@@ -17,6 +17,26 @@
  * The structure of NAV below is the single source of truth for nav ordering.
  */
 
+/* Master output trim for every page that makes sound - play, the minigames,
+ * the media browser.
+ *
+ * This is a LOUDNESS setting, not a mix control. The pages were simply too
+ * loud on arrival, and the fix belongs at the output stage rather than in the
+ * per-sound levels: the visible gain sliders (1x..10x on the media browser)
+ * keep their whole range and their labels, and every relative balance between
+ * BGM, SFX and one-shots is preserved, because everything downstream is
+ * scaled by the same factor.
+ *
+ * Applied at each final GainNode -> destination hop. The WASM audio path
+ * (the play page) carries the same trim in `engine-audio`'s WebAudioOut, so
+ * a page mixing both sources stays balanced.
+ *
+ * Call sites use `window.LEGAIA_MASTER_TRIM ?? 0.25` - the literal there is a
+ * fallback for a page that somehow loads without this file, not a second
+ * source of truth. Change the value HERE.
+ */
+window.LEGAIA_MASTER_TRIM = 0.25;
+
 const NAV = [
   {
     label: 'overview',

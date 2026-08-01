@@ -474,13 +474,18 @@ window.MgDance = (function () {
       return sfx;
     }
 
+    // Site master trim (js/layout.js) - applied at the output stage so the
+    // authored per-cue levels below stay as written.
+    const masterTrim = () =>
+      window.LEGAIA_MASTER_TRIM == null ? 0.25 : window.LEGAIA_MASTER_TRIM;
+
     function play(name, gain = 0.5) {
       const a = audioReady();
       if (!a || !a.buffers[name]) return;
       const src = a.ctx.createBufferSource();
       src.buffer = a.buffers[name];
       const gn = a.ctx.createGain();
-      gn.gain.value = gain;
+      gn.gain.value = gain * masterTrim();
       src.connect(gn).connect(a.ctx.destination);
       src.start();
     }
@@ -493,7 +498,7 @@ window.MgDance = (function () {
         const src = a.ctx.createBufferSource();
         src.buffer = buf;
         const gn = a.ctx.createGain();
-        gn.gain.value = 0.45;
+        gn.gain.value = 0.45 * masterTrim();
         src.connect(gn).connect(a.ctx.destination);
         src.start();
       }

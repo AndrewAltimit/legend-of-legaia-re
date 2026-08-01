@@ -713,6 +713,110 @@ impl World {
             .unwrap_or(crate::field_env::PLAYER_CLIP_STANDIN_FRAMES)
     }
 
+    /// Is the player running this frame?
+    ///
+    /// Retail (`FUN_801d01b0` at `0x801D0358..0x801D03A0`) computes it as the
+    /// **exclusive or** of two things:
+    ///
+    /// - the run button - held pad `_DAT_8007B850` AND the mask config word
+    ///   `[0x800846DC]`;
+    /// - the Field Move option word `[0x800846CC]` (= `0x80084140 + 0x58c`,
+    ///   the pause menu's Walk / Run row).
+    ///
+    /// The XOR is what the paired branches encode: from the button-held side
+    /// (`bnez` at `0x801D0370` → `0x801D0390`) a set option jumps PAST the
+    /// `$s4 = 0xc` store, and from the button-clear side it falls INTO it. So
+    /// the option picks the default and the button inverts it - hold to run
+    /// when Walk is selected, hold to walk when Run is.
+    pub fn field_run_active(&self) -> bool {
+        self.field_run_button_held != self.field_move_run_default
+    }
+
+    /// The frame's base step - retail's `$s4` before the `+0x72` multiply at
+    /// `0x801D056C`.
+    ///
+    /// Ported from the selector at `0x801D0334..0x801D03E0`, in the order
+    /// retail tests it: forced-slow wins outright (its arm `j`s past
+    /// everything else), otherwise run vs walk. The debug-turbo arm
+    /// ([`crate::world::config::FIELD_BASE_STEP_DEBUG_TURBO`]) is recorded but
+    /// never taken - see its doc comment for the three gates.
+    ///
+    /// PORT: FUN_801d01b0 (base-step selector)
+    pub fn field_base_step(&self) -> i32 {
+        if self.field_forced_slow {
+            return crate::world::config::FIELD_BASE_STEP_FORCED_SLOW;
+        }
+        if self.field_run_active() {
+            return crate::world::config::FIELD_BASE_STEP_RUN;
+        }
+        crate::world::config::FIELD_BASE_STEP
+    }
+
+    /// Recompute [`World::field_actor_moving`] by diffing every tracked
+    /// actor's live field position against last frame's, and fold the
+    /// player's own bit into its locomotion animation.
+    ///
+    /// This is the source-agnostic half of the locomotion animation. The pad
+    /// and nav-walk paths raise
+    /// [`crate::field_anim::FieldPlayerAnim::moved_this_frame`] directly
+    /// (they know they moved before they commit, and a *wall-blocked* pad
+    /// step still walks in place the way retail does, which a position diff
+    /// cannot see). Everything else that moves an actor - a motion-VM patrol
+    /// leg, a cutscene `MoveTo`, a channel-driven walk-on - commits a
+    /// position and nothing more, so without this pass those actors slide
+    /// along in their idle pose.
+    ///
+    /// Called once per field tick, immediately before
+    /// [`Self::tick_field_player_anim`], so it sees every position any earlier
+    /// step in the frame committed.
+    ///
+    /// A slot appearing for the first time (an actor seated mid-scene by a
+    /// timeline, or the frame after a scene load) seeds the snapshot and is
+    /// NOT reported as moving - its arrival is a placement, not a step.
+    pub(crate) fn detect_field_actor_motion(&mut self) {
+        self.field_actor_moving.clear();
+        let player_slot = self.player_actor_slot;
+        // The player reads from its move_state (the locomotion commits
+        // there); NPCs read from the live placement-position map.
+        let player_pos = player_slot
+            .and_then(|s| self.actors.get(s as usize))
+            .map(|a| (a.move_state.world_x, a.move_state.world_z));
+        let mut seen: std::collections::HashSet<u8> =
+            std::collections::HashSet::with_capacity(self.field_npc_positions.len() + 1);
+        let mut moved_player = false;
+        if let (Some(slot), Some(pos)) = (player_slot, player_pos) {
+            seen.insert(slot);
+            match self.field_motion_prev.insert(slot, pos) {
+                Some(prev) if prev != pos => {
+                    moved_player = true;
+                    self.field_actor_moving.insert(slot);
+                }
+                _ => {}
+            }
+        }
+        for (&slot, &pos) in &self.field_npc_positions {
+            if Some(slot) == player_slot {
+                // The player is tracked off its move_state above; a stale
+                // mirror of it here must not double-report.
+                continue;
+            }
+            seen.insert(slot);
+            match self.field_motion_prev.insert(slot, pos) {
+                Some(prev) if prev != pos => {
+                    self.field_actor_moving.insert(slot);
+                }
+                _ => {}
+            }
+        }
+        // Drop slots that are no longer tracked (scene actors torn down), so
+        // a later scene reusing the slot number starts from a fresh seed
+        // instead of diffing against a dead actor's last position.
+        self.field_motion_prev.retain(|slot, _| seen.contains(slot));
+        if moved_player && let Some(anim) = &mut self.field_player_anim {
+            anim.moved_this_frame = true;
+        }
+    }
+
     /// One field-frame advance of the player's locomotion animation: pick
     /// idle vs walk off the movement flag the locomotion step just set, emit
     /// the active clip's frame into the player actor's `pose_frame`. Called

@@ -1385,10 +1385,11 @@ const PRESET_BASE = {
 };
 
 // Both gameplay presets hand the player a generous, fast-travel-ready start:
-// every convenience item + accessory, all warps unlocked, the whole starting
-// party at level 10, and 5 random consumables on top.
+// every convenience item + accessory, all warps unlocked, and 5 random
+// consumables on top. The starting LEVEL is not part of the bundle - each
+// preset names its own, because the two want different curves (see below).
 const STARTING_BUNDLE = {
-  startingItems: 5, startingLevel: 10, allWarps: true,
+  startingItems: 5, allWarps: true,
   doorOfWind: true, incense: true,
   speedChain: true, chickenHeart: true, goodLuckBell: true,
 };
@@ -1399,7 +1400,14 @@ const STARTING_BUNDLE = {
 //
 // `monster_stats` is Full Chaos only: reshuffled enemy stat blocks move fights
 // off the vanilla difficulty curve that the rest of Balanced - kingdom-scope
-// encounters, shuffled loot, the level-10 start - is balanced against.
+// encounters, shuffled loot, the level-5 start - is balanced against.
+//
+// The two presets start at different levels on purpose. Balanced keeps the
+// early curve legible: level 5 clears the opening difficulty spike without
+// skipping past the fights the shuffled encounter tables are tuned around.
+// Full Chaos starts at 10 because its randomized monster stats and world-scope
+// encounters can seat a wildly over-levelled fight in the first region, and the
+// higher floor is what keeps that survivable.
 const PRESETS = {
   vanilla: { ...PRESET_BASE },
   items: {
@@ -1414,7 +1422,7 @@ const PRESETS = {
     chests: 'shuffle', steals: 'shuffle', arts: 'shuffle',
     equip_bonus: 'shuffle', equipmentDrops: true,
     seruTrade: true, enemyAlly: true, shinySeru: true, jewelFix: true, approachFix: true,
-    ...STARTING_BUNDLE,
+    ...STARTING_BUNDLE, startingLevel: 5,
   },
   chaos: {
     ...PRESET_BASE,
@@ -1426,7 +1434,7 @@ const PRESETS = {
     monster_stats: 'random', move_power: 'random', element_affinity: 'random',
     spell_cost: 'random', equip_bonus: 'random', weaponSpecialty: true,
     equipmentDrops: true, seruTrade: true, enemyAlly: true, shinySeru: true, jewelFix: true, approachFix: true,
-    ...STARTING_BUNDLE,
+    ...STARTING_BUNDLE, startingLevel: 10,
   },
 };
 

@@ -816,7 +816,10 @@ window.MgMuscle = (function () {
       const src = a.ctx.createBufferSource();
       src.buffer = buf;
       const gn = a.ctx.createGain();
-      gn.gain.value = gain;
+      // Every cue on this page funnels through here, so the site master trim
+      // (js/layout.js) lands once and the authored per-cue levels stand.
+      const trim = window.LEGAIA_MASTER_TRIM == null ? 0.25 : window.LEGAIA_MASTER_TRIM;
+      gn.gain.value = gain * trim;
       src.connect(gn).connect(a.ctx.destination);
       src.start();
     }

@@ -62,7 +62,10 @@
       if (!Ctor) return null;
       ctx = new Ctor();
       master = ctx.createGain();
-      master.gain.value = 1;
+      // Every cue routes through this node, so the site master trim
+      // (js/layout.js) belongs here and nowhere else in this file - the
+      // per-cue `b.gain` levels below stay exactly as authored.
+      master.gain.value = window.LEGAIA_MASTER_TRIM == null ? 0.25 : window.LEGAIA_MASTER_TRIM;
       master.connect(ctx.destination);
     }
     if (ctx.state === 'suspended' && ctx.resume) ctx.resume();

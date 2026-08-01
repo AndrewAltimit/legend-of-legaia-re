@@ -99,7 +99,7 @@ The callers this protects are the ones whose tile is *derived* rather than autho
    speed = ((base_step * player[+0x72]) >> 12) * DAT_1f800393
    ```
 
-   where `base_step` is `8` walking (`5` / `0xc` / `0x18` in special states such as run / forced-walk), `player[+0x72]` is the per-actor multiplier, and `DAT_1f800393` is the per-frame delta scalar (frame-rate compensation). Modifiers:
+   where `base_step` is one of four values chosen by the selector at `0x801D0334..0x801D03E0` (see [Base-step selection](#base-step-selection-walk--run) below), `player[+0x72]` is the per-actor multiplier, and `DAT_1f800393` is the per-frame delta scalar (frame-rate compensation). Modifiers:
    - **Terrain slow.** If the player's current collision tile has flag `0x4000` set and the scene control byte `_DAT_801c6ea4[+0x61] == 1`, `speed >>= 1` (half speed - mud / shallow water).
    - **Diagonal normalise.** Under camera mode 4 with both axes pressed, `speed -= speed >> 2` (×0.75).
 5. **Step loop.** The function then loops, advancing **2 units per iteration** until `speed` units are consumed. Each iteration checks the candidate axis for collision and, only if clear, commits the step:
@@ -123,6 +123,39 @@ The engine ports the probe as `World::tick_field_interaction_probe` (`engine-cor
 This is the input-driven counterpart to the scripted field-interact op; talking to the Rim Elm sparring partner this way starts the Tetsu fight through the dialogue-accept auto-arm.
 
 `World::nav_step_toward(tx, tz, tol)` is the matching auto-navigation primitive: it steps the player one frame toward a world target using the same per-axis collision as the pad path (`advance_with_collision`) but a world-space direction, returning `true` on arrival. A driver loops it along a BFS route over the collision grid to walk the player to a target - e.g. the v0.1 oracle's emergent Battle leg walks from the cold-boot spawn to the sparring partner, then talks to it via the probe. (The partner's *placement* tile (76,65) is its post-tutorial village spot, in a town01 sub-area not walk-reachable from the spawn; the opening repositions it next to Vahn for the tutorial - see `RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS`.)
+
+### Base-step selection (Walk / Run)
+
+`$s4` holds the frame's base step across `0x801D0334..0x801D03E0`. Four values, tested in this order:
+
+| base step | selected when | address |
+|---|---|---|
+| `5` | `_DAT_8007B6A8 != 0` - forced slow | `0x801D0354` |
+| `0xc` | run (see the XOR below) | `0x801D03A0` |
+| `0x18` | `_DAT_8007B98C != 0` **and** `_DAT_8007B868 != 0` **and** held pad `_DAT_8007B850 & 0x80` - a debug turbo | `0x801D03DC` |
+| `8` | nothing above fired - plain walk | `0x801D0334` |
+
+The forced-slow arm is not just first, it is exclusive: `0x801D0350` `j`s to `0x801D03A4`, past both the run and turbo checks. A forced walk cannot be run out of. The turbo arm is last and overwrites whatever run chose.
+
+**Run is an exclusive or, not a button.** The two inputs are the held run button (`_DAT_8007B850 &` the mask config word `0x800846DC`) and the Field Move option word `0x800846CC` (= `0x80084140 + 0x58c`, the pause menu's Walk / Run row - see [`field-menu.md`](field-menu.md#options-screen)). The paired branches encode XOR: from the button-held side (`bnez` at `0x801D0370` → `0x801D0390`) a set option jumps *past* the `$s4 = 0xc` store, and from the button-clear side it falls *into* it. So the option sets the default and the button inverts it - hold to run when Walk is selected, hold to **walk** when Run is.
+
+The mask word `0x800846DC` is **not pinned**. It is reached as a base-plus-offset off `0x80084140`, so nothing materialises the address and an [address-reference scan](../tooling/address-reference-scan.md) returns nothing in any image; it is also not one of the ten option rows. Its value is therefore Unknown, and the port binds the run button host-side rather than claiming a retail bit.
+
+**Engine port.** `World::field_base_step` (the selector) over `World::field_run_active` (the XOR), with the four constants in `engine-core::world::config`. The option arrives as `World::field_move_run_default` (hosts mirror `OptionsState::field_move`); the button as `World::field_run_button_held`, latched inside `World::set_pad` so every host that feeds a pad gets it without wiring anything. `World::field_forced_slow` is ported but **NOT WIRED** - no host drives `_DAT_8007B6A8`'s equivalent - and the turbo arm is recorded as a constant and never taken.
+
+### Motion-derived locomotion animation
+
+Which clip plays is a function of whether an actor **moved**, not of what moved it. `World::detect_field_actor_motion` runs once per field tick, after every mover in the frame (cutscene timeline, per-actor channels, field VM, NPC motion legs, locomotion) and before the animation tick, diffing each tracked actor's position against last frame's into `World::field_actor_moving`; the player's bit folds into `FieldPlayerAnim::moved_this_frame`.
+
+The pad and nav-walk paths still raise that flag directly, because they know they moved *before* they commit - and a wall-blocked pad step walks in place the way retail does, which a position diff cannot see.
+
+The pass exists because the flag previously had only those two writers, both on the player's own locomotion path. Anything moved by a script - a cutscene `MoveTo`, a channel walk-on - committed a position and raised nothing, so it slid along in its idle pose. An actor appearing in the tracked set for the first time seeds the snapshot without reporting motion: its arrival is a placement, not a step. The snapshot clears on scene entry, or a warp would read as one enormous step and start everyone walking on the landing frame.
+
+**The NPC half is signal-only so far.** `field_actor_moving` carries a bit for every tracked placement slot, but no host reads the NPC bits yet - an NPC's clip still changes only on an explicit `Animate` cue, so a script-walked NPC still glides.
+
+Wiring it needs an idle-clip → walk-clip pairing per NPC, and only the `special_model` party placements have one pinned (the PROT 0874 §1 locomotion bank's `LOCOMOTION_IDLE_SLOT` / `_WALK_SLOT` per character). For an ordinary scene NPC the placement names a single record out of the scene's own ANM bundle and the walk sibling is not identified.
+
+Retail selects it off the actor's `+0x5c` dash-state counter, and that counter's **writer is not in this controller**: `FUN_801d01b0` only reads it (`lh $v0, 0x5c($s2)` at `0x801D0424`, gating a `+0x6a = 8` store and an `actor[+0x10] |= 0x01000000`). Finding the writer is the next step.
 
 ### Wall-slide resolution (`FUN_80046494`)
 

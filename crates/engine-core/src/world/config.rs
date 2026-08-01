@@ -48,7 +48,29 @@ pub(crate) const FIELD_GRID_LEN: usize = FIELD_GRID_STRIDE * 0x80;
 pub(crate) const SEAT_RESCUE_RADIUS_SUBCELLS: i32 = 8;
 /// Base walk step (retail `base_step = 8` in `FUN_801d01b0`). Scaled by the
 /// player's `+0x72` speed multiplier and the per-frame delta scalar.
+///
+/// One of four values the controller's selector picks between before the
+/// multiply at `0x801D056C` (`mult $s4, $v0`, `$s4` = base step, `$v0` =
+/// `player[+0x72]`). The other three are below; the selector itself is
+/// [`crate::world::World::field_base_step`].
 pub(crate) const FIELD_BASE_STEP: i32 = 8;
+/// Run base step (retail `0x801D03A0`: `addiu $s4, $zero, 0xc`). Selected
+/// when the run condition holds - see
+/// [`crate::world::World::field_run_active`] for the XOR that picks it.
+pub(crate) const FIELD_BASE_STEP_RUN: i32 = 0xc;
+/// Forced-slow base step (retail `0x801D0354`: `addiu $s4, $zero, 5`, in the
+/// delay slot of `beqz` on `_DAT_8007B6A8`). This arm `j`s straight past the
+/// run and turbo checks at `0x801D0350`, so a forced walk cannot be run out
+/// of - which is why the selector tests it first.
+pub(crate) const FIELD_BASE_STEP_FORCED_SLOW: i32 = 5;
+/// Debug turbo base step (retail `0x801D03DC`: `addiu $s4, $zero, 0x18`).
+///
+/// NOT WIRED: gated in retail on three conditions - `_DAT_8007B98C != 0`,
+/// `_DAT_8007B868 != 0`, and held-pad bit `_DAT_8007B850 & 0x80` - and it
+/// overwrites whatever the run arm chose. The port has no equivalent of the
+/// first two globals, so the constant is recorded and the arm is not taken.
+#[allow(dead_code)]
+pub(crate) const FIELD_BASE_STEP_DEBUG_TURBO: i32 = 0x18;
 /// Per-iteration advance of the locomotion step loop (retail commits in
 /// 2-unit increments per axis).
 pub(crate) const FIELD_STEP_UNIT: i32 = 2;

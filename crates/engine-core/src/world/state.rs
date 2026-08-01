@@ -216,6 +216,38 @@ pub struct World {
     /// path stays bit-identical to the retail-faithful quantised remap
     /// (replays / oracles are unaffected unless a host opts in).
     pub precise_movement: bool,
+    /// Field Move option: `false` = Walk, `true` = Run (retail config word
+    /// `0x800846CC`, the pause menu's "Field Move" row - see
+    /// [`crate::options::FieldMoveOpt`]). Hosts mirror their
+    /// [`crate::options::OptionsState`] onto this the way they mirror
+    /// [`Self::precise_movement`].
+    ///
+    /// This is the *default*, not the state: the run button INVERTS it, so
+    /// with Run selected the button walks. See
+    /// [`World::field_run_active`].
+    pub field_move_run_default: bool,
+    /// `true` while the field run button is held this frame. Fed by the host
+    /// from its own binding each tick, alongside the rest of the pad.
+    ///
+    /// Retail reads it as `pad_held & mask`, where the held-pad word is
+    /// `_DAT_8007B850` and the mask is the config word `0x800846DC`. The mask
+    /// WORD's value is not pinned - nothing materialises that address (it is
+    /// reached as `0x80084140 + 0x59c`, so an address scan cannot see it) and
+    /// it is not one of the ten option rows. So the engine takes the run
+    /// button as a host-bound input rather than claiming a retail bit; the
+    /// XOR structure around it in [`World::field_run_active`] IS pinned.
+    pub field_run_button_held: bool,
+    /// Forced-slow gate: retail's `_DAT_8007B6A8` arm of the base-step
+    /// selector. Non-zero there selects base step
+    /// [`crate::world::config::FIELD_BASE_STEP_FORCED_SLOW`] and **skips the
+    /// run check entirely** - a forced walk cannot be run out of.
+    ///
+    /// NOT WIRED: no host drives this yet. `_DAT_8007B6A8` is the same word
+    /// the action-button gate and the per-scene save-allow test read
+    /// (`docs/subsystems/field-locomotion.md`), and the port has no
+    /// equivalent of its writer, so the constant and the arm are ported and
+    /// the flag stays `false`.
+    pub field_forced_slow: bool,
     /// Scene-entry VDF pulse **enhancement** gate
     /// ([`World::install_entry_vdf_pulse`]). On by default; clearing it
     /// keeps every never-retail-armed morph pack (jou's flesh ground)
@@ -700,6 +732,36 @@ pub struct World {
     /// per-frame positions back here, so collision and interact probes follow
     /// a moving NPC.
     pub field_npc_positions: std::collections::HashMap<u8, (i16, i16)>,
+
+    /// Last frame's field position for every actor the motion detector
+    /// tracks - the player (from its [`crate::vm::ActorMoveState`]) and every
+    /// entry of [`Self::field_npc_positions`]. Rewritten each field tick by
+    /// [`Self::detect_field_actor_motion`], which is the only reader.
+    ///
+    /// Cleared on scene entry alongside [`Self::field_npc_positions`]: a
+    /// stale entry across a scene change would read the warp itself as one
+    /// enormous step and start every actor walking on the landing frame.
+    ///
+    /// Public only because `World` is built with functional-update syntax in
+    /// integration tests, which requires every field to be visible; treat it
+    /// as internal to the detector.
+    pub field_motion_prev: std::collections::HashMap<u8, (i16, i16)>,
+
+    /// Placement slots whose field position CHANGED during the frame just
+    /// ticked - the source-agnostic "this actor is moving" signal.
+    ///
+    /// Recomputed every field tick by [`Self::detect_field_actor_motion`] by
+    /// diffing live positions against [`Self::field_motion_prev`], so it is
+    /// true for a walk driven by the pad, by a nav step, by a motion-VM
+    /// patrol leg, by a cutscene `MoveTo`, or by anything else that commits a
+    /// position - the animation layer does not have to know which. That is
+    /// the point: selecting the walk clip off the *mover* rather than off the
+    /// *motion* is what made script-driven actors glide.
+    ///
+    /// The player's own bit is folded straight into
+    /// [`crate::field_anim::FieldPlayerAnim::moved_this_frame`] rather than
+    /// left here for a host to read.
+    pub field_actor_moving: std::collections::HashSet<u8>,
 
     /// `true` only while [`Self::pre_run_field_channel_prologues`] is
     /// executing the scene-entry spawn-prologue slices. The field-VM host
@@ -2451,6 +2513,9 @@ impl World {
             walk_regen_window: 0,
             field_camera_azimuth: 0,
             precise_movement: false,
+            field_move_run_default: false,
+            field_run_button_held: false,
+            field_forced_slow: false,
             entry_pulse_enabled: true,
             precise_move_carry: (0.0, 0.0),
             party_actor_slots: Vec::new(),
@@ -2516,6 +2581,8 @@ impl World {
             field_npc_dialog_prologue: std::collections::HashMap::new(),
             active_inline_prologue: None,
             field_npc_positions: std::collections::HashMap::new(),
+            field_motion_prev: std::collections::HashMap::new(),
+            field_actor_moving: std::collections::HashSet::new(),
             field_entry_prerun: false,
             field_npc_entry_positions: std::collections::HashMap::new(),
             field_npc_headings: std::collections::HashMap::new(),

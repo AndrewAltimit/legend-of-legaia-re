@@ -213,8 +213,21 @@ impl World {
     /// [`input::InputState`] at the call site. Hosts that drive the
     /// world from a scripted timeline (`legaia-engine replay`, the
     /// v0.1 playthrough oracle) call this before each [`Self::tick`].
+    /// Also latches [`Self::field_run_button_held`] off the same word, so the
+    /// run modifier reaches every host that feeds a pad - native window,
+    /// browser play page, replay driver - without any of them wiring it
+    /// separately. Deriving it here rather than per-host is deliberate: a
+    /// per-host derivation is exactly the shape the UI-drift gate exists to
+    /// catch, and this way there is nothing to keep in sync.
+    ///
+    /// The button is **Square**. Retail's held-pad speed modifier - the
+    /// debug-turbo arm of the same base-step selector - reads packed bit
+    /// `0x80`, which the fishing controller pins as Square, so it is the
+    /// retail-adjacent choice; the run mask config word `0x800846DC` itself
+    /// is unpinned (see [`Self::field_run_button_held`]).
     pub fn set_pad(&mut self, mask: u16) {
         self.input.set_pad(mask);
+        self.field_run_button_held = mask & input::PadButton::Square.mask() != 0;
     }
 
     /// Per-frame world tick. Drives whichever scene-mode VMs are live.
@@ -596,6 +609,13 @@ impl World {
                 if let Some(pslot) = self.player_actor_slot {
                     self.step_field_vertical(pslot as usize);
                 }
+                // Motion detection: diff every tracked actor's position
+                // against last frame's. Runs after EVERY mover in the frame
+                // (timeline, channels, field VM, NPC motion legs, locomotion)
+                // so the walk clip is selected by whether an actor moved, not
+                // by which subsystem moved it - the script paths commit a
+                // position and raise no flag of their own.
+                self.detect_field_actor_motion();
                 // Locomotion animation: idle vs walk off the movement flag
                 // the step above just set, folded into the player's
                 // `pose_frame` for the host's posed-mesh rebuild.

@@ -2227,7 +2227,7 @@ impl World {
         // speed = ((base_step * player[+0x72]) >> 12) * DAT_1f800393.
         let mult = self.actors[slot].move_state.field_72 as i32;
         let ratio = self.move_ramp_ratio.max(1) as i32;
-        let mut speed = ((FIELD_BASE_STEP * mult) >> 12) * ratio;
+        let mut speed = ((self.field_base_step() * mult) >> 12) * ratio;
         // Diagonal normalise (camera mode 4, both axes pressed): x0.75.
         // The precise path normalises its vector instead (below), so the
         // fixed cut only applies to the quantised path.

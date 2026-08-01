@@ -2087,7 +2087,9 @@ seed-routine code stays byte-identical and EDC/ECC-valid. A companion test runs 
 tiny MIPS-subset interpreter over the *patched* seed routine and asserts every
 growth slot's live record lands with the right `+0x0` / `+0x4` / `+0x130` - proving
 the whole party, not just the lead, ends up coherent. The randomizer is enabled
-at level 10 in the web "Balanced" and "Full Chaos" presets and off in
+at level 5 in the web "Balanced" preset and level 10 in "Full Chaos" - Chaos
+randomizes monster stats and rolls encounters at world scope, so it can seat an
+over-levelled fight in the first region and wants the higher floor. Off in
 "Vanilla" / "Item Shuffle".
 
 ### Unused content
