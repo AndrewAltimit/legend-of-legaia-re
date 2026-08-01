@@ -38,8 +38,8 @@
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_core::battle_hud::{
-    BattleHud, DamagePopup, battle_active_actor, encounter_banner_enabled, encounter_banner_label,
-    sync_battle_hud_rows,
+    BattleHud, DamagePopup, battle_active_actor, battle_plaque_element_badge,
+    encounter_banner_enabled, encounter_banner_label, sync_battle_hud_rows,
 };
 use legaia_engine_core::world::SceneMode;
 use legaia_engine_ui::{self as ui, HudPopupView, HudSlotMeta, HudSlotView, SpriteDraw, TextDraw};
@@ -397,6 +397,11 @@ impl LegaiaRuntime {
         surface_h: u32,
     ) -> ui::BattleHudDraws {
         let font = assets.font_ref();
+        // The badge cells the HUD blits, projected out of the baked atlas. A
+        // `None` CELL inside it means that badge's palette source was outside
+        // the slice the atlas was built from, and the HUD keeps its tag.
+        let badges = assets.battle_badges();
+        let banner = self.battle_banner_message(assets);
         let active = self
             .scene_host
             .as_ref()
@@ -428,34 +433,59 @@ impl LegaiaRuntime {
                 surface: (surface_w, surface_h),
                 chrome: assets.chrome_rects(),
                 plaque: active.as_ref().map(|(_, n)| n.as_str()),
+                // The element badge the plaque wears in front of the name;
+                // `None` draws the bare name.
+                plaque_badge: self
+                    .scene_host
+                    .as_ref()
+                    .and_then(|h| battle_plaque_element_badge(&h.world)),
+                banner: banner.as_deref(),
+                // The sparring-tutorial prompt is a box this page draws
+                // itself, and its rect starts on the plaque's own content
+                // pen - so while it is up the plaque must not draw, or two
+                // text runs land on the same pixels. Same three conditions
+                // the native window suppresses on.
+                plaque_seat_taken: self.battle_tutorial_stage_rect(font).is_some()
+                    || self.scene_host.as_ref().is_some_and(|h| {
+                        h.world.current_dialog.is_some() || h.world.inline_dialogue.is_some()
+                    }),
+                badges: badges.as_ref(),
                 active_slot: active.as_ref().map(|(s, _)| *s),
                 // Retail parks the status plate off-screen while a command
                 // entry session owns the frame; the port emits no strip.
                 input_session_parked: parked,
                 diag: ui::diag_hud_enabled(),
-                // NOT WIRED on this host yet. Four fields the native window
-                // fills and this page does not, all of them plain data:
-                //
-                // * `badges` - `BattleBadgeRects` from the baked atlas's
-                //   `band_status_badges()` / `band_element_badges()`. Until
-                //   then a selected ailment keeps the engine's labelled tag
-                //   instead of retail's 48x16 word cell. The page's atlas
-                //   also needs its PROT.DAT slice rooted at
-                //   `save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET` rather
-                //   than the system-UI sheet, or three of the nine badges
-                //   have no sub-palette to decode with.
-                // * `plaque_badge` -
-                //   `battle_hud::battle_plaque_element_badge(world)`.
-                // * `banner` - a battle message for the top-of-screen
-                //   widget; the native host feeds it the level-up /
-                //   Seru-capture lines.
-                // * `plaque_seat_taken` - true while this page draws its own
-                //   box on the plaque's pen (the tutorial prompt), or two
-                //   text runs land on the same pixels.
-                ..Default::default()
             },
             BATTLE_HUD_PEN,
         )
+    }
+
+    /// The message holding retail's top-of-screen banner this frame, if any -
+    /// the browser twin of the native window's `battle_banner_message`.
+    ///
+    /// The port's two battle messages are the level-up and Seru-capture
+    /// lines, and retail draws exactly those in this widget. Deliberately NOT
+    /// gated on `SceneMode::Battle`: the port grants XP after the mode has
+    /// flipped back to Field, so a battle-mode gate would leave the widget
+    /// wired and never drawn.
+    ///
+    /// `None` without the system-UI atlas - there is no frame to put a
+    /// message in, so a chrome-less host keeps the loose pens instead.
+    fn battle_banner_message(&self, assets: &crate::play_menu::PlayMenuAssets) -> Option<String> {
+        assets.chrome_rects()?;
+        let w = &self.scene_host.as_ref()?.world;
+        if let Some(b) = &w.current_level_up_banner {
+            return Some(format!(
+                "LEVEL UP!  P{} -> LV {}\nHP +{}  MP +{}",
+                b.char_id + 1,
+                b.new_level,
+                b.hp_gained,
+                b.mp_gained
+            ));
+        }
+        w.current_capture_banner
+            .as_ref()
+            .and_then(|b| b.current_banner())
     }
 
     /// The live battle command menu projected into the shared chip-cluster
