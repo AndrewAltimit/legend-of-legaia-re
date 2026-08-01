@@ -235,7 +235,7 @@ Per-script state, passed as `ctx_ptr`. Offsets identified so far:
 | +0x68 | i16 | Local guard slot. Read by op 0x4C nibble-8 sub-C to skip a forward jump when zero. |
 | +0x6A | i16 | Generic scalar. Written / ramped by op 0x4C nibble-4 sub-1 (input is `(value >> 1).max(1)`). |
 | +0x6D | u8 | Face/body rotation index (op 0x43 sub-7). |
-| +0x72 | u16 | Generic scalar. Written / ramped by op 0x4C nibble-4 sub-0. |
+| +0x72 | u16 | **Render scale**, fixed-point `0x1000` = 1.0. Seeded by the actor allocator (`actor_free`, `funcs/80020de0.txt`); written / ramped by op 0x4C nibble-4 sub-0; consumed by the per-actor render dispatcher `FUN_8001ADA4` (disasm `8001b240..8001b28c`), which loads a non-unit value into the GTE scale vector. **Scale 0 = invisible**: the interaction-trigger placements' spawn prologue writes `4C 40 00 00` so their dev-gizmo marker mesh (orange diamond + blue cone) never rasterises; visible NPCs commonly run `4C 40 00 14` (1.25x). |
 | +0x74 | u32 | Composite control word. XOR-toggled by op 0x4C nibble-C sub-8 (flips bit 0x10000000). |
 | +0x8B | u8 | Cleared by op 0x23 NPC path. |
 | +0x8C | u8 | NPC X grid coord (op 0x23). |

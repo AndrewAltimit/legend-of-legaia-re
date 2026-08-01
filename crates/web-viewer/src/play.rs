@@ -989,14 +989,24 @@ impl LegaiaRuntime {
             return Vec::new();
         };
         let mut out = Vec::with_capacity(n.pack.entries.len() * 4);
+        let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
         for e in &n.pack.entries {
             let slot = e.placement.index as u8;
-            let (x, z) = h
+            let (mut x, mut z) = h
                 .world
                 .field_npc_positions
                 .get(&slot)
                 .copied()
                 .unwrap_or((e.placement.world_x, e.placement.world_z));
+            // Zero render scale (`actor[+0x72] = 0`, the trigger records'
+            // spawn prologue): retail collapses the actor's mesh to a
+            // point - the invisible interaction markers. Surface it as the
+            // off-map hide sentinel the page already skips, so both hosts
+            // hide on the same World predicate (the native window's skip
+            // sits in its NPC draw loop).
+            if h.world.field_npc_render_scale(e.placement.index) == Some(0) {
+                (x, z) = (hide, hide);
+            }
             // A slot with no seeded heading renders at **identity** in the
             // native window (`redraw.rs`: `None => Mat4::IDENTITY`). The page
             // composes `rot = -(facing + 2048)` (the half-turn the walker

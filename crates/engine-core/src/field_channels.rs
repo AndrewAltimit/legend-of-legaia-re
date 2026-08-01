@@ -127,6 +127,17 @@ pub fn spawn_channels(man_file: &ManFile, man: &[u8]) -> Vec<FieldChannel> {
                 // (`FUN_8003A1E4`); the halt-acquire predicate reads it as
                 // "acquireable" (non-zero).
                 saved_pc: 0xFFFF_FFFF,
+                // Retail's actor allocator (`actor_free`,
+                // ghidra/scripts/funcs/80020de0.txt) births every actor
+                // with `+0x72 = 0x1000` - the fixed-point unit RENDER
+                // SCALE the per-actor render dispatcher (`FUN_8001ADA4`)
+                // composes into the model matrix. The invisible
+                // interaction-trigger records rely on it: their spawn
+                // prologue writes `+0x72 = 0` (op `4C 40 00 00`), which
+                // collapses their dev-gizmo marker mesh (orange diamond +
+                // blue cone) to a point. Seeding 0 here made that write
+                // meaningless and the markers drew at full size.
+                field_72: 0x1000,
                 ..FieldCtx::default()
             };
             FieldChannel {
@@ -184,6 +195,8 @@ pub fn spawn_object_channels(
             world_z: cz as u16,
             // Retail inits the `+0x94` payload slot to `-1` (`FUN_8003A55C`).
             saved_pc: 0xFFFF_FFFF,
+            // Unit render scale from `actor_free` - see `spawn_channels`.
+            field_72: 0x1000,
             ..FieldCtx::default()
         };
         out.push(FieldChannel {

@@ -1083,6 +1083,19 @@ renderer and the site's WebGL viewers:
   alternate 0/1 instead of accumulating. Retail art itself authors ~1-unit
   offsets for the decals it separates explicitly, so the nudge stays inside
   authored practice and far below visibility against 128-unit tiles.
+
+  Both passes run over the **hybrid** of a TMD's textured and untextured
+  halves as one stream (`legaia_tmd::mesh::resolve_hybrid`): the baked floor
+  shadows and wall paintings are untextured `F*`/`G*` colour prims lying on
+  textured bases, pairs neither single-mesh pass can see. The kernel merges,
+  runs both passes, then splits positions back to their owning half; a
+  flagged colour vert carries the pair bit in blend bit 14
+  (`BLEND_DOUBLE_SIDED_BIT`) - the colour-mesh shader's facing discard reads
+  it natively, and the web merge re-keys it onto the merged CBA bit 15. Both
+  hosts call the one kernel (native `assets.rs` static-env + posed-placement
+  builds; web `build_hybrid_env_mesh(_posed)`) - running the passes on the
+  textured half alone left every colour-on-textured decal z-fighting in the
+  native window while the browser was clean.
 - **Cross-draw overlaps** - `legaia_engine_core::coplanar_draws` detects the
   coplanar overlap clusters across a scene's resolved `EnvDraw` list (terrain
   + placed layers combined) and returns a per-draw world offset: the largest
