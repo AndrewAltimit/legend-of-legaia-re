@@ -215,6 +215,65 @@ fn assembled_rest_pose_stands_upright() {
     }
 }
 
+/// The assembled mesh is the right *size*, not just the right shape - stated
+/// as the thing anyone actually looks at, the fraction of the frame the
+/// character fills under the retail resting battle camera.
+///
+/// The mesh carries no scale and nothing on the load path applies one, so this
+/// is arithmetic: `H * world_scale * height / Ez` with `H = 256`,
+/// `world_scale = 4.0` (base matrix `0x8007BF10 = 16384 * I` on game mode
+/// `0x14`) and `Ez` the eye distance to the party seat under the retail menu
+/// framing `TR = (0, 1280, 7680)`, pitch `32`, yaw `3372`, seat
+/// `(0, 0, -800)`, which is `6260`. Pinned against the battle command-menu
+/// save state's framebuffer, where the party member's soles land on row `169`
+/// and his hair tops out around `106`.
+///
+/// This exists because "the battle character is far too large" was chased into
+/// the assembly twice. It is not there. If this test passes and the character
+/// still fills the frame, the camera is the thing that moved.
+#[test]
+fn the_assembled_mesh_fills_the_retail_share_of_the_frame() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let Some(prot_dir) = extracted_prot_dir() else {
+        eprintln!("[skip] extracted/PROT missing");
+        return;
+    };
+    // Retail battle projection constants, all read off save states.
+    const H: f32 = 256.0;
+    const WORLD_SCALE: f32 = 4.0;
+    const EZ_RESTING_PARTY_SEAT: f32 = 6260.0;
+    // Retail's drawn frame is 224 rows, not 240 (`renderer.md`).
+    const FRAME_ROWS: f32 = 224.0;
+    let mut checked = 0;
+    for (cslot, prefix) in HUMANOIDS {
+        let Some(asm) = assemble(&prot_dir, prefix) else {
+            eprintln!("[skip] char {cslot} player file missing");
+            continue;
+        };
+        let (lo, hi) = posed_extents(&asm, &asm.idle, 0);
+        let height = hi[1] - lo[1];
+        let px = H * WORLD_SCALE * height / EZ_RESTING_PARTY_SEAT;
+        let share = px / FRAME_ROWS;
+        eprintln!(
+            "char {cslot}: {height:.0} units -> {px:.1} px = {:.0}% of the frame",
+            share * 100.0
+        );
+        assert!(
+            (0.22..0.40).contains(&share),
+            "char {cslot}: a resting party member fills 22-40% of the retail \
+             frame; {height:.0} units projects to {px:.1} px = {:.0}%. Either \
+             the splice changed the mesh or these constants went stale - the \
+             mesh is the half this test owns.",
+            share * 100.0
+        );
+        checked += 1;
+    }
+    assert!(checked > 0, "no player file assembled - test was vacuous");
+}
+
 #[test]
 fn knockdown_and_getup_clips_are_prone() {
     // The counterpart of the upright invariant: the reaction family really

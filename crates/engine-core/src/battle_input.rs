@@ -84,6 +84,22 @@ impl BattleCommand {
         )
     }
 
+    /// Can the command be chosen in *this* battle?
+    ///
+    /// [`Self::enabled`] answers "is the command wired at all"; this adds
+    /// the per-battle refusal the retail flow has: a scripted no-escape
+    /// battle ([`crate::world::World::battle_no_escape`], the same flag the
+    /// field loop honours) forbids **Run**. A command that answers `false`
+    /// still draws its chip - retail keeps the plate and puts a single `-`
+    /// where the word would go
+    /// (`legaia_engine_ui::battle_command_ui`).
+    pub fn available(self, no_escape: bool) -> bool {
+        if matches!(self, BattleCommand::Run) && no_escape {
+            return false;
+        }
+        self.enabled()
+    }
+
     /// Short label for the HUD / command menu.
     pub fn label(self) -> &'static str {
         match self {
@@ -328,6 +344,27 @@ fn menu_index(command: BattleCommand) -> u8 {
 /// One frame of the command menu. Up/Down move the cursor (wrapping); Cross
 /// on an enabled command opens its target picker (or aborts if there is no
 /// valid target). Disabled commands and Circle are no-ops in v0.1.
+/// The entry seated beside `i` on its own row of the drawn cluster.
+///
+/// The menu is drawn as a chip cluster, not a list
+/// (`legaia_engine_ui::battle_command_ui`): `Arts` and `Magic` are the
+/// diamond's two flanking arms, the port's extra row is `Attack | Run`,
+/// and `Item` / `Spirit` sit alone on the diamond's vertical arms. Each
+/// populated row holds two entries, so Left and Right both toggle within
+/// it and a lone entry stays put.
+///
+/// Up / Down remain the linear walk over `BattleCommand::MENU`, which is
+/// what still reaches every chip from every chip.
+const fn row_neighbour(i: u8) -> u8 {
+    match i {
+        0 => 5, // Attack -> Run
+        5 => 0, // Run -> Attack
+        1 => 2, // Arts -> Magic
+        2 => 1, // Magic -> Arts
+        other => other,
+    }
+}
+
 fn step_menu(
     cursor: u8,
     ev: BattleCommandInput,
@@ -342,6 +379,8 @@ fn step_menu(
         cursor = (cursor + len - 1) % len;
     } else if ev.down {
         cursor = (cursor + 1) % len;
+    } else if ev.left || ev.right {
+        cursor = row_neighbour(cursor);
     }
 
     if ev.cross {
@@ -505,6 +544,54 @@ mod tests {
         );
         assert_eq!(s.menu_command(), Some(BattleCommand::Attack));
         assert!(s.resolved().is_none());
+    }
+
+    /// Left / Right move along the drawn row - the direction pair the
+    /// linear Up / Down walk cannot express once the menu is a cluster.
+    /// A lone entry on a vertical arm stays put rather than jumping.
+    #[test]
+    fn left_right_step_along_the_drawn_row() {
+        let press = |right: bool| BattleCommandInput {
+            left: !right,
+            right,
+            ..Default::default()
+        };
+        let seat = |from: u8, right: bool| {
+            let mut s = BattleCommandSession::new(0, 0);
+            s.phase = CommandPhase::Menu { cursor: from };
+            s.input(press(right), party3(), one_monster());
+            s.menu_command()
+        };
+        // The extra row: Attack | Run, both directions toggling.
+        assert_eq!(seat(0, true), Some(BattleCommand::Run));
+        assert_eq!(seat(5, false), Some(BattleCommand::Attack));
+        assert_eq!(seat(0, false), Some(BattleCommand::Run));
+        // The diamond's flanking arms: Arts | Magic.
+        assert_eq!(seat(1, true), Some(BattleCommand::Magic));
+        assert_eq!(seat(2, false), Some(BattleCommand::Arts));
+        // The vertical arms are alone on their rows.
+        assert_eq!(seat(3, true), Some(BattleCommand::Item));
+        assert_eq!(seat(4, false), Some(BattleCommand::Spirit));
+    }
+
+    /// Up / Down keep the linear walk, so every chip stays reachable from
+    /// every chip whatever the seating does.
+    #[test]
+    fn up_down_still_reach_every_command() {
+        let mut s = BattleCommandSession::new(0, 0);
+        let mut seen = vec![s.menu_command().unwrap()];
+        for _ in 1..BattleCommand::MENU.len() {
+            s.input(
+                BattleCommandInput {
+                    down: true,
+                    ..Default::default()
+                },
+                party3(),
+                one_monster(),
+            );
+            seen.push(s.menu_command().unwrap());
+        }
+        assert_eq!(seen, BattleCommand::MENU.to_vec());
     }
 
     #[test]

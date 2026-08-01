@@ -4,7 +4,7 @@
   <p class="lede">The live list of this project's unsolved mysteries. Every row is a reverse-engineering <em>question</em> about Legaia's runtime that is still contested, with the concrete next step that would close it. If you are looking for a way to contribute, this page is the invitation.</p>
 </header>
 
-<section class="doc-section" id="overview">
+<section class="doc-section" id="overview" data-doc="what-this-page-is-for">
   <h2>How to use these three pages</h2>
   <p>Before starting a hunt, look for it here. If the question is not on this page, it is probably already answered or already disproved - and checking is cheaper than re-deriving.</p>
   <table>
@@ -16,10 +16,10 @@
     </tbody>
   </table>
   <p>A falsified row is kept forever with its reasoning intact, because the reasoning <em>is</em> the deliverable - "the world-map slot-4 bodies are coastline wireframes" is a very plausible reading of those bytes, and knowing why it is wrong is worth more than the row it occupies.</p>
-  <p>Each row carries a one-line <em>current answer</em>; byte-level detail lives on the linked page, and the full working notes live in <code>docs/reference/open-rev-eng-threads.md</code>. A thread whose answer is complete moves to the <a href="re-settled-threads.html">settled register</a> - which is where most of this page's former residents now live.</p>
+  <p>Nothing on any of the three pages counts ports, tests or coverage. Each row carries a one-line <em>current answer</em>; byte-level detail lives on the linked page, and the full working notes live in <code>docs/reference/open-rev-eng-threads.md</code>. A thread whose answer is complete moves to the <a href="re-settled-threads.html">settled register</a> - which is where most of this page's former residents now live.</p>
 </section>
 
-<section class="doc-section" id="grades">
+<section class="doc-section" id="grades" data-doc="what-an-evidence-grade-means">
   <h2>What an evidence grade means</h2>
   <p>Grades live on the <a href="re-settled-threads.html">settled threads</a> page. They are explained here because the grade is the first thing to check when a settled fact is load-bearing for live work.</p>
   <p>Every settled row is graded by what its own stated evidence actually rests on. Where a row cites more than one kind, it is graded by the <strong>weakest load-bearing</strong> claim - the one that breaks the conclusion if it is wrong.</p>
@@ -35,7 +35,37 @@
   <p><strong><code>decompiled-C</code> is the re-audit bucket, not a wrong-answer bucket.</strong> It marks a claim nobody has confirmed against instructions. Most are probably right; the point is that none has been checked, and every claim falsified in the last audit wave would have graded <code>decompiled-C</code>. The C is a rendering: dropped register arguments, <code>||</code> printed as nested <code>if</code>s, reordered or omitted stores, and hand-written annotations read as fact have each already put a wrong statement on these pages.</p>
 </section>
 
-<section class="doc-section" id="field">
+<section class="doc-section" id="status-conventions" data-doc="status-conventions,how-a-thread-is-laid-out">
+  <h2>Status conventions, and how a row is laid out</h2>
+  <table>
+    <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag tag-open">open</span></td><td>Active hunt. A concrete next step exists; the row names it.</td></tr>
+      <tr><td><span class="tag tag-partial">partial</span></td><td>The main result is pinned; a residual sub-question remains.</td></tr>
+      <tr><td><span class="tag tag-mostly">mostly resolved</span></td><td>The mechanism is pinned; one leg is unconfirmed.</td></tr>
+    </tbody>
+  </table>
+  <p>Many rows qualify the status in parentheses - <em>partial (transcode closed)</em>, <em>open (narrowed)</em> - naming <em>how far</em> it got. Read the parenthetical.</p>
+  <p>Each area below opens with a table of one-line rows. A thread whose write-up outgrows a table cell keeps its one-liner in the table and links to a section immediately after that table via <strong>details &darr;</strong>; the full analysis - every address, capture and falsification - lives in that section, under its own <em>Status:</em> line.</p>
+</section>
+
+<section class="doc-section" id="recently-corrected" data-doc="recently-corrected">
+  <h2>Recently corrected</h2>
+  <p>Rows the last audit wave overturned. They are listed here rather than filed silently into the settled page, because a claim that was wrong once is the cheapest place to look for a claim that is still wrong.</p>
+  <ul class="bullets">
+    <li><strong>Debug flag <code>_DAT_8007B8C2</code> had its branch sense backwards</strong>, and one arm was named for the wrong loader. Every site reads the flag with <code>lh</code> and takes the <strong>zero</strong> arm to the debug-station host trap, the <strong>non-zero</strong> arm to the index resolver.</li>
+    <li><strong>The VA-aliasing corollary was too narrow.</strong> It read as an <code>0x801Fxxxx</code> problem; <code>801e23ec</code> is a settled casualty in the <code>0x801E</code> band, and its aliased reading had silently dropped all three initiative modifier terms.</li>
+    <li><strong>The op-<code>0x2F</code> "seven byte-identical dumps" shorthand was compressing.</strong> The capture-derived dumps agree with each other; the static 0897 dump is a strict <em>subset</em> of them, not a twin.</li>
+    <li><strong><code>FUN_8001EBEC</code>'s second pose-copy arm loads seven words</strong>, so its range ends at <code>+0x15C</code>, not <code>+0x158</code>.</li>
+    <li><strong>A committed claim can quote a dump statistic the dump no longer reports.</strong> Re-extraction makes dumps longer, and a caveat written against the old one keeps suppressing work - <code>0x8005BA38</code> was recorded "not a function" and is a complete <code>RotTransPers</code>. The class is on <a href="re-do-not-re-walk.html#measurement">do not re-walk &sect; measurement readings</a>.</li>
+    <li><strong>A battle <code>0xB5</code> was read in the wrong id space.</strong> Spell <code>0xB5</code> is Lapis Wave; formation <code>0xB5</code> is Cort. The wrong reading survived because Cort casts Lapis Wave - the two spaces agreeing on the answer is what hid the error.</li>
+    <li><strong>Op-<code>0x35</code> sub-op 9 was recorded as "Queue".</strong> It is a <em>start</em> behind an asset-load barrier, and it is what a <strong>cutscene</strong> changes music with - so a scene-corpus BGM sweep, which only runs prescripts, could not see the difference.</li>
+    <li><strong>"Retail shots rarely roll the camera" was false, and so was the row that replaced it.</strong> Retail authors a non-zero op-<code>0x45</code> slot-2 roll in eight scenes; the two linear censuses that had measured it were each measuring their own decode gate.</li>
+  </ul>
+  <p>Two rows a prior audit flagged as the highest-risk <code>decompiled-C</code> claims - the narration-roller op's operand decode and the item-add OOB store-order claim - have both now been <strong>re-derived from the disassembly and confirmed</strong>. Both live on the <a href="re-settled-threads.html">settled register</a> with the instruction evidence cited.</p>
+</section>
+
+<section class="doc-section" id="field" data-doc="field--locomotion">
   <h2>Field / locomotion</h2>
   <table>
     <thead><tr><th>Thread</th><th>Status</th><th>Current answer</th><th>Detail</th></tr></thead>
@@ -54,25 +84,40 @@
   <p>The full structure (Sebucus spokes, Rim Elm opening/revisit/final bands, Uru Mais, Nivora Ravine, Karisto castle depth, Conkram, and the <code>0x7</code>/<code>0xF</code> variant-discriminator pattern) lives on the <a href="re-settled-threads.html#field">settled threads</a> page. The families for the dungeons the capture corpus never walked (<code>taiku</code>/<code>doman</code>/<code>rayman</code>, <code>station</code>, <code>dohaty</code>/<code>retock</code>, the Karisto spokes) are proven as structure, but their in-game play order is not yet confirmed against a live capture. <code>ropeway</code>/<code>ropeway2</code>/<code>jiji</code> are the only spokes walked organically, and Nivora's <code>0x370</code> has one live organic SET confirming its play order. The generic C1/C2 seeder already drives every family, so one dungeon-walk capture per region would close the residual.</p>
 </section>
 
-<section class="doc-section" id="title-boot-overlays">
-  <h2>Title / boot / overlays</h2>
+<section class="doc-section" id="battle-rendering" data-doc="battle--rendering">
+  <h2>Battle / rendering</h2>
   <table>
     <thead><tr><th>Thread</th><th>Status</th><th>Current answer</th><th>Detail</th></tr></thead>
     <tbody>
       <tr>
-        <td>PROT 0968 identity - the one unidentified slot-B cluster entry</td>
-        <td><span class="tag tag-open">open</span> (narrowed to one entry)</td>
-        <td>Every other entry in the <code>0900..0969</code> slot-B cluster is identified (see the <a href="re-settled-threads.html#title-boot-overlays">settled register</a>); 0968 is a 4&nbsp;KB stager-shaped module whose loader param <code>0x49</code> appears at no known callsite. <a href="#d-prot-0968">details &darr;</a></td>
-        <td><a href="../tooling/static-overlay-pipeline.html">static-overlay-pipeline</a></td>
+        <td>The battle-<strong>intro</strong> enemy-name banner - which placement record raises it</td>
+        <td><span class="tag tag-mostly">mostly resolved</span> - chrome, seat and frame law captured; only the record identity is owed</td>
+        <td>The chrome, the seat and the frame arithmetic are captured on the same banner surface mid-fight. What is owed is only which placement record the transient intro instance raises. <a href="#d-intro-banner">details &darr;</a></td>
+        <td><a href="../subsystems/battle.html">battle</a></td>
       </tr>
     </tbody>
   </table>
 
-  <h3 id="d-prot-0968">PROT 0968 identity</h3>
-  <p><em>Status:</em> open - every other entry in the <code>0900..0969</code> slot-B cluster is identified.</p>
-  <p>A 4&nbsp;KB slot-B module (pointer-table head, 10/11 self-pointers resolve at the link base <code>0x801F69D8</code>, 2+8 spawn calls - stager-shaped). Its loader param would be <code>0x49</code>, which appears at no static SCUS callsite and no captured overlay callsite; it sits between the tutorial (0967, <code>0x48</code>) and the STR-path table (0969, <code>0x4A</code>). Identity needs either an uncaptured overlay callsite or a residency capture. (The old "STR overlay replicated across 0967/0968/0969/0970" reading was the over-read: the corrected 4&nbsp;KB entry cannot contain the STR dispatch code at its <code>+0x225C</code> offsets.)</p>
+  <h3 id="d-intro-banner">The battle-intro enemy-name banner</h3>
+  <p><em>Status:</em> mostly resolved - the chrome, the seat and the frame arithmetic are captured. What is owed is only which placement record the intro instance raises.</p>
+  <p>The thread opened as "chrome and seat unknown, blocked on a live frame", on the premise that no manifest state catches the surface. That premise was wrong about the <em>surface</em> rather than about the intro: a corner-sweep of the whole save library finds the battle's <strong>full-width top message banner</strong> live in two states - the mid-battle Seru "captured!" banner, and the level-up banner.</p>
+  <p>Both draw the same thing, and it is the frame the thread described: the widget table's <strong>class-0 9-slice window</strong>, tile-set 0, sub-palette 2 - 4&times;4 corners and 24&times;4 / 4&times;24 edges cut from one 32&times;32 patch at texels <code>(160, 0)</code>, content pen <code>(16, 12)</code>, frame origin <code>(8, 4)</code>, interior 20 tall, top and bottom edges tiled 24 wide from <code>x = 12</code> with the last tile clipped. Every placement record whose kind byte is <code>0x03</code> / <code>0x04</code> / <code>0x44</code> frames itself that way - see <a href="../subsystems/battle.html">the widget-class table</a>.</p>
+  <p>One sub-claim in the old row is <strong>falsified</strong> by those frames: there is no blue interior. Retail draws the border sprites and the glyph run and nothing else - no fill primitive of any kind under the window, so the scene shows through. The blue-marbled 32&times;32 patch that made "gold border over a blue interior" a natural reading is the fill the framed <em>menu</em> windows use.</p>
+  <p>Residual: the intro instance is transient, so which top-seated <code>0x0303</code> record it raises - the candidates park at <code>(16, -24)</code> and live at <code>(16, 14)</code>, and the runtime overwrites the disc width with the measured enemy name - is still capture-owed. Two operating notes apply to any run: PCSX-Redux probes <a href="../tooling/pcsx-redux-automation.html">do not exit on their own</a>, and <code>pgrep -f</code> matches the caller's own command line, so a probe runbook has to kill on a timeout it owns.</p>
+  <p>Recently closed in this area: the <code>+0x0E</code> kind-pair mapping and the element-badge palette selector both fell out of the widget-class table, and the status-element badge sheet <code>0x18..=0x20</code> is pinned cell by cell. Before them, the ground grid's depth-cue far colour and the battle-intro tile shatter's side-face shade page closed by capture. All on the <a href="re-settled-threads.html#battle">settled register</a>.</p>
 </section>
-<section class="doc-section" id="adding-rows">
+
+<section class="doc-section" id="audio" data-doc="audio--bgm">
+  <h2>Audio / BGM</h2>
+  <p>No open threads. The most recent one - op-<code>0x35</code> sub-op <code>0xA</code>, the "unhalt-pause toggle" - resolved as the track-swap <strong>commit</strong> and moved to the <a href="re-settled-threads.html#audio">settled register</a>.</p>
+</section>
+
+<section class="doc-section" id="title-boot-overlays" data-doc="title--boot--overlays">
+  <h2>Title / boot / overlays</h2>
+  <p>No open threads. The last one - PROT 0968 identity, the one slot-B cluster entry without a residency capture - closed by capture: a PCSX-Redux state taken at the first command menu of the evolved-Cort fight shows the loader-B tracker <code>0x8007BC4C</code> reading <code>0x49</code> and entry 968 100&nbsp;% byte-resident at <code>0x801F69D8</code> over its own <code>0xA28</code> extent, with the field-side ladder states bracketing the page-in to the battle load. It is the Cort battle-stage overlay; see the <a href="re-settled-threads.html#title-boot-overlays">settled register</a>.</p>
+</section>
+
+<section class="doc-section" id="adding-rows" data-doc="adding-a-thread">
   <h2>When to add a row</h2>
   <p>A thread belongs here when:</p>
   <ol class="bullets">
@@ -83,13 +128,13 @@
   <p>When a thread closes, rewrite the row to a <span class="tag tag-done">resolved</span> / <span class="tag tag-done">falsified</span> line if the path was instructive enough to warrant a do-not-re-walk marker; otherwise delete the row. Rotating the page is part of using it.</p>
 </section>
 
-<section class="doc-section" id="see-also">
+<section class="doc-section" id="see-also" data-doc="related-pages">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
-    <a href="open-rev-eng-threads.html">Open RE threads</a>
     <a href="re-settled-threads.html">Settled threads</a>
     <a href="re-do-not-re-walk.html">Do not re-walk</a>
     <a href="functions.html">Functions</a>
+    <a href="../tooling/port-catalog.html">Port catalog</a>
   </div>
 </section>

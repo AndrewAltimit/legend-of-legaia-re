@@ -14,6 +14,14 @@
 //! the colour word to stamp, and a host that grows those five passes replays it
 //! verbatim. Nothing calls it today.
 //!
+//! Its own retail caller is **`FUN_8001ADA4`** at `8001AEF4`
+//! (`jal 0x800480d8` with `a0 = s0`, under the `slti v0,v0,0xa1` guard that
+//! restricts the pass to actor ids below `0xA1`) - dumped, and partly ported
+//! (case `0xB` lands in the native window's field render pass). So this row
+//! is not "no caller exists"; the missing retail functions are the five REFs
+//! below, which are what the schedule would have to call.
+//!
+//! REF: FUN_8001ada4 - the dispatcher whose actor-id arm calls this pass.
 //! REF: FUN_8004a908 - tint / fade pass (`BattleDrawStep::Tint`).
 //! REF: FUN_80048a08 - TMD draw pass (`BattleDrawStep::Draw`).
 //! REF: FUN_80049348 - arts after-image walk (`BattleDrawStep::Afterimage`).

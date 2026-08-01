@@ -14,7 +14,10 @@ tint. The host renderer rasterises them; neither the geometry nor the menu
 navigation logic depends on the GPU backend.
 
 - `ui_overlay` - dialog box, cutscene narration, battle HUD, encounter banner,
-  stage-scale text, per-glyph sprite emit helpers.
+  stage-scale text, per-glyph sprite emit helpers, and the floating value
+  readout's font fallback (`battle_value_readout_draws_for` - retail's own
+  cells and pitch, for hosts with no screen-space VRAM sink to draw the real
+  24x24 sheet through).
 - `ui_menu` - pause-menu field / status / spell / inventory / equipment panels,
   options + key-rebind, name entry, game-over, the post-battle spoils panel
   (`battle_spoils_draws_for`), tactical-arts editor, the
@@ -33,6 +36,20 @@ navigation logic depends on the GPU backend.
   the battle hosts and the dome page all compose from this module.
   Packet-pinned - see
   [`minigame-muscle-dome.md`](../../docs/subsystems/minigame-muscle-dome.md).
+- `battle_command_ui` - the **battle command menu**'s chip cluster: the blue
+  plate 3-slice with its clipped final body tile, the packet-pinned four-arm
+  diamond at `(228, 70)` and the `Begin | Run` pair at `(160, 92)`, the D-pad
+  glyph they share with `arts_input`, and the `-` chip retail draws for a
+  command that cannot be chosen. Both battle hosts seat their command menu
+  through it. Geometry mirrors `legaia_engine_vm::battle_chrome`, which
+  `engine-shell`'s HUD tests pin equal.
+- `battle_hud_chrome` - the battle surfaces that are **widget-table records**
+  rather than plate runs: the class-0 **message banner** (`banner_frame` /
+  `message_banner_chrome_draws_for` / `message_banner_text_draws_for` - which
+  draws no interior fill, and shares content pen `(16, 12)` with the
+  actor-name plaque, so the two never coexist) and the **badge cells**
+  (`BattleBadgeRects`) the HUD blits for a slot's status element and for an
+  actor's element badge.
 - `ui_fishing` - fishing-minigame HUD: the ported persistent / catch HUD
   layout, gauge bars, digit field and banner animators, plus
   `fishing_hud_draws_for`, the consumer that renders that draw list.

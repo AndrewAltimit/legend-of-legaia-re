@@ -219,6 +219,42 @@ that passes an explicit versioned URL into the wasm-bindgen `init`. What the
 skew actually costs today is measured in
 [`shipped-bundle-freshness.md`](shipped-bundle-freshness.md#what-a-stale-engine-against-fresh-pages-costs).
 
+## A `_content` mirror of a `docs/` page rots silently
+
+Several `site/_content/` fragments are *mirrors*: a page under `docs/` is the
+source of record and the fragment restates it for the public site. Nothing
+relates the two. The generator's page table maps `_content/<x>.html` to
+`<x>.html` and never opens `docs/` at all, so the only thing keeping a mirror
+current is somebody remembering it exists.
+
+The failure mode is not a broken page. A stale mirror builds, renders, passes
+`check-site-links.py`, and reads as finished - it has simply stopped mentioning
+whole areas of its source, and a reader has no way to tell. The open-RE-threads
+mirror shipped with **no battle section at all** while its source had one, and
+went on describing a thread as open after the doc closed it by capture. Both
+halves matter: an absent area is invisible, and a present-but-stale area is
+worse, because it is confidently wrong.
+
+`scripts/ci/check-site-doc-mirrors.py` makes the relation explicit and
+mechanical. Every `##` heading of the source doc must be claimed by a section
+of the mirror through a `data-doc` attribute carrying that heading's GitHub
+anchor slug:
+
+```html
+<section class="doc-section" id="battle-rendering" data-doc="battle--rendering">
+```
+
+One section may claim several headings (comma-separated) where the mirror
+deliberately merges them; a section that exists only on the site claims
+`data-doc="-"`. A slug naming no heading in the source is an error too - that
+is what a *renamed* heading looks like, and it is the half a "did you cover
+everything" check on its own would miss.
+
+What the gate deliberately does not check: prose, tables, row counts, or
+whether the mirror says the same thing as its source. A section can be present
+and wrong. It answers one question - is a whole area of the source missing from
+the public page - because that is the failure that survived review.
+
 ## Verifying a shell change
 
 Static reading is not enough - the trap above is invisible in a diff and
@@ -235,3 +271,37 @@ invisible in a single-width screenshot. Render it:
 
 The last assertion is the one that catches a "tidy" mobile layout that has
 quietly dropped a destination.
+
+### Reaching the play page's battle screen headlessly
+
+The battle screen is the play page's least-reachable surface, and for a long
+time it was not reachable at all from a driver: a battle needs a step roll, the
+retail towns are all rate-0 by design so they never produce one, and the
+native-only `debug_start_test_battle` is `#[cfg(not(target_arch = "wasm32"))]`
+and never crossed into the bundle. Anything shipped to the battle screen was
+therefore verified on the native window alone.
+
+`LegaiaRuntime::debug_force_battle(row)` is the wasm-side twin of the native
+`--battle <ROW|first>`: it resolves a formation row against the scene's own MAN
+formation table, turns the live loop on (the transition is drained by the field
+tick, so an armed fight cannot open without it) and hands the row to
+`World::force_encounter` - the same entry an organic encounter takes, so the
+intro, the BGM swap and the battle load are the ordinary ones.
+`debug_formation_rows()` returns the rows the current scene registered, so a
+driver picks one that exists instead of guessing.
+
+```js
+await page.evaluate(() => window.__playRuntime.debug_formation_rows());  // "[0,1,...]"
+await page.evaluate(() => window.__playRuntime.debug_force_battle(4));   // -1 = "first"
+```
+
+Both are on the ordinary `#[wasm_bindgen]` surface rather than behind a
+feature, because a debug entry point that is not in the shipped bundle is
+exactly the thing that left this screen unverified.
+
+Two driver notes. Give the fight ~150 sim ticks before expecting
+`SceneMode::Battle` - the encounter transition runs first. And a popup-lifetime
+surface (the floating damage numeral) needs the sim paused on the frame you
+found it, or the screenshot lands after it expires: poll
+`play_overlay_draws_json`, then `window.__playView.setPaused(true)`, then
+shoot.

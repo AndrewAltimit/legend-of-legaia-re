@@ -830,7 +830,12 @@ pub(super) fn cmd_play_window_with_record(
         // system-UI TIM header so existing offsets stay
         // slice-relative; `build_atlas` handles both shapes.
         {
-            let base = legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET;
+            // Rooted one TIM earlier than the sheet, at the row-511 CLUT
+            // extension: it carries sub-palettes 16..18, which three of the
+            // nine status-element badges decode with. `build_atlas` splits
+            // that leading TIM off and treats the remainder exactly as a
+            // sheet-rooted slice.
+            let base = legaia_engine_core::save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET;
             let end = legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
                 + legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE;
             session

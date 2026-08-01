@@ -781,25 +781,30 @@ fn warp(offset: i32, elapsed: i32) -> i32 {
 ///   warped x still falls inside the screen, stretched vertically by
 ///   `(|col - 160| * elapsed) >> 5` and lifted by `120/4096` of that.
 ///
-/// Retail also emits four rectangle primitives around the two passes and calls
-/// `FUN_801D1D9C(0x1EA, 2, 0x808080)` between them. Those are draw-list work
-/// with no state, and stay with the renderer.
+/// **The two passes do not draw to the same place.** Around them retail links
+/// `SetDrawOffset` / `SetDrawArea` packets at OT buckets `0x1F4` and `0x190`,
+/// plus `FUN_801D1D9C(0x1EA, 2, 0x808080)` between them. Those are not
+/// stateless draw-list work: the pair at `0x1F4` points the draw area at VRAM
+/// `(320, 0)` with a zero offset, so the **column** pass renders an
+/// intermediate there - which is exactly the rect the **row** pass' pages
+/// [`CURTAIN_ROW_TPAGE_LEFT`] / [`CURTAIN_ROW_TPAGE_RIGHT`] decode to. Only the
+/// row pass reaches the display. That is what [`CURTAIN_COL_DRAW_BIAS`] is for:
+/// a visible column (tested about `0xA0`) lands at `x` in `320..640`, inside
+/// the installed area. See `docs/subsystems/battle.md`.
 ///
 /// PORT: FUN_801D11D0
 /// REF: FUN_801CF1B0 (the quad builder), FUN_801D1D9C (the mid-pass emitter)
 ///
-/// WIRED. This is the one transition style the port draws end to end:
-/// `legaia_engine_render::battle_intro::BattleIntro` owns the descriptor table,
-/// ticks it from the live transition clock, and converts every built
-/// [`IntroQuad`] into a screen-space primitive. Both inputs an earlier note
-/// listed as missing now exist - the `0x14`-stride table parses out of PROT
-/// 0979 (`IntroQuadTable::parse_overlay`), and the field frame the strips
-/// texture themselves with is landed in VRAM by `vram_capture` at exactly the
-/// rects [`CURTAIN_ROW_TPAGE_LEFT`] and its three siblings decode to.
+/// WIRED. `legaia_engine_render::battle_intro::BattleIntro` owns the
+/// descriptor table (the `0x14`-stride table parses out of PROT 0979 via
+/// `IntroQuadTable::parse_overlay`), ticks it from the live transition clock,
+/// splits this function's output by pass, emits the row quads as screen
+/// primitives and rasterises the column quads into the intermediate.
 ///
 /// The style is reached only when [`select_intro_style`] picks it, which is
-/// three formations on the disc - the ordinary encounter takes
-/// [`IntroStyle::TileShatter`], which is ticked but not drawn.
+/// three formations on the disc; the ordinary encounter takes
+/// [`IntroStyle::TileShatter`], which is drawn by
+/// `legaia_engine_render::battle_intro::emit_tile`.
 pub fn tick_curtain(table: &mut [IntroQuadDesc], elapsed: &mut i16, frame_step: u8) -> CurtainTick {
     let mut out = CurtainTick::default();
     let clock = i32::from(*elapsed);

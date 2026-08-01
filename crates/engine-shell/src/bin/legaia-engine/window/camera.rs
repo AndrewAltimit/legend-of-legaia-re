@@ -254,7 +254,18 @@ impl PlayWindowApp {
                 // scanlines (the frame is 240 lines, NDC spans 2). This is
                 // the number a framing change is measured in - a pose alone
                 // does not say how much of the frame the actor fills.
-                const DIAG_ACTOR_HEIGHT: f32 = 800.0;
+                //
+                // The reference is a real battle-form party mesh, not a round
+                // number: the posed AABBs are 425 (Vahn), 390 (Noa) and 503
+                // (Gala) battle-world units, feet on the seat plane
+                // (`docs/formats/character-mesh.md` § Rest-pose orientation).
+                // The old `800` here was nearly *double* the mesh it claimed
+                // to stand in for, so every `lines` reading came out 1.9x
+                // high - and one was read as evidence that the assembled mesh
+                // was itself oversized. It is not: nothing on the load path
+                // scales a vertex. Change this only to another measured mesh
+                // height.
+                const DIAG_ACTOR_HEIGHT: f32 = 425.0;
                 let head = cam * Vec3::new(w.x, w.y - DIAG_ACTOR_HEIGHT, w.z).extend(1.0);
                 let lines = if clip.w > 0.0 && head.w > 0.0 {
                     ((head.y / head.w - clip.y / clip.w).abs() * 120.0).round()
@@ -400,10 +411,22 @@ impl PlayWindowApp {
         let a = far / (far - near);
         let b = -near * far / (far - near);
         let aspect_fix = (4.0 / 3.0) / aspect.max(0.01);
+        // The `y`-from-`w` term is retail's screen centre
+        // `legaia_engine_vm::battle_cam_script::GTE_OFY` = 114, not the naive
+        // `240 / 2`: the GTE control file carries `OFX = 160` / `OFY = 114`
+        // unchanged through field, battle, battle load and minigame, so every
+        // projected point sits six rows above the geometric centre of the
+        // frame. Shared with the browser host through `battle_vp`, which folds
+        // the identical term.
         let proj = Mat4::from_cols(
             Vec4::new(h / 160.0 * aspect_fix, 0.0, 0.0, 0.0),
             Vec4::new(0.0, -h / 120.0, 0.0, 0.0),
-            Vec4::new(0.0, 0.0, a, 1.0),
+            Vec4::new(
+                0.0,
+                legaia_engine_vm::battle_cam_script::GTE_OFY_NDC_BIAS,
+                a,
+                1.0,
+            ),
             Vec4::new(0.0, 0.0, b, 0.0),
         );
         proj * t * r * Mat4::from_translation(-target) * f
@@ -663,13 +686,16 @@ pub(super) fn battle_cam_inputs(
         .as_ref()
         .map(|c| c.actor)
         .unwrap_or(world.battle_ctx.active_actor);
-    let phase = script::phase_for(
+    // The **input** pickers own the close-up; the top-level command chooser
+    // keeps the far framing (`script::phase_for_state` carries the two retail
+    // framebuffers that separate them). `battle_command` is the port's
+    // Begin/Run + per-character command row, which retail frames wide.
+    let phase = script::phase_for_state(
         world.current_dialog.is_some() || world.inline_dialogue.is_some(),
-        world.battle_command.is_some()
-            || world.battle_arts_menu.is_some()
+        world.battle_arts_menu.is_some()
             || world.battle_spell_menu.is_some()
             || world.battle_item_menu.is_some(),
-        script::action_state_frames_the_action(world.battle_ctx.action_state),
+        world.battle_ctx.action_state,
     );
     // The submenu close-up frames whoever owns the menu; the action framing
     // frames whoever is acting. Both are the same `BattleCamActor`.
@@ -716,13 +742,47 @@ pub(super) fn battle_cam_inputs(
     legaia_engine_vm::battle_cam_script::BattleCamInputs {
         phase,
         acting,
+        target: battle_post_action_target(world, acting_slot),
         // The far menu framing sizes its depth to - and centres on - the
         // live formation's X/Z bounding box (`FUN_801D5854` case 9).
         formation: PlayWindowApp::battle_formation_box(world),
         action: battle_action_framing(world, acting_slot),
+        // `_DAT_8007B792` is one global shared with the field camera, and
+        // nothing on the battle-entry path zeroes it - a fight inherits the
+        // live azimuth (see `BattleCamInputs::entry_yaw`).
+        entry_yaw: f32::from(world.field_camera_azimuth & 0xFFF),
         shake_amplitude: world.camera_shake_amplitude,
         attack: battle_attack_channels(world, world.battle_ctx.active_actor),
     }
+}
+
+/// The acting actor's target as the post-strike framings read it: retail's
+/// `actor[+0x1DD]` indexed into the 8-slot actor table `0x801C9370`.
+///
+/// Case 7 orbits the **midpoint** of the acting actor and this one, which is
+/// the only framing in the set that guarantees both combatants stay on
+/// screen; case 8 orbits this one alone and takes its actor-only arm when
+/// `actor[+0x1DD] >= 8` or the target's node is dead (`live`). The engine's
+/// stand-in for the node test is the live-HP halfword the rest of the camera
+/// path already keys on.
+pub(super) fn battle_post_action_target(
+    world: &legaia_engine_core::world::World,
+    acting_slot: u8,
+) -> Option<legaia_engine_vm::battle_cam_script::PostActionTarget> {
+    let acting = world.actors.get(acting_slot as usize)?;
+    let slot = acting.battle.active_target;
+    if usize::from(slot) >= 8 {
+        return None;
+    }
+    let t = world.actors.get(usize::from(slot))?;
+    Some(legaia_engine_vm::battle_cam_script::PostActionTarget {
+        world: [
+            t.move_state.world_x as f32,
+            t.move_state.world_y as f32,
+            t.move_state.world_z as f32,
+        ],
+        live: t.active && t.battle.hp > 0,
+    })
 }
 
 /// The per-art attack camera's track table, re-read from the battle-action
@@ -968,6 +1028,14 @@ mod battle_cam_shared_tests {
         world.battle_command = Some(legaia_engine_core::battle_input::BattleCommandSession::new(
             0, 0,
         ));
+        // The **arts input** picker is what arms retail's case-0 close-up;
+        // the command chooser alone keeps the far framing (see
+        // `script::phase_for_state`).
+        world.battle_arts_menu = Some(legaia_engine_core::battle_arts::BattleArtsSession::new(
+            0,
+            0,
+            Vec::new(),
+        ));
 
         let inputs = battle_cam_inputs(&world);
         assert_eq!(inputs.phase, script::BattleCamPhase::Submenu);
@@ -1037,6 +1105,14 @@ mod battle_cam_shared_tests {
         world.actors = vec![vahn, tetsu];
         world.battle_command = Some(legaia_engine_core::battle_input::BattleCommandSession::new(
             0, 0,
+        ));
+        // The **arts input** picker is what arms retail's case-0 close-up;
+        // the command chooser alone keeps the far framing (see
+        // `script::phase_for_state`).
+        world.battle_arts_menu = Some(legaia_engine_core::battle_arts::BattleArtsSession::new(
+            0,
+            0,
+            Vec::new(),
         ));
 
         let inputs = battle_cam_inputs(&world);
@@ -1360,13 +1436,25 @@ mod cutscene_framing_tests {
         assert_ne!(got.to_cols_array(), without.to_cols_array());
     }
 
-    /// The retail intro shot ("It was the Seru.") frames the party at screen
-    /// ~(172, 180) in the 320x240 PSX frame (measured from the intro save
-    /// state's framebuffer). The camera's focus tracks the party anchor, so the
-    /// focus point itself must land there - regardless of the 6x world scale
-    /// (the perspective divide cancels it) - which is exactly what pins the
-    /// eye-back depth. This guards against the old heuristic that framed the
-    /// shot too close.
+    /// The retail intro shot ("It was the Seru.") frames the party low and
+    /// left of centre in the PSX frame. The camera's focus tracks the party
+    /// anchor, so the focus point itself must land there - regardless of the
+    /// 6x world scale (the perspective divide cancels it) - which is exactly
+    /// what pins the eye-back depth. This guards against the old heuristic
+    /// that framed the shot too close.
+    ///
+    /// The two axes are not equally sharp, and it matters which is which. `X`
+    /// is exact: `OFX + h * tr.x / tr.z` = `172.0` on the nose, so a wrong
+    /// eye-back depth moves it immediately. `Y` is `OFY + h * tr.y / tr.z`
+    /// with the retail screen centre `OFY = 114` (see
+    /// `legaia_engine_vm::battle_cam_script::GTE_OFY`), giving `173.7`. The
+    /// framebuffer read this expectation was first taken from said "~180",
+    /// which is what a soft eyeball of a *cluster* of small actors gives
+    /// against a projection of the single ground anchor they stand around -
+    /// and holding `180` here is what kept the naive `240 / 2` centre alive in
+    /// `psx_camera_mvp`. The sharp constraint on the centre is the GTE control
+    /// file plus the battle framebuffer, where a party member's soles land on
+    /// the row `OFY = 114` predicts and six rows above the one `120` does.
     #[test]
     fn intro_focus_projects_to_retail_party_position() {
         // Eye-space translation trio `0x800840B8 = (260, 1293, 17145)`, reduced
@@ -1378,9 +1466,10 @@ mod cutscene_framing_tests {
             (px - 172.0).abs() < 3.0,
             "focus X projects to retail ~172, got {px}"
         );
+        let want_y = legaia_engine_vm::battle_cam_script::GTE_OFY + 792.0 * (1293.0 / 17145.0);
         assert!(
-            (py - 180.0).abs() < 3.0,
-            "focus Y projects to retail ~180 (lower-centre), got {py}"
+            (py - want_y).abs() < 3.0,
+            "focus Y projects to OFY + h*tr.y/tr.z = {want_y} (lower-centre), got {py}"
         );
     }
 

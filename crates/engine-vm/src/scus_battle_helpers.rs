@@ -38,6 +38,24 @@
 //! short of, so what has to exist first is that body's engine equivalent -
 //! and each is a different missing thing:
 //!
+//! And it is worth being exact about which half is missing, because it is not
+//! the caller. Every one of these four has a retail caller, every caller is
+//! dumped, and every caller is already ported somewhere in the workspace:
+//!
+//! | Kernel | Retail caller | Call site | Port of the caller |
+//! |---|---|---|---|
+//! | [`scale_rgb24`] | `FUN_80016444` | `80016748` | `engine-core::world::frame_tick` |
+//! | [`depth_cue_scale_channel`] / [`invert_bgr24`] | `FUN_80047430`, `FUN_800480D8` | `800476C8`; `800481B4`/`8004825C`/`800482E8` | `engine-vm::battle_hp_bar`; `engine-render::battle_actor_tick` (itself inert) |
+//! | [`bgr555_to_grey`] | `FUN_8004DA00` | `8004DC4C` | `engine-audio::battle_voice` |
+//! | [`copy_nested_records`] | `FUN_80052FA0` | `80053438`, `800534F4` | `asset::battle_char_palette` |
+//!
+//! So the shape is not "waiting for a caller" - it is that each ported caller
+//! reached the same outcome by a different route, over typed engine state
+//! instead of the raw words / globals / framebuffer strips these kernels
+//! read. A wire would have to re-introduce the retail representation on the
+//! engine side purely so the kernel had something to chew, which is the
+//! definition of a fake wire. Per kernel:
+//!
 //! * [`copy_nested_records`] stages a nested record block between two raw
 //!   `u32` buffers. The engine has no such buffer: animation and keyframe
 //!   data arrive as parsed `legaia_asset` types and are handed to the

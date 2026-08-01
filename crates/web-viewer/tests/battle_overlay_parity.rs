@@ -146,14 +146,20 @@ fn live_battle_overlay_draws_the_retail_party_surface_and_no_banner() {
 /// arming is what the previous test exercised, not a side effect.
 #[test]
 fn live_battles_opt_out_keeps_the_field_walk_only() {
+    // `env::var` returns `Ok("")` for a set-but-empty variable, so the
+    // unset-only guard let an empty value through to a panicking read. Gate on
+    // a readable disc instead, which is the condition the test actually needs.
     let disc = match std::env::var("LEGAIA_DISC_BIN") {
-        Ok(d) => d,
-        Err(_) => {
+        Ok(d) if !d.is_empty() => d,
+        _ => {
             eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
             return;
         }
     };
-    let bytes = std::fs::read(&disc).expect("disc read");
+    let Ok(bytes) = std::fs::read(&disc) else {
+        eprintln!("[skip] disc unreadable (disc-gated)");
+        return;
+    };
     let mut rt = LegaiaRuntime::new();
     rt.load_disc(bytes, String::new()).expect("load_disc");
     rt.set_live_battles(false);

@@ -52,6 +52,10 @@ const BATTLE_HUD_PEN: (i32, i32) = (8, 60);
 /// `Field -> Battle` mode change (~1.5 s at the 60 Hz sim tick; the native
 /// window's `ENCOUNTER_BANNER_FRAMES`).
 const ENCOUNTER_BANNER_FRAMES: u16 = 90;
+/// The retail 4x battle world scale (`play_battle_render::BATTLE_WORLD_SCALE`,
+/// private to that module) - the actor stage the battle view-projection is
+/// built for, so an actor origin has to be scaled before it is projected.
+const BATTLE_WORLD_SCALE_LOCAL: f32 = 4.0;
 /// Left margin of the battle command / arts / magic submenus.
 const MENU_X: i32 = 8;
 /// First row Y of the battle command / arts / magic submenus.
@@ -429,14 +433,82 @@ impl LegaiaRuntime {
                 // entry session owns the frame; the port emits no strip.
                 input_session_parked: parked,
                 diag: ui::diag_hud_enabled(),
+                // NOT WIRED on this host yet. Four fields the native window
+                // fills and this page does not, all of them plain data:
+                //
+                // * `badges` - `BattleBadgeRects` from the baked atlas's
+                //   `band_status_badges()` / `band_element_badges()`. Until
+                //   then a selected ailment keeps the engine's labelled tag
+                //   instead of retail's 48x16 word cell. The page's atlas
+                //   also needs its PROT.DAT slice rooted at
+                //   `save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET` rather
+                //   than the system-UI sheet, or three of the nine badges
+                //   have no sub-palette to decode with.
+                // * `plaque_badge` -
+                //   `battle_hud::battle_plaque_element_badge(world)`.
+                // * `banner` - a battle message for the top-of-screen
+                //   widget; the native host feeds it the level-up /
+                //   Seru-capture lines.
+                // * `plaque_seat_taken` - true while this page draws its own
+                //   box on the plaque's pen (the tutorial prompt), or two
+                //   text runs land on the same pixels.
+                ..Default::default()
             },
             BATTLE_HUD_PEN,
         )
     }
 
+    /// The live battle command menu projected into the shared chip-cluster
+    /// view: one [`legaia_engine_ui::battle_command_ui::CommandChipView`]
+    /// per `BattleCommand::MENU` entry plus the cursor index, or `None`
+    /// when no command menu owns the frame.
+    ///
+    /// One projector feeds both halves of the cluster - the plate sprites
+    /// and the labels - so the page's two draw arrays cannot disagree about
+    /// whether the menu is up. Twin of the native window's method of the
+    /// same name, with the same suppression rules.
+    pub(crate) fn battle_command_menu_chips(
+        &self,
+    ) -> Option<(
+        Vec<legaia_engine_ui::battle_command_ui::CommandChipView<'static>>,
+        usize,
+    )> {
+        use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
+        let bw = self.scene_host.as_ref().map(|h| &h.world)?;
+        if bw.mode != SceneMode::Battle {
+            return None;
+        }
+        if bw.current_dialog.is_some() || bw.inline_dialogue.is_some() {
+            return None;
+        }
+        if bw.arts_input_view().is_some()
+            || bw.battle_arts_menu.is_some()
+            || bw.battle_spell_menu.is_some()
+            || bw.battle_item_menu.is_some()
+        {
+            return None;
+        }
+        let cmd = bw.battle_command.as_ref()?;
+        let CommandPhase::Menu { cursor } = cmd.phase else {
+            return None;
+        };
+        let no_escape = bw.battle_no_escape;
+        Some((
+            BattleCommand::MENU
+                .iter()
+                .map(|c| legaia_engine_ui::battle_command_ui::CommandChipView {
+                    label: c.label(),
+                    enabled: c.available(no_escape),
+                })
+                .collect(),
+            cursor as usize,
+        ))
+    }
+
     /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` /
-    /// green `MP` label cells) for the page's system-UI atlas array. Empty
-    /// outside battle.
+    /// green `MP` label cells) for the page's system-UI atlas array, plus
+    /// the command menu's chip plates + D-pad glyph when a menu is up.
+    /// Empty outside battle.
     pub(crate) fn battle_chrome_sprite_draws(
         &self,
         assets: &crate::play_menu::PlayMenuAssets,
@@ -450,8 +522,29 @@ impl LegaiaRuntime {
         if !in_battle {
             return Vec::new();
         }
-        self.battle_hud_frame_draws(assets, surface_w, surface_h)
-            .sprites
+        let mut out = self
+            .battle_hud_frame_draws(assets, surface_w, surface_h)
+            .sprites;
+        // The command chips sample the same blue plate 3-slice the party
+        // bar does, so they ride this array rather than a second one.
+        if let (Some(rects), Some((chips, cursor))) = (
+            assets.chrome_rects().and_then(|r| r.battle),
+            self.battle_command_menu_chips(),
+        ) {
+            use legaia_engine_ui::battle_command_ui as bcu;
+            let (origin, scale) =
+                crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
+            out.extend(bcu::battle_command_chip_sprites(
+                &bcu::CommandChipAtlas::from_battle_chrome(&rects),
+                &bcu::BattleCommandMenuFrame {
+                    chips: &chips,
+                    cursor: Some(cursor),
+                },
+                origin,
+                scale,
+            ));
+        }
+        out
     }
 
     pub(crate) fn battle_overlay_draws(
@@ -460,7 +553,7 @@ impl LegaiaRuntime {
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<TextDraw> {
-        use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
+        use legaia_engine_core::battle_input::CommandPhase;
         use legaia_engine_core::target_picker::{CursorRow, PickerState};
 
         let Some(bw) = self.scene_host.as_ref().map(|h| &h.world) else {
@@ -488,6 +581,14 @@ impl LegaiaRuntime {
             self.battle_hud_frame_draws(assets, surface_w, surface_h)
                 .text,
         );
+
+        // Floating value readout: the numeral a landed hit throws, over the
+        // struck actor. Layout is the packet-pinned
+        // `engine-vm::battle_value_readout`; this page draws it through the
+        // font fallback rather than the retail 24x24 cells, because its
+        // overlay list is font-atlas quads (the native window has a
+        // screen-space VRAM sink and draws the real art).
+        out.extend(self.battle_value_readout_draws(font, surface_w, surface_h));
 
         // Encounter-transition banner: centred "ENCOUNTER!" over the
         // formation label, shown for the opening frames of the battle. A port
@@ -655,34 +756,24 @@ impl LegaiaRuntime {
             let mut my = MENU_Y;
             match &cmd.phase {
                 CommandPhase::Menu { .. } => {
-                    let header = format!("P{} - command:", cmd.actor + 1);
-                    out.extend(ui::text_draws_for(
-                        &font.layout_ascii(&header),
-                        (MENU_X, my),
-                        white,
-                    ));
-                    my += 16;
-                    let cur = cmd.menu_command();
-                    for c in BattleCommand::MENU {
-                        let marker = if Some(c) == cur { ">" } else { " " };
-                        let line = if c.enabled() {
-                            format!("{} {}", marker, c.label())
-                        } else {
-                            format!("{} {} --", marker, c.label())
-                        };
-                        let color = if Some(c) == cur {
-                            white
-                        } else if c.enabled() {
-                            dim
-                        } else {
-                            down_color
-                        };
-                        out.extend(ui::text_draws_for(
-                            &font.layout_ascii(&line),
-                            (MENU_X + 8, my),
-                            color,
+                    // Retail's command menu is a chip cluster, not a list:
+                    // the packet-pinned diamond plus the port's second row.
+                    // Same shared builder + same projector the native
+                    // window uses, so the two hosts cannot drift; the
+                    // plates go out in `battle_chrome_sprite_draws`.
+                    if let Some((chips, cursor)) = self.battle_command_menu_chips() {
+                        use legaia_engine_ui::battle_command_ui as bcu;
+                        let (origin, scale) =
+                            crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
+                        out.extend(bcu::battle_command_chip_text(
+                            font,
+                            &bcu::BattleCommandMenuFrame {
+                                chips: &chips,
+                                cursor: Some(cursor),
+                            },
+                            origin,
+                            scale,
                         ));
-                        my += 14;
                     }
                 }
                 CommandPhase::Targeting { command, picker } => {
@@ -733,6 +824,94 @@ impl LegaiaRuntime {
     /// sizing arithmetic (`FUN_801F747C`). Shared by the text and chrome
     /// layers so the frame and the rows cannot disagree - the native window's
     /// `battle_tutorial_stage_rect` twin.
+    /// The frame's floating value readout, as font-fallback draws in surface
+    /// pixels.
+    ///
+    /// One run of digit cells per live damage popup, seated over the struck
+    /// actor's projected screen position and laid out by
+    /// `legaia_engine_vm::battle_value_readout::value_cells` - the same model
+    /// the native window draws with retail's own 24x24 cells. Only the
+    /// newest popup per actor draws: retail's readout is a per-slot value
+    /// window, and two runs centred on one point interleave unreadably.
+    pub(crate) fn battle_value_readout_draws(
+        &self,
+        font: &legaia_font::Font,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<TextDraw> {
+        use legaia_engine_vm::battle_value_readout as vr;
+        if surface_w == 0 || surface_h == 0 || self.battle_hud.popups.is_empty() {
+            return Vec::new();
+        }
+        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+            return Vec::new();
+        };
+        // The FX camera: the page's battle view-projection with the retail 4x
+        // world scale composed on, i.e. the native `fx_cam`.
+        let vp = self.play_battle_camera_vp(surface_w as f32 / surface_h as f32);
+        if vp.len() != 16 {
+            return Vec::new();
+        }
+        // The stage transform the rest of the battle chrome uses.
+        let scale = (surface_w / 320).min(surface_h / 240).clamp(1, 4);
+        let origin = (
+            (surface_w as i32 - 320 * scale as i32) / 2,
+            (surface_h as i32 - 240 * scale as i32) / 2,
+        );
+        let mut newest: Vec<&legaia_engine_core::battle_hud::DamagePopup> = Vec::new();
+        for p in &self.battle_hud.popups {
+            if p.status.is_some() {
+                continue;
+            }
+            match newest.iter_mut().find(|q| q.slot == p.slot) {
+                Some(q) if q.frames_remaining >= p.frames_remaining => {}
+                Some(q) => *q = p,
+                None => newest.push(p),
+            }
+        }
+        let mut out = Vec::new();
+        for p in newest {
+            let Some(a) = world.actors.get(usize::from(p.slot)) else {
+                continue;
+            };
+            // Column-major mat4 times the scaled actor origin.
+            let w = [
+                a.move_state.world_x as f32 * BATTLE_WORLD_SCALE_LOCAL,
+                a.move_state.world_y as f32 * BATTLE_WORLD_SCALE_LOCAL,
+                a.move_state.world_z as f32 * BATTLE_WORLD_SCALE_LOCAL,
+                1.0,
+            ];
+            let mut clip = [0.0f32; 4];
+            for (i, c) in clip.iter_mut().enumerate() {
+                *c = (0..4).map(|j| vp[j * 4 + i] * w[j]).sum();
+            }
+            if clip[3] <= 0.01 {
+                continue;
+            }
+            let ax = ((clip[0] / clip[3] * 0.5 + 0.5) * 320.0) as i32;
+            let ay = ((0.5 - clip[1] / clip[3] * 0.5) * 240.0) as i32;
+            let age = p.frames_total.saturating_sub(p.frames_remaining);
+            let cells: Vec<ui::ValueCellView> = vr::value_cells(p.amount, ax, ay - 26, age)
+                .into_iter()
+                .map(|c| ui::ValueCellView {
+                    digit: c.digit,
+                    x: c.x,
+                    y: c.y,
+                    w: c.w,
+                    h: c.h,
+                })
+                .collect();
+            out.extend(ui::battle_value_readout_draws_for(
+                font,
+                &cells,
+                ui::VALUE_READOUT_FALLBACK_COLOR,
+                origin,
+                scale,
+            ));
+        }
+        out
+    }
+
     pub(crate) fn battle_tutorial_stage_rect(
         &self,
         font: &legaia_font::Font,
@@ -829,6 +1008,67 @@ impl LegaiaRuntime {
         self.scene_host
             .as_ref()
             .is_some_and(|h| h.world.scene_encounters_rollable)
+    }
+
+    /// The formation rows the current scene registered, as a JSON array of
+    /// ids (`[]` with no scene up). The list the native window prints when
+    /// `--battle <ROW>` names a row the scene never registered, exposed so a
+    /// page - or a headless driver - can pick a row that exists instead of
+    /// guessing.
+    pub fn debug_formation_rows(&self) -> String {
+        let ids = self
+            .scene_host
+            .as_ref()
+            .map(|h| h.world.registered_formation_ids())
+            .unwrap_or_default();
+        let body: Vec<String> = ids.iter().map(|i| i.to_string()).collect();
+        format!("[{}]", body.join(","))
+    }
+
+    /// Arm a deterministic battle instead of waiting for a step roll - the
+    /// browser twin of the native window's `--battle <ROW|first>`.
+    ///
+    /// `row >= 0` names one of the scene's MAN encounter formation rows (the
+    /// id space the region roll itself produces); `row < 0` takes the lowest
+    /// row that carries monsters, i.e. `--battle first`. The fight is armed
+    /// through [`legaia_engine_core::world::World::force_encounter`], which
+    /// hands the row to the encounter session's transition state machine
+    /// exactly as a region roll does, so the intro, the BGM swap and the
+    /// battle-load path are the ordinary ones and what the page shows is what
+    /// an organic encounter shows.
+    ///
+    /// Like the native flag it turns the live loop on: the transition is
+    /// drained by the live field tick, so an armed fight cannot open without
+    /// it. Returns `true` when the row resolved and the transition armed - the
+    /// page still has to tick for the `Field -> Battle` edge to land.
+    ///
+    /// This is the page's only way into a fight in a scene that rolls none
+    /// (every town), which is what previously made the browser battle screen
+    /// unreachable to a headless driver: `debug_start_test_battle` is
+    /// `#[cfg(not(target_arch = "wasm32"))]` and never crossed into the
+    /// bundle.
+    pub fn debug_force_battle(&mut self, row: i32) -> bool {
+        let Some(host) = self.scene_host.as_mut() else {
+            return false;
+        };
+        let resolved = if row < 0 {
+            host.world.first_rollable_formation_id()
+        } else {
+            u16::try_from(row).ok()
+        };
+        let Some(id) = resolved else {
+            crate::console_log(&format!(
+                "debug_force_battle: no formation resolved in '{}' (registered rows: {:?})",
+                host.world.active_scene_label,
+                host.world.registered_formation_ids()
+            ));
+            return false;
+        };
+        if !host.world.live_gameplay_loop {
+            host.world.live_gameplay_loop = true;
+            host.world.battle_player_driven = true;
+        }
+        host.world.force_encounter(id)
     }
 
     /// `true` while the game-over panel owns the frame. The page draws the

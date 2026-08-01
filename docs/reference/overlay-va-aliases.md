@@ -69,11 +69,12 @@ is why its delta differs from every neighbour. A correct base tag does not make
 a printed VA real.
 
 `0x801F8D0C` is the independent check on the whole law. Read on its own terms,
-that body is a per-frame pass over battle-context bytes `+0x28B` (stage) and
-`+0x28C` (level), emitting up to four `FUN_801E2650` layers gated at
-`0xF0`/`0xE0`/`0xD0` and walking the level by `DAT_1F800393 << 3` to a `0xF0`
-ceiling. That is, line for line, the already-documented battle screen-flash ramp
-[`801E2524`](functions/audio.md#audio) - which is exactly where `- 0x167E8` puts it.
+that body is a per-frame pass over battle-context bytes `+0x28B` (selector) and
+`+0x28C` (clock), emitting up to four `FUN_801E2650` layers gated at
+`0xF0`/`0xE0`/`0xD0` and walking the clock by `DAT_1F800393 << 3` to a `0xF0`
+ceiling. That is, line for line, the already-documented battle Arts announcement
+banner [`801E2524`](functions/audio.md#audio) - which is exactly where
+`- 0x167E8` puts it.
 The arithmetic and the semantics agree without either having been used to derive
 the other.
 

@@ -291,7 +291,7 @@ about these is contested.
 | save-model unification | The two hosts build their save-slot model separately; the tier-3 `set_card_slots_mode` row is one symptom of it, not the whole of it. |
 | shared camera on web | The browser page runs its own orbit projection beside the engine's camera controller instead of consuming it. |
 | MDEC on web | `crates/mdec` decodes STR video for the native `play-str` path; the play page has no video decode, so an FMV beat has nothing to show. |
-| battle 3D layer on web | The browser host runs live battles and draws the HUD, command menus and banners, but not the battle *scene* - no 3D layer stands behind them. |
+| shading law on web | The two hosts do not run the same fragment arithmetic. See [below](#the-two-hosts-do-not-share-a-shading-law). |
 | screen-space PSX primitives on web | The native renderer draws PSX `POLY_FT4`/`POLY_GT4` quads in ordering-table order; the browser has no equivalent, because `SpriteDraw` cannot carry a PSX primitive. See below. |
 | field-to-battle transition on web | The native play window opens a battle with the retail transition - the fade on every style, the curtain where retail selects it. The browser page cuts straight to the battle, because the transition is drawn entirely out of the row above. |
 
@@ -354,6 +354,49 @@ Five things, in the order they block each other:
 Items 1 and 2 are the ones that decide whether this ends as one model or two.
 Doing them in `engine-ui`, where both hosts already meet, is what keeps the next
 transition from being written twice.
+
+### The two hosts do not share a shading law
+
+The 3D geometry is shared - the same TMD, the same mesh builders in
+`legaia-tmd`, the same camera matrix out of `battle_cam_script::battle_vp`.
+The **fragment arithmetic** is not: `engine-render` ships WGSL and the browser
+ships GLSL, written separately, and nothing pairs them. Tier 1 is silent here
+by construction, because both hosts do reach a builder; tier 2 pairs named
+constants, and a shading term written into a shader body is not one.
+
+The law, on the native side, is stated in
+[`renderer.md`](../subsystems/renderer.md): a textured prim is
+`texel * packet_colour / 128` through the GTE depth cue, an untextured prim is
+its packet colour directly, and **neither applies a light source**. The
+synthetic Lambert is a viewer aid.
+
+The browser's fragment shader (`site/js/webgl-shaders.js`) applies a Lambert
+term off the screen-space geometric normal on *both* paths. On the untextured
+path this was a visible divergence rather than a subtle one: a battle stage's
+sky dome and mountain arc are flat/gouraud panels that sweep through every
+azimuth, so `0.45 + 0.55 * dot(n, -light)` painted repeating vertical lighter
+bands across them that the native window does not draw. The untextured path is
+now the retail law - packet colour, graded and cued, no light - which is the
+whole of that divergence.
+
+The **textured** path still carries the Lambert, and it is not a one-line
+removal, because it is standing in for something the browser does not upload.
+Retail modulates each texel by the prim's baked colour word; the page's
+`uploadSceneMesh` sends positions, UVs, `(cba, tsb)` and indices, but not
+`VramMesh::colors`, so dropping the Lambert would leave every textured surface
+at flat full-brightness - a *different* wrong answer, not the right one.
+Closing it is three steps in order: export the per-vertex packet colour
+alongside the other mesh attributes, bind it as a fourth vertex attribute, and
+replace `color.rgb * shade` with the retail `texel * colour / 128`. Until then
+the browser's textured shading is an approximation, and the note is here rather
+than on [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)
+because nothing about retail's law is contested - only the port's arithmetic.
+
+The transferable point: **two hosts reaching one builder is not two hosts
+computing one thing.** Where the shared artefact is *data* (a draw list, a
+matrix, a rect) the gates can pair it. Where it is a *law* expressed twice in
+two shading languages, only a rendered frame from each host, at the same scene
+and the same camera, can compare them.
 
 ## Adding coverage
 

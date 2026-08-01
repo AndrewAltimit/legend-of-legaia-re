@@ -10,7 +10,7 @@ A two-level finite state machine that drives the per-actor execution of a chosen
 - [The `0x51` exit gate and the HP-bar settle invariant](#the-0x51-exit-gate-and-the-hp-bar-settle-invariant) - the endless-camera-orbit softlock class
 - [Cross-references with other battle helpers](#cross-references-with-other-battle-helpers) - [range law](#fun_8004e2f0---battle-range--reach-metric) · [stat aggregator](#fun_80042558---per-frame-stat-aggregator) · [effect spawn API](#fun_801dfdf8---effect-bundle-public-spawn-api) · [summon-overlay dispatch](#seru-magic-summon-overlay-dispatch) · [pose driver](#fun_801d5854---per-actor-pose-driver) · [party/monster setup](#fun_801eed1c--fun_801e7320---party--monster-setup-hooks) · [camera bounds](#fun_801efe44---battle-camera-bounds)
 - More helpers: [escape roll](#the-escape-roll-fun_801e791c) · [queued-magic follow-up guard](#the-queued-magic-follow-up-guard-fun_801f3c34) · [battle voice cues](#battle-voice-cues---the-xa30-grunt-vs-the-xa2xa4xa6-arts-shout) · [helper functions](#battle-helper-functions)
-- [Notes for the engine port](#notes-for-the-engine-port) · [decompile quirks](#decompile-quirks-worth-knowing) · [engine port](#engine-port)
+- [Notes for the engine port](#notes-for-the-engine-port) · [decompile quirks](#decompile-quirks-worth-knowing) · [engine port](#engine-port) · [where an action leaves its combatants](#where-an-action-leaves-its-combatants) · [the sound a melee swing makes](#the-sound-a-melee-swing-makes-and-which-half-of-it-the-port-has) · [three readings the port already satisfied](#three-readings-the-port-already-satisfied)
 - [The per-action effect script (`FUN_801DEA50`)](#the-per-action-effect-script-fun_801dea50)
 - [Action validator (`FUN_8003FB10`)](#action-validator-fun_8003fb10) · [action queue + Tactical Arts trigger ordering](#action-queue-and-tactical-arts-trigger-ordering) · [Miracle / Super in the live Arts submenu](#miracle--super-in-the-live-player-driven-arts-submenu) · [the no-directional-input attack queue](#the-no-directional-input-attack-queue) - what a basic Attack queues
 - [Screen-element placement table `0x80076C10`](#screen-element-placement-table-0x80076c10-and-its-copy-helpers) · [overlay-local PRNG](#overlay-local-prng-fun_801d0290) · [open work](#open-work)
@@ -2236,6 +2236,37 @@ The clip's finish is the engine's anim-end signal: `ADVANCE_DONE` clears (openin
 Clip sources, decoded at battle entry next to the mesh assembly (`play-window`): the record[0] action streams + `swing_battle_animations` (per equipped item, runtime slots `0xC..0xF`) feed `World::set_actor_battle_action_clips`; the art bank (`art_animation_bank`, streams resolved through the `readef.DAT` `"ME"` archives via `art_me_archive`/`art_animation`) feeds `World::set_actor_battle_art_bank`.
 Monsters install no bank, so their staged ids stay plain archive entry indices across the whole range. The art records' `rate_alt` (`+0x84`) byte is used only as the base-archive marker; playback stepping follows the `+0x78` rate like every other entry (see [battle-data-pack.md § Art-animation bank](../formats/battle-data-pack.md#art-animation-bank-record0-0x58)). Engine assumption: the loop-vs-once bit retail derives from the record kind isn't modelled - staged id `1` (the approach walk) loops, every other staged id plays once.
 
+### Where an action leaves its combatants
+
+An action does **not** return its combatants to their authored formation seats. Retail leaves each one standing on the ground the action put it on, and the reference pair the seat-measured range law reads moves with it; the port models that as a **ground commit** at `DoneCleanup` (`0x50`), which re-takes every living actor's seat pair from its live pair. `World::tick_battle_locomotion` therefore drives exactly one leg - the approach - and no walk-home leg at all.
+
+The capture evidence is four save states of one solo fight. Two read the authored formation (party `z = -800`, monster `z = +800`, 1600 apart); two later ones read the party member at `z ~ -540` and the monster at `z ~ -250`, ~300 apart and both far off the formation. Across every mid-battle state in the library each actor's `+0x3C`/`+0x40` pair sits within ~110 units of its live `+0x34`/`+0x38` pair, so the reference pair cannot be a seat the actor has walked away from.
+
+Holding the seat still for the *duration* of an action and committing it at the end is what keeps the range law honest: the approach has a fixed goal and the separation pass a stable reference while the action runs, and once it ends a parked actor is again *at* the pair the gate measures - so the next attacker walks at where its target actually stands. Retail's recovery backstep (the recover clip's own negative-speed root motion) is deliberately not modelled: it is clip-timed and no clip-duration source is decoded, so the attacker ends on the range boundary the arrival shove pushed its target out to.
+
+### The sound a melee swing makes, and which half of it the port has
+
+A physical swing's whole sound is one call: `li a0,0x10c` / `jal 0x8004fe5c` at `0x801EEBD8`, the only submit to the battle overlay's sound funnel anywhere in the melee kernel `FUN_801EC3E4`. Its second argument is the **attacker's actor-table index**, and because [`FUN_8004FE5C`](#engine-port) switches legs on `category < 3` the two sides of a fight sound different by construction:
+
+| Attacker | Leg | Result |
+|---|---|---|
+| Party (`category < 3`) | CD-XA voice | `0x10C` → clip `26`, channel `4` - i.e. `XA27` |
+| Monster (`category >= 3`) | element-tinted high leg | ring id `0x10C + 0x19C = 0x2A8`, plus the attacker's element byte into that id's runtime-bank descriptor |
+
+Two gates guard the submit. The target must be playing a plain action-table clip (`+0x1D9 < 0x10`, `0x801EEB88`), so a hit landing during an art-bank animation is silent. And `_DAT_8007BD84` selects between this cue and the per-character `XA30` grunt immediately above it (`FUN_8003D53C(0x1D, ch, dur)` at `0x801EEB18..0x801EEB44`, channel and duration keyed on `DAT_8007BD10[slot]`).
+
+The port's live gameplay loop resolves melee damage inline rather than through the art-strike event, so nothing downstream of `World::fold_battle_event` used to see a swing at all and a whole fight produced **zero** cues. `World::apply_one_basic_strike` now runs the funnel at retail's site, which is what makes `sfx_cue::route_sfx_cue` a live port rather than a caller-less one. The engine's compacted monster seating has to be re-based into retail's `0..=2` / `3..=7` index space first, or a monster seated at index 1 takes the party leg.
+
+**Which half that is.** The *producer* half is done and observable: a monster swing enqueues `0x2A8` on `World::battle_sfx_cues` and the native host logs it. The *playback* half is not, for two reasons that are properties of the audio stack rather than of this seam - the party leg's `XA27` is not among the clips boot stages (`XA2`/`XA4`/`XA6`), and `0x2A8` is a runtime-bank id (`>= 0x200`) that no engine bank models, so the host's scheduler accepts it and resolves nothing. The party leg's request is therefore discarded rather than faked into the ring.
+
+### Three readings the port already satisfied
+
+Each of these was believed to be a port gap and is not. They are recorded with the measurement so the next reader does not re-open them; the falsified-hypothesis index is [re-do-not-re-walk.md](../reference/re-do-not-re-walk.md).
+
+- **The latched anim id `+0x1DB` is written on the ordinary Attack path.** Driving `town01 --battle 4` to a swing reads `+0x1DB` taking `0x01` (the approach walk), then `0x0D`, then `0x0C` - never `0x00` after the first staging. `0x0C`/`0x0D` are the two rolled arm swings the [no-directional-input queue](#the-no-directional-input-attack-queue) writes, and a retail mid-swing Attack state reads exactly the same band (`+0x1D9 = 0x0D`, `+0x1DA = 0x0C`, `+0x1DB = 0x0D`, `+0x1DE = 3`). The per-art attack camera not arming for that swing is retail's own behaviour - its `0x1A..=0x2D` band is reached by *action-constant* queue bytes, and a retail state that reads `+0x1DB = 0x27` is running a queue of `0f 0e 19 27 0f 19 1f 0e 1a 2b 2b 2b`, an arts chain, not two rolled arm swings.
+- **The `0x51` fade-down countdown is bounded.** `DoneCleanup` seeds `ctx[+0x6D8] = 0x3C` and `done_fade_down` decrements it, so a single action holds `0x51` for `0x3C` frames plus whatever the HP-bar settle check freezes. A live `--battle 4` fight measures 128 frames of `0x51` across **two** actions and 195 across three - 60-65 each, not one unbounded park.
+- **The battle command cursor walks in the sparring tutorial.** Stepping the live loop with Down after the queued prompt boxes are acknowledged moves it `0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 0`. What pins it on screen is a *waiting* prompt box: a box with `waits_for_input` parks the whole battle tick until Cross, which is retail's own `ctx[+0x6B2]` guard, and the port reproduces it. The command session is not reopened per pass - `open_battle_command` runs only on a rejected **resolution**.
+
 ## The per-action effect script (`FUN_801DEA50`)
 
 Every battle action places its visual effects through a small per-frame
@@ -2670,6 +2701,48 @@ scripts/ghidra-analysis/disasm-overlay-fn.py \
 ```
 
 Ported as `engine-vm::battle_action::OverlayRng`.
+
+## Arts announcement banner (`FUN_801E2524` / `FUN_801E2650`)
+
+The pair that draws **`NEW ARTS!!` / `HYPER ARTS!!` / `MIRACLE ARTS!!` /
+`SUPER ARTS!!`**. Both were read as a full-screen flash ramp; decoding the
+texel rows the emitter addresses falsifies that - they are the banner words,
+and the "brightness level" is the banner's slide clock.
+
+`FUN_801E2524` runs once per frame off the battle context and reads two bytes.
+`ctx[+0x28B]` selects the banner (`0` idle, `1..=4` live, `5..=8` a cancel that
+clears the byte and draws nothing, `>= 9` inert without clearing);
+`ctx[+0x28C]` is the clock, walked by `DAT_1F800393 << 3` and saturating at
+`0xF0`. A live frame emits four layers through `FUN_801E2650`, all sharing
+`stage - 1` as the position selector but each with its own clock `offset`
+(`0x30 / 0x20 / 0x10 / 0x00`) and brightness percent (`5 / 10 / 20 / 50`, only
+the last opaque). Because the offset shifts the clock, the four are the same
+banner drawn at four points of its own travel - a ghost trail behind the
+sliding word, gated off at clock `0xF0 / 0xE0 / 0xD0` as the banner lands.
+
+`FUN_801E2650` emits **two** textured `POLY_FT4`s per layer, both at texpage
+`0x27` = `(448, 0)` under CBA `0x7703` - the value-readout sheet's page and
+sub-palette. The second quad's texel rect is fixed (the sheet's single shared
+`ARTS!!`); the first is position-selected, so the four positions compose the
+four banners. Layout: [`formats/effect.md`](../formats/effect.md#the-battle-value-readouts-glyph-sheet-lives-here-too).
+
+Geometry, per layer:
+
+- travel `t = min(ctx[+0x28C] - offset + 0x30, 0xF0) * 2`
+- quad 1 spans screen X `t - bias` to `seam`; quad 2 spans `seam` to
+  `far - t`. So the halves march toward the seam as the clock runs.
+- both share the vertical band `0x90 - h` to `0xB2 + h`, `h = (0x1E0 - t) * 7 / 20`
+- the position table is `(bias, seam, far, quad-1 texel rect)`:
+  `0` = `(0x198, 0x90, 0x2D8, NEW)`, `1` = `(0x1AC, 0xA4, 0x2EC, HYPER)`,
+  `2` = `(0x1B4, 0xAC, 0x2F4, MIRACLE)`, `3` = `(0x1AC, 0xA4, 0x2EC, SUPER)`
+- the switch has **no default arm**, so a position `>= 4` reaches the CLUT /
+  tpage writes and `AddPrim` with whatever X the recycled packet held
+
+Ported as `engine-vm::battle_action::flash_ramp` (`step_flash_ramp` +
+`flash_quads`), both disclosed `NOT WIRED`: `BattleActionCtx` carries neither
+byte, and retail's writer of `+0x28B` is not in the dumped battle-overlay
+corpus. The engine-side raiser would sit at the Super / Miracle chain match in
+`engine-core`'s battle command flow.
 
 ## Open work
 

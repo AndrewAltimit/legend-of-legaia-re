@@ -300,21 +300,29 @@ void main() {
    * by the mesh builders into bit 15 of the per-vertex TSB attribute. */
   bool prim_semi = (tsb & 0x8000u) != 0u;
 
-  /* Field-character hybrid path: an untextured (flat/gouraud) prim carries no
-   * UVs, so it would sample empty VRAM and discard. Take its TMD vertex colour
-   * instead, shade it, and return. Gated by u_use_flat_colors so no other draw
-   * is affected. */
+  /* Untextured (flat/gouraud) prim path: the prim carries no UVs, so it would
+   * sample empty VRAM and discard. Take its TMD packet colour instead and
+   * return. Gated by u_use_flat_colors so no other draw is affected.
+   *
+   * THE PACKET COLOUR IS THE SHADING. Retail fills an untextured PSX prim
+   * with the colour word directly - no modulation and no light source - and
+   * then runs the GTE depth cue on it, which is exactly what the native
+   * window's COLOR_MESH_SHADER_SRC does ("An untextured PSX prim is filled
+   * with its packet colour directly ... The colour IS the baked shading").
+   * This path used to multiply by a synthetic Lambert term
+   * (0.45 + 0.55 * dot(n, -u_light)) off the screen-space geometric normal,
+   * which is a viewer aid, not retail: on a battle-stage sky dome the panels
+   * sweep through every azimuth, so the term paints repeating vertical
+   * lighter bands across the sky and the mountain arc that the native window
+   * does not draw. Same TMD, same second-copy transform - the divergence was
+   * entirely this multiply. See docs/subsystems/renderer.md. */
   if (u_use_flat_colors != 0 && v_flat_rgba.a < 0.5) {
     /* No per-texel STP for untextured prims - the whole prim defers. */
     if (u_semi_pass == 0 && prim_semi) discard;
     if (u_semi_pass == 1 && !prim_semi) discard;
-    vec3 dxf = dFdx(v_world);
-    vec3 dyf = dFdy(v_world);
-    vec3 nf = normalize(cross(dxf, dyf)) * u_normal_sign;
-    float lf = max(dot(nf, normalize(-u_light)), 0.0);
     /* Untextured prims pull to the DPCS far colour directly (retail: the
      * cue runs on the packet colour and there is no texel multiply). */
-    vec3 flat_lit = grade_near(v_flat_rgba.rgb * (0.45 + 0.55 * lf));
+    vec3 flat_lit = grade_near(v_flat_rgba.rgb);
     o_color = vec4(mix(flat_lit, u_cue_far, cue_ir0(v_view_z)), 1.0);
     return;
   }

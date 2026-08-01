@@ -129,6 +129,9 @@ reserved/authoring data with no live consumer.
 | How long does a field-to-battle transition run (`DAT_801D2458`)? | resolved (132 frames; 252 for the swirl) | `disassembly` | [details ↓](#battle-intro-transition-length---dat_801d2458) |
 | Which stage-dome objects does the battle backdrop draw? | resolved (drop index 1, not "keep index 0") | `disassembly` + `capture` | The registration edits the object list rather than truncating it: each backdrop actor owns a private `0x9c` part table at `+0x44` (allocated at `0x80021184`), and `0x80051ad4..0x80051bac` applies one `count -= 1` plus one `entry[i] = entry[i+1]` shift from index 1 to each. Object **1** is dropped and everything else kept, gated on `_DAT_8007b64b == 0`. Indistinguishable from "draw object 0" on the two-object shells; on the seven four-object domes it keeps sky, mountains and the ground ring. See [battle.md](../subsystems/battle.md#object-1-is-dropped). |
 | Battle ground grid depth cue - the far colour | resolved (captured at the draw; port fogs the grid) | `capture` | [details ↓](#battle-ground-grid-depth-cue---the-far-colour) |
+| Which element the screen-element `+0x0E` **kind pair** selects, per value | resolved (it is a table index, not a style enum) | `disassembly` + `capture` | [details ↓](#the-chrome-kind-byte-is-an-index-into-the-widget-class-table) |
+| The element-**badge** palette selector | resolved (the badge record's own palette byte) | `disassembly` + `capture` | [details ↓](#the-element-badge-palette-selector) |
+| The status-element badge sheet `0x18..=0x20` | resolved (nine 48x16 word tags; ladder assignment independently confirmed) | `disassembly` + `capture` | [details ↓](#the-status-element-badge-sheet-0x180x20) |
 | Does the battle ground grid roll per-cell randomness? | resolved (no - a four-entry table walk) | `disassembly` | No. `func_0x801d02c0` builds sixteen literal UV words into scratchpad `0x1f800034` (`0x801d0304..0x801d03a0`) and the emit loop reads group `n` for quad `n`, advancing `0x10` each time. They decode to four fixed 32x32 sub-tiles of the `(192..=255)^2` window walked in `sub_row * 2 + sub_col` order, copied into the packet verbatim - no roll, no corner mirror. The grid origin also carries an extra `-0x200` bias on `z`, and pass 1's cull is a view-`z` bracket with **no** screen-space term (that is a separate pass-2 test). See [battle.md](../subsystems/battle.md#the-grids-own-constants-read-off-the-emitter). |
 | Endless camera orbit (Gaza 2 softlock) - the `0x19` attack-approach park | resolved (caught live; root-caused; disc fix shipped) | `capture` + `disassembly` | [details ↓](#endless-camera-orbit---the-0x19-attack-approach-park) |
 | `0x19` fallback approach drive - which anim-driver field does summon staging leave stale? | resolved (pinned + causally reproduced on the parked save) | `capture` + `disassembly` | [details ↓](#the-summon-then-melee-park-trigger---the-stale-field-is-0x1dc-bit-2) |
@@ -176,6 +179,110 @@ reserved/authoring data with no live consumer.
 | How an NPC's facing changes **after** spawn - snap vs ramp, and which writer wins | resolved (two laws; order-of-execution priority) | `disassembly` | [details ↓](#npc-dynamic-facing---two-laws-and-an-execution-order) |
 | dolk2/rikuroa MAN source (the "v12-embedded MAN" was an over-read) | resolved (streaming carrier) | `capture` | Their own `base+3` bundles are the MAN-less count=4 form `[1,2,6,0x14]`; the "embedded MAN at 0x1000" inside their SceneV12Table entries is an over-read onto the next scene's bundle (suimon's / geremi's; [scene-v12-table.md](../formats/scene-v12-table.md) § over-read). Retail sources their partition scripts from the block's standalone `data_field_streaming` entry's type-3 chunk (`dolk2` ext 70 `[29,73,17]`, `rikuroa` ext 157 `[13,29,64]`; live script-heap byte-match at the Caruban beat). Engine: `field_man_payload` streaming fallback (`streaming_man_payloads`) + retail-frame `Scene::load` windows; pins `v12_bundle_man_disc.rs`. |
 | kor-family op-0x49 flag window `[0x138..0x13F]` - what the 8 flags gate | resolved (Uru Mais warp-pad destination memory) | `disassembly` | [details ↓](#kor-family-op-0x49-flag-window-0x1380x13f---uru-mais-warp-pad-picker) |
+
+### The chrome `kind` byte is an index into the widget-class table
+
+*Status:* resolved - the correlation was a table lookup all along.
+
+The dispatcher the thread asked for is `FUN_8002C69C`
+(`ghidra/scripts/funcs/8002c69c.txt`, the `POLY_FT4` / `SPRT` emitter). It
+reads the kind out of `gp+0x14C`, multiplies by `0x0C` (`sll`/`addu`/`sll` at
+`0x8002C7A0..0x8002C7AC`) and adds `0x800732A4` - so a
+[screen-element](memory-map.md#0x80076c10---one-table-three-names) record's
+`+0x0E` byte is a **record index into the widget-class table**, and the record
+is the sprite the element is framed in. Layout, classes, chains and the
+palette decode are on
+[`battle.md`](../subsystems/battle.md#the-widget-class-table---where-every-chrome-sprite-comes-from);
+parser `legaia_asset::ui_widgets`, disc oracle
+`crates/asset/tests/ui_widgets_real.rs`.
+
+The join is exact over the whole placement table: every kind byte, high and
+low, on all 103 initialised records names a real widget record. The values the
+old row could only name by what sat at their seats resolve to art:
+
+| Kind | Widget record | What it is |
+|---|---|---|
+| `0x01` | `(192, 0)` 16x20, sub-palette 4, class 3 | blue plate body - the command chips |
+| `0x02` | `(192, 64)` 16x20, sub-palette 12, class 3 | carved-gold plate body - the name plaque |
+| `0x03` / `0x04` / `0x44` | class 0, tile-set 0 | the rectangular gold 9-slice window |
+| `0x07` | chain `0x07 → 0x08 → 0x09` | a roster panel: `HP` row, `MP` row, 102x48 plate |
+| `0x2B` | chain `0x2B → 0x2C → 0x2D → 0x2E → 0x2F` | the active-actor bar's two label / separator pairs, then its plate |
+| `0x33` / `0x34` / `0x35` | the panel chain plus the status marker | the three roster panels, one kind per party slot |
+
+Two corrections fall out. The old row's "`0x32`/`0x33` the roster panels" is
+**wrong about the record it named**: the panel placement records (6, 78, 79)
+carry kind `0x07`; `0x33`/`0x34`/`0x35` are the sibling kinds that add the
+level / status marker, special-cased at the head of `FUN_8002C69C` into
+`FUN_8002C2E4(slot)`. And `+0x0E` is not a lone byte - it is a pair, `+0x0E`
+and `+0x0F`, both indices; they are equal on all but five records, where the
+pair reads `(gold, blue)`.
+
+The chain field settles the rest of the surface. `+0x02` is a **signed** hop
+(`lb v1, 0x2(s7)` at `0x8002FF00`, added into the index and re-entered at
+`0x8002C780` unless zero), which is why one kind draws a whole readout.
+Walking the `0x2B` chain against the bar's own pen `(16, 192)` reproduces
+`(80, 194)`, `(136, 188)`, `(192, 194)`, `(240, 188)` - the four seats the
+packet walk had measured independently.
+
+### The element-badge palette selector
+
+*Status:* resolved - the selector is the badge record's own palette byte.
+
+Each badge is a widget record (`0x8B..=0x92`, `20 x 12` at a 32-texel pitch
+from `u = 6` on row `v = 192`), and its `+0x03` palette byte is `0x40 + index`.
+Bit 6 of that byte switches both draw routines onto a second CLUT decode -
+`fb_y = 498 + ((b & 0x3F) >> 2)`, `fb_x = 896 + (b & 3) * 16` - which turns
+the single walking byte into a 4-wide by 2-tall block of sub-palettes:
+
+```text
+badge i -> palette 0x40 + i -> CLUT ( 896 + (i % 4) * 16 , 498 + i / 4 )
+```
+
+That reproduces all four captured pairs (`u = 6` with `(896, 498)`, `38` with
+`(912, 498)`, `166` with `(912, 499)`, `230` with `(944, 499)`) from the disc
+alone. They looked unrelated to the badge index because the index is encoded
+two-dimensionally - the low two bits pick the column, the next two the row.
+
+The `v = 208` "winged" strip is a **separate** set of eight records
+(`0x94..=0x9B`), `28 x 12` from `u = 2`, on the second CLUT block
+(`0x48 + index`, rows 500 / 501). Record `0x9B` reads `v = 192`, so the eighth
+wide badge samples the square-framed art on the plain row while its seven
+siblings sample the winged row; the winged eighth badge exists in VRAM and no
+record selects it.
+
+### The status-element badge sheet (`0x18..=0x20`)
+
+*Status:* resolved - nine 48x16 word tags, and the art confirms the ladder.
+
+The nine ids `FUN_8002C2E4`'s exclusive ladder emits are widget records
+`0x18..=0x20`: 48x16 cells in a two-column block on the resident system-UI
+sheet (VRAM page `(896, 256)`), each on its own row-511 sub-palette, drawn by
+`FUN_8002C488` at the caller's seat with no bias. Decoding the cells against
+their palettes shows the art is a **word tag**, not an icon, so the ladder's
+per-bit assignment is confirmed by a second, independent route:
+
+| Sprite | Mask | Cell | Sub-palette | Reads |
+|---|---|---|---|---|
+| `0x18` | `0x0001` | `(0, 48)` | 9 | `Venom` |
+| `0x19` | `0x0002` | `(48, 48)` | 10 | `Toxic` |
+| `0x1A` | `0x0004` | `(48, 80)` | 16 | `Stone` |
+| `0x1B` | `0x0078` | `(48, 112)` | 14 | `Rot` |
+| `0x1C` | `0x0380` | `(0, 96)` | 17 | `Rage` |
+| `0x1D` | `0x0400` | `(0, 64)` | 11 | `Numb` |
+| `0x1E` | `0x0800` | `(0, 80)` | 15 | `Sleep` |
+| `0x1F` | `0x1000` | `(48, 64)` | 13 | `Curse` |
+| `0x20` | HP `== 0` | `(48, 96)` | 18 | `Faint` |
+
+The accessory-guard derivation
+([`accessory-passive-table.md`](../formats/accessory-passive-table.md#status-guard-clear-masks))
+and the pixels agree everywhere, including the two the mask shapes make least
+obvious - the `0x0078` group is `Rot` and the `0x0380` group is `Rage`. The
+zero-HP arm reading `Faint` is what shows the KO test and the bit ladder are
+one selector over one sheet.
+
+Two corollaries. The block's tenth cell (`(0, 112)`) is other art, so there is
+no tenth badge. And row 511's sub-palette strip is wider than the sixteen the
+chrome plates use - these badges alone reach index 18, i.e. VRAM x 288.
 
 ### Battle-intro tile shatter - the side-face shade page
 

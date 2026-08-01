@@ -9,7 +9,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 
 **Retail scene + render**
 - [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0) - [stage-overlay dispatch](#stage-overlay-dispatch-the-0x47-loader-band) · [sparring-tutorial prompts](#the-sparring-tutorial-prompt-machine-overlay-967) · [command-flow byte](#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes)
-- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [party meshes](#battle-party-meshes-assembled) · [display list](#the-battle-display-list-is-the-registration-set-not-active) · [staged-anim channel](#one-staged-anim-channel-actor0x1da)
+- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [post-strike two-shot](#the-post-strike-two-shot-fun_801d5854-cases-7-and-8) · [menu vs input framing](#the-command-chooser-is-the-far-framing-the-arts-input-is-the-close-up) · [resting yaw](#the-resting-yaw-is-the-orbit-and-a-battle-inherits-it) · [party meshes](#battle-party-meshes-assembled) · [display list](#the-battle-display-list-is-the-registration-set-not-active) · [staged-anim channel](#one-staged-anim-channel-actor0x1da)
 
 **Retail battle logic + data**
 - [Battle action state machine (`FUN_801E295C`)](#battle-action-state-machine-fun_801e295c)
@@ -27,7 +27,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 
 **Clean-room engine systems**
 - [Inventory (page-banked)](#inventory-cratesasset-page-banked-layout) · [Status effects](#status-effects) · [AP / Spirit gauge](#ap--spirit-gauge) · [Battle stat aggregator](#battle-stat-aggregator) · [Item catalog](#item-catalog)
-- [Battle round lifecycle](#battle-round-lifecycle) · [command runner](#battle-command-runner) · [BattleSession Resolve driver](#battlesession-resolve-driver) · [HUD model](#battle-hud-model) · [screen chrome](#battle-screen-chrome-packet-pinned) · [SFX bank](#sfx-bank--scheduler)
+- [Battle round lifecycle](#battle-round-lifecycle) · [command runner](#battle-command-runner) · [BattleSession Resolve driver](#battlesession-resolve-driver) · [HUD model](#battle-hud-model) · [screen chrome](#battle-screen-chrome-packet-pinned) · [widget-class table](#the-widget-class-table---where-every-chrome-sprite-comes-from) · [SFX bank](#sfx-bank--scheduler)
 - [Inventory item-use session](#inventory-item-use-session) · [Encounter system](#encounter-system) · [target picker](#battle-target-picker)
 - [Equipment catalog](#equipment-catalog) · [Seru capture + spell learning](#seru-capture--spell-learning) · [Tactical Arts chain editor](#tactical-arts-chain-editor) · [rewards composite](#battle-rewards-composite)
 - [Live gameplay loop - Field ↔ Battle](#live-gameplay-loop---field--battle-in-tick) - [auto vs player-driven](#auto-resolve-vs-player-driven) · [post-battle Seru learning](#post-battle-seru-learning)
@@ -820,6 +820,102 @@ The fallback arm frames on the seat position at `ctx[+0x6D0]` - the depth
 translation. `ctx[+0x6DA]` is not a constant: the SM's prologue advances it
 about one unit per display frame (`0x801E29E4..0x801E2A24`), so successive enemy
 actions frame from a slowly drifting angle.
+
+**The framing-case table.** `FUN_801D5854`'s mode argument indexes a
+ten-entry jump table at `0x801CEA00` (PROT 0898 file `0x1E8`), and modes `4`
+and `5` are the same no-op tail slot:
+
+| Mode | Entry | Framing | Focus |
+|---|---|---|---|
+| `0` | `0x801D59E0` | arts / spell / item **input** close-up | acting actor |
+| `1` | `0x801D5A6C` | submenu-exit swing | acting actor |
+| `2` / `3` | `0x801D5BB0` / `0x801D5BD4` | menu-driver transitions | acting actor |
+| `4` / `5` | `0x801D7138` | nothing - straight to the shared tail | - |
+| `6` | `0x801D5CE8` | per-action framing (two arms) | acting actor |
+| `7` | `0x801D65DC` | post-strike **two-shot** | attacker-target **midpoint** |
+| `8` | `0x801D67D0` | end-of-action | the target |
+| `9` | `0x801D6EF4` | far Begin/Run framing | formation centre |
+
+### The post-strike two-shot (`FUN_801D5854` cases 7 and 8)
+
+Case `7` is the only framing in the set that orbits **both** combatants. Its
+base (`0x801D65DC..0x801D6694`) is pitch `0`, yaw `ctx[+0x6DA] - actor[+0x46]`,
+`TR = (0, 0x500, ctx[+0x6D0])` and a focus at the midpoint of the acting actor
+and its target (`actor[+0x1DD]` through the actor table `0x801C9370`), each
+component `(a + b) >> 1` and negated. Then the shared `ctx[+0xD]` style fork
+(`1`/`3` add half a turn, `2`/`3` drop `TR.y` to `0x400` and tilt the pitch by
+`0x80`), a **one-way** yaw unwrap at `0x801D6700` - `yaw = (yaw - 0x700) &
+0xFFF`, plus a full turn when that lands below the live `_DAT_8007B792`, so the
+swing never takes the short arc back - and a "pull in" tweak at `0x801D6780`
+(pitch levelled, `TR.y += 0x40`, `TR.z = 3z/5`) gated on `_DAT_800846C0 == 0`
+and the acting actor's anim state.
+
+Case `8` is the same shape aimed at the target alone: an extra `-0x100` on the
+yaw base, `focus.y` forced to the stage floor, a `-0x600` unwrap, and a focus
+fork that falls back to the acting actor when `actor[+0x1DD] >= 8` or the
+target's node is dead (`0x801D6870`). Its long per-liveness tail from
+`0x801D69A8` - the death-clip re-frame, the counter-attack flags, the
+`ctx[+0x270]` ramp - is decoded but not ported; every branch reads a channel
+the engine's battle actor does not carry.
+
+Which states arm them is `FUN_801E295C`'s own fork, not an inference. The
+attack chain's recovery-wait and return (`0x1F`, `0x20`) share one arm at
+`0x801E5660..0x801E56C0` whose **default** is `li a1,0x7`; it takes mode `8`
+only when the target's live anim id matches its counter-trigger bytes
+(`s8[+0x1F1]` / `+0x1F2`) or a party slot faces a target already in a death
+clip. The Done cleanup (`0x50`) forks on the action category at
+`0x801E5FC0..0x801E6018` - `actor[+0x1DE] == 3` (Attack) and "party slot whose
+target's live-HP halfword reached zero" branch to `li a1,0x8`, everything else
+to `li a1,0x6` - and `0x52` / `0xFD` arm `8` unconditionally (`0x801E5F74`).
+
+Engine side: `battle_cam_script::recover_framing` / `action_end_framing`, armed
+by the `Recover` / `ActionEnd` phases. `0x51` is deliberately left idle - see
+the Done-band note above; the port's residency there is unbounded where
+retail's is `ctx[+0x6D8] = 0x3C` frames.
+
+### The command chooser is the far framing, the arts input is the close-up
+
+"A battle menu is open" does not select the close-up. The battle menu driver
+`FUN_801D388C` arms **both** cases: `0x801D475C` / `0x801D53B8` pass `a1 = 0`
+and `0x801D4908` / `0x801D5688` pass `a1 = 9`, and the battle tick
+`FUN_801D0748` arms case `9` itself at `0x801D0E98`. Two retail save states
+separate them, framebuffer and RAM together: with the **Begin / Run** chooser
+up the rotation/translation trios read `pitch 32`, `TR (0, 1280, 7680)`, focus
+at the origin - case 9's `max(span * 3, 0x800)` over the `+-800` seats,
+prescaled, exactly - and the framebuffer shows both fighters; with the **arts
+input** panel up they read `TR (-512, 1152, 2457)` and `yaw = 0x8F0 -
+actor[+0x46]` (`2119` against a facing of `169`), which projects the enemy off
+the left edge behind the panel. So the close-up belongs to the input pickers,
+and a host that folds the command chooser into it puts the opponent behind the
+eye for the whole command phase.
+
+### Case 9 is re-derived every pass, so the depth follows the formation
+
+The far framing is not armed once and left. `FUN_801D0748` re-arms it per tick
+and the menu driver re-arms it on its own transitions, so `max(span * 3,
+0x800)` and the bbox centre are rebuilt out of the live actor table - exactly
+like case 6. This matters because the formation *moves*: an attacker walks most
+of the way to its target during the approach, collapsing the span onto the
+`0x800` floor. A depth frozen at the moment the far framing was armed survives
+the actor walking back to its seat, leaving the eye at `prescale(0x800)`
+against a full-width formation with one combatant filling the frame and the
+other behind it. Engine side: `BattleCamera::retarget_menu_glide`, which skips
+only the two segments that are not "walk to the far framing" (the rate-clamped
+dialogue dismiss and the scripted submenu-exit swing).
+
+### The resting yaw is the orbit, and a battle inherits it
+
+`_DAT_8007B790/92/94` is **one** rotation trio, shared by the field and battle
+cameras, and nothing on the battle-entry path zeroes it: case 9 passes
+`_DAT_8007B792` straight through and the action SM only decrements it. A fight
+therefore inherits whatever azimuth the field camera left. Five battle save
+states caught at the identical framing (`ctx[7] == 0x00`, pitch `32`,
+`TR (0, 1280, 7680)`, focus at the origin, `+-800` seats) read five different
+yaws - `224`, `2632`, `3136`, `3808`, `3882` - so no captured value is *the*
+resting yaw. What must not survive is `0`: at yaw `0` the eye looks straight
+down the seat axis and the two rows project to the same screen X, each
+occluding the other. `BattleCamInputs::entry_yaw` carries the inherited
+azimuth; both hosts feed it `World::field_camera_azimuth`.
 
 **The per-art attack camera is an override, not a fold.** `FUN_801D71B8` is
 *not* part of case 6. Its only call site is `FUN_801D5854`'s shared tail
@@ -2199,7 +2295,14 @@ parked seat is `(8, -24)`, so retail slides it in from above. The port draws
 the live seat only. This is also where the port's **monster readout** lives:
 retail draws no monster gauge at all, so a monster's name is the whole of what
 it contributes to the drawn surface. `battle_hud::battle_active_actor` picks
-the actor.
+the actor and `battle_plaque_element_badge` picks the badge.
+
+**One seat, two surfaces.** The plaque and the
+[message banner](#the-full-width-message-banner) share content pen `(16, 12)`
+- they are alternatives, not layers, and drawing both puts two text runs on
+the same pixels. `BattleHudFrame::banner` wins when a message is up, and
+`plaque_seat_taken` lets a host claim the seat for a box it draws itself
+(the sparring-tutorial prompt, whose rect starts on that same pen).
 
 **The surface samples the disc's own cells.** The 102x48 marbled panel plate,
 the blue plate 3-slice, the 8x16 `/` separator and the 8x12 numerals are all
@@ -2219,9 +2322,13 @@ with a 1-px rim, the labels and the `/` to tinted text, and the numerals to
 font glyphs **centred on the same 8-px cells** - the fallback changes
 letterforms, never layout.
 
-**Still substituted.** The status element's badge art (`0x18..=0x20`) is
-unpinned, so the selected id draws as a labelled tag on the panel's level
-seat, which is the seat retail's exclusive ladder puts it on.
+**The status badge is retail's own cell.** When a slot's ladder selects an
+ailment the HUD blits the 48x16 word tag off the sheet
+([the badge sheet](#the-status-element-badge-sheet)) rather than a labelled
+stand-in, at `panel + (56, 0)` - the ladder caller's `pen + (0x33, -4)` off
+the panel's `(+5, +4)` name pen. The engine's tag survives as the per-cell
+fallback: a host whose atlas could not reach a badge's sub-palette keeps the
+tag for that one badge and blits the other eight.
 
 **Parked, not stacked.** The port emits no panel draws at all while the
 active-actor bar or a command-entry session owns the frame, rather than
@@ -2268,7 +2375,9 @@ The word itself is battle actor `+0x16E` verbatim: `FUN_80047430` mirrors it wit
 
 The ladder tests `0x0004`, `0x0400`, `0x0800`, `0x0380`, `0x0078`, `0x1000`, `0x0002`, `0x0001` in that order, emitting sprites `0x1A`, `0x1D`, `0x1E`, `0x1C`, `0x1B`, `0x1F`, `0x19`, `0x18`. The band `0x18..=0x20` is nine sprites for the nine conditions the status model tracks, KO being the one that is a zero-HP test rather than a bit. Per-bit provenance is in [`accessory-passive-table.md`](../formats/accessory-passive-table.md#status-guard-clear-masks) - the seven accessory guards each clear exactly one ailment's mask, which is what fixes the assignment - and mirrored at `engine-vm::status_effects::display_flags`.
 
-Port: `BattleSlotHud::status_display_flags` packs the engine's typed status set into the retail word and `status_element` runs the ladder. The no-ailment arm is the level, and retail draws that as a **panel row** - the `LV` label cell at the panel's `(64, 6)` with its digits at `(88, 4)` - not as a floating marker. The ladder is exclusive, so any set bit (or zero HP) **replaces** that level with its own element, and the port draws the selected id as a labelled tag on the same panel seat: the retail **sprite sheet** for `0x18..=0x20` is not resolved, so the selection is ported and the pixels are not. Three bits - `0x0040` inside the Rot group, and `0x2000`/`0x4000`/`0x8000`, which survive even Master Guard's clear - have no writer anywhere in the dumped corpus and stay unassigned.
+The **art agrees with that assignment**, independently: each of the nine ids is a word tag on the system-UI sheet, and decoding the cells gives `Venom` / `Toxic` / `Stone` / `Rot` / `Rage` / `Numb` / `Sleep` / `Curse` / `Faint` in ladder order. Cells, sub-palettes and the sheet law are in [the badge-sheet section](#the-status-element-badge-sheet).
+
+Port: `BattleSlotHud::status_display_flags` packs the engine's typed status set into the retail word and `status_element` runs the ladder. The no-ailment arm is the level, and retail draws that as a **panel row** - the `LV` label cell at the panel's `(64, 6)` with its digits at `(88, 4)` - not as a floating marker. The ladder is exclusive, so any set bit (or zero HP) **replaces** that level with its own element, and the port draws the selected id as its own labelled tag on the same panel seat rather than blitting retail's cell. Three bits - `0x0040` inside the Rot group, and `0x2000`/`0x4000`/`0x8000`, which survive even Master Guard's clear - have no writer anywhere in the dumped corpus and stay unassigned.
 
 ### Enemy target strip
 
@@ -2300,8 +2409,10 @@ and the solo action frames `battle_gimard_tail_fire_a` /
 The whole chrome samples the **resident system-UI TIM**
 ([`title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET`](../../crates/asset/src/title_pak.rs),
 `PROT.DAT` `0x18E0`), whose pixels upload to VRAM page `(896, 256)` and
-whose 16-row CLUT block packs into VRAM row **511** as sixteen side-by-side
-sub-palettes. Text comes off the neighbouring menu-glyph atlas at page
+whose CLUT block packs into VRAM row **511** as side-by-side sub-palettes -
+the chrome plates use the first sixteen, and the row runs further (the
+[status badges](#the-status-element-badge-sheet) reach sub-palette 18).
+Text comes off the neighbouring menu-glyph atlas at page
 `(896, 0)` through row **510** sub-palette 13, as 14x15 blits of 16x16 cells
 (`cell = ascii - 0x20`, sixteen cells per row, `u = (i%16)*16`,
 `v = (i/16)*16`) advanced by each glyph's own width.
@@ -2387,10 +2498,13 @@ Captured widths: `Noa` -> 20 (right cap at x=36), `Carl` -> 23, `Zeto` -> 24,
 (cap at 79). Total plate width is `interior + 16`.
 
 The **element badge** is a 20x12 sprite off the same sheet: eight badges at a
-32-texel pitch from `u = 6`, row `v = 192` plain and `v = 208` winged. Each
-badge picks its own 16-entry sub-palette out of the CLUT block at VRAM x
-`896..`, rows 498 / 499 - the palette travels with the badge, not with the
-row, so the colour is per-element and the geometry is not.
+32-texel pitch from `u = 6`, row `v = 192`. Each takes its own 16-entry
+sub-palette out of the CLUT block at VRAM x `896..`, rows 498 / 499 - so the
+colour is per-element and the geometry is not. The selector is the badge
+record's own palette byte, `0x40 + index`, decoded two-dimensionally; the
+winged `v = 208` strip is a separate set of eight 28x12 records on its own
+CLUT block. Both are pinned in
+[the element-badge section](#the-element-badges-and-their-per-badge-palette).
 
 ### The party status readout - and it has no gauge
 
@@ -2451,6 +2565,261 @@ the element command right `(240, 60)` and `Spirit` down `(196, 92)`. An
 unavailable command still gets its chip - the right seat draws a single `-`
 glyph for a character with no magic. The `Begin` / `Run` cluster is seat- and
 size-identical in a solo tutorial fight and in a three-member battle.
+
+The dome's element table names the same four seats from a second, unrelated
+capture (`(204, 34)` / `(160, 66)` / `(248, 66)` / `(204, 98)` through the
+plate law above), which is what says this cluster is the battle command menu's
+and not a per-mode variant - see
+[`minigame-muscle-dome.md`](minigame-muscle-dome.md#the-command-cluster-is-the-battle-cluster).
+Note the two "cannot pick this" marks are different widgets: the `-` glyph is
+an unavailable command, while a *forbidden* one wears the red cross-out X
+(`FUN_801DBC30`, port `battle_party_panel::cross_out_mark`).
+
+**Port.** The cluster's draw side is
+[`engine-ui::battle_command_ui`](../../crates/engine-ui/src/battle_command_ui.rs) -
+plate run, both clusters, the shared D-pad cell and the `-` chip - and both
+battle hosts seat their command menu through it, so the menu is chips rather
+than a text list on either. The port's menu carries two entries retail's four
+arms have no seat for, and they take a second row the module documents; the
+`engine-ui` literals are pinned equal to `battle_chrome` by `engine-shell`'s
+`engine_ui_command_chips_mirror_the_packet_pinned_battle_chrome`.
+
+## The widget-class table - where every chrome sprite comes from
+
+Everything the packet walk measured above is **disc data**, and it all comes
+out of one array: the widget-class table at `SCUS_942.54` VA `0x800732A4`,
+`0x0C` bytes per record, `0x9D` records. The run's end is structural rather
+than guessed - `0x800732A4 + 0x9D * 0x0C` is exactly `0x80073A00`, the frame
+tile-set pool the class arms read next. Parser `legaia_asset::ui_widgets`;
+disc-gated oracle `crates/asset/tests/ui_widgets_real.rs`.
+
+A [screen-element placement record](../reference/memory-map.md#0x80076c10---one-table-three-names)'s
+`+0x0E` *kind pair* is two indices into this table - which is what turns the
+chrome section's correlation ("`0x0101` is on every blue chip, `0x0202` on the
+gold plaque") into a mapping. Kind `0x01` **is** widget record `0x01`, the blue
+plate body; kind `0x02` is record `0x02`, the carved-gold one. The join holds
+for all 103 initialised placement records: every kind byte, high and low,
+names a real widget record, and each named surface resolves to the art the
+packets drew.
+
+### Record layout
+
+| Offset | Type | Field |
+|---|---|---|
+| `+0x00` | u8 | frame **class** - which layout arm draws it (`0..=6`, jump table `0x80010D18`) |
+| `+0x01` | u8 | **tile-set** index into the frame pool at `0x80073A00` |
+| `+0x02` | i8 | **chain delta** to the next record in this widget; `0` ends the run |
+| `+0x03` | u8 | **palette** byte - bit 7 semi-transparent, the rest a packed CLUT address |
+| `+0x04`..`+0x07` | u8 x4 | source rect `u`, `v`, `w`, `h` on the system-UI sheet |
+| `+0x08` / `+0x0A` | i16 | seat bias `dx` / `dy` |
+
+Two SCUS routines read it. `FUN_8002C488(x, y, id)`
+(`ghidra/scripts/funcs/8002c488.txt`) draws exactly one sprite and seats it at
+the caller's `(x, y)` **verbatim** - it never applies `+0x08`/`+0x0A`.
+`FUN_8002C69C(x, y, w, h)` (`ghidra/scripts/funcs/8002c69c.txt`, the
+`POLY_FT4` / `SPRT` emitter) draws a sized widget with the record index in
+`gp+0x14C`, applies the bias, and then loops: `lb v1, 0x2(s7)` at `0x8002FF00`,
+`addu` it into the index, and re-enter at `0x8002C780` unless it is zero.
+
+The `(x, y)` it is called with is the **glyph pen** - the content box's
+`(x, y - 2)` - not the box seat, and the bias converts pen to frame origin.
+One law covers both frame families: the plate run's `(-8, -4)` takes the
+plaque's pen `(16, 12)` to the documented plate at `(8, 8)`, and the framed
+window's `(-8, -8)` takes a banner pen `(16, 12)` to a frame at `(8, 4)`.
+Both are packet-confirmed (see the message banner below).
+
+That split is why the same table produces both behaviours the packet walk saw:
+the status marker lands at `pen + (0x3B, 2)` because its caller
+(`FUN_8002C2E4`) supplies that offset, while the roster panel's `HP` label
+lands at `pen + (-1, 17)` because record `0x07` carries it.
+
+### The palette byte is a packed CLUT address
+
+Both routines decode `+0x03` with the same six instructions, and it has two
+forms:
+
+```text
+bit 6 clear:  CBA  = 0x7FC0 + (b & 0x3F)      -> VRAM row 511, x = (b & 0x3F) * 16
+bit 6 set:    fb_y = 498 + ((b & 0x3F) >> 2)
+              fb_x = 896 + (b & 3) * 16
+```
+
+The first form is the system-UI sheet's own sub-palette strip on VRAM row 511
+(the chrome's blue is sub-palette 4, the carved gold 12, the marbled panel 0).
+The second addresses a **separate 4-wide block of CLUTs at VRAM
+`(896.., 498..501)`**, and it is the whole answer to the element-badge palette
+question - see below.
+
+Bit 7 selects the GP0 code: `0x66` (raw sprite) instead of `0x64`.
+
+### Chains: a widget is a run of records
+
+`+0x02` is a signed hop, so one kind draws several sprites. The two the chrome
+section describes are both chains, and following them reproduces the captured
+seats exactly:
+
+| Kind | Chain | What it lays out |
+|---|---|---|
+| `0x2B` | `0x2B → 0x2C → 0x2D → 0x2E → 0x2F` | the active-actor bar: `HP` label `(+64, +2)`, `/` `(+120, -4)`, `MP` label `(+176, +2)`, `/` `(+224, -4)`, then the blue plate body |
+| `0x07` | `0x07 → 0x08 → 0x09` | a roster panel: `HP` row `(-1, +17)`, `MP` row `(-1, +32)`, then the 102x48 marbled plate at `(-5, -4)` |
+| `0x33` / `0x34` / `0x35` | `→ 0x41 → 0x42 → 0x08 → 0x09` | the same panel with its level / status marker, one kind per party slot |
+
+Against the bar's own pen `(16, 192)` those biases give `(80, 194)`,
+`(136, 188)`, `(192, 194)`, `(240, 188)` - the four seats the packets carry.
+
+### Classes and the frame pool
+
+The class byte picks the layout arm. Two matter for the battle screen:
+
+- **class 3** - the rounded **plate run**. It reads a `(left cap, right cap)`
+  quad pair from `0x80073A60 + tileset * 8`; tile-set 3 gives
+  `(208, 0, 8, 20)` / `(216, 0, 8, 20)` (blue) and tile-set 4
+  `(208, 64, ...)` / `(216, 64, ...)` (gold). Body tiles come from the
+  record's own rect. Tile-set `0` is the sentinel the arm skips, so a
+  cap-less run is expressible.
+- **class 0** - the rectangular **9-slice window**. It reads eight quads from
+  `0x80073A00 + tileset * 0x20` in the order top-left, top-right,
+  bottom-left, bottom-right, top, bottom, left, right. Tile-set 0 is the gold
+  border: 4x4 corners and 24x4 / 4x24 edges cut from one 32x32 patch at
+  texels `(160, 0)`.
+
+The two views overlap by construction - a cap pair *is* the last two quads of
+a frame set - which is why `0x80073A60` sits three tile-sets into the pool.
+
+### The full-width message banner
+
+The top-of-screen banner every battle message uses is a class-0 window on the
+same seat, and it is packet-pinned mid-fight (the `rim_elm_gimard_seru_capture_after`
+and `noa_levelup_banner` states). Content pen `(16, 12)`, frame origin
+`(8, 4)`, left / right border columns 4 wide, interior 20 tall - so the frame
+is 28 tall and its right column starts at `16 + measured_width`. The top and
+bottom edges tile 24 wide from `x = 12` with the final tile clipped, exactly
+as a plate run clips its last body tile.
+
+Retail draws **no interior fill** under it: the display list carries the
+border sprites and the glyph run and nothing else, so the scene shows
+through. The 32x32 blue-marbled patch records `0x03` / `0x04` carry as their
+own rect is a fill the framed *menu* windows use, not this banner.
+
+The same frames catch the actor-name plaque parked: a gold plate run at
+`(8, -30)` with a 27-pixel interior (cap, one 16-wide body tile, one clipped
+to 11) and `Vahn` on the pen at `(16, -26)`. That is placement record 68's
+disc-side parked seat `(16, -24)` through the pen and bias law above, and it
+is the clip rule and the plate arithmetic confirmed in one packet run.
+
+**Port.** [`engine-ui::battle_hud_chrome`](../../crates/engine-ui/src/battle_hud_chrome.rs)
+carries the geometry (`banner_frame` / `banner_interior`, the tiled-edge
+emit, no fill) and the HUD builder draws it in place of the plaque. What
+feeds it is the port's two battle messages, level-up and Seru-capture - the
+`noa_levelup_banner` state is one of the two the geometry came from. The port
+raises both a mode-tick **after** the fight has handed the frame back to the
+field, where retail raises them on the battle result screen, so the message
+takes the banner wherever the port raises it and the widget is not gated on
+battle mode. A multi-line message grows the interior by the 14-px text pitch
+per extra row and nothing else moves.
+
+### The status-element badge sheet
+
+The nine ids the exclusive status ladder emits, `0x18..=0x20`, are **48x16
+cells in a two-column block** on the system-UI sheet, and each takes its own
+row-511 sub-palette. The art is a word tag, not an icon, which is what settles
+the ladder's per-bit assignment independently of the accessory-guard argument:
+
+| Sprite | Mask tested | Sheet cell | Sub-palette | Reads |
+|---|---|---|---|---|
+| `0x18` | `0x0001` | `(0, 48)` | 9 | `Venom` |
+| `0x19` | `0x0002` | `(48, 48)` | 10 | `Toxic` |
+| `0x1A` | `0x0004` | `(48, 80)` | 16 | `Stone` |
+| `0x1B` | `0x0078` | `(48, 112)` | 14 | `Rot` |
+| `0x1C` | `0x0380` | `(0, 96)` | 17 | `Rage` |
+| `0x1D` | `0x0400` | `(0, 64)` | 11 | `Numb` |
+| `0x1E` | `0x0800` | `(0, 80)` | 15 | `Sleep` |
+| `0x1F` | `0x1000` | `(48, 64)` | 13 | `Curse` |
+| `0x20` | HP `== 0` | `(48, 96)` | 18 | `Faint` |
+
+The block's tenth cell (`(0, 112)`) is other art - there is no tenth badge.
+The KO badge reading `Faint` is the confirmation that the zero-HP arm and the
+bit ladder are one selector over one sheet.
+
+Two corollaries the sheet forces. Row 511's sub-palette strip is **wider than
+sixteen**: these badges alone reach index 18, so the strip runs to VRAM x 288,
+and the "sixteen side-by-side sub-palettes" reading above describes the block
+the chrome plates use, not the row's extent. And the no-ailment arm's marker,
+sprite `0x0A`, is a plain 16x10 `LV` label at `(192, 86)` on sub-palette 1 -
+the same three-texel label set as `HP` and `MP`.
+
+**Where the strip's continuation lives.** The system-UI sheet's own CLUT
+block is `16 x 16` at VRAM `(0, 511)` - sub-palettes 0..15 and no more. Sub-
+palettes 16 / 17 / 18 come from a separate **CLUT-only TIM** immediately
+before it at `PROT.DAT[0x1858]` (`0x1858 + 0x88 == 0x18E0`), whose block is
+`16 x 3` at VRAM `(256, 511)` and whose image block is a four-word stub. So
+"the strip runs to VRAM x 288" is a second file, not a wider first one - and
+an atlas bake rooted at the sheet cannot see it, which is why the port's
+badge accessor answers per cell. Constants + bake:
+`engine-core::save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET`.
+
+### The element badges and their per-badge palette
+
+The badge strip is eight consecutive records, `0x8B..=0x92`: `20 x 12` at a
+32-texel pitch from `u = 6`, row `v = 192`, exactly as the packet walk
+measured. Their palette bytes are `0x40 + index`, and the bit-6 decode turns
+that single walking byte into a 4-wide by 2-tall block of CLUTs:
+
+```text
+badge i -> palette 0x40 + i -> CLUT ( 896 + (i % 4) * 16 , 498 + i / 4 )
+```
+
+Which reproduces every captured pair - `u = 6` with `(896, 498)`, `38` with
+`(912, 498)`, `166` with `(912, 499)`, `230` with `(944, 499)` - from the disc
+alone. The pairs looked unrelated to the badge index because the index is
+encoded **two-dimensionally**: the low two bits pick the column, the next two
+the row. The palette does travel with the badge; it just travels through a
+packed address rather than a lookup.
+
+A sibling strip of eight *winged* badges lives at `0x94..=0x9B`, `28 x 12` from
+`u = 2` on row `v = 208`, on the second CLUT block (`0x48 + index`, rows
+500 / 501 - byte-identical to 498 / 499 in a live frame). Record `0x9B` is the
+one asymmetry: it reads `v = 192`, so the eighth wide badge samples the
+square-framed art on the plain row while its seven siblings sample the winged
+row. The winged eighth badge exists in VRAM and no record selects it.
+
+**Neither strip's texels are on the system-UI sheet.** Rows `v = 192` and
+`v = 208` are past that TIM's 192, and belong to the **extension strip** that
+continues the page at VRAM `(896, 448)`
+(`title_pak::OVERLAY_SYSTEM_UI_EXT_TIM_OFFSET`, strip `v` = sheet `V - 192`).
+Each of the four CLUT rows `498..501` is a whole sibling TIM of its own -
+`0x10178` / `0x100D0` / `0x10028` / `0xFF80` - so a badge's palette is
+`(row TIM, index & 3)`. The port bakes the plain eight from the first two
+(`save_menu_atlas::add_element_badge_sprites`); the winged four on row 500
+are already baked as the status screen's ATR icons, which is the same art.
+
+**Port + what is inferred.** The plaque wears badge `element` for a monster
+whose record `+0x1D` names one (`battle_hud::battle_plaque_element_badge`),
+and the plaque widens by `20 + 5` exactly as `name_plaque` lays out. The
+geometry, the palette decode and the plaque law are all disc-read; **the
+selector is not** - no dumped caller computes the badge id, so "badge index
+= element id" is an inference from the two eights lining up, and whether a
+neutral (id 7) actor draws a badge at all is unverified.
+
+### Four ids are not on this sheet at all - they are the save-slot portraits
+
+`FUN_8002C488` has a second arm for ids `0x86`, `0x87`, `0x88` and `0x8A`.
+They draw through texture page `0x1F` (VRAM `(960, 256)`) instead of `0x1E`
+(`(896, 256)`), take their CLUT from the four-word side table at `0x80073DB8`
+instead of their palette byte, and are the only ids whose `+0x08`/`+0x0A`
+bias appears on the *single-sprite* path - though only `0x8A` carries a
+non-zero one, `(-8, -8)`, which centres the 32x32 frame on the same seat a
+16x16 face takes.
+
+They are **not an undrawn surface**. The side table reads `(976, 304)`,
+`(976, 305)`, `(976, 306)`, `(976, 307)`; the records' rects
+(`(64|80|96, 0, 16, 16)` and `(64, 16, 32, 32)`) address VRAM `x = 976 + u/4`
+at 4bpp, i.e. `(976..988, 256..272)` and `(976..984, 272..304)`. Those are
+exactly the framebuffer coordinates of the four load-screen TIMs at
+`PROT.DAT[0x1AC90]` and `[0x1AED0]` - the three party-member face portraits
+and the empty-cell frame the save-slot grid already draws
+(`title_pak::OVERLAY_LOAD_PORTRAIT_TIM_OFFSET`, port
+`engine-ui::ui_title_save::slot_grid`). One asset, two consumers.
 
 ## SFX bank + scheduler
 
@@ -3119,6 +3488,50 @@ frame capture (`Renderer::capture_rgba` → `vram_capture`) lands the drawn
 field in the texture pages each style's packets name; and the emitted
 `ScreenPrim`s composite over the scene through
 `RenderTarget::SceneWithScreenPrims`.
+
+### The curtain is a render-to-texture, and only its row pass is on screen
+
+`FUN_801D11D0` draws two passes and it does **not** draw them to the same
+place. Between them it links draw-environment packets into the ordering table,
+and their OT buckets - a higher index draws first - order them against the
+strips:
+
+| OT bucket | packet |
+|---|---|
+| `0x1F4` | `SetDrawOffset(0, 0)` + `SetDrawArea(320, 0, 320, 240)` |
+| `0x1EA` | `FUN_801D1D9C(0x1EA, 2, 0x808080)`, the mid-pass emitter |
+| `0x1C2` | the column strips |
+| `0x190` | `SetDrawArea(0, y, 320, h)` + `SetDrawOffset(0, y)`, the back buffer |
+| `0x12C` | the row strips |
+
+So the column pass runs with the draw area on VRAM `(320, 0)` and its offset at
+zero, which makes its primitive coordinates absolute VRAM. `CURTAIN_COL_DRAW_BIAS`
+(`0x1E0`) is what makes that fit: a column that passes the visibility test -
+which re-centres on `0xA0` - lands at `x` in `320..640`, exactly the installed
+area. That area is the rect the row pass' texture pages `0x105` / `0x108`
+decode to, so **the row pass samples what the column pass just drew**. The
+image is warped horizontally into an intermediate and then sliced vertically
+out of it; only the second slice reaches the display.
+
+Two consequences for the port, both now carried. The one-shot field capture
+belongs in the *columns* rect only (`capture_rects_for`) - the rows rect is the
+intermediate, overwritten every frame - and the column pass has to be
+rasterised somewhere, which `engine-render::battle_intro`'s
+`compose_curtain_intermediate` does on the CPU because a screen-space quad list
+has no render-to-VRAM target. Reading the two rects as "two copies of the same
+capture" instead left the curtain stretching in one axis only.
+
+What is still missing is the accumulation the effect rides on. Retail never
+clears: the transition's own `FUN_8004695C(0x80808)` subtracts 8 per channel
+per frame from the display buffer, so a scanline drawn on one frame decays over
+~31 frames behind the ones drawn after it, and the mid-pass emitter does the
+same to the intermediate at a steeper rate. The port composes each frame from
+scratch over `backdrop_prim`, so the gaps between strips are pure black rather
+than a fading trail, and the transition reads far darker than retail's from
+about a third of the way in. `FUN_801D1D9C` is only dumped at a VA that aliases
+another overlay ([`call-target-integrity.md`](../tooling/call-target-integrity.md)),
+so its exact decay is not established; the port clears the intermediate instead
+of guessing.
 
 ### The window has no field in it
 

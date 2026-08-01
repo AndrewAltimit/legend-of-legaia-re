@@ -118,13 +118,16 @@ fn derive_battle_cam(
         .as_ref()
         .map(|c| c.actor)
         .unwrap_or(world.battle_ctx.active_actor);
-    let phase = script::phase_for(
+    // The **input** pickers own the close-up; the top-level command chooser
+    // keeps the far framing. Same call the native window makes - see
+    // `script::phase_for_state` for the two retail framebuffers that separate
+    // case 0 from case 9, and for the case-7 / case-8 post-strike bands.
+    let phase = script::phase_for_state(
         world.current_dialog.is_some() || world.inline_dialogue.is_some(),
-        world.battle_command.is_some()
-            || world.battle_arts_menu.is_some()
+        world.battle_arts_menu.is_some()
             || world.battle_spell_menu.is_some()
             || world.battle_item_menu.is_some(),
-        script::action_state_frames_the_action(world.battle_ctx.action_state),
+        world.battle_ctx.action_state,
     );
     let actor_at = |slot: u8, party_slot: Option<u8>| {
         let a = world.actors.get(slot as usize)?;
@@ -184,9 +187,27 @@ fn derive_battle_cam(
     // computed. `flow_active` is `_DAT_8007BD71 == 0xFE`, which the engine
     // has no byte for and which is true whenever it runs this camera.
     let party = usize::from(acting_slot) < pc;
+    // Cases 7 / 8 frame against the acting actor's target (`actor[+0x1DD]`
+    // through the 8-slot actor table) - the browser mirror of the native
+    // `battle_post_action_target`.
+    let target = world
+        .actors
+        .get(acting_slot as usize)
+        .map(|a| a.battle.active_target)
+        .filter(|s| usize::from(*s) < 8)
+        .and_then(|s| world.actors.get(usize::from(s)))
+        .map(|t| script::PostActionTarget {
+            world: [
+                t.move_state.world_x as f32,
+                t.move_state.world_y as f32,
+                t.move_state.world_z as f32,
+            ],
+            live: t.active && t.battle.hp > 0,
+        });
     script::BattleCamInputs {
         phase,
         acting,
+        target,
         formation,
         action: script::ActionFraming {
             party_slot: party,
@@ -196,6 +217,10 @@ fn derive_battle_cam(
             style: 0,
             char_id: if party { acting_slot + 1 } else { 0 },
         },
+        // `_DAT_8007B792` is one global shared with the field camera, and
+        // nothing on the battle-entry path zeroes it - a fight inherits the
+        // live azimuth (see `BattleCamInputs::entry_yaw`).
+        entry_yaw: f32::from(world.field_camera_azimuth & 0xFFF),
         shake_amplitude: world.camera_shake_amplitude,
         attack: attack_channels(world, world.battle_ctx.active_actor),
     }
@@ -1339,6 +1364,8 @@ impl LegaiaRuntime {
             Some(P::Dialogue) => "dialogue",
             Some(P::Submenu) => "submenu",
             Some(P::Action) => "action",
+            Some(P::Recover) => "recover",
+            Some(P::ActionEnd) => "action-end",
             Some(P::Menu) | None => "menu",
         }
     }
@@ -1389,6 +1416,14 @@ mod battle_cam_web_tests {
         world.actors = vec![vahn, tetsu];
         world.battle_command = Some(legaia_engine_core::battle_input::BattleCommandSession::new(
             0, 0,
+        ));
+        // The **arts input** picker is what arms retail's case-0 close-up;
+        // the command chooser alone keeps the far framing (see
+        // `script::phase_for_state`). Same recipe as the native mirror.
+        world.battle_arts_menu = Some(legaia_engine_core::battle_arts::BattleArtsSession::new(
+            0,
+            0,
+            Vec::new(),
         ));
 
         let inputs = derive_battle_cam(&world);
@@ -1474,6 +1509,14 @@ mod battle_cam_web_tests {
         world.actors = vec![vahn, tetsu];
         world.battle_command = Some(legaia_engine_core::battle_input::BattleCommandSession::new(
             0, 0,
+        ));
+        // The **arts input** picker is what arms retail's case-0 close-up;
+        // the command chooser alone keeps the far framing (see
+        // `script::phase_for_state`). Same recipe as the native mirror.
+        world.battle_arts_menu = Some(legaia_engine_core::battle_arts::BattleArtsSession::new(
+            0,
+            0,
+            Vec::new(),
         ));
 
         let inputs = derive_battle_cam(&world);

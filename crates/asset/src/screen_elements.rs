@@ -32,8 +32,15 @@
 //! | `+0x02` / `+0x04` | i16 | x / y |
 //! | `+0x06` / `+0x08` | i16 | content width / line height (`0x0C` throughout) |
 //! | `+0x0A` / `+0x0C` | i16 | the second seat - the pair `FUN_801D5778` offsets by a screen width |
-//! | `+0x0E` | u16 | kind pair (the chrome style the element is framed in) |
+//! | `+0x0E` | u16 | kind pair - two indices into [`crate::ui_widgets`] |
 //! | `+0x14` | u32 | payload pointer - the string being measured, or null |
+//!
+//! The kind pair is not an opaque style tag: each byte is a **widget-class
+//! record index**, and the record is the sprite (or chain of sprites) the
+//! element is framed in. `0x01` is the blue plate body, `0x02` the carved-gold
+//! one, `0x03`/`0x04` the corner-framed window, `0x07` a roster panel, `0x2B`
+//! the active-actor bar. The two bytes are equal on all but a handful of
+//! records, where the pair reads `(gold, blue)`.
 //!
 //! The two seats are a **from / to** pair for the element's slide, and which
 //! one is live depends on the direction it last travelled: the actor-name
@@ -83,13 +90,13 @@ pub const RECORDS_PARTY_PANEL: [usize; 3] = [6, 78, 79];
 pub const RECORDS_COMMAND_CHIP: [usize; 4] = [8, 9, 10, 11];
 
 /// PSX-EXE `t_addr` -> file-offset resolver for `SCUS_942.54`'s data segment.
-struct ExeMap {
+pub(crate) struct ExeMap {
     t_addr: u32,
     t_size: u32,
 }
 
 impl ExeMap {
-    fn parse(scus: &[u8]) -> Option<Self> {
+    pub(crate) fn parse(scus: &[u8]) -> Option<Self> {
         if scus.len() < 0x800 || &scus[0..8] != b"PS-X EXE" {
             return None;
         }
@@ -98,7 +105,7 @@ impl ExeMap {
         Some(Self { t_addr, t_size })
     }
 
-    fn off(&self, va: u32) -> Option<usize> {
+    pub(crate) fn off(&self, va: u32) -> Option<usize> {
         if va < self.t_addr || va >= self.t_addr.checked_add(self.t_size)? {
             return None;
         }

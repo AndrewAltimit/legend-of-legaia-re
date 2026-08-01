@@ -18,6 +18,7 @@ original executable.
 - [`actor_tick` - `FUN_80021DF4`](#actor_tick---fun_80021df4)
 - [`status_effects`](#status_effects)
 - [`scus_core_helpers`](#scus_core_helpers)
+- [`battle_cam_script` - `FUN_801D5854`](#battle_cam_script---fun_801d5854)
 - [Battle-overlay leaves outside the action SM](#battle-overlay-leaves-outside-the-action-sm)
 - [`field_party_cursor` - `FUN_801F1278`](#field_party_cursor---fun_801f1278)
 - [`battle_formulas`](#battle_formulas)
@@ -79,6 +80,14 @@ Effect VM with a 32-master + 128-child slot pool.
 (`Pool::child_billboards` is the pass-2 render snapshot); the lifecycle is
 pure data (the catalog's spawn records + animation frames), so `EffectHost`
 only supplies the RNG and the summon routing.
+
+The sibling module `effect_billboard` carries the one step a *world-space*
+billboard builder gets wrong. Retail's quad projector `FUN_800195A8` transforms
+the sprite centre through the camera matrix and only then adds the
+half-extents, in view space - so the battle camera's 4x base matrix scales the
+centre and must not scale the size. `world_half_extents` divides it back out;
+both hosts call it, since `engine-render` links wgpu and the browser play page
+cannot depend on it.
 
 ## `move_vm` - `FUN_80023070`
 
@@ -221,6 +230,25 @@ a cast differently elsewhere is charging twice or charging nothing. See
 [`docs/subsystems/battle-action.md`](../../docs/subsystems/battle-action.md)
 § Magic in the port for which half of a cast each side owns.
 
+## `battle_cam_script` - `FUN_801D5854`
+
+The phase-scripted battle camera, held once for every host. The module owns
+retail's framing cases and the phase that selects each: the arts / spell / item
+**input** close-up (case `0`), the per-action framing and its two arms (case
+`6`), the post-strike **two-shot** on the attacker-target midpoint (case `7`),
+the end-of-action shot on the target (case `8`), and the far Begin/Run framing
+sized to the live formation (case `9`). `drive` is the single entry both hosts
+call, so the create / retarget / phase-change / step ordering cannot diverge.
+
+Three things here are easy to get wrong and are pinned in
+[`docs/subsystems/battle.md`](../../docs/subsystems/battle.md#battle-camera-exact):
+"a battle menu is open" does **not** select the close-up (the command chooser
+keeps the far framing, only the input pickers take case `0`); case `9` is
+re-derived every pass, so a depth frozen while the formation was collapsed
+mid-approach never re-opens; and the resting yaw is the free-running orbit a
+fight *inherits* from the field camera, not a constant - five retail states at
+one framing read five different yaws.
+
 ## Battle-overlay leaves outside the action SM
 
 Five more `0898` bodies whose kernels are ported here, each with its own
@@ -232,7 +260,7 @@ Five more `0898` bodies whose kernels are ported here, each with its own
 | `battle_scatter` | `FUN_801E0080` | The arena's emitter/particle pools: record layouts, both script advances, the countdown drain, the position integration, the brightness ramp and the mirror-bit UVs. |
 | `battle_arts_auto_combo` | `FUN_801F0450` | The AI-side Arts assembler's two arms - the learned-arts auto-fill and the weighted candidate pool with its AP-gauge spend loop. |
 | `battle_attack_camera` | `FUN_801D71B8` | The per-art attack camera's gate, pose seed, character / art dispatch and animation-frame push; the seventeen per-art arms need the `0x801F4E10` table parsed first. |
-| `battle_value_readout` | `FUN_801E805C` | The multi-cast readout's decimal split (both reciprocal divides), the `(id, id-4)` teardown pairing, the slot-to-widget indirection and the label quad. |
+| `battle_value_readout` | `FUN_801E805C` | The battle value readout: the landed-hit numeral's sheet, cells and pop/rise envelope, plus the multi-cast half's decimal split, teardown pairing, slot-to-widget indirection and label quad. |
 | `battle_approach` | `FUN_801DF570` | The attack-approach distance clamp: the projected attacker/target separation and the `[3d/4, d]` band a requested step is clamped into. |
 | `battle_party_panel` | `FUN_801DBB8C`, `FUN_801DBC30`, `FUN_801D84C0` | The battle party-name panels - the label-actor open/teardown pair over `0x801F4E08`, the per-party-size anchors, the all-slots actor reset, and the label-strip blit. |
 | `battle_burst` | `FUN_801F30C4` | The two-mode radial effect burst: four compass iterations x three spawn blocks, the per-block placement / spread / tail arithmetic, and both parameter sets. |

@@ -175,6 +175,50 @@ So the dev names map 1:1 onto the four retail `befect_data` slots. Earlier readi
 
 The per-entry PROT extractor over-reads here (neighbouring entries' extended footprints overlap), so naive `.BIN` files bleed into their neighbours. `asset befect-cluster PROT.DAT --cdname CDNAME.TXT [--out DIR]` footprint-bounds and classifies a window of entries; note it resolves the CDNAME symbol in define-number space, so its "befect" window is extraction 872..875 - retail `vdf.dat`, `efect.dat`, `player.lzs` (= `player_data`), and a `sound_data2` VAB stream. Its LZS-section expansion of entry 874 is the **player.lzs** split, not the battle effect files.
 
+#### The battle value readout's glyph sheet lives here too
+
+`etim.dat`'s **third** TIM - page `(448, 0)`, CLUT row 476 - is not all effect
+texels. Its lower half is the battle screen's **value readout** sheet: the
+numeral a landed hit throws, and the labels the combo cluster stacks. Decoding
+the page at 4bpp through the sub-palette at VRAM `(48, 476)` (CBA word
+`0x7703`) makes it legible:
+
+| texels | content |
+|---|---|
+| `v = 64..=87` | ten 24x24 digit cells, strip order **`1234567890`** |
+| `u = 0..=111, v = 152..=175` | the word `SUPER` |
+| `u = 0..=111, v = 176..=199` | the word `HYPER` |
+| `u = 112..=215, v = 176..=199` | the shared tail `ARTS!!` |
+| `u = 0..=127, v = 200..=223` | the word `MIRACLE` |
+| `u = 128..=199, v = 200..=223` | the word `NEW` |
+| `u = 0..=55, v = 224..=239` | the `DAMAGE` label |
+| `u = 0..=31, v = 240..=255` | the `HIT` label |
+| `u = 32..=79, v = 240..=255` | the `TOTAL` label |
+
+##### The four Arts banners are composed, not stored
+
+Only one `ARTS!!` exists on the sheet. The banner emitter `FUN_801E2650` draws a
+**pair** of quads per call: the first takes the position-selected word row above,
+the second always takes `u 112..=215, v 176..=199` - so the four positions render
+`NEW ARTS!!` / `HYPER ARTS!!` / `MIRACLE ARTS!!` / `SUPER ARTS!!`, the halves
+sliding in from opposite sides of the screen to a per-position seam. That is what
+`ctx[+0x28B]` selects and `ctx[+0x28C]` clocks: the **Arts announcement banner**,
+not a full-screen flash (a reading this decode falsifies - see
+[`reference/functions/audio.md`](../reference/functions/audio.md#audio)).
+
+The strip starts at `1`, so digit `d`'s cell is `((d + 9) % 10) * 24`. This is
+a *different* sheet from the HUD's `cur / max` numerals, which are 8x12 cells
+off the menu-glyph atlas through CLUT row 510
+([`battle.md` § screen chrome](../subsystems/battle.md#battle-screen-chrome-packet-pinned)) -
+one screen carries both, and confusing them puts a damage figure in a party
+panel's cell width.
+
+Because the sheet rides `etim.dat`, a host that has made the battle effect
+atlas resident already has the digits: no separate asset, no atlas bake. The
+per-hit numeral's geometry and its pop / rise envelope are pinned in
+[`engine-vm::battle_value_readout`](../../crates/engine-vm/src/battle_value_readout.rs),
+whose module header carries the display-list measurements.
+
 #### Effect texels in VRAM - pixel-verified
 
 `FUN_800198e0` is the general packed-image → VRAM uploader the loader uses (loader state `9` walks a pack and calls it per entry): it reads a per-chunk tag/flag word, builds a PSX `RECT`, and calls `FUN_800583c8` = `LoadImage` (`0x800156d4`) to DMA pixels into VRAM, maintaining a CLUT cache at `0x8007BEC0`. (Same routine the title / menu / save overlays and the type-`0x01` CLUT walker `FUN_8001fe70` use.)

@@ -186,6 +186,19 @@ pub struct BillboardCorners {
 /// ported, and engine-shell draws its live effect billboards as 3D meshes
 /// (`effect_billboard_mesh`) rather than through a projected screen quad,
 /// so nothing else reaches for it. Exercised by unit tests; do not delete.
+///
+/// The rider set is large and mostly ported, which is why "find the caller"
+/// is not the work here: a `jal 0x800195a8` sweep of the dump corpus returns
+/// **17** distinct retail callers over 24 call sites, and 10 of the 17 have
+/// ports (`world_map_panel_actors`, `move_vm_overlay_ext`, `battle_scatter`,
+/// `effect_vm::pool`, `afterimage` x2, `field_actor_billboard`, `screen_fx`,
+/// `battle_on_screen`). Every one of those ports reached its result some
+/// other way - as a 3D mesh, or as a typed draw - so the projector is the
+/// step they each replaced, not a step they are missing. The seven with no
+/// port are `FUN_800485BC`, `FUN_801D08E4` (the slot-machine cabinet),
+/// `FUN_801D5C58`, `FUN_801DF6B8`, `FUN_801E7448`, `FUN_801C2520` and
+/// `FUN_801CD998`; `FUN_800485BC`'s four sites share the three-stack-arg
+/// shape that pins this signature's trailing arguments.
 #[allow(clippy::too_many_arguments)]
 pub fn project_billboard(
     rot: &GteMat3,

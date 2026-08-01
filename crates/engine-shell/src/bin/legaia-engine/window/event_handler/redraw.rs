@@ -633,6 +633,9 @@ impl PlayWindowApp {
             let in_world_map_now = self.session.host.world.mode == SceneMode::WorldMap;
             let nclip_mode = u32::from(cutscene_cam.is_some() && !in_world_map_now) * 2;
             r.set_backface_cull(nclip_mode);
+            if std::env::var_os("LEGAIA_DIAG_NOSEMI").is_some() {
+                r.set_semi_blend(false);
+            }
             // World-map mode frames the loaded map with the
             // controller-driven camera (azimuth / zoom / pan); an active
             // in-engine cutscene (opdeene opening prologue) frames the
@@ -1043,25 +1046,33 @@ impl PlayWindowApp {
                     // `cam * F` recovers the raw PSX vertex the retail
                     // transform expects.
                     //
-                    // Drawn ONCE, world-fixed - matching retail, which
-                    // sets the dome up as a background **actor**
+                    // World-fixed, and **one draw but two copies** - do not
+                    // read the single `draws.push` below as "one instance".
+                    // Retail sets the dome up as a background **actor**
                     // (`FUN_800513F0`: `tmd_register` -> `DAT_8007C018[]`
                     // + `FUN_80020de0` actor_alloc + `FUN_80020f88` link)
-                    // rendered by the normal actor path `FUN_80048A08`.
-                    // The stage TMD is a HALF arena, not a full surround
+                    // rendered by the normal actor path `FUN_80048A08`, and
+                    // it renders it **twice**: a second copy under either a
+                    // per-stage `Ry(180)` half-turn or a mirror-X selected by
+                    // the SCUS table `DAT_80078B50`
+                    // (`legaia_asset::battle_backdrop::SecondCopy`). The
+                    // stage TMD is a HALF arena, not a full surround
                     // (map01's dome is a front half, verts `Z in [-1260,
                     // +12155]`; town01's arena is authored entirely at
                     // `X >= 0`, open side facing -X - the sea horizon in
-                    // the retail Tetsu close-up). Retail never completes
-                    // the circle: its captures show 44-81% horizon
-                    // coverage depending on angle, and the phase-scripted
-                    // camera either sits in a close-up or clips the
-                    // near-side arc behind the eye. An earlier engine
-                    // build drew a second 180-deg-Y mirror instance to
-                    // "complete" the surround - for town01 that planted a
-                    // duplicate village wall across the open sea side, so
-                    // the mirror draw is removed (one instance, like
-                    // retail). See `project_battle_backdrop_is_prot88_dome`.
+                    // the retail Tetsu close-up), which is why the second
+                    // copy exists at all.
+                    //
+                    // The port applies that copy at **mesh build** time, not
+                    // here: `battle_stage_meshes` pre-appends it with
+                    // `VramMesh::append_scaled` (winding flipped for the
+                    // mirror), so the page and the window both upload one
+                    // mesh and this loop pushes one draw. An older comment
+                    // here said "the mirror draw is removed (one instance,
+                    // like retail)" - that described a *withdrawn* draw-time
+                    // second instance and was wrong about retail besides.
+                    // See `project_battle_backdrop_is_prot88_dome` and
+                    // `docs/subsystems/battle.md` § the second copy.
                     //
                     // **Stage scale.** The stage rides the same
                     // [`BATTLE_WORLD_SCALE`] base matrix the actors do
@@ -1509,6 +1520,27 @@ impl PlayWindowApp {
                                 }
                                 _ => {}
                             }
+                            // Hit reaction: the struck actor ramps toward
+                            // white for a few frames after damage lands.
+                            // Retail's own recolour is the per-actor colour
+                            // word `FUN_8004A908` steps through the actor
+                            // OTZ/colour setup; the port has no per-actor
+                            // colour word, so the flash rides the same
+                            // saturated `DrawCue` seam the target cursor
+                            // uses - a flat blend toward the cue colour,
+                            // decaying over `HIT_FLASH_FRAMES`. It composes
+                            // over the cursor tint rather than beside it:
+                            // a struck monster that is also the pointed-at
+                            // one flashes, then falls back to its pulse.
+                            if let Some(age) = self.battle_hit_age(i) {
+                                let k = 1.0 - f32::from(age) / f32::from(HIT_FLASH_FRAMES.max(1));
+                                cue = Some(legaia_engine_render::DrawCue {
+                                    far: [1.0, 1.0, 1.0],
+                                    near_z: -1.0,
+                                    far_z: 0.0,
+                                    max_ir0: 0.8 * k,
+                                });
+                            }
                         }
                         draws.push(SceneDraw {
                             mesh,
@@ -1686,8 +1718,21 @@ impl PlayWindowApp {
             // 4x world-scale base under the shared rotation) so
             // effects land on the scaled actor stage; field FX use
             // the field camera as-is.
-            let fx_cam = if fx_in_battle && self.battle_stage_mesh.is_some() {
-                cam * Mat4::from_scale(Vec3::splat(BATTLE_WORLD_SCALE))
+            // The uniform scale `fx_cam` composes on top of `cam`. Effect
+            // billboards need it separately from the matrix: retail forms a
+            // sprite quad's corners in VIEW space, after the camera matrix has
+            // scaled the centre (`FUN_800195a8` - the `MVMVA` transforms the
+            // centre, the corner adds follow it, and the matrix is reset to
+            // identity before the projection), so the half-extents must not go
+            // through the 4x a second time. See
+            // `legaia_engine_vm::effect_billboard`.
+            let fx_scale = if fx_in_battle && self.battle_stage_mesh.is_some() {
+                BATTLE_WORLD_SCALE
+            } else {
+                1.0
+            };
+            let fx_cam = if fx_scale != 1.0 {
+                cam * Mat4::from_scale(Vec3::splat(fx_scale))
             } else {
                 cam
             };
@@ -1708,7 +1753,14 @@ impl PlayWindowApp {
             // small at the wrong stage position. The camera-facing basis
             // derives from the same matrix, so the quads face the camera
             // that actually draws them.
-            let (effect_billboard, effect_lines) = self.build_effect_billboards(r, fx_cam);
+            let (effect_billboard, effect_lines) =
+                self.build_effect_billboards(r, fx_cam, fx_scale);
+            self.diag_effect_billboards(fx_cam);
+            let effect_billboard = if std::env::var_os("LEGAIA_DIAG_NOFX").is_some() {
+                None
+            } else {
+                effect_billboard
+            };
             if let Some(mesh) = effect_billboard.as_ref() {
                 draws.push(SceneDraw {
                     mesh,
@@ -1800,6 +1852,26 @@ impl PlayWindowApp {
                 color_draws.push(ColorSceneDraw {
                     mesh: m,
                     mvp: screen_fx_mvp,
+                });
+            }
+            // Floating value readout: the numeral a landed hit throws.
+            //
+            // Retail's own art and geometry - 24x24 cells off the battle
+            // effect atlas (texture page `0x27`, CLUT `0x7703`), thrown over
+            // the STRUCK actor, growing about a fixed horizontal centre and
+            // rising to screen row 32. Laid out by
+            // `engine-vm::battle_value_readout::value_cells`, whose module
+            // header carries the packet + VRAM provenance. Drawn here rather
+            // than in the HUD builder because the seat needs the target's
+            // projected screen position, which only a host holding the camera
+            // has; it rides the same screen-space ortho MVP as the widget
+            // overlays above, so the numerals sit in front of the fight.
+            let value_readout = self.battle_value_readout_mesh(r, fx_cam);
+            if let Some(m) = &value_readout {
+                draws.push(SceneDraw {
+                    mesh: m,
+                    mvp: screen_fx_mvp,
+                    cue: None,
                 });
             }
             // The scripted screen fade (op 0x4C 0x12) is NOT drawn as a wash
@@ -1936,5 +2008,221 @@ impl PlayWindowApp {
         self.battle_intro = battle_intro;
         legaia_engine_render::profile::end_frame();
         self.win.request_redraw();
+    }
+}
+
+/// Where a landed hit's numeral starts, above the struck actor's own origin,
+/// in stage pixels. Retail's start seat is captured only once
+/// (`battle_melee_hit_spark`, top edge 49 with the actor mid-frame), so the
+/// lift is engine-chosen; the row it rises **to** is pinned.
+const VALUE_READOUT_ACTOR_LIFT: i32 = 26;
+
+/// Frames the struck actor stays flashed after a hit lands.
+pub(super) const HIT_FLASH_FRAMES: u16 = 10;
+
+impl PlayWindowApp {
+    /// Screen-space stage position (retail 320x240) an actor's origin
+    /// projects to under `cam`, or `None` when it is behind the camera.
+    pub(super) fn actor_stage_point(&self, slot: usize, cam: Mat4) -> Option<(i32, i32)> {
+        let a = self.session.host.world.actors.get(slot)?;
+        let w = Vec3::new(
+            a.move_state.world_x as f32,
+            a.move_state.world_y as f32,
+            a.move_state.world_z as f32,
+        );
+        let clip = cam * w.extend(1.0);
+        if clip.w <= 0.01 {
+            return None;
+        }
+        let ndc = clip.truncate() / clip.w;
+        Some((
+            ((ndc.x * 0.5 + 0.5) * 320.0) as i32,
+            ((0.5 - ndc.y * 0.5) * 240.0) as i32,
+        ))
+    }
+
+    /// `LEGAIA_DIAG_FX=1` instrument: report where each live effect billboard
+    /// actually lands, in the frame's own FX camera.
+    ///
+    /// "The spawn fires and nothing appears" has three distinguishable causes
+    /// and this separates them in one line per sprite: a clip `w <= 0` (the
+    /// quad is behind the eye), NDC outside `[-1, 1]` (projected off-screen),
+    /// or an in-frame NDC with texel coordinates that name a page nothing
+    /// uploaded (the quad draws, but every texel discards). Off by default -
+    /// the log is per-frame per-sprite.
+    fn diag_effect_billboards(&self, cam: Mat4) {
+        if std::env::var_os("LEGAIA_DIAG_FX").is_none() {
+            return;
+        }
+        let sprites = self.session.host.world.active_effect_sprites();
+        if sprites.is_empty() {
+            return;
+        }
+        for slot in 0..4usize {
+            if let Some(a) = self.session.host.world.actors.get(slot) {
+                log::info!(
+                    "DIAG fx actor {slot}: world ({},{},{}) screen {:?}",
+                    a.move_state.world_x,
+                    a.move_state.world_y,
+                    a.move_state.world_z,
+                    self.actor_stage_point(slot, cam)
+                );
+            }
+        }
+        for s in sprites.iter().take(4) {
+            let p = cam * glam::Vec4::new(s.world_pos[0], s.world_pos[1], s.world_pos[2], 1.0);
+            let ndc = if p.w.abs() > 1e-6 {
+                [p.x / p.w, p.y / p.w, p.z / p.w]
+            } else {
+                [f32::NAN; 3]
+            };
+            let u0 = s.uv[0] as u8;
+            let v0 = s.uv[1] as u8;
+            let u1 = u0.saturating_add(s.uv_size[0].saturating_sub(1) as u8);
+            let v1 = v0.saturating_add(s.uv_size[1].saturating_sub(1) as u8);
+            let texels = self
+                .battle_vram
+                .as_ref()
+                .or(self.cpu_vram_base.as_ref())
+                .map(|v| {
+                    v.prim_texture_status(s.clut, s.page, &[(u0, v0), (u1, v0), (u0, v1), (u1, v1)])
+                });
+            // Resolve the sprite's own texel rect through its CLUT, exactly
+            // as the fragment shader would: 4bpp indices out of the texture
+            // page, index 0 discarded, everything else a BGR555 word.
+            let mut opaque = 0usize;
+            let mut total = 0usize;
+            let mut sample = 0u16;
+            if let Some(v) = self.battle_vram.as_ref().or(self.cpu_vram_base.as_ref()) {
+                let px = ((s.page & 0xF) * 64) as usize;
+                let py = (((s.page >> 4) & 1) * 256) as usize;
+                let cx = ((s.clut & 0x3F) * 16) as usize;
+                let cy = ((s.clut >> 6) & 0x1FF) as usize;
+                for dv in 0..s.uv_size[1] as usize {
+                    for du in 0..s.uv_size[0] as usize {
+                        let u = u0 as usize + du;
+                        let word = v.pixel(px + (u >> 2), py + v0 as usize + dv);
+                        let idx = ((word >> (4 * (u & 3))) & 0xF) as usize;
+                        total += 1;
+                        if idx != 0 {
+                            opaque += 1;
+                            if sample == 0 {
+                                sample = v.pixel(cx + idx, cy);
+                            }
+                        }
+                    }
+                }
+            }
+            log::info!(
+                "DIAG fx: n={} pos {:?} size {:?} page {:#04x} clut {:#06x} uv {:?}+{:?} \
+                 bright {:#04x} clip.w {:.1} ndc [{:.3} {:.3} {:.3}] texels {:?} \
+                 opaque {opaque}/{total} sample {sample:#06x}",
+                sprites.len(),
+                s.world_pos,
+                s.size,
+                s.page,
+                s.clut,
+                s.uv,
+                s.uv_size,
+                s.brightness,
+                p.w,
+                ndc[0],
+                ndc[1],
+                ndc[2],
+                texels,
+            );
+        }
+    }
+
+    /// How recently actor `slot` was struck, in frames, or `None` if the
+    /// flash window has passed. Derived from the popup queue, which is what
+    /// the per-strike FX drain already fills.
+    pub(super) fn battle_hit_age(&self, slot: usize) -> Option<u16> {
+        self.battle_hud
+            .popups
+            .iter()
+            .filter(|p| usize::from(p.slot) == slot && !p.is_heal)
+            .map(|p| p.frames_total.saturating_sub(p.frames_remaining))
+            .filter(|&age| age < HIT_FLASH_FRAMES)
+            .min()
+    }
+
+    /// The frame's floating value readout, as one screen-space VRAM-textured
+    /// mesh in stage coordinates.
+    ///
+    /// One run of digit cells per live popup, seated over the struck actor
+    /// (`actor_stage_point`) and laid out by
+    /// `legaia_engine_vm::battle_value_readout::value_cells`. Returns `None`
+    /// outside battle, with no popups, or before the battle VRAM (which is
+    /// what makes the effect atlas's digit page resident) has been uploaded.
+    pub(super) fn battle_value_readout_mesh(
+        &self,
+        r: &legaia_engine_render::Renderer,
+        cam: Mat4,
+    ) -> Option<legaia_engine_render::UploadedVramMesh> {
+        use legaia_engine_vm::battle_value_readout as vr;
+        if self.session.host.world.mode != SceneMode::Battle {
+            return None;
+        }
+        if self.battle_vram.is_none() || self.battle_hud.popups.is_empty() {
+            return None;
+        }
+        let mut pos: Vec<[f32; 3]> = Vec::new();
+        let mut uvs: Vec<[u8; 2]> = Vec::new();
+        let mut cba_tsb: Vec<[u16; 2]> = Vec::new();
+        let mut idx: Vec<u32> = Vec::new();
+        // One numeral per actor, the newest. Retail's readout is a per-slot
+        // **value window** (`_DAT_801F6980`, four halfwords, one per slot), so
+        // a second hit on the same actor replaces the figure rather than
+        // stacking beside it - and stacking is not cosmetic here: two runs
+        // centred on the same point interleave into an unreadable third
+        // number (a 9 landing inside a 10 reads as "190").
+        let mut newest: Vec<&legaia_engine_core::battle_hud::DamagePopup> = Vec::new();
+        for p in &self.battle_hud.popups {
+            if p.status.is_some() {
+                // Status applications have no numeral on the sheet.
+                continue;
+            }
+            match newest.iter_mut().find(|q| q.slot == p.slot) {
+                Some(q) if q.frames_remaining >= p.frames_remaining => {}
+                Some(q) => *q = p,
+                None => newest.push(p),
+            }
+        }
+        for p in newest {
+            let Some((ax, ay)) = self.actor_stage_point(usize::from(p.slot), cam) else {
+                continue;
+            };
+            let age = p.frames_total.saturating_sub(p.frames_remaining);
+            let cells = vr::value_cells(p.amount, ax, ay - VALUE_READOUT_ACTOR_LIFT, age);
+            for c in &cells {
+                let base = pos.len() as u32;
+                let (x0, y0) = (c.x as f32, c.y as f32);
+                let (x1, y1) = (x0 + c.w as f32, y0 + c.h as f32);
+                pos.push([x0, y0, 0.0]);
+                pos.push([x1, y0, 0.0]);
+                pos.push([x0, y1, 0.0]);
+                pos.push([x1, y1, 0.0]);
+                let u1 = c.u.saturating_add(c.cell - 1);
+                let v1 = c.v.saturating_add(c.cell - 1);
+                uvs.extend_from_slice(&[[c.u, c.v], [u1, c.v], [c.u, v1], [u1, v1]]);
+                cba_tsb.extend(std::iter::repeat_n([vr::GLYPH_CLUT, vr::GLYPH_TPAGE], 4));
+                idx.extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
+            }
+        }
+        if idx.is_empty() {
+            return None;
+        }
+        let normals = vec![[0.0f32; 3]; pos.len()];
+        // Retail's quads carry the neutral colour word `0x808080`: the sheet
+        // is already the gold ramp, so a tint here would double-apply it.
+        let colors = vec![[legaia_tmd::legaia_prims::MODULATION_NEUTRAL; 3]; pos.len()];
+        match r.upload_vram_mesh(&pos, &uvs, &cba_tsb, &normals, &colors, &idx) {
+            Ok(m) => Some(m),
+            Err(e) => {
+                log::warn!("battle value readout mesh upload: {e:#}");
+                None
+            }
+        }
     }
 }

@@ -179,14 +179,55 @@ process-matching helpers in
 
 | Thread | Status | What would close it |
 |---|---|---|
-| The battle-**intro** enemy-name banner's chrome and seat | open | A live frame. Every mid-fight surface is packet-pinned ([`battle.md`](../subsystems/battle.md#battle-screen-chrome-packet-pinned)), but the intro banner is transient: no manifest battle save state catches it, and a top-centre sweep of all of them finds nothing. Its frame reads as a rectangular gold border over a blue interior rather than the fight plaque's rounded gold plate, so it is probably a different `kind` on the same placement table. Runbook: drive `v0_1_battle_loading_tetsu` forward under PCSX-Redux, dump main RAM on the first frames after the mode flips, then walk the ordering table as the mid-fight pins were walked. |
-| Which element the `+0x0E` **kind pair** selects, per value | open | The correlation is strong on the two values a capture covers - `0x0101` on every blue command chip, `0x0202` on the gold name plaque - and the remaining values (`0x0303` full-width message rows, `0x0404` framed windows, `0x2B2B` the status bar, `0x32`/`0x33` the roster panels) are named only by what sits at their seats. Reading the dispatcher that consumes `+0x0E` would turn a correlation into a mapping. |
-| The element-**badge** palette selector | open | The badge strip's geometry is pinned (eight 20x12 badges, 32-texel pitch from `u = 6`, rows `v = 192` / `208`), but each badge carries its own sub-palette out of the CLUT block at VRAM x `896..`, rows 498 / 499, and the captured pairs (`u = 6` with `(896, 498)`, `38` with `(912, 498)`, `166` with `(912, 499)`, `230` with `(944, 499)`) do not fall out of the badge index alone. Whatever writes the CLUT word is the answer. |
+| The battle-**intro** enemy-name banner - which placement record raises it | mostly resolved (chrome, seat and frame law captured on the same surface mid-fight; only the record identity is owed) | [details ↓](#the-battle-intro-enemy-name-banner) |
 
-Two recent threads closed by capture: the ground grid's depth-cue far colour
-- captured at the draw by an exec-breakpoint probe and wired into the port -
-and the battle-intro tile shatter's side-face shade page, which resolved as a
-resident field asset and now draws. Both in
+### The battle-intro enemy-name banner
+
+*Status:* the chrome, the seat and the frame arithmetic are captured - on the
+same banner surface, mid-fight. What is owed is only which placement record
+the intro instance raises.
+
+The thread opened as "chrome and seat unknown, blocked on a live frame", on
+the premise that no manifest state catches the surface. That premise was
+wrong about the surface rather than about the intro: a corner-sweep of the
+whole save library finds the battle's **full-width top message banner** live
+in two states - `rim_elm_gimard_seru_capture_after` (the mid-battle Seru
+"captured!" banner) and `noa_levelup_banner`.
+
+Both draw the same thing, and it is the frame the thread described. It is the
+widget table's **class-0 9-slice window**, tile-set 0, sub-palette 2: 4x4
+corners and 24x4 / 4x24 edges cut from one 32x32 patch at texels `(160, 0)`,
+content pen `(16, 12)`, frame origin `(8, 4)`, interior 20 tall, top and
+bottom edges tiled 24 wide from `x = 12` with the last tile clipped. Every
+placement record whose kind byte is `0x03` / `0x04` / `0x44` frames itself
+that way. Table and law:
+[`battle.md`](../subsystems/battle.md#the-widget-class-table---where-every-chrome-sprite-comes-from).
+
+One sub-claim in the old row is **falsified** by those frames: there is no
+blue interior. Retail draws the border sprites and the glyph run and nothing
+else - no fill primitive of any kind under the window, so the scene shows
+through. The blue-marbled 32x32 patch that made "gold border over a blue
+interior" a natural reading is the fill the framed *menu* windows use.
+
+Residual: the intro instance is transient, so which top-seated `0x0303`
+record it raises - the candidates park at `(16, -24)` and live at `(16, 14)`,
+and the runtime overwrites the disc width with the measured enemy name - is
+still capture-owed. The runbook is unchanged: drive
+`v0_1_battle_loading_tetsu` forward under PCSX-Redux and dump main RAM on the
+first frames after the mode flips. The read-out is mechanical -
+[`scripts/mednafen/widget-draw-sweep.py`](../../scripts/mednafen/widget-draw-sweep.py)
+joins any frame's sprites back to the widget records that drew them.
+
+Two operating notes apply to any run: PCSX-Redux probes **do not exit on their
+own** ([`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md)), and
+`pgrep -f` matches the caller's own command line
+([`shell-observer-traps.md`](../tooling/shell-observer-traps.md)).
+
+Recently closed in this area: the `+0x0E` kind-pair mapping and the
+element-badge palette selector both fell out of the widget-class table, and the
+status-element badge sheet `0x18..=0x20` is pinned cell by cell. Before them,
+the ground grid's depth-cue far colour and the battle-intro tile shatter's
+side-face shade page closed by capture. All in
 [`re-settled-threads.md`](re-settled-threads.md#battle--arts--level-up).
 
 

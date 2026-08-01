@@ -11,7 +11,11 @@
 //!   for a positive speed, on the range check `FUN_8004E2F0` still failing,
 //!   so the walk stops itself exactly on arrival. The SM's approach states
 //!   only stage the walk clip and poll the range.
-//!   [`World::tick_battle_locomotion`] is that drive's engine slot.
+//!   [`World::tick_battle_locomotion`] is that drive's engine slot. There is
+//!   **no walk-home leg**: an action leaves its combatants standing where it
+//!   put them, and the seat pair the range law measures against is re-taken
+//!   from the live pair at `DoneCleanup` - see
+//!   [`World::tick_battle_locomotion`] for the capture evidence.
 //! - **The separation pass** `FUN_80051078` / `FUN_80050BB8` runs on the
 //!   line after the action SM, every live battle frame (`FUN_80046A20`:
 //!   `jal 0x801E295C; jal 0x80051078`). [`World::tick_battle_separation`]
@@ -190,27 +194,43 @@ impl World {
     /// retail's frame order (the actor-list anim tick runs before
     /// `FUN_80046A20`'s SM dispatch).
     ///
-    /// Two drives:
+    /// One drive and one commit:
     ///
     /// - **Approach** (acting actor, states `0x15`/`0x16`/`0x19`): step the
     ///   live pair along the facing toward the target, gated on the range
     ///   check still failing - the retail positive-speed gate, which stops
     ///   the walk exactly on arrival - and clamped so a step never crosses
     ///   the target's live position.
-    /// - **Return** (every other living actor, and the acting actor outside
-    ///   the approach states): step the live pair back toward the seat,
-    ///   clamping on arrival. Retail's return is the recover clip's
-    ///   negative-speed root motion (ungated, clip-timed); targeting the
-    ///   seat directly, and letting an off-turn actor keep walking home, is
-    ///   the engine's grounded approximation. It reproduces the walk-back
-    ///   with the same step arithmetic without modelling per-clip retreat
-    ///   durations, and it keeps the invariant the seat-measured range law
-    ///   depends on - an idle actor sits at its seat, so an attacker
-    ///   chasing its live position converges on the pair the gate measures.
-    ///   (A turn budget that strands the target off-seat otherwise parks
-    ///   the next attacker oscillating around a live position whose seat
-    ///   metric never closes.) A monster that would commit forward drift in
-    ///   retail instead re-seats exactly.
+    /// - **Ground commit** (state `0x50`, once per action): copy every living
+    ///   actor's live pair onto its seat pair. **Nothing walks home.**
+    ///
+    /// ## Why there is no walk-home leg
+    ///
+    /// Retail does not return a combatant to its authored formation seat when
+    /// an action ends - it leaves it standing where the fight put it, and the
+    /// pair the range law measures against moves with it. Four capture-library
+    /// states of the same solo fight make that measurable: two read the
+    /// authored formation (party `z = -800`, monster `z = +800`, 1600 apart)
+    /// and two - later in the same fight - read the party member at
+    /// `z ~ -540` and the monster at `z ~ -250`, ~300 apart and both far off
+    /// the formation, with each actor's `+0x3C`/`+0x40` pair sitting within
+    /// ~110 units of its live `+0x34`/`+0x38` pair in every one of them. An
+    /// actor that had been walked home could not read those positions, and a
+    /// fixed seat could not stay that close to a live pair that has moved.
+    ///
+    /// So the engine commits the ground instead of undoing it: the seat is
+    /// held still for the duration of an action (a stable goal for the
+    /// approach and a stable reference for the separation pass) and then
+    /// re-taken from the live pair at `DoneCleanup`. The invariant the
+    /// seat-measured range law needs - a parked actor is *at* the pair the
+    /// gate measures - survives by the same route retail keeps it, and the
+    /// next attacker walks at where its target actually stands.
+    ///
+    /// What is deliberately **not** modelled is retail's recovery backstep
+    /// (the recover clip's own negative-speed root motion): it is clip-timed
+    /// and no clip-duration source is decoded, so the attacker ends the action
+    /// on the range boundary the arrival shove pushed the target out to rather
+    /// than a step behind it.
     pub(in crate::world) fn tick_battle_locomotion(&mut self) {
         use vm::battle_action::ActionState;
         self.seed_battle_seats();
@@ -222,23 +242,24 @@ impl World {
             state,
             ActionState::AttackWindup | ActionState::AttackAdvance | ActionState::AttackShortStep
         );
-        // The acting actor holds its ground through the close-range / strike
-        // states; it walks back only once the recovery band starts.
-        let active_returns = matches!(
-            state,
-            ActionState::AttackRecovery
-                | ActionState::AttackReturn
-                | ActionState::DoneCleanup
-                | ActionState::DoneFadeDown
-                | ActionState::DoneMultiCast
-                | ActionState::EndOfAction
-        );
-        for slot in 0..self.actors.len() {
-            if slot == active && approaching {
-                self.drive_attack_approach(slot);
-            } else if (slot != active || active_returns) && self.actors[slot].battle.liveness != 0 {
-                self.drive_attack_return(slot);
+        if approaching && active < self.actors.len() {
+            self.drive_attack_approach(active);
+        }
+        if state == ActionState::DoneCleanup {
+            self.commit_battle_ground();
+        }
+    }
+
+    /// Re-take every living actor's seat pair from its live pair - the
+    /// end-of-action ground commit described on
+    /// [`Self::tick_battle_locomotion`]. A downed actor keeps its seat so the
+    /// slot it fell in stays the reference a revive re-enters at.
+    fn commit_battle_ground(&mut self) {
+        for a in self.actors.iter_mut() {
+            if a.battle.liveness == 0 {
+                continue;
             }
+            a.battle.seat = Some((a.move_state.world_x, a.move_state.world_z));
         }
     }
 
@@ -281,38 +302,6 @@ impl World {
         let ms = &mut self.actors[slot].move_state;
         ms.world_x = clamp(ms.world_x, dx, tx);
         ms.world_z = clamp(ms.world_z, dz, tz);
-    }
-
-    /// Return leg: root-motion-sized step back toward the seat, clamped to
-    /// exact arrival (see [`Self::tick_battle_locomotion`]).
-    fn drive_attack_return(&mut self, slot: usize) {
-        let Some(a) = self.actors.get(slot) else {
-            return;
-        };
-        let live = (a.move_state.world_x, a.move_state.world_z);
-        let seat = self.battle_seat_of(slot);
-        if live == seat {
-            return;
-        }
-        let bearing = vm::battle_action::bearing_12bit_approx(live.1, live.0, seat.1, seat.0);
-        let (speed, scale) = self.battle_root_motion_of(slot);
-        let (sin, cos) = motion::trig12(bearing);
-        let (dx, dz) = motion::root_motion_step(sin, cos, speed.abs(), 1, scale);
-        // Per-axis step with arrival clamp: never overshoot the seat.
-        let clamp = |cur: i16, step: i32, dest: i16| -> i16 {
-            let next = i32::from(cur) + step;
-            let (lo, hi) = if cur <= dest {
-                (cur, dest)
-            } else {
-                (dest, cur)
-            };
-            next.clamp(i32::from(lo), i32::from(hi)) as i16
-        };
-        let ms = &mut self.actors[slot].move_state;
-        ms.world_x = clamp(ms.world_x, dx, seat.0);
-        ms.world_z = clamp(ms.world_z, dz, seat.1);
-        // Face the walk-back direction while moving.
-        self.actors[slot].battle.facing_angle = bearing & 0xFFF;
     }
 
     /// PORT-adjacent driver for `FUN_80051078` / `FUN_80050BB8` (the kernels
@@ -432,34 +421,86 @@ mod tests {
     }
 
     #[test]
-    fn return_leg_walks_back_to_the_seat_and_clamps() {
+    fn nothing_walks_an_arrived_attacker_home() {
+        // The recovery / done band must leave an arrived attacker exactly
+        // where the strike left it. Retail does; the port used to ramp it
+        // back to the authored seat over the whole Done budget.
         let mut w = battle_world();
+        w.actors[0].battle.liveness = 1;
         w.tick_battle_locomotion(); // seed seats
         let seat = w.battle_seat_of(0);
-        // Displace the attacker as an arrived approach would.
-        w.actors[0].move_state.world_z = seat.1 + 1360;
-        w.actors[0].move_state.world_x = seat.0 + 7;
-        w.battle_ctx.active_actor = 0;
-        w.battle_ctx.action_state = ActionState::AttackReturn.as_byte();
-        let mut ticks = 0;
-        while (
-            w.actors[0].move_state.world_x,
-            w.actors[0].move_state.world_z,
-        ) != seat
-            && ticks < 500
-        {
-            w.tick_battle_locomotion();
-            ticks += 1;
+        let arrived = (seat.0 + 7, seat.1 + 1360);
+        for state in [
+            ActionState::AttackRecovery,
+            ActionState::AttackReturn,
+            ActionState::DoneFadeDown,
+            ActionState::EndOfAction,
+        ] {
+            w.actors[0].move_state.world_x = arrived.0;
+            w.actors[0].move_state.world_z = arrived.1;
+            w.battle_ctx.active_actor = 0;
+            w.battle_ctx.action_state = state.as_byte();
+            for _ in 0..200 {
+                w.tick_battle_locomotion();
+            }
+            assert_eq!(
+                (
+                    w.actors[0].move_state.world_x,
+                    w.actors[0].move_state.world_z
+                ),
+                arrived,
+                "state {state:?} moved the attacker off the ground it ended on"
+            );
         }
+    }
+
+    #[test]
+    fn done_cleanup_commits_the_ground_as_the_new_seat() {
+        let mut w = battle_world();
+        w.actors[0].battle.liveness = 1;
+        w.actors[1].battle.liveness = 1;
+        w.tick_battle_locomotion(); // seed seats
+        let seat0 = w.battle_seat_of(0);
+        let arrived = (seat0.0 + 7, seat0.1 + 1360);
+        w.actors[0].move_state.world_x = arrived.0;
+        w.actors[0].move_state.world_z = arrived.1;
+        // Mid-action the seat is still the one the approach aimed at.
+        w.battle_ctx.active_actor = 0;
+        w.battle_ctx.action_state = ActionState::AttackChain.as_byte();
+        w.tick_battle_locomotion();
         assert_eq!(
-            (
-                w.actors[0].move_state.world_x,
-                w.actors[0].move_state.world_z
-            ),
-            seat,
-            "return leg re-seats exactly"
+            w.battle_seat_of(0),
+            seat0,
+            "the seat holds during an action"
         );
-        assert!(ticks > 1, "the walk-back is a multi-tick ramp, not a snap");
+        // The action's cleanup state re-takes it from the live pair.
+        w.battle_ctx.action_state = ActionState::DoneCleanup.as_byte();
+        w.tick_battle_locomotion();
+        assert_eq!(
+            w.battle_seat_of(0),
+            arrived,
+            "DoneCleanup commits the ground the action ended on"
+        );
+        // ... which is what keeps the seat-measured range law honest: the
+        // next attacker now walks at where this actor actually stands.
+        assert_eq!(
+            w.battle_range_metric(1, 0),
+            w.battle_range_metric(1, 0),
+            "range metric resolves against the committed seat"
+        );
+    }
+
+    #[test]
+    fn a_downed_actor_keeps_its_seat_through_the_commit() {
+        let mut w = battle_world();
+        w.actors[0].battle.liveness = 1;
+        w.actors[1].battle.liveness = 0;
+        w.tick_battle_locomotion();
+        let seat1 = w.battle_seat_of(1);
+        w.actors[1].move_state.world_x = seat1.0 + 500;
+        w.battle_ctx.action_state = ActionState::DoneCleanup.as_byte();
+        w.tick_battle_locomotion();
+        assert_eq!(w.battle_seat_of(1), seat1, "a downed slot is not re-seated");
     }
 
     #[test]
@@ -503,11 +544,12 @@ mod tests {
     }
 
     #[test]
-    fn attack_chain_round_trips_position_through_the_sm() {
+    fn attack_chain_walks_the_attacker_in_and_leaves_it_there() {
         // The SM + locomotion pair, interleaved like `live_battle_tick`
         // does: a party attacker seated 1600 units from its target must
         // physically walk in (AttackShortStep holds while out of range),
-        // land the staged strike, and walk back through the recovery band.
+        // land the staged strike, and then STAY on the ground it fought on -
+        // with that ground committed as its new seat.
         let mut w = battle_world();
         for i in 0..2 {
             w.actors[i].battle.liveness = 1;
@@ -549,16 +591,22 @@ mod tests {
             struck,
             "the strike edge never fired - the walk never arrived"
         );
-        // The return leg pulled it back toward the seat (the Done band's
-        // frame budget bounds how far; retail also leaves committed drift).
+        // No walk-home: the attacker ends the action at its closed-in
+        // distance, not back at the authored seat.
         let end = (
             w.actors[0].move_state.world_x,
             w.actors[0].move_state.world_z,
         );
         let end_dist = i32::from(end.1) - i32::from(seat0.1);
-        assert!(
-            end_dist < max_dist,
-            "the return leg never ran: end {end_dist} vs peak {max_dist}"
+        assert_eq!(
+            end_dist, max_dist,
+            "the attacker must hold the ground it closed to"
+        );
+        // ... and that ground is now its seat (committed at DoneCleanup).
+        assert_eq!(
+            w.battle_seat_of(0),
+            end,
+            "the action's ground was committed as the new seat"
         );
     }
 }

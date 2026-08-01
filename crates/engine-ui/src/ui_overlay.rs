@@ -9,6 +9,10 @@
 //! used to live here; nothing called it on either host, so it was removed
 //! rather than waived in the ui-host-drift gate.
 
+use crate::battle_hud_chrome::{
+    STATUS_BADGE_PANEL_SEAT, message_banner_chrome_draws_for, message_banner_content,
+    message_banner_text_draws_for,
+};
 use crate::*;
 
 /// Convert sprite requests to [`SpriteDraw`]s, applying a screen-space
@@ -558,6 +562,24 @@ pub struct BattleHudFrame<'a> {
     /// not yet pinned; the label draws as clean text at the plaque's
     /// captured text inset until it is.
     pub plaque: Option<&'a str>,
+    /// Element-badge index (`0..8`) the plaque wears in front of the name.
+    /// Retail's plaque interior is `20 + 5 + name width` when the actor
+    /// carries one, which is the second half of the pinned plaque law
+    /// (`battle_chrome::name_plaque`). `None` draws the bare name.
+    pub plaque_badge: Option<u8>,
+    /// A battle message holding the **top-of-screen banner**. Retail's
+    /// banner and the actor-name plaque are one seat (content pen
+    /// `(16, 12)`), so this wins: while a message is up the builder draws
+    /// the class-0 frame and its text and emits no plaque.
+    pub banner: Option<&'a str>,
+    /// The host is already drawing its own box on that seat (the sparring
+    /// tutorial prompt). Suppresses the plaque without drawing a banner -
+    /// two text runs on one pen is the artifact this exists to stop.
+    pub plaque_seat_taken: bool,
+    /// Atlas cells for the status-element and element badges
+    /// ([`crate::battle_hud_chrome::BattleBadgeRects`]). Any `None` cell
+    /// falls back to the engine's labelled text tag.
+    pub badges: Option<&'a crate::battle_hud_chrome::BattleBadgeRects>,
     /// Retail parks the party status plate off-screen while an arts input
     /// session owns the frame (`docs/subsystems/minigame-muscle-dome.md` -
     /// its draws move to `y = 230`, under the 228-line display window), and
@@ -657,6 +679,10 @@ const PLAQUE_X: i32 = 8;
 const PLAQUE_Y: i32 = 8;
 /// Vertical inset of the plaque's contents from its plate top.
 const PLAQUE_CONTENT_DY: i32 = 4;
+/// Width of the element badge the plaque wears, and the gap between it and
+/// the first name glyph (`battle_chrome::BADGE_W` / `PLAQUE_BADGE_GAP`).
+const PLAQUE_BADGE_W: i32 = 20;
+const PLAQUE_BADGE_GAP: i32 = 5;
 
 /// Roster-panel background size and row.
 const PANEL_W: i32 = 102;
@@ -1101,18 +1127,33 @@ pub fn battle_hud_draws_for(
             // the level, and any set bit (or zero HP) replaces both with a
             // single ailment sprite. Retail seats that element on the panel's
             // top cell, so the level and the ailment share one seat here too.
-            // The ladder itself is resolved into `status_sprite` upstream;
-            // what is approximate is only the art - retail's sprite sheet for
-            // `0x18..=0x20` is unresolved, so the id draws as a labelled tag.
+            //
+            // The badge is retail's own 48x16 word cell off the system-UI
+            // sheet, seated at the ladder caller's `pen + (0x33, -4)`
+            // ([`battle_hud_chrome::STATUS_BADGE_PANEL_SEAT`]). Without the
+            // cell (an atlas built from a slice that could not reach the
+            // row-511 extension palettes) it degrades to the engine's
+            // labelled tag on the level seat.
             if slot.status_sprite != 0 {
-                stage_text(
-                    &mut text,
-                    font,
-                    status_element_label(slot.status_sprite),
-                    px + PANEL_LV_LABEL.0,
-                    py + PANEL_LV_LABEL.1,
-                    status_element_color(slot.status_sprite),
-                );
+                match frame
+                    .badges
+                    .and_then(|b| b.status_badge(slot.status_sprite))
+                {
+                    Some(src) => stage_sprite(
+                        &mut sprites,
+                        src,
+                        px + STATUS_BADGE_PANEL_SEAT.0,
+                        py + STATUS_BADGE_PANEL_SEAT.1,
+                    ),
+                    None => stage_text(
+                        &mut text,
+                        font,
+                        status_element_label(slot.status_sprite),
+                        px + PANEL_LV_LABEL.0,
+                        py + PANEL_LV_LABEL.1,
+                        status_element_color(slot.status_sprite),
+                    ),
+                }
             } else if slot.level > 0 {
                 label(
                     &mut sprites,
@@ -1269,26 +1310,65 @@ pub fn battle_hud_draws_for(
         );
     }
 
-    // ---- The actor-name plaque ----
+    // ---- The top-left seat: banner OR plaque, never both ----
     //
-    // Retail's top-left plaque names the actor the frame belongs to - the
-    // party member on his turn, the monster through its attack - on a carved
-    // gold plate whose interior is sized to the measured name. Its live seat
-    // is `(8, 8)` and its parked seat `(8, -24)`: the plaque slides in from
-    // above. The port draws only the live seat; the slide is not animated.
-    if let Some(name) = frame.plaque
+    // Retail's message banner and the actor-name plaque share content pen
+    // `(16, 12)`; they are alternatives on one seat. Drawing both is two
+    // text runs on the same pixels, so the banner wins when a message is
+    // up and the host can also claim the seat outright
+    // (`plaque_seat_taken`) for a box it draws itself.
+    if let Some(message) = frame.banner.filter(|m| !m.is_empty()) {
+        // The class-0 nine-slice, sized to the measured message - and no
+        // interior fill: retail's display list carries the border sprites
+        // and the glyph run and nothing else, so the scene shows through.
+        if let Some(rects) = frame.chrome {
+            let content = message_banner_content(font, message);
+            sprites.extend(message_banner_chrome_draws_for(
+                rects,
+                content,
+                origin,
+                scale as u32,
+            ));
+        }
+        let mut rows = message_banner_text_draws_for(font, message);
+        scale_stage_text_draws(&mut rows, origin, scale as u32);
+        text.extend(rows);
+    } else if let Some(name) = frame.plaque
         && !name.is_empty()
+        && !frame.plaque_seat_taken
     {
+        // Retail's top-left plaque names the actor the frame belongs to -
+        // the party member on his turn, the monster through its attack - on
+        // a carved gold plate whose interior is sized to the measured name.
+        // Its live seat is `(8, 8)` and its parked seat `(8, -24)`: the
+        // plaque slides in from above. The port draws only the live seat.
+        //
+        // An actor that carries an element wears its badge in front of the
+        // name, and the interior grows by the badge plus a 5-px gap - the
+        // second half of `battle_chrome::name_plaque`'s pinned law.
         let name_w = font.layout_ascii(name).advance_x as i32;
-        plate_run(&mut text, &mut sprites, PLAQUE_X, PLAQUE_Y, name_w, true);
-        stage_text(
+        let badge = frame
+            .plaque_badge
+            .and_then(|i| frame.badges.and_then(|b| b.element_badge(i)));
+        let lead = if badge.is_some() {
+            PLAQUE_BADGE_W + PLAQUE_BADGE_GAP
+        } else {
+            0
+        };
+        plate_run(
             &mut text,
-            font,
-            name,
-            PLAQUE_X + PLATE_CAP_W,
-            PLAQUE_Y + PLAQUE_CONTENT_DY,
-            white,
+            &mut sprites,
+            PLAQUE_X,
+            PLAQUE_Y,
+            lead + name_w,
+            true,
         );
+        let content_x = PLAQUE_X + PLATE_CAP_W;
+        let content_y = PLAQUE_Y + PLAQUE_CONTENT_DY;
+        if let Some(src) = badge {
+            stage_sprite(&mut sprites, src, content_x, content_y);
+        }
+        stage_text(&mut text, font, name, content_x + lead, content_y, white);
     }
 
     // ---- Diagnostic rows (LEGAIA_DIAG_HUD) ----
@@ -1435,7 +1515,17 @@ pub fn battle_hud_draws_for(
         ));
     }
 
-    for popup in frame.popups {
+    // ---- Popups: the diagnostic seat only ----
+    //
+    // Retail's landed-hit numeral is not a HUD widget. It is a run of 24x24
+    // cells off the battle effect atlas, thrown over the **struck actor** and
+    // rising to a fixed screen row - laid out by
+    // `engine-vm::battle_value_readout::value_cells` and drawn by the host,
+    // which is the only layer that knows where the actor projects. Anchoring a
+    // number to a party panel (or, for a monster, to the diagnostic pen in the
+    // top-left corner) put every damage figure somewhere retail never draws
+    // one, so that pass is now the diagnostic readout's and nothing else's.
+    for popup in frame.popups.iter().filter(|_| frame.diag) {
         if (popup.slot as usize) >= frame.slots.len() {
             continue;
         }
@@ -1528,4 +1618,84 @@ pub fn apply_alpha(color: [f32; 4], alpha: f32) -> [f32; 4] {
         color[2],
         color[3] * alpha.clamp(0.0, 1.0),
     ]
+}
+
+/// One laid-out digit of a floating battle value readout.
+///
+/// Hosts fill these from `engine-vm::battle_value_readout::value_cells`, which
+/// is where the geometry is pinned; this crate sits below `engine-vm` in the
+/// crate graph, so the type is mirrored rather than imported. Fields are
+/// **stage pixels** on the retail 320x240 stage.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ValueCellView {
+    /// The decimal digit the cell shows.
+    pub digit: u8,
+    pub x: i32,
+    pub y: i32,
+    pub w: u32,
+    pub h: u32,
+}
+
+/// Colour the retail numeral art reads as - a hot gold, the top of the sheet's
+/// own vertical ramp. Only the **fallback** uses it: retail's quads carry the
+/// neutral colour word `0x808080` and take their colour from the texels, so a
+/// host drawing the real cells must not tint them.
+pub const VALUE_READOUT_FALLBACK_COLOR: [f32; 4] = [1.0, 0.78, 0.24, 1.0];
+
+/// Fallback draw list for a floating value readout: the dialog font's digits
+/// scaled into the pinned cells.
+///
+/// This is what a host without the battle effect atlas resident draws. The
+/// **layout is retail's** - same cells, same pitch, same pop and rise - and
+/// only the letterforms differ, the same bargain the HUD numerals already
+/// strike. A host that can sample VRAM should draw the real 24x24 cells off
+/// texture page `0x27` / CLUT `0x7703` instead and skip this entirely.
+///
+/// `origin` / `scale` are the stage-to-surface transform the caller already
+/// uses for the rest of the battle chrome.
+pub fn battle_value_readout_draws_for(
+    font: &legaia_font::Font,
+    cells: &[ValueCellView],
+    color: [f32; 4],
+    origin: (i32, i32),
+    scale: u32,
+) -> Vec<TextDraw> {
+    let mut out = Vec::new();
+    for c in cells {
+        if c.w == 0 || c.h == 0 {
+            continue;
+        }
+        let glyph = [b'0' + (c.digit % 10)];
+        let s = match std::str::from_utf8(&glyph) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        let layout = font.layout_ascii(s);
+        for d in text_draws_for(&layout, (0, 0), color) {
+            let (dx, dy, dw, dh) = d.dst;
+            // Scale the glyph's own quad into the cell: the font atlas has no
+            // 24-px digits, so each source rect is stretched rather than
+            // blitted. The scale is taken from the glyph RECT (`dw` / `dh`),
+            // not from the layout advance. The advance is the *proportional*
+            // pen step - 5 px for `1`, 7 for `3` - while the atlas cell the
+            // quad samples is a fixed 14x15, so dividing by it inflated every
+            // digit by `rect / advance` (~2x-3x) and, because the advance is
+            // per glyph, drew the digits of one number at DIFFERENT sizes.
+            // Retail's readout is a run of uniform 24x24 cells, so the quad
+            // is the cell.
+            let sx = c.w as f32 / (dw.max(1) as f32);
+            let sy = c.h as f32 / (dh.max(1) as f32);
+            out.push(TextDraw {
+                dst: (
+                    origin.0 + (c.x * scale as i32) + (dx as f32 * sx) as i32 * scale as i32,
+                    origin.1 + (c.y * scale as i32) + (dy as f32 * sy) as i32 * scale as i32,
+                    ((dw as f32 * sx) as u32).max(1) * scale,
+                    ((dh as f32 * sy) as u32).max(1) * scale,
+                ),
+                src: d.src,
+                color: d.color,
+            });
+        }
+    }
+    out
 }

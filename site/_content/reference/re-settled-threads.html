@@ -4,13 +4,13 @@
   <p class="lede">The questions about Legaia's runtime that have an answer - and, for each one, how firmly that answer is pinned. This is the archive half of the RE register: the live hunts are on <a href="open-rev-eng-threads.html">open RE threads</a>, and the disproved readings on <a href="re-do-not-re-walk.html">do not re-walk</a>.</p>
 </header>
 
-<section class="doc-section" id="overview">
+<section class="doc-section" id="overview" data-doc="how-a-thread-is-laid-out">
   <h2>How to use this page</h2>
   <p>Look here when you need the answer to something, or when you are about to build on a claim and want to know what it rests on. Each row carries a one-line current answer; byte-level detail lives on the linked page, and the full working notes live in <code>docs/reference/re-settled-threads.md</code>.</p>
   <p><strong><code>resolved</code> is a claim, not a warranty.</strong> That is what the evidence column is for.</p>
 </section>
 
-<section class="doc-section" id="grades">
+<section class="doc-section" id="grades" data-doc="the-evidence-column">
   <h2>What an evidence grade means</h2>
   <p>Every settled row is graded by what its own stated evidence actually rests on. Where a row cites more than one kind, it is graded by the <strong>weakest load-bearing</strong> claim - the one that breaks the conclusion if it is wrong.</p>
   <table>
@@ -25,7 +25,7 @@
   <p><strong><code>decompiled-C</code> is the re-audit bucket, not a wrong-answer bucket.</strong> It marks a claim nobody has confirmed against instructions. Most are probably right; the point is that none has been checked, and every claim falsified in the last audit wave would have graded <code>decompiled-C</code>. The C is a rendering: dropped register arguments, <code>||</code> printed as nested <code>if</code>s, reordered or omitted stores, and hand-written annotations read as fact have each already put a wrong statement on these pages.</p>
 </section>
 
-<section class="doc-section" id="world-map">
+<section class="doc-section" id="world-map" data-doc="world-map--kingdom-bundles">
   <h2>World map / kingdom bundles</h2>
   <table>
     <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Current answer</th><th>Detail</th></tr></thead>
@@ -62,7 +62,7 @@
   </table>
 </section>
 
-<section class="doc-section" id="battle">
+<section class="doc-section" id="battle" data-doc="battle--arts--level-up">
   <h2>Battle / arts / level-up</h2>
   <table>
     <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Current answer</th><th>Detail</th></tr></thead>
@@ -382,7 +382,7 @@
   <p>Launch mechanism, carrier identity/placement, picker, and the walk-talk-accept leg are all derived from disc bytes. The formation-row selection is the standard field-VM scripted-battle op <code>3E FF 04</code> in <code>P1[10]</code> (MAN body <code>0x01B67</code>) - the same case-<code>0x3E</code> direct-install arm as garmel's Zeto (<code>3E FF 09</code>) and rikuroa's Caruban (<code>3E FF 11</code>) - with row 4 = the lone-Tetsu formation. The opening carrier reposition is <code>P1[10]</code>'s <code>4C 51 15 0E 07 22</code> NpcRun &rarr; tile <code>(21,14)</code> = world <code>(2752,1856)</code> (bytecode-derived, not a bare constant), and the spar Yes/No is a MES option picker (<code>0x29</code> open + relative-jump table, handler <code>FUN_80038050</code>, ported as <code>legaia_mes::Picker::jump_target</code>), not a field-VM opcode. Anchor <code>rim_elm_sparring_carrier.rs</code>.</p>
 </section>
 
-<section class="doc-section" id="field">
+<section class="doc-section" id="field" data-doc="field--locomotion">
   <h2>Field / locomotion</h2>
   <table>
     <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Current answer</th><th>Detail</th></tr></thead>
@@ -614,7 +614,7 @@
   <p>The head-walk operands are a literal disc table: <strong>kingdom-bundle slot 5</strong> (type byte <code>0x06</code>), a 516-byte 8-entry CLUT-walk animation table byte-identical across all three kingdoms (parser <code>legaia_asset::clut_walk</code>). Chain: loader <code>FUN_8001F05C</code> case 6 &rarr; <code>DAT_8007B7C8</code>; field-init <code>FUN_801D6704</code> spawns one render-mode-<code>0xB</code> actor per entry (<code>FUN_80024CFC</code>, accumulator seeded 100); emitter <code>FUN_8001ADA4</code> case <code>0xB</code> banks <code>acc += DAT_1F800393</code> and on <code>acc &gt;= hold</code> issues the 16&times;1 <code>MoveImage</code>, <em>resetting</em> <code>acc = 0</code>. Live traces on all three kingdoms confirm strictly constant intervals <code>ceil(hold/dt)*dt</code> (9/12/21 vsyncs for holds 8/10/20 at overworld <code>dt=3</code>), a shared spawn epoch with independent per-entry phases, and the 18-step head cycle sourcing two extra wave frames parked before the <code>OCEAN_ANIM_FRAME0_HEAD</code> signature (ocean frame 12 never shown). The emitter is <em>not</em> the script-driven <code>FUN_801E4C58</code>/<code>FUN_801E4794</code> family - that carries only the row-498 park one-shots/fades, whose cells the slot-5 walkers then use as <em>sources</em>. "Dest rows = park rows + 8" is falsified (literal u16 dest cells). Engine: <code>WaterAnim::Walk</code> in play-window; <code>WORLD_MAP_CLUT_CYCLE_CELLS</code> = the slot-5 destination fold. See <a href="../subsystems/world-map.html">world-map</a> &sect; Ocean animation.</p>
 </section>
 
-<section class="doc-section" id="text-dialog">
+<section class="doc-section" id="text-dialog" data-doc="text--fonts--dialog">
   <h2>Text / fonts / dialog</h2>
   <table>
     <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Current answer</th><th>Detail</th></tr></thead>
@@ -651,7 +651,7 @@
   </table>
 </section>
 
-<section class="doc-section" id="animation">
+<section class="doc-section" id="animation" data-doc="animation">
   <h2>Animation</h2>
   <table>
     <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Current answer</th><th>Detail</th></tr></thead>
@@ -688,7 +688,7 @@
   </table>
 </section>
 
-<section class="doc-section" id="audio">
+<section class="doc-section" id="audio" data-doc="audio">
   <h2>Audio</h2>
   <table>
     <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Current answer</th><th>Detail</th></tr></thead>
@@ -739,7 +739,7 @@
   </table>
 </section>
 
-<section class="doc-section" id="title-boot-overlays">
+<section class="doc-section" id="title-boot-overlays" data-doc="title--boot--overlays">
   <h2>Title / boot / overlays</h2>
   <table>
     <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Current answer</th><th>Detail</th></tr></thead>
@@ -879,7 +879,7 @@
   <h3 id="d-prot0896">PROT 0896 - resolved</h3>
   <p>Host-capstone decode of the head (extraction entry 896, located by the <code>"FWIN ERR"</code> bytes) identifies it as the vestigial Japanese-build field-menu / config / status overlay: a Shift-JIS config/menu/status label pool, the <code>"FWIN ERR %d"</code> (Field WINdow) debug printf at file offset <code>0x3D4</code>, real MIPS at link base <code>~0x801D0000</code> indexing the <code>0x414</code>-byte character records, and head function-pointer tables across <code>0x801D81C0..0x801DC700</code> - the same window-renderer VA family as the live English menu overlay PROT 0899, which ships the English equivalents of the identical label set with zero <code>FWIN</code>. A distinctive-signature scan across 140 catalogued RAM states finds 0896 resident in none (positive control: the English "Battle Voices" is resident in 10 menu-phase states), so the USA build never loads it - a vestigial JP-build overlay carried on the disc.</p>
 </section>
-<section class="doc-section" id="rendering-camera">
+<section class="doc-section" id="rendering-camera" data-doc="rendering--camera">
   <h2>Rendering / camera</h2>
   <table>
     <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Answer</th></tr></thead>
@@ -925,7 +925,52 @@
   <p>Two corrections fall out. The parenthetical "zeroed in the field-camera build path" on the slot-2 row was wrong: none of <code>FUN_801DAB90</code>, <code>FUN_801DB8EC</code> or <code>FUN_801DBE9C</code> writes <code>_DAT_8007B794</code>, and the only zeroing is the scene-entry reset <code>FUN_80025C24</code>. And <code>edstati3</code> is a real scene - the ending cutscene block whose bundle sits at extraction entry 826. Its CDNAME label inherits forward as far as the battle-data packs at 863/864, and that is what made it look like a decode artefact rather than a scene.</p>
   <p>Grade <span class="tag tag-done">capture</span> for the census (a disc-derived executing oracle) and <span class="tag tag-done">disassembly</span> for the factor itself - <code>0x8001CFD0..0x8001CFE8</code> loads <code>_DAT_8007B794</code> through <code>lui a0,0x8008; lh a0,-0x486c(a0)</code> and calls <code>0x8004638C</code> unless the render node's <code>+0x52</code> bit <code>0x200</code> is set.</p>
 </section>
-<section class="doc-section" id="see-also">
+<section class="doc-section" id="measurement" data-doc="measurement--corpus">
+  <h2>Measurement + corpus</h2>
+  <p>Questions about the <em>instruments</em> rather than about the game. They are settled rows like any other, and they are on this page because a measurement has no oracle: a number it prints is believed on the strength of its explanation.</p>
+  <table>
+    <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Answer</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>What is in the <code>SCUS_942.54</code> code gap the citation graph never listed</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><span class="tag tag-done">disassembly</span> + <span class="tag tag-done">capture</span></td>
+        <td>Mostly one thing: routines <strong>nothing references</strong>. Ghidra builds functions from the call graph, so a routine with no reference gets no function record, no dump and no citation - invisible to any worklist derived from citations. <a href="#d-scus-gap">details &darr;</a></td>
+      </tr>
+      <tr>
+        <td>Why three plausible-code blocks in <code>SCUS_942.54</code> can never be a function body</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><span class="tag tag-done">disassembly</span></td>
+        <td>The BIOS kernel-patch cluster copies <code>0x8006EF78</code> and <code>0x8006F058</code> into kernel RAM, and <code>0x8005BBB8</code> is the stock PSX exception-handler prologue with no reference of any of the five forms anywhere on the disc. Each is real MIPS that executes only after relocation.</td>
+      </tr>
+      <tr>
+        <td>Is the unattributable dump-extent residue a re-dumping problem</td>
+        <td><span class="tag tag-done">resolved</span> (no)</td>
+        <td><span class="tag tag-done">capture</span></td>
+        <td>Three shapes remain and only one is dump-shaped: short windows no image reproduces at that VA, bytes in no extracted image at any VA (which needs an <strong>extraction</strong>), and extents where two dumps genuinely resolve to different images (which is an answer).</td>
+      </tr>
+      <tr>
+        <td>Can the inner of two nested overlay spans be measured at all</td>
+        <td><span class="tag tag-done">resolved</span> (yes)</td>
+        <td><span class="tag tag-done">capture</span></td>
+        <td>Address ambiguity is total for it by construction; byte attribution places most of its extents anyway and the row reports. What is structural is that it can never be resolved <em>by address</em> - a statement about one method, not about the image.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 id="d-scus-gap">What is in the <code>SCUS_942.54</code> code gap</h3>
+  <p><em>Status:</em> resolved.</p>
+  <p>The gap is what the citation-denominated instruments cannot see, and it is mostly one thing. Working <a href="../tooling/disc-coverage.html">the disc-denominated gap list</a> until it stopped yielding produced roughly 95 function entries; a five-form <a href="../tooling/address-reference-scan.html">reference sweep</a> over each, across <code>SCUS_942.54</code>, the based overlay images and every PROT entry, splits them about three quarters / one fifth / three:</p>
+  <ul class="bullets">
+    <li><strong>No reference of any form, anywhere.</strong> The class only the bytes can find, and the majority of what was left.</li>
+    <li><strong>Referenced from <code>SCUS_942.54</code></strong> - mostly through the entry-stub / init path, or from a body whose own analysis was incomplete.</li>
+    <li><strong>Referenced only from an overlay</strong> (three): live routines whose only caller sits in an image the SCUS-only analysis never sees - the standing "zero static callers is not dead" trap, surfacing as a coverage gap.</li>
+  </ul>
+  <p>Four recovered entries are game logic rather than library material: the inventory count-add primitive carrying the 99 stack cap (<code>80042FE8</code>), the CD-read retry step and subsystem mode toggle (<code>8003F210</code> / <code>8003EDAC</code>), and a camera preset (<code>800260DC</code>).</p>
+  <p>Grade <span class="tag tag-done">disassembly</span> for the identifications, <span class="tag tag-done">capture</span> for the reachability split - the latter rests on the reference sweep, whose negative is a statement about <em>static</em> references only: a computed target assembled some other way, or a caller in an overlay never extracted, would not appear.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="related-pages">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>

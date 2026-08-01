@@ -108,6 +108,31 @@ fn the_real_descriptor_table_has_the_shape_the_curtain_patches() {
         assert_eq!(table.0[i].bottom, [0xFF; 3], "record {i} bottom edge");
     }
 
+    // The two fields the built primitive's *page decode* depends on, neither
+    // of which was checked before. `build_intro_quad` folds `tpage_step << 5`
+    // into the tpage word on the mode-zero path both curtain passes take, and
+    // TSB bits `5..=6` are the ABR field while `7..=8` are the colour depth -
+    // so a large enough step would silently turn the style's 15-bpp pages into
+    // 4-/8-bpp ones and the strips into CLUT garbage. Both records carry step
+    // `1`, which lands wholly in the ABR field and leaves the page where the
+    // constants say it is; that matters now that the column pass is rasterised
+    // straight off the decoded page.
+    for (i, base) in [
+        (CURTAIN_ROW_DESC, CURTAIN_ROW_TPAGE_LEFT),
+        (CURTAIN_COL_DESC, CURTAIN_COL_TPAGE_LEFT),
+    ] {
+        let step = u16::from(table.0[i].tpage_step) << 5;
+        assert!(step < 0x20 * 4, "record {i} step reaches the depth field");
+        let (bx, by, bd) = decode_tpage(base);
+        let (sx, sy, sd) = decode_tpage(base.wrapping_add(step));
+        assert_eq!((bx, by, bd), (sx, sy, sd), "record {i} moved its own page");
+        // `abr` only reaches the primitive's semi-transparency bit
+        // (`code = (abr << 1) | POLY_GT4`), and both records are opaque - the
+        // strips replace what is under them rather than blending with a
+        // backdrop the port composes and retail does not.
+        assert_eq!(table.0[i].abr & 1, 0, "record {i} is not an opaque strip");
+    }
+
     // Records 0 and 1 are the full-screen halves the mid-pass rectangles use,
     // and their widths are the same split the row pass draws with.
     assert_eq!(table.0[0].w, CURTAIN_LEFT_W);

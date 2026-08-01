@@ -63,14 +63,48 @@
 //! quad; every style's first frame is a deliberate no-draw (see the
 //! stale-view-matrix note on [`BattleIntro::tick`]'s tile arm).
 //!
-//! # The capture is a two-rect affair, and both rects are used
+//! # The curtain is a two-pass render-to-texture, and only one pass is on screen
 //!
 //! The curtain's row pass samples texture pages `0x105` / `0x108` and its
 //! column pass `0x115` / `0x118`. Those decode to 15-bpp pages at VRAM
-//! `(320, 0)` / `(512, 0)` and `(320, 256)` / `(512, 256)`, and each pass
-//! covers columns `320..=639` across its pair - so the row pass reads the
-//! capture at [`FIELD_CAPTURE_ROWS`] and the column pass an identical copy at
-//! [`FIELD_CAPTURE_COLS`]. [`BattleIntro::capture_field_frame`] writes both.
+//! `(320, 0)` / `(512, 0)` and `(320, 256)` / `(512, 256)`. It is tempting to
+//! read that as "two identical copies of the capture, one per pass", and this
+//! module used to. `FUN_801D11D0`'s own draw-environment packets say otherwise.
+//!
+//! Between the two passes retail pushes `SetDrawArea` / `SetDrawOffset` pairs
+//! into the ordering table, and their OT buckets order them against the strips:
+//!
+//! | OT bucket | what retail links there |
+//! |---|---|
+//! | `0x1F4` (500) | `SetDrawOffset(0, 0)` + `SetDrawArea(320, 0, 320, 240)` |
+//! | `0x1EA` (490) | `FUN_801D1D9C(0x1EA, 2, 0x808080)` - the mid-pass emitter |
+//! | `0x1C2` (450) | the **column** strips ([`styles::CURTAIN_COL_OT_DEPTH`]) |
+//! | `0x190` (400) | `SetDrawArea(0, y, 320, h)` + `SetDrawOffset(0, y)` - the back buffer |
+//! | `0x12C` (300) | the **row** strips ([`styles::CURTAIN_ROW_OT_DEPTH`]) |
+//!
+//! A higher OT index draws first, so the column pass runs with the draw area
+//! pointed at VRAM `(320, 0)` - which is [`FIELD_CAPTURE_ROWS`], the very rect
+//! the row pass then samples. The column strips are not on screen at all: they
+//! render an intermediate, and the row pass slices *that* into the display.
+//! `styles::CURTAIN_COL_DRAW_BIAS` (`0x1E0`) is what makes it fit - a column
+//! that passes the visibility test (which re-centres on `0xA0`) lands at
+//! `x` in `320..640`, exactly the installed draw area, with the offset at
+//! `(0, 0)` so primitive coordinates are absolute VRAM.
+//!
+//! So the capture goes into [`FIELD_CAPTURE_COLS`] **only**, and
+//! [`BattleIntro::update_field_capture`] re-composes the intermediate every
+//! frame. The port rasterises the column pass on the CPU
+//! ([`compose_curtain_intermediate`]) because a screen-space quad list has no
+//! render-to-VRAM target; the arithmetic is the same quad
+//! `legaia_engine_vm::battle_intro_transition::build_intro_quad` produced.
+//!
+//! One piece of that chain is *not* modelled: `FUN_801D1D9C` is only dumped at
+//! a VA that aliases another overlay, so what the mid-pass emitter draws into
+//! the intermediate is not established from a trustworthy image (see
+//! `docs/tooling/call-target-integrity.md`). Its arguments read as a
+//! full-intermediate ABR-2 quad, i.e. a per-frame *decay* of what the last
+//! frame left there rather than a clear. The port clears instead, which loses
+//! the trail retail accumulates but invents nothing.
 
 use crate::billboard::{psx_cos, psx_sin};
 use crate::gte::{GteMat3, GteVec3, ScreenXY, avsz4_with_scale, gte_divide, gte_persp_term, nclip};
@@ -104,25 +138,24 @@ pub const TILE_SHADE_PAGE: VramRect = VramRect::new(448, 0, 16, 64);
 ///
 /// | Style | Samples | Rects written |
 /// |---|---|---|
-/// | [`IntroStyle::Curtain`] | row pass `0x105`/`0x108` at `(320,0)`/`(512,0)`; column pass `0x115`/`0x118` at `(320,256)`/`(512,256)` | both |
-/// | [`IntroStyle::TileShatter`] | `0x135`/`0x137` at `(320,256)`/`(448,256)`, plus the 4bpp [`TILE_SHADE_PAGE`] at `(448,0)` | **columns only** |
-/// | the particle styles | `0x135..=0x139` at `(320,256)..(576,256)` (u < 64, so the five pages tile the 320 capture columns) | **columns only** |
-/// | [`IntroStyle::Swirl`] | `0x115`/`0x117` at `(320,256)`/`(448,256)` | **columns only** |
+/// | [`IntroStyle::Curtain`] | column pass `0x115`/`0x118` at `(320,256)`/`(512,256)`; the row pass' `0x105`/`0x108` at `(320,0)`/`(512,0)` is the column pass' **output** | columns only |
+/// | [`IntroStyle::TileShatter`] | `0x135`/`0x137` at `(320,256)`/`(448,256)`, plus the 4bpp [`TILE_SHADE_PAGE`] at `(448,0)` | columns only |
+/// | the particle styles | `0x135..=0x139` at `(320,256)..(576,256)` (u < 64, so the five pages tile the 320 capture columns) | columns only |
+/// | [`IntroStyle::Swirl`] | `0x115`/`0x117` at `(320,256)`/`(448,256)` | columns only |
 ///
-/// Only the curtain's row pass samples the rows rect. The tile shatter is the
-/// style where columns-only is load-bearing rather than economical: its own
-/// pages are wholly inside the column rect, and the shade page it also needs
-/// is inside the row rect - so writing the rows would destroy an input it
-/// depends on while gaining it nothing. The particle and swirl pages are
-/// likewise wholly inside the column rect (every page they name carries the
-/// `y = 256` bit), so the rows blit would buy them nothing either.
-pub fn capture_rects_for(style: IntroStyle) -> &'static [VramRect] {
-    const BOTH: [VramRect; 2] = [FIELD_CAPTURE_ROWS, FIELD_CAPTURE_COLS];
+/// **No style writes the rows rect**, and for two different reasons. For the
+/// curtain the rows rect is the intermediate its column pass renders into (see
+/// the module docs) - blitting the capture there would be overwritten by the
+/// first column strip anyway, and until it was it would show the transition an
+/// un-warped frame. For the tile shatter it is load-bearing the other way: its
+/// own pages are wholly inside the column rect and the 4bpp
+/// [`TILE_SHADE_PAGE`] it also needs is inside the *row* rect, so writing the
+/// rows would destroy an input it depends on while gaining it nothing. The
+/// particle and swirl pages are likewise wholly inside the column rect (every
+/// page they name carries the `y = 256` bit).
+pub fn capture_rects_for(_style: IntroStyle) -> &'static [VramRect] {
     const COLS_ONLY: [VramRect; 1] = [FIELD_CAPTURE_COLS];
-    match style {
-        IntroStyle::Curtain => &BOTH,
-        _ => &COLS_ONLY,
-    }
+    &COLS_ONLY
 }
 
 // ---------------------------------------------------------------------------
@@ -805,17 +838,28 @@ impl IntroQuadTable {
     /// A neutral stand-in with the shape the curtain needs, for hosts that
     /// have no disc image to hand. Unity scale, white on both edges - so the
     /// strips carry the captured frame unmodulated.
+    ///
+    /// The four extents are **not** interchangeable, and a uniform `1 x 1`
+    /// stand-in silently broke the column pass: `tick_curtain` patches `w` and
+    /// `v0` on the row record but only `u0` and `tpage` on the column one, so
+    /// the column strip's height comes from the table. The values here are the
+    /// ones `battle_intro_table_real.rs` asserts of the disc records: records
+    /// `0` / `1` the two full-screen halves, `2` a full-height column, `3` a
+    /// single scanline.
     pub fn neutral() -> Self {
+        let desc = |w: u8, h: u8| IntroQuadDesc {
+            size_q12: 0x1000,
+            w,
+            h,
+            top: [0xFF; 3],
+            bottom: [0xFF; 3],
+            ..Default::default()
+        };
         Self(vec![
-            IntroQuadDesc {
-                size_q12: 0x1000,
-                w: 1,
-                h: 1,
-                top: [0xFF; 3],
-                bottom: [0xFF; 3],
-                ..Default::default()
-            };
-            INTRO_QUAD_TABLE_LEN
+            desc(styles::CURTAIN_LEFT_W, styles::CURTAIN_ROWS as u8),
+            desc(styles::CURTAIN_RIGHT_W, styles::CURTAIN_ROWS as u8),
+            desc(1, styles::CURTAIN_ROWS as u8),
+            desc(1, 1),
         ])
     }
 }
@@ -876,6 +920,15 @@ pub struct BattleIntro {
     /// transition draws against. `None` = no disc access; the shade faces
     /// then sample whatever the base page holds.
     shade_pack: Option<legaia_asset::field_char_textures::FieldCharTextures>,
+    /// The captured frame lifted out of [`FIELD_CAPTURE_COLS`] as a plain
+    /// `320 x 240` halfword image, so the curtain's column pass can sample it
+    /// while the same page is being written. Empty for every other style.
+    capture_src: Vec<u16>,
+    /// This frame's **column**-pass quads, held between [`BattleIntro::tick`]
+    /// (which builds them) and [`BattleIntro::update_field_capture`] (which
+    /// rasterises them into the intermediate). Only the curtain fills it - see
+    /// the module docs on why these never reach the screen.
+    pending_columns: Vec<IntroQuad>,
 }
 
 impl BattleIntro {
@@ -957,6 +1010,8 @@ impl BattleIntro {
             total_duration,
             captured: None,
             shade_pack: None,
+            capture_src: Vec::new(),
+            pending_columns: Vec::new(),
         }
     }
 
@@ -983,60 +1038,122 @@ impl BattleIntro {
         self.captured.is_none()
     }
 
-    /// The captured page, once [`BattleIntro::capture_field_frame`] has run.
+    /// The captured page, once [`BattleIntro::update_field_capture`] has run.
     pub fn captured_vram(&self) -> Option<&Vram> {
         self.captured.as_ref()
     }
 
-    /// Land a drawn frame in the two VRAM rects the transition styles sample.
+    /// This frame's curtain **column**-pass quads - the half that renders the
+    /// intermediate rather than the display. Empty for every other style, and
+    /// between the tick and the next one for a style that emitted none.
+    pub fn pending_column_quads(&self) -> &[IntroQuad] {
+        &self.pending_columns
+    }
+
+    /// Bring the transition's private VRAM page up to date for this frame, and
+    /// say whether the host has to re-upload it.
     ///
-    /// Both rects get the same image: the row pass reads
-    /// [`FIELD_CAPTURE_ROWS`] and the column pass [`FIELD_CAPTURE_COLS`], and
-    /// the tile and swirl styles' own pages sit inside the second rect. The
-    /// mask bit is set so a black field pixel samples as opaque black rather
-    /// than as a transparent hole - a full-screen transition wants the whole
-    /// frame, including its dark areas.
+    /// Two jobs, and only the first is a one-shot:
+    ///
+    /// 1. **The capture.** On the frame the emitter arms, the drawn field frame
+    ///    is read back and blitted into the rects [`capture_rects_for`] names -
+    ///    [`FIELD_CAPTURE_COLS`] for every style, since no style samples the
+    ///    rows rect (see the module docs). The mask bit is set so a black field
+    ///    pixel samples as opaque black rather than as a transparent hole.
+    /// 2. **The curtain's intermediate.** Every frame after that, the curtain's
+    ///    column pass is rasterised into [`FIELD_CAPTURE_ROWS`], which is what
+    ///    its row pass samples. That is retail's own two-pass structure, not a
+    ///    port convenience - see the module docs.
     ///
     /// `base` is the scene's own VRAM, which is **cloned** rather than edited:
     /// the capture is transient and the host's pristine page has to survive
-    /// the transition. The returned page is the one to upload and draw the
-    /// strips against.
+    /// the transition.
     ///
-    /// Cost: one offscreen frame plus a full readback and a resample, once per
-    /// transition.
-    pub fn capture_field_frame(
+    /// Returns `Some(page)` on any frame whose contents changed - the capture
+    /// frame for every style, and every frame for the curtain. `None` means the
+    /// last uploaded page is still correct.
+    pub fn update_field_capture(
         &mut self,
         renderer: &crate::Renderer,
         target: crate::RenderTarget<'_>,
         base: &Vram,
-    ) -> anyhow::Result<&Vram> {
-        let img = renderer.capture_rgba(target)?;
-        let style = self.style;
-        let shade = if style == IntroStyle::TileShatter {
-            self.shade_pack.as_ref()
-        } else {
-            None
-        };
-        let page = self.captured.insert(base.clone());
-        let opts = CaptureOpts { set_mask_bit: true };
-        // Only the rects this style samples - see `capture_rects_for`. The
-        // rows rect covers the tile shatter's own shade page, so writing it
-        // unconditionally destroys an input the style needs.
-        for rect in capture_rects_for(style) {
-            crate::vram_capture::blit_rgba_into_vram(
-                &img.rgba, img.width, img.height, page, *rect, opts,
-            );
+    ) -> anyhow::Result<Option<&Vram>> {
+        let first = self.captured.is_none();
+        if first {
+            let img = renderer.capture_rgba(target)?;
+            let style = self.style;
+            let shade = if style == IntroStyle::TileShatter {
+                self.shade_pack.as_ref()
+            } else {
+                None
+            };
+            let page = self.captured.insert(base.clone());
+            let opts = CaptureOpts { set_mask_bit: true };
+            for rect in capture_rects_for(style) {
+                crate::vram_capture::blit_rgba_into_vram(
+                    &img.rgba, img.width, img.height, page, *rect, opts,
+                );
+            }
+            // The shade page + its row-473 CLUT strip (see `shade_pack`). Entry
+            // 0 only: the pack's character-atlas entries are already in the
+            // base page via the host's field upload, and its other shared pages
+            // land on rects the scene meshes sample.
+            if let Some(pack) = shade {
+                let mut entry0 = pack.clone();
+                entry0.textures.retain(|t| t.index == 0);
+                entry0.upload_to_vram(page, false);
+            }
+            if style == IntroStyle::Curtain {
+                self.capture_src = lift_capture_src(page);
+            }
         }
-        // The shade page + its row-473 CLUT strip (see `shade_pack`). Entry 0
-        // only: the pack's character-atlas entries are already in the base
-        // page via the host's field upload, and its other shared pages land
-        // on rects the scene meshes sample.
-        if let Some(pack) = shade {
-            let mut entry0 = pack.clone();
-            entry0.textures.retain(|t| t.index == 0);
-            entry0.upload_to_vram(page, false);
+        if self.style != IntroStyle::Curtain {
+            return Ok(if first { self.captured.as_ref() } else { None });
         }
-        Ok(page)
+        self.compose_curtain_intermediate();
+        Ok(self.captured.as_ref())
+    }
+
+    /// Install `page` as though the one-shot capture had already run, so the
+    /// curtain's two-pass composition is drivable without a GPU.
+    #[cfg(test)]
+    pub(crate) fn seed_capture_for_test(&mut self, page: Vram) {
+        self.capture_src = lift_capture_src(&page);
+        self.captured = Some(page);
+    }
+
+    /// Run the curtain's column pass into the intermediate. Test seam for the
+    /// half of [`BattleIntro::update_field_capture`] that needs no renderer.
+    #[cfg(test)]
+    pub(crate) fn compose_intermediate_for_test(&mut self) {
+        self.compose_curtain_intermediate();
+    }
+
+    /// Rasterise this frame's column-pass quads into [`FIELD_CAPTURE_ROWS`],
+    /// the intermediate the curtain's row pass samples.
+    ///
+    /// The port has no render-to-VRAM target for screen-space quads, so the
+    /// pass runs on the CPU. Each quad is one texel wide and `h` pixels tall
+    /// with its `v` running the full source column, which makes the rasteriser
+    /// a per-column vertical resample rather than a general triangle setup -
+    /// exactly the shape `build_intro_quad` produced.
+    ///
+    /// The rect is cleared to opaque black first. Retail decays it instead
+    /// (the `FUN_801D1D9C` mid-pass emitter), which is the trail the port does
+    /// not carry - see the module docs.
+    fn compose_curtain_intermediate(&mut self) {
+        let rect = FIELD_CAPTURE_ROWS;
+        let (rw, rh) = (rect.w as usize, rect.h as usize);
+        if self.capture_src.len() < rw * rh {
+            return;
+        }
+        let mut buf = vec![0x8000u16; rw * rh];
+        for q in &self.pending_columns {
+            blit_intro_quad_column(q, &self.capture_src, rect, &mut buf);
+        }
+        if let Some(page) = self.captured.as_mut() {
+            page.write_block(rect.x, rect.y, rect.w, rect.h, bytemuck::cast_slice(&buf));
+        }
     }
 
     /// Advance one frame and emit.
@@ -1107,10 +1224,20 @@ impl BattleIntro {
             }
             WorkingSet::Curtain(table) => {
                 let tick = styles::tick_curtain(&mut table.0, &mut self.clock, frame_step);
+                // The two passes go to two different places. Retail installs a
+                // draw area at VRAM (320, 0) for the column pass and restores
+                // the back buffer before the row pass, so only the rows are on
+                // screen; the columns render the intermediate the rows sample.
+                // See the module docs for the OT-bucket evidence.
+                self.pending_columns.clear();
                 out.prims.reserve(tick.quads.len());
                 for q in &tick.quads {
-                    out.prims
-                        .push(ScreenPrim::Textured(intro_quad_to_screen(&q.quad)));
+                    if q.desc_index == styles::CURTAIN_COL_DESC {
+                        self.pending_columns.push(q.quad);
+                    } else {
+                        out.prims
+                            .push(ScreenPrim::Textured(intro_quad_to_screen(&q.quad)));
+                    }
                 }
                 out.style_drawn = !tick.quads.is_empty();
             }
@@ -1143,6 +1270,95 @@ impl BattleIntro {
             out.prims.push(fade_quad(&f));
         }
         out
+    }
+}
+
+/// Lift [`FIELD_CAPTURE_COLS`] out of `page` as a flat halfword image.
+///
+/// The curtain's column pass samples that rect while writing
+/// [`FIELD_CAPTURE_ROWS`] of the same page, which a borrow cannot express - and
+/// the source never changes after the one-shot capture, so a copy is also the
+/// cheaper answer.
+fn lift_capture_src(page: &Vram) -> Vec<u16> {
+    let src = FIELD_CAPTURE_COLS;
+    (0..src.h as usize)
+        .flat_map(|y| (0..src.w as usize).map(move |x| (src.x as usize + x, src.y as usize + y)))
+        .map(|(x, y)| page.pixel(x, y))
+        .collect()
+}
+
+/// PSX texture modulation on one 5-bit channel: `texel * colour / 128`,
+/// saturated. `0x80` is the neutral colour, which is why the curtain's `0x7F`
+/// (`0xFF` shaded by the pass' `0x80` intensity) reads as "carry the capture".
+///
+/// Rounded rather than truncated, and that is a deliberate divergence. The
+/// hardware truncates, but the port's own row pass runs the same modulation in
+/// the fragment shader in floating point and rounds only at the UNORM8 write -
+/// so a truncating column pass would drop a whole 5-bit level per channel
+/// before the row pass ever saw it, and the two halves of one effect would
+/// disagree about a neutral modulation. Rounding makes `0x7F` the no-op it is
+/// meant to be on both sides.
+fn modulate5(c5: u16, colour: u8) -> u16 {
+    ((u32::from(c5) * u32::from(colour) + 64) >> 7).min(31) as u16
+}
+
+/// Rasterise one column-pass quad into the curtain's intermediate rect.
+///
+/// `src` is [`FIELD_CAPTURE_COLS`] as a flat `rect.w x rect.h` halfword image,
+/// `dst` the [`FIELD_CAPTURE_ROWS`] rect the quad's absolute-VRAM coordinates
+/// are clipped against, and `out` that rect as a flat buffer.
+///
+/// The quad is a `POLY_GT4` with axis-aligned corners, one texel wide and its
+/// `v` spanning the whole source column, so the mapping is a per-column
+/// vertical resample.
+fn blit_intro_quad_column(q: &IntroQuad, src: &[u16], dst: VramRect, out: &mut [u16]) {
+    let (tx, ty, depth) = (
+        ((q.tpage & 0x0F) as i32) * 64,
+        if q.tpage & 0x10 != 0 { 256 } else { 0 },
+        (q.tpage >> 7) & 0x3,
+    );
+    // Only a 15-bpp page inside the capture rect can be resolved out of `src`.
+    if depth != 2 || ty != i32::from(FIELD_CAPTURE_COLS.y) {
+        return;
+    }
+    let (sw, sh) = (FIELD_CAPTURE_COLS.w as i32, FIELD_CAPTURE_COLS.h as i32);
+    let (x0, y0) = (i32::from(q.verts[0].x), i32::from(q.verts[0].y));
+    let (x1, y1) = (i32::from(q.verts[3].x), i32::from(q.verts[3].y));
+    let (w, h) = (x1 - x0, y1 - y0);
+    if w <= 0 || h <= 0 {
+        return;
+    }
+    let (u0, v0) = (i32::from(q.verts[0].u), i32::from(q.verts[0].v));
+    let (u1, v1) = (i32::from(q.verts[3].u), i32::from(q.verts[3].v));
+    let (rx, ry) = (i32::from(dst.x), i32::from(dst.y));
+    let (rw, rh) = (i32::from(dst.w), i32::from(dst.h));
+    for dy in y0.max(ry)..y1.min(ry + rh) {
+        let v = v0 + (dy - y0) * (v1 - v0) / h;
+        // The gradient is per-vertex; the two edges are equal on the disc
+        // records, so this is a no-op there and correct if they ever differ.
+        let t = (dy - y0) as u32 * 256 / h as u32;
+        let shade: [u8; 3] = std::array::from_fn(|i| {
+            let (a, b) = (u32::from(q.verts[0].rgb[i]), u32::from(q.verts[3].rgb[i]));
+            ((a * (256 - t) + b * t) >> 8) as u8
+        });
+        for dx in x0.max(rx)..x1.min(rx + rw) {
+            let u = u0 + (dx - x0) * (u1 - u0) / w;
+            let (sx, sy) = (tx + u - i32::from(FIELD_CAPTURE_COLS.x), v);
+            if !(0..sw).contains(&sx) || !(0..sh).contains(&sy) {
+                continue;
+            }
+            // The overlay shader's transparency rule, applied to the same
+            // texels: a whole-word zero is a hole. The capture sets the mask
+            // bit, so a black *captured* pixel is `0x8000` and still draws.
+            let texel = src[(sy * sw + sx) as usize];
+            if texel == 0 {
+                continue;
+            }
+            let r = modulate5(texel & 0x1F, shade[0]);
+            let g = modulate5((texel >> 5) & 0x1F, shade[1]);
+            let b = modulate5((texel >> 10) & 0x1F, shade[2]);
+            out[((dy - ry) * rw + (dx - rx)) as usize] = r | (g << 5) | (b << 10) | 0x8000;
+        }
     }
 }
 

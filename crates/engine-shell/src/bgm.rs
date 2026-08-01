@@ -219,7 +219,38 @@ impl AudioBgmDirector {
         let mut fired = Vec::new();
         self.audio.with_spu(|spu| {
             for cue in &batch.fired {
-                let id = cue.id as u8;
+                // The queue is a `u16` because the battle cue space is - the
+                // action SM's cast cues run to `0x20E` - while the SFX
+                // descriptor table is `0x00..=0x63`. Truncating with `as u8`
+                // did not make an out-of-band cue silent, it made it play the
+                // **wrong** descriptor: `0x20C` became `0x0C`, `0x118` became
+                // `0x18`, and every one of those is a populated entry. Classify
+                // instead, exactly as `FUN_8004FCC8` does.
+                //
+                // Only the `Voice` band is re-routed here. The `Ring` band's
+                // `id - 1` resolution below `0x40` is retail's
+                // (`route_sfx_cue`'s low leg) but the one live producer feeds
+                // this queue an art-record `HitCue::kind` that the bank is
+                // already indexed by, so applying it would silently move the
+                // one cue that works today. Left as an open thread rather than
+                // changed without an oracle.
+                if let legaia_engine_audio::CueDispatch::Voice {
+                    channel, submode, ..
+                } = legaia_engine_audio::classify_cue(u32::from(cue.id))
+                {
+                    // A streamed CD-XA voice, not an SPU descriptor. The port
+                    // stages no bank for the voice clip files, so it stays
+                    // silent rather than wrong - see `docs/subsystems/audio.md`.
+                    log::debug!(
+                        "battle cue {:#06x} is a CD-XA voice (clip channel {channel:#04x} \
+                         submode {submode}); no voice bank staged",
+                        cue.id
+                    );
+                    continue;
+                }
+                let Ok(id) = u8::try_from(cue.id) else {
+                    continue;
+                };
                 // The cue's category picks its bank; with nothing staged the
                 // scene BGM VAB stands in, as it did before any SFX bank did.
                 let Some(vab) = self.sfx_vab_for_cue(id).or(self.bank.as_ref()) else {

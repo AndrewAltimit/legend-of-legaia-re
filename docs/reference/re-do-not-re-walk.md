@@ -40,6 +40,72 @@ below.
 | Muscle Dome awards a **Seru** on a win | falsified (a leg pays nothing; a contest pays casino coins) | [details ↓](#the-dome-victory-caption-is-not-a-prize) |
 | `FUN_801DBC30` blits the party panels' name plate | falsified (its page + CLUT resolve to the `etim` red cross-out X) | [details ↓](#fun_801dbc30-is-not-the-battle-name-plate) |
 | The retail party HUD carries HP / MP gauge bars | falsified (no bar primitive in either readout's packet run) | [details](../subsystems/battle.md#the-party-status-readout---and-it-has-no-gauge) |
+| Screen-element kinds named by what sits at their seat (`0x32`/`0x33` = "the roster panels") | falsified (naming by seat named the wrong record) | [details ↓](#a-kind-named-by-its-seat-can-name-the-wrong-record) |
+| The battle message banner is "a gold border over a blue interior" | falsified (border only - no fill primitive under it) | [details ↓](#the-battle-message-banner-has-no-interior-fill) |
+| `FUN_801E2524` / `FUN_801E2650` are a full-screen flash / fade ramp | falsified (they are the **Arts announcement banner**) | [details ↓](#the-flash-ramp-is-the-arts-announcement-banner) |
+| "The port never latches the art id, so `actor[+0x1DB]` reads `0x00` all fight" | falsified (it latches `0x01`, then `0x0D`, then `0x0C`) | Those are the rolled arm swings a basic Attack queues, and a retail mid-swing Attack state reads the same band. `0x1A..=0x2D` - the per-art camera's band - is reached by action-constant queue bytes, i.e. an arts chain, so the camera not arming on two arm swings is retail. [details](../subsystems/battle-action.md#three-readings-the-port-already-satisfied) |
+| "The port's `0x51` Done-band residency is unbounded" | falsified (bounded at `ctx[+0x6D8] = 0x3C`, as retail) | The 60-70 frames a sample shows is **one** action's countdown plus the HP-bar settle freeze; a multi-action sample sums several of them. Counting frames in a band without splitting them by action reads a per-action budget as a park. [details](../subsystems/battle-action.md#three-readings-the-port-already-satisfied) |
+| "The sparring tutorial reopens the command session, so the cursor cannot move" | falsified (the cursor walks `0..5`; a *waiting* prompt box parks the tick) | The session is reopened only on a rejected resolution. What pins the cursor on screen is retail's own `ctx[+0x6B2]` box guard, which the port reproduces. [details](../subsystems/battle-action.md#three-readings-the-port-already-satisfied) |
+| An action returns its combatants to their authored formation seats | falsified (retail leaves them on the ground the action ended on) | Two library states of one solo fight read the authored formation 1600 apart; two later ones read the same pair ~300 apart and both far off it, with every actor's `+0x3C`/`+0x40` pair within ~110 units of its live `+0x34`/`+0x38`. The port's walk-home leg is gone; the seat is committed from the live pair at `DoneCleanup`. [details](../subsystems/battle-action.md#where-an-action-leaves-its-combatants) |
+
+### The flash ramp is the Arts announcement banner
+
+`FUN_801E2650` scales a percent into grey, replicates it into RGB, picks GP0
+`0x2C` or `0x2E`, and emits quads whose extent is driven by a level byte. Read
+on the arithmetic alone that is a flash, and it was documented as one - a
+"full-screen flash / fade overlay" walked by a "brightness level".
+
+The quads are **textured**, and the texels settle it. Every arm writes texpage
+`0x27` = `(448, 0)` under CBA `0x7703`; decoding that page at 4bpp through that
+sub-palette shows the emitter's three 24-tall rows are the words `SUPER`,
+`HYPER`, and `MIRACLE` + `NEW`, sitting directly above the already-documented
+`DAMAGE` / `HIT` / `TOTAL` labels on the same sheet. The second quad's texel
+rect is fixed for every position and reads `ARTS!!`. So the four `ctx[+0x28B]`
+values compose `NEW ARTS!!` / `HYPER ARTS!!` / `MIRACLE ARTS!!` /
+`SUPER ARTS!!`, each as two halves sliding in from opposite screen sides to a
+per-banner seam. `ctx[+0x28C]` is that slide's clock, and the four "layers" are
+a ghost trail behind the moving word - not a brightness ramp.
+
+The lesson generalises: a routine that emits textured primitives is not
+characterised until its texels are decoded. Percent-scaled grey with
+`0x2C`/`0x2E` describes a flash and a banner equally well, and only the atlas
+distinguishes them. Full geometry:
+[`battle-action.md`](../subsystems/battle-action.md#arts-announcement-banner-fun_801e2524--fun_801e2650);
+sheet layout: [`effect.md`](../formats/effect.md#the-battle-value-readouts-glyph-sheet-lives-here-too).
+
+### The battle message banner has no interior fill
+
+Two live frames carrying the banner - `rim_elm_gimard_seru_capture_after` (the
+mid-battle Seru "captured!" line) and `noa_levelup_banner` - draw the class-0
+9-slice border sprites and the glyph run and **nothing else**. No textured
+fill, no flat quad, no semi-transparent rect anywhere inside the frame rect.
+The scene shows through.
+
+What made "a gold border over a blue interior" the natural reading is that the
+framed-window widget records (`0x03` / `0x04` / `0x44`) carry a 32x32
+blue-marbled patch at texels `(128, 0)` as their own sprite rect, and the
+framed *menu* windows do fill with it - so the art exists, and the battle
+banner simply does not use it. Geometry:
+[`battle.md`](../subsystems/battle.md#the-full-width-message-banner).
+
+### A kind named by its seat can name the wrong record
+
+Before the `+0x0E` kind byte was resolved as a table index, the open thread
+listed the values it could not decode with the surface each one *sat under*:
+`0x0303` "full-width message rows", `0x0404` "framed windows", `0x2B2B` "the
+status bar", `0x32`/`0x33` "the roster panels". Four of those survive the
+decode. The panel one does not: the three roster-panel placement records
+(6, 78, 79) carry kind `0x07`, and `0x33`/`0x34`/`0x35` are the sibling kinds
+that add the level / status marker on top of the same panel chain.
+
+The reading was not careless - it was correct about *what is on screen* and
+wrong about *which row draws it*, because the two kinds converge: `0x33`'s
+chain hops `+0x0E` and then walks into `0x08` → `0x09`, the same panel plate
+`0x07`'s chain ends on. A seat-based name cannot separate two records that
+draw the same pixels, and no amount of further capture would have; only the
+index arithmetic (`0x800732A4 + kind * 0x0C`, `FUN_8002C69C` at
+`0x8002C7A0`) does. Resolution:
+[`re-settled-threads.md`](re-settled-threads.md#the-chrome-kind-byte-is-an-index-into-the-widget-class-table).
 
 ### `FUN_801DBC30` is not the battle name plate
 

@@ -176,9 +176,144 @@ pub const HUD_DIGIT_W: u32 = 8;
 /// Height of one HUD numeral cell.
 pub const HUD_DIGIT_H: u32 = 12;
 
+/// Atlas placement of the **status-element badge block** - the nine 48x16
+/// word tags `FUN_8002C2E4`'s exclusive ladder selects from, sprite ids
+/// `0x18..=0x20` (`legaia_asset::ui_widgets::STATUS_BADGES`).
+///
+/// On the sheet they are a two-column block at `(0 | 48, 48..=112)`; here
+/// they re-seat into a 4-wide grid because three of the sheet cells collide
+/// with the save-menu slot pills this atlas already carries at
+/// `(33, 97..128)`. Same rule the HUD numeral strip follows: natural
+/// coordinates unless something already owns them.
+pub const ATLAS_RECT_STATUS_BADGES_ORIGIN: (u32, u32) = (0, 128);
+/// Badge cell size, sheet and atlas alike.
+pub const STATUS_BADGE_W: u32 = 48;
+pub const STATUS_BADGE_H: u32 = 16;
+/// Badges per atlas row (`4 * 48 = 192` px, clear of the arts chip triple
+/// at `x >= 200`).
+pub const STATUS_BADGE_ATLAS_COLS: u32 = 4;
+/// Number of status badges - the nine ladder outcomes.
+pub const STATUS_BADGE_COUNT: usize = 9;
+
+/// Sheet cell + row-511 sub-palette of each status badge, in ladder order
+/// (`0x18` first). Mirrors what `legaia_asset::ui_widgets` reads out of the
+/// widget-class table; the disc-gated oracle
+/// `crates/asset/tests/ui_widgets_real.rs` is what keeps the two honest.
+///
+/// Three of the nine reach past the system-UI TIM's own sixteen palettes -
+/// row 511 runs on to VRAM x 288 through the CLUT-only TIM at
+/// [`SYSTEM_UI_CLUT_EXT_TIM_OFFSET`].
+struct StatusBadgeCell {
+    /// Retail sprite id (`0x18..=0x20`).
+    sprite: u8,
+    /// Cell origin on the system-UI sheet.
+    sheet: (u32, u32),
+    /// Row-511 sub-palette index.
+    subpalette: u16,
+}
+
+const STATUS_BADGE_CELLS: [StatusBadgeCell; STATUS_BADGE_COUNT] = [
+    StatusBadgeCell {
+        sprite: 0x18,
+        sheet: (0, 48),
+        subpalette: 9,
+    },
+    StatusBadgeCell {
+        sprite: 0x19,
+        sheet: (48, 48),
+        subpalette: 10,
+    },
+    StatusBadgeCell {
+        sprite: 0x1A,
+        sheet: (48, 80),
+        subpalette: 16,
+    },
+    StatusBadgeCell {
+        sprite: 0x1B,
+        sheet: (48, 112),
+        subpalette: 14,
+    },
+    StatusBadgeCell {
+        sprite: 0x1C,
+        sheet: (0, 96),
+        subpalette: 17,
+    },
+    StatusBadgeCell {
+        sprite: 0x1D,
+        sheet: (0, 64),
+        subpalette: 11,
+    },
+    StatusBadgeCell {
+        sprite: 0x1E,
+        sheet: (0, 80),
+        subpalette: 15,
+    },
+    StatusBadgeCell {
+        sprite: 0x1F,
+        sheet: (48, 64),
+        subpalette: 13,
+    },
+    StatusBadgeCell {
+        sprite: 0x20,
+        sheet: (48, 96),
+        subpalette: 18,
+    },
+];
+
+/// File offset within `PROT.DAT` of the **row-511 sub-palette extension**:
+/// a CLUT-only TIM (its image block is a four-word stub) whose CLUT block
+/// uploads to VRAM `(256, 511)`, 16 entries x 3 rows - sub-palettes **16,
+/// 17 and 18** of the same strip the system-UI sheet's own sixteen start.
+///
+/// It sits immediately before the system-UI TIM
+/// (`0x1858 + 0x88 == 0x18E0`), which is why a slice rooted at the sheet
+/// cannot see it; [`build_atlas`] accepts either root.
+pub const SYSTEM_UI_CLUT_EXT_TIM_OFFSET: usize = 0x1858;
+/// Byte extent of that TIM: 8 header + 108 CLUT block + 20 image stub.
+pub const SYSTEM_UI_CLUT_EXT_TIM_SIZE: usize = 0x88;
+/// Sub-palette index the extension TIM's palette 0 stands for.
+pub const SYSTEM_UI_CLUT_EXT_FIRST_SUBPALETTE: u16 = 16;
+
+/// Atlas placement of the **plain element-badge strip** - the eight 20x12
+/// badges the actor-name plaque wears in front of an elemental actor's
+/// name (widget records `0x8B..=0x92`).
+///
+/// Their texels are not on the system-UI sheet: they are row `v = 192` of
+/// the 256x32 **extension strip** that continues the page at VRAM
+/// `(896, 448)`, and each badge takes its own CLUT out of the
+/// `(896.., 498..499)` block rather than the row-511 strip.
+pub const ATLAS_RECT_ELEMENT_BADGES_ORIGIN: (u32, u32) = (0, 176);
+/// Element-badge cell size.
+pub const ELEMENT_BADGE_W: u32 = 20;
+pub const ELEMENT_BADGE_H: u32 = 12;
+/// Number of element badges in the plain strip.
+pub const ELEMENT_BADGE_COUNT: usize = 8;
+/// Horizontal pitch of the badges **on the extension strip** and the u of
+/// badge 0 (`(6 + 32*i, 0, 20, 12)` in strip-local coordinates - strip
+/// `v` is sheet `V - 192`).
+const ELEMENT_BADGE_SHEET_PITCH: u32 = 32;
+const ELEMENT_BADGE_SHEET_U0: u32 = 6;
+
+/// The two sibling CLUT TIMs the plain element badges decode through:
+/// badges `0..=3` take palettes `0..=3` of the strip's own block (VRAM row
+/// 498, [`title_pak::OVERLAY_SYSTEM_UI_EXT_TIM_OFFSET`]) and badges
+/// `4..=7` the same palettes of the row-499 sibling.
+const ELEMENT_BADGE_ROW499_TIM_OFFSET: usize = 0x100D0;
+
 /// Atlas placement of the 3 character portrait TIMs (16x16 each).
 /// Stacked horizontally just below the empty-frame rect; each portrait
 /// occupies a 16x16 sub-region.
+///
+/// These four TIMs are also **widget records `0x86` / `0x87` / `0x88` and
+/// `0x8A`** - `FUN_8002C488`'s second arm, the ids that draw through
+/// texture page `0x1F` and take their CLUT from the four-word side table at
+/// `0x80073DB8`. That table holds VRAM `(976, 304..307)`, which is exactly
+/// where these TIMs' own CLUT blocks upload, and the records' rects
+/// (`(64|80|96, 0, 16, 16)` and `(64, 16, 32, 32)` on page `0x1F`) address
+/// the same VRAM the image blocks occupy. So the "four ids not on the
+/// system-UI sheet" are the save-slot portraits and the empty-cell frame -
+/// one asset, already baked here and already drawn by
+/// `legaia_engine_ui::ui_title_save::slot_grid`.
 pub const ATLAS_RECT_PORTRAIT_W: u32 = 16;
 pub const ATLAS_RECT_PORTRAIT_H: u32 = 16;
 pub const ATLAS_RECT_PORTRAIT_BASE_X: u32 = 200;
@@ -210,6 +345,14 @@ pub struct SaveMenuAtlas {
     /// [`SaveMenuAtlas::band_hud_digits`] answers `None` then, and the
     /// battle HUD falls back to font glyphs on the same 8-px grid.
     pub has_hud_digits: bool,
+    /// Bit `i` set = status badge `i` (ladder order, `0x18` first) carries
+    /// its cell. Three of the nine need the row-511 extension palettes, so a
+    /// caller whose slice starts at the system-UI sheet gets six; the HUD
+    /// falls back to its labelled tag for the rest.
+    pub status_badges_baked: u16,
+    /// Bit `i` set = plain element badge `i` carries its cell. Clear for
+    /// every badge when the caller's slice cannot reach the extension strip.
+    pub element_badges_baked: u8,
 }
 
 impl SaveMenuAtlas {
@@ -403,6 +546,30 @@ impl SaveMenuAtlas {
     pub fn band_battle_separator(&self) -> (u32, u32, u32, u32) {
         ATLAS_RECT_BATTLE_SEPARATOR
     }
+    /// Status-element badge cell for retail sprite id `sprite`
+    /// (`0x18..=0x20`), or `None` when the id is outside the ladder's band
+    /// or its palette source was out of the caller's slice.
+    pub fn band_status_badge(&self, sprite: u8) -> Option<(u32, u32, u32, u32)> {
+        let i = status_badge_index(sprite)?;
+        (self.status_badges_baked & (1 << i) != 0).then(|| status_badge_atlas_rect(i))
+    }
+    /// Every status badge in ladder order, `None` per unbaked cell. The
+    /// shape the HUD builders take, so one lookup covers the whole ladder.
+    pub fn band_status_badges(&self) -> [Option<(u32, u32, u32, u32)>; STATUS_BADGE_COUNT] {
+        std::array::from_fn(|i| {
+            (self.status_badges_baked & (1 << i) != 0).then(|| status_badge_atlas_rect(i))
+        })
+    }
+    /// Plain element badge `index` (`0..8`), or `None` when the extension
+    /// strip was out of the caller's slice.
+    pub fn band_element_badge(&self, index: usize) -> Option<(u32, u32, u32, u32)> {
+        (index < ELEMENT_BADGE_COUNT && self.element_badges_baked & (1 << index) != 0)
+            .then(|| element_badge_atlas_rect(index))
+    }
+    /// Every plain element badge, `None` per unbaked cell.
+    pub fn band_element_badges(&self) -> [Option<(u32, u32, u32, u32)>; ELEMENT_BADGE_COUNT] {
+        std::array::from_fn(|i| self.band_element_badge(i))
+    }
     /// Empty-cell frame sprite for the load-screen slot grid (32x32,
     /// 20x20 hollow blue border centred in the sprite - outer 6 px
     /// margin is transparent).
@@ -440,6 +607,36 @@ pub const fn hud_digit_cell(strip: (u32, u32, u32, u32), d: u32) -> Option<(u32,
     Some((strip.0 + d * HUD_DIGIT_W, strip.1, HUD_DIGIT_W, HUD_DIGIT_H))
 }
 
+/// Ladder position of a status-element sprite id (`0x18` -> `0`), or `None`
+/// outside the nine-id band.
+pub const fn status_badge_index(sprite: u8) -> Option<usize> {
+    if sprite < 0x18 || sprite > 0x20 {
+        return None;
+    }
+    Some((sprite - 0x18) as usize)
+}
+
+/// Atlas cell of status badge `index` in the re-seated block.
+pub const fn status_badge_atlas_rect(index: usize) -> (u32, u32, u32, u32) {
+    let i = index as u32;
+    (
+        ATLAS_RECT_STATUS_BADGES_ORIGIN.0 + (i % STATUS_BADGE_ATLAS_COLS) * STATUS_BADGE_W,
+        ATLAS_RECT_STATUS_BADGES_ORIGIN.1 + (i / STATUS_BADGE_ATLAS_COLS) * STATUS_BADGE_H,
+        STATUS_BADGE_W,
+        STATUS_BADGE_H,
+    )
+}
+
+/// Atlas cell of plain element badge `index` (one row, left to right).
+pub const fn element_badge_atlas_rect(index: usize) -> (u32, u32, u32, u32) {
+    (
+        ATLAS_RECT_ELEMENT_BADGES_ORIGIN.0 + index as u32 * ELEMENT_BADGE_W,
+        ATLAS_RECT_ELEMENT_BADGES_ORIGIN.1,
+        ELEMENT_BADGE_W,
+        ELEMENT_BADGE_H,
+    )
+}
+
 /// Build a [`SaveMenuAtlas`] from raw `PROT.DAT` bytes (carries the
 /// system-UI TIM at offset `0x018E0`) plus the trailing-overlay
 /// bytes of PROT 0899 (carries the save-menu TIM with the slot pills).
@@ -460,6 +657,11 @@ pub fn build_atlas(
     prot_0899_bytes: &[u8],
     menu_glyph_tim: Option<&[u8]>,
 ) -> anyhow::Result<SaveMenuAtlas> {
+    // A caller may root its slice one TIM earlier, at the row-511 CLUT
+    // extension (`SYSTEM_UI_CLUT_EXT_TIM_OFFSET`), to bring the status
+    // badges' sub-palettes 16..18 along. Split that off first so every
+    // offset below still measures from the system-UI sheet.
+    let (clut_ext_tim, prot_dat_bytes) = split_leading_clut_ext(prot_dat_bytes);
     // --- Slot pills from PROT 0899 ---
     let pill_tim = title_pak::extract_overlay_save_menu_tim(prot_0899_bytes)?;
     let pill_parsed = legaia_tim::parse(pill_tim.bytes)?;
@@ -742,6 +944,18 @@ pub fn build_atlas(
     // (`engine_vm::battle_chrome`), which the atlas happens to leave free.
     add_battle_chrome_sprites(&mut out, &panel_parsed, panel_src_w)?;
 
+    // The nine status-element badges the exclusive ladder selects, each on
+    // its own row-511 sub-palette. Three of them reach past the sheet TIM's
+    // own sixteen palettes into the extension block, so the returned mask
+    // says which cells actually carry art.
+    let status_badges_baked =
+        add_status_badge_sprites(&mut out, &panel_parsed, panel_src_w, clut_ext_tim)?;
+
+    // The eight plain element badges. Their texels live on the extension
+    // strip below the sheet, not on the sheet, and their palettes come out
+    // of two sibling CLUT TIMs - so this is a whole separate source chain.
+    let element_badges_baked = add_element_badge_sprites(&mut out, prot_dat_bytes)?;
+
     // Battle-HUD numeral cells, off a different TIM entirely. Optional:
     // a caller without the menu-glyph slice leaves the strip blank and
     // the HUD falls back to font glyphs.
@@ -756,7 +970,183 @@ pub fn build_atlas(
         width: ATLAS_WIDTH,
         height: ATLAS_HEIGHT,
         has_hud_digits,
+        status_badges_baked,
+        element_badges_baked,
     })
+}
+
+/// Split a leading row-511 CLUT-extension TIM off the caller's PROT.DAT
+/// slice, returning `(extension bytes, the rest)`.
+///
+/// Three shapes reach here and all three are answered by looking for that
+/// TIM's own signature - a CLUT block at VRAM `(256, 511)`:
+///
+/// * a slice rooted at [`SYSTEM_UI_CLUT_EXT_TIM_OFFSET`] - the extension is
+///   the first `SYSTEM_UI_CLUT_EXT_TIM_SIZE` bytes;
+/// * the whole `PROT.DAT` - the extension is at its absolute offset and the
+///   rest is returned unchanged, since every other offset here is absolute
+///   in that case too;
+/// * a slice rooted at the system-UI sheet - the extension is *behind* the
+///   slice start and simply unreachable.
+fn split_leading_clut_ext(bytes: &[u8]) -> (Option<&[u8]>, &[u8]) {
+    let looks_like_ext = |b: &[u8]| -> bool {
+        b.len() >= SYSTEM_UI_CLUT_EXT_TIM_SIZE
+            && b[..4] == [0x10, 0, 0, 0]
+            && legaia_tim::parse(&b[..SYSTEM_UI_CLUT_EXT_TIM_SIZE])
+                .ok()
+                .and_then(|t| t.clut.map(|c| (c.fb_x, c.fb_y)))
+                == Some((256, 511))
+    };
+    if looks_like_ext(bytes) {
+        return (
+            Some(&bytes[..SYSTEM_UI_CLUT_EXT_TIM_SIZE]),
+            &bytes[SYSTEM_UI_CLUT_EXT_TIM_SIZE..],
+        );
+    }
+    if bytes.len() > SYSTEM_UI_CLUT_EXT_TIM_OFFSET
+        && looks_like_ext(&bytes[SYSTEM_UI_CLUT_EXT_TIM_OFFSET..])
+    {
+        let end = SYSTEM_UI_CLUT_EXT_TIM_OFFSET + SYSTEM_UI_CLUT_EXT_TIM_SIZE;
+        return (Some(&bytes[SYSTEM_UI_CLUT_EXT_TIM_OFFSET..end]), bytes);
+    }
+    (None, bytes)
+}
+
+/// Stamp the nine **status-element badges** into the atlas, one row-511
+/// sub-palette each, and return a bitmask of the cells that got art.
+///
+/// The art settles the ladder's per-bit assignment on its own: decoding the
+/// two-column block gives `Venom` / `Toxic` / `Stone` / `Rot` / `Rage` /
+/// `Numb` / `Sleep` / `Curse` / `Faint` in exactly `FUN_8002C2E4`'s order.
+///
+/// Six badges decode with the sheet TIM's own palettes. `Stone`, `Rage` and
+/// `Faint` sit on sub-palettes 16 / 17 / 18, past that TIM's sixteen - they
+/// take the CLUT-only extension TIM at [`SYSTEM_UI_CLUT_EXT_TIM_OFFSET`],
+/// whose block uploads to VRAM `(256, 511)` and continues the same strip.
+/// Without it those three cells stay blank and the HUD keeps its tag.
+///
+/// REF: FUN_8002c2e4
+fn add_status_badge_sprites(
+    dst: &mut [u8],
+    panel_parsed: &legaia_tim::Tim,
+    src_w: u32,
+    clut_ext_tim: Option<&[u8]>,
+) -> anyhow::Result<u16> {
+    // The extension TIM carries no pixels of its own - only the three
+    // palettes - so it is grafted onto the sheet's image the same way the
+    // ATR icons graft their row-500 block onto the extension strip.
+    let ext_sheet = clut_ext_tim
+        .and_then(|b| legaia_tim::parse(b).ok())
+        .and_then(|ext| {
+            ext.clut.map(|clut| {
+                let mut sheet = panel_parsed.clone();
+                sheet.clut = Some(clut);
+                sheet
+            })
+        });
+
+    let mut baked = 0u16;
+    for (i, cell) in STATUS_BADGE_CELLS.iter().enumerate() {
+        let (tim, pal) = if cell.subpalette < SYSTEM_UI_CLUT_EXT_FIRST_SUBPALETTE {
+            (panel_parsed, cell.subpalette as usize)
+        } else {
+            match ext_sheet.as_ref() {
+                Some(t) => (
+                    t,
+                    (cell.subpalette - SYSTEM_UI_CLUT_EXT_FIRST_SUBPALETTE) as usize,
+                ),
+                None => continue,
+            }
+        };
+        let rgba = legaia_tim::decode_rgba8(tim, pal).map_err(|e| {
+            anyhow::anyhow!("status badge {:#04x} decode failed: {e:?}", cell.sprite)
+        })?;
+        debug_assert_eq!(status_badge_index(cell.sprite), Some(i));
+        copy_rect(
+            dst,
+            ATLAS_WIDTH,
+            &rgba,
+            src_w,
+            (cell.sheet.0, cell.sheet.1, STATUS_BADGE_W, STATUS_BADGE_H),
+            status_badge_atlas_rect(i),
+        );
+        baked |= 1 << i;
+    }
+    Ok(baked)
+}
+
+/// Stamp the eight **plain element badges** into the atlas and return a
+/// bitmask of the cells that got art.
+///
+/// These are not on the system-UI sheet. Their texels are row `v = 192` of
+/// the 256x32 extension strip that continues the page at VRAM `(896, 448)`
+/// (`title_pak::OVERLAY_SYSTEM_UI_EXT_TIM_OFFSET`), i.e. strip-local
+/// `v = 0`; and their palettes come from that strip's own CLUT block (VRAM
+/// row 498, badges `0..=3`) and its row-499 sibling (badges `4..=7`). The
+/// widget record's palette byte `0x40 + i` is what says so: the bit-6
+/// decode walks a 4-wide block of CLUTs row-major, so the low two bits pick
+/// the column inside a block and the next two pick the block.
+fn add_element_badge_sprites(dst: &mut [u8], prot_dat_bytes: &[u8]) -> anyhow::Result<u8> {
+    let base = title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET;
+    let size = title_pak::OVERLAY_SYSTEM_UI_EXT_TIM_SIZE;
+    let has_tim_magic = |off: usize| {
+        prot_dat_bytes.len() >= off + 8 && prot_dat_bytes[off..off + 4] == [0x10, 0, 0, 0]
+    };
+    // Same full-PROT.DAT vs sheet-rooted-slice disambiguation the ATR
+    // icons run; both source TIMs sit after the sheet, so a relative root
+    // never underflows.
+    let strip_abs = title_pak::OVERLAY_SYSTEM_UI_EXT_TIM_OFFSET;
+    let row499_abs = ELEMENT_BADGE_ROW499_TIM_OFFSET;
+    let (strip_off, row499_off) = if has_tim_magic(strip_abs - base) {
+        (strip_abs - base, row499_abs - base)
+    } else if has_tim_magic(strip_abs) {
+        (strip_abs, row499_abs)
+    } else {
+        return Ok(0);
+    };
+    let end = |o: usize| (o + size).min(prot_dat_bytes.len());
+    let Ok(strip) = legaia_tim::parse(&prot_dat_bytes[strip_off..end(strip_off)]) else {
+        return Ok(0);
+    };
+    let strip_w = strip.pixel_width() as u32;
+    let row499 = legaia_tim::parse(&prot_dat_bytes[row499_off..end(row499_off)])
+        .ok()
+        .and_then(|t| t.clut)
+        .map(|clut| {
+            let mut s = strip.clone();
+            s.clut = Some(clut);
+            s
+        });
+
+    let mut baked = 0u8;
+    for i in 0..ELEMENT_BADGE_COUNT {
+        let (tim, pal) = if i < 4 {
+            (&strip, i)
+        } else {
+            match row499.as_ref() {
+                Some(t) => (t, i - 4),
+                None => continue,
+            }
+        };
+        let Ok(rgba) = legaia_tim::decode_rgba8(tim, pal) else {
+            continue;
+        };
+        copy_rect(
+            dst,
+            ATLAS_WIDTH,
+            &rgba,
+            strip_w,
+            (
+                ELEMENT_BADGE_SHEET_U0 + i as u32 * ELEMENT_BADGE_SHEET_PITCH,
+                0,
+                ELEMENT_BADGE_W,
+                ELEMENT_BADGE_H,
+            ),
+            element_badge_atlas_rect(i),
+        );
+        baked |= 1 << i;
+    }
+    Ok(baked)
 }
 
 /// Stamp the battle screen's own skin into the atlas: the roster-panel
@@ -1261,8 +1651,12 @@ mod tests {
         let system_ui_slice = &prot_dat[tim_off..end];
         let glyph_off = legaia_asset::menu_glyph_atlas::PROT_DAT_OFFSET as usize;
         let glyph_tim = &prot_dat[glyph_off..glyph_off + legaia_asset::menu_glyph_atlas::TIM_SIZE];
-        let atlas = build_atlas(system_ui_slice, &prot_899, Some(glyph_tim))
-            .expect("build save-menu atlas");
+        // The battle HUD's own window starts one TIM earlier, at the row-511
+        // CLUT extension, so the three status badges on sub-palettes 16..18
+        // come along; `build_atlas` splits that leading TIM back off.
+        let hud_slice = &prot_dat[SYSTEM_UI_CLUT_EXT_TIM_OFFSET..end];
+        let atlas =
+            build_atlas(hud_slice, &prot_899, Some(glyph_tim)).expect("build save-menu atlas");
         assert_eq!(atlas.width, ATLAS_WIDTH);
         assert_eq!(atlas.height, ATLAS_HEIGHT);
         assert_eq!(atlas.rgba.len(), (ATLAS_WIDTH * ATLAS_HEIGHT * 4) as usize);
@@ -1293,6 +1687,78 @@ mod tests {
             strip.0 + strip.2
         );
         assert_eq!(hud_digit_cell(strip, 10), None);
+
+        // The nine status-element badges, including the three whose
+        // sub-palettes (16 / 17 / 18) only exist because the slice reached
+        // the row-511 CLUT extension. Each cell is a word tag, so a mostly
+        // opaque 48x16 block, and no two decode identically - a wrong
+        // palette would collapse several onto one colour.
+        let opaque_in = |rect: (u32, u32, u32, u32)| -> u32 {
+            let (rx, ry, rw, rh) = rect;
+            let mut n = 0;
+            for row in 0..rh {
+                for col in 0..rw {
+                    let off = ((ry + row) as usize) * stride + ((rx + col) as usize) * 4;
+                    if atlas.rgba[off + 3] != 0 {
+                        n += 1;
+                    }
+                }
+            }
+            n
+        };
+        let mut inks: Vec<Vec<u8>> = Vec::new();
+        for (i, cell) in STATUS_BADGE_CELLS.iter().enumerate() {
+            let sprite = cell.sprite;
+            let rect = atlas
+                .band_status_badge(sprite)
+                .unwrap_or_else(|| panic!("status badge {sprite:#04x} not baked"));
+            assert_eq!(rect, status_badge_atlas_rect(i));
+            assert!(
+                opaque_in(rect) > 200,
+                "status badge {sprite:#04x} decoded nearly empty"
+            );
+            let (rx, ry, rw, rh) = rect;
+            let mut px = Vec::new();
+            for row in 0..rh {
+                let off = ((ry + row) as usize) * stride + (rx as usize) * 4;
+                px.extend_from_slice(&atlas.rgba[off..off + (rw as usize) * 4]);
+            }
+            inks.push(px);
+        }
+        for a in 0..inks.len() {
+            for b in (a + 1)..inks.len() {
+                assert_ne!(
+                    inks[a], inks[b],
+                    "status badges {a} and {b} decoded identically - one took the wrong palette"
+                );
+            }
+        }
+        // The plain element badges off the extension strip, 20x12 each.
+        for i in 0..ELEMENT_BADGE_COUNT {
+            let rect = atlas
+                .band_element_badge(i)
+                .unwrap_or_else(|| panic!("element badge {i} not baked"));
+            assert_eq!(rect, element_badge_atlas_rect(i));
+            assert!(
+                opaque_in(rect) > 40,
+                "element badge {i} decoded nearly empty"
+            );
+        }
+
+        // A sheet-rooted slice cannot reach the CLUT extension, so exactly
+        // the three extension-palette badges go unbaked - and the HUD's
+        // per-cell fallback is what that shape exists for.
+        let narrow = build_atlas(system_ui_slice, &prot_899, Some(glyph_tim))
+            .expect("build save-menu atlas without the CLUT extension");
+        for cell in STATUS_BADGE_CELLS {
+            let (sprite, subpal) = (cell.sprite, cell.subpalette);
+            let reachable = subpal < SYSTEM_UI_CLUT_EXT_FIRST_SUBPALETTE;
+            assert_eq!(
+                narrow.band_status_badge(sprite).is_some(),
+                reachable,
+                "badge {sprite:#04x} (sub-palette {subpal}) baked against expectation"
+            );
+        }
 
         // Built without the glyph TIM, the strip is absent rather than
         // blank - that is what lets the HUD choose its font fallback.

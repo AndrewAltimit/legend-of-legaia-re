@@ -32,3 +32,14 @@ pub use teardown::BattleSpoilsBanner;
 /// runs as the **arm** command `0x0C` - the cheapest of the four and the one
 /// the gauge deals first.
 pub(in crate::world) const BASIC_ATTACK_COMMAND: u8 = 0x0C;
+
+/// The sound cue a landed melee swing submits - `li a0,0x10c` at
+/// `0x801EEBD8`, the one `jal 0x8004fe5c` in the melee kernel
+/// `FUN_801EC3E4`. See [`World::apply_one_basic_strike`]'s cue arm for what
+/// each of the funnel's two legs does with it.
+pub(in crate::world) const MELEE_IMPACT_CUE: u32 = 0x10C;
+
+/// Attacker element the SFX funnel's tinted leg writes when the engine can
+/// resolve none - retail's non-elemental id, the same `7` the melee damage
+/// path passes as `attacker_element`.
+pub(in crate::world) const NEUTRAL_ELEMENT: u8 = 7;

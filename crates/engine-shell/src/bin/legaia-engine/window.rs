@@ -306,6 +306,10 @@ struct SaveMenuAssets {
     /// GPU-resident sprite atlas (composite 256×256: panel tiles from
     /// system-UI TIM + slot pills from PROT 0899's save-menu TIM).
     atlas: legaia_engine_render::UploadedSpriteAtlas,
+    /// Battle-HUD badge cells inside that atlas: the nine status-element
+    /// word tags and the eight element badges, `None` per cell this bake
+    /// could not reach a palette for.
+    badges: legaia_engine_render::battle_hud_chrome::BattleBadgeRects,
 }
 
 /// Muscle Dome hub-screen assets: the two hub page TIMs (extraction 1220,
@@ -1333,9 +1337,14 @@ mod battle_camera_tests {
 
     /// `retail_battle_mvp` must reproduce the exact retail overworld-battle
     /// projection `screen = H*(Rx(32u)*Ry(yaw)*v + (0,1280,7680))/Ze`, H=256,
-    /// PSX +Y down, screen-centre (160,120) over 320x240 - pinned from the
+    /// PSX +Y down, screen-centre `(OFX, OFY)` over 320x240 - pinned from the
     /// `overworld_battle_bg_angle_*` saves + `FUN_80026988`. Disc-free: pure
     /// math. Guards the glam matrix construction against regression.
+    ///
+    /// The centre is the GTE control file's, not the geometric one: `OFY` is
+    /// `114`. Writing `120` on *both* sides of this comparison is what let the
+    /// six-pixel error live - the reference has to name the retail constant,
+    /// so that a matrix built on the naive centre fails here.
     #[test]
     fn retail_battle_mvp_matches_psx_projection() {
         // Hand-rolled retail projection (the savestate-verified reference).
@@ -1351,8 +1360,8 @@ mod battle_camera_tests {
                 return None;
             }
             Some((
-                256.0 * e[0] / ez + 160.0,
-                256.0 * (e[1] + 1280.0) / ez + 120.0,
+                256.0 * e[0] / ez + legaia_engine_vm::battle_cam_script::GTE_OFX,
+                256.0 * (e[1] + 1280.0) / ez + legaia_engine_vm::battle_cam_script::GTE_OFY,
             ))
         }
         // Sample several world points and orbit angles (4:3 so aspect_fix == 1).

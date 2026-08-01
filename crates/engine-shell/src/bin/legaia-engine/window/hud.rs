@@ -954,9 +954,15 @@ impl PlayWindowApp {
                 out.extend(text_draws_for(&ml_layout, SHOP_OVERLAY_PEN, white));
             }
         }
-        // Battle-event log: rendered along the right edge when non-empty.
-        // Most recent at the bottom of the column.
-        if !self.battle_event_log.is_empty() {
+        // Battle-event log: the engine's own typed battle stream
+        // (`Pose(...)`, `RecomputeBattleOrder`, per-strike `slot N -M HP`)
+        // rendered along the right edge, most recent at the bottom. It is a
+        // **diagnostic** surface - retail draws no such column, and painting
+        // it over the dialog box is what made a live battle unreadable - so
+        // it rides the shared `LEGAIA_DIAG_HUD` toggle with the rest of the
+        // debug readout and is off by default. The ring itself keeps
+        // filling either way, so a probe can turn it on mid-session.
+        if !self.battle_event_log.is_empty() && legaia_engine_render::diag_hud_enabled() {
             let log_color = [1.0f32, 0.95, 0.7, 1.0];
             let line_height = 14;
             let bottom_y = 280;
@@ -972,7 +978,7 @@ impl PlayWindowApp {
         // SceneMode::Battle; harmless when the live loop is off (it just never
         // enters battle).
         if self.session.host.world.mode == SceneMode::Battle {
-            use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
+            use legaia_engine_core::battle_input::CommandPhase;
             use legaia_engine_core::target_picker::{CursorRow, PickerState};
             let bw = &self.session.host.world;
             // Greyed-out row tint, used by the target lists in the Arts /
@@ -1183,34 +1189,28 @@ impl PlayWindowApp {
                 let mut my = 210i32;
                 match &cmd.phase {
                     CommandPhase::Menu { .. } => {
-                        let header = format!("P{} - command:", cmd.actor + 1);
-                        out.extend(text_draws_for(
-                            &self.font.layout_ascii(&header),
-                            (menu_x, my),
-                            white,
-                        ));
-                        my += 16;
-                        let cur = cmd.menu_command();
-                        for c in BattleCommand::MENU {
-                            let marker = if Some(c) == cur { ">" } else { " " };
-                            let line = if c.enabled() {
-                                format!("{} {}", marker, c.label())
-                            } else {
-                                format!("{} {} --", marker, c.label())
-                            };
-                            let color = if Some(c) == cur {
-                                white
-                            } else if c.enabled() {
-                                dim
-                            } else {
-                                down_color
-                            };
-                            out.extend(text_draws_for(
-                                &self.font.layout_ascii(&line),
-                                (menu_x + 8, my),
-                                color,
+                        // Retail's command menu is a cluster of framed
+                        // chips around a D-pad glyph, not a list: the
+                        // packet-pinned diamond at `(228, 70)` plus the
+                        // port's second row for the two entries retail's
+                        // four arms have no seat for. Labels ride the
+                        // shared builder's left-aligned interior pen, and
+                        // a command that cannot be chosen keeps its chip
+                        // and draws a single `-`. The plates themselves go
+                        // out in the sprite layer
+                        // (`battle_chrome_sprite_draws`).
+                        if let Some((chips, cursor)) = self.battle_command_menu_chips() {
+                            use legaia_engine_render::battle_command_ui as bcu;
+                            let (origin, scale) = self.save_select_stage(w, h);
+                            out.extend(bcu::battle_command_chip_text(
+                                &self.font,
+                                &bcu::BattleCommandMenuFrame {
+                                    chips: &chips,
+                                    cursor: Some(cursor),
+                                },
+                                origin,
+                                scale,
                             ));
-                            my += 14;
                         }
                     }
                     CommandPhase::Targeting { command, picker } => {
@@ -1274,28 +1274,53 @@ impl PlayWindowApp {
                 out.extend(draws);
             }
         }
-        // Level-up banner: rendered near the top when active after a battle win.
-        if let Some(banner) = &self.session.host.world.current_level_up_banner {
-            let draws = level_up_draws_for(
-                &self.font,
-                banner.char_id,
-                banner.new_level,
-                banner.hp_gained,
-                banner.mp_gained,
-                LEVEL_UP_BANNER_PEN,
-            );
-            out.extend(draws);
-        }
-        // Seru-capture banner: shown after a battle in which a Seru was
-        // captured (and, if a threshold was crossed, a spell learned).
-        if let Some(banner) = &self.session.host.world.current_capture_banner
-            && let Some(text) = banner.current_banner()
-        {
-            out.extend(capture_banner_draws_for(
-                &self.font,
-                &text,
-                CAPTURE_BANNER_PEN,
-            ));
+        // Level-up + Seru-capture messages. Both take retail's own
+        // top-of-screen banner - the widget the `noa_levelup_banner` capture
+        // pinned - rather than a loose pen in the corner.
+        //
+        // Two draw paths, mutually exclusive by mode: inside battle
+        // `battle_hud_draws_for` emits the banner (and yields the plaque's
+        // seat to it); outside, the same builders run here, because the port
+        // raises both messages a mode-tick after the fight has already
+        // returned to the field.
+        // Without the system-UI atlas there is no frame to put a message in,
+        // so a chrome-less host keeps the original loose pens.
+        let banner_message = self
+            .battle_banner_message()
+            .filter(|_| self.save_menu.is_some());
+        match &banner_message {
+            // In battle `battle_hud_draws_for` already emitted both halves.
+            Some(_) if self.session.host.world.mode == SceneMode::Battle => {}
+            Some(message) => {
+                let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+                let mut rows =
+                    legaia_engine_render::battle_hud_chrome::message_banner_text_draws_for(
+                        &self.font, message,
+                    );
+                legaia_engine_render::scale_stage_text_draws(&mut rows, stage_origin, stage_scale);
+                out.extend(rows);
+            }
+            None => {
+                if let Some(banner) = &self.session.host.world.current_level_up_banner {
+                    out.extend(level_up_draws_for(
+                        &self.font,
+                        banner.char_id,
+                        banner.new_level,
+                        banner.hp_gained,
+                        banner.mp_gained,
+                        LEVEL_UP_BANNER_PEN,
+                    ));
+                }
+                if let Some(banner) = &self.session.host.world.current_capture_banner
+                    && let Some(text) = banner.current_banner()
+                {
+                    out.extend(capture_banner_draws_for(
+                        &self.font,
+                        &text,
+                        CAPTURE_BANNER_PEN,
+                    ));
+                }
+            }
         }
         // Opening-cutscene narration: the retail bottom-up subtitle CRAWL
         // (`FUN_80037174`) - every visible line drawn centered at its
@@ -1808,6 +1833,8 @@ impl PlayWindowApp {
                     .map(|(_, name)| (slot, name))
             })
             .or_else(|| legaia_engine_core::battle_hud::battle_active_actor(w_ref));
+        let badges = self.battle_badge_rects();
+        let banner = self.battle_banner_message();
         battle_hud_draws_for(
             &self.font,
             &legaia_engine_render::BattleHudFrame {
@@ -1818,6 +1845,16 @@ impl PlayWindowApp {
                 surface: (w, h),
                 chrome: self.save_menu.as_ref().map(|a| &a.rects),
                 plaque: active.as_ref().map(|(_, n)| n.as_str()),
+                plaque_badge: legaia_engine_core::battle_hud::battle_plaque_element_badge(w_ref),
+                banner: banner.as_deref(),
+                // The sparring-tutorial prompt is a box the host draws
+                // itself, and its rect starts on the plaque's own content
+                // pen - so while it is up the plaque must not draw, or the
+                // two text runs land on the same pixels.
+                plaque_seat_taken: self.battle_tutorial_stage_rect().is_some()
+                    || w_ref.current_dialog.is_some()
+                    || w_ref.inline_dialogue.is_some(),
+                badges: badges.as_ref(),
                 active_slot: active.as_ref().map(|(s, _)| *s),
                 // Retail parks the status plate off-screen while a command
                 // entry session owns the frame; the port emits no strip.
@@ -1828,21 +1865,152 @@ impl PlayWindowApp {
         )
     }
 
+    /// The badge cells the battle HUD blits, projected out of the baked
+    /// atlas. `None` before the atlas is resident; a `None` *cell* inside it
+    /// means that badge's palette source was outside the slice the atlas was
+    /// built from, and the HUD falls back to its labelled tag.
+    pub(super) fn battle_badge_rects(
+        &self,
+    ) -> Option<legaia_engine_render::battle_hud_chrome::BattleBadgeRects> {
+        self.save_menu.as_ref().map(|a| a.badges)
+    }
+
+    /// The message holding retail's top-of-screen banner this frame, if any.
+    ///
+    /// The port's two battle messages are the level-up and Seru-capture
+    /// lines, and retail draws exactly those in this widget -
+    /// `noa_levelup_banner` is one of the two save states the banner's
+    /// geometry was read out of.
+    ///
+    /// Not gated on `SceneMode::Battle`, and that is a **port ordering
+    /// difference worth naming**: retail raises the level-up message on the
+    /// battle result screen, still in battle, while the port grants XP after
+    /// the mode has already flipped back to Field - so gating on battle mode
+    /// would leave the widget wired and never drawn. The message goes in
+    /// retail's own widget wherever the port raises it; the sprite half
+    /// follows through [`Self::battle_chrome_sprite_draws`].
+    ///
+    /// `None` without the system-UI atlas: there is no frame to put a
+    /// message in, so a chrome-less host keeps the loose pens instead.
+    pub(super) fn battle_banner_message(&self) -> Option<String> {
+        self.save_menu.as_ref()?;
+        let w = &self.session.host.world;
+        if let Some(b) = &w.current_level_up_banner {
+            return Some(format!(
+                "LEVEL UP!  P{} -> LV {}\nHP +{}  MP +{}",
+                b.char_id + 1,
+                b.new_level,
+                b.hp_gained,
+                b.mp_gained
+            ));
+        }
+        w.current_capture_banner
+            .as_ref()
+            .and_then(|b| b.current_banner())
+    }
+
+    /// The live battle command menu projected into the shared chip-cluster
+    /// view: one [`legaia_engine_render::battle_command_ui::CommandChipView`]
+    /// per `BattleCommand::MENU` entry plus the cursor index, or `None` when
+    /// no command menu owns the frame.
+    ///
+    /// One projector feeds both halves of the cluster - the plate sprites
+    /// and the labels - so the two draw slots cannot disagree about whether
+    /// the menu is up. The suppression rules mirror the text block's
+    /// if-else chain exactly: a dialogue box, an arts-entry session or any
+    /// open submenu parks the command chrome, which is what retail does.
+    pub(super) fn battle_command_menu_chips(
+        &self,
+    ) -> Option<(
+        Vec<legaia_engine_render::battle_command_ui::CommandChipView<'static>>,
+        usize,
+    )> {
+        use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
+        let bw = &self.session.host.world;
+        if bw.mode != legaia_engine_core::world::SceneMode::Battle {
+            return None;
+        }
+        if bw.current_dialog.is_some() || bw.inline_dialogue.is_some() {
+            return None;
+        }
+        if bw.arts_input_view().is_some()
+            || bw.battle_arts_menu.is_some()
+            || bw.battle_spell_menu.is_some()
+            || bw.battle_item_menu.is_some()
+        {
+            return None;
+        }
+        let cmd = bw.battle_command.as_ref()?;
+        let CommandPhase::Menu { cursor } = cmd.phase else {
+            return None;
+        };
+        let no_escape = bw.battle_no_escape;
+        Some((
+            BattleCommand::MENU
+                .iter()
+                .map(
+                    |c| legaia_engine_render::battle_command_ui::CommandChipView {
+                        label: c.label(),
+                        enabled: c.available(no_escape),
+                    },
+                )
+                .collect(),
+            cursor as usize,
+        ))
+    }
+
     /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` /
-    /// green `MP` label cells) for the system-UI atlas slot. Empty outside
-    /// battle, or before the atlas is resident.
+    /// green `MP` label cells) for the system-UI atlas slot, plus the
+    /// command menu's chip plates + D-pad glyph when a menu is up. Empty
+    /// before the atlas is resident.
+    ///
+    /// Outside battle this narrows to one surface: the frame of the
+    /// **message banner** carrying a level-up / Seru-capture line, which the
+    /// port raises after the fight has already handed the frame back to the
+    /// field. Its text half rides the glyph layer in `hud_draws`.
     pub(super) fn battle_chrome_sprite_draws(
         &self,
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<legaia_engine_render::SpriteDraw> {
+        let Some(assets) = self.save_menu.as_ref() else {
+            return Vec::new();
+        };
+        if self.boot_ui.is_active() {
+            return Vec::new();
+        }
         if self.session.host.world.mode != legaia_engine_core::world::SceneMode::Battle {
-            return Vec::new();
+            let Some(message) = self.battle_banner_message() else {
+                return Vec::new();
+            };
+            let (origin, scale) = self.save_select_stage(surface_w, surface_h);
+            use legaia_engine_render::battle_hud_chrome as bhc;
+            return bhc::message_banner_chrome_draws_for(
+                &assets.rects,
+                bhc::message_banner_content(&self.font, &message),
+                origin,
+                scale,
+            );
         }
-        if self.save_menu.is_none() || self.boot_ui.is_active() {
-            return Vec::new();
+        let mut out = self.battle_hud_frame_draws(surface_w, surface_h).sprites;
+        // The command chips sample the same blue plate 3-slice the party
+        // bar does, so they ride this list rather than a second slot.
+        if let (Some(rects), Some((chips, cursor))) =
+            (assets.rects.battle, self.battle_command_menu_chips())
+        {
+            use legaia_engine_render::battle_command_ui as bcu;
+            let (origin, scale) = self.save_select_stage(surface_w, surface_h);
+            out.extend(bcu::battle_command_chip_sprites(
+                &bcu::CommandChipAtlas::from_battle_chrome(&rects),
+                &bcu::BattleCommandMenuFrame {
+                    chips: &chips,
+                    cursor: Some(cursor),
+                },
+                origin,
+                scale,
+            ));
         }
-        self.battle_hud_frame_draws(surface_w, surface_h).sprites
+        out
     }
 
     /// The retail enemy target-name strip for a picker parked on the enemy
@@ -2180,6 +2348,145 @@ mod battle_hud_wiring_tests {
         );
     }
 
+    /// Third face of the same mirror: the **command-chip clusters**. Both
+    /// pinned clusters and every seat on them have to agree with
+    /// `battle_chrome`, or the menu draws chips at coordinates nothing
+    /// pinned. This window is again the only crate that can see both sides.
+    #[test]
+    fn engine_ui_command_chips_mirror_the_packet_pinned_battle_chrome() {
+        use legaia_engine_render::battle_command_ui as bcu;
+        use legaia_engine_vm::battle_chrome as bc;
+
+        let pairs = [
+            (bcu::CLUSTER_COMMAND, bc::CLUSTER_COMMAND),
+            (bcu::CLUSTER_TOP_LEVEL, bc::CLUSTER_TOP_LEVEL),
+        ];
+        for (ui, vm) in pairs {
+            assert_eq!(ui.centre, (vm.centre.0 as i32, vm.centre.1 as i32));
+            assert_eq!(ui.dx, vm.dx as i32);
+            assert_eq!(ui.dy, vm.dy as i32);
+            assert_eq!(ui.interior_w, vm.interior_w as i32);
+            assert_eq!(
+                ui.plate_width(),
+                bc::plate_width(vm.interior_w) as i32,
+                "the mirrored plate width drifted from battle_chrome"
+            );
+            let seats = [
+                (bcu::ChipSeat::Up, bc::ChipSeat::Up),
+                (bcu::ChipSeat::Left, bc::ChipSeat::Left),
+                (bcu::ChipSeat::Right, bc::ChipSeat::Right),
+                (bcu::ChipSeat::Down, bc::ChipSeat::Down),
+            ];
+            for (us, vs) in seats {
+                let (px, py) = vm.plate_origin(vs);
+                assert_eq!(
+                    ui.plate_origin(us),
+                    (px as i32, py as i32),
+                    "the mirrored chip plate seat drifted from battle_chrome"
+                );
+                let (lx, ly) = vm.label_seat(vs);
+                assert_eq!(
+                    ui.label_seat(us),
+                    (lx as i32, ly as i32),
+                    "the mirrored chip label pen drifted from battle_chrome"
+                );
+            }
+            let (dx, dy, dw, dh) = vm.dpad_rect();
+            assert_eq!(ui.dpad_rect(), (dx as i32, dy as i32, dw as u32, dh as u32));
+        }
+        // The plate 3-slice and the D-pad cell the chips sample are the
+        // same rects `battle_chrome` names.
+        let a = bcu::CommandChipAtlas::SHEET;
+        assert_eq!(a.plate_cap_l.0 as u16, bc::PLATE_CAP_L_U);
+        assert_eq!(a.plate_body.0 as u16, bc::PLATE_BODY_U);
+        assert_eq!(a.plate_cap_r.0 as u16, bc::PLATE_CAP_R_U);
+        for r in [a.plate_cap_l, a.plate_body, a.plate_cap_r] {
+            assert_eq!(r.1 as u16, bc::PLATE_BLUE.v);
+            assert_eq!(r.3 as u16, bc::PLATE_H);
+        }
+        assert_eq!(
+            a.dpad,
+            (
+                bc::DPAD_GLYPH.0 as u32,
+                bc::DPAD_GLYPH.1 as u32,
+                bc::DPAD_GLYPH.2 as u32,
+                bc::DPAD_GLYPH.3 as u32
+            ),
+            "the command cluster stopped sampling battle_chrome's D-pad cell"
+        );
+        assert_eq!(bcu::DPAD_DRAW, bc::DPAD_DRAW_W as u32);
+        // One chip per menu entry, and the port's extra row is the only
+        // seating that is not a pinned diamond arm.
+        assert_eq!(
+            bcu::MENU_SEATS.len(),
+            legaia_engine_core::battle_input::BattleCommand::MENU.len(),
+            "the seating table and the command menu disagree on entry count"
+        );
+        assert_eq!(
+            bcu::MENU_SEATS
+                .iter()
+                .filter(|s| matches!(s, bcu::CommandSeat::Diamond(_)))
+                .count(),
+            4,
+            "the pinned diamond has four arms and they must all be used"
+        );
+    }
+
+    /// The Left / Right step the command session takes has to land on the
+    /// chip actually drawn beside the current one. `engine-core` cannot see
+    /// the seating table (it does not link `engine-ui`), so it carries the
+    /// pairing as its own `match`; this is where the two are held equal.
+    #[test]
+    fn left_right_steps_land_on_the_neighbouring_drawn_chip() {
+        use legaia_engine_core::battle_input::{
+            BattleCommand, BattleCommandInput, BattleCommandSession, CommandPhase,
+        };
+        use legaia_engine_core::target_picker::SlotState;
+        use legaia_engine_render::battle_command_ui as bcu;
+
+        let party = [SlotState::alive(true, true); 3];
+        let monsters = [
+            SlotState::alive(true, true),
+            SlotState::default(),
+            SlotState::default(),
+            SlotState::default(),
+            SlotState::default(),
+        ];
+        for from in 0..BattleCommand::MENU.len() {
+            let mut s = BattleCommandSession::new(0, 0);
+            s.phase = CommandPhase::Menu { cursor: from as u8 };
+            s.input(
+                BattleCommandInput {
+                    right: true,
+                    ..Default::default()
+                },
+                party,
+                monsters,
+            );
+            let to = BattleCommand::MENU
+                .iter()
+                .position(|c| Some(*c) == s.menu_command())
+                .expect("the cursor stayed in the menu");
+            let (a, b) = (bcu::MENU_SEATS[from], bcu::MENU_SEATS[to]);
+            if to == from {
+                // A lone chip on a vertical arm: nothing is drawn beside it.
+                assert!(
+                    bcu::MENU_SEATS
+                        .iter()
+                        .enumerate()
+                        .all(|(j, s)| j == from || s.plate_origin().1 != a.plate_origin().1),
+                    "entry {from} refused to step but shares its row"
+                );
+                continue;
+            }
+            assert_eq!(
+                a.plate_origin().1,
+                b.plate_origin().1,
+                "the Left/Right step off entry {from} left its drawn row"
+            );
+        }
+    }
+
     /// The sibling half of the mirror check: the numeral fields. Every one is
     /// a right edge the field grows leftward from in 8-px cells, and the
     /// `engine-ui` literals have to name the same edges `battle_chrome` pins
@@ -2401,9 +2708,13 @@ mod battle_hud_wiring_tests {
         );
     }
 
-    /// Popups carry an absolute actor slot. The builder anchors them by slice
-    /// index, so the projection must keep inactive slots in place - a
-    /// compacted list would put a monster's damage number on a party row.
+    /// Popups carry an absolute actor slot. The **diagnostic** readout
+    /// anchors them by slice index, so the projection must keep inactive
+    /// slots in place - a compacted list would put a monster's damage number
+    /// on a party row. The default surface no longer draws them at all:
+    /// retail's landed-hit numeral is seated over the struck actor, which
+    /// only a host holding the camera can place, so it is the window's own
+    /// `battle_value_readout_mesh` (see `engine-vm::battle_value_readout`).
     #[test]
     fn popup_anchors_track_absolute_actor_slot() {
         let mut hud = hud_with_party_row(100, 100, 0, 0);
@@ -2422,7 +2733,7 @@ mod battle_hud_wiring_tests {
             },
         );
         hud.push_popup(DamagePopup::damage(3, 25));
-        let out = draws(&hud);
+        let out = frame_draws(&hud, true).text;
         // Row stride is 14; monster slot 3's row sits at pen.y + 42, popups
         // 16 above (monster popups keep the index-anchored surface layout).
         let want_y = BATTLE_HUD_PEN.1 + 3 * 14 - 16;
@@ -2430,6 +2741,59 @@ mod battle_hud_wiring_tests {
         assert!(
             out.iter().any(|d| d.dst.1 == want_y && d.dst.0 >= popup_x),
             "no popup glyph at slot 3's anchor (y={want_y})"
+        );
+    }
+
+    /// `engine-render`'s HUD tests repeat the badge block's atlas layout as
+    /// literals, because that crate sits below `engine-core` and cannot
+    /// import the bake. This is the seam that keeps the copy honest - the
+    /// same job `engine_ui_command_chips_mirror_the_packet_pinned_battle_chrome`
+    /// does for the chip cluster.
+    #[test]
+    fn badge_atlas_seats_match_the_bake() {
+        use legaia_engine_core::save_menu_atlas as sma;
+        for i in 0..sma::STATUS_BADGE_COUNT {
+            assert_eq!(
+                sma::status_badge_atlas_rect(i),
+                (
+                    48 * (i as u32 % 4),
+                    128 + 16 * (i as u32 / 4),
+                    sma::STATUS_BADGE_W,
+                    sma::STATUS_BADGE_H
+                ),
+                "status badge {i} atlas seat drifted from the mirrored layout"
+            );
+        }
+        for i in 0..sma::ELEMENT_BADGE_COUNT {
+            assert_eq!(
+                sma::element_badge_atlas_rect(i),
+                (
+                    20 * i as u32,
+                    176,
+                    sma::ELEMENT_BADGE_W,
+                    sma::ELEMENT_BADGE_H
+                ),
+                "element badge {i} atlas seat drifted from the mirrored layout"
+            );
+        }
+        // The badge block must not land on anything the atlas already
+        // carries; these are the neighbours it was seated between.
+        let (bx, by) = sma::ATLAS_RECT_STATUS_BADGES_ORIGIN;
+        assert_eq!((bx, by), (0, 128));
+        assert!(
+            by >= 128 && by + 3 * sma::STATUS_BADGE_H <= sma::ATLAS_RECT_ELEMENT_BADGES_ORIGIN.1,
+            "the status block overruns the element strip"
+        );
+        const {
+            assert!(
+                4 * sma::STATUS_BADGE_W <= 200,
+                "the status block reaches the arts chip triple at x=200"
+            )
+        };
+        assert!(
+            sma::ATLAS_RECT_ELEMENT_BADGES_ORIGIN.1 + sma::ELEMENT_BADGE_H
+                <= sma::ATLAS_RECT_FILIGREE.1,
+            "the element strip overruns the filigree tile"
         );
     }
 }

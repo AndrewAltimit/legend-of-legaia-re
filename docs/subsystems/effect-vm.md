@@ -134,6 +134,21 @@ Two render-agnostic seams expose the live pool:
 
 The native host (`play-window`) draws each `EffectSprite` two ways: a **camera-facing textured quad** through the VRAM-mesh pipeline (`upload_vram_mesh`, sampling the scene VRAM at the sprite's atlas page/clut/uv as a `SceneDraw`, modulated by the pass-2 brightness with the mirror-resolved UV corner order), plus a **tinted outline** through the `UploadedLines` pipeline so the billboard is visible regardless of VRAM contents, faded by animation age. `World::spawn_debug_effect` seats a synthetic marker by hand (the `E` key in `play-window`); it is not a retail path and lives outside the pool.
 
+#### The quad half-extent is a view-space quantity, so the battle camera scale must be divided back out
+
+`FUN_800195A8` transforms the sprite **centre** through the GTE camera matrix (`FUN_8003D344`, one `MVMVA`), then forms the four corners by adding the half-extents to that *already-transformed* view-space centre, then resets the rotation matrix to identity with `TRX/TRY/TRZ = 0` before the `RTPT`. The camera matrix therefore multiplies the centre and never touches the half-extents.
+
+In battle that matrix carries retail's base matrix `0x8007BF10` = `16384 * I`, a **4x uniform scale**. A port that offsets the corners in *world* space and draws the quad under the same scaled MVP puts the half-extents through the 4x a second time, so every battle effect sprite comes out exactly `BATTLE_WORLD_SCALE` too large - a 32-texel puff spanning 1280 view units instead of 320, three quarters of an actor's height instead of a fifth. The shared correction is `engine-vm::effect_billboard::world_half_extents(size, view_scale)`; the native window passes its `fx_scale` (the same factor it composes into `fx_cam`) into `effect_sprite_corners`.
+
+#### "The spawns fire and nothing appears" is mostly the atlas, not the pipeline
+
+Measured on `play-window --scene town01 --battle 4` by differencing two otherwise byte-identical frames with the billboard draw suppressed: the layer contributes a real, in-frame delta (up to ~53 per channel, mean ~10 over the puff), so the spawn, the projection, the texel residency and the semi-transparent blend pass are all working. What it does *not* look like is a visible effect, for two data reasons worth knowing before re-opening that thread:
+
+- Every effect the Rim Elm spar fires (`0x01`, `0x05`, `0x06`) resolves through pack0 anim batch `1` to atlas page **`0x66`** = `(384, 0)`, whose texpage bits carry **ABR 3 = `B + 0.25*F`**, under CLUT `0x76C0` = row 475 palette 0 - a dark warm-grey ramp topping out at `(184, 144, 112)`. A quarter of a dark grey ramp added over a bright tan arena floor is a few percent.
+- The bright effects are the other pages. `0x25` = `(320, 0)` and `0x27` = `(448, 0)` are **ABR 1 = `B + F`**, and those are the pages a retail melee-hit-spark capture shows the spark drawing from. They belong to other effect ids (`0x04`, `0x0B..0x0E`, `0x10..0x14`, `0x16`, `0x17`, `0x1C..0x1E`), which the spar's clips never request.
+
+So a battle whose only live effect is the walk-clip dust reads as an empty effect layer even when the layer is correct. `LEGAIA_DIAG_FX=1` on the native window logs each live sprite's world position, quad size, page/CLUT, brightness, projected NDC and a VRAM texel-residency verdict, which separates "behind the eye" / "off-screen" / "texels absent" / "drawing but faint" in one line. `LEGAIA_DIAG_NOFX=1` suppresses the billboard draw so two runs can be differenced, and `LEGAIA_DIAG_NOSEMI=1` turns the semi-transparency blend pass off so a deferred fragment draws opaque instead of vanishing.
+
 **Two effect-texel pools, both pixel-verified.** The retail `befect_data` block (CDNAME defines `872..875` → extraction entries **870..873**) holds the four battle effect files - `etim.dat` (0870), `etmd.dat` (0871), `vdf.dat` (0872), `efect.dat` (0873) - pulled by `FUN_800520F0` at raw TOC indices `0x368..0x36B`; see the verified case→index→entry map in [`formats/effect.md`](../formats/effect.md#battle-effect-cluster-befect_data). The texels effects sample come from two pools:
 
 - **`etim.dat` = extraction 0870** (three 64×256 4bpp TIMs targeting VRAM `(320,0)`/`(384,0)`/`(448,0)`, CLUTs rows 474..476) is byte-verified loaded at battle and is **battle-only** - those columns hold town stage textures during a field scene, so uploading it at field entry would clobber field rendering. The engine uploads it on **battle entry** (`scene::upload_flame_atlas_into_vram`, called from the play-window battle-render setup into a throwaway VRAM copy that battle exit discards).
@@ -172,6 +187,33 @@ This is distinct from the 2D billboard path here:
 - That `0x7680` is the atlas entry's **CLUT**, not its tpage - the `+4`/`+6` fields are CLUT (u16) / tpage (byte), the reverse of an earlier reading (the emit at `~0x801E0980` writes `atlas[4..5]` into the primitive's CLUT field and `atlas[6]` into its tpage field). `0x7680` decodes as CBA fb `(0,474)`, an effect-CLUT row, *not* page `(0,0)`.
 - Confirmed from a melee hit-spark battle capture: no prim samples page (0,0)/8bpp/`0x7680`, and the spark draws as textured quads sampling the loaded effect pages (PROT 870 flame atlas `(320,0)`/`(448,0)`, effect-band CLUTs).
 - The engine's `SpriteAtlasEntry` reads the fields in the correct order, so `active_effect_sprites` yields the real effect page + CLUT and the billboards sample the resident PROT 870 / `etim` texels. The faithful per-frame cadence ([pass-1 algebra](#the-extracted-pass-1-state-algebra)) is executed by `Pool::tick_retail`, with the pass-2 computation exposed as `Pool::child_billboards` - and the `engine-core` snapshot `active_effect_sprites` maps those live child slots directly (the earlier uniform-loop stand-in is gone).
+
+### The floating value readout rides the same atlas
+
+The numeral a landed hit throws is not an effect-pool child, but it samples the
+same texture page: `etim.dat`'s third TIM, page `(448, 0)`, through the
+sub-palette at VRAM `(48, 476)` (CBA `0x7703`, tpage `0x27`). The sheet's
+layout - ten 24x24 digit cells in strip order `1234567890`, plus the `DAMAGE` /
+`HIT` / `TOTAL` labels - is in
+[`formats/effect.md`](../formats/effect.md#the-battle-value-readouts-glyph-sheet-lives-here-too).
+
+The geometry is read out of retail's own display list. Both frame arenas of the
+`battle_melee_hit_spark` capture carry the same two-digit run, so the pair is an
+animation: the run's horizontal **centre** holds while the cell **grows**
+toward its 1:1 24-px size, and the run **rises** to a fixed screen row `y = 32`.
+Cell pitch is the drawn width plus one; the quads are `0x2C` at colour
+`0x808080`, so retail neither modulates nor fades the numeral. Port:
+`engine-vm::battle_value_readout::value_cells`.
+
+Placing it is a **host** job, not a HUD-builder job: the seat is the struck
+actor's projected screen position, which only the layer holding the camera
+knows. The native window projects the actor under the FX camera and emits the
+cells as screen-space VRAM quads (retail's own texels, since the battle loader
+has already made the atlas resident); the browser play page has no
+screen-space VRAM sink, so it draws the same layout through
+`engine-ui::battle_value_readout_draws_for`, the dialog-font fallback - retail's
+cells and pitch, different letterforms. `engine-ui`'s HUD builder draws the
+popup queue only under `LEGAIA_DIAG_HUD`.
 
 ## Pool layout (`_DAT_8007BD30`, 5008 bytes total)
 

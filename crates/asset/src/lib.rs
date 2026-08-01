@@ -112,6 +112,7 @@ pub mod tim_scan;
 pub mod title_pak;
 pub mod tmd_scan;
 pub mod tmd_size_prefix;
+pub mod ui_widgets;
 pub mod vab_multi_bank;
 pub mod world_map_overlay;
 pub mod worldmap_menu;

@@ -813,7 +813,7 @@ impl World {
     /// ([`crate::monster_catalog::MonsterDef::element`]). Returns `None` when the
     /// affinity tables aren't installed or no element resolves, so callers fall
     /// back to neutral.
-    fn battle_slot_element(&self, slot: u8) -> Option<u8> {
+    pub(in crate::world) fn battle_slot_element(&self, slot: u8) -> Option<u8> {
         let aff = self.element_affinity.as_ref()?;
         if (slot as usize) < self.party_count as usize {
             aff.character_element(slot + 1)

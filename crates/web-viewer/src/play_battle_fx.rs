@@ -195,14 +195,21 @@ fn transform_dir(m: &[f32; 16], v: [f32; 3]) -> [f32; 3] {
 /// BR - the browser copy of the native `effect_sprite_corners`. The native
 /// `EFFECT_TEXEL_WORLD` extra scale is `1.0` (the sprite's `size` is already
 /// the retail pass-2 world size), so it does not appear here.
+///
+/// The half-extents come through [`legaia_engine_vm::effect_billboard`]
+/// because retail forms the corners in **view** space, after the camera
+/// transform (`FUN_800195A8`), so they must not take the battle base matrix's
+/// `BATTLE_WORLD_SCALE` a second time - the module carries the instruction
+/// evidence. Both hosts share the kernel so their effects cannot differ in
+/// size.
 fn sprite_corners(
     sprite: &legaia_engine_core::world::EffectSprite,
     right: [f32; 3],
     up: [f32; 3],
 ) -> [[f32; 3]; 4] {
     let c = sprite.world_pos;
-    let hw = sprite.size[0] * 0.5;
-    let hh = sprite.size[1] * 0.5;
+    let (hw, hh) =
+        legaia_engine_vm::effect_billboard::world_half_extents(sprite.size, BATTLE_WORLD_SCALE);
     let mut out = [[0.0f32; 3]; 4];
     // TL, TR, BL, BR: (-r +u), (+r +u), (-r -u), (+r -u).
     for (i, (sr, su)) in [(-1.0f32, 1.0f32), (1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)]
@@ -790,7 +797,21 @@ mod tests {
             assert!(((tr[k] + bl[k]) * 0.5 - sprite.world_pos[k]).abs() < 1e-4);
             assert!(((tr[k] - tl[k]) - (br[k] - bl[k])).abs() < 1e-4);
         }
-        assert!((tr[0] - tl[0] - 8.0).abs() < 1e-4, "width = size[0]");
-        assert!((tl[1] - bl[1] - 4.0).abs() < 1e-4, "height = size[1]");
+        // The quad's WORLD extent is the pass-2 size divided by the camera's
+        // own scale, because retail forms the corners in view space after the
+        // camera transform (`FUN_800195A8`) - drawing them under a `4x` MVP
+        // would otherwise apply that scale twice. This assertion used to read
+        // `== size[0]`, which is what the oversize looked like from inside the
+        // browser host.
+        let (hw, hh) =
+            legaia_engine_vm::effect_billboard::world_half_extents(sprite.size, BATTLE_WORLD_SCALE);
+        assert!((tr[0] - tl[0] - 2.0 * hw).abs() < 1e-4, "width = 2 * hw");
+        assert!((tl[1] - bl[1] - 2.0 * hh).abs() < 1e-4, "height = 2 * hh");
+        // Non-vacuity: the kernel really does shrink, so a host that skipped
+        // it would fail the two assertions above rather than pass them.
+        assert!(
+            2.0 * hw < sprite.size[0],
+            "the shared kernel must divide by the camera scale"
+        );
     }
 }
