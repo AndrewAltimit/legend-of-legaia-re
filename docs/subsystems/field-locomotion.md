@@ -151,6 +151,12 @@ The pad and nav-walk paths still raise that flag directly, because they know the
 
 The pass exists because the flag previously had only those two writers, both on the player's own locomotion path. Anything moved by a script - a cutscene `MoveTo`, a channel walk-on - committed a position and raised nothing, so it slid along in its idle pose. An actor appearing in the tracked set for the first time seeds the snapshot without reporting motion: its arrival is a placement, not a step. The snapshot clears on scene entry, or a warp would read as one enormous step and start everyone walking on the landing frame.
 
+**The NPC half is signal-only so far.** `field_actor_moving` carries a bit for every tracked placement slot, but no host reads the NPC bits yet - an NPC's clip still changes only on an explicit `Animate` cue, so a script-walked NPC still glides.
+
+Wiring it needs an idle-clip → walk-clip pairing per NPC, and only the `special_model` party placements have one pinned (the PROT 0874 §1 locomotion bank's `LOCOMOTION_IDLE_SLOT` / `_WALK_SLOT` per character). For an ordinary scene NPC the placement names a single record out of the scene's own ANM bundle and the walk sibling is not identified.
+
+Retail selects it off the actor's `+0x5c` dash-state counter, and that counter's **writer is not in this controller**: `FUN_801d01b0` only reads it (`lh $v0, 0x5c($s2)` at `0x801D0424`, gating a `+0x6a = 8` store and an `actor[+0x10] |= 0x01000000`). Finding the writer is the next step.
+
 ### Wall-slide resolution (`FUN_80046494`)
 
 Step 3's "direction decode" is really a **wall-slide resolver**. The
