@@ -108,6 +108,7 @@ pub mod camera_rel_actor;
 pub mod code_lock_actor;
 pub mod cutscene_trigger;
 pub mod dev_equip_commit;
+pub mod effect_billboard;
 pub mod effect_vm;
 pub mod escape_timer;
 pub mod field;

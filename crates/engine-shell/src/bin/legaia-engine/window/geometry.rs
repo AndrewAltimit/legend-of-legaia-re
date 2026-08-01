@@ -32,16 +32,24 @@ fn effect_sprite_tsb(page: u16) -> u16 {
 
 /// The four world-space corners of a camera-facing billboard for `sprite`,
 /// using the camera's world `right`/`up` basis. Order: TL, TR, BL, BR.
+///
+/// `view_scale` is the uniform scale the drawing camera composes ahead of the
+/// projection (`BATTLE_WORLD_SCALE` on the battle stage, `1.0` elsewhere).
+/// Retail forms these corners in **view** space, *after* that scale has been
+/// applied to the sprite centre and before the projection - so the
+/// half-extents must be divided back out here or every battle effect draws
+/// `BATTLE_WORLD_SCALE` too large. The rule and its disassembly citation live
+/// in `legaia_engine_vm::effect_billboard`, shared with the browser host.
 fn effect_sprite_corners(
     sprite: &legaia_engine_core::world::EffectSprite,
     right: Vec3,
     up: Vec3,
+    view_scale: f32,
 ) -> [Vec3; 4] {
     let c = Vec3::from(sprite.world_pos);
-    let hw = sprite.size[0] * 0.5 * EFFECT_TEXEL_WORLD;
-    let hh = sprite.size[1] * 0.5 * EFFECT_TEXEL_WORLD;
-    let rx = right * hw;
-    let uy = up * hh;
+    let (hw, hh) = legaia_engine_vm::effect_billboard::world_half_extents(sprite.size, view_scale);
+    let rx = right * (hw * EFFECT_TEXEL_WORLD);
+    let uy = up * (hh * EFFECT_TEXEL_WORLD);
     [c - rx + uy, c + rx + uy, c - rx - uy, c + rx - uy]
 }
 
@@ -83,6 +91,7 @@ pub(crate) fn effect_billboard_mesh(
     sprites: &[legaia_engine_core::world::EffectSprite],
     right: Vec3,
     up: Vec3,
+    view_scale: f32,
 ) -> Option<UploadedVramMesh> {
     if sprites.is_empty() {
         return None;
@@ -114,7 +123,7 @@ pub(crate) fn effect_billboard_mesh(
         if s.flip_v {
             std::mem::swap(&mut v0, &mut v1);
         }
-        let corners = effect_sprite_corners(s, right, up);
+        let corners = effect_sprite_corners(s, right, up, view_scale);
         let corner_uv = [[u0, v0], [u1, v0], [u0, v1], [u1, v1]];
         let base = positions.len() as u32;
         for (corner, uv) in corners.iter().zip(corner_uv) {
@@ -149,12 +158,13 @@ pub(crate) fn effect_sprite_line_geometry(
     sprites: &[legaia_engine_core::world::EffectSprite],
     right: Vec3,
     up: Vec3,
+    view_scale: f32,
 ) -> (Vec<[f32; 3]>, Vec<[u8; 4]>, Vec<u32>) {
     let mut pos: Vec<[f32; 3]> = Vec::with_capacity(sprites.len() * 4);
     let mut col: Vec<[u8; 4]> = Vec::with_capacity(sprites.len() * 4);
     let mut idx: Vec<u32> = Vec::with_capacity(sprites.len() * 8);
     for s in sprites {
-        let [tl, tr, bl, br] = effect_sprite_corners(s, right, up);
+        let [tl, tr, bl, br] = effect_sprite_corners(s, right, up, view_scale);
         // Warm spark colour, dimmed as the effect ages toward retirement.
         let fade = (1.0 - s.age01).clamp(0.0, 1.0);
         let c = [

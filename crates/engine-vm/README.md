@@ -81,6 +81,14 @@ Effect VM with a 32-master + 128-child slot pool.
 pure data (the catalog's spawn records + animation frames), so `EffectHost`
 only supplies the RNG and the summon routing.
 
+The sibling module `effect_billboard` carries the one step a *world-space*
+billboard builder gets wrong. Retail's quad projector `FUN_800195A8` transforms
+the sprite centre through the camera matrix and only then adds the
+half-extents, in view space - so the battle camera's 4x base matrix scales the
+centre and must not scale the size. `world_half_extents` divides it back out;
+both hosts call it, since `engine-render` links wgpu and the browser play page
+cannot depend on it.
+
 ## `move_vm` - `FUN_80023070`
 
 71-opcode move-table VM (jump table at `0x80010778`); `actor_tick` and

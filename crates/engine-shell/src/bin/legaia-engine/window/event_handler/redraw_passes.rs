@@ -297,10 +297,15 @@ impl PlayWindowApp {
         (posed_overrides, player_color_posed)
     }
 
+    /// `view_scale` is the uniform scale `cam` composes ahead of the
+    /// projection (`BATTLE_WORLD_SCALE` on the battle stage, `1.0` elsewhere).
+    /// It sizes the quads: retail adds the half-extents in view space, so they
+    /// must not go through that scale - see `effect_sprite_corners`.
     pub(super) fn build_effect_billboards(
         &self,
         r: &legaia_engine_render::Renderer,
         cam: Mat4,
+        view_scale: f32,
     ) -> (
         Option<UploadedVramMesh>,
         Option<legaia_engine_render::UploadedLines>,
@@ -317,7 +322,7 @@ impl PlayWindowApp {
                 let inv = cam.inverse();
                 let right = inv.transform_vector3(Vec3::X).normalize_or_zero();
                 let up = inv.transform_vector3(Vec3::Y).normalize_or_zero();
-                let mesh = effect_billboard_mesh(r, &sprites, right, up);
+                let mesh = effect_billboard_mesh(r, &sprites, right, up, view_scale);
                 // The wireframe outline is a **diagnostic**, off by default
                 // (`LEGAIA_DIAG_FX=1`). It exists to make a spawn readable
                 // when its texels are not resident, and it predates the
@@ -325,7 +330,8 @@ impl PlayWindowApp {
                 // textured quad draws, and leaving the outline on stamps a
                 // bright rectangle over every effect in normal play.
                 let lines = if std::env::var_os("LEGAIA_DIAG_FX").is_some() {
-                    let (pos, col, idx) = effect_sprite_line_geometry(&sprites, right, up);
+                    let (pos, col, idx) =
+                        effect_sprite_line_geometry(&sprites, right, up, view_scale);
                     match r.upload_lines(&pos, &col, &idx) {
                         Ok(m) => Some(m),
                         Err(e) => {

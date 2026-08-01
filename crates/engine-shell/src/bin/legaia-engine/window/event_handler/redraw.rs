@@ -633,6 +633,9 @@ impl PlayWindowApp {
             let in_world_map_now = self.session.host.world.mode == SceneMode::WorldMap;
             let nclip_mode = u32::from(cutscene_cam.is_some() && !in_world_map_now) * 2;
             r.set_backface_cull(nclip_mode);
+            if std::env::var_os("LEGAIA_DIAG_NOSEMI").is_some() {
+                r.set_semi_blend(false);
+            }
             // World-map mode frames the loaded map with the
             // controller-driven camera (azimuth / zoom / pan); an active
             // in-engine cutscene (opdeene opening prologue) frames the
@@ -1715,8 +1718,21 @@ impl PlayWindowApp {
             // 4x world-scale base under the shared rotation) so
             // effects land on the scaled actor stage; field FX use
             // the field camera as-is.
-            let fx_cam = if fx_in_battle && self.battle_stage_mesh.is_some() {
-                cam * Mat4::from_scale(Vec3::splat(BATTLE_WORLD_SCALE))
+            // The uniform scale `fx_cam` composes on top of `cam`. Effect
+            // billboards need it separately from the matrix: retail forms a
+            // sprite quad's corners in VIEW space, after the camera matrix has
+            // scaled the centre (`FUN_800195a8` - the `MVMVA` transforms the
+            // centre, the corner adds follow it, and the matrix is reset to
+            // identity before the projection), so the half-extents must not go
+            // through the 4x a second time. See
+            // `legaia_engine_vm::effect_billboard`.
+            let fx_scale = if fx_in_battle && self.battle_stage_mesh.is_some() {
+                BATTLE_WORLD_SCALE
+            } else {
+                1.0
+            };
+            let fx_cam = if fx_scale != 1.0 {
+                cam * Mat4::from_scale(Vec3::splat(fx_scale))
             } else {
                 cam
             };
@@ -1737,7 +1753,14 @@ impl PlayWindowApp {
             // small at the wrong stage position. The camera-facing basis
             // derives from the same matrix, so the quads face the camera
             // that actually draws them.
-            let (effect_billboard, effect_lines) = self.build_effect_billboards(r, fx_cam);
+            let (effect_billboard, effect_lines) =
+                self.build_effect_billboards(r, fx_cam, fx_scale);
+            self.diag_effect_billboards(fx_cam);
+            let effect_billboard = if std::env::var_os("LEGAIA_DIAG_NOFX").is_some() {
+                None
+            } else {
+                effect_billboard
+            };
             if let Some(mesh) = effect_billboard.as_ref() {
                 draws.push(SceneDraw {
                     mesh,
@@ -2016,6 +2039,99 @@ impl PlayWindowApp {
             ((ndc.x * 0.5 + 0.5) * 320.0) as i32,
             ((0.5 - ndc.y * 0.5) * 240.0) as i32,
         ))
+    }
+
+    /// `LEGAIA_DIAG_FX=1` instrument: report where each live effect billboard
+    /// actually lands, in the frame's own FX camera.
+    ///
+    /// "The spawn fires and nothing appears" has three distinguishable causes
+    /// and this separates them in one line per sprite: a clip `w <= 0` (the
+    /// quad is behind the eye), NDC outside `[-1, 1]` (projected off-screen),
+    /// or an in-frame NDC with texel coordinates that name a page nothing
+    /// uploaded (the quad draws, but every texel discards). Off by default -
+    /// the log is per-frame per-sprite.
+    fn diag_effect_billboards(&self, cam: Mat4) {
+        if std::env::var_os("LEGAIA_DIAG_FX").is_none() {
+            return;
+        }
+        let sprites = self.session.host.world.active_effect_sprites();
+        if sprites.is_empty() {
+            return;
+        }
+        for slot in 0..4usize {
+            if let Some(a) = self.session.host.world.actors.get(slot) {
+                log::info!(
+                    "DIAG fx actor {slot}: world ({},{},{}) screen {:?}",
+                    a.move_state.world_x,
+                    a.move_state.world_y,
+                    a.move_state.world_z,
+                    self.actor_stage_point(slot, cam)
+                );
+            }
+        }
+        for s in sprites.iter().take(4) {
+            let p = cam * glam::Vec4::new(s.world_pos[0], s.world_pos[1], s.world_pos[2], 1.0);
+            let ndc = if p.w.abs() > 1e-6 {
+                [p.x / p.w, p.y / p.w, p.z / p.w]
+            } else {
+                [f32::NAN; 3]
+            };
+            let u0 = s.uv[0] as u8;
+            let v0 = s.uv[1] as u8;
+            let u1 = u0.saturating_add(s.uv_size[0].saturating_sub(1) as u8);
+            let v1 = v0.saturating_add(s.uv_size[1].saturating_sub(1) as u8);
+            let texels = self
+                .battle_vram
+                .as_ref()
+                .or(self.cpu_vram_base.as_ref())
+                .map(|v| {
+                    v.prim_texture_status(s.clut, s.page, &[(u0, v0), (u1, v0), (u0, v1), (u1, v1)])
+                });
+            // Resolve the sprite's own texel rect through its CLUT, exactly
+            // as the fragment shader would: 4bpp indices out of the texture
+            // page, index 0 discarded, everything else a BGR555 word.
+            let mut opaque = 0usize;
+            let mut total = 0usize;
+            let mut sample = 0u16;
+            if let Some(v) = self.battle_vram.as_ref().or(self.cpu_vram_base.as_ref()) {
+                let px = ((s.page & 0xF) * 64) as usize;
+                let py = (((s.page >> 4) & 1) * 256) as usize;
+                let cx = ((s.clut & 0x3F) * 16) as usize;
+                let cy = ((s.clut >> 6) & 0x1FF) as usize;
+                for dv in 0..s.uv_size[1] as usize {
+                    for du in 0..s.uv_size[0] as usize {
+                        let u = u0 as usize + du;
+                        let word = v.pixel(px + (u >> 2), py + v0 as usize + dv);
+                        let idx = ((word >> (4 * (u & 3))) & 0xF) as usize;
+                        total += 1;
+                        if idx != 0 {
+                            opaque += 1;
+                            if sample == 0 {
+                                sample = v.pixel(cx + idx, cy);
+                            }
+                        }
+                    }
+                }
+            }
+            log::info!(
+                "DIAG fx: n={} pos {:?} size {:?} page {:#04x} clut {:#06x} uv {:?}+{:?} \
+                 bright {:#04x} clip.w {:.1} ndc [{:.3} {:.3} {:.3}] texels {:?} \
+                 opaque {opaque}/{total} sample {sample:#06x}",
+                sprites.len(),
+                s.world_pos,
+                s.size,
+                s.page,
+                s.clut,
+                s.uv,
+                s.uv_size,
+                s.brightness,
+                p.w,
+                ndc[0],
+                ndc[1],
+                ndc[2],
+                texels,
+            );
+        }
     }
 
     /// How recently actor `slot` was struck, in frames, or `None` if the
