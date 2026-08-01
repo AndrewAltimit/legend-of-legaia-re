@@ -202,6 +202,16 @@ pub const ELEMENT_BADGE_SIZE: (i32, i32) = (20, 12);
 /// the level on - the two are alternatives on one seat, not neighbours.
 pub const STATUS_BADGE_PANEL_SEAT: (i32, i32) = (56, 0);
 
+/// Vertical inset of the **fallback tag** inside a status badge's cell.
+///
+/// A host with no baked badge cell draws
+/// [`crate::status_element_label`]'s tag in the cell's place instead, and it
+/// has to land where the cell's own word does or the panel reads as if its
+/// tag had slipped. In a retail frame the badge cell's drawn word occupies
+/// rows `1..15` of the 16-row cell; a 12-px glyph run centred in that band
+/// starts two rows in.
+pub const STATUS_BADGE_TAG_DY: i32 = 2;
+
 /// Atlas cells for the badges the HUD blits, `None` per cell the atlas
 /// could not bake (its palette source was outside the caller's slice).
 ///

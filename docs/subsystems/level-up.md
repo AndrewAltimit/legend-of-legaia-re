@@ -547,6 +547,34 @@ A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednaf
   current port; other stats are handled by the per-character record's stat
   aggregator (`FUN_80042558`).
 
+## What the port draws between the last enemy dying and the field returning
+
+Observed on the native window with a scripted victory (`play-window --battle 4
+--seed-party --party vahn,noa,gala`), three characters crossing a threshold in
+one battle:
+
+- The **level-up banner** goes into retail's top-of-screen message widget and
+  names the character (`LEVEL UP!  Gala -> LV 2 / HP +43  MP +8`). It used to
+  print the roster ordinal (`P3`), which is an index only the codebase knows.
+- The **spoils panel** (`engine-ui::battle_spoils_draws_for`) lists `VICTORY`,
+  the EXP, the gold, each drop and one `<name> is now level N` line per
+  level-up. It is an acknowledged engine presentation, not a traced window -
+  retail's battle-result overlay is not in the dumped corpus.
+
+Two things the pair gets wrong, both still open:
+
+- **Only the last level-up's banner is ever seen.** `World::apply_battle_xp`
+  writes `current_level_up_banner` inside its per-member loop, so a battle that
+  levels three characters overwrites the slot twice in one frame and shows one
+  banner. The banner needs a queue the world drains one at a time; the spoils
+  panel's `is now level` lines are what makes the loss visible rather than
+  silent.
+- **Both surfaces draw over the FIELD.** The port grants XP after the mode has
+  already flipped back from `Battle`, so the banner and the panel land on the
+  returned field scene. Retail raises its result screen while still in battle.
+  This is the ordering difference `engine-shell`'s `battle_banner_message`
+  already documents at its own call site, seen from the other end.
+
 ## See also
 
 **Reference** -

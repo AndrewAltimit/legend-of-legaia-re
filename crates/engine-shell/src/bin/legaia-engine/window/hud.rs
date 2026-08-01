@@ -1855,6 +1855,11 @@ impl PlayWindowApp {
                     || w_ref.current_dialog.is_some()
                     || w_ref.inline_dialogue.is_some(),
                 badges: badges.as_ref(),
+                // The same box, tested against the party surfaces' own rows:
+                // a bottom-anchored prompt lands on the active-actor bar
+                // (188..208) and inside the roster panels (164..212), so the
+                // builder parks whichever one it covers.
+                host_box: self.battle_tutorial_stage_rect(),
                 active_slot: active.as_ref().map(|(s, _)| *s),
                 // Retail parks the status plate off-screen while a command
                 // entry session owns the frame; the port emits no strip.
@@ -1896,12 +1901,20 @@ impl PlayWindowApp {
         self.save_menu.as_ref()?;
         let w = &self.session.host.world;
         if let Some(b) = &w.current_level_up_banner {
+            // Name the character, not their roster ordinal: the banner reads
+            // to a player, and `P3` is an index only this codebase knows.
+            // `char_id` is the ROSTER slot the level-up applier wrote, so it
+            // indexes `roster.members` directly (not the battle order).
+            let who = w
+                .roster
+                .members
+                .get(b.char_id as usize)
+                .map(|r| r.name())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| format!("P{}", b.char_id + 1));
             return Some(format!(
-                "LEVEL UP!  P{} -> LV {}\nHP +{}  MP +{}",
-                b.char_id + 1,
-                b.new_level,
-                b.hp_gained,
-                b.mp_gained
+                "LEVEL UP!  {who} -> LV {}\nHP +{}  MP +{}",
+                b.new_level, b.hp_gained, b.mp_gained
             ));
         }
         w.current_capture_banner
@@ -2047,10 +2060,14 @@ impl PlayWindowApp {
                 selected: slot >= r.first_slot && slot < r.first_slot + r.members,
             })
             .collect();
-        Some(legaia_engine_render::enemy_target_menu_draws_for(
+        // The strip and a bottom-anchored sparring prompt share stage row 166
+        // when the prompt runs to three lines, so the strip steps clear of the
+        // live box's drawn footprint (`enemy_target_menu_rows_y`).
+        Some(legaia_engine_render::enemy_target_menu_draws_at(
             &self.font,
             &views,
             (w, h),
+            legaia_engine_render::enemy_target_menu_rows_y(self.battle_tutorial_stage_rect()),
         ))
     }
 }
