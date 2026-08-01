@@ -484,12 +484,21 @@ impl LegaiaRuntime {
         assets.chrome_rects()?;
         let w = &self.scene_host.as_ref()?.world;
         if let Some(b) = &w.current_level_up_banner {
+            // Name the character, not their roster ordinal - `P3` is an index
+            // only this codebase knows. `char_id` is the ROSTER slot the
+            // level-up applier wrote, so it indexes `roster.members`
+            // directly (not the battle order). Twin of the native window's
+            // `battle_banner_message`.
+            let who = w
+                .roster
+                .members
+                .get(b.char_id as usize)
+                .map(|r| r.name())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| format!("P{}", b.char_id + 1));
             return Some(format!(
-                "LEVEL UP!  P{} -> LV {}\nHP +{}  MP +{}",
-                b.char_id + 1,
-                b.new_level,
-                b.hp_gained,
-                b.mp_gained
+                "LEVEL UP!  {who} -> LV {}\nHP +{}  MP +{}",
+                b.new_level, b.hp_gained, b.mp_gained
             ));
         }
         w.current_capture_banner

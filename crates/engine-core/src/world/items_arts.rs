@@ -798,13 +798,23 @@ impl World {
                 hp_gained: result.hp_gained,
                 mp_gained: result.mp_gained,
             });
-            self.current_level_up_banner = Some(LevelUpBanner {
+            // One fight can level several members. The banner is a single
+            // slot, so the first leveller takes it and the rest queue behind
+            // it - assigning here unconditionally meant every leveller after
+            // the first overwrote its predecessor within the same frame, and
+            // a battle that levelled three showed one banner.
+            let banner = LevelUpBanner {
                 char_id,
                 new_level: result.new_level,
                 hp_gained: result.hp_gained,
                 mp_gained: result.mp_gained,
                 frames_remaining: LevelUpBanner::DEFAULT_FRAMES,
-            });
+            };
+            if self.current_level_up_banner.is_none() {
+                self.current_level_up_banner = Some(banner);
+            } else {
+                self.pending_level_up_banners.push_back(banner);
+            }
             results.push(result);
         }
         results
