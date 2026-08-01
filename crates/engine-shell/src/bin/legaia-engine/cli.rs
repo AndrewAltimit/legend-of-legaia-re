@@ -947,6 +947,16 @@ pub(crate) enum Cmd {
         /// morphs retail itself arms (rikuroa) are unaffected either way.
         #[arg(long, default_value_t = false)]
         no_entry_pulse: bool,
+        /// Disable the camera-occlusion fade ENHANCEMENT (see-through
+        /// walls). By default, field scene geometry between the camera and
+        /// the player dissolves to a screen-door dither in a circle around
+        /// the character, so the character stays visible behind walls /
+        /// roofs / props (retail relies on authored camera framing instead
+        /// and can bury the player). Pure presentation - the simulation and
+        /// the faithful-mode oracles are untouched. Toggle at runtime with
+        /// the `D` key.
+        #[arg(long, default_value_t = false)]
+        no_occlusion_fade: bool,
     },
     /// Open a window and play back a PSX STR movie using the MDEC decoder,
     /// paced at the stream's real ~15 fps.

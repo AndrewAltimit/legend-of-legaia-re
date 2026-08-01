@@ -657,6 +657,29 @@ impl Renderer {
             SHADOW_COMPARE_BIAS,
             0.0,
         ];
+        // Camera-occlusion fade focus: project the host-staged player clip
+        // position to framebuffer pixels + view depth. The zeroed default
+        // (enable 0) is the identity, so the faithful path pays one uniform
+        // read. `w <= 0` = the player is behind the camera plane - no
+        // meaningful projection, leave the fade inert for the frame.
+        if self.occl_fade.get()
+            && let Some(c) = self.occl_focus.get()
+            && c[3] > 1e-3
+        {
+            use crate::occlusion_fade as of;
+            let vw = self.config.width as f32;
+            let vh = self.config.height as f32;
+            let px = (c[0] / c[3] * 0.5 + 0.5) * vw;
+            // WebGPU NDC y is up, framebuffer y is down.
+            let py = (0.5 - c[1] / c[3] * 0.5) * vh;
+            u.occl_focus = [px, py, c[3], 1.0];
+            u.occl_params = [
+                of::OCCL_RADIUS_FRAC * vh,
+                of::OCCL_MIN_KEEP,
+                of::OCCL_DEPTH_MARGIN,
+                of::OCCL_FEATHER_FRAC * vh,
+            ];
+        }
         let light_vps: Vec<Mat4> = lights[..n].iter().map(light_view_proj).collect();
         for (i, l) in lights[..n].iter().enumerate() {
             u.lights[i] = ScenePointLightUniform {

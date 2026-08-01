@@ -220,6 +220,24 @@ const DYN_POOL_CENTER: vec2<f32> = vec2<f32>(0.5, 0.45); // pool centre, 0..1
 const DYN_POOL_INNER: f32 = 0.15; // pool full-strength radius (screen frac)
 const DYN_POOL_OUTER: f32 = 0.75; // pool fade-out radius (screen frac)
 
+// 4x4 Bayer threshold in [0, 1) for the camera-occlusion fade's
+// screen-door discard (see `occl_keep` in the scene-lights layer). CPU
+// mirror: `crate::occlusion_fade::bayer_threshold` (kept in lockstep).
+// A fragment is discarded when this threshold >= its keep probability, so
+// keep = 1.0 (the identity) never discards: the largest threshold is
+// 15.5/16.
+fn occl_bayer(frag: vec2<f32>) -> f32 {
+    var bm = array<f32, 16>(
+         0.0,  8.0,  2.0, 10.0,
+        12.0,  4.0, 14.0,  6.0,
+         3.0, 11.0,  1.0,  9.0,
+        15.0,  7.0, 13.0,  5.0,
+    );
+    let xi = u32(frag.x) & 3u;
+    let yi = u32(frag.y) & 3u;
+    return (bm[yi * 4u + xi] + 0.5) / 16.0;
+}
+
 fn dyn_light(
     rgb: vec3<f32>,
     vert_normal: vec3<f32>,
@@ -289,6 +307,16 @@ struct SceneLightsU {
     // x = active light count (0 = layer off), y = shadow-map texel size
     // (1 / dimension), z = depth-compare bias, w reserved.
     params: vec4<f32>,
+    // Camera-occlusion fade (opt-in see-through-walls enhancement,
+    // NON-RETAIL - see `crate::occlusion_fade`): .xy = the player's
+    // projected framebuffer pixel, .z = the player's view-space depth,
+    // .w = enable (0.0, the default, is the identity - every fragment
+    // keeps).
+    occl_focus: vec4<f32>,
+    // (radius_px, min_keep, depth_margin, feather_px) - the staged
+    // `crate::occlusion_fade` constants (radius/feather scaled to the
+    // viewport height). Only read while `occl_focus.w` is set.
+    occl_params: vec4<f32>,
     lights: array<ScenePointLightU, 8u>,
 };
 
@@ -321,6 +349,34 @@ fn scene_light_shadow(idx: u32, world_pos: vec3<f32>) -> f32 {
         }
     }
     return sum / 9.0;
+}
+
+// Camera-occlusion fade keep probability for one fragment - 1.0 = keep
+// unconditionally (the identity while the enable is off). A fragment
+// fades only when it is BOTH nearer the camera than the player by more
+// than the depth margin AND within the screen-space fade circle around
+// the player's projected centre; the keep ramps from 1.0 at the rim to
+// `min_keep` at the centre. The caller discards when
+// `occl_bayer(frag) >= keep` (screen-door transparency - no blend state,
+// depth writes intact). CPU mirror: `crate::occlusion_fade::
+// keep_probability` (kept in lockstep by that module's tests).
+// `frag_w` is `@builtin(position).w` = 1/clip_w, so `1/frag_w` is the
+// fragment's view-space depth (same recovery as `cue_ramp_ir0`).
+fn occl_keep(frag_px: vec2<f32>, frag_w: f32) -> f32 {
+    if (sl.occl_focus.w < 0.5) {
+        return 1.0;
+    }
+    let view_z = 1.0 / max(frag_w, 1e-8);
+    if (view_z >= sl.occl_focus.z - sl.occl_params.z) {
+        return 1.0;
+    }
+    let d = distance(frag_px, sl.occl_focus.xy);
+    let r = sl.occl_params.x;
+    if (d >= r) {
+        return 1.0;
+    }
+    let t = smoothstep(r - sl.occl_params.w, r, d);
+    return mix(sl.occl_params.y, 1.0, t);
 }
 
 // Summed point-light gain for one fragment (the `point_gain` argument of
@@ -374,6 +430,12 @@ fn scene_point_gain(
     geo_normal: vec3<f32>,
 ) -> vec3<f32> {
     return vec3<f32>(0.0);
+}
+
+// Camera-occlusion fade stub: the single-mesh pipelines carry no scene
+// focus (group 2 is absent from their layouts), so every fragment keeps.
+fn occl_keep(frag_px: vec2<f32>, frag_w: f32) -> f32 {
+    return 1.0;
 }
 "#;
 
@@ -811,6 +873,13 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     if (in.cba_tsb.x & 0x8000u) != 0u && front_facing {
         discard;
     }
+    // Camera-occlusion fade (opt-in see-through-walls enhancement):
+    // screen-door discard of fragments between the camera and the player.
+    // Identity while disabled - `occl_keep` returns 1.0 and no threshold
+    // reaches it (see the prelude's `occl_bayer`).
+    if (occl_bayer(in.clip_pos.xy) >= occl_keep(in.clip_pos.xy, in.clip_pos.w)) {
+        discard;
+    }
     let tsb = in.cba_tsb.y;
     let cba = in.cba_tsb.x;
     var word = fetch_vram_word(in.uv_affine, cba, tsb);
@@ -900,6 +969,11 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     // Double-sided pair copies: blend only the camera-facing one (see
     // fs_main - same rule so a flagged semi prim can't double-blend).
     if (in.cba_tsb.x & 0x8000u) != 0u && front_facing {
+        discard;
+    }
+    // Camera-occlusion fade: same screen-door as the opaque pass, so a
+    // semi-transparent wall patch (water panes, glass) opens up too.
+    if (occl_bayer(in.clip_pos.xy) >= occl_keep(in.clip_pos.xy, in.clip_pos.w)) {
         discard;
     }
     let tsb = in.cba_tsb.y;
@@ -1057,6 +1131,12 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     if (u.flags.y >= 0.5 && (in.blend & 0x8000u) != 0u) {
         discard;
     }
+    // Camera-occlusion fade (opt-in see-through-walls enhancement):
+    // screen-door discard of fragments between the camera and the player,
+    // mirroring the textured opaque pass. Identity while disabled.
+    if (occl_bayer(in.clip_pos.xy) >= occl_keep(in.clip_pos.xy, in.clip_pos.w)) {
+        discard;
+    }
     // An untextured PSX prim is filled with its packet colour directly - no
     // modulation, no light source. The colour IS the baked shading. The
     // opt-in dynamic light (identity when disabled) layers over it; this
@@ -1107,6 +1187,10 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     // Double-sided pair copies: same facing discard as the opaque entry
     // (mirrors the textured blend pass).
     if ((in.blend & 0x4000u) != 0u && front_facing) {
+        discard;
+    }
+    // Camera-occlusion fade: same screen-door as the opaque colour pass.
+    if (occl_bayer(in.clip_pos.xy) >= occl_keep(in.clip_pos.xy, in.clip_pos.w)) {
         discard;
     }
     // Opt-in dynamic light first (identity when disabled), matching the

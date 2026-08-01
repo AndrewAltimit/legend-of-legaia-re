@@ -190,6 +190,18 @@ pub struct Renderer {
     /// the whole point-light layer (lights + shadows), leaving the global
     /// gain only. Irrelevant while dynamic lighting is off.
     pub(super) dyn_shadows: std::cell::Cell<bool>,
+    /// Camera-occlusion fade master toggle (the opt-in see-through-walls
+    /// enhancement, NON-RETAIL - see [`crate::occlusion_fade`]). `false`
+    /// (the default) keeps every mesh path bit-identical to the faithful
+    /// render; the host's play window enables it. Set with
+    /// [`Self::set_occlusion_fade`]. Only bites while a focus is staged
+    /// ([`Self::set_occlusion_focus`]).
+    pub(super) occl_fade: std::cell::Cell<bool>,
+    /// The player's clip-space position under the current frame's scene
+    /// camera, staged per field frame by the host via
+    /// [`Self::set_occlusion_focus`]; `None` (cleared on non-field modes /
+    /// cutscenes) leaves the fade inert regardless of the toggle.
+    pub(super) occl_focus: std::cell::Cell<Option<[f32; 4]>>,
     /// Derived per-scene point lights (world space), staged by the host
     /// via [`Self::set_scene_lights`]. Cleared on scene change.
     pub(super) scene_lights: std::cell::RefCell<Vec<crate::scene_lights::ScenePointLight>>,
@@ -311,6 +323,45 @@ impl Renderer {
     /// Read the current shadow sub-toggle.
     pub fn dyn_shadows(&self) -> bool {
         self.dyn_shadows.get()
+    }
+
+    /// Toggle the **camera-occlusion fade enhancement** (see-through
+    /// walls; see [`crate::occlusion_fade`] for the model). Off by
+    /// default, and OFF IS RETAIL: scene fragments render exactly as the
+    /// faithful path does. When on AND a focus is staged
+    /// ([`Self::set_occlusion_focus`]), scene fragments that sit between
+    /// the camera and the player - nearer by more than
+    /// [`crate::occlusion_fade::OCCL_DEPTH_MARGIN`] and within the
+    /// screen-space fade circle around the player's projected centre -
+    /// dissolve to a 4x4-Bayer screen-door at
+    /// [`crate::occlusion_fade::OCCL_MIN_KEEP`] density, so the character
+    /// stays visible behind walls / roofs / props. Pure presentation:
+    /// depth writes, the blend pass and the simulation are untouched.
+    pub fn set_occlusion_fade(&self, enable: bool) {
+        self.occl_fade.set(enable);
+    }
+
+    /// Read the current camera-occlusion fade toggle.
+    pub fn occlusion_fade(&self) -> bool {
+        self.occl_fade.get()
+    }
+
+    /// Stage the player's **clip-space position** under this frame's scene
+    /// camera (`view_proj * world_pos`, the same matrix the scene draw
+    /// MVPs compose against - pre reversed-Z, which only remaps `z` and
+    /// leaves the `x/y/w` this consumer reads untouched). The renderer
+    /// projects it to framebuffer pixels + view depth when staging the
+    /// per-frame scene uniform. Call every field frame; stale foci would
+    /// fade the wrong screen region, so clear on mode changes
+    /// ([`Self::clear_occlusion_focus`]).
+    pub fn set_occlusion_focus(&self, clip_pos: [f32; 4]) {
+        self.occl_focus.set(Some(clip_pos));
+    }
+
+    /// Drop the staged occlusion-fade focus: the fade goes inert (every
+    /// fragment keeps) until the next [`Self::set_occlusion_focus`].
+    pub fn clear_occlusion_focus(&self) {
+        self.occl_focus.set(None);
     }
 
     /// Stage the derived per-scene point lights (see

@@ -1035,7 +1035,12 @@ scene), but even the exact segment-vs-world-AABB form culled legitimate bodies:
 the placement boxes are axis-aligned over whole terrain tiles, walls, and
 buildings, so as the camera orbited or the player walked, the lens-to-player
 segment swept through a *neighbour's* box and blinked it out. The cull code is
-kept for reference but the branch is never taken.
+kept for reference but the branch is never taken. The native renderer solves
+the same "wall between lens and player" problem at per-fragment granularity
+instead - the
+[camera-occlusion fade](#camera-occlusion-fade-see-through-walls-opt-in-enhancement),
+which dissolves pixels rather than culling bodies and so has no
+neighbour-blink failure mode.
 
 ## Coplanar surfaces: retail's ordering model, the port's depth policy
 
@@ -1133,6 +1138,7 @@ different default:
 | `Renderer::set_semi_blend` | **on** | *on* is retail | ABE semi-transparency. Independent of `psx_mode` |
 | `Renderer::set_dynamic_lighting` | **off** | *off* is retail, pixel-identical to the faithful render | the opt-in soft-light enhancement |
 | `Renderer::set_dyn_shadows` | **on** | inert while `set_dynamic_lighting` is off | the point-light + shadow sub-layer of dynamic lighting |
+| `Renderer::set_occlusion_fade` | **off** in the renderer, **on** in `play-window` | *off* is retail, pixel-identical to the faithful render | the see-through-walls camera-occlusion fade |
 
 Two things routinely get mis-stated about this table, so they are worth saying
 plainly:
@@ -1256,6 +1262,59 @@ so only the scene pipelines carry the lights bind group; both shader variants
 are naga-validated by the engine-render test suite, and
 `scene_lights::point_gain` / `point_attenuation` are the CPU mirror of the
 analytic part, asserted in lockstep with the WGSL.
+
+### Camera-occlusion fade (see-through walls, opt-in enhancement)
+
+`Renderer::set_occlusion_fade` gates the port's answer to a problem retail
+solves with authored camera placement: the engine's one field follow camera
+regularly puts walls, roofs and cliff faces between the lens and the player.
+When the fade is on and the host stages a focus
+(`Renderer::set_occlusion_focus` - the player's clip-space position under the
+frame's scene camera), scene fragments that would bury the character dissolve
+to a screen-door dither so the player always reads through. The renderer
+default is **off, and off is retail** - the disabled path is pixel-identical
+and the parity oracles never see it; `legaia-engine play-window` turns it on
+by default as a clearly-better play experience (`--no-occlusion-fade`, or the
+`D` key, restores authored-framing-only).
+
+A fragment fades only when **both** hold (`occl_keep` in the scene-lights WGSL
+layer; CPU lockstep mirror + tunables in
+`crates/engine-render/src/occlusion_fade.rs`):
+
+- it is **nearer the camera than the player** by more than the depth margin
+  (~150 view units - sized so the player mesh itself, the floor tier at its
+  feet, and NPCs standing beside it never fade), and
+- it lies within the **screen-space fade circle** around the player's
+  projected centre (radius 0.20 of the viewport height), so only the patch of
+  wall actually covering the character opens up - the rest of the surface
+  stays solid.
+
+The fade itself is a **screen-door discard** against a 4x4 Bayer threshold
+(`occl_bayer` in the shader prelude): keep probability ramps from 1.0 at the
+circle's rim down to 0.25 at the centre over a feather band. Discarding in
+the opaque pass (and identically in the semi-blend entries) means no new
+pipelines, no blend state, no CPU sorting, and depth writes stay intact - and
+the dither pattern reads naturally next to the PSX ordered dither. The focus
+rides in the per-frame group-2 scene uniform (`SceneLightsUniform`, which is
+staged every scene frame whether or not the point-light layer is live), so
+the faithful path pays one uniform read; the single-mesh pipelines compile a
+`return 1.0` stub, exactly like `scene_point_gain`.
+
+**Per-fragment on purpose.** The site play page once shipped this feature at
+per-*body* granularity (drop any placement whose AABB the eye-to-player
+segment pierces) and had to disable it - see the `OCCLUDER_CULL` history
+above. Placement boxes span whole terrain tiles and buildings, so neighbours
+blinked out as the camera orbited. The fragment test has no such failure
+mode: nothing is ever culled, geometry only loses individual pixels inside
+the fade circle. The browser hosts currently ship no occlusion handling at
+all (the fade is native-only, like dynamic lighting).
+
+The host stages the focus in **field free-roam only** - the player's floor
+tier (the same sampler the follow camera anchors to) lifted half a character
+height - and clears it for cutscenes (an occluded player there is a
+directorial choice), battle, world map and the boot UI. Replays force the
+fade off alongside dynamic lighting, keeping recorded sessions on the
+faithful render.
 
 **The viewer-only exception, so nobody re-derives the wrong conclusion.** There
 *is* a fixed directional light with a `max(dot(n, l), 0.0)` diffuse term in the

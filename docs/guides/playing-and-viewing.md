@@ -25,8 +25,11 @@ victory returns you to the field with XP, gold and drops. Keyboard defaults:
 arrows = D-pad, `Z` = Cross, `Esc` = quit. In-window extras: left-mouse drag
 orbits the camera, `T` cycles the camera-distance preset, `R` toggles precise
 free-angle movement (an opt-in enhancement - retail-style movement is the
-default), `V` mutes audio. `--boot-ui` starts at the title screen →
-save-select flow instead of jumping into the scene.
+default), `D` toggles the camera-occlusion fade (on by default: walls between
+the camera and your character dissolve to a dither so you can always see
+yourself; `--no-occlusion-fade` starts with it off), `V` mutes audio.
+`--boot-ui` starts at the title screen → save-select flow instead of jumping
+into the scene.
 
 Two flags turn parts of that back off:
 

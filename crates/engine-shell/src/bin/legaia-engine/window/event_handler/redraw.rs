@@ -690,6 +690,43 @@ impl PlayWindowApp {
             } else {
                 r.clear_scene_lights();
             }
+            // Camera-occlusion fade focus (the see-through-walls
+            // enhancement): stage the player's clip-space position under
+            // this frame's camera so the scene shaders can screen-door
+            // fragments that bury the character. Field free-roam only -
+            // cutscene framing is authored (an occluded player there is a
+            // directorial choice), and battle / world map / boot UI frame
+            // their own subjects. The focus is the player's body centre:
+            // the floor tier under the actor (the same sampler the follow
+            // camera anchors to - `world_y` is usually 0 while the ground
+            // sits on a LUT-elevated tier) lifted half a character height
+            // (~130-unit mesh; field world is retail Y-down, so up is
+            // negative). Inert unless the fade toggle is on (`D` /
+            // `--no-occlusion-fade`) - the renderer gates on both.
+            let occl_focus = (!self.boot_ui.is_active()
+                && !in_world_map
+                && self.session.host.world.mode == SceneMode::Field
+                && cutscene_cam.is_none())
+            .then(|| {
+                let w = &self.session.host.world;
+                w.player_actor_slot
+                    .and_then(|s| w.actors.get(s as usize))
+                    .map(|a| (a.move_state.world_x, a.move_state.world_z))
+            })
+            .flatten();
+            if let Some((wx, wz)) = occl_focus {
+                const HALF_CHAR_HEIGHT: f32 = 65.0;
+                let floor_y = self
+                    .session
+                    .host
+                    .world
+                    .sample_field_floor_height(wx as i32, wz as i32);
+                let clip =
+                    cam * Vec4::new(wx as f32, floor_y as f32 - HALF_CHAR_HEIGHT, wz as f32, 1.0);
+                r.set_occlusion_focus(clip.to_array());
+            } else {
+                r.clear_occlusion_focus();
+            }
             // Drain queued spawn slots: build a VRAM mesh from each
             // actor's `tmd_ref` (global-pool TMD that the field-VM
             // 0x4C 0xD8 host hook installed) and append it to

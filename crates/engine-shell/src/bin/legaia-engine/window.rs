@@ -830,6 +830,17 @@ struct PlayWindowApp {
     /// toggle at runtime with the `Y` key. Mirrored into the renderer via
     /// [`legaia_engine_render::Renderer::set_dyn_shadows`].
     dyn_shadows: bool,
+    /// Camera-occlusion fade ENHANCEMENT (see-through walls): field scene
+    /// geometry between the camera and the player dissolves to a
+    /// screen-door dither in a circle around the character, so the
+    /// character is always at least partly visible. Default `true`
+    /// (clearly the better play experience); disable with
+    /// `--no-occlusion-fade`, or toggle at runtime with the `D` key.
+    /// Mirrored into the renderer via
+    /// [`legaia_engine_render::Renderer::set_occlusion_fade`]; the
+    /// per-frame focus is staged by the redraw pass in field free-roam
+    /// only, so cutscene / battle / world-map framing is untouched.
+    occlusion_fade: bool,
     /// The current scene's derived point lights (world space), rebuilt by
     /// `upload_assets` at scene load and staged into the renderer each
     /// field frame together with the camera's view-projection.

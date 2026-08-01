@@ -597,6 +597,27 @@ impl PlayWindowApp {
             );
             return;
         }
+        // `D`: toggle the camera-occlusion fade enhancement (the
+        // `--no-occlusion-fade` flag's runtime twin). Default ON: field
+        // walls / roofs / props between the camera and the player dissolve
+        // to a screen-door dither around the character so it stays
+        // visible. Pure renderer state - no world/sim effect, replays
+        // unaffected. OFF is the retail behaviour (authored framing only).
+        if matches!(code, KeyCode::KeyD) && state == ElementState::Pressed {
+            self.occlusion_fade = !self.occlusion_fade;
+            if let Some(r) = self.win.renderer.as_ref() {
+                r.set_occlusion_fade(self.occlusion_fade);
+            }
+            log::info!(
+                "render: camera-occlusion fade {}",
+                if self.occlusion_fade {
+                    "ON (see-through walls - enhancement)"
+                } else {
+                    "off (retail authored framing)"
+                }
+            );
+            return;
+        }
         // `C`: toggle the field camera between the retail follow view
         // (savestate-pinned pitch/yaw/H, player-anchored - the
         // faithful framing) and the wide debug orbit vantage (better

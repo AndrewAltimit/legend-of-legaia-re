@@ -1353,6 +1353,11 @@ impl Renderer {
             // Shadow sub-toggle defaults ON - it only bites while dynamic
             // lighting is enabled and lights are staged.
             dyn_shadows: std::cell::Cell::new(true),
+            // Camera-occlusion fade off by default: parity oracles and every
+            // non-play-window consumer stay on the faithful render; the play
+            // window opts in explicitly.
+            occl_fade: std::cell::Cell::new(false),
+            occl_focus: std::cell::Cell::new(None),
             scene_lights: std::cell::RefCell::new(Vec::new()),
             scene_view_proj: std::cell::Cell::new(None),
             scene_lights_buf,
