@@ -559,7 +559,10 @@ window.MgMuscle = (function () {
               out.uvs.push(u0, v0, u1, v0, u1, v1, u0, v1);
               for (let k = 0; k < 4; k++) {
                 out.ct.push(CBA, TSB);
-                out.flat.push(255, 255, 255, 255);   /* textured */
+                /* Textured, neutral packet colour (0x80): the shader's
+                 * `texel * rgb / 128` needs 0x80 for the identity. White
+                 * here would brighten the whole grid by 255/128. */
+                out.flat.push(128, 128, 128, 255);
               }
               out.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
             }
