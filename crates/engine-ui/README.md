@@ -43,6 +43,13 @@ navigation logic depends on the GPU backend.
   command that cannot be chosen. Both battle hosts seat their command menu
   through it. Geometry mirrors `legaia_engine_vm::battle_chrome`, which
   `engine-shell`'s HUD tests pin equal.
+- `battle_hud_chrome` - the battle surfaces that are **widget-table records**
+  rather than plate runs: the class-0 **message banner** (`banner_frame` /
+  `message_banner_chrome_draws_for` / `message_banner_text_draws_for` - which
+  draws no interior fill, and shares content pen `(16, 12)` with the
+  actor-name plaque, so the two never coexist) and the **badge cells**
+  (`BattleBadgeRects`) the HUD blits for a slot's status element and for an
+  actor's element badge.
 - `ui_fishing` - fishing-minigame HUD: the ported persistent / catch HUD
   layout, gauge bars, digit field and banner animators, plus
   `fishing_hud_draws_for`, the consumer that renders that draw list.

@@ -2295,7 +2295,14 @@ parked seat is `(8, -24)`, so retail slides it in from above. The port draws
 the live seat only. This is also where the port's **monster readout** lives:
 retail draws no monster gauge at all, so a monster's name is the whole of what
 it contributes to the drawn surface. `battle_hud::battle_active_actor` picks
-the actor.
+the actor and `battle_plaque_element_badge` picks the badge.
+
+**One seat, two surfaces.** The plaque and the
+[message banner](#the-full-width-message-banner) share content pen `(16, 12)`
+- they are alternatives, not layers, and drawing both puts two text runs on
+the same pixels. `BattleHudFrame::banner` wins when a message is up, and
+`plaque_seat_taken` lets a host claim the seat for a box it draws itself
+(the sparring-tutorial prompt, whose rect starts on that same pen).
 
 **The surface samples the disc's own cells.** The 102x48 marbled panel plate,
 the blue plate 3-slice, the 8x16 `/` separator and the 8x12 numerals are all
@@ -2315,12 +2322,13 @@ with a 1-px rim, the labels and the `/` to tinted text, and the numerals to
 font glyphs **centred on the same 8-px cells** - the fallback changes
 letterforms, never layout.
 
-**Still substituted, and no longer for want of the art.** The port draws the
-selected status id as its own labelled tag on the panel's level seat - the
-seat retail's exclusive ladder puts it on. Retail's own cells are pinned
-([the badge sheet](#the-status-element-badge-sheet)): nine 48x16 tags on the
-system-UI sheet, one row-511 sub-palette each. Wiring them is a draw-builder
-change, not an RE question.
+**The status badge is retail's own cell.** When a slot's ladder selects an
+ailment the HUD blits the 48x16 word tag off the sheet
+([the badge sheet](#the-status-element-badge-sheet)) rather than a labelled
+stand-in, at `panel + (56, 0)` - the ladder caller's `pen + (0x33, -4)` off
+the panel's `(+5, +4)` name pen. The engine's tag survives as the per-cell
+fallback: a host whose atlas could not reach a badge's sub-palette keeps the
+tag for that one badge and blits the other eight.
 
 **Parked, not stacked.** The port emits no panel draws at all while the
 active-actor bar or a command-entry session owns the frame, rather than
@@ -2699,6 +2707,17 @@ to 11) and `Vahn` on the pen at `(16, -26)`. That is placement record 68's
 disc-side parked seat `(16, -24)` through the pen and bias law above, and it
 is the clip rule and the plate arithmetic confirmed in one packet run.
 
+**Port.** [`engine-ui::battle_hud_chrome`](../../crates/engine-ui/src/battle_hud_chrome.rs)
+carries the geometry (`banner_frame` / `banner_interior`, the tiled-edge
+emit, no fill) and the HUD builder draws it in place of the plaque. What
+feeds it is the port's two battle messages, level-up and Seru-capture - the
+`noa_levelup_banner` state is one of the two the geometry came from. The port
+raises both a mode-tick **after** the fight has handed the frame back to the
+field, where retail raises them on the battle result screen, so the message
+takes the banner wherever the port raises it and the widget is not gated on
+battle mode. A multi-line message grows the interior by the 14-px text pitch
+per extra row and nothing else moves.
+
 ### The status-element badge sheet
 
 The nine ids the exclusive status ladder emits, `0x18..=0x20`, are **48x16
@@ -2729,6 +2748,16 @@ the chrome plates use, not the row's extent. And the no-ailment arm's marker,
 sprite `0x0A`, is a plain 16x10 `LV` label at `(192, 86)` on sub-palette 1 -
 the same three-texel label set as `HP` and `MP`.
 
+**Where the strip's continuation lives.** The system-UI sheet's own CLUT
+block is `16 x 16` at VRAM `(0, 511)` - sub-palettes 0..15 and no more. Sub-
+palettes 16 / 17 / 18 come from a separate **CLUT-only TIM** immediately
+before it at `PROT.DAT[0x1858]` (`0x1858 + 0x88 == 0x18E0`), whose block is
+`16 x 3` at VRAM `(256, 511)` and whose image block is a four-word stub. So
+"the strip runs to VRAM x 288" is a second file, not a wider first one - and
+an atlas bake rooted at the sheet cannot see it, which is why the port's
+badge accessor answers per cell. Constants + bake:
+`engine-core::save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET`.
+
 ### The element badges and their per-badge palette
 
 The badge strip is eight consecutive records, `0x8B..=0x92`: `20 x 12` at a
@@ -2754,14 +2783,43 @@ one asymmetry: it reads `v = 192`, so the eighth wide badge samples the
 square-framed art on the plain row while its seven siblings sample the winged
 row. The winged eighth badge exists in VRAM and no record selects it.
 
-### Four ids are not on this sheet at all
+**Neither strip's texels are on the system-UI sheet.** Rows `v = 192` and
+`v = 208` are past that TIM's 192, and belong to the **extension strip** that
+continues the page at VRAM `(896, 448)`
+(`title_pak::OVERLAY_SYSTEM_UI_EXT_TIM_OFFSET`, strip `v` = sheet `V - 192`).
+Each of the four CLUT rows `498..501` is a whole sibling TIM of its own -
+`0x10178` / `0x100D0` / `0x10028` / `0xFF80` - so a badge's palette is
+`(row TIM, index & 3)`. The port bakes the plain eight from the first two
+(`save_menu_atlas::add_element_badge_sprites`); the winged four on row 500
+are already baked as the status screen's ATR icons, which is the same art.
+
+**Port + what is inferred.** The plaque wears badge `element` for a monster
+whose record `+0x1D` names one (`battle_hud::battle_plaque_element_badge`),
+and the plaque widens by `20 + 5` exactly as `name_plaque` lays out. The
+geometry, the palette decode and the plaque law are all disc-read; **the
+selector is not** - no dumped caller computes the badge id, so "badge index
+= element id" is an inference from the two eights lining up, and whether a
+neutral (id 7) actor draws a badge at all is unverified.
+
+### Four ids are not on this sheet at all - they are the save-slot portraits
 
 `FUN_8002C488` has a second arm for ids `0x86`, `0x87`, `0x88` and `0x8A`.
 They draw through texture page `0x1F` (VRAM `(960, 256)`) instead of `0x1E`
 (`(896, 256)`), take their CLUT from the four-word side table at `0x80073DB8`
-(VRAM `(976, 304..307)`) instead of their palette byte, and are the only ids
-whose `+0x08`/`+0x0A` bias applies on the *single-sprite* path. They are the
-three party-member face portraits (16x16 each) plus a 32x32 empty frame.
+instead of their palette byte, and are the only ids whose `+0x08`/`+0x0A`
+bias appears on the *single-sprite* path - though only `0x8A` carries a
+non-zero one, `(-8, -8)`, which centres the 32x32 frame on the same seat a
+16x16 face takes.
+
+They are **not an undrawn surface**. The side table reads `(976, 304)`,
+`(976, 305)`, `(976, 306)`, `(976, 307)`; the records' rects
+(`(64|80|96, 0, 16, 16)` and `(64, 16, 32, 32)`) address VRAM `x = 976 + u/4`
+at 4bpp, i.e. `(976..988, 256..272)` and `(976..984, 272..304)`. Those are
+exactly the framebuffer coordinates of the four load-screen TIMs at
+`PROT.DAT[0x1AC90]` and `[0x1AED0]` - the three party-member face portraits
+and the empty-cell frame the save-slot grid already draws
+(`title_pak::OVERLAY_LOAD_PORTRAIT_TIM_OFFSET`, port
+`engine-ui::ui_title_save::slot_grid`). One asset, two consumers.
 
 ## SFX bank + scheduler
 

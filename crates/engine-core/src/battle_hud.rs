@@ -844,6 +844,31 @@ pub fn battle_active_actor(world: &crate::world::World) -> Option<(u8, String)> 
     None
 }
 
+/// Element-badge index the actor-name plaque wears in front of the name, or
+/// `None` for an actor that carries no badge.
+///
+/// Retail's plaque grows its interior by `20 + 5` when the actor has one
+/// (`battle_chrome::name_plaque`), and the eight badge records `0x8B..=0x92`
+/// are the only strip that fits that 20x12 slot. The **selector** is what is
+/// inferred rather than pinned: no dumped caller computes the badge id, so
+/// this reads the monster record's own element (`+0x1D`, the id space
+/// `element_affinity` decodes) and takes badge `element` out of the strip.
+/// A party member gets no badge - the captured plaques that carry one are
+/// the monster frames (`Gimard`), and the party ones (`Vahn`, `Noa`) do not.
+pub fn battle_plaque_element_badge(world: &crate::world::World) -> Option<u8> {
+    let (slot, _) = battle_active_actor(world)?;
+    let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
+    if (slot as usize) < pc {
+        return None;
+    }
+    let actor = world.actors.get(slot as usize)?;
+    let def = world
+        .monster_catalog
+        .get(actor.battle_monster_id?)
+        .filter(|d| (d.element as usize) < legaia_asset::element_affinity::ELEMENT_COUNT)?;
+    Some(def.element)
+}
+
 /// Is the port's encounter-transition banner enabled?
 ///
 /// The "ENCOUNTER!" head line has no retail counterpart - retail's

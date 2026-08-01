@@ -306,6 +306,10 @@ struct SaveMenuAssets {
     /// GPU-resident sprite atlas (composite 256×256: panel tiles from
     /// system-UI TIM + slot pills from PROT 0899's save-menu TIM).
     atlas: legaia_engine_render::UploadedSpriteAtlas,
+    /// Battle-HUD badge cells inside that atlas: the nine status-element
+    /// word tags and the eight element badges, `None` per cell this bake
+    /// could not reach a palette for.
+    badges: legaia_engine_render::battle_hud_chrome::BattleBadgeRects,
 }
 
 /// Muscle Dome hub-screen assets: the two hub page TIMs (extraction 1220,

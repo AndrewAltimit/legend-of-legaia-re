@@ -433,6 +433,26 @@ impl LegaiaRuntime {
                 // entry session owns the frame; the port emits no strip.
                 input_session_parked: parked,
                 diag: ui::diag_hud_enabled(),
+                // NOT WIRED on this host yet. Four fields the native window
+                // fills and this page does not, all of them plain data:
+                //
+                // * `badges` - `BattleBadgeRects` from the baked atlas's
+                //   `band_status_badges()` / `band_element_badges()`. Until
+                //   then a selected ailment keeps the engine's labelled tag
+                //   instead of retail's 48x16 word cell. The page's atlas
+                //   also needs its PROT.DAT slice rooted at
+                //   `save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET` rather
+                //   than the system-UI sheet, or three of the nine badges
+                //   have no sub-palette to decode with.
+                // * `plaque_badge` -
+                //   `battle_hud::battle_plaque_element_badge(world)`.
+                // * `banner` - a battle message for the top-of-screen
+                //   widget; the native host feeds it the level-up /
+                //   Seru-capture lines.
+                // * `plaque_seat_taken` - true while this page draws its own
+                //   box on the plaque's pen (the tutorial prompt), or two
+                //   text runs land on the same pixels.
+                ..Default::default()
             },
             BATTLE_HUD_PEN,
         )

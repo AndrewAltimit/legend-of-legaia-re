@@ -9,6 +9,10 @@
 //! used to live here; nothing called it on either host, so it was removed
 //! rather than waived in the ui-host-drift gate.
 
+use crate::battle_hud_chrome::{
+    STATUS_BADGE_PANEL_SEAT, message_banner_chrome_draws_for, message_banner_content,
+    message_banner_text_draws_for,
+};
 use crate::*;
 
 /// Convert sprite requests to [`SpriteDraw`]s, applying a screen-space
@@ -558,6 +562,24 @@ pub struct BattleHudFrame<'a> {
     /// not yet pinned; the label draws as clean text at the plaque's
     /// captured text inset until it is.
     pub plaque: Option<&'a str>,
+    /// Element-badge index (`0..8`) the plaque wears in front of the name.
+    /// Retail's plaque interior is `20 + 5 + name width` when the actor
+    /// carries one, which is the second half of the pinned plaque law
+    /// (`battle_chrome::name_plaque`). `None` draws the bare name.
+    pub plaque_badge: Option<u8>,
+    /// A battle message holding the **top-of-screen banner**. Retail's
+    /// banner and the actor-name plaque are one seat (content pen
+    /// `(16, 12)`), so this wins: while a message is up the builder draws
+    /// the class-0 frame and its text and emits no plaque.
+    pub banner: Option<&'a str>,
+    /// The host is already drawing its own box on that seat (the sparring
+    /// tutorial prompt). Suppresses the plaque without drawing a banner -
+    /// two text runs on one pen is the artifact this exists to stop.
+    pub plaque_seat_taken: bool,
+    /// Atlas cells for the status-element and element badges
+    /// ([`crate::battle_hud_chrome::BattleBadgeRects`]). Any `None` cell
+    /// falls back to the engine's labelled text tag.
+    pub badges: Option<&'a crate::battle_hud_chrome::BattleBadgeRects>,
     /// Retail parks the party status plate off-screen while an arts input
     /// session owns the frame (`docs/subsystems/minigame-muscle-dome.md` -
     /// its draws move to `y = 230`, under the 228-line display window), and
@@ -657,6 +679,10 @@ const PLAQUE_X: i32 = 8;
 const PLAQUE_Y: i32 = 8;
 /// Vertical inset of the plaque's contents from its plate top.
 const PLAQUE_CONTENT_DY: i32 = 4;
+/// Width of the element badge the plaque wears, and the gap between it and
+/// the first name glyph (`battle_chrome::BADGE_W` / `PLAQUE_BADGE_GAP`).
+const PLAQUE_BADGE_W: i32 = 20;
+const PLAQUE_BADGE_GAP: i32 = 5;
 
 /// Roster-panel background size and row.
 const PANEL_W: i32 = 102;
@@ -1101,18 +1127,33 @@ pub fn battle_hud_draws_for(
             // the level, and any set bit (or zero HP) replaces both with a
             // single ailment sprite. Retail seats that element on the panel's
             // top cell, so the level and the ailment share one seat here too.
-            // The ladder itself is resolved into `status_sprite` upstream;
-            // what is approximate is only the art - retail's sprite sheet for
-            // `0x18..=0x20` is unresolved, so the id draws as a labelled tag.
+            //
+            // The badge is retail's own 48x16 word cell off the system-UI
+            // sheet, seated at the ladder caller's `pen + (0x33, -4)`
+            // ([`battle_hud_chrome::STATUS_BADGE_PANEL_SEAT`]). Without the
+            // cell (an atlas built from a slice that could not reach the
+            // row-511 extension palettes) it degrades to the engine's
+            // labelled tag on the level seat.
             if slot.status_sprite != 0 {
-                stage_text(
-                    &mut text,
-                    font,
-                    status_element_label(slot.status_sprite),
-                    px + PANEL_LV_LABEL.0,
-                    py + PANEL_LV_LABEL.1,
-                    status_element_color(slot.status_sprite),
-                );
+                match frame
+                    .badges
+                    .and_then(|b| b.status_badge(slot.status_sprite))
+                {
+                    Some(src) => stage_sprite(
+                        &mut sprites,
+                        src,
+                        px + STATUS_BADGE_PANEL_SEAT.0,
+                        py + STATUS_BADGE_PANEL_SEAT.1,
+                    ),
+                    None => stage_text(
+                        &mut text,
+                        font,
+                        status_element_label(slot.status_sprite),
+                        px + PANEL_LV_LABEL.0,
+                        py + PANEL_LV_LABEL.1,
+                        status_element_color(slot.status_sprite),
+                    ),
+                }
             } else if slot.level > 0 {
                 label(
                     &mut sprites,
@@ -1269,26 +1310,65 @@ pub fn battle_hud_draws_for(
         );
     }
 
-    // ---- The actor-name plaque ----
+    // ---- The top-left seat: banner OR plaque, never both ----
     //
-    // Retail's top-left plaque names the actor the frame belongs to - the
-    // party member on his turn, the monster through its attack - on a carved
-    // gold plate whose interior is sized to the measured name. Its live seat
-    // is `(8, 8)` and its parked seat `(8, -24)`: the plaque slides in from
-    // above. The port draws only the live seat; the slide is not animated.
-    if let Some(name) = frame.plaque
+    // Retail's message banner and the actor-name plaque share content pen
+    // `(16, 12)`; they are alternatives on one seat. Drawing both is two
+    // text runs on the same pixels, so the banner wins when a message is
+    // up and the host can also claim the seat outright
+    // (`plaque_seat_taken`) for a box it draws itself.
+    if let Some(message) = frame.banner.filter(|m| !m.is_empty()) {
+        // The class-0 nine-slice, sized to the measured message - and no
+        // interior fill: retail's display list carries the border sprites
+        // and the glyph run and nothing else, so the scene shows through.
+        if let Some(rects) = frame.chrome {
+            let content = message_banner_content(font, message);
+            sprites.extend(message_banner_chrome_draws_for(
+                rects,
+                content,
+                origin,
+                scale as u32,
+            ));
+        }
+        let mut rows = message_banner_text_draws_for(font, message);
+        scale_stage_text_draws(&mut rows, origin, scale as u32);
+        text.extend(rows);
+    } else if let Some(name) = frame.plaque
         && !name.is_empty()
+        && !frame.plaque_seat_taken
     {
+        // Retail's top-left plaque names the actor the frame belongs to -
+        // the party member on his turn, the monster through its attack - on
+        // a carved gold plate whose interior is sized to the measured name.
+        // Its live seat is `(8, 8)` and its parked seat `(8, -24)`: the
+        // plaque slides in from above. The port draws only the live seat.
+        //
+        // An actor that carries an element wears its badge in front of the
+        // name, and the interior grows by the badge plus a 5-px gap - the
+        // second half of `battle_chrome::name_plaque`'s pinned law.
         let name_w = font.layout_ascii(name).advance_x as i32;
-        plate_run(&mut text, &mut sprites, PLAQUE_X, PLAQUE_Y, name_w, true);
-        stage_text(
+        let badge = frame
+            .plaque_badge
+            .and_then(|i| frame.badges.and_then(|b| b.element_badge(i)));
+        let lead = if badge.is_some() {
+            PLAQUE_BADGE_W + PLAQUE_BADGE_GAP
+        } else {
+            0
+        };
+        plate_run(
             &mut text,
-            font,
-            name,
-            PLAQUE_X + PLATE_CAP_W,
-            PLAQUE_Y + PLAQUE_CONTENT_DY,
-            white,
+            &mut sprites,
+            PLAQUE_X,
+            PLAQUE_Y,
+            lead + name_w,
+            true,
         );
+        let content_x = PLAQUE_X + PLATE_CAP_W;
+        let content_y = PLAQUE_Y + PLAQUE_CONTENT_DY;
+        if let Some(src) = badge {
+            stage_sprite(&mut sprites, src, content_x, content_y);
+        }
+        stage_text(&mut text, font, name, content_x + lead, content_y, white);
     }
 
     // ---- Diagnostic rows (LEGAIA_DIAG_HUD) ----

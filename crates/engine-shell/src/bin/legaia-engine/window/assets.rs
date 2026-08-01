@@ -701,7 +701,20 @@ impl PlayWindowApp {
                             digits: atlas_data.band_hud_digits(),
                         }),
                     };
-                    self.save_menu = Some(SaveMenuAssets { rects, atlas });
+                    // The battle HUD's badge cells: which ones actually
+                    // carry art is a property of *this* bake (three of the
+                    // status badges need the row-511 extension palettes),
+                    // so it travels with the atlas rather than being
+                    // re-derived from the layout.
+                    let badges = legaia_engine_render::battle_hud_chrome::BattleBadgeRects {
+                        status: atlas_data.band_status_badges(),
+                        element: atlas_data.band_element_badges(),
+                    };
+                    self.save_menu = Some(SaveMenuAssets {
+                        rects,
+                        atlas,
+                        badges,
+                    });
                 }
                 Err(e) => log::warn!("save-menu atlas upload skipped: {e:#}"),
             }

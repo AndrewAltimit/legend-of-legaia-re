@@ -1274,28 +1274,53 @@ impl PlayWindowApp {
                 out.extend(draws);
             }
         }
-        // Level-up banner: rendered near the top when active after a battle win.
-        if let Some(banner) = &self.session.host.world.current_level_up_banner {
-            let draws = level_up_draws_for(
-                &self.font,
-                banner.char_id,
-                banner.new_level,
-                banner.hp_gained,
-                banner.mp_gained,
-                LEVEL_UP_BANNER_PEN,
-            );
-            out.extend(draws);
-        }
-        // Seru-capture banner: shown after a battle in which a Seru was
-        // captured (and, if a threshold was crossed, a spell learned).
-        if let Some(banner) = &self.session.host.world.current_capture_banner
-            && let Some(text) = banner.current_banner()
-        {
-            out.extend(capture_banner_draws_for(
-                &self.font,
-                &text,
-                CAPTURE_BANNER_PEN,
-            ));
+        // Level-up + Seru-capture messages. Both take retail's own
+        // top-of-screen banner - the widget the `noa_levelup_banner` capture
+        // pinned - rather than a loose pen in the corner.
+        //
+        // Two draw paths, mutually exclusive by mode: inside battle
+        // `battle_hud_draws_for` emits the banner (and yields the plaque's
+        // seat to it); outside, the same builders run here, because the port
+        // raises both messages a mode-tick after the fight has already
+        // returned to the field.
+        // Without the system-UI atlas there is no frame to put a message in,
+        // so a chrome-less host keeps the original loose pens.
+        let banner_message = self
+            .battle_banner_message()
+            .filter(|_| self.save_menu.is_some());
+        match &banner_message {
+            // In battle `battle_hud_draws_for` already emitted both halves.
+            Some(_) if self.session.host.world.mode == SceneMode::Battle => {}
+            Some(message) => {
+                let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+                let mut rows =
+                    legaia_engine_render::battle_hud_chrome::message_banner_text_draws_for(
+                        &self.font, message,
+                    );
+                legaia_engine_render::scale_stage_text_draws(&mut rows, stage_origin, stage_scale);
+                out.extend(rows);
+            }
+            None => {
+                if let Some(banner) = &self.session.host.world.current_level_up_banner {
+                    out.extend(level_up_draws_for(
+                        &self.font,
+                        banner.char_id,
+                        banner.new_level,
+                        banner.hp_gained,
+                        banner.mp_gained,
+                        LEVEL_UP_BANNER_PEN,
+                    ));
+                }
+                if let Some(banner) = &self.session.host.world.current_capture_banner
+                    && let Some(text) = banner.current_banner()
+                {
+                    out.extend(capture_banner_draws_for(
+                        &self.font,
+                        &text,
+                        CAPTURE_BANNER_PEN,
+                    ));
+                }
+            }
         }
         // Opening-cutscene narration: the retail bottom-up subtitle CRAWL
         // (`FUN_80037174`) - every visible line drawn centered at its
@@ -1808,6 +1833,8 @@ impl PlayWindowApp {
                     .map(|(_, name)| (slot, name))
             })
             .or_else(|| legaia_engine_core::battle_hud::battle_active_actor(w_ref));
+        let badges = self.battle_badge_rects();
+        let banner = self.battle_banner_message();
         battle_hud_draws_for(
             &self.font,
             &legaia_engine_render::BattleHudFrame {
@@ -1818,6 +1845,16 @@ impl PlayWindowApp {
                 surface: (w, h),
                 chrome: self.save_menu.as_ref().map(|a| &a.rects),
                 plaque: active.as_ref().map(|(_, n)| n.as_str()),
+                plaque_badge: legaia_engine_core::battle_hud::battle_plaque_element_badge(w_ref),
+                banner: banner.as_deref(),
+                // The sparring-tutorial prompt is a box the host draws
+                // itself, and its rect starts on the plaque's own content
+                // pen - so while it is up the plaque must not draw, or the
+                // two text runs land on the same pixels.
+                plaque_seat_taken: self.battle_tutorial_stage_rect().is_some()
+                    || w_ref.current_dialog.is_some()
+                    || w_ref.inline_dialogue.is_some(),
+                badges: badges.as_ref(),
                 active_slot: active.as_ref().map(|(s, _)| *s),
                 // Retail parks the status plate off-screen while a command
                 // entry session owns the frame; the port emits no strip.
@@ -1826,6 +1863,50 @@ impl PlayWindowApp {
             },
             BATTLE_HUD_PEN,
         )
+    }
+
+    /// The badge cells the battle HUD blits, projected out of the baked
+    /// atlas. `None` before the atlas is resident; a `None` *cell* inside it
+    /// means that badge's palette source was outside the slice the atlas was
+    /// built from, and the HUD falls back to its labelled tag.
+    pub(super) fn battle_badge_rects(
+        &self,
+    ) -> Option<legaia_engine_render::battle_hud_chrome::BattleBadgeRects> {
+        self.save_menu.as_ref().map(|a| a.badges)
+    }
+
+    /// The message holding retail's top-of-screen banner this frame, if any.
+    ///
+    /// The port's two battle messages are the level-up and Seru-capture
+    /// lines, and retail draws exactly those in this widget -
+    /// `noa_levelup_banner` is one of the two save states the banner's
+    /// geometry was read out of.
+    ///
+    /// Not gated on `SceneMode::Battle`, and that is a **port ordering
+    /// difference worth naming**: retail raises the level-up message on the
+    /// battle result screen, still in battle, while the port grants XP after
+    /// the mode has already flipped back to Field - so gating on battle mode
+    /// would leave the widget wired and never drawn. The message goes in
+    /// retail's own widget wherever the port raises it; the sprite half
+    /// follows through [`Self::battle_chrome_sprite_draws`].
+    ///
+    /// `None` without the system-UI atlas: there is no frame to put a
+    /// message in, so a chrome-less host keeps the loose pens instead.
+    pub(super) fn battle_banner_message(&self) -> Option<String> {
+        self.save_menu.as_ref()?;
+        let w = &self.session.host.world;
+        if let Some(b) = &w.current_level_up_banner {
+            return Some(format!(
+                "LEVEL UP!  P{} -> LV {}\nHP +{}  MP +{}",
+                b.char_id + 1,
+                b.new_level,
+                b.hp_gained,
+                b.mp_gained
+            ));
+        }
+        w.current_capture_banner
+            .as_ref()
+            .and_then(|b| b.current_banner())
     }
 
     /// The live battle command menu projected into the shared chip-cluster
@@ -1881,20 +1962,35 @@ impl PlayWindowApp {
     /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` /
     /// green `MP` label cells) for the system-UI atlas slot, plus the
     /// command menu's chip plates + D-pad glyph when a menu is up. Empty
-    /// outside battle, or before the atlas is resident.
+    /// before the atlas is resident.
+    ///
+    /// Outside battle this narrows to one surface: the frame of the
+    /// **message banner** carrying a level-up / Seru-capture line, which the
+    /// port raises after the fight has already handed the frame back to the
+    /// field. Its text half rides the glyph layer in `hud_draws`.
     pub(super) fn battle_chrome_sprite_draws(
         &self,
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<legaia_engine_render::SpriteDraw> {
-        if self.session.host.world.mode != legaia_engine_core::world::SceneMode::Battle {
-            return Vec::new();
-        }
         let Some(assets) = self.save_menu.as_ref() else {
             return Vec::new();
         };
         if self.boot_ui.is_active() {
             return Vec::new();
+        }
+        if self.session.host.world.mode != legaia_engine_core::world::SceneMode::Battle {
+            let Some(message) = self.battle_banner_message() else {
+                return Vec::new();
+            };
+            let (origin, scale) = self.save_select_stage(surface_w, surface_h);
+            use legaia_engine_render::battle_hud_chrome as bhc;
+            return bhc::message_banner_chrome_draws_for(
+                &assets.rects,
+                bhc::message_banner_content(&self.font, &message),
+                origin,
+                scale,
+            );
         }
         let mut out = self.battle_hud_frame_draws(surface_w, surface_h).sprites;
         // The command chips sample the same blue plate 3-slice the party
@@ -2645,6 +2741,59 @@ mod battle_hud_wiring_tests {
         assert!(
             out.iter().any(|d| d.dst.1 == want_y && d.dst.0 >= popup_x),
             "no popup glyph at slot 3's anchor (y={want_y})"
+        );
+    }
+
+    /// `engine-render`'s HUD tests repeat the badge block's atlas layout as
+    /// literals, because that crate sits below `engine-core` and cannot
+    /// import the bake. This is the seam that keeps the copy honest - the
+    /// same job `engine_ui_command_chips_mirror_the_packet_pinned_battle_chrome`
+    /// does for the chip cluster.
+    #[test]
+    fn badge_atlas_seats_match_the_bake() {
+        use legaia_engine_core::save_menu_atlas as sma;
+        for i in 0..sma::STATUS_BADGE_COUNT {
+            assert_eq!(
+                sma::status_badge_atlas_rect(i),
+                (
+                    48 * (i as u32 % 4),
+                    128 + 16 * (i as u32 / 4),
+                    sma::STATUS_BADGE_W,
+                    sma::STATUS_BADGE_H
+                ),
+                "status badge {i} atlas seat drifted from the mirrored layout"
+            );
+        }
+        for i in 0..sma::ELEMENT_BADGE_COUNT {
+            assert_eq!(
+                sma::element_badge_atlas_rect(i),
+                (
+                    20 * i as u32,
+                    176,
+                    sma::ELEMENT_BADGE_W,
+                    sma::ELEMENT_BADGE_H
+                ),
+                "element badge {i} atlas seat drifted from the mirrored layout"
+            );
+        }
+        // The badge block must not land on anything the atlas already
+        // carries; these are the neighbours it was seated between.
+        let (bx, by) = sma::ATLAS_RECT_STATUS_BADGES_ORIGIN;
+        assert_eq!((bx, by), (0, 128));
+        assert!(
+            by >= 128 && by + 3 * sma::STATUS_BADGE_H <= sma::ATLAS_RECT_ELEMENT_BADGES_ORIGIN.1,
+            "the status block overruns the element strip"
+        );
+        const {
+            assert!(
+                4 * sma::STATUS_BADGE_W <= 200,
+                "the status block reaches the arts chip triple at x=200"
+            )
+        };
+        assert!(
+            sma::ATLAS_RECT_ELEMENT_BADGES_ORIGIN.1 + sma::ELEMENT_BADGE_H
+                <= sma::ATLAS_RECT_FILIGREE.1,
+            "the element strip overruns the filigree tile"
         );
     }
 }

@@ -14,6 +14,10 @@
 //! * [`battle_command_ui`] - the battle command menu's packet-pinned chip
 //!   cluster: the plate 3-slice, the four-arm diamond and its D-pad glyph,
 //!   and the `-` chip an unavailable command draws.
+//! * [`battle_hud_chrome`] - the battle surfaces that are widget-table
+//!   records rather than plate runs: the class-0 message banner (which
+//!   draws no interior fill and shares its seat with the actor-name
+//!   plaque) and the status / element badge cells.
 //! * [`ui_fishing`] - fishing-minigame HUD: the ported draw-list layout plus
 //!   the consumer that renders it.
 //! * [`ui_menu`] - pause-menu field/status/spell/inventory/equipment panels,
@@ -40,6 +44,7 @@ pub use legaia_tim;
 
 pub mod arts_input;
 pub mod battle_command_ui;
+pub mod battle_hud_chrome;
 pub mod battle_name_banner;
 mod battle_tutorial_box;
 pub mod other_game_hud;

@@ -261,9 +261,18 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   (slot rows). `engine-render::battle_hud_draws_for` turns it into the
   drawn surface. Also the two labels the drawn surface needs off the
   live world: `battle_plaque_label` (the top-left plaque, and the port's
-  whole monster readout - retail draws no monster gauge) and
-  `encounter_banner_label` / `encounter_banner_enabled` (the banner is a
-  port invention with no retail counterpart, so it is gated off).
+  whole monster readout - retail draws no monster gauge),
+  `battle_plaque_element_badge` (the 20x12 badge an elemental actor wears
+  in front of that name) and `encounter_banner_label` /
+  `encounter_banner_enabled` (the banner is a port invention with no retail
+  counterpart, so it is gated off).
+- `save_menu_atlas` - the shared 256x256 sprite bake. Besides the save /
+  pause chrome it carries the **battle badge cells**: the nine 48x16 status
+  word tags (`band_status_badge`) and the eight element badges
+  (`band_element_badge`). Three status badges decode through the row-511
+  CLUT extension at `SYSTEM_UI_CLUT_EXT_TIM_OFFSET`, one TIM before the
+  system-UI sheet, so a caller roots its slice there to get all nine; a
+  sheet-rooted slice bakes six and the accessors answer `None` for the rest.
 - `inventory_use` - `InventoryUseSession` state machine for the field
   + battle inventory flow. Filters items by `InventoryContext`,
   validates target compatibility (Revive vs alive), folds `ItemOutcome`
