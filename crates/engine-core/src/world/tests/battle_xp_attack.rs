@@ -29,6 +29,62 @@ fn apply_battle_xp_sets_level_up_banner() {
     );
 }
 
+/// A fight that levels several members shows a banner for each, one after
+/// the other.
+///
+/// The banner is a single slot and `apply_battle_xp` used to assign it inside
+/// the per-member loop, so every leveller after the first overwrote its
+/// predecessor in the same frame: a battle that levelled three showed one
+/// banner. The queue is what makes the other two reachable, so this test
+/// walks the whole drain rather than only checking that a banner exists.
+#[test]
+fn every_member_who_levels_gets_their_own_banner_in_turn() {
+    let mut world = World {
+        party_count: 3,
+        ..World::default()
+    };
+    for slot in 0..3 {
+        world.actors[slot].battle.hp = 100;
+    }
+    // Scaled 3/4 + ceil-split over 3 alive: ceil((486 - 486>>2)/3) = 122
+    // each, past the 121 threshold, so all three level in one call.
+    let results = world.apply_battle_xp(486);
+    assert_eq!(results.len(), 3, "all three members should level");
+
+    let mut seen = vec![
+        world
+            .current_level_up_banner
+            .as_ref()
+            .expect("first banner")
+            .char_id,
+    ];
+    assert_eq!(
+        world.pending_level_up_banners.len(),
+        2,
+        "the other two levellers must be queued, not dropped"
+    );
+
+    // Drain: each banner runs its countdown, then the next takes the slot.
+    for _ in 0..2 {
+        for _ in 0..=crate::levelup::LevelUpBanner::DEFAULT_FRAMES {
+            world.tick();
+        }
+        seen.push(
+            world
+                .current_level_up_banner
+                .as_ref()
+                .expect("queued banner should take the slot")
+                .char_id,
+        );
+    }
+    seen.sort_unstable();
+    assert_eq!(
+        seen,
+        vec![0, 1, 2],
+        "each member who levelled should get their own banner"
+    );
+}
+
 #[test]
 fn apply_battle_xp_skips_dead_members() {
     let mut world = World {

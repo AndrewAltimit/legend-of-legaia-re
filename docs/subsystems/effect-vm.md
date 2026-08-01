@@ -132,7 +132,26 @@ Two render-agnostic seams expose the live pool:
 - `World::active_effect_markers` - one coarse `EffectMarker` per effect still in its spawn phase (origin + age), plus the dev `debug_effects`. For hosts/tests that only need effect positions.
 - `World::active_effect_sprites` - the faithful per-child billboard view (the textured-quad path): a one-for-one mapping of `Pool::child_billboards` over the pool's live child slots - each child's integrated 16.8 position, its current pack0 frame's atlas rect + `tpage`/`clut`, the pass-2 sprite sizing (`atlas w/h * sprite_scale >> 8`), the retail brightness envelope, and the random UV-mirror corner order. `FUN_801E0088` pass 2, one GPU sprite primitive per child.
 
-The native host (`play-window`) draws each `EffectSprite` two ways: a **camera-facing textured quad** through the VRAM-mesh pipeline (`upload_vram_mesh`, sampling the scene VRAM at the sprite's atlas page/clut/uv as a `SceneDraw`, modulated by the pass-2 brightness with the mirror-resolved UV corner order), plus a **tinted outline** through the `UploadedLines` pipeline so the billboard is visible regardless of VRAM contents, faded by animation age. `World::spawn_debug_effect` seats a synthetic marker by hand (the `E` key in `play-window`); it is not a retail path and lives outside the pool.
+Both hosts draw each `EffectSprite` as a **camera-facing textured quad**: the native window through the VRAM-mesh pipeline (`upload_vram_mesh`, sampling the scene VRAM at the sprite's atlas page/clut/uv as a `SceneDraw`, modulated by the pass-2 brightness with the mirror-resolved UV corner order), the play page through the same shape in `web-viewer::play_battle_fx`.
+
+Each host also carries a **tinted outline** builder - a flat rectangle around the quad, faded by animation age - and on both it is a diagnostic that is **off by default**, because retail draws no such rectangle. See [the outline is a diagnostic](#the-billboard-outline-is-a-diagnostic-and-defaults-off-on-both-hosts).
+
+`World::spawn_debug_effect` seats a synthetic marker by hand (the `E` key in `play-window`); it is not a retail path and lives outside the pool.
+
+#### The billboard outline is a diagnostic, and defaults off on both hosts
+
+The outline predates the battle-entry flame-atlas blit. It existed so a spawn stayed readable when its texels were not resident; with the atlas resident the textured quad draws on its own and the rectangle is only in the way.
+
+It is also not a faint marking. The strips are untextured, carry no ABE bit, and so rasterise in the **opaque** pass, and the tint law `(80 + 175f, 200f, 255f)` for `f = 1 - age01` is red-dominant at every point of a sprite's animation - pale rose at spawn, dark red at the end. What that draws is a solid red-ish box around every effect sprite in a fight; the Rim Elm spar (`play-window --scene town01 --battle 4`) carries up to 25 live sprites in one frame, so it is up to 25 boxes.
+
+The two gates are host-shaped, because a WASM module has no process environment to read:
+
+| host | builder | gate | default |
+|---|---|---|---|
+| native `play-window` | `effect_sprite_line_geometry` (`UploadedLines`) | env `LEGAIA_DIAG_FX=1` | off |
+| browser play page | `play_battle_fx` outline strips (hybrid-flat quads) | `LegaiaRuntime::set_battle_fx_outline(true)` | off |
+
+This is a worked example of the drift shape in [`tooling/host-drift.md`](../tooling/host-drift.md): the native gate landed on its own, the browser twin kept drawing, and a diff of the gating commit reads as complete because the file it touched is complete. The pairing to check is "does the other host reach the same builder under the same condition", not "was the builder edited".
 
 #### The quad half-extent is a view-space quantity, so the battle camera scale must be divided back out
 

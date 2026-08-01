@@ -87,10 +87,7 @@ impl LegaiaMinigames {
         let tmd = legaia_tmd::parse(&tmd_bytes).ok()?;
         let part_count = tmd.objects.len();
         let (mesh, object_ids, shading) = tmd_to_vram_mesh_field_hybrid(&tmd, &tmd_bytes);
-        let mut flat = Vec::with_capacity(shading.colors.len() * 4);
-        for (c, &t) in shading.colors.iter().zip(shading.textured.iter()) {
-            flat.extend_from_slice(&[c[0], c[1], c[2], if t != 0 { 255 } else { 0 }]);
-        }
+        let flat = crate::packet_color::hybrid(&mesh, &shading);
         Some(FighterMesh {
             mesh,
             object_ids,
@@ -406,12 +403,8 @@ impl LegaiaMinigames {
         let Ok(tmd) = legaia_tmd::parse(&bytes) else {
             return Vec::new();
         };
-        let (_, _, shading) = tmd_to_vram_mesh_field_hybrid(&tmd, &bytes);
-        let mut out = Vec::with_capacity(shading.colors.len() * 4);
-        for (c, &t) in shading.colors.iter().zip(shading.textured.iter()) {
-            out.extend_from_slice(&[c[0], c[1], c[2], if t != 0 { 255 } else { 0 }]);
-        }
-        out
+        let (mesh, _, shading) = tmd_to_vram_mesh_field_hybrid(&tmd, &bytes);
+        crate::packet_color::hybrid(&mesh, &shading)
     }
 
     // ---------------------------------------------------------------- VRAM

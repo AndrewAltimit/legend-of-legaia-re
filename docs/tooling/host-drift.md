@@ -19,7 +19,7 @@ Related pages: [`shipped-bundle-freshness.md`](shipped-bundle-freshness.md)
 
 ## Where the gates run
 
-The five host-drift tiers below all run in the `gates` job of
+The six host-drift tiers below all run in the `gates` job of
 [`.github/workflows/main-ci.yml`](../../.github/workflows/main-ci.yml) and from
 [`scripts/git-hooks/pre-commit`](../../scripts/git-hooks/pre-commit) as a fast
 local mirror. CI is the authority: a gate that lives only in a hook is one
@@ -257,6 +257,45 @@ There is deliberately **no waiver file** for this tier. A waiver names a
 blocking capability, and no capability is missing here: the table is exported,
 the adoption helper ships, and the answer is always to type the lookup.
 
+## Tier 6 - diagnostics: is a debug draw off on BOTH hosts?
+
+Every tier above asks whether a host **reaches** a surface. None can see the
+shape where both hosts reach it and only one of them turns it off.
+
+That shipped, and a user reported it. The effect billboards carry a tinted
+wireframe outline so a spawn stays readable when its texels are not resident.
+The native window gates it behind `LEGAIA_DIAG_FX=1`; the browser twin had no
+gate at all. Retail draws no such rectangle, so every play-page fight stamped
+an opaque red-ish box around every effect sprite - up to 25 at once. Both hosts
+called the builder, the constants matched, the sim pairs matched, no page
+carried a key table: **all five tiers above passed.**
+
+`DIAG_GATES` in [`check-ui-host-drift.py`](../../scripts/ci/check-ui-host-drift.py)
+declares every `LEGAIA_DIAG_*` gate in the engine crates and whether it is
+`additive` - whether it draws something retail does not. The asymmetry is the
+whole point:
+
+| kind | example | a host missing it |
+|---|---|---|
+| subtractive | `NOFX` (suppress the layer), `NOSEMI` (blend off), `LAYERS` / `PLACE_RANGE` (draw a subset) | renders retail-correctly; it just cannot bisect |
+| additive | `FX` (outline strips), `HUD` (diagnostic text over the frame) | **paints it in normal play, for every user** |
+
+Only additive gates require a twin. A WASM module has no process environment,
+so the browser twin is a module static a page or devtools console flips - which
+is why this cannot be checked by looking for the env name on both sides. The
+check is that the twin's *initialiser* reads false.
+
+Validated both ways, like the waiver files: an undeclared `LEGAIA_DIAG_*` fails
+(declare what it draws), and a declared gate that no longer appears fails (drop
+the row). What it does **not** prove: that the two gates suppress the same
+draw, that the twin is wired to anything, or that no un-gated debug draw exists
+under some other name.
+
+One gate declares `web_toggle = None` with a reason rather than a twin:
+`LEGAIA_DIAG_HUD` reads its env inside the shared `engine-ui` leaf, so it is
+one implementation both hosts call, and `std::env::var` answers `Err` under
+`wasm32` - default-off by construction rather than by a second toggle.
+
 ## What a waiver may say
 
 Both waiver files are validated for staleness on every run, so they cannot
@@ -291,7 +330,7 @@ about these is contested.
 | save-model unification | The two hosts build their save-slot model separately; the tier-3 `set_card_slots_mode` row is one symptom of it, not the whole of it. |
 | shared camera on web | The browser page runs its own orbit projection beside the engine's camera controller instead of consuming it. |
 | MDEC on web | `crates/mdec` decodes STR video for the native `play-str` path; the play page has no video decode, so an FMV beat has nothing to show. |
-| shading law on web | The two hosts do not run the same fragment arithmetic. See [below](#the-two-hosts-do-not-share-a-shading-law). |
+| shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
 | screen-space PSX primitives on web | The native renderer draws PSX `POLY_FT4`/`POLY_GT4` quads in ordering-table order; the browser has no equivalent, because `SpriteDraw` cannot carry a PSX primitive. See below. |
 | field-to-battle transition on web | The native play window opens a battle with the retail transition - the fade on every style, the curtain where retail selects it. The browser page cuts straight to the battle, because the transition is drawn entirely out of the row above. |
 
@@ -355,6 +394,17 @@ Items 1 and 2 are the ones that decide whether this ends as one model or two.
 Doing them in `engine-ui`, where both hosts already meet, is what keeps the next
 transition from being written twice.
 
+**This is not a kernel waiting to be hoisted.** The transition's simulation and
+geometry already live where the browser can reach them - `engine-vm`'s
+`battle_intro_styles` / `battle_intro_swirl` / `battle_intro_tiles` /
+`battle_intro_transition`, all wgpu-free. What `engine-render`'s `battle_intro`
+adds on top is entirely the render half: it reaches `crate::gte`,
+`crate::billboard`, `crate::screen_overlay`, `crate::vram_capture`, and takes a
+`&Renderer` + `RenderTarget`. Moving *it* would move the wgpu dependency, not
+the logic. The five items above are the work, in that order, and item 5 is the
+one with no browser analogue at all today: nothing on the page reads a drawn
+frame back.
+
 ### The two hosts do not share a shading law
 
 The 3D geometry is shared - the same TMD, the same mesh builders in
@@ -370,27 +420,65 @@ The law, on the native side, is stated in
 its packet colour directly, and **neither applies a light source**. The
 synthetic Lambert is a viewer aid.
 
-The browser's fragment shader (`site/js/webgl-shaders.js`) applies a Lambert
-term off the screen-space geometric normal on *both* paths. On the untextured
-path this was a visible divergence rather than a subtle one: a battle stage's
-sky dome and mountain arc are flat/gouraud panels that sweep through every
-azimuth, so `0.45 + 0.55 * dot(n, -light)` painted repeating vertical lighter
-bands across them that the native window does not draw. The untextured path is
-now the retail law - packet colour, graded and cued, no light - which is the
-whole of that divergence.
+The browser's fragment shader (`site/js/webgl-shaders.js`) used to apply a
+Lambert term off the screen-space geometric normal on *both* paths. On the
+untextured path it was a visible divergence rather than a subtle one: a battle
+stage's sky dome and mountain arc are flat/gouraud panels that sweep through
+every azimuth, so `0.45 + 0.55 * dot(n, -light)` painted repeating vertical
+lighter bands across them that the native window does not draw.
 
-The **textured** path still carries the Lambert, and it is not a one-line
-removal, because it is standing in for something the browser does not upload.
-Retail modulates each texel by the prim's baked colour word; the page's
-`uploadSceneMesh` sends positions, UVs, `(cba, tsb)` and indices, but not
-`VramMesh::colors`, so dropping the Lambert would leave every textured surface
-at flat full-brightness - a *different* wrong answer, not the right one.
-Closing it is three steps in order: export the per-vertex packet colour
-alongside the other mesh attributes, bind it as a fourth vertex attribute, and
-replace `color.rgb * shade` with the retail `texel * colour / 128`. Until then
-the browser's textured shading is an approximation, and the note is here rather
-than on [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)
-because nothing about retail's law is contested - only the port's arithmetic.
+Both paths are now the retail law. Neither host applies a light source, and
+the browser has no light uniform left to apply one with - `u_light`,
+`u_normal_sign` and the world-position varying they needed are gone.
+
+### What the textured half needed, and why it was not a one-line removal
+
+The Lambert was standing in for something the page did not upload. Retail
+modulates each texel by the prim's baked colour word; `VramMesh::colors` has
+always carried it, and every browser exporter threw it away and sent
+`[255, 255, 255]` for textured verts. Dropping the term alone would have left
+every textured surface at flat full brightness - a *different* wrong answer.
+
+The stream is `a_flat_rgba`, and it now means one thing everywhere: **the
+prim's packet colour**, with the alpha byte saying which job it does.
+
+| flag | meaning |
+|---|---|
+| `255` | textured - sample VRAM, then `texel * rgb * 255/128` |
+| `0` | untextured - fill with `rgb` |
+
+Three traps sit in that redefinition, and all three have already fired:
+
+**The hybrid builder reads two arrays, not one.** An untextured vert's colour
+is its *fill* and only `VertexShading::colors` carries it; a textured vert's is
+its *modulation* and only `VramMesh::colors` carries it - `VertexShading`
+reports white there by design. `crates/web-viewer/src/packet_color.rs` is the
+one place that joins them, with a regression test that a textured vert does not
+come back white.
+
+**The unbound-attribute constant is 0x80, not white.** A draw with no colour
+stream reads the context-global generic attribute, and white there is
+`texel * 255/128` - every un-coloured mesh ~2x too bright. `TmdRenderer`'s
+`_setNeutralPacketColor` is the only place that value is written.
+
+**A page that fabricates vertices has to invent a colour word, and zero is not
+dead.** Baka Fighter's tiled arena floor wrote `[0, 0, 0, 255]`; under the old
+shader the RGB lanes were ignored on the textured path, under the new one the
+floor multiplied to black and the arena lost its ground. Muscle Dome's battle
+grid wrote white, which is the 2x case. Both write `0x80` now.
+
+Meshes with genuinely no packet colour - the generated walk-ground heightfields
+- keep the neutral constant and draw at the raw texel, which is the honest
+answer for geometry that has no colour word to modulate by.
+
+### The monster bestiary is a viewer, and says so
+
+`site/_content/monsters.html` carries its **own** WebGL program with a
+two-sided key light and a gamma curve, and it keeps it. That page is a
+bestiary card, not a game frame, and its preview is the browser sibling of the
+asset-viewer's `MESH_SHADER_SRC`. Counting shader programs rather than pages is
+what keeps this from reading as a missed conversion: the site ships four, and
+only the shared `TmdRenderer` one claims to be retail.
 
 The transferable point: **two hosts reaching one builder is not two hosts
 computing one thing.** Where the shared artefact is *data* (a draw list, a
@@ -398,12 +486,44 @@ matrix, a rect) the gates can pair it. Where it is a *law* expressed twice in
 two shading languages, only a rendered frame from each host, at the same scene
 and the same camera, can compare them.
 
+## A shared builder can be starved by its caller's slice
+
+Tier 1 asks whether a host *reaches* a builder. Nothing asks whether it hands
+the builder the same **inputs**, and a builder given a short slice does not
+fail - it produces a smaller answer that reads like a deliberate fallback.
+
+The battle HUD's nine status-element badges are the worked example. Six decode
+with the system-UI sheet TIM's own sixteen palettes; `Stone`, `Rage` and
+`Faint` sit on row-511 sub-palettes 16 / 17 / 18 and decode with nothing but
+the CLUT-only continuation TIM one file *earlier* in `PROT.DAT`
+(`save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET`). The native window roots its
+atlas slice there; the browser rooted its at the sheet, which puts that TIM
+behind the slice start where `build_atlas` cannot reach it. Both hosts called
+the same builder with the same signature, the bake succeeded on both, and three
+of nine cells came back `None` on one of them - whereupon the HUD did what it
+is supposed to do with a `None` cell and drew its labelled text tag.
+
+The measurement, on the real disc: **9/9 badges ext-rooted, 6/9 sheet-rooted.**
+
+What makes that assertable is the contrast, not the count. `crates/web-viewer/tests/battle_hud_badges.rs`
+bakes the atlas from both bases and requires the second to resolve *strictly
+fewer*, so the test keeps measuring the base choice rather than silently
+passing if the builder ever started inventing cells. A count alone would also
+have passed on the day the constant was wrong, since 6 badges is a perfectly
+plausible number.
+
+The generalisation: when two hosts share a builder whose output *degrades*
+rather than errors, the honest oracle runs the builder twice - once the right
+way, once the suspected wrong way - and asserts they differ.
+
 ## Adding coverage
 
 - a screen appears on the surface by existing; wire it on both hosts, or waive it;
 - a paired constant joins tier 2 by being added to `CONSTANT_PAIRS`;
 - a feature joins tier 3 by being added to `SIM_PAIRS` with its two sites;
-- a trait joins tier 4 by having a default method body and two implementers.
+- a trait joins tier 4 by having a default method body and two implementers;
+- a diagnostic joins tier 6 by being declared in `DIAG_GATES` - which is not
+  optional: an undeclared `LEGAIA_DIAG_*` fails the gate.
 
 Each script self-tests its own detectors on every run and refuses to report a
 pass when a control fails - a "0 orphans" verdict from a classifier that

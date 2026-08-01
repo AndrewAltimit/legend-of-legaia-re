@@ -146,6 +146,43 @@ waiver is: a `blocked_on` row that diverges reports and does not fail, and a
 deleted. So a pending row cannot rot into a permanent exemption - the moment
 the work lands, the gate says so.
 
+## The fifth question: is a debug draw off on BOTH hosts?
+
+Every question above asks whether a host *reaches* a surface. None of them can
+see the shape where both hosts reach it and only one of them turns it off.
+
+That shipped. The effect billboards carry a tinted wireframe outline so a spawn
+stays readable when its texels are not resident; the native window gates it
+behind `LEGAIA_DIAG_FX=1`, and the browser twin had no gate at all. Retail
+draws no such rectangle, so every play-page fight stamped an opaque red-ish box
+around every effect sprite - up to 25 at once - and a user reported it as a
+rendering bug. Both hosts called the builder, the constants matched, the sim
+pairs matched, no page carried a key table: **all four tiers above passed.**
+
+[`DIAG_GATES`] declares every `LEGAIA_DIAG_*` env gate in the engine crates and
+whether it is `additive` - whether it draws something retail does not. The
+asymmetry is the whole point:
+
+* a **subtractive** gate (suppress a layer, blend off, draw slots [a,b) only)
+  can only remove pixels, so a host without it still renders retail-correctly
+  and merely cannot bisect;
+* an **additive** gate paints what retail never paints, so a host without it
+  paints that thing in normal play, for every user.
+
+So only additive gates require a twin. A WASM module has no process
+environment, which is why this cannot be checked by looking for the env name on
+both sides - the browser twin is a module static a page or console flips, and
+the check is that its *initialiser* is false. Validated both ways, like the
+waivers: an undeclared `LEGAIA_DIAG_*` fails (declare what it draws), and a
+declared gate that no longer exists fails (drop the row).
+
+Scope, stated as narrowly as the tiers above:
+
+* it DOES prove every diagnostic env gate is declared, and that each additive
+  one has a browser twin whose initialiser reads false;
+* it does NOT prove the two gates suppress the *same* draw, that the twin is
+  wired to anything, or that no un-gated debug draw exists under another name.
+
 Usage:
 
     python3 scripts/ci/check-ui-host-drift.py            # check, exit 1 on drift
@@ -1269,6 +1306,12 @@ def run_selftest() -> int:
             verdict = "flagged" if not want else "passed"
             print(f"  FAIL  page keys: {label} - detector {verdict}")
             failures += 1
+    for label, init, want in SELFTEST_DIAG:
+        if initialiser_is_off(init) == want:
+            print(f"  ok    diag toggle: {label}")
+        else:
+            print(f"  FAIL  diag toggle: {label}")
+            failures += 1
     total = (
         len(SELFTEST_WORDS)
         + len(SELFTEST_SCREENS)
@@ -1277,6 +1320,7 @@ def run_selftest() -> int:
         + len(SELFTEST_SIGNATURES)
         + len(SELFTEST_SIM)
         + len(SELFTEST_PAGE_KEYS)
+        + len(SELFTEST_DIAG)
     )
     if failures:
         print(
@@ -1439,6 +1483,177 @@ def check_page_key_tables() -> tuple[list[str], int]:
     return problems, len(sources)
 
 
+# --------------------------------------------------------------------------
+# Paired diagnostic draw gates.
+# --------------------------------------------------------------------------
+#
+# Every `LEGAIA_DIAG_*` env gate in the engine crates, declared by whether it
+# changes what is DRAWN and, when it draws something retail does not, which
+# browser-side toggle is its twin.
+#
+# `additive` is the field that matters. A *subtractive* gate (suppress a
+# layer, blend off, draw only slots [a,b)) can only ever remove pixels, so a
+# host missing it renders retail-correctly - it just cannot bisect. An
+# *additive* gate paints something retail never paints, so a host missing it
+# paints that thing unconditionally, in normal play, for every user.
+#
+# `web_toggle` names the `web-viewer` symbol carrying the twin. A WASM module
+# has no process environment, so the browser twin is a module static a page or
+# a devtools console flips - which is why this cannot be checked by looking for
+# the env name on both sides.
+DIAG_GATES: list[dict[str, object]] = [
+    # --- additive: draws something retail does not -------------------------
+    {
+        "env": "LEGAIA_DIAG_FX",
+        "additive": True,
+        "web_toggle": "FX_OUTLINE",
+        "note": "per-billboard wireframe outline strips + per-sprite log",
+    },
+    {
+        "env": "LEGAIA_DIAG_HUD",
+        "additive": True,
+        "web_toggle": None,
+        "waiver": (
+            "the gate lives in the shared engine-ui leaf (`ui_overlay::"
+            "diag_hud_enabled`), so it is one implementation both hosts call "
+            "rather than a per-host twin. `std::env::var` answers Err under "
+            "wasm32, which makes the browser default-off by construction."
+        ),
+        "note": "battle-event log + pose/HP diagnostic text over the frame",
+    },
+    # --- subtractive / logging only ----------------------------------------
+    {"env": "LEGAIA_DIAG_NOFX", "additive": False, "note": "suppress the effect layer"},
+    {"env": "LEGAIA_DIAG_NOSEMI", "additive": False, "note": "semi-transparent blend off"},
+    {"env": "LEGAIA_DIAG_LAYERS", "additive": False, "note": "draw only the named layers"},
+    {"env": "LEGAIA_DIAG_PLACE_RANGE", "additive": False, "note": "draw only placements [a,b)"},
+    {"env": "LEGAIA_DIAG_MESHTEX", "additive": False, "note": "mesh/texture bind log"},
+    {"env": "LEGAIA_DIAG_PLACE", "additive": False, "note": "placement-resolve log"},
+    {"env": "LEGAIA_DIAG_POSE", "additive": False, "note": "per-actor pose/AABB log"},
+    {"env": "LEGAIA_DIAG_CAMERA", "additive": False, "note": "camera-solve log"},
+    {"env": "LEGAIA_DIAG_CUTCAM", "additive": False, "note": "cutscene-camera log"},
+    {"env": "LEGAIA_DIAG_BATCAM", "additive": False, "note": "battle-camera log"},
+    {"env": "LEGAIA_DIAG_BATDRAW", "additive": False, "note": "battle draw-list log"},
+    {"env": "LEGAIA_DIAG_TIMELINE", "additive": False, "note": "narration-timeline log"},
+    {"env": "LEGAIA_DIAG_MEI", "additive": False, "note": "test-only NPC-entry log"},
+]
+
+DIAG_ENV_RE = re.compile(r'"(LEGAIA_DIAG_[A-Z0-9_]+)"')
+
+# Roots swept for gate *declarations*. Tests are included deliberately: a gate
+# introduced in a test still has to be declared, because the next wave will
+# reach for it from the engine.
+DIAG_ROOTS = [
+    REPO / "crates" / "engine-shell",
+    REPO / "crates" / "engine-render",
+    REPO / "crates" / "engine-core",
+    REPO / "crates" / "engine-ui",
+    REPO / "crates" / "engine-vm",
+    REPO / "crates" / "web-viewer",
+]
+
+
+def discover_diag_gates() -> set[str]:
+    """Every `LEGAIA_DIAG_*` name appearing as a string literal in the crates."""
+    found: set[str] = set()
+    for root in DIAG_ROOTS:
+        if not root.exists():
+            continue
+        for path in root.rglob("*.rs"):
+            found.update(DIAG_ENV_RE.findall(path.read_text(encoding="utf-8", errors="replace")))
+    return found
+
+
+def initialiser_is_off(init: str) -> bool:
+    """Does a toggle's initialiser text mean "off"?
+
+    Split out of [`web_toggle_defaults_off`] so it can be run against synthetic
+    inputs - a checker that only ever sees the one real file cannot show it
+    would notice the file changing.
+    """
+    return bool(re.search(r"\bnew\s*\(\s*false\s*\)|^false$", init))
+
+
+# Control suite for the toggle-initialiser detector. A tier that cannot tell
+# `new(false)` from `new(true)` proves nothing about the hosts.
+SELFTEST_DIAG: list[tuple[str, str, bool]] = [
+    ("atomic off", "std::sync::atomic::AtomicBool::new(false)", True),
+    ("atomic on", "std::sync::atomic::AtomicBool::new(true)", False),
+    ("cell off", "Cell::new(false)", True),
+    ("bare off", "false", True),
+    ("bare on", "true", False),
+    ("expression", "cfg!(debug_assertions)", False),
+]
+
+
+def web_toggle_defaults_off(symbol: str) -> tuple[bool, str]:
+    """Does `symbol` exist in web-viewer and initialise to false?
+
+    Returns `(ok, detail)`. The initialiser test is the whole point: a toggle
+    that exists but defaults on is the defect this tier was written for,
+    wearing the shape of the fix.
+    """
+    pattern = re.compile(
+        r"\b" + re.escape(symbol) + r"\b[^=;]*=\s*([^;]+);",
+        re.S,
+    )
+    for path in (REPO / "crates" / "web-viewer" / "src").rglob("*.rs"):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        m = pattern.search(text)
+        if not m:
+            continue
+        init = " ".join(m.group(1).split())
+        if initialiser_is_off(init):
+            return True, f"{path.relative_to(REPO)}: {init}"
+        return False, f"{path.relative_to(REPO)}: initialiser is `{init}`, expected false"
+    return False, f"no `{symbol}` found in crates/web-viewer/src"
+
+
+def check_diag_gates() -> tuple[list[str], int]:
+    """Tier 6: an additive diagnostic must be default-off on BOTH hosts.
+
+    Returns `(problems, additive_count)`.
+    """
+    problems: list[str] = []
+    declared = {str(g["env"]): g for g in DIAG_GATES}
+    found = discover_diag_gates()
+
+    for env in sorted(found - set(declared)):
+        problems.append(
+            f"UNDECLARED DIAG GATE {env}: add it to DIAG_GATES in "
+            f"{Path(__file__).name} and say whether it is `additive` (draws "
+            f"something retail does not). An additive gate needs a default-off "
+            f"twin in crates/web-viewer, or the browser draws it always."
+        )
+    for env in sorted(set(declared) - found):
+        problems.append(
+            f"STALE DIAG GATE {env}: declared in DIAG_GATES but no longer "
+            f"appears in any engine crate. Drop the row."
+        )
+
+    additive = 0
+    for env, gate in sorted(declared.items()):
+        if not gate.get("additive"):
+            continue
+        additive += 1
+        toggle = gate.get("web_toggle")
+        if toggle is None:
+            if not str(gate.get("waiver", "")).strip():
+                problems.append(
+                    f"{env}: additive with no `web_toggle` needs a `waiver` "
+                    f"saying why the browser cannot draw it."
+                )
+            continue
+        ok, detail = web_toggle_defaults_off(str(toggle))
+        if not ok:
+            problems.append(
+                f"DIAG DRIFT {env}: its browser twin `{toggle}` is not "
+                f"default-off - {detail}. The native gate suppresses a draw "
+                f"retail never makes; a browser that cannot suppress it "
+                f"stamps that draw on every user's frame."
+            )
+    return problems, additive
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--quiet", action="store_true", help="findings only")
@@ -1506,6 +1721,16 @@ def main() -> int:
                 "ERROR: built-in sim-pair control failed; a comparator that cannot "
                 "tell agreement from divergence proves nothing about the pairs "
                 "below. Run --selftest.",
+                file=sys.stderr,
+            )
+            return 2
+    for _label, init, want in SELFTEST_DIAG:
+        if initialiser_is_off(init) != want:
+            print(
+                "ERROR: built-in diag-toggle control failed; a detector that "
+                "cannot tell `new(false)` from `new(true)` proves nothing "
+                "about whether a debug draw is off on the browser. Run "
+                "--selftest.",
                 file=sys.stderr,
             )
             return 2
@@ -1614,6 +1839,11 @@ def main() -> int:
     key_problems, key_files = check_page_key_tables()
     problems.extend(key_problems)
 
+    # The diagnostic half: an additive debug draw must be off by default on
+    # BOTH hosts, or one host paints it in normal play.
+    diag_problems, diag_additive = check_diag_gates()
+    problems.extend(diag_problems)
+
     if not args.quiet:
         print(
             f"[ui-drift] engine-ui draw builders: {len(builders)} "
@@ -1632,6 +1862,11 @@ def main() -> int:
         print(
             f"[ui-drift] pad-driving site sources scanned for page-side "
             f"keyboard tables: {key_files}"
+        )
+        print(
+            f"[ui-drift] LEGAIA_DIAG_* gates declared: {len(DIAG_GATES)} "
+            f"({diag_additive} additive - i.e. draw something retail does not "
+            f"and so need a default-off twin on both hosts)"
         )
         if web_ahead:
             print(f"[ui-drift] web-ahead (informational): {', '.join(web_ahead)}")

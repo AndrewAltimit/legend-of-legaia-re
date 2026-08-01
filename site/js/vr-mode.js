@@ -76,13 +76,13 @@
    *   W = MirrorX * RotY(-yaw) * Scale(1/upm) * Translate(-p)
    *
    * The mirror is not cosmetic: both flat projections mirror screen X (the
-   * retail horizontal flip - `buildWorldOrbitVp` negates P[0]) and the
-   * fragment shader compensates with a hardcoded `u_normal_sign = -1`. An
-   * unmirrored XR matrix would flip the handedness of the screen-space
-   * derivatives the shader builds its lighting normal from, and every surface
-   * would collapse to the ambient floor. Mirroring the *world* instead of the
-   * projection keeps the shading correct and keeps both eyes consistent, so
-   * stereo is unaffected. */
+   * retail horizontal flip - `buildWorldOrbitVp` negates P[0]), and the
+   * renderer tells the fragment shader which reflection parity it is on
+   * (`u_pair_front`) so the double-sided-pair discard keeps the right copy.
+   * An unmirrored XR matrix would invert gl_FrontFacing against that flag and
+   * every paired surface would show its back copy. Mirroring the *world*
+   * instead of the projection keeps both eyes consistent, so stereo is
+   * unaffected. */
   function worldToXr(p, yaw, upm) {
     const s = 1 / upm;
     const c = Math.cos(yaw), sn = Math.sin(yaw);

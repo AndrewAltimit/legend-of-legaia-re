@@ -288,6 +288,16 @@ struct BattleMesh {
 }
 
 impl BattleMesh {
+    /// Wrap a purely-textured mesh, carrying its per-prim packet colours into
+    /// the `a_flat_rgba` stream so the browser shader can run retail's
+    /// `texel * colour / 128` modulation. An actor or grid uploaded with an
+    /// empty stream falls back to the renderer's neutral constant, i.e. draws
+    /// at the raw texel with the baked contrast thrown away.
+    fn textured(mesh: legaia_tmd::mesh::VramMesh) -> Self {
+        let flat = crate::packet_color::textured(&mesh);
+        BattleMesh { mesh, flat }
+    }
+
     fn positions(&self) -> Vec<f32> {
         self.mesh.positions.iter().flatten().copied().collect()
     }
@@ -402,10 +412,7 @@ impl BattleRender {
             // party side; the archive meshes rest facing `+Z`, which is the
             // direction the party already faces, so no half-turn.
             monster: false,
-            mesh: BattleMesh {
-                mesh,
-                flat: Vec::new(),
-            },
+            mesh: BattleMesh::textured(mesh),
             object_ids,
             rest_pose,
         });
@@ -446,16 +453,6 @@ fn flatten_frame(frame: &[legaia_asset::monster_archive::PartPose]) -> Vec<i32> 
         ]);
     }
     out
-}
-
-/// Hybrid flat-RGBA stream from a `tmd_to_vram_mesh_field_hybrid` shading
-/// block: `[r, g, b, textured_flag]` per vertex.
-fn hybrid_flat(shading: &legaia_tmd::mesh::VertexShading) -> Vec<u8> {
-    let mut flat = Vec::with_capacity(shading.colors.len() * 4);
-    for (c, &t) in shading.colors.iter().zip(shading.textured.iter()) {
-        flat.extend_from_slice(&[c[0], c[1], c[2], if t != 0 { 255 } else { 0 }]);
-    }
-    flat
 }
 
 impl LegaiaRuntime {
@@ -576,7 +573,7 @@ impl LegaiaRuntime {
             let tmd0 = legaia_asset::battle_backdrop::drawn_objects_tmd(tmd);
             let (mut vmesh, _oids, shading) =
                 legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd0, raw);
-            let mut flat = hybrid_flat(&shading);
+            let mut flat = crate::packet_color::hybrid(&vmesh, &shading);
             // The disc shell is an authored HALF; the second copy under the
             // per-stage transform closes the horizon. `append_scaled`
             // reverses winding on a negative determinant (the mesh-level
@@ -593,10 +590,7 @@ impl LegaiaRuntime {
             // page/CLUT/UV window the scene battle VRAM populates.
             let grid = legaia_asset::battle_backdrop::build_ground_grid();
             if !grid.indices.is_empty() {
-                ground = Some(BattleMesh {
-                    mesh: grid,
-                    flat: Vec::new(),
-                });
+                ground = Some(BattleMesh::textured(grid));
                 grid_far = Some(*gf);
             }
         }
@@ -647,10 +641,7 @@ impl LegaiaRuntime {
             actors.push(BattleActorRender {
                 actor_idx,
                 monster: true,
-                mesh: BattleMesh {
-                    mesh: vmesh,
-                    flat: Vec::new(),
-                },
+                mesh: BattleMesh::textured(vmesh),
                 object_ids,
                 rest_pose,
             });
@@ -916,10 +907,7 @@ impl LegaiaRuntime {
                 BattleActorRender {
                     actor_idx: member,
                     monster: false,
-                    mesh: BattleMesh {
-                        mesh: vmesh,
-                        flat: Vec::new(),
-                    },
+                    mesh: BattleMesh::textured(vmesh),
                     object_ids,
                     rest_pose,
                 },
@@ -965,10 +953,7 @@ impl LegaiaRuntime {
             BattleActorRender {
                 actor_idx: member,
                 monster: false,
-                mesh: BattleMesh {
-                    mesh: vmesh,
-                    flat: Vec::new(),
-                },
+                mesh: BattleMesh::textured(vmesh),
                 object_ids: Vec::new(),
                 rest_pose: Vec::new(),
             },
@@ -1161,6 +1146,16 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    /// Per-vertex `[r, g, b, 255]` packet colours of the ground grid - the
+    /// modulation half of retail's `texel * colour / 128`.
+    pub fn play_battle_ground_flat_rgba(&self) -> Vec<u8> {
+        self.battle_render
+            .as_ref()
+            .and_then(|b| b.ground.as_ref())
+            .map(|m| m.flat.clone())
+            .unwrap_or_default()
+    }
+
     /// Ground-grid depth-cue parameters:
     /// `{"far":[r,g,b],"near_z":0,"far_z":Z,"max_ir0":M}` (display 0..1
     /// colour), or `null` when no grid is up. The page attaches this to the
@@ -1223,6 +1218,17 @@ impl LegaiaRuntime {
             .as_ref()
             .and_then(|b| b.actors.get(i as usize))
             .map(|a| a.mesh.mesh.indices.clone())
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[r, g, b, 255]` packet colours of one bound actor mesh.
+    /// Without this the combatants drew at the raw texel while the backdrop
+    /// carried its modulation, so the party read brighter than the arena.
+    pub fn play_battle_actor_flat_rgba(&self, i: u32) -> Vec<u8> {
+        self.battle_render
+            .as_ref()
+            .and_then(|b| b.actors.get(i as usize))
+            .map(|a| a.mesh.flat.clone())
             .unwrap_or_default()
     }
 

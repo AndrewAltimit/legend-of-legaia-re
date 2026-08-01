@@ -190,11 +190,36 @@ impl World {
     pub(in crate::world) fn live_battle_tick(&mut self) -> Option<StepOutcome> {
         use vm::battle_action::{ActionState, ActorFlags};
 
-        // Sparring tutorial: a prompt box on screen parks the entire battle -
-        // retail's `FUN_801D0748` returns before it reads the flow state when
-        // `FUN_801D9BBC` reports a box up (`ctx[+0x6B2]`).
+        // Everything already in the battle-event queue belongs to an earlier
+        // tick and has been folded once; only this tick's tail may be folded
+        // below. See the fold site for what re-folding costs.
+        let events_before = self.pending_battle_events.len();
+
+        // Round-open prompt: the flow byte sitting at `TurnPrompt` is the
+        // port's `ctx[+0x06] == 0x1E`, and retail reaches it once per round
+        // (state `0x14` sets it unconditionally, and the action SM's
+        // round-end at `801e67e8` parks the flow back at `0x14`). Swap the
+        // freshly opened command session onto its `Begin | Run` phase here so
+        // both entry points - the battle's opening turn and every later round
+        // boundary - raise it, and a mid-round reopen does not.
+        //
+        // Ahead of the message-box park below, not after it: retail's own
+        // `0x14 -> 0x1E` write happens whether or not a box is up, and the
+        // sparring tutorial's very first box (`Select [Begin]`) is queued by
+        // the same flow transition - so arming behind the park would leave the
+        // player staring at an instruction for a prompt that never appeared.
+        // REF: FUN_801D0748 (states 0x14 / 0x1E)
+        self.arm_round_open_prompt();
+
+        // A message box on screen parks the entire battle - retail's
+        // `FUN_801D0748` returns before it reads the flow state when
+        // `FUN_801D9BBC` reports a box up (`ctx[+0x6B2]`). The guard is the
+        // box queue, not the tutorial: the battle-open formation banner
+        // (`raise_battle_open_banner`) rides the same single surface, and
+        // gating on `battle_tutorial` meant an `Ambushed!` outside the
+        // sparring fight queued a box nothing ever ticked or dismissed.
         // REF: FUN_801D0748, FUN_801D9BBC
-        if self.battle_tutorial.is_some() && self.tick_battle_tutorial_boxes() {
+        if self.tick_battle_tutorial_boxes() {
             return None;
         }
 
@@ -304,7 +329,16 @@ impl World {
 
         // Apply this step's damage events (art strikes carry a damage value;
         // the loop owns folding while live, so events are consumed here).
-        let events = std::mem::take(&mut self.pending_battle_events);
+        //
+        // Only what **this** tick produced (`events_before` was measured on
+        // entry): everything already in the queue has been folded once and is
+        // only sitting there so a host can still observe it. Re-folding it
+        // applies its HP delta again every frame until the host drains, which
+        // for `ApplyArtStrike` is a target losing the same damage on repeat.
+        // Both play hosts drain once per simulation tick, so this only bit a
+        // driver that drains on redraw - but the queue's contract is "folded
+        // once", not "drained promptly".
+        let events: Vec<BattleEvent> = self.pending_battle_events.split_off(events_before);
         let mut art_strike_applied = false;
         for e in &events {
             if let BattleEvent::ApplyArtStrike {
@@ -335,7 +369,9 @@ impl World {
         // presentation-only members - `CameraFrameHeight`, anim / cast
         // triggers - and taking it here used to drop those on the floor for
         // every host running the live loop. Hosts drain, they do not fold.
-        self.pending_battle_events.splice(0..0, events);
+        // Appended, not prepended: an undrained backlog keeps its order and
+        // this tick's tail stays behind it.
+        self.pending_battle_events.extend(events);
 
         // Chain-driven strike: this frame's `AttackChain` pass staged one
         // queued swing byte, so one hit resolves for it. Retail's seam is the
@@ -483,6 +519,11 @@ impl World {
             // counter); the waker is RNG-free unless an actor carries the
             // latent `0x400` status, which no retail applier sets.
             self.advance_battle_mode();
+            // Retail's round-end writes `ctx[+0x06] = 0x14`, and `0x14` opens
+            // the `Begin | Run` prompt (`0x1E`) unconditionally. Park the
+            // port's flow byte on the same state so the next party command of
+            // the new round gets the prompt and the ones after it do not.
+            self.set_battle_flow(crate::battle_flow::BattleFlowState::TurnPrompt);
             self.tick_status_0x400_wakes();
             // The actor sweep (`FUN_801D88CC`): action-gauge restore, the
             // `+0x1DF` action-stream clear, and the party band's stale-target
@@ -546,6 +587,39 @@ impl World {
             self.finish_battle();
         }
         Some(outcome)
+    }
+
+    /// Put the open command session onto its round-open `Begin | Run` prompt
+    /// when the flow byte says this is the round's first party command.
+    ///
+    /// Retail's `0x14` arm sets `ctx[+0x06] = 0x1E` before any member picks,
+    /// and the ring (`0x28`) is only reached through it - so the prompt is a
+    /// property of the **round**, not of the turn. The port reads that off
+    /// [`crate::battle_flow::BattleFlowState::TurnPrompt`]: the round boundary
+    /// parks the flow there, `open_battle_command` parks it there at battle
+    /// entry, and the first frame a session is live consumes it. A session
+    /// reopened mid-round (a submenu backed out of) finds the flow already on
+    /// the ring and is left alone, which is where retail's own rewind lands.
+    ///
+    /// An **ambushed** party never reaches here on its lost round: the
+    /// `ctx[+0x290]` side lockout ([`World::reseed_initiative`]) zeroes every
+    /// party key, so no party turn opens - retail's `0x0B -> 0xFE` jump in the
+    /// port's own seating.
+    ///
+    /// REF: FUN_801D0748 (states 0x14 / 0x1E)
+    fn arm_round_open_prompt(&mut self) {
+        use crate::battle_flow::BattleFlowState;
+        use crate::battle_input::CommandPhase;
+        if self.battle_flow != BattleFlowState::TurnPrompt {
+            return;
+        }
+        let no_escape = self.battle_no_escape;
+        if let Some(session) = self.battle_command.as_mut()
+            && matches!(session.phase, CommandPhase::Menu { .. })
+        {
+            session.no_escape = no_escape;
+            session.phase = CommandPhase::RoundPrompt { cursor: 0 };
+        }
     }
 
     /// Apply one generic physical strike from the active attacker to the

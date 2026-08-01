@@ -158,8 +158,46 @@ their literals and ramps rather than only their table folds.
 `FUN_80047430` clamps it against `clip[+0x85] << 4` and `clip[+0x86] << 4`
 (`0x800477D4` / `0x8004781C`), so a threshold of `0xB0` is keyframe 11.
 
+## What has to be true for an arm to run at all
+
+The arms are keyed on `actor[+0x1DB]`, the **latched** staged anim id, and that
+byte only enters the `0x1A..=0x2D` band when the action-parameter stream the
+attack band walks carries an art action constant. The chain is short and every
+link is load-bearing:
+
+1. the queue builder inserts `art_id + 0x1B` into `actor[+0x1DF..]`
+   (`FUN_801EED1C` at `0x801EF7A0`);
+2. the strike loop stages that byte into `actor[+0x1DA]`
+   (`FUN_801E295C` case `0x1E` at `0x801E3764`);
+3. the anim commit copies it verbatim to `actor[+0x1DB]`
+   (`FUN_8004AD80` at `0x8004AEB0`/`0x8004AEB8` - unconditional, every path
+   converges there);
+4. `FUN_801D71B8`'s outer gate passes (real target slot, category `3`, party
+   seat) and `character_arm` resolves the participant id.
+
+Steps 1-3 are documented in
+[battle-action.md § A Tactical Art is an ordinary attack-band
+action](../subsystems/battle-action.md#a-tactical-art-is-an-ordinary-attack-band-action).
+
+**An action whose stream holds only direction swings `0x0C..0x0F` therefore
+reaches no arm, and that is retail behaviour, not a defect.** A plain physical
+Attack is exactly that action: the port's `basic_attack_queue`
+(`FUN_801EED1C`'s no-directional-input arm) writes two `0x0C`/`0x0D` swings and
+nothing else, so `art_arm` answering `None` for it is correct. The band the
+table serves is reached by an **arts chain**, and until the port routed its
+Arts path through the attack band
+(`engine-core`'s `World::run_battle_art`) nothing in either host ever put a
+constant in that range - which is why the whole per-art channel measured as
+dead code while being correctly ported.
+
+`0x1B` is the one art constant with no arm in any of the three tables (index
+`0x1B - 0x1A = 1` is `None` for characters 1, 2 and 3), so a turn whose art is
+`Art1B` still frames from the case-6 action pose. That too is retail.
+
 ## See also
 
 - [`move-power.md`](move-power.md) - the sibling PROT 0898 table, and the
   worked example of how an overlay table's file offset is pinned.
 - [`battle.md`](../subsystems/battle.md) - the battle camera the arms feed.
+- [`battle-action.md`](../subsystems/battle-action.md#a-tactical-art-is-an-ordinary-attack-band-action) -
+  how an art constant gets into the stream in the first place.

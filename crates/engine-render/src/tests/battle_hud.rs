@@ -366,22 +366,41 @@ fn battle_hud_draws_for_skips_empty_slot_name() {
     assert!(draws.is_empty());
 }
 
-/// A K.O.'d member keeps its row and dims - retail's strip has no "K.O."
-/// legend, and the readout law's own death index is what greys the numerals.
+/// A K.O.'d member keeps its row and its readout goes **red** - retail's
+/// strip has no loose "K.O." legend, and its death tier is the brightest
+/// colour on the panel rather than a grey-out.
+///
+/// Read off a retail battle frame whose third party member is at 0 HP: the
+/// downed panel's HP *and* MP numerals take font CLUT `(128, 510)`, entry 15
+/// `(230, 32, 0)`, while its **name** keeps the same `(208, 510)` the two
+/// living members' names use. The port used to grey all three, which is the
+/// shape this test previously asserted.
 #[test]
-fn dead_member_dims_instead_of_drawing_a_ko_legend() {
+fn dead_member_reads_red_and_keeps_its_name_colour() {
     let font = legaia_font::synthetic_for_tests();
-    let slot = slot_view("Vahn", true, false, 0, 300, 0, 30);
+    let slot = slot_view("Vahn", true, false, 0, 300, 20, 30);
     let draws = hud_draws(&font, &[slot], &[], &[]);
-    let dim = [0.5f32, 0.5, 0.5, 1.0];
+    let dead = gauge_fill_color(2);
+    assert_eq!(dead, [0.902, 0.125, 0.0, 1.0], "retail's dead tier is red");
+    let glyphs: Vec<_> = draws.iter().filter(|d| d.src != SOLID).collect();
     assert!(
-        draws.iter().any(|d| d.src != SOLID && d.color == dim),
-        "dead member's glyphs did not take the dim tint"
+        !glyphs.is_empty(),
+        "the downed member drew no glyphs at all"
     );
-    let red = [1.0f32, 0.4, 0.4, 1.0];
     assert!(
-        !draws.iter().any(|d| d.src != SOLID && d.color == red),
-        "a K.O. legend still draws on the retail strip"
+        glyphs.iter().any(|d| d.color == dead),
+        "dead member's numerals did not take the retail death tint"
+    );
+    assert!(
+        glyphs
+            .iter()
+            .any(|d| d.color == legaia_engine_ui::READOUT_NORMAL),
+        "dead member's NAME was tinted - retail leaves it in the normal readout colour"
+    );
+    let old_dim = [0.5f32, 0.5, 0.5, 1.0];
+    assert!(
+        !glyphs.iter().any(|d| d.color == old_dim),
+        "the old grey-out tint is still on the panel"
     );
 }
 
@@ -563,6 +582,104 @@ fn parked_input_session_suppresses_the_roster_panels() {
     );
 }
 
+/// A host box on the party surface's own rows parks that surface, the same
+/// exclusive-seat rule the plaque already follows one band up.
+///
+/// Retail's bottom-anchored sparring-prompt styles anchor at `0xCC` / `0xB0`
+/// / `0x9A`, so a one-line style-3 box is `(0x10, 194, w, 10)` - skin
+/// `186..212`, straight through the active-actor bar at `188..208` and inside
+/// the roster panels' `164..212`. Both surfaces drew under it, which is what
+/// `Vahn  HP 151/ 180` reading through the prompt text was.
+#[test]
+fn a_bottom_anchored_host_box_parks_the_party_surface_it_covers() {
+    let font = legaia_font::synthetic_for_tests();
+    let slot = slot_view("Vahn", true, true, 151, 180, 12, 30);
+    let frame = |host_box, active| {
+        battle_hud_draws_for(
+            &font,
+            &BattleHudFrame {
+                slots: &[slot],
+                solid_src: Some(SOLID),
+                surface: SURFACE,
+                host_box,
+                active_slot: active,
+                ..Default::default()
+            },
+            PEN,
+        )
+        .text
+    };
+    // A one-line style-3 prompt: `BoxStyle { bottom_anchor: 0xCC }`, h = 10.
+    let bottom = Some((0x10, 0xCC - 10, 120, 10));
+    // A style-0 prompt on the top seat leaves both surfaces alone.
+    let top = Some((0x10, 0x0E, 120, 24));
+
+    assert!(
+        !boxes_of(&frame(None, None), PANEL_W, PANEL_H).is_empty(),
+        "non-vacuous: the roster panel draws with no box up"
+    );
+    assert!(
+        boxes_of(&frame(bottom, None), PANEL_W, PANEL_H).is_empty(),
+        "the roster panels drew under a bottom-anchored prompt"
+    );
+    assert!(
+        !boxes_of(&frame(top, None), PANEL_W, PANEL_H).is_empty(),
+        "a top-seat prompt must not park the roster panels"
+    );
+
+    // The bar is the surface that is actually up during command entry.
+    let bar_glyphs = |draws: &[TextDraw]| {
+        draws
+            .iter()
+            .filter(|d| d.src != SOLID && d.dst.1 >= BAR_Y * STAGE_SCALE)
+            .count()
+    };
+    assert!(
+        bar_glyphs(&frame(None, Some(0))) > 0,
+        "non-vacuous: the active-actor bar draws with no box up"
+    );
+    assert_eq!(
+        bar_glyphs(&frame(bottom, Some(0))),
+        0,
+        "the active-actor bar drew under a bottom-anchored prompt"
+    );
+}
+
+/// The enemy target strip steps clear of a host box that shares its row.
+///
+/// Retail's target-select hint is style `5` - centred, bottom-anchored at
+/// `0xB0` - so a three-line hint's last row lands on stage `166`, which is
+/// exactly [`legaia_engine_ui::ENEMY_MENU_STAGE_Y`]. Left alone the two draw
+/// on the same pixels ("Tetsu" through `...only one target.").
+#[test]
+fn the_enemy_strip_steps_off_a_host_boxs_row() {
+    use legaia_engine_ui::{ENEMY_MENU_STAGE_Y, enemy_target_menu_rows_y};
+    assert_eq!(
+        enemy_target_menu_rows_y(None),
+        ENEMY_MENU_STAGE_Y,
+        "the strip must not move when no box is up"
+    );
+    // Three-line style-5 hint: h = 3 * 14 - 4 = 38, y = 0xB0 - 38 = 138.
+    let hint = (0x30, 0xB0 - 38, 200, 38);
+    let y = enemy_target_menu_rows_y(Some(hint));
+    let (box_top, box_bot) = (hint.1 - 8, hint.1 + hint.3 + 8);
+    assert!(
+        y + 14 <= box_top || y >= box_bot,
+        "the strip row {y} still overlaps the box band {box_top}..{box_bot}"
+    );
+    assert!(y < ENEMY_MENU_STAGE_Y, "the strip should step UP, not down");
+    assert_eq!(
+        (ENEMY_MENU_STAGE_Y - y) % 14,
+        0,
+        "the strip must step in whole text rows"
+    );
+    // A box that does not reach the strip leaves it where it was.
+    assert_eq!(
+        enemy_target_menu_rows_y(Some((0x10, 0x0E, 120, 24))),
+        ENEMY_MENU_STAGE_Y
+    );
+}
+
 /// The top-left plaque names the acting actor at the pinned `(16, 12)`
 /// content seat, on a plate whose interior is the measured name.
 #[test]
@@ -644,18 +761,24 @@ fn gauge_fill_color_distinguishes_every_retail_index() {
 }
 
 #[test]
-fn battle_hud_caution_mp_uses_yellow_not_row_color() {
+fn battle_hud_caution_mp_uses_the_caution_tint_not_the_row_color() {
     let font = legaia_font::synthetic_for_tests();
-    // 15 MP of 40 is in (10, 20] -> caution -> yellow numerals.
+    // 15 MP of 40 is in (10, 20] -> caution -> the tier-6 tint.
     let slot = slot_view("Noa", true, true, 100, 100, 15, 40);
     let draws = hud_draws(&font, &[slot], &[], &[]);
-    // Yellow = [1.0, 0.95, 0.4]: high R+G, low B. Row color (white) has B==1.
-    let any_yellow = draws
-        .iter()
-        .any(|d| d.src != SOLID && d.color[1] > 0.9 && d.color[2] < 0.5);
+    // Retail's caution tier is font CLUT byte 12, entry 15 `(230, 172, 0)` -
+    // amber. The old magnitude line here (`G > 0.9`) encoded the port's
+    // brighter approximation, not a measurement.
+    let caution = gauge_fill_color(6);
+    assert_eq!(caution, [0.902, 0.675, 0.0, 1.0]);
     assert!(
-        any_yellow,
-        "caution MP should produce a yellow-tinted glyph"
+        draws.iter().any(|d| d.src != SOLID && d.color == caution),
+        "caution MP should produce an amber-tinted glyph"
+    );
+    assert_ne!(
+        caution,
+        legaia_engine_ui::READOUT_NORMAL,
+        "the caution tier must not collapse onto the row colour"
     );
 }
 
@@ -791,13 +914,37 @@ fn ailment_replaces_the_level_on_the_members_panel() {
     sick.status_sprite = 0x1F;
     let with = hud_draws(&font, &[sick], &[], &[]);
     // `FUN_8002C2E4`'s ladder is exclusive: the ailment REPLACES the level
-    // element rather than joining it, so the tag lands on the panel's LV seat
-    // and the LV label sprite stops drawing.
+    // element rather than joining it, so the LV label sprite stops drawing.
+    //
+    // The tag stands in for retail's 48x16 badge **cell**, whose seat is the
+    // ladder arm's `pen + (0x33, -4)` = panel `+(56, 0)` - not the `+(64, 6)`
+    // `LV` label seat this test used to pin it to. The cell is capture-pinned:
+    // a retail battle frame with a downed member queues widget record `0x20`
+    // as a 48x16 `SPRT` at `(panel.x + 56, panel.y)`.
+    let cell = (
+        SOLO_PANEL_X + battle_hud_chrome::STATUS_BADGE_PANEL_SEAT.0,
+        PANEL_Y + battle_hud_chrome::STATUS_BADGE_PANEL_SEAT.1,
+    );
+    let tag: Vec<_> = with
+        .iter()
+        .filter(|d| {
+            d.src != SOLID
+                && d.dst.0 >= cell.0 * STAGE_SCALE
+                && d.dst.0 < (cell.0 + battle_hud_chrome::STATUS_BADGE_SIZE.0) * STAGE_SCALE
+                && d.dst.1 >= cell.1 * STAGE_SCALE
+                && d.dst.1 < (cell.1 + battle_hud_chrome::STATUS_BADGE_SIZE.1) * STAGE_SCALE
+        })
+        .collect();
     assert!(
-        with.iter().any(|d| d.src != SOLID
-            && d.dst.0 == (SOLO_PANEL_X + 64) * STAGE_SCALE
-            && d.dst.1 == (PANEL_Y + 6) * STAGE_SCALE),
-        "the ailment tag is not on the panel's element seat"
+        !tag.is_empty(),
+        "the ailment tag is not inside the retail badge cell at panel +(56, 0)"
+    );
+    // Non-vacuous: it must be the *tag*, in the ailment's own colour, and it
+    // must sit clear of the LV label seat the level would have taken.
+    assert!(
+        tag.iter()
+            .all(|d| d.color == legaia_engine_ui::status_element_color(0x1F)),
+        "a non-tag glyph landed in the badge cell"
     );
     let lv_row = |slot: HudSlotView<'_>| -> Vec<(i32, String)> {
         numerals_on_row(

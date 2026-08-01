@@ -377,6 +377,7 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     use legaia_art::power::PowerByte;
     use legaia_art::queue::{ActionConstant, Command};
     use legaia_art::record::EnemyEffect;
+    use legaia_engine_vm::battle_action::ActionState;
 
     let mut world = World {
         party_count: 1,
@@ -434,6 +435,46 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_arts_menu();
 
+    // The confirm no longer resolves the damage: it stages the art constant
+    // into the action-parameter stream and arms the SM's attack band
+    // (`World::run_battle_art`). One stream byte per resolved strike, each
+    // carrying the art's own constant - which is the byte the anim commit
+    // latches into `+0x1DB` and the per-art attack camera dispatches on.
+    assert_eq!(
+        &world.actors[0].battle.params[..3],
+        &[
+            ActionConstant::Art1B.as_byte(),
+            ActionConstant::Art1B.as_byte(),
+            0
+        ],
+        "two staged art strikes and the 0x00 terminator"
+    );
+    assert_eq!(world.actors[0].battle.action_category, 3);
+    assert_eq!(
+        world.actors[0].battle.chosen_art,
+        Some(ActionConstant::Art1B)
+    );
+    assert_eq!(
+        world.actors[1].battle.hp, 4000,
+        "nothing lands before the band runs"
+    );
+
+    // Let the band walk the stream, exactly as the play window's live loop
+    // does.
+    for _ in 0..400 {
+        if world.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
+            || world.battle_command.is_some()
+        {
+            break;
+        }
+        world.set_pad(0);
+        world.live_battle_tick();
+        // Both play hosts drain once per simulation tick; the loop folds and
+        // then re-publishes, so a driver that never drains re-folds the same
+        // strikes on the next tick.
+        let _ = world.drain_battle_events();
+    }
+
     // UDF ×28 vs udf=10: 64*28/16 - 10 = 112 - 10 = 102.
     // LDF ×28 vs ldf=40: 64*28/16 - 40 = 112 - 40 = 72.
     let expect = (102u16 + 72u16) as u32;
@@ -442,10 +483,17 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
         world.status_effects.is_afflicted(1),
         "the art's Toxic effect was applied to the target"
     );
-    let fx = world.drain_battle_hit_fx();
-    assert_eq!(fx.len(), 1);
-    assert_eq!(fx[0].amount, expect as u16);
-    assert!(fx[0].is_crit, "multi-hit art flagged as crit popup");
+    // Through the SM the popups are per strike, like the melee seam's, rather
+    // than one summed number for the whole turn. (The turn cycles to the
+    // monster once the band parks, so filter to the art's own target.)
+    let fx: Vec<_> = world
+        .drain_battle_hit_fx()
+        .into_iter()
+        .filter(|f| f.target_slot == 1)
+        .collect();
+    assert_eq!(fx.len(), 2, "one popup per landed strike");
+    assert!(fx.iter().all(|f| !f.is_heal));
+    assert_eq!(fx.iter().map(|f| u32::from(f.amount)).sum::<u32>(), expect);
 }
 
 #[test]

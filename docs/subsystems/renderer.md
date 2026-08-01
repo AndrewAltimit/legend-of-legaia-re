@@ -423,9 +423,9 @@ once. Retail draws it twice, and which transform the copy takes is per stage
 > The table above still describes the builder split accurately - it is real,
 > and it is still something the host-drift gate cannot see, because both hosts
 > *do* reach a backdrop builder - but it is not what was on screen. Full
-> analysis, including the residual textured-path Lambert that is still a
-> stand-in for `texel * packet_colour / 128`, is in
-> [`host-drift.md`](../tooling/host-drift.md).
+> analysis, including how the textured path closed the same way (the page now
+> uploads the per-vertex packet colour and applies `texel * colour / 128`), is
+> in [`host-drift.md`](../tooling/host-drift.md).
 >
 > The reproduction cost is also gone: `play_battle.rs` exports a wasm
 > `debug_force_battle(row)` that mirrors native `--battle <ROW>`, so a headless

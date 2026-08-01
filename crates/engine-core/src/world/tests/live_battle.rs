@@ -22,6 +22,7 @@ fn spirit_command_charges_ap_and_raises_the_guard_stance() {
     world.battle_command = Some(BattleCommandSession {
         actor: 0,
         party_slot: 0,
+        no_escape: false,
         phase: CommandPhase::SpiritGuard,
     });
     world.tick_battle_command();
@@ -128,6 +129,7 @@ fn run_command_arms_the_run_band() {
     world.battle_command = Some(BattleCommandSession {
         actor: 0,
         party_slot: 0,
+        no_escape: false,
         phase: CommandPhase::RunAway,
     });
     world.tick_battle_command();

@@ -19,15 +19,18 @@
 //!
 //! ## The command-flow state space
 //!
-//! Below `0x1E` the flow is battle entry and turn setup (`0x00` init,
-//! `0x0A`/`0x0B` the intro timer at `ctx[+0x6D6]`, `0x14` turn start, which
-//! opens the top menu and falls into `0x1E`). From `0x1E` up it is the player's
-//! command selection, and the states are **regular decimal multiples of ten**:
+//! Below `0x1E` the flow is battle entry and round setup (`0x00` init, `0x0A`
+//! the party plates + formation banner, `0x0B` the intro timer at
+//! `ctx[+0x6D6]`, `0x14` round start, which falls into `0x1E`). From `0x1E` up
+//! it is the player's command selection, and the states are **regular decimal
+//! multiples of ten**. The sequencing is documented in
+//! [`battle.md`](../../../docs/subsystems/battle.md); the surfaces are
+//! [`crate::battle_input`]'s three phases:
 //!
 //! | `ctx[+0x06]` | State | What is on screen |
 //! |---|---|---|
-//! | `0x1E` = 30 | [`BattleFlowState::TurnPrompt`] | Turn start: the `[Begin]` / `[Escape]` prompt. |
-//! | `0x28` = 40 | [`BattleFlowState::CategoryMenu`] | The action-category menu (Attack / Arts / Magic / Item / Spirit). |
+//! | `0x1E` = 30 | [`BattleFlowState::TurnPrompt`] | Round start: the `[Begin]` / `[Run]` prompt. |
+//! | `0x28` = 40 | [`BattleFlowState::CategoryMenu`] | The four-arm command ring (Item / Attack / magic / Spirit). |
 //! | `0x32` = 50 | [`BattleFlowState::EscapePrompt`] | `[Escape]` chosen - the flee confirm. |
 //! | `0x3C` = 60 | [`BattleFlowState::ItemWindow`] | The item window. |
 //! | `0x46` = 70 | [`BattleFlowState::MagicWindow`] | The magic window. |
@@ -66,9 +69,11 @@ pub enum BattleFlowState {
     /// (`0xFE`/`0xFF`) states, none of which carry a tutorial hook.
     #[default]
     Idle = 0,
-    /// Turn start - the `[Begin]` / `[Escape]` prompt (retail `0x1E`).
+    /// Round start - the `[Begin]` / `[Run]` prompt (retail `0x1E`). Raised
+    /// once per round, ahead of the round's first party command.
     TurnPrompt = 30,
-    /// The action-category menu (retail `0x28`).
+    /// The four-arm command ring - Item / Attack / magic / Spirit (retail
+    /// `0x28`).
     CategoryMenu = 40,
     /// `[Escape]` chosen - the flee confirm (retail `0x32`).
     EscapePrompt = 50,
@@ -137,11 +142,9 @@ pub enum BattleMenuKind {
 /// would be sitting in, and the command session that spawned it has already
 /// resolved. When neither is live the flow is [`BattleFlowState::Idle`].
 ///
-/// The engine has no separate `[Begin]` screen, so
-/// [`BattleFlowState::TurnPrompt`] is not produced here - the World raises it
-/// for the frame a command session is opened (see
-/// `World::open_battle_command`), which is the same instant retail enters
-/// `0x1E`.
+/// The command session now models retail's round prompt (`0x1E`) and
+/// attack-mode prompt (`0x78`) as phases of its own, so both map straight
+/// across instead of being synthesised by the World.
 pub fn flow_state_for(phase: Option<&CommandPhase>, menu: BattleMenuKind) -> BattleFlowState {
     match menu {
         BattleMenuKind::Item => return BattleFlowState::ItemWindow,
@@ -150,6 +153,8 @@ pub fn flow_state_for(phase: Option<&CommandPhase>, menu: BattleMenuKind) -> Bat
         BattleMenuKind::None => {}
     }
     match phase {
+        Some(CommandPhase::RoundPrompt { .. }) => BattleFlowState::TurnPrompt,
+        Some(CommandPhase::AttackMode { .. }) => BattleFlowState::AttackModePrompt,
         Some(CommandPhase::Menu { .. }) => BattleFlowState::CategoryMenu,
         Some(CommandPhase::Targeting { .. }) => BattleFlowState::TargetSelect,
         // A confirmed target commits the action: retail's target cursor (0x5A)

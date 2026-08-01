@@ -949,6 +949,7 @@ table.arts-list .cmd-tag {
           Uint32Array.from(indices),
           bounds,
           objectIds && objectIds.length ? Uint32Array.from(objectIds) : null,
+          viewer.battle_char_mesh_flat_rgba(slot),
         );
         // Hook playback → slider readout, same shape as the field-form view.
         meshView.onFrame = (f) => {

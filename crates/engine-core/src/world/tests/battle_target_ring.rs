@@ -87,6 +87,35 @@ fn press(w: &mut World, button: PadButton) {
     w.tick_battle_arts_menu();
 }
 
+/// Run the live battle loop until the action state machine parks the armed
+/// action at `EndOfAction`, or `cap` frames elapse.
+///
+/// A confirmed art no longer resolves its damage inside the menu tick: it
+/// **arms the action SM's attack band** (`World::run_battle_art`), and the
+/// strikes land as the band walks the staged action-parameter stream. So a
+/// test that asserts on the art's outcome has to let the band run, exactly
+/// as the play window does.
+fn run_armed_action(w: &mut World, cap: u32) -> Vec<BattleEvent> {
+    use legaia_engine_vm::battle_action::ActionState;
+    let mut seen = Vec::new();
+    for _ in 0..cap {
+        if w.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
+            || w.battle_command.is_some()
+        {
+            break;
+        }
+        w.set_pad(0);
+        w.live_battle_tick();
+        // Drain like a host does - both play hosts call
+        // `drain_battle_events` once per simulation tick. The loop folds the
+        // events it produced and then re-publishes them for observers, so a
+        // driver that never drains hands the same stream back to the next
+        // tick's fold and applies every art strike again.
+        seen.extend(w.drain_battle_events());
+    }
+    seen
+}
+
 /// Re-seat the four monsters so **slot order and screen order disagree**:
 /// picker slots `0,1,2,3` sit at x `-300, +900, -900, +300`, all at the same
 /// depth. A slot-order cursor walks `0,1,2,3`; a bearing-ordered one sweeps
@@ -211,11 +240,16 @@ fn performing_an_art_learns_it_once() {
     open_somersault_menu(&mut w);
 
     press(&mut w, PadButton::Cross); // open the target cursor
-    press(&mut w, PadButton::Cross); // confirm - the art runs
+    press(&mut w, PadButton::Cross); // confirm - the art is armed
     assert!(w.battle_arts_menu.is_none(), "arts menu closed");
-
-    let learned: Vec<_> = w
-        .drain_battle_events()
+    // The confirm arms the SM's attack band; the learn-on-use check runs off
+    // the strike that band produces, so the band has to be let run.
+    assert_eq!(
+        w.actors[0].battle.params[0], art_id,
+        "the art constant is staged into the action-parameter stream"
+    );
+    assert_eq!(w.actors[0].battle.action_category, 3, "attack band armed");
+    let learned: Vec<_> = run_armed_action(&mut w, 400)
         .into_iter()
         .filter_map(|e| match e {
             BattleEvent::TacticalArtLearned { char_id, art_id } => Some((char_id, art_id)),
@@ -236,8 +270,7 @@ fn performing_an_art_learns_it_once() {
     open_somersault_menu(&mut w);
     press(&mut w, PadButton::Cross);
     press(&mut w, PadButton::Cross);
-    let again = w
-        .drain_battle_events()
+    let again = run_armed_action(&mut w, 400)
         .into_iter()
         .filter(|e| matches!(e, BattleEvent::TacticalArtLearned { .. }))
         .count();

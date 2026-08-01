@@ -400,7 +400,7 @@ impl World {
                 // row's own matched constant), so its shout list is that one
                 // constant - or empty for a synthetic row.
                 let actions: Vec<legaia_art::ActionConstant> = action.into_iter().collect();
-                self.apply_battle_art(
+                self.run_battle_art(
                     caster,
                     &power,
                     enemy_effect,
@@ -408,8 +408,6 @@ impl World {
                     target_row,
                     target_slot,
                 );
-                self.battle_ctx.action_state =
-                    vm::battle_action::ActionState::EndOfAction.as_byte();
             }
             Some(ArtsResolution::Aborted) => {
                 let actor = self.battle_ctx.active_actor;
@@ -536,7 +534,7 @@ impl World {
                 let caster = session.actor;
                 let (power, enemy_effect, actions) =
                     self.resolve_arts_input_entry(caster, &session.buffer);
-                self.apply_battle_art(
+                self.run_battle_art(
                     caster,
                     &power,
                     enemy_effect,
@@ -544,8 +542,6 @@ impl World {
                     target_row,
                     target_slot,
                 );
-                self.battle_ctx.action_state =
-                    vm::battle_action::ActionState::EndOfAction.as_byte();
             }
             Some(ArtsInputResolution::Aborted) => {
                 let actor = self.battle_ctx.active_actor;
@@ -632,8 +628,168 @@ impl World {
         (entry.power, entry.enemy_effect, entry.matched)
     }
 
+    /// Run a resolved Tactical-Arts turn against the picked target.
+    ///
+    /// **This is the seam the Arts path used to bypass.** The entry resolver
+    /// hands over a per-strike power profile; the turn is then *executed* by
+    /// the battle-action state machine's attack band - the same band a
+    /// physical Attack runs - by staging the art's action constant into the
+    /// actor's action-parameter stream and arming category `3`
+    /// ([`Self::arm_battle_art_action`]). Everything the band owns therefore
+    /// applies to an art as well: the face / approach / strike-pace states,
+    /// the staged art-bank animation, and - because the anim commit latches
+    /// the staged constant into `+0x1DB` - the per-art attack camera, whose
+    /// jump tables are keyed on exactly that byte
+    /// (`docs/formats/battle-attack-camera-table.md`).
+    ///
+    /// The pre-SM behaviour (resolve every strike inline, park the SM at
+    /// `EndOfAction`) survives as [`Self::apply_battle_art`] and is taken for
+    /// an entry that performs **no named art** - a synthetic / demo row has
+    /// no action constant to stage, so there is no animation, no camera arm
+    /// and nothing for the band to walk.
+    pub(in crate::world) fn run_battle_art(
+        &mut self,
+        caster: u8,
+        power: &[legaia_art::PowerByte],
+        enemy_effect: legaia_art::EnemyEffect,
+        actions: &[legaia_art::ActionConstant],
+        target_row: crate::target_picker::CursorRow,
+        target_slot: u8,
+    ) {
+        if self.arm_battle_art_action(
+            caster,
+            power,
+            enemy_effect,
+            actions,
+            target_row,
+            target_slot,
+        ) {
+            // The SM owns the turn from here; the live loop's next step
+            // drives the attack band and cycles the turn at its own
+            // `EndOfAction`.
+            return;
+        }
+        self.apply_battle_art(
+            caster,
+            power,
+            enemy_effect,
+            actions,
+            target_row,
+            target_slot,
+        );
+        self.battle_ctx.action_state = vm::battle_action::ActionState::EndOfAction.as_byte();
+    }
+
+    /// Stage a Tactical-Arts turn on the acting actor and arm the action SM's
+    /// attack band for it. Returns `false` when the entry performs no named
+    /// art, in which case the caller falls back to the inline resolver.
+    ///
+    /// The stream is **one byte per resolved strike**, each carrying the
+    /// turn's action constant. That is the port's reading of retail's stream
+    /// alphabet - direction swings `0x0C..0x0F`, art starters `0x19`/`0x1A`,
+    /// art action constants `0x1B+`, walked one byte per staged swing
+    /// (`docs/subsystems/battle-action.md` § Attack chain - strike loop) -
+    /// with the per-strike power carried alongside in
+    /// [`vm::battle_action::BattleActor::art_power`] rather than re-derived
+    /// from a record, because the entry resolver has already folded the
+    /// Miracle / Super and no-record degradations the record alone cannot
+    /// answer.
+    ///
+    /// **Disclosed approximation.** A multi-art entry stages every strike
+    /// under `actions[0]`. That is not new: the inline resolver keys
+    /// `ArtStrikeInfo::art` the same way, because the flat power list the
+    /// entry resolver returns carries no per-hit attribution back to the art
+    /// that produced it.
+    fn arm_battle_art_action(
+        &mut self,
+        caster: u8,
+        power: &[legaia_art::PowerByte],
+        enemy_effect: legaia_art::EnemyEffect,
+        actions: &[legaia_art::ActionConstant],
+        target_row: crate::target_picker::CursorRow,
+        target_slot: u8,
+    ) -> bool {
+        use crate::target_picker::CursorRow;
+        let Some(art) = actions.first().copied() else {
+            return false;
+        };
+        let party_count = self.party_count.clamp(1, 3);
+        let target = match target_row {
+            CursorRow::Enemy => party_count + target_slot,
+            CursorRow::Ally => target_slot,
+        };
+        if usize::from(target) >= self.actors.len() || power.is_empty() {
+            return false;
+        }
+        // The **roster**-slot keying `resolve_arts_input_entry` resolved the
+        // entry under, not the battle ordinal: the SM looks the art record up
+        // by this key, so the two have to agree or a three-member party reads
+        // the wrong character's table.
+        let char_slot = self.party_roster_slot(caster as usize) as u8;
+        let character = self.caster_character(char_slot);
+        self.push_art_shout_cues(caster, actions);
+        // A freshly-armed action starts from an empty strike script - see
+        // `World::clear_action_stream` for the soft-lock a carried-over byte
+        // produces. It also drops the previous turn's staged art profile.
+        self.clear_action_stream(caster);
+        let Some(a) = self.actors.get_mut(caster as usize) else {
+            return false;
+        };
+        // Leave room for the `0x00` terminator the attack band stops on.
+        let hits = power.len().min(a.battle.params.len().saturating_sub(1));
+        for slot in a.battle.params.iter_mut().take(hits) {
+            *slot = art.as_byte();
+        }
+        a.battle.params[hits] = 0;
+        a.battle.strike_index = 0;
+        a.battle.active_target = target;
+        a.battle.action_category = 3;
+        // The art-record lookup key. Nothing else in the port writes it, so
+        // an unset slot would resolve every character's arts against Vahn's
+        // table.
+        a.battle.character = character;
+        a.battle
+            .stage_art_profile(Some(art), &power[..hits], enemy_effect);
+        self.battle_ctx.active_actor = caster;
+        self.battle_ctx.queued_action = 3;
+        self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
+        true
+    }
+
+    /// Arts-voice shout: one cue **per art the turn performs**, on that
+    /// art's animation-start frame, when the art carries a real action
+    /// constant (a synthetic/demo art has none and stays silent - the
+    /// retail degradation for arts with no cue-table entry). Retail
+    /// stages each art's animation separately and the materialiser
+    /// (`FUN_8004AD80`) calls the cue selector per staging, so an entry
+    /// that performs three arts requests three shouts; the mixer queues
+    /// a back-to-back request behind the sounding one rather than cutting
+    /// it. The host resolves each (character, action) pair against the
+    /// arts-voice tables + XA clip banks and plays the CD-XA shout with the
+    /// modeled CD-response delay, so the audio trails this frame rather than
+    /// leading it. REF: FUN_8004C140.
+    fn push_art_shout_cues(&mut self, caster: u8, actions: &[legaia_art::ActionConstant]) {
+        let character = self.caster_character(caster);
+        let cslot = legaia_art::Character::all()
+            .iter()
+            .position(|c| *c == character)
+            .unwrap_or(usize::MAX);
+        if cslot >= 3 {
+            return;
+        }
+        for action in actions {
+            self.battle_shout_cues
+                .push(crate::battle_events::BattleShoutCue {
+                    cslot: cslot as u8,
+                    action: action.as_byte(),
+                });
+        }
+    }
+
     /// Execute an art against the picked target through the real art-power
-    /// path.
+    /// path, **without** the action state machine - the fallback
+    /// [`Self::run_battle_art`] takes for an entry that performs no named
+    /// art (a synthetic / demo row).
     ///
     /// Each [`legaia_art::PowerByte`] in `power` drives one strike through
     /// [`crate::art_strike::apply_art_strike`]: the byte's multiplier tier +
@@ -678,40 +834,18 @@ impl World {
             .copied()
             .unwrap_or(0);
         let character = self.caster_character(caster);
-        // Arts-voice shout: one cue **per art the turn performs**, on that
-        // art's animation-start frame, when the art carries a real action
-        // constant (a synthetic/demo art has none and stays silent - the
-        // retail degradation for arts with no cue-table entry). Retail
-        // stages each art's animation separately and the materialiser
-        // (`FUN_8004AD80`) calls the cue selector per staging, so an entry
-        // that performs three arts requests three shouts; the mixer queues
-        // a back-to-back request behind the sounding one rather than cutting
-        // it. The live loop has no per-art animation timeline, so the whole
-        // list is requested on this frame in performed order. The host
-        // resolves each (character, action) pair against the arts-voice
-        // tables + XA clip banks and plays the CD-XA shout with the modeled
-        // CD-response delay, so the audio trails this frame rather than
-        // leading it. REF: FUN_8004C140.
-        let cslot = legaia_art::Character::all()
-            .iter()
-            .position(|c| *c == character)
-            .unwrap_or(usize::MAX);
+        // One shout per art the turn performs (the SM-routed path pushes the
+        // same list at arm time).
+        self.push_art_shout_cues(caster, actions);
         let roster = self.party_roster_slot(caster as usize) as u8;
         for action in actions {
-            if cslot < 3 {
-                self.battle_shout_cues
-                    .push(crate::battle_events::BattleShoutCue {
-                        cslot: cslot as u8,
-                        action: action.as_byte(),
-                    });
-            }
-            // Learn-on-use, likewise per art. This is the player-driven arts
-            // path, which reaches `art_strike::apply_art_strike` directly
-            // rather than through `BattleActionHost::apply_art_strike`, so
-            // retail's per-art check (`FUN_801EFBFC`, wired in the host impl
-            // and run once per accepted art in the queue-builder walk) has to
-            // be run here too. A synthetic art contributes no constant and is
-            // skipped - there is no real art id to insert.
+            // Learn-on-use, likewise per art. This path reaches
+            // `art_strike::apply_art_strike` directly rather than through
+            // `BattleActionHost::apply_art_strike`, so retail's per-art check
+            // (`FUN_801EFBFC`, wired in the host impl and run once per
+            // accepted art in the queue-builder walk) has to be run here too.
+            // A synthetic art contributes no constant and is skipped - there
+            // is no real art id to insert.
             self.notify_art_used(roster, action.as_byte());
         }
         let action = actions.first().copied();

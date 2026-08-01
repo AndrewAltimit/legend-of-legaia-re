@@ -102,8 +102,6 @@ class TmdRenderer {
     this.locMvp     = gl.getUniformLocation(this.program, 'u_mvp');
     this.locModel   = gl.getUniformLocation(this.program, 'u_model');
     this.locVram    = gl.getUniformLocation(this.program, 'u_vram');
-    this.locLight   = gl.getUniformLocation(this.program, 'u_light');
-    this.locNormalSign = gl.getUniformLocation(this.program, 'u_normal_sign');
     this.locNoDisc  = gl.getUniformLocation(this.program, 'u_no_discard');
     this.locSemiPass = gl.getUniformLocation(this.program, 'u_semi_pass');
     this.locFogLut  = gl.getUniformLocation(this.program, 'u_fog_lut');
@@ -387,6 +385,22 @@ class TmdRenderer {
       : { far: null, nearZ: 0, farZ: 0, maxIr0: 0 };
   }
 
+  /* Set the context-global `a_flat_rgba` constant that a draw with no bound
+   * colour stream reads.
+   *
+   * It must be the PSX **neutral modulation word** 0x80 (128/255), not white:
+   * the fragment shader's textured path is `texel * colour * 255/128`, so a
+   * white constant would brighten every un-coloured draw by ~2x. Alpha 1.0
+   * marks the vertex textured, which is the only sane reading when no stream
+   * says otherwise. Generic vertex-attribute values are context state rather
+   * than VAO state, so one call covers every VAO that leaves the attribute
+   * disabled. */
+  _setNeutralPacketColor() {
+    if (this.locFlatRgba < 0) return;
+    const n = 128 / 255;
+    this.gl.vertexAttrib4f(this.locFlatRgba, n, n, n, 1.0);
+  }
+
   /* Stage the grade + cue uniforms on the currently-bound main program. */
   _applyGradeCue() {
     const gl = this.gl;
@@ -537,12 +551,13 @@ class TmdRenderer {
     return m ? m.aabb : null;
   }
 
-  /* `flatRgba` (optional): Uint8Array, 4 bytes per vertex [r, g, b, flag],
-   * for the field-character hybrid render. When present, the field body's
-   * untextured prims (flag byte 0) draw with their TMD colour instead of
-   * sampling VRAM; textured verts carry flag byte 255. Omit it for every
-   * other mesh (the attribute falls back to a constant (1,1,1,1) and
-   * u_use_flat_colors stays 0, so behaviour is unchanged). */
+  /* `flatRgba` (optional): Uint8Array, 4 bytes per vertex
+   * [r, g, b, textured_flag] - the prim's PSX packet colour plus which job it
+   * does. Textured verts (flag 255) MODULATE their texel by it
+   * (`texel * colour / 128`, retail's whole lighting model); untextured verts
+   * (flag 0) are FILLED with it. Omit it only for geometry that has no packet
+   * colour at all (a generated heightfield): the attribute then falls back to
+   * the neutral 0x80 constant and the draw is `texel * 1.0`. */
   uploadMesh(positions, uvs, cbaTsb, indices, flatRgba) {
     const gl = this.gl;
     gl.bindVertexArray(this.vao);
@@ -572,7 +587,7 @@ class TmdRenderer {
       gl.vertexAttribPointer(this.locFlatRgba, 4, gl.UNSIGNED_BYTE, true, 0, 0);
     } else if (this.locFlatRgba >= 0) {
       gl.disableVertexAttribArray(this.locFlatRgba);
-      gl.vertexAttrib4f(this.locFlatRgba, 1.0, 1.0, 1.0, 1.0);
+      this._setNeutralPacketColor();
     }
 
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.idxBuf);
@@ -623,8 +638,6 @@ class TmdRenderer {
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.locMvp, false, mvp);
     gl.uniformMatrix4fv(this.locModel, false, IDENTITY4);
-    gl.uniform3f(this.locLight, 0.5, -0.7, 0.4);  /* matches WGSL light_dir.xyz */
-    gl.uniform1f(this.locNormalSign, 1.0);  /* orbit VP keeps screen handedness */
     /* buildMvp = single reflection (Y flip): a double-sided pair's visible
      * copy is the front-facing one under this projection. */
     gl.uniform1i(this.locPairFront, 1);
@@ -632,8 +645,9 @@ class TmdRenderer {
     /* Single-mesh inspector: legacy single pass (no semi-transparency defer,
      * ABE prims draw opaque) - only renderAssembled runs the blend pass. */
     gl.uniform1i(this.locSemiPass, -1);
-    /* Field-character hybrid: untextured prims use their vertex colour. Set
-     * explicitly every frame (the uniform persists on the shared program). */
+    /* Untextured-fill branch: untextured prims are filled from their vertex
+     * colour. Set explicitly every frame (the uniform persists on the shared
+     * program). The textured path's packet modulation is unconditional. */
     gl.uniform1i(this.locUseFlatColors, this.useFlatColors ? 1 : 0);
     /* Ghost tint OFF for the opaque pose (the trail pass sets it per echo). */
     gl.uniform4f(this.locGhost, 0, 0, 0, 0);
@@ -705,12 +719,11 @@ class TmdRenderer {
    * as the meshId, so repeated placements that share a slot share GPU buffers.
    *
    * `flatRgba` (optional): Uint8Array, 4 bytes per vertex [r, g, b, flag]
-   * (flag 255 = textured / sample VRAM, 0 = untextured / use the colour) for
-   * hybrid env meshes whose untextured flat/gouraud prims carry per-vertex RGB
-   * instead of UVs (the viewer full-map path; mirrors the native engine's
-   * colour-mesh pipeline). Omit / pass null for pure-textured meshes - the
-   * attribute then reads the context constant (1,1,1,1) and the FS flat
-   * branch never fires.
+   * (flag 255 = textured / sample VRAM and modulate by the RGB, 0 = untextured
+   * / fill with the RGB) - the prim's packet colour. Pass it for every mesh
+   * built off a TMD; omit / pass null only for geometry with no packet colour
+   * (a generated heightfield), which then reads the neutral 0x80 constant and
+   * draws at the raw texel.
    *
    * Idempotent: re-upload under the same meshId overwrites. */
   uploadSceneMesh(meshId, positions, uvs, cbaTsb, indices, flatRgba) {
@@ -758,7 +771,7 @@ class TmdRenderer {
       gl.vertexAttribPointer(this.locFlatRgba, 4, gl.UNSIGNED_BYTE, true, 0, 0);
     } else if (this.locFlatRgba >= 0) {
       /* Attribute enables are VAO state: leave it disabled in this VAO so
-       * draws read the context-global constant (1,1,1,1). */
+       * draws read the context-global neutral-modulation constant. */
       gl.disableVertexAttribArray(this.locFlatRgba);
     }
 
@@ -951,12 +964,12 @@ class TmdRenderer {
         cx / p.tileWorldSize, cz / p.tileWorldSize);
       gl.uniform1i(this.locOceanTextured, p.textured ? 1 : 0);
       gl.uniform2f(this.locOceanSampleSize, p.sampleWidth, p.sampleHeight);
-      /* Match the main program's flat-ground Lambert shade (light dir
-       * (0.5, -0.7, 0.4), shade = 0.45 + 0.55 * lambert(up-normal)) so
-       * the backdrop is pixel-identical in brightness to the
-       * heightfield's water cells - the sea reads as one layer. */
-      const lambertUp = 0.7 / Math.hypot(0.5, 0.7, 0.4);
-      gl.uniform1f(this.locOceanShade, 0.45 + 0.55 * lambertUp);
+      /* Match the main program's ground water cells. Those are a generated
+       * heightfield with no packet colour word, so they draw at the neutral
+       * 0x80 modulation = 1.0; the backdrop plane takes the same factor and
+       * the sea reads as one layer. (This tracked the old synthetic Lambert
+       * shade before the textured path became retail's texel * colour / 128.) */
+      gl.uniform1f(this.locOceanShade, 1.0);
       const c = p.color;
       gl.uniform4f(this.locOceanColor, c.r, c.g, c.b, 1.0);
       gl.activeTexture(gl.TEXTURE0);
@@ -978,7 +991,6 @@ class TmdRenderer {
 
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.locMvp, false, vp);
-    gl.uniform3f(this.locLight, 0.5, -0.7, 0.4);
     /* Assembled VPs add the retail screen-X mirror on top of the per-model
      * Y flip (two reflections), which inverts gl_FrontFacing - a pair's
      * visible copy is the back-facing one here (see u_pair_front). */
@@ -986,11 +998,6 @@ class TmdRenderer {
     /* Prologue grade + depth cue (identity / off unless the play page
      * staged them this frame). */
     this._applyGradeCue();
-    /* The top-down VP horizontally mirrors a screen axis (retail orientation),
-     * which flips the handedness of the screen-space derivatives the FS uses
-     * to build the shading normal. Negate it back so lighting matches the
-     * non-mirrored orbit view instead of collapsing to the ambient floor. */
-    gl.uniform1f(this.locNormalSign, -1.0);
     /* Cutout discard ON (retail semantics): texel 0 with STP 0 is fully
      * transparent, which is what makes the crossed-quad billboard trees
      * read as foliage instead of solid star-shaped slabs. The old
@@ -1002,14 +1009,12 @@ class TmdRenderer {
     /* Opaque pass: defer semi-transparent (ABE) fragments; the blend pass
      * after the placement loop re-draws them per ABR mode. */
     gl.uniform1i(this.locSemiPass, 0);
-    /* Flat-colour hybrid: off for the ground pass; re-enabled per placed
+    /* Untextured-fill branch: off for the ground pass; re-enabled per placed
      * mesh below when it carries an untextured vertex-colour half (the
      * viewer full-map path). The context-global constant keeps disabled
-     * a_flat_rgba attributes reading as "textured". */
+     * a_flat_rgba attributes reading as "textured, neutral modulation". */
     gl.uniform1i(this.locUseFlatColors, 0);
-    if (this.locFlatRgba >= 0) {
-      gl.vertexAttrib4f(this.locFlatRgba, 1.0, 1.0, 1.0, 1.0);
-    }
+    this._setNeutralPacketColor();
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     gl.uniform1i(this.locVram, 0);

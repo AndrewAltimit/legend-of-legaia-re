@@ -34,30 +34,22 @@
 //! `pen = (rec.x, rec.y - 2)`, `plate = (rec.x - 8, rec.y - 6)` sized
 //! `(rec.w + 16, 20)`.
 //!
-//! ## Where the port's six commands sit
+//! ## The two clusters are three phases
 //!
-//! Retail runs the two clusters in **different phases** - the round menu
-//! first, then the acting member's diamond - and their pinned rects
-//! overlap, so retail can never show both at once. The port's command
-//! menu is a single six-entry phase
-//! (`legaia_engine_core::battle_input::BattleCommand::MENU`), so the four
-//! commands with a retail counterpart take the diamond's four pinned
-//! seats:
+//! Retail runs the clusters in **different phases** and their pinned
+//! rects overlap, so it can never show two at once. Which phase a frame
+//! is in is [`ChipPhase`], and each one names the seats its chips take:
 //!
-//! | Seat | Port command | Retail counterpart |
-//! |---|---|---|
-//! | Up | Item | Item |
-//! | Left | Arts | Attack (which is what opens the directional entry) |
-//! | Right | Magic | the element command |
-//! | Down | Spirit | Spirit |
+//! | Retail `ctx[+0x06]` | [`ChipPhase`] | Cluster | Chips |
+//! |---|---|---|---|
+//! | `0x1E` | `RoundPrompt` | [`CLUSTER_TOP_LEVEL`] | `Begin` \| `Run` |
+//! | `0x28` | `CommandRing` | [`CLUSTER_COMMAND`] | `Item` / `Attack` / magic / `Spirit` |
+//! | `0x78` | `AttackMode` | [`CLUSTER_COMMAND`] | `Auto` \| `Command` |
 //!
-//! and the two the diamond has no seat for - the port's plain-strike
-//! `Attack` convenience and `Run` - take a second row
-//! ([`CLUSTER_EXTRA`]). That row is the port's, and it is the only
-//! invented number here: it keeps the pair's pinned centre x and takes
-//! the diamond's arm and interior, then drops [`EXTRA_ROW_DY`] rows so it
-//! clears the diamond's Down chip. Its right chip lands at x `172` - the
-//! pinned x of retail's own `Run` chip.
+//! The ring's four arms are the placement table's records `8..=11` in up /
+//! left / right / down order, and the attack-mode pair re-uses the same
+//! diamond's left and right arms (records `85` / `84`). Every seat here
+//! is pinned - there is no invented row.
 //!
 //! Retail's selection cue is not pinned, so the port supplies one: the
 //! chip under the cursor keeps its full plate tint and a white label
@@ -115,30 +107,18 @@ pub const CLUSTER_COMMAND: ChipCluster = ChipCluster {
     interior_w: 48,
 };
 
-/// The round-level `Begin | Run` pair (`battle_chrome::CLUSTER_TOP_LEVEL`).
+/// The round-open `Begin | Run` prompt (`battle_chrome::CLUSTER_TOP_LEVEL`).
+///
+/// Retail's own labels for the pair are static `SCUS_942.54` rodata the
+/// placement records point at before the battle overlay is even loaded
+/// (`legaia_asset::battle_ui_strings::{SCUS_BEGIN, SCUS_RUN}`), which is
+/// the disc-side proof that this cluster is the round prompt and not a
+/// second command row.
 pub const CLUSTER_TOP_LEVEL: ChipCluster = ChipCluster {
     centre: (160, 92),
     dx: 38,
     dy: 0,
     interior_w: 36,
-};
-
-/// Rows the port drops its extra command row by so it clears the
-/// diamond's Down chip (which occupies `y 92..112`). The port's one
-/// invented number on this screen - see the module docs.
-pub const EXTRA_ROW_DY: i32 = 34;
-
-/// The port's second command row: the two menu entries retail's diamond
-/// has no seat for. Pinned centre x, the diamond's arm and interior, and
-/// [`EXTRA_ROW_DY`] rows of clearance.
-pub const CLUSTER_EXTRA: ChipCluster = ChipCluster {
-    centre: (
-        CLUSTER_TOP_LEVEL.centre.0,
-        CLUSTER_TOP_LEVEL.centre.1 + EXTRA_ROW_DY,
-    ),
-    dx: CLUSTER_COMMAND.dx,
-    dy: 0,
-    interior_w: CLUSTER_COMMAND.interior_w,
 };
 
 impl ChipCluster {
@@ -174,13 +154,13 @@ impl ChipCluster {
 
 // ---------------------------------------------------------------- seating
 
-/// Which cluster + arm one menu entry takes.
+/// Which cluster + arm one chip takes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CommandSeat {
     /// A seat on the packet-pinned per-actor diamond.
     Diamond(ChipSeat),
-    /// A seat on the port's extra row ([`CLUSTER_EXTRA`]).
-    ExtraRow(ChipSeat),
+    /// A seat on the pinned round-prompt pair ([`CLUSTER_TOP_LEVEL`]).
+    TopLevel(ChipSeat),
 }
 
 impl CommandSeat {
@@ -188,14 +168,14 @@ impl CommandSeat {
     pub const fn cluster(self) -> ChipCluster {
         match self {
             Self::Diamond(_) => CLUSTER_COMMAND,
-            Self::ExtraRow(_) => CLUSTER_EXTRA,
+            Self::TopLevel(_) => CLUSTER_TOP_LEVEL,
         }
     }
 
     /// The arm within the cluster.
     pub const fn seat(self) -> ChipSeat {
         match self {
-            Self::Diamond(s) | Self::ExtraRow(s) => s,
+            Self::Diamond(s) | Self::TopLevel(s) => s,
         }
     }
 
@@ -211,18 +191,65 @@ impl CommandSeat {
 }
 
 /// Seat of each entry of `battle_input::BattleCommand::MENU`, in that
-/// order (`Attack`, `Arts`, `Magic`, `Item`, `Spirit`, `Run`). The four
-/// with a retail counterpart take the diamond's pinned seats; the two
-/// without take the port's extra row. See the module docs for the mapping
-/// and why the two pinned clusters cannot both be up.
-pub const MENU_SEATS: [CommandSeat; 6] = [
-    CommandSeat::ExtraRow(ChipSeat::Left),
+/// order (`Item`, `Attack`, magic, `Spirit`) - the diamond's up, left,
+/// right and down arms, which is the order the placement table's records
+/// `8..=11` sit in.
+pub const MENU_SEATS: [CommandSeat; 4] = [
+    CommandSeat::Diamond(ChipSeat::Up),
     CommandSeat::Diamond(ChipSeat::Left),
     CommandSeat::Diamond(ChipSeat::Right),
-    CommandSeat::Diamond(ChipSeat::Up),
     CommandSeat::Diamond(ChipSeat::Down),
-    CommandSeat::ExtraRow(ChipSeat::Right),
 ];
+
+/// Seat of each entry of `battle_input::RoundChoice::PROMPT` (`Begin`,
+/// `Run`) - the round prompt's pinned left / right pair.
+pub const ROUND_PROMPT_SEATS: [CommandSeat; 2] = [
+    CommandSeat::TopLevel(ChipSeat::Left),
+    CommandSeat::TopLevel(ChipSeat::Right),
+];
+
+/// Seat of each entry of `battle_input::AttackMode::PROMPT` (`Auto`,
+/// `Command`) - the diamond's own left / right arms, which is where the
+/// placement records `85` / `84` put them.
+pub const ATTACK_MODE_SEATS: [CommandSeat; 2] = [
+    CommandSeat::Diamond(ChipSeat::Left),
+    CommandSeat::Diamond(ChipSeat::Right),
+];
+
+/// Which selection surface a frame is drawing - the port's mirror of
+/// retail's flow byte `ctx[+0x06]` for the three states that put chips up.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ChipPhase {
+    /// Retail `0x1E` - the round-open `Begin | Run` prompt.
+    RoundPrompt,
+    /// Retail `0x28` - the four-arm command ring.
+    #[default]
+    CommandRing,
+    /// Retail `0x78` - the `Auto | Command` attack-mode prompt.
+    AttackMode,
+}
+
+impl ChipPhase {
+    /// The seats this phase's chips take, in chip order.
+    pub const fn seats(self) -> &'static [CommandSeat] {
+        match self {
+            Self::RoundPrompt => &ROUND_PROMPT_SEATS,
+            Self::CommandRing => &MENU_SEATS,
+            Self::AttackMode => &ATTACK_MODE_SEATS,
+        }
+    }
+
+    /// The cluster whose centre carries this phase's face-button glyph.
+    /// Retail draws it every frame of all three states - at `(152, 84)` for
+    /// the round prompt (`801d102c`) and `(220, 62)` for the ring and the
+    /// attack-mode prompt (`801d1188` / `801d16e8`).
+    pub const fn cluster(self) -> ChipCluster {
+        match self {
+            Self::RoundPrompt => CLUSTER_TOP_LEVEL,
+            Self::CommandRing | Self::AttackMode => CLUSTER_COMMAND,
+        }
+    }
+}
 
 // ------------------------------------------------------------ atlas rects
 
@@ -275,13 +302,15 @@ pub struct CommandChipView<'a> {
 }
 
 /// Everything the cluster draws from. Hosts project their live command
-/// session into this; `chips` is in `BattleCommand::MENU` order and is
-/// seated by [`MENU_SEATS`].
+/// session into this; `chips` is in the order the phase's own chip list
+/// carries and is seated by [`ChipPhase::seats`].
 #[derive(Clone, Copy, Debug)]
 pub struct BattleCommandMenuFrame<'a> {
     pub chips: &'a [CommandChipView<'a>],
     /// Index of the chip under the cursor, if any.
     pub cursor: Option<usize>,
+    /// Which selection surface these chips belong to.
+    pub phase: ChipPhase,
 }
 
 /// Plate tint of the chip under the cursor - retail's selection cue is
@@ -361,12 +390,13 @@ pub fn battle_command_chip_sprites(
 ) -> Vec<SpriteDraw> {
     let scale = stage_scale.max(1);
     let mut out: Vec<SpriteDraw> = Vec::new();
-    let mut diamond = false;
+    let seats = frame.phase.seats();
+    let mut any = false;
     for (i, chip) in frame.chips.iter().enumerate() {
-        let Some(seat) = MENU_SEATS.get(i).copied() else {
+        let Some(seat) = seats.get(i).copied() else {
             continue;
         };
-        diamond |= matches!(seat, CommandSeat::Diamond(_));
+        any = true;
         let (plate_tint, _) = tints(frame.cursor == Some(i), chip.enabled);
         let (px, py) = seat.plate_origin();
         out.extend(plate_run(
@@ -379,10 +409,11 @@ pub fn battle_command_chip_sprites(
             stage_scale,
         ));
     }
-    // The D-pad glyph belongs to the pinned diamond. The port's extra row
-    // is a flat pair and draws none, so a frame never shows two.
-    if diamond {
-        let (dx, dy, dw, dh) = CLUSTER_COMMAND.dpad_rect();
+    // The face-button glyph sits at the centre of whichever cluster this
+    // phase is drawing - retail draws exactly one, every frame of all
+    // three selection states.
+    if any {
+        let (dx, dy, dw, dh) = frame.phase.cluster().dpad_rect();
         out.push(SpriteDraw {
             dst: (
                 stage_origin.0 + dx * scale as i32,
@@ -407,8 +438,9 @@ pub fn battle_command_chip_text(
 ) -> Vec<TextDraw> {
     let scale = stage_scale.max(1) as i32;
     let mut out: Vec<TextDraw> = Vec::new();
+    let seats = frame.phase.seats();
     for (i, chip) in frame.chips.iter().enumerate() {
-        let Some(seat) = MENU_SEATS.get(i).copied() else {
+        let Some(seat) = seats.get(i).copied() else {
             continue;
         };
         let (_, ink) = tints(frame.cursor == Some(i), chip.enabled);
@@ -437,13 +469,21 @@ mod tests {
     use super::*;
 
     fn chips(n: usize) -> Vec<CommandChipView<'static>> {
-        const LABELS: [&str; 6] = ["Attack", "Arts", "Magic", "Item", "Spirit", "Run"];
+        const LABELS: [&str; 4] = ["Item", "Attack", "Meta", "Spirit"];
         (0..n)
             .map(|i| CommandChipView {
-                label: LABELS[i],
+                label: LABELS[i % LABELS.len()],
                 enabled: true,
             })
             .collect()
+    }
+
+    fn ring<'a>(chips: &'a [CommandChipView<'a>], cursor: usize) -> BattleCommandMenuFrame<'a> {
+        BattleCommandMenuFrame {
+            chips,
+            cursor: Some(cursor),
+            phase: ChipPhase::CommandRing,
+        }
     }
 
     /// Every seat of the per-actor diamond, against the packet-pinned
@@ -504,128 +544,140 @@ mod tests {
     }
 
     /// Retail's two clusters overlap, which is what says they are two
-    /// phases. The port's extra row exists because its menu is one phase,
-    /// so the row has to clear the diamond entirely.
+    /// **phases** rather than two rows of one menu: no frame can draw both.
+    /// That overlap is the whole reason the port stopped inventing a third
+    /// row for the commands the diamond has no arm for.
     #[test]
-    fn the_extra_row_clears_the_diamond_the_pinned_pair_collides_with() {
+    fn the_two_pinned_clusters_overlap_which_is_why_they_are_phases() {
         let overlaps = |a: (i32, i32), aw: i32, b: (i32, i32), bw: i32| {
             a.0 < b.0 + bw && b.0 < a.0 + aw && a.1 < b.1 + PLATE_H && b.1 < a.1 + PLATE_H
         };
         let down = CLUSTER_COMMAND.plate_origin(ChipSeat::Down);
         let dw = CLUSTER_COMMAND.plate_width();
-        // The pinned pair's Run chip really does land on the diamond.
         assert!(overlaps(
             down,
             dw,
             CLUSTER_TOP_LEVEL.plate_origin(ChipSeat::Right),
             CLUSTER_TOP_LEVEL.plate_width(),
         ));
-        // The port's row does not, on either arm.
-        for seat in [ChipSeat::Left, ChipSeat::Right] {
-            assert!(!overlaps(
-                down,
-                dw,
-                CLUSTER_EXTRA.plate_origin(seat),
-                CLUSTER_EXTRA.plate_width(),
-            ));
-        }
-        // ... and it stays inside the 320x240 stage.
-        for seat in [ChipSeat::Left, ChipSeat::Right] {
-            let (x, y) = CLUSTER_EXTRA.plate_origin(seat);
-            assert!(x >= 0 && x + CLUSTER_EXTRA.plate_width() <= 320);
-            assert!(y >= 0 && y + PLATE_H <= 240);
+        // Every seat any phase can draw stays inside the 320x240 stage.
+        for phase in [
+            ChipPhase::RoundPrompt,
+            ChipPhase::CommandRing,
+            ChipPhase::AttackMode,
+        ] {
+            for seat in phase.seats() {
+                let (x, y) = seat.plate_origin();
+                let w = seat.cluster().plate_width();
+                assert!(x >= 0 && x + w <= 320, "{seat:?} left the stage");
+                assert!(y >= 0 && y + PLATE_H <= 240, "{seat:?} left the stage");
+            }
         }
     }
 
-    /// The extra row's right chip keeps the pinned x of retail's own Run
-    /// chip - the arm and interior it borrows from the diamond land it
-    /// there.
+    /// Each phase seats its chips on pinned arms only, one chip per seat.
     #[test]
-    fn the_extra_row_right_chip_keeps_the_pinned_run_x() {
-        assert_eq!(CLUSTER_EXTRA.plate_origin(ChipSeat::Right).0, 172);
-        assert_eq!(
-            CLUSTER_TOP_LEVEL.plate_origin(ChipSeat::Right).0,
-            CLUSTER_EXTRA.plate_origin(ChipSeat::Right).0,
-        );
-        assert_eq!(CLUSTER_EXTRA.centre.0, CLUSTER_TOP_LEVEL.centre.0);
+    fn every_phase_seats_its_chips_on_pinned_arms() {
+        for phase in [
+            ChipPhase::RoundPrompt,
+            ChipPhase::CommandRing,
+            ChipPhase::AttackMode,
+        ] {
+            let seats = phase.seats();
+            let mut seen: Vec<(i32, i32)> = seats.iter().map(|s| s.plate_origin()).collect();
+            seen.sort();
+            seen.dedup();
+            assert_eq!(seen.len(), seats.len(), "{phase:?} seats a chip twice");
+        }
+        // The ring is the diamond's four arms in up / left / right / down
+        // order - the placement table's records 8..=11.
+        assert_eq!(MENU_SEATS[0], CommandSeat::Diamond(ChipSeat::Up)); // Item
+        assert_eq!(MENU_SEATS[1], CommandSeat::Diamond(ChipSeat::Left)); // Attack
+        assert_eq!(MENU_SEATS[2], CommandSeat::Diamond(ChipSeat::Right)); // magic
+        assert_eq!(MENU_SEATS[3], CommandSeat::Diamond(ChipSeat::Down)); // Spirit
+        // The round prompt is the pinned pair, `Begin` left and `Run` right.
+        assert_eq!(ROUND_PROMPT_SEATS[0].plate_origin(), (96, 82));
+        assert_eq!(ROUND_PROMPT_SEATS[1].plate_origin(), (172, 82));
+        // The attack-mode pair re-uses the ring's own left / right arms.
+        assert_eq!(ATTACK_MODE_SEATS[0], MENU_SEATS[1]);
+        assert_eq!(ATTACK_MODE_SEATS[1], MENU_SEATS[2]);
     }
 
-    /// The port's six menu entries seat onto the four pinned diamond arms
-    /// plus the two-chip row, one command per seat and no seat twice.
+    /// Each phase draws its own face-button glyph, at its own cluster
+    /// centre - `(152, 84)` for the round prompt, `(220, 62)` for the two
+    /// that sit on the diamond.
     #[test]
-    fn every_menu_entry_gets_its_own_seat() {
-        let mut seen: Vec<(i32, i32)> = MENU_SEATS.iter().map(|s| s.plate_origin()).collect();
-        seen.sort();
-        seen.dedup();
-        assert_eq!(seen.len(), MENU_SEATS.len());
-        // The four retail-counterpart commands are on the pinned diamond.
-        assert_eq!(MENU_SEATS[1], CommandSeat::Diamond(ChipSeat::Left)); // Arts
-        assert_eq!(MENU_SEATS[2], CommandSeat::Diamond(ChipSeat::Right)); // Magic
-        assert_eq!(MENU_SEATS[3], CommandSeat::Diamond(ChipSeat::Up)); // Item
-        assert_eq!(MENU_SEATS[4], CommandSeat::Diamond(ChipSeat::Down)); // Spirit
+    fn one_plate_run_per_chip_plus_one_glyph_per_phase() {
+        let expect = [
+            (ChipPhase::RoundPrompt, 2usize, (152, 84, 15, 15)),
+            (ChipPhase::CommandRing, 4, (220, 62, 15, 15)),
+            (ChipPhase::AttackMode, 2, (220, 62, 15, 15)),
+        ];
+        for (phase, n, glyph) in expect {
+            let all = chips(n);
+            let sprites = battle_command_chip_sprites(
+                &CommandChipAtlas::SHEET,
+                &BattleCommandMenuFrame {
+                    chips: &all,
+                    cursor: Some(0),
+                    phase,
+                },
+                (0, 0),
+                1,
+            );
+            // Every chip is a 5-piece plate run (cap + 3 body + cap for the
+            // 48-wide diamond interior, cap + 2 body + a clipped tile + cap
+            // for the 36-wide prompt), plus the single glyph.
+            assert_eq!(sprites.len(), n * 5 + 1, "{phase:?}");
+            let g = sprites.last().unwrap();
+            assert_eq!(g.src, title_pak::OVERLAY_SYSTEM_UI_ARTS_DPAD);
+            assert_eq!(g.dst, glyph, "{phase:?} glyph drifted");
+        }
     }
 
+    /// A frame with no chips draws nothing at all - not even a lone glyph.
     #[test]
-    fn one_plate_run_per_chip_plus_one_dpad() {
-        let all = chips(6);
+    fn an_empty_frame_draws_nothing() {
         let sprites = battle_command_chip_sprites(
             &CommandChipAtlas::SHEET,
             &BattleCommandMenuFrame {
-                chips: &all,
-                cursor: Some(0),
+                chips: &[],
+                cursor: None,
+                phase: ChipPhase::CommandRing,
             },
             (0, 0),
             1,
         );
-        // Diamond chip: cap + 3 body + cap = 5. Extra-row chip: same
-        // interior, so also 5. Six chips + the single D-pad.
-        assert_eq!(sprites.len(), 6 * 5 + 1);
-        let dpad = sprites.last().unwrap();
-        assert_eq!(dpad.src, title_pak::OVERLAY_SYSTEM_UI_ARTS_DPAD);
-        assert_eq!(dpad.dst, (220, 62, 15, 15));
+        assert!(sprites.is_empty());
     }
 
     /// The pinned law: an unavailable command keeps its chip and draws a
-    /// single `-` where the word would go.
+    /// single `-` where the word would go. Retail's own `-` is the fifth
+    /// slot of the Ra-Seru label run, so this is the disc's rule.
     #[test]
     fn an_unavailable_command_keeps_its_chip_and_draws_a_dash() {
         let font = legaia_font::Font::placeholder();
-        let mut all = chips(6);
-        all[5].enabled = false;
-        let frame = BattleCommandMenuFrame {
-            chips: &all,
-            cursor: Some(0),
-        };
+        let mut all = chips(4);
+        all[3].enabled = false;
+        let frame = ring(&all, 0);
         // The plate is still there.
         let sprites = battle_command_chip_sprites(&CommandChipAtlas::SHEET, &frame, (0, 0), 1);
-        assert_eq!(sprites.len(), 6 * 5 + 1);
-        let run_plate = CLUSTER_EXTRA.plate_origin(ChipSeat::Right);
-        assert!(sprites.iter().any(|s| s.dst.0 == run_plate.0));
+        assert_eq!(sprites.len(), 4 * 5 + 1);
+        let down_plate = CLUSTER_COMMAND.plate_origin(ChipSeat::Down);
+        assert!(sprites.iter().any(|s| s.dst.1 == down_plate.1));
         // ... and its label is one glyph wide.
         let dash = font.layout_ascii("-").glyphs.len();
-        let word = font.layout_ascii("Run").glyphs.len();
+        let word = font.layout_ascii("Spirit").glyphs.len();
         let with = battle_command_chip_text(&font, &frame, (0, 0), 1).len();
-        all[5].enabled = true;
-        let without = battle_command_chip_text(
-            &font,
-            &BattleCommandMenuFrame {
-                chips: &all,
-                cursor: Some(0),
-            },
-            (0, 0),
-            1,
-        )
-        .len();
+        all[3].enabled = true;
+        let without = battle_command_chip_text(&font, &ring(&all, 0), (0, 0), 1).len();
         assert_eq!(without - with, word - dash);
     }
 
     #[test]
     fn stage_scale_multiplies_every_seat() {
-        let all = chips(6);
-        let frame = BattleCommandMenuFrame {
-            chips: &all,
-            cursor: Some(2),
-        };
+        let all = chips(4);
+        let frame = ring(&all, 2);
         let one = battle_command_chip_sprites(&CommandChipAtlas::SHEET, &frame, (0, 0), 1);
         let two = battle_command_chip_sprites(&CommandChipAtlas::SHEET, &frame, (10, 20), 2);
         assert_eq!(one.len(), two.len());
@@ -641,21 +693,14 @@ mod tests {
     /// Only the cursor's chip is drawn at full brightness.
     #[test]
     fn the_cursor_chip_is_the_only_bright_one() {
-        let all = chips(6);
-        let sprites = battle_command_chip_sprites(
-            &CommandChipAtlas::SHEET,
-            &BattleCommandMenuFrame {
-                chips: &all,
-                cursor: Some(3),
-            },
-            (0, 0),
-            1,
-        );
+        let all = chips(4);
+        let sprites =
+            battle_command_chip_sprites(&CommandChipAtlas::SHEET, &ring(&all, 0), (0, 0), 1);
         let bright: Vec<&SpriteDraw> = sprites
             .iter()
             .filter(|s| s.color == CHIP_TINT_SELECTED)
             .collect();
-        // The Item chip's five pieces, plus the D-pad glyph.
+        // The Item chip's five pieces, plus the face-button glyph.
         assert_eq!(bright.len(), 6);
         let item = CLUSTER_COMMAND.plate_origin(ChipSeat::Up);
         assert!(

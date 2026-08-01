@@ -989,11 +989,24 @@ pub struct World {
     /// distribute XP and check for level-ups.
     pub level_up_tracker: LevelUpTracker,
 
-    /// Active level-up HUD banner. Set by [`World::apply_battle_xp`] for the
-    /// last character that leveled up; `frames_remaining` is decremented by
-    /// [`World::tick`] until it reaches zero. `None` when no banner is active.
-    /// Engines render this as a dialog-font overlay after battle.
+    /// Active level-up HUD banner. Set by [`World::apply_battle_xp`];
+    /// `frames_remaining` is decremented by [`World::tick`] until it reaches
+    /// zero, at which point the next entry of
+    /// [`Self::pending_level_up_banners`] takes the slot. `None` when no
+    /// banner is active. Engines render this as a dialog-font overlay after
+    /// battle.
     pub current_level_up_banner: Option<LevelUpBanner>,
+
+    /// Level-up banners waiting for the slot above, in the order they were
+    /// earned.
+    ///
+    /// One fight can level several party members, and the banner is a single
+    /// slot. Writing it per member inside the distribution loop meant each
+    /// leveller overwrote the previous one in the same frame and the player
+    /// saw exactly one banner - the last - for a battle that levelled three.
+    /// Queueing is what makes "three members levelled" legible as three
+    /// banners.
+    pub pending_level_up_banners: std::collections::VecDeque<LevelUpBanner>,
 
     /// Active post-battle Seru-capture banner. Set by `World::resolve_captures`
     /// when a capture is accepted; advanced one frame per [`World::tick`] and
@@ -1871,7 +1884,17 @@ pub struct World {
     /// Tutorial boxes waiting to be shown, front first. While non-empty the
     /// whole battle loop is parked - the port of retail's `ctx[+0x6B2]`
     /// message-box guard, which makes `FUN_801D0748` return early.
+    ///
+    /// The queue is retail's single battle message box, so it carries more
+    /// than the tutorial: the battle-open formation banner
+    /// ([`World::raise_battle_open_banner`]) rides it too.
     pub battle_tutorial_boxes: std::collections::VecDeque<crate::battle_flow::ActiveTutorialBox>,
+
+    /// The battle screen's chip / banner labels, read off the user's own disc
+    /// ([`legaia_asset::battle_ui_strings`]). Empty when the host had no disc
+    /// to read - the port's own wording is used then, so the surfaces still
+    /// draw rather than going blank.
+    pub battle_ui_strings: legaia_asset::battle_ui_strings::BattleUiStrings,
 
     /// The next [`World::enter_battle`] is the sparring fight and should arm
     /// [`Self::battle_tutorial`]. Set by
@@ -2529,6 +2552,7 @@ impl World {
             current_art_banner: None,
             level_up_tracker: LevelUpTracker::new(),
             current_level_up_banner: None,
+            pending_level_up_banners: std::collections::VecDeque::new(),
             current_capture_banner: None,
             world_map_ctrl: None,
             tile_board: None,
@@ -2663,6 +2687,7 @@ impl World {
             battle_tutorial: None,
             battle_tutorial_script: crate::battle_tutorial::BattleTutorialScript::default(),
             battle_tutorial_boxes: std::collections::VecDeque::new(),
+            battle_ui_strings: legaia_asset::battle_ui_strings::BattleUiStrings::default(),
             battle_tutorial_pending: false,
             active_formation: None,
             field_boss_stagers: std::collections::HashMap::new(),

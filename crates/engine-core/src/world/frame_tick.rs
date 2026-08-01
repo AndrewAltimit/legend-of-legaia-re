@@ -401,12 +401,14 @@ impl World {
                 self.current_art_banner = None;
             }
         }
-        // Tick level-up banner countdown.
+        // Tick level-up banner countdown; when it expires the next member who
+        // levelled in the same fight takes the slot (see
+        // `World::pending_level_up_banners`).
         if let Some(banner) = &mut self.current_level_up_banner {
             if banner.frames_remaining > 0 {
                 banner.frames_remaining -= 1;
             } else {
-                self.current_level_up_banner = None;
+                self.current_level_up_banner = self.pending_level_up_banners.pop_front();
             }
         }
         // Advance the post-battle Seru-capture banner; clear when it finishes.

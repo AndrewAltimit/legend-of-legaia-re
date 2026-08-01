@@ -2174,6 +2174,25 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         let n = (skills.count as usize).min(skills.ids.len());
         skills.ids[..n].to_vec()
     }
+    /// The disc-parsed [`legaia_art::ArtRecord`] for `(character, action)` -
+    /// `World::art_records`, the same map the entry resolver reads its
+    /// per-strike power profile out of.
+    ///
+    /// Without this the SM's whole art-strike seam was unreachable from the
+    /// World host: `attack_chain` only dispatches
+    /// [`legaia_engine_vm::battle_action::BattleActionHost::apply_art_strike`]
+    /// for an art it can resolve, and the trait default answers `None` for
+    /// every pair. The record supplies the strike's `dmg_timing` and hit cue;
+    /// the power itself comes from the profile the entry staged on the actor
+    /// (`BattleActor::art_power`), so an art whose record is not loaded still
+    /// resolves its damage.
+    fn art_record(
+        &self,
+        character: legaia_art::Character,
+        action: legaia_art::ActionConstant,
+    ) -> Option<&legaia_art::ArtRecord> {
+        self.world.art_records.get(&(character, action))
+    }
     fn apply_art_strike(&mut self, info: legaia_engine_vm::battle_action::ArtStrikeInfo) {
         // Resolve per-slot weapon attack and the defense the art targets.
         let attack = self
@@ -2184,6 +2203,23 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .unwrap_or(0);
         let defense = self.world.resolve_battle_defense(info.target_slot, &info);
         let outcome = crate::art_strike::apply_art_strike(attack, defense, &info);
+        // Seed the target's HP-bar ramp the way every other damage entry
+        // point does (`World::apply_battle_hp_delta`). The HP itself is
+        // applied downstream by `fold_battle_event`, so only the *bar* side
+        // is armed here - without it an art landed through the state machine
+        // moves live HP with no ramp, which is the one visible difference
+        // between this seam and the melee one. A petrified target absorbs the
+        // hit and owes the bar nothing, matching the fold's own guard.
+        if let Some(dmg) = outcome.damage
+            && dmg > 0
+            && !self.world.actor_is_petrified(info.target_slot)
+        {
+            let petrified_free = i32::from(dmg);
+            if let Some(t) = self.world.actors.get_mut(info.target_slot as usize) {
+                t.battle.arm_hp_bar();
+                t.battle.accumulate_hp_bar(petrified_free);
+            }
+        }
         self.world
             .pending_battle_events
             .push(BattleEvent::ApplyArtStrike {

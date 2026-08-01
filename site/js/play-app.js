@@ -1950,7 +1950,11 @@
      *
      *  - the effect POOL, as one batched mesh of camera-facing textured quads
      *    (the retail FUN_801E0088 pass-2 billboards, sampling the flame atlas
-     *    the battle VRAM carries) plus tinted outline strips. Its vertices
+     *    the battle VRAM carries). The per-billboard tinted outline is a
+     *    diagnostic and is OFF unless something calls
+     *    `rt.set_battle_fx_outline(true)` - retail draws no such rectangle,
+     *    and leaving it on stamped an opaque red-ish box around every effect
+     *    sprite in the fight. Its vertices
      *    already carry the FX camera's 4x world scale, so it draws under an
      *    identity model - the basis is derived engine-side from the same
      *    battle VP the page renders with, which is what makes the quads face
@@ -2038,15 +2042,24 @@
         rt.play_battle_backdrop_indices(), rt.play_battle_backdrop_flat_rgba());
       b.ground = up(BATTLE_MESH_BASE + 1, rt.play_battle_ground_positions(),
         rt.play_battle_ground_uvs(), rt.play_battle_ground_cba_tsb(),
-        rt.play_battle_ground_indices(), null);
+        rt.play_battle_ground_indices(),
+        (typeof rt.play_battle_ground_flat_rgba === 'function')
+          ? rt.play_battle_ground_flat_rgba() : null);
       const n = rt.play_battle_actor_count();
       for (let i = 0; i < n; i++) {
         const base = rt.play_battle_actor_positions(i);
         const idx = rt.play_battle_actor_indices(i);
         if (!base.length || !idx.length) { b.actors.push(null); continue; }
         const meshId = BATTLE_MESH_BASE + 16 + i;
+        /* Actors carry their packet colours like every other TMD draw - the
+         * shader's `texel * colour / 128` is retail's only lighting term, so
+         * an actor uploaded without them reads flat against a modulated
+         * backdrop. Older bundles have no export: fall back to null. */
+        const actorFlat = (typeof rt.play_battle_actor_flat_rgba === 'function')
+          ? rt.play_battle_actor_flat_rgba(i) : null;
         this.renderer.uploadSceneMesh(meshId, base, rt.play_battle_actor_uvs(i),
-          rt.play_battle_actor_cba_tsb(i), idx, null);
+          rt.play_battle_actor_cba_tsb(i), idx,
+          (actorFlat && actorFlat.length) ? actorFlat : null);
         const rec = {
           meshId, base,
           objectIds: rt.play_battle_actor_object_ids(i),

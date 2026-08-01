@@ -351,10 +351,7 @@ fn hybrid_body(tmd_bytes: &[u8], kind: usize, spawn: (i16, i16)) -> Option<Dance
     let tmd = legaia_tmd::parse(tmd_bytes).ok()?;
     let part_count = tmd.objects.len();
     let (mesh, object_ids, shading) = tmd_to_vram_mesh_field_hybrid(&tmd, tmd_bytes);
-    let mut flat = Vec::with_capacity(shading.colors.len() * 4);
-    for (c, &t) in shading.colors.iter().zip(shading.textured.iter()) {
-        flat.extend_from_slice(&[c[0], c[1], c[2], if t != 0 { 255 } else { 0 }]);
-    }
+    let flat = crate::packet_color::hybrid(&mesh, &shading);
     Some(DanceBodyMesh {
         mesh,
         object_ids,

@@ -10,8 +10,8 @@
 //! rather than waived in the ui-host-drift gate.
 
 use crate::battle_hud_chrome::{
-    STATUS_BADGE_PANEL_SEAT, message_banner_chrome_draws_for, message_banner_content,
-    message_banner_text_draws_for,
+    STATUS_BADGE_PANEL_SEAT, STATUS_BADGE_SIZE, STATUS_BADGE_TAG_DY,
+    message_banner_chrome_draws_for, message_banner_content, message_banner_text_draws_for,
 };
 use crate::*;
 
@@ -404,7 +404,12 @@ pub fn status_element_label(sprite: u8) -> &'static str {
         0x1D => "NMB",
         0x1E => "SLP",
         0x1F => "CRS",
-        0x20 => "K.O.",
+        // Retail's own badge cell for this id reads **Faint** - the word is
+        // legible in a battle frame's framebuffer (a party member at 0 HP
+        // wears it where the `LV` label would be). The tag stands in for that
+        // cell, so it carries the same word rather than a "K.O." of the
+        // port's own invention.
+        0x20 => "Faint",
         _ => "",
     }
 }
@@ -512,23 +517,46 @@ pub fn font_solid_src(font: &legaia_font::Font) -> Option<(u32, u32, u32, u32)> 
     None
 }
 
-/// RGBA for a retail gauge fill-colour index.
+/// RGBA for a retail gauge / readout tint index.
 ///
-/// The **index space** is retail's (`FUN_80046A20` / the readout-tint pair
+/// The index space is retail's (`FUN_80046A20` / the readout-tint pair
 /// `FUN_800349EC` / `FUN_80035EA8`: `2` dead, `3` status override, `7` high,
-/// `6` mid, `9` low). The **RGB values are approximations** - retail resolves
-/// each index through a font-CLUT row whose entries are not pinned; these are
-/// chosen to read the same way (green = healthy, amber = caution, red =
-/// danger, violet = status-locked, grey = dead).
+/// `6` mid, `9` low), and so are the **colours** - they are no longer
+/// approximations.
+///
+/// Retail resolves a tier by *selecting a whole font CLUT*: the drawn
+/// numerals' palette byte is `tier + 6`, whose 16-entry CLUT sits at VRAM
+/// `(16 * (tier + 6), 510)`, and the glyph body is that CLUT's **entry 15**.
+/// Read straight out of a retail battle frame's VRAM (a party frame with one
+/// member at 0 HP, two in the danger tier), which pins five of the six rows
+/// at once:
+///
+/// | tier | palette | VRAM x | entry 15 | reads as |
+/// |---|---|---|---|---|
+/// | 2 empty / K.O. | 8 | 128 | `(230, 32, 0)` | red |
+/// | 3 status lock | 9 | 144 | `(230, 106, 230)` | magenta |
+/// | 6 caution | 12 | 192 | `(230, 172, 0)` | amber |
+/// | 7 normal | 13 | 208 | `(205, 205, 205)` | light grey |
+/// | 9 danger | 15 | 240 | `(222, 90, 0)` | orange |
+///
+/// Note tier 2 is **red**, not a grey-out: retail paints a downed member's
+/// whole readout in the brightest colour on the strip. The port used to grey
+/// it, which read as "this panel is disabled" rather than "this member is
+/// down".
 pub fn gauge_fill_color(idx: u8) -> [f32; 4] {
     match idx {
-        2 => [0.30, 0.30, 0.34, 1.0],
-        3 => [0.72, 0.45, 0.95, 1.0],
-        6 => [1.0, 0.78, 0.15, 1.0],
-        9 => [1.0, 0.28, 0.22, 1.0],
-        _ => [0.25, 0.92, 0.40, 1.0],
+        2 => [0.902, 0.125, 0.0, 1.0],
+        3 => [0.902, 0.416, 0.902, 1.0],
+        6 => [0.902, 0.675, 0.0, 1.0],
+        9 => [0.871, 0.353, 0.0, 1.0],
+        _ => READOUT_NORMAL,
     }
 }
+
+/// Retail's "normal" readout colour - `(205, 205, 205)`, entry 15 of the
+/// tier-7 CLUT. It is also the colour every **name** on the battle strip is
+/// drawn in, downed members included; see [`gauge_fill_color`].
+pub const READOUT_NORMAL: [f32; 4] = [0.804, 0.804, 0.804, 1.0];
 
 /// Everything one battle-HUD frame draws, plus the chrome inputs the
 /// retail-shaped strip needs. Bundled so [`battle_hud_draws_for`] stays under
@@ -587,6 +615,24 @@ pub struct BattleHudFrame<'a> {
     /// Hosts set this while a command-entry session is up; the builder then
     /// emits no party strip.
     pub input_session_parked: bool,
+    /// Stage rect (`x, y, w, h`) of a box the **host** draws on top of the
+    /// battle screen this frame - today the sparring-tutorial prompt, whose
+    /// rect is the retail emitter's own (`battle_tutorial::BoxStyle::box_rect`).
+    ///
+    /// Retail's bottom-anchored prompt styles anchor at `y = 0xCC / 0xB0 /
+    /// 0x9A`, and a one-line style-2/3 box therefore lands on `188..212` -
+    /// exactly the rows the active-actor bar occupies, and inside the roster
+    /// panels' `164..212`. Drawing both puts two text runs on the same
+    /// pixels, the same defect the plaque seat already has an exclusive
+    /// branch for; the builder resolves it the same way and omits whichever
+    /// party surface the box's drawn footprint covers.
+    ///
+    /// This is the box's **centre** rect: the drawn window skin extends
+    /// [`HOST_BOX_SKIN`] px beyond it on every side (the reading box's
+    /// 9-slice inflation), and that inflated rect is what is tested.
+    ///
+    /// `None` (the default) leaves both surfaces alone.
+    pub host_box: Option<(i32, i32, i32, i32)>,
     /// Actor-table slot of the actor the frame belongs to
     /// (`engine-core::battle_hud::battle_active_actor`). When it names a live
     /// party member, retail replaces that member's resting panel readout with
@@ -683,6 +729,11 @@ const PLAQUE_CONTENT_DY: i32 = 4;
 /// the first name glyph (`battle_chrome::BADGE_W` / `PLAQUE_BADGE_GAP`).
 const PLAQUE_BADGE_W: i32 = 20;
 const PLAQUE_BADGE_GAP: i32 = 5;
+
+/// How far a host-drawn window's skin extends past its centre rect, every
+/// side - the dialog reading box's 9-slice inflation, which the tutorial
+/// prompt reuses ([`crate::battle_tutorial_chrome_draws_for`]).
+pub const HOST_BOX_SKIN: i32 = 8;
 
 /// Roster-panel background size and row.
 const PANEL_W: i32 = 102;
@@ -851,14 +902,12 @@ pub fn battle_hud_draws_for(
         out.extend(draws);
     };
 
-    // Retail readout-tint law -> HUD palette. The "normal" tier (7) keeps the
-    // row's base colour so monster rows stay tinted; danger -> red, caution ->
-    // yellow, K.O. -> dim.
+    // Retail readout-tint law -> HUD palette. Every tier but "normal" takes
+    // retail's own CLUT colour ([`gauge_fill_color`]); the normal tier keeps
+    // the caller's base so the diagnostic monster rows stay row-tinted.
     let tint = |idx: u8, base: [f32; 4]| -> [f32; 4] {
         match idx {
-            9 => red,
-            6 => yellow,
-            2 => dim,
+            2 | 3 | 6 | 9 => gauge_fill_color(idx),
             _ => base,
         }
     };
@@ -1072,20 +1121,32 @@ pub fn battle_hud_draws_for(
             }
         };
     // The retail readout-tint law, per slot (`FUN_800349EC` / `FUN_80035EA8`).
+    //
+    // Two things the port used to get backwards, both read off a retail frame
+    // whose third party member is at 0 HP:
+    //
+    // * a downed member's **name** is drawn in the ordinary readout colour,
+    //   not dimmed - retail's name glyphs take CLUT `(208, 510)` on all three
+    //   panels, the live pair and the downed one alike;
+    // * a downed member's HP **and** MP readouts both take the dead tier,
+    //   which is retail's brightest red, not a grey-out. The MP field takes it
+    //   even when its own ratio would say "normal", so the death override sits
+    //   above `mp_bar_color_index`.
     let tints = |slot: &HudSlotView<'_>| -> ([f32; 4], [f32; 4], [f32; 4]) {
-        let base = if slot.alive { white } else { dim };
+        const DEAD: u8 = 2;
+        let base = READOUT_NORMAL;
         let hp = if !slot.alive {
-            dim
+            gauge_fill_color(DEAD)
         } else {
             tint(
                 hp_bar_color_index(slot.hp, slot.hp_max, slot.status_sprite != 0),
-                white,
+                READOUT_NORMAL,
             )
         };
         let mp = if !slot.alive {
-            dim
+            gauge_fill_color(DEAD)
         } else {
-            tint(mp_bar_color_index(slot.mp, slot.mp_max), white)
+            tint(mp_bar_color_index(slot.mp, slot.mp_max), READOUT_NORMAL)
         };
         (base, hp, mp)
     };
@@ -1098,6 +1159,17 @@ pub fn battle_hud_draws_for(
         .active_slot
         .and_then(|a| live_party.iter().find(|(i, _)| *i == a as usize).copied());
 
+    // Rows a host-drawn box claims this frame, skin included, and the row
+    // test each party surface runs against them ([`BattleHudFrame::host_box`]).
+    let host_box_rows = frame
+        .host_box
+        .map(|(_, y, _, h)| (y - HOST_BOX_SKIN, y + h + HOST_BOX_SKIN));
+    let box_covers = |top: i32, height: i32| {
+        host_box_rows.is_some_and(|(box_top, box_bot)| box_top < top + height && box_bot > top)
+    };
+    let panels_covered = box_covers(PANEL_Y, PANEL_H);
+    let bar_covered = box_covers(BAR_Y, PLATE_H);
+
     // ---- Surface 1: the resting roster panels ----
     //
     // One 102x48 panel per live member at the packet-pinned seats, carrying
@@ -1107,7 +1179,7 @@ pub fn battle_hud_draws_for(
     // stage is 240 lines, so `y = 230` would still be visible here and the
     // port omits the draws instead.
     let seats = panel_seats(live_party.len().min(3));
-    if !frame.input_session_parked && bar_member.is_none() {
+    if !frame.input_session_parked && bar_member.is_none() && !panels_covered {
         for (ordinal, (i, slot)) in live_party.iter().take(3).enumerate() {
             let px = seats[ordinal];
             let py = PANEL_Y;
@@ -1145,14 +1217,24 @@ pub fn battle_hud_draws_for(
                         px + STATUS_BADGE_PANEL_SEAT.0,
                         py + STATUS_BADGE_PANEL_SEAT.1,
                     ),
-                    None => stage_text(
-                        &mut text,
-                        font,
-                        status_element_label(slot.status_sprite),
-                        px + PANEL_LV_LABEL.0,
-                        py + PANEL_LV_LABEL.1,
-                        status_element_color(slot.status_sprite),
-                    ),
+                    // The fallback tag stands in for that 48x16 cell, so it
+                    // belongs on the **badge's** seat, centred in the cell -
+                    // not on the `LV` label seat the level would have used.
+                    // The two are 8 px apart on x and 6 on y, which is what a
+                    // host with no badge atlas (the browser play page) shows
+                    // as a downed member's tag sitting off its own plate.
+                    None => {
+                        let label = status_element_label(slot.status_sprite);
+                        let w = font.layout_ascii(label).advance_x as i32;
+                        stage_text(
+                            &mut text,
+                            font,
+                            label,
+                            px + STATUS_BADGE_PANEL_SEAT.0 + (STATUS_BADGE_SIZE.0 - w) / 2,
+                            py + STATUS_BADGE_PANEL_SEAT.1 + STATUS_BADGE_TAG_DY,
+                            status_element_color(slot.status_sprite),
+                        );
+                    }
                 }
             } else if slot.level > 0 {
                 label(
@@ -1250,7 +1332,7 @@ pub fn battle_hud_draws_for(
     // right-aligned maximum either side of the `/`, then the same pair for
     // MP. Retail draws **no gauge bar** here - the packet run carries no bar
     // primitive in either readout, and neither reference frame shows one.
-    if let Some((i, slot)) = bar_member {
+    if let Some((i, slot)) = bar_member.filter(|_| !bar_covered) {
         let (base, hp_tint, mp_tint) = tints(slot);
         plate_run(&mut text, &mut sprites, BAR_X, BAR_Y, BAR_INTERIOR_W, false);
         stage_text(&mut text, font, slot.name, BAR_NAME.0, BAR_NAME.1, base);
@@ -1565,9 +1647,41 @@ pub struct EnemyTargetRowView<'a> {
 /// Stage Y of the enemy target strip. An approximation: retail's row Y comes
 /// from the caller-side text-actor placement, not from the row builder
 /// `FUN_801D9D3C` itself; the band sits above the party panels.
-const ENEMY_MENU_STAGE_Y: i32 = 166;
+pub const ENEMY_MENU_STAGE_Y: i32 = 166;
 
-/// Build [`TextDraw`]s for the enemy target-selection name strip.
+/// Row pitch a displaced enemy strip steps by ([`enemy_target_menu_rows_y`]).
+/// One text row of the in-battle 14-px pitch.
+const ENEMY_MENU_STEP: i32 = 14;
+
+/// Stage Y the enemy target strip should draw at given the box a host is
+/// drawing over the battle screen this frame (`BattleHudFrame::host_box`,
+/// the same centre rect, `None` for "no box").
+///
+/// [`ENEMY_MENU_STAGE_Y`] is `166`, and retail's target-select tutorial hint
+/// is style `5` - centred, bottom-anchored at `0xB0` - so a three-line hint
+/// puts its own last row on **exactly** that Y. The two then draw on the same
+/// pixels, which is what "Tetsu" reading through `...only one target.` is.
+/// Retail's strip Y is caller-side and unpinned, so rather than guess a new
+/// fixed seat the strip steps up in whole text rows until it clears the box's
+/// drawn footprint (skin included). It never moves when no box is up, so a
+/// frame without a prompt is unchanged.
+pub fn enemy_target_menu_rows_y(host_box: Option<(i32, i32, i32, i32)>) -> i32 {
+    let Some((_, by, _, bh)) = host_box else {
+        return ENEMY_MENU_STAGE_Y;
+    };
+    let (box_top, box_bot) = (by - HOST_BOX_SKIN, by + bh + HOST_BOX_SKIN);
+    let mut y = ENEMY_MENU_STAGE_Y;
+    // A glyph row is at most the pitch tall, so "clear" means the row band
+    // `[y, y + pitch)` misses `[box_top, box_bot)`.
+    while y + ENEMY_MENU_STEP > box_top && y < box_bot && y > ENEMY_MENU_STEP {
+        y -= ENEMY_MENU_STEP;
+    }
+    y
+}
+
+/// Build [`TextDraw`]s for the enemy target-selection name strip at a
+/// caller-chosen stage row - the seat [`enemy_target_menu_rows_y`] picks,
+/// which is [`ENEMY_MENU_STAGE_Y`] unless a host box shares the strip's row.
 ///
 /// The row *content* is retail's: dedup labels from `FUN_801D9D3C` and the
 /// centre/relax/clamp X layout from its second half
@@ -1576,10 +1690,15 @@ const ENEMY_MENU_STAGE_Y: i32 = 166;
 /// its stage X (integer-upscaled + centred, the same transform as the battle
 /// HUD panels), the selected row in white behind a `>` cursor, the rest
 /// dimmed.
-pub fn enemy_target_menu_draws_for(
+///
+/// There is deliberately no fixed-seat wrapper: both hosts share a row band
+/// with a host-drawn prompt box, so every caller must pass the resolved seat
+/// or it silently overprints the box.
+pub fn enemy_target_menu_draws_at(
     font: &legaia_font::Font,
     rows: &[EnemyTargetRowView<'_>],
     surface: (u32, u32),
+    stage_y: i32,
 ) -> Vec<TextDraw> {
     let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
     let dim: [f32; 4] = [0.62, 0.62, 0.66, 1.0];
@@ -1595,13 +1714,13 @@ pub fn enemy_target_menu_draws_for(
         let color = if row.selected { white } else { dim };
         let mut draws = text_draws_for(
             &font.layout_ascii(row.label),
-            (i32::from(row.x), ENEMY_MENU_STAGE_Y),
+            (i32::from(row.x), stage_y),
             color,
         );
         if row.selected {
             draws.extend(text_draws_for(
                 &font.layout_ascii(">"),
-                (i32::from(row.x) - 9, ENEMY_MENU_STAGE_Y),
+                (i32::from(row.x) - 9, stage_y),
                 white,
             ));
         }

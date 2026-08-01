@@ -183,6 +183,10 @@ impl World {
                 *b = 0;
             }
             a.battle.strike_index = 0;
+            // The staged Tactical-Arts profile belongs to the stream that is
+            // being cleared - keeping it would re-key the next action's
+            // strikes to the previous turn's art.
+            a.battle.clear_art_profile();
         }
     }
 

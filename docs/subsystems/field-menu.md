@@ -2113,3 +2113,74 @@ UDF / LDF triple in this flow. A host that cannot resolve the byte may
 pass the sentinel and get the identical screen, which is what lets the
 native window feed a constant where the browser page feeds a table
 lookup.
+
+## Battle readout tint law (the panel's sibling)
+
+The battle roster panel is the field status panel's sibling surface, and it
+takes a colour law of its own. `FUN_800349EC` (HP) and `FUN_80035EA8` (MP)
+return a *tier* - `2` empty / K.O., `3` status lock, `6` caution, `7` normal,
+`9` danger - and retail resolves it by selecting a whole 16-entry **font
+CLUT**: the drawn numerals' palette byte is `tier + 6`, its CLUT sits at VRAM
+`(16 * (tier + 6), 510)`, and the glyph body is that CLUT's **entry 15**.
+
+| tier | palette byte | VRAM CLUT x | entry 15 | reads as |
+|---|---|---|---|---|
+| 2 empty / K.O. | 8 | 128 | `(230, 32, 0)` | red |
+| 3 status lock | 9 | 144 | `(230, 106, 230)` | magenta |
+| 6 caution | 12 | 192 | `(230, 172, 0)` | amber |
+| 7 normal | 13 | 208 | `(205, 205, 205)` | light grey |
+| 9 danger | 15 | 240 | `(222, 90, 0)` | orange |
+
+Two consequences the port had backwards, both read off one retail battle
+frame whose third party member is at 0 HP (its `SPRT` run has the downed
+panel's HP *and* MP numerals on CLUT `(128, 510)` and all three panels' name
+glyphs on `(208, 510)`):
+
+- **A downed member's readout is red, not greyed.** Tier 2 is the brightest
+  colour on the strip. Greying it reads as "this panel is disabled" instead of
+  "this member is down".
+- **A downed member's name is not tinted at all**, and its **MP** field takes
+  the death tier even when its own ratio would say "normal" - so the death
+  override sits above `mp_bar_color_index`, not beside it.
+
+Mirror: `engine-ui::gauge_fill_color` + `READOUT_NORMAL`.
+
+## Status-element badge on the roster panel
+
+`FUN_8002C2E4`'s ladder draws exactly one element per panel and its two arms
+share one seat. The no-ailment arm is `FUN_8002C488(pen.x + 0x3B, pen.y + 2,
+10)` (the `LV` marker) followed by the level number at `pen.x + 0x4B`; the
+matched-ailment arm first does `addiu s1, s1, 0x27` / `addiu s2, s2, -0x4` and
+then calls `FUN_8002C488(s1 + 0xC, s2, sprite)` - so the badge lands at
+`pen + (0x33, -4)`. With the panel's pen at its name seat `+(5, 4)` that is
+panel-relative **`(56, 0)`**, and the badge is a 48x16 cell, so it runs to
+`104` on a 102-wide plate.
+
+Capture-confirmed rather than inferred: a retail frame with a downed third
+member queues widget record `0x20` as a 48x16 `SPRT` at `(267, 164)` with its
+CLUT at `(288, 511)` (sub-palette 18), and the panel backgrounds are at
+`(7, 164)` / `(109, 164)` / `(211, 164)` - `267 - 211 = 56`. The badge's word
+is **`Faint`**, legible in the frame's own framebuffer.
+
+A host that cannot bake that cell (its atlas slice must be rooted at the
+row-511 CLUT extension, or three of the nine badges have no sub-palette)
+falls back to a text tag. The tag stands in for the *cell*, so it is centred
+in the cell at `(56, 0)` - not on the `LV` label seat `(64, 6)`, which is
+where it used to land and is what a downed member's tag sitting off its own
+plate was.
+
+## The party surface is an exclusive seat, like the plaque
+
+The sparring-tutorial prompt (`battle_tutorial::BoxStyle`) bottom-anchors at
+`0xCC` / `0xB0` / `0x9A`, and its drawn window skin extends 8 px past the
+emitter's centre rect on every side. A one-line style-2/3 box is therefore
+`186..212` - straight through the active-actor bar at `188..208`, and inside
+the roster panels' `164..212`. Drawing both puts two text runs on the same
+pixels, exactly the artifact the top-left plaque already has an exclusive
+branch for.
+
+`engine-ui::BattleHudFrame::host_box` carries the live box's centre rect and
+the builder omits whichever party surface its inflated footprint covers. The
+enemy target strip has the same collision one band up - its stage row `166` is
+the last row of a three-line style-5 hint - and steps up in whole 14-px text
+rows until it clears (`enemy_target_menu_rows_y`).

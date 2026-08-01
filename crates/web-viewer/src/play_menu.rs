@@ -153,6 +153,24 @@ impl PlayMenuAssets {
         self.chrome.as_ref().map(|(_, r)| r)
     }
 
+    /// The battle HUD's nine status-element + eight element badge cells,
+    /// projected out of the baked atlas.
+    ///
+    /// Which cells actually carry art is a property of **this bake** (three
+    /// of the status badges need the row-511 CLUT extension the slice above
+    /// is rooted at), so it travels with the atlas rather than being
+    /// re-derived from the layout - the same rule the native window follows.
+    pub(crate) fn battle_badges(
+        &self,
+    ) -> Option<legaia_engine_ui::battle_hud_chrome::BattleBadgeRects> {
+        self.chrome.as_ref().map(
+            |(a, _)| legaia_engine_ui::battle_hud_chrome::BattleBadgeRects {
+                status: a.band_status_badges(),
+                element: a.band_element_badges(),
+            },
+        )
+    }
+
     /// The disc-parsed menu-overlay window-descriptor table, when it parsed.
     ///
     /// [`Self::window_rect`] falls back to pinned rects for the screens whose
@@ -342,7 +360,16 @@ impl LegaiaRuntime {
             Some(host) => {
                 let idx = &host.index;
                 let panel = {
-                    let base = legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET as u64;
+                    // Rooted ONE TIM EARLIER than the system-UI sheet, at the
+                    // row-511 CLUT extension - the same base the native window
+                    // uses. That TIM carries no pixels, only sub-palettes
+                    // 16..18, and three of the nine status-element badges
+                    // (Stone / Rage / Faint) decode with nothing else. A slice
+                    // rooted at the sheet puts the extension *behind* its start
+                    // where `build_atlas` cannot reach it, and those three
+                    // cells silently bake blank.
+                    let base =
+                        legaia_engine_core::save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET as u64;
                     let end = (legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
                         + legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE)
                         as u64;

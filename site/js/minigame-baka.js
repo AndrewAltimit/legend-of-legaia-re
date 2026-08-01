@@ -472,7 +472,11 @@
                          best.u1, best.v1, best.u0, best.v1);
           for (let k = 0; k < 4; k++) {
             stage.ct.push(best.cba, best.tsb);
-            stage.flat.push(0, 0, 0, 255);
+            /* Neutral packet colour (0x80): the shader draws a textured
+             * vertex as `texel * rgb / 128`, so a synthesised tile that has
+             * no colour word of its own must say 0x80, not 0 - zero blacks
+             * the whole floor out. */
+            stage.flat.push(128, 128, 128, 255);
           }
           stage.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
         }

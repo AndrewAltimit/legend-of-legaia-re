@@ -2577,11 +2577,13 @@ an unavailable command, while a *forbidden* one wears the red cross-out X
 
 **Port.** The cluster's draw side is
 [`engine-ui::battle_command_ui`](../../crates/engine-ui/src/battle_command_ui.rs) -
-plate run, both clusters, the shared D-pad cell and the `-` chip - and both
-battle hosts seat their command menu through it, so the menu is chips rather
-than a text list on either. The port's menu carries two entries retail's four
-arms have no seat for, and they take a second row the module documents; the
-`engine-ui` literals are pinned equal to `battle_chrome` by `engine-shell`'s
+plate run, both clusters, the shared face-button cell and the `-` chip - and
+both battle hosts seat their command menu through it, so the menu is chips
+rather than a text list on either. Every chip sits on a pinned arm: the two
+clusters are three **phases**, not two rows of one menu, and the phase a frame
+is in ([`ChipPhase`](#the-battle-open-flow---ctx0x06-from-the-intro-timer-to-the-first-swing))
+is what names the seats. The `engine-ui` literals are pinned equal to
+`battle_chrome` by `engine-shell`'s
 `engine_ui_command_chips_mirror_the_packet_pinned_battle_chrome`.
 
 ## The widget-class table - where every chrome sprite comes from
@@ -3578,6 +3580,127 @@ leaves un-carried - is on
 `crates/engine-render/src/tests/battle_intro_emitter.rs` pins per-style packet
 counts, geometry and OT linkage, and `crates/engine-vm/tests/battle_intro_chain.rs`
 the working-set arithmetic.
+
+## The battle open flow - `ctx[+0x06]` from the intro timer to the first swing
+
+The battle command UI is **not one menu**. `FUN_801D0748` walks the flow byte
+`ctx[+0x06]` through three separate selection surfaces, each a small cluster of
+plate chips around a face-button glyph, and none of them is a scrolling list.
+The whole sequence is readable off the disc: the dispatcher's state chain is a
+binary-search `beq` ladder at `0x801D0C84`, and every chip's seat and label
+comes from the [screen-element placement table](#the-widget-class-table---where-every-chrome-sprite-comes-from)
+plus the two string pools below.
+
+### The state chain
+
+Each row is `ctx[+0x06]`, the arm's entry, and what it does. Addresses are in
+PROT entry `0898` at base `0x801CE818`.
+
+| `ctx[+0x06]` | Arm | Behaviour |
+|---|---|---|
+| `0x00` | `0x801D0DD0` | init (`FUN_801D84C0`), then `0x0A` |
+| `0x0A` | `0x801D0DE0` | party plates + formation banner (`FUN_801D9D3C`); intro timer `ctx[+0x6D6] = 0x5A`, or `0x78` when `ctx[+0x290] != 0`; then `0x0B` |
+| `0x0B` | `0x801D0E3C` | count the timer down; on expiry `0xFE` if `ctx[+0x290] == 1`, else `0x14` |
+| `0x14` | `0x801D0EC4` | one-frame turn setup; sets `ctx[+0x06] = 0x1E` unconditionally |
+| `0x1E` | `0x801D102C` | the round-open `Begin` \| `Run` prompt |
+| `0x28` | `0x801D1188` | the four-arm command ring |
+| `0x32` | `0x801D10F8` | escape |
+| `0x78` | `0x801D16E8` | the `Auto` \| `Command` attack-mode prompt |
+| `0xFE` | `0x801D31E8` | round armed; hands the frame to the action SM (`ctx[+0x06] = 0xFF`, `ctx[+0x07] = 0`) |
+
+The prompt at `0x1E` is a property of the **round**, not of the turn: `0x14`
+is the only way into it, and the action SM's round end (`0x801E67E8`) writes
+`ctx[+0x06] = 0x14` and bumps the round counter `ctx[+0x28A]`. So every round
+opens with `Begin` / `Run`, and each party member then picks from the ring in
+turn.
+
+### Each surface is a face-button map
+
+There is no cursor. Every chip is one face button, which is why a glyph sits at
+the centre of each cluster (`FUN_801DB8F4(x, y)`, the textured-quad emitter,
+drawn every frame of all three states).
+
+| State | Button | Chip | Next |
+|---|---|---|---|
+| `0x1E` | Square / confirm mask `0x800846D0` | `Begin` | `0x28` (or `0x6E`) |
+| `0x1E` | Circle | `Run` | `0x32` |
+| `0x28` | Triangle | `Item` (up arm) | `0x3C` |
+| `0x28` | Square / confirm mask | `Attack` (left arm) | `0x78` / `0x5A` / `0x50` by option `0x800846C4` |
+| `0x28` | Circle | Ra-Seru magic (right arm) | `0x46` |
+| `0x28` | Cross | `Spirit` (down arm) | commit; `0x6E` on the last member |
+| `0x28` | cancel mask `0x800846D4` | - | back to `0x1E` |
+| `0x78` | Square / confirm mask | `Auto` | `0x5A` (target cursor) |
+| `0x78` | Circle | `Command` | `0x50` (directional arts entry) |
+| `0x78` | cancel mask | - | back to `0x28` |
+
+`Attack` is therefore **not** the plain strike: it is the door to the
+attack-mode prompt, and option `0x800846C4` decides whether that prompt is shown
+(`0`), skipped straight to auto-target (`1`), or skipped straight to the
+directional entry (`2`).
+
+### Where the words come from
+
+Two pools, and which one a label lives in follows from who writes it into the
+placement record's `+0x14` payload pointer. Parser
+`legaia_asset::battle_ui_strings`; the coordinates are pinned, never the text.
+
+| Chip | Record | Source |
+|---|---|---|
+| `Begin` | 0/1/2 | `SCUS_942.54` `0x8007B688`, static on the disc |
+| `Run` | 3/4/5 | `SCUS_942.54` `0x8007B684`, static |
+| `Item` | 8 | `SCUS_942.54` `0x8007B67C`, static |
+| `Attack` | 9 | `SCUS_942.54` `0x8007B674`, static |
+| magic | 10 | overlay, written at runtime - see below |
+| `Spirit` | 11 | overlay `0x801F4B98`, written by `0x801D8F98` |
+| `Auto` | 85 | `SCUS_942.54` `0x8007B658`, static |
+| `Command` | 84 | `SCUS_942.54` `0x8007B660`, static |
+| `Reselect` | 19/20/21 | `SCUS_942.54` `0x800152D4`, static |
+
+Each disc-static record's seats are the pinned rects the packet walk already
+measured: record 1 lives at `(104, 88)` and record 4 at `(180, 88)` with content
+width `36`, which is exactly `CLUSTER_TOP_LEVEL`; records 8..=11 sit at
+`(204, 34)` / `(160, 66)` / `(248, 66)` / `(204, 98)` with width `48`, which is
+`CLUSTER_COMMAND`'s four arms.
+
+**The magic arm is not labelled `Magic`.** `0x801D8F30` reads the acting slot's
+character id out of `DAT_8007BD10 + ctx[+0x13]` and indexes a 10-byte-stride run
+at `0x801F4B9E`, so the word on the chip is the character's **Ra-Seru**: `Meta`
+(Vahn), `Terra` (Noa), `Ozma` (Gala). Index `4` of the same run is a single `-`,
+which the `ctx[+0x25F + slot]` gate above it selects for a character with no
+Ra-Seru magic - the disc's own instance of the "an unavailable command keeps its
+plate and draws a dash" law.
+
+### The formation banner
+
+`FUN_801D9D3C`'s arm at `0x801DA234` reads `ctx[+0x290]` and picks the line it
+stores into placement record 67 before the intro timer runs:
+
+| `ctx[+0x290]` | Line | Consequence |
+|---|---|---|
+| `0` | none - the draw at `0x801DA2E4` is skipped | ordinary round |
+| `1` back attack | `0x801F4D10` | `0x0B` jumps to `0xFE`: the party enters **no** command that round |
+| `2` pre-emptive | `0x801F4CD8` / `0x801F4CF8` | ordinary round; the monsters sit it out |
+
+The singular / plural pick at `0x801DA274` tests the byte at `DAT_8007BD10 + 1`
+(present-party slot 1), so a party with nobody there gets the shorter line. The
+name is substituted into the `0xC1` token by `FUN_8003CBF8`, whose operand is
+`DAT_8007BD10[0] - 1` - the party **leader**, not the acting member.
+
+### Port
+
+`engine-core::battle_input` carries the three phases (`CommandPhase::RoundPrompt`
+/ `Menu` / `AttackMode`) and `engine-ui::battle_command_ui::ChipPhase` the
+seating for each; `engine-core::battle_open` composes the banner and
+`World::raise_battle_open_banner` queues it onto the shared battle message box
+(retail's `ctx[+0x6B2]` surface). The round-scoped prompt is armed from
+`World::arm_round_open_prompt`, keyed on the flow byte parking at
+`BattleFlowState::TurnPrompt` - which the round boundary and battle entry both
+set, and which a mid-round reopen does not. The ambush's lost round is already
+the `ctx[+0x290]` side lockout in `World::reseed_initiative`.
+
+The port keeps a cursor on top of the face-button seating so a keyboard host has
+something to move: Left / Right toggle within the drawn row, Up / Down walk the
+ring linearly.
 
 ## See also
 

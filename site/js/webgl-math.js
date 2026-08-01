@@ -324,8 +324,9 @@ function buildTopDownVp(viewportW, viewportH, worldExtent, cam) {
  * above (up = world +Z rotated by yaw, matching buildTopDownVp), and the
  * projection mirrors screen X the same way the ortho path does so the
  * retail horizontal flip is preserved. Winding flips with the mirror,
- * which is harmless (renderAssembled disables CULL_FACE) and the FS
- * already compensates via u_normal_sign = -1. */
+ * which is harmless (renderAssembled disables CULL_FACE); the one thing
+ * that reads facing is the double-sided-pair discard, and renderAssembled
+ * already tells it this parity via u_pair_front = 0. */
 function buildWorldOrbitVp(viewportW, viewportH, worldExtent, cam) {
   /* Explicit view-projection override: a cam carrying a ready column-major
    * `vp` matrix (Float32Array(16)) bypasses the orbit construction entirely.

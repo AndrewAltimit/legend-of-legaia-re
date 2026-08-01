@@ -1188,18 +1188,21 @@ impl PlayWindowApp {
                 let menu_x = 8i32;
                 let mut my = 210i32;
                 match &cmd.phase {
-                    CommandPhase::Menu { .. } => {
-                        // Retail's command menu is a cluster of framed
-                        // chips around a D-pad glyph, not a list: the
-                        // packet-pinned diamond at `(228, 70)` plus the
-                        // port's second row for the two entries retail's
-                        // four arms have no seat for. Labels ride the
-                        // shared builder's left-aligned interior pen, and
-                        // a command that cannot be chosen keeps its chip
-                        // and draws a single `-`. The plates themselves go
-                        // out in the sprite layer
+                    CommandPhase::RoundPrompt { .. }
+                    | CommandPhase::Menu { .. }
+                    | CommandPhase::AttackMode { .. } => {
+                        // Retail's command surfaces are clusters of framed
+                        // chips around a face-button glyph, not lists: the
+                        // round-open `Begin | Run` pair, the packet-pinned
+                        // four-arm diamond at `(228, 70)`, and the
+                        // `Auto | Command` pair that re-uses the diamond's
+                        // own left / right arms. Labels ride the shared
+                        // builder's left-aligned interior pen, and a
+                        // command that cannot be chosen keeps its chip and
+                        // draws a single `-`. The plates themselves go out
+                        // in the sprite layer
                         // (`battle_chrome_sprite_draws`).
-                        if let Some((chips, cursor)) = self.battle_command_menu_chips() {
+                        if let Some((chips, cursor, phase)) = self.battle_command_menu_chips() {
                             use legaia_engine_render::battle_command_ui as bcu;
                             let (origin, scale) = self.save_select_stage(w, h);
                             out.extend(bcu::battle_command_chip_text(
@@ -1207,6 +1210,7 @@ impl PlayWindowApp {
                                 &bcu::BattleCommandMenuFrame {
                                     chips: &chips,
                                     cursor: Some(cursor),
+                                    phase,
                                 },
                                 origin,
                                 scale,
@@ -1855,6 +1859,11 @@ impl PlayWindowApp {
                     || w_ref.current_dialog.is_some()
                     || w_ref.inline_dialogue.is_some(),
                 badges: badges.as_ref(),
+                // The same box, tested against the party surfaces' own rows:
+                // a bottom-anchored prompt lands on the active-actor bar
+                // (188..208) and inside the roster panels (164..212), so the
+                // builder parks whichever one it covers.
+                host_box: self.battle_tutorial_stage_rect(),
                 active_slot: active.as_ref().map(|(s, _)| *s),
                 // Retail parks the status plate off-screen while a command
                 // entry session owns the frame; the port emits no strip.
@@ -1896,12 +1905,20 @@ impl PlayWindowApp {
         self.save_menu.as_ref()?;
         let w = &self.session.host.world;
         if let Some(b) = &w.current_level_up_banner {
+            // Name the character, not their roster ordinal: the banner reads
+            // to a player, and `P3` is an index only this codebase knows.
+            // `char_id` is the ROSTER slot the level-up applier wrote, so it
+            // indexes `roster.members` directly (not the battle order).
+            let who = w
+                .roster
+                .members
+                .get(b.char_id as usize)
+                .map(|r| r.name())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| format!("P{}", b.char_id + 1));
             return Some(format!(
-                "LEVEL UP!  P{} -> LV {}\nHP +{}  MP +{}",
-                b.char_id + 1,
-                b.new_level,
-                b.hp_gained,
-                b.mp_gained
+                "LEVEL UP!  {who} -> LV {}\nHP +{}  MP +{}",
+                b.new_level, b.hp_gained, b.mp_gained
             ));
         }
         w.current_capture_banner
@@ -1909,10 +1926,15 @@ impl PlayWindowApp {
             .and_then(|b| b.current_banner())
     }
 
-    /// The live battle command menu projected into the shared chip-cluster
+    /// The live battle command surface projected into the shared chip-cluster
     /// view: one [`legaia_engine_render::battle_command_ui::CommandChipView`]
-    /// per `BattleCommand::MENU` entry plus the cursor index, or `None` when
-    /// no command menu owns the frame.
+    /// per chip of whichever phase is up, the cursor index, and the phase
+    /// itself (which is what names the seats). `None` when no command surface
+    /// owns the frame.
+    ///
+    /// The three phases are retail's three selection states - the round-open
+    /// `Begin | Run` prompt (`0x1E`), the four-arm command ring (`0x28`) and
+    /// the `Auto | Command` attack-mode prompt (`0x78`).
     ///
     /// One projector feeds both halves of the cluster - the plate sprites
     /// and the labels - so the two draw slots cannot disagree about whether
@@ -1924,8 +1946,12 @@ impl PlayWindowApp {
     ) -> Option<(
         Vec<legaia_engine_render::battle_command_ui::CommandChipView<'static>>,
         usize,
+        legaia_engine_render::battle_command_ui::ChipPhase,
     )> {
-        use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
+        use legaia_engine_core::battle_input::{
+            AttackMode, BattleCommand, CommandPhase, RoundChoice,
+        };
+        use legaia_engine_render::battle_command_ui::{ChipPhase, CommandChipView};
         let bw = &self.session.host.world;
         if bw.mode != legaia_engine_core::world::SceneMode::Battle {
             return None;
@@ -1941,22 +1967,35 @@ impl PlayWindowApp {
             return None;
         }
         let cmd = bw.battle_command.as_ref()?;
-        let CommandPhase::Menu { cursor } = cmd.phase else {
-            return None;
-        };
         let no_escape = bw.battle_no_escape;
-        Some((
-            BattleCommand::MENU
-                .iter()
-                .map(
-                    |c| legaia_engine_render::battle_command_ui::CommandChipView {
-                        label: c.label(),
-                        enabled: c.available(no_escape),
-                    },
-                )
-                .collect(),
-            cursor as usize,
-        ))
+        let chip = |label: &'static str, enabled: bool| CommandChipView { label, enabled };
+        match cmd.phase {
+            CommandPhase::RoundPrompt { cursor } => Some((
+                RoundChoice::PROMPT
+                    .iter()
+                    .map(|c| chip(c.label(), !matches!(c, RoundChoice::Run) || !no_escape))
+                    .collect(),
+                cursor as usize,
+                ChipPhase::RoundPrompt,
+            )),
+            CommandPhase::Menu { cursor } => Some((
+                BattleCommand::MENU
+                    .iter()
+                    .map(|c| chip(c.label(), c.available(no_escape)))
+                    .collect(),
+                cursor as usize,
+                ChipPhase::CommandRing,
+            )),
+            CommandPhase::AttackMode { cursor } => Some((
+                AttackMode::PROMPT
+                    .iter()
+                    .map(|m| chip(m.label(), true))
+                    .collect(),
+                cursor as usize,
+                ChipPhase::AttackMode,
+            )),
+            _ => None,
+        }
     }
 
     /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` /
@@ -1995,7 +2034,7 @@ impl PlayWindowApp {
         let mut out = self.battle_hud_frame_draws(surface_w, surface_h).sprites;
         // The command chips sample the same blue plate 3-slice the party
         // bar does, so they ride this list rather than a second slot.
-        if let (Some(rects), Some((chips, cursor))) =
+        if let (Some(rects), Some((chips, cursor, phase))) =
             (assets.rects.battle, self.battle_command_menu_chips())
         {
             use legaia_engine_render::battle_command_ui as bcu;
@@ -2005,6 +2044,7 @@ impl PlayWindowApp {
                 &bcu::BattleCommandMenuFrame {
                     chips: &chips,
                     cursor: Some(cursor),
+                    phase,
                 },
                 origin,
                 scale,
@@ -2047,10 +2087,14 @@ impl PlayWindowApp {
                 selected: slot >= r.first_slot && slot < r.first_slot + r.members,
             })
             .collect();
-        Some(legaia_engine_render::enemy_target_menu_draws_for(
+        // The strip and a bottom-anchored sparring prompt share stage row 166
+        // when the prompt runs to three lines, so the strip steps clear of the
+        // live box's drawn footprint (`enemy_target_menu_rows_y`).
+        Some(legaia_engine_render::enemy_target_menu_draws_at(
             &self.font,
             &views,
             (w, h),
+            legaia_engine_render::enemy_target_menu_rows_y(self.battle_tutorial_stage_rect()),
         ))
     }
 }
@@ -2415,12 +2459,12 @@ mod battle_hud_wiring_tests {
             "the command cluster stopped sampling battle_chrome's D-pad cell"
         );
         assert_eq!(bcu::DPAD_DRAW, bc::DPAD_DRAW_W as u32);
-        // One chip per menu entry, and the port's extra row is the only
-        // seating that is not a pinned diamond arm.
+        // One chip per ring entry, and every one of them is a pinned diamond
+        // arm - there is no invented seating left on this screen.
         assert_eq!(
             bcu::MENU_SEATS.len(),
             legaia_engine_core::battle_input::BattleCommand::MENU.len(),
-            "the seating table and the command menu disagree on entry count"
+            "the seating table and the command ring disagree on entry count"
         );
         assert_eq!(
             bcu::MENU_SEATS
@@ -2430,6 +2474,24 @@ mod battle_hud_wiring_tests {
             4,
             "the pinned diamond has four arms and they must all be used"
         );
+        // The other two phases seat on pinned arms too: the round prompt on
+        // the top-level pair, the attack-mode prompt on the diamond's own
+        // left / right.
+        assert_eq!(
+            bcu::ROUND_PROMPT_SEATS.len(),
+            legaia_engine_core::battle_input::RoundChoice::PROMPT.len()
+        );
+        assert!(
+            bcu::ROUND_PROMPT_SEATS
+                .iter()
+                .all(|s| matches!(s, bcu::CommandSeat::TopLevel(_)))
+        );
+        assert_eq!(
+            bcu::ATTACK_MODE_SEATS.len(),
+            legaia_engine_core::battle_input::AttackMode::PROMPT.len()
+        );
+        assert_eq!(bcu::ATTACK_MODE_SEATS[0], bcu::MENU_SEATS[1]);
+        assert_eq!(bcu::ATTACK_MODE_SEATS[1], bcu::MENU_SEATS[2]);
     }
 
     /// The Left / Right step the command session takes has to land on the
@@ -2594,9 +2656,17 @@ mod battle_hud_wiring_tests {
         );
     }
 
-    /// The four-tier retail readout-tint law has to reach the surface, not
-    /// just exist in engine-ui: normal / caution / danger numerals must
-    /// produce three distinct glyph tints.
+    /// The retail readout-tint law has to reach the **surface**, not just
+    /// exist in engine-ui: normal / caution / danger numerals must each take
+    /// their own tier's colour.
+    ///
+    /// Expectations come from `gauge_fill_color`, retail's own law, rather
+    /// than from literals. This test used to carry `[1.0, 0.95, 0.4, 1.0]`
+    /// ("builder's yellow") and `[1.0, 0.4, 0.4, 1.0]` ("builder's red") -
+    /// the port's pre-VRAM approximations - so once the colours were pinned
+    /// off a retail frame it failed while asserting nothing retail does.
+    /// What it always meant to protect is that the law reaches this host and
+    /// separates the tiers; both survive, and neither is spelled here.
     #[test]
     fn native_battle_hud_hp_tints_span_the_retail_tiers() {
         let glyph_colors = |hp: u16| -> Vec<[f32; 4]> {
@@ -2607,8 +2677,17 @@ mod battle_hud_wiring_tests {
                 .map(|d| d.color)
                 .collect()
         };
-        let caution = [1.0, 0.95, 0.4, 1.0]; // builder's yellow
-        let danger = [1.0, 0.4, 0.4, 1.0]; // builder's red
+        // Retail's tier ids: 7 normal, 6 caution, 9 danger.
+        let caution = legaia_engine_render::gauge_fill_color(6);
+        let danger = legaia_engine_render::gauge_fill_color(9);
+        // A law whose tiers collapsed to one colour would satisfy every
+        // "contains" below while drawing a single flat readout.
+        assert!(
+            caution != danger
+                && caution != legaia_engine_render::READOUT_NORMAL
+                && danger != legaia_engine_render::READOUT_NORMAL,
+            "the three tiers must be visually distinct"
+        );
         assert!(
             !glyph_colors(90)
                 .iter()
@@ -2617,11 +2696,11 @@ mod battle_hud_wiring_tests {
         );
         assert!(
             glyph_colors(40).contains(&caution),
-            "caution tier numerals not yellow"
+            "caution tier numerals do not take the tier-6 colour"
         );
         assert!(
             glyph_colors(20).contains(&danger),
-            "danger tier numerals not red"
+            "danger tier numerals do not take the tier-9 colour"
         );
     }
 

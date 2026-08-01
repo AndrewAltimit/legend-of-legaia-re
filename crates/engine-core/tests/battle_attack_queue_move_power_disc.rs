@@ -105,15 +105,34 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
     assert!(w.battle_command.is_some(), "command session never opened");
     let slot = w.battle_ctx.active_actor as usize;
 
+    // Walk retail's open flow to a committed swing: `Begin` on the round
+    // prompt, then the ring's `Attack` arm (one Down off the `Item` arm it
+    // opens on), then `Auto` on the attack-mode prompt, then the target
+    // cursor's confirm. Phase-driven rather than a fixed press count so the
+    // test says what it is steering, not how many frames that takes.
+    use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
     let cross = InputState::mask_of([PadButton::Cross]);
-    let mut pressed = false;
-    for _ in 0..64 {
-        w.set_pad(if pressed { 0 } else { cross });
-        pressed = !pressed;
-        w.tick();
-        if w.battle_command.is_none() {
+    let down = InputState::mask_of([PadButton::Down]);
+    let mut release = false;
+    for _ in 0..256 {
+        let Some(session) = w.battle_command.as_ref() else {
             break;
-        }
+        };
+        let pad = if release {
+            0
+        } else {
+            match session.phase {
+                CommandPhase::Menu { .. }
+                    if session.menu_command() != Some(BattleCommand::Attack) =>
+                {
+                    down
+                }
+                _ => cross,
+            }
+        };
+        release = !release;
+        w.set_pad(pad);
+        w.tick();
     }
     assert!(w.battle_command.is_none(), "Attack was never confirmed");
 

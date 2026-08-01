@@ -805,10 +805,11 @@ pub(crate) enum Cmd {
         #[arg(long, default_value_t = false)]
         no_live_loop: bool,
         /// Turn OFF player-driven battles: each party turn then
-        /// auto-attacks the first living monster instead of opening the
-        /// battle command menu (Up/Down picks a command, Left/Right a
-        /// target, Cross confirms). Player-driven is the default, matching
-        /// the browser play page.
+        /// auto-attacks the first living monster instead of running the
+        /// retail open flow - the round's `Begin | Run` prompt, then the
+        /// Item / Attack / magic / Spirit ring, then `Auto | Command` under
+        /// Attack (arrows move, Cross confirms, Circle backs out).
+        /// Player-driven is the default, matching the browser play page.
         #[arg(long, default_value_t = false)]
         no_player_battle: bool,
         /// Present-party composition: comma-separated character names

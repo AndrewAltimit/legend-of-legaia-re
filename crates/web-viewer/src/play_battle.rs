@@ -38,8 +38,8 @@
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_core::battle_hud::{
-    BattleHud, DamagePopup, battle_active_actor, encounter_banner_enabled, encounter_banner_label,
-    sync_battle_hud_rows,
+    BattleHud, DamagePopup, battle_active_actor, battle_plaque_element_badge,
+    encounter_banner_enabled, encounter_banner_label, sync_battle_hud_rows,
 };
 use legaia_engine_core::world::SceneMode;
 use legaia_engine_ui::{self as ui, HudPopupView, HudSlotMeta, HudSlotView, SpriteDraw, TextDraw};
@@ -148,10 +148,14 @@ impl LegaiaRuntime {
                 selected: slot >= r.first_slot && slot < r.first_slot + r.members,
             })
             .collect();
-        Some(ui::enemy_target_menu_draws_for(
+        // The strip shares a row band with a host-drawn prompt box, so it
+        // steps up in whole 14 px rows off that box's rect rather than
+        // overprinting it - the native window resolves the same collision.
+        Some(ui::enemy_target_menu_draws_at(
             font,
             &views,
             (surface_w, surface_h),
+            ui::enemy_target_menu_rows_y(self.battle_tutorial_stage_rect(font)),
         ))
     }
 
@@ -397,6 +401,11 @@ impl LegaiaRuntime {
         surface_h: u32,
     ) -> ui::BattleHudDraws {
         let font = assets.font_ref();
+        // The badge cells the HUD blits, projected out of the baked atlas. A
+        // `None` CELL inside it means that badge's palette source was outside
+        // the slice the atlas was built from, and the HUD keeps its tag.
+        let badges = assets.battle_badges();
+        let banner = self.battle_banner_message(assets);
         let active = self
             .scene_host
             .as_ref()
@@ -428,40 +437,83 @@ impl LegaiaRuntime {
                 surface: (surface_w, surface_h),
                 chrome: assets.chrome_rects(),
                 plaque: active.as_ref().map(|(_, n)| n.as_str()),
+                // The element badge the plaque wears in front of the name;
+                // `None` draws the bare name.
+                plaque_badge: self
+                    .scene_host
+                    .as_ref()
+                    .and_then(|h| battle_plaque_element_badge(&h.world)),
+                banner: banner.as_deref(),
+                // The sparring-tutorial prompt is a box this page draws
+                // itself, and its rect starts on the plaque's own content
+                // pen - so while it is up the plaque must not draw, or two
+                // text runs land on the same pixels. Same three conditions
+                // the native window suppresses on.
+                plaque_seat_taken: self.battle_tutorial_stage_rect(font).is_some()
+                    || self.scene_host.as_ref().is_some_and(|h| {
+                        h.world.current_dialog.is_some() || h.world.inline_dialogue.is_some()
+                    }),
+                badges: badges.as_ref(),
+                // The same tutorial box that takes the plaque's seat also
+                // sits on a party surface's row; naming its rect is what
+                // parks the covered surface instead of letting two text
+                // runs share the pixels.
+                host_box: self.battle_tutorial_stage_rect(font),
                 active_slot: active.as_ref().map(|(s, _)| *s),
                 // Retail parks the status plate off-screen while a command
                 // entry session owns the frame; the port emits no strip.
                 input_session_parked: parked,
                 diag: ui::diag_hud_enabled(),
-                // NOT WIRED on this host yet. Four fields the native window
-                // fills and this page does not, all of them plain data:
-                //
-                // * `badges` - `BattleBadgeRects` from the baked atlas's
-                //   `band_status_badges()` / `band_element_badges()`. Until
-                //   then a selected ailment keeps the engine's labelled tag
-                //   instead of retail's 48x16 word cell. The page's atlas
-                //   also needs its PROT.DAT slice rooted at
-                //   `save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET` rather
-                //   than the system-UI sheet, or three of the nine badges
-                //   have no sub-palette to decode with.
-                // * `plaque_badge` -
-                //   `battle_hud::battle_plaque_element_badge(world)`.
-                // * `banner` - a battle message for the top-of-screen
-                //   widget; the native host feeds it the level-up /
-                //   Seru-capture lines.
-                // * `plaque_seat_taken` - true while this page draws its own
-                //   box on the plaque's pen (the tutorial prompt), or two
-                //   text runs land on the same pixels.
-                ..Default::default()
             },
             BATTLE_HUD_PEN,
         )
     }
 
-    /// The live battle command menu projected into the shared chip-cluster
-    /// view: one [`legaia_engine_ui::battle_command_ui::CommandChipView`]
-    /// per `BattleCommand::MENU` entry plus the cursor index, or `None`
-    /// when no command menu owns the frame.
+    /// The message holding retail's top-of-screen banner this frame, if any -
+    /// the browser twin of the native window's `battle_banner_message`.
+    ///
+    /// The port's two battle messages are the level-up and Seru-capture
+    /// lines, and retail draws exactly those in this widget. Deliberately NOT
+    /// gated on `SceneMode::Battle`: the port grants XP after the mode has
+    /// flipped back to Field, so a battle-mode gate would leave the widget
+    /// wired and never drawn.
+    ///
+    /// `None` without the system-UI atlas - there is no frame to put a
+    /// message in, so a chrome-less host keeps the loose pens instead.
+    fn battle_banner_message(&self, assets: &crate::play_menu::PlayMenuAssets) -> Option<String> {
+        assets.chrome_rects()?;
+        let w = &self.scene_host.as_ref()?.world;
+        if let Some(b) = &w.current_level_up_banner {
+            // Name the character, not their roster ordinal - `P3` is an index
+            // only this codebase knows. `char_id` is the ROSTER slot the
+            // level-up applier wrote, so it indexes `roster.members`
+            // directly (not the battle order). Twin of the native window's
+            // `battle_banner_message`.
+            let who = w
+                .roster
+                .members
+                .get(b.char_id as usize)
+                .map(|r| r.name())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| format!("P{}", b.char_id + 1));
+            return Some(format!(
+                "LEVEL UP!  {who} -> LV {}\nHP +{}  MP +{}",
+                b.new_level, b.hp_gained, b.mp_gained
+            ));
+        }
+        w.current_capture_banner
+            .as_ref()
+            .and_then(|b| b.current_banner())
+    }
+
+    /// The live battle command surface projected into the shared chip-cluster
+    /// view: one [`legaia_engine_ui::battle_command_ui::CommandChipView`] per
+    /// chip of whichever phase is up, the cursor index, and the phase (which
+    /// names the seats). `None` when no command surface owns the frame.
+    ///
+    /// The three phases are retail's three selection states - the round-open
+    /// `Begin | Run` prompt, the four-arm command ring, and the
+    /// `Auto | Command` attack-mode prompt.
     ///
     /// One projector feeds both halves of the cluster - the plate sprites
     /// and the labels - so the page's two draw arrays cannot disagree about
@@ -472,8 +524,12 @@ impl LegaiaRuntime {
     ) -> Option<(
         Vec<legaia_engine_ui::battle_command_ui::CommandChipView<'static>>,
         usize,
+        legaia_engine_ui::battle_command_ui::ChipPhase,
     )> {
-        use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
+        use legaia_engine_core::battle_input::{
+            AttackMode, BattleCommand, CommandPhase, RoundChoice,
+        };
+        use legaia_engine_ui::battle_command_ui::{ChipPhase, CommandChipView};
         let bw = self.scene_host.as_ref().map(|h| &h.world)?;
         if bw.mode != SceneMode::Battle {
             return None;
@@ -489,20 +545,35 @@ impl LegaiaRuntime {
             return None;
         }
         let cmd = bw.battle_command.as_ref()?;
-        let CommandPhase::Menu { cursor } = cmd.phase else {
-            return None;
-        };
         let no_escape = bw.battle_no_escape;
-        Some((
-            BattleCommand::MENU
-                .iter()
-                .map(|c| legaia_engine_ui::battle_command_ui::CommandChipView {
-                    label: c.label(),
-                    enabled: c.available(no_escape),
-                })
-                .collect(),
-            cursor as usize,
-        ))
+        let chip = |label: &'static str, enabled: bool| CommandChipView { label, enabled };
+        match cmd.phase {
+            CommandPhase::RoundPrompt { cursor } => Some((
+                RoundChoice::PROMPT
+                    .iter()
+                    .map(|c| chip(c.label(), !matches!(c, RoundChoice::Run) || !no_escape))
+                    .collect(),
+                cursor as usize,
+                ChipPhase::RoundPrompt,
+            )),
+            CommandPhase::Menu { cursor } => Some((
+                BattleCommand::MENU
+                    .iter()
+                    .map(|c| chip(c.label(), c.available(no_escape)))
+                    .collect(),
+                cursor as usize,
+                ChipPhase::CommandRing,
+            )),
+            CommandPhase::AttackMode { cursor } => Some((
+                AttackMode::PROMPT
+                    .iter()
+                    .map(|m| chip(m.label(), true))
+                    .collect(),
+                cursor as usize,
+                ChipPhase::AttackMode,
+            )),
+            _ => None,
+        }
     }
 
     /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` /
@@ -527,7 +598,7 @@ impl LegaiaRuntime {
             .sprites;
         // The command chips sample the same blue plate 3-slice the party
         // bar does, so they ride this array rather than a second one.
-        if let (Some(rects), Some((chips, cursor))) = (
+        if let (Some(rects), Some((chips, cursor, phase))) = (
             assets.chrome_rects().and_then(|r| r.battle),
             self.battle_command_menu_chips(),
         ) {
@@ -539,6 +610,7 @@ impl LegaiaRuntime {
                 &bcu::BattleCommandMenuFrame {
                     chips: &chips,
                     cursor: Some(cursor),
+                    phase,
                 },
                 origin,
                 scale,
@@ -755,13 +827,17 @@ impl LegaiaRuntime {
         } else if let Some(cmd) = &bw.battle_command {
             let mut my = MENU_Y;
             match &cmd.phase {
-                CommandPhase::Menu { .. } => {
-                    // Retail's command menu is a chip cluster, not a list:
-                    // the packet-pinned diamond plus the port's second row.
+                CommandPhase::RoundPrompt { .. }
+                | CommandPhase::Menu { .. }
+                | CommandPhase::AttackMode { .. } => {
+                    // Retail's command surfaces are chip clusters, not
+                    // lists: the round-open `Begin | Run` pair, the
+                    // packet-pinned four-arm diamond, and the
+                    // `Auto | Command` pair on the diamond's own arms.
                     // Same shared builder + same projector the native
                     // window uses, so the two hosts cannot drift; the
                     // plates go out in `battle_chrome_sprite_draws`.
-                    if let Some((chips, cursor)) = self.battle_command_menu_chips() {
+                    if let Some((chips, cursor, phase)) = self.battle_command_menu_chips() {
                         use legaia_engine_ui::battle_command_ui as bcu;
                         let (origin, scale) =
                             crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
@@ -770,6 +846,7 @@ impl LegaiaRuntime {
                             &bcu::BattleCommandMenuFrame {
                                 chips: &chips,
                                 cursor: Some(cursor),
+                                phase,
                             },
                             origin,
                             scale,
@@ -1264,27 +1341,67 @@ mod live_hud_tests {
             );
         }
 
-        // (2) Cross on Attack opens targeting; the retail dedup name strip
+        // (2) Reaching Attack opens targeting; the retail dedup name strip
         // resolves rows off the live formation and lands in the draw list at
         // the strip's stage band.
-        // The session may open on a turn-start prompt phase before the menu,
-        // so press Cross (edge + release) until the Attack targeting phase
-        // shows - a bounded retry, not a spin.
-        'press: for _ in 0..4 {
-            rt.set_pad(0x4000);
-            rt.tick_frame().expect("tick");
-            rt.set_pad(0);
-            for _ in 0..3 {
-                let targeting = rt.scene_host.as_ref().is_some_and(|h| {
-                    matches!(
-                        h.world.battle_command.as_ref().map(|c| &c.phase),
-                        Some(legaia_engine_core::battle_input::CommandPhase::Targeting { .. })
-                    )
-                });
-                if targeting {
-                    break 'press;
-                }
+        //
+        // The walk has to be PHASE-DRIVEN. Retail's opening flow is three
+        // selection surfaces, not one flat list - the `Begin | Run` round
+        // prompt, the four-arm ring in seat order (Item / Attack / magic /
+        // Spirit), then `Auto | Command` - and the ring opens on **Item**.
+        // This test used to mash Cross, which worked only while `Attack` was
+        // entry 0 of a flat menu; against the retail flow the first confirm
+        // opens the item submenu and hands the command session away, which is
+        // why the failure read `cmd_phase=None`. Step to the arm, then
+        // confirm.
+        {
+            use legaia_engine_core::battle_input::{AttackMode, BattleCommand, CommandPhase};
+            let tap = |rt: &mut LegaiaRuntime, b: legaia_engine_core::input::PadButton| {
+                rt.set_pad(b.mask());
                 rt.tick_frame().expect("tick");
+                rt.set_pad(0);
+                rt.tick_frame().expect("tick");
+            };
+            use legaia_engine_core::input::PadButton;
+            for _ in 0..40 {
+                let phase = rt
+                    .scene_host
+                    .as_ref()
+                    .and_then(|h| h.world.battle_command.as_ref())
+                    .map(|c| {
+                        (
+                            std::mem::discriminant(&c.phase),
+                            matches!(c.phase, CommandPhase::RoundPrompt { .. }),
+                            matches!(c.phase, CommandPhase::Menu { .. }),
+                            matches!(c.phase, CommandPhase::AttackMode { .. }),
+                            matches!(c.phase, CommandPhase::Targeting { .. }),
+                            c.menu_command(),
+                            c.attack_mode(),
+                        )
+                    });
+                let Some((_, round, menu, atk_mode, targeting, cmd, mode)) = phase else {
+                    break;
+                };
+                if targeting {
+                    break;
+                }
+                if round {
+                    tap(&mut rt, PadButton::Cross); // opens on Begin
+                } else if menu {
+                    if cmd == Some(BattleCommand::Attack) {
+                        tap(&mut rt, PadButton::Cross);
+                    } else {
+                        tap(&mut rt, PadButton::Down);
+                    }
+                } else if atk_mode {
+                    if mode == Some(AttackMode::Auto) {
+                        tap(&mut rt, PadButton::Cross);
+                    } else {
+                        tap(&mut rt, PadButton::Right);
+                    }
+                } else {
+                    break;
+                }
             }
         }
         {

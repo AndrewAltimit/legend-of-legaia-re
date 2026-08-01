@@ -499,6 +499,15 @@ impl LegaiaViewer {
         out
     }
 
+    /// Per-vertex `[r, g, b, 255]` packet colours - the modulation half of
+    /// retail's `texel * colour / 128`, parallel to the positions.
+    pub fn mesh_flat_rgba(&self) -> Vec<u8> {
+        let Some(mesh) = self.build_current_vram_mesh() else {
+            return Vec::new();
+        };
+        crate::packet_color::textured(&mesh)
+    }
+
     pub fn mesh_cba_tsb(&self) -> Vec<u16> {
         let Some(mesh) = self.build_current_vram_mesh() else {
             return Vec::new();

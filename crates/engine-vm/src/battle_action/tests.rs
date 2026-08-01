@@ -2352,3 +2352,157 @@ fn target_cursor_disable_clears_tint() {
         assert_eq!(host.actors[slot].render_color, CURSOR_COLOR_BRIGHT);
     }
 }
+
+// ---------------------------------------------------------------------------
+// The Arts routing: an art constant staged inline in the action-parameter
+// stream is what makes the per-art attack camera reachable, and what the
+// strike loop resolves the art from.
+// ---------------------------------------------------------------------------
+
+/// An art action constant staged in the stream **is** the strike's art - the
+/// SM does not need `chosen_art` to be set, and it does not need the art
+/// record either when the engine staged the per-strike power alongside.
+///
+/// This is the seam `docs/subsystems/battle-action.md` § A Tactical Art is an
+/// ordinary attack-band action describes: retail's `FUN_801EED1C` writes
+/// `art_id + 0x1B` into `actor[+0x1DF..]` (`0x801EF7A0`) and the strike loop
+/// stages that byte into `+0x1DA` (`0x801E3764`).
+#[test]
+fn an_inline_art_constant_drives_the_strike_and_stages_itself_as_the_anim() {
+    use legaia_art::{ActionConstant, Character, PowerTarget};
+
+    let mut host = RecHost::with_n_actors(4);
+    host.actors[0].character = Character::Vahn;
+    host.actors[0].active_target = 3;
+    // Two strikes of Art1C, then the terminator - no `chosen_art`, no record.
+    let art = ActionConstant::Art1C;
+    host.actors[0].params[0] = art.as_byte();
+    host.actors[0].params[1] = art.as_byte();
+    host.actors[0].params[2] = 0x00;
+    host.actors[0].stage_art_profile(
+        None,
+        &[
+            dmg_byte(PowerTarget::Udf, 20),
+            dmg_byte(PowerTarget::Ldf, 30),
+        ],
+        legaia_art::EnemyEffect::Numb,
+    );
+
+    let mut ctx = BattleActionCtx::new();
+    ctx.action_state = ActionState::AttackChain.as_byte();
+    ctx.active_actor = 0;
+
+    step(&mut host, &mut ctx);
+    // The staged byte is the art constant itself - the id the anim commit
+    // latches into `+0x1DB` and the attack camera dispatches on.
+    assert_eq!(host.actors[0].queued_anim, art.as_byte());
+    host.actors[0].flag_bits.clear(ActorFlags::ADVANCE_DONE);
+    step(&mut host, &mut ctx);
+    host.actors[0].flag_bits.clear(ActorFlags::ADVANCE_DONE);
+    step(&mut host, &mut ctx);
+
+    let events = host.take();
+    let strikes: Vec<&ArtStrikeInfo> = events
+        .iter()
+        .filter_map(|e| match e {
+            Event::ApplyArtStrike(info) => Some(info),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(strikes.len(), 2, "one strike per staged art byte");
+    assert!(strikes.iter().all(|s| s.art == art));
+    assert!(
+        strikes
+            .iter()
+            .all(|s| s.enemy_effect == legaia_art::EnemyEffect::Numb),
+        "the staged profile's effect, with no record to read one from"
+    );
+    assert!(matches!(
+        strikes[0].power,
+        Some(legaia_art::PowerByte::Damage(legaia_art::ArtPower {
+            multiplier: 20,
+            ..
+        }))
+    ));
+    assert!(matches!(
+        strikes[1].power,
+        Some(legaia_art::PowerByte::Damage(legaia_art::ArtPower {
+            multiplier: 30,
+            ..
+        }))
+    ));
+
+    // ...and that constant is inside the band the per-art attack camera
+    // dispatches on, with a live arm for this character. Every action whose
+    // stream carries only direction swings answers `None` here, which is why
+    // the channel measured as dead before the Arts path was routed through
+    // this band.
+    use crate::battle_attack_camera::{CharacterArm, art_arm};
+    assert!(art_arm(CharacterArm::One, art.as_byte()).is_some());
+}
+
+/// A **direction swing** in the stream never dispatches an art strike, even
+/// with `chosen_art` set - it is a committed arms command and resolves through
+/// the host's melee seam. Without this an arts entry's unmatched directions
+/// would be charged twice.
+#[test]
+fn a_direction_swing_never_dispatches_an_art_strike() {
+    use legaia_art::{ActionConstant, Character, PowerTarget};
+
+    let mut host = RecHost::with_n_actors(4);
+    host.actors[0].character = Character::Vahn;
+    host.actors[0].active_target = 3;
+    host.actors[0].chosen_art = Some(ActionConstant::Art1C);
+    host.actors[0].params[0] = crate::battle_action::SWING_LEFT;
+    host.actors[0].params[1] = 0x00;
+    host.actors[0].stage_art_profile(
+        Some(ActionConstant::Art1C),
+        &[dmg_byte(PowerTarget::Udf, 20)],
+        legaia_art::EnemyEffect::None,
+    );
+
+    let mut ctx = BattleActionCtx::new();
+    ctx.action_state = ActionState::AttackChain.as_byte();
+    ctx.active_actor = 0;
+    step(&mut host, &mut ctx);
+
+    assert_eq!(host.actors[0].queued_anim, crate::battle_action::SWING_LEFT);
+    assert!(
+        host.take()
+            .iter()
+            .all(|e| !matches!(e, Event::ApplyArtStrike(_))),
+        "a swing byte is not an art hit"
+    );
+}
+
+/// A **monster** slot's stream carries archive entry indices across the whole
+/// byte range, so a value that names an art on a party slot must not be read
+/// as one there - the slot's `character` key is meaningless for a monster.
+#[test]
+fn a_monster_slot_never_reads_its_stream_bytes_as_art_constants() {
+    use legaia_art::{ActionConstant, PowerTarget};
+
+    let mut host = RecHost::with_n_actors(5);
+    // Slot 3 is a monster (`party_count` is 3 by default).
+    host.actors[3].active_target = 0;
+    host.actors[3].params[0] = ActionConstant::Art1C.as_byte();
+    host.actors[3].params[1] = 0x00;
+    host.actors[3].stage_art_profile(
+        None,
+        &[dmg_byte(PowerTarget::Udf, 99)],
+        legaia_art::EnemyEffect::None,
+    );
+
+    let mut ctx = BattleActionCtx::new();
+    ctx.action_state = ActionState::AttackChain.as_byte();
+    ctx.active_actor = 3;
+    step(&mut host, &mut ctx);
+
+    assert_eq!(host.actors[3].queued_anim, ActionConstant::Art1C.as_byte());
+    assert!(
+        host.take()
+            .iter()
+            .all(|e| !matches!(e, Event::ApplyArtStrike(_))),
+        "a monster's clip index is not an art constant"
+    );
+}
