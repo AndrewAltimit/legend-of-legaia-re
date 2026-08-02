@@ -63,6 +63,13 @@ pub struct FieldRender {
     /// [`LegaiaRuntime::field_player_occluded`] - the same
     /// `engine_core::field_occlusion` kernel the native play-window runs.
     pub occluders: legaia_engine_core::field_occlusion::FieldOccluders,
+    /// Cross-draw coplanar lifts (`engine_core::coplanar_draws`), applied to
+    /// each draw's translation by the position accessors - the same map the
+    /// native play-window (`coplanar_env_offsets`) and the field-scene viewer
+    /// compute. Without it every placement/terrain pair that meets on one
+    /// world plane (a floor slab against its room's wall-strip aprons)
+    /// z-fights view-angle-dependently on this page alone.
+    pub coplanar_offsets: std::collections::HashMap<EnvDraw, [f32; 3]>,
 }
 
 /// The lead party member's field-form actor: the object-local mesh, its
@@ -215,6 +222,15 @@ pub fn build_field_render(
         .filter(|h| !h.indices.is_empty());
     let occluders =
         legaia_engine_core::field_occlusion::FieldOccluders::build(&[&terrain, &placements], res);
+    // Cross-draw coplanar lifts over the combined layers (terrain first, then
+    // placements - the same concatenation the native shell and the field-scene
+    // viewer rank, so all three hosts lift the same draws).
+    let mut combined: Vec<EnvDraw> = Vec::with_capacity(terrain.len() + placements.len());
+    combined.extend_from_slice(&terrain);
+    combined.extend_from_slice(&placements);
+    let planes = legaia_engine_core::coplanar_draws::draw_plane_summaries(&combined, res);
+    let coplanar_offsets =
+        legaia_engine_core::coplanar_draws::coplanar_draw_offsets(&combined, &planes);
     FieldRender {
         env_tmds,
         placements,
@@ -222,6 +238,7 @@ pub fn build_field_render(
         ground,
         cur: None,
         occluders,
+        coplanar_offsets,
     }
 }
 
@@ -494,7 +511,7 @@ impl LegaiaRuntime {
     pub fn field_placement_positions(&self) -> Vec<f32> {
         self.field
             .as_ref()
-            .map(|f| env_positions(&f.placements))
+            .map(|f| env_positions(&f.placements, &f.coplanar_offsets))
             .unwrap_or_default()
     }
 
@@ -607,7 +624,7 @@ impl LegaiaRuntime {
     pub fn field_terrain_positions(&self) -> Vec<f32> {
         self.field
             .as_ref()
-            .map(|f| env_positions(&f.terrain))
+            .map(|f| env_positions(&f.terrain, &f.coplanar_offsets))
             .unwrap_or_default()
     }
 
@@ -1109,12 +1126,19 @@ fn bundle_pose_frames(
 }
 
 /// Flatten `EnvDraw` world positions to `[x, y, z, ...]`.
-fn env_positions(draws: &[EnvDraw]) -> Vec<f32> {
+/// Flatten draw translations, adding each draw's cross-draw coplanar lift
+/// (see [`FieldRender::coplanar_offsets`]) - the same per-draw offset the
+/// field-scene viewer's `field_scene_*_positions` accessors apply.
+fn env_positions(
+    draws: &[EnvDraw],
+    offsets: &std::collections::HashMap<EnvDraw, [f32; 3]>,
+) -> Vec<f32> {
     let mut out = Vec::with_capacity(draws.len() * 3);
     for d in draws {
-        out.push(d.world_x as f32);
-        out.push(d.world_y as f32);
-        out.push(d.world_z as f32);
+        let off = offsets.get(d).copied().unwrap_or([0.0; 3]);
+        out.push(d.world_x as f32 + off[0]);
+        out.push(d.world_y as f32 + off[1]);
+        out.push(d.world_z as f32 + off[2]);
     }
     out
 }
