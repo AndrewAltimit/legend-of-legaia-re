@@ -44,12 +44,19 @@
 
 /// Fade-circle radius as a fraction of the viewport height. WGSL twin:
 /// staged into `occl_params.x` in pixels.
-pub const OCCL_RADIUS_FRAC: f32 = 0.30;
+///
+/// Sized so the opening hugs the character rather than the viewport. At the
+/// default framing a 130-unit character stands ~12.5% of the viewport height,
+/// so `0.30` opened a hole ~4.8x their height - roughly 31x their screen area,
+/// which reads as the scene dissolving rather than a wall going see-through.
+/// Being a fraction of the *viewport*, it is also zoom-invariant: the hole
+/// stayed 60% of screen height at every zoom level.
+pub const OCCL_RADIUS_FRAC: f32 = 0.12;
 
 /// Width of the rim feather (keep probability ramps 1.0 -> [`OCCL_MIN_KEEP`]
 /// over this band), as a fraction of the viewport height. WGSL twin:
 /// staged into `occl_params.w` in pixels.
-pub const OCCL_FEATHER_FRAC: f32 = 0.15;
+pub const OCCL_FEATHER_FRAC: f32 = 0.05;
 
 /// Keep probability at the circle centre - the "mostly transparent" floor.
 /// `0.25` keeps 4 of every 16 screen-door pixels. WGSL twin: `occl_params.y`.
@@ -178,8 +185,10 @@ mod tests {
         }
     }
 
-    const R: f32 = 216.0; // 0.30 * 720
-    const F: f32 = 108.0; // 0.15 * 720
+    // Derived, not restated: a hard-coded copy silently stops testing the
+    // shipped value the moment the constant is retuned.
+    const R: f32 = OCCL_RADIUS_FRAC * 720.0;
+    const F: f32 = OCCL_FEATHER_FRAC * 720.0;
     const FOCUS: [f32; 2] = [480.0, 360.0];
     const FOCUS_Z: f32 = 1800.0;
 

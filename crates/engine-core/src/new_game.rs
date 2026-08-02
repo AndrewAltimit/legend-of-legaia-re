@@ -98,9 +98,22 @@ impl World {
         self.load_party(Party {
             members: vec![starting_record(vahn)],
         });
-        // Seed the display name from the template; the name-entry overlay
-        // overwrites slot 0 when the player names the lead character.
-        self.party_names = vec![vahn.name.clone()];
+        // Seed EVERY template row's display name, not just the lead's.
+        //
+        // Retail's seed routine copies all four rows' names into their live
+        // records at `+0x2A7` (see [`crate::save`] / `docs/subsystems/boot.md`),
+        // so Noa / Gala / Terra carry their defaults from New Game onward -
+        // long before they join the roster. That matters because the dialog
+        // renderer's `0xC1 XX` escape reads the *record*, not a side table
+        // (`docs/formats/mes.md`), and the game substitutes those names in
+        // cutscenes the player reaches well before the characters do.
+        //
+        // Truncating this to the lead is what made a scene-selector cutscene
+        // render an empty string where a name belongs: `0xC1 01` resolved to
+        // nothing and the panel emits nothing for an absent entry. The roster
+        // deliberately stays Vahn-alone (retail's New Game party), so this
+        // touches display names only - `party_count` is untouched.
+        self.party_names = starting.members().iter().map(|m| m.name.clone()).collect();
         self.seed_party_battle_stats();
     }
 
@@ -499,6 +512,9 @@ mod tests {
         assert!(committed, "Yes-confirm commits + closes the overlay");
         assert!(!world.name_entry_active());
         assert_eq!(world.party_name(0), "Noa");
+        // Retail's carrier is the record, so the committed name has to land
+        // there too or it is lost across a save/load round trip.
+        assert_eq!(world.roster.members[0].name(), "Noa");
     }
 
     #[test]
@@ -609,6 +625,55 @@ mod tests {
             mk("Gala", 210, 40, 27),
             mk("Terra", 120, 60, 15),
         ])
+    }
+
+    /// A New Game seeds EVERY template row's display name, not just the
+    /// lead's - and does so without growing the roster.
+    ///
+    /// Retail copies all four rows' names into their records at `+0x2A7`, and
+    /// the dialog renderer's `0xC1 XX` escape reads the record. Truncating the
+    /// name list to the lead made any cutscene that names Noa / Gala / Terra
+    /// render an empty string, which is reachable from the play page's scene
+    /// selector long before those characters join.
+    #[test]
+    fn new_game_seeds_every_template_name_without_growing_the_roster() {
+        let mut world = World::new();
+        world.begin_new_game();
+        world.seed_starting_party(&four_row_template());
+
+        assert_eq!(world.party_name(0), "Vahn");
+        assert_eq!(world.party_name(1), "Noa");
+        assert_eq!(world.party_name(2), "Gala");
+        assert_eq!(world.party_name(3), "Terra");
+
+        // Retail's New Game party is Vahn alone; names are display state, not
+        // membership, so neither the roster nor the party count may move.
+        assert_eq!(world.roster.members.len(), 1);
+        assert_eq!(world.party_count, 1);
+    }
+
+    /// A loaded save's custom names reach the display list, and loading a
+    /// one-member roster does not clobber the not-yet-joined defaults.
+    ///
+    /// The record (`+0x2A7`) is retail's name carrier, so `load_party` has to
+    /// adopt it; and because a cold-boot save carries only Vahn, the adoption
+    /// must not shrink the list back to one entry.
+    #[test]
+    fn a_loaded_roster_name_reaches_the_display_list() {
+        let mut world = World::new();
+        world.begin_new_game();
+        world.seed_starting_party(&four_row_template());
+
+        let mut rec = world.roster.members[0].clone();
+        rec.set_name("Zed");
+        world.load_party(Party { members: vec![rec] });
+
+        assert_eq!(world.party_name(0), "Zed", "the record's name wins");
+        assert_eq!(
+            world.party_name(1),
+            "Noa",
+            "a one-member roster must not truncate the seeded defaults"
+        );
     }
 
     /// A present party that names members the story has not introduced gets

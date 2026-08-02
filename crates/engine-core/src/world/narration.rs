@@ -51,7 +51,13 @@ impl World {
             if self.party_names.len() <= slot {
                 self.party_names.resize(slot + 1, String::new());
             }
-            self.party_names[slot] = name;
+            self.party_names[slot] = name.clone();
+            // Stamp the record too, so the committed name survives a
+            // save/load round trip - retail's carrier is the record's
+            // `+0x2A7`, not a side table.
+            if let Some(rec) = self.roster.members.get_mut(slot) {
+                rec.set_name(&name);
+            }
             self.name_entry = None;
             true
         } else {
@@ -1070,10 +1076,17 @@ impl World {
                 {
                     if text_byte == 0x1F {
                         if modal {
-                            tl.dialog = Some(crate::dialog::OwnedDialogPanel::at_segment(
+                            // Resolve the record's `0xC1`/`0xC2`/`0xC4` name
+                            // escapes, exactly as the prop-interaction panel
+                            // does. Without this a cutscene renders an empty
+                            // string wherever a character name belongs - and
+                            // this is the cutscene path.
+                            let mut panel = crate::dialog::OwnedDialogPanel::at_segment(
                                 std::sync::Arc::clone(&tl.bytecode),
                                 pc,
-                            ));
+                            );
+                            panel.substitutions = host.world.dialog_substitutions(&tl.bytecode);
+                            tl.dialog = Some(panel);
                         } else {
                             // A concurrent helper context has no modal input
                             // routing to page an inline dialog; complete the
@@ -2286,10 +2299,14 @@ impl World {
                     if id.pc < id.visited.len() {
                         id.visited[id.pc] = true;
                     }
-                    id.panel = Some(crate::dialog::OwnedDialogPanel::at_segment(
+                    // Same name-escape resolution as the prop-interaction and
+                    // cutscene panels; this is the main NPC-talk path.
+                    let mut panel = crate::dialog::OwnedDialogPanel::at_segment(
                         std::sync::Arc::clone(&id.bytecode),
                         id.pc,
-                    ));
+                    );
+                    panel.substitutions = host.world.dialog_substitutions(&id.bytecode);
+                    id.panel = Some(panel);
                     break;
                 }
                 // A non-`0x1F` terminator before any box opened: if a prologue

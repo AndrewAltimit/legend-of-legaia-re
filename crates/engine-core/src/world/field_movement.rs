@@ -1169,6 +1169,26 @@ impl World {
     /// was standing with - the talk-time half of retail's save / snap /
     /// restore triple.
     ///
+    /// The live actor flag word (`+0x10`) of placement `slot`'s field-VM
+    /// channel - what the spawn prologue's `0x31` / `0x32` CFLAG ops left set
+    /// once [`Self::pre_run_field_channel_prologues`] ran the record's
+    /// story-true branch. `0` when no channel is installed for the slot.
+    ///
+    /// It must be the **live** context rather than a static decode of the
+    /// record: some placements author both `31 16` and `32 16` in one
+    /// prologue on different story branches, so only the executed branch is
+    /// the truth.
+    ///
+    /// REF: FUN_8003A1E4 (per-placement context), FUN_801DE840 (op 0x31)
+    pub fn field_channel_flags(&self, slot: u8) -> u32 {
+        self.field_channels
+            .iter()
+            .find(|c| !c.object_bind && c.placement_index == slot as usize)
+            .map_or(0, |c| c.ctx.flags)
+    }
+
+    /// Gated on the placement's live class word - see the body.
+    ///
     /// **Retail snaps; it does not ramp.** The write is a single `sh` in the
     /// per-actor dialog SM: `FUN_80039B7C` reaches `0x80039F48` when it moves
     /// its context to state 1 (the script has yielded and the box is about to
@@ -1202,8 +1222,22 @@ impl World {
     /// so it is shape-faithful rather than bit-exact.
     ///
     /// PORT: FUN_80039B7C (the `0x80039F48..0x80039F80` face-the-player arm)
-    /// REF: FUN_80019B28, FUN_801D5B5C
+    /// REF: FUN_80019B28, FUN_801D5B5C, FUN_8003A1E4, FUN_80020DE0
     pub fn face_field_npc_at_player(&mut self, slot: u8) {
+        // Retail's class gate, which the paragraphs above describe and this
+        // arm used to skip: the snap runs only for `flags & 0x420000 ==
+        // 0x20000`. `FUN_8003A1E4` ORs `0x20000` into every partition-1
+        // placement and the allocator template leaves `0x400000` clear
+        // (`FUN_80020DE0`), so on the disc the only discriminator is the
+        // opt-out - a spawn prologue `31 16` (`CFLAG_SET` bit 22) marking a
+        // placement that must keep its authored pose. The engine does not
+        // mirror the `0x20000` OR, so the test reduces to "bit 22 clear".
+        //
+        // koin6's two cribbed babies carry it, which is why they used to
+        // rotate ~51 degrees out of their cribs to look at the player.
+        if self.field_channel_flags(slot) & 0x0040_0000 != 0 {
+            return;
+        }
         let Some(&(nx, nz)) = self.field_npc_positions.get(&slot) else {
             return;
         };

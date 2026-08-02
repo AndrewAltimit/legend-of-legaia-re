@@ -120,8 +120,8 @@ const FOG_LUT_SIZE = 2048;
  * framebuffer height; MIN_KEEP is the pixel-keep floor at the centre;
  * DEPTH_MARGIN is the view-depth clearance (world units) that shields
  * the player mesh, the floor at its feet and bystander NPCs. */
-const OCCL_RADIUS_FRAC = 0.30;
-const OCCL_FEATHER_FRAC = 0.15;
+const OCCL_RADIUS_FRAC = 0.12;
+const OCCL_FEATHER_FRAC = 0.05;
 const OCCL_MIN_KEEP = 0.25;
 /* Guards only environment geometry AT the focus depth (floor tier,
  * coplanar decals) - the player / NPC draws are exempted per draw via

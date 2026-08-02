@@ -53,6 +53,23 @@ impl World {
                 self.level_up_tracker.level[slot] = rec.level().max(rec.magic_rank()).max(1);
             }
         }
+        // Adopt each record's stored display name (`+0x2A7`) so a loaded save's
+        // custom names reach the dialog renderer's `0xC1 XX` substitutions.
+        //
+        // Non-shrinking and skip-empty on purpose: a cold-boot save has a
+        // one-member roster, and truncating here would drop the Noa / Gala /
+        // Terra defaults `seed_starting_party` installs for the slots that have
+        // not joined yet.
+        for (slot, rec) in self.roster.members.iter().enumerate() {
+            let name = rec.name();
+            if name.is_empty() {
+                continue;
+            }
+            if self.party_names.len() <= slot {
+                self.party_names.resize(slot + 1, String::new());
+            }
+            self.party_names[slot] = name;
+        }
     }
 
     /// Capture the world's current actor state back into a `Party`. The

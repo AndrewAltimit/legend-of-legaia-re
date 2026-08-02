@@ -1320,8 +1320,18 @@ A fragment fades only when all three hold:
   and stacked occluders all open at once since the Bayer pattern is
   screen-aligned across layers); and
 - it lies within the **screen-space fade circle** around the player's
-  projected centre (radius 0.30 of the viewport height), so only the patch
-  of wall actually covering the character opens up.
+  projected centre (radius `OCCL_RADIUS_FRAC` of the viewport height), so
+  only the patch of wall near the character opens up.
+
+The radius is a fraction of the **viewport**, not of the character, so it
+does not track zoom: at a fixed fraction the hole is the same share of the
+screen whether the camera is tight or pulled all the way out. It was tuned
+down once for exactly that reason - at `0.30`, a 130-unit character standing
+~12.5% of the viewport height got a hole ~4.8x their height, around 31x their
+screen area, which reads as the scene dissolving rather than a wall going
+see-through. Sizing the radius off the character's *projected* half-height
+instead would make it zoom- and FOV-invariant; that is the durable fix and is
+not implemented.
 
 The fade itself is a **screen-door discard** against a 4x4 Bayer threshold
 (`occl_bayer` in the shader prelude): keep probability ramps from 1.0 at the
