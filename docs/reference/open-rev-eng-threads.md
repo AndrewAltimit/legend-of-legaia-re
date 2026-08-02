@@ -151,8 +151,19 @@ walk into record 0's band - and the port warps **only** from that band.
 
 Retail uses the other one. Its captured pre-transition frame parks the player
 at world `(3264, 5824)`, inside record 10's band, and an Up press warps to
-`map01` from there. In the port the same seat produces no transition and no
-dialogue: record 10 spawns nothing observable.
+`map01` from there.
+
+Record 10 is **story-locked, correctly**: its gates are `c1=[563]`,
+`c2=[562]`, so it spawns only once system flag 562 is set and 563 is not. At a
+cold boot it spawns nothing - which is right, because Rim Elm's south exit is
+shut until the town's story beats run. Neither the port nor retail can leave
+`town01` on a fresh save, and the same gates and the same sealed band appear
+in `town0b` and `town0c`.
+
+With 562 seeded the dispatch works: crossing into the band installs record 10
+as a cutscene timeline. **That timeline then runs for two frames, nudges the
+player from `z` 5824 to 5832, and ends without performing the scene change.**
+That is the defect, and it sits downstream of everything else here.
 
 Three things this rules out, each measured rather than argued:
 
@@ -165,10 +176,15 @@ Three things this rules out, each measured rather than argued:
 - **Not a wider standoff.** The pad-driven player reaches `z = 5886`, which is
   62 units *further south* than retail's own park.
 
-What is owed is port-side: find why record 10's spawn does not deliver the
-scene change. Note the shape retail implies - stepping into record 10's band
-runs a partition-2 script that carries the player the rest of the way - which
-would explain how retail crosses a wall band that blocks locomotion.
+What is owed is port-side: find why record 10's timeline ends after two frames
+instead of carrying the departure through. The `+8` nudge it does perform is
+one locomotion step's worth, which fits the shape retail implies - the record
+force-walks the player the rest of the way and then runs the `0x3F` - and
+would explain how retail crosses a wall band that blocks ordinary locomotion.
+The next step is the record's own bytecode: what opcode terminates it early.
+
+Note what is *not* owed: no collision, grid, standoff or dispatch change. Each
+of those was suspected in turn and each was measured false.
 
 Method note, because it generalises: this was settled entirely from save
 states read offline. A mednafen state carries the scratchpad, so

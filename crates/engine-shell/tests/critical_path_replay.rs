@@ -361,6 +361,11 @@ struct StallSite {
     /// Per-direction block, indexed as [`STEPS`]: Z-, X-, Z+, X+.
     wall: [bool; 4],
     actor: [bool; 4],
+    /// How many scripted sequences (dialogue / cutscene timeline) ran during
+    /// the leg. Non-zero at a stall means a walk-on trigger *did* fire and
+    /// its record *did* execute - the leg failed after the dispatch, not
+    /// before it, which is a different defect entirely.
+    scripted: u32,
 }
 
 /// The tile as the **walk-on dispatch** quantises it: a raw `world >> 7`,
@@ -433,7 +438,14 @@ impl std::fmt::Display for Leg {
                 s.want,
                 StallSite::dirs(s.wall),
                 StallSite::dirs(s.actor),
-            ),
+            )
+            .and_then(|()| {
+                if s.scripted > 0 {
+                    write!(f, "; {} scripted sequence(s) ran", s.scripted)
+                } else {
+                    Ok(())
+                }
+            }),
             Leg::Timeout { at, goal } => {
                 write!(f, "out of frames at tile {at:?} heading for {goal:?}")
             }
@@ -445,6 +457,33 @@ fn player_world(host: &SceneHost) -> (i16, i16) {
     let slot = host.world.player_actor_slot.expect("player actor") as usize;
     let ms = &host.world.actors[slot].move_state;
     (ms.world_x, ms.world_z)
+}
+
+/// Outcome of letting a scripted sequence run to completion.
+enum Drain {
+    /// The sequence performed a scene change - the leg's success condition.
+    Entered(String),
+    /// It finished and handed input back.
+    Released,
+    /// It never handed input back inside the budget.
+    Locked,
+}
+
+/// Tick with a neutral pad while a dialogue or cutscene owns input, surfacing
+/// a scene change if the sequence performs one.
+fn drain_scripted(host: &mut SceneHost) -> Drain {
+    for _ in 0..INPUT_RELEASE_BUDGET {
+        if !host.world.cutscene_timeline_active() && !host.world.dialogue_owns_input() {
+            return Drain::Released;
+        }
+        host.world.set_pad(0);
+        match host.tick() {
+            Ok(SceneTickEvent::SceneEntered { name }) => return Drain::Entered(name),
+            Ok(_) => {}
+            Err(_) => return Drain::Locked,
+        }
+    }
+    Drain::Locked
 }
 
 /// Tick with a neutral pad until the world hands control back, so a leg does
@@ -477,6 +516,7 @@ fn walk_to(host: &mut SceneHost, goal: (i16, i16)) -> Leg {
     let dist = |a: (i16, i16), b: (i16, i16)| ((a.0 - b.0).abs() + (a.1 - b.1).abs()) as i32;
     let mut best = dist(start, goal);
     let mut since_progress = 0u32;
+    let mut scripted = 0u32;
 
     // The plan is always rooted at the tile the player is standing on, and
     // replanned the moment they leave it. Following a fixed waypoint list
@@ -523,11 +563,18 @@ fn walk_to(host: &mut SceneHost, goal: (i16, i16)) -> Leg {
         }
 
         // A dialogue or cutscene that opened mid-leg owns input now; let it
-        // finish rather than burning frames against it.
-        if (host.world.cutscene_timeline_active() || host.world.dialogue_owns_input())
-            && !wait_for_input(host)
-        {
-            return Leg::InputLocked;
+        // finish rather than burning frames against it. Crucially it may also
+        // be the *success* path - a walk-on trigger's partition-2 record
+        // installs as a timeline and that timeline is what performs the scene
+        // change - so the drain has to surface `SceneEntered` rather than
+        // swallow it. (It did swallow it, which read as a stall at the gate.)
+        if host.world.cutscene_timeline_active() || host.world.dialogue_owns_input() {
+            scripted += 1;
+            match drain_scripted(host) {
+                Drain::Entered(name) => return Leg::Transitioned(name),
+                Drain::Released => {}
+                Drain::Locked => return Leg::InputLocked,
+            }
         }
 
         // Progress is measured against the best distance ever achieved, so
@@ -554,6 +601,7 @@ fn walk_to(host: &mut SceneHost, goal: (i16, i16)) -> Leg {
                         .map(tile_of_cell),
                     wall: probe(&|d| host.world.field_dir_blocked(sx, sz, d)),
                     actor: probe(&|d| host.world.field_actor_dir_blocked(sx, sz, d)),
+                    scripted,
                 }));
             }
         }
@@ -591,6 +639,20 @@ struct Rung {
 /// failure - later rungs depend on earlier ones having landed.
 fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     let mut rungs = Vec::new();
+
+    // Rim Elm's south exit is **story-locked**, and correctly so: its walk-on
+    // record (P2[10], on the only band a player can stand in) carries the
+    // gates `c1=[563] c2=[562]`, so it spawns once system flag 562 is set and
+    // 563 is not. The other band - P2[0] on tiles (24..26, 46) - is ungated
+    // but sealed, because grid row 47 walls `z ∈ [5888, 5951]` across the
+    // whole doorway until a story `0x4C` nibble-7 paint clears it.
+    //
+    // So a cold boot cannot leave Rim Elm, in the port or in retail. Seeding
+    // 562 stands in for the town's story beats (which are their own rung to
+    // write, not this one's job), and keeps this ladder measuring what it
+    // exists to measure: locomotion, collision and the pad remap, not story
+    // progression. Without it rung 2 is unwinnable by construction.
+    host.world.system_flag_set(562);
 
     // --- 1. Cold boot into Rim Elm free-roam with control released. -------
     host.enter_field_scene("town01", 0).expect("enter town01");
