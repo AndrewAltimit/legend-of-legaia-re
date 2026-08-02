@@ -674,7 +674,7 @@ CDNAME_SCENES: list[dict] = [
     {"label": "doman",            "start": 399,  "category": "town",      "display": "Usha Research Center"},
     {"label": "bubu1",            "start": 407,  "category": "town",      "display": "Buma (revived)"},
     {"label": "bubu2",            "start": 416,  "category": "town",      "display": "Buma"},
-    {"label": "taiku2",           "start": 425,  "category": "field",     "display": "Muscle Dome (later)"},
+    {"label": "taiku2",           "start": 425,  "category": "field",     "display": "Zora's Floating Castle"},
     {"label": "uru",              "start": 434,  "category": "field",     "display": "Uru Mais"},
     {"label": "uru2",             "start": 444,  "category": "field",     "display": "Uru Mais (deeper)"},
     {"label": "urudre1",          "start": 454,  "category": "field",     "display": "Uru Mais (dream 1)"},

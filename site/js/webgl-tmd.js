@@ -484,9 +484,13 @@ class TmdRenderer {
         const px = (cx / cw * 0.5 + 0.5) * w;
         const py = (cy / cw * 0.5 + 0.5) * h;
         gl.uniform4f(this.locOcclFocus, px, py, cw, f.strength);
+        /* The circle is authored in world units and projected here, at the
+         * focus depth, so it keeps hugging the character as the camera
+         * pushes in instead of staying a fixed slice of the viewport. */
+        const radius = occlRadiusPx(cw, occlProjScaleY(vp), h);
         gl.uniform4f(this.locOcclParams,
-          OCCL_RADIUS_FRAC * h, OCCL_MIN_KEEP,
-          OCCL_DEPTH_MARGIN, OCCL_FEATHER_FRAC * h);
+          radius, OCCL_MIN_KEEP,
+          OCCL_DEPTH_MARGIN, radius * OCCL_FEATHER_FRAC_OF_RADIUS);
         return;
       }
     }

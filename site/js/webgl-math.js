@@ -5,9 +5,11 @@
  * Loads as a classic global script - exposes: IDENTITY4, MESH_SCALE,
  * compileProgram, mulMat4, perspective, translate, rotateY, rotateX,
  * scaleMat, buildMvp, placementModelScaled, placementModelScaledY,
+ * placementModelEuler,
  * placementModelCentered,
  * computeAabb, buildTopDownVp, buildWorldOrbitVp, ortho, lookAt,
- * attachWorldOrbitControls. Must be loaded before webgl-tmd.js.
+ * occlProjScaleY, attachWorldOrbitControls. Must be loaded before
+ * webgl-tmd.js.
  */
 
 const IDENTITY4 = new Float32Array([
@@ -70,6 +72,20 @@ function perspective(fov, aspect, near, far) {
     0,          0, (far + near) * nf,      -1,
     0,          0, 2 * far * near * nf,     0,
   ]);
+}
+
+/* The projection's vertical scale P[1][1] (= 1 / tan(fovY / 2)) recovered
+ * from a finished column-major view-projection.
+ *
+ * vp = P * V with V a rigid transform, so the product's second row is
+ * P[1][1] times the view's UNIT up axis - its length is the scale. That is
+ * what lets the occlusion fade size its circle in world units without the
+ * renderer being handed a camera basis. Unaffected by buildWorldOrbitVp's
+ * retail screen-X mirror (`P[0] = -P[0]`), which touches only row 0.
+ * Column-major index = col * 4 + row, so row 1 is 1, 5, 9.
+ * Rust twin: occlusion_fade::view_proj_scale_y. */
+function occlProjScaleY(vp) {
+  return Math.hypot(vp[1], vp[5], vp[9]);
 }
 
 /* Translation matrix as column-major. */
@@ -205,6 +221,34 @@ function placementModelScaledY(x, y, z, rotY, scale) {
      0,       -sc,  0,      0,    /* flip Y so PSX +Y down -> world +Y up */
     -sc * s,    0,  sc * c, 0,
      x,         y,  z,      1,
+  ]);
+}
+
+/* Per-placement model carrying all THREE authored angles from the object
+ * record (`+0x08` / `+0x0A` / `+0x0C`), composed in retail's `Rx * Ry * Rz`
+ * order (`FUN_80026988`). Angles are radians, positive, in the retail sense -
+ * the same values the Rust side feeds `battle_intro::placement_rotation`.
+ *
+ * `placementModelScaledY` is the yaw-only special case of this: its linear
+ * part expands to `diag(sc,-sc,sc) * Ry(angle)`, which is why it takes a
+ * NEGATED yaw (its inline Ry is transposed, and the two negations cancel).
+ * That cancellation does not generalise to X and Z, so a tilted placement
+ * must come through here instead. */
+function placementModelEuler(x, y, z, rotX, rotY, rotZ, scale) {
+  const cx = Math.cos(rotX), sx = Math.sin(rotX);
+  const cy = Math.cos(rotY), sy = Math.sin(rotY);
+  const cz = Math.cos(rotZ), sz = Math.sin(rotZ);
+  /* R = Rx * Ry * Rz, row-major. */
+  const r00 = cy * cz,                  r01 = -cy * sz,                 r02 = sy;
+  const r10 = sx * sy * cz + cx * sz,   r11 = -sx * sy * sz + cx * cz,  r12 = -sx * cy;
+  const r20 = -cx * sy * cz + sx * sz,  r21 = cx * sy * sz + sx * cz,   r22 = cx * cy;
+  /* M = T * diag(sc,-sc,sc) * R; emitted column-major for WebGL. */
+  const sc = scale;
+  return new Float32Array([
+     sc * r00, -sc * r10,  sc * r20, 0,
+     sc * r01, -sc * r11,  sc * r21, 0,
+     sc * r02, -sc * r12,  sc * r22, 0,
+     x,         y,         z,        1,
   ]);
 }
 

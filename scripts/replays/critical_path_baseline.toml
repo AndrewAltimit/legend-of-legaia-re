@@ -1,0 +1,17 @@
+# Critical-path replay baseline.
+#
+# The highest rung `crates/engine-shell/tests/critical_path_replay.rs` has
+# reached driving the chapter-1 spine with the PAD only - no seating, no
+# teleports. The test asserts `score >= reached` so the number is a ratchet:
+# it may go up in a reviewed edit, and a drop fails the run.
+#
+# Rungs (see the test's module docs for the full table):
+#   1  town01 free-roam, input released
+#   2  pad-walk town01 south gate -> map01
+#   3  pad-walk map01 -> keikoku (Ravine)
+#
+# Unlike the other progression oracles, this number is denominated in what a
+# player can do, not in what the disc decodes. Raise it only when the run
+# actually clears the rung - never to make a red test green.
+
+reached = 1

@@ -125,6 +125,72 @@ with the instruction evidence cited.
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes, a shrunken residual set still owed | [details ↓](#region-story-flag-gate-families) |
 | teien hedge-base ground fill (kind-2 tile-trigger cells) | open | [details ↓](#teien-hedge-base-ground-fill) |
+| `town01` south gate: the reachable trigger band is inert | open - cause pinned, fix owed | [details ↓](#town01-south-gate-the-reachable-trigger-band-is-inert) |
+
+### `town01` south gate: the reachable trigger band is inert
+
+*Status:* open as engineering work - the collision side is settled and faithful; the walk-on side is not
+
+The Rim Elm south gate is the first scene exit of the game. Seated onto tile
+`(25, 46)` it fires correctly - that is what `chapter1_spine_oracle`'s Leg 1
+asserts. Driven by **pad** from the scene's own spawn it never fires, because
+the tile the oracle seats onto is not one a player can stand on.
+
+The `.MAP` kind-1 trigger table gives the gate **two** bands, not one:
+
+| Record | Tiles | World `z` | Reachable on foot |
+|---|---|---|---|
+| 10 | `(24..26, 45)`, `(25, 44)` | `5632..5887` | yes |
+| 0 | `(24..26, 46)` | `5888..6015` | no |
+
+Record 0's band is sealed by the collision grid: grid row `47` reads `7 3 B`
+across columns `24/25/26`, and every one of those nibbles has the even-`z_cell`
+bits set, so `z ∈ [5888, 5951]` is a solid 64-unit wall band spanning the whole
+doorway. The corridor only reopens at `z ≥ 5952`, on the far side. Nothing can
+walk into record 0's band - and the port warps **only** from that band.
+
+Retail uses the other one. Its captured pre-transition frame parks the player
+at world `(3264, 5824)`, inside record 10's band, and an Up press warps to
+`map01` from there.
+
+Record 10 is **story-locked, correctly**: its gates are `c1=[563]`,
+`c2=[562]`, so it spawns only once system flag 562 is set and 563 is not. At a
+cold boot it spawns nothing - which is right, because Rim Elm's south exit is
+shut until the town's story beats run. Neither the port nor retail can leave
+`town01` on a fresh save, and the same gates and the same sealed band appear
+in `town0b` and `town0c`.
+
+With 562 seeded the dispatch works: crossing into the band installs record 10
+as a cutscene timeline. **That timeline then runs for two frames, nudges the
+player from `z` 5824 to 5832, and ends without performing the scene change.**
+That is the defect, and it sits downstream of everything else here.
+
+Three things this rules out, each measured rather than argued:
+
+- **Not a wrong wall bit.** The port's loaded grid is byte-identical to retail's
+  live grid in early-story `town01` captures. The only differences against a
+  late-story `town0c` capture are 16 bytes of `0x4C` nibble-7 story paints,
+  correctly absent early - one of which is what opens this gate later.
+- **Not a band authored further north.** The disc's own trigger table is the
+  source of both bands above.
+- **Not a wider standoff.** The pad-driven player reaches `z = 5886`, which is
+  62 units *further south* than retail's own park.
+
+What is owed is port-side: find why record 10's timeline ends after two frames
+instead of carrying the departure through. The `+8` nudge it does perform is
+one locomotion step's worth, which fits the shape retail implies - the record
+force-walks the player the rest of the way and then runs the `0x3F` - and
+would explain how retail crosses a wall band that blocks ordinary locomotion.
+The next step is the record's own bytecode: what opcode terminates it early.
+
+Note what is *not* owed: no collision, grid, standoff or dispatch change. Each
+of those was suspected in turn and each was measured false.
+
+Method note, because it generalises: this was settled entirely from save
+states read offline. A mednafen state carries the scratchpad, so
+`_DAT_1f8003ec` (and through it the live collision grid) is readable without
+running anything; a PCSX-Redux state carries only main RAM, but the same grid
+can be located by content-matching an unpainted row against a known one.
 
 ### teien hedge-base ground fill
 

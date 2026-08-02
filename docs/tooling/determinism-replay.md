@@ -166,6 +166,51 @@ is byte-identical. The scripted-encounter Battle leg is deferred (see the
 "Scripted Tetsu encounter → Battle" row in
 [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)).
 
+## Critical-path replay: the game-denominated sibling
+
+[`crates/engine-shell/tests/critical_path_replay.rs`](../../crates/engine-shell/tests/critical_path_replay.rs)
+drives the chapter-1 spine with the **pad** as the only actuator and scores
+how far it gets, against a ratcheted baseline in
+[`scripts/replays/critical_path_baseline.toml`](../../scripts/replays/critical_path_baseline.toml).
+
+It exists because every other progression oracle is denominated in the disc.
+`chapter1_spine_oracle` proves the same legs, but moves the player with
+`seat_player_at_tile` - its `walk_onto_tile` helper is a teleport pair that
+synthesises the tile crossing, and `chapter1_spine.toml` says as much: the
+pad rows "document the traversal" while the diff "drives the transitions by
+seating the player on the trigger tiles". That is correct for asking *does
+the scene graph connect*, and structurally blind to locomotion speed and
+heading, the collision probe, the walkability grid, and the camera-relative
+pad remap. Nothing is seated here.
+
+Waypoints come from a BFS over the walkability grid whose edges are certified
+by `field_dir_blocked` - the same probe the locomotion step runs. Two
+constraints fix the lattice pitch, and both are tighter than "one wall bit":
+the probe reaches only ~47 units ahead of the source, so an edge longer than
+that is not covered by its own certificate; and a tile centre is `128t + 64`,
+so the pitch must divide 64 or the planner can never stand on a doorway's
+centreline, where the probe's laterally-spread points then read a one-tile
+opening as sealed. Both failure modes were observed before the pitch settled
+at 32.
+
+The goal is best-effort by design: a scene exit is a door, and a door tile
+reads as a wall (`seat_player_at_tile` documents this), so the planner routes
+to the closest reachable node and the follower presses from there. A leg
+succeeds on the transition firing, not on arrival.
+
+A stall reports the tile, the world position, the next waypoint, and both
+wall arms (`field_dir_blocked` and `field_actor_dir_blocked`) separately -
+"the player stopped here" and "the engine says every useful direction is a
+wall" are different findings and the bare tile cannot tell them apart. The
+first run's stall is written up as
+[the `town01` south gate's inert trigger band](../reference/open-rev-eng-threads.md#town01-south-gate-the-reachable-trigger-band-is-inert);
+it found a defect every seated oracle is blind to, and its first two
+diagnoses were both wrong, which is the argument for making a stall
+self-describing rather than a bare failure.
+
+The pad-inversion arithmetic and the baseline parser are covered by disc-free
+unit tests, so the file stays non-vacuous in CI where the ladder skips.
+
 ## See also
 
 - [`docs/subsystems/engine.md`](../subsystems/engine.md) - the clean-room engine the record/replay loop drives.

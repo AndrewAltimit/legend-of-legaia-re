@@ -161,6 +161,12 @@
    * frame, unconditionally. */
   const OCCLUDER_CULL = false;
 
+  /* Half a character's standing height, in world units. Paired with
+   * HALF_CHAR_HEIGHT in crates/web-viewer/src/play.rs, which is the point
+   * the occlusion gate (`field_player_occluded`) tests - the fade focus has
+   * to be staged at that same point or the hole lands off the character. */
+  const HALF_CHAR_HEIGHT = 65;
+
   /* World AABB of one placement: the mesh's local box carried through the draw
    * model `T(x, y, z) . Ry(rotY) . diag(sc, -sc, sc)` (`placementModelScaledY`).
    * Baked once per placement so the per-frame occluder test is a slab
@@ -629,7 +635,7 @@
       };
       const isSky = (window.FieldSceneView && window.FieldSceneView.isSkyMesh)
         || (() => false);
-      const push = (slots, pos, rots, anims) => {
+      const push = (slots, pos, rots, anims, rotsX, rotsZ) => {
         for (let i = 0; i < slots.length; i++) {
           const anim = anims ? anims[i] : 0;
           let meshId, animRec = null;
@@ -657,6 +663,20 @@
             rotY: -(rots[i] & 0xFFF) * A2R,
             scale: 1.0,
           };
+          /* A placement with an authored X/Z tilt cannot go through the
+           * yaw-only path: that builder's negated-yaw convention is a
+           * cancellation specific to Ry (see webgl-math.js). Hand it a whole
+           * model matrix composed in retail's Rx*Ry*Rz order instead - the
+           * same composition crates/engine-render battle_intro::
+           * placement_rotation applies natively. Most placements are pure
+           * yaw and keep the cheaper path. */
+          const rx = rotsX ? (rotsX[i] & 0xFFF) : 0;
+          const rz = rotsZ ? (rotsZ[i] & 0xFFF) : 0;
+          if (rx || rz) {
+            draw.model = placementModelEuler(
+              draw.x, draw.y, draw.z,
+              rx * A2R, (rots[i] & 0xFFF) * A2R, rz * A2R, 1.0);
+          }
           /* World box for the occluder test, baked once (see `_frame`). */
           draw.box = placementWorldBox(aabb, draw);
           this.staticDraws.push(draw);
@@ -665,7 +685,9 @@
       };
       push(rt.field_terrain_slots(), rt.field_terrain_positions(), rt.field_terrain_rot_y(), null);
       push(rt.field_placement_slots(), rt.field_placement_positions(), rt.field_placement_rot_y(),
-        rt.field_placement_anim_ids());
+        rt.field_placement_anim_ids(),
+        rt.field_placement_rot_x ? rt.field_placement_rot_x() : null,
+        rt.field_placement_rot_z ? rt.field_placement_rot_z() : null);
 
       /* Player: geometry once, positions re-uploaded per frame from the pose. */
       if (rt.player_has_mesh()) {
@@ -1673,15 +1695,19 @@
         this._occlStrength += (target - this._occlStrength) * 0.25;
         if (Math.abs(this._occlStrength - target) < 0.01) this._occlStrength = target;
         if (this._occlStrength > 0.01) {
+          /* 65 must match HALF_CHAR_HEIGHT in crates/web-viewer/src/play.rs,
+           * which is the point field_player_occluded() above tested. Staging
+           * the fade at a different height than the gate proved occluded put
+           * the hole ~37px above the character's body centre. */
           this.renderer.setOcclusionFocus(
-            [pt[0], -pt[1] + 90, pt[2]], this._occlStrength);
+            [pt[0], -pt[1] + HALF_CHAR_HEIGHT, pt[2]], this._occlStrength);
         }
       } else {
         this._occlStrength = 0;
       }
       if (OCCLUDER_CULL && !fpLive) {
         const eye = this._eye();
-        const px = pt[0], py = -pt[1] + 90, pz = pt[2];
+        const px = pt[0], py = -pt[1] + HALF_CHAR_HEIGHT, pz = pt[2];
         const ex = eye[0] - px, ey = eye[1] - py, ez = eye[2] - pz;
         draws = this.staticDraws.filter(
           d => !segmentHitsBox(px, py, pz, ex, ey, ez, d.box));

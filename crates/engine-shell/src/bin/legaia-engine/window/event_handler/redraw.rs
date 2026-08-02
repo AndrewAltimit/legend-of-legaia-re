@@ -778,7 +778,13 @@ impl PlayWindowApp {
                     if std::env::var_os("LEGAIA_OCCL_DEBUG").is_some() {
                         log::info!("occl-gate: staging focus clip {:?} strength {s:.2}", clip);
                     }
-                    r.set_occlusion_focus(clip.to_array(), s);
+                    // The fade circle is authored in world units, so the
+                    // renderer needs this camera's vertical projection
+                    // scale to size it in pixels at the focus depth.
+                    let scale_y = legaia_engine_render::occlusion_fade::view_proj_scale_y(
+                        &cam.to_cols_array(),
+                    );
+                    r.set_occlusion_focus(clip.to_array(), s, scale_y);
                     occl_staged = true;
                 }
             } else {

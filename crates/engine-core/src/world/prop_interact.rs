@@ -365,7 +365,10 @@ impl World {
     /// engine's live tables (`0xC1 63` = the party leader, `0xC2 xx` = item
     /// name - the same tables retail's dialog renderer consults). `None`
     /// when the record carries no resolvable escape.
-    fn dialog_substitutions(&self, record: &[u8]) -> Option<crate::dialog::PanelSubstitutions> {
+    pub(crate) fn dialog_substitutions(
+        &self,
+        record: &[u8],
+    ) -> Option<crate::dialog::PanelSubstitutions> {
         let mut map: std::collections::HashMap<(u8, u8), Vec<u8>> = Default::default();
         for w in record.windows(2) {
             let (esc, arg) = (w[0], w[1]);

@@ -505,6 +505,25 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    /// Per-placement authored pitch (object record `+0x08`), parallel to
+    /// [`Self::field_placement_rot_y`]. Composed with yaw and roll in
+    /// retail's `Rx * Ry * Rz` order (`FUN_80026988`).
+    pub fn field_placement_rot_x(&self) -> Vec<u16> {
+        self.field
+            .as_ref()
+            .map(|f| f.placements.iter().map(|d| d.rot_x).collect())
+            .unwrap_or_default()
+    }
+
+    /// Per-placement authored roll (object record `+0x0C`). See
+    /// [`Self::field_placement_rot_x`].
+    pub fn field_placement_rot_z(&self) -> Vec<u16> {
+        self.field
+            .as_ref()
+            .map(|f| f.placements.iter().map(|d| d.rot_z).collect())
+            .unwrap_or_default()
+    }
+
     /// Per-placement object-bind animation id (parallel to
     /// [`Self::field_placement_slots`]). `0` = unposed; nonzero = draw the
     /// slot's mesh through [`Self::field_mesh_posed`] with this id, or the

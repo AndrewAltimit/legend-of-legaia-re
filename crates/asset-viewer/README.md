@@ -49,11 +49,13 @@ Useful flags:
   yet, so some palette rows always render as garbage in textured mode.
 
 When VRAM is built from one or more TIM directories, the `tmd` viewer
-drops primitives whose texture page region is empty or whose CLUT row
-is populated at the wrong palette depth - those would otherwise
-rasterise as solid `CLUT[0]` (a flat green / cyan tint over
-correctly-textured geometry) or rainbow-noise stripes (16 entries
-sliced out of a 256-entry gradient) and obscure the rest of the model.
+drops primitives whose texture page region or whose own CLUT entries no
+loaded TIM has populated - those would otherwise rasterise as solid
+`CLUT[0]`, a flat green / cyan tint over correctly-textured geometry that
+obscures the rest of the model. It does **not** judge a prim by how wide
+its CLUT row is: a row legitimately holds up to 64 packed palettes, so
+width cannot separate a spilled texture from a dense palette bank (see
+`docs/subsystems/renderer.md`).
 The diagnostic logs distinguish each failure mode:
 
 ```
