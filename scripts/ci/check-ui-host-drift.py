@@ -417,10 +417,69 @@ NATIVE_BOOT = "crates/engine-shell/src/boot.rs"
 NATIVE_SAVE_HELPERS = "crates/engine-shell/src/bin/legaia-engine/window/save_select_helpers.rs"
 NATIVE_FRAME_TICK = "crates/engine-core/src/world/frame_tick.rs"
 NATIVE_BOOT_CUTSCENE = "crates/engine-shell/src/bin/legaia-engine/window/boot_cutscene.rs"
+NATIVE_FIELD_RENDER = "crates/engine-shell/src/bin/legaia-engine/window/field_render.rs"
+NATIVE_GEOMETRY = "crates/engine-shell/src/bin/legaia-engine/window/geometry.rs"
 WEB_MINIGAMES_MUSCLE = "crates/web-viewer/src/minigames_muscle.rs"
 WEB_PLAY_BATTLE = "crates/web-viewer/src/play_battle.rs"
+WEB_PLAY = "crates/web-viewer/src/play.rs"
+WEB_FIELD_SCENE = "crates/web-viewer/src/field_scene.rs"
 
 SIM_PAIRS: list[dict[str, object]] = [
+    {
+        "what": "coplanar draw lifts, native vs play page - every host that "
+        "assembles a field scene from EnvDraws must run the cross-draw "
+        "coplanar kernel (`draw_plane_summaries` + `coplanar_draw_offsets`) "
+        "and apply its lifts, or that host alone z-fights on every "
+        "placement/terrain pair that meets on one world plane. The play page "
+        "shipped exactly this gap: `build_field_render` resolved the same "
+        "draws as the native shell and the field-scene viewer but never "
+        "computed the lifts, so koin6's inn floor shimmered only in the "
+        "browser play page (angle-dependently - invisible in a diff and in "
+        "any single screenshot taken from the lucky angle)",
+        "sites": {
+            "native": (NATIVE_FIELD_RENDER, "compute_coplanar_env_offsets"),
+            "web": (WEB_PLAY, "build_field_render"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["draw_plane_summaries", "coplanar_draw_offsets"],
+    },
+    {
+        "what": "coplanar draw lifts, play page vs field-scene viewer - the "
+        "two web surfaces assemble the same scene through the same resolver "
+        "calls, so both must hand the combined draw list to the same "
+        "coplanar kernel (see the native pairing above for the failure this "
+        "catches)",
+        "sites": {
+            "web_play": (WEB_PLAY, "build_field_render"),
+            "web_viewer": (WEB_FIELD_SCENE, "build_field_scene"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["draw_plane_summaries", "coplanar_draw_offsets"],
+    },
+    {
+        "what": "ground-heightfield sink, native vs play page - the walk-ground "
+        "grid shares its plane with the env pack's authored floor art (koin6: "
+        "both at y=0 with different tessellations), so every render site must "
+        "sink it by the shared GROUND_SINK or that host's floors z-fight as "
+        "wedge streaks from steep cameras while every other host is clean",
+        "sites": {
+            "native": (NATIVE_GEOMETRY, "heightfield_to_vram_mesh"),
+            "web": (WEB_PLAY, "field_ground_positions"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["GROUND_SINK"],
+    },
+    {
+        "what": "ground-heightfield sink, play page vs field-scene viewer - "
+        "same property as the native pairing above, across the two web "
+        "surfaces' ground exporters",
+        "sites": {
+            "web_play": (WEB_PLAY, "field_ground_positions"),
+            "web_viewer": (WEB_FIELD_SCENE, "field_scene_ground_positions"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["GROUND_SINK"],
+    },
     {
         "what": "Muscle Dome damage - the arena's per-exchange damage must come "
         "off the same battle-formula kernel on both hosts, or the same command "

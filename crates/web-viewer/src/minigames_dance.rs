@@ -224,7 +224,10 @@ fn bake_dance_env(
         let base = (out.positions.len() / 3) as u32;
         for p in &hf.positions {
             out.positions.push(p[0] - origin.0);
-            out.positions.push(p[1] - origin.1);
+            // Ground sinks below the env floor art (`GROUND_SINK`) - the
+            // stage floor and the walk grid share one plane.
+            out.positions
+                .push(p[1] + legaia_engine_core::coplanar_draws::GROUND_SINK - origin.1);
             out.positions.push(p[2] - origin.2);
         }
         for uv in &hf.uvs {
