@@ -212,6 +212,29 @@ see `docs/tooling/mednafen-automation.md`), checking whether any ground
 prim covers a `0x0800`-only cell. Until then the engine must not grow a
 speculative fill.
 
+### Coplanar residual tail: same-position curved-shell stacks
+
+*Status:* open - the mitigation stack resolves the flat-plane corpus; the residual is a structurally different shape
+
+After the cross-draw coplanar kernel's per-family lifts and repair pass
+(`engine-core::coplanar_draws`; the whole model is in
+[`renderer.md`](../subsystems/renderer.md#coplanar-surfaces-retails-ordering-model-the-ports-depth-policy)),
+the corpus sweep (`DIAG_ALL=1` on `engine-core/tests/coplanar_residual_disc.rs`)
+still reports a small tail, dominated by two shapes. First, **same-position
+stacks of curved shells** - two different env TMDs placed at one translation
+whose curved surfaces coincide (jouine/jouind's flesh-cave walls, chitei2's
+res41/res45 slope): a per-draw *translation* cannot separate two coincident
+curved surfaces everywhere (any direction is tangent to some part of the
+shell), so the offset API is structurally the wrong tool. Open questions:
+does retail even draw both copies (they may be state/morph variants the
+scripts swap), and if it does, which wins per OT bucket? A display-list read
+from a save state inside jou would answer both. Second, **sub-cluster
+slivers** - wall/kerb strips whose per-plane area inside one mesh falls
+below the detection floor or fragments across the cluster quantization
+(koin4 keeps one sub-100-area example the regression test bounds). Neither
+shape is angle-stable shimmer of a whole floor - the class the kernel
+exists for and now clears.
+
 ### Region story-flag gate families
 
 *Status:* structure resolved and settled; residual = play-order confirmation for the dungeons the capture corpus never walked

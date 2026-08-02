@@ -1117,11 +1117,48 @@ renderer and the site's WebGL viewers:
   coplanar overlap clusters across a scene's resolved `EnvDraw` list (terrain
   + placed layers combined) and returns a per-draw world offset: the largest
   surface in a cluster stays put, each overlapping smaller/later draw lifts
-  one unit per rank toward the surface's visible side - the same "small decal
-  wins" outcome retail's mean-Z bucketing produces. The native play-window
-  applies the offsets in its placement/posed-prop resolvers; the web viewer
-  applies them in the placement/terrain position exporters, so the two stay
-  consistent.
+  `DRAW_NUDGE` per rank toward the surface's visible side - the same "small
+  decal wins" outcome retail's mean-Z bucketing produces. All three hosts
+  that assemble field scenes apply the same map: the native play-window in
+  its placement/posed-prop resolvers, the browser play page and the
+  field-scene viewer in their placement/terrain position exporters (the
+  drift gate's sim-pair rows pin all three call sites).
+
+  Five properties of the kernel each close a failure mode that shipped as a
+  visible, view-angle-dependent fight:
+
+  - Conflicts are partitioned into **normal families** (clustered by angle,
+    never by quantizing the normal into a hash key) and each family gets its
+    own colouring and its own lift component; the components sum. One rank
+    per draw resolves only the largest conflict - a draw lifted along Z for
+    its floor tie keeps fighting a wall on X.
+  - `DRAW_NUDGE = 0.75` is deliberately **not commensurate** with either the
+    intra-mesh `0.5` nudge or retail's ~1-unit authored decal lattice: a
+    whole-draw lift of exactly `1.0` maps a mesh's authored offset layer
+    straight onto the neighbouring draw's base plane, creating the very
+    coincidence the pass removes.
+  - Rank capacity (16) exceeds the largest mutual-overlap clique in the
+    corpus - a low clamp parks the overflow draws on one shared lift
+    (taiku's plaza stacks six-plus instances of one slab on a single plane).
+  - Plane *distance* is always measured point-through-plane, never `d - d`:
+    two matching sloped clusters carry representative normals that differ by
+    float noise, and at world coordinates that noise scales into tens of
+    units of spurious `d` difference (the bucket walk computes its distance
+    key against the bucket's own quantized normal for the same reason).
+  - A final **repair pass** re-measures every detected pair under the summed
+    offsets and bumps any still-coincident pair apart - per-family lifts of
+    a pair that conflicts in many families at once (two shells stacked at
+    one position touch on every family) can otherwise sum back into
+    coincidence.
+
+  The disc-gated oracle for all of this is
+  `engine-core/tests/coplanar_residual_disc.rs`: it rebuilds a scene's final
+  world-space triangle soup exactly as the hosts draw it (hybrid passes,
+  yaw-instanced draws, lifts applied) and scans for coplanar overlapping
+  pairs that survive - `DIAG_ALL=1` sweeps the whole field corpus. The known
+  residual tail it tolerates: same-position stacks of *curved* shells
+  (jouine's flesh walls), which no translation offset can separate
+  everywhere, and sub-cluster slivers below the detection floor.
 - **Depth precision** - the native renderer runs **reversed-Z**
   (`renderer/helpers.rs::reverse_z`: clip `z' = w - z`, depth cleared to 0,
   compares mirrored to Greater/GreaterEqual, applied centrally at the two MVP
