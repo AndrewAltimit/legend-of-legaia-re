@@ -657,6 +657,31 @@ impl Renderer {
             SHADOW_COMPARE_BIAS,
             0.0,
         ];
+        // Camera-occlusion fade focus: project the host-staged player clip
+        // position to framebuffer pixels + view depth, carrying the host's
+        // eased fade strength in `.w`. The zeroed default (strength 0) is
+        // the identity, so the faithful path pays one uniform read.
+        // `w <= 0` = the player is behind the camera plane - no meaningful
+        // projection, leave the fade inert for the frame.
+        if self.occl_fade.get()
+            && let Some((c, strength)) = self.occl_focus.get()
+            && c[3] > 1e-3
+            && strength > 0.004
+        {
+            use crate::occlusion_fade as of;
+            let vw = self.config.width as f32;
+            let vh = self.config.height as f32;
+            let px = (c[0] / c[3] * 0.5 + 0.5) * vw;
+            // WebGPU NDC y is up, framebuffer y is down.
+            let py = (0.5 - c[1] / c[3] * 0.5) * vh;
+            u.occl_focus = [px, py, c[3], strength];
+            u.occl_params = [
+                of::OCCL_RADIUS_FRAC * vh,
+                of::OCCL_MIN_KEEP,
+                of::OCCL_DEPTH_MARGIN,
+                of::OCCL_FEATHER_FRAC * vh,
+            ];
+        }
         let light_vps: Vec<Mat4> = lights[..n].iter().map(light_view_proj).collect();
         for (i, l) in lights[..n].iter().enumerate() {
             u.lights[i] = ScenePointLightUniform {
@@ -828,12 +853,16 @@ impl Renderer {
         ];
         let tex_window = self.tex_window.get();
         let grade = self.color_grade.get();
-        let flags = [
+        // flags[2] is set per draw below: 1.0 = environment geometry the
+        // occlusion fade may dissolve, 0.0 = actor draws (player / NPCs)
+        // that keep every fragment (see `set_occlusion_env_draws`).
+        let flags_base = [
             self.backface_cull.get(),
             if self.semi_blend.get() { 1.0 } else { 0.0 },
             0.0,
             0.0,
         ];
+        let (occl_env_textured, occl_env_color) = self.occl_env_counts.get();
         let light_dir = self.dyn_light_dir_uniform();
         let light_color = self.dyn_light_color_uniform();
         let cue_ramp = self.cue_ramp.get();
@@ -849,7 +878,13 @@ impl Renderer {
         } else {
             None
         };
-        let push = |bytes: &mut [u8], slot: usize, mvp: Mat4, cue: Option<crate::DrawCue>| {
+        let push = |bytes: &mut [u8],
+                    slot: usize,
+                    mvp: Mat4,
+                    cue: Option<crate::DrawCue>,
+                    occl_allowed: bool| {
+            let mut flags = flags_base;
+            flags[2] = if occl_allowed { 1.0 } else { 0.0 };
             let model = match inv_vp {
                 Some(inv) => model_rows(&(inv * mvp)),
                 None => MODEL_ROWS_IDENTITY,
@@ -900,15 +935,21 @@ impl Renderer {
             bytes[off..off + n].copy_from_slice(bytemuck::bytes_of(&u));
         };
         for (i, draw) in scene.draws.iter().enumerate() {
-            push(&mut bytes, i, draw.mvp, draw.cue);
+            push(&mut bytes, i, draw.mvp, draw.cue, i < occl_env_textured);
         }
         if let Some((_, mvp)) = scene.overlay_lines {
-            push(&mut bytes, scene.draws.len(), mvp, None);
+            push(&mut bytes, scene.draws.len(), mvp, None, false);
         }
         // Colour-mesh slots follow the draws + the optional overlay-lines slot.
         let color_base = scene.draws.len() + scene.overlay_lines.is_some() as usize;
         for (i, draw) in scene.color_draws.iter().enumerate() {
-            push(&mut bytes, color_base + i, draw.mvp, None);
+            push(
+                &mut bytes,
+                color_base + i,
+                draw.mvp,
+                None,
+                i < occl_env_color,
+            );
         }
         let buf_borrow = self.scene_uniforms_buf.borrow();
         let buf: &wgpu::Buffer = &buf_borrow;

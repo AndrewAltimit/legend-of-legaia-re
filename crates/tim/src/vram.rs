@@ -451,6 +451,69 @@ impl Vram {
         PrimTextureStatus::Ok
     }
 
+    /// Estimate of the fraction of OPAQUE texels across the prim's UV
+    /// bounding box, sampling up to an 8x8 grid and decoding each texel
+    /// exactly as the render shaders do (4/8bpp CLUT lookup, 15bpp
+    /// direct). A texel is transparent when its decoded BGR555 word is
+    /// `0x0000` (black + STP 0 - the shaders' cutout `discard`).
+    ///
+    /// The consumer is the camera-occlusion fade's visibility gate: a
+    /// prim that *draws* but whose texels are mostly the transparent word
+    /// (terrain-tile boundary skirts, foliage cutouts, grates) is see-
+    /// through on screen, so it must not count as an occluder. A bbox
+    /// sample overestimates the transparent share of diagonal-half prims,
+    /// which only ever makes the gate MORE conservative (less fading).
+    pub fn prim_opaque_fraction(&self, cba: u16, tsb: u16, uvs: &[(u8, u8)]) -> f32 {
+        if uvs.is_empty() {
+            return 0.0;
+        }
+        let cx = ((cba & 0x3F) * 16) as usize;
+        let cy = ((cba >> 6) & 0x1FF) as usize;
+        let tpage_x = ((tsb & 0xF) * 64) as usize;
+        let tpage_y = (((tsb >> 4) & 1) * 256) as usize;
+        let depth = (tsb >> 7) & 0x3;
+        let (mut umin, mut umax, mut vmin, mut vmax) = (u8::MAX, 0u8, u8::MAX, 0u8);
+        for &(u, v) in uvs {
+            umin = umin.min(u);
+            umax = umax.max(u);
+            vmin = vmin.min(v);
+            vmax = vmax.max(v);
+        }
+        let word_at = |x: usize, y: usize| -> u16 {
+            if x >= VRAM_WIDTH || y >= VRAM_HEIGHT {
+                return 0;
+            }
+            self.pixels[y * VRAM_WIDTH + x]
+        };
+        let steps = 8usize;
+        let mut opaque = 0usize;
+        let mut total = 0usize;
+        for si in 0..=steps {
+            for sj in 0..=steps {
+                let u = umin as usize + (umax as usize - umin as usize) * si / steps;
+                let v = vmin as usize + (vmax as usize - vmin as usize) * sj / steps;
+                let word = match depth {
+                    0 => {
+                        let w = word_at(tpage_x + (u >> 2), tpage_y + v);
+                        let pal = (w >> ((u & 3) * 4)) & 0xF;
+                        word_at(cx + pal as usize, cy)
+                    }
+                    1 => {
+                        let w = word_at(tpage_x + (u >> 1), tpage_y + v);
+                        let pal = (w >> ((u & 1) * 8)) & 0xFF;
+                        word_at(cx + pal as usize, cy)
+                    }
+                    _ => word_at(tpage_x + u, tpage_y + v),
+                };
+                total += 1;
+                if word != 0 {
+                    opaque += 1;
+                }
+            }
+        }
+        opaque as f32 / total as f32
+    }
+
     /// Length (in pixels) of the populated run starting at `(x, y)` in
     /// VRAM. Used to gauge how wide a CLUT row's contents are - 16 for a
     /// 4bpp palette, 256 for an 8bpp one. `max_w` caps the search so the

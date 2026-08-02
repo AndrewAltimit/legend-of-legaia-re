@@ -112,6 +112,24 @@ void main() {
  * shader samples this via `int(v_fog_t * (FOG_LUT_SIZE - 1))`. */
 const FOG_LUT_SIZE = 2048;
 
+/* Camera-occlusion fade (see-through walls) tunables - the GLSL twin of
+ * the native renderer's `crates/engine-render/src/occlusion_fade.rs`
+ * constants (keep the two in lockstep): fragments between the camera and
+ * the player dissolve to a 4x4-Bayer screen-door inside a circle around
+ * the player's projected centre. RADIUS/FEATHER are fractions of the
+ * framebuffer height; MIN_KEEP is the pixel-keep floor at the centre;
+ * DEPTH_MARGIN is the view-depth clearance (world units) that shields
+ * the player mesh, the floor at its feet and bystander NPCs. */
+const OCCL_RADIUS_FRAC = 0.30;
+const OCCL_FEATHER_FRAC = 0.15;
+const OCCL_MIN_KEEP = 0.25;
+/* Guards only environment geometry AT the focus depth (floor tier,
+ * coplanar decals) - the player / NPC draws are exempted per draw via
+ * u_occl_allow, so a wall hugging the character still opens up. Larger
+ * values protected such walls as if they were the player ("only the
+ * nearest of several stacked occluders fades"). */
+const OCCL_DEPTH_MARGIN = 16.0;
+
 const VS_SRC = `#version 300 es
 precision highp float;
 precision highp int;
@@ -243,6 +261,21 @@ uniform vec3 u_cue_far;   /* DPCS far colour, linear 0..1 */
  * front (1); the assembled views add the retail screen-X mirror on top (two
  * reflections), which inverts gl_FrontFacing, so they keep back (0). */
 uniform int u_pair_front;
+/* Camera-occlusion fade (see-through walls enhancement, NON-RETAIL - the
+ * GLSL twin of the native scene shaders' occl_keep/occl_bayer, see
+ * crates/engine-render/src/occlusion_fade.rs). xy = the player's projected
+ * framebuffer pixel (gl_FragCoord space, origin bottom-left), z = the
+ * player's view-space depth, w = fade strength 0..1 (the page's eased
+ * visibility-gate output). All-zero (the GL default) is the identity - no
+ * fragment ever fades. */
+uniform vec4 u_occl_focus;
+/* (radius_px, min_keep, depth_margin, feather_px); only read while
+ * u_occl_focus.w is set. */
+uniform vec4 u_occl_params;
+/* Per-draw occlusion-fade permission: 1 on environment draws (terrain /
+ * placements / ground), 0 (the GL default) on actor draws - the player and
+ * NPCs must never dissolve - and on every page that never stages a focus. */
+uniform int u_occl_allow;
 
 in vec2 v_uv;
 flat in uvec2 v_cba_tsb;
@@ -282,6 +315,40 @@ vec3 grade_near(vec3 c) {
   return mix(c, c * u_grade.rgb, u_grade.a);
 }
 
+/* 4x4 Bayer threshold in [0, 1) for the occlusion fade's screen-door
+ * discard. keep = 1.0 never discards (largest threshold is 15.5/16). */
+float occl_bayer(vec2 frag) {
+  float bm[16] = float[16](
+     0.0,  8.0,  2.0, 10.0,
+    12.0,  4.0, 14.0,  6.0,
+     3.0, 11.0,  1.0,  9.0,
+    15.0,  7.0, 13.0,  5.0);
+  int xi = int(frag.x) & 3;
+  int yi = int(frag.y) & 3;
+  return (bm[yi * 4 + xi] + 0.5) / 16.0;
+}
+
+/* Keep probability for the occlusion fade - 1.0 = keep unconditionally.
+ * A fragment fades only when it is BOTH nearer the camera than the player
+ * by more than the depth margin AND inside the screen-space fade circle;
+ * the keep feathers from 1.0 at the rim to min_keep at the centre.
+ * frag_w is gl_FragCoord.w = 1/clip_w, so 1/frag_w is the fragment's
+ * view depth - the same recovery the native WGSL uses. */
+float occl_keep(vec2 frag_px, float frag_w) {
+  /* .w = the eased fade strength (0..1): 0 = off (identity), fractions
+   * blend the geometric keep toward 1.0 so the screen-door dissolves in
+   * and out with the visibility gate - same law as the native WGSL. */
+  float s = u_occl_focus.w;
+  if (s < 0.004) return 1.0;
+  float view_z = 1.0 / max(frag_w, 1e-8);
+  if (view_z >= u_occl_focus.z - u_occl_params.z) return 1.0;
+  float d = distance(frag_px, u_occl_focus.xy);
+  float r = u_occl_params.x;
+  if (d >= r) return 1.0;
+  float t = smoothstep(r - u_occl_params.w, r, d);
+  return mix(1.0, mix(u_occl_params.y, 1.0, t), s);
+}
+
 void main() {
   uint cba = v_cba_tsb.x;
   uint tsb = v_cba_tsb.y;
@@ -289,6 +356,12 @@ void main() {
    * this view's parity (see u_pair_front). The CLUT decode below masks the
    * flag bit out ((cba >> 6) & 511 covers CBA bits 6..14 only). */
   if ((cba & 0x8000u) != 0u && gl_FrontFacing != (u_pair_front != 0)) discard;
+  /* Camera-occlusion fade: screen-door discard of fragments between the
+   * camera and the player. Placed before the untextured early-return so
+   * both prim families fade; identity while u_occl_focus.w is zero, and
+   * actor draws (u_occl_allow == 0) never fade. */
+  if (u_occl_allow != 0
+      && occl_bayer(gl_FragCoord.xy) >= occl_keep(gl_FragCoord.xy, gl_FragCoord.w)) discard;
   uint u_pix = uint(v_uv.x) & 255u;
   uint v_pix = uint(v_uv.y) & 255u;
 

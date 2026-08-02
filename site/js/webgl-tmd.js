@@ -116,10 +116,21 @@ class TmdRenderer {
     this.locCue     = gl.getUniformLocation(this.program, 'u_cue');
     this.locCueFar  = gl.getUniformLocation(this.program, 'u_cue_far');
     this.locPairFront = gl.getUniformLocation(this.program, 'u_pair_front');
+    this.locOcclFocus  = gl.getUniformLocation(this.program, 'u_occl_focus');
+    this.locOcclParams = gl.getUniformLocation(this.program, 'u_occl_params');
+    this.locOcclAllow  = gl.getUniformLocation(this.program, 'u_occl_allow');
     /* Prologue colour grade + depth-cue ramp, staged per frame by the play
      * page (identity / off by default - no other page is affected). */
     this.gradeParams = { rgb: null, strength: 0 };
     this.cueParams = { far: null, nearZ: 0, farZ: 0, maxIr0: 0 };
+    /* Camera-occlusion fade focus: the player's WORLD-space body centre
+     * (draw frame, i.e. the Y-flipped coords every placement uses), staged
+     * per frame by the play page via setOcclusionFocus / cleared with
+     * clearOcclusionFocus. null (the default) disables the fade, so no
+     * other consumer of this renderer is affected. renderAssembled
+     * projects it through the same view-projection it builds for the
+     * scene draws - the page never duplicates camera math. */
+    this.occlFocus = null;
     this.locPos     = gl.getAttribLocation(this.program, 'a_position');
     this.locUv      = gl.getAttribLocation(this.program, 'a_uv_byte');
     this.locCbaTsb  = gl.getAttribLocation(this.program, 'a_cba_tsb');
@@ -429,6 +440,59 @@ class TmdRenderer {
     }
   }
 
+  /* Camera-occlusion fade (see-through walls): stage the player's world
+   * position (draw frame - the Y-flipped coords the placements use; the
+   * play page passes `[x, -y + 90, z]`, its body-centre point) plus the
+   * page's eased fade strength (0..1, the visibility-gate ramp) for the
+   * next renderAssembled call, which projects it through the frame's own
+   * view-projection and screen-doors scene fragments that sit between the
+   * camera and this point (GLSL `occl_keep`/`occl_bayer`; the native twin
+   * is engine-render's occlusion_fade module). Call per frame; stale foci
+   * would fade the wrong screen region. */
+  setOcclusionFocus(worldPos, strength) {
+    if (!worldPos || !(strength > 0)) {
+      this.occlFocus = null;
+      return;
+    }
+    this.occlFocus = {
+      pos: [worldPos[0], worldPos[1], worldPos[2]],
+      strength: Math.min(strength, 1.0),
+    };
+  }
+
+  /* Drop the occlusion-fade focus - every fragment keeps (the default). */
+  clearOcclusionFocus() {
+    this.occlFocus = null;
+  }
+
+  /* Stage the occlusion-fade uniforms on the bound main program for a
+   * frame rendered with view-projection `vp` into a `w`x`h` framebuffer.
+   * Projects the staged world focus to gl_FragCoord pixels (origin
+   * bottom-left) + view depth; a missing focus (or one behind the camera
+   * plane) stages the all-zero disable so the shader is the identity. */
+  _applyOcclusionFade(vp, w, h) {
+    const gl = this.gl;
+    if (!this.locOcclFocus) return;
+    const f = this.occlFocus;
+    if (f) {
+      /* clip = vp * (x, y, z, 1) - column-major mat4. */
+      const p = f.pos;
+      const cx = vp[0] * p[0] + vp[4] * p[1] + vp[8] * p[2] + vp[12];
+      const cy = vp[1] * p[0] + vp[5] * p[1] + vp[9] * p[2] + vp[13];
+      const cw = vp[3] * p[0] + vp[7] * p[1] + vp[11] * p[2] + vp[15];
+      if (cw > 1e-3) {
+        const px = (cx / cw * 0.5 + 0.5) * w;
+        const py = (cy / cw * 0.5 + 0.5) * h;
+        gl.uniform4f(this.locOcclFocus, px, py, cw, f.strength);
+        gl.uniform4f(this.locOcclParams,
+          OCCL_RADIUS_FRAC * h, OCCL_MIN_KEEP,
+          OCCL_DEPTH_MARGIN, OCCL_FEATHER_FRAC * h);
+        return;
+      }
+    }
+    gl.uniform4f(this.locOcclFocus, 0, 0, 0, 0);
+  }
+
   /* Set the per-kingdom ocean tint + enable flag. `color` is `{ r, g, b }`
    * in 0..1 floats (typically the `ocean_color_normalized` field from
    * world-overview.json). `enable` toggles whether the ocean pass runs
@@ -660,6 +724,9 @@ class TmdRenderer {
     gl.uniform1i(this.locUseFlatColors, this.useFlatColors ? 1 : 0);
     /* Ghost tint OFF for the opaque pose (the trail pass sets it per echo). */
     gl.uniform4f(this.locGhost, 0, 0, 0, 0);
+    /* Occlusion fade OFF on the single-mesh inspector path (uniforms
+     * persist on the shared program; a play-page focus must not leak). */
+    gl.uniform4f(this.locOcclFocus, 0, 0, 0, 0);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     gl.uniform1i(this.locVram, 0);
@@ -1008,6 +1075,10 @@ class TmdRenderer {
     /* Prologue grade + depth cue (identity / off unless the play page
      * staged them this frame). */
     this._applyGradeCue();
+    /* Camera-occlusion fade (identity unless the play page staged a focus
+     * this frame; uniforms persist through the opaque + blend passes so
+     * semi-transparent wall patches open up too). */
+    this._applyOcclusionFade(vp, w, h);
     /* Cutout discard ON (retail semantics): texel 0 with STP 0 is fully
      * transparent, which is what makes the crossed-quad billboard trees
      * read as foliage instead of solid star-shaped slabs. The old
@@ -1063,6 +1134,8 @@ class TmdRenderer {
         0, 0, 0, 1,
       ]);
       gl.uniformMatrix4fv(this.locModel, false, flipY);
+      /* The ground is environment: the occlusion fade may dissolve it. */
+      gl.uniform1i(this.locOcclAllow, 1);
       gl.bindVertexArray(this.ground.vao);
       gl.drawElements(gl.TRIANGLES, this.ground.indexCount, gl.UNSIGNED_INT, 0);
       gl.bindVertexArray(null);
@@ -1095,6 +1168,9 @@ class TmdRenderer {
         const wantCue = p.cue || this.cueParams;
         if (wantCue !== cueOn) { this._setCue(wantCue); cueOn = wantCue; }
         gl.uniformMatrix4fv(this.locModel, false, this._placementModel(p, m));
+        /* Actor draws (the player, NPCs - `noOccl` on the placement) must
+         * never dissolve; environment placements may. */
+        gl.uniform1i(this.locOcclAllow, p.noOccl ? 0 : 1);
         gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
       }
     }
@@ -1129,6 +1205,7 @@ class TmdRenderer {
         const wantCue = p.cue || this.cueParams;
         if (wantCue !== cueOn) { this._setCue(wantCue); cueOn = wantCue; }
         gl.uniformMatrix4fv(this.locModel, false, this._placementModel(p, m));
+        gl.uniform1i(this.locOcclAllow, p.noOccl ? 0 : 1);
         for (const r of m.semiRanges) {
           this._setSemiBlend(r.mode);
           gl.drawElements(gl.TRIANGLES, r.count, gl.UNSIGNED_INT, r.start * 4);

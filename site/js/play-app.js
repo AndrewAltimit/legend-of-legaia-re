@@ -290,6 +290,19 @@
        * null otherwise. `_camBeforeBattle` restores the field framing after. */
       this._battle = null;
       this._camBeforeBattle = null;
+      /* Camera-occlusion fade (see-through walls) - the browser twin of the
+       * native play-window's default-on enhancement: field geometry between
+       * the camera and the player screen-doors open around the character
+       * (per-fragment, in the shared FS - NOT the abandoned per-body
+       * OCCLUDER_CULL above). The page's checkbox drives setOcclusionFade;
+       * the focus itself is staged per field frame in `_frame` and never
+       * during battle or VR first-person. */
+      this.occlusionFade = true;
+      /* Eased occlusion-fade strength (0..1): ramps toward the visibility
+       * gate's verdict a quarter of the gap per frame (the native
+       * redraw.rs OCCL_STRENGTH_EASE twin) so the screen-door dissolves
+       * in/out instead of popping while the gate flips at cover edges. */
+      this._occlStrength = 0;
       /* Retail pause menu (Start): the state + navigation live in the engine
        * (`LegaiaRuntime::play_menu_*`), which serves the byte-pinned window
        * chrome + font glyphs as `{ dst, src, color }` quads. This page owns only
@@ -1598,6 +1611,11 @@
        * restores the field VRAM texture on the exit edge), handing the
        * frame back to the field path in the `else`. The text HUD overlay
        * further below runs either way, on top. */
+      /* Occlusion-fade focus is per-frame state: drop it before whichever
+       * mode draws, and let the field branch below re-stage it. Battle and
+       * VR first-person never fade (battle frames its own subjects; in
+       * first-person the eye IS the player, nothing can sit between). */
+      this.renderer.clearOcclusionFocus();
       if (this._battleFrame(rt, skipDraw)) {
         /* Battle owns the 3D frame; FPS/HUD/overlay below still run. */
       } else {
@@ -1631,6 +1649,36 @@
       /* In VR first-person there is no third-person lens: the eye IS the
        * player, so nothing can "sit between" them - draw everything. */
       const fpLive = this._vrFp && this.vr && this.vr.isActive();
+      /* Camera-occlusion fade, two halves (native redraw.rs twin):
+       * 1. Visibility gate - the engine ray-casts a 5-point eye->player
+       *    cross against the static scene triangles (the shared
+       *    engine-core::field_occlusion kernel) and the fade arms only
+       *    when EVERY sample is blocked: a partially visible character
+       *    gets no fade at all. The kernel wants the eye in retail
+       *    Y-down world, so the draw-frame `_eye()` Y negates on the way
+       *    in. A wasm bundle predating the export falls back to the
+       *    always-armed fade rather than losing the feature.
+       * 2. Strength ramp - ease toward the verdict so the screen-door
+       *    dissolves in/out instead of popping at cover edges.
+       * The staged focus is the player's body centre (the same point the
+       * dead cull below used - draw frame, +90 up from the feet); the
+       * renderer projects it with the frame's own camera. */
+      if (this.occlusionFade && !fpLive) {
+        let hidden = true;
+        if (typeof rt.field_player_occluded === 'function') {
+          const eye = this._eye();
+          hidden = !!rt.field_player_occluded(eye[0], -eye[1], eye[2]);
+        }
+        const target = hidden ? 1 : 0;
+        this._occlStrength += (target - this._occlStrength) * 0.25;
+        if (Math.abs(this._occlStrength - target) < 0.01) this._occlStrength = target;
+        if (this._occlStrength > 0.01) {
+          this.renderer.setOcclusionFocus(
+            [pt[0], -pt[1] + 90, pt[2]], this._occlStrength);
+        }
+      } else {
+        this._occlStrength = 0;
+      }
       if (OCCLUDER_CULL && !fpLive) {
         const eye = this._eye();
         const px = pt[0], py = -pt[1] + 90, pz = pt[2];
@@ -1653,6 +1701,8 @@
           x: pt[0], y: -pt[1], z: pt[2],
           rotY: -(pt[3] + 2048) * A2R,
           scale: 1.0,
+          /* Actor draw: the occlusion fade must never dissolve the player. */
+          noOccl: true,
         });
       }
 
@@ -1728,6 +1778,8 @@
           x: nt[base], y: -nt[base + 1], z: nt[base + 2],
           rotY: -(nt[base + 3] + 2048) * A2R,
           scale: 1.0,
+          /* Actor draw: exempt from the occlusion fade, like the player. */
+          noOccl: true,
         });
       }
 
@@ -2099,6 +2151,17 @@
         this.cam.centerY + dist * cp,
         this.cam.centerZ - dist * sp * cy,
       ];
+    }
+
+    /* Toggle the camera-occlusion fade (the page's "See-through walls"
+     * checkbox; default on, matching the native play-window). Off drops
+     * the staged focus immediately so the next frame is fully solid. */
+    setOcclusionFade(on) {
+      this.occlusionFade = !!on;
+      if (!this.occlusionFade) {
+        this._occlStrength = 0;
+        if (this.renderer) this.renderer.clearOcclusionFocus();
+      }
     }
 
     /* Keep the camera on the player: same target, user-controlled orbit. */

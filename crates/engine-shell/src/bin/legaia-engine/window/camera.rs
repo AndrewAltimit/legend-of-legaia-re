@@ -2,6 +2,15 @@
 
 use super::*;
 
+/// Retail field follow-camera parameters (see `field_follow_camera_mvp`):
+/// pitch `_DAT_8007B790 = 450` units (~39.6 deg down-tilt), GTE
+/// `H = _DAT_8007B6F4 = 512`, and the engine-calibrated eye-back depth.
+/// Module-scope so `field_follow_camera_eye` (the occlusion-fade gate's
+/// analytic eye) stays in lockstep with the matrix builder.
+const FIELD_PITCH_UNITS: f32 = 450.0;
+const FIELD_H: f32 = 512.0;
+const FIELD_CAM_DEPTH: f32 = 1200.0;
+
 impl PlayWindowApp {
     pub(super) fn camera_mvp(&self, aspect: f32) -> Mat4 {
         // Frame the player's vicinity, not the whole scene. Loading the full
@@ -84,9 +93,6 @@ impl PlayWindowApp {
     /// `Camera::compass_azimuth_units` tracks the on-screen view exactly).
     /// Both default to the retail-identical values.
     pub(super) fn field_follow_camera_mvp(&self, aspect: f32) -> Option<Mat4> {
-        const PITCH_UNITS: f32 = 450.0;
-        const FIELD_H: f32 = 512.0;
-        const FIELD_CAM_DEPTH: f32 = 1200.0;
         let cam = &self.session.camera;
         let depth = FIELD_CAM_DEPTH * cam.distance.scale();
         let world = &self.session.host.world;
@@ -112,7 +118,7 @@ impl PlayWindowApp {
         // yaw. Base yaw is the pinned FIELD_FOLLOW_YAW_UNITS.
         let yaw = to_rad(FIELD_FOLLOW_YAW_UNITS) - cam.manual_orbit;
         Some(Self::psx_camera_mvp(
-            to_rad(PITCH_UNITS),
+            to_rad(FIELD_PITCH_UNITS),
             yaw,
             // The field follow camera never rolls (`FUN_80025C24` seeds the
             // roll global to `0` on scene entry and only an op-`0x45` beat
@@ -122,6 +128,37 @@ impl PlayWindowApp {
             Vec3::new(0.0, 0.0, depth),
             target,
             aspect,
+        ))
+    }
+
+    /// World-space **eye position** of the retail field follow camera, in
+    /// RAW retail Y-down world coordinates (the frame the field draws use).
+    /// The analytic inverse of `field_follow_camera_mvp`'s view composition:
+    /// the effective view on raw world coords is `R * (v - target) + tr`
+    /// with `R = Rx(pitch) * Ry(yaw)` and `tr = (0, 0, depth)` (the caller's
+    /// `FIELD_WORLD_FLIP` cancels `psx_camera_mvp`'s internal pre-flip), so
+    /// `eye = target - R^T * (0, 0, depth)`. Consumed by the
+    /// camera-occlusion fade's visibility gate, which ray-casts eye->player
+    /// against the static scene geometry in this same frame. `None` on the
+    /// same no-player guard as the follow camera.
+    pub(super) fn field_follow_camera_eye(&self) -> Option<Vec3> {
+        let cam = &self.session.camera;
+        let depth = FIELD_CAM_DEPTH * cam.distance.scale();
+        let world = &self.session.host.world;
+        let p = world
+            .actors
+            .first()
+            .filter(|p| p.active || p.tmd_binding.is_some())?;
+        let (wx, wz) = (p.move_state.world_x, p.move_state.world_z);
+        let floor_y = world.sample_field_floor_height(wx as i32, wz as i32);
+        let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
+        let pitch = to_rad(FIELD_PITCH_UNITS);
+        let yaw = to_rad(FIELD_FOLLOW_YAW_UNITS) - cam.manual_orbit;
+        Some(Vec3::new(
+            wx as f32 + depth * pitch.cos() * yaw.sin(),
+            // Y-down world: minus = above the floor.
+            floor_y as f32 - depth * pitch.sin(),
+            wz as f32 - depth * pitch.cos() * yaw.cos(),
         ))
     }
 

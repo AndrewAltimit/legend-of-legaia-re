@@ -830,6 +830,31 @@ struct PlayWindowApp {
     /// toggle at runtime with the `Y` key. Mirrored into the renderer via
     /// [`legaia_engine_render::Renderer::set_dyn_shadows`].
     dyn_shadows: bool,
+    /// Camera-occlusion fade ENHANCEMENT (see-through walls): field scene
+    /// geometry between the camera and the player dissolves to a
+    /// screen-door dither in a circle around the character, so the
+    /// character is always at least partly visible. Default `true`
+    /// (clearly the better play experience); disable with
+    /// `--no-occlusion-fade`, or toggle at runtime with the `D` key.
+    /// Mirrored into the renderer via
+    /// [`legaia_engine_render::Renderer::set_occlusion_fade`]; the
+    /// per-frame focus is staged by the redraw pass in field free-roam
+    /// only, so cutscene / battle / world-map framing is untouched.
+    occlusion_fade: bool,
+    /// The occlusion fade's **visibility gate**: the static scene's
+    /// world-space triangles (retail Y-down frame), rebuilt per scene load
+    /// by `upload_assets` from the same resolved env draw list the render
+    /// layers use. Each field frame the redraw pass ray-casts a 5-point
+    /// eye->player cross against it and arms the fade only when EVERY
+    /// sample is blocked - a partially visible character gets no fade at
+    /// all ([`legaia_engine_core::field_occlusion`]).
+    field_occluders: legaia_engine_core::field_occlusion::FieldOccluders,
+    /// Eased occlusion-fade strength (0..1) staged as the shader's fade
+    /// blend: ramps toward the gate verdict a quarter of the gap per frame,
+    /// so the screen-door dissolves in/out instead of popping while the
+    /// gate flickers at cover edges. `Cell` because the redraw pass updates
+    /// it while the renderer borrow is live.
+    occl_fade_strength: std::cell::Cell<f32>,
     /// The current scene's derived point lights (world space), rebuilt by
     /// `upload_assets` at scene load and staged into the renderer each
     /// field frame together with the camera's view-projection.

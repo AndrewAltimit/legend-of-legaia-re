@@ -108,6 +108,7 @@ pub(crate) fn cmd_play_window(
     dynamic_lighting: bool,
     dyn_shadows: bool,
     entry_pulse: bool,
+    occlusion_fade: bool,
 ) -> Result<()> {
     cmd_play_window_with_record(
         scene,
@@ -137,6 +138,7 @@ pub(crate) fn cmd_play_window(
         dynamic_lighting,
         dyn_shadows,
         entry_pulse,
+        occlusion_fade,
         None,
     )
 }
@@ -335,6 +337,7 @@ pub(super) fn cmd_play_window_with_record(
     dynamic_lighting: bool,
     dyn_shadows: bool,
     entry_pulse: bool,
+    occlusion_fade: bool,
     record_to: Option<RecordTarget>,
 ) -> Result<()> {
     // Resolve the cutscene map (explicit `--cutscene-map` override or the
@@ -1054,6 +1057,9 @@ pub(super) fn cmd_play_window_with_record(
         battle_camera: None,
         dynamic_lighting,
         dyn_shadows,
+        occlusion_fade,
+        field_occluders: Default::default(),
+        occl_fade_strength: std::cell::Cell::new(0.0),
         scene_point_lights: Vec::new(),
         orbit_drag_last_x: None,
         cursor_x: 0.0,

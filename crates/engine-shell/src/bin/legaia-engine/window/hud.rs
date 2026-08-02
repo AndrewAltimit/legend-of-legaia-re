@@ -117,14 +117,22 @@ impl PlayWindowApp {
         } else {
             ""
         };
+        // Camera-occlusion fade is default-on; flag the non-default state
+        // (`D` toggles) so a "why is the wall solid again" session sees it.
+        let occl_str = if self.occlusion_fade {
+            ""
+        } else {
+            "  occl-fade off (D)"
+        };
         let line2 = format!(
-            "t {:.1}s  {}{}{}{}{}  arrows=dpad Z=X drag=orbit",
+            "t {:.1}s  {}{}{}{}{}{}  arrows=dpad Z=X drag=orbit",
             self.win.elapsed_secs(),
             audio_str,
             bgm_str,
             light_str,
             cam_str,
-            precise_str
+            precise_str,
+            occl_str
         );
         let layout2 = self.font.layout_ascii(&line2);
         out.extend(text_draws_for(&layout2, (8, 26), dim));

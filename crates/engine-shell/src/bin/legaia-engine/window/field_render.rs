@@ -137,18 +137,22 @@ impl PlayWindowApp {
     ///
     /// Resolves the layers with the same inputs the draw resolvers use so
     /// the map's `EnvDraw` keys match theirs by identity.
-    pub(super) fn compute_coplanar_env_offsets(
+    /// Resolve the scene's complete STATIC env draw list (terrain tiles +
+    /// placed objects; world-map scenes use the walk layers) - the shared
+    /// input of the coplanar-lift pass and the occlusion-fade gate's
+    /// occluder set.
+    pub(super) fn static_env_draws(
         &self,
         res: &SceneResources,
-    ) -> std::collections::HashMap<legaia_engine_core::field_env::EnvDraw, [f32; 3]> {
-        use legaia_engine_core::{coplanar_draws, field_env};
+    ) -> Vec<legaia_engine_core::field_env::EnvDraw> {
+        use legaia_engine_core::field_env;
         let Some(scene) = self.session.host.scene.as_ref() else {
-            return Default::default();
+            return Vec::new();
         };
         let index = &self.session.host.index;
         let env_tmds = field_env::env_pack_tmd_indices(scene, res);
         if env_tmds.is_empty() {
-            return Default::default();
+            return Vec::new();
         }
         let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
         let mut draws: Vec<field_env::EnvDraw> = Vec::new();
@@ -183,6 +187,15 @@ impl PlayWindowApp {
                 draws.extend(d);
             }
         }
+        draws
+    }
+
+    pub(super) fn compute_coplanar_env_offsets(
+        &self,
+        res: &SceneResources,
+    ) -> std::collections::HashMap<legaia_engine_core::field_env::EnvDraw, [f32; 3]> {
+        use legaia_engine_core::coplanar_draws;
+        let draws = self.static_env_draws(res);
         if draws.is_empty() {
             return Default::default();
         }
@@ -196,6 +209,24 @@ impl PlayWindowApp {
             );
         }
         offs
+    }
+
+    /// Build the occlusion-fade visibility gate's world-space occluder set
+    /// from the same static draw list the render layers use (see
+    /// `legaia_engine_core::field_occlusion`). Rebuilt per scene load.
+    pub(super) fn build_field_occluders(
+        &self,
+        res: &SceneResources,
+    ) -> legaia_engine_core::field_occlusion::FieldOccluders {
+        let draws = self.static_env_draws(res);
+        let occ = legaia_engine_core::field_occlusion::FieldOccluders::build(&[&draws], res);
+        if !occ.is_empty() {
+            log::info!(
+                "play-window: occlusion-fade gate armed with {} static triangles",
+                occ.triangle_count()
+            );
+        }
+        occ
     }
 
     /// Rebuild + re-upload the env-pack meshes whose VDF morph deltas moved

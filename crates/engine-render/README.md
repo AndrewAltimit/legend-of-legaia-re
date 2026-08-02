@@ -187,6 +187,38 @@ the CPU mirror + lockstep tests live in the `dyn_light` module. In
 `play-window` this is the `--dynamic-lighting` flag, toggled at runtime
 with the `I` key and reflected on the HUD status line.
 
+## Opt-in camera-occlusion fade (enhancement, NOT retail)
+
+`Renderer::set_occlusion_fade(true)` plus a per-frame
+`Renderer::set_occlusion_focus(player_clip_pos, strength)` dissolve scene
+fragments that sit between the camera and the player to a 4x4-Bayer
+screen-door, so the character reads through walls / roofs / cliffs. **Off
+by default, and off IS retail** - the disabled path is pixel-identical
+(the WGSL `occl_keep` returns 1.0, which no Bayer threshold reaches).
+`strength` is the host's eased output of the **visibility gate**
+(`engine-core::field_occlusion`): a 5-point eye-to-player ray-cast against
+the static scene that arms the fade only when the character is completely
+hidden - a partially visible character never fades. A fragment then fades
+only when its draw is environment geometry (the
+`set_occlusion_env_draws` watermark exempts the player / NPC draws via
+`flags[2]`), it is nearer the camera than the player by more than a small
+depth margin (16 units - hugging occluders still open, actors are
+protected by the watermark instead), and it lies inside a screen-space
+circle around the player's projected centre; the keep probability
+feathers from 1.0 at the rim to 0.25 at the centre, then blends toward
+identity by the strength. Implemented as a fragment `discard` in the
+opaque + semi-blend scene entries - no extra pipelines, depth writes
+intact. The focus rides in the per-frame group-2 scene uniform;
+single-mesh pipelines compile a `return 1.0` stub, like
+`scene_point_gain`. Tunables + the CPU lockstep mirror live in the
+`occlusion_fade` module. In `play-window` this is ON by default
+(`--no-occlusion-fade` / the `D` key disables), and the whole feature is
+deliberately per-fragment + per-triangle - the site's abandoned per-body
+occluder cull is the failure mode it avoids (see
+`docs/subsystems/renderer.md`). The browser play page ships the GLSL twin
+(`occl_keep`/`occl_bayer` in `site/js/webgl-shaders.js`, constants
+mirrored there - keep them in lockstep with this module).
+
 `Renderer::set_texture_window(mask_x, mask_y, off_x, off_y)` maps to
 GP0(0xE2) "Texture Window setting" - four 5-bit values in 8-pixel steps
 that clamp / wrap texture-coordinate sampling to a smaller window inside

@@ -47,6 +47,7 @@ pub(crate) fn cmd_record(
         false, // dynamic_lighting: replays stay on the faithful render
         true,  // dyn_shadows: inert while dynamic_lighting is off
         false, // entry_pulse: replays stay on the retail-static entry
+        false, // occlusion_fade: replays stay on the faithful render
         Some(RecordTarget {
             out: out.to_path_buf(),
             scenario: scenario.map(str::to_string),

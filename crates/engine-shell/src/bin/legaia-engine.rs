@@ -298,6 +298,7 @@ fn main() -> Result<()> {
             dynamic_lighting,
             no_dyn_shadows,
             no_entry_pulse,
+            no_occlusion_fade,
         } => cmd_play_window(
             &scene,
             &extracted_root,
@@ -333,6 +334,7 @@ fn main() -> Result<()> {
             dynamic_lighting,
             !no_dyn_shadows,
             !no_entry_pulse,
+            !no_occlusion_fade,
         ),
         Cmd::Save {
             extracted_root,

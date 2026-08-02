@@ -58,6 +58,11 @@ pub struct FieldRender {
     /// `anim_id != 0` is the frame-0 posed variant of the slot's mesh.
     #[allow(clippy::type_complexity)]
     pub cur: Option<((usize, u8), legaia_tmd::mesh::VramMesh, Vec<u8>)>,
+    /// The occlusion fade's visibility gate: the static scene triangles
+    /// (terrain + placements, retail Y-down world), ray-cast per frame by
+    /// [`LegaiaRuntime::field_player_occluded`] - the same
+    /// `engine_core::field_occlusion` kernel the native play-window runs.
+    pub occluders: legaia_engine_core::field_occlusion::FieldOccluders,
 }
 
 /// The lead party member's field-form actor: the object-local mesh, its
@@ -208,12 +213,15 @@ pub fn build_field_render(
         .ok()
         .flatten()
         .filter(|h| !h.indices.is_empty());
+    let occluders =
+        legaia_engine_core::field_occlusion::FieldOccluders::build(&[&terrain, &placements], res);
     FieldRender {
         env_tmds,
         placements,
         terrain,
         ground,
         cur: None,
+        occluders,
     }
 }
 
@@ -716,6 +724,37 @@ impl LegaiaRuntime {
             a.move_state.world_z as f32,
             a.move_state.render_26 as f32,
         ]
+    }
+
+    /// Camera-occlusion fade **visibility gate**: is the player completely
+    /// hidden from `eye` by the static scene geometry? Ray-casts the
+    /// 5-point body cross of `engine_core::field_occlusion` (the same
+    /// kernel the native play-window runs) against the scene's occluder
+    /// set. `eye_*` are RAW retail Y-down world coordinates - the page's
+    /// draw frame is Y-up, so `play-app.js` negates its `_eye()` Y on the
+    /// way in. `false` when no scene / player / occluders exist, so a
+    /// partially visible character (or an unprovable one) never fades.
+    pub fn field_player_occluded(&self, eye_x: f32, eye_y: f32, eye_z: f32) -> bool {
+        let Some(f) = self.field.as_ref() else {
+            return false;
+        };
+        let Some(h) = self.scene_host.as_ref() else {
+            return false;
+        };
+        let Some(slot) = h.world.player_actor_slot else {
+            return false;
+        };
+        let Some(a) = h.world.actors.get(slot as usize) else {
+            return false;
+        };
+        // Body centre: the floor tier under the actor lifted half a
+        // character height (~130-unit mesh; Y-down world, up = negative) -
+        // the same point the native gate samples.
+        const HALF_CHAR_HEIGHT: f32 = 65.0;
+        let (wx, wz) = (a.move_state.world_x, a.move_state.world_z);
+        let floor_y = h.world.sample_field_floor_height(wx as i32, wz as i32);
+        let centre = [wx as f32, floor_y as f32 - HALF_CHAR_HEIGHT, wz as f32];
+        f.occluders.fully_occluded([eye_x, eye_y, eye_z], centre)
     }
 
     // ---------------------------------------------------------------- NPCs

@@ -485,6 +485,11 @@ impl PlayWindowApp {
         // below (textured / colour / posed bridges) finds its draw's offset
         // by identity lookup and the layers stay mutually consistent.
         self.coplanar_env_offsets = self.compute_coplanar_env_offsets(&res);
+        // Occlusion-fade visibility gate: the static scene's world-space
+        // triangle set, ray-cast per field frame (eye -> player samples) so
+        // the see-through fade arms only when the character is completely
+        // hidden. Same static draw list as the coplanar pass above.
+        self.field_occluders = self.build_field_occluders(&res);
         let posed_props =
             self.resolve_posed_props(&res, &posed_placement_meshes, scene_bundle.as_ref());
         let field_placement_draws =

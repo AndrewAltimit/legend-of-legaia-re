@@ -61,8 +61,12 @@ pub(super) struct MeshUniforms {
     /// GTE **NCLIP** screen-winding rejection as a fragment `discard` on the
     /// VRAM / colour mesh shaders, so a camera placed inside a closed shell
     /// (the opdeene crater's cave-wall backdrop) sees through the near wall
-    /// exactly as retail does. Set with [`Renderer::set_backface_cull`];
-    /// `[1..4]` reserved.
+    /// exactly as retail does. Set with [`Renderer::set_backface_cull`].
+    /// `[1]` = semi-transparency (ABE) blend enable. `[2]` = per-draw
+    /// occlusion-fade permission: `1.0` on environment draws below the
+    /// [`Renderer::set_occlusion_env_draws`] watermark, `0.0` on actor
+    /// draws (the player / NPCs), which the see-through fade must never
+    /// dissolve. `[3]` reserved.
     pub(super) flags: [f32; 4],
     /// Opt-in dynamic-lighting enhancement (NON-RETAIL - the field path has
     /// no light source; see the `dyn_light` WGSL helper). `[0..3]` = unit
@@ -141,12 +145,25 @@ pub(super) struct ScenePointLightUniform {
 }
 
 /// The per-frame scene point-light uniform block (WGSL `SceneLightsU`).
+/// Also carries the camera-occlusion fade focus: it is the one per-frame,
+/// non-dynamic-offset uniform both scene fragment shaders already read
+/// (group 2), and it is staged every scene frame whether or not the
+/// point-light layer is live.
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub(super) struct SceneLightsUniform {
     /// x = active light count, y = shadow-map texel size, z = compare
     /// bias, w reserved.
     pub(super) params: [f32; 4],
+    /// Camera-occlusion fade (see [`crate::occlusion_fade`]): `[0..2]` =
+    /// the player's projected framebuffer pixel, `[2]` = the player's
+    /// view-space depth, `[3]` = enable. All-zero (the `Zeroable` default)
+    /// is the identity - the shaders' `occl_keep` returns 1.0.
+    pub(super) occl_focus: [f32; 4],
+    /// `(radius_px, min_keep, depth_margin, feather_px)` - the
+    /// [`crate::occlusion_fade`] constants with radius/feather scaled to
+    /// the viewport height. Only read while `occl_focus[3]` is set.
+    pub(super) occl_params: [f32; 4],
     pub(super) lights: [ScenePointLightUniform; crate::scene_lights::MAX_SCENE_LIGHTS],
 }
 

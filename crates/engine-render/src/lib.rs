@@ -48,6 +48,7 @@ pub use wgpu;
 pub use legaia_engine_ui::*;
 
 pub mod dyn_light;
+pub mod occlusion_fade;
 pub mod profile;
 pub mod psx_blend;
 pub mod psx_dither;
