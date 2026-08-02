@@ -8,7 +8,8 @@
  * placementModelEuler,
  * placementModelCentered,
  * computeAabb, buildTopDownVp, buildWorldOrbitVp, ortho, lookAt,
- * attachWorldOrbitControls. Must be loaded before webgl-tmd.js.
+ * occlProjScaleY, attachWorldOrbitControls. Must be loaded before
+ * webgl-tmd.js.
  */
 
 const IDENTITY4 = new Float32Array([
@@ -71,6 +72,20 @@ function perspective(fov, aspect, near, far) {
     0,          0, (far + near) * nf,      -1,
     0,          0, 2 * far * near * nf,     0,
   ]);
+}
+
+/* The projection's vertical scale P[1][1] (= 1 / tan(fovY / 2)) recovered
+ * from a finished column-major view-projection.
+ *
+ * vp = P * V with V a rigid transform, so the product's second row is
+ * P[1][1] times the view's UNIT up axis - its length is the scale. That is
+ * what lets the occlusion fade size its circle in world units without the
+ * renderer being handed a camera basis. Unaffected by buildWorldOrbitVp's
+ * retail screen-X mirror (`P[0] = -P[0]`), which touches only row 0.
+ * Column-major index = col * 4 + row, so row 1 is 1, 5, 9.
+ * Rust twin: occlusion_fade::view_proj_scale_y. */
+function occlProjScaleY(vp) {
+  return Math.hypot(vp[1], vp[5], vp[9]);
 }
 
 /* Translation matrix as column-major. */

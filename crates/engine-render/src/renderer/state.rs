@@ -24,6 +24,22 @@ pub const DYN_LIGHT_TINT: [f32; 3] = [1.0, 0.93, 0.80];
 /// corner). Keeps the enhancement a *shading*, not a blackout.
 pub const DYN_LIGHT_AMBIENT: f32 = 0.55;
 
+/// One frame's camera-occlusion fade focus, as staged by the host - see
+/// [`Renderer::set_occlusion_focus`] and [`crate::occlusion_fade`].
+///
+/// A named struct rather than a tuple because two of the three fields are
+/// bare `f32`s that a caller could silently transpose.
+#[derive(Clone, Copy)]
+pub(super) struct OcclFocus {
+    /// The player's clip-space position under the frame's scene camera.
+    pub(super) clip: [f32; 4],
+    /// The host's eased visibility-gate output, 0..1.
+    pub(super) strength: f32,
+    /// That camera's vertical projection scale `P[1][1]`, which turns the
+    /// world-space fade radius into pixels at the focus depth.
+    pub(super) proj_scale_y: f32,
+}
+
 pub struct Renderer {
     pub(super) surface: wgpu::Surface<'static>,
     pub(super) device: wgpu::Device,
@@ -197,12 +213,11 @@ pub struct Renderer {
     /// [`Self::set_occlusion_fade`]. Only bites while a focus is staged
     /// ([`Self::set_occlusion_focus`]).
     pub(super) occl_fade: std::cell::Cell<bool>,
-    /// The player's clip-space position under the current frame's scene
-    /// camera plus the host's eased fade strength (0..1), staged per field
-    /// frame via [`Self::set_occlusion_focus`]; `None` (cleared on
-    /// non-field modes / cutscenes / a disarmed visibility gate) leaves the
-    /// fade inert regardless of the toggle.
-    pub(super) occl_focus: std::cell::Cell<Option<([f32; 4], f32)>>,
+    /// This frame's camera-occlusion focus, staged per field frame via
+    /// [`Self::set_occlusion_focus`]; `None` (cleared on non-field modes /
+    /// cutscenes / a disarmed visibility gate) leaves the fade inert
+    /// regardless of the toggle.
+    pub(super) occl_focus: std::cell::Cell<Option<OcclFocus>>,
     /// Occlusion-fade draw watermark `(textured, colour)`: scene draw slots
     /// BELOW these counts are environment geometry (fadeable); slots at or
     /// past them are actors (the player, NPCs), which the fade must never
@@ -360,14 +375,24 @@ impl Renderer {
     /// leaves the `x/y/w` this consumer reads untouched) together with the
     /// host's **fade strength** (0..1: the eased output of the visibility
     /// gate - the shaders blend the screen-door keep toward the identity by
-    /// it, so the fade dissolves in/out instead of popping). The renderer
-    /// projects the focus to framebuffer pixels + view depth when staging
-    /// the per-frame scene uniform. Call every field frame; stale foci
-    /// would fade the wrong screen region, so clear on mode changes
+    /// it, so the fade dissolves in/out instead of popping) and that
+    /// camera's **vertical projection scale**
+    /// ([`crate::occlusion_fade::view_proj_scale_y`] of the same matrix).
+    ///
+    /// The scale is what lets the renderer size the fade circle in world
+    /// units instead of in screen space, so the opening tracks the
+    /// character as the camera pushes in - see
+    /// [`crate::occlusion_fade::radius_px`]. The renderer projects the focus
+    /// to framebuffer pixels + view depth when staging the per-frame scene
+    /// uniform. Call every field frame; stale foci would fade the wrong
+    /// screen region, so clear on mode changes
     /// ([`Self::clear_occlusion_focus`]).
-    pub fn set_occlusion_focus(&self, clip_pos: [f32; 4], strength: f32) {
-        self.occl_focus
-            .set(Some((clip_pos, strength.clamp(0.0, 1.0))));
+    pub fn set_occlusion_focus(&self, clip_pos: [f32; 4], strength: f32, proj_scale_y: f32) {
+        self.occl_focus.set(Some(OcclFocus {
+            clip: clip_pos,
+            strength: strength.clamp(0.0, 1.0),
+            proj_scale_y,
+        }));
     }
 
     /// Drop the staged occlusion-fade focus: the fade goes inert (every

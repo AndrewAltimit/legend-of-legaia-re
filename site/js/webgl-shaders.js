@@ -114,14 +114,33 @@ const FOG_LUT_SIZE = 2048;
 
 /* Camera-occlusion fade (see-through walls) tunables - the GLSL twin of
  * the native renderer's `crates/engine-render/src/occlusion_fade.rs`
- * constants (keep the two in lockstep): fragments between the camera and
- * the player dissolve to a 4x4-Bayer screen-door inside a circle around
- * the player's projected centre. RADIUS/FEATHER are fractions of the
- * framebuffer height; MIN_KEEP is the pixel-keep floor at the centre;
- * DEPTH_MARGIN is the view-depth clearance (world units) that shields
- * the player mesh, the floor at its feet and bystander NPCs. */
-const OCCL_RADIUS_FRAC = 0.12;
-const OCCL_FEATHER_FRAC = 0.05;
+ * constants (keep the two in lockstep; the pre-commit host-drift gate
+ * pairs them by name): fragments between the camera and the player
+ * dissolve to a 4x4-Bayer screen-door inside a circle around the player's
+ * projected centre. MIN_KEEP is the pixel-keep floor at the centre;
+ * DEPTH_MARGIN is the view-depth clearance (world units) that shields the
+ * player mesh, the floor at its feet and bystander NPCs.
+ *
+ * The radius is authored in WORLD units and projected per frame by
+ * occlRadiusPx below, not held as a fraction of the framebuffer. A screen
+ * fraction is zoom-invariant by construction, so it cannot serve two
+ * framings: tuned at follow distance it collapses to a peephole around the
+ * character's head as the camera pushes in, which is the reported defect.
+ * 250 world units is about two character heights - an opening roughly four
+ * characters wide. One character height is what the previous 0.12-of-height
+ * tuning worked out to at the distance it was made at, and it played too
+ * tight: the wall opened around the character but not around what they were
+ * walking toward. */
+const OCCL_RADIUS_WORLD = 250.0;
+const OCCL_FEATHER_FRAC_OF_RADIUS = 0.42;
+/* Clamps on the projected radius, as fractions of framebuffer height.
+ * Guards against degenerate cameras (1/z diverges as the lens approaches
+ * the focus, and vanishes far away), NOT tuning knobs - the upper one is
+ * deliberately loose because the tightest play-page zoom already projects
+ * to ~0.57 of the height, and a clamp near there would silently cap the
+ * close-up hole and bring back the zoom dependence this model removes. */
+const OCCL_RADIUS_MIN_FRAC = 0.04;
+const OCCL_RADIUS_MAX_FRAC = 0.9;
 const OCCL_MIN_KEEP = 0.25;
 /* Guards only environment geometry AT the focus depth (floor tier,
  * coplanar decals) - the player / NPC draws are exempted per draw via
@@ -129,6 +148,21 @@ const OCCL_MIN_KEEP = 0.25;
  * values protected such walls as if they were the player ("only the
  * nearest of several stacked occluders fades"). */
 const OCCL_DEPTH_MARGIN = 16.0;
+
+/* Fade-circle radius in framebuffer pixels: OCCL_RADIUS_WORLD projected at
+ * the focus's view depth, clamped to the guard band. A world length L
+ * perpendicular to the view axis at depth z spans `L * projScaleY / z` in
+ * NDC, whose -1..1 covers `h` pixels - hence the halved height. `viewZ` is
+ * the focus's clip w; `projScaleY` comes from occlProjScaleY (webgl-math).
+ * Degenerate inputs fall back to the floor rather than to a NaN uniform.
+ * Rust twin: occlusion_fade::radius_px. */
+function occlRadiusPx(viewZ, projScaleY, h) {
+  const lo = OCCL_RADIUS_MIN_FRAC * h;
+  const hi = OCCL_RADIUS_MAX_FRAC * h;
+  if (!(viewZ > 1e-3) || !(projScaleY > 0)) return lo;
+  const r = OCCL_RADIUS_WORLD * projScaleY * h / (2 * viewZ);
+  return Math.min(Math.max(r, lo), hi);
+}
 
 const VS_SRC = `#version 300 es
 precision highp float;

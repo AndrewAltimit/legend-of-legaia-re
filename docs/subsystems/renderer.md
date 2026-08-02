@@ -1319,19 +1319,36 @@ A fragment fades only when all three hold:
   hugging the character - a plant stalk, an inner wall - still opens up,
   and stacked occluders all open at once since the Bayer pattern is
   screen-aligned across layers); and
-- it lies within the **screen-space fade circle** around the player's
-  projected centre (radius `OCCL_RADIUS_FRAC` of the viewport height), so
-  only the patch of wall near the character opens up.
+- it lies within the **fade circle** around the player's projected centre,
+  so only the patch of wall near the character opens up.
 
-The radius is a fraction of the **viewport**, not of the character, so it
-does not track zoom: at a fixed fraction the hole is the same share of the
-screen whether the camera is tight or pulled all the way out. It was tuned
-down once for exactly that reason - at `0.30`, a 130-unit character standing
-~12.5% of the viewport height got a hole ~4.8x their height, around 31x their
-screen area, which reads as the scene dissolving rather than a wall going
-see-through. Sizing the radius off the character's *projected* half-height
-instead would make it zoom- and FOV-invariant; that is the durable fix and is
-not implemented.
+The circle is sized in **world units** (`OCCL_RADIUS_WORLD` = 250, about two
+character heights) and projected to pixels per frame at the focus's own view
+depth (`occlusion_fade::radius_px`, JS twin `occlRadiusPx`), so the hole
+covers the same amount of world - and so the same share of the character - at
+every camera distance. Across the play page's whole zoom range that holds it
+at ~1.9x the character's on-screen height. The projection needs the frame
+camera's vertical scale `P[1][1]`, which each host recovers from the
+view-projection it already holds: `view_proj = P * V` with `V` rigid, so the
+product's second row is `P[1][1]` times a unit axis and its length is the
+scale (`view_proj_scale_y` / `occlProjScaleY`).
+
+A fraction of the *viewport* is the obvious alternative and it is wrong -
+being screen-relative it is zoom-invariant by construction, so no single
+value serves two framings. The knob was retuned twice under that model
+before the model itself was replaced: at `0.30` a character standing ~12.5%
+of the viewport height got a hole ~4.8x their height (~31x their screen
+area), reading as the scene dissolving; retuned to `0.12` it framed that one
+distance well and then collapsed to a peephole around the character's head
+as the camera pushed in, because the character grows on screen and a screen
+fraction does not.
+
+The radius clamps (`OCCL_RADIUS_MIN_FRAC` 0.04, `OCCL_RADIUS_MAX_FRAC` 0.9 of
+the viewport height) are guards on that `1/z`, not tuning. The upper one is
+deliberately far above anything the follow camera reaches - the tightest
+play-page zoom projects to ~0.57 - because a clamp set near the working range
+silently caps the close-up hole and re-introduces exactly the zoom dependence
+the world-space radius exists to remove.
 
 The fade itself is a **screen-door discard** against a 4x4 Bayer threshold
 (`occl_bayer` in the shader prelude): keep probability ramps from 1.0 at the

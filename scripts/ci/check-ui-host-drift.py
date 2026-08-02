@@ -298,6 +298,12 @@ WEB_PLAY_MENU = "crates/web-viewer/src/play_menu.rs"
 WEB_PLAY_SHOP = "crates/web-viewer/src/play_shop.rs"
 NATIVE_BGM = "crates/engine-shell/src/bgm.rs"
 WEB_RUNTIME = "crates/web-viewer/src/runtime.rs"
+# The occlusion-fade tunables are the one paired set whose web half is a
+# plain script rather than a wasm crate - the browser play page holds them
+# in its GLSL module. `const NAME = <value>;` parses identically either way,
+# which is what lets one checker cover both.
+NATIVE_OCCL = "crates/engine-render/src/occlusion_fade.rs"
+WEB_SHADERS = "site/js/webgl-shaders.js"
 
 # Geometry constants that exist once per host and must agree. See the module
 # docstring for the scope of the claim: equal values, nothing about use.
@@ -368,6 +374,35 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
         "long after the native host had measured that down to two frames",
         "native": (NATIVE_BGM, "TRANSITION_FADE_IN_SAMPLES"),
         "web": (WEB_RUNTIME, "TRANSITION_FADE_IN_SAMPLES"),
+    },
+    # The camera-occlusion fade is not an engine-ui screen - the shared
+    # kernel here is a pair of hand-written twin shaders, so these four
+    # numbers are the whole model and nothing downstream would catch a
+    # divergence. They were unpaired while the radius was retuned twice.
+    {
+        "what": "occlusion-fade circle radius in WORLD units - projected per "
+        "frame by each host (radius_px / occlRadiusPx) so the see-through-wall "
+        "hole tracks the character through zoom",
+        "native": (NATIVE_OCCL, "OCCL_RADIUS_WORLD"),
+        "web": (WEB_SHADERS, "OCCL_RADIUS_WORLD"),
+    },
+    {
+        "what": "occlusion-fade rim feather, as a fraction of the radius - "
+        "the band each host's screen-door keep probability ramps across",
+        "native": (NATIVE_OCCL, "OCCL_FEATHER_FRAC_OF_RADIUS"),
+        "web": (WEB_SHADERS, "OCCL_FEATHER_FRAC_OF_RADIUS"),
+    },
+    {
+        "what": "occlusion-fade screen-door keep floor at the circle centre - "
+        "how transparent a faded wall gets (occl_params.y on both hosts)",
+        "native": (NATIVE_OCCL, "OCCL_MIN_KEEP"),
+        "web": (WEB_SHADERS, "OCCL_MIN_KEEP"),
+    },
+    {
+        "what": "occlusion-fade view-depth clearance - how far in front of the "
+        "player a fragment must sit to fade (occl_params.z on both hosts)",
+        "native": (NATIVE_OCCL, "OCCL_DEPTH_MARGIN"),
+        "web": (WEB_SHADERS, "OCCL_DEPTH_MARGIN"),
     },
 ]
 

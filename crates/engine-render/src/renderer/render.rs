@@ -664,22 +664,26 @@ impl Renderer {
         // `w <= 0` = the player is behind the camera plane - no meaningful
         // projection, leave the fade inert for the frame.
         if self.occl_fade.get()
-            && let Some((c, strength)) = self.occl_focus.get()
-            && c[3] > 1e-3
-            && strength > 0.004
+            && let Some(f) = self.occl_focus.get()
+            && f.clip[3] > 1e-3
+            && f.strength > 0.004
         {
             use crate::occlusion_fade as of;
+            let c = f.clip;
             let vw = self.config.width as f32;
             let vh = self.config.height as f32;
             let px = (c[0] / c[3] * 0.5 + 0.5) * vw;
             // WebGPU NDC y is up, framebuffer y is down.
             let py = (0.5 - c[1] / c[3] * 0.5) * vh;
-            u.occl_focus = [px, py, c[3], strength];
+            u.occl_focus = [px, py, c[3], f.strength];
+            // Radius is authored in world units and projected here, at the
+            // focus depth, so the hole tracks the character through zoom.
+            let radius = of::radius_px(c[3], f.proj_scale_y, vh);
             u.occl_params = [
-                of::OCCL_RADIUS_FRAC * vh,
+                radius,
                 of::OCCL_MIN_KEEP,
                 of::OCCL_DEPTH_MARGIN,
-                of::OCCL_FEATHER_FRAC * vh,
+                of::feather_px(radius),
             ];
         }
         let light_vps: Vec<Mat4> = lights[..n].iter().map(light_view_proj).collect();
