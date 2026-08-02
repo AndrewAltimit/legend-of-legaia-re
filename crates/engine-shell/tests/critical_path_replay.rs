@@ -97,10 +97,22 @@ const TILE: i16 = 128;
 /// lattice deliberately oversamples it rather than matching it.
 const SUBCELL: i16 = 32;
 
-/// Rim Elm's south-gate trigger tile - the walk-on band whose partition-2
-/// `0x3F` record leaves for the overworld. Same constant the spine oracle
-/// seats onto; here it is a navigation *goal*, not a teleport target.
-const TOWN01_SOUTH_GATE: (u8, u8) = (25, 46);
+/// Rim Elm's south-gate trigger tile, as a navigation *goal* rather than a
+/// teleport target - which is why it is **not** the `(25, 46)` the spine
+/// oracle seats onto.
+///
+/// The `.MAP` kind-1 table gives this gate two bands: record 10 over tiles
+/// `(24..26, 45)` (world `z` `5632..5887`) and record 0 over `(24..26, 46)`
+/// (`5888..6015`). Record 0's band is sealed - grid row `47` reads `7 3 B`
+/// across columns `24/25/26` and every even-`z_cell` bit is set, so
+/// `z ∈ [5888, 5951]` is a solid 64-unit wall band across the doorway. A
+/// seat lands on it; a walk cannot. Retail's captured pre-transition frame
+/// parks at `(3264, 5824)`, inside record 10's band, and warps from there.
+///
+/// So the goal is record 10's band. Reaching it and *not* transitioning is
+/// the honest reading of the current defect - see the `town01` south-gate
+/// thread in `docs/reference/open-rev-eng-threads.md`.
+const TOWN01_SOUTH_GATE: (u8, u8) = (25, 45);
 
 /// Frames a leg may spend before it is called a timeout.
 const LEG_FRAME_BUDGET: u32 = 6_000;
@@ -351,6 +363,16 @@ struct StallSite {
     actor: [bool; 4],
 }
 
+/// The tile as the **walk-on dispatch** quantises it: a raw `world >> 7`,
+/// not the `(world - 0x40) >> 7` the planner and the region refresh use.
+/// The two agree at tile centres and differ by a half-tile band elsewhere,
+/// so a stall reported only in planner tiles can sit in a trigger band while
+/// naming the tile before it. Retail's own dispatcher uses this form
+/// (`FUN_801D1EC4`); see `SceneHost::dispatch_walk_on_trigger`.
+fn dispatch_tile(x: i16, z: i16) -> (i32, i32) {
+    (i32::from(x) >> 7, i32::from(z) >> 7)
+}
+
 impl StallSite {
     fn dirs(flags: [bool; 4]) -> String {
         const NAME: [&str; 4] = ["Z-", "X-", "Z+", "X+"];
@@ -402,10 +424,11 @@ impl std::fmt::Display for Leg {
             }
             Leg::Stalled(s) => write!(
                 f,
-                "STALLED at tile {:?} world {:?} heading for {:?} (next waypoint {:?}); \
-                 walls {}; actors {}",
+                "STALLED at tile {:?} world {:?} (dispatch tile {:?}) heading for {:?} \
+                 (next waypoint {:?}); walls {}; actors {}",
                 s.tile,
                 s.world,
+                dispatch_tile(s.world.0, s.world.1),
                 s.goal,
                 s.want,
                 StallSite::dirs(s.wall),

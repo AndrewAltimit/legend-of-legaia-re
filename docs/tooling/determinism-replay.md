@@ -203,7 +203,10 @@ wall arms (`field_dir_blocked` and `field_actor_dir_blocked`) separately -
 "the player stopped here" and "the engine says every useful direction is a
 wall" are different findings and the bare tile cannot tell them apart. The
 first run's stall is written up as
-[`town01` south gate unreachable on foot](../reference/open-rev-eng-threads.md#town01-south-gate-unreachable-on-foot).
+[the `town01` south gate's inert trigger band](../reference/open-rev-eng-threads.md#town01-south-gate-the-reachable-trigger-band-is-inert);
+it found a defect every seated oracle is blind to, and its first two
+diagnoses were both wrong, which is the argument for making a stall
+self-describing rather than a bare failure.
 
 The pad-inversion arithmetic and the baseline parser are covered by disc-free
 unit tests, so the file stays non-vacuous in CI where the ladder skips.

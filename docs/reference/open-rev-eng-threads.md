@@ -125,44 +125,56 @@ with the instruction evidence cited.
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes, a shrunken residual set still owed | [details ↓](#region-story-flag-gate-families) |
 | teien hedge-base ground fill (kind-2 tile-trigger cells) | open | [details ↓](#teien-hedge-base-ground-fill) |
-| `town01` south gate unreachable on foot | open | [details ↓](#town01-south-gate-unreachable-on-foot) |
+| `town01` south gate: the reachable trigger band is inert | open - cause pinned, fix owed | [details ↓](#town01-south-gate-the-reachable-trigger-band-is-inert) |
 
-### `town01` south gate unreachable on foot
+### `town01` south gate: the reachable trigger band is inert
 
-*Status:* open - the exit fires when the player is placed on it, and no walkable position reaches it
+*Status:* open as engineering work - the collision side is settled and faithful; the walk-on side is not
 
-The Rim Elm south gate is the first scene exit of the game: its walk-on
-trigger runs the partition-2 `0x3F` record that leaves for the Drake
-overworld. Seated onto the trigger tile `(25, 46)` it fires correctly - that
-is what `chapter1_spine_oracle`'s Leg 1 asserts. Driven by **pad** from the
-scene's own spawn, it is not reachable.
+The Rim Elm south gate is the first scene exit of the game. Seated onto tile
+`(25, 46)` it fires correctly - that is what `chapter1_spine_oracle`'s Leg 1
+asserts. Driven by **pad** from the scene's own spawn it never fires, because
+the tile the oracle seats onto is not one a player can stand on.
 
-`critical_path_replay` walks it with the collision grid as the planner and
-the pad as the only actuator. From the spawn at tile `(20, 20)` the player
-crosses ~26 tiles and arrives at world `(3268, 5886)` - tile `(25, 45)`, on
-the gate's centreline (the gate tile centre is `x = 3264`). There it reports
-`X-`, `Z+` and `X+` all walled, presses `Z+` into the gate for the full
-stall window, and no transition fires.
+The `.MAP` kind-1 trigger table gives the gate **two** bands, not one:
 
-The flood settles the "maybe another route" question: of the 10441 lattice
-nodes reachable from the spawn, none is closer to the trigger tile than that
-one, and from it `Z+` is a wall. The gate cell itself is open only from the
-south (`Z-`, `X-`, `X+` all blocked there), which is the signature of a wall
-band across the approach rather than a narrow opening the planner missed.
+| Record | Tiles | World `z` | Reachable on foot |
+|---|---|---|---|
+| 10 | `(24..26, 45)`, `(25, 44)` | `5632..5887` | yes |
+| 0 | `(24..26, 46)` | `5888..6015` | no |
 
-Note that a door tile reading as a wall is *expected* - `seat_player_at_tile`
-documents exactly that - so the finding is not "the gate tile is solid". It
-is that the walk-on band is never crossed: the player is held ~66 units short
-of the gate centre, and the standoff (`field-locomotion.md`: the player rests
-47-48 units off the wall plane) puts the blocking plane inside the approach
-rather than behind the trigger.
+Record 0's band is sealed by the collision grid: grid row `47` reads `7 3 B`
+across columns `24/25/26`, and every one of those nibbles has the even-`z_cell`
+bits set, so `z ∈ [5888, 5951]` is a solid 64-unit wall band spanning the whole
+doorway. The corridor only reopens at `z ≥ 5952`, on the far side. Nothing can
+walk into record 0's band - and the port warps **only** from that band.
 
-What would close it: a retail capture of the same walk - a PCSX-Redux probe
-on `player+0x14/0x18` while walking Rim Elm's south exit - to establish
-whether retail's player crosses the same band from the same side, and at what
-`z`. That distinguishes three candidates the port cannot separate from its
-own data: a wrong wall bit in the loaded grid, a trigger band authored
-further north than the port places it, and a standoff wider than retail's.
+Retail uses the other one. Its captured pre-transition frame parks the player
+at world `(3264, 5824)`, inside record 10's band, and an Up press warps to
+`map01` from there. In the port the same seat produces no transition and no
+dialogue: record 10 spawns nothing observable.
+
+Three things this rules out, each measured rather than argued:
+
+- **Not a wrong wall bit.** The port's loaded grid is byte-identical to retail's
+  live grid in early-story `town01` captures. The only differences against a
+  late-story `town0c` capture are 16 bytes of `0x4C` nibble-7 story paints,
+  correctly absent early - one of which is what opens this gate later.
+- **Not a band authored further north.** The disc's own trigger table is the
+  source of both bands above.
+- **Not a wider standoff.** The pad-driven player reaches `z = 5886`, which is
+  62 units *further south* than retail's own park.
+
+What is owed is port-side: find why record 10's spawn does not deliver the
+scene change. Note the shape retail implies - stepping into record 10's band
+runs a partition-2 script that carries the player the rest of the way - which
+would explain how retail crosses a wall band that blocks locomotion.
+
+Method note, because it generalises: this was settled entirely from save
+states read offline. A mednafen state carries the scratchpad, so
+`_DAT_1f8003ec` (and through it the live collision grid) is readable without
+running anything; a PCSX-Redux state carries only main RAM, but the same grid
+can be located by content-matching an unpainted row against a known one.
 
 ### teien hedge-base ground fill
 
