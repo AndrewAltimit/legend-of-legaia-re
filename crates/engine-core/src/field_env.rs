@@ -72,6 +72,8 @@ pub struct EnvDraw {
     /// dropping it does more than leave a prop upright: a mesh authored off
     /// its own origin also lands in the wrong place, because the rotation is
     /// about the origin, not the geometry's centre.
+    ///
+    // REF: FUN_80026988, FUN_8003A55C, FUN_8001ADA4
     pub rot_x: u16,
     /// See [`Self::rot_x`].
     pub rot_z: u16,
