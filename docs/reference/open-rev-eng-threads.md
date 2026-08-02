@@ -125,6 +125,44 @@ with the instruction evidence cited.
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes, a shrunken residual set still owed | [details ↓](#region-story-flag-gate-families) |
 | teien hedge-base ground fill (kind-2 tile-trigger cells) | open | [details ↓](#teien-hedge-base-ground-fill) |
+| `town01` south gate unreachable on foot | open | [details ↓](#town01-south-gate-unreachable-on-foot) |
+
+### `town01` south gate unreachable on foot
+
+*Status:* open - the exit fires when the player is placed on it, and no walkable position reaches it
+
+The Rim Elm south gate is the first scene exit of the game: its walk-on
+trigger runs the partition-2 `0x3F` record that leaves for the Drake
+overworld. Seated onto the trigger tile `(25, 46)` it fires correctly - that
+is what `chapter1_spine_oracle`'s Leg 1 asserts. Driven by **pad** from the
+scene's own spawn, it is not reachable.
+
+`critical_path_replay` walks it with the collision grid as the planner and
+the pad as the only actuator. From the spawn at tile `(20, 20)` the player
+crosses ~26 tiles and arrives at world `(3268, 5886)` - tile `(25, 45)`, on
+the gate's centreline (the gate tile centre is `x = 3264`). There it reports
+`X-`, `Z+` and `X+` all walled, presses `Z+` into the gate for the full
+stall window, and no transition fires.
+
+The flood settles the "maybe another route" question: of the 10441 lattice
+nodes reachable from the spawn, none is closer to the trigger tile than that
+one, and from it `Z+` is a wall. The gate cell itself is open only from the
+south (`Z-`, `X-`, `X+` all blocked there), which is the signature of a wall
+band across the approach rather than a narrow opening the planner missed.
+
+Note that a door tile reading as a wall is *expected* - `seat_player_at_tile`
+documents exactly that - so the finding is not "the gate tile is solid". It
+is that the walk-on band is never crossed: the player is held ~66 units short
+of the gate centre, and the standoff (`field-locomotion.md`: the player rests
+47-48 units off the wall plane) puts the blocking plane inside the approach
+rather than behind the trigger.
+
+What would close it: a retail capture of the same walk - a PCSX-Redux probe
+on `player+0x14/0x18` while walking Rim Elm's south exit - to establish
+whether retail's player crosses the same band from the same side, and at what
+`z`. That distinguishes three candidates the port cannot separate from its
+own data: a wrong wall bit in the loaded grid, a trigger band authored
+further north than the port places it, and a standoff wider than retail's.
 
 ### teien hedge-base ground fill
 
