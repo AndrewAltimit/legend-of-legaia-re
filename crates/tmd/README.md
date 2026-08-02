@@ -91,9 +91,11 @@ share this logic so on-screen rendering and offline diagnostics agree.
 
 `legaia_tim::vram::Vram::prim_texture_status` returns a structured
 verdict per prim: `Ok` / `MissingClut { row }` /
-`ClutDepthMismatch { row, populated_width, expected_width }` /
 `MissingTexturePage { tpage }`. The CLI prints these as readable trailers
-on each prim row when invoked with `--vram-dir`.
+on each prim row when invoked with `--vram-dir`. A fourth variant,
+`ClutDepthMismatch`, is retained for the diagnostic columns but is no
+longer produced - judging a prim by its CLUT row's populated width is
+unsound and dropped real geometry (`docs/subsystems/renderer.md`).
 
 ## TMD vs TMD2 (asset dispatcher types `0x02` and `0x09`)
 

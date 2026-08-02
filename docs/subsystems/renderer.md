@@ -690,11 +690,11 @@ and the CLUT block are decided *independently* against the prim-target rectangle
 for the current TMD, so a TIM can contribute one block, both, or neither.
 
 `legaia_tim::vram::Vram::prim_texture_status` then classifies each prim's
-`(cba, tsb, uv)` lookup as `Ok` / `MissingClut` /
-`ClutDepthMismatch { populated_width, expected_width }` / `MissingTexturePage`.
-The viewer drops bad prims at mesh-build time; the CLI can explain *why* a prim
-was dropped. The most common case is a 4bpp prim referencing a CLUT row that a
-different TIM has populated as a 256-entry 8bpp palette.
+`(cba, tsb, uv)` lookup as `Ok` / `MissingClut` / `MissingTexturePage` (plus
+the retired `ClutDepthMismatch`, which nothing produces - see below). The
+viewer drops bad prims at mesh-build time; the CLI can explain *why* a prim
+was dropped. The common case is a prim whose CLUT row or texture page no
+loaded TIM has uploaded at all.
 
 The same filter is wired into engine-side scene loads through `ResolvedTmd::build_filtered_vram_mesh`, so battle / field actor meshes inherit the same cleanup the asset viewer has.
 
@@ -894,20 +894,32 @@ actually have; the alignment roughly doubles `map01` texpage residency
 
 Both work without any pre-extracted `tim_scan/` tree - they operate straight off `PROT.DAT` + `CDNAME.TXT` (extracted-root or in-place disc image).
 
-### CLUT-depth-mismatch threshold
+### A CLUT row's width says nothing about a prim (retired check)
 
-`Vram::prim_texture_status` flags `ClutDepthMismatch` when a CLUT row is
-populated past what the prim's colour depth could legitimately fill.
+`Vram::prim_texture_status` used to flag `ClutDepthMismatch` when a 4bpp
+prim's CLUT scanline was populated past 256 pixels, reading a wide row as
+another TIM's image bytes having spilled onto the palette.
 
-For 4bpp prims the threshold is `16 * 16 = 256` entries - 16 distinct 16-entry
-palettes packed in one row, picked by the prim's `CBA` low 6 bits, which is the
-standard Legaia character-TIM layout. For 8bpp it is `2 * 256`: one palette plus
-slack for stray pixels.
+The check is unsound and has been removed. A 4bpp `CBA` addresses **64**
+distinct 16-entry palettes on a row (`(cba & 0x3F) * 16` spans `0..=1008`),
+so a densely packed row is legitimately populated across all 1024 pixels -
+four times the width the threshold called impossible; 8bpp has the same
+property with four 256-entry palettes. And the GPU reads only the 16 (or
+256) entries at the prim's own `CBA`, so no measurement of the *rest* of the
+scanline can decide whether those entries are a palette. `MissingClut`,
+which reads exactly that window, is the sound test and still runs.
 
-Anything past that means another TIM's image bytes have spilled onto the CLUT
-row, and the paletted decode would index into pixel data. The targeted-upload
-path in `build_targeted` prevents the spillage, so engine-side scenes hit the
-mismatch threshold only when a regression breaks the per-TIM block arbitration.
+It was not a theoretical fault. Scenes really do pack rows that densely, and
+the threshold then deleted whole buildings: in `town0b` every primitive of
+the placed house at tile `(37, 42)` sampled row 491 and was dropped, leaving
+a hole through to the clear colour where the house should stand - 17 of the
+scene's env-pack meshes were emptied outright. Regression cover:
+`crates/engine-core/tests/scene_clut_row_packing_disc.rs`, which asserts
+both that the house keeps its prims and that the row really is packed past
+the old bound, so it cannot pass vacuously.
+
+The variant and its per-reason counter are retained so the diagnostic
+surfaces keep their column; the count is now always zero.
 
 ### Texture-window register
 

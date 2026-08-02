@@ -27,21 +27,38 @@ pub const VRAM_PIXELS: usize = VRAM_WIDTH * VRAM_HEIGHT;
 /// [`Vram::prim_texture_status`]; [`Vram::prim_has_texture_data`] is a thin
 /// wrapper that just checks for `Ok` here.
 ///
-/// "Coherent" means: the CLUT row has the right number of populated
-/// entries for the prim's depth, AND the UV bbox inside the texture page
-/// has non-zero data. A `ClutDepthMismatch` row is one where a 4bpp prim
-/// references a CLUT scanline that's actually 256 wide (typical when the
-/// wrong TIM was uploaded for the row) - rendering it gives rainbow noise.
+/// "Coherent" means: the entries the GPU would actually read for this
+/// prim's CLUT are populated, AND the UV bbox inside the texture page has
+/// non-zero data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrimTextureStatus {
     /// CLUT (if any) and texture page both populated and depth-matched.
     Ok,
     /// CLUT row sits in unfilled VRAM (no TIM has uploaded this row).
     MissingClut { row: u16 },
-    /// CLUT row has data but only at the wrong palette depth - e.g. a
-    /// 4bpp prim sampling a 256-entry 8bpp palette. `populated_width` is
-    /// the run of non-zero entries in the row; `expected_width` is what
-    /// this prim's depth needs (16 or 256).
+    /// **No longer produced.** Retained so the diagnostic surfaces that
+    /// tabulate drop reasons keep their column (it now always reads zero,
+    /// which is the true count).
+    ///
+    /// This was a width heuristic: measure how far the prim's CLUT
+    /// scanline is populated and reject a 4bpp prim whose row ran past 16
+    /// palettes' worth (256 entries), on the theory that a wide row meant
+    /// another TIM's image data had spilled onto it and the lookup would
+    /// index pixels instead of a palette.
+    ///
+    /// It is unsound, and the bound was the giveaway: a 4bpp CBA addresses
+    /// **64** distinct 16-entry palettes per row (`(cba & 0x3F) * 16` spans
+    /// `0..=1008`), so a fully legitimate row is populated across all 1024
+    /// pixels - four times the width the check called impossible. 8bpp has
+    /// the same property with 4 palettes. The GPU reads only the 16 (or
+    /// 256) entries at the prim's own CBA, so no measurement of the *rest*
+    /// of the scanline can say whether those entries are a palette; only
+    /// [`Self::MissingClut`], which reads exactly that window, can.
+    ///
+    /// In practice it deleted whole buildings: every one of `town0b`'s
+    /// placed-house prims sampling the densely-packed CLUT row 491 was
+    /// dropped, leaving a hole through to the clear colour where the house
+    /// should be. Do not re-add a width test here.
     ClutDepthMismatch {
         row: u16,
         populated_width: u16,
@@ -374,45 +391,14 @@ impl Vram {
                 row: (cba >> 6) & 0x1FF,
             };
         }
-        // Depth-mismatch check: if a 4bpp prim's CLUT row is filled far
-        // past what 16 separate 4bpp palettes (= 256 entries) could
-        // occupy, the first 16 entries are an arbitrary slice of a wide
-        // gradient and the prim renders as rainbow stripes. Count the
-        // populated run length so the diagnostic can tell the user how
-        // wide the row actually is.
-        //
-        // Legaia character TIMs commonly pack 16 distinct 16-entry
-        // palettes into a single 256-wide row (the prim's CBA low 6 bits
-        // pick which palette to use). So the depth-mismatch threshold
-        // is `clut_w * 16` for 4bpp (= 256-wide row legitimate) and
-        // proportional for 8bpp. Anything past that is a real mismatch.
-        if clut_w != 0 && clut_w < 256 {
-            // Measure the populated run as a *contiguous* palette band: stop at
-            // the first large zero gap so an unrelated texture region sharing
-            // this scanline isn't counted as part of the palette. This matters
-            // for the battle monster layout, where the per-slot CLUT rows
-            // (`484 + slot`) fall inside the 256-tall texture-page y-band
-            // (`y = 256`), so the slot's own 4bpp page sits far to the right of
-            // the CLUT on the *same* scanline; an unbounded scan would walk
-            // across the empty gap into the page and report a bogus ~480-wide
-            // palette. `MAX_CLUT_GAP` tolerates a few fully-transparent palette
-            // entries inside the band while staying well below the 80+ px gap
-            // that separates the CLUT region from any texture page.
-            const MAX_CLUT_GAP: usize = 64;
-            let populated_width = self.row_run_width(cx, cy, VRAM_WIDTH, MAX_CLUT_GAP) as u16;
-            let max_legitimate_width = match depth_bits {
-                4 => clut_w * 16, // 16 distinct 16-entry palettes per row
-                8 => clut_w * 2,  // 8bpp has 1 palette per row; 2x slack for stray pixels
-                _ => clut_w,
-            };
-            if populated_width as usize > max_legitimate_width {
-                return PrimTextureStatus::ClutDepthMismatch {
-                    row: (cba >> 6) & 0x1FF,
-                    populated_width,
-                    expected_width: clut_w as u16,
-                };
-            }
-        }
+        // NO WIDTH-BASED DEPTH CHECK HERE - see
+        // [`PrimTextureStatus::ClutDepthMismatch`]. How much of the rest of
+        // the scanline is populated says nothing about whether *this* prim's
+        // palette is valid, because the CBA addresses 64 distinct 16-entry
+        // palettes per row (`(cba & 0x3F) * 16` spans `0..=1008`), so a
+        // legitimately packed row runs the full 1024. The sound test is the
+        // `MissingClut` one above, which reads exactly the 16 (or 256)
+        // entries the GPU would.
 
         // Texture page region: hash the UV bbox into VRAM coords and check
         // that some words are non-zero. UV byte layout matches the shader:
@@ -735,13 +721,17 @@ mod tests {
         vram_multi.write_words(0, 64, 256, 1, &[0x1234; 256]);
         vram_multi.write_words(64, 0, 4, 16, &[0x4567; 64]);
         assert!(vram_multi.prim_has_texture_data(cba, tsb, &uvs));
-        // CLUT row extends *past* 256 entries (= image data has spilled
-        // onto the palette row from some other TIM upload) -> drop, the
-        // 4bpp prim would index into junk pixels.
-        let mut vram_spill = Vram::new();
-        vram_spill.write_words(0, 64, 600, 1, &[0x1234; 600]);
-        vram_spill.write_words(64, 0, 4, 16, &[0x4567; 64]);
-        assert!(!vram_spill.prim_has_texture_data(cba, tsb, &uvs));
+        // A CLUT row populated past 256 entries is *also* legitimate - the
+        // CBA addresses 64 palettes per row, so a densely packed one runs
+        // the full width. The old width heuristic dropped these; on the disc
+        // that meant losing entire buildings. See
+        // `PrimTextureStatus::ClutDepthMismatch` for why width cannot decide
+        // this, and keep this prim's own palette (populated above) the only
+        // thing that does.
+        let mut vram_wide = Vram::new();
+        vram_wide.write_words(0, 64, 600, 1, &[0x1234; 600]);
+        vram_wide.write_words(64, 0, 4, 16, &[0x4567; 64]);
+        assert!(vram_wide.prim_has_texture_data(cba, tsb, &uvs));
     }
 
     #[test]
@@ -776,37 +766,34 @@ mod tests {
             PrimTextureStatus::Ok
         );
 
-        // (4) CLUT row populated *past* 16 4bpp palettes' worth (256
-        // entries) for a 4bpp prim -> ClutDepthMismatch. Image data
-        // from a different TIM has spilled onto this CLUT row, so the
-        // 4bpp lookup would index into pixel data.
-        let mut vram = Vram::new();
-        vram.write_words(0, 64, 600, 1, &[0x1234; 600]);
-        vram.write_words(64, 0, 4, 16, &[0x4567; 64]);
-        match vram.prim_texture_status(cba, tsb, &uvs) {
-            PrimTextureStatus::ClutDepthMismatch {
-                row,
-                populated_width,
-                expected_width,
-            } => {
-                assert_eq!(row, 64);
-                assert_eq!(populated_width, 600);
-                assert_eq!(expected_width, 16);
-            }
-            other => panic!("expected ClutDepthMismatch, got {:?}", other),
+        // (4) A widely-populated CLUT row is legitimate at every width, and
+        // this is the case the old width heuristic got wrong. The CBA
+        // addresses 64 distinct 16-entry palettes per row, so a densely
+        // packed row runs the full 1024 - the GPU still reads only the 16
+        // entries at this prim's own CBA, which case (3) already populated.
+        // `town0b` really ships rows like this, and rejecting them deleted
+        // whole houses. See `PrimTextureStatus::ClutDepthMismatch`.
+        for width in [256usize, 600, VRAM_WIDTH] {
+            let mut vram = Vram::new();
+            vram.write_words(0, 64, width as u16, 1, &vec![0x1234; width]);
+            vram.write_words(64, 0, 4, 16, &[0x4567; 64]);
+            assert_eq!(
+                vram.prim_texture_status(cba, tsb, &uvs),
+                PrimTextureStatus::Ok,
+                "a {width}-wide CLUT row must not disqualify a 4bpp prim"
+            );
         }
 
-        // (5) CLUT row exactly 256 wide for a 4bpp prim is *legitimate*
-        // multi-palette (16 distinct 16-entry palettes packed in one
-        // row, picked by CBA low 6 bits). Must NOT trigger depth
-        // mismatch - this is Legaia's standard character-TIM layout.
+        // (5) ...and a prim whose own 16-entry window is empty is still
+        // rejected, so widening (4) did not disarm the check that matters.
+        // Palette 1 (CBA x = 16) is populated; this prim reads palette 0.
         let mut vram = Vram::new();
-        vram.write_words(0, 64, 256, 1, &[0x1234; 256]);
+        vram.write_words(16, 64, 16, 1, &[0x1234; 16]);
         vram.write_words(64, 0, 4, 16, &[0x4567; 64]);
-        assert_eq!(
-            vram.prim_texture_status(cba, tsb, &uvs),
-            PrimTextureStatus::Ok
-        );
+        match vram.prim_texture_status(cba, tsb, &uvs) {
+            PrimTextureStatus::MissingClut { row } => assert_eq!(row, 64),
+            other => panic!("expected MissingClut, got {other:?}"),
+        }
     }
 
     #[test]
