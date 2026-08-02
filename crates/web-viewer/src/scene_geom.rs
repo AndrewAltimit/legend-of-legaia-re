@@ -151,9 +151,13 @@ impl LegaiaViewer {
         let Some(hf) = self.walk_ground.as_ref() else {
             return Vec::new();
         };
+        // Ground sinks below the env pack's authored floor art (see
+        // `coplanar_draws::GROUND_SINK`).
         let mut out = Vec::with_capacity(hf.positions.len() * 3);
         for p in &hf.positions {
-            out.extend_from_slice(p);
+            out.push(p[0]);
+            out.push(p[1] + legaia_engine_core::coplanar_draws::GROUND_SINK);
+            out.push(p[2]);
         }
         out
     }

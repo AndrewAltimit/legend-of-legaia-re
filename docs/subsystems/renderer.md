@@ -1151,14 +1151,29 @@ renderer and the site's WebGL viewers:
     one position touch on every family) can otherwise sum back into
     coincidence.
 
+- **The walk-ground heightfield** - the `.MAP` walkable base grid is a
+  *fourth* surface layer, and indoors/in towns the env pack lays authored
+  floor art on the very same plane (koin6: the entire 972-triangle ground
+  grid and the env floor slabs all at `y = 0`) with a different
+  tessellation - so every such floor z-fights as wedge streaks along the
+  grid's cell diagonals, most visible from steep pulled-back cameras.
+  Retail resolves the tie painter-style; the port sinks the ground layer
+  `coplanar_draws::GROUND_SINK` (`0.4`) units below its authored height at
+  every **render** site (native `heightfield_to_vram_mesh`, the play page /
+  field-scene viewer / kingdom-walk position exporters, the dance stage),
+  so the authored art wins deterministically and the ground still draws
+  wherever nothing covers it. The heightfield struct itself keeps its
+  authored heights - the `.glb` exporter and the fishing shore-anchor
+  height queries must not shift.
+
   The disc-gated oracle for all of this is
   `engine-core/tests/coplanar_residual_disc.rs`: it rebuilds a scene's final
   world-space triangle soup exactly as the hosts draw it (hybrid passes,
-  yaw-instanced draws, lifts applied) and scans for coplanar overlapping
-  pairs that survive - `DIAG_ALL=1` sweeps the whole field corpus. The known
-  residual tail it tolerates: same-position stacks of *curved* shells
-  (jouine's flesh walls), which no translation offset can separate
-  everywhere, and sub-cluster slivers below the detection floor.
+  yaw-instanced draws, lifts applied, ground layer sunk) and scans for
+  coplanar overlapping pairs that survive - `DIAG_ALL=1` sweeps the whole
+  field corpus. The known residual tail it tolerates: same-position stacks
+  of *curved* shells (jouine's flesh walls), which no translation offset can
+  separate everywhere, and sub-cluster slivers below the detection floor.
 - **Depth precision** - the native renderer runs **reversed-Z**
   (`renderer/helpers.rs::reverse_z`: clip `z' = w - z`, depth cleared to 0,
   compares mirrored to Greater/GreaterEqual, applied centrally at the two MVP

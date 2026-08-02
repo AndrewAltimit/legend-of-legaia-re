@@ -418,6 +418,7 @@ NATIVE_SAVE_HELPERS = "crates/engine-shell/src/bin/legaia-engine/window/save_sel
 NATIVE_FRAME_TICK = "crates/engine-core/src/world/frame_tick.rs"
 NATIVE_BOOT_CUTSCENE = "crates/engine-shell/src/bin/legaia-engine/window/boot_cutscene.rs"
 NATIVE_FIELD_RENDER = "crates/engine-shell/src/bin/legaia-engine/window/field_render.rs"
+NATIVE_GEOMETRY = "crates/engine-shell/src/bin/legaia-engine/window/geometry.rs"
 WEB_MINIGAMES_MUSCLE = "crates/web-viewer/src/minigames_muscle.rs"
 WEB_PLAY_BATTLE = "crates/web-viewer/src/play_battle.rs"
 WEB_PLAY = "crates/web-viewer/src/play.rs"
@@ -454,6 +455,30 @@ SIM_PAIRS: list[dict[str, object]] = [
         },
         "mode": "symbols_all",
         "symbols": ["draw_plane_summaries", "coplanar_draw_offsets"],
+    },
+    {
+        "what": "ground-heightfield sink, native vs play page - the walk-ground "
+        "grid shares its plane with the env pack's authored floor art (koin6: "
+        "both at y=0 with different tessellations), so every render site must "
+        "sink it by the shared GROUND_SINK or that host's floors z-fight as "
+        "wedge streaks from steep cameras while every other host is clean",
+        "sites": {
+            "native": (NATIVE_GEOMETRY, "heightfield_to_vram_mesh"),
+            "web": (WEB_PLAY, "field_ground_positions"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["GROUND_SINK"],
+    },
+    {
+        "what": "ground-heightfield sink, play page vs field-scene viewer - "
+        "same property as the native pairing above, across the two web "
+        "surfaces' ground exporters",
+        "sites": {
+            "web_play": (WEB_PLAY, "field_ground_positions"),
+            "web_viewer": (WEB_FIELD_SCENE, "field_scene_ground_positions"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["GROUND_SINK"],
     },
     {
         "what": "Muscle Dome damage - the arena's per-exchange damage must come "

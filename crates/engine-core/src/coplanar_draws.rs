@@ -38,6 +38,25 @@ use std::collections::HashMap;
 /// authored layers - far above depth-buffer resolution at scene scale.
 pub const DRAW_NUDGE: f32 = 0.75;
 
+/// World-units the **walk-ground heightfield** sinks below its authored
+/// height at every render site (positive = down in the retail Y-down frame
+/// the heightfield is stored in). The heightfield is the walkable base grid;
+/// indoors and in towns the env pack lays authored floor art on the SAME
+/// plane (koin6: all 972 ground tris at y=0, exactly the env floor slabs'
+/// plane), and the two tessellations differ - so every such floor z-fights
+/// as view-angle-dependent wedge streaks along the ground grid's cell
+/// diagonals. Retail resolves the tie painter-style through the ordering
+/// table; the port sinks the heightfield so the authored art wins
+/// deterministically, and the heightfield still draws wherever nothing
+/// covers it. `0.4` clears depth rounding at any sane distance while staying
+/// off the occupied below-floor lattice (authored under-layers sit at 1+
+/// units; the intra/cross nudges only ever move geometry UP).
+///
+/// Render-site-only by design: the heightfield struct itself stays at its
+/// authored heights (the `.glb` exporter and the fishing shore-anchor height
+/// queries must not shift).
+pub const GROUND_SINK: f32 = 0.4;
+
 /// Planes smaller than this total triangle area within one mesh are ignored -
 /// they cannot host the overlaps that read as shimmer, and skipping them
 /// keeps the cluster graph small. `64` (an 8x8-unit patch, 1/256 of a field

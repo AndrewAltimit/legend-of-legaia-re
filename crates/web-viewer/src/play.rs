@@ -639,7 +639,16 @@ impl LegaiaRuntime {
         let Some(hf) = self.field.as_ref().and_then(|f| f.ground.as_ref()) else {
             return Vec::new();
         };
-        hf.positions.iter().flatten().copied().collect()
+        // Ground sinks below the env pack's authored floor art (see
+        // `coplanar_draws::GROUND_SINK` - coincident planes with different
+        // tessellations z-fight at any depth precision).
+        let mut out = Vec::with_capacity(hf.positions.len() * 3);
+        for p in &hf.positions {
+            out.push(p[0]);
+            out.push(p[1] + legaia_engine_core::coplanar_draws::GROUND_SINK);
+            out.push(p[2]);
+        }
+        out
     }
 
     pub fn field_ground_uvs(&self) -> Vec<u8> {

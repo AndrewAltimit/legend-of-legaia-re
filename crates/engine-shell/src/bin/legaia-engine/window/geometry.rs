@@ -219,8 +219,17 @@ pub(crate) fn heightfield_to_vram_mesh(
     for tri in indices.chunks_exact_mut(3) {
         tri.swap(1, 2);
     }
+    // Sink the ground below the env pack's authored floor art (see
+    // `coplanar_draws::GROUND_SINK`): the two surfaces share a plane with
+    // different tessellations, and coincident planes z-fight at any depth
+    // precision. Render-side only - the heightfield struct keeps its
+    // authored heights.
+    let mut positions = hf.positions.clone();
+    for p in &mut positions {
+        p[1] += legaia_engine_core::coplanar_draws::GROUND_SINK;
+    }
     legaia_tmd::mesh::VramMesh {
-        positions: hf.positions.clone(),
+        positions,
         uvs: hf.uvs.clone(),
         // Per-cell terrain page + palette (multi-page terrain atlas).
         cba_tsb: hf.cba_tsb.clone(),

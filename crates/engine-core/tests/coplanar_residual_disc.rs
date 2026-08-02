@@ -336,6 +336,47 @@ fn diag_scene(index: &ProtIndex, name: &str) -> (usize, f32) {
             true,
         );
     }
+    // The walk-ground heightfield layer, sunk exactly as the render sites
+    // sink it (`GROUND_SINK`). Before the sink, koin6's entire ground grid
+    // sat on the env floor slabs' plane - the class this layer's inclusion
+    // pins.
+    if let Ok(Some(hf)) = scene.walk_heightfield(index) {
+        const GROUND_DRAW: usize = usize::MAX;
+        for tri in hf.indices.chunks_exact(3) {
+            let v: Vec<[f32; 3]> = tri
+                .iter()
+                .map(|&i| {
+                    let p = hf.positions[i as usize];
+                    [p[0], p[1] + coplanar_draws::GROUND_SINK, p[2]]
+                })
+                .collect();
+            let cr = cross(sub(v[1], v[0]), sub(v[2], v[0]));
+            let len = dot(cr, cr).sqrt();
+            if len < 1e-6 {
+                continue;
+            }
+            let area = len * 0.5;
+            if area < 1.0 {
+                continue;
+            }
+            let mut n = [cr[0] / len, cr[1] / len, cr[2] / len];
+            let ax = dominant_axis(n);
+            if n[ax] < 0.0 {
+                n = [-n[0], -n[1], -n[2]];
+            }
+            let dd = dot(n, v[0]);
+            soup.push(WTri {
+                draw: GROUND_DRAW,
+                res_tmd: GROUND_DRAW,
+                colour_half: false,
+                v: [v[0], v[1], v[2]],
+                n,
+                d: dd,
+                area,
+                p2: [project2(v[0], ax), project2(v[1], ax), project2(v[2], ax)],
+            });
+        }
+    }
 
     // Bucket by quantized plane; scan for surviving coincident overlaps.
     let mut buckets: HashMap<(i32, i32, i32, i64), Vec<usize>> = HashMap::new();
@@ -419,7 +460,9 @@ fn diag_scene(index: &ProtIndex, name: &str) -> (usize, f32) {
     for ((da, ra, ha, db, rb, hb), (pairs, area, at, n)) in rows.iter().take(30) {
         let half = |h: bool| if h { "colour" } else { "tex" };
         let dinfo = |di: usize| {
-            let d = &combined[di];
+            let Some(d) = combined.get(di) else {
+                return "ground-heightfield".to_string();
+            };
             format!(
                 "draw{di}[res{} @({},{},{}) rot{}]",
                 d.res_tmd, d.world_x, d.world_y, d.world_z, d.rot_y
