@@ -60,10 +60,21 @@ pub struct EnvDraw {
     /// retail's matrix builder (`FUN_80026988`) maps local `+Z` to
     /// `(sin, 0, cos)` in the retail Y-down frame - `glam`'s
     /// `Mat4::from_rotation_y` with the same angle reproduces it exactly.
-    /// The record's `+0x08`/`+0x0C` X/Z tilts (zero on every retail walk
-    /// map, rare in towns) stay on the [`Placement`] until the full
-    /// three-angle composition order of `FUN_80026988` is ported.
     pub rot_y: u16,
+    /// Pitch / roll in the same PSX angle units, from the object record's
+    /// `+0x08` and `+0x0C`.
+    ///
+    /// Retail feeds all three angles to the Euler matrix builder
+    /// (`FUN_8003A55C` copies record `+0x08`/`+0x0A`/`+0x0C` to actor
+    /// `+0x24`/`+0x26`/`+0x28`; `FUN_8001ADA4` passes `actor+0x24` to
+    /// `FUN_80026988`, which composes `Rx * Ry * Rz`). Most placements are
+    /// pure yaw, but a minority across the disc carry a real tilt - and
+    /// dropping it does more than leave a prop upright: a mesh authored off
+    /// its own origin also lands in the wrong place, because the rotation is
+    /// about the origin, not the geometry's centre.
+    pub rot_x: u16,
+    /// See [`Self::rot_x`].
+    pub rot_z: u16,
     /// Animation id from the placement's object bind ([`ObjectBind::anim_id`]);
     /// `0` = none.
     ///
@@ -385,6 +396,8 @@ pub fn resolve_placed_env_draws(
             world_y,
             world_z: p.world_z,
             rot_y: p.rot_y,
+            rot_x: p.rot_x,
+            rot_z: p.rot_z,
             anim_id,
             anchor,
         });
@@ -1374,6 +1387,8 @@ mod tests {
                 world_y: -192 + 8,
                 world_z: 3 * 0x80 + 0x40,
                 rot_y: 0x400,
+                rot_x: 0,
+                rot_z: 0,
                 anim_id: 0,
                 anchor: (2, 3),
             }]

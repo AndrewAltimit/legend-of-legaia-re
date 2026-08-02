@@ -635,7 +635,7 @@
       };
       const isSky = (window.FieldSceneView && window.FieldSceneView.isSkyMesh)
         || (() => false);
-      const push = (slots, pos, rots, anims) => {
+      const push = (slots, pos, rots, anims, rotsX, rotsZ) => {
         for (let i = 0; i < slots.length; i++) {
           const anim = anims ? anims[i] : 0;
           let meshId, animRec = null;
@@ -663,6 +663,20 @@
             rotY: -(rots[i] & 0xFFF) * A2R,
             scale: 1.0,
           };
+          /* A placement with an authored X/Z tilt cannot go through the
+           * yaw-only path: that builder's negated-yaw convention is a
+           * cancellation specific to Ry (see webgl-math.js). Hand it a whole
+           * model matrix composed in retail's Rx*Ry*Rz order instead - the
+           * same composition crates/engine-render battle_intro::
+           * placement_rotation applies natively. Most placements are pure
+           * yaw and keep the cheaper path. */
+          const rx = rotsX ? (rotsX[i] & 0xFFF) : 0;
+          const rz = rotsZ ? (rotsZ[i] & 0xFFF) : 0;
+          if (rx || rz) {
+            draw.model = placementModelEuler(
+              draw.x, draw.y, draw.z,
+              rx * A2R, (rots[i] & 0xFFF) * A2R, rz * A2R, 1.0);
+          }
           /* World box for the occluder test, baked once (see `_frame`). */
           draw.box = placementWorldBox(aabb, draw);
           this.staticDraws.push(draw);
@@ -671,7 +685,9 @@
       };
       push(rt.field_terrain_slots(), rt.field_terrain_positions(), rt.field_terrain_rot_y(), null);
       push(rt.field_placement_slots(), rt.field_placement_positions(), rt.field_placement_rot_y(),
-        rt.field_placement_anim_ids());
+        rt.field_placement_anim_ids(),
+        rt.field_placement_rot_x ? rt.field_placement_rot_x() : null,
+        rt.field_placement_rot_z ? rt.field_placement_rot_z() : null);
 
       /* Player: geometry once, positions re-uploaded per frame from the pose. */
       if (rt.player_has_mesh()) {

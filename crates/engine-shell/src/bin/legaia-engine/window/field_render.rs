@@ -110,9 +110,8 @@ impl PlayWindowApp {
                 d.world_y as f32 + off[1],
                 d.world_z as f32 + off[2],
             ));
-            let rot = Mat4::from_rotation_y(
-                f32::from(d.rot_y & 0x0FFF) * (std::f32::consts::TAU / 4096.0),
-            );
+            let rot =
+                legaia_engine_render::battle_intro::placement_rotation(d.rot_x, d.rot_y, d.rot_z);
             props.push(PosedPropDraw {
                 anchor: d.anchor,
                 anim_id: d.anim_id,
@@ -975,14 +974,21 @@ impl PlayWindowApp {
                 d.world_y as f32 + off[1],
                 d.world_z as f32 + off[2],
             ));
-            // Authored yaw from the object record's `+0x0A` (PSX 4096-per-rev;
-            // bridge quarter-turns, tree variety). `Mat4::from_rotation_y`
-            // reproduces retail's pure-Y `FUN_80026988` matrix exactly in the
-            // retail frame, and rotation about Y commutes with the (1,-1,1)
-            // flip, so it composes identically on both frame pairings.
-            let rot = Mat4::from_rotation_y(
-                f32::from(d.rot_y & 0x0FFF) * (std::f32::consts::TAU / 4096.0),
-            );
+            // All three authored angles from the object record
+            // (`+0x08`/`+0x0A`/`+0x0C`), composed in retail's `Rx * Ry * Rz`
+            // order. Yaw alone (bridge quarter-turns, tree variety) covers
+            // most placements, but a minority across the disc carry a real
+            // tilt, and dropping it also displaces any mesh authored off its
+            // own origin - the rotation is about the origin, not the
+            // geometry's centre.
+            //
+            // Both branches below build `rot` in the RETAIL frame: the field
+            // pairing draws raw vertices and lets the camera's
+            // FIELD_WORLD_FLIP supply the single net negation, and the
+            // world-map pairing applies the per-model flip on the left of
+            // `rot`. So the same matrix is correct for both.
+            let rot =
+                legaia_engine_render::battle_intro::placement_rotation(d.rot_x, d.rot_y, d.rot_z);
             let model = if flip_y {
                 t * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0)) * rot
             } else {

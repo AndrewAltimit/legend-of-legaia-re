@@ -174,6 +174,11 @@ impl FieldOccluders {
     /// raw geometry) can compose a set without a [`SceneResources`].
     pub fn add_instanced_mesh(&mut self, positions: &[[f32; 3]], indices: &[u32], d: &EnvDraw) {
         // Retail pure-Y rotation (FUN_80026988): local +Z -> (sin, 0, cos).
+        // Known gap: this rotates by yaw only, while the draw itself now composes
+        // all three authored angles (`battle_intro::placement_rotation`). The
+        // handful of disc placements carrying a real X/Z tilt therefore get a
+        // plane whose normal is off by that tilt. Harmless for the pure-yaw
+        // majority; fixing it means sharing the same composition here.
         let ang = f32::from(d.rot_y & 0x0FFF) * (std::f32::consts::TAU / 4096.0);
         let (s, c) = ang.sin_cos();
         let t = [d.world_x as f32, d.world_y as f32, d.world_z as f32];
@@ -388,6 +393,8 @@ mod tests {
             world_y: y,
             world_z: z,
             rot_y,
+            rot_x: 0,
+            rot_z: 0,
             anim_id: 0,
             anchor: (0, 0),
         }

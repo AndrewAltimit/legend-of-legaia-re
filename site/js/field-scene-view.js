@@ -44,7 +44,15 @@
    * pre-guard behaviour. */
   function isSkyMesh(aabb, vertCount) {
     if (!aabb) return false;
-    const sparse = !vertCount || vertCount <= 96;
+    /* `vertCount` is TmdRenderer.getMeshVertexCount = positions.length / 3 -
+     * the UPLOADED per-primitive-corner count, because legaia_tmd emits one
+     * position per corner with no dedup. That is ~4x the TMD vertex count the
+     * 96 was calibrated against (kor5 slot 3: 459 TMD verts, 1714 uploaded),
+     * so nearly every sky shell scored as dense and got drawn - the "extra
+     * sky domes" symptom. Corpus separation in uploaded counts: shells run
+     * 48..480, the densest real geometry clearing the AABB arm starts at 582,
+     * and kor5's plaza paving (what this guard exists for) is 1714. */
+    const sparse = !vertCount || vertCount <= 512;
     const flatPlane = Math.min(aabb.sx, aabb.sz) < 8
       && Math.max(aabb.sx, aabb.sz) > 3000 && aabb.sy > 600;
     const domeShell = aabb.sx > 3400 && aabb.sz > 3400 && aabb.sy > 800 && sparse;
