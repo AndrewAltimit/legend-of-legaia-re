@@ -451,6 +451,99 @@ fn muscle_hud_chrome_decodes_from_the_disc() {
     assert_eq!(ai["tri_button"]["r"][2], 16);
     assert_eq!(hud["sheets"]["button"][0], 64, "button TIM: {hud}");
     assert_eq!(hud["sheets"]["button"][1], 32);
+
+    // The AP plate's meter is NOT a sheet tile - the widget sheet carries
+    // none, because retail draws the fill as an untextured gouraud pair.
+    // The only tile near it is the baked "100" numeral that fills the end
+    // box at a full gauge. A piece named `gauge_fill` pointed the page at
+    // that numeral, so the plate drew a stretched "100" where the orange
+    // meter belongs and left the value box empty; keep the name honest so
+    // the JSON can't invite that again.
+    let pieces = &hud["pieces"];
+    assert!(
+        pieces.get("gauge_fill").is_none(),
+        "no fill tile exists on the sheet: {pieces}"
+    );
+    let hundred = &pieces["gauge_100"];
+    assert_eq!(
+        [
+            hundred["r"][0].as_u64().unwrap() as u32,
+            hundred["r"][1].as_u64().unwrap() as u32,
+            hundred["r"][2].as_u64().unwrap() as u32,
+            hundred["r"][3].as_u64().unwrap() as u32,
+        ],
+        [
+            legaia_asset::title_pak::OVERLAY_SYSTEM_UI_GAUGE_100.0,
+            legaia_asset::title_pak::OVERLAY_SYSTEM_UI_GAUGE_100.1,
+            legaia_asset::title_pak::OVERLAY_SYSTEM_UI_GAUGE_100.2,
+            legaia_asset::title_pak::OVERLAY_SYSTEM_UI_GAUGE_100.3,
+        ],
+        "the end-box numeral is the shared GAUGE_100 rect"
+    );
+    // The meter's gouraud endpoints reach the page through the arts-input
+    // block over the shared pinned span - the plate's only fill source.
+    assert_eq!(
+        ai["ap_input_fill"]["rect"][0],
+        legaia_engine_ui::arts_input::AP_FILL_X
+    );
+    assert_eq!(
+        ai["ap_input_fill"]["rect"][2],
+        legaia_engine_ui::arts_input::AP_FILL_W
+    );
+    assert_eq!(
+        ai["ap_input_fill"]["rgb"][0][0],
+        legaia_asset::title_pak::OVERLAY_SYSTEM_UI_GAUGE_FILL_GOLD_RGB.0
+    );
+}
+
+/// The browser's shading law: a textured vert's `a_flat_rgba` carries the
+/// prim's **packet colour**, and the shader draws `texel * rgb / 128`. White
+/// there is not "unlit" - it is `texel * 255/128`, which reads as blown-out
+/// lighting rather than as a missing stream, so nothing about the frame says
+/// the colour word was dropped.
+///
+/// The parallel-accessor tests above assert stream *lengths*, and a
+/// `vec![255; n * 4]` satisfies every one of them. This asserts the
+/// *content*: the dome's three bodies must carry the disc's own modulation.
+#[test]
+fn muscle_vertex_colours_are_the_packet_colours_not_white() {
+    let Some((mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let monster = first_roster_id(&mg);
+
+    // Textured verts (flag 255) whose rgb is not the neutral 0x80 are the
+    // proof the colour word survived; a white stream has none below 255.
+    let modulated = |flat: &[u8]| -> (usize, usize) {
+        let mut textured = 0usize;
+        let mut white = 0usize;
+        for p in flat.chunks_exact(4) {
+            if p[3] == 0 {
+                continue; // untextured fill - its colour is the fill itself
+            }
+            textured += 1;
+            if p[0] == 255 && p[1] == 255 && p[2] == 255 {
+                white += 1;
+            }
+        }
+        (textured, white)
+    };
+
+    for (name, flat) in [
+        ("arena shell", mg.muscle_arena_flat_rgba()),
+        ("fighter body", mg.muscle_fighter_flat_rgba(0)),
+        ("monster body", mg.muscle_monster_flat_rgba(monster)),
+    ] {
+        assert!(!flat.is_empty(), "{name} uploads a colour stream");
+        let (textured, white) = modulated(&flat);
+        assert!(textured > 0, "{name} has textured verts");
+        assert_eq!(
+            white, 0,
+            "{name}: {white}/{textured} textured verts upload white, i.e. \
+             draw at texel * 255/128"
+        );
+    }
 }
 
 #[test]

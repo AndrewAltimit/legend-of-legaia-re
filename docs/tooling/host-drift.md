@@ -467,6 +467,23 @@ shader the RGB lanes were ignored on the textured path, under the new one the
 floor multiplied to black and the arena lost its ground. Muscle Dome's battle
 grid wrote white, which is the 2x case. Both write `0x80` now.
 
+**A stream can be white without any of the three above.** The Muscle Dome's
+three bodies - the arena shell, the assembled fighter, the monster - each
+exported a hand-written stream. Two returned `vec![255u8; n * 4]` outright;
+the third built a hybrid stream but read `VertexShading::colors` for both
+halves, which is trap one wearing a different coat. None of them reached
+`packet_color`, so the sweep that converted the exporters never saw them, and
+the page drew its whole arena at `texel * 255/128`.
+
+What let it sit there is that the wrongness is invisible in the shape of the
+data. The accessor tests assert `flat_rgba().len() == n * 4`, and a white
+stream satisfies that exactly; on screen `texel * 2` reads as *over-lit*, so
+the frame does not point at a dropped colour word either. The check that
+catches it has to assert the stream's **content** - that a textured vert does
+not come back white - which is now a disc-gated test per body
+(`muscle_web_real.rs`). The transferable rule: for a stream that is allowed to
+be uniform, length parity is not coverage.
+
 Meshes with genuinely no packet colour - the generated walk-ground heightfields
 - keep the neutral constant and draw at the raw texel, which is the honest
 answer for geometry that has no colour word to modulate by.
