@@ -386,10 +386,11 @@ impl LegaiaMinigames {
         let tmd = legaia_tmd::parse(tmd_bytes).ok()?;
         let (mesh, oids, shading) =
             legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd, tmd_bytes);
-        let mut flat = Vec::with_capacity(shading.colors.len() * 4);
-        for (c, &t) in shading.colors.iter().zip(shading.textured.iter()) {
-            flat.extend_from_slice(&[c[0], c[1], c[2], if t != 0 { 255 } else { 0 }]);
-        }
+        // A textured vert's colour is its MODULATION and lives on `mesh`;
+        // `shading.colors` reports white there by design, so reading one
+        // array for both halves uploads white and draws the shell at
+        // `texel * 255/128`. [`crate::packet_color::hybrid`] is the split.
+        let flat = crate::packet_color::hybrid(&mesh, &shading);
         // Drop TMD object 1 - the wall-base dust-decal object (12 ABE ABR-1
         // quads over the (128..190, 192..253) window of the (832, 0) page,
         // CLUT (16, 479)). Its texels are genuinely BRIGHT (whitish wisps up
@@ -1145,11 +1146,15 @@ impl LegaiaMinigames {
             .unwrap_or_default()
     }
 
-    /// Per-vertex `[r, g, b, textured_flag]` - the assembled form draws
-    /// fully textured (kept for parity with the monster API).
+    /// Per-vertex `[r, g, b, 255]` - the assembled form draws fully
+    /// textured, so every vertex carries the prim's **packet colour**, the
+    /// modulation half of retail's `texel * colour / 128`. Emitting white
+    /// here instead of the colour word is not "unlit", it is `texel * 2.0`
+    /// (see [`crate::packet_color`]) - which is what read as blown-out
+    /// arena lighting.
     pub fn muscle_fighter_flat_rgba(&self, char_slot: u32) -> Vec<u8> {
         self.muscle_fighter_build(char_slot)
-            .map(|(_, m, _)| vec![255u8; m.positions.len() * 4])
+            .map(|(_, m, _)| crate::packet_color::textured(&m))
             .unwrap_or_default()
     }
 
@@ -1408,13 +1413,14 @@ impl LegaiaMinigames {
             .unwrap_or_default()
     }
 
-    /// Per-vertex `[r, g, b, textured_flag]` - monsters draw fully textured,
-    /// so every vertex samples VRAM (kept for parity with the fighter API).
+    /// Per-vertex `[r, g, b, 255]` - monsters draw fully textured, so every
+    /// vertex samples VRAM through its prim's **packet colour** (same
+    /// convention as the fighter body; see [`crate::packet_color`]).
     pub fn muscle_monster_flat_rgba(&self, monster_id: u16) -> Vec<u8> {
         let Some(mesh) = self.muscle_monster_render_mesh(monster_id) else {
             return Vec::new();
         };
-        vec![255u8; mesh.positions.len() * 4]
+        crate::packet_color::textured(&mesh)
     }
 
     /// Per-vertex TMD object index (the rigid part a vertex hangs from).
@@ -2285,7 +2291,13 @@ impl LegaiaMinigames {
                 "ap_trough": {"r": [128,80,56,16], "pal": 4},
                 "ap_end": {"r": [176,64,16,16], "pal": 4},
                 "ap_cap": {"r": [184,80,8,16], "pal": 4},
-                "gauge_fill": {"r": [64,136,16,6], "pal": 1},
+                // The baked "100" numeral tile that fills the plate's end
+                // box at a full gauge (`OVERLAY_SYSTEM_UI_GAUGE_100`) - the
+                // 6px digit strip has no 3-digit seat, so the sheet carries
+                // this one. It is NOT the meter fill: the sheet has no fill
+                // tile at all, because retail draws the fill as an
+                // untextured gouraud pair (`ap_input_fill` below).
+                "gauge_100": {"r": [64,136,16,6], "pal": 1},
                 "red_x": {"r": [0,96,64,16], "pal": 4},
                 "digit24_v": 64,
                 "word_super": {"r": [3,152,105,24], "pal": 3},

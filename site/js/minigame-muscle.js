@@ -1559,37 +1559,51 @@ window.MgMuscle = (function () {
       }
     }
 
-    /* The input-phase AP plate at (208,172): the same label / trough / end
-     * pieces as the command menu, but the fill is retail's two 3-px
-     * gouraud strips (dark-orange-dark sheen, x 235..285 at full) reading
-     * the SPIRIT gauge - the input budget is the bar on the left, the
-     * plate on the right never drains during entry (packet + RAM
-     * capture). */
-    function drawInputApPlate(state) {
+    /* The AP plate at (208,172) - ONE widget with two callers, so they
+     * cannot drift: the command menu reads the AP budget, the input screen
+     * reads the SPIRIT gauge (the input budget is the bar along the bottom;
+     * the plate on the right never drains during entry - packet + RAM
+     * capture). Capture decomposition: the 24x16 pointed "AP" label, the
+     * 56x16 trough, the 16x16 end box, the 8x16 cap.
+     *
+     * The meter inside the trough is NOT a sheet tile - the widget sheet
+     * carries none. Retail draws it as two 3-px untextured gouraud strips
+     * (dark -> gold -> dark sheen) over the pinned span x 235..285, which
+     * is what `arts_input.ap_input_fill` hands over. The end box carries
+     * the VALUE: the sheet's baked 16x6 "100" tile at a full gauge (the
+     * 6-px digit strip has no 3-digit seat, which is why that tile exists),
+     * small atlas digits below it. */
+    function drawApGaugePlate(value, max) {
       const p = hudMeta.pieces, a = ai();
       const x = 208, y = 172;
       blit(0, p.ap_label.pal, ...p.ap_label.r, x, y);
       blit(0, p.ap_trough.pal, ...p.ap_trough.r, x + 24, y);
-      const spirit = state.spirit ? state.spirit[0] : 100;
-      if (spirit >= 100) {
-        blit(0, p.ap_end.pal, ...p.ap_end.r, x + 80, y);
-      } else {
-        blit(0, p.ap_trough.pal, p.ap_trough.r[0] + 16, p.ap_trough.r[1], 16, 16, x + 80, y);
-        const num = String(spirit);
-        hudDigits(num, x + 95 - num.length * 8, y + 2);
-      }
+      blit(0, p.ap_end.pal, ...p.ap_end.r, x + 80, y);
       blit(0, p.ap_cap.pal, ...p.ap_cap.r, x + 96, y);
-      const f = a.ap_input_fill;
-      const w = Math.round(f.rect[2] * Math.max(0, Math.min(100, spirit)) / 100);
-      if (w > 0) {
+      const f = a && a.ap_input_fill;
+      const frac = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
+      if (f && frac > 0) {
         const [lite, dark] = f.rgb;
         const gr = g.createLinearGradient(0, f.rect[1] * 2, 0, (f.rect[1] + f.rect[3]) * 2);
         gr.addColorStop(0, `rgb(${dark[0]},${dark[1]},${dark[2]})`);
         gr.addColorStop(0.5, `rgb(${lite[0]},${lite[1]},${lite[2]})`);
         gr.addColorStop(1, `rgb(${dark[0]},${dark[1]},${dark[2]})`);
         g.fillStyle = gr;
-        g.fillRect(f.rect[0] * 2, f.rect[1] * 2, w * 2, f.rect[3] * 2);
+        g.fillRect(f.rect[0] * 2, f.rect[1] * 2,
+          Math.round(f.rect[2] * frac) * 2, f.rect[3] * 2);
       }
+      const v = Math.max(0, Math.round(value));
+      if (v >= 100 && p.gauge_100) {
+        const t = p.gauge_100;
+        blit(0, t.pal, t.r[0], t.r[1], t.r[2], t.r[3], x + 80, y + 5);
+      } else {
+        const num = String(v);
+        hudDigits(num, x + 95 - num.length * 8, y + 2);
+      }
+    }
+
+    function drawInputApPlate(state) {
+      drawApGaugePlate(state.spirit ? state.spirit[0] : 100, 100);
     }
 
     /* The Triangle caption: the green Triangle button circle (its own gap
@@ -1718,34 +1732,13 @@ window.MgMuscle = (function () {
       }
     }
 
-    /* The retail AP plate. Capture decomposition at (208, 172): the 24x16
-     * pointed "AP" label piece, the 56x16 gauge trough, the 16x16 end
-     * piece + 8x16 cap, the 16x6 orange fill tile, small numerals. */
+    /* The command-menu AP plate - the same widget as the input screen's,
+     * reading the AP budget out of its pool. See [drawApGaugePlate]. */
     function drawApPlate(state) {
       const budget = state.budget[0];
       const pool = state.stats ? state.stats[0].budget_pool : budget;
       if (hudOk()) {
-        const x = 208, y = 172, p = hudMeta.pieces;
-        blit(0, p.ap_label.pal, ...p.ap_label.r, x, y);
-        blit(0, p.ap_trough.pal, ...p.ap_trough.r, x + 24, y);
-        const frac = pool ? Math.max(0, Math.min(1, budget / pool)) : 0;
-        if (budget >= pool) {
-          /* Full gauge: the captured end piece (its numeral is baked). */
-          blit(0, p.ap_end.pal, ...p.ap_end.r, x + 80, y);
-        } else {
-          /* Partial: continue the trough under small digits (the partial
-           * numeral styling is approximated; retail redraws it during
-           * direction entry, which the capture didn't pin). */
-          blit(0, p.ap_trough.pal, p.ap_trough.r[0] + 16, p.ap_trough.r[1],
-            16, 16, x + 80, y);
-          const num = String(budget);
-          hudDigits(num, x + 95 - num.length * 8, y + 2);
-        }
-        blit(0, p.ap_cap.pal, ...p.ap_cap.r, x + 96, y);
-        if (frac > 0) {
-          blit(0, p.gauge_fill.pal, p.gauge_fill.r[0], p.gauge_fill.r[1],
-            p.gauge_fill.r[2], p.gauge_fill.r[3], x + 28, y + 5, 48 * frac, 6);
-        }
+        drawApGaugePlate(budget, pool);
         return;
       }
       plate(190, 188, 112, 12, 'blue', true);

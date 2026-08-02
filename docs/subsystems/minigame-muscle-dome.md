@@ -333,6 +333,17 @@ with the shell's ABE lamp glows routed through the renderer's two-pass PSX
 blend (`site/js/minigame-muscle.js`, `semiTwoPass`) and the object-1 dust
 decal omitted per the capture above (`muscle_arena_hybrid` filters it).
 
+The shell, the assembled fighter and the monster all upload their prims'
+baked **packet colour** on the `a_flat_rgba` attribute, because the page
+shades the retail way - `texel * colour / 128`, no light source. The dome's
+own packet colours run well under the neutral `0x80` (much of the shell sits
+near `0x60`), so this is the difference between a lit interior and a washed
+one. Uploading white instead does not read as *unlit*, it reads as
+**over-lit** at `texel * 255/128`, which is why nothing about the frame
+points at a dropped colour stream; `legaia_web_viewer::packet_color` is the
+one place the two halves (textured = modulation off the mesh, untextured =
+fill off the shading) get split correctly.
+
 ## Retail presentation
 
 Retail presents the contest as a **standard battle** - the normal Legaia
@@ -419,7 +430,7 @@ byte-matched to its disc source:
 |---|---|---|---|
 | Chip / plate 3-slice art | `(896,256)`; CLUT row 511 sub-pal 4 (blue) / 12 (gold) | caps `(208,v)`/`(216,v)` 8×20, body `(192,v)` 16×20; blue `v=0`, gold `v=64` | boot-gap TIM `PROT.DAT 0x18E0` ([`boot.md`](boot.md#pre-init_data-system-ui-gap-menu-glyph-atlas--boot-cursors)) |
 | D-pad glyph | `(896,256)`; sub-pal 7 | `(0,112)` 16×16, drawn 15×15 between Attack and the Ra-Seru chip | same TIM |
-| AP plate | `(896,256)`; sub-pals 4 + 1 | label `(128,64)` 24×16, trough `(128,80)` 56×16, end `(176,64)` 16×16, cap `(184,80)` 8×16, orange fill tile `(64,136)` 16×6; drawn at `(208..312, 172)` | same TIM |
+| AP plate | `(896,256)`; sub-pals 4 + 1 | label `(128,64)` 24×16, trough `(128,80)` 56×16, end box `(176,64)` 16×16, cap `(184,80)` 8×16; drawn at `(208..312, 172)`. The end box's value numeral at a full gauge is the baked "100" tile `(64,136)` 16×6 (sub-pal 1). The meter itself is **not on this sheet** - see "The meter is not a tile" below | same TIM |
 | Status plate row | `(896,256)`; sub-pals 4 / 1 / 5 | plate slices at `y=188`, HP badge `(208,86)` 16×10 at `(80,194)`, MP badge `(224,86)` at `(192,194)`, `/` separator `(96,64)` 8×16 | same TIM |
 | Chip / caption text | `(896,0)`; menu-atlas bank sub-pal 13 = CLUT `(208,510)` | 16×16 cells drawn 14×15; cell = ASCII − 0x20, column-major 16/row; pen advance = glyph texel width (`i`/`m`/`M` +1, space 5 - capture-measured) | boot-gap ASCII font TIM `PROT.DAT 0x7F40` |
 | Small digits | `(960,256)`; sub-pal 13 | `u = digit*8`, `v=208`, 8×12 | menu-glyph atlas `PROT.DAT 0x11218` |
@@ -433,6 +444,24 @@ block uploads **packed into one VRAM row** as 16 side-by-side sub-palettes
 (widget bank -> row 511, menu-atlas bank -> row 510), which is what the
 packets' CLUT words (`0x7FC4` = `(64,511)`, `0x7FCC` = `(192,511)`,
 `0x7F8D` = `(208,510)`, ...) address.
+
+### The meter is not a tile
+
+The AP plate's orange meter has **no source rect**, on this sheet or any
+other. Retail draws it as two untextured 3-px gouraud strips - the same
+`FUN_8002C0B0` fill the status screen's AP gauge uses, dark `(0x80,0x20,0x10)`
+to gold `(0xC0,0xA0,0x40)` and back, over the span pinned in the arts-input
+table below. Only the *value* is art: the 6-px digit strip has no 3-digit
+seat, so the sheet carries one baked "100" tile for the end box.
+
+That leaves a trap in the sheet's neighbourhood, because the "100" tile is
+16×6 - exactly a plausible fill-tile shape, sitting two rows under the digit
+strip. Read as a fill and stretched across the trough, it draws a wide "100"
+where the meter belongs and leaves the value box blank, which is what the
+browser dome page did. The plate is one widget with two callers (command
+menu, direction entry); both take their fill from
+`legaia_engine_ui::arts_input`'s span + gouraud endpoints, so neither can
+re-acquire a tile.
 
 ## Arts command input (packet-pinned)
 
