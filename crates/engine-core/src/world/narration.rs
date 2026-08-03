@@ -1784,6 +1784,25 @@ impl World {
             .map(|c| c.ctx.field_72)
     }
 
+    /// Flat partition-0 record indices whose **object-bind channel** is
+    /// story-hidden after its spawn prologue ran: parked at the off-map hide
+    /// box (`0x23 MoveTo 0x7F,0x7F` behind a `SysFlag.Test`, e.g. town01's
+    /// gate rocks `P0[18..21]` until flag `0x147` sets) or zero render scale
+    /// (`0x4C 0x40 0x00`). The placed-object draw resolvers consult this via
+    /// [`crate::field_env::retain_visible_placed_draws`] - the `.MAP` table
+    /// alone says where a placed object *can* stand, the bind record's
+    /// prologue says whether it currently *does*.
+    // REF: FUN_8003A55C (bind-time prologue pre-run seats/parks the actor)
+    pub fn hidden_object_records(&self) -> std::collections::HashSet<usize> {
+        let hide = crate::world::FIELD_OFFMAP_HIDE_XZ as u16;
+        self.field_channels
+            .iter()
+            .filter(|c| c.object_bind)
+            .filter(|c| (c.ctx.world_x == hide && c.ctx.world_z == hide) || c.ctx.field_72 == 0)
+            .map(|c| c.placement_index)
+            .collect()
+    }
+
     // PORT: FUN_80039B7C (per-actor frame-slice loop; NOP break + halt park)
     // REF: FUN_8003C83C (cross-context target resolve)
     pub fn step_field_channels(&mut self) {

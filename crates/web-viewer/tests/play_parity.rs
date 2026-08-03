@@ -40,7 +40,8 @@ fn play_render_state_matches_native_field_pipeline() {
         let res = host.resources.as_ref().expect("resources built");
 
         // ------------------------------------------------ placement layer
-        let f = build_field_render(&host.index, scene, res, false);
+        let hidden = host.world.hidden_object_records();
+        let f = build_field_render(&host.index, scene, res, false, &hidden);
 
         // Native reference: the play-window's exact resolver calls.
         let env_tmds = legaia_engine_core::field_env::env_pack_tmd_indices(scene, res);
@@ -51,12 +52,22 @@ fn play_render_state_matches_native_field_pipeline() {
             .flatten()
             .unwrap_or_default();
         let binds = scene.field_object_binds(&host.index).ok().flatten();
-        let (native_placed, _) = legaia_engine_core::field_env::resolve_placed_env_draws(
+        let (mut native_placed, _) = legaia_engine_core::field_env::resolve_placed_env_draws(
             &env_tmds,
             &placements,
             floor_lut,
             binds.as_ref(),
         );
+        // The native shell applies the story-hidden object filter after the
+        // resolve (`resolve_placement_draws`); mirror it here so the parity
+        // claim covers the filter too.
+        if let Some(binds) = binds.as_ref() {
+            legaia_engine_core::field_env::retain_visible_placed_draws(
+                &mut native_placed,
+                binds,
+                &hidden,
+            );
+        }
         assert_eq!(
             f.placements, native_placed,
             "{name}: placement draws diverge from the native play-window resolver"

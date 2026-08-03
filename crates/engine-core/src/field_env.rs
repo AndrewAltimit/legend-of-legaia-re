@@ -407,6 +407,39 @@ pub fn resolve_placed_env_draws(
     (draws, drops)
 }
 
+/// Drop placed-object draws whose object-bind channel currently hides the
+/// object.
+///
+/// The `.MAP` placement table is where a placed object *can* stand; whether
+/// it currently *does* is decided by its bind record's spawn prologue, which
+/// the world pre-runs at scene entry (`World::seed_object_channels`). A
+/// prologue that parks the actor at the off-map hide box behind a
+/// `SysFlag.Test` (town01's gate rocks, `P0[18..21]` gated on flag `0x147`)
+/// or zeroes its render scale leaves the object story-hidden - retail draws
+/// the *actor*, so a parked actor draws nothing, while a raw `.MAP` walk
+/// resurrects post-story scenery in a cold scene.
+///
+/// `hidden_records` is [`World::hidden_object_records`] (flat partition-0
+/// record indices); a draw whose anchor has no bind is untouched (the window
+/// sweep's bindless actors have no script to hide them).
+///
+/// [`World::hidden_object_records`]: crate::world::World::hidden_object_records
+// REF: FUN_8003A55C (bind-time prologue seats the object's actor)
+pub fn retain_visible_placed_draws(
+    draws: &mut Vec<EnvDraw>,
+    binds: &HashMap<(u8, u8), ObjectBind>,
+    hidden_records: &std::collections::HashSet<usize>,
+) {
+    if hidden_records.is_empty() {
+        return;
+    }
+    draws.retain(|d| {
+        binds
+            .get(&d.anchor)
+            .is_none_or(|b| !hidden_records.contains(&(b.record as usize)))
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Placed-prop animation: the door swing.
 // ---------------------------------------------------------------------------

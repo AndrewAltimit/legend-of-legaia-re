@@ -40,7 +40,13 @@ fn play_render_state_builds_from_the_running_host() {
             .as_ref()
             .expect("enter_field_scene builds the scene resources the page draws");
 
-        let f = build_field_render(&host.index, scene, res, false);
+        let f = build_field_render(
+            &host.index,
+            scene,
+            res,
+            false,
+            &host.world.hidden_object_records(),
+        );
         assert!(
             !f.env_tmds.is_empty(),
             "{name}: no environment mesh pack in the host's resources"

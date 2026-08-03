@@ -1037,6 +1037,7 @@ impl LegaiaRuntime {
             scene,
             res,
             is_world_map,
+            &host.world.hidden_object_records(),
         ));
         // Pose sources, resolved the way the native window's
         // `find_scene_anm_bundle` does (entry-major, desc-seed minor). The
