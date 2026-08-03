@@ -581,10 +581,17 @@ impl World {
                 self.step_field_channels();
                 self.step_field();
                 // Field-NPC walk legs (autonomous patrol routes + scripted
-                // interaction-prologue runs) - one motion-VM step per frame,
-                // writing back into `field_npc_positions` so collision /
-                // interact probes follow the live NPC.
-                self.tick_field_npc_motions();
+                // interaction-prologue runs) - one motion-VM step per RETAIL
+                // frame, writing back into `field_npc_positions` so collision /
+                // interact probes follow the live NPC. The step decode takes
+                // `dt = _DAT_1f800393` at 1 (one call = one retail update, see
+                // `field_npc_walk_step_speed`), so the call rate must be the
+                // retail 60 Hz frame clock, not the 100 Hz sim tick - ungated
+                // every glide leg ran 1.67x retail wall-speed.
+                // REF: FUN_8003774C
+                if self.field_frame_step == 1 {
+                    self.tick_field_npc_motions();
+                }
                 // Ambient facing channels (`FUN_80038158` ops 0x04 / 0x0D):
                 // the idle turn-in-place a standing town NPC runs between
                 // walk legs. Part of the actor pool, so it advances on the

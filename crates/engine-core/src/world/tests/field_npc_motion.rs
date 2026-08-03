@@ -4,6 +4,21 @@ use super::*;
 // Field-NPC motion (motion-VM wiring) + prop walk-touch dispatch
 // ---------------------------------------------------------------------------
 
+/// Tick the world until `n` retail field frames have elapsed. NPC glide
+/// legs step on the ~60 Hz retail frame clock (`field_frame_step == 1`),
+/// not the 100 Hz sim tick - see the gate on
+/// [`World::tick_field_npc_motions`] - so motion assertions count frames,
+/// not ticks.
+fn tick_retail_frames(world: &mut World, n: usize) {
+    let mut fired = 0;
+    while fired < n {
+        let _ = world.tick();
+        if world.field_frame_step == 1 {
+            fired += 1;
+        }
+    }
+}
+
 #[test]
 fn field_npc_patrol_route_walks_through_motion_vm() {
     let mut world = World::new();
@@ -22,23 +37,19 @@ fn field_npc_patrol_route_walks_through_motion_vm() {
     // Flag on: the motion VM walks the NPC toward waypoint 0 at the per-frame
     // speed (8 units), reaches it, then patrols back toward waypoint 1.
     world.animate_field_npcs = true;
-    let _ = world.tick();
+    tick_retail_frames(&mut world, 1);
     assert_eq!(
         world.field_npc_positions.get(&1),
         Some(&(1008, 1000)),
-        "one tick = one motion-VM step of FIELD_NPC_MOTION_SPEED units"
+        "one retail frame = one motion-VM step of FIELD_NPC_MOTION_SPEED units"
     );
-    for _ in 0..37 {
-        let _ = world.tick();
-    }
+    tick_retail_frames(&mut world, 37);
     assert_eq!(
         world.field_npc_positions.get(&1),
         Some(&(1300, 1000)),
         "the leg clamps at the waypoint (300 units / 8 per frame)"
     );
-    for _ in 0..5 {
-        let _ = world.tick();
-    }
+    tick_retail_frames(&mut world, 5);
     let &(x, _) = world.field_npc_positions.get(&1).unwrap();
     assert!(x < 1300, "patrol loops: the NPC heads back to waypoint 1");
 }
@@ -57,9 +68,7 @@ fn moving_field_npc_collision_box_follows_live_position() {
     assert!(world.field_actor_dir_blocked(1000 - 102, 1000, 3));
 
     // Walk the NPC to its waypoint (one-shot route).
-    for _ in 0..60 {
-        let _ = world.tick();
-    }
+    tick_retail_frames(&mut world, 60);
     assert_eq!(world.field_npc_positions.get(&1), Some(&(1300, 1000)));
     assert!(
         world.field_npc_motions.is_empty(),
@@ -92,9 +101,7 @@ fn autonomous_legs_pause_during_dialogue_scripted_legs_run() {
         depth_id: 0,
     });
     assert!(world.start_field_npc_motion(2, 2080, 2000));
-    for _ in 0..10 {
-        let _ = world.tick();
-    }
+    tick_retail_frames(&mut world, 10);
     assert_eq!(
         world.field_npc_positions.get(&1),
         Some(&(1000, 1000)),
@@ -108,9 +115,7 @@ fn autonomous_legs_pause_during_dialogue_scripted_legs_run() {
 
     // Box dismissed: the patrol resumes.
     world.current_dialog = None;
-    for _ in 0..10 {
-        let _ = world.tick();
-    }
+    tick_retail_frames(&mut world, 10);
     let &(x, _) = world.field_npc_positions.get(&1).unwrap();
     assert!(x > 1000, "patrol resumes once the dialogue clears");
 }
@@ -297,9 +302,7 @@ fn interaction_prologue_npc_run_walks_the_interacted_npc() {
     );
 
     world.trigger_field_interact(0, 3);
-    for _ in 0..15 {
-        let _ = world.tick();
-    }
+    tick_retail_frames(&mut world, 15);
     assert_eq!(
         world.field_npc_positions.get(&3),
         Some(&(target_x, target_z)),

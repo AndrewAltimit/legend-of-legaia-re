@@ -1773,6 +1773,15 @@ impl World {
                     && let Some(m) = self.field_npc_motions.get_mut(&slot)
                 {
                     m.route_cursor = Some(0);
+                    // Liveliness amble cap: the decoded pace comes from
+                    // seat/dash ops that retail fires once at story moments
+                    // (`0x41`/`0x47` bits-0 = 16/32 units per frame). A
+                    // patrol that loops those targets forever must walk at
+                    // the villager pace, not the story dash (town01's gate
+                    // guard loops its cutscene staging route at 32 ungated).
+                    // Scripted legs keep the decoded speed - they ARE the
+                    // authored dash.
+                    m.state.speed = m.state.speed.min(FIELD_NPC_MOTION_SPEED);
                 }
             }
         }
@@ -1821,6 +1830,8 @@ impl World {
                                     && let Some(m) = self.field_npc_motions.get_mut(&slot)
                                 {
                                     m.route_cursor = Some(ni);
+                                    // Same amble cap as the kick site above.
+                                    m.state.speed = m.state.speed.min(FIELD_NPC_MOTION_SPEED);
                                 }
                             }
                             None => {
