@@ -436,6 +436,15 @@ pub const FIELD_COLD_SPAWN_XZ: i16 = 0x0A40;
 /// value.
 pub const FIELD_OFFMAP_HIDE_XZ: i16 = 16320;
 
+/// Free-roam picker staging: retail-frame width of the scene-entry window in
+/// which a script-issued BGM **pause** is dropped (see
+/// [`crate::world::World::seed_free_roam_story_baseline`]). Entry scripts
+/// pause the just-started track for story moments whose repair (a cutscene
+/// record's sub-9 restart) never runs on a picker visit; five seconds
+/// comfortably covers every observed entry prologue (town01 pauses ~34 sim
+/// ticks in) while leaving player-triggered pauses untouched.
+pub const FREE_ROAM_ENTRY_PAUSE_WINDOW: u64 = 300;
+
 /// Remap a screen-space d-pad delta into overworld direction bits using the
 /// world-map camera azimuth, so "screen up" always walks away from the camera
 /// and "screen right" walks screen-right regardless of how the map is framed.

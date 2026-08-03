@@ -177,6 +177,7 @@ pub fn build_field_render(
     scene: &Scene,
     res: &SceneResources,
     is_world_map: bool,
+    hidden_records: &std::collections::HashSet<usize>,
 ) -> FieldRender {
     let env_tmds = field_env::env_pack_tmd_indices(scene, res);
     let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
@@ -208,12 +209,18 @@ pub fn build_field_render(
             scene.field_object_binds(index).ok().flatten(),
         )
     };
-    let (placements, _) = field_env::resolve_placed_env_draws(
+    let (mut placements, _) = field_env::resolve_placed_env_draws(
         &env_tmds,
         &placement_records,
         floor_lut,
         binds.as_ref(),
     );
+    // Story-hidden placed objects (bind prologue parked at the hide box -
+    // town01's flag-gated gate rocks): same gate the native shell applies in
+    // `resolve_placement_draws`.
+    if let Some(binds) = binds.as_ref() {
+        field_env::retain_visible_placed_draws(&mut placements, binds, hidden_records);
+    }
     let (terrain, _) = field_env::resolve_env_draws(&env_tmds, &terrain_records, floor_lut);
     let ground = scene
         .walk_heightfield(index)

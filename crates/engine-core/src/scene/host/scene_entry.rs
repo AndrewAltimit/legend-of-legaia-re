@@ -199,6 +199,14 @@ impl SceneHost {
     /// scripts or the record index is out of range.
     pub fn enter_field_scene(&mut self, name: &str, record_index: usize) -> Result<()> {
         self.load_scene(name)?;
+        // Free-roam picker staging: every scene entered while staging is on
+        // re-arms the entry window the BGM pause-drop measures against (a
+        // door walked through in free roam runs the next scene's entry
+        // script, whose authored pause has the same no-choreography problem
+        // as the picked scene's).
+        if self.world.free_roam_staging {
+            self.world.free_roam_entry_frame = self.world.field_frames;
+        }
         // Drop any cutscene timeline from a previous scene; only `opdeene`
         // re-installs one below, so it must not leak into the scene we hand off
         // to (Rim Elm). The per-actor channels are timeline-scoped and drop

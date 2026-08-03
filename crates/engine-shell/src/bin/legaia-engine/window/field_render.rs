@@ -85,8 +85,15 @@ impl PlayWindowApp {
             .field_floor_height_lut(&self.session.host.index)
             .ok()
             .flatten();
-        let (draws, _) =
+        let (mut draws, _) =
             field_env::resolve_placed_env_draws(&env_tmds, &placements, floor_lut, Some(&binds));
+        // Same story-hidden gate as the static placement pass: a parked
+        // prop's clip must not draw either.
+        field_env::retain_visible_placed_draws(
+            &mut draws,
+            &binds,
+            &self.session.host.world.hidden_object_records(),
+        );
 
         let bank = &self.session.host.world.field_prop_bank;
         let mut props = Vec::new();
@@ -873,9 +880,20 @@ impl PlayWindowApp {
         if env_tmds.is_empty() {
             return Vec::new();
         }
-        let (env_draws, dropped) = legaia_engine_core::field_env::resolve_placed_env_draws(
+        let (mut env_draws, dropped) = legaia_engine_core::field_env::resolve_placed_env_draws(
             &env_tmds, placements, floor_lut, binds,
         );
+        // Story-hidden placed objects: a bind record's spawn prologue that
+        // parked its actor at the hide box (flag-gated scenery like town01's
+        // gate rocks) draws nothing, exactly as retail draws the actor rather
+        // than the raw `.MAP` table.
+        if let Some(binds) = binds {
+            legaia_engine_core::field_env::retain_visible_placed_draws(
+                &mut env_draws,
+                binds,
+                &self.session.host.world.hidden_object_records(),
+            );
+        }
         let diag = std::env::var_os("LEGAIA_DIAG_PLACE").is_some();
         if diag {
             for d in &dropped {

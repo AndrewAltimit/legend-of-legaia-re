@@ -954,6 +954,24 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             // `crate::scus_leaf_kernels::TimedSoundArm`)
             self.world.arm_sound_release(i32::from(text_id));
         }
+        // Free-roam picker staging: drop an ENTRY-WINDOW pause. A scene's
+        // entry script may park the just-started BGM for a story moment the
+        // choreography repairs (town01 `P1[0]` `+0x61`: silent dawn while
+        // flag 0x225 is clear, restarted by the opening records' sub-9
+        // starts). A picker visit runs no choreography, so the pause would
+        // hold forever - the "music dies a second into the scene" report.
+        // Pauses issued after the window (dialog / cutscene beats the
+        // player triggers) route normally.
+        if sub_op == 2
+            && self.world.free_roam_staging
+            && self
+                .world
+                .field_frames
+                .saturating_sub(self.world.free_roam_entry_frame)
+                < crate::world::FREE_ROAM_ENTRY_PAUSE_WINDOW
+        {
+            return;
+        }
         self.world
             .pending_field_events
             .push(FieldEvent::Bgm { text_id, sub_op });

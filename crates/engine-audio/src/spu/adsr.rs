@@ -25,18 +25,30 @@
 //!     bits  4..0: release shift    (5 bits)
 //! ```
 //!
-//! Per-tick advance, given (mode, shift, step_bits, dir_sign):
+//! Per-step advance, given (mode, shift, step_bits, direction) - the
+//! hardware's **cycle-wait** scheme (nocash psx-spx):
 //!
 //! ```text
-//!   step = (7 - step_bits) for increase, (-8 + step_bits) for decrease
-//!   if shift < 11:  delta = step << (11 - shift)
-//!   else:           delta = step >> (shift - 11)        (rounds toward 0)
-//!   if exponential and increase and counter > 0x6000:
-//!     delta >>= 2
-//!   if exponential and decrease:
-//!     delta = (delta * counter) >> 15
-//!   counter = clamp(counter + dir_sign * delta, 0, 0x7FFF)
+//!   cycles = 1 << max(0, shift - 11)
+//!   step   = (7 - step_bits) << max(0, 11 - shift)   for increase
+//!            (-8 + step_bits) << max(0, 11 - shift)  for decrease
+//!   if exponential and increase and counter > 0x6000:  cycles *= 4
+//!   if exponential and decrease:  step = (step * counter) >> 15
+//!   wait (cycles - 1) ticks, then counter = clamp(counter + step, 0, 0x7FFF)
 //! ```
+//!
+//! Two properties of this scheme are load-bearing and were lost by the
+//! earlier "per-tick delta" collapse (`delta = step >> (shift - 11)`,
+//! magnitudes only):
+//!
+//! - a slow rate means a **longer wait**, never a zero step - `step >> 4`
+//!   rounding to 0 froze every envelope with `shift >= 15`;
+//! - the exponential-decrease scale runs on the **signed** step, and an
+//!   arithmetic shift of a negative number floors at -1, so the tail always
+//!   reaches 0. On positive magnitudes `(base * level) >> 15` floors at 0,
+//!   parking every exponential release at a small nonzero level forever -
+//!   which kept the voice busy, leaked the 24-voice pool dry in seconds of
+//!   BGM, and silenced every note allocated after that.
 //!
 //! The increase/decrease distinction is carried by `step_bits` interpretation
 //! plus the explicit direction sign (sustain can go either way).
@@ -122,6 +134,9 @@ pub struct AdsrState {
     pub phase: Phase,
     /// Envelope level, 0..=0x7FFF.
     pub level: u16,
+    /// Remaining wait ticks before the next step applies (the hardware's
+    /// `cycles - 1` countdown; slow rates wait longer, they never step by 0).
+    wait: u32,
 }
 
 impl Default for AdsrState {
@@ -129,6 +144,7 @@ impl Default for AdsrState {
         Self {
             phase: Phase::Off,
             level: 0,
+            wait: 0,
         }
     }
 }
@@ -137,120 +153,114 @@ impl AdsrState {
     pub fn key_on(&mut self) {
         self.phase = Phase::Attack;
         self.level = 0;
+        self.wait = 0;
     }
 
     pub fn key_off(&mut self) {
         // libspu KeyOff transitions any phase to Release.
         if self.phase != Phase::Off {
             self.phase = Phase::Release;
+            self.wait = 0;
         }
     }
 
     /// Advance the envelope by one sample tick. Returns the new level.
     pub fn tick(&mut self, cfg: &AdsrConfig) -> u16 {
+        if self.phase == Phase::Off {
+            self.level = 0;
+            return 0;
+        }
+        // Cycle-wait countdown: a slow rate is a long wait between full-size
+        // steps, never a zero-size step.
+        if self.wait > 0 {
+            self.wait -= 1;
+            return self.level;
+        }
+        let spec = match self.phase {
+            Phase::Off => unreachable!("handled above"),
+            Phase::Attack => env_step(
+                cfg.attack_exp,
+                false,
+                cfg.attack_shift,
+                cfg.attack_step,
+                self.level,
+            ),
+            // Decay is always exponential decrease with step=-8 (step_bits=0).
+            Phase::Decay => env_step(true, true, cfg.decay_shift, 0, self.level),
+            Phase::Sustain => env_step(
+                cfg.sustain_exp,
+                cfg.sustain_decrease,
+                cfg.sustain_shift,
+                cfg.sustain_step,
+                self.level,
+            ),
+            Phase::Release => env_step(cfg.release_exp, true, cfg.release_shift, 0, self.level),
+        };
+        self.level = (i32::from(self.level) + spec.step).clamp(0, 0x7FFF) as u16;
+        self.wait = spec.cycles.saturating_sub(1);
         match self.phase {
-            Phase::Off => {
-                self.level = 0;
-                return 0;
-            }
             Phase::Attack => {
-                let delta = compute_delta_increase(
-                    cfg.attack_exp,
-                    cfg.attack_shift,
-                    cfg.attack_step,
-                    self.level,
-                );
-                self.level = self.level.saturating_add(delta as u16).min(0x7FFF);
                 if self.level >= 0x7FFF {
                     self.level = 0x7FFF;
                     self.phase = Phase::Decay;
+                    self.wait = 0;
                 }
             }
             Phase::Decay => {
-                // Decay is always exponential decrease with step=-8 (i.e. step_bits=0).
-                let delta = compute_delta_exp_decrease(cfg.decay_shift, 0, self.level);
-                self.level = self.level.saturating_sub(delta as u16);
                 if self.level <= cfg.sustain_level {
-                    self.level = cfg.sustain_level;
+                    self.level = cfg.sustain_level.min(0x7FFF);
                     self.phase = Phase::Sustain;
+                    self.wait = 0;
                 }
             }
             Phase::Sustain => {
-                if cfg.sustain_decrease {
-                    let delta = if cfg.sustain_exp {
-                        compute_delta_exp_decrease(cfg.sustain_shift, cfg.sustain_step, self.level)
-                    } else {
-                        // Linear sustain-*decrease*: the step is negative
-                        // (`-8 + step_bits`, magnitude `8 - step_bits`), the
-                        // same StepValue table the exponential decrease uses -
-                        // NOT the increase table (`7 - step_bits`). Passing the
-                        // increase sign here would fade sustain ~1 step slow.
-                        compute_delta_linear(cfg.sustain_shift, cfg.sustain_step, true)
-                    };
-                    self.level = self.level.saturating_sub(delta as u16);
-                    if self.level == 0 {
-                        self.phase = Phase::Off;
-                    }
-                } else {
-                    let delta = compute_delta_increase(
-                        cfg.sustain_exp,
-                        cfg.sustain_shift,
-                        cfg.sustain_step,
-                        self.level,
-                    );
-                    self.level = self.level.saturating_add(delta as u16).min(0x7FFF);
+                if cfg.sustain_decrease && self.level == 0 {
+                    self.phase = Phase::Off;
+                    self.wait = 0;
                 }
             }
             Phase::Release => {
-                let delta = if cfg.release_exp {
-                    compute_delta_exp_decrease(cfg.release_shift, 0, self.level)
-                } else {
-                    // Linear release always steps by the fixed `-8` StepValue
-                    // (magnitude 8), so pass the decrease sign. The prior
-                    // `false` used the `+7` increase magnitude, making a
-                    // linear-release voice fade ~12.5% slow.
-                    compute_delta_linear(cfg.release_shift, 0, true)
-                };
-                self.level = self.level.saturating_sub(delta as u16);
                 if self.level == 0 {
                     self.phase = Phase::Off;
+                    self.wait = 0;
                 }
             }
+            Phase::Off => {}
         }
         self.level
     }
 }
 
-/// Linear delta for increase (`negative=false`) or decrease (`negative=true`).
-fn compute_delta_linear(shift: u8, step_bits: u8, negative: bool) -> i32 {
-    let step = if negative {
-        -(8 - step_bits as i32)
+/// One envelope step: how many ticks it spans and the **signed** level delta
+/// it applies at the end.
+struct EnvStep {
+    cycles: u32,
+    step: i32,
+}
+
+/// The hardware rate resolver (nocash psx-spx "AdsrCycles / AdsrStep").
+///
+/// `decrease` selects the `-8 + step_bits` StepValue row (increase uses
+/// `7 - step_bits`). The exponential-decrease scale multiplies the SIGNED
+/// step by `level` and arithmetic-shifts right, so its floor is -1 - the
+/// property that lets a release tail actually land on 0.
+fn env_step(exp: bool, decrease: bool, shift: u8, step_bits: u8, level: u16) -> EnvStep {
+    let mut cycles: u32 = 1 << (shift as u32).saturating_sub(11);
+    let base = if decrease {
+        -8 + step_bits as i32
     } else {
         7 - step_bits as i32
     };
-    if shift < 11 {
-        step << (11 - shift) as u32
-    } else {
-        step >> (shift - 11) as u32
+    let mut step = base << 11u32.saturating_sub(shift as u32);
+    if exp {
+        if !decrease && level > 0x6000 {
+            cycles = cycles.saturating_mul(4);
+        }
+        if decrease {
+            step = (step * i32::from(level)) >> 15;
+        }
     }
-    .abs()
-}
-
-/// Exponential-curve increase delta. Slows down past 0x6000, which gives the
-/// characteristic libspu attack curve.
-fn compute_delta_increase(exp: bool, shift: u8, step_bits: u8, level: u16) -> i32 {
-    let mut delta = compute_delta_linear(shift, step_bits, false);
-    if exp && level > 0x6000 {
-        delta >>= 2;
-    }
-    delta
-}
-
-/// Exponential-curve decrease delta. Scales by `level/0x8000`, which gives
-/// the libspu "fade exponentially toward zero" shape.
-fn compute_delta_exp_decrease(shift: u8, step_bits: u8, level: u16) -> i32 {
-    let base = compute_delta_linear(shift, step_bits, true);
-    ((base as u32 * level as u32) >> 15) as i32
+    EnvStep { cycles, step }
 }
 
 #[cfg(test)]
@@ -363,6 +373,7 @@ mod tests {
         let mut s = AdsrState {
             phase: Phase::Release,
             level: 0x7FFF,
+            wait: 0,
         };
         assert_eq!(s.tick(&cfg), 0x3FFF);
     }
@@ -382,6 +393,7 @@ mod tests {
         let mut s = AdsrState {
             phase: Phase::Sustain,
             level: 0x7FFF,
+            wait: 0,
         };
         assert_eq!(s.tick(&cfg), 0x3FFF);
     }
@@ -401,8 +413,47 @@ mod tests {
         let mut s = AdsrState {
             phase: Phase::Sustain,
             level: 0x7FFF,
+            wait: 0,
         };
         assert_eq!(s.tick(&cfg), 0x7FFF - 0x2800);
+    }
+
+    /// Every release configuration must land the envelope on 0 and free the
+    /// voice - the leak regression. The exponential-decrease floor is the
+    /// signed arithmetic shift's -1; the positive-magnitude version floored
+    /// at 0 and parked the voice at a small nonzero level forever, draining
+    /// the 24-voice pool dry within seconds of BGM.
+    #[test]
+    fn release_always_reaches_off_for_every_rate() {
+        for &exp in &[false, true] {
+            for shift in 0..=31u8 {
+                let cfg = AdsrConfig {
+                    release_exp: exp,
+                    release_shift: shift,
+                    ..AdsrConfig::default()
+                };
+                let mut s = AdsrState {
+                    phase: Phase::Release,
+                    level: 0x7FFF,
+                    wait: 0,
+                };
+                // Generous budget: the slowest hardware release (exp,
+                // shift 31) is minutes long; ticking steps of the wait
+                // counter directly keeps the test O(steps), not O(ticks).
+                let mut steps = 0u64;
+                while s.phase != Phase::Off && steps < 5_000_000 {
+                    s.wait = 0; // collapse the wait; only convergence matters
+                    s.tick(&cfg);
+                    steps += 1;
+                }
+                assert_eq!(
+                    s.phase,
+                    Phase::Off,
+                    "release must finish (exp={exp} shift={shift}), stuck at level {}",
+                    s.level
+                );
+            }
+        }
     }
 
     /// AdsrConfig::from_words round-trips the bit layout we care about.

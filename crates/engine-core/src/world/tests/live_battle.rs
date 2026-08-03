@@ -294,9 +294,10 @@ fn npc_walk_steps_track_heading_and_keep_it_after_arrival() {
     world.field_npc_positions.insert(1, (1000, 1000));
     assert!(!world.field_npc_headings.contains_key(&1));
 
-    // Walk X+ : heading = quarter turn (0x400).
+    // Walk X+ : heading = quarter turn (0x400). NPC glide steps only on the
+    // retail-frame ticks (~60 of every 100), so budget extra sim ticks.
     assert!(world.start_field_npc_motion(1, 1200, 1000));
-    for _ in 0..40 {
+    for _ in 0..70 {
         let _ = world.tick();
     }
     assert_eq!(world.field_npc_positions.get(&1), Some(&(1200, 1000)));
@@ -311,7 +312,7 @@ fn npc_walk_steps_track_heading_and_keep_it_after_arrival() {
 
     // Walk Z- : heading = half turn (0x800).
     assert!(world.start_field_npc_motion(1, 1200, 800));
-    for _ in 0..40 {
+    for _ in 0..70 {
         let _ = world.tick();
     }
     assert_eq!(world.field_npc_headings.get(&1), Some(&0x800));

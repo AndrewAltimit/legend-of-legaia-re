@@ -218,6 +218,24 @@ satisfied on arrival (the same reasoning as sub-op 9's barrier) and
 still set, then clear the latch unconditionally. `see
 ghidra/scripts/funcs/800243f0.txt`, `800266e0.txt`, `80026520.txt`.
 
+### Entry-script pauses and free-roam picker staging
+
+A scene's entry script can start its track and immediately pause it for a
+story moment: town01's `P1[0]` starts global id 2016 then, while system flag
+`0x225` is clear, issues a sub-op 2 pause (`+0x5D..+0x91` of the record) -
+the opening's silent dawn, repaired by the opening cutscene records' own
+sub-op 9 restarts (`35 E7 07 09`, `35 E0 07 09` + sub-`0xA` commits in the
+same MAN). The retail s3 free-roam capture confirms both halves: flag `0x225`
+still clear, pause bit `_DAT_8007B750` bit 1 clear.
+
+A scene-picker / `--scene` entry runs the entry script with none of that
+choreography behind it, so the authored pause would park the BGM forever
+("the music dies a second into the scene"). The engine's free-roam staging
+(`World::seed_free_roam_story_baseline`) drops a sub-op 2 issued inside the
+scene-entry window on picker entries only; the new-game chain keeps the
+authored pause. The same staging seeds story-twin scenery flags (e.g.
+`town0c`'s blown gate). Disc pins: `engine-core/tests/free_roam_staging_disc.rs`.
+
 The engine port reuses this same dispatch for the **Battle↔Field music swap**: `World::set_battle_bgm` configures a battle track id, and the live gameplay loop queues an ordinary `FieldEvent::Bgm{sub_op: 1}` start for it on encounter (`swap_to_battle_bgm`) and resumes the stashed field track on battle end (`restore_field_bgm`). Both transitions run through the host's `AudioBgmDirector` `start_inner` path - no separate battle-audio code path. The battle id must resolve in the current scene's BGM table since the live loop doesn't load a distinct battle audio bundle.
 
 Retail BGM changes are **hard cuts** (or short `SsSeqSetVol` ramps), so
