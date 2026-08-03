@@ -438,6 +438,11 @@ pub(super) fn cmd_play_window_with_record(
         }
     }
     if !world_map {
+        // Free-roam story staging: the `--scene` direct entry is the native
+        // picker - stage the scene at its canonical free-roam visit (entry
+        // BGM pause dropped, story-twin event flags seeded). The boot-UI
+        // NEW GAME handler clears the staging again via `begin_new_game`.
+        session.host.world.seed_free_roam_story_baseline(scene);
         // Drop into the live field scene (run record 0, install the encounter
         // table, arm the live loop). Shared with the v0.1 oracle + headless
         // drivers via `BootSession::enter_field_live`.

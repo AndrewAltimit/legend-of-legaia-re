@@ -539,6 +539,12 @@ impl LegaiaRuntime {
         host.world.leading_edge_wall_probes = true;
         host.world.solid_field_npcs = true;
         host.world.animate_field_npcs = true;
+        // Free-roam story staging for PICKER entries only: the opening
+        // chain's legs re-enter through here too, and their authored
+        // presentation (silent dawn, pre-event scenery) must stay untouched.
+        if !host.world.opening_chain_active && !host.world.cutscene_timeline_active() {
+            host.world.seed_free_roam_story_baseline(name);
+        }
         if legaia_engine_core::scene::is_world_map_scene(name) {
             host.enter_world_map_scene(name)
                 .map_err(|e| JsValue::from_str(&format!("enter_field({name}): {e:#}")))?;

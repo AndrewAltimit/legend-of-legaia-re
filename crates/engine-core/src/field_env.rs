@@ -440,6 +440,57 @@ pub fn retain_visible_placed_draws(
     });
 }
 
+/// Evaluate a scene's story-hidden object records **without a live world** -
+/// the [`retain_visible_placed_draws`] input for hosts that assemble a scene
+/// statically (the site's full-map viewer, exporters).
+///
+/// Spins a scratch [`World`](crate::world::World), stages it at the scene's
+/// canonical free-roam visit
+/// ([`World::seed_free_roam_story_baseline`](crate::world::World::seed_free_roam_story_baseline)),
+/// and pre-runs the object-bind spawn prologues exactly as `enter_field_scene`
+/// does (`seed_object_channels` - the bind derivation mirrors the scene-entry
+/// host). A scene with no MAN / no bindable objects returns the empty set
+/// (nothing filtered).
+pub fn story_hidden_records_for_scene(
+    scene: &Scene,
+    index: &crate::scene::ProtIndex,
+) -> std::collections::HashSet<usize> {
+    let Ok(Some(man_bytes)) = scene.field_man_payload(index) else {
+        return Default::default();
+    };
+    let Ok(man_file) = legaia_asset::man_section::parse(&man_bytes) else {
+        return Default::default();
+    };
+    let (primary, fallback) = scene
+        .field_tile_triggers(index)
+        .unwrap_or((Vec::new(), Vec::new()));
+    let triggers: Vec<field_regions::TileTrigger> = primary.into_iter().chain(fallback).collect();
+    let map_bytes = scene
+        .field_map_index(index)
+        .and_then(|idx| index.entry_bytes_extended(idx).ok());
+    let object_binds: Vec<(usize, (i16, i16))> = match map_bytes.as_deref() {
+        Some(map) => crate::man_field_scripts::object_script_binds(map, &triggers),
+        None => triggers
+            .iter()
+            .filter(|t| t.gate == 0)
+            .map(|t| {
+                (
+                    t.record as usize,
+                    (
+                        i16::from(t.tile_x) * 128 + 0x40,
+                        i16::from(t.tile_z) * 128 + 0x40,
+                    ),
+                )
+            })
+            .collect(),
+    };
+    let mut w = crate::world::World::new();
+    w.seed_free_roam_story_baseline(&scene.name);
+    w.seed_field_channels(&man_file, &man_bytes);
+    w.seed_object_channels(&man_file, &man_bytes, &object_binds);
+    w.hidden_object_records()
+}
+
 // ---------------------------------------------------------------------------
 // Placed-prop animation: the door swing.
 // ---------------------------------------------------------------------------

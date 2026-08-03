@@ -270,7 +270,17 @@ pub fn build_field_scene(index: &ProtIndex, name: &str) -> Result<FieldScenePack
                 .collect(),
         )
     };
-    let (placements, _) = field_env::resolve_env_draws(&env_tmds, &placement_records, floor_lut);
+    let (mut placements, _) =
+        field_env::resolve_env_draws(&env_tmds, &placement_records, floor_lut);
+    // Story-hidden placed objects: the `.MAP` table says where an object CAN
+    // stand, its bind record's spawn prologue says whether it currently DOES
+    // (town01's flag-gated gate rocks; town0c's parked intact doorway). The
+    // full-map viewer stages each scene at its canonical free-roam visit,
+    // same as the play page's world does.
+    if !is_world_map && let Ok(Some(binds)) = scene.field_object_binds(index) {
+        let hidden = field_env::story_hidden_records_for_scene(&scene, index);
+        field_env::retain_visible_placed_draws(&mut placements, &binds, &hidden);
+    }
     let (terrain, _) = field_env::resolve_env_draws(&env_tmds, &terrain_records, floor_lut);
     let ground = scene
         .walk_heightfield(index)

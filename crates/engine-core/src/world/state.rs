@@ -2352,6 +2352,16 @@ pub struct World {
     /// the narration roller so the crawl scrolls at retail's 60 fps wall-speed.
     pub field_frame_step: u16,
 
+    /// Set by [`Self::seed_free_roam_story_baseline`] for scene-picker /
+    /// `--scene` entries: the world was staged for a free-roam visit with no
+    /// story behind it, so the BGM host arm drops entry-window pauses (their
+    /// authored repair - the opening records' sub-9 restarts - never runs
+    /// here). The new-game / opening chain leaves this `false`.
+    pub free_roam_staging: bool,
+    /// [`Self::field_frames`] at the most recent free-roam staging / scene
+    /// entry - the base of the entry window the pause-drop measures against.
+    pub free_roam_entry_frame: u64,
+
     /// Per-actor field-VM channels: one spawned context per MAN partition-1
     /// placement record, mirroring the retail per-record spawn
     /// (`FUN_8003A1E4`). Spawned alongside a cutscene timeline
@@ -2813,6 +2823,8 @@ impl World {
             field_frame_accum: 40,
             field_frame_step: 0,
             field_frames: 0,
+            free_roam_staging: false,
+            free_roam_entry_frame: 0,
             field_channels: Vec::new(),
             field_channels_man: None,
             executing_channel: None,
@@ -2864,6 +2876,40 @@ impl World {
     /// are downstream field/event/menu-overlay steps after the field launches,
     /// not modeled here yet; this seed just copies the template's default name
     /// (`Vahn`).
+    /// Stage the world for a **free-roam picker entry** - the scene-picker /
+    /// `--scene` paths that drop into a scene with no story behind them.
+    /// Retail has no such entry: every visit arrives with the story state a
+    /// playthrough accumulated, and scene scripts assume it. Two consequences
+    /// a cold picker entry gets wrong, both repaired here:
+    ///
+    /// - **Entry-script BGM pauses park forever.** town01's entry script
+    ///   starts the town theme then pauses it while flag `0x225` is clear
+    ///   (the opening's silent dawn; `P1[0]` `+0x5D..+0x91`); retail's
+    ///   opening records repair it with their own sub-9 starts, which a
+    ///   picker visit never runs. [`Self::free_roam_staging`] lets the BGM
+    ///   host arm drop a pause issued inside the entry window (see
+    ///   `op35_bgm` in `vm_hosts`).
+    /// - **Story-twin scenes present the wrong world event.** `town0c` is
+    ///   post-Mist Rim Elm: flag `0x147` seats the blown-gate rock debris
+    ///   and parks the intact wall/doorway pieces (the same records exist in
+    ///   `town01` - the flag decides, not the scene). Curated per-scene
+    ///   seeds below stage each twin at its canonical visit.
+    ///
+    /// Managed flags reset first, so picking scenes in any order never leaks
+    /// one scene's staging into the next. The new-game / opening chain must
+    /// NOT call this - the opening's authored silence and pre-event
+    /// presentation are the point there.
+    pub fn seed_free_roam_story_baseline(&mut self, scene: &str) {
+        self.free_roam_staging = true;
+        self.free_roam_entry_frame = self.field_frames;
+        // Managed story-event flags (reset-then-seed).
+        self.system_flag_clear(0x147);
+        if scene == "town0c" {
+            // Juggernaut blew the south gate: rocks out, intact door parked.
+            self.system_flag_set(0x147);
+        }
+    }
+
     // REF: FUN_80025B64
     // REF: FUN_801D6704
     // REF: FUN_801DD35C
@@ -2873,6 +2919,11 @@ impl World {
     pub fn begin_new_game(&mut self) {
         self.story_flags = 0;
         self.story_flag_bits.clear();
+        // A NEW GAME is the opening chain, not a free-roam picker visit: the
+        // authored entry pauses / pre-event scenery are the point. Any flags
+        // an earlier picker staging seeded reset with the bank.
+        self.free_roam_staging = false;
+        self.system_flags.clear();
         self.money = NEW_GAME_STARTING_GOLD;
         self.point_card = 0;
         self.inventory.clear();
