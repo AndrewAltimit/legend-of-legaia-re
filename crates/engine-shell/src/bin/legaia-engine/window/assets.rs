@@ -1014,6 +1014,20 @@ impl PlayWindowApp {
                         .map(|t| (t.tmd.clone(), t.raw.clone()))
                 };
                 let Some((mut tmd, raw)) = src else {
+                    // An unresolved mesh source means this placement can NEVER
+                    // draw, no matter what seats it later - for a special
+                    // model that is "Noa/Gala missing from the cutscene", and
+                    // silently dropping it here made that unfindable.
+                    log::warn!(
+                        "field NPC placement {} (model 0x{:02X}{}) has no mesh source - never drawn",
+                        p.index,
+                        p.model_index,
+                        if p.special_model {
+                            ", special/global pool"
+                        } else {
+                            ", scene pack"
+                        }
+                    );
                     continue;
                 };
                 let bundle = if p.special_model {
