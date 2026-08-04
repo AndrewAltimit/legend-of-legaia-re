@@ -11,6 +11,12 @@
 //! `see ghidra/scripts/funcs/8003cb54.txt`, `.../800597c8.txt`,
 //! `.../80046870.txt`, `.../801cee80.txt`.
 //!
+//! REF: FUN_8004AD80 (the one dumped caller of `FUN_8003CB54`)
+//! REF: FUN_8003CA78 (its sibling: the marked-up string copy that seeds the
+//! buffer `mes_append_escape` appends to)
+//! REF: FUN_800589D0 (`PutDispEnv` - the caller of `FUN_800597C8`, declined
+//! rather than pending; see below)
+//!
 //! # NOT WIRED
 //!
 //! Each of these leaves is waiting on a different piece of engine state - and

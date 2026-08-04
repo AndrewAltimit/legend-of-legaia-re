@@ -23,6 +23,9 @@
 //! Every claim below is read out of the instruction stream in the reference
 //! dumps, not the decompiled C.
 //!
+//! REF: FUN_8004695C (the arm whose drain `scale_rgb24` is the maths of)
+//! REF: FUN_80024EE4 (that drain's submit)
+//!
 //! ## Clean-room boundary
 //!
 //! No `SCUS_942.54` bytes live in this crate. The reference dumps
