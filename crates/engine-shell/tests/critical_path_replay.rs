@@ -37,15 +37,20 @@
 //! | 1 | `town01` free-roam, input released | cold boot hands control to the player |
 //! | 2 | pad-walk to the south gate -> `map01` | field locomotion + collision + walk-on trigger |
 //! | 3 | pad-walk `map01` across the continent | overworld remap + collision + the encounter round trip |
-//! | 4 | pad-walk onto the `keikoku` portal | overworld route + portal engage |
+//! | 4 | pad-walk on to the Ravine, via `suimon` | multi-scene overworld route + portal engage |
 //!
-//! Rungs 3 and 4 are one leg scored twice, and they are split because the
-//! overworld leg is sixty-odd tiles long: under a single portal check, "walked
-//! nowhere" and "crossed the continent and was turned back at the last ridge"
-//! are the same number. Rung 3's threshold is
-//! [`OVERWORLD_CROSSING_TILES`] **and** at least one random encounter fought
-//! and survived - the capability [`drain_battle`] documents, and the one a
-//! regression would otherwise re-break silently.
+//! Rung 3 is the first leg of rung 4's route, scored on its own, because that
+//! leg is sixty-odd tiles long: under a single portal check, "walked nowhere"
+//! and "crossed the continent and was turned back at the last ridge" are the
+//! same number. Rung 3's threshold is [`OVERWORLD_CROSSING_TILES`] **and** at
+//! least one random encounter fought and survived - the capability
+//! [`drain_battle`] documents, and the one a regression would otherwise
+//! re-break silently.
+//!
+//! Rung 4 is **three** legs, not one, because `map01` is not one walk
+//! component: the arrival is on the northern half, every `keikoku` mouth is on
+//! the southern half, and the crossing between them is the `suimon` scene.
+//! See [`SUIMON_SOUTH_EXIT`] and [`WATER_GATE_FLAG`].
 //!
 //! ## Navigation
 //!
@@ -144,6 +149,72 @@ const SUBCELL: i16 = 32;
 /// [`GATE_OPEN_FLAGS`](self::GATE_OPEN_FLAGS). See that constant.
 const TOWN01_SOUTH_GATE: (u8, u8) = (25, 46);
 
+/// The Ravine approach is **three** legs, because `map01` is not one walk
+/// component.
+///
+/// Its wall bits split the kingdom in two: a flood from Rim Elm's arrival tile
+/// `(96, 25)` covers ~850 tiles' worth of ground and reaches exactly four
+/// overworld doors - `jou`, `town0c`, `izumi` and `suimon` - while all six
+/// `keikoku` mouths sit on the other side of a band at minimum four 64-unit
+/// wall sub-cells thick. Refining the planner lattice does not help: the
+/// reachable area is flat from 32 units of pitch down to **2**, which is the
+/// retail stepper's own increment, so no finer discretisation exists
+/// ([`probe_rung4_lattice`]).
+///
+/// `suimon` is the crossing. `map01` partition-2 record `18` (trigger tiles
+/// `(55, 62)` / `(56, 61)`) enters it; `suimon`'s records `0`/`1` come back to
+/// `map01` tile `(54, 61)` on the **northern** component and its record `2`
+/// comes back to `(59, 61)` on the **southern** one. Neither is story-gated
+/// (`C1`/`C2` empty), so the crossing is open from a cold boot.
+///
+/// So routing straight at a `keikoku` mouth cannot work, and treating `suimon`
+/// as a portal hazard to walk around - which is what [`portal_hazards`] does
+/// for any scene that is not the leg's destination - walls the route off
+/// entirely. See `docs/subsystems/world-map.md`.
+///
+/// This is `suimon`'s southern door: a tile inside record `2`'s trigger band,
+/// which runs `(30, 80)`..`(37, 92)`.
+const SUIMON_SOUTH_EXIT: (i16, i16) = (34, 85);
+
+/// `suimon`'s **northern** doors, as dispatch tiles for [`plan_path`]'s
+/// `avoid` set - the overworld [`portal_hazards`] idea applied to a field
+/// scene.
+///
+/// Entering from `map01` lands the player at `suimon` tile `(68, 44)`
+/// (`map01` P2[18]'s `0x3F` at bytecode `+0x1C`; the sibling at `+0x37`, entry
+/// `(21, 84)`, is the `SysFlag.Test 0x27B` arm). That is the northern chamber,
+/// and record `0`'s trigger band runs straight down its west wall at `x = 66`,
+/// `z = 40..53`, with record `1` capping it at `z = 38..39`. A route that
+/// heads straight for the southern door crosses one of them and is sent back
+/// to `map01` tile `(54, 61)` on the component it started from - the leg
+/// reports `Transitioned("map01")` and has gone nowhere.
+///
+/// So the two northern bands are hazards, exactly like another scene's portal
+/// on the overworld: the way south is to leave the chamber past `z = 53` on
+/// the far side of the `x = 66` band first. The rectangles over-approximate
+/// the on-disc trigger tiles (`suimon`'s `.MAP` fallback table), which is safe
+/// - none of them touches record `2`'s band at `x = 30..37`.
+fn suimon_north_doors() -> HashSet<(i32, i32)> {
+    let mut out = HashSet::new();
+    for z in 79..=92 {
+        out.insert((19, z));
+    }
+    for z in 40..=53 {
+        out.insert((66, z));
+    }
+    for x in 19..=29 {
+        for z in 77..=80 {
+            out.insert((x, z));
+        }
+    }
+    for x in 66..=74 {
+        for z in 38..=39 {
+            out.insert((x, z));
+        }
+    }
+    out
+}
+
 /// The two system flags Rim Elm's south gate is authored on: `327` ("the gate
 /// scenery exists") and `321` ("the gate is open").
 ///
@@ -186,6 +257,28 @@ const GATE_OPEN_FLAGS: [u16; 2] = [327, 321];
 /// Rim Elm's gate and for the same reason - this ladder scores locomotion,
 /// collision and the pad remap, not story progression.
 const MIST_WALL_FLAG: u16 = 0x482;
+
+/// `0x27B` - the `suimon` water gate, which is the switch on **which chamber**
+/// of `suimon` the `map01` crossing delivers you to.
+///
+/// `map01` P2[18] is a two-armed `0x3F`: `SysFlag.Test 0x27B` at bytecode
+/// `+0x0E` jumps to `+0x2D` when the flag **is set** (the field VM's `0x7_`
+/// route takes the branch on set), and the two arms name different `suimon`
+/// entry tiles - `(68, 44)` on the clear arm, `(21, 84)` on the set one.
+///
+/// They are not interchangeable. `(68, 44)` is the **northern** chamber, and
+/// flooding `suimon`'s grid from it with its own trigger tiles honoured
+/// reaches 6,425 sub-cells and **none** of record `2`'s twenty southern-door
+/// tiles - its only exits are records `0`/`1`, which return to `map01` tile
+/// `(54, 61)` on the component the player came from. From `(21, 84)` the same
+/// flood reaches over a million sub-cells and all twenty. So with `0x27B`
+/// clear the crossing is a dead end by design: `suimon` is a sluice-gate
+/// puzzle, and its own scene-entry script `P1[0]` is what sets the flag.
+///
+/// Seeding it is the same move [`GATE_OPEN_FLAGS`] and [`MIST_WALL_FLAG`]
+/// make, for the same reason - this ladder scores locomotion, collision and
+/// the pad remap, not story progression. See [`SUIMON_SOUTH_EXIT`].
+const WATER_GATE_FLAG: u16 = 0x27B;
 
 /// Frames a leg may spend before it is called a timeout.
 const LEG_FRAME_BUDGET: u32 = 6_000;
@@ -1287,6 +1380,125 @@ fn ablate_rung4_inputs(host: &mut SceneHost, hazards: &HashSet<(i32, i32)>) {
     row("restored (sanity, == as-is)", host, hazards);
 }
 
+/// Lattice-pitch sweep + portal-reachability report for the rung-4 flood,
+/// printed under `LEGAIA_CPR_LATTICE=1`.
+///
+/// [`ablate_rung4_inputs`] eliminates the flood's *inputs* (grid, props, NPCs,
+/// hazards) one at a time; this eliminates the flood's *discretisation*, then
+/// says which overworld portals the surviving component actually contains.
+///
+/// **Pitch.** The planner walks a [`SUBCELL`]-pitch lattice while retail's
+/// locomotion is continuous in 2-unit sub-steps - the world-map-walk copy of
+/// `FUN_801d01b0` increments the actor's `+0x14`/`+0x18` by 2 and re-runs
+/// `FUN_801cfe4c` each time (`ghidra/scripts/funcs/overlay_world_map_walk_801d01b0.txt`).
+/// A lattice can only ever *under*-report reachability against that, because
+/// [`World::field_dir_blocked`]'s three probe points spread +/-16 units
+/// laterally and which sub-cells that footprint straddles depends on the
+/// position's phase modulo 64. Pitch 2 is therefore the ceiling: a node set
+/// closed under 2-unit cardinal steps is exactly the set of positions the
+/// retail stepper can reach, and nothing coarser can beat it.
+///
+/// The measured answer is that the pitch buys nothing - the reachable area is
+/// flat from 32 down to 2 and never contains a `keikoku` mouth - so the seal
+/// is not the lattice. What the portal listing then shows is that the
+/// component *does* contain `suimon`, which is the scene that crosses to the
+/// component the `keikoku` mouths are on. See `handoff/rung4-probe.md` and
+/// [`docs/subsystems/world-map.md`].
+///
+/// Walls only: props / NPCs are already falsified by the ablation, and the
+/// per-node actor test is a linear scan the fine pitches cannot afford.
+fn probe_rung4_lattice(host: &SceneHost) {
+    /// World extent of the collision grid: 128 tiles x 128 units.
+    const SPAN: i32 = 128 * 128;
+    /// Pitches to sweep, coarsest first; the last is the retail step unit.
+    const PITCHES: [i32; 5] = [32, 16, 8, 4, 2];
+    /// A `map01` save state parks retail's own player here, just outside the
+    /// `keikoku` entrance - a ground-truth standable point on the far side.
+    const RETAIL_STAND: (i16, i16) = (8266, 8700);
+
+    let (px, pz) = player_world(host);
+    let portals: Vec<(String, (i16, i16))> = host
+        .world
+        .world_map_entity_configs
+        .iter()
+        .zip(host.world.world_map_entity_positions.iter())
+        .filter_map(|(cfg, &(x, z))| match cfg {
+            WorldMapEntityConfig::OverworldPortal { scene_name, .. } => {
+                Some((scene_name.clone(), (x, z)))
+            }
+            _ => None,
+        })
+        .collect();
+    eprintln!(
+        "[lattice] arrival world ({px},{pz}); retail stand {RETAIL_STAND:?}; \
+         {} overworld portals",
+        portals.len()
+    );
+
+    for pitch in PITCHES {
+        let stride = (SPAN / pitch) as usize;
+        let snap = |w: i16| -> i32 { (i32::from(w) + pitch / 2).div_euclid(pitch) };
+        let inside = |nx: i32, nz: i32| -> bool {
+            nx >= 0 && nz >= 0 && (nx as usize) < stride && (nz as usize) < stride
+        };
+        let at = |nx: i32, nz: i32| -> usize { nz as usize * stride + nx as usize };
+
+        let (sx, sz) = (snap(px), snap(pz));
+        if !inside(sx, sz) {
+            eprintln!("[lattice] pitch {pitch:>3}: the arrival is off the lattice");
+            continue;
+        }
+        let mut seen = vec![false; stride * stride];
+        let mut queue = VecDeque::new();
+        seen[at(sx, sz)] = true;
+        queue.push_back((sx, sz));
+        let mut nodes = 0u64;
+        while let Some((cx, cz)) = queue.pop_front() {
+            nodes += 1;
+            let (wx, wz) = ((cx * pitch) as i16, (cz * pitch) as i16);
+            for ((dx, dz), dir) in STEPS {
+                let (nx, nz) = (cx + i32::from(dx), cz + i32::from(dz));
+                if !inside(nx, nz) || seen[at(nx, nz)] {
+                    continue;
+                }
+                if host.world.field_dir_blocked(wx, wz, dir) {
+                    continue;
+                }
+                seen[at(nx, nz)] = true;
+                queue.push_back((nx, nz));
+            }
+        }
+
+        // Reached "near" = within 128 world units, so a portal tile that is
+        // itself a wall (a door reads as one) still reports as arrived-at.
+        let near = |wx: i16, wz: i16| -> bool {
+            let (gx, gz) = (snap(wx), snap(wz));
+            let span = 128 / pitch;
+            (-span..=span).any(|dz| {
+                (-span..=span).any(|dx| inside(gx + dx, gz + dz) && seen[at(gx + dx, gz + dz)])
+            })
+        };
+        // Node count as tile-equivalents, so the pitches compare directly.
+        let tiles = nodes * (pitch as u64) * (pitch as u64) / (128 * 128);
+        let (rx, rz) = (snap(RETAIL_STAND.0), snap(RETAIL_STAND.1));
+        eprintln!(
+            "[lattice] pitch {pitch:>3}: {nodes:>9} nodes = {tiles:>5} tile-equivalents; \
+             reaches retail's stand: {}",
+            inside(rx, rz) && seen[at(rx, rz)]
+        );
+        if pitch == *PITCHES.last().expect("non-empty") {
+            for (scene, (wx, wz)) in &portals {
+                eprintln!(
+                    "[lattice]   portal -> {scene:<10} world ({wx:>5},{wz:>5}) \
+                     tile {:?}  reached: {}",
+                    tile_of(*wx, *wz),
+                    near(*wx, *wz)
+                );
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The run
 // ---------------------------------------------------------------------------
@@ -1331,8 +1543,11 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     for flag in GATE_OPEN_FLAGS {
         host.world.system_flag_set(flag);
     }
-    // The overworld's own story gate. See `MIST_WALL_FLAG`.
+    // The overworld's own story gates. See `MIST_WALL_FLAG` (the Drake mist
+    // walls) and `WATER_GATE_FLAG` (which `suimon` chamber the crossing lands
+    // in - without it the crossing is a dead end by design).
     host.world.system_flag_set(MIST_WALL_FLAG);
+    host.world.system_flag_set(WATER_GATE_FLAG);
 
     // --- 1. Cold boot into Rim Elm free-roam with control released. -------
     host.enter_field_scene("town01", 0).expect("enter town01");
@@ -1372,30 +1587,35 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
         return rungs;
     }
 
-    // --- 3. Walk the overworld onto the Ravine portal. --------------------
-    let hazards = portal_hazards(host, "keikoku");
+    // --- 3. Walk the overworld toward the Ravine. -------------------------
+    //
+    // Three legs, not one - see [`RAVINE_CROSSING`]. Leg A crosses the
+    // northern component to the `suimon` door, leg B walks `suimon` to its
+    // southern door, leg C crosses the southern component to a `keikoku`
+    // mouth. Rung 3 is scored on leg A, which is the long overworld walk.
     let arrival = {
         let (x, z) = player_world(host);
         tile_of(x, z)
     };
     if std::env::var_os("LEGAIA_CPR_ABLATE").is_some() {
+        let hazards = portal_hazards(host, "keikoku");
         ablate_rung4_inputs(host, &hazards);
     }
-    let (leg, stats) = match portal_tile(host, "keikoku", &hazards) {
-        None => (None, LegStats::default()),
-        Some(goal) => {
-            let mut stats = LegStats::default();
-            let leg = walk_to(host, goal, &hazards, &mut stats);
-            (Some(leg), stats)
-        }
-    };
+    if std::env::var_os("LEGAIA_CPR_LATTICE").is_some() {
+        probe_rung4_lattice(host);
+    }
 
-    // --- 3. …and the crossing itself, which is the leg's first half. ------
+    let a_hazards = portal_hazards(host, "suimon");
+    let a_goal = portal_tile(host, "suimon", &a_hazards);
+    let mut stats = LegStats::default();
+    let leg_a = a_goal.map(|goal| walk_to(host, goal, &a_hazards, &mut stats));
+
+    // --- 3. …and the crossing itself, which is leg A. ---------------------
     let crossed = stats.fought > 0 && stats.reach >= OVERWORLD_CROSSING_TILES;
     rungs.push(Rung {
         label: "pad-walk map01 across the continent",
-        detail: match &leg {
-            None => "no keikoku overworld portal on map01".to_string(),
+        detail: match &leg_a {
+            None => "no suimon overworld portal on map01".to_string(),
             Some(_) => format!(
                 "reached {} tiles from the {arrival:?} arrival, {} random encounter(s) fought \
                  (needs {OVERWORLD_CROSSING_TILES} and 1)",
@@ -1408,14 +1628,54 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
         return rungs;
     }
 
-    // --- 4. …and the portal engage at the end of it. ----------------------
+    // --- 4. Through `suimon` and on to a Ravine mouth. --------------------
+    let mut trail = vec![format!("map01 -> suimon: {}", fmt_leg(leg_a.as_ref()))];
+    let mut arrived = matches!(&leg_a, Some(Leg::Transitioned(n)) if n == "suimon");
+    if arrived {
+        if std::env::var_os("LEGAIA_CPR_DEBUG").is_some() {
+            let (x, z) = player_world(host);
+            eprintln!(
+                "[dbg] suimon entry world ({x},{z}) tile {:?} dispatch {:?}",
+                tile_of(x, z),
+                dispatch_tile(x, z)
+            );
+        }
+        let leg_b = walk_to(
+            host,
+            SUIMON_SOUTH_EXIT,
+            &suimon_north_doors(),
+            &mut LegStats::default(),
+        );
+        if std::env::var_os("LEGAIA_CPR_DEBUG").is_some() {
+            let (x, z) = player_world(host);
+            eprintln!(
+                "[dbg] after leg B: {leg_b} at world ({x},{z}) dispatch {:?}",
+                dispatch_tile(x, z)
+            );
+        }
+        trail.push(format!("suimon -> map01: {leg_b}"));
+        arrived = matches!(&leg_b, Leg::Transitioned(n) if n == "map01");
+    }
+    if arrived {
+        let c_hazards = portal_hazards(host, "keikoku");
+        let leg_c = portal_tile(host, "keikoku", &c_hazards)
+            .map(|goal| walk_to(host, goal, &c_hazards, &mut LegStats::default()));
+        trail.push(format!("map01 -> keikoku: {}", fmt_leg(leg_c.as_ref())));
+        arrived = matches!(&leg_c, Some(Leg::Transitioned(n)) if n == "keikoku");
+    }
     rungs.push(Rung {
-        label: "pad-walk map01 -> keikoku (Ravine)",
-        detail: leg.as_ref().map_or_else(String::new, |l| format!("{l}")),
-        cleared: matches!(&leg, Some(Leg::Transitioned(n)) if n == "keikoku"),
+        label: "pad-walk map01 -> suimon -> map01 -> keikoku (Ravine)",
+        detail: trail.join(" | "),
+        cleared: arrived,
     });
 
     rungs
+}
+
+/// Render an optional leg, so a missing goal reads as a leg outcome rather
+/// than as an empty string.
+fn fmt_leg(leg: Option<&Leg>) -> String {
+    leg.map_or_else(|| "no reachable portal".to_string(), |l| format!("{l}"))
 }
 
 #[test]

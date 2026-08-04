@@ -379,6 +379,18 @@ The candidate table itself is rebuilt per frame by **`FUN_801cf754`** (`ghidra/s
 - A **door's touch pass runs `31 00`** (field-VM CFLAG_SET bit 0 on its own `+0x10`) immediately after its swing-start ops (`2C 07 / 2C 01 / 2B 03`, e.g. `town01` P0[0] offset `0x24`) and *before* the `2D 08` end-latch spin - so a closed door is **solid** (bit-4 contact blocks the step while the same probe posts the touch), and its collision + touch box drop **at touch-resume, as the swing starts**, not at full-open. Props born pass-through carry `31 00` in their spawn prologue instead.
 - A **searchable prop's spawn prologue runs `31 1E`** (`+0x10 |= 0x40000000`, e.g. the `town01` cupboard P0[12] offset `0x09`), flipping its contact class to result bit `1`: it still blocks, but the locomotion dispatch **never auto-posts bit-1 partners** - only the just-pressed-confirm facing probe does. That single authored op is the whole door-vs-cupboard discriminator: doors open on body contact, cupboards only on the interact button. (`31 11` - bit 17, `0x20000` - also selects the bit-1 class *and* the moving-arm box.)
 
+**The overworld walk runs this same probe, unchanged.** The world-map overlay's
+copy of `FUN_801cfe4c` is instruction-identical to the field overlay's (217
+instructions, matching by VA; base-tagged dumps
+`ghidra/scripts/funcs/overlay_0897_801cfe4c.txt` and
+`.../overlay_world_map_top_801cfe4c.txt`), and both tables it indexes are data
+in overlay 0897 - the same overlay under both loads. The world-map-walk copy of
+`FUN_801d01b0` also commits in the same **2-unit** increments (`addiu v0, v0,
+0x2` / `-0x2` on `+0x14` / `+0x18`, loop cursor `+2` per pass;
+`.../overlay_world_map_walk_801d01b0.txt`). A higher overworld speed buys more
+sub-steps per frame, not a longer probe reach. See
+[`world-map.md`](world-map.md#overworld-collision--walkability).
+
 **The locomotion gates a step on the actor bits and the wall bit together**: `FUN_801d01b0` commits each 2-unit axis step only when `FUN_801cfe4c` returns `0` (or the debug no-clip `_DAT_8007b98c`/`_DAT_8007b850 & 2` is on) - NPCs block movement exactly like walls.
 
 Each sub-step it also runs the **touch/interact dispatch** (gated off while the player's `+0x10 & 0x80000` engaged flag, the scratch system-channel `_DAT_1f800394 & 0x400`, or the field-control dialog byte `_DAT_801c6ea4+0x62` is set):

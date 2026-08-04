@@ -22,7 +22,7 @@ below to jump within this page.
 - [Encounter-record installation](#encounter-record-installation) · [clean-room port](#clean-room-port---both-overworld-and-field) · [NPC dialogue text source](#npc-dialogue-text-source)
 
 **Overworld player + scenes**
-- [Player movement + region-keyed encounters](#overworld-player-movement--region-keyed-encounters) · [collision / walkability](#overworld-collision--walkability) · [camera-relative movement remap](#camera-relative-movement-remap) · [axis convention](#overworld-axis-convention) · [boot-path seeding](#boot-path-seeding)
+- [Player movement + region-keyed encounters](#overworld-player-movement--region-keyed-encounters) · [collision / walkability](#overworld-collision--walkability) · [not one walk component](#the-overworld-is-not-one-walk-component) · [camera-relative movement remap](#camera-relative-movement-remap) · [axis convention](#overworld-axis-convention) · [boot-path seeding](#boot-path-seeding)
 - [Entity / actor placement table](#entity--actor-placement-table) · [classifying the entity kind](#classifying-the-entity-kind-from-its-script) · [scene destinations](#scene-destinations) · [chapter-1 Drake hub sweep](#chapter-1-drake-hub-sweep)
 
 **Terrain + geometry**
@@ -1172,6 +1172,69 @@ same [`Scene::field_collision_grid`](../../crates/engine-core/src/scene.rs)
 path as the field and steps the overworld player through the shared
 `World::advance_with_collision`, so walls stop the player exactly as on the
 field.
+
+**Same probe, same step, both walks.** The world-map overlay's copy of
+`FUN_801cfe4c` is instruction-identical to the field overlay's - all 217
+instructions match by VA, from base-tagged dumps of both loads (see
+`ghidra/scripts/funcs/overlay_0897_801cfe4c.txt` and
+`ghidra/scripts/funcs/overlay_world_map_top_801cfe4c.txt`). The probe offset
+tables it indexes (`DAT_801f21b4`, `DAT_801f2214`) are data in overlay 0897,
+the same overlay in both cases - "world-map" is a subsystem of the field
+overlay, not a separate PROT entry. And the world-map-walk copy of
+`FUN_801d01b0` commits its axis steps in the same **2-unit** increments as the
+field (`addiu v0, v0, 0x2` / `-0x2` on the actor's `+0x14` / `+0x18`, loop
+cursor advanced by `2` per pass; see
+`ghidra/scripts/funcs/overlay_world_map_walk_801d01b0.txt`). So the overworld
+does not sample at a longer reach to match its higher per-frame speed - it
+takes more 2-unit sub-steps per frame, each re-probing at the same 47-48 units.
+
+### The overworld is not one walk component
+
+`map01`'s wall bits split the kingdom into **two** walk components, and what
+joins them is a scene, not a pass. Flooding the grid from Rim Elm's arrival
+tile `(96, 25)` reaches roughly 850 tiles' worth of ground and never reaches
+any of the six `keikoku` (Ravine) mouths; the two components are separated by
+at minimum four 64-unit wall sub-cells everywhere, the thinnest crossing
+sitting around world `(7584, 7584..7776)`.
+
+`suimon` is the crossing. `map01`'s partition-2 record `18`, fired by the
+kind-1 gate-1 trigger tiles `(55, 62)` and `(56, 61)` on the northern
+component, changes scene to `suimon`; `suimon`'s own records `0`/`1` return to
+`map01` tile `(54, 61)` on the northern side and its record `2` returns to
+`map01` tile `(59, 61)` on the **southern** one. Every `keikoku` mouth
+(`map01` partition-2 records `21`/`23`/`25`/`27`, tiles `(53, 93)`,
+`(53, 94)`, `(64, 68)`, `(77, 69)`, `(81, 82)`, `(81, 83)`) is on that
+southern side. So the chapter-1 approach to the Ravine is
+`map01 -> suimon -> map01 -> keikoku`, and a router that treats `suimon` as a
+portal to route around on the way to `keikoku` seals the route.
+
+Neither `suimon` record carries a spawn gate (`C1`/`C2` both empty); the
+`keikoku` records are gated `C1 = 0x193` (blocked *after* the Ravine is
+cleared), and the mist-wall band records `34`/`35`/`36` are gated
+`C1 = 0x482`.
+
+**Which chamber of `suimon` the crossing lands in is flag `0x27B`.** `map01`
+P2[18] is a two-armed `0x3F`: a `SysFlag.Test 0x27B` at bytecode `+0x0E`
+branches to `+0x2D` when the flag is set (the field VM's `0x7_` route takes
+the branch on **set**), and the two arms name the same scene at different
+entry tiles - `suimon (0x44, 0x2C)` = `(68, 44)` on the clear arm,
+`(0x15, 0x54)` = `(21, 84)` on the set one.
+
+They are opposite ends of the scene, and only one crosses. Flooding `suimon`'s
+own grid with its trigger tiles honoured, `(68, 44)` reaches a few thousand
+sub-cells and **none** of record `2`'s twenty southern-door tiles - its only
+exits are records `0`/`1`, back to the northern component. `(21, 84)` reaches
+the whole scene and all twenty. So with `0x27B` clear the crossing is a
+deliberate dead end: `suimon` is a sluice-gate puzzle, and its own scene-entry
+script `P1[0]` is what sets the flag.
+
+Recovering that second arm is what
+[`man_field_scripts::partition2_scene_changes`](../../crates/engine-core/src/man_field_scripts/scene_triggers.rs)
+does, and the trap is that "the arms differ" has to mean the whole
+destination, not the scene name. A post-beat dungeon variant differs by name
+(`map01`'s `dolk` -> `dolk2` on flag `0x142`); a two-ended pass names one
+scene twice and differs only in the arrival tile. A name-only comparison keeps
+the flag-clear arm forever and the pass never opens.
 
 ### Camera-relative movement remap
 
