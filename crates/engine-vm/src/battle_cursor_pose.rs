@@ -22,10 +22,22 @@
 //!   history pair, *and* the boundary adopting retail's cursor order over the
 //!   initiative one.
 //! * `FUN_801D57E8` / `FUN_801D5778` copy records inside the **screen-element
-//!   placement table** at `0x80076C10` - see
-//!   [the memory map](../../../../docs/reference/memory-map.md). The engine
-//!   builds its battle UI from world state every frame and allocates no such
-//!   table, so both stay unwired.
+//!   placement table** at `0x80076C10` (`docs/reference/memory-map.md`). The
+//!   old reason - "the engine allocates no such table" - is withdrawn: the
+//!   table is disc data and the port parses it, as
+//!   `legaia_asset::screen_elements::ScreenElementTable` (103 records, `0x18`
+//!   stride), read by `crate::battle_chrome` and `engine-ui`'s battle command
+//!   chrome. That parser's own page even names this pair's subject: `+0x0A` /
+//!   `+0x0C` is "the second seat - the pair `FUN_801D5778` offsets by a screen
+//!   width", the from/to of an element's **slide**.
+//!
+//!   So what is missing is one level down. The engine's chrome derives its
+//!   rects per frame from the read-only disc record (`ScreenElement::pen` /
+//!   `plate_at`), which means there is no mutable runtime seat array for a
+//!   copy to write into, and no element ever animates between its two seats -
+//!   the actor-name plaque is drawn at its live seat or not at all, never slid
+//!   in from the parked one. Wiring these means the engine growing that live
+//!   array and a slide that steps it; the copies are the splice it would use.
 //!
 //!   This module used to call the array a per-actor animation-pose buffer,
 //!   one of three names the same base carried. The record layout falsifies
@@ -41,9 +53,13 @@
 //!   still the right name for a *different* thing, the actor's animation-pose
 //!   index (`battle_cue_group`, `charm_fix`, `docs/subsystems/battle.md`).
 //!   That collision is why the wrong name stuck here.
-//! * `FUN_801D9AE8` releases a `0x28`-slot tracked-widget pool. The engine's
-//!   battle UI is rebuilt from world state every frame (`engine-ui` draw-list
-//!   builders), so nothing is tracked and nothing needs releasing.
+//! * `FUN_801D9AE8` releases a `0x28`-slot tracked-widget pool. Both of its
+//!   arrays are *described* in the port - `crate::battle_value_readout` carries
+//!   the same `ctx[+0x1074]` pointer table and `ctx[+0x11B4]` `0xC`-stride
+//!   record as address constants - but a described offset is not a pool. No
+//!   engine structure owns widget slots: the battle UI is rebuilt from world
+//!   state every frame by the `engine-ui` draw-list builders, so no widget
+//!   outlives the frame that drew it and nothing has a lifetime to end.
 //!
 //! ## Why one module for four functions
 //!
