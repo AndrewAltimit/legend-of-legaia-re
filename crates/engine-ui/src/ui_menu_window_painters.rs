@@ -640,6 +640,31 @@ fn choice_marker_sprites(rows: &[ChoiceRow; 2], flags: ChoiceFlags) -> Vec<Paint
 /// NOT WIRED: `engine-core::shop::shop_cursor_mode` - the same three bits,
 /// NOT WIRED: the same arms as [`ChoiceFlags::marker_variant`]. Waived in
 /// NOT WIRED: scripts/ci/ui-host-drift-waivers.toml
+/// NOT WIRED:
+/// NOT WIRED: The remaining chain, enumerated so the next attempt is
+/// NOT WIRED: mechanical rather than re-derived. Five pieces, four files,
+/// NOT WIRED: three crates, two hosts - which is why it is a screen build
+/// NOT WIRED: and not a gap-fill:
+/// NOT WIRED: (1) a reader for the block - PROT 0899 file `0x15D00`, four
+/// NOT WIRED: `0x60`-byte blocks of `[u16 id][u16 gate][u32 price]`, read
+/// NOT WIRED: through `ProtIndex::entry_bytes_extended(899)` beside the
+/// NOT WIRED: existing `menu_windows::parse` call, since the table sits past
+/// NOT WIRED: the TOC size and needs the *extended* read;
+/// NOT WIRED: (2) a `World` channel - `record_op49_park` already stores the
+/// NOT WIRED: sub-op and `menu_entry_context_kind()` already publishes it to
+/// NOT WIRED: both hosts, so this is a pending-session slot beside
+/// NOT WIRED: `pending_field_shop`, not a new signal;
+/// NOT WIRED: (3) routing - `field_submode_screen::OP49_DEDICATED_SUB_OPS`
+/// NOT WIRED: is `[0, 3, 5]`, so sub-op `7` currently falls through
+/// NOT WIRED: `slot_for_op49_sub_op` to the generic `CLOSE_TICK` and
+/// NOT WIRED: unparks the script - the trigger fires and is discarded;
+/// NOT WIRED: (4) a `MenuRuntime` session slot + open call, the shape
+/// NOT WIRED: `open_shop_menu` already has;
+/// NOT WIRED: (5) the two host drains, mirroring
+/// NOT WIRED: `take_pending_field_shop` in `redraw.rs` and `play_shop.rs`.
+/// NOT WIRED: The session itself (`PrizeExchangeSession`, all four states)
+/// NOT WIRED: and every painter it needs are done; nothing on this list is
+/// NOT WIRED: a kernel.
 pub fn choice_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
