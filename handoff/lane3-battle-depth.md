@@ -9,9 +9,13 @@ retail behaviour that retail does not have.
 
 `crates/engine-shell/tests/battle_depth_replay.rs` (new). A disc-gated,
 pad-driven ladder that boots `town01` off `extracted/`, enters the real Rim
-Elm sparring battle (MAN formation 4, the 999-HP opponent - long-lived enough
-to carry eight rungs in one fight), and issues each command class through
+Elm sparring fight (MAN formation 4) and issues each command class through
 `World::set_pad` + `BootSession::tick`.
+
+It ends up running **four** battles, not one, because three commands park the
+fight (finding 2 below); the party and the opponent are both given large HP at
+setup so a fight survives the tens of thousands of frames the settle loops
+spend in it.
 
 ### Why it did not exist
 
