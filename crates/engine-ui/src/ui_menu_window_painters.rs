@@ -1129,13 +1129,32 @@ pub const BOX_EMIT_MAX_Y: i32 = 0xF0;
 /// REF: FUN_8002c69c - the box writer, which inflates its own rect by 8px on
 /// every side. Not ported; the hosts draw their window chrome from the UI
 /// atlas instead.
-/// NOT WIRED: no host emits the block's box fills. What the hosts do draw is
-/// NOT WIRED: the UI-atlas 9-slice window chrome, a different primitive from
-/// NOT WIRED: this colour-fill pair, and they draw it at the already-inflated
-/// NOT WIRED: frame rect - whereas `FUN_8002C69C` inflates its own argument
-/// NOT WIRED: by 8px on every side, so this guard tests the *content* y.
-/// NOT WIRED: Gating that chrome on this rect would clip on the wrong
-/// NOT WIRED: coordinate and claim a guard over a draw it does not own.
+/// NOT WIRED: what must exist first is a **caller that can produce an
+/// NOT WIRED: out-of-range `y`**, and none can. [`BOX_EMIT_MAX_Y`] is `0xF0`,
+/// NOT WIRED: which is the 320x240 stage's own height, so every rect in the
+/// NOT WIRED: disc window table passes; and the one rect retail stamps per
+/// NOT WIRED: open - the options value popup, window 47 - is already flipped
+/// NOT WIRED: up by its own rule when its bottom would pass `0xB0`
+/// NOT WIRED: (`engine-core::options::options_popup_content_rect`). A call
+/// NOT WIRED: site here would add a branch nothing can take.
+/// NOT WIRED:
+/// NOT WIRED: This note used to say the hosts draw "at the already-inflated
+/// NOT WIRED: frame rect" while the guard tests the *content* y, so gating
+/// NOT WIRED: them on it would clip on the wrong coordinate. That is not the
+/// NOT WIRED: blocker: both host paths hold the content rect. `pause_menu`'s
+/// NOT WIRED: `frame_around` takes one and applies the same 8px inflation
+/// NOT WIRED: `FUN_8002C69C` does - it is called with
+/// NOT WIRED: `ITEMS_INFO_EXTRA_BOX_RECT`, which *is* that routine's
+/// NOT WIRED: `(WX, WY + 0x38, 0x90, 0x28)` argument for window 17 - and
+/// NOT WIRED: `window_chrome` derives its rect from the descriptor's content
+/// NOT WIRED: rect through `frame_rect`.
+/// NOT WIRED:
+/// NOT WIRED: What is still genuinely unported is the *pair* the guard gates
+/// NOT WIRED: rather than the guard: `FUN_80034B6C`'s mode selector + packed
+/// NOT WIRED: RGB word has no port, so the engine's boxes are UI-atlas
+/// NOT WIRED: sprites whose colour comes from the atlas instead of from the
+/// NOT WIRED: caller's word. Wiring the guard alone would claim a guard over
+/// NOT WIRED: a fill retail colours and the port does not.
 pub fn guarded_box_rect(x: i32, y: i32, w: i32, h: i32) -> Option<(i32, i32, i32, i32)> {
     (y <= BOX_EMIT_MAX_Y).then_some((x, y, w, h))
 }
