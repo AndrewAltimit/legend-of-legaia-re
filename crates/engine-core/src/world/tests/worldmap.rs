@@ -414,79 +414,83 @@ fn world_map_encounter_zone_uses_its_own_formation() {
     );
 }
 
-/// Engaging a portal entity surfaces a `WorldMapTransition` carrying the
-/// portal's target map id.
+/// Engaging a minigame-door entity arms the **mode-24 door warp** with the
+/// placement's sub-id.
+///
+/// This used to assert a `WorldMapTransition { target_map: 5 }`, which was the
+/// defect: the payload of an overworld door entity is `op0 - 100` off the
+/// field-VM `0x3E` arm - a code-overlay selector - so surfacing it as a map id
+/// handed a minigame sub-id to the CDNAME-ordinal resolver.
 #[test]
-fn world_map_portal_engage_surfaces_target_map() {
+fn world_map_minigame_door_engage_arms_the_door_warp() {
     let mut world = World::default();
     world.enter_world_map();
-    world.install_world_map_entities_with_configs(vec![WorldMapEntityConfig::Portal {
-        target_map: 5,
+    world.install_world_map_entities_with_configs(vec![WorldMapEntityConfig::MinigameDoor {
+        sub_id: 5,
     }]);
     // Encounters off so only the transition path can fire.
     world.set_world_map_encounter(false, 50, 0, 64);
 
     world.engage_world_map_entity(0);
     let _ = world.tick();
-    let transitioned = world.drain_field_events().into_iter().any(|e| {
-        matches!(
-            e,
-            FieldEvent::WorldMapTransition {
-                target_map: 5,
-                slot: 0
-            }
-        )
-    });
-    assert!(transitioned, "the portal surfaces its target map");
+    assert_eq!(
+        world.pending_minigame_warp,
+        Some(5),
+        "the door arms its minigame sub-id"
+    );
+    assert!(
+        world.minigame_scene_backup.is_some(),
+        "the departure scene is backed up for the return trip"
+    );
+    assert!(
+        !world
+            .drain_field_events()
+            .iter()
+            .any(|e| matches!(e, FieldEvent::WorldMapTransition { .. })),
+        "a minigame door is not a scene transition"
+    );
 }
 
-/// Walking the overworld player onto a portal entity's tile auto-engages it
-/// (no host `engage_world_map_entity` call) and surfaces its target map.
+/// Walking the overworld player onto a minigame-door entity's tile
+/// auto-engages it (no host `engage_world_map_entity` call) and arms the door
+/// warp with its sub-id.
 #[test]
-fn world_map_walking_onto_portal_auto_engages() {
+fn world_map_walking_onto_minigame_door_auto_engages() {
     let mut world = World::default();
     world.enter_world_map();
     world.install_field_player(0);
     // Encounters off so only the transition path can fire.
     world.set_world_map_encounter(false, 50, 0, 64);
-    // A portal at tile (3,3) -> world (3*128 + 64 = 448, 448).
+    // A door at tile (3,3) -> world (3*128 + 64 = 448, 448).
     world.install_world_map_entities_at(vec![(
-        WorldMapEntityConfig::Portal { target_map: 9 },
+        WorldMapEntityConfig::MinigameDoor { sub_id: 3 },
         (448, 448),
     )]);
 
-    // Player starts two tiles to the -X side, on the same row as the portal.
+    // Player starts two tiles to the -X side, on the same row as the door.
     world.actors[0].move_state.world_x = 448 - 256;
     world.actors[0].move_state.world_z = 448;
 
     // Hold the d-pad direction that walks +X at the default azimuth (0): the
-    // camera sits on +X, so "screen down" walks +X toward the portal (see the
+    // camera sits on +X, so "screen down" walks +X toward the door (see the
     // camera-relative remap).
     world.set_pad(input::PadButton::Down.mask());
-    let mut transitioned = false;
+    let mut armed = false;
     for _ in 0..200 {
         let _ = world.tick();
-        if world.drain_field_events().into_iter().any(|e| {
-            matches!(
-                e,
-                FieldEvent::WorldMapTransition {
-                    target_map: 9,
-                    slot: 0
-                }
-            )
-        }) {
-            transitioned = true;
+        if world.pending_minigame_warp == Some(3) {
+            armed = true;
             break;
         }
     }
     assert!(
-        transitioned,
-        "walking onto the portal tile auto-fires its transition"
+        armed,
+        "walking onto the door tile auto-arms its minigame warp"
     );
 }
 
-/// Auto-engage is portal-only: walking onto an NPC entity's tile does NOT fire
-/// a transition (NPCs are talk-to, not walk-onto).
+/// Auto-engage is walk-onto-only: walking onto an NPC entity's tile fires
+/// neither a transition nor a door warp (NPCs are talk-to).
 #[test]
 fn world_map_walking_onto_npc_does_not_transition() {
     let mut world = World::default();
@@ -513,6 +517,10 @@ fn world_map_walking_onto_npc_does_not_transition() {
         !transitioned,
         "an NPC is not auto-engaged by walking onto its tile"
     );
+    assert_eq!(
+        world.pending_minigame_warp, None,
+        "nor does it arm a door warp"
+    );
 }
 
 /// Placed overworld entities surface as render markers: one per installed
@@ -525,7 +533,7 @@ fn world_map_entity_markers_pair_position_and_kind() {
     // Put the player on a known plane so the marker `y` is deterministic.
     world.actors[0].move_state.world_y = -200;
     world.install_world_map_entities_at(vec![
-        (WorldMapEntityConfig::Portal { target_map: 9 }, (448, 320)),
+        (WorldMapEntityConfig::MinigameDoor { sub_id: 3 }, (448, 320)),
         (
             WorldMapEntityConfig::Npc {
                 interact_id: 4,

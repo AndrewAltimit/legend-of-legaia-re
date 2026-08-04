@@ -169,13 +169,18 @@ pub enum FieldEvent {
     /// instantiator returns when `FUN_80020DE0` hands back zero). The
     /// dropped record is included so engines can log / diagnose.
     ActorSpawnFailed { record: Vec<u8> },
-    /// A world-map portal entity reached its scene-transition state. `slot` is
-    /// the overworld entity index; `target_map` is the scene the portal leads
-    /// to (the per-portal target map id the entity was configured with via
-    /// [`crate::world::WorldMapEntityConfig::Portal`]). Engines drain this to
-    /// load `target_map` and leave the overworld. Carries the richer target id
-    /// the generic [`Self::FieldInteract`] cannot.
-    WorldMapTransition { target_map: u16, slot: u8 },
+    /// An overworld town / dungeon entrance
+    /// ([`crate::world::WorldMapEntityConfig::OverworldPortal`]) reached its
+    /// scene-transition state. `slot` is the overworld entity index, whose
+    /// config row carries the CDNAME destination + arrival tile; `dest_index`
+    /// echoes that entrance's `0x3F` named-scene-change index so a host
+    /// without config access still has an id to key on.
+    ///
+    /// **Not a map id.** The `0x3E` door-warp id space is a mode-24 minigame
+    /// sub-id and never reaches this event - a
+    /// [`crate::world::WorldMapEntityConfig::MinigameDoor`] arms
+    /// `World::pending_minigame_warp` instead.
+    WorldMapTransition { dest_index: u16, slot: u8 },
 }
 
 impl FieldEvent {
@@ -212,8 +217,8 @@ impl FieldEvent {
             FieldEvent::FieldInteract { interact_id, slot } => {
                 format!("FieldInteract(id={interact_id}, slot={slot})")
             }
-            FieldEvent::WorldMapTransition { target_map, slot } => {
-                format!("WorldMapTransition(target_map={target_map}, slot={slot})")
+            FieldEvent::WorldMapTransition { dest_index, slot } => {
+                format!("WorldMapTransition(dest_index={dest_index}, slot={slot})")
             }
             FieldEvent::SceneRegisterWrite {
                 slot_10,

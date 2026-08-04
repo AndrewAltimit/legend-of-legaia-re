@@ -389,7 +389,10 @@ impl World {
                     Some(WorldMapEntityConfig::EncounterZone { .. }) => {
                         WorldMapEntityKind::EncounterZone
                     }
-                    Some(WorldMapEntityConfig::Portal { .. })
+                    // Both walk-onto shapes draw the same marker; where they
+                    // lead differs (a CDNAME scene vs a mode-24 overlay), and
+                    // that is a drain-side distinction, not a render one.
+                    Some(WorldMapEntityConfig::MinigameDoor { .. })
                     | Some(WorldMapEntityConfig::OverworldPortal { .. }) => {
                         WorldMapEntityKind::Portal
                     }

@@ -1109,7 +1109,7 @@ impl World {
     /// list order, so it picks the hit nearest the probe point instead
     /// (tie-break: lowest slot) - identical whenever NPCs stand more than
     /// 144 units apart, which every authored placement does.
-    pub(crate) fn field_interact_probe_slot(&self) -> Option<u8> {
+    pub fn field_interact_probe_slot(&self) -> Option<u8> {
         let slot = self.player_actor_slot? as usize;
         if slot >= self.actors.len() || !self.actors[slot].active {
             return None;
@@ -1121,14 +1121,36 @@ impl World {
         let px = x.saturating_add(dx) as i32;
         let pz = z.saturating_sub(dz) as i32;
         let mut best: Option<(i32, u8)> = None;
-        for (&npc_slot, &(ax, az)) in &self.field_npc_positions {
+        let consider = |slot: u8, ax: i16, az: i16, best: &mut Option<(i32, u8)>| {
             let (ex, ez) = ((px - ax as i32).abs(), (pz - az as i32).abs());
             if ex < FIELD_INTERACT_BOX_HALF && ez < FIELD_INTERACT_BOX_HALF {
                 let d = ex * ex + ez * ez;
-                if best.is_none_or(|(bd, bs)| d < bd || (d == bd && npc_slot < bs)) {
-                    best = Some((d, npc_slot));
+                if best.is_none_or(|(bd, bs)| d < bd || (d == bd && slot < bs)) {
+                    *best = Some((d, slot));
                 }
             }
+        };
+        for (&npc_slot, &(ax, az)) in &self.field_npc_positions {
+            consider(npc_slot, ax, az, &mut best);
+        }
+        // Retail's probe walks the **actor list** and box-tests every placed
+        // actor, with no "is this one a talk NPC" filter - the touched actor's
+        // own record is what the dialog SM then runs. The engine's
+        // `field_npc_positions` is seeded only for text-bearing NPC placements,
+        // so a **minigame door** (a casino cabinet, the dance-hall desk) sat
+        // outside the probe entirely and pressing the action button at one did
+        // nothing at all. Its placement anchor is already carried by
+        // `field_walk_touch`; admit exactly the slots that also carry an
+        // interaction record and are not already NPC anchors, which is the door
+        // set and nothing else.
+        // REF: FUN_801cf9f4 (the actor-list walk), FUN_80039B7C
+        for (&slot, &((ax, az), _)) in &self.field_walk_touch {
+            if self.field_npc_positions.contains_key(&slot)
+                || !self.field_npc_dialog_prologue.contains_key(&slot)
+            {
+                continue;
+            }
+            consider(slot, ax, az, &mut best);
         }
         best.map(|(_, s)| s)
     }
@@ -1946,6 +1968,17 @@ impl World {
                 // Posting `sub_id` into `pending_scene_transition` instead
                 // resolved a code-overlay selector through a CDNAME ordinal
                 // and warped the player to an unrelated scene.
+                //
+                // Body contact takes the **decoded** effect, not the record
+                // run: the warp drains this same frame, so a record run armed
+                // by the `trigger_field_interact` above would be suspended
+                // mid-conversation for the whole minigame and then resume, on
+                // the return frame, as a box the player never opened. The
+                // record's own path is the button probe
+                // ([`Self::field_interact_probe_slot`]), which does not warp
+                // out from under it.
+                self.active_inline_prologue = None;
+                self.active_inline_slot = None;
                 self.arm_minigame_warp();
                 self.pending_minigame_warp = Some(sub_id);
             }

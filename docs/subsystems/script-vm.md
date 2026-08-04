@@ -1502,6 +1502,53 @@ NPC is the **interaction pipeline**, not a text-carrying instruction:
    map is cleared on every picker commit so menu records that re-emit their
    menu by jumping back after a branch reply still cycle.
 
+### The interaction cursor: one record, two consecutive scripts
+
+A partition-1 placement record is a single byte stream carrying **two**
+consecutive scripts under **one** cursor, and the split is what decides where an
+interaction begins.
+
+The scene setup spawns one script context per record (`FUN_8003A1E4`: buffer base
+`actor[+0x90]`, PC `actor[+0x9E]`). That context runs the record's **spawn
+section** - class-flag setup, the initial camera / seat pokes - and stops at the
+first raw `0x21`. `FUN_80039B7C` state 0 then resumes *the same* `actor[+0x9E]`
+on an interaction, so the interaction begins **one instruction past the spawn
+terminator**, never at the record's `script_pc0`.
+
+The terminator is explicit in the SM's own run loop. `s4` holds `0x21` across the
+dispatcher call, and `beq s0,s4` at `0x80039E20` breaks on it - *after* the delay
+slot `sh a1,0x9e(s2)` has already stored the forwarded PC, so the cursor left
+behind points past the byte. The arm it breaks to (`0x80039E5C`, `a2 == 0x21`) is
+the conversation-end teardown, not the pager; the same raw-`0x21` rule is
+`FUN_8003CF7C`'s run-to-next-text helper.
+
+Nothing in the SM gates on the record containing text. A record whose interaction
+section is camera work, an affordability check and a `0x3E` door warp runs exactly
+the way a talk NPC's does - which is why a **minigame door is not a special case**
+of the interaction pipeline but an ordinary member of it. `koin1`'s cabinets are
+the clearest shape: spawn section, then a cross-context player `EXEC_MOVE`, camera
+framing, a `0x4E` sub-9 compare of the coin bank against `1`, a fade, and the
+`0x3E` warp - with the record's *first* `0x1F` segment being the "no tokens" line
+the **failed** compare jumps to.
+
+Entering at `script_pc0` therefore trips the spawn terminator on the first step,
+and a port that then falls through to the first text segment skips the entire
+interaction section - for a door, straight into its refusal branch. The engine
+derives the cursor structurally instead
+(`man_field_scripts::placement_interaction_entry_pc`, bounded by the first text
+segment so the walk can never desync inside message bytes and read an ASCII `!`
+as a terminator).
+
+**The port applies it to door records only.** The rule is general, but moving
+the talk-NPC path onto it regresses at least one pinned conversation: `retock`'s
+innkeeper resolves its 2-option picker and then runs neither its gold debit nor
+its HP/MP restore (`engine-core/tests/inn_stay_field_vm_disc.rs`). What the port
+does between an NPC record's spawn terminator and its first line does not come
+out where the old entry did, and until that is understood the corrected cursor
+ships for the records it was derived on. The two entry points are
+`placement_interaction_record` (cursor) and `placement_inline_prologue`
+(`script_pc0`).
+
 An earlier engine model drove `0x3F → open_dialog(text_id, inline, …)`, which is
 wrong twice over: `0x3F` is the named scene-change, and field dialogue is the
 interaction-driven actor-text pipeline above, not an inline-text opcode. (The

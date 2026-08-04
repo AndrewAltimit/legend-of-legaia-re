@@ -392,30 +392,33 @@ impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
         // Pending scene/portal data copy - no engine-side scene buffer yet.
     }
     fn on_scene_transition(&mut self, entity_idx: usize) {
-        // A portal entity reached the transition state. When it carries a
-        // target map, surface the richer transition event; otherwise fall back
-        // to the generic interaction marker.
+        // A portal entity reached the transition state. Which of the two
+        // portal shapes it is decides where the number goes - and they are
+        // *different id spaces*, which is the whole reason this arm is split.
         match self.world.world_map_entity_configs.get(entity_idx) {
-            Some(WorldMapEntityConfig::Portal { target_map }) => {
-                let target_map = *target_map;
-                self.world
-                    .pending_field_events
-                    .push(FieldEvent::WorldMapTransition {
-                        target_map,
-                        slot: entity_idx as u8,
-                    });
+            // A **minigame door** on the overworld (the `map02` / `map03`
+            // fishing signboards): its payload is the op-`0x3E` `op0 - 100`
+            // mode-24 sub-id, so it arms the door warp exactly as the field
+            // VM's own arm and the walk-touch arm do. Routing it as a map id
+            // instead resolved a code-overlay selector through a CDNAME
+            // ordinal and warped the player to an unrelated scene.
+            // REF: FUN_801DE840 case 0x3e at 0x801E078C
+            Some(WorldMapEntityConfig::MinigameDoor { sub_id }) => {
+                let sub_id = *sub_id;
+                self.world.arm_minigame_warp();
+                self.world.pending_minigame_warp = Some(sub_id);
             }
-            // An overworld town/dungeon entrance (the `0x3F`-bridge portal).
-            // The event only carries `slot`; the host's transition drain reads
-            // the real CDNAME destination from `world_map_entity_configs[slot]`.
-            // `target_map` echoes the `0x3F` index so a host without config
-            // access still has the destination id.
+            // An overworld town/dungeon entrance (the `0x3F`-bridge portal) -
+            // the only producer of `WorldMapTransition`. The event carries the
+            // `0x3F` destination index and the `slot`; the host's transition
+            // drain reads the real CDNAME destination from
+            // `world_map_entity_configs[slot]`.
             Some(WorldMapEntityConfig::OverworldPortal { index, .. }) => {
                 let index = *index;
                 self.world
                     .pending_field_events
                     .push(FieldEvent::WorldMapTransition {
-                        target_map: index as u16,
+                        dest_index: index as u16,
                         slot: entity_idx as u8,
                     });
             }

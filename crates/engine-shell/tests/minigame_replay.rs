@@ -56,30 +56,32 @@
 //!
 //! The door records are executed by loading the record's own body into the
 //! field VM ([`World::load_field_script_at`]) - the retail bytecode, stepped by
-//! the ported VM. What is *not* exercised is the dispatch that runs that record
-//! in retail (the interaction probe resuming the placement's script). The port
-//! has no general "interact runs the placement's partition-1 record" path -
-//! `World::trigger_field_interact` opens inline dialogue and runs a record only
-//! for boss stagers - so the ladder supplies the trigger and the disc supplies
-//! everything after it. Rung 2 therefore reads "the door's bytecode drives the
-//! port into the minigame", not "walking up and pressing X does".
+//! the ported VM - from the record's start, and when that does not reach the
+//! warp, retried from the warp instruction's own PC. Still the disc's bytes
+//! through the ported VM, minus the prologue. Which path each door took is
+//! printed, because "cleared through its own prologue" and "cleared only past
+//! it" are different facts. **Every door still clears only past its prologue**
+//! on this path, and the stall is reported as `(pc, opcode)`.
 //!
-//! The runner executes each record from its start and, when the prologue does
-//! not reach the warp, retries from the warp instruction's own PC - still the
-//! disc's bytes through the ported VM, minus the prologue. Which path each door
-//! took is printed, because "cleared through its own prologue" and "cleared
-//! only past it" are different facts.
+//! That is a property of *this* trigger, not of the port any more. The
+//! placement-interaction dispatch now exists: `install_field_carriers_from_man`
+//! installs an interaction record for every genuine `0x3E` placement as well as
+//! every talk NPC, and `World::trigger_field_interact` runs it through the
+//! inline field-VM runner from the **interaction cursor** - one instruction
+//! past the record's spawn-section `0x21`, which is where retail's dialog SM
+//! resumes `actor[+0x9E]` (see `docs/subsystems/script-vm.md` § the interaction
+//! cursor). Entering at the record's start instead trips that terminator on the
+//! first step and falls through to the first text segment, which for a `koin1`
+//! cabinet is the refusal line its **failed** coin compare jumps to.
 //!
-//! **Every door currently clears only past its prologue**, and the stall is
-//! reported as `(pc, opcode)`. All five come to rest inside the attendant's
-//! conversation - four on `0x1F` (a text-segment byte, not an opcode) and the
-//! two `koin1` cabinets on `0xAB` (the `0x80` cross-context prefix on op
-//! `0x2B`). Enabling `World::use_vm_dialogue` does not move any of them, which
-//! is itself a measurement: the inline-script runner is reached through
-//! `trigger_field_interact`'s dialogue install, not through a script loaded
-//! with `load_field_script_at`, so on this path it never engages. Making a
-//! door clear through its own prologue needs the placement-interaction
-//! dispatch, not a deeper fix in the warp arm.
+//! What the corrected dispatch does **not** yet do is carry a door record all
+//! the way to its own `0x3E`. `crates/engine-core/tests/placement_interact_disc.rs`
+//! measures each door from the interaction cursor and reports where it comes to
+//! rest; none reaches the warp, and the two blockers are named there rather
+//! than guessed at. So this ladder keeps supplying the trigger itself - a rung
+//! that ran the door through `trigger_field_interact` would score lower today,
+//! and lowering the ratchet to record a *better*-founded path would be the
+//! wrong trade.
 //!
 //! ## Ratchet
 //!

@@ -348,17 +348,19 @@ impl World {
         self.world_map_entity_configs = entities.into_iter().map(|(cfg, _)| cfg).collect();
     }
 
-    /// Auto-engage any `Portal` overworld entity the player is standing on.
+    /// Auto-engage any walk-onto overworld entity the player is standing on -
+    /// a town / dungeon entrance ([`WorldMapEntityConfig::OverworldPortal`]) or
+    /// a minigame door ([`WorldMapEntityConfig::MinigameDoor`]).
     ///
     /// The clean-room stand-in for retail's per-entity player-position-in-zone
-    /// trigger: a portal whose placement tile (`pos >> 7`) matches the player's
+    /// trigger: an entity whose placement tile (`pos >> 7`) matches the player's
     /// current tile is driven to its transition state, exactly as a host
-    /// [`Self::engage_world_map_entity`] call would, so the next SM step fires
-    /// the [`crate::field_events::FieldEvent::WorldMapTransition`]. Only `Idle`
-    /// portals are engaged, so a portal fires once per visit and the player can
-    /// stand on the tile without re-triggering. NPC entities are *not*
-    /// auto-engaged (they are talk-to, not walk-onto). No-op without entity
-    /// positions, a player actor, or while a dialog owns the frame.
+    /// [`Self::engage_world_map_entity`] call would, so the next SM step runs
+    /// its transition arm. Only `Idle` entities are engaged, so one fires once
+    /// per visit and the player can stand on the tile without re-triggering.
+    /// NPC entities are *not* auto-engaged (they are talk-to, not walk-onto).
+    /// No-op without entity positions, a player actor, or while a dialog owns
+    /// the frame.
     fn auto_engage_world_map_portals(&mut self) {
         if self.dialogue_owns_input() || self.world_map_entity_positions.is_empty() {
             return;
@@ -383,7 +385,7 @@ impl World {
             }
             if !matches!(
                 self.world_map_entity_configs.get(idx),
-                Some(WorldMapEntityConfig::Portal { .. })
+                Some(WorldMapEntityConfig::MinigameDoor { .. })
                     | Some(WorldMapEntityConfig::OverworldPortal { .. })
             ) {
                 continue;
@@ -706,14 +708,19 @@ impl World {
 
     /// Host signal that the player engaged overworld entity `idx` (walked onto
     /// a portal tile / pressed confirm on it). Drives the entity SM straight to
-    /// its scene-transition state so the next `Self::tick_world_map` fires the
-    /// transition; a [`WorldMapEntityConfig::Portal`] then surfaces a
-    /// [`crate::field_events::FieldEvent::WorldMapTransition`] with its target
-    /// map. No-op for an out-of-range index.
+    /// its scene-transition state so the next `Self::tick_world_map` runs the
+    /// entity's transition arm. No-op for an out-of-range index.
+    ///
+    /// The arm forks on the config row: an
+    /// [`WorldMapEntityConfig::OverworldPortal`] surfaces a
+    /// [`crate::field_events::FieldEvent::WorldMapTransition`], while a
+    /// [`WorldMapEntityConfig::MinigameDoor`] arms
+    /// [`Self::pending_minigame_warp`] instead - its payload is a mode-24
+    /// sub-id, not a map id.
     ///
     /// Hosts can call this directly; `Self::auto_engage_world_map_portals`
-    /// also calls it each tick for any `Portal` entity the player has walked
-    /// onto (the engine-driven trigger), so an entity installed with a position
+    /// also calls it each tick for any walk-onto entity the player is standing
+    /// on (the engine-driven trigger), so an entity installed with a position
     /// via [`Self::install_world_map_entities_at`] fires on walk-over without a
     /// host call.
     pub fn engage_world_map_entity(&mut self, idx: usize) {
@@ -726,22 +733,23 @@ impl World {
 
     /// Remove and return the first pending
     /// [`crate::field_events::FieldEvent::WorldMapTransition`] as
-    /// `(target_map, slot)`.
+    /// `(dest_index, slot)`.
     ///
     /// The host's scene-transition drain calls this each tick to consume the
-    /// overworld-portal engage the entity SM emitted (walk-onto a portal tile),
+    /// overworld-entrance engage the entity SM emitted (walk-onto its tile),
     /// leaving every other queued field event in place. `None` when no
     /// world-map transition is queued. The returned `slot` indexes
-    /// [`Self::world_map_entity_configs`], where an
-    /// [`WorldMapEntityConfig::OverworldPortal`] carries the real CDNAME
-    /// destination.
+    /// [`Self::world_map_entity_configs`], where the
+    /// [`WorldMapEntityConfig::OverworldPortal`] that raised it carries the
+    /// real CDNAME destination - `dest_index` is only that entrance's `0x3F`
+    /// index, never a door-warp map id.
     pub fn take_world_map_transition(&mut self) -> Option<(u16, u8)> {
         let pos = self
             .pending_field_events
             .iter()
             .position(|e| matches!(e, FieldEvent::WorldMapTransition { .. }))?;
         match self.pending_field_events.remove(pos) {
-            FieldEvent::WorldMapTransition { target_map, slot } => Some((target_map, slot)),
+            FieldEvent::WorldMapTransition { dest_index, slot } => Some((dest_index, slot)),
             _ => unreachable!("position matched WorldMapTransition"),
         }
     }

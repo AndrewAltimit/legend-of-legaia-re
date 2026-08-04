@@ -397,12 +397,19 @@ fn world_map_scene_transition_auto_enters_world_map() {
     );
 }
 
-/// A real overworld portal auto-engages when the player walks onto its tile:
-/// teleport the player onto a classified `Portal` entity's tile and confirm the
-/// next world-map ticks surface a `WorldMapTransition` to the portal's target
-/// map - no host `engage_world_map_entity` call.
+/// A real overworld **minigame door** auto-engages when the player walks onto
+/// its tile: teleport the player onto the classified entity's tile and confirm
+/// the next world-map ticks arm the mode-24 door warp with the placement's
+/// sub-id - no host `engage_world_map_entity` call.
+///
+/// This used to assert a `WorldMapTransition` carrying the same number, which
+/// is the defect it now guards: `map02` / `map03`'s only genuine `0x3E`
+/// placements are the fishing signboards (`sub_id 0`), so the payload is a
+/// code-overlay selector and surfacing it as a map id put it through the
+/// CDNAME-ordinal resolver - i.e. walking onto the signboard warped the player
+/// to an unrelated scene instead of opening the fishing minigame.
 #[test]
-fn world_map_walking_onto_real_portal_transitions() {
+fn world_map_walking_onto_real_minigame_door_arms_the_warp() {
     use legaia_engine_core::field_events::FieldEvent;
     use legaia_engine_core::world::WorldMapEntityConfig;
 
@@ -415,7 +422,8 @@ fn world_map_walking_onto_real_portal_transitions() {
         return;
     };
 
-    // map02 / map03 each classify one warp portal from their placement scripts.
+    // map02 / map03 each classify one genuine door placement from their
+    // placement scripts.
     let mut tested_any = false;
     for scene in ["map02", "map03"] {
         let cfg = BootConfig {
@@ -429,47 +437,56 @@ fn world_map_walking_onto_real_portal_transitions() {
             .expect("enter_world_map_live");
 
         let world = &mut session.host.world;
-        // Find the first installed Portal entity and its placement position.
-        let portal = world
+        // Find the first installed door entity and its placement position.
+        let door = world
             .world_map_entity_configs
             .iter()
             .enumerate()
             .find_map(|(i, c)| match c {
-                WorldMapEntityConfig::Portal { target_map } => Some((i, *target_map)),
+                WorldMapEntityConfig::MinigameDoor { sub_id } => Some((i, *sub_id)),
                 _ => None,
             });
-        let Some((idx, target_map)) = portal else {
-            eprintln!("[{scene}] no portal entity installed");
+        let Some((idx, sub_id)) = door else {
+            eprintln!("[{scene}] no minigame-door entity installed");
             continue;
         };
         let (px, pz) = world.world_map_entity_positions[idx];
-        // Teleport the player onto the portal tile, then tick: auto-engage
-        // should fire the transition within a couple of frames.
+        // Teleport the player onto the door tile, then tick: auto-engage
+        // should arm the warp within a couple of frames.
         if let Some(slot) = world.player_actor_slot {
             let a = &mut world.actors[slot as usize];
             a.move_state.world_x = px;
             a.move_state.world_z = pz;
         }
-        let mut transitioned = false;
+        let mut armed = false;
         for _ in 0..4 {
             let _ = world.tick();
-            if world.drain_field_events().into_iter().any(|e| {
-                matches!(e, FieldEvent::WorldMapTransition { target_map: t, .. } if t == target_map)
-            }) {
-                transitioned = true;
+            if world.pending_minigame_warp == Some(sub_id) {
+                armed = true;
                 break;
             }
         }
-        eprintln!("[{scene}] portal #{idx} -> map {target_map}: transitioned={transitioned}");
+        eprintln!("[{scene}] door #{idx} -> minigame sub_id {sub_id}: armed={armed}");
         assert!(
-            transitioned,
-            "[{scene}] standing on the portal tile auto-fires its transition"
+            armed,
+            "[{scene}] standing on the door tile auto-arms its minigame warp"
+        );
+        assert_eq!(
+            world.pending_scene_transition, None,
+            "[{scene}] a door sub-id must not reach the map-id resolver"
+        );
+        assert!(
+            !world
+                .drain_field_events()
+                .iter()
+                .any(|e| matches!(e, FieldEvent::WorldMapTransition { .. })),
+            "[{scene}] a minigame door is not a scene transition"
         );
         tested_any = true;
     }
     assert!(
         tested_any,
-        "at least one overworld portal must be exercised"
+        "at least one overworld minigame door must be exercised"
     );
 }
 

@@ -462,10 +462,25 @@ The derivation and the footprint rest positions are pinned by two cheat-free Rim
   forward probe points that block movement** (the `DAT_801f21b4` rows of the directions held this
   tick, plus the stand-inside fallback) against the placement's static ±80 contact box, posting once
   per contact through the same `trigger_field_interact` dispatch the button-gated interact uses and
-  applying the decoded effect (queue the door-warp transition / snap the player) - so a **solid**
-  doorway object still fires its teleport while the player stands pressed against its box, exactly
-  as retail's one probe both refuses the step and posts the touch.
-  Not modelled: the facing save/restore and touch counters of the post kernel. Disc-gated: `engine-core/tests/field_walk_touch_disc.rs` (koin1 mine-exit warps; cave01 guard throw-backs).
+  applying the decoded effect (arm the **mode-24 minigame door warp** / snap the player) - so a
+  **solid** doorway object still fires its teleport while the player stands pressed against its box,
+  exactly as retail's one probe both refuses the step and posts the touch.
+  A `Warp` payload is the door-warp `op0 - 100`, i.e. a minigame sub-id
+  ([`minigame-entry`](../../crates/engine-core/src/minigame_entry.rs)), and it is staged exactly as the
+  field-VM arm stages it - never through the map-id resolver.
+  Not modelled: the facing save/restore and touch counters of the post kernel. Disc-gated: `engine-core/tests/field_walk_touch_disc.rs` (koin1 casino-cabinet door warps; cave01 guard throw-backs).
+- **A door placement's own record is installed, and the action probe reaches it.** Retail runs the
+  touched placement's record through the dialog SM whatever it contains
+  (see [`script-vm.md`](script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts)), so
+  `install_field_carriers_from_man` seeds a `field_npc_dialog_prologue` entry for every genuine
+  `0x3E` placement as well as every talk NPC, entered at the interaction cursor, and
+  `field_interact_probe_slot` admits those slots off their `field_walk_touch` anchors - retail's
+  probe walks the whole actor list, so a cabinet is as probe-able as a villager, where the engine's
+  NPC-only probe set left it unreachable. **Body contact keeps the decoded effect**: the warp drains
+  the same frame, so the contact arm drops the record run it armed rather than leave a conversation
+  suspended across the minigame. Disc-gated:
+  `engine-core/tests/placement_interact_disc.rs` reports, per door, whether the record reaches its
+  box or its own warp and the `(pc, byte)` it comes to rest on.
 - **Prop bind records run through the field VM on touch / interact - the door swing, its collision
   drop, and the cupboard search.** A static-class prop touch (`World::pending_prop_touch`, the bit-4
   auto-post) or an interact-class confirm press (`World::field_interact_prop_anchor`, the
