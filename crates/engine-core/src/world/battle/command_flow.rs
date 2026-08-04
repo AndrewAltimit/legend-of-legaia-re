@@ -10,19 +10,44 @@ impl World {
     /// queued action / target is filled in by [`Self::tick_battle_command`]
     /// once the player confirms. No-op unless [`Self::battle_player_driven`].
     pub(in crate::world) fn open_battle_command(&mut self, actor: u8) {
+        use crate::battle_flow::BattleFlowState as Flow;
+        use crate::battle_input::BattleCommandSession;
         if !self.battle_player_driven {
             return;
         }
         self.battle_ctx.active_actor = actor;
-        self.battle_command = Some(crate::battle_input::BattleCommandSession::new(actor, actor));
-        // A turn opening from rest is retail flow state 0x1E - the
-        // `[Begin]`/`[Escape]` prompt, where the sparring tutorial shows the
-        // lesson intro. Reopening mid-turn (a submenu backed out of, or a
-        // tutorial rewind) is *not* a new turn: the flow is still parked on the
-        // hook state it bounced from and syncs back to the category menu next
-        // frame, which is where retail's rewind lands too.
-        if self.battle_flow == crate::battle_flow::BattleFlowState::Idle {
-            self.set_battle_flow(crate::battle_flow::BattleFlowState::TurnPrompt);
+        // **The round prompt is the phase the session opens in, not one it is
+        // swapped onto a frame later.** Retail's round-start arm writes the
+        // prompt state before anything is on screen - `0x14` at `0x801D0EC4`
+        // seats the selector on member 0 and stores `ctx[+0x06] = 0x1E` in the
+        // delay slot at `0x801D0ED4`, and the four-arm ring `0x28` is only ever
+        // reached *through* `0x1E` (the confirm arm at `0x801D108C`). So the
+        // ring is never the first thing a round shows.
+        //
+        // A session built on the ring and rewritten by the next tick's
+        // [`World::arm_round_open_prompt`] is one frame of the wrong surface:
+        // a host that draws between ticks draws the ring, and any observer
+        // that reads the session on the frame it opens - which is the frame
+        // `battle_command` becomes `Some` - reads the ring and concludes the
+        // prompt never happens. That is exactly how "no battle opens the round
+        // prompt" was measured, and with it "a player cannot flee at all",
+        // when the prompt was in fact one tick behind the look.
+        //
+        // Reopening mid-round (a submenu backed out of, or a tutorial rewind)
+        // is *not* a round start: the flow byte is still parked on the window
+        // state it bounced from, which is where retail's own cancel arm lands
+        // (the item window `0x3C` stores `0x28` at `0x801D180C`), so those
+        // open on the ring.
+        //
+        // REF: FUN_801D0748 (states 0x14 / 0x1E / 0x28)
+        let round_open = matches!(self.battle_flow, Flow::Idle | Flow::TurnPrompt);
+        self.battle_command = Some(if round_open {
+            BattleCommandSession::new_round_open(actor, actor, self.battle_no_escape)
+        } else {
+            BattleCommandSession::new(actor, actor)
+        });
+        if self.battle_flow == Flow::Idle {
+            self.set_battle_flow(Flow::TurnPrompt);
         }
     }
 
@@ -1199,7 +1224,7 @@ impl World {
             if let Some(item_id) = item_before {
                 // Apply to every affected slot, but consume only one copy.
                 for &target_slot in &used_slots {
-                    let outcome = self.use_item(item_id, target_slot);
+                    let outcome = self.apply_battle_item(item_id, target_slot);
                     self.push_item_use_fx(target_slot, outcome);
                 }
                 self.consume_item(item_id);
@@ -1228,6 +1253,52 @@ impl World {
                 self.battle_item_menu = Some(menu);
             }
         }
+    }
+
+    /// Use `item_id` on `target_slot` **inside a battle**: the shared
+    /// [`World::use_item`] resolution, plus the HP-readout seed the battle
+    /// context needs and the field menu does not.
+    ///
+    /// `use_item` writes live HP directly. Out of battle that is complete -
+    /// there is no readout. In battle it is half of retail's applier: the
+    /// restore primitive `FUN_800402F4` folds the delta into the stat halfword
+    /// (`0x800408A8`) **and** assigns the readout's pending accumulator
+    /// `-delta` (`0x800408FC` / `0x80040D28` / `0x800410BC`). Writing only the
+    /// stat leaves `hp != hp_display` with a **zero** accumulator, and that
+    /// pair is absorbing: the ramp's one guard is `+0x10 != 0`
+    /// (`0x800474E8`), so nothing ever moves the bar back. The action SM's
+    /// `0x51` exit waits on that bar for any party-targeted action, so the
+    /// next monster swing at the healed member parks the fight - with no
+    /// in-battle exit, since the turn pump that would notice a KO is the thing
+    /// that stopped.
+    ///
+    /// The seed is an **assignment**, not an accumulation, because that is
+    /// what the three seed sites are: `sll/sra` the signed halfword delta,
+    /// `subu v0,zero,v0`, `sw v0,0x10(actor)`. The remainder of a drain still
+    /// in flight is discarded, which is retail's behaviour and not an
+    /// approximation of it.
+    ///
+    /// REF: FUN_800402F4 (the assigning seed; kernel in
+    /// `legaia_engine_vm::battle_hp_bar::assign_pending`)
+    pub(in crate::world) fn apply_battle_item(
+        &mut self,
+        item_id: u8,
+        target_slot: u8,
+    ) -> crate::items::ItemOutcome {
+        let before = self
+            .actors
+            .get(target_slot as usize)
+            .map(|a| a.battle.hp)
+            .unwrap_or(0);
+        let outcome = self.use_item(item_id, target_slot);
+        if let Some(a) = self.actors.get_mut(target_slot as usize) {
+            let delta = i32::from(a.battle.hp) - i32::from(before);
+            if delta != 0 {
+                a.battle
+                    .assign_hp_bar(delta.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16);
+            }
+        }
+        outcome
     }
 
     /// Remove one copy of `item_id` from the inventory, dropping the entry

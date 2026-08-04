@@ -86,13 +86,25 @@ fn opening_a_turn_raises_the_turn_prompt_and_queues_the_lesson_intro() {
     assert!(world.battle_tutorial_box_up());
 }
 
+/// Take `Begin` on the round prompt - retail's `0x1E -> 0x28` (the confirm arm
+/// at `0x801D108C`). A turn opens on the prompt, not on the ring, so the ring's
+/// hooks are one press away rather than one tick away.
+fn take_begin(world: &mut World) {
+    world.set_pad(0);
+    world.set_pad(crate::input::PadButton::Cross.mask());
+    world.tick_battle_command();
+    world.set_pad(0);
+}
+
 #[test]
-fn the_command_menu_raises_the_category_prompt_after_the_intro_clears() {
+fn the_command_menu_raises_the_category_prompt_after_begin_is_taken() {
     let mut world = tutorial_battle_world();
     world.open_battle_command(0);
     // Drain the two intro boxes (the second waits for input).
     world.battle_tutorial_boxes.clear();
-    world.tick_battle_command();
+    // The turn opens on `Begin | Run`; the ring is behind it.
+    assert_eq!(world.battle_flow, BattleFlowState::TurnPrompt);
+    take_begin(&mut world);
     assert_eq!(world.battle_flow, BattleFlowState::CategoryMenu);
     // Lesson 0 names [Attack] as the category to pick.
     assert_eq!(queued(&world), vec![marker(msg::PICK_ATTACK)]);
@@ -103,7 +115,7 @@ fn a_hook_fires_once_per_entry_into_its_flow_state() {
     let mut world = tutorial_battle_world();
     world.open_battle_command(0);
     world.battle_tutorial_boxes.clear();
-    world.tick_battle_command();
+    take_begin(&mut world);
     assert_eq!(queued(&world).len(), 1);
     world.battle_tutorial_boxes.clear();
     // Still in the category menu: the one-shot latch swallows the re-dispatch.

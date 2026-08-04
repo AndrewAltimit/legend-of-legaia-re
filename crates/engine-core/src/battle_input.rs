@@ -493,10 +493,23 @@ const fn row_neighbour(i: u8) -> u8 {
 }
 
 /// One frame of the **round prompt** (retail `0x1E`). Left / Right walk the
-/// pair, Cross takes the highlighted chip, and Circle takes `Run` outright -
-/// which is what retail's own arm does (`801d10bc`, the Circle test that jumps
-/// straight to flow state `0x32`). A scripted no-escape battle refuses both
-/// routes into `Run` and leaves the prompt up.
+/// pair, Cross takes the highlighted chip, and Circle takes `Run` outright. A
+/// scripted no-escape battle refuses both routes into `Run` and leaves the
+/// prompt up.
+///
+/// **The Circle route is the port's, not retail's, and the citation it used to
+/// carry was a raw-pad misread.** `FUN_801D0748`'s handlers test **packed**
+/// masks (byte halves swapped against the raw BIOS word), so the
+/// `andi v0,s2,0x2000` at `0x801D1058` that routes to flow state `0x32` is
+/// **Right**, not Circle; packed Circle is `0x0020`. Retail's `0x1E` is a
+/// two-chip prompt whose chips *are* directions - Left `0x8000` takes `Begin`,
+/// Right `0x2000` takes `Run` - and confirm reaches one only indirectly: the
+/// pre-dispatch block rewrites `s2` to the highlight it has been walking in
+/// `ctx[+0x880]` (`0x801D0AC4..0x801D0B08`). The port's Cross-plus-cursor is an
+/// ergonomic divergence; converting it wants the prompt's chrome moved with it,
+/// which lives in `engine-ui`. See `docs/subsystems/battle.md`.
+///
+/// REF: FUN_801D0748 (state `0x1E`, `0x801D1038..0x801D10D4`)
 fn step_round_prompt(cursor: u8, ev: BattleCommandInput, no_escape: bool) -> CommandPhase {
     let len = RoundChoice::PROMPT.len() as u8;
     let mut cursor = cursor.min(len - 1);

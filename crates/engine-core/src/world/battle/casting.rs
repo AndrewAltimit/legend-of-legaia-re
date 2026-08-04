@@ -946,9 +946,23 @@ impl World {
             }
             O::Revive { target, hp } => {
                 if let Some(a) = self.actors.get_mut(target as usize) {
+                    let before = a.battle.hp;
                     a.battle.hp = hp.min(a.battle.max_hp);
                     if a.battle.hp > 0 {
                         a.battle.liveness = 1;
+                    }
+                    // Retail's revive is `FUN_800402F4` selector 4, and that
+                    // routine seeds the readout accumulator alongside its stat
+                    // write. Skipping the seed leaves the pair `hp !=
+                    // hp_display` with a zero accumulator, which the ramp's
+                    // `+0x10 != 0` guard makes absorbing - and the action SM's
+                    // `0x51` gate then parks on the revived member forever.
+                    // REF: FUN_800402F4
+                    let delta = i32::from(a.battle.hp) - i32::from(before);
+                    if delta != 0 {
+                        a.battle.assign_hp_bar(
+                            delta.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16,
+                        );
                     }
                 }
                 self.battle_hit_fx.push(BattleHitFx {

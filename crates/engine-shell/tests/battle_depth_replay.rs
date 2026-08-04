@@ -74,27 +74,36 @@
 //!
 //! ## What the order is carrying
 //!
-//! Two engine defects shape it, and both were found by this file.
+//! Two engine defects shaped it, both found by this file and both since
+//! fixed; the ordering that exposed them is kept because it is what makes the
+//! ladder able to tell "broken" from "unmeasured".
 //!
-//! **Several commands park the fight.** After a Summon, an Item use or a
-//! Spirit guard, no further party command session opens - measured to 9000
-//! ticks (2.5 minutes of game time) with the mode still `Battle` and every
-//! surface closed. A parked battle has no in-battle exit: not even winning
-//! it, because the turn pump that would notice the opponent at 0 HP is the
-//! thing that stopped. Rungs 7, 8 and 10 therefore each take a fresh battle
-//! reached through [`reset_to_field`], and the three parking commands sit
-//! late. Ordering a cumulative ladder is a measurement decision, not
-//! cosmetics: the first pass of this file put Item at rung 5, scored 5, and
-//! left Magic / Summon / Spirit / Run **unmeasured** - which reads identically
-//! to "broken" and is not the same claim.
+//! **An item use parked the fight.** After a battle heal, no further party
+//! command session opened - measured to 9000 ticks with the mode still
+//! `Battle` and every surface closed, and with no in-battle exit at all: not
+//! even winning it, because the turn pump that would notice the opponent at
+//! 0 HP is the thing that stopped. The cause was the readout, not the
+//! command: `World::use_item` wrote live HP without seeding the HP-bar
+//! accumulator retail's applier `FUN_800402F4` assigns, and `hp != hp_display`
+//! with a zero accumulator is absorbing, so the action SM's `0x51` gate waited
+//! on a bar nothing could move. Rungs 7 and 8 now run in the *same* battle as
+//! everything before them, which is what makes each rung's opening
+//! `wait_for_command` an assertion that the previous command did not park it.
 //!
-//! **No battle opens the round prompt.** `CommandPhase::RoundPrompt` exists
-//! and `step_round_prompt` implements both its chips, but every battle's
-//! opening session observed here is `Menu` (the four-arm ring) - the first
-//! fight and every later one alike. Run lives only on that prompt, so rungs
-//! 9 and 10 are currently unreachable **from the pad**, and that is the
-//! standing finding rather than a gap in the driver. They are last so they
-//! block nothing behind them.
+//! Summon and Spirit were reported as parking too. Measured one at a time
+//! from a fresh fight, neither does: a summon cast and a Spirit guard each
+//! hand out the next command session inside ~230 ticks. They resolve without
+//! a strike, like Item, but they touch no party HP - the shared symptom was
+//! the item's, and the other two were inference from it.
+//!
+//! **No battle opened the round prompt.** `CommandPhase::RoundPrompt` and
+//! `step_round_prompt` were both implemented and reachable, but the session
+//! was *built* on the ring and rewritten onto the prompt by the next tick's
+//! `arm_round_open_prompt`. `battle_command.is_some()` is the only edge an
+//! observer has, so the prompt was one frame behind every look at it and read
+//! as absent - taking `Run`, which lives nowhere else, with it. Retail stores
+//! `ctx[+0x06] = 0x1E` in `0x14` before anything is drawn, and rungs 9 and 10
+//! check the prompt on exactly that frame.
 //!
 //! ## Ratchet
 //!
@@ -124,7 +133,7 @@ const SCENE: &str = "town01";
 const TRAINING_FORMATION_ID: u16 = 4;
 
 /// Highest rung count reached so far. Raise deliberately; never auto-written.
-const BASELINE: usize = 8;
+const BASELINE: usize = 10;
 
 /// Healing Leaf, the restorative rung 5 uses. Stocked explicitly so the rung
 /// tests the *menu*, not the starting bag's contents.
@@ -355,17 +364,16 @@ fn at_round_prompt(session: &BootSession) -> bool {
 
 /// Re-enter the field scene from scratch, abandoning any battle in progress.
 ///
-/// The ladder needs this because **several commands park the fight**: after a
-/// Summon, an Item use or a Spirit guard, no further party command session
-/// opens. A parked battle has no in-battle exit - not even winning it, since
-/// the turn pump that would notice the opponent at 0 HP is the thing that
-/// stopped (measured: opponent at 1 HP, mode still `Battle`, every surface
-/// closed, 9000 ticks).
+/// The two Run rungs need it: `battle_no_escape` is copied into the command
+/// session when the session opens, so the flag has to be set before the
+/// battle starts, and the two rungs want opposite values. Rung 10 also *ends*
+/// its battle by escaping, so anything after it would need a fresh one anyway.
 ///
-/// So without a restart only *one* parking command could ever be measured -
-/// whichever ran last - and the rest would be indistinguishable from broken.
-/// This is a host-level scene restart, the same call the boot path makes; it
-/// touches no battle internal and no command surface.
+/// It used to carry a second job - working around commands that parked the
+/// fight - and no longer does; rungs 7 and 8 run in the battle before them so
+/// that a park would cost rungs rather than be routed around. This is a
+/// host-level scene restart, the same call the boot path makes; it touches no
+/// battle internal and no command surface.
 fn reset_to_field(session: &mut BootSession) -> bool {
     session
         .enter_field_live(
@@ -691,32 +699,22 @@ fn battle_depth_ladder() {
         }
         cleared.push("summon");
 
-        // --- rung 7: Item, in a fresh battle ------------------------------
-        // Item is last, and in a *new* fight, on purpose. Using an item parks
-        // the battle: once the item resolves, no further party command
-        // session ever opens - measured out to 9000 ticks (2.5 minutes of
-        // game time) with the mode still `Battle` and every surface closed.
-        // Anywhere earlier in the ladder it masks every rung behind it, which
-        // is exactly what it did on the first pass of this file (score 5,
-        // "no command session after Item", with Magic / Summon / Spirit / Run
-        // unmeasured and therefore unknown rather than broken).
+        // --- rung 7: Item -------------------------------------------------
+        // Item stays late, and stays in the *same* fight, both on purpose.
+        // This is the command that parked the battle: once the heal resolved,
+        // no further party command session ever opened - measured to 9000
+        // ticks with the mode still `Battle` and every surface closed. It sat
+        // behind a restart while that was true, because anywhere earlier it
+        // masked every rung after it (the first pass of this file scored 5 and
+        // left Magic / Summon / Spirit / Run **unmeasured**, which reads
+        // identically to broken).
         //
-        // Re-entering also buys a second assertion for free: a battle can be
-        // entered again after an escape.
-        if !reset_to_field(&mut session) {
-            return Err(format!(
-                "could not restart the scene for the Item rung ({})",
-                surface_report(&session)
-            ));
-        }
-        if !enter_battle(&mut session) {
-            return Err(format!(
-                "could not re-enter a battle after escaping ({})",
-                surface_report(&session)
-            ));
-        }
+        // Running it in the battle rungs 1-6 already used is what turns rung
+        // 8's opening `wait_for_command` into the standing regression test:
+        // if an item use ever stops the turn pump again, the ladder loses two
+        // rungs rather than silently restarting around it.
         if !wait_for_command(&mut session) {
-            return Err(no_command(&session, "re-entering for the Item rung"));
+            return Err(no_command(&session, "Summon"));
         }
         let carried = session
             .host
@@ -762,29 +760,16 @@ fn battle_depth_ladder() {
         }
         cleared.push("item");
 
-        // --- rung 8: Spirit, in a fresh battle ----------------------------
-        // Spirit parks the battle exactly the way Item does, so it takes the
-        // last slot and its own fight. Only one of the two can be terminal:
-        // whichever runs first leaves a battle that hands out no further
-        // command session, and `finish_battle_by_winning` cannot close it
-        // either (measured with the opponent already at 0 HP and the mode
-        // still `Battle`). That shared symptom - the two commands that resolve
-        // *without* a strike both stop the turn pump - is the lane's main
-        // engine finding.
-        if !reset_to_field(&mut session) {
-            return Err(format!(
-                "could not restart the scene for the Spirit rung ({})",
-                surface_report(&session)
-            ));
-        }
-        if !enter_battle(&mut session) {
-            return Err(format!(
-                "could not enter a battle for Spirit ({})",
-                surface_report(&session)
-            ));
-        }
+        // --- rung 8: Spirit -----------------------------------------------
+        // Spirit was reported as parking the battle the way Item did, and it
+        // does not: measured on its own from a fresh fight, a Spirit guard
+        // hands the pad the next command session inside ~230 ticks. It shares
+        // Item's shape - it resolves without a strike - but it touches no
+        // party HP, and party HP was the whole mechanism. So this rung runs in
+        // the same fight as everything before it, and the `wait_for_command`
+        // above it is the assertion that the Item rung did not park anything.
         if !wait_for_command(&mut session) {
-            return Err(no_command(&session, "re-entering for the Spirit rung"));
+            return Err(no_command(&session, "Item"));
         }
         let guard = session
             .host
@@ -832,19 +817,18 @@ fn battle_depth_ladder() {
         cleared.push("spirit");
 
         // --- rung 9: Run refused under battle_no_escape ---------------------
-        // Both Run rungs take a *fresh battle*, and that is a finding rather
-        // than a convenience.
+        // Both Run rungs take a *fresh battle*, and here that really is a
+        // convenience rather than a finding: `no_escape` is copied into the
+        // session when it opens, so the flag has to be set before entering,
+        // and rung 10 needs it back off. The prompt itself is not scarce -
+        // every round boundary re-arms it (retail's `0x14`, re-entered from
+        // the action SM's `0xFF` arm at `0x801E67E8`), so `wait_for_command`
+        // now lands on a `RoundPrompt` mid-fight as readily as at battle open.
         //
-        // Run lives on the round prompt, and the port opens that prompt at
-        // battle start but does not reopen it on later rounds: after Spirit,
-        // forty consecutive turn-spends never produced another `RoundPrompt`
-        // while the fight was still perfectly healthy (party 26509 HP,
-        // opponent 59676 of 60000). So the prompt - and with it Run - is
-        // reachable only on a battle's opening session, and a driver that
-        // waits for "the next round" waits forever.
-        //
-        // `no_escape` is copied into the session when it opens, so the flag
-        // is set *before* entering.
+        // What the fresh battle *does* still buy is the tightest possible read
+        // of the opening frame: `at_round_prompt` is checked on the very frame
+        // `battle_command` becomes `Some`, which is where the prompt used to
+        // be missing.
         if !reset_to_field(&mut session) {
             return Err(format!(
                 "could not restart the scene after the first battle ({})",

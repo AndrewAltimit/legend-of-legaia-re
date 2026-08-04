@@ -631,6 +631,31 @@ impl BattleActor {
             crate::battle_hp_bar::accumulate_pending(self.hp_bar_pending, display, delta);
     }
 
+    /// Seed the HP-bar accumulator the way the **item / restore applier**
+    /// does ([`crate::battle_hp_bar::assign_pending`], retail `FUN_800402F4`):
+    /// a bare *assignment* of `-delta`, discarding any remainder still in
+    /// flight.
+    ///
+    /// `delta` is the signed change applied to live HP - a heal is positive, a
+    /// hit negative - i.e. the same `s4` the routine folds into the stat
+    /// halfword at `0x800408A8` before the three identical seed stores at
+    /// `0x800408FC` / `0x80040D28` / `0x800410BC`. Retail leaves the displayed
+    /// value `+0x172` alone here; the ramp is what carries it, which is why a
+    /// caller that writes live HP and **skips this seed** leaves the pair
+    /// `hp != hp_display` with a zero accumulator - the absorbing state that
+    /// parks the action SM at `0x51` forever (see [`crate::battle_hp_bar`]).
+    ///
+    /// No-op when the host does not animate bars (`hp_display == None`),
+    /// matching [`Self::accumulate_hp_bar`].
+    ///
+    /// REF: FUN_800402F4 (kernel + `// PORT:` tag in `battle_hp_bar`)
+    pub fn assign_hp_bar(&mut self, delta: i16) {
+        if self.hp_display.is_none() {
+            return;
+        }
+        self.hp_bar_pending = crate::battle_hp_bar::assign_pending(delta);
+    }
+
     /// Begin animating this actor's HP bar from its current live HP, if the
     /// host is not already animating it. Idempotent.
     ///

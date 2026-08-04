@@ -8,7 +8,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 ## Contents
 
 **Retail scene + render**
-- [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0) - [stage-overlay dispatch](#stage-overlay-dispatch-the-0x47-loader-band) · [sparring-tutorial prompts](#the-sparring-tutorial-prompt-machine-overlay-967) · [command-flow byte](#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes)
+- [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0) - [stage-overlay dispatch](#stage-overlay-dispatch-the-0x47-loader-band) · [sparring-tutorial prompts](#the-sparring-tutorial-prompt-machine-overlay-967) · [command-flow byte](#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes) · [the round loop](#the-round-loop---what-re-arms-0x1e) · [`s2` + commit](#s2-is-not-the-pad-and-how-a-command-commits)
 - [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [post-strike two-shot](#the-post-strike-two-shot-fun_801d5854-cases-7-and-8) · [menu vs input framing](#the-command-chooser-is-the-far-framing-the-arts-input-is-the-close-up) · [resting yaw](#the-resting-yaw-is-the-orbit-and-a-battle-inherits-it) · [party meshes](#battle-party-meshes-assembled) · [display list](#the-battle-display-list-is-the-registration-set-not-active) · [staged-anim channel](#one-staged-anim-channel-actor0x1da)
 
 **Retail battle logic + data**
@@ -289,6 +289,130 @@ items, spirit and hyper arts, and never magic. Engine mirror
 [`engine-core::battle_flow`](../../crates/engine-core/src/battle_flow.rs), which
 carries that cross-check as a test.
 
+### The round loop - what re-arms `0x1E`
+
+`0x14` is the round-start arm and the **only** writer of `0x1E`:
+
+```text
+801d0ec4  lw    v1,-0x42dc(s0)      ; ctx
+801d0ecc  sw    v0,0x880(v1)        ; highlight cursor = 0x8000 (the Left arm)
+801d0ed0  jal   0x801d88cc          ; per-round actor sweep
+801d0ed4  _sb   s5,0x0(s3)          ; ctx[+0x06] = 0x1E   (s5 = 0x1E at 0x801D0C98)
+801d0ee4  jal   0x801d388c          ; open the prompt window (a0 = a1 = 0)
+801d0ef4  lbu   v0,0x28a(v0)        ; round index
+801d0efc  beq   v0,zero,0x801d0f0c  ; round 0 only: the tutorial arm below
+```
+
+The store is unconditional - no arm of `0x14` skips it - so **every round the
+player is given starts on `Begin` / `Run`**, and the ring `0x28` is only ever
+entered from `0x1E`'s confirm at `0x801D108C`. A port that opens its command
+surface on the ring is not one frame early, it is a different machine.
+
+`0x14` is reached from two different state machines:
+
+- **Battle open.** The intro timer `0x0B` runs down and branches on the
+  back-attack byte: `ctx[+0x290] == 1` stores `0xFE` (the party loses its
+  first round outright), anything else stores `0x14`
+  (`0x801D0E68..0x801D0EB8`).
+- **Every later round.** The *action* SM's `ctx[+0x07] == 0xFF` arm, jump-table
+  slot `0xFF` of `0x801CED44`. Its whole body is two writes:
+
+```text
+801e67e8  lui   a0,0x8008
+801e67ec  lw    v1,-0x42dc(a0)
+801e67f0  li    v0,0x14
+801e67f4  sb    v0,0x6(v1)          ; ctx[+0x06] = 0x14  -> next round's prompt
+801e6800  lbu   v0,0x28a(v1)
+801e6808  addiu v0,v0,0x1
+801e680c  jal   0x801f45a4
+801e6810  _sb   v0,0x28a(v1)        ; ctx[+0x28A] += 1   (the round index)
+```
+
+`ctx[+0x07] = 0xFF` is stored at `0x801E67E4`, on the arm where the per-round
+action cursor has passed every living actor. So the two bytes hand the round
+back and forth: the flow SM ends a round by arming `0xFE` -> `0xFF`, and the
+action SM ends it by arming `0x14`.
+
+**Read this one off the jump table, not off the decompiler's flow analysis.**
+Nothing inside `FUN_801E295C` branches to `0x801E67E8` - it is reached only
+through the `jr v0` at `0x801E2AAC` - so a pass that does not resolve the table
+reports `Removing unreachable block (ram,0x801E67E8)` and drops the round bump
+from the C entirely. That `+0x28A` is the round index rather than some other
+counter is corroborated by `0x14`'s own second reader: under
+`_DAT_8007BD0C == 0xB6` (the Muscle Dome match) `0x801D0F94..0x801D0FA4` draws
+`4 - ctx[+0x28A]`, the rounds remaining.
+
+### `s2` is not the pad, and how a command commits
+
+Every handler in `FUN_801D0748` tests `s2`, and `s2` is built two different ways
+before the state switch runs.
+
+The masks are **packed** throughout - byte-swapped against the raw BIOS word
+(`engine-core::world_map_panel_host::packed_pad`), so the four directions are
+Left `0x8000`, Right `0x2000`, Down `0x4000`, Up `0x1000`. Read raw they look
+like face buttons, which in turn makes the confirm and cancel masks look
+unreachable; the same trap is catalogued in
+[`arts-command-gauge.md`](arts-command-gauge.md).
+
+**With a selection widget up** (`_DAT_800846C8 != 0` and `ctx[+0x275] != 0`), the
+pre-dispatch block at `0x801D07FC..0x801D0AC0` walks a highlight rather than
+handing the press down. A pressed direction stores that mask in `ctx[+0x880]`
+and stamps `+0x1D = 2` on the matching widget actor - `ctx[+0x1114]` Left,
+`+0x1118` Right, `+0x111C` Up, `+0x1120` Down - with every other actor set to
+`1`; `ctx[+0x275]` is how many arms exist, and the Up and Down arms are skipped
+below `3` and `4` (`sltiu` guards at `0x801D0A24` and `0x801D096C`). Then
+`0x801D0AC4..0x801D0B08` **rewrites `s2` outright**: the confirm mask
+`_DAT_800846D0` replaces it with the stored `ctx[+0x880]`, the cancel mask
+`_DAT_800846D4` replaces it with itself, and anything else leaves zero. So a
+handler below sees a direction bit only on the frame confirm is pressed, which
+is what turns its direction tests into "take the highlighted chip".
+
+**Without one**, `0x801D0B0C` builds `s2 = _DAT_8007B874 | _DAT_8007B938`, the
+plain packed pad, and the direction tests are direct presses.
+
+`0x14` seeds `ctx[+0x880] = 0x8000` (`0x801D0ECC`), so a freshly armed prompt is
+highlighted on its Left arm.
+
+Which `s2` bit routes where, in the three prompt states:
+
+| State | Left `0x8000` | Right `0x2000` | confirm `_DAT_800846D0` | cancel `_DAT_800846D4` |
+|---|---|---|---|---|
+| `0x1E` | Begin | Run -> `0x32` | Begin | - |
+| `0x32` | run confirmed -> `0xFE` | back to `0x1E` | - | back to `0x1E` |
+| `0x6E` | begin the round -> `0xFE` | step back | begin the round | step back |
+
+`0x32`'s confirm arm stamps `+0x1DE = 5` (the Run action category) on all three
+party actors at `0x801D1174..0x801D1184` before storing `0xFE`.
+
+The ring's four arms sit on the same four masks, and every one of them commits
+through the same idiom - **advance to the next member that still owes a
+command, or begin the round**:
+
+```text
+801d16ac  jal   0x801db81c          ; next member after ctx[+0x13] awaiting a command
+801d16b4  lw    v1,-0x42dc(s6)
+801d16bc  lbu   v1,0x0(v1)          ; ctx[+0x00] = seated party count
+801d16c4  bne   v0,v1,0x801d16d8    ; someone still owes one -> stay in 0x28
+801d16cc  li    v0,0x6e
+801d16d0  sb    v0,0x0(s3)          ; nobody does -> 0x6E
+```
+
+Ten sites in the handler share it, one per commit path: Spirit at `0x801D16AC`,
+the target-cursor confirm at `0x801D22C4`, and the per-window target
+sub-cursors at `0x801D24B4`, `0x801D2698`, `0x801D2830`, `0x801D29C0`,
+`0x801D2AAC`, `0x801D2D74`, `0x801D2E64` and `0x801D2FE4`. `FUN_801DB81C` scans
+forward from `ctx[+0x13] + 1`; its sibling `FUN_801DBA04` scans from zero and is
+what `0x1E`'s confirm and `0x6E`'s cancel call. Both skip a member whose
+per-member state byte `_DAT_8007BD10[i]` is already `4` (committed), whose live
+HP `+0x14C` is zero, or whose status word `+0x16E & 0xF84` is set, and both
+return `ctx[+0x00]` when none is left.
+
+**No command path leaves the flow parked.** All ten end in `0x28` or `0x6E`,
+which is the invariant a port has to keep: a command that resolves without
+arming the next surface is a soft-lock, and it does not have to be the command
+itself that breaks - see the readout desync in
+[`battle-action.md`](battle-action.md#the-0x51-exit-gate-and-the-hp-bar-settle-invariant).
+
 ### How the engine raises the flow state
 
 The engine splits what `FUN_801D0748` does in one machine across a
@@ -297,9 +421,16 @@ plus host-owned Item / Magic / Arts submenus, so the flow byte is *recomposed*
 each frame by `battle_flow::flow_state_for` (an open submenu wins over the
 command phase). Three points differ from retail and are deliberate:
 
-- **Turn prompt.** The engine has no separate `[Begin]` screen, so
-  `World::open_battle_command` raises state `30` directly for the frame a turn
-  opens - the same instant retail enters `0x1E`.
+- **Round prompt.** `World::open_battle_command` builds the session **already
+  on** `CommandPhase::RoundPrompt` whenever the flow byte says the round is
+  opening (battle entry leaves it `Idle`; the round boundary parks it on
+  `TurnPrompt`), matching retail's unconditional `0x14 -> 0x1E` store. It has
+  to be the phase the session is constructed in rather than one applied on a
+  later tick: `battle_command.is_some()` is the only edge a host or a test
+  has, so a prompt that lands one frame behind it is a prompt nothing sees -
+  and `Run` lives on that prompt and on no other surface. A session reopened
+  mid-round (a submenu backed out of) finds the flow on a window state and
+  opens on the ring, which is where retail's own cancel arms land.
 - **Target confirm.** `CommandPhase::Confirmed` is the Attack path, which retail
   routes `0x5A → 0x6E`; state `100` is the item window's own target step and has
   no engine hook point yet.
