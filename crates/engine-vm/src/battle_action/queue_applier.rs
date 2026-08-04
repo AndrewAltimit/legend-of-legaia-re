@@ -305,15 +305,26 @@ pub fn apply_super_tail_replace(
 /// PORT: FUN_801DA34C - the round driver's arts-queue preseed (leaf; called
 /// from `FUN_801D0748` at `0x801D15C8` / `0x801D1734`).
 ///
-/// NOT WIRED: the engine has no per-character saved arts-input string to
-/// preseed from - `legaia_save`'s record model carries no `+0x76F` / `+0x77F`
-/// chain slot, so there is nothing to copy and nothing for the
-/// `u16[+0x156] < u16[+0x154]` predicate to choose between. That single
-/// missing field is the whole prerequisite: retail's caller
-/// `FUN_801D0748` is **not** unported (an earlier note here said so) - its
-/// state space is `engine-core::battle_flow` and its arts-entry state `0x50`
-/// is the one `engine-core::battle_input` recomposes - it simply has no
-/// per-state body to hang the copy on until the record field exists.
+/// NOT WIRED, and the reason is narrower than it used to read. "The engine
+/// has no per-character saved arts-input string to preseed from" is
+/// **wrong**: it has one. `legaia_save::SavedChainRecord` persists a named
+/// per-character command sequence in the LGSF v2 ext block, `World::saved_chains`
+/// carries it live, `tactical_arts_editor` edits it and `battle_arts` reads it
+/// in battle - and shipped non-test code fills it (`--player-battle` in the
+/// native window's `run.rs`).
+///
+/// What is missing is the **mapping**, not the data. Retail's two slots are
+/// char-record `+0x76F` / `+0x77F`, i.e. record-relative `+0x1A7` / `+0x1B7`
+/// off `0x80084140 + (id-1)*0x414`, and `legaia_save`'s retail `0x414` record
+/// model (`crates/save/src/character.rs`) declares no accessor there - it
+/// covers `+0x104..+0x19D` and `+0x2A7` onward. So nothing projects the
+/// engine's chain library onto the slot pair this reads, and the
+/// `u16[+0x156] < u16[+0x154]` predicate has no two slots to choose between.
+///
+/// Retail's caller `FUN_801D0748` is **not** unported (an older note said so):
+/// its state space is `engine-core::battle_flow` and its arts-entry state
+/// `0x50` is the one `engine-core::battle_input` recomposes. It simply has no
+/// per-state body to hang the copy on until the slot pair is addressable.
 ///
 /// Copies one of the character's two saved 16-byte arts-input strings
 /// (char record `+0x76F` = first slot, `+0x77F` = second slot, off
@@ -471,18 +482,29 @@ pub fn check_and_learn_art(
 
 /// NOT WIRED: `FUN_801E91E8` is **not** called by the queue-builder
 /// `FUN_801EED1C` (whose only `jal`s are `0x80056798`, `0x801EFBFC` and
-/// `0x801EF9E4`). Its two retail caller families are (a) the per-keypress
-/// arts-input recognizer in the menu band (`jal` at `0x80204AA8` inside
-/// `FUN_80202BCC`, `overlay_0897_80202bcc.txt`), which arms the slot's Miracle
-/// marker `ctx[+0x25F + slot]`, and (b) the arms execution resolver
-/// `FUN_801EC3E4` (`jal` at `0x801EE2C0`, `overlay_0898_801ec3e4.txt`), which
-/// reads a strike record's `+0x3E` token and, on a zero position, stages the
-/// token into the reward byte `ctx[+0x269]`. The engine's Miracle gate is the
-/// whole-string match in
+/// `0x801EF9E4`).
+///
+/// It has exactly **one** retail caller: the arms execution resolver
+/// `FUN_801EC3E4`, `jal` at `0x801EE2C0`, which reads a strike record's
+/// `+0x3E` token and, on a zero position, stages the token into the reward
+/// byte `ctx[+0x269]`.
+///
+/// An earlier note here claimed a second caller family - a "per-keypress
+/// arts-input recognizer `FUN_80202BCC`" reached at `0x80204AA8` - and that
+/// is the same function counted twice. `overlay_0897_80202bcc.txt` is
+/// `FUN_801EC3E4` printed at a wrong load base: the two prologues are
+/// instruction-for-instruction identical and the whole call neighbourhood
+/// matches under a constant `+0x167E8` print shift
+/// (`0x80204AA8 - 0x801EE2C0`). See
+/// [`phantom-print-index.md`](../../../../docs/tooling/phantom-print-index.md) -
+/// a dump's printed addresses are a property of its load base, so counting
+/// caller *sites* across differently-based dumps of one image inflates them.
+///
+/// The engine's Miracle gate is the whole-string match in
 /// [`resolve_action_queue`](super::resolve_action_queue), and its execution
-/// point (`attack_chain`) models neither the per-slot marker nor
-/// `ctx[+0x269]`, so the per-token position has no consumer until one of
-/// those two pieces of context state exists.
+/// point (`attack_chain`) models neither the per-slot marker `ctx[+0x25F +
+/// slot]` nor `ctx[+0x269]`, so the per-token position has no consumer until
+/// that context state exists.
 ///
 /// PORT: FUN_801E91E8 - Miracle-command token position lookup.
 ///

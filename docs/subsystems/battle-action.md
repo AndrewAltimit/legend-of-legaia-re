@@ -2489,12 +2489,27 @@ it with the matched slot's mask, while the battle branches of `0x03`/`0x08` and 
 `inventory_use` for item-menu greying) additionally surface the same signal where it is read.
 The dump's only real callees are the system-flag test `FUN_8003CE64` (arms `0x80`/`0x81`, flags
 5/6 in the `DAT_80085758` bank, alongside `_DAT_1F800394` bits `0x100000`/`0x200000`) and the
-arm-`0x82` inventory gate `FUN_80046898` - a 3-instruction leaf returning
-`*(int *)(gp + 0x2E8) < 0xE0` ("the inventory has room", signed compare against the 224-slot
-cap; `see ghidra/scripts/funcs/80046898.txt`), ported as
-`battle_action::item_count_gate` over `ActionValidatorHost::inventory_count`. The validator
-does **not** call the ability bit-test `FUN_800431D0` (an earlier attribution in
+arm-`0x82` gate `FUN_80046898` - a 3-instruction leaf returning
+`*(int *)(gp + 0x2E8) < 0xE0` (signed compare; `see ghidra/scripts/funcs/80046898.txt`),
+ported as `battle_action::item_count_gate` over `ActionValidatorHost::inventory_count`. The
+validator does **not** call the ability bit-test `FUN_800431D0` (an earlier attribution in
 [`battle.md`](battle.md) / `reference/functions.md`).
+
+The "inventory has room, against a 224-slot cap" reading of that compare is **falsified**, and
+the two symbol names above preserve it only because three surfaces spell them. `gp` is
+`0x8007B318` (`80026ca8` `lui gp,0x8008` + `80026cac` `addiu gp,gp,-0x4ce8`, cross-checked
+against two known globals: the halfword camera pitch at `gp+0x478` = `_DAT_8007B790` and the
+tile-board install pointer at `gp+0x138` = `_DAT_8007B450`). So `gp + 0x2E8` is
+`_DAT_8007B600` - in the `0x8007Bxxx` overlay-scratch band, not the `0x80084xxx` save/game-state
+window an inventory length lives in.
+
+Both overlay sites that reach that word by absolute address read it as a **frame countdown**:
+one decrements it by 1 and fires its expiry action only on the transition to zero, the other
+refuses to proceed while it is non-zero. Its writer `FUN_80046870`
+(`battle_helpers::advance_gauge`) tops it up by `0x40` and caps it at `0x100`. The pair is a
+cooldown window measured in frames, so `0xE0` is a threshold on remaining time rather than a
+capacity - which is why a host should return `0` ("no cooldown outstanding") and not plumb an
+inventory length in.
 
 ## Action queue and Tactical Arts trigger ordering
 

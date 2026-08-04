@@ -226,6 +226,54 @@ the other side: **wiring a caller is not done until every disclosure that named
 it has been re-read.** Grep the file set for the wired symbol's name before
 closing that work, not after the next audit.
 
+## What a correct disclosure still does not tell you
+
+Both triage pages ask one question - *is this tag right?* - and a `NOT WIRED`
+tag can be perfectly right about an **inert port that is also a wrong port**.
+Nothing in either audit looks at whether the body under the tag matches the
+instruction stream, and nothing ever will: reachability and fidelity are
+independent properties.
+
+`exec_sprite_descriptor` (`800198e0`, `crates/engine-vm/src/title_prim.rs`) is
+the worked example. Its disclosure held exactly as written - no host implements
+`PrimHost`, every `exec_*` in the file is test-only - and re-reading
+`FUN_800198E0` against the disassembly turned up three divergences in the port
+beneath it:
+
+| The port did | `FUN_800198E0` does |
+|---|---|
+| suppress the whole strip emit when `_DAT_8007B998` is clear | gate only the STP-OR loop; `0x80019998` branches *to* the emit at `0x800199EC` |
+| pick a width divisor from `flags & 3`, and skip the sprite on `== 3` | reload the **raw** extents at `0x80019AAC` two instructions before the call, so all four arms emit identically and `== 3` is not a skip |
+| draw the main sprite from the descriptor's own rect | re-base onto `desc + ((u32 @ +0x08 & !3) + 8)` when `flags & 8` is set (`0x800199F8..0x80019A10`) |
+
+Three properties of the shape are worth carrying forward.
+
+**A dead computation is the easiest thing to port as live behaviour.** The four
+`flags & 3` arms are real branches with real arithmetic; only the store that
+follows them is dead. A port written from the arms outward reproduces all of it
+faithfully and still gets the behaviour wrong, because the fact that decides the
+question is an *overwrite* one basic block later. Read forward to the consuming
+instruction before modelling a computed value - the same "the consumer can tell
+you" lesson `live-audit-triage.md` records for `build_camera_angle_tween`.
+
+**An invented enum arm outlives the reading that produced it.** `SkipMainSprite`
+existed because the `== 3` arm stores no width, which is true; "therefore it
+skips the emit" was the inference, and once it was a named variant with a test
+asserting it, it read like a finding. The tests asserted the defect, which is
+why they all passed. Keep such a decode as provenance if it is real, but keep it
+*out* of the call it does not control.
+
+**The tests move with the fix.** Six of the file's sprite tests encoded the
+wrong behaviour, so the suite was green throughout and stayed green by
+asserting the divergence. A test written from the same reading as the port
+cannot falsify it; only the instruction stream can. Treat a green suite over a
+port nobody has diffed against the disassembly as untested, not as verified.
+
+None of this changes an audit count - the anchors were inert before and after -
+which is the point. A drained disclosure worklist is not a statement about
+fidelity, and a re-read of an already-disclosed block is worth doing on its own
+terms.
+
 ## Rows
 
 None open.
