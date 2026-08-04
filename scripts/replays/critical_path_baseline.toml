@@ -14,4 +14,4 @@
 # player can do, not in what the disc decodes. Raise it only when the run
 # actually clears the rung - never to make a red test green.
 
-reached = 1
+reached = 2

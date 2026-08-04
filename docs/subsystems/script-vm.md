@@ -1029,6 +1029,24 @@ randomizer's MAN edits (all `LinearWalker` consumers), while runtime behaviour w
 depends on the sub* must be decoded per-sub, and the executing VM's port is the reference when the two
 disagree.
 
+#### Rim Elm's gate paints are carried by an *object* record, not an entry script
+
+The gate the width fix made legible is not carried the same way in every
+rendition. `town0c` holds it twice - once in its scene-entry `P1[0]` and again
+in `P0[20]` - but `town01` holds it **only** in `P0[20]`, and that is not an
+entry script at all. It is the gate object's own record, bound by the `.MAP`
+gate-0 kind-1 trigger at tile `(23, 43)` and executed by the scene-init bind
+prologue (`FUN_8003A55C`), which runs a bound record whose first opcode is
+`0x24`/`0x25` through this VM until it yields, stalls, or reaches a dialog byte
+(the loop conditions tabulated just below).
+
+The consequence for a port is concrete: an engine that applies nibble-7 deltas
+only from the entry script leaves `town01`'s south gate sealed in every story
+state, because the record that opens it is reached through the object-bind
+path. The paints themselves, their `327`/`321` branch and the resulting grid
+are in [`world-map.md`](world-map.md#the-drake-round-trip-rim-elm---map01---cave01);
+`engine-core/tests/south_gate_disc.rs` pins all three states off the disc.
+
 One more nibble-7 pin, this time on the *interpreter* side: **none of the four
 paints ends the dispatch slice** - but not for the reason previously recorded
 here. There is **no label-call idiom in the nibble-7 arms at all**. All four

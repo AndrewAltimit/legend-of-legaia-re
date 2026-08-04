@@ -44,10 +44,17 @@
 //! validated by [`World::field_dir_blocked`] (retail `FUN_801cfe4c`'s
 //! static-wall arm) at the source tile's centre - so the planner and the
 //! engine consult the same walls. The follower converts the desired world
-//! step into a pad mask by inverting the camera quadrant that
-//! `decode_field_direction` applies, which is what a player does when they
-//! look at the screen and press the direction that moves them the way they
-//! want.
+//! step into a pad mask by inverting whatever remap the world is currently
+//! walking under, which is what a player does when they look at the screen
+//! and press the direction that moves them the way they want.
+//!
+//! There are **two** such remaps and they are not interchangeable: the field
+//! walk goes through `decode_field_direction` (world axes, quadrant rotation),
+//! the overworld walk through `world_map_camera_relative_bits` (camera-relative).
+//! Inverting the field one on the overworld sends the player off at an angle,
+//! and map01's collision leaves the sea open, so nothing stops them - the leg
+//! walks off the map rather than stalling against a wall. See
+//! [`pad_for_step`].
 //!
 //! A leg that stops making progress is reported as `Stalled` with the tile it
 //! died on, not as a bare assertion failure - a stall is the finding.
@@ -97,22 +104,45 @@ const TILE: i16 = 128;
 /// lattice deliberately oversamples it rather than matching it.
 const SUBCELL: i16 = 32;
 
-/// Rim Elm's south-gate trigger tile, as a navigation *goal* rather than a
-/// teleport target - which is why it is **not** the `(25, 46)` the spine
-/// oracle seats onto.
+/// Rim Elm's south-gate exit tile: the band carrying the `0x3F` scene change.
 ///
-/// The `.MAP` kind-1 table gives this gate two bands: record 10 over tiles
-/// `(24..26, 45)` (world `z` `5632..5887`) and record 0 over `(24..26, 46)`
-/// (`5888..6015`). Record 0's band is sealed - grid row `47` reads `7 3 B`
-/// across columns `24/25/26` and every even-`z_cell` bit is set, so
-/// `z ∈ [5888, 5951]` is a solid 64-unit wall band across the doorway. A
-/// seat lands on it; a walk cannot. Retail's captured pre-transition frame
-/// parks at `(3264, 5824)`, inside record 10's band, and warps from there.
+/// The `.MAP` kind-1 table gives this gate two bands, and only one of them is
+/// a door. Record 10 over tiles `(24..26, 45)` + `(25, 44)` is a **content-free
+/// park** - five bytes of `Nop; Nop; JmpRel`-to-self, no scene change, no
+/// walk - so standing in it does nothing by design. Record 0 over
+/// `(24..26, 46)` is the exit: its script is `CFlag.Set`, an `Effect` fade and
+/// the `0x3F` naming `map01` at entry tile `(0x60, 0x19)`.
 ///
-/// So the goal is record 10's band. Reaching it and *not* transitioning is
-/// the honest reading of the current defect - see the `town01` south-gate
-/// thread in `docs/reference/open-rev-eng-threads.md`.
-const TOWN01_SOUTH_GATE: (u8, u8) = (25, 45);
+/// Record 0's band is walled on a fresh boot, and the wall is **not** a fixed
+/// map feature: it is the gate itself, opened by
+/// [`GATE_OPEN_FLAGS`](self::GATE_OPEN_FLAGS). See that constant.
+const TOWN01_SOUTH_GATE: (u8, u8) = (25, 46);
+
+/// The two system flags Rim Elm's south gate is authored on: `327` ("the gate
+/// scenery exists") and `321` ("the gate is open").
+///
+/// `town01`'s gate-object script `P0[20]` - bound to the object at tile
+/// `(23, 43)` by the `.MAP`'s gate-0 kind-1 trigger, and run by the scene-init
+/// bind prologue (`FUN_8003A55C`) - clears the approach band with three
+/// `0x4C` nibble-7 sub-0 paints and then branches:
+///
+/// | `327` | `321` | what the script paints | gate |
+/// |---|---|---|---|
+/// | clear | - | nothing more; the base map's row-47 wall stands | shut |
+/// | set | clear | re-blocks rows 44..46 and seats the gate at `(24, 44)` | shut |
+/// | set | set | `sub-0` over cols `24..25`, rows `46..47` | **open** |
+///
+/// Only that last arm clears grid row 47 cols 24-25, and those are the cells
+/// that block the walk - so on a cold boot a player cannot leave Rim Elm, in
+/// the port or in retail, and the disc says so rather than the engine.
+///
+/// Seeding the pair here stands in for the town's story beats the same way the
+/// other progression oracles seed their gates: this ladder measures locomotion,
+/// collision and the pad remap, not story progression. Note what is *not*
+/// seeded - `562`, record 10's own `C2` gate. Setting it would spawn that
+/// content-free park as a modal timeline mid-walk; it gates a beat, not the
+/// door.
+const GATE_OPEN_FLAGS: [u16; 2] = [327, 321];
 
 /// Frames a leg may spend before it is called a timeout.
 const LEG_FRAME_BUDGET: u32 = 6_000;
@@ -264,6 +294,61 @@ fn pad_for_world_step(azimuth: u16, dwx: i16, dwz: i16) -> u16 {
         pad |= PadButton::Left.mask();
     }
     pad
+}
+
+/// The **overworld** pad inversion, which is a different space.
+///
+/// The two walks do not share a remap:
+/// [`World::step_field_locomotion`] routes the pad through
+/// `decode_field_direction` (world axes, quadrant rotation), while
+/// `World::step_world_map_locomotion` routes it through
+/// `world_map_camera_relative_bits` - screen-up -> world `(-cosθ, -sinθ)`,
+/// screen-right -> world `(sinθ, -cosθ)`. Inverting the field remap on the
+/// overworld sends the player off at an angle, and map01's collision grid
+/// leaves the sea open, so there is nothing to stop them: the leg walks off
+/// the map instead of stalling against a wall.
+///
+/// That 2x2 is a reflection, so it is its own inverse - the screen delta for
+/// a desired world step is the same matrix applied to the step. The `T` band
+/// matches the forward map's 8-direction quantisation.
+fn world_map_pad_for_world_step(azimuth: i32, dwx: i16, dwz: i16) -> u16 {
+    let (dx, dz) = (f32::from(dwx), f32::from(dwz));
+    let len = (dx * dx + dz * dz).sqrt();
+    if len == 0.0 {
+        return 0;
+    }
+    let theta = (azimuth as f32) / 4096.0 * std::f32::consts::TAU;
+    let (sin, cos) = theta.sin_cos();
+    let (dx, dz) = (dx / len, dz / len);
+    let sx = dx * sin - dz * cos;
+    let sy = -dx * cos - dz * sin;
+    /// sin(22.5°) - the same cardinal band `world_map_camera_relative_bits` uses.
+    const T: f32 = 0.382_683_43;
+    let mut pad = 0u16;
+    if sy > T {
+        pad |= PadButton::Up.mask();
+    } else if sy < -T {
+        pad |= PadButton::Down.mask();
+    }
+    if sx > T {
+        pad |= PadButton::Right.mask();
+    } else if sx < -T {
+        pad |= PadButton::Left.mask();
+    }
+    pad
+}
+
+/// Pick the pad for a desired world step in whichever space the world is
+/// currently walking in.
+fn pad_for_step(host: &SceneHost, dwx: i16, dwz: i16) -> u16 {
+    match host.world.mode {
+        SceneMode::WorldMap => world_map_pad_for_world_step(
+            host.world.world_map_ctrl.as_ref().map_or(0, |c| c.azimuth),
+            dwx,
+            dwz,
+        ),
+        _ => pad_for_world_step(host.world.field_camera_azimuth, dwx, dwz),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -549,11 +634,7 @@ fn walk_to(host: &mut SceneHost, goal: (i16, i16)) -> Leg {
             Some(&c) => cell_center(c),
             None => tile_center(goal),
         };
-        let pad = pad_for_world_step(
-            host.world.field_camera_azimuth,
-            (tx - wx).signum(),
-            (tz - wz).signum(),
-        );
+        let pad = pad_for_step(host, (tx - wx).signum(), (tz - wz).signum());
 
         host.world.set_pad(pad);
         match host.tick() {
@@ -611,6 +692,12 @@ fn walk_to(host: &mut SceneHost, goal: (i16, i16)) -> Leg {
 }
 
 /// Tile of the first overworld portal to `dest` on the loaded map.
+///
+/// `world_map_entity_positions` is in **world** units; [`walk_to`] navigates in
+/// tiles. Handing the raw world pair straight through overflows `tile_center`'s
+/// `t * 128` on an `i16` and aims the follower at a wrapped coordinate off the
+/// map - which, because map01's collision leaves the sea open, it then walks
+/// to without ever hitting a wall.
 fn portal_tile(host: &SceneHost, dest: &str) -> Option<(i16, i16)> {
     host.world
         .world_map_entity_configs
@@ -618,7 +705,7 @@ fn portal_tile(host: &SceneHost, dest: &str) -> Option<(i16, i16)> {
         .zip(host.world.world_map_entity_positions.iter())
         .find_map(|(cfg, &(x, z))| match cfg {
             WorldMapEntityConfig::OverworldPortal { scene_name, .. } if scene_name == dest => {
-                Some((x, z))
+                Some(tile_of(x, z))
             }
             _ => None,
         })
@@ -640,19 +727,14 @@ struct Rung {
 fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     let mut rungs = Vec::new();
 
-    // Rim Elm's south exit is **story-locked**, and correctly so: its walk-on
-    // record (P2[10], on the only band a player can stand in) carries the
-    // gates `c1=[563] c2=[562]`, so it spawns once system flag 562 is set and
-    // 563 is not. The other band - P2[0] on tiles (24..26, 46) - is ungated
-    // but sealed, because grid row 47 walls `z ∈ [5888, 5951]` across the
-    // whole doorway until a story `0x4C` nibble-7 paint clears it.
-    //
-    // So a cold boot cannot leave Rim Elm, in the port or in retail. Seeding
-    // 562 stands in for the town's story beats (which are their own rung to
-    // write, not this one's job), and keeps this ladder measuring what it
-    // exists to measure: locomotion, collision and the pad remap, not story
-    // progression. Without it rung 2 is unwinnable by construction.
-    host.world.system_flag_set(562);
+    // Rim Elm's south exit is **story-locked**, and correctly so - but the
+    // lock is the gate's own collision, not a script gate on the `0x3F`. The
+    // exit record P2[0] (tiles (24..26, 46)) has empty C1/C2; what stops a
+    // cold boot leaving is grid row 47, which `P0[20]` only cuts through on
+    // its `327`+`321` arm. See `GATE_OPEN_FLAGS`.
+    for flag in GATE_OPEN_FLAGS {
+        host.world.system_flag_set(flag);
+    }
 
     // --- 1. Cold boot into Rim Elm free-roam with control released. -------
     host.enter_field_scene("town01", 0).expect("enter town01");
@@ -805,6 +887,43 @@ mod tests {
                     forward(azimuth, pad),
                     (dwx, dwz),
                     "azimuth {azimuth} step ({dwx},{dwz}) did not round-trip (pad {pad:#06x})"
+                );
+            }
+        }
+    }
+
+    /// The overworld inversion is checked against the engine's **own** forward
+    /// remap, not a re-derivation of it - the two walks use different spaces
+    /// and the field inversion above is silently wrong here.
+    ///
+    /// The contract is *not* an exact round trip, and asserting one would be a
+    /// bug in the test: a 4-way d-pad through
+    /// `world_map_camera_relative_bits` reaches only 8 world directions, and
+    /// which 8 depends on the azimuth, so at a rotated framing no press yields
+    /// a pure cardinal. What the follower needs - and what is asserted - is
+    /// that the press always moves the player *toward* the request: the
+    /// resulting world direction has a strictly positive dot product with it,
+    /// i.e. it is within 90°. Disc-free.
+    #[test]
+    fn world_map_pad_inversion_always_moves_toward_the_request() {
+        use legaia_engine_core::world::world_map_camera_relative_bits;
+
+        for azimuth in [0i32, 700, 1024, 1800, 2048, 2900, 3072, 4000] {
+            for (dwx, dwz) in [(1i16, 0i16), (-1, 0), (0, 1), (0, -1)] {
+                let pad = world_map_pad_for_world_step(azimuth, dwx, dwz);
+                assert_ne!(pad, 0, "azimuth {azimuth} step ({dwx},{dwz}): no press");
+                let sx = i32::from(pad & PadButton::Right.mask() != 0)
+                    - i32::from(pad & PadButton::Left.mask() != 0);
+                let sy = i32::from(pad & PadButton::Up.mask() != 0)
+                    - i32::from(pad & PadButton::Down.mask() != 0);
+                let bits = world_map_camera_relative_bits(azimuth, sx, sy);
+                let gz = i32::from(bits & 0x1000 != 0) - i32::from(bits & 0x4000 != 0);
+                let gx = i32::from(bits & 0x2000 != 0) - i32::from(bits & 0x8000 != 0);
+                let dot = gx * i32::from(dwx) + gz * i32::from(dwz);
+                assert!(
+                    dot > 0,
+                    "azimuth {azimuth} step ({dwx},{dwz}) walked the wrong way \
+                     (pad {pad:#06x} -> screen ({sx},{sy}) -> world ({gx},{gz}))"
                 );
             }
         }
