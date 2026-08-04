@@ -50,13 +50,39 @@ id &ge; 0x9A:  base = 4 * id + 0x63   (mod 256)</code></pre>
 +0x08  u32  texture-pool offset
 +0x4A  u8   part count
 +0x4C  u32[part_count]  per-part offsets (+ indirection fixups)</code></pre>
-  <p>The TMD + texture pool route through <code>FUN_80055468</code> - the same mesh/texture installer the monster archive uses - and the summon creature is staged as a battle actor. For the base + evolved-Seru summons (<code>0x81..=0x95</code>) the actor-record TMD is <strong>byte-identical</strong> to a record in the monster archive (extraction entry 867): the summon reuses an ordinary enemy creature's mesh (map in <code>legaia_asset::summon_creatures</code>). The big-summon block <code>0x9A..=0xA0</code> instead carries a bespoke mesh in its raw slot - no archive match.</p>
+  <p>The TMD + texture pool route through <code>FUN_80055468</code> - the same mesh/texture installer the monster archive uses - and the summon creature is staged as a battle actor. For the base + evolved-Seru summons (<code>0x81..=0x95</code>) the actor-record TMD is <strong>byte-identical</strong> to a record in the monster archive (extraction entry 867): the summon reuses an ordinary enemy creature's mesh (map in <code>legaia_asset::summon_creatures</code>). The seven big summons <code>0x9A..=0xA0</code> instead carry a bespoke mesh that matches no archive record, so the creature-id route resolves nothing for them - their model is still the actor record's own TMD, but their texture pool and their per-part animation entries live in the group's raw slot instead.</p>
+</section>
+
+<section class="doc-section" id="animation">
+  <h2>Per-part animation entries</h2>
+  <p>The <code>+0x4A</code> count and <code>+0x4C</code> offset table are the same shape as the monster archive's spell-offset array, and each entry they point at is a per-action record with a packed keyframe stream at entry <code>+0x8C</code>: <code>[u8 parts][u8 frames]</code> followed by <code>frames &times; parts</code> nine-byte TRS records in the same 12-bit field layout <code>FUN_8004998C</code> unpacks, with the playback-rate byte at <code>+0x78</code>. That is why a summon's cast animates through the ordinary battle rigid-TRS draw and needs no decoder of its own.</p>
+  <p>What the offsets are <em>relative to</em> differs by band, and that is the detail that hides the seven big summons from anyone who assumes one rule. For the three-slot groups (<code>0x81..=0x99</code>) they are relative to the <strong>actor-record slot itself</strong>, and the streams tile it contiguously - each entry's stream ends exactly where the next begins, and the last ends exactly at the record's texture-pool offset. For the four-slot big-summon groups they are relative to the <strong>raw slot's part pool</strong> at <code>+0x81E0</code> (the "off-band fixup arm"), which the streams tile the same way.</p>
+  <p>The raw slot's first two regions are a monster texture pool byte-for-byte - <code>0x1E0</code> is exactly the 15-palette CLUT region, and the page is the usual 256-row 4bpp block. Their VRAM targets pin the slot as well: CLUT row 486 and page origin <code>(448, 256)</code> are <code>484 + slot</code> and <code>((5 + slot) &times; 64, 256)</code> for <strong>slot 2</strong>, so a big summon installs over monster battle slot 2 and the ordinary relocation reproduces its placement exactly.</p>
+  <h3>The seven big summons</h3>
+  <p>Each id is pinned by two independent reads of its own actor record - the inline attack-name string at <code>rec[0]</code>, and the element byte at <code>+0x1D</code> - and both agree with the curated summon table, which is what makes the labelling a measurement rather than an ordering assumption.</p>
+  <table>
+  <thead><tr><th>Spell id</th><th>Summon</th><th>Attack name</th><th>Element byte</th></tr></thead>
+  <tbody>
+    <tr><td><code>0x9A</code></td><td>Palma</td><td>Meteor Cluster</td><td>0 earth</td></tr>
+    <tr><td><code>0x9B</code></td><td>Mule</td><td>Deep Avalanche</td><td>1 water</td></tr>
+    <tr><td><code>0x9C</code></td><td>Horn</td><td>Resurrector</td><td>5 light</td></tr>
+    <tr><td><code>0x9D</code></td><td>Jedo</td><td>Deadly Promise</td><td>6 dark</td></tr>
+    <tr><td><code>0x9E</code></td><td>Meta</td><td>Inferno</td><td>2 fire</td></tr>
+    <tr><td><code>0x9F</code></td><td>Terra</td><td>Queen Twister</td><td>3 wind</td></tr>
+    <tr><td><code>0xA0</code></td><td>Ozma</td><td>Voltagor</td><td>4 thunder</td></tr>
+  </tbody>
+  </table>
+  <p>All seven are playable in the browser on the <a href="../magic.html">Seru magic &amp; summons</a> page, decoded from your own disc.</p>
+</section>
+
+<section class="doc-section" id="me-archives">
+  <h2>Art stream archives</h2>
   <p><strong>Art "ME" stream-archive slots</strong>: the aux slots of <code>readef.DAT</code> groups 0..3 (slots <code>3&times;char + 1</code> / <code>3&times;char + 2</code> for Vahn / Noa / Gala / Terra) carry the player art-animation keyframe-stream archives - magic <code>'M' 'E'</code>, <code>u8 count</code>, <code>u16 entry_sizes[count]</code> (bit 15 = compressed), concatenated bodies - each decompressing through the channel-delta codec into a packed <code>[u8 parts][u8 frames][9-byte TRS]</code> stream (see <a href="battle-data-pack.html">player battle files</a>). Parser <code>legaia_asset::me_archive</code>. The main-vs-base pick is per battle phase (turn staging vs the battle-end win-pose staging - see the slot math above). The aux slots of the higher readef groups (enemy-special bands) are still unattributed as content, though their selection is pinned to the monster record's group byte <code>+0x1C</code>.</p>
 </section>
 
 <section class="doc-section" id="parser">
   <h2>Parser + tooling</h2>
-  <p>Parser: <code>legaia_asset::summon_readef</code> (slot classification, texture layouts, action-id &rarr; <code>(file, slot)</code> resolution). CLI: <code>asset summon-readef &lt;entry.BIN&gt;</code> lists every slot's class and attack-name string; <code>--texture-png-dir</code> decodes texture pages to PNG; <code>--action-id</code> resolves an action id to its stream target. The disc-gated <code>summon_readef_real</code> test asserts the raw-TOC-to-extraction mapping and slot tiling; <code>summon_creature_tmd_map_real</code> byte-validates the spell &rarr; creature mesh map. The attack-name sequence across the <code>summon.dat</code> actor records follows the spell-id order exactly, independently corroborating the case-<code>0x32</code> banding. Provenance: <code>ghidra/scripts/funcs/overlay_battle_801f17f8.txt</code>, <code>overlay_muscle_dome_801f12d0.txt</code>, <code>overlay_muscle_dome_801f19ec.txt</code>, <code>overlay_battle_action_801daba4.txt</code>, <code>800558fc.txt</code>, <code>8003e8a8.txt</code>.</p>
+  <p>Parser: <code>legaia_asset::summon_readef</code> (slot classification, texture layouts, action-id &rarr; <code>(file, slot)</code> resolution, and <code>parse_cast</code> - one spell's mesh, texture pool, element, attack name, keyframe clips and FX texture slots, which is what the site's summon viewer runs on). CLI: <code>asset summon-readef &lt;entry.BIN&gt;</code> lists every slot's class and attack-name string; <code>--texture-png-dir</code> decodes texture pages to PNG; <code>--action-id</code> resolves an action id to its stream target. The disc-gated <code>summon_readef_real</code> test asserts the raw-TOC-to-extraction mapping and slot tiling; <code>summon_creature_tmd_map_real</code> byte-validates the spell &rarr; creature mesh map. The attack-name sequence across the <code>summon.dat</code> actor records follows the spell-id order exactly, independently corroborating the case-<code>0x32</code> banding. Provenance: <code>ghidra/scripts/funcs/overlay_battle_801f17f8.txt</code>, <code>overlay_muscle_dome_801f12d0.txt</code>, <code>overlay_muscle_dome_801f19ec.txt</code>, <code>overlay_battle_action_801daba4.txt</code>, <code>800558fc.txt</code>, <code>8003e8a8.txt</code>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

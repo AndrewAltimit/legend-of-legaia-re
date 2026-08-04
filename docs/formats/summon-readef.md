@@ -198,6 +198,15 @@ Consumed headerless by case 6 - the three regions tile the slot exactly
          (the summon creature's part data for the off-band fixup arm)
 ```
 
+The first two regions are a **monster texture pool byte-for-byte**: `0x1E0` is
+exactly [`monster_archive::CLUT_REGION_BYTES`](monster-animation.md) (15
+sixteen-colour palettes) and the page is the usual 256-row 4bpp block. Their
+VRAM targets pin the slot too - CLUT row `486` and page origin `(448, 256)` are
+`484 + slot` and `((5 + slot) * 64, 256)` for **slot 2**, so a big summon
+installs over monster battle slot 2 and the ordinary `FUN_80055468` relocation
+reproduces its placement exactly. The part pool holds the group's per-part
+animation entries; see [Per-part animation entries](#per-part-animation-entries).
+
 ### Actor-record slot (last streamed slot of a group)
 
 Consumed in place by `FUN_801F19EC` (offsets are slot-relative; the installer
@@ -251,10 +260,58 @@ spell → creature map (e.g. Gimard `0x81`→ archive id 10; the otherwise
 capture-less evolved legs `0x90`→ Kemaro 144, `0x91`→ Spoon 147). The map lives
 in `legaia_asset::summon_creatures` and is byte-validated by the disc-gated
 `summon_creature_tmd_map_real`. The **big-summon block `0x9A..=0xA0`** instead
-carries a **bespoke mesh** in the group's third (raw CLUT+texture+part-pool)
-slot - no archive byte-match - so those summons are not reused enemy bodies.
-See [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md) (Seru-magic
+carries a **bespoke mesh** - its actor-record TMD byte-matches no archive
+record - so those seven summons are not reused enemy bodies, and the
+creature-id route resolves nothing for them. Their mesh is still the actor
+record's own TMD; what moves out of the record is the *texture pool* and the
+*per-part entries*, both of which live in the group's third (raw) slot. See
+[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md) (Seru-magic
 summon visual).
+
+#### The seven big summons
+
+Each row's id is pinned by two independent reads of its own actor record: the
+inline ASCII attack name at `rec[0]`, and the element byte at `+0x1D`. Both
+agree with the curated summon table in
+[`gamedata.md`](../reference/gamedata.md), which is what makes the labelling a
+measurement rather than an ordering assumption. Mirrored at
+`engine-core::summon::BIG_SUMMONS`; asserted by `summon_view_real`.
+
+| Spell id | Summon | Attack name (`rec[0]`) | Element (`+0x1D`) |
+|---|---|---|---|
+| `0x9A` | Palma | Meteor Cluster | 0 earth |
+| `0x9B` | Mule | Deep Avalanche | 1 water |
+| `0x9C` | Horn | Resurrector | 5 light |
+| `0x9D` | Jedo | Deadly Promise | 6 dark |
+| `0x9E` | Meta | Inferno | 2 fire |
+| `0x9F` | Terra | Queen Twister | 3 wind |
+| `0xA0` | Ozma | Voltagor | 4 thunder |
+
+### Per-part animation entries
+
+The actor record's `+0x4A` count and `+0x4C` offset table are the **same shape
+as the monster archive's `magic_count` / spell-offset array**, and each entry
+they point at is a per-action record whose packed keyframe stream sits at entry
+`+0x8C` - `[u8 parts][u8 frames]` then `frames × parts` nine-byte TRS records,
+decoded by the same `FUN_8004998C` bit layout, with the playback-rate byte at
+`+0x78`. That is why a cast's animation plays through the ordinary battle
+rigid-TRS draw and needs no separate decoder.
+
+What the offsets are **relative to** differs by band, and this is the part that
+hides the seven big summons from a reader who assumes one rule:
+
+- `0x81..=0x99` (three-slot groups): relative to the **actor-record slot**
+  itself. The streams tile the slot contiguously - each entry's stream ends
+  exactly where the next entry begins, and the last one ends exactly at the
+  record's `rec[2]` texture-pool offset.
+- `0x9A..=0xA0` (four-slot groups): relative to the group's **raw slot part
+  pool** (`+0x81E0`), the "off-band fixup arm". Every offset in the corpus lands
+  inside the pool's `0x8620` bytes and the streams tile it the same way.
+
+Parser: `legaia_asset::summon_readef::parse_cast`, which returns the cast's
+mesh (as a `MonsterMesh`, so `battle_render_mesh` applies), its clips, its
+element, its attack name and the group's FX texture slots. The site's
+`magic.html` summon viewer is built on it.
 
 ### Art `"ME"` stream-archive slot (readef groups 0..3)
 

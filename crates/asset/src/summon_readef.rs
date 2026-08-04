@@ -76,6 +76,8 @@
 
 use anyhow::{Result, bail};
 
+use crate::monster_archive::{MonsterAnimation, MonsterMesh, PartPose};
+
 /// Fixed streaming-slot size in bytes (`0x10800` = 67584 = 33 CD sectors).
 pub const SLOT_BYTES: usize = 0x10800;
 
@@ -358,6 +360,348 @@ pub fn detect(bytes: &[u8]) -> Option<SidebandFile> {
     (named * DETECT_MIN_NAMED_DENOM >= slots * DETECT_MIN_NAMED_NUMER).then_some(parsed)
 }
 
+// ---------------------------------------------------------------------------
+// Cast view - one summon spell's mesh, texture pool and keyframe clips
+// ---------------------------------------------------------------------------
+
+/// The whole player-summon action-id span carried by `summon.dat`: the base +
+/// evolved + flute + Evil-Seru groups (`0x81..=0x99`, three slots each) and the
+/// seven big-summon groups (`0x9A..=0xA0`, four slots each). Mirrors
+/// `legaia_engine_core::summon::PLAYER_SUMMON_IDS`.
+pub const PLAYER_CAST_IDS: std::ops::RangeInclusive<u8> = 0x81..=0xA0;
+
+/// The four-slot **big-summon** band - the Sim-Seru (Palma / Mule / Horn /
+/// Jedo) and Ra-Seru (Meta / Terra / Ozma) casts. Their groups carry the extra
+/// raw CLUT+texture+part-pool slot, and their meshes are bespoke rather than
+/// reused `battle_data` creature bodies (see [`crate::summon_creatures`]).
+pub const BIG_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x9A..=0xA0;
+
+/// Byte length of the big-summon raw slot's CLUT region: 240 BGR555 entries =
+/// the same 15 × 16-colour region a monster texture pool leads with
+/// ([`crate::monster_archive::CLUT_REGION_BYTES`]).
+pub const RAW_SLOT_CLUT_BYTES: usize = 0x1E0;
+/// Byte length of the big-summon raw slot's 4bpp page (64 halfwords × 256
+/// rows = 128 bytes per row = 256 texels wide).
+pub const RAW_SLOT_PAGE_BYTES: usize = 0x8000;
+/// Offset of the part pool inside a big-summon raw slot - exactly the end of
+/// the CLUT + page regions, which is what makes the raw slot's head a
+/// monster-shaped texture pool byte-for-byte.
+pub const RAW_SLOT_PART_POOL_OFFSET: usize = RAW_SLOT_CLUT_BYTES + RAW_SLOT_PAGE_BYTES;
+/// Byte length of the big-summon raw slot's part pool (`FUN_801F12D0` case 6
+/// copies it to `*0x8007B85C + 0x44000`). The three regions tile the slot
+/// exactly: `0x1E0 + 0x8000 + 0x8620 = 0x10800`.
+pub const RAW_SLOT_PART_POOL_BYTES: usize = SLOT_BYTES - RAW_SLOT_PART_POOL_OFFSET;
+
+/// Battle texture slot the summon creature's pool occupies.
+///
+/// Not a choice: the big-summon raw slot's own VRAM targets are the CLUT row
+/// `486` and page origin `(448, 256)` that `FUN_801F12D0` case 6 hardcodes, and
+/// those are exactly [`crate::monster_archive::monster_page_origin`] and CLUT
+/// row `484 + slot` for `slot = 2`. So a big summon installs over monster
+/// battle slot 2, and relocating its mesh with
+/// [`crate::monster_archive::MonsterMesh::battle_render_mesh`] at this slot
+/// reproduces the retail placement.
+pub const SUMMON_VRAM_SLOT: u8 = 2;
+
+/// Offset of the cast's **element** byte inside an actor record (`0`=earth,
+/// `1`=water, `2`=fire, `3`=wind, `4`=thunder, `5`=light, `6`=dark, `7`=none).
+/// The damage pipeline reads this record byte directly through the record
+/// pointer table `0x801C9348` - a cast's element is never the caster's.
+pub const ACTOR_ELEMENT_OFFSET: usize = 0x1D;
+
+/// Offset of a per-part entry's packed keyframe stream (`[u8 parts][u8 frames]`
+/// then nine-byte TRS records). Same offset as the monster archive's per-action
+/// entries; the record's own `+0x88` self-pointer is what the installer fixes
+/// up to it.
+pub const PART_STREAM_OFFSET: usize = 0x8C;
+/// Offset of a per-part entry's playback-rate byte.
+pub const PART_RATE_OFFSET: usize = 0x78;
+/// Bytes of a per-part entry's head kept as the effect-script region.
+const PART_HEAD_BYTES: usize = 0x54;
+/// Bytes per packed part record (six 12-bit fields).
+const PART_POSE_STRIDE: usize = 9;
+
+/// 4bpp page byte length for the narrow (64 bytes per row) layout.
+const NARROW_PAGE_BYTES: usize = 0x4000;
+/// 4bpp page byte length for the wide (128 bytes per row) layout.
+const WIDE_PAGE_BYTES: usize = 0x8000;
+
+/// `true` when `spell_id` is one of the seven four-slot big-summon casts.
+pub fn is_big_summon(spell_id: u8) -> bool {
+    BIG_SUMMON_IDS.contains(&spell_id)
+}
+
+/// `(first slot index, slot count)` of a cast's `summon.dat` group, or `None`
+/// when the id is outside [`PLAYER_CAST_IDS`]. Three slots for `0x81..=0x99`,
+/// four for the big-summon band - the same tiling [`stream_target`] resolves.
+pub fn group_slots(spell_id: u8) -> Option<(usize, usize)> {
+    if !PLAYER_CAST_IDS.contains(&spell_id) {
+        return None;
+    }
+    let (_, first) = stream_target(spell_id);
+    Some((first as usize, if is_big_summon(spell_id) { 4 } else { 3 }))
+}
+
+/// One `0x10800` slice of a side-band file.
+fn slot_bytes(file: &[u8], index: usize) -> Result<&[u8]> {
+    file.get(index * SLOT_BYTES..(index + 1) * SLOT_BYTES)
+        .ok_or_else(|| anyhow::anyhow!("slot {index} is past the end of the side-band file"))
+}
+
+/// Sign-extend a 12-bit field to `i16` (mirrors the monster keyframe decoder).
+fn sx12(v: u16) -> i16 {
+    if v & 0x800 != 0 {
+        (v | 0xf000) as i16
+    } else {
+        v as i16
+    }
+}
+
+/// Unpack one nine-byte part record into its six 12-bit fields - the identical
+/// bit layout `FUN_8004998C` decodes for the monster archive (low bytes at
+/// `[0,1,3,4,6,7]`, high nibbles packed into `[2,5,8]`). Cross-validated
+/// byte-for-byte against [`crate::monster_archive::animations`] by the
+/// disc-gated `summon_cast_stream_matches_monster_decoder` oracle.
+fn unpack_pose(b: &[u8]) -> PartPose {
+    let v0 = b[0] as u16 | ((b[2] as u16 & 0x0f) << 8);
+    let v1 = b[1] as u16 | ((b[2] as u16 & 0xf0) << 4);
+    let v2 = b[3] as u16 | ((b[5] as u16 & 0x0f) << 8);
+    let v3 = b[4] as u16 | ((b[5] as u16 & 0xf0) << 4);
+    let v4 = b[6] as u16 | ((b[8] as u16 & 0x0f) << 8);
+    let v5 = b[7] as u16 | ((b[8] as u16 & 0xf0) << 4);
+    PartPose {
+        tx: sx12(v0),
+        ty: sx12(v1),
+        tz: sx12(v2),
+        rx: v3 & 0xfff,
+        ry: v4 & 0xfff,
+        rz: v5 & 0xfff,
+    }
+}
+
+/// Decode one per-part entry at `entry_off` inside `pool` into a clip.
+///
+/// `pool` is the buffer the entry offsets are relative to: the **actor-record
+/// slot itself** for the three-slot groups, and the big-summon group's **raw
+/// slot part pool** (`+0x81E0`) for the four-slot ones - the "off-band fixup
+/// arm" the installer takes when the parts live outside the record.
+fn parse_part_entry(pool: &[u8], entry_off: usize) -> Option<MonsterAnimation> {
+    let action_id = *pool.get(entry_off)?;
+    let rate = pool.get(entry_off + PART_RATE_OFFSET).copied().unwrap_or(0);
+    let s = entry_off.checked_add(PART_STREAM_OFFSET)?;
+    let part_count = *pool.get(s)? as usize;
+    let frame_count = *pool.get(s + 1)? as usize;
+    if part_count == 0 || frame_count == 0 {
+        return None;
+    }
+    let data = s + 2;
+    let need = frame_count * part_count * PART_POSE_STRIDE;
+    if data + need > pool.len() {
+        return None;
+    }
+    let mut frames = Vec::with_capacity(frame_count);
+    for f in 0..frame_count {
+        let mut parts = Vec::with_capacity(part_count);
+        for p in 0..part_count {
+            let o = data + (f * part_count + p) * PART_POSE_STRIDE;
+            parts.push(unpack_pose(&pool[o..o + PART_POSE_STRIDE]));
+        }
+        frames.push(parts);
+    }
+    let head_end = (entry_off + PART_HEAD_BYTES).min(pool.len());
+    Some(MonsterAnimation {
+        action_id,
+        rate,
+        part_count,
+        frame_count,
+        frames,
+        effect_script: pool.get(entry_off..head_end).unwrap_or_default().to_vec(),
+    })
+}
+
+/// Byte length of the texture pool at `pool_off`, clamped to the monster-pool
+/// layout (`0x1E0` CLUT region + a 64- or 128-byte-per-row 4bpp page over 256
+/// rows). A streaming slot is fixed-size, so the pool's tail is zero padding -
+/// taking "everything to the end of the slot" would hand the decoder a
+/// nonsense row stride. `0` when the record carries no usable pool.
+fn texture_pool_extent(slot: &[u8], pool_off: usize) -> usize {
+    let Some(tail) = slot.get(pool_off..) else {
+        return 0;
+    };
+    let used = tail.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
+    if used <= RAW_SLOT_CLUT_BYTES {
+        return 0;
+    }
+    let page = if used <= RAW_SLOT_CLUT_BYTES + NARROW_PAGE_BYTES {
+        NARROW_PAGE_BYTES
+    } else {
+        WIDE_PAGE_BYTES
+    };
+    (RAW_SLOT_CLUT_BYTES + page).min(tail.len())
+}
+
+/// One decoded summon cast: everything a renderer needs to draw the creature a
+/// Seru-magic spell summons and play the clips it performs.
+#[derive(Debug, Clone)]
+pub struct SummonCast {
+    /// Action id (`actor[+0x1DF]`) = the spell-table id of the cast.
+    pub spell_id: u8,
+    /// The attack-name string at the actor record's `rec[0]` offset (e.g.
+    /// `"Burning Attack"`, `"Inferno"`). This is the on-disc name of the cast.
+    pub attack_name: Option<String>,
+    /// Element the damage pipeline attributes to the cast (record `+0x1D`).
+    pub element: u8,
+    /// `true` for the four-slot big-summon band (bespoke mesh, parts in the
+    /// group's raw slot).
+    pub bespoke: bool,
+    /// Slot index of the group's actor record inside `summon.dat`.
+    pub actor_slot: usize,
+    /// Slot indices of the group's `[u32 mode]`-headed FX texture slots - the
+    /// per-cast CLUT rows + 4bpp pages the applier uploads to VRAM while the
+    /// cast plays. Decode one with [`decode_texture_slot`].
+    pub fx_slots: Vec<(usize, TextureSlot)>,
+    /// The creature mesh + its texture pool, shaped as a
+    /// [`MonsterMesh`] so the ordinary battle relocation
+    /// ([`MonsterMesh::battle_render_mesh`] at [`SUMMON_VRAM_SLOT`]) applies -
+    /// which is what the retail installer does too (`FUN_801F19EC` routes the
+    /// record's TMD + pool through the monster mesh installer `FUN_80055468`).
+    pub mesh: MonsterMesh,
+    /// The cast's keyframe clips, in the actor record's `+0x4C` table order.
+    /// Clip 0 is the cast's opening pose loop; the rest are its phases.
+    pub clips: Vec<MonsterAnimation>,
+}
+
+impl SummonCast {
+    /// Total keyframes across every decoded clip - a cheap non-vacuity probe.
+    pub fn total_frames(&self) -> usize {
+        self.clips.iter().map(|c| c.frame_count).sum()
+    }
+}
+
+/// Decode one summon cast out of raw `summon.dat` (extraction PROT
+/// [`SUMMON_PROT_INDEX`]) bytes.
+///
+/// The group's **last** slot is the actor record (`[u32 name][u32 TMD][u32
+/// pool]`, part table at `+0x4C`); for the four-slot big-summon groups the
+/// per-part keyframe entries live in the **previous** slot's part pool instead
+/// of in the record, and the same slot's head is the creature's texture pool.
+pub fn parse_cast(summon_dat: &[u8], spell_id: u8) -> Result<SummonCast> {
+    if !PLAYER_CAST_IDS.contains(&spell_id) {
+        bail!("{spell_id:#04x} is not a player summon cast id");
+    }
+    let actor_slot = crate::summon_creatures::actor_record_slot_index(spell_id);
+    let actor = slot_bytes(summon_dat, actor_slot)?;
+    let rec = actor_record_slot(actor)
+        .ok_or_else(|| anyhow::anyhow!("slot {actor_slot} is not a summon actor record"))?;
+    let bespoke = is_big_summon(spell_id);
+
+    // Where the per-part entries and the creature texture pool come from.
+    let (part_pool, tex_pool): (Vec<u8>, Vec<u8>) = if bespoke {
+        let raw = slot_bytes(summon_dat, actor_slot - 1)?;
+        (
+            raw[RAW_SLOT_PART_POOL_OFFSET..].to_vec(),
+            raw[..RAW_SLOT_PART_POOL_OFFSET].to_vec(),
+        )
+    } else {
+        let n = texture_pool_extent(actor, rec.texture_pool_offset);
+        let pool = actor
+            .get(rec.texture_pool_offset..rec.texture_pool_offset + n)
+            .unwrap_or_default()
+            .to_vec();
+        (actor.to_vec(), pool)
+    };
+
+    let clips: Vec<MonsterAnimation> = rec
+        .part_offsets
+        .iter()
+        .filter_map(|&off| parse_part_entry(&part_pool, off as usize))
+        .collect();
+
+    // Compose a monster-shaped block: the record verbatim (so `tmd_offset`
+    // still points at the TMD) with the trimmed pool appended as the tail the
+    // monster texture decoder expects.
+    let mut block = actor.to_vec();
+    let texture_pool_offset = if tex_pool.is_empty() { 0 } else { block.len() };
+    block.extend_from_slice(&tex_pool);
+
+    let mut fx_slots = Vec::new();
+    if let Some((first, count)) = group_slots(spell_id) {
+        for i in first..first + count {
+            if i == actor_slot {
+                continue;
+            }
+            let Ok(s) = slot_bytes(summon_dat, i) else {
+                continue;
+            };
+            let mode = u32::from_le_bytes(s[..4].try_into().unwrap());
+            if let Some(t) = texture_slot(mode) {
+                fx_slots.push((i, t));
+            }
+        }
+    }
+
+    Ok(SummonCast {
+        spell_id,
+        attack_name: rec.name.clone(),
+        element: actor.get(ACTOR_ELEMENT_OFFSET).copied().unwrap_or(7),
+        bespoke,
+        actor_slot,
+        fx_slots,
+        mesh: MonsterMesh {
+            id: spell_id as u16,
+            block,
+            tmd_offset: rec.tmd_offset,
+            texture_pool_offset,
+        },
+        clips,
+    })
+}
+
+/// A decoded FX texture page: the cast's 4bpp page resolved through one
+/// 16-colour window of its CLUT row.
+#[derive(Debug, Clone)]
+pub struct FxPage {
+    /// Page width in texels (`texture_width_halfwords * 4`).
+    pub width: usize,
+    /// Page height in texels (always 256).
+    pub height: usize,
+    /// Row-major RGBA8; the all-zero BGR555 texel keeps alpha 0.
+    pub rgba: Vec<u8>,
+}
+
+/// Decode a `[u32 mode]`-headed FX texture slot into RGBA through the
+/// `clut_sub`-th 16-colour window of its first CLUT row (the CLUT row is 256
+/// entries = 16 such windows, and a prim picks one with `cba & 0x3F`).
+pub fn decode_texture_slot(slot: &[u8], t: &TextureSlot, clut_sub: u8) -> Option<FxPage> {
+    let (width, height) = (t.texture_width_halfwords * 4, 256usize);
+    let clut_base = 4 + (clut_sub as usize & 0xF) * 32;
+    let pal: Vec<[u8; 4]> = (0..16)
+        .map(|i| {
+            let off = clut_base + i * 2;
+            let raw = slot
+                .get(off..off + 2)
+                .map_or(0, |b| u16::from_le_bytes([b[0], b[1]]));
+            legaia_tim::bgr555_to_rgba8(raw)
+        })
+        .collect();
+    let page = slot.get(t.texture_offset..t.texture_offset + width * height / 2)?;
+    let mut rgba = vec![0u8; width * height * 4];
+    for (texel, px) in rgba.chunks_exact_mut(4).enumerate() {
+        let byte = page[texel / 2];
+        let idx = if texel.is_multiple_of(2) {
+            byte & 0xF
+        } else {
+            byte >> 4
+        };
+        px.copy_from_slice(&pal[idx as usize]);
+    }
+    Some(FxPage {
+        width,
+        height,
+        rgba,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -429,5 +773,123 @@ mod tests {
     fn parse_rejects_bad_length() {
         assert!(parse(&[0u8; 0x10801]).is_err());
         assert!(parse(&[]).is_err());
+    }
+
+    #[test]
+    fn cast_groups_tile_the_summon_file_exactly() {
+        // 25 three-slot groups then 7 four-slot ones, back to back, ending on
+        // the file's last slot. A gap or an overlap here would mean a cast
+        // reads another cast's record.
+        let mut cursor = 0usize;
+        for id in PLAYER_CAST_IDS {
+            let (first, count) = group_slots(id).expect("every cast id has a group");
+            assert_eq!(
+                first, cursor,
+                "group for {id:#04x} starts where the last ended"
+            );
+            assert_eq!(count, if is_big_summon(id) { 4 } else { 3 });
+            // The actor record is always the group's final slot.
+            assert_eq!(
+                crate::summon_creatures::actor_record_slot_index(id),
+                first + count - 1,
+                "actor record is the last slot of {id:#04x}'s group"
+            );
+            cursor += count;
+        }
+        assert_eq!(cursor, SUMMON_SLOT_COUNT);
+        assert!(group_slots(0x80).is_none());
+        assert!(group_slots(0xA1).is_none());
+    }
+
+    #[test]
+    fn big_summon_raw_slot_regions_tile_the_slot() {
+        assert_eq!(
+            RAW_SLOT_CLUT_BYTES + RAW_SLOT_PAGE_BYTES + RAW_SLOT_PART_POOL_BYTES,
+            SLOT_BYTES
+        );
+        assert_eq!(RAW_SLOT_PART_POOL_BYTES, 0x8620);
+        // The raw slot's head is a monster-shaped texture pool byte-for-byte,
+        // which is why the ordinary battle relocation applies to it.
+        assert_eq!(
+            RAW_SLOT_CLUT_BYTES,
+            crate::monster_archive::CLUT_REGION_BYTES
+        );
+        // ... at monster battle slot 2, whose page origin is the (448, 256)
+        // FUN_801F12D0 case 6 hardcodes.
+        assert_eq!(
+            crate::monster_archive::monster_page_origin(SUMMON_VRAM_SLOT),
+            (448, 256)
+        );
+    }
+
+    #[test]
+    fn texture_pool_extent_picks_the_page_stride_not_the_slot_tail() {
+        // A pool whose used bytes fit the narrow page must report the narrow
+        // extent even though the slot runs on for tens of KB of zero padding.
+        let mut slot = vec![0u8; SLOT_BYTES];
+        let pool_off = 0x4000;
+        for b in slot[pool_off..pool_off + RAW_SLOT_CLUT_BYTES + NARROW_PAGE_BYTES].iter_mut() {
+            *b = 0x21;
+        }
+        assert_eq!(
+            texture_pool_extent(&slot, pool_off),
+            RAW_SLOT_CLUT_BYTES + NARROW_PAGE_BYTES
+        );
+        // One more used byte tips it into the wide layout.
+        slot[pool_off + RAW_SLOT_CLUT_BYTES + NARROW_PAGE_BYTES] = 1;
+        assert_eq!(
+            texture_pool_extent(&slot, pool_off),
+            RAW_SLOT_CLUT_BYTES + WIDE_PAGE_BYTES
+        );
+        // A pointer landing past the record's data is an empty pool.
+        let empty = vec![0u8; SLOT_BYTES];
+        assert_eq!(texture_pool_extent(&empty, pool_off), 0);
+    }
+
+    #[test]
+    fn unpack_pose_reads_the_twelve_bit_layout() {
+        // Low bytes at [0,1,3,4,6,7]; high nibbles packed into [2,5,8] - the
+        // low nibble of the packing byte belongs to the FIRST field of its
+        // pair, the high nibble to the second.
+        // b[2] = 0x18 -> tx high nibble 0x8 (sign bit set), ty high nibble 0x1.
+        let b = [0x01, 0x02, 0x18, 0x03, 0x04, 0x00, 0x05, 0x06, 0x00];
+        let p = unpack_pose(&b);
+        assert_eq!(p.tx, -2047, "0x801 sign-extends negative");
+        assert_eq!(p.ty, 0x102, "high nibble 1 makes a positive 12-bit value");
+        assert_eq!(p.tz, 3);
+        // Rotations are unsigned 12-bit angles, never sign-extended.
+        assert_eq!((p.rx, p.ry, p.rz), (4, 5, 6));
+        let hi = [0x00, 0x00, 0x00, 0x00, 0xFF, 0xF0, 0x00, 0x00, 0x00];
+        assert_eq!(unpack_pose(&hi).rx, 0xFFF, "12-bit angle stays unsigned");
+    }
+
+    #[test]
+    fn parse_part_entry_needs_a_stream_that_fits() {
+        // parts=2, frames=2 -> 36 bytes of pose data must be present.
+        let mut pool = vec![0u8; PART_STREAM_OFFSET + 2 + 2 * 2 * PART_POSE_STRIDE];
+        pool[0] = 0x20; // action tag
+        pool[PART_RATE_OFFSET] = 2;
+        pool[PART_STREAM_OFFSET] = 2;
+        pool[PART_STREAM_OFFSET + 1] = 2;
+        let anim = parse_part_entry(&pool, 0).expect("stream fits");
+        assert_eq!((anim.action_id, anim.rate), (0x20, 2));
+        assert_eq!((anim.part_count, anim.frame_count), (2, 2));
+        assert_eq!(anim.frames.len(), 2);
+        // Truncate by one byte and the entry must be rejected, not read OOB.
+        pool.pop();
+        assert!(parse_part_entry(&pool, 0).is_none());
+        // A zero part or frame count is an empty entry, not a clip.
+        pool.push(0);
+        pool[PART_STREAM_OFFSET] = 0;
+        assert!(parse_part_entry(&pool, 0).is_none());
+    }
+
+    #[test]
+    fn parse_cast_rejects_ids_outside_the_summon_span() {
+        let file = vec![0u8; SLOT_BYTES * SUMMON_SLOT_COUNT];
+        assert!(parse_cast(&file, 0x80).is_err());
+        assert!(parse_cast(&file, 0xA1).is_err());
+        // In range but the file is filler: the actor record must not parse.
+        assert!(parse_cast(&file, 0x81).is_err());
     }
 }

@@ -1,0 +1,163 @@
+<script src="js/rom-cache.js"></script>
+<script src="js/load-progress.js"></script>
+<script src="js/webgl-math.js"></script>
+<script src="js/webgl-shaders.js"></script>
+<script src="js/webgl-tmd.js"></script>
+<script src="js/mesh-view.js"></script>
+<script src="js/summon-view.js"></script>
+
+<style>
+.magic-status { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.82rem; }
+.magic-stage { margin-top: 0.75rem; }
+canvas.magic-canvas {
+  width: 100%; max-width: 720px; height: 440px; display: block;
+  background: radial-gradient(ellipse at 50% 42%, #2b2b44 0%, #14142a 78%);
+  border: 1px solid var(--border, #2a2d55); border-radius: 8px;
+  cursor: grab; touch-action: none;
+}
+canvas.magic-canvas:active { cursor: grabbing; }
+.magic-controls { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; margin: 0.6rem 0 0; }
+.magic-fit-label {
+  display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer;
+  color: var(--text-muted); font-family: var(--font-mono); font-size: 0.82rem;
+}
+.magic-now { margin-top: 0.5rem; font-weight: 600; }
+.magic-note { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.8rem; min-height: 1.2em; }
+.summon-clips { margin-top: 0.5rem; display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.summon-clips:empty { display: none; }
+.summon-clip-btn {
+  font: inherit; font-size: 0.78rem; padding: 0.15rem 0.55rem;
+  border: 1px solid var(--border, #444); border-radius: 999px;
+  background: transparent; color: inherit; cursor: pointer;
+}
+.summon-clip-btn:hover { border-color: var(--accent, #8ab); }
+.summon-clip-btn.summon-clip-playing { border-color: var(--accent, #8ab); font-weight: 600; }
+.summon-fx { margin-top: 0.6rem; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-start; }
+.summon-fx:empty { display: none; }
+canvas.summon-fx-page {
+  width: 128px; height: 128px; image-rendering: pixelated;
+  border: 1px solid var(--border, #2a2d55); border-radius: 4px;
+  background:
+    repeating-conic-gradient(#1b1b28 0% 25%, #12121c 0% 50%) 50% / 12px 12px;
+}
+.summon-grid {
+  display: grid; gap: 0.55rem; margin-top: 0.6rem;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+}
+.summon-card {
+  display: flex; flex-direction: column; gap: 0.15rem; text-align: left;
+  font: inherit; color: inherit; cursor: pointer;
+  padding: 0.5rem 0.65rem; border-radius: 7px;
+  border: 1px solid var(--border, #2a2d55); background: transparent;
+}
+.summon-card:hover { border-color: var(--accent, #8C88EC); }
+.summon-card.summon-card-playing { border-color: #F4B41A; box-shadow: 0 0 0 1px #F4B41A inset; }
+.summon-card-ra { background: linear-gradient(180deg, rgba(140,136,236,0.09), transparent); }
+.summon-card-name { font-weight: 700; font-size: 1.02rem; }
+.summon-card-attack { color: var(--text-muted, #9a96b8); font-size: 0.88rem; }
+.summon-card-meta { display: flex; gap: 0.5rem; font-family: var(--font-mono); font-size: 0.75rem; }
+.summon-id { color: var(--text-dim); }
+.summon-card-sub { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.72rem; }
+.summon-placeholder { color: var(--text-dim); }
+body.magic-live .summon-placeholder { display: none; }
+/* The progress bar fades out after a load, so the host's own text comes back.
+   Swap the "no disc loaded" line for the live one instead of leaving a
+   contradiction under a loaded disc. */
+body.magic-live .magic-status-idle { display: none; }
+</style>
+
+<header class="page-header">
+  <div class="breadcrumb"><a href="index.html">home</a> &middot; seru magic</div>
+  <h1>Seru Magic &amp; Summons</h1>
+  <p class="lede">
+    Every Seru-magic cast in the game, animated. Load your own disc image and each spell plays the creature it summons - the real model, the real textures, the real on-disc keyframes - including the seven Ra-Seru and Sim-Seru summons: Meta, Ozma, Terra, Horn, Jedo, Palma and Mule.
+  </p>
+</header>
+
+<div class="disc-bar">
+  <label for="magic-file">Disc:</label>
+  <input type="file" id="magic-file" accept=".bin,.DAT,.dat">
+  <span class="magic-status" id="magic-status"><span class="magic-status-idle">No disc loaded - provide a <code>.bin</code> Mode2/2352 image (or a raw <code>PROT.DAT</code>) and every cast below becomes playable.</span><span id="magic-status-live"></span></span>
+</div>
+
+<section class="doc-section" id="stage">
+  <h2>Watch the cast</h2>
+  <div class="magic-controls">
+    <label class="magic-fit-label" title="Off: frame the summon on the cast's opening pose, so the body fills the canvas. On: frame the whole cast, so a summon that flies in from off-screen stays visible - at the cost of drawing it very small, because these casts travel a long way.">
+      <input type="checkbox" id="magic-fit-toggle"> frame the whole cast
+    </label>
+  </div>
+  <div class="magic-stage" id="magic-stage" hidden>
+    <canvas id="magic-canvas" class="magic-canvas" width="720" height="440"></canvas>
+    <div class="summon-clips" id="magic-clips"
+         title="The cast's phases - the per-part keyframe entries in the summon's actor record, in the record's own table order. 'whole cast' plays them back to back."></div>
+    <div class="magic-now" id="magic-now"></div>
+    <div class="magic-note" id="magic-note"></div>
+    <div class="summon-fx" id="magic-fx"
+         title="The cast's own FX texture pages - the 4bpp pages summon.dat streams into VRAM while the spell plays, decoded through their CLUT row."></div>
+  </div>
+</section>
+
+<section class="doc-section" id="ra-seru">
+  <h2>Ra-Seru &amp; Sim-Seru summons</h2>
+  <p>
+    The seven big summons. Each is a <strong>bespoke</strong> body - unlike every other Seru-magic cast, its model matches no enemy in the monster archive, and its texture pool and keyframes live in a separate slot of its own group. Click one to orbit it.
+  </p>
+  <p class="summon-placeholder">Meta &middot; Ozma &middot; Terra &middot; Horn &middot; Jedo &middot; Palma &middot; Mule - load a disc to see them.</p>
+  <div class="summon-grid" id="magic-gallery"></div>
+</section>
+
+<section class="doc-section" id="seru-magic">
+  <h2>Seru magic</h2>
+  <p>
+    The rest of the player Seru-magic block. Each of these summons an ordinary creature from the game's own monster archive - the Gimard spell summons a Gimard - so the model you see here is the same body you fight in the field, performing its cast animation.
+  </p>
+  <p class="summon-placeholder">Load a disc to list every cast.</p>
+  <div class="summon-grid" id="magic-grid"></div>
+</section>
+
+<details class="about-data">
+  <summary>About this data &mdash; where the models and animations come from</summary>
+  <div class="about-body">
+  <h3>The streaming side-band</h3>
+  <p>
+    A Seru-magic cast is not resident: the battle engine streams it off the disc mid-fight, in fixed 66&nbsp;KB slots of <code>\data\battle\summon.dat</code>, while the spell plays. Each cast owns a group of slots - texture pages first, then a <em>summon-creature actor record</em> holding the creature's model, its texture pool, and a table of per-part keyframe streams. This page decodes exactly that, entirely in your browser.
+  </p>
+  <h3>Why the seven were different</h3>
+  <p>
+    Casts <code>0x81</code>-<code>0x99</code> reuse an ordinary enemy body - their model is byte-identical to a record in the monster archive, so a summon can be resolved to a creature id. The seven Ra-Seru / Sim-Seru summons cannot: their groups are four slots wide instead of three, their model matches nothing in the archive, and their texture pool and per-part keyframes live in the group's extra raw slot rather than in the record. That is the split this page's decoder handles, and it is what the summon's own identity is pinned on here - each cast carries its attack name as plain text on the disc (Meta's is "Inferno", Ozma's is "Voltagor"), and the record's element byte independently agrees.
+  </p>
+  <h3>Shading</h3>
+  <p>
+    Retail applies no light source to these bodies: a textured primitive draws as <code>texel &times; colour / 128</code> using the model's own baked colour word. This page uploads that per-vertex colour stream and does the same - so what you see is the game's shading, not a viewer's.
+  </p>
+
+<section class="doc-section" id="related">
+  <h3>Under the hood</h3>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="formats/summon-readef.html">summon.dat / readef.DAT</a>
+    <a href="formats/spell-table.html">Spell table</a>
+    <a href="formats/monster-animation.html">Monster animation</a>
+    <a href="subsystems/effect-vm.html">Effect VM</a>
+    <a href="subsystems/battle-action.html">Battle action</a>
+  </div>
+</section>
+  </div>
+</details>
+
+<script>
+/* magic.html - the summon viewer's mount point. The lists are rendered from
+ * the disc itself (js/summon-view.js), so without a disc the page stays a
+ * short static description rather than claiming models it cannot show. */
+(function () {
+  if (!window.SummonViewerApp) return;
+  window.SummonViewerApp.mount({
+    file: 'magic-file', status: 'magic-status', statusLive: 'magic-status-live',
+    stage: 'magic-stage',
+    canvas: 'magic-canvas', now: 'magic-now', note: 'magic-note',
+    clips: 'magic-clips', fx: 'magic-fx', fit: 'magic-fit-toggle',
+    gallery: 'magic-gallery', grid: 'magic-grid',
+  });
+})();
+</script>
