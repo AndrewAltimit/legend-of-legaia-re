@@ -45,17 +45,21 @@ continuous playthrough and the report says so; what it does measure honestly is
 "code some pad-driven run entered" versus "code no pad-driven run entered".
 
 Usage:
-    # consume existing exports - one per ladder, union reported
-    scripts/ci/replay-port-coverage.py \\
-        --json target/cov-critical-path.json \\
-        --json target/cov-menu.json \\
-        --json target/cov-minigame.json
+    # produce one export per ladder (slow: instrumented release build of the
+    # engine crates). One export each rather than one multi---test run: the
+    # per-ladder table is only possible when the exports are separate, and
+    # that table is what makes dropping a ladder a visible cost.
+    for t in critical_path_replay menu_replay minigame_replay v0_1_playthrough; do
+        cargo llvm-cov --release -p legaia-engine-shell \\
+            --test "$t" --json --output-path "target/cov-$t.json"
+    done
 
-    # produce them first (slow: instrumented release build of the engine
-    # crates; one build serves every --test in the same invocation)
-    cargo llvm-cov --release -p legaia-engine-shell \\
-        --test critical_path_replay --test menu_replay --test minigame_replay \\
-        --json --output-path target/replay-cov.json
+    # then join them - the headline is the union
+    scripts/ci/replay-port-coverage.py \\
+        --json target/cov-critical_path_replay.json \\
+        --json target/cov-menu_replay.json \\
+        --json target/cov-minigame_replay.json \\
+        --json target/cov-v0_1_playthrough.json
 
 Skips (exit 0) when every coverage JSON is absent, so a disc-free or
 coverage-toolless CI run is a pass, matching the `LEGAIA_DISC_BIN` convention.
