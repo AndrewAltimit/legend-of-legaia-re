@@ -1117,20 +1117,20 @@ pub const TALLY_DIVISOR_MID: i32 = 2;
 /// the tally to its end state.
 // PORT: FUN_801d6710 (tally drain step; the doc's "digit drawer" reading is
 // wrong - this function draws nothing, it is the per-frame drain rate)
+// REF: FUN_801d14b0 (the same routine linked into the PROT 0977 hub overlay)
 // Wired: [`BakaTally::tick`] (the port of `FUN_801d239c`) calls this for
 // every counter step, and [`BakaFight`] runs a tally once the match is
 // decided, so the drain rate paces the prize actually reaching party gold.
+//
+// `FUN_801D6710` and the hub overlay's `FUN_801D14B0` are **one routine linked
+// twice**: the two dumps are 24 instructions each and agree opcode for opcode
+// and register for register, differing only in the `lui`/`lw` pair that loads
+// the bypass flag (`DAT_801DBF00` here, `DAT_801D1AB4` there) and in the
+// relocated branch targets. So the port holds one implementation and this entry
+// delegates to it - the shape the `sin_4096` incident argues for, where two
+// reproductions of one table disagreed and nothing compared them.
 pub fn tally_drain_step(remaining: i32, skip: bool) -> i32 {
-    if skip {
-        return remaining;
-    }
-    if remaining > TALLY_FAST_THRESHOLD {
-        return remaining / TALLY_DIVISOR_FAST;
-    }
-    if remaining < TALLY_SLOW_THRESHOLD {
-        return 1;
-    }
-    remaining / TALLY_DIVISOR_MID
+    crate::other_game_overlay::step_scale(remaining, skip)
 }
 
 /// Run one counter of the tally to empty, returning the per-frame steps it
@@ -1312,23 +1312,26 @@ fn mips_scale(value: i32, factor: i32, shift: u32) -> i32 {
     p >> shift
 }
 
-// NOT WIRED: **the two sources the earlier reason called missing both exist.**
-// `legaia_asset::baka_opponents::parse_baka_hud` is called by the play window
-// (`window/minigames.rs`, which stages the 51 records for the duel) and by the
-// browser duel page, and that page also decodes the PROT 1203 art pack the
-// widgets sample. The port already hands both hosts retail's whole argument
-// tuple: `BakaChrome` emits one
-// [`ChromeDraw`](crate::baka_fighter_chrome::ChromeDraw) per call of this
-// emitter, carrying the same `(widget, x, y, brightness, size)`, and the play
-// window resolves its `u` column through
-// [`crate::baka_fighter_chrome::glyph_u`].
-//
-// What has no consumer is only the last step - the POLY_GT4 assembly itself.
-// The play window draws each `ChromeDraw` as font text and the browser page
-// composes its own quads in the page's GL layer, so nothing asks for a
+// NOT WIRED: what has no consumer is the last step - the POLY_GT4 assembly
+// itself. The play window draws each `ChromeDraw` as font text and the browser
+// page composes its own quads in the page's GL layer, so nothing asks for a
 // [`HudWidgetQuad`]. This is the same shape as the dome HUD emitters in
-// `legaia_engine_ui::other_game_hud`: a Rust-side quad sink is one gap across
-// three minigames, not three gaps.
+// `legaia_engine_ui::other_game_hud` and as [`crate::dance::dancer_emit`]: **a
+// Rust-side quad sink is one gap across three minigames, not three gaps**, and
+// the sink is not a wrapper - it needs a texel source resident in engine VRAM
+// on the native side and a quad-shaped request in the page's JavaScript on the
+// browser side, neither of which exists.
+//
+// (Everything *upstream* of that step is present, which is why this row reads
+// like ready work and is not. `legaia_asset::baka_opponents::parse_baka_hud` is
+// called by the play window - `window/minigames.rs` stages the 51 records for
+// the duel - and by the browser duel page, which also decodes the PROT 1203 art
+// pack the widgets sample; and the port already hands both hosts retail's whole
+// argument tuple, `BakaChrome` emitting one
+// [`ChromeDraw`](crate::baka_fighter_chrome::ChromeDraw) per call of this
+// emitter with the same `(widget, x, y, brightness, size)`, the play window
+// resolving its `u` column through
+// [`crate::baka_fighter_chrome::glyph_u`].)
 /// PORT: FUN_801d5ed0 - the Baka Fighter HUD textured-quad emitter.
 ///
 /// `FUN_801d5ed0(x, y, id, brightness, size)` draws widget `id` of the

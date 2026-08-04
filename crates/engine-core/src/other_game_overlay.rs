@@ -32,12 +32,21 @@
 //! [`crate::muscle_dome::DomeContest`]; the screen's geometry is
 //! `other_game_hud::HUB_SCORE_TALLY_LABELS` / `score_tally_quads`.
 //!
-//! # NOT WIRED
+//! # Wiring status is per item, not per module
 //!
-//! What is still absent is the per-frame *ramp*: both hosts drain a leg's
-//! lanes in one step rather than counting them up over frames, so nothing
-//! calls [`step_scale`] or [`arena_voice_cue`] yet. That is presentation on
-//! top of a model that now exists, not a missing rule.
+//! This module carried a blanket `# NOT WIRED` heading saying that nothing
+//! called either kernel. That is no longer true of [`step_scale`], and a
+//! blanket is read unconditionally by every anchor in the file, so leaving it
+//! would make it assert something false about that one.
+//!
+//! [`step_scale`] is on the live path. `FUN_801D14B0` is not unique to this
+//! overlay: the Baka Fighter overlay links **the same 24 instructions** at
+//! `FUN_801D6710`, and that copy paces the end-of-match tally
+//! ([`crate::baka_fighter::BakaTally::tick`]) both hosts run. The port keeps
+//! one implementation of the pair, and it is this one.
+//!
+//! What is still absent is this overlay's *own* driver, and with it
+//! [`arena_voice_cue`]. See that function's tag for the exact ramp.
 
 /// Threshold above which the unslowed step is divided by five.
 pub const STEP_FAST_MIN: i32 = 6;
@@ -63,6 +72,16 @@ pub const STEP_MIN_FLOOR: i32 = 3;
 /// input below `3`, negative ones included, returns `1`.
 ///
 /// PORT: FUN_801d14b0
+// REF: FUN_801d6710 (the Baka Fighter overlay's copy of this same routine)
+// Wired, but not through this overlay's own tick. `FUN_801D6710` is the same
+// 24 instructions linked into the Baka overlay - identical opcode for opcode
+// and register for register, differing only in the `lui`/`lw` pair that loads
+// the bypass flag (`DAT_801D1AB4` here, `DAT_801DBF00` there) and in the
+// relocated branch targets - and [`crate::baka_fighter::tally_drain_step`]
+// delegates here so the port holds one implementation. The live caller is
+// therefore the *Baka* tally, reached from both hosts; the dome hub's own
+// caller `FUN_801CF074` is still unported, so the `boost` argument is only
+// ever the Baka fast-forward latch and never `DAT_801D1AB4`.
 #[inline]
 pub fn step_scale(step: i32, boost: bool) -> i32 {
     if boost {
@@ -155,6 +174,27 @@ pub fn cue_volume(word: u32) -> i32 {
 /// `docs/tooling/stale-not-wired-triage.md`.
 ///
 /// PORT: FUN_801d1288
+// NOT WIRED: the missing thing is one named function, `FUN_801CF074` - the
+// tally tick itself, which is what turns the settled lane values into a
+// per-frame count-up and blips this cue once per counted step. Its shape is
+// fully in the disassembly, so wiring is mechanical rather than exploratory:
+// four staged lanes, each with a fade accumulator (`DAT_801D1ABC` /
+// `..1AC0` / `..1AC4` / `..1AB8`) that advances by the frame delta
+// `DAT_1F800393` and clamps at `0x10`; a lane only starts accumulating once the
+// previous lane's *pending* word (`DAT_801D1ACC` / `..1AD0` / `..1AD4` /
+// `..1AAC`) has emptied; a lane past the clamp moves [`step_scale`] of its
+// remainder per frame and fires this cue on every step. Lanes 0..2 drain into
+// the HP accumulator `DAT_801D1AC8`, lane 3 into the running tally
+// `_DAT_80084440`, and the return word is `1` while anything is still pending.
+// Each lane's clamped accumulator doubles as its row brightness.
+//
+// What that costs is not the tick but the two hosts: both draw the tally at its
+// settled values in one frame (`window/minigames.rs`'s `muscle_interval_timer`
+// arm and the dome page's `score_tally_quads` call), so each has to hold the
+// ramp state and read the counted-up rows instead - and the browser side is a
+// change in the page's JavaScript, not only in the wasm surface. Until then a
+// port of `FUN_801CF074` would itself be inert, which is why the row is left
+// stated rather than half-built.
 pub fn arena_voice_cue(counter: &mut u32, volume_word: u32) -> VoiceAttrCue {
     let voice = CUE_VOICE_BASE | (*counter & (CUE_VOICE_SLOTS - 1));
     let v = cue_volume(volume_word);
@@ -197,6 +237,31 @@ mod tests {
         assert_eq!(step_scale(2, false), 1);
         assert_eq!(step_scale(0, false), 1);
         assert_eq!(step_scale(-9, false), 1);
+    }
+
+    #[test]
+    fn the_baka_tally_drain_rate_is_this_same_kernel() {
+        // `FUN_801D6710` (Baka overlay) and `FUN_801D14B0` (this one) are one
+        // routine linked twice, so the port keeps one implementation. This is
+        // the guard the `sin_4096` incident says was missing when two
+        // reproductions of one table disagreed and nothing compared them: if
+        // the delegation is ever unwound into a second copy, any drift in a
+        // band edge, a divisor or the bypass fails here.
+        use crate::baka_fighter::{
+            TALLY_DIVISOR_FAST, TALLY_DIVISOR_MID, TALLY_FAST_THRESHOLD, TALLY_SLOW_THRESHOLD,
+            tally_drain_step,
+        };
+        assert_eq!(TALLY_FAST_THRESHOLD + 1, STEP_FAST_MIN, "fast band edge");
+        assert_eq!(TALLY_SLOW_THRESHOLD, STEP_MIN_FLOOR, "slow band edge");
+        assert_eq!(TALLY_DIVISOR_FAST, 5);
+        assert_eq!(TALLY_DIVISOR_MID, 2);
+        for v in -40..=400 {
+            assert_eq!(tally_drain_step(v, false), step_scale(v, false), "v={v}");
+            assert_eq!(tally_drain_step(v, true), step_scale(v, true), "v={v}");
+        }
+        for v in [i32::MIN + 1, -1_000_000, 1_000_000, i32::MAX] {
+            assert_eq!(tally_drain_step(v, false), step_scale(v, false), "v={v}");
+        }
     }
 
     #[test]

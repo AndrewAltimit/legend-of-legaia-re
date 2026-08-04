@@ -1378,19 +1378,27 @@ pub fn dance_clip_driver_gate(spin: i16, flags: u32) -> bool {
     spin > 0 || (flags & 0x1000) != 0
 }
 
-// NOT WIRED: **both prerequisites the earlier reason named already exist.**
-// `legaia_asset::dance_art::FACE_RIGS` carries the four rigs' strips and frame
-// tables, `dance_art::face_window_rgba` performs the two `MoveImage` blits, and
-// the browser dance page runs the pair per frame
-// (`web-viewer::minigames_dance::dance_face_rgba`) - so "no face pages
-// resident, no blit pass" is false.
+// NOT WIRED, AND REDUNDANT RATHER THAN MISSING - read the second paragraph
+// before treating this as wirable work.
 //
-// What has no consumer is the *selector*. The host indexes `FACE_RIGS` by a rig
-// id it takes from the disc **cast table** (`dance_cast`'s per-dancer kind,
-// which on the qualifier floor is already `0/2/3`), so it never needs the
-// overlay's hard-coded slot -> rig remap. The two agree on that floor, which is
-// what makes this redundant rather than missing; a caller appears only if a
-// host ever drives the floor by slot index instead of by cast kind.
+// No host needs the *selector*, because every host that stamps a face already
+// holds a rig id and never holds a slot index. The browser dance page resolves
+// its rigs from the disc **cast table** - `castRigs()` in
+// `site/js/minigame-dance.js` maps the mode's spawn records to their
+// `dance_cast` kinds and passes those straight to `drawFace`, which is
+// `LegaiaMinigames::dance_face_rgba(rig, pose)` - and on the qualifier floor
+// those kinds are already `0/2/3`, the exact output of the overlay's hard-coded
+// slot -> rig remap. The two arrive at the same rig from different data, so a
+// caller appears only if a host ever drives the floor by slot index instead of
+// by cast kind. Nothing does today, and nothing needs to.
+//
+// (The blockers an *earlier* reason named here - "no face pages resident, no
+// blit pass" - are indeed long gone: `legaia_asset::dance_art::FACE_RIGS`
+// carries the four rigs' strips and frame tables and `dance_art::face_window_rgba`
+// performs the two `MoveImage` blits, per frame on the browser page. That
+// correction is history, not an invitation: it is the paragraph above that
+// says why the row is still open, and a wire placed on the strength of the
+// correction alone would be a call site with nothing behind it.)
 /// PORT: FUN_801d03c4 - the dancer face-stamp's rig selector. The face blit picks
 /// a per-dancer VRAM strip + eye/mouth frame table by rig index; in the qualifier
 /// (mode 0) the overlay remaps dancer `2 -> 3` and `1 -> 2`, so the rig id equals
@@ -1471,8 +1479,9 @@ pub const fn dance_scene_stage() -> DanceSceneStage {
 /// than saturating it.
 // PORT: FUN_801d387c (the fade-weight prologue)
 // NOT WIRED: the port's dancers are rules records with no `+0x78` beat field
-// and no sprite quad to fade - the same missing dance presentation layer
-// [`dance_face_rig`] names.
+// and no sprite quad to fade - the same pair of gaps [`dancer_emit`] names (a
+// minigame actor record, and a quad sink to draw it into). Not the same row as
+// [`dance_face_rig`], which is blocked on nothing and simply has no work to do.
 pub fn dancer_fade_weight(beat: u16) -> u8 {
     if beat as i32 > 0x4000 {
         return 0;
@@ -1507,8 +1516,18 @@ pub enum DancerEmit {
 
 // NOT WIRED: every arm ends in the hub sprite emitter `FUN_801D2F38` or in a
 // write to an overlay-resident transform template, neither of which the engine
-// has: no dance sprite page is uploaded and no quad emitter is bound to one.
-// Same prerequisite as [`dance_face_rig`] and [`step_mark_effect_spawn`].
+// has - and the two halves of that are separate prerequisites worth keeping
+// apart. (1) **A minigame actor record**: retail's dancer carries `+0x14/+0x16`
+// screen pair, `+0x50` sprite word, `+0x78` beat field and the `+0x90` transform
+// template this dispatch reads and writes; the port's dancers are rules records
+// with none of them. The same record is what [`dance_clip_driver_gate`],
+// [`dancer_fade_weight`] and `baka_fighter_chrome::mirrored_sprite_pass` each
+// wait on, in three different minigames. (2) **A quad sink**: no dance sprite
+// page is resident in engine VRAM (`minigame_fx::dance_quad_draws` already runs
+// per frame with `solid_src: None`) and the browser page composes its quads in
+// JavaScript, so nothing asks a ported emitter for a packet - the same sink
+// `baka_fighter::hud_widget_quad` and `other_game_hud`'s emitters name.
+// [`step_mark_effect_spawn`] needs (1) plus an effect-part pool on top.
 /// PORT: FUN_801d387c - the per-dancer sprite / shadow emit dispatch.
 ///
 /// `mode` selects one of five arms through a jump table; `x` / `y` are the
