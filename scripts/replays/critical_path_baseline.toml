@@ -10,6 +10,7 @@
 #   2  pad-walk town01 south gate -> map01
 #   3  pad-walk map01 across the continent (>= 24 tiles, >= 1 encounter fought)
 #   4  pad-walk map01 -> suimon -> map01 -> keikoku (Ravine)
+#   5  pad-walk the Ravine interior to its far exit (>= 12 tiles walked)
 #
 # Unlike the other progression oracles, this number is denominated in what a
 # player can do, not in what the disc decodes. Raise it only when the run
@@ -23,5 +24,21 @@
 # because both arms of map01 P2[18]'s `0x3F` name the same scene. The probe
 # geometry, the grid decode and the planner lattice are all exonerated against
 # retail - see `handoff/rung4-probe.md` and `docs/subsystems/world-map.md`.
+
+# Rung 5 does NOT clear, and the first draft of it is worth recording because
+# it *did*. It aimed at an exit band 47 tiles away and scored the rung on
+# `Transitioned(_)`: the run reported a clean "entered map01" after walking
+# **two** tiles, because the arrival at keikoku tile (58, 24) sits beside the
+# band it came in through and the route to the far end crosses it. Scoring the
+# goal's distance instead of the walked distance reads identically and measures
+# nothing.
+#
+# Scored on reach and with the arrival band routed around, the leg stalls
+# instead: with those 24 band tiles excluded the flood cannot leave the
+# entrance chamber at all (every exit candidate comes back with an infinite
+# residual), so on this mouth the port's Ravine interior is not reachable by
+# pad. Note which mouth: `portal_tile` picks map01's (64, 68) keikoku portal on
+# smallest residual, not the (53, 93)/(53, 94) pair the spine uses. Whether the
+# seal is the arrival seat, that mouth, or the interior grid is open.
 
 reached = 4

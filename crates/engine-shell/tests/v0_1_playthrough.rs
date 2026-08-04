@@ -377,10 +377,11 @@ fn v0_1_oracle_convergence() {
     // replay's expanded pad stream into `World.input` per frame.
     //
     // This converges against a field-phase retail snapshot (`game_mode
-    // 0x03` -> Field). The scripted-encounter Battle leg needs the scene's
-    // story state seeded so the trigger is armed (a cold boot into record 0
-    // produces no dialogue, and town scenes have a 0% random rate); that is
-    // a separate, tracked milestone. This oracle stops at Field.
+    // 0x03` -> Field), and stops there on purpose. The scripted-encounter
+    // Battle leg needs the scene's story state seeded so the trigger is armed
+    // (a cold boot into record 0 produces no dialogue, and town scenes have a
+    // 0% random rate), which makes it a different scenario with a different
+    // retail anchor - it lives in `v0_1_battle_leg_*` below, not here.
     let pad_stream = replay.expand_pad_stream();
     let oracle_frames = replay.meta.frames.max(MIN_ORACLE_FRAMES);
     let trace = build_engine_mode_trace_field_live(
@@ -440,8 +441,9 @@ fn v0_1_oracle_convergence() {
     // [[expected]] rows pin specific frames to specific scene_modes,
     // aligned with the anchors in `scripts/scenarios.toml`. With the
     // field-live driver these are `Field` rows for the field-phase
-    // scenario; the deferred Battle leg will add a `Battle` row once the
-    // scripted trigger is seeded.
+    // scenario; the Battle rows are pinned by the battle-leg fixture
+    // (`v0_1_battle_leg_mode_trace_matches_expected`), whose driver seeds a
+    // new game so the scripted trigger arms.
     if let Some(d) = replay.diff(&trace) {
         panic!(
             "v0.1 replay fixture drift at frame {}: kind={:?} expected={:?} recorded(scene_mode={}, active_scene={:?})",
