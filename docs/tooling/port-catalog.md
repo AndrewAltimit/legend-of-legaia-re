@@ -598,3 +598,46 @@ carrying item-level information.
 [`stale-not-wired-triage.md`](stale-not-wired-triage.md) carries the worked
 examples, the per-row verdicts, and why the receiver gate must fire only on
 *ambiguous* names.
+
+## The runtime denominator (`replay-port-coverage.py`)
+
+Everything above is computed by the engine about the engine: a static graph
+walked from the host roots, answering *could this be reached*. It cannot
+answer *was it reached*, and because the shared graph is deliberately
+permissive, `live` is an upper bound - the count includes ports reachable only
+through a path no player takes.
+
+`scripts/ci/replay-port-coverage.py` supplies the missing denominator. It joins
+`cargo llvm-cov` output for a replay test against the catalog's
+address → `(file, line)` anchors, resolving each anchor to a function the same
+way [`collect_port_anchors`](#anchors) does (a tag inside a body belongs to the
+enclosing function; a tag above an item to the next one; a `//! PORT:` module
+tag to the whole file). It reports three sets:
+
+| set | meaning |
+|---|---|
+| **inert-entered** | the static graph says no host root reaches it; the run executed it anyway. The graph is wrong or the tag is on the wrong symbol - each row is a finding. |
+| **disclosed-entered** | an anchor carrying a `NOT WIRED:` disclosure that a **passing** oracle executed. Highest priority: an oracle traversing stub code can certify behaviour nothing implements. |
+| **live-unentered** | statically reachable, never reached. Not a defect - the wiring worklist ordered by what a playthrough actually needs. |
+
+Produce the input with an instrumented run, then join:
+
+```bash
+cargo llvm-cov --release -p legaia-engine-shell \
+    --test critical_path_replay --json --output-path target/replay-cov.json
+scripts/ci/replay-port-coverage.py --json target/replay-cov.json
+```
+
+The join needs no source edits - the `// PORT:` tags already carry the
+address→symbol mapping, and coverage supplies execution counts against the same
+`(file, line)` coordinates.
+
+Two properties to keep in mind when reading the output. **`live-unentered` is
+scoped to how far the replay gets**, so it is a worklist and never a defect
+count; a rung the ladder cannot clear silently widens it. And
+**`--fail-on-disclosed` is the only gateable set** - the other two move with
+replay coverage, so ratcheting them would punish extending the run.
+
+Requires `cargo-llvm-cov` and the `llvm-tools-preview` component; the script
+skips (exit 0) when the JSON is absent, so a CI run without the coverage
+toolchain is a pass.

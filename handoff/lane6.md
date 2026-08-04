@@ -99,15 +99,70 @@ inputs, and the question is which input is wrong. Ruled out already:
 - **Not the encounter path** — fixed, 10 fought and survived.
 - **Not the pad remap** — see above.
 
+### Correction: the residual table is not "walls only"
+
+The table above was reported as a flood with "walls only (no props, no portal
+hazards)". That is wrong about its own instrument: `plan_path` rejects a step on
+`field_dir_blocked` **or** `field_actor_dir_blocked`, and the caller passes the
+hazard set - so those residuals were measured with props, NPCs and hazards all
+live. The correction matters because it is what made prop colliders look like
+the lead candidate.
+
+An ablation now runs under `LEGAIA_CPR_ABLATE=1` (`ablate_rung4_inputs` in the
+replay test), clearing one input at a time and re-flooding to all six mouths:
+
+| variant | best residual |
+|---|---|
+| as-is (all inputs live) | 54 |
+| hazards cleared | 54 |
+| props cleared | 54 |
+| props + hazards cleared | 54 |
+| props + NPCs + hazards (walls only) | 54 |
+
+Identical in every variant. **Prop colliders, NPC boxes and portal hazards are
+all falsified as the seal** - the walkability grid alone accounts for it, and
+candidate 1 below is closed.
+
+### What the ablation replaced it with
+
+- The reachable pocket from the `(96, 25)` arrival is **13,700 sub-cells,
+  bounding box tiles `(47, 13)..(105, 63)`** - bounded at `z = 63` across its
+  whole width, while all six `keikoku` mouths sit at `z >= 68`.
+- The terrain there is **ragged authored landscape, not a straight artificial
+  edge**, and the `x = 64` corridor is open end to end: `field_tile_is_wall`,
+  `field_dir_blocked(Z+)` and `field_actor_dir_blocked` all read clear at every
+  32-unit cell from `z 62.0` to `z 69.3`. The flood does not fail to cross the
+  corridor - it never reaches it.
+- The **arrival tile is correct**: `town01`'s `0x3F` names `map01` entry
+  `(96, 25)`, exactly where the player lands. `keikoku` exits to `map01` at
+  `(52, 94)`, so the canonical door is the `(53, 93)` / `(53, 94)` mouth pair -
+  but `portal_tile` picks `(64, 68)` because it scores the smallest residual.
+- **The spine shape is right.** `scripts/replays/chapter1_spine.toml` pins
+  `town01 -> map01 -> keikoku` with no intermediate scene, so the `suimon`
+  pass-through reading (candidate 3) is not the spine route. `suimon`'s only
+  scene-change back to `map01` carries entry tile `(0, 0)`.
+- `map01`'s MAN carries **11 `0x4C` nibble-7 collision paints** inside `P1[0]`,
+  two of them sub-0 "clear walls" over `cols 55..70, rows 43..61` and
+  `cols 70..89, rows 37..49` - the band between the pocket and the south. Under
+  a run instrumented at `paint_field_collision`, **six paints fire and all six
+  are `town01`'s gate area** (`cols 21..30, rows 44..48`); none of `map01`'s do.
+  `map01`'s entry script *is* loaded (the earlier "no load" reading was a
+  logging artifact - `load_field_script_at` runs before
+  `set_active_scene_label`, so the load logs under the previous scene's name).
+
+So the open question is now sharp: **either one of `map01`'s flag-gated
+"clear walls" paints is supposed to fire at chapter-1 story state and does not,
+or the base grid decode seals a route retail leaves open.** The next
+measurement that discriminates them is a retail `map01` collision grid read
+offline from a save state (recipe below) and diffed against the port's decode -
+not another port-side flood.
+
 Candidates for whoever picks this up, roughly in order:
 
-- The **prop colliders on an overworld scene**. Retail's `FUN_801CF754` does
-  put placed objects in the collision candidate list, so their presence is not
-  by itself wrong — but `solid` defaults to true for every placement with no
-  `31 00`, and a ±80 box on overworld-scale scenery may be sealing corridors
-  retail leaves open. Cheapest experiment: rerun the ladder with
-  `field_prop_colliders` cleared on world-map scenes and see whether the flood
-  connects.
+- ~~The **prop colliders on an overworld scene**.~~ **Closed** by the ablation
+  above: clearing all six changes no residual. Retail's `FUN_801CF754` does put
+  placed objects in the collision candidate list, so their presence is not wrong
+  either; they are simply not what seals this route.
 - The **walkability-grid decode for a `map\d\d` scene**. `field_tile_is_wall`
   indexes `z >> 6` into the `0x12000`-byte `.MAP` block's `+0x4000..+0x8000`
   region. If an overworld map's grid has a different stride or origin from a
