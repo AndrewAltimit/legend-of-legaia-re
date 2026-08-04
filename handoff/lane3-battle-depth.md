@@ -67,6 +67,55 @@ scene restart (`reset_to_field`). Without it only one parking command could
 ever be measured - whichever ran last - and the other two would be
 indistinguishable from broken.
 
+### Coverage, with its N stated
+
+`cargo llvm-cov -p legaia-engine-shell --test battle_depth_replay` joined
+through `scripts/ci/replay-port-coverage.py`:
+
+| | |
+|---|---|
+| ported anchors | 834 |
+| statically live / **entered by this ladder** | 688 / **143** |
+| statically not-live / entered anyway | 146 / **0** |
+| `NOT WIRED`-disclosed anchors executed | **0** |
+| live, never entered | 461 |
+| not observable in this binary | 108 |
+
+**This is the ladder's own number, not a delta.** The wave brief's figure of
+132 belongs to `critical_path_replay`, a *different* test; computing a real
+"previously-unentered" count needs the union of the two coverage sets, and I
+did not run the critical path under instrumentation. Reporting `143 - 132 = 11`
+would be a subtraction across two different denominators. What is measured
+here: this ladder alone enters 143 live anchors, executes no inert anchor, and
+executes nothing carrying a `NOT WIRED` disclosure.
+
+### Rows the ladder reached the surface of and still never entered
+
+The wiring signal. Render-side rows (`battle_intro_*`, `battle_camera`,
+`battle_hud`) are excluded - this is a headless sim run, so those are expected,
+not findings. What remains is simulation-side code whose surface the pad
+*did* drive:
+
+| anchor | site | the ladder did |
+|---|---|---|
+| `801d8f10`/`801d9110`/`801d9280`/`801d9594` | `engine-core/src/spell_menu.rs:38-41` | cast twice through the battle magic surface |
+| `801d8a88` `build_attack_target_queue` | `engine-vm/src/battle_action/pool_ops.rs:397` | confirmed target pickers |
+| `801d8d00` `cycle_attack_target` | `engine-vm/src/battle_action/pool_ops.rs:205` | confirmed target pickers |
+| `801db124` `redirect_dead_target` | `engine-vm/src/battle_action/pool_ops.rs:295` | fought with dead monsters present |
+| `80046a20` `battle_gauge` | `engine-vm/src/battle_gauge.rs:3` | charged AP via Spirit |
+| `801cf650` `compute_battle_stats` | `engine-core/src/battle_stats.rs:223` | fought four real battles |
+| `801db8b4` `first_living_monster` | `engine-core/src/battle_round.rs:197` | ran full rounds |
+| `801dba90` `battle_cast_dispatch` | `engine-vm/src/battle_cast_dispatch.rs:6` | cast a spell and a summon |
+| `801dceac` `target_group_range` | `engine-vm/src/battle_target_group.rs:181` | cast a group-capable summon |
+| `801e22c8` `expand_cue_group` | `engine-vm/src/battle_cue_group.rs:134` | cast a spell and a summon |
+
+The `spell_menu.rs` row is the sharpest: the battle magic surface is
+`battle_magic::BattleSpellSession`, and `battle_magic` / `inventory_use` /
+`arts_command_input` / `ap_gauge` do **not** appear in the unentered list at
+all. So `spell_menu.rs` is a parallel module the battle path does not use -
+orphan-module wiring debt of the shape wave 18 catalogued, not a dead
+anchor.
+
 ### Two measurement traps this file walked into first
 
 Both are worth knowing because both produced a *confident wrong answer*, not
