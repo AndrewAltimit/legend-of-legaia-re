@@ -71,24 +71,39 @@ fn load_field_record_without_sentinel_starts_at_zero() {
     assert_eq!(world.field_pc, 0);
 }
 
-/// Field VM op 0x3E with `op0 >= 100` is the scene-transition arm
-/// (`map_id = op0 - 100`). The world's `FieldHostImpl` records the
-/// request in `pending_scene_transition` for `SceneHost::tick` to
-/// drain on the next frame boundary.
+/// Field VM op 0x3E with `op0 >= 100` is the **mode-24 minigame door-warp**,
+/// not a scene change: `sub_id = op0 - 100` selects a code overlay, and the
+/// retail arm calls no scene-change packet at all (`FUN_801DE840` case `0x3e`
+/// at `0x801E078C` stores game mode `0x18` and the sub-id, zeroes the winnings
+/// accumulator, and clears the player flag - nothing else).
+///
+/// The world's `FieldHostImpl` arms the round trip and records the request in
+/// `pending_minigame_warp` for `SceneHost::tick` to drain. It must **not**
+/// touch `pending_scene_transition`: routing the sub-id through the map-id
+/// resolver is what used to warp a player who used a casino cabinet to an
+/// unrelated scene. See `crate::minigame_entry`.
 #[test]
-fn field_scene_transition_writes_pending_map_id() {
+fn field_op_3e_warp_arms_the_minigame_door_not_a_scene_change() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    // Bytecode: opcode 0x3E, op0 = 105 (map_id 5), then 4 padding
-    // bytes (op0 + 4 trailing operand bytes per the dispatcher math).
+    // Bytecode: opcode 0x3E, op0 = 105 (sub_id 5 = the Muscle Dome arena),
+    // then 4 trailing operand bytes per the dispatcher math.
     let bytecode = vec![0x3E, 105, 0, 0, 0, 0];
     world.load_field_script(bytecode);
     let _ = world.tick();
-    assert_eq!(world.pending_scene_transition, Some(5));
+    assert_eq!(world.pending_minigame_warp, Some(5));
+    assert_eq!(
+        world.pending_scene_transition, None,
+        "the door-warp sub-id must not reach the map-id resolver"
+    );
+    // The arm's other retail half: the winnings accumulator is zeroed and the
+    // departure scene is backed up for the return trip.
+    assert_eq!(world.minigame_winnings, 0);
+    assert!(world.minigame_scene_backup.is_some());
 }
 
-/// `op0 < 100` is the field_interact arm - should NOT trigger a
-/// scene transition.
+/// `op0 < 100` is the field_interact arm - should trigger neither a scene
+/// transition nor a door-warp.
 #[test]
 fn field_op_3e_low_op0_does_not_request_scene_transition() {
     let mut world = World::new();
@@ -97,6 +112,7 @@ fn field_op_3e_low_op0_does_not_request_scene_transition() {
     world.load_field_script(bytecode);
     let _ = world.tick();
     assert_eq!(world.pending_scene_transition, None);
+    assert_eq!(world.pending_minigame_warp, None);
 }
 
 /// Field-VM op `0x4C 0xE2` (FMV trigger) records the FMV index in
