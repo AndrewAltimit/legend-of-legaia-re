@@ -150,12 +150,52 @@ candidate 1 below is closed.
   logging artifact - `load_field_script_at` runs before
   `set_active_scene_label`, so the load logs under the previous scene's name).
 
-So the open question is now sharp: **either one of `map01`'s flag-gated
-"clear walls" paints is supposed to fire at chapter-1 story state and does not,
-or the base grid decode seals a route retail leaves open.** The next
-measurement that discriminates them is a retail `map01` collision grid read
-offline from a save state (recipe below) and diffed against the port's decode -
-not another port-side flood.
+### Settled by the retail grid: the data is right, the probe is not
+
+The discriminating measurement has been run. `keikoku_chest_preload`
+(fingerprint `f697ac27`, validated) is a mednafen state parked on **`map01` at
+world `(8266, 8700)` = tile `(64, 67)`** - inside the very `x = 64` corridor the
+port's flood never reaches. Reading its live grid offline (scratchpad
+`_DAT_1f8003ec` = `0x80139530`, grid at main-RAM `0x13d530`) and re-indexing it
+through `field_tile_is_wall`'s exact derivation gives a wall map that is
+**byte-identical to the port's decode** over the whole `x 45..110, z 56..72`
+window, and reports `is_wall = false` at retail's own standing position.
+
+Two conclusions, both firm:
+
+- **The base grid decode is correct.** Candidate 2 is closed.
+- **The paints are not the answer either.** Retail's grid at this (post-keikoku)
+  story state matches the port's *unpainted* grid over the window that map01's
+  two sub-0 "clear walls" paints would cover, so retail has not applied them
+  here. Whether they fire is a separate question and not this one.
+
+So retail reaches `(64, 67)` **on the same collision bytes the port has**, and
+the port's own reachability says it cannot. The seal is therefore in
+`field_dir_blocked` (or in how the planner samples it), not in the data.
+
+Three measurements localise it:
+
+- **657 probe-vs-tile disagreements** on the forward flood's frontier - cells
+  whose neighbour is an open tile by `field_tile_is_wall`, with no prop or NPC,
+  that `field_dir_blocked` still refuses. They are spread across the entire
+  pocket boundary `(47,13)..(105,63)`, not clustered at one pinch point, so the
+  probe is *systematically* stricter than the walls it derives from.
+- **It is not simple probe asymmetry.** Flooding backward from retail's tile
+  reaches 27,376 sub-cells - twice the forward flood's 13,700 - and still never
+  reaches the `(96, 25)` arrival. The two are genuinely separate components
+  under the directional probe, not one component the forward direction cannot
+  enter.
+- The forward pocket is 13,700 sub-cells bounded at `z = 63`; retail's tile sits
+  at `z = 67` in the larger component.
+
+**Next step for whoever picks this up:** diff `field_dir_blocked`'s probe
+geometry against `FUN_801cfe4c`'s disassembly - specifically the lateral spread
+of `FIELD_ACTOR_PROBES` / the leading-edge sample offsets, and whether the
+overworld's 8-units-per-frame step should be sampling at a different reach from
+the field's 2-unit step. Also worth ruling out that the 32-unit 4-connected
+planner lattice is itself the limitation rather than the probe: retail's mover
+is continuous and can slide along a wall in ways a 4-connected BFS cannot
+represent. Both are port-side questions; the disc data is now exonerated.
 
 Candidates for whoever picks this up, roughly in order:
 
@@ -163,7 +203,9 @@ Candidates for whoever picks this up, roughly in order:
   above: clearing all six changes no residual. Retail's `FUN_801CF754` does put
   placed objects in the collision candidate list, so their presence is not wrong
   either; they are simply not what seals this route.
-- The **walkability-grid decode for a `map\d\d` scene**. `field_tile_is_wall`
+- ~~The **walkability-grid decode for a `map\d\d` scene**.~~ **Closed** by the
+  retail grid read above - byte-identical to the port's decode over the whole
+  contested window. Kept for the reasoning: `field_tile_is_wall`
   indexes `z >> 6` into the `0x12000`-byte `.MAP` block's `+0x4000..+0x8000`
   region. If an overworld map's grid has a different stride or origin from a
   town's, the landscape would still *look* plausible while the corridors landed

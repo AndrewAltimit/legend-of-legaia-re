@@ -1180,6 +1180,98 @@ fn ablate_rung4_inputs(host: &mut SceneHost, hazards: &HashSet<(i32, i32)>) {
         );
     }
 
+    // Where does the *directional* probe disagree with the *tile* read?
+    // Retail's own grid for this scene is byte-identical to the port's decode
+    // (read offline from a `map01` save state), and retail parks the player
+    // inside the x=64 corridor this flood never reaches - so the seal is not
+    // the data. Every frontier cell whose neighbour is an open tile the flood
+    // refused to enter is a place `field_dir_blocked` is stricter than the
+    // walls it is derived from.
+    let mut disagreements: Vec<(Cell, usize)> = Vec::new();
+    for &cur in &reached {
+        let (cx, cz) = cell_center(cur);
+        for ((dx, dz), dir) in STEPS {
+            let next = (cur.0 + dx, cur.1 + dz);
+            if next.0 < 0 || next.1 < 0 || reached.contains(&next) {
+                continue;
+            }
+            let (nx, nz) = cell_center(next);
+            if host.world.field_tile_is_wall(nx, nz) {
+                continue; // genuinely walled - not a disagreement
+            }
+            if host.world.field_actor_dir_blocked(cx, cz, dir) {
+                continue; // a prop/NPC, already ablated above
+            }
+            disagreements.push((cur, dir));
+        }
+    }
+    eprintln!(
+        "[ablate] probe-vs-tile disagreements on the flood frontier: {}",
+        disagreements.len()
+    );
+    if let (Some(lo_x), Some(hi_x), Some(lo_z), Some(hi_z)) = (
+        disagreements.iter().map(|(c, _)| c.0).min(),
+        disagreements.iter().map(|(c, _)| c.0).max(),
+        disagreements.iter().map(|(c, _)| c.1).min(),
+        disagreements.iter().map(|(c, _)| c.1).max(),
+    ) {
+        eprintln!(
+            "[ablate]   spread: cells x {lo_x}..{hi_x} z {lo_z}..{hi_z} \
+             = tiles ({},{})..({},{})",
+            lo_x / 4,
+            lo_z / 4,
+            hi_x / 4,
+            hi_z / 4
+        );
+        for (c, dir) in disagreements.iter().take(8) {
+            let (wx, wz) = cell_center(*c);
+            eprintln!(
+                "[ablate]   at cell {c:?} tile ({},{}) world ({wx},{wz}) dir {dir}",
+                c.0 / 4,
+                c.1 / 4
+            );
+        }
+    }
+
+    // Is the probe *asymmetric*? It samples points ahead of the source, so
+    // `A -> B` can block while `B -> A` is clear, and a BFS from the arrival
+    // then cannot enter a region a BFS from the destination would leave. Flood
+    // backward from the tile retail actually parks the player on
+    // (`map01` save state, world (8266, 8700) = tile (64, 67)) and see whether
+    // it reaches the arrival the forward flood started from.
+    let retail_cell = cell_of(8266, 8700);
+    let back: HashSet<Cell> = {
+        let mut seen: HashSet<Cell> = HashSet::new();
+        let mut queue = VecDeque::new();
+        seen.insert(retail_cell);
+        queue.push_back(retail_cell);
+        while let Some(cur) = queue.pop_front() {
+            let (cx, cz) = cell_center(cur);
+            for ((dx, dz), dir) in STEPS {
+                let next = (cur.0 + dx, cur.1 + dz);
+                if next.0 < 0 || next.1 < 0 || seen.contains(&next) {
+                    continue;
+                }
+                if host.world.field_dir_blocked(cx, cz, dir)
+                    || host.world.field_actor_dir_blocked(cx, cz, dir)
+                {
+                    continue;
+                }
+                seen.insert(next);
+                queue.push_back(next);
+            }
+        }
+        seen
+    };
+    eprintln!(
+        "[ablate] backward flood from retail's tile (64,67): {} sub-cells; \
+         reaches the arrival cell {:?}: {}; forward flood reached retail's cell: {}",
+        back.len(),
+        from,
+        back.contains(&from),
+        reached.contains(&retail_cell)
+    );
+
     row("as-is (all inputs live)", host, hazards);
     row("hazards cleared", host, &none);
 
