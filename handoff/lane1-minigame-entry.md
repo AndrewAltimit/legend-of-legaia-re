@@ -189,6 +189,78 @@ measurement: the inline-script runner is reached through
 So the honest reading of rung 2 is **"the door's bytecode drives the port into
 the minigame"**, not "walking up and pressing X does".
 
+## Coverage - with its N
+
+`cargo llvm-cov --release -p legaia-engine-shell --test minigame_replay` joined
+through `scripts/ci/replay-port-coverage.py`:
+
+```
+ported anchors        : 834
+live / entered        : 689 / 146
+not-live / entered    : 145 / 0     (observable 145 / 145)
+NOT WIRED executed    : 0
+live never entered    : 488
+```
+
+**Read that 146 as a different measurement, not a delta.** The join is
+denominated on **one test binary**; `main`'s 132 is `critical_path_replay`'s
+number. Two different tests, two different numbers - subtracting them would be
+meaningless.
+
+### The caveat, measured rather than assumed
+
+The wave brief flagged that a row this join calls "never entered" may well be
+executed by `crates/engine-core/tests/*_minigame_real.rs`, and that an
+unqualified number would mislead. So both were run and joined against the same
+catalog. Rows live **and** observable in at least one of the two binaries:
+
+| module | ladder | `*_minigame_real` | union | live |
+|---|---|---|---|---|
+| `fishing` | 3 | 4 | 4 | 24 |
+| `baka_fighter` | 12 | 13 | 13 | 19 |
+| `dance` | 8 | 12 | 12 | 18 |
+| `baka_hub_actors` | 0 | 0 | 0 | 15 |
+| `muscle_dome` | 8 | 8 | 8 | 12 |
+| `ui_fishing` | 0 | 0 | 0 | 10 |
+| `slot_machine` | 7 | 7 | 7 | 8 |
+| `minigame_*` | 0 | 1 | 1 | 7 |
+| `baka` (other) | 2 | 2 | 2 | 3 |
+| **total** | **40** | **47** | **47** | **116** |
+
+**Union equals `real`. The ladder enters no row the sibling tests did not
+already enter** - its 40 are a strict subset of their 47.
+
+That is the honest headline, and it is not a disappointment: **the ladder's
+product is reachability, not coverage.** Those 47 rows were always executed;
+what no instrument showed was that a player could reach them. Before this lane
+the answer was that they could not - the door warped them to an unrelated
+scene. The catalog number is the wrong denominator for that question, which is
+why the ladder scores rungs rather than rows.
+
+Two corrections fall out. The block is **116-118** live rows, not the ~79 the
+brief carried (the spread is which binary a row is observable in) - re-derive
+before quoting. And the 69 unentered rows are unentered by **both** binaries,
+so they are not "covered elsewhere".
+
+### Rows the ladder reached the surface of and still did not enter
+
+These are the ones worth acting on, and they split into three kinds:
+
+- **`baka_hub_actors` 0/15 - a real wiring gap, and neither binary touches it.**
+  This is the op-`0x49` submode dispatcher (the casino hub / coin counter). The
+  door warp does not go through it and nothing else arms it, so the hub is
+  reached by no path at all, test or player. Distinct from the door work - see
+  residue 2.
+- **`ui_fishing` 0/10 and most of `minigame_*` - observability, not wiring.**
+  Draw-list builders and art / sfx resolvers. Both binaries are headless and
+  build no draw lists, so neither could enter them either way. A renderer-side
+  oracle is the right instrument, not a deeper pad stream.
+- **`fishing` 3-4/24 - both instruments stop too early.** The ladder hooks and
+  reels but never *lands* a fish (its leg ends with the phase still
+  `Fighting`), so the catch, score, point-bank and prize-exchange paths never
+  run; `fishing_minigame_real` adds exactly one row over it. This is the
+  cheapest single gain in the table and it is a gain for **both** instruments.
+
 ## Residue - for the integration pass
 
 Ordered by how much each blocks a player.
