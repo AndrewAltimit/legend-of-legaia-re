@@ -100,6 +100,17 @@ Replace the text from "First, **same-position stacks of curved shells**" up to
 > geometry projects to 1-3 pixel slivers that coincide with each other
 > constantly without saying anything about meshes, hence the `--min-area` floor.
 >
+> **What this evidence does and does not cover.** Each read is one frame, so it
+> is one camera position: a surface outside that view contributes no packet, and
+> its absence from the report is not evidence about it. What makes the result
+> load-bearing anyway is the scale of the negative - a stacked shell would
+> double *many* adjacent surfaces at once, not one, and across 1218 and 971
+> walked packets no surface anywhere on either screen is submitted twice. For
+> cave interiors, whose walls are the dominant on-screen geometry, both shells
+> being off-camera in both frames is implausible. It is not impossible, and a
+> second field-run state per scene at a different camera would retire the
+> caveat.
+>
 > `chitei2` is **not** covered by the state corpus, so its res41/res45 slope is
 > asserted only by the two `jou` scenes' result, not measured directly.
 >

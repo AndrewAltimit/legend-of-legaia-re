@@ -96,8 +96,15 @@ all learned the hard way here:
 draw both copies.** `jouine` and `jouind` field-run frames report **zero**
 screen-coincident groups above 16 px². The only coincidence found is one mesh
 drawn three times in a single texture family (multi-pass alpha), in a different
-OT. `chitei2` is not covered, so its slope inherits the conclusion rather than
-being measured.
+OT.
+
+Limits, stated so nobody relays this as broader than it is: each read is **one
+frame, one camera**, and a surface outside that view contributes no packet. The
+negative carries weight because a stacked shell would double many adjacent
+surfaces at once and none of 1218 + 971 walked packets is doubled anywhere - but
+a second field-run state per scene at a different camera would retire the
+caveat. `chitei2` is not covered at all, so its slope inherits the conclusion
+rather than being measured.
 
 **Thread 1 (teien hedge-base ground fill): BLOCKED, with the blocker pinned.**
 No `teien` field-run state exists. The `field-init` one is mid-fade - three
