@@ -168,14 +168,52 @@ reaches 254 of that frame's 1624 pool packets - see the limitation below - so I
 could not even measure it cleanly. I did **not** answer thread 1 from this, and
 nothing in the engine changed.
 
-### Known limitation: OT detection is not exhaustive
+### 5c. The OT under-read had a cause, and it is fixed
 
-`find_ot_arrays` keys on the `ClearOTagR` empty-bucket signature. It finds the
-live table in every `jou`/`teien` state read here, but in `edteien` the tables it
-finds account for 254 of 1624 pool packets, so at least one table is missed
-(likely one whose buckets are densely enough occupied to erase the signature).
-A frame whose walked count is far below its pool count should be treated as
-under-read, not as a small frame.
+The `edteien` under-read (254 of 1624 packets) was not "a table whose signature
+is erased" - it was a one-word over-extension in `find_ot_arrays`.
+`is_occupied_bucket` accepted **any** word with a zero length byte, so a word
+`0x00002020` sitting directly above a 2048-bucket table joined the run. The head
+is taken as the top of the run, so a single junk word put the head on a
+non-bucket and the entire walk terminated immediately.
+
+Real links point into a libgpu work buffer, which never lives in the first
+64 KiB (that is BIOS and kernel space), so requiring `next >= 0x10000` fixes it.
+`edteien` now walks **2368** packets instead of 254. Regression-checked: `jouine`
+972 and `jouind` 1218, both still zero coincident groups, so thread 2's result is
+unchanged.
+
+The general tell still stands and is documented: a walked count far below the
+pool count means under-read, not a small frame.
+
+### 5d. Thread 1 from `edteien`: still cannot tell, and edteien is disqualified
+
+The coordinator's framing is right - `FUN_801f6d48` is scene-independent shared
+code, so a ground primitive over an `0x0800`-only cell in *any* scene would be a
+finding about the emitter. I could not establish either branch, for two
+independent reasons, and the second one matters more than the first.
+
+**The join cannot be made by count.** Retail's ground pass is not 1:1 with grid
+cells. `edteien` has 400 cells with `0x1000` and 45 `0x0800`-only, so the two
+hypotheses predict 400 and 445 packets - and no texture family in the live chain
+is near either. The largest ground-plausible family (`clut=0x7C40 tpage=0x001A`)
+carries 651 `POLY_FT4`; summing its whole atlas gives 917. Attributing a packet
+to a cell needs the camera transform to forward-project cell centres, which is
+not pinned, so no geometric join was possible either.
+
+**`edteien`'s `0x0800`-only cells are not hedge bases.** Their layout is not
+row-shaped at all: 36 of the 45 form a solid **6x6 block** (rows 46-51 x cols
+40-45) sitting inside the walkable region, 10 more run along row 28, and 3 sit at
+row 6 cols 10-12, far outside the `0x1000` area entirely (which spans rows 28-51,
+cols 31-54). A solid 6x6 block is a raised platform - which is what the bit means:
+the port's own name for `0x0800` is `CELL_ELEVATION_OVERRIDE`. Teien's case is
+hedge *rows* whose cutout texels are what make a missing ground quad visible.
+
+So the bit pattern matches while the **feature** does not, and a raised platform
+would legitimately have its own mesh drawn over it. Even a clean result here
+would not transfer to teien. Recording this so the next wave does not spend a
+session on `edteien` as a stand-in: it is not one. Thread 1's row keeps its
+capture-blocked status with no measured prior added.
 
 ## 6. Decoder defect found and fixed, with a downstream visual consequence
 

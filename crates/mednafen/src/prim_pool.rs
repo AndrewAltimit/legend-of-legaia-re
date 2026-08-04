@@ -599,13 +599,27 @@ pub fn find_ot_arrays(ram: &[u8], ram_base: u32, min_buckets: usize) -> Vec<OtAr
     };
     // A bucket that received prims points somewhere else entirely; accept it as
     // part of the table so an occupied bucket does not split one array in two.
+    //
+    // The lower bound matters more than it looks. Accepting *any* word with a
+    // zero length byte lets the run extend one word past the real table into
+    // whatever data follows - and since the head is taken as the top of the
+    // run, a single over-extension puts the head on a non-bucket and the whole
+    // walk yields nothing. (Observed: a word `0x00002020` directly above a
+    // 2048-bucket table, which silently cost 1600 packets.) A real link points
+    // at a libgpu work buffer, which never lives in the first 64 KiB - that is
+    // BIOS and kernel space.
+    const MIN_LINK: u32 = 0x1_0000;
     let is_occupied_bucket = |w: usize| -> bool {
         let i = w * 4;
         if i + 4 > ram.len() {
             return false;
         }
         let word = read_u32(ram, i);
-        (word >> 24) == 0 && (word & 0x00FF_FFFF) != 0
+        if (word >> 24) != 0 {
+            return false;
+        }
+        let next = word & 0x00FF_FFFF;
+        next >= MIN_LINK
     };
 
     let mut out = Vec::new();
@@ -1255,6 +1269,64 @@ mod tests {
             base + ((buckets - 1) * 4) as u32,
             "head is the highest bucket (reverse-cleared table)"
         );
+    }
+
+    /// A junk word directly above a table must not join the run. The head is
+    /// the top of the detected run, so a single over-extension puts the head on
+    /// a non-bucket and the whole walk yields nothing - a silent total loss, not
+    /// a degraded result. (Observed in a real capture: `0x00002020` above a
+    /// 2048-bucket table cost 1600 packets.)
+    #[test]
+    fn ot_run_does_not_extend_over_a_low_junk_word() {
+        let base = 0x8000_0000u32;
+        let buckets = 128usize;
+        // Table occupies words 0..128; word 128 is junk with a zero length byte.
+        let mut ram = vec![0u8; (buckets + 8) * 4];
+        for i in 0..buckets {
+            let addr = base + (i * 4) as u32;
+            let prev = addr.wrapping_sub(4) & 0x00FF_FFFF;
+            ram[i * 4..i * 4 + 4].copy_from_slice(&prev.to_le_bytes());
+        }
+        let junk = 0x0000_2020u32;
+        ram[buckets * 4..buckets * 4 + 4].copy_from_slice(&junk.to_le_bytes());
+
+        let found = find_ot_arrays(&ram, base, 64);
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            found[0].buckets, buckets,
+            "run must stop at the real top, not swallow the junk word"
+        );
+        assert_eq!(
+            found[0].head,
+            base + ((buckets - 1) * 4) as u32,
+            "head must be the last real bucket"
+        );
+    }
+
+    /// The converse: a legitimately occupied bucket (pointing at a packet in
+    /// the pool, not at its own predecessor) must still count as part of the
+    /// table, or one filled bucket splits a table into two fragments.
+    #[test]
+    fn ot_run_spans_occupied_buckets() {
+        let base = 0x8000_0000u32;
+        let buckets = 128usize;
+        let mut ram = vec![0u8; buckets * 4];
+        for i in 0..buckets {
+            let addr = base + (i * 4) as u32;
+            let prev = addr.wrapping_sub(4) & 0x00FF_FFFF;
+            ram[i * 4..i * 4 + 4].copy_from_slice(&prev.to_le_bytes());
+        }
+        // Bucket 64 received a primitive living far away in a work buffer.
+        let into_pool = 0x000B_31B0u32;
+        ram[64 * 4..64 * 4 + 4].copy_from_slice(&into_pool.to_le_bytes());
+
+        let found = find_ot_arrays(&ram, base, 64);
+        assert_eq!(
+            found.len(),
+            1,
+            "an occupied bucket must not split the table"
+        );
+        assert_eq!(found[0].buckets, buckets);
     }
 
     #[test]

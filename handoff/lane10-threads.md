@@ -57,16 +57,31 @@ of the section with:
 > slice; see
 > [`mednafen-automation.md`](../tooling/mednafen-automation.md#read-a-frames-display-list-libgpu-ordering-table).
 >
-> **The cell configuration itself is confirmed to exist, in a sibling scene.**
-> `edteien` - the epilogue variant of the same garden, drawing the same texture
-> families - has three field-run *mednafen* states, and its live object grid
-> read through the scratchpad holds 400 cells with `0x1000` and **45 with
-> `0x0800` and no `0x1000`**: exactly the shape the thread describes. That
-> settles that the pattern is not a teien-specific authoring accident. It does
-> not answer the thread, because `edteien` is a different scene with its own
-> `.MAP`, and a draw-channel result there is not a result about teien's cells.
+> **`edteien` was tried as a proxy and does not work - do not re-try it.**
+> The emitter is scene-independent shared code, so a ground primitive over an
+> `0x0800`-only cell in any scene would be a finding about the mechanism. The
+> epilogue garden `edteien` has three field-run *mednafen* states drawing
+> teien's own texture families, and its live object grid does hold 400 cells
+> with `0x1000` and 45 with `0x0800` and no `0x1000`. Two things stop it being
+> an answer, and the second disqualifies the scene rather than the attempt.
 >
-> Until then the engine must not grow a speculative fill.
+> The join cannot be made by **count**: retail's ground pass is not 1:1 with
+> cells, so the two hypotheses (400 vs 445 packets) predict values no texture
+> family in the frame is near - the largest ground-plausible family carries 651
+> `POLY_FT4`, its whole atlas 917. A geometric join needs the camera transform
+> to forward-project cell centres, which is not pinned.
+>
+> And `edteien`'s `0x0800`-only cells are **not hedge bases**: 36 of the 45 form
+> a solid 6x6 block inside the walkable region, 10 run along one row, and 3 sit
+> outside the walkable area entirely. A solid block is a raised platform - which
+> is what the bit means, `0x0800` being `CELL_ELEVATION_OVERRIDE`. Teien's case
+> is hedge *rows* whose authored cutout texels are what make a missing quad
+> visible. The bit pattern matches; the feature does not. A raised platform would
+> legitimately carry its own mesh, so even a clean result there would not
+> transfer.
+>
+> Until this is measured in `teien` itself the engine must not grow a
+> speculative fill.
 
 ## 3. `### Coplanar residual tail: same-position curved-shell stacks` - REPLACE
 
