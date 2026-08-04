@@ -994,15 +994,27 @@ not factor into `engine-vm` cleanly:
 | `FUN_801EF014` | `801ef014.txt` | Destination list-picker actor over the tile descriptor `_DAT_8007B450`: counts selectable cells (`+1`), drives a cursor prompt (`FUN_801E9DC8`), commits the pick into `_DAT_8007BB88`, then exits via `ctx[+0x50] = 0x1A` |
 | `FUN_801E3E00` | `overlay_world_map_walk_801e3e00.txt` | Scripted-move actor tick: dispatches on the opcode at `script[ctx[+0x9e]]` (`script = ctx[+0x94]`); op `0` retires (`ctx[+0x10] |= 8`), op `1` rewinds the cursor `ctx[+0x9e]`, op `2` reads three-byte big-endian operands via `FUN_8003CE9C` into a target block (`ctx[+0x74]` and the screen-scroll fields `ctx[+0x16]/+0x3C/+0x3E`) and advances the cursor. A world-map scripted-camera / actor mover; `j 0x801E4420`/`0x801E444C` are shared-tail exits, not calls |
 
-### `FUN_801D5DE0` - world-map tile cursor SM (604 bytes)
+### `FUN_801D5DE0` is not a world-map routine
 
-Entry `(ctx_ptr)` (dump `801d5e20.txt`, entry `801d5de0`). While
-`DAT_801EF0D0 != 0` it walks the per-cell cursor state `_DAT_8007BB98`
-(low 12 bits = selected cell, bit `0x2000`/`0x4000` = mode flags), calls the
-tile drawer `FUN_8002B994` for the highlighted cell, sets `_DAT_8007B454 = 7`,
-and resolves each cell's art id through `DAT_801E4518[...]` keyed by the tile
-descriptor `_DAT_8007B450[+1]`. A cursor / selection-grid renderer, not a
-locomotion controller.
+This page once carried a section calling `FUN_801D5DE0` the world-map tile
+cursor state machine. It is the **casino prize list's row renderer**, resident
+in the menu / save / shop overlay (PROT 0899) - see
+[shop.md](shop.md#row-layout-whose-list-this-is) for the trace. The section is
+kept as a correction because the description it gave was accurate about the
+*bytes* and wrong about the subsystem, which is the failure mode that is hard
+to notice: `DAT_801EF0D0`, `_DAT_8007BB98`, `FUN_8002B994`, `_DAT_8007B454 = 7`
+and `DAT_801E4518` keyed by `_DAT_8007B450[+1]` are all really there. Only the
+label "tile cursor" was invented, and with it the reading of `DAT_801E4518` as
+per-cell art ids rather than the casino prize table it is everywhere else.
+
+The evidence that settles it is that there is no world-map dump of the VA at
+all. The three dumps of `801d5de0` - `801d5e20.txt`, `overlay_menu_801d5de0.txt`
+and `overlay_shop_save_801d5de0.txt` - are byte-identical across all 151
+printed instructions, and the two that carry an image tag both name the menu
+overlay. The untagged one, whose filename this section cited, is named for the
+address that was *requested* rather than the entry it found, and a filename is
+not evidence of a load base
+([dump-corpus-integrity.md](../tooling/dump-corpus-integrity.md)).
 
 ### The Drake round trip (Rim Elm <-> map01 <-> cave01)
 
