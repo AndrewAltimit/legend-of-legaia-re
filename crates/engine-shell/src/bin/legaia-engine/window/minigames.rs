@@ -516,12 +516,23 @@ impl PlayWindowApp {
     /// * a leg opening on a **fresh** contest arms the "Welcome to the
     ///   Muscle Dome!" intro card, then the ROUND banner;
     /// * a leg opening mid-ladder arms the ROUND banner alone;
-    /// * a leg closing while its contest is (or just was) open arms the
-    ///   between-legs INTERVAL + score-tally screen.
+    /// * a leg **closing** arms the between-legs INTERVAL + score-tally
+    ///   screen, but only when the shared cadence rule
+    ///   ([`legaia_engine_core::muscle_dome::leg_boundary_raises_interval`])
+    ///   says retail's hub reaches state `0x0A` - a survived leg with the
+    ///   course not yet exhausted. A lost, run-from or final leg settles
+    ///   instead and raises nothing.
+    ///
+    /// A **turn** boundary arms nothing here, and cannot: the leg stays open
+    /// across turns, so the closing edge never fires. Retail agrees - the turn
+    /// boundary is `ctx[6] = 0x14` inside the battle SM, with the arena hub not
+    /// running ([`MusclePhase::ends_turn`]).
     ///
     /// Retail runs these screens on the hub controllers' own fade / hold
     /// counters (`DAT_801D1A80` and siblings), which are unported; the host
     /// holds each screen for a fixed frame count at full brightness instead.
+    ///
+    /// [`MusclePhase::ends_turn`]: legaia_engine_core::muscle_dome::MusclePhase::ends_turn
     pub(super) fn tick_muscle_hub(&mut self) {
         const INTRO_FRAMES: i32 = 90;
         const ROUND_BANNER_FRAMES: i32 = 120;
@@ -541,7 +552,12 @@ impl PlayWindowApp {
             self.muscle_interval_timer = 0;
         }
         if !leg_open && self.muscle_prev_leg_open && self.muscle_prev_contest_open {
-            self.muscle_interval_timer = INTERVAL_FRAMES;
+            // The leg boundary the arena hub sees. Whether it shows the tally
+            // screen is the shared rule's call, not this host's.
+            let raises = legaia_engine_core::muscle_dome::leg_boundary_raises_interval(
+                world.muscle_contest.as_ref().map(|c| c.state()),
+            );
+            self.muscle_interval_timer = if raises { INTERVAL_FRAMES } else { 0 };
             self.muscle_intro_timer = 0;
             self.muscle_round_banner = None;
         }

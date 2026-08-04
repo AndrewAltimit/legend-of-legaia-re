@@ -7,14 +7,21 @@ engine's disc-gated oracle tests the same way the mednafen `.mc` saves already d
 
 ## What it does
 
-A `.sstate` is `gzip(rawsstate)`, where `rawsstate` is PCSX-Redux's
-protobuf-encoded state. The reader doesn't need the protobuf schema: it gunzips
-the file and locates the 2 MiB main RAM **format-agnostically** by reusing the
-SCUS anchor search ([`legaia_mednafen::extract::main_ram_via_anchor`]) - matching
-a string known to live in the loaded SCUS region (e.g. `h:\prot\cdname.dat`) in
-both the SCUS binary and the decompressed payload to derive the RAM base. (For the
-captured anchors the RAM happens to start at payload offset `0x27`, but the anchor
-search makes the reader robust to that.)
+A `.sstate` holds PCSX-Redux's protobuf-encoded state, **either gzipped or
+bare**. Which one depends on how the state was produced: the emulator's own
+save-state slots are gzipped, while a state written from a Lua probe's snapshot
+call is not - every `captures/**/snap_*.sstate` and `autosave_*.sstate` in this
+repo is bare, ~19 MB each. The reader dispatches on the `1f 8b` magic, so both
+shapes open; treating the format as "always gzip" silently drops most of the
+capture corpus with `invalid gzip header`.
+
+Either way the reader doesn't need the protobuf schema: it locates the 2 MiB
+main RAM **format-agnostically** by reusing the SCUS anchor search
+([`legaia_mednafen::extract::main_ram_via_anchor`]) - matching a string known to
+live in the loaded SCUS region (e.g. `h:\prot\cdname.dat`) in both the SCUS
+binary and the payload to derive the RAM base. (For the captured anchors the RAM
+happens to start at payload offset `0x27`, but the anchor search makes the reader
+robust to that.)
 
 ```rust
 let st = legaia_pcsxr::SaveState::from_path(path)?;       // gunzip + anchor search
@@ -25,15 +32,27 @@ let (x, z) = st.player_pos().unwrap();                     // player+0x14/+0x18 
 
 `SaveState` exposes `main_ram()` + KSEG0 virtual-address readers
 (`u8_at`/`u16_at`/`i16_at`/`u32_at`) plus the convenience accessors above. The
-position fields are read as `i16` - the facing word at `player+0x16` sits between
-`+0x14` (X) and `+0x18` (Z), so a `u32` read would fold it into the coordinate.
+anchors and their readers live in `legaia_mednafen::game_anchors`, shared with
+the mednafen reader so both emulators answer "which scene is this state in?"
+identically; this crate re-exports the constants and delegates. The position
+fields are read as `i16` - the facing word at `player+0x16` sits between `+0x14`
+(X) and `+0x18` (Z), so a `u32` read would fold it into the coordinate.
 
 The **`pcsxr-state`** binary is the CLI face: `info` prints the scene /
-game-mode / player anchors, and `extract` mirrors `mednafen-state extract`
+game-mode / player anchors, `identify` does the same for a batch (mirroring
+`mednafen-state identify`, so `scripts/mednafen/state-index.py` can sweep both
+corpora into one scene index), and `extract` mirrors `mednafen-state extract`
 (same `--start`/`--end`/`--out` flags, same KSEG0 VA semantics) so a
 state-reading script can dispatch on file extension and accept either
 emulator's states - `scripts/mednafen/check-0968-residency.py` does exactly
 that.
+
+One capability difference matters when picking which emulator to capture with:
+a `.sstate` carries **main RAM only**. Mednafen states additionally carry the
+scratchpad (`ScratchRAM.data8`), which is where `_DAT_1F8003EC` - and through it
+the live per-scene collision / object grid - becomes readable offline. A
+question that has to join a display-list read against grid cells therefore needs
+a **mednafen** capture, not a PCSX-Redux one.
 
 ## How it composes
 

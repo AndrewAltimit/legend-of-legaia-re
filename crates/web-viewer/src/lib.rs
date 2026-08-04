@@ -44,6 +44,7 @@ mod scene_geom;
 pub mod sentinel_placements;
 pub mod session_save;
 pub mod sfx_view;
+pub mod summon_view;
 pub mod texture_pack;
 pub mod texture_registry;
 pub mod tmd3d;

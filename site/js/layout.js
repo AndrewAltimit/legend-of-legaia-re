@@ -66,6 +66,7 @@ const NAV = [
       { href: 'shops.html',                     text: 'Shops & vendors',          key: 'shops' },
       { href: 'minigames.html',                 text: 'Minigames',                key: 'minigames' },
       { href: 'arts.html',                      text: 'Tactical Arts',            key: 'arts' },
+      { href: 'magic.html',                     text: 'Seru magic & summons',     key: 'magic' },
       { href: 'monsters.html',                  text: 'Enemy table',              key: 'monsters' },
       { href: 'characters.html',                text: 'Characters',               key: 'characters' },
       { href: 'npcs.html',                      text: 'NPCs',                     key: 'npcs' },
@@ -214,7 +215,7 @@ const NAV = [
 /* Interactive pages get app chrome (no sidebar); everything else is docs. */
 const EXPLORE_KEYS = new Set([
   'home', 'play', 'viewer', 'media', 'tooling/rom-patcher', 'world', 'shops',
-  'minigames', 'arts', 'monsters', 'characters', 'npcs', 'world-overview',
+  'minigames', 'arts', 'magic', 'monsters', 'characters', 'npcs', 'world-overview',
 ]);
 /* NAV sections rendered in the docs sidebar (order preserved). The 'explore'
    section is deliberately absent - those pages live in the rail + home grid. */
@@ -229,7 +230,7 @@ function zoneForKey(key) {
 const EXPLORE_GROUPS = [
   { label: 'play',           keys: ['play', 'minigames'] },
   { label: 'modding',        keys: ['tooling/rom-patcher'] },
-  { label: 'browse the disc', keys: ['viewer', 'media', 'world', 'world-overview', 'characters', 'npcs', 'monsters', 'shops', 'arts'] },
+  { label: 'browse the disc', keys: ['viewer', 'media', 'world', 'world-overview', 'characters', 'npcs', 'monsters', 'shops', 'arts', 'magic'] },
 ];
 
 function exploreNavSections() {
@@ -249,7 +250,7 @@ const RAIL = [
     icon: '<rect x="3" y="8" width="18" height="9" rx="4.5"/><path d="M8 11v3M6.5 12.5h3"/><circle cx="15.5" cy="11.5" r="0.9"/><circle cx="17.8" cy="13.4" r="0.9"/>' },
   { label: 'Mods',   href: 'tooling/rom-patcher.html', match: k => k === 'tooling/rom-patcher',
     icon: '<path d="M4 8h4c3.5 0 4.5 8 8 8h4M4 16h4c1.4 0 2.4-1.1 3.2-2.3M12.8 10.2C13.8 9 14.8 8 16 8h4"/><path d="M18 6l2.5 2L18 10M18 14l2.5 2-2.5 2"/>' },
-  { label: 'Browse', href: 'viewer.html',             match: k => ['viewer', 'media', 'world', 'world-overview', 'characters', 'npcs', 'monsters', 'shops', 'arts'].includes(k),
+  { label: 'Browse', href: 'viewer.html',             match: k => ['viewer', 'media', 'world', 'world-overview', 'characters', 'npcs', 'monsters', 'shops', 'arts', 'magic'].includes(k),
     icon: '<path d="M7 9 12 6l5 3v6l-5 3-5-3z"/><path d="M7 9l5 3 5-3M12 12v6"/>' },
   { label: 'Docs',   href: 'architecture.html',       match: (k, zone) => zone === 'docs',
     icon: '<path d="M4 6.5C5.5 5.5 7.5 5 9 5s3 .5 3 .5V19s-1.5-.5-3-.5-3.5.5-5 1.5zM20 6.5C18.5 5.5 16.5 5 15 5s-3 .5-3 .5V19s1.5-.5 3-.5 3.5.5 5 1.5z"/>' },

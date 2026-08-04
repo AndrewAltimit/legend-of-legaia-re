@@ -548,20 +548,21 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["FieldMenuGate", "SceneMode::Menu", "dialogue_owns_input"],
     },
     {
-        "what": "game-over panel - both hosts must project the live "
-        "`GameOverSession` (its cursor, and the save-scan `continue_enabled`), "
-        "not a pinned pair of literals. The browser drew `(1, false)` for a "
-        "long time, which is a picture of a menu: the cursor never moved and "
-        "Continue was permanently greyed on a host that could already load "
-        "saves. `pattern_same` over the argument list says the two calls must "
-        "agree without saying what they must agree on, so it keeps working if "
-        "the arguments change",
+        "what": "party wipe - both hosts must route it to the title screen "
+        "and nowhere else. Retail's wipe arm has exactly one exit store "
+        "(`game_mode = 0x16` + `_DAT_8007BB00 = 1`), so a host that offers "
+        "the player a row here has invented one. The panel that used to sit "
+        "in this slot was exactly that, and the browser drew it from a pinned "
+        "`(1, false)` while the native window drew it from a live cursor - "
+        "two pictures of a menu that never existed. Pairing the routing "
+        "sites, not the draw sites, is what keeps a second destination from "
+        "reappearing on one host only",
         "sites": {
-            "native": (NATIVE_BOOT_CUTSCENE, "game_over_draws"),
-            "web": (WEB_PLAY_BATTLE, "game_over_draws"),
+            "native": (NATIVE_BOOT_CUTSCENE, "tick_boot_ui"),
+            "web": (WEB_PLAY_BATTLE, "game_over_input"),
         },
-        "mode": "pattern_same",
-        "pattern": r"game_over_draws_for\(\s*[^,]+,\s*(.*?),\s*(?:ui::|legaia_engine_render::)?GAME_OVER_PEN",
+        "mode": "symbols_all",
+        "symbols": ["GameOverOutcome::ReturnToTitle"],
     },
     {
         "what": "BGM start - a music change must install the incoming track "
@@ -1406,6 +1407,13 @@ def run_selftest() -> int:
         else:
             print(f"  FAIL  diag toggle: {label}")
             failures += 1
+    for label, rule, src, want in SELFTEST_RENDER:
+        if _selftest_render_case(rule, src) == want:
+            print(f"  ok    render kernel: {label}")
+        else:
+            verdict = "stayed silent" if want else "fired"
+            print(f"  FAIL  render kernel: {label} - detector {verdict}")
+            failures += 1
     total = (
         len(SELFTEST_WORDS)
         + len(SELFTEST_SCREENS)
@@ -1415,6 +1423,7 @@ def run_selftest() -> int:
         + len(SELFTEST_SIM)
         + len(SELFTEST_PAGE_KEYS)
         + len(SELFTEST_DIAG)
+        + len(SELFTEST_RENDER)
     )
     if failures:
         print(
@@ -1748,6 +1757,317 @@ def check_diag_gates() -> tuple[list[str], int]:
     return problems, additive
 
 
+# --------------------------------------------------------------------------
+# Tier 7 - render kernels: same draw list, same kernel, on every surface
+# --------------------------------------------------------------------------
+#
+# Every tier above measures a UI screen, a constant, a sim injection site, a
+# trait hook or a keyboard table. None of them asks the question that has now
+# shipped five separate bugs: **two surfaces assemble the same kind of draw
+# list and only one of them runs the kernel that makes it correct.**
+#
+# The five, each invisible in a diff because no file held two of the columns:
+# the play page resolved the same EnvDraws as the native shell and never
+# computed the coplanar lifts; the Muscle Dome bodies hand-rolled white vertex
+# streams the converter sweep could not see; `webgl-shaders.js` applied a
+# synthetic Lambert on both its paths; the ground heightfield was left out of
+# the coplanar soup; an occlusion-fade radius was staged at a different value
+# on the browser than the gate it fed (that last one is tier 2's).
+#
+# What makes this tier different from `SIM_PAIRS` is the denominator. A
+# `SIM_PAIRS` row names TWO function bodies by hand, so a THIRD surface that
+# grows the same draw list is outside the measurement by construction - and
+# there are five render surfaces in this tree, not two: the native window, the
+# browser play page, the browser field-scene viewer, and the two minigame
+# venue bakers (dance hall, fishing venue), each of which resolves `EnvDraw`s
+# and instances env-pack meshes exactly like the other three.
+#
+# So the surface here is **derived**: every non-test source under the render
+# roots. A rule states an implication over it - "a file that does X must also
+# do Y" - or a prohibition - "a file that does X may not contain Z". A new
+# surface joins the measurement by existing.
+#
+# Two rule kinds:
+#
+#   requires  a file whose comment-stripped source matches `trigger` must also
+#             match every pattern in `requires`.
+#   forbids   a file matching `trigger` may not match `forbids` inside any
+#             3-line window (the statement scale - these kernels are written
+#             as `self.flat\n    .extend(...)` as often as on one line).
+#
+# Comments are stripped first, in both languages, for the same reason tier 1
+# strips them: a doc comment naming `coplanar_draw_offsets` is prose, not a
+# wiring, and the conservative direction is to under-count "satisfied".
+#
+# `blocked_on` marks a known divergence being closed elsewhere and is
+# validated in both directions exactly like a waiver: a `blocked_on` path that
+# has gone clean FAILS, demanding the entry be deleted. `exempt` is the
+# stronger claim - the rule does not apply to that file at all - and needs a
+# reason about the DATA, not about the schedule.
+
+RENDER_ROOTS = [
+    REPO / "crates" / "engine-shell" / "src" / "bin",
+    REPO / "crates" / "engine-render" / "src",
+    REPO / "crates" / "web-viewer" / "src",
+    REPO / "site" / "js",
+]
+
+RENDER_KERNEL_RULES: list[dict[str, object]] = [
+    {
+        "kernel": "cross-draw coplanar lifts",
+        "why": "a surface that resolves EnvDraws and does not rank their "
+        "coplanar clusters z-fights on every placement/terrain pair that "
+        "meets on one world plane - view-angle-dependently, so it survives a "
+        "diff and any single screenshot taken from the lucky angle",
+        "trigger": r"\bresolve_(?:placed_)?env_draws\b",
+        "requires": [r"\bdraw_plane_summaries\b", r"\bcoplanar_draw_offsets\b"],
+        "blocked_on": {
+            "crates/web-viewer/src/minigames_dance.rs":
+                "the dance-hall venue baker resolves the same two EnvDraw "
+                "layers and instances them itself; it needs the lift map "
+                "threaded through DanceEnv::append_draw",
+            "crates/web-viewer/src/minigames_fishing_scene.rs":
+                "same shape in FishingEnv::append_draw",
+        },
+    },
+    {
+        "kernel": "walk-ground heightfield sink",
+        "why": "the generated ground grid shares its plane with the env "
+        "pack's authored floor art (koin6: both at y=0, different "
+        "tessellations), so a render site that emits the heightfield's "
+        "vertices without GROUND_SINK draws wedge streaks along the grid's "
+        "cell diagonals while every other host is clean",
+        # The EMITTER, not every file that names the type: a log line reading
+        # `hf.positions.len()` is not a render site, and an early draft that
+        # triggered on the type name reported four files that only pass it on.
+        "trigger": r"for\s+\w+\s+in\s+&(?:mut\s+)?hf\.positions\b|\bhf\.positions\.clone\(\)",
+        "requires": [r"\bGROUND_SINK\b"],
+        "blocked_on": {
+            "crates/web-viewer/src/minigames_fishing_scene.rs":
+                "the fishing venue splices the heightfield into the same "
+                "vertex buffer as the env meshes, at its authored height",
+        },
+    },
+    {
+        "kernel": "packet-colour stream fill",
+        "why": "the shader reads `a_flat_rgba` as `texel * rgb * 255/128`, so "
+        "a fabricated stream of white is `texel * 2` - the mesh reads as "
+        "over-lit rather than as having lost its colour word, and the "
+        "accessor tests pass because length parity is not coverage. The one "
+        "legal fill for geometry with no packet colour is the neutral "
+        "constant (`packet_color::NEUTRAL` / `MODULATION_NEUTRAL` = 0x80)",
+        "trigger": r"\bflat_rgba\b|\bpacket_color\b",
+        "forbids": r"\bflat\b[\s\S]{0,140}?\[\s*(?:255u8|255|0x[fF][fF]u8|0x[fF][fF])\s*[;,]",
+        "blocked_on": {
+            "crates/web-viewer/src/minigames_dance.rs":
+                "the dance hall fills both its no-colour-word streams (the "
+                "pure-textured env fallback and the ground heightfield) with "
+                "white; both want NEUTRAL",
+            "crates/web-viewer/src/minigames_fishing_scene.rs":
+                "same two streams in the fishing venue baker",
+        },
+    },
+    {
+        "kernel": "placement tilt composition (Rx*Ry*Rz)",
+        "why": "a placement record carries three authored angles "
+        "(`+0x08` / `+0x0A` / `+0x0C`) and retail composes all three "
+        "(`FUN_80026988`). A surface that reads only the yaw draws every "
+        "tilted object upright: measured over 49 field scenes, 94 of 1667 "
+        "placements tilt, and juui1 tilts all nine of its by a quarter turn "
+        "about X",
+        "trigger": r"\w*placement_rot_y\b",
+        "requires": [r"\w*placement_rot_x\b", r"\w*placement_rot_z\b"],
+        "exempt": {
+            "crates/web-viewer/src/scene_geom.rs":
+                "world-map WALK placements, whose records carry rot_x = "
+                "rot_z = 0 across the retail corpus (see the "
+                "`legaia_asset::field_objects::Placement::rot_x` doc) - the "
+                "yaw-only path is not a shortcut there, it is the data",
+            "site/js/world-overview-app.js":
+                "consumer of the same walk-placement accessors; see above",
+        },
+    },
+]
+
+BLOCK_COMMENT_ANY_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+
+
+def render_sources() -> list[Path]:
+    """Every non-test render-surface source, `.rs` and `.js` alike."""
+    out: list[Path] = []
+    for root in RENDER_ROOTS:
+        if not root.exists():
+            continue
+        for ext in ("*.rs", "*.js"):
+            out.extend(p for p in root.rglob(ext) if not is_test_source(p))
+    return sorted(out)
+
+
+def strip_all_comments(text: str) -> str:
+    """Drop `/* */` and `//` comments - the same conservative direction as
+    tier 1, applied to both languages this tier scans."""
+    return LINE_COMMENT_RE.sub("", BLOCK_COMMENT_ANY_RE.sub("", text))
+
+
+def rule_findings(rule: dict, text: str) -> list[str]:
+    """Findings for one rule against one file's comment-stripped source.
+
+    Empty when the file does not trigger, or triggers and complies. The
+    `forbids` kind reports one entry per offending statement window so the
+    output names the line, not just the file.
+    """
+    trigger = str(rule["trigger"])
+    if not re.search(trigger, text):
+        return []
+    out: list[str] = []
+    for pat in rule.get("requires", []):  # type: ignore[union-attr]
+        if not re.search(str(pat), text):
+            out.append(f"does not reach `{pat}`")
+    forbids = rule.get("forbids")
+    if forbids:
+        lines = text.splitlines()
+        for i in range(len(lines)):
+            window = "\n".join(lines[max(0, i - 2) : i + 1])
+            if re.search(str(forbids), window):
+                out.append(f"line {i + 1}: {lines[i].strip()[:80]}")
+    return out
+
+
+def check_render_kernels() -> tuple[list[str], list[str], list[tuple[str, int, int, int]]]:
+    """Tier 7. Returns (problems, disclosed-blocked notes, per-rule counts).
+
+    A count row is `(kernel, running, blocked, exempt)`: how many surfaces
+    assembling that draw list run the kernel, how many are disclosed as a
+    divergence still being closed, and how many the rule provably does not
+    apply to. The three are printed separately because collapsing them is how
+    a matrix reads clean while a surface is missing.
+    """
+    problems: list[str] = []
+    pending: list[str] = []
+    counts: list[tuple[str, int, int, int]] = []
+    sources = render_sources()
+    texts = {p: strip_all_comments(p.read_text(encoding="utf-8", errors="ignore")) for p in sources}
+    for rule in RENDER_KERNEL_RULES:
+        kernel = str(rule["kernel"])
+        blocked: dict = rule.get("blocked_on", {})  # type: ignore[assignment]
+        exempt: dict = rule.get("exempt", {})  # type: ignore[assignment]
+        clean = 0
+        seen_blocked: set[str] = set()
+        seen_exempt: set[str] = set()
+        for path, text in texts.items():
+            rel = str(path.relative_to(REPO))
+            if not re.search(str(rule["trigger"]), text):
+                continue
+            findings = rule_findings(rule, text)
+            if rel in exempt:
+                seen_exempt.add(rel)
+                if not findings:
+                    problems.append(
+                        f"STALE EXEMPT {kernel} / {rel}: the file now satisfies "
+                        f"the rule, so the exemption claims nothing. Drop it."
+                    )
+                continue
+            if not findings:
+                clean += 1
+                if rel in blocked:
+                    seen_blocked.add(rel)
+                    problems.append(
+                        f"STALE BLOCKED {kernel} / {rel}: the divergence is "
+                        f"closed. Drop the `blocked_on` entry."
+                    )
+                continue
+            detail = "; ".join(findings)
+            if rel in blocked:
+                seen_blocked.add(rel)
+                pending.append(f"{kernel} / {rel}: {blocked[rel]}")
+                continue
+            problems.append(
+                f"RENDER KERNEL {kernel}: {rel} assembles this draw list but "
+                f"{detail}. {rule['why']}."
+            )
+        for rel in blocked:
+            if rel not in seen_blocked:
+                problems.append(
+                    f"STALE BLOCKED {kernel} / {rel}: the file no longer "
+                    f"assembles this draw list (renamed or deleted?). Drop the "
+                    f"`blocked_on` entry."
+                )
+        for rel in exempt:
+            if rel not in seen_exempt:
+                problems.append(
+                    f"STALE EXEMPT {kernel} / {rel}: the file no longer "
+                    f"assembles this draw list. Drop the exemption."
+                )
+        counts.append((kernel, clean, len(seen_blocked), len(seen_exempt)))
+    return problems, pending, counts
+
+
+# Positive control. A rule engine that matched nothing would report every
+# surface clean, which is the failure mode this whole file exists to refuse -
+# so each case pins one direction of one detector against a synthetic source.
+SELFTEST_RENDER: list[tuple[str, dict, str, bool]] = [
+    (
+        "requires: triggering file that reaches the kernel",
+        {"trigger": r"\bresolve_env_draws\b", "requires": [r"\bcoplanar_draw_offsets\b"]},
+        "let (t, _) = resolve_env_draws(&e, &r, lut);\nlet o = coplanar_draw_offsets(&t, &p);",
+        False,
+    ),
+    (
+        "requires: triggering file that does NOT reach the kernel",
+        {"trigger": r"\bresolve_env_draws\b", "requires": [r"\bcoplanar_draw_offsets\b"]},
+        "let (t, _) = resolve_env_draws(&e, &r, lut);\nout.append(t);",
+        True,
+    ),
+    (
+        "requires: non-triggering file is not a finding",
+        {"trigger": r"\bresolve_env_draws\b", "requires": [r"\bcoplanar_draw_offsets\b"]},
+        "fn draw_hud() { let x = 1; }",
+        False,
+    ),
+    (
+        "requires: the kernel named only in a comment does not count",
+        {"trigger": r"\bresolve_env_draws\b", "requires": [r"\bcoplanar_draw_offsets\b"]},
+        "// runs coplanar_draw_offsets later\nlet (t, _) = resolve_env_draws(&e, &r, lut);",
+        True,
+    ),
+    (
+        "forbids: multi-line white fill of a packet-colour stream",
+        {"trigger": r"\bpacket_color\b", "forbids": r"\bflat\b[\s\S]{0,140}?\[\s*(?:255u8|255)\s*[;,]"},
+        "use crate::packet_color;\nself.flat\n    .extend(std::iter::repeat_n([255u8; 4], n).flatten());",
+        True,
+    ),
+    (
+        "forbids: single-line white fill of a packet-colour stream",
+        {"trigger": r"\bpacket_color\b", "forbids": r"\bflat\b[\s\S]{0,140}?\[\s*(?:255u8|255)\s*[;,]"},
+        "use crate::packet_color;\nlet flat = vec![255u8; n * 4];",
+        True,
+    ),
+    (
+        "forbids: a resolved stream is not a finding",
+        {"trigger": r"\bpacket_color\b", "forbids": r"\bflat\b[\s\S]{0,140}?\[\s*(?:255u8|255)\s*[;,]"},
+        "let flat = crate::packet_color::hybrid(&mesh, &shading);",
+        False,
+    ),
+    (
+        "forbids: the textured FLAG byte 255 is not a white fill",
+        {"trigger": r"\bpacket_color\b", "forbids": r"\bflat\b[\s\S]{0,140}?\[\s*(?:255u8|255)\s*[;,]"},
+        "// packet_color\nlet mut flat = Vec::new();\nflat.extend_from_slice(&[c[0], c[1], c[2], 255]);",
+        False,
+    ),
+    (
+        "forbids: a white literal far from any packet-colour stream",
+        {"trigger": r"\bpacket_color\b", "forbids": r"\bflat\b[\s\S]{0,140}?\[\s*(?:255u8|255)\s*[;,]"},
+        "use crate::packet_color;\nlet flat = pc(&m);\nlet a = 1;\nlet b = 2;\n"
+        "let c = 3;\nlet tint = [255u8, 0, 0, 255];",
+        False,
+    ),
+]
+
+
+def _selftest_render_case(rule: dict, src: str) -> bool:
+    return bool(rule_findings(rule, strip_all_comments(src)))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--quiet", action="store_true", help="findings only")
@@ -1834,6 +2154,15 @@ def main() -> int:
                 "ERROR: built-in page-key control failed; a detector that cannot "
                 "tell a page-side keyboard table from an ordinary object field "
                 "proves nothing about the pages below. Run --selftest.",
+                file=sys.stderr,
+            )
+            return 2
+    for _label, rule, src, want in SELFTEST_RENDER:
+        if _selftest_render_case(rule, src) != want:
+            print(
+                "ERROR: built-in render-kernel control failed; a rule engine "
+                "that matches nothing reports every surface clean, which is "
+                "exactly the silence this tier exists to break. Run --selftest.",
                 file=sys.stderr,
             )
             return 2
@@ -1938,6 +2267,12 @@ def main() -> int:
     diag_problems, diag_additive = check_diag_gates()
     problems.extend(diag_problems)
 
+    # The render half: every surface that assembles a given draw list must run
+    # the kernel that makes it correct. The surface is derived, so a new one
+    # joins the measurement by existing.
+    rk_problems, rk_pending, rk_counts = check_render_kernels()
+    problems.extend(rk_problems)
+
     if not args.quiet:
         print(
             f"[ui-drift] engine-ui draw builders: {len(builders)} "
@@ -1962,6 +2297,22 @@ def main() -> int:
             f"({diag_additive} additive - i.e. draw something retail does not "
             f"and so need a default-off twin on both hosts)"
         )
+        print(
+            f"[ui-drift] render kernels checked across "
+            f"{len(render_sources())} render-surface sources: "
+            f"{len(RENDER_KERNEL_RULES)} rules"
+        )
+        # Name every row of the kernel x surface matrix. A bare rule count
+        # cannot tell "three surfaces assemble this list" from "one does and
+        # two were renamed out of the trigger", and the second is how a
+        # derived surface quietly shrinks to nothing.
+        for kernel, running, blocked_n, exempt_n in rk_counts:
+            print(
+                f"[ui-drift] render kernel `{kernel}`: {running} surface(s) "
+                f"run it, {blocked_n} disclosed as blocked, {exempt_n} exempt"
+            )
+        for note in rk_pending:
+            print(f"[ui-drift] render kernel blocked: {note}")
         if web_ahead:
             print(f"[ui-drift] web-ahead (informational): {', '.join(web_ahead)}")
         # Name every native-only builder, waived or not, for the same reason

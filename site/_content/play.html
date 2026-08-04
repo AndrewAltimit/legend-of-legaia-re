@@ -676,10 +676,13 @@
             saveMsg(`Loaded from memory card${scene ? ` - ${scene}` : ''}.`);
             if (sceneKnown(scene) && scene !== active) enter(scene);
           },
-          /* Game over -> Quit: retail returns to the title card. The panel
-           * is a live session on both hosts, so the row actually reaches
-           * here now (it used to be a bare Retry whatever the player
-           * picked). */
+          /* Party wipe -> the title card, which is retail's only answer
+           * here: the wipe arm of FUN_8003AEB0 stores game_mode = 0x16
+           * (CARD INIT) + _DAT_8007BB00 = 1 and the title overlay takes the
+           * screen. There is no chooser to route - the engine holds for the
+           * length of the title's own fade, draws nothing, and fires this
+           * once. The Continue/Retry/Quit panel that used to sit in front of
+           * this hook was an engine invention and is gone. */
           onQuit: () => {
             try { view.stop(); } catch (e) {}
             runBootTitle((outcome) => {

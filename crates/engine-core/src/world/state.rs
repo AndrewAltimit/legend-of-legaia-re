@@ -2327,29 +2327,36 @@ pub struct World {
     /// [`Self::cutscene_narration`] presenter owns - not an actor spawn.
     pub in_cutscene_timeline: bool,
 
-    /// Retail-frame sub-clock accumulator (fixed-point, `RETAIL_FPS` added per
-    /// tick, wrapping at `SIM_HZ`). The sim ticks at 100 Hz, but the narration
-    /// crawl roller's scroll speed is authored in retail's ~60 fps field frames;
-    /// scrolling it once per 100 Hz tick drains the crawl ~1.7x too fast (the
-    /// creation crawl finishes ~5 s early, then the caption + between-crawl
-    /// camera choreography leave a long dead-air gap). [`Self::tick`] advances
-    /// this and derives [`Self::field_frame_step`] so the roller runs at 60 fps.
-    /// NB the cutscene *timeline*'s WAIT_FRAMES stay on the 100 Hz sim clock -
-    /// their frame-count vs rate errors happen to cancel so block 2 lands at
-    /// retail wall-time; pacing them too would push block 2 far too late.
+    /// Monotonic count of sim ticks that ran, advanced once per
+    /// [`Self::tick`]. It is the world's cheapest "a frame actually ran"
+    /// witness - the mode driver's frame-begin-skip test probes it to tell an
+    /// abandoned frame from a live one.
+    ///
+    /// Historically this was a fixed-point phase accumulator bridging a
+    /// claimed 100 Hz sim to retail's 60 Hz display frame. No host ever ticked
+    /// at 100 Hz, so the phase only ever *withheld* retail frames; with the
+    /// 1:1 denomination (see [`Self::tick`]) there is no phase left to carry.
     pub field_frame_accum: u32,
 
-    /// Monotonic count of retail display frames elapsed - incremented on
-    /// every sim tick that sets [`Self::field_frame_step`]. Consumers that
-    /// have to advance something in retail-frame time across a variable
-    /// number of sim ticks (the renderer's cutscene camera glide, whose
-    /// `apply_trigger` is a duration in display frames) diff this rather
-    /// than counting sim ticks.
+    /// Monotonic count of retail display frames elapsed. Consumers that have
+    /// to advance something in retail-frame time (the renderer's cutscene
+    /// camera glide, whose `apply_trigger` is a duration in display frames)
+    /// diff this rather than counting sim ticks.
+    ///
+    /// Under the 1:1 denomination this equals [`Self::frame`]; it stays a
+    /// separate counter because it names a *unit* (retail display frames) that
+    /// the sim-tick counter does not promise.
     pub field_frames: u64,
 
-    /// `1` on the ~60 % of sim ticks that map to a retail field frame, else `0`
-    /// (derived from [`Self::field_frame_accum`] each [`Self::tick`]). Fed to
-    /// the narration roller so the crawl scrolls at retail's 60 fps wall-speed.
+    /// `1` on every sim tick that maps to a retail display frame - which, under
+    /// the 1:1 denomination [`Self::tick`] documents, is every sim tick.
+    ///
+    /// Consumers gate on it to say "this is retail-frame paced": the narration
+    /// roller (whose scroll speed is pinned as 1 px per 6 frames at 60 Hz), the
+    /// effect pool, the escape timer, the CLUT / ambient game-tick banks, the
+    /// timed sound release, and the field-NPC motion legs. It is a *unit*
+    /// marker, not a throttle - a host that re-introduced oversampling would
+    /// make it selective again without any of those call sites changing.
     pub field_frame_step: u16,
 
     /// Set by [`Self::seed_free_roam_story_baseline`] for scene-picker /
@@ -2816,11 +2823,11 @@ impl World {
             helper_contexts: Vec::new(),
             inline_dialogue: None,
             in_cutscene_timeline: false,
-            // Primed so the FIRST sim tick is a retail display frame: the
-            // accumulator crosses `SIM_HZ` on tick 1 rather than tick 2, so a
-            // world that ticks exactly once still advances the roller and the
-            // retail-frame-paced record contexts.
-            field_frame_accum: 40,
+            // Every sim tick is a retail display frame under the 1:1
+            // denomination, so there is no phase to prime: a world that ticks
+            // exactly once advances the roller and the retail-frame-paced
+            // record contexts by exactly one frame.
+            field_frame_accum: 0,
             field_frame_step: 0,
             field_frames: 0,
             free_roam_staging: false,
@@ -2895,6 +2902,31 @@ impl World {
     ///   `town01` - the flag decides, not the scene). Curated per-scene
     ///   seeds below stage each twin at its canonical visit.
     ///
+    /// # The south gate takes TWO flags, not one
+    ///
+    /// Rim Elm's south gate is cut open by the gate object's bind script
+    /// (`town01`/`town0c` `P0[20]`, bound to the object at tile `(23, 43)` by
+    /// the `.MAP` gate-0 kind-1 trigger and run by the scene-init bind
+    /// prologue `FUN_8003A55C`). It makes three unconditional `4C 70` clears
+    /// and then branches on **`0x147` (327) and `0x141` (321) together**; only
+    /// the both-set arm runs `4C 70 18 2D 19 2E` (cols 24..25, rows 46..47),
+    /// which cuts collision-grid row 47 and opens the doorway. Cold = sealed;
+    /// `0x147` alone = still blocked, just further north; both = open at cols
+    /// 24/25 with col 26 correctly still walled.
+    ///
+    /// So `town0c` seeds both. Seeding `0x147` on its own produced a staged
+    /// world no playthrough can reach - the rubble of a blown gate in front of
+    /// a doorway you cannot walk through.
+    ///
+    /// `town01` deliberately seeds **neither**. `0x147` is the same flag that
+    /// seats the rock debris, and pre-Mist Rim Elm's authored appearance is
+    /// rocks hidden / doorway intact / gate shut - which is exactly what the
+    /// cold-entry oracles pin (`field_object_visibility_disc.rs` asserts
+    /// `P0[18..21]` are story-hidden while `0x147` is clear, and
+    /// `free_roam_staging_disc.rs` asserts picking `town01` after `town0c`
+    /// re-hides them). A "usable" pre-Mist south gate would have to come from
+    /// somewhere other than this flag pair.
+    ///
     /// Managed flags reset first, so picking scenes in any order never leaks
     /// one scene's staging into the next. The new-game / opening chain must
     /// NOT call this - the opening's authored silence and pre-event
@@ -2904,9 +2936,13 @@ impl World {
         self.free_roam_entry_frame = self.field_frames;
         // Managed story-event flags (reset-then-seed).
         self.system_flag_clear(0x147);
+        self.system_flag_clear(0x141);
         if scene == "town0c" {
-            // Juggernaut blew the south gate: rocks out, intact door parked.
+            // Juggernaut blew the south gate: rocks out, intact door parked,
+            // and - with the second half of the gate script's `and` - the
+            // doorway itself actually cut open.
             self.system_flag_set(0x147);
+            self.system_flag_set(0x141);
         }
     }
 

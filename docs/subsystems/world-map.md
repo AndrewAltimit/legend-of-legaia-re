@@ -22,7 +22,7 @@ below to jump within this page.
 - [Encounter-record installation](#encounter-record-installation) · [clean-room port](#clean-room-port---both-overworld-and-field) · [NPC dialogue text source](#npc-dialogue-text-source)
 
 **Overworld player + scenes**
-- [Player movement + region-keyed encounters](#overworld-player-movement--region-keyed-encounters) · [collision / walkability](#overworld-collision--walkability) · [camera-relative movement remap](#camera-relative-movement-remap) · [boot-path seeding](#boot-path-seeding)
+- [Player movement + region-keyed encounters](#overworld-player-movement--region-keyed-encounters) · [collision / walkability](#overworld-collision--walkability) · [camera-relative movement remap](#camera-relative-movement-remap) · [axis convention](#overworld-axis-convention) · [boot-path seeding](#boot-path-seeding)
 - [Entity / actor placement table](#entity--actor-placement-table) · [classifying the entity kind](#classifying-the-entity-kind-from-its-script) · [scene destinations](#scene-destinations) · [chapter-1 Drake hub sweep](#chapter-1-drake-hub-sweep)
 
 **Terrain + geometry**
@@ -1002,8 +1002,14 @@ arrival seat, not Down.
 **Rim Elm's south gate is a story gate, enforced in the collision grid.** The
 exit trigger band is walled off on a fresh New Game - you cannot leave Rim Elm,
 exactly as retail plays. The seal is not a script gate on the `0x3F` but a
-**collision delta**: `town0c` `P1[0]` first clears the approach band
-(three `0x4C` nibble-7 sub-0 paints), then branches on system flags `327` and
+**collision delta**, and the record carrying it is **not the same one in every
+Rim Elm variant**: `town0c` holds the sequence twice - in its entry script
+`P1[0]` *and* in `P0[20]`, the gate object's own record (bound by the `.MAP`
+gate-0 kind-1 trigger at tile `(23, 43)`, executed by the scene-init bind
+prologue `FUN_8003A55C`) - while **`town01` holds it only in `P0[20]`**. An
+engine that applies nibble-7 deltas from entry scripts alone therefore leaves
+`town01`'s gate sealed in every story state. The record first clears the
+approach band (three `0x4C` nibble-7 sub-0 paints), then branches on system flags `327` and
 `321`. With `327` clear the script skips both arms and the base map's wall
 stands; with `327` set and `321` clear it re-blocks the band (`sub-1`
 `x=23..29 z=44..45` and friends); with **both set** it takes the open-gate arm -
@@ -1189,6 +1195,66 @@ world direction back through `world_map_camera_mvp` and asserts it moves the
 right way on screen for every azimuth, keeping the remap in lock-step with the
 camera. The native `play-window` feeds the same controller azimuth to both the
 camera and the remap, so they cannot drift.
+
+### Overworld axis convention
+
+Retail's overworld walk pins its axes twice over, and both pins are in the
+instruction stream rather than in the decompiled C.
+
+**The compass ring.** `FUN_800467E8` is the pad remap, and it is not a
+trigonometric rotation of a continuous angle: it looks the held direction
+nibble (`pad & 0xF000`) up in the eight-entry table at `DAT_800766FC`, adds the
+integer octant count at `gp + 0x2D8`, masks to `& 7`, and writes the ring entry
+back over the pad's direction bits. The table's disc bytes are:
+
+| ring index | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|---|
+| pad bits | `0x1000` | `0x3000` | `0x2000` | `0x6000` | `0x4000` | `0xC000` | `0x8000` | `0x9000` |
+| world dir | Z+ | Z+X+ | X+ | X+Z− | Z− | Z−X− | X− | X−Z+ |
+
+So the remap is a whole number of 45° steps around a compass that turns from
+`+Z` toward `+X`, and a rotation count of `0` is the **identity**: with the
+global clear, Up walks world `Z+` and Right walks world `X+`.
+
+**The step arms.** `FUN_801D01B0` - the locomotion integrator the world-map-walk
+and field overlays share - consumes the post-remap bits and steps one axis per
+bit, each arm gated on `FUN_801CFE4C(dir)`:
+
+| bit | probe `dir` | store | world |
+|---|---|---|---|
+| `0x1000` | `2` | `actor[+0x18] += 2` | Z+ |
+| `0x4000` | `0` | `actor[+0x18] -= 2` | Z− |
+| `0x2000` | `3` | `actor[+0x14] += 2` | X+ |
+| `0x8000` | `1` | `actor[+0x14] -= 2` | X− |
+
+Those are the raw PSX d-pad bit positions, which is why rotation count `0` is
+the identity. `World::advance_with_collision` is the port of this table and
+matches it bit for bit. The same routine also writes the facing angle
+`actor[+0x26]` from the ring index as `((index + 4) & 7) * 0x200`, i.e. retail's
+heading `0` is world **Z−**; the engine's `render_26` puts `0` at world **Z+**,
+a whole-turn-half offset it compensates for at the animation-sector lookup
+(`(render_26 + 0x800) & 0xFFF`), so the two are consistent rather than in
+conflict.
+
+**The port's frame is offset from retail's, deliberately.** Retail's yaw-`0`
+walk camera is a GTE `Rx(pitch)` frame looking down `+Z`, so screen-up is `+Z`
+and screen-right is `+X`. The port's `world_map_camera_mvp` instead puts the
+eye at `center + (d·cosθ, …, d·sinθ)`, which at azimuth `0` is on `+X` looking
+back down `−X`. `world_map_camera_relative_bits` carries the compensating
+rotation, so the port's azimuth-`0` Up walks `−X` where retail's walks `+Z`.
+What the player sees is the same in both; the world-axis assignment is not.
+**Do not "fix" one half of that pair alone** - the remap and the camera are
+pinned against each other by `world_map_camera_remap.rs`, and rotating only one
+of them breaks the screen contract that test exists to hold.
+
+What that pairing cannot see is a **single-axis** sign flip, because remap and
+mover would still agree and the frame would still be self-consistent (it
+becomes a rotation where it was a reflection). Two things close that:
+`world_map_camera_remap.rs` fails on it, because a reflection and a rotation do
+not project the same way; and
+`crates/engine-core/tests/world_map_axis_convention.rs` carries the verdict
+down to the pad→`move_state` leg, pinning the retail bit-to-axis table above,
+the mover-follows-the-remap agreement, and the frame's handedness.
 
 ### Walk-view camera (retail model, RAM-pinned)
 

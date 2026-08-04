@@ -173,6 +173,36 @@ The resulting hub routing after a leg:
 | not survived | `0x32` - settle, latch down |
 | ran (`_DAT_80084448 == 4`) | `0x32` - settle, latch down, `DAT_801D1A74 = 1` |
 
+### The intermission is per fight, not per turn
+
+The table above is a table of **legs**. No turn boundary reaches any row of
+it, because the two boundaries are written by different arms and only one of
+them leaves the battle:
+
+| Boundary | Written at | What happens |
+|---|---|---|
+| turn | `0x801E67E8..0x801E6810` | `ctx[6] = 0x14` (the round driver's turn-top arm) and `ctx[+0x28a] += 1`; the driver re-enters its own command cluster `0x28` |
+| leg | `0x801E65D8` / `0x801E6674` | `DAT_8007BD71 = 0xFE` - party wipe (cause `5`, `-0x42D4`) / monster wipe (cause `0`); the exit selector routes to arena mode `0x18` |
+
+Both writes are in `FUN_801E295C`, the shared battle-action SM. While a leg
+runs the game is in battle mode, so `FUN_801CF870`'s hub - the only thing that
+draws the INTERVAL heading and the score tally - is not executing. Retail has
+**no beat between turns at all**: the command cluster comes straight back.
+
+So the intermission is a fight boundary twice over. The hub has to be running
+to draw it, and even then only the first row above reaches state `0x0A`; a
+lost, run-from or course-exhausting leg settles instead.
+
+The trap the split hides is that both boundaries reach a host as "the turn's
+playback ended". A host that keys the hub screen on the match phase alone
+draws an intermission every turn. The verdict therefore lives in one shared
+place, `engine-core::muscle_dome::leg_boundary_raises_interval`, called at the
+leg boundary by the native window (`tick_muscle_hub`) and by the browser dome
+page (through the `muscle_leg_shows_interval` binding);
+`MusclePhase::ends_turn` / `ends_leg` name the same split on the session side.
+Locked by `engine-core/tests/muscle_intermission_cadence.rs` and
+`web-viewer/tests/muscle_page_cadence.rs`.
+
 ## What a cleared leg is worth
 
 `FUN_801D1184` computes four count-up rows, and they do **not** all mean the
@@ -376,12 +406,17 @@ an art playing out.
   defender's blue name chip bottom-right. The commit path appends raw
   direction ids `0xC..=0xF` into `actor+0x1df`, so the recognition happens
   on the battle-action side as it does for a normal battle's input string.
-- **The enemy's HP *is* shown here, and there is no mist.** A normal Legaia
-  battle never draws the enemy's HP; the dome is the exception - its
-  `Turns Left / HP Left` strip prints the opponent's remaining HP as a
-  percentage every frame of the match, which is what makes a timed-out leg
-  scoreable. The per-fighter status plate is the usual one (no enemy plate).
-  The arena interior is mist-free (see
+- **The enemy's HP is *not* shown here, and there is no mist.** A normal
+  Legaia battle never draws the enemy's HP, and the dome is no exception:
+  the `Turns Left / HP Left` strip that would print it is gated on formation
+  slot 0 `== 0xB6`, which no dome round can satisfy
+  ([The four-turn strip belongs to Koru](#the-four-turn-strip-belongs-to-koru-not-the-dome)).
+  The earlier reading of this bullet - that the dome is the one battle that
+  shows it, "which is what makes a timed-out leg scoreable" - is **falsified
+  twice over**: the strip is Koru's, and a dome leg has no timeout to score
+  ([What ends a leg](#what-ends-a-leg-a-knockout-and-nothing-else)). The
+  per-fighter status plate is the usual one (no enemy plate). The arena
+  interior is mist-free (see
   [Arena backdrop](#arena-backdrop-extraction-1225) for the ABE-prim defect
   that fakes a mist band).
 
@@ -596,10 +631,13 @@ play-window bakes the two hub page TIMs per referenced sub-palette into a
 sprite atlas and runs the same builders itself (`window/minigames.rs`,
 `muscle_hub_sprite_draws`): the intro card + ROUND banner over an open leg,
 the INTERVAL heading + six-row score tally between legs, the tally fed the
-same `DomeContest` rows / tally / coin-bank model on both hosts. The retail
-hub controllers' fade / hold counters (`DAT_801D1A80` and siblings) are
-unported; the native host holds each screen at full brightness for a fixed
-frame count, and the browser page drives its own page-side timings.
+same `DomeContest` rows / tally / coin-bank model on both hosts. *Between
+legs* is the whole of it - see [The intermission is per fight, not per
+turn](#the-intermission-is-per-fight-not-per-turn) for why a turn boundary
+draws no hub screen and where the shared verdict lives. The retail hub
+controllers' fade / hold counters (`DAT_801D1A80` and siblings) are unported;
+the native host holds each screen at full brightness for a fixed frame count,
+and the browser page drives its own page-side timings.
 
 ## Sound
 
@@ -622,10 +660,12 @@ shared impact.
 
 ## Match state machine
 
-The per-frame controller is `FUN_801d0748` (`overlay_muscle_dome_801d0748.txt`). It is the largest function in the overlay and drives the entire contest:
+The per-frame controller is `FUN_801d0748` (`overlay_muscle_dome_801d0748.txt`). It is the largest function in the overlay and drives one **leg** - not the contest, which is the arena hub's ([Two state machines](#two-state-machines-not-one)):
 
 1. **Read input.** It folds the current pad-edge masks (`_DAT_8007b874` and `_DAT_8007b938`) into a single press mask `s2`. The four card-selection directions are the standard PSX face/d-pad bits `0x8000`, `0x2000`, `0x1000`, `0x4000`; the controller maps the pressed direction to one of the four queued input slots `ctx+0x1114 / +0x1118 / +0x111c / +0x1120` and records the chosen direction in `ctx+0x880`.
-2. **Dispatch on the phase byte `ctx+6`.** This byte is the match phase. Confirmed phase values include `0x00`, `0x0a`, `0x0b`, `0x14`, `0x1e`, `0x28`, `0x32`, `0x3c`, `0x46`, `0x50`, `0x5a`, `0x5b`, `0x5c`, `0x5d`, `0x5e`, `0x64`, `0x65`, `0x66`, `0x67`, `0x6e`, `0x78`, `0xfe`. Phases advance by writing the next value back into `ctx+6` (`s3`). The terminal/idle phases `0x1e / 0x32 / 0x6e / 0xfe` also tick a spin/azimuth global at `_DAT_8007b938+2` each frame (the rotating dome camera). **(Confirmed: the dispatch is a `ctx+6` switch.) (Inferred: the exact ordering of phases is the deal → select → confirm → resolve → score loop; individual phase semantics below are partially confirmed.)**
+2. **Dispatch on the phase byte `ctx+6`.** This byte is the match phase. Confirmed phase values include `0x00`, `0x0a`, `0x0b`, `0x14`, `0x1e`, `0x28`, `0x32`, `0x3c`, `0x46`, `0x50`, `0x5a`, `0x5b`, `0x5c`, `0x5d`, `0x5e`, `0x64`, `0x65`, `0x66`, `0x67`, `0x6e`, `0x78`, `0xfe`. Phases advance by writing the next value back into `ctx+6` (`s3`). The terminal/idle phases `0x1e / 0x32 / 0x6e / 0xfe` also tick a spin/azimuth global at `_DAT_8007b938+2` each frame (the rotating dome camera). **(Confirmed: the dispatch is a `ctx+6` switch.) (Inferred: the exact ordering of phases is the deal → select → confirm → resolve → turn-top loop; individual phase semantics below are partially confirmed.)**
+
+   The loop closes back on the turn-top arm `0x14`, never on a score screen - see [The intermission is per fight, not per turn](#the-intermission-is-per-fight-not-per-turn).
 3. **Run the presentation + camera.** Most phase arms call the presentation driver `FUN_801d388c` (command/sprite layout, see below) and the camera director `FUN_801d5854`, then play a UI/SFX cue through `func_0x8004fcc8`.
 
 A small number of phase arms are confirmed by content:
@@ -772,7 +812,7 @@ The score table's own rows corroborate the same shape: 8 / 8 / 13 populated
 
 `FUN_801d8de8` is a **different widget** and must not be collapsed into the strip. It is the shared battle **status-plate composer** (dumped under ten overlays - dance, fishing, slot, Baka Fighter, debug menu, magic capture …), and its numeric work is four `func_0x8003563c` registrations at `0x801d959c..0x801d9648`, one per plate field: `+0x172` / `+0x14e` (HP `cur` / `max`, 4 digits) and `+0x174` / `+0x152` (MP `cur` / `max`, 3 digits). Its elems `0x52` / `0x53` stage the fighters' `+0x170` gauge values into `_DAT_800773c8` / `_DAT_800773e0`.
 
-So the dome shows both: per-fighter `cur/max` **numerals + bars** on the status plate (shared battle chrome, no percentage anywhere), and the dome-only **single percentage** of the opponent's HP in the top strip (`FUN_801d0748` phase `0x14`). Different functions, different phases, different source fields.
+So a dome match shows exactly one of the two: the per-fighter `cur/max` **numerals + bars** on the status plate (shared battle chrome, no percentage anywhere). The **single percentage** the phase-`0x14` arm of `FUN_801d0748` computes belongs to the *other* readout - Koru's strip - and its `== 0xB6` gate keeps it off every dome frame. Calling it "dome-only" inverts what the gate says.
 
 Auxiliary per-frame helpers the controller calls every frame:
 - `FUN_801d3444` - animates the round **time meter**: ramps a 0..0xc counter `DAT_801f4e0a` up by the frame delta while the phase tag `ctx+6 == 'P'` (0x50) and an enable flag is set, drains it otherwise, and maps it to the bar Y `counter * 160 / 12 - 0x92`. Core ramp + mapping ported as `engine-core::muscle_dome::time_meter_step`. (`overlay_muscle_dome_801d3444.txt`.)
@@ -899,7 +939,7 @@ All offsets are relative to the context base `_DAT_8007bd24` unless noted otherw
 
 | Address | Role | Provenance |
 |---|---|---|
-| `FUN_801d0748` | Per-frame match controller: reads pad, dispatches on `ctx+6` phase, drives card pick / commit / resolve / score loop | `overlay_muscle_dome_801d0748.txt` |
+| `FUN_801d0748` | Per-frame **match** controller: reads pad, dispatches on `ctx+6`, drives direction pick / commit / resolve. It owns no score loop and no hub screen - both belong to the arena's own SM ([Two state machines](#two-state-machines-not-one)) | `overlay_muscle_dome_801d0748.txt` |
 | `FUN_801d388c` | Card/presentation driver: deal-hand (4 slots), commit-card, per-step sprite layout, runs the `PTR_DAT_801f4d34` sub-draw script | `overlay_muscle_dome_801d388c.txt` |
 | `FUN_801d5854` | Camera / view director: 10-way (`param_2` 0..9) switch computing the dome view transform per phase | `overlay_muscle_dome_801d5854.txt` |
 | `FUN_801d8de8` | HUD / element renderer: draws labels, HP/stat bars, card numbers, and the reward message; returns a sprite handle | `overlay_muscle_dome_801d8de8.txt` |

@@ -391,6 +391,37 @@ pub enum MusclePhase {
     Lost,
 }
 
+impl MusclePhase {
+    /// A **turn** inside an open leg just resolved - and nothing else.
+    ///
+    /// Retail's turn boundary is entirely inside the battle: the
+    /// battle-action SM writes `ctx[6] = 0x14` (the round driver's turn-top
+    /// arm) and bumps the turn counter `ctx+0x28a`, then the driver re-enters
+    /// its own command cluster (`ctx+6 = 0x28`). The arena's hub state machine
+    /// is not running at all - the game is in battle mode - so **no hub screen
+    /// is raised between turns**. A host that puts one there is inventing a
+    /// beat retail does not have.
+    ///
+    /// REF: FUN_801e295c (`0x801E67E8..0x801E6810`)
+    pub fn ends_turn(self) -> bool {
+        matches!(self, Self::TurnOver)
+    }
+
+    /// The **leg** is over - the fight ended on a KO, which is the only thing
+    /// that ends one.
+    ///
+    /// This is the boundary the arena hub sees: the `0x5A` end-of-action scan
+    /// of `FUN_801E295C` raises the battle-end signal `DAT_8007BD71 = 0xFE`
+    /// (party wipe at `0x801E65D8`, cause `5`; monster wipe at `0x801E6674`,
+    /// cause `0`), the exit selector routes back to arena mode `0x18`, and only
+    /// then does the hub decide between another leg and settlement.
+    ///
+    /// REF: FUN_801e295c (`0x801E65D8`, `0x801E6674`)
+    pub fn ends_leg(self) -> bool {
+        matches!(self, Self::Won | Self::Lost)
+    }
+}
+
 /// One fighter's dome state.
 #[derive(Debug, Clone)]
 struct DomeFighter {
@@ -1242,6 +1273,36 @@ pub enum ContestState {
     Settle = 0x32,
     /// The port's own terminal: [`DomeContest::settle`] has run.
     Settled = 0xFF,
+}
+
+/// Whether **this leg boundary** raises the arena's between-legs INTERVAL +
+/// score-tally screen.
+///
+/// Call it at a leg boundary ([`MusclePhase::ends_leg`]) with the contest
+/// state left after the leg was reported. It is the one place the cadence is
+/// decided, so no host can grow its own: the native window and the browser
+/// dome page both read this.
+///
+/// Retail's hub routes a finished leg through the 51-entry jump table at
+/// `0x801CE990` on `DAT_801D1A78`, and only one of the four outcomes reaches
+/// the tally screen `0x0A`:
+///
+/// | Leg | Hub state | Screen |
+/// |---|---|---|
+/// | survived, course not exhausted | `0x0A` | INTERVAL + tally |
+/// | survived, course exhausted | `0x32` | settlement |
+/// | not survived | `0x32` | settlement |
+/// | ran | `0x32` | settlement |
+///
+/// Both hosts drain `0x0A`..`0x0C` inside their leg report, so the state they
+/// can still observe afterwards is [`ContestState::Fight`] (the ladder staged
+/// another leg - the tally screen ran) or a settling / absent contest (it did
+/// not). A **turn** boundary never reaches here at all, which is the point:
+/// the arena hub does not run during a leg.
+///
+/// PORT: FUN_801cf870 (hub dispatch `0x801CF8E4`, jump table `0x801CE990`)
+pub fn leg_boundary_raises_interval(after_report: Option<ContestState>) -> bool {
+    matches!(after_report, Some(ContestState::Fight))
 }
 
 /// A running Muscle Dome **contest** - the ladder above a single leg.

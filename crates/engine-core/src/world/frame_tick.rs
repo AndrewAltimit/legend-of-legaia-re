@@ -269,23 +269,80 @@ impl World {
         // no-encounters-here hint (armed by `arm_live_loop`).
         self.battle_spoils_frames = self.battle_spoils_frames.saturating_sub(1);
         self.scene_encounter_hint_frames = self.scene_encounter_hint_frames.saturating_sub(1);
-        // Retail-frame sub-clock for the narration crawl roller. The sim ticks
-        // at 100 Hz, but the roller's scroll is authored in retail's ~60 fps
-        // field frames; advance a fixed-point accumulator by RETAIL_FPS each
-        // tick and emit a whole retail frame on the ~60 % of ticks that cross
-        // SIM_HZ, so the crawl scrolls at retail wall-speed (otherwise it drains
-        // ~1.7x too fast, opening a long between-crawl gap). See
-        // `field_frame_accum`.
-        const SIM_HZ: u32 = 100;
+        // ------------------------------------------------------------------
+        // The simulation clock's denomination.
+        //
+        // **One `World::tick` is exactly one retail display frame (vsync).**
+        // Both hosts already drive it that way and must keep doing so: the
+        // native window's fixed-timestep accumulator (`EngineWindow::
+        // drain_ticks`, `TICK_DT = 1.0/60.0`, backlog capped at 4 ticks) and
+        // the browser play page's (`site/js/play-app.js`, `TICK_DT = 1000/60`,
+        // same cap). So `SIM_HZ == RETAIL_FPS`, the retail-frame sub-clock is
+        // an identity - `field_frame_step` is `1` on every tick and
+        // `field_frames == frame` - and the gates below are statements of
+        // which consumers are retail-frame paced rather than rate changes.
+        //
+        // Retail's frame has TWO clocks and `DAT_1F800393` relates them.
+        // `FUN_80016B6C` resolves that byte once per frame
+        // (`0x80017044..0x800171D8`: sample the frame time with `VSync(1)`
+        // through `FUN_800173BC`, pick 1..4, raise it to the per-mode floor
+        // `DAT_8007B9D8`, then `VSync(n)`-wait), so one pass of the master
+        // driver `FUN_80016444` spans `DAT_1F800393` vsyncs - the **game
+        // tick**. Every duration and every velocity inside that pass is
+        // denominated in vsyncs and scaled by the byte, which makes the
+        // wall-clock rates cadence-invariant:
+        //
+        //  * player locomotion `FUN_801D01B0` - called **once per game tick**
+        //    from the field frame pump `FUN_801D1344` (`jal 0x801D01B0` at
+        //    `0x801D16F4`, with no cadence gate of its own), and its travel
+        //    budget for the call is
+        //    `((base_step * player[+0x72]) >> 12) * DAT_1F800393`
+        //    (`0x801D0564..0x801D05C4`: `mult s4,v0`; `sra s4,t1,0xc`;
+        //    `lbu v1,0x7f(a1)` with `a1 = 0x1F800314`; `mult s4,v1`).
+        //  * field-NPC motion `FUN_8003774C` - the same shape
+        //    (`0x80037868 lbu s2,0x393(s2)`, then `mult ...,s2` into every
+        //    glide leg).
+        //  * the frame pump's own countdowns - the dialogue-pacing timer
+        //    `_DAT_8007B6B4` (`0x801D1618..0x801D1630`) and the field-control
+        //    byte `+0x62` (`0x801D1670..0x801D1690`) each subtract
+        //    `DAT_1F800393`, not `1`.
+        //
+        // So retail's player advances `base_step` units per **vsync** whatever
+        // the cadence does: at the field floor of 2 it runs the controller
+        // 30x a second for `2 * base_step` each. The engine takes the
+        // finer-grained half of that identity - the controller once per vsync
+        // with the scalar at 1 - which lands on the same `base_step * 60`
+        // units per second and merely emits twice as many intermediate poses.
+        // Neither half is a place to insert a rate.
+        //
+        // The `SIM_HZ = 100` this replaces was a premise no host ever met. It
+        // withheld 2 of every 5 retail frames from the *gated* consumers (the
+        // narration crawl, the cutscene timeline, the effect pool, the escape
+        // timer, NPC motion, the CLUT / ambient game-tick banks, the timed
+        // sound release) - 36 Hz against retail's 60 - while the *ungated*
+        // ones (locomotion, the per-actor field channels, the prop and
+        // tile-board layers) ran at the correct 60. The two errors cancelled
+        // in the one place anyone measured: `opening_chain_wall_time.rs`
+        // divided observed ticks by 100 while the timeline emitted 0.6 retail
+        // frames per tick, so the *seconds* came out right and the *unit*
+        // stayed wrong.
+        //
+        // REF: FUN_80016B6C (cadence resolver), FUN_80016444 (master driver),
+        //      FUN_801D1344 (field frame pump), FUN_801D01B0, FUN_8003774C
         const RETAIL_FPS: u32 = 60;
-        self.field_frame_accum += RETAIL_FPS;
-        if self.field_frame_accum >= SIM_HZ {
-            self.field_frame_accum -= SIM_HZ;
-            self.field_frame_step = 1;
-            self.field_frames += 1;
-        } else {
-            self.field_frame_step = 0;
-        }
+        const SIM_HZ: u32 = RETAIL_FPS;
+        // A host that ever wants to oversample has to re-derive every
+        // consumer below, not just relax this constant.
+        const _: () = assert!(
+            SIM_HZ == RETAIL_FPS,
+            "one sim tick is one retail display frame"
+        );
+        self.field_frame_step = 1;
+        self.field_frames += 1;
+        // Kept advancing as the cheap "a world frame ran" witness (the mode
+        // driver's frame-begin-skip test probes it); the fixed-point phase it
+        // used to carry is gone with the 1:1 denomination.
+        self.field_frame_accum = self.field_frame_accum.wrapping_add(1);
         // Retail game-tick clock for the scripted CLUT-cell effects: one game
         // tick spans `frame_step` vsyncs (the adaptive `DAT_1F800393` factor
         // written by `FUN_80016B6C`; see [`Self::frame_step`]). Count the sim
@@ -350,12 +407,11 @@ impl World {
         // next-game-mode global one frame after the op writes it, so the flip
         // into the cutscene mode lands here, at the top of the following tick.
         self.maybe_enter_pending_cutscene();
-        // Effect-pool walker on the retail-frame sub-clock: retail runs
-        // the per-frame walker once per rendered frame with its vsync
-        // catch-up factor - one sweep per vsync. The sim ticks at 100 Hz,
-        // so gating on the ~60 Hz `field_frame_step` keeps the 5.3
-        // wait-counter cadence at retail wall-speed (ungated it would
-        // drain ~1.7x fast).
+        // Effect-pool walker on the retail-frame sub-clock: retail runs the
+        // per-frame walker once per rendered frame with its vsync catch-up
+        // factor - one sweep per vsync. Under the 1:1 denomination above that
+        // is one sweep per sim tick; the gate names the clock the walker's
+        // wait counters are denominated in rather than thinning them.
         // REF: FUN_801E0088
         if self.field_frame_step == 1 {
             self.tick_effects();
@@ -436,8 +492,12 @@ impl World {
         // skip; the player skips the WHOLE opening through the hand-off
         // packet instead - see `take_prologue_handoff`). Clear it once every
         // page has scrolled off so the suspended cutscene timeline resumes.
-        // Scroll the roller on the 60 fps sub-clock (0 or 1 retail frame per
-        // sim tick) so the crawl reads at retail wall-speed, not 100 Hz.
+        // Scroll the roller on the retail-frame sub-clock. Its speed is pinned
+        // from a realtime retail video as 1 px per 6 frames at 60 Hz
+        // (`cutscene_narration::DEFAULT_FRAMES_PER_PIXEL`), so the sub-clock
+        // has to deliver a full 60 retail frames a second - which it does only
+        // under the 1:1 denomination (at the old 100 Hz premise it delivered
+        // 36, and the crawl ran at 0.6x its own pinned figure).
         if let Some(narration) = &mut self.cutscene_narration
             && !narration.tick(self.field_frame_step as u32)
         {
@@ -578,16 +638,29 @@ impl World {
                 // timeline): each vignette actor's own placement script runs
                 // its frame slice - animate cues, scripted moves, flag
                 // handshakes with the timeline.
+                //
+                // Ungated deliberately, and that is the retail denomination,
+                // not an omission. A placement script is actor-pool work
+                // (`FUN_8002519C` -> the actor's `+0x0C` handler), so retail
+                // runs it once per game tick and credits `DAT_1F800393` frames
+                // of progress per visit - the same cadence-invariant identity
+                // the locomotion note above spells out. The engine takes the
+                // fine-grained half: one visit per vsync crediting one frame.
+                // Since a sim tick IS a vsync, calling it every tick is
+                // retail-frame paced already; a `field_frame_step` gate would
+                // be a tautology here, not a correction.
                 self.step_field_channels();
                 self.step_field();
                 // Field-NPC walk legs (autonomous patrol routes + scripted
                 // interaction-prologue runs) - one motion-VM step per RETAIL
                 // frame, writing back into `field_npc_positions` so collision /
                 // interact probes follow the live NPC. The step decode takes
-                // `dt = _DAT_1f800393` at 1 (one call = one retail update, see
-                // `field_npc_walk_step_speed`), so the call rate must be the
-                // retail 60 Hz frame clock, not the 100 Hz sim tick - ungated
-                // every glide leg ran 1.67x retail wall-speed.
+                // `dt = _DAT_1f800393` at 1, so one call credits one retail
+                // display frame of glide (`field_npc_walk_step_speed`) and the
+                // call rate has to be the retail 60 Hz frame clock. Retail
+                // reaches the same wall speed from the other side: it visits
+                // `FUN_8003774C` once per game tick and multiplies each leg by
+                // `DAT_1F800393` (`0x80037868 lbu s2,0x393(s2)`).
                 // REF: FUN_8003774C
                 if self.field_frame_step == 1 {
                     self.tick_field_npc_motions();
@@ -737,13 +810,15 @@ impl World {
     /// equipped therefore sees no state change at all, which is why wiring
     /// this moves no existing oracle.
     ///
-    /// Two honest gaps, both stated rather than papered over:
+    /// The **fill** side is retail's as well, and it is inside the locomotion
+    /// controller: `FUN_801D01B0`'s tail at `0x801D0910..0x801D0928` adds
+    /// `DAT_1F800393` to `_DAT_801F2274` behind the step-delta-non-zero test at
+    /// `0x801D08F4..0x801D090C` - one unit per vsync whose step committed.
+    /// [`Self::step_field_locomotion`] adds [`Self::field_frame_step`] once per
+    /// sim tick, which is the same rate under the 1:1 denomination.
     ///
-    /// - The **fill** side of the accumulator is not decoded. No dump in the
-    ///   corpus carries the writer of retail's `_DAT_801F2274`, so
-    ///   [`Self::step_field_locomotion`] feeds it one unit per retail frame
-    ///   whose step committed. The drain (`0x20`, the `>` gate, the three
-    ///   bump/clamp pairs) is the retail one.
+    /// One honest gap remains:
+    ///
     /// - The kernel's return value is the edge where retail arms a
     ///   dialog-window callback off [`Self::walk_regen_window`]
     ///   (`_DAT_8007B600`). The engine has no such window slot and nothing
@@ -1705,7 +1780,8 @@ impl World {
     ///   finisher, on the contest's PsyQ `rand()` stream), the same one the
     ///   browser host resolves with. A session with no model installed
     ///   resolves to no damage rather than to invented constants.
-    /// - **TurnOver / decided**: [`Cross`] takes the next turn, or leaves a
+    /// - **TurnOver / decided**: the next turn is taken automatically (retail
+    ///   confirms nothing at a turn boundary), and [`Cross`] leaves a
     ///   finished leg (via [`World::exit_muscle_dome`], crediting the reward
     ///   Seru capture on a win). A leg finishes on a KO and on nothing else:
     ///   turns are counted, never budgeted. Retail agrees - the arena hands
@@ -1756,7 +1832,15 @@ impl World {
                 }
             }
             MusclePhase::TurnOver => {
-                if confirm && let Some(s) = self.muscle_dome.as_mut() {
+                // Retail's turn boundary is automatic, not confirmed: the
+                // battle-action SM writes `ctx[6] = 0x14` at `0x801E67F0` and
+                // the round driver re-enters its own command cluster with no
+                // press. The arena hub - the only thing that draws an
+                // INTERVAL screen - runs in arena mode `0x18` and is not
+                // executing during a leg, so a confirm gate here was a silent
+                // one-press stall with nothing on screen to explain it.
+                // REF: FUN_801e295c (turn-top arm)
+                if let Some(s) = self.muscle_dome.as_mut() {
                     s.next_turn();
                 }
             }

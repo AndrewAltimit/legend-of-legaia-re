@@ -65,24 +65,16 @@ impl PlayWindowApp {
             }
             // Party wipe: the world raises `game_over` when a battle
             // resolves to `BattleEndCause::PartyWipe`. Consume the flag and
-            // push the game-over panel, which owns the frame from here (the
-            // arm below skips the scene tick while any boot UI is active).
-            // Before this the flag had no reader at all, so losing every
-            // fight silently dropped the player back into the field.
+            // start the return-to-title hand-off, which owns the frame from
+            // here (the arm below skips the scene tick while any boot UI is
+            // active). Retail's wipe arm stores mode 22 CARD INIT with the
+            // title context word set, so the destination is the title screen
+            // and nothing is asked of the player on the way.
             if self.session.host.world.game_over && !self.boot_ui.is_active() {
                 self.session.host.world.game_over = false;
-                let has_saves = scan_save_dir(&self.save_dir).iter().any(|s| {
-                    matches!(
-                        s.content,
-                        legaia_engine_core::save_select::SlotContent::LegaiaSave
-                    )
-                });
-                self.boot_ui = BootUiState::GameOver(if has_saves {
-                    legaia_engine_core::game_over::GameOverSession::new()
-                } else {
-                    legaia_engine_core::game_over::GameOverSession::with_no_save()
-                });
-                log::info!("play-window: party wipe -> game over");
+                self.boot_ui =
+                    BootUiState::GameOver(legaia_engine_core::game_over::GameOverSession::new());
+                log::info!("play-window: party wipe -> title screen");
             }
             // When the boot UI is active, route input there and skip
             // the scene tick - the player hasn't entered the world

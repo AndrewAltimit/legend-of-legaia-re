@@ -1315,6 +1315,7 @@ This relies on the **runtime actor frame == MAN placement frame** finding: `FUN_
 
 | Thread | Status | Evidence | Answer |
 |---|---|---|---|
+| Rim Elm's south gate - why a seated player exits and a walking one does not | resolved | `disassembly` | Neither walk-on band was the mechanism: the exit record is ungated, the other is five inert bytes, and the wall is a collision row the gate object's own script paints. [details ↓](#rim-elms-south-gate) |
 | Town/field free-movement locomotion | resolved | `capture` | [details ↓](#townfield-free-movement-locomotion) |
 | Field ambient animation - what makes jou's ground pulse and the water shimmer | resolved | `disassembly` | Three mechanisms: the bundle type-6 CLUT-walk table (12 carriers, 9 of them field scenes), the ambient move-VM tree the MAN P1 placements install at entry, and jou's flesh pulse = the mode-3 CLUT-cell HSV cycler (`FUN_80019D50`, lightning = flag `0x364`). Full chain + two move-VM decode corrections: [`field-ambient-fx.md`](../subsystems/field-ambient-fx.md). |
 | Ambient render-mode 4 - what the op-`0x1E` seat animates | resolved | `disassembly` | A **cyclic VRAM-rect scroller**, and it is what makes waterfalls fall. Per fired period (`+0xC6` drained by the frame step alone, no speed scalar) the render tail rotates the seated rect `+0xD0..+0xD6` left by `+0xCC * frame_step` and up by `+0xCE * frame_step`, each axis as StoreImage / MoveImage / LoadImage over a bump-allocated strip (`80021df4.txt` `0x80022CB8..0x80022EE0`). Seventeen scenes carry one at plain entry; sixteen scroll upward over a texture-band rect, `tunnelc`'s second seat scrolls a CLUT row sideways. Ported as `engine-core::world::ambient::vram_scroll`. [details ↓](#ambient-render-mode-4---the-vram-rect-scroller) |
@@ -1341,7 +1342,7 @@ This relies on the **runtime actor frame == MAN placement frame** finding: `FUN_
 | Field `.MAP` PROT resolution - which entry holds a scene's map | resolved (census-pinned; engine resolver corrected) | `capture` | [details ↓](#field-map-prot-resolution---define--2-universal) |
 | World-map CLUT cycling beyond the ocean head | closed (operand table + emitter + cadence pinned) | `capture` | [details ↓](#world-map-clut-cycling-beyond-the-ocean-head---closed-operand-table--emitter--cadence-all-pinned) |
 | `init_data` UI-tile page residency; the map03 terrain column | resolved (both premises falsified) | `capture` | [details ↓](#init_data-ui-tile-pages---journey-dependent-residency-resolved-map03-texture-column-resolved---not-uploaded-premise-falsified) |
-| What transitions retail into game over? | resolved | `capture` + `disassembly` | Retail has **no** mode-`0x12` transition. A party wipe exits battle to mode 2; MAIN INIT `FUN_8003AEB0`'s back-from-battle arm (gated on the `DAT_8007BD60 & 0x80` survivor latch **and** story-flag idx 0 = the scripted-loss latch, raised by field-VM op `4C EA`) stores `game_mode = 0x16` (CARD INIT) with `_DAT_8007BB00 = 1` at `0x8003B5D4`, landing on the **title screen with CONTINUE preselected** - no GAME OVER art, no dedicated menu. Every store PC captured live (`autorun_gameover_mode_writer.lua`). Mode 18/19 + PROT 0902 confirmed an unreachable dev harness. The port's three-row session stays an engine invention. [details](../subsystems/battle.md#party-wipe--the-game-over-overlay) |
+| What transitions retail into game over? | resolved | `capture` + `disassembly` | Retail has **no** mode-`0x12` transition. A wipe exits battle to mode 2; MAIN INIT `FUN_8003AEB0`'s back-from-battle arm stores `game_mode = 0x16` (CARD INIT) + `_DAT_8007BB00 = 1` at `0x8003B5D4`, landing on the **title screen** - no GAME OVER art, no menu. Three more sites carry the identical pair (`FUN_8003C7EC`, `FUN_801D84B4`, the STR attract exit `0x801CF048`). Mode 18/19 + PROT 0902 are an unreachable dev harness. The port's three-row panel is **deleted**; both hosts hold, draw nothing, hand to the title. [details](../subsystems/battle.md#party-wipe--the-game-over-overlay) |
 | Mid-visit NPC re-arrangement beats (dolk2 market crowd; garmel pre-Zeto staging) | resolved | `disassembly` + `capture` | dolk2: the swap is `P2[11]`, spawned by the `.MAP` fallback walk-on-trigger rows (C1=[`0x27C`], C2=[`0x142`]) - eight `CC <crowd> E3 <day>` seats (op `4C` nE sub-3, `0x801E3108`) put P1[53..60] on the day cohort's tiles and `A3` parks the day cohort at `(127,127)`. garmel: the Zeto stager `P2[12]` materializes P1[3]/P1[4] beside the player (n3 sub-7 player-coord copy `0x801E0FB0`); post-battle re-entries run `P1[0]`'s flag-consume arms. See [script-vm.md](../subsystems/script-vm.md#mid-visit-npc-re-arrangement-beats-dolk2-market-swap--garmel-boss-staging); pinned by `engine-core/tests/man_midvisit_rearrangement_disc.rs`. |
 | Region story-flag gate families (record-header C1/C2 gates) | resolved as structure (play-order residual on the open page) | `capture` | [details ↓](#region-story-flag-gate-families) |
 | Extraction-0874 §2 (`player.lzs`) F-variant pixels | resolved - installing event named | `capture` + `disassembly` | [details ↓](#extraction-0874-2-playerlzs-f-variant-pixels---a-one-shot-opening-face-frame-stamp-not-a-menu-writer) |
@@ -1512,6 +1513,47 @@ The boot sound-bank loader `FUN_8001FA88` writes the same slot and then
 immediately saves *its* bank's record-0 address at `gp+0x678`, precisely
 because the next scene load overwrites the slot - so the two readings are
 complementary, not contradictory.
+
+### Rim Elm's south gate
+
+*What it looked like:* the first scene exit of the game fires when an oracle
+seats the player onto `(25, 46)` and never fires when a player walks there, so
+the walk-on dispatch looked broken.
+
+*What it is:* neither of the gate's two `.MAP` kind-1 gate-1 bands is the
+mechanism the symptom suggested.
+
+| Record | Tiles | Script |
+|---|---|---|
+| `P2[10]` | `(24..26, 45)`, `(25, 44)` | `21 21 26 FE FF` - `Nop; Nop; JmpRel`-to-self. Five bytes, no scene change. |
+| `P2[0]` | `(24..26, 46)` | `CFlag.Set`, an `Effect` fade, `0x3F` naming `map01` at entry `(0x60, 0x19)`. `C1=[] C2=[]`. |
+
+The exit record is **ungated**; the other record is **inert**. What holds a
+player inside Rim Elm is the collision grid - grid row 47 walls
+`z ∈ [5888, 5951]` across the doorway - and that row *is* the gate. It is cut
+by `town01` `P0[20]`, the gate object's own record, bound by the gate-0 kind-1
+trigger at tile `(23, 43)` and executed by the scene-init bind prologue
+(`FUN_8003A55C`). The record clears the approach with three `4C 70` paints and
+then branches on system flags `327` / `321`:
+
+| `327` | `321` | paints | gate |
+|---|---|---|---|
+| clear | - | none; the base row-47 wall stands | shut |
+| set | clear | re-blocks rows 44..46, seats the gate at `(24, 44)` | shut |
+| set | set | `4C 70 18 2D 19 2E` - cols `24..25`, rows `46..47` | **open** |
+
+So a cold boot cannot leave Rim Elm in the port *or* in retail, and the disc
+says so rather than the engine. The port already executes the whole chain:
+measured on its loaded grid, the three flag states give exactly the three
+collision states above, with col 26 correctly re-blocked in the open one.
+Pinned by `crates/engine-core/tests/south_gate_disc.rs`; the pad-driven exit is
+a rung of `crates/engine-shell/tests/critical_path_replay.rs`.
+
+Carrier note, because it decides whether a port can open the gate at all:
+`town0c` holds the same paint sequence **twice** (its entry script `P1[0]` and
+`P0[20]`); `town01` holds it only in `P0[20]`. An engine that applies nibble-7
+deltas from entry scripts alone leaves `town01`'s gate sealed in every story
+state.
 
 ### Town/field free-movement locomotion
 
@@ -3325,6 +3367,38 @@ excluded by the same comparison rather than by arithmetic.
 | Thread | Status | Evidence | Answer |
 |---|---|---|---|
 | Does any retail shot author a non-zero camera roll? | resolved (yes) | `capture` + `disassembly` | Eight scenes stage a reachable, executing op-`0x45` slot-2 roll, from `10` units (0.9 deg) to `-660` (-58 deg). [details ↓](#does-any-retail-shot-author-a-non-zero-camera-roll) |
+| Does retail stack coincident curved shells? | resolved (no) | `capture` | Field-run display-list reads in `jouine` / `jouind` find zero screen-coincident surface groups; every surface is submitted once. [details ↓](#does-retail-stack-coincident-curved-shells) |
+
+### Does retail stack coincident curved shells?
+
+*Status:* resolved - **no**.
+
+Field-run display-list reads inside `jouine` and `jouind` report zero
+screen-coincident surface groups above a 16 px² floor; every surface in the
+live ordering table is submitted exactly once (1218 packets walked in
+`jouind`, 972 in `jouine`). The coplanar kernel's same-position curved-shell
+residual is therefore a property of how the *port* assembles a scene's env
+TMDs, not something retail resolves by ordering - there is nothing for retail
+to order. The only coincidence in either image is one mesh drawn three times
+in a single texture family (`clut=0x7F86 tpage=0x001F`), which is the
+multi-pass semi-transparency idiom rather than a mesh stack: its members share
+a material, and two different env TMDs would not.
+
+Two false positives this measurement has to avoid, both of which turn a clean
+frame into an apparent stack. Retail **double-buffers**, so ordering tables
+come in pairs holding frame N and frame N-1 with near-identical packet counts -
+merging a pair makes every surface look stacked with itself. And distant
+geometry projects to 1-3 pixel slivers that coincide constantly without saying
+anything about meshes, which is what the area floor exists for.
+
+Coverage limit, stated because the result is a negative: each read is one
+frame and therefore one camera, and the corpus holds no second viewpoint for
+either scene - the curated library's `jouine`/`jouind` entries are
+byte-identical backups of these two (a library filename is the sha256 of its
+contents). `chitei2` is not covered at all and inherits the conclusion rather
+than being measured. What carries the negative anyway is its scale: a stacked
+shell would double many adjacent surfaces at once, and in cave interiors the
+walls are the dominant on-screen geometry.
 
 ### Does any retail shot author a non-zero camera roll?
 

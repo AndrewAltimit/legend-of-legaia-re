@@ -391,7 +391,7 @@ mod tests {
         let view = detect(&card).unwrap();
         // Block 7 starts free, and parse_card must not see it.
         assert!(!view.block_is_save_start(&card, 7));
-        view.claim_block(&mut card, 7, "BASCUS-94254PRO_00")
+        view.claim_block(&mut card, 7, "BASCUS-94254PRO-00")
             .unwrap();
         assert!(view.block_is_save_start(&card, 7));
 

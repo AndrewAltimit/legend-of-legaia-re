@@ -203,7 +203,7 @@ wall arms (`field_dir_blocked` and `field_actor_dir_blocked`) separately -
 "the player stopped here" and "the engine says every useful direction is a
 wall" are different findings and the bare tile cannot tell them apart. The
 first run's stall is written up as
-[the `town01` south gate's inert trigger band](../reference/open-rev-eng-threads.md#town01-south-gate-the-reachable-trigger-band-is-inert);
+[Rim Elm's south gate](../reference/re-settled-threads.md#rim-elms-south-gate);
 it found a defect every seated oracle is blind to, and its first two
 diagnoses were both wrong, which is the argument for making a stall
 self-describing rather than a bare failure.

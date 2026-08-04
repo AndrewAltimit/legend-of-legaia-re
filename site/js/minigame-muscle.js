@@ -27,7 +27,16 @@
  *     cluster (Begin + name chips, Item crossed out, Attack / D-pad /
  *     Ra-Seru / Spirit), the name/HP/MP plate, the AP plate, the arts
  *     banner with its speed-lines, damage numbers, the round time meter,
- *     the between-round interval panel and the verdict banners.
+ *     the between-LEGS interval panel and the verdict banners.
+ *
+ * CADENCE: the INTERVAL + score-tally screen is a between-FIGHTS beat, not a
+ * between-turns one. A settled turn goes straight back to the command cluster
+ * - retail's battle SM writes ctx[6] = 0x14 and re-enters ctx+6 = 0x28 with
+ * the arena hub not running at all - so nothing is drawn between turns. Only a
+ * finished leg reaches the hub, and even then only a survived one with the
+ * course unexhausted (state 0x0A); a lost, run-from or final leg settles. The
+ * verdict is the engine's, through `muscle_leg_shows_interval` - the same
+ * `leg_boundary_raises_interval` call the native window makes.
  *
  * SOUND: the dome's own cue set, decoded from the disc's SFX banks - the
  * match SM's UI blips (static rows 0x20..0x22, PROT 0868) and the shared
@@ -158,7 +167,10 @@ window.MgMuscle = (function () {
 
     let scene = null;          /* 3D scene (null = text fallback) */
     let sceneMonster = -1;     /* monster the scene was built for */
-    let mode = 'idle';         /* idle|intro|select|playback|interval|decided */
+    /* idle|intro|select|playback|interval|decided. `interval` is the arena's
+     * BETWEEN-LEGS hub screen (retail state 0x0A); a turn boundary never
+     * enters it. */
+    let mode = 'idle';
     /* select submode - the retail command flow (recomp phase captures):
      *   menu (0x28 cluster) -> attackmenu (0x78 Auto|Command) ->
      *   input (0x50 direction entry) -> review (0x5a queue shown) ->
@@ -182,6 +194,11 @@ window.MgMuscle = (function () {
     let roster = null;         /* muscle_roster_json rows */
     let meter = 0;             /* round time meter 0..0xC (FUN_801d3444) */
     let tally = null;          /* {attacker, total} - playback damage tally */
+    /* The cleared leg's victory caption (FUN_801D8DE8 case 0x59). Retail plays
+     * it inside the battle before the hub takes over; the page has no separate
+     * victory beat, so the INTERVAL screen carries it - below the tally rows,
+     * never over them. */
+    let legCaption = '';
 
     /* --------------------------------------------------- the contest layer
      *
@@ -243,13 +260,30 @@ window.MgMuscle = (function () {
     }
 
     /* Hand a finished leg to the contest, then either stage the next leg or
-     * settle the run. Returns 'next' | 'settled' | 'none'. */
+     * settle the run. Returns 'next' | 'settled' | 'none'.
+     *
+     * 'next' is exactly retail's hub state 0x0A - the between-legs INTERVAL +
+     * score-tally screen - and the engine says so, not this file: the verdict
+     * comes from `muscle_leg_shows_interval`, the same
+     * `leg_boundary_raises_interval` call the native window makes. Only a
+     * finished LEG ever asks; a finished turn keeps the leg open and never
+     * reaches the arena hub. */
     function reportLeg(survived, outcome, turns, hpMax) {
       if (!api.muscle_report_leg || !contest) return 'none';
       api.muscle_report_leg(
         !!survived, outcome | 0, turns | 0, hpMax | 0,
         contestFlags.unlock, contestFlags.gates);
+      const shows = api.muscle_leg_shows_interval
+        ? !!api.muscle_leg_shows_interval() : null;
       cst();
+      if (shows === true) return 'next';
+      if (shows === false) {
+        if (api.muscle_contest_settle) {
+          api.muscle_contest_settle(contestFlags.unlock, contestFlags.gates, false);
+        }
+        cst();
+        return 'settled';
+      }
       if (!contest || contest.over) {
         if (api.muscle_contest_settle) {
           api.muscle_contest_settle(contestFlags.unlock, contestFlags.gates, false);
@@ -401,14 +435,16 @@ window.MgMuscle = (function () {
     function hubQuads(screen, arg, brightness) {
       if (!api || !api.muscle_hub_quads_json) return 0;
       const key = screen + ':' + (arg | 0) + ':' + (brightness | 0);
-      let m = hubQuadCache.get(key);
+      /* Screen 4's numerals come from the LIVE contest, so it must not be
+       * memoised - a cached tally would freeze on the first leg's rows. */
+      let m = screen === 4 ? undefined : hubQuadCache.get(key);
       if (m === undefined) {
         try {
           m = JSON.parse(api.muscle_hub_quads_json(screen, arg | 0, brightness | 0));
         } catch (e) {
           m = { ok: false };
         }
-        hubQuadCache.set(key, m);
+        if (screen !== 4) hubQuadCache.set(key, m);
       }
       if (!m.ok || !m.quads || !m.quads.length) return 0;
       let n = 0;
@@ -933,6 +969,7 @@ window.MgMuscle = (function () {
       artsRows = null;      /* re-read: the fighter may have changed */
       pennantFx = [];
       confirmSel = 0;
+      legCaption = '';
       return true;
     }
 
@@ -1111,18 +1148,7 @@ window.MgMuscle = (function () {
         while (playQueue.length) applyEvent(playQueue.shift(), true);
         artsBanner = null;
         finishPlayback();
-      } else if (mode === 'interval') {
-        api.muscle_next_turn();
-        const s2 = st();
-        if (s2.phase === 'select') {
-          mode = 'select';
-          selectSub = 'menu';
-          /* Between TURNS of one leg the contest round does not move; the
-           * banner stays on the round the ladder staged. */
-          setBanner('ROUND ' + (contest ? contest.round + 1 : s2.turn + 1),
-            null, 70);
-        }
-      } else if (mode === 'decided') {
+      } else if (mode === 'interval' || mode === 'decided') {
         /* A contest still mid-ladder stages its NEXT leg rather than
          * restarting: the ladder has already advanced, so `continueRun`
          * keeps it and lets `start` read the staged foe off it. */
@@ -1184,7 +1210,16 @@ window.MgMuscle = (function () {
     function finishPlayback() {
       const state = st();
       if (state.phase === 'turn_over') {
-        mode = 'interval';
+        /* A TURN ended, not a fight. Retail's battle SM writes ctx[6] = 0x14
+         * and re-enters its own command cluster (ctx+6 = 0x28) - the arena hub
+         * is not even running, so there is no screen between turns. Straight
+         * back to the cluster, no beat, no keypress. */
+        api.muscle_next_turn();
+        mode = 'select';
+        selectSub = 'menu';
+        pennantFx = [];
+        confirmSel = 0;
+        artsPage = -1;
       } else if (state.phase === 'won' || state.phase === 'lost') {
         mode = 'decided';
         if (scene) {
@@ -1211,10 +1246,15 @@ window.MgMuscle = (function () {
            * worth is the CONTEST's score cell, banked below. */
           const step = reportLeg(true, 0, state.turn, state.hp_max[0]);
           if (step === 'next') {
-            setBanner('ROUND CLEARED',
-              'banked ' + contest.rows.score + ' coins  ·  total ' +
-              contest.tally + ' — SPACE for round ' + (contest.round + 1),
-              100000, 'good');
+            /* THE fight ended and the ladder carries on: this - and only this
+             * - is retail's hub state 0x0A, the between-legs INTERVAL +
+             * score-tally screen, which carries the verdict itself as the six
+             * count-up rows. The victory caption is the BATTLE's, so it plays
+             * as a short beat over the KO and expires into the hub screen. */
+            mode = 'interval';
+            banner = null;
+            legCaption = sub;
+            playCue('confirm', 0.5);
           } else {
             setBanner('COURSE CLEARED!',
               (settlement ? settlement.score + ' coins paid' : 'contest over') +
@@ -1926,46 +1966,51 @@ window.MgMuscle = (function () {
       g.strokeRect(x * 2 + 0.5, y * 2 + 0.5, w * 2, h * 2);
     }
 
+    /* The between-LEGS screen: retail hub state 0x0A, reached only once the
+     * fight is over and the ladder has another round to stage. It is not a
+     * between-turns screen - a turn boundary keeps the leg open and the arena
+     * hub never runs (`MusclePhase::ends_turn`), which is why nothing calls
+     * this from `finishPlayback`'s turn arm.
+     *
+     * The retail composition is two emitter runs off the PROT 0977 sprite
+     * table: the 192x32 INTERVAL heading (record 16) and the six count-up rows
+     * (`score_tally_quads`) - the four lanes FUN_801D1184 computes, then the
+     * running tally and the coin bank they drain into. The native window draws
+     * this screen through the same two builders. */
     function drawInterval(state) {
-      g.fillStyle = 'rgba(4,6,10,0.82)';
-      g.fillRect(30 * 2, 52 * 2, 260 * 2, 136 * 2);
-      g.strokeStyle = 'rgba(255,255,255,0.25)';
-      g.strokeRect(30 * 2 + 0.5, 52 * 2 + 0.5, 260 * 2, 136 * 2);
-      /* "INTERVAL" is retail's own between-round heading - the 192x32 hub
-       * sprite (PROT 0977 record 16) off the dome data file. The panel's
-       * info layout below is a page aid (the retail interval screen's own
-       * layout is uncaptured). */
-      if (!(hudOk() && hubQuads(2, 0, 0x100))) {
-        text('INTERVAL', 160, 64, 10, '#ffd166', 'center');
+      const heading = hudOk() && hubQuads(2, 0, 0x100);
+      const rows = hudOk() && hubQuads(4, 0, 0x100);
+      if (heading && rows) {
+        if (legCaption) text(legCaption, 160, 200, 7, '#e8ecf2', 'center', '');
+        text('SPACE: next round', 160, 214, 8, '#2dcca7', 'center');
+        return;
       }
-      text('turn ' + state.turn + ' settled', 160, 75, 6, '#aeb6c4', 'center', '');
-      /* The OPPONENT's HP percentage (hp * 100 / max). Retail pairs this
-       * number with a "Turns Left" digit, but only in the one fight whose
-       * formation slot 0 is monster 0xB6 (Koru) - the dome ladder tops out
-       * at 0xAA, so no dome round raises that strip. The leg is won by
-       * emptying this bar, with no turn limit to beat. */
-      text('HP Left: ' + state.hp_left + '%', 160, 86, 9, '#ffd166', 'center');
-      gaugeBar(80, 94, 160, 6, state.hp_left / 100, '#d84b4b');
-      text('damage taken   you ' + state.last_damage[0] +
-        '  ·  foe ' + state.last_damage[1], 160, 110, 7, '#e8ecf2', 'center', '');
-      /* Spirit recovered this contest - the +0x170 gauge each hit fills
-       * (spirit_gauge_fill); the interval framing itself is approximated. */
-      text('spirit gauge   you ' + state.spirit[0] + '/100' +
-        '  ·  foe ' + state.spirit[1] + '/100', 160, 124, 7, '#7798d4', 'center', '');
-      const q0 = state.queue[0].length, q1 = state.queue[1].length;
-      text('commands played   you ' + q0 + '  ·  foe ' + q1,
-        160, 138, 7, '#aeb6c4', 'center', '');
-      text('AP reseeds from your AGL pool next turn',
-        160, 154, 6, '#aeb6c4', 'center', '');
-      /* Where the leg sits in the CONTEST, and what the run has banked.
-       * A leg pays nothing; the contest pays coins when it settles. */
+      /* No hub art on this image: a text stand-in with the same six numbers. */
+      g.fillStyle = 'rgba(4,6,10,0.82)';
+      g.fillRect(30 * 2, 52 * 2, 260 * 2, 124 * 2);
+      g.strokeStyle = 'rgba(255,255,255,0.25)';
+      g.strokeRect(30 * 2 + 0.5, 52 * 2 + 0.5, 260 * 2, 124 * 2);
+      if (!heading) text('INTERVAL', 160, 64, 10, '#ffd166', 'center');
+      text('round cleared in ' + state.turn + ' turns',
+        160, 78, 6, '#aeb6c4', 'center', '');
+      /* Three of the four lanes are HP recovery scaled by max HP, and only
+       * `score` is money - a dome LEG pays nothing, the contest pays coins
+       * when it settles. */
+      const r = contest ? contest.rows : { round: 0, turns: 0, outcome: 0, score: 0 };
+      text('round ' + r.round + '  ·  turns ' + r.turns +
+        '  ·  outcome ' + r.outcome, 160, 96, 7, '#7798d4', 'center', '');
+      text('recovered ' + (r.round + r.turns + r.outcome) + ' HP',
+        160, 110, 7, '#2dcca7', 'center', '');
+      text('score ' + r.score, 160, 126, 9, '#ffd166', 'center');
       if (contest) {
         text('course ' + (contest.course + 1) +
-          '  ·  round ' + (contest.round + 1) + '/' + contest.length +
+          '  ·  next round ' + (contest.round + 1) + '/' + contest.length +
           '  ·  banked ' + contest.tally + ' coins',
-          160, 164, 7, '#ffd166', 'center', '');
+          160, 144, 7, '#ffd166', 'center', '');
+        text('coin bank ' + contest.coins, 160, 158, 7, '#aeb6c4', 'center', '');
       }
-      text('SPACE: next turn', 160, 176, 8, '#2dcca7', 'center');
+      if (legCaption) text(legCaption, 160, 172, 6, '#e8ecf2', 'center', '');
+      text('SPACE: next round', 160, 186, 8, '#2dcca7', 'center');
     }
 
     function drawBanner() {
@@ -2164,7 +2209,7 @@ window.MgMuscle = (function () {
         drawTally();
         drawArtsBanner();
       } else if (mode === 'interval') {
-        drawStatusPlate(state);
+        /* The arena hub, not the battle: no battle status plate here. */
         drawInterval(state);
       } else if (mode === 'decided') {
         drawStatusPlate(state);

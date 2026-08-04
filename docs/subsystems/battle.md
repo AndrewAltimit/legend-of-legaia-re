@@ -13,7 +13,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 
 **Retail battle logic + data**
 - [Battle action state machine (`FUN_801E295C`)](#battle-action-state-machine-fun_801e295c)
-- [Party wipe + the game-over overlay](#party-wipe--the-game-over-overlay)
+- [Party wipe + the game-over overlay](#party-wipe--the-game-over-overlay) - [the port's hand-off](#the-ports-hand-off)
 - [Battle context struct](#battle-context-struct)
 - [Stage seats (`FUN_800513F0` placement tables)](#stage-seats-fun_800513f0-placement-tables)
 - [Range / line-of-sight (`FUN_8004E2F0`)](#range--line-of-sight-fun_8004e2f0)
@@ -1266,13 +1266,26 @@ wipe captures close the register-indirect remainder: a real party wipe
 routes through the CARD gate above and mode 18 never fires. That 0902
 exits to mode 0 - the **debug menu** - fits the same reading: the 18/19
 pair is a dev harness around dev art. Relatedly, retail's game over is
-**not a menu**: 0902's only readable string is `GAME OVER`, so the port's
-three-row `engine-core::game_over::GameOverSession` is an **engine
-invention** - and it is what both hosts now show on a wipe, because the
-alternative in place while retail's destination stayed unpinned was a
-`World::game_over` flag nothing read, i.e. losing a fight returned the
-player to the field as if they had won. The retail question is still open;
-what is settled is that the port does not pretend a wipe did not happen.
+**not a menu** and **not a screen**: 0902's only readable string is
+`GAME OVER`, and nothing on the reachable path draws it.
+
+### The port's hand-off
+
+`engine-core::game_over::GameOverSession` is the port of that store pair,
+not of a panel. It holds for `TITLE_HANDOFF_FRAMES` - the window retail
+spends streaming the menu overlay, sized from the title's own `0x11` fade
+(the screen-fade level `_DAT_8007BAB4` is clamped to `0xFF` where it is
+consumed and drains `8` per frame at `0x801DDAEC`, so `0xFF / 8` = 32) -
+draws nothing, reads no button, and resolves to its single outcome
+`ReturnToTitle`. Both hosts route it into the same title session their
+boot path uses.
+
+The three-row Continue / Retry / Quit panel that stood here while the
+destination was unpinned is **deleted**, builder and all. It was a real
+improvement over its own predecessor - a `World::game_over` flag nothing
+read, i.e. losing a fight returned the player to the field as if they had
+won - but it was still a menu the game does not have, and once one exit
+store is pinned, three rows cannot be reconstructed from it.
 
 Mode numbers are decimal in these docs and hex in the dumps, which is a
 standing trap here: `_DAT_8007B83C = 0x18` is mode **24** (OTHER /
@@ -3390,7 +3403,7 @@ The `legaia-engine play-window` host ships the loop **on**, matching the browser
 `World::finish_battle` is what a resolved battle runs, and three of its results are now read:
 
 - **Party HP / MP persists.** The battle mutates the `BattleActor` mirrors; `finish_battle` writes them into the roster records (via `World::save_party`) *before* restoring the field actor snapshot, then pushes them back onto the restored party actors (`World::resync_party_actors_from_roster`). Without that step every fight ended at the HP it started with, and losing was indistinguishable from winning.
-- **A wipe raises `World::game_over`**, which both hosts read: native pushes `BootUiState::GameOver`, the browser draws the same `game_over_draws_for` panel. The panel's Continue / Retry / Quit rows remain an **engine invention** - retail's destination on a wipe is still unpinned (see § party wipe) - and Retry runs `World::revive_party_full`, because a wiped party dropped back into the field would now simply re-wipe.
+- **A wipe raises `World::game_over`**, which both hosts read and route to the **title screen** - retail's destination, pinned to the `game_mode = 0x16` / `_DAT_8007BB00 = 1` store pair (see [§ party wipe](#party-wipe--the-game-over-overlay)). Native pushes `BootUiState::GameOver`, the browser arms the same `GameOverSession`; neither draws anything and neither reads a button, because retail asks the player nothing here.
 - **A victory arms the spoils panel** (`World::battle_spoils_banner`, `World::SPOILS_BANNER_FRAMES`), drawn by the shared `engine-ui` builder `battle_spoils_draws_for` on both hosts. The XP / gold / drops were always applied; nothing showed them.
 
 ### Scenes that cannot roll

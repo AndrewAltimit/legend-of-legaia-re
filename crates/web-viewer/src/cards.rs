@@ -29,8 +29,8 @@
 //! Nothing here is uploaded; the bytes live in the tab for the session.
 
 use legaia_engine_core::save_select::{
-    CARD_DIRENTRY_NAME_LEN, CardDirEntry, SlotContent, SlotSnapshot, card_directory_scan,
-    card_free_blocks,
+    CARD_DIRENTRY_NAME_LEN, CARD_SLOT_CLASSES, CardDirEntry, SlotContent, SlotSnapshot,
+    card_dir_slot_of, card_directory_scan, card_free_blocks, classify_card_directory,
 };
 use legaia_save::emu::{self, CardView};
 use legaia_save::{SaveFile, card};
@@ -48,16 +48,19 @@ pub const CARD_SLOTS: usize = 2;
 /// retail load screen lays these out as its 5x3 preview grid.
 pub const CARD_BLOCKS: u8 = 15;
 
-/// The save-number suffix this rack gives a block it claims.
+/// The save number this rack *prefers* for a block it claims.
 ///
 /// Retail's number comes from the save-select list position
 /// (`_DAT_801F0210`), which is independent of the block the BIOS happens to
 /// place the file in - a real card can hold `-01` in block 1 and `-00` in
-/// block 2. The rack has no such list, so it derives the number from the
-/// block instead. That keeps every filename on a card unique (which the card
-/// format requires) and gives each block its own portrait, which is the
-/// visible effect either rule produces.
-fn slot_for_block(block: u8) -> u32 {
+/// block 2. The rack has no such list, so it starts from the block.
+///
+/// That preference is only a starting point, not the answer: see
+/// [`LegaiaRuntime::card_save_index`], which reconciles it against the
+/// numbers the card already carries. Retail cannot collide because it is
+/// standing on the list position it writes; a host that addresses a
+/// **block** has to ask the card.
+fn preferred_slot_for_block(block: u8) -> u32 {
     u32::from(block.saturating_sub(1))
 }
 
@@ -133,6 +136,96 @@ impl LegaiaRuntime {
     /// so the grid's portraits and the info panel's name / level / HP / MP /
     /// location rows come off the real save, exactly as retail reads them
     /// out of its per-slot buffer at `0x801EF1B8 + N * 0x100`.
+    /// Enumerate the card's files off its live directory frames, as the
+    /// [`CardDirEntry`] list the retail scan/budget pair consumes.
+    ///
+    /// The BIOS `firstfile` walk retail's table fill rides builds each
+    /// `DIRENTRY` from the raw 128-byte frame: the 20-byte filename at
+    /// `+0x0A`, the byte size at `+0x04`.
+    fn card_dir_entries(&self, slot: usize) -> Vec<CardDirEntry> {
+        let Some(cardslot) = self.card(slot) else {
+            return Vec::new();
+        };
+        let Some(view) = cardslot.view() else {
+            return Vec::new();
+        };
+        (1..=CARD_BLOCKS)
+            .filter(|&b| view.block_is_save_start(&cardslot.bytes, b))
+            .filter_map(|b| view.dir_frame(&cardslot.bytes, b))
+            .filter_map(|f| {
+                let mut name = [0u8; CARD_DIRENTRY_NAME_LEN];
+                name.copy_from_slice(f.get(0x0A..0x0A + CARD_DIRENTRY_NAME_LEN)?);
+                let s = f.get(4..8)?;
+                Some(CardDirEntry {
+                    name,
+                    size: u32::from_le_bytes([s[0], s[1], s[2], s[3]]),
+                })
+            })
+            .collect()
+    }
+
+    /// The save number to stamp into `block` of the card in rack `slot`.
+    ///
+    /// Two rules, and the first is why this cannot just be the block:
+    ///
+    /// * **The block already carries a Legaia save.** Its number is the one
+    ///   in its own filename, because an overwrite does not re-claim the
+    ///   directory frame - deriving a different number would leave the
+    ///   block's title digits and its filename disagreeing about which save
+    ///   it is, a state retail cannot produce.
+    /// * **The block is free.** Take [`preferred_slot_for_block`] unless the
+    ///   card already files a save under it, in which case take the lowest
+    ///   number it does not. Filenames on a card must be unique - the BIOS
+    ///   directory is keyed by them - and a card written by retail files by
+    ///   list position, so `block - 1` collides as soon as the two spaces
+    ///   disagree.
+    ///
+    /// Which numbers are taken is retail's own question, so it is answered
+    /// by retail's own walk: `classify_card_directory` (`FUN_801E1208`) is
+    /// the pass that stamps [`SlotContent::LegaiaSave`] on every save number
+    /// a directory names, and this reads that class. The free-block budget
+    /// it spends afterwards is the same one the preview grid prices, so both
+    /// are taken off one classification.
+    fn card_save_index(&self, slot: usize, block: u8) -> u32 {
+        let existing = self
+            .card(slot)
+            .and_then(|c| Some((c, c.view()?)))
+            .filter(|(c, v)| v.block_is_save_start(&c.bytes, block))
+            .and_then(|(c, v)| v.dir_frame(&c.bytes, block).map(|f| f.to_vec()))
+            .and_then(|f| card_dir_slot_of(f.get(0x0A..)?));
+        if let Some(index) = existing {
+            return index as u32;
+        }
+
+        let entries = self.card_dir_entries(slot);
+        let (dir_table, dir_count) = card_directory_scan(&entries);
+        let free = card_free_blocks(&dir_table, dir_count).max(0) as u32;
+        let classes = classify_card_directory(&Self::name_frames(&entries), free);
+        let taken = |n: u32| {
+            classes
+                .get(n as usize)
+                .is_some_and(|c| *c == SlotContent::LegaiaSave)
+        };
+
+        let preferred = preferred_slot_for_block(block);
+        if !taken(preferred) {
+            return preferred;
+        }
+        (0..CARD_SLOT_CLASSES as u32)
+            .find(|n| !taken(*n))
+            // A full class array means every number is spoken for; keeping
+            // the preference is then no worse than any other choice and
+            // leaves the collision visible rather than silently renumbering
+            // to a wrong block.
+            .unwrap_or(preferred)
+    }
+
+    /// Directory entries as the filename-leading frames the classifier
+    /// walks (retail's `0x28`-stride record has its name at offset 0).
+    fn name_frames(entries: &[CardDirEntry]) -> Vec<&[u8]> {
+        entries.iter().map(|e| e.name.as_slice()).collect()
+    }
+
     pub(crate) fn card_block_snapshots(&self, slot: usize) -> Vec<SlotSnapshot> {
         let Some(cardslot) = self.card(slot) else {
             return (0..CARD_BLOCKS).map(SlotSnapshot::empty).collect();
@@ -147,22 +240,7 @@ impl LegaiaRuntime {
         // budget pays for it - absence of a claim is not evidence a block is
         // free, so an unclaimed cell past the budget captions as foreign
         // rather than inviting an overwrite.
-        let entries: Vec<CardDirEntry> = (1..=CARD_BLOCKS)
-            .filter(|&b| view.block_is_save_start(&cardslot.bytes, b))
-            .filter_map(|b| view.dir_frame(&cardslot.bytes, b))
-            .filter_map(|f| {
-                // The BIOS `firstfile` walk retail's table fill rides builds
-                // each `DIRENTRY` from the raw 128-byte frame: the 20-byte
-                // filename at `+0x0A`, the byte size at `+0x04`.
-                let mut name = [0u8; CARD_DIRENTRY_NAME_LEN];
-                name.copy_from_slice(f.get(0x0A..0x0A + CARD_DIRENTRY_NAME_LEN)?);
-                let s = f.get(4..8)?;
-                Some(CardDirEntry {
-                    name,
-                    size: u32::from_le_bytes([s[0], s[1], s[2], s[3]]),
-                })
-            })
-            .collect();
+        let entries = self.card_dir_entries(slot);
         let (dir_table, dir_count) = card_directory_scan(&entries);
         let mut free_budget = card_free_blocks(&dir_table, dir_count).max(0);
         (0..CARD_BLOCKS)
@@ -254,7 +332,7 @@ impl LegaiaRuntime {
         // Resolve the portrait before taking the mutable borrow on the rack:
         // the icon read goes through the scene host, which lives on the same
         // struct as the cards.
-        let save_slot = slot_for_block(block);
+        let save_slot = self.card_save_index(slot, block);
         let icon = self.save_block_icon(save_slot);
         let card_slot = self
             .cards
@@ -461,16 +539,36 @@ mod tests {
         buf
     }
 
-    /// A card carrying one Legaia save in `block`.
+    /// A card carrying one Legaia save in `block`, filed under save number
+    /// `block - 1` (the number this rack derives).
     fn card_with_save(block: u8, name: &str, gold: i32) -> Vec<u8> {
+        card_with_numbered_save(block, u32::from(block.saturating_sub(1)), name, gold)
+    }
+
+    /// A card carrying one Legaia save in `block` filed under an arbitrary
+    /// save number - what a card written by **retail** looks like, since
+    /// retail numbers a save by the save-select list position the player
+    /// picked and not by the block the BIOS placed it in.
+    fn card_with_numbered_save(block: u8, save_index: u32, name: &str, gold: i32) -> Vec<u8> {
         let mut buf = blank_card();
         let f = card::DIR_FRAME_SIZE * block as usize;
         buf[f..f + 4].copy_from_slice(&card::state::FIRST_BLOCK.to_le_bytes());
         buf[f + 8..f + 10].copy_from_slice(&0xFFFFu16.to_le_bytes());
-        buf[f + 10..f + 22].copy_from_slice(b"BASCUS-94254");
+        let filename = card::legaia_save_filename(save_index);
+        buf[f + 10..f + 10 + filename.len()].copy_from_slice(filename.as_bytes());
         let b = card::BLOCK_SIZE * block as usize;
         let sc = &mut buf[b..b + card::BLOCK_SIZE];
         sc[..2].copy_from_slice(&card::SAVE_BLOCK_MAGIC);
+        // A retail block carries a Shift-JIS title whose two digit cells
+        // spell the save number; the identity writer patches those cells
+        // in place and deliberately refuses to stamp them into an empty
+        // title, so a fixture without one cannot exercise the patch.
+        let title = &mut sc[card::RETAIL_TITLE_OFFSET..card::RETAIL_ICON_CLUT_OFFSET];
+        title.fill(0x20);
+        let digits = card::save_title_digits(save_index);
+        for (off, d) in card::RETAIL_TITLE_DIGIT_OFFSETS.iter().zip(digits.iter()) {
+            title[*off] = *d;
+        }
         let mut rec = legaia_save::CharacterRecord::zeroed();
         rec.set_name(name);
         rec.set_magic_rank(12);
@@ -644,6 +742,78 @@ mod tests {
 
         let rt2 = rt_with_card(0, exported);
         assert!(rt2.card_block_snapshots(0)[4].present, "cell 4 = block 5");
+    }
+
+    /// Every filename on a memory card must be unique - the BIOS
+    /// directory is keyed by it. A card written by retail numbers its
+    /// saves by the save-select list position, so a save filed as `-03`
+    /// can sit in any block; deriving the number from the block alone
+    /// then hands a second block the same filename.
+    #[test]
+    fn saving_never_duplicates_a_filename_already_on_the_card() {
+        // Retail card: block 1 holds save number 3.
+        let mut rt = rt_with_card(0, card_with_numbered_save(1, 3, "Vahn", 100));
+        rt.world_mut().money = 5;
+        rt.world_mut().load_party(legaia_save::Party {
+            members: vec![{
+                let mut r = legaia_save::CharacterRecord::zeroed();
+                r.set_name("Noa");
+                r
+            }],
+        });
+        // `block - 1` would be 3 here, colliding with block 1's file.
+        rt.write_session_into_card(0, 4).unwrap();
+        let exported = rt.export_card(0);
+
+        let names: Vec<String> = (1..=CARD_BLOCKS)
+            .filter_map(|b| {
+                let f = card::DIR_FRAME_SIZE * b as usize;
+                let n: String = exported[f + 10..f + 30]
+                    .iter()
+                    .take_while(|&&c| c != 0)
+                    .map(|&c| c as char)
+                    .collect();
+                (!n.is_empty()).then_some(n)
+            })
+            .collect();
+        let mut uniq = names.clone();
+        uniq.sort();
+        uniq.dedup();
+        assert_eq!(uniq.len(), names.len(), "duplicate filenames: {names:?}");
+        // The generic card walker must still see both saves.
+        assert_eq!(card::parse_card(&exported).expect("parses").len(), 2);
+    }
+
+    /// Overwriting a block keeps its **existing** save number, because the
+    /// directory filename is not rewritten on an overwrite: deriving a
+    /// different number would leave the block's own title digits and its
+    /// filename disagreeing about which save it is.
+    #[test]
+    fn overwriting_a_block_keeps_the_number_its_filename_carries() {
+        let mut rt = rt_with_card(0, card_with_numbered_save(2, 7, "Vahn", 100));
+        rt.world_mut().load_party(legaia_save::Party {
+            members: vec![legaia_save::CharacterRecord::zeroed()],
+        });
+        rt.write_session_into_card(0, 2).unwrap();
+        let exported = rt.export_card(0);
+
+        let f = card::DIR_FRAME_SIZE * 2;
+        let name: String = exported[f + 10..f + 30]
+            .iter()
+            .take_while(|&&c| c != 0)
+            .map(|&c| c as char)
+            .collect();
+        assert_eq!(name, card::legaia_save_filename(7), "filename untouched");
+        let b = card::BLOCK_SIZE * 2 + card::RETAIL_TITLE_OFFSET;
+        let title = &exported[b..b + 0x5C];
+        assert_eq!(
+            [
+                title[card::RETAIL_TITLE_DIGIT_OFFSETS[0]],
+                title[card::RETAIL_TITLE_DIGIT_OFFSETS[1]]
+            ],
+            card::save_title_digits(7),
+            "the block title must agree with the filename"
+        );
     }
 
     #[test]

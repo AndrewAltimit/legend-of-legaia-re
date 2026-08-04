@@ -19,16 +19,13 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-/// Player context pointer global (`*0x8007C364` = the player actor struct).
-pub const PLAYER_PTR_VA: u32 = 0x8007_C364;
-/// Active-scene CDNAME name (8 bytes at `0x8007050C`).
-pub const SCENE_NAME_VA: u32 = 0x8007_050C;
-/// Next game-mode index (`0x02` field-init, `0x03` field-run, `0x15` battle, ...).
-pub const GAME_MODE_VA: u32 = 0x8007_B83C;
-/// Player position fields (16-bit signed; `+0x16` facing sits between them, so
-/// they MUST be read as `i16`, never `u32`).
-pub const PLAYER_X_OFF: u32 = 0x14;
-pub const PLAYER_Z_OFF: u32 = 0x18;
+// The Legaia RAM anchors are shared with the mednafen reader - both land on the
+// same KSEG0-addressed 2 MiB image, so "which scene is this state in?" has one
+// implementation. Re-exported here so existing `legaia_pcsxr::SCENE_NAME_VA`
+// consumers keep resolving.
+pub use legaia_mednafen::game_anchors::{
+    GAME_MODE_VA, PLAYER_PTR_VA, PLAYER_X_OFF, PLAYER_Z_OFF, SCENE_NAME_VA, StateIdentity,
+};
 
 /// A loaded PCSX-Redux save state: just its 2 MiB main RAM, KSEG0-addressed.
 pub struct SaveState {
@@ -42,13 +39,32 @@ impl SaveState {
         Self::from_sstate_bytes(&raw)
     }
 
-    /// Same as [`Self::from_path`] from in-memory `.sstate` (gzip) bytes.
-    pub fn from_sstate_bytes(gz: &[u8]) -> Result<Self> {
-        let mut payload = Vec::new();
-        flate2::read::GzDecoder::new(gz)
-            .read_to_end(&mut payload)
-            .context("gunzip .sstate")?;
-        let ram = legaia_mednafen::extract::main_ram_via_anchor(&payload)
+    /// Same as [`Self::from_path`] from in-memory `.sstate` bytes.
+    ///
+    /// PCSX-Redux writes a `.sstate` **either** gzipped **or** as the bare
+    /// protobuf, depending on how it was produced: the emulator's own
+    /// save-state slots are gzipped, while a state written from a Lua probe's
+    /// snapshot call is not (the repo's `captures/**/snap_*.sstate` and
+    /// `autosave_*.sstate` are all bare, ~19 MB each). Treating the format as
+    /// "always gzip" silently drops most of the capture corpus with
+    /// `invalid gzip header`, so dispatch on the magic instead: `1f 8b` is
+    /// gzip, anything else is already the payload.
+    ///
+    /// Either way the main RAM is found by the same format-agnostic anchor
+    /// search, so nothing downstream needs to know which shape it came from.
+    pub fn from_sstate_bytes(bytes: &[u8]) -> Result<Self> {
+        let owned: Vec<u8>;
+        let payload: &[u8] = if bytes.starts_with(&[0x1f, 0x8b]) {
+            let mut buf = Vec::new();
+            flate2::read::GzDecoder::new(bytes)
+                .read_to_end(&mut buf)
+                .context("gunzip .sstate")?;
+            owned = buf;
+            &owned
+        } else {
+            bytes
+        };
+        let ram = legaia_mednafen::extract::main_ram_via_anchor(payload)
             .context("locate main RAM in PCSX-Redux payload (anchor search)")?
             .to_vec();
         Ok(Self { ram })
@@ -59,60 +75,44 @@ impl SaveState {
         &self.ram
     }
 
-    fn off(&self, va: u32) -> usize {
-        (va & 0x1F_FFFF) as usize
-    }
-
     pub fn u8_at(&self, va: u32) -> u8 {
-        self.ram[self.off(va)]
+        legaia_mednafen::game_anchors::u8_at(&self.ram, va)
     }
     pub fn u16_at(&self, va: u32) -> u16 {
-        let o = self.off(va);
-        u16::from_le_bytes([self.ram[o], self.ram[o + 1]])
+        legaia_mednafen::game_anchors::u16_at(&self.ram, va)
     }
     pub fn i16_at(&self, va: u32) -> i16 {
-        self.u16_at(va) as i16
+        legaia_mednafen::game_anchors::i16_at(&self.ram, va)
     }
     pub fn u32_at(&self, va: u32) -> u32 {
-        let o = self.off(va);
-        u32::from_le_bytes([
-            self.ram[o],
-            self.ram[o + 1],
-            self.ram[o + 2],
-            self.ram[o + 3],
-        ])
+        legaia_mednafen::game_anchors::u32_at(&self.ram, va)
     }
 
     /// Active CDNAME scene label (e.g. `"town01"`), trimmed at the first NUL /
     /// non-printable byte.
     pub fn scene_name(&self) -> String {
-        let mut s = String::new();
-        for i in 0..8 {
-            let b = self.u8_at(SCENE_NAME_VA + i);
-            if !(0x20..0x7f).contains(&b) {
-                break;
-            }
-            s.push(b as char);
-        }
-        s
+        legaia_mednafen::game_anchors::scene_name(&self.ram)
     }
 
     /// Next game-mode index (`0x03` = field-run, `0x15` = battle, ...).
     pub fn game_mode(&self) -> u8 {
-        self.u8_at(GAME_MODE_VA)
+        legaia_mednafen::game_anchors::game_mode(&self.ram)
     }
 
     /// The player actor struct pointer (`*0x8007C364`), or `None` if it is not a
     /// plausible KSEG0 main-RAM pointer.
     pub fn player_ptr(&self) -> Option<u32> {
-        let p = self.u32_at(PLAYER_PTR_VA);
-        ((p & 0xFFE0_0000) == 0x8000_0000).then_some(p)
+        legaia_mednafen::game_anchors::player_ptr(&self.ram)
     }
 
     /// Player world position `(x, z)` read as 16-bit signed from the player
     /// struct, or `None` if the struct pointer is implausible.
     pub fn player_pos(&self) -> Option<(i16, i16)> {
-        let p = self.player_ptr()?;
-        Some((self.i16_at(p + PLAYER_X_OFF), self.i16_at(p + PLAYER_Z_OFF)))
+        legaia_mednafen::game_anchors::player_pos(&self.ram)
+    }
+
+    /// Scene + mode + player position in one record.
+    pub fn identity(&self) -> StateIdentity {
+        legaia_mednafen::game_anchors::identify(&self.ram)
     }
 }

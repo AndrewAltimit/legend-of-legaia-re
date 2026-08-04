@@ -7,9 +7,7 @@
 use legaia_engine_core::field_menu::{
     FieldMenuInput, FieldMenuOutcome, FieldMenuRow, FieldMenuRowMask, FieldMenuSession,
 };
-use legaia_engine_core::game_over::{
-    GameOverInput, GameOverOutcome, GameOverPhase, GameOverSession,
-};
+use legaia_engine_core::game_over::{GameOverOutcome, GameOverPhase, GameOverSession};
 use legaia_engine_core::input::{Mapping, PadButton};
 use legaia_engine_core::key_rebind::{KeyRebindInput, KeyRebindOutcome, KeyRebindSession};
 use legaia_engine_core::options::{OptionsInput, OptionsOutcome, OptionsSession, OptionsState};
@@ -201,33 +199,35 @@ fn options_session_popup_cancel_leaves_value() {
     );
 }
 
+/// The wipe hand-off holds, then resolves to the title - the port of
+/// `FUN_8003AEB0`'s `game_mode = 0x16` / `_DAT_8007BB00 = 1` store pair.
+///
+/// These two assertions replace a pair that asserted the defect: they drove a
+/// cursor across Continue / Retry / Quit rows and checked that a disabled
+/// Continue was skipped. Retail has no rows, so the old tests could only ever
+/// hold the invention in place.
 #[test]
-fn game_over_continue_outcome() {
-    let mut s = GameOverSession::new();
-    s.fade_in_frames = 1;
-    s.phase = GameOverPhase::FadeIn {
-        frames_remaining: 1,
-    };
-    let _ = s.tick(GameOverInput::default());
-    let _ = s.tick(GameOverInput {
-        cross: true,
-        ..Default::default()
-    });
-    assert_eq!(s.outcome(), Some(GameOverOutcome::Continue));
+fn game_over_holds_then_hands_to_the_title() {
+    let mut s = GameOverSession::with_hold(2);
+    s.tick();
+    assert_eq!(
+        s.phase(),
+        GameOverPhase::Hold {
+            frames_remaining: 1
+        }
+    );
+    assert_eq!(s.outcome(), None, "the hold must not resolve early");
+    s.tick();
+    assert_eq!(s.outcome(), Some(GameOverOutcome::ReturnToTitle));
 }
 
 #[test]
-fn game_over_skips_continue_when_no_save() {
-    let mut s = GameOverSession::with_no_save();
-    s.phase = GameOverPhase::Choosing { cursor: 1 }; // Retry
-    let _ = s.tick(GameOverInput {
-        up: true,
-        ..Default::default()
-    });
-    // Wraps around, skipping disabled Continue, lands on Quit.
+fn game_over_default_hold_matches_the_traced_title_fade() {
+    // 0xFF (the clamped screen-fade level) / 8 (the per-frame drain in title
+    // sub-mode 0x11 at 0x801DDAEC).
     assert_eq!(
-        s.cursor(),
-        legaia_engine_core::game_over::GameOverRow::Quit.index()
+        GameOverSession::new().frames_remaining(),
+        legaia_engine_core::game_over::TITLE_HANDOFF_FRAMES
     );
 }
 

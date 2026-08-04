@@ -161,9 +161,10 @@ fn world_tick_runs_physics_pass_on_the_actor_game_tick() {
     world.actors[0].physics.move_vm_kick = 1;
     world.actors[0].move_buffer.cursor_requested = 1;
     world.actors[0].move_buffer.phase_rate = 4;
-    // The sim clocks at 100 Hz and marks a vsync on the ~60 % of ticks that
-    // cross it, so the first vsync (and with `frame_step = 1`, the first
-    // game tick) lands within the first two sim ticks.
+    // One sim tick is one retail vsync, so with `frame_step = 1` the first
+    // game tick lands on the first sim tick. The second call is kept as
+    // slack: the assertion is "the kick reached the pool", not "on which of
+    // the first two ticks".
     world.tick();
     world.tick();
     assert_eq!(world.actors[0].move_buffer.cursor_active, 1);

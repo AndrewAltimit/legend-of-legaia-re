@@ -320,7 +320,7 @@ blocker is a table is the same error this page records for the panel painters.
 | `801d8258` | `arm` | `crates/engine-core/src/world_map.rs:78` | DISCLOSE |
 | `801da9f8` | `OptionsPhase` | `crates/engine-core/src/options.rs:406` | FALSE INERT |
 | `801dd0c0` | `category_check` | `crates/engine-core/src/menu_item_category.rs:118` | DISCLOSE |
-| `801e1208` | `classify_card_directory` | `crates/engine-core/src/save_select.rs:218` | DISCLOSE |
+| `801e1208` | `classify_card_directory` | `crates/engine-core/src/save_select.rs` | WIRE |
 | `801e295c` | `advance_battle_mode` | `crates/engine-core/src/world/battle/monster_ai.rs:414` | WIRE |
 | `801e3af0` | `card_directory_scan` | `crates/engine-core/src/save_select.rs:398` | DISCLOSE |
 | `801e3ba0` | `card_free_blocks` | `crates/engine-core/src/save_select.rs:422` | DISCLOSE |
@@ -582,16 +582,14 @@ anchor. Wrap to the file's comment width.
 - **`category_check`** - the item-category favor score drives retail's
   per-character item-menu ordering and greying. The engine's item menu has no
   favor pass, so there is no ordering for the score to affect.
-- **`classify_card_directory` / `card_directory_scan` / `card_free_blocks`** -
-  the reason recorded here (no runtime card-image backend) **no longer
-  holds** and the source no longer says it. The browser card rack
-  (`web-viewer::cards`) mounts raw card images and runs the scan/budget
-  pair. What blocks the classifier is an **index-space mismatch**: the rack's
-  grid is keyed by physical block and the classifier keys by the filename's
-  save index, and nothing makes the two agree on a player's card. Adopting
-  it means re-keying the grid. Read the tags in `save_select.rs`, not this
-  bullet, for the current form - it is kept only to record that the earlier
-  reason was outgrown rather than wrong at the time.
+- **`card_directory_scan` / `card_free_blocks`** - the reason recorded here
+  (no runtime card-image backend) **no longer holds** and the source no
+  longer says it. The browser card rack (`web-viewer::cards`) mounts raw
+  card images and runs the scan/budget pair. Its sibling
+  `classify_card_directory` is now wired too, for the reason
+  [below](#the-index-space-mismatch-was-the-wire-not-the-blocker) - which
+  is the second time this bullet's reason has been outgrown rather than
+  found wrong. Read the tags in `save_select.rs`, not this bullet.
 - **`list_append_u16` / `alloc_list_head` / `alloc_and_append` / `free`** - the
   module doc already carries the full reason under its `# NOT WIRED` heading;
   the audit compares per anchor, so each function needs its own line. Short
@@ -912,6 +910,86 @@ table (the array walked at `+0x1818` is the item bag); the read and compose
 buffers are two distinct `0x2000` regions (`0x801E5120` / `0x801E7120`), not
 one used both ways; and `FUN_801DAFD4` is the shop's Buy/Sell/Quit picker
 rather than a save-slot confirm.
+
+### The index-space mismatch was the wire, not the blocker
+
+`classify_card_directory`'s disclosure named the right fact and drew the
+wrong conclusion from it. The fact: its class array is keyed by the save
+number in a directory frame's **filename**, while the browser card rack's
+5x3 preview grid is keyed by **physical block**, and on a real card the two
+disagree - retail files a save under the save-select list position it was
+standing on and lets the BIOS place the file wherever, so `-03` can sit in
+block 1. The conclusion drawn was "adopting it means re-keying the grid".
+
+Re-keying the grid is one thing a host could do with the walk. It is not
+the thing the host needed. **A card's filenames must be unique** - the BIOS
+directory is keyed by them - so any host that addresses a block has to ask
+the card which save numbers are already spoken for before it claims one,
+and that question is exactly what this walk answers. Retail never asks it
+because it writes the number it is already standing on; that is why the
+routine looks like a screen-building pass and is also a uniqueness oracle.
+
+The rack was deriving the number from the block alone, which produced two
+defects on any card retail had written: a duplicate filename whenever the
+two spaces collided, and, on an overwrite, title digits that disagreed with
+the filename the frame kept (an overwrite does not re-claim the frame).
+`LegaiaRuntime::card_save_index` now takes the block's own number when it
+has one and otherwise picks a free one off this walk's class array.
+
+The transferable part: **a disclosure that names a mismatch should say what
+the mismatch blocks, not just that it exists.** "The two spaces disagree"
+is a fact about the port; "so no host can adopt it" was an inference nobody
+checked, and it survived because the inference sounds like the fact.
+
+### The prefix was wrong, and only an inert kernel could hide it
+
+The same re-read found the walk could not have matched anything.
+`CARD_SAVE_PREFIXES` spelled the separator `PRO_`; the retail literals in
+the menu overlay's data segment (`0x801EF03C` / `0x801EF054`, PROT entry
+0899 file `0x20824` / `0x2083C`) and the directory frames of real cards
+both spell it `PRO-`. Four places in
+[`save-screen.md`](../subsystems/save-screen.md) carried the same typo.
+
+Two things made it invisible, and both are general:
+
+- **Every fixture was built from the constant under test.** Six unit tests
+  asserted the walk's behaviour by constructing frames out of
+  `CARD_SAVE_PREFIXES` itself, so all six passed against a prefix that
+  matches nothing. A self-referential fixture cannot see a wrong literal;
+  it can only see a wrong *rule*.
+- **The writer and the matcher were in different crates and only one was
+  live.** `legaia_save::card::LEGAIA_SAVE_FILENAME_PREFIX` had it right the
+  whole time, because the browser rack writes through it and real cards
+  proved it. Nothing compared the two. The USA entry is now taken from that
+  constant rather than respelled, so one retail literal has one owner.
+
+This is the [second re-read's](#the-card-clusters-second-re-read-the-block-carries-a-checksum)
+lesson landing a second time in the same cluster: an inert cluster's
+disclosures can be right about the wiring and wrong about the bytes.
+
+### `card_message_rows` named a string table that is a sprite table
+
+`engine-ui`'s `card_message_rows` (`801e0418`) is still `DISCLOSE`, but one
+of its two stated prerequisites was wrong about the mechanism. It read
+"`msg_slot` indexes the slot argument retail's drawer (`FUN_801E2EE4`)
+resolves against the menu overlay's message pointers ... even a wired host
+would have five rows and no text."
+
+`FUN_801E2EE4` draws no text. Its 4th argument is `(index & 0x3FF)` into a
+20-byte-stride **sprite descriptor** table at `0x801E50A8` (PROT 0899 file
+`0x16890`), and the routine builds one `0x34`-byte four-vertex GP0 packet
+from it - tpage `+0x04`, CLUT `+0x06`, texel origin `+0x08`, extent `+0x0A`,
+two RGB triples at `+0x0C` / `+0x10` scaled by the caller's brightness -
+then links it into the OT through `FUN_8003D2C4`. The first two records read
+`254x148` and `254x16`: the messages are pre-rendered image strips in VRAM.
+
+[`functions/menus.md`](../reference/functions/menus.md) already classed
+`801E2EE4` with its two sibling GPU-primitive emitters, so the disclosure
+contradicted the repo's own function directory - which is the cheapest
+possible check and the one that was skipped. The prerequisite is a parser
+for that descriptor table plus its page resident in engine VRAM, i.e. a
+disc-derived asset on the same footing as the save-icon sheet, not a text
+corpus nobody has.
 
 ### A latent duplicate-free-function-name landmine, defused
 

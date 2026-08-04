@@ -21,11 +21,18 @@
 
 use super::*;
 
-/// Sim ticks to run. The sim clocks at 100 Hz and marks a retail vsync on
-/// the ~60 % of ticks that cross it, so 200 sim ticks = 120 vsyncs - an even
-/// multiple of both cadences under test, which keeps the comparison free of
-/// partial-tick remainders.
-const SIM_TICKS: usize = 200;
+/// Sim ticks to run. One sim tick is one retail display frame (the 1:1
+/// denomination `World::tick` documents), so this is also the vsync count.
+/// `120` is divisible by every cadence `FUN_80016B6C` can produce (`1..=4`),
+/// which keeps the comparison free of partial-game-tick remainders.
+///
+/// This constant used to read `200`, derived from a claimed 100 Hz sim whose
+/// sub-clock emitted 120 retail frames over 200 ticks. No host ever ticked at
+/// 100 Hz - both drive `World::tick` at 60 - so 200 ticks were really 200
+/// vsyncs and the assertions below were comparing a 200-vsync run against a
+/// 120-vsync expectation. The *properties* asserted here were right
+/// throughout; only the tick -> vsync conversion was wrong.
+const SIM_TICKS: usize = 120;
 const EXPECTED_VSYNCS: i32 = 120;
 
 /// A world whose only job is to integrate one actor's acceleration. Title

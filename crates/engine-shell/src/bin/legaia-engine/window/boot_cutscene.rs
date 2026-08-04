@@ -429,37 +429,16 @@ impl PlayWindowApp {
                 true
             }
             BootUiState::GameOver(session) => {
-                use legaia_engine_core::game_over::{GameOverInput, GameOverOutcome};
-                let input = GameOverInput { up, down, cross };
-                let _ = session.tick(input);
-                if let Some(outcome) = session.outcome() {
-                    match outcome {
-                        GameOverOutcome::Continue => {
-                            self.save_flow.reset();
-                            self.boot_ui = BootUiState::SaveSelect(
-                                legaia_engine_core::save_select::SaveSelectSession::for_rack(
-                                    legaia_engine_core::save_select::SaveSelectMode::Load,
-                                    &disk_save_rack(&self.save_dir),
-                                ),
-                            );
-                        }
-                        GameOverOutcome::Retry | GameOverOutcome::Quit => {
-                            // Retry → drop to scene; Quit → back to title.
-                            self.boot_ui = match outcome {
-                                GameOverOutcome::Quit => BootUiState::Title(
-                                    legaia_engine_core::title::TitleSession::new(),
-                                ),
-                                _ => {
-                                    // Post-battle HP now survives the fight,
-                                    // so a wiped party dropped back into the
-                                    // field would re-wipe on the next
-                                    // encounter. Stand it back up first.
-                                    self.session.host.world.revive_party_full();
-                                    BootUiState::Inactive
-                                }
-                            };
-                        }
-                    }
+                use legaia_engine_core::game_over::GameOverOutcome;
+                // No input arm: retail's wipe path offers the player nothing.
+                // It stores `game_mode = 0x16` + `_DAT_8007BB00 = 1`
+                // (`FUN_8003AEB0` `0x8003B5D0` / `0x8003B5E0`) and the title
+                // overlay takes the screen. The hold below stands in for the
+                // menu-overlay stream retail spends that window on.
+                session.tick();
+                if let Some(GameOverOutcome::ReturnToTitle) = session.outcome() {
+                    self.boot_ui =
+                        BootUiState::Title(legaia_engine_core::title::TitleSession::new());
                 }
                 true
             }
@@ -696,20 +675,12 @@ impl PlayWindowApp {
                 }
                 draws
             }
-            BootUiState::GameOver(s) => self.game_over_draws(s),
+            // The wipe hand-off draws nothing: retail's next frame after the
+            // `game_mode = 0x16` store is the title overlay fading in, and
+            // the browser host is silent here for the same reason. The panel
+            // that used to be built here was an engine invention.
+            BootUiState::GameOver(_) => Vec::new(),
         }
-    }
-
-    /// The game-over panel's draws, off the live session.
-    ///
-    /// A named site rather than an inline arm so the browser host can be
-    /// paired against it: both hosts must project the *session* here (cursor
-    /// and the save-scan `continue_enabled`), not a pinned pair of literals,
-    /// and the pen is the shared `engine-ui` constant so the panel cannot
-    /// land in two places.
-    fn game_over_draws(&self, s: &legaia_engine_core::game_over::GameOverSession) -> Vec<TextDraw> {
-        use legaia_engine_render::{GAME_OVER_PEN, game_over_draws_for};
-        game_over_draws_for(&self.font, s.cursor(), s.continue_enabled, GAME_OVER_PEN)
     }
 
     /// Drain world field events and route them to whichever subsystem

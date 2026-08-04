@@ -431,7 +431,7 @@ op word `_DAT_801F329C`, sitting above the libcd I/O machine
 |---|---|
 | `1` | Save request armed. Waits on the last card result `_DAT_801F3804`; a fatal `-2` raises write-error flag `DAT_801EF13C` and status-string id `_DAT_801F0204 = 0x17`; a positive result arms the write delay `DAT_801EF128 = 0x18` and advances to `3`. |
 | `2` | Load request armed. Same shape; fatal `-2` raises `DAT_801EF140` + string `0x13`; positive advances to `5`. |
-| `3` | Write execute. Counts the `0x18`-frame delay down by the frame-rate byte `DAT_1F800393`, resolves the region filename (`FUN_801E3AF0` / `3BA0` / `3BEC`, prefix `BASCUS-94254PRO_`), issues the block write `FUN_801E3D68(handle, 0, name, buf, 0x2000, …)`. Success prints `"open ok"` and advances to `4`; failure closes the file (`FUN_800566D8`), prints `"write error"`, raises `DAT_801EF13C`, resets to `0`. |
+| `3` | Write execute. Counts the `0x18`-frame delay down by the frame-rate byte `DAT_1F800393`, resolves the region filename (`FUN_801E3AF0` / `3BA0` / `3BEC`, prefix `BASCUS-94254PRO-`), issues the block write `FUN_801E3D68(handle, 0, name, buf, 0x2000, …)`. Success prints `"open ok"` and advances to `4`; failure closes the file (`FUN_800566D8`), prints `"write error"`, raises `DAT_801EF13C`, resets to `0`. |
 | `5` | Read execute. `FUN_801E3C90(handle, 0, name, buf, blocks)`; success advances to `6`, failure prints `"write error"` and resets to `0`. |
 | `7` | Format. Retries `FUN_801E3E7C` up to five times; result `-1` prints `"Format No Card"`, `1` prints `"Format End"` (+ `_DAT_801F0220 = 3`), anything else `"Format Error"`; resets to `0`. |
 
@@ -495,8 +495,17 @@ prefix using BIOS-A(0x18) `strncmp` (`FUN_80056748`):
 
 | Prefix string | Region |
 |---|---|
-| `BASCUS-94254PRO_` | USA (Legend of Legaia, SCUS-94254) |
-| `BISCPS-10059PRO_` | JP (Legend of Legaia, SCPS-10059) |
+| `BASCUS-94254PRO-` | USA (Legend of Legaia, SCUS-94254) |
+| `BISCPS-10059PRO-` | JP (Legend of Legaia, SCPS-10059) |
+
+Both are exactly 16 bytes, which is the `strncmp` length retail passes,
+so the separator is the sixteenth character and the two digits follow it.
+The literals live in the menu overlay's own data segment at `0x801EF03C`
+and `0x801EF054` (PROT entry 0899 file `0x20824` / `0x2083C`); the
+directory frames of real cards carry the same spelling. The separator is a
+**hyphen** - this table and the port's matcher both spelled it `PRO_` for
+as long as the walk had no caller, which is a wrong literal that no test
+could see because every fixture was built from the constant under test.
 
 The 2-digit slot number is parsed from positions `[10..11]` of the
 matched entry and used to write a per-slot record at
@@ -667,6 +676,30 @@ differ in:
 - The native shell mounts its save directory as the card in port 1
   (`disk_save_rack`), where cell `i` is `slot_{i}` - a plain index, no
   directory block. Port 2 is the empty port.
+
+### The third id space: the save **number** in the filename
+
+The grid's block index is not the number a save is filed under. Retail
+files a save as `BASCUS-94254PRO-<nn>` where `nn` is the save-select list
+position it was standing on (`_DAT_801F0210`), and lets the BIOS place the
+file in whatever block is free - so a real card can hold `-03` in block 1
+and `-00` in block 2. That number is what
+[`FUN_801E1208`](#save-block-directory-enumeration-fun_801e1208) keys its
+class array by, and what the block's own title digits spell.
+
+Retail never has to reconcile the two spaces, because it writes the number
+it is already standing on. A host that addresses a **block** does, and the
+browser card rack is one: `LegaiaRuntime::card_save_index` takes the
+block's existing number when the block is claimed - an overwrite does not
+re-claim the directory frame, so a derived number would leave the title
+digits and the filename disagreeing - and otherwise picks a number no file
+on the card already uses, reading the taken set out of
+`classify_card_directory`. Deriving it from the block alone wrote duplicate
+filenames onto a retail card, which the BIOS directory cannot represent.
+
+The two other index spaces are unaffected: the grid stays keyed by block
+and the pill row by port. Re-keying the grid into the retail name-index
+space is a separate question and is still open.
 
 ### The driver around the second stage
 
@@ -1173,7 +1206,7 @@ the block holds. Only the latter distinguishes a free block from a foreign
 save.
 
 `_DAT_801f0200` gates mode 3's wording, and is `0` on the **Save** path: it is
-the branch that goes on to stamp `BASCUS-94254PRO_00` into the chosen free
+the branch that goes on to stamp `BASCUS-94254PRO-00` into the chosen free
 block (`FUN_801DD35C` case `0xE`), which is save-creation, and it is set from
 `FUN_801DD35C`'s second parameter (`1` → `0`, `2` → `1`).
 

@@ -192,7 +192,7 @@
       const skySlots = new Set();
       let skyDrawsHidden = 0;
       const draws = [];
-      const pushDraws = (slots, pos, rots) => {
+      const pushDraws = (slots, pos, rots, rotsX, rotsZ) => {
         for (let i = 0; i < slots.length; i++) {
           const ms = slots[i];
           if (!ensureMesh(ms)) continue;
@@ -212,25 +212,47 @@
            * buildings on elevated maps like Rim Elm's cliff).
            * rotY: the record's authored yaw (+0x0A, PSX 4096-per-rev); retail's
            * yaw sense is opposite placementModelScaledY's, hence the negation. */
-          draws.push({
+          const draw = {
             meshId: ms,
             x: pos[i * 3], y: -pos[i * 3 + 1], z: pos[i * 3 + 2],
             rotY: rots ? -(rots[i] & 0xFFF) * Math.PI / 2048 : 0,
             scale: 1.0,
-          });
+          };
+          /* A placement with an authored X/Z tilt cannot go through the
+           * yaw-only path above: that builder's negated-yaw convention is a
+           * cancellation specific to Ry (see webgl-math.js). Hand it a whole
+           * model matrix composed in retail's Rx*Ry*Rz order instead - the
+           * same composition the native shell applies through
+           * engine-render's battle_intro::placement_rotation, and the same
+           * one the play page applies. Most placements are pure yaw and keep
+           * the cheaper path. */
+          const rx = rotsX ? (rotsX[i] & 0xFFF) : 0;
+          const rz = rotsZ ? (rotsZ[i] & 0xFFF) : 0;
+          if (rx || rz) {
+            const A2R = Math.PI / 2048;
+            draw.model = placementModelEuler(
+              draw.x, draw.y, draw.z,
+              rx * A2R, (rots ? rots[i] & 0xFFF : 0) * A2R, rz * A2R, 1.0);
+          }
+          draws.push(draw);
         }
       };
 
       /* Terrain tiles first (ground layer), placed objects on top - the depth
        * test resolves overlap either way; the order just matches the native
-       * draw sequence. Yaw accessors are guarded so a stale cached WASM still
-       * draws (unrotated). */
+       * draw sequence. Rotation accessors are guarded so a stale cached WASM
+       * still draws (unrotated). */
       const hasRot = typeof v.field_scene_placement_rot_y === 'function';
+      const hasTilt = typeof v.field_scene_placement_rot_x === 'function';
       pushDraws(v.field_scene_terrain_slots(), v.field_scene_terrain_positions(),
-        hasRot ? v.field_scene_terrain_rot_y() : null);
+        hasRot ? v.field_scene_terrain_rot_y() : null,
+        hasTilt ? v.field_scene_terrain_rot_x() : null,
+        hasTilt ? v.field_scene_terrain_rot_z() : null);
       const terrainCount = draws.length;
       pushDraws(v.field_scene_placement_slots(), v.field_scene_placement_positions(),
-        hasRot ? v.field_scene_placement_rot_y() : null);
+        hasRot ? v.field_scene_placement_rot_y() : null,
+        hasTilt ? v.field_scene_placement_rot_x() : null,
+        hasTilt ? v.field_scene_placement_rot_z() : null);
 
       /* Frame the camera on the assembled geometry (ground AABB if present,
        * else the draw cluster). */

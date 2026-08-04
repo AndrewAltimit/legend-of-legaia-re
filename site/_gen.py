@@ -76,6 +76,7 @@ TITLE_OVERRIDES: dict[str, str] = {
     "world-overview": "Legend of Legaia World Map in 3D - WebGL Viewer",
     "shops": "Legend of Legaia Shops & Vendors - Full Inventories and Prices",
     "arts": "Legend of Legaia Tactical Arts List - Inputs, AP & Damage",
+    "magic": "Legend of Legaia Seru Magic & Summons - Every Cast in 3D",
     "tooling/rom-patcher": "Legend of Legaia Randomizer - In-Browser ROM Patcher",
 }
 
@@ -136,6 +137,11 @@ DESCRIPTIONS: dict[str, str] = {
         "Complete Legend of Legaia Tactical Arts list with button inputs, AP "
         "costs, and damage data, cross-checked against the game's own move "
         "tables."
+    ),
+    "magic": (
+        "Every Legend of Legaia Seru-magic cast animated in 3D, including the "
+        "Ra-Seru and Sim-Seru summons Meta, Ozma, Terra, Horn, Jedo, Palma "
+        "and Mule - decoded in your browser from your own disc image."
     ),
     "tooling/rom-patcher": (
         "Randomize Legend of Legaia in your browser: drops, encounters, "
@@ -347,6 +353,7 @@ WIDE_PAGES: set[str] = {
     "world",
     "minigames",
     "arts",
+    "magic",
     "monsters",
     "characters",
     "npcs",
@@ -451,6 +458,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("shops.html",                 "Shops & vendors",               "shops",                      "shops.html"),
     ("minigames.html",             "Minigames",                     "minigames",                  "minigames.html"),
     ("arts.html",                  "Tactical Arts",                 "arts",                       "arts.html"),
+    ("magic.html",                 "Seru Magic & Summons",          "magic",                      "magic.html"),
     ("monsters.html",              "Enemy table (WASM)",            "monsters",                   "monsters.html"),
     ("characters.html",            "Characters (WASM)",             "characters",                 "characters.html"),
     ("npcs.html",                  "NPCs (WASM)",                   "npcs",                       "npcs.html"),

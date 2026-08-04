@@ -148,22 +148,37 @@ pub trait ActionValidatorHost {
     /// against `0xE0`. See [`item_count_gate`]. Default 0 (gate open).
     ///
     /// The "running inventory item count against a 224-slot cap" reading of
-    /// this word is **unconfirmed**: the sibling `FUN_80046870` (ported as
-    /// `crate::battle_helpers::advance_gauge`) writes the same `gp + 0x2E8`,
-    /// adding `0x40` per call and saturating at `0x100` - a gauge shape, in
-    /// which `0xE0` is a threshold rather than a capacity. Nothing in the
-    /// dumped corpus settles which reading is right, so hosts should treat
-    /// the default as "gate open" rather than plumbing an inventory length in.
+    /// this word is **falsified**. `gp` is `0x8007B318` (`80026ca8` /
+    /// `80026cac`), so the word is `_DAT_8007B600`, and the two overlay sites
+    /// that reach it by absolute address both treat it as a **frame
+    /// countdown** - one decrements it by 1 and acts only on the transition to
+    /// zero, the other refuses to proceed while it is non-zero. Its writer
+    /// `FUN_80046870` (`crate::battle_helpers::advance_gauge`) tops it up by
+    /// `0x40` and caps it at `0x100`. That is a cooldown window measured in
+    /// frames, so `0xE0` is a threshold on *remaining time*, not a capacity.
+    ///
+    /// Hosts should keep the default: returning `0` means "no cooldown
+    /// outstanding", which is the gate-open answer, and there is no inventory
+    /// length to plumb in.
+    ///
+    /// The name is the falsified reading and outlives it deliberately: it is
+    /// spelled the same way in `docs/tooling/live-audit-triage.md` and in the
+    /// site's battle-action page, so renaming it here alone would strand both.
+    /// Rename all three together or not at all.
     fn inventory_count(&self) -> i32 {
         0
     }
 }
 
-/// The out-of-battle inventory gate arm `0x82` tails into: a 3-instruction
-/// leaf returning `*(int *)(gp + 0x2E8) < 0xE0` (signed compare). Retail
-/// returns this raw value as the validator result; the validity byte is not
-/// touched. What `gp + 0x2E8` counts is not settled - see
-/// [`ActionValidatorHost::inventory_count`].
+/// The out-of-battle gate arm `0x82` tails into: a 3-instruction leaf
+/// returning `*(int *)(gp + 0x2E8) < 0xE0` (signed compare). Retail returns
+/// this raw value as the validator result; the validity byte is not touched.
+///
+/// `gp + 0x2E8` is `_DAT_8007B600`, and it holds **frames of cooldown
+/// remaining**, not an item count - see
+/// [`ActionValidatorHost::inventory_count`], whose name predates that finding.
+/// The compare is therefore "fewer than `0xE0` frames left", and the function
+/// name is kept only because three surfaces spell it.
 ///
 /// PORT: FUN_80046898
 pub fn item_count_gate(count: i32) -> bool {

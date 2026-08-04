@@ -124,73 +124,15 @@ with the instruction evidence cited.
 | Thread | Status | What would close it |
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes, a shrunken residual set still owed | [details ↓](#region-story-flag-gate-families) |
-| teien hedge-base ground fill (kind-2 tile-trigger cells) | open | [details ↓](#teien-hedge-base-ground-fill) |
-| `town01` south gate: the reachable trigger band is inert | open - cause pinned, fix owed | [details ↓](#town01-south-gate-the-reachable-trigger-band-is-inert) |
+| teien hedge-base ground fill (kind-2 tile-trigger cells) | open - blocked on one `teien` field-run mednafen state | [details ↓](#teien-hedge-base-ground-fill) |
 
-### `town01` south gate: the reachable trigger band is inert
-
-*Status:* open as engineering work - the collision side is settled and faithful; the walk-on side is not
-
-The Rim Elm south gate is the first scene exit of the game. Seated onto tile
-`(25, 46)` it fires correctly - that is what `chapter1_spine_oracle`'s Leg 1
-asserts. Driven by **pad** from the scene's own spawn it never fires, because
-the tile the oracle seats onto is not one a player can stand on.
-
-The `.MAP` kind-1 trigger table gives the gate **two** bands, not one:
-
-| Record | Tiles | World `z` | Reachable on foot |
-|---|---|---|---|
-| 10 | `(24..26, 45)`, `(25, 44)` | `5632..5887` | yes |
-| 0 | `(24..26, 46)` | `5888..6015` | no |
-
-Record 0's band is sealed by the collision grid: grid row `47` reads `7 3 B`
-across columns `24/25/26`, and every one of those nibbles has the even-`z_cell`
-bits set, so `z ∈ [5888, 5951]` is a solid 64-unit wall band spanning the whole
-doorway. The corridor only reopens at `z ≥ 5952`, on the far side. Nothing can
-walk into record 0's band - and the port warps **only** from that band.
-
-Retail uses the other one. Its captured pre-transition frame parks the player
-at world `(3264, 5824)`, inside record 10's band, and an Up press warps to
-`map01` from there.
-
-Record 10 is **story-locked, correctly**: its gates are `c1=[563]`,
-`c2=[562]`, so it spawns only once system flag 562 is set and 563 is not. At a
-cold boot it spawns nothing - which is right, because Rim Elm's south exit is
-shut until the town's story beats run. Neither the port nor retail can leave
-`town01` on a fresh save, and the same gates and the same sealed band appear
-in `town0b` and `town0c`.
-
-With 562 seeded the dispatch works: crossing into the band installs record 10
-as a cutscene timeline. **That timeline then runs for two frames, nudges the
-player from `z` 5824 to 5832, and ends without performing the scene change.**
-That is the defect, and it sits downstream of everything else here.
-
-Three things this rules out, each measured rather than argued:
-
-- **Not a wrong wall bit.** The port's loaded grid is byte-identical to retail's
-  live grid in early-story `town01` captures. The only differences against a
-  late-story `town0c` capture are 16 bytes of `0x4C` nibble-7 story paints,
-  correctly absent early - one of which is what opens this gate later.
-- **Not a band authored further north.** The disc's own trigger table is the
-  source of both bands above.
-- **Not a wider standoff.** The pad-driven player reaches `z = 5886`, which is
-  62 units *further south* than retail's own park.
-
-What is owed is port-side: find why record 10's timeline ends after two frames
-instead of carrying the departure through. The `+8` nudge it does perform is
-one locomotion step's worth, which fits the shape retail implies - the record
-force-walks the player the rest of the way and then runs the `0x3F` - and
-would explain how retail crosses a wall band that blocks ordinary locomotion.
-The next step is the record's own bytecode: what opcode terminates it early.
-
-Note what is *not* owed: no collision, grid, standoff or dispatch change. Each
-of those was suspected in turn and each was measured false.
-
-Method note, because it generalises: this was settled entirely from save
-states read offline. A mednafen state carries the scratchpad, so
-`_DAT_1f8003ec` (and through it the live collision grid) is readable without
-running anything; a PCSX-Redux state carries only main RAM, but the same grid
-can be located by content-matching an unpainted row against a known one.
+Recently closed here: Rim Elm's south gate. Neither of its two walk-on bands
+was the mechanism the symptom suggested - the exit record is ungated and the
+other record is five inert bytes; what holds a player in is a collision row the
+gate object's own script paints. See
+[`re-settled-threads.md` § Rim Elm's south gate](re-settled-threads.md#rim-elms-south-gate),
+and the force-walk reading it falsified in
+[`re-do-not-re-walk.md`](re-do-not-re-walk.md#the-reachable-bands-record-force-walks-the-player-through-the-wall).
 
 ### teien hedge-base ground fill
 
@@ -206,29 +148,108 @@ for kor5/teien/town01) emits ground there. Through the hedge sprites'
 authored cutout texels that reads as black holes along the hedge bases from
 free-camera angles retail's fixed camera may never reach. If retail really
 shows grass in those cells, the filler is an **unpinned kind-2-cell draw
-channel**. What would close it: a mednafen/PCSX-Redux save state inside
-teien + the display-list read (a RAM image carries the frame's libgpu OT -
-see `docs/tooling/mednafen-automation.md`), checking whether any ground
-prim covers a `0x0800`-only cell. Until then the engine must not grow a
+channel**.
+
+**The corpus cannot answer this yet, and the reason is now precise rather
+than assumed.** The state index (`scripts/mednafen/state-index.py`) covers 55
+scenes across both emulators and all three state populations - the live
+emulator slots, the repo's probe captures, and the curated `saves/library/` -
+and `teien` is one of them, but neither of its two states carries a `teien`
+field frame. One is `battle-init`; the other is `field-init`, and reading its
+display list settles what that means: the live ordering table holds **44
+packets**, three of which are stacked full-screen untextured `POLY_F4` quads
+spanning `(0,-4)..(320,228)`. That is a scene-transition fade, not a rendered
+garden. The several hundred packets also present in the pool are stale bytes
+from the previous frame that no ordering table links - which is exactly why
+the read walks the OT rather than scanning the pool.
+
+**What would close it:** one save state in `teien` at game mode `0x03`
+(field-run), captured in **mednafen**, not PCSX-Redux. The emulator choice is
+load-bearing: the question is per-cell, so answering it means joining the
+frame's ground primitives against the live object grid at `*(_DAT_1F8003EC)`,
+and that pointer lives in the scratchpad. Mednafen states carry
+`ScratchRAM.data8`; a PCSX-Redux `.sstate` carries main RAM only. With such a
+state the read is `mednafen-state display-list <state> --list` plus the grid
+slice; see
+[`mednafen-automation.md`](../tooling/mednafen-automation.md).
+
+**`edteien` was tried as a proxy and does not work - do not re-try it.** The
+emitter is scene-independent shared code, so a ground primitive over an
+`0x0800`-only cell in any scene would be a finding about the mechanism. The
+epilogue garden `edteien` has three field-run *mednafen* states drawing
+teien's own texture families, and its live object grid does hold 400 cells
+with `0x1000` and 45 with `0x0800` and no `0x1000`. Two things stop it being
+an answer, and the second disqualifies the scene rather than the attempt. The
+join cannot be made by **count**: retail's ground pass is not 1:1 with cells,
+so the two hypotheses (400 vs 445 packets) predict values no texture family in
+the frame is near - the largest ground-plausible family carries 651
+`POLY_FT4`, its whole atlas 917, and a geometric join needs a camera transform
+that is not pinned. And `edteien`'s `0x0800`-only cells are **not hedge
+bases**: 36 of the 45 form a solid 6x6 block inside the walkable region, 10 run
+along one row, and 3 sit outside the walkable area entirely. A solid block is a
+raised platform - which is what the bit means, `0x0800` being
+`CELL_ELEVATION_OVERRIDE`. Teien's case is hedge *rows* whose authored cutout
+texels are what make a missing quad visible. The bit pattern matches; the
+feature does not, and a raised platform would legitimately carry its own mesh,
+so even a clean result there would not transfer.
+
+Until this is measured in `teien` itself the engine must not grow a
 speculative fill.
 
 ### Coplanar residual tail: same-position curved-shell stacks
 
-*Status:* open - the mitigation stack resolves the flat-plane corpus; the residual is a structurally different shape
+*Status:* partial - the same-position curved-shell half is **answered** by a display-list read; the sliver half remains
 
 After the cross-draw coplanar kernel's per-family lifts and repair pass
 (`engine-core::coplanar_draws`; the whole model is in
 [`renderer.md`](../subsystems/renderer.md#coplanar-surfaces-retails-ordering-model-the-ports-depth-policy)),
 the corpus sweep (`DIAG_ALL=1` on `engine-core/tests/coplanar_residual_disc.rs`)
-still reports a small tail, dominated by two shapes. First, **same-position
-stacks of curved shells** - two different env TMDs placed at one translation
-whose curved surfaces coincide (jouine/jouind's flesh-cave walls, chitei2's
-res41/res45 slope): a per-draw *translation* cannot separate two coincident
-curved surfaces everywhere (any direction is tangent to some part of the
-shell), so the offset API is structurally the wrong tool. Open questions:
-does retail even draw both copies (they may be state/morph variants the
-scripts swap), and if it does, which wins per OT bucket? A display-list read
-from a save state inside jou would answer both. Second, **sub-cluster
+still reports a small tail, dominated by two shapes.
+
+First, **same-position stacks of curved shells** - two different env TMDs
+placed at one translation whose curved surfaces coincide (jouine/jouind's
+flesh-cave walls, chitei2's res41/res45 slope). A per-draw *translation*
+cannot separate two coincident curved surfaces everywhere (any direction is
+tangent to some part of the shell), so the offset API is structurally the
+wrong tool.
+
+**Retail does not draw both copies.** Reading the libgpu ordering table out of
+field-run save states inside `jouine` and `jouind` (`mednafen-state
+display-list --coincident`) finds **zero** screen-coincident groups among
+surfaces of at least 16 px² in either scene's live frame - 1218 packets walked
+in `jouind`, 972 in `jouine`, every surface submitted exactly once. The scripts
+swap these meshes as state/morph variants rather than stacking them, which is
+what the thread suspected. The one place coincidence does appear is not a mesh
+stack: a small ordering table in the `jouine` image holds four groups of
+**three** copies of a single quad, all in one texture family
+(`clut=0x7F86 tpage=0x001F`), forming a 2x2 patch - the multi-pass
+semi-transparency idiom, one mesh drawn three times. Its members share a
+material; two different env TMDs would not.
+
+Two format properties decide whether such a report means anything, and both
+produce false positives when ignored. Retail **double-buffers**: ordering
+tables come in pairs holding frame N and frame N-1 with near-identical packet
+counts, so merging a pair makes every surface appear stacked with itself
+(`--all-ots` does this deliberately; the default walks one). And distant
+geometry projects to 1-3 pixel slivers that coincide with each other constantly
+without saying anything about meshes, hence the `--min-area` floor.
+
+**What this evidence does and does not cover.** Each read is one frame, so it
+is one camera position: a surface outside that view contributes no packet, and
+its absence from the report is not evidence about it. What makes the result
+load-bearing anyway is the scale of the negative - a stacked shell would double
+*many* adjacent surfaces at once, not one, and across 1218 and 971 walked
+packets no surface anywhere on either screen is submitted twice. For cave
+interiors, whose walls are the dominant on-screen geometry, both shells being
+off-camera in both frames is implausible. It is not impossible, and a second
+field-run state per scene at a different camera would retire the caveat - **the
+corpus does not contain one**: the curated library's `jouine`/`jouind`
+field-run states are byte-identical backups of the two read here (a library
+filename is the sha256 of its contents), not new viewpoints. `chitei2` is
+**not** covered by the state corpus, so its res41/res45 slope is asserted only
+by the two `jou` scenes' result, not measured directly.
+
+Second, **sub-cluster
 slivers** - wall/kerb strips whose per-plane area inside one mesh falls
 below the detection floor or fragments across the cluster quantization
 (koin4 keeps one sub-100-area example the regression test bounds). Neither

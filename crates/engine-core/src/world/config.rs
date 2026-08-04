@@ -460,11 +460,27 @@ pub const FREE_ROAM_ENTRY_PAUSE_WINDOW: u64 = 300;
 /// hand-derived "away from camera" guess**: under the renderer's Y-down
 /// (eye at `-Y`, `+Y` up-vector) convention the on-screen vertical axis is
 /// inverted relative to the eye→centre direction, so the verified mapping is
-/// screen-up → world `(cosθ, sinθ)` and screen-right → world `(sinθ, -cosθ)`.
+/// screen-up → world `(-cosθ, -sinθ)` and screen-right → world `(sinθ, -cosθ)`,
+/// matching the body below, which is the authority. (This line read
+/// `(cosθ, sinθ)` while the body negated; a doc that disagrees with its own
+/// function on a sign is how "the overworld walks the wrong way in Z" gets
+/// re-opened.)
+///
+/// This frame is **not** retail's, and the difference is the camera's, not the
+/// remap's: retail's yaw-`0` overworld camera looks down `+Z`, so its
+/// unrotated d-pad is the identity (Up walks world `Z+`, Right walks `X+`),
+/// while `world_map_camera_mvp` frames azimuth `0` from `+X`. The compensating
+/// rotation lives here, and rotating it without rotating the camera breaks
+/// what the player sees. See
+/// `docs/subsystems/world-map.md#overworld-axis-convention` for retail's
+/// compass-ring table and the `FUN_801D01B0` step arms.
+///
 /// The `world_map_camera_relative_*` tests in `crates/engine-shell` project the
 /// chosen world direction back through `world_map_camera_mvp` and assert it
 /// moves the right way on screen for every azimuth, so this stays in lock-step
-/// with the camera.
+/// with the camera; `engine-core`'s `world_map_axis_convention` integration
+/// test carries the same verdict down to the pad→`move_state` leg, which the
+/// projection test cannot see.
 ///
 /// `sx` is the screen-right delta (`+1` = Right pressed), `sy` the
 /// screen-up delta (`+1` = Up pressed). Returns the post-remap convention

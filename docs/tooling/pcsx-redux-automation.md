@@ -71,6 +71,24 @@ Override any of these via env vars (`PCSX_REDUX`, `LEGAIA_BIOS`,
 `LEGAIA_SSTATE`, `LEGAIA_ISO`). The repo doesn't ship the binary or
 BIOS or disc; those stay local.
 
+### Two `.sstate` shapes - gzipped and bare
+
+A `.sstate` holds PCSX-Redux's protobuf state **either gzipped or bare**, and
+which one depends on how it was written. Quicksave slots (the F-key saves above)
+are gzipped. States a Lua probe writes from a snapshot call are not - they open
+with the bare protobuf `0a 1b 0a 17 "PCSX"` and run ~19 MB, and that is what
+every `captures/**/snap_*.sstate` and `autosave_*.sstate` in this repo is.
+
+Any reader that assumes gzip therefore rejects most of the capture corpus with
+`invalid gzip header` while working fine on the handful of quicksaves - a
+failure shaped like "that state is corrupt" rather than "my reader handles one
+of two formats". `legaia_pcsxr::SaveState` dispatches on the `1f 8b` magic and
+opens both.
+
+The corpus-wide consequence is worth stating plainly: before that dispatch
+existed the scene index over every state on this machine resolved 21 scenes;
+after it, 50.
+
 ### Save-state library (immutable backups)
 
 PCSX-Redux quicksave slots (`<TITLE_ID>.sstate<N>`) and mednafen `mc{N}`

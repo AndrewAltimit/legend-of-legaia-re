@@ -161,17 +161,29 @@ pub enum MoveImageOutcome {
 ///   bytes `+0x0C..+0x14`; pixel-data pointer at `+0x14..`.
 /// - **Complex** (`tag != 0x11`): up to two sprites. `flags` (bytes
 ///   `+0x04..+0x08`):
-///   - bit 3 set: the dispatcher first runs an "alpha-OR" pass on the
-///     pixel array at `+0x14`, ORing `0x8000` into each non-zero u16
-///     pixel (the PSX semi-transparency bit). This pass only fires
-///     when global `_DAT_8007B998` is non-zero. Then it emits a
-///     sprite from the same `+0x0C..+0x14` rect.
-///   - bit 3 clear: skip the alpha pass.
-///   - low 2 bits of `flags` select a width-divisor variant on the
-///     main sprite emit (div-2 / div-4 / raw / skip). This module
-///     only honours the raw / div-2 / div-4 paths because the title
-///     tick is only observed using raw; the "skip" case is recorded
-///     via [`SpriteEmitVariant::SkipMainSprite`].
+///   - bit 3 set: the dispatcher emits a **strip** sprite of extent
+///     `(w * h, 1)` from the `+0x0C..+0x14` rect (`0x800199EC`), having
+///     first ORed `0x8000` (the PSX semi-transparency bit) into each
+///     non-zero u16 of the pixel array at `+0x14`. Only that OR pass is
+///     gated on `_DAT_8007B998` - the strip emit itself is **not**; when
+///     the global is zero, `0x80019998` branches past the loop and lands
+///     directly on the emit.
+///   - bit 3 clear: no strip, no OR pass.
+///   - low 2 bits of `flags` select a width divisor - and retail then
+///     throws the result away, so they change nothing. See
+///     [`SpriteEmitVariant`].
+///
+/// The **main** emit's source record is not always this descriptor. With
+/// bit 3 clear it is `desc + 8`, so the `+0x0C..+0x14` rect and the
+/// `+0x14` pointer are what it draws. With bit 3 set, `0x800199F8..
+/// 0x80019A10` computes `desc + ((u32 @ desc[+0x08] & !3) + 8)` and
+/// draws that record's rect / pointer instead - a different sub-record
+/// of the same blob. [`main_rect`] / [`main_pixel_data_ptr`] carry the
+/// resolved result, because this struct is a flattened view and cannot
+/// walk the blob itself.
+///
+/// [`main_rect`]: SpriteDescriptor::main_rect
+/// [`main_pixel_data_ptr`]: SpriteDescriptor::main_pixel_data_ptr
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpriteDescriptor {
     /// `desc[0]` (u32). `0x11` selects the simple sprite variant;
@@ -191,34 +203,68 @@ pub struct SpriteDescriptor {
     /// `u32` (the PSX virtual address); the host translates it to
     /// real bytes / texture handles as it sees fit.
     pub pixel_data_ptr: u32,
+    /// Rect of the record the **main** emit draws from - `s0[+0x04..+0x0C]`
+    /// at `0x80019A18`/`0x80019A24`, re-read raw at `0x80019AAC`/`0x80019AB8`.
+    ///
+    /// Equal to [`rect`] whenever `flags & 8` is clear (`0x80019A14` sets
+    /// `s0 = desc + 8`). When it is set, retail resolves a different
+    /// sub-record and this is that one's rect.
+    ///
+    /// [`rect`]: SpriteDescriptor::rect
+    pub main_rect: Rect12,
+    /// Pixel-data pointer of the same record - `s0 + 0x0C` at
+    /// `0x80019ABC`. Equal to [`pixel_data_ptr`] when `flags & 8` is clear.
+    ///
+    /// [`pixel_data_ptr`]: SpriteDescriptor::pixel_data_ptr
+    pub main_pixel_data_ptr: u32,
 }
 
-/// Width-divisor variant the dispatcher picks for the main sprite
-/// emit based on `flags & 3`.
+/// The four-way branch `FUN_800198E0` takes on `flags & 3` at
+/// `0x80019A30..0x80019A4C`.
+///
+/// **Retail computes this and then discards it, so it selects nothing.**
+/// Each arm stores its width into `0x14(sp)` (`0x80019A9C` div-4,
+/// `0x80019A90` div-2, `0x80019A9C` raw) and the `== 3` arm stores
+/// nothing at all - and then the common tail at `0x80019AAC` reloads
+/// the **raw** `lhu s0[+0x08]` into that same slot, and `0x80019AB8`
+/// reloads the raw height, in the two instructions immediately before
+/// `jal 0x800583C8`. Every arm therefore emits the raw extents.
+///
+/// The `== 3` arm is likewise not a skip: `0x80019A4C` jumps straight
+/// to that common tail, so it emits exactly like the others.
+///
+/// The type survives as provenance for a branch that really is in the
+/// instruction stream, and because a reader who finds the four arms
+/// deserves to be told they are dead rather than left to re-derive it.
+/// It is deliberately **not** a parameter of [`PrimHost::emit_sprite`] -
+/// passing it there is what let an earlier port turn a dead computation
+/// into live behaviour, including a main-sprite skip retail never does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpriteEmitVariant {
-    /// `flags & 3 == 2`: width is `desc[+0x10]` verbatim.
-    /// (Also used as the default for the tag-`0x11` simple path.)
+    /// `flags & 3 == 2`: width read back verbatim.
     Raw,
-    /// `flags & 3 == 1`: width is `desc[+0x10] / 2` with signed
-    /// rounding (matches `sra v1, t3, 1`).
+    /// `flags & 3 == 1`: width halved with signed rounding
+    /// (`0x80019A70..0x80019A8C`). Overwritten before use.
     HalfWidth,
-    /// `flags & 3 == 0`: width is `desc[+0x10] / 4` with signed
-    /// rounding (matches `addiu v0, v0, 3; sra v0, 2`).
+    /// `flags & 3 == 0`: width divided by 4 with signed rounding
+    /// (`0x80019A54..0x80019A6C`). Overwritten before use.
     QuarterWidth,
-    /// `flags & 3 == 3`: skip the main sprite emit entirely (the
-    /// width-decode arm has no `sh v0, 0x14(sp)` store).
-    SkipMainSprite,
+    /// `flags & 3 == 3`: the arm stores no width
+    /// (`0x80019A4C` jumps to the common tail). Emits raw, like the rest.
+    NoWidthStore,
 }
 
 impl SpriteEmitVariant {
     /// Decode from the low 2 bits of [`SpriteDescriptor::flags`].
+    ///
+    /// Decoding is all this is good for - see the type's note for why
+    /// the result must not reach an emit.
     pub const fn from_flags(flags: u32) -> Self {
         match flags & 0b11 {
             0 => Self::QuarterWidth,
             1 => Self::HalfWidth,
             2 => Self::Raw,
-            _ => Self::SkipMainSprite, // 0b11
+            _ => Self::NoWidthStore, // 0b11
         }
     }
 }
@@ -243,29 +289,33 @@ pub trait PrimHost {
     /// Equivalent of `FUN_800583C8` - queue a sprite primitive
     /// described by `rect` with pixel data at `pixel_data_ptr`.
     ///
-    /// `is_alpha_or_pass`: `true` when this emit is the pre-pass that
-    /// `FUN_800198E0` runs under `flags & 8`. The host can use this
-    /// to apply the appropriate STP / semi-transparency state.
-    /// `variant`: the width-divisor variant selected by `flags & 3`
-    /// (always [`SpriteEmitVariant::Raw`] for the alpha-OR pre-pass
-    /// and the tag-`0x11` path).
-    fn emit_sprite(
-        &mut self,
-        rect: Rect12,
-        pixel_data_ptr: u32,
-        is_alpha_or_pass: bool,
-        variant: SpriteEmitVariant,
-    );
-
-    /// Read the global `_DAT_8007B998` gate that
-    /// [`exec_sprite_descriptor`] checks before performing the
-    /// alpha-OR pre-pass.
+    /// `is_strip_pass`: `true` when this emit is the `(w * h, 1)` strip
+    /// `FUN_800198E0` runs under `flags & 8` (`0x800199EC`), `false` for
+    /// the main emit and the tag-`0x11` path.
     ///
-    /// In retail this global is set by an unrelated subsystem; the
-    /// engine port has to decide whether to enable it (its purpose
-    /// is to force every non-transparent pixel to gain the STP bit,
-    /// effectively a "darken non-transparent pixels" toggle).
-    fn alpha_or_gate_set(&self) -> bool;
+    /// `rect` is always the extent retail passes - it takes no width
+    /// divisor, because the `flags & 3` arms are overwritten before the
+    /// call. See [`SpriteEmitVariant`].
+    fn emit_sprite(&mut self, rect: Rect12, pixel_data_ptr: u32, is_strip_pass: bool);
+
+    /// OR `0x8000` (the PSX STP / semi-transparency bit) into each
+    /// non-zero `u16` of the `count`-pixel array at `pixel_data_ptr` -
+    /// the loop at `0x800199B0..0x800199E8`.
+    ///
+    /// This is the **only** thing `_DAT_8007B998` gates
+    /// ([`Self::stp_or_gate_set`]); the strip emit that follows runs
+    /// either way. Default: no-op, for hosts that do not own the pixel
+    /// bytes.
+    fn stp_or_pixels(&mut self, _pixel_data_ptr: u32, _count: i32) {}
+
+    /// Read the global `_DAT_8007B998` (`lui 0x8008` + `lw -0x4668` at
+    /// `0x80019984`/`0x80019988`).
+    ///
+    /// It gates only [`Self::stp_or_pixels`], not any emit. Its purpose
+    /// is to force every non-transparent pixel to gain the STP bit -
+    /// effectively a "make non-transparent pixels semi-transparent"
+    /// toggle - and the engine port has to decide whether to enable it.
+    fn stp_or_gate_set(&self) -> bool;
 
     // ------------------------------------------------------------------
     // Overlay-side helpers consumed by [`exec_centered_bar`] /
@@ -367,57 +417,51 @@ pub fn exec_move_image<H: PrimHost>(
 
 /// Port of `FUN_800198E0` (sprite-descriptor dispatcher).
 ///
-/// Routes between the simple (tag `0x11`) and complex variants;
-/// performs the alpha-OR pre-pass when `flags & 8` is set AND the
-/// host's [`PrimHost::alpha_or_gate_set`] returns `true`.
+/// Routes between the simple (tag `0x11`) and complex variants. Under
+/// `flags & 8` the complex variant runs an STP-OR pass over the pixel
+/// array and emits a `(w * h, 1)` strip; then, either way, it emits the
+/// main sprite from [`SpriteDescriptor::main_rect`].
+///
+/// Read the whole of `0x800198E0` before changing this - three of its
+/// properties are counter-intuitive and an earlier port got all three
+/// backwards. The gate does not gate the emit, the `flags & 3` arms are
+/// dead, and the main emit's source record moves. Each is pinned in the
+/// doc of the item it affects.
 ///
 /// PORT: FUN_800198E0
 pub fn exec_sprite_descriptor<H: PrimHost>(host: &mut H, desc: &SpriteDescriptor) {
     if desc.tag == 0x11 {
-        // Simple variant: one sprite emit with `Raw` width.
-        host.emit_sprite(
-            desc.rect,
-            desc.pixel_data_ptr,
-            false,
-            SpriteEmitVariant::Raw,
-        );
+        // Simple variant: one sprite emit, straight to the epilogue
+        // (`0x80019938` then `j 0x80019B0C`).
+        host.emit_sprite(desc.rect, desc.pixel_data_ptr, false);
         return;
     }
 
-    // Complex variant. Optional alpha-OR pre-pass, then the main sprite.
-    if (desc.flags & 0x08) != 0 && host.alpha_or_gate_set() {
-        // The original's pre-pass emits a sprite of size (rect.w * rect.h, 1) -
-        // i.e. it treats the pixel array as a 1-pixel-tall strip whose width is
-        // the total pixel count. (Matches `local_1c = (short)param_1[4] *
-        // *(short *)((int)param_1 + 0x12); local_1a = 1;`.)
+    if (desc.flags & 0x08) != 0 {
+        // The strip treats the pixel array as one row whose width is the
+        // total pixel count: `mult v1,v0` at `0x80019980` feeds
+        // `sh a0,0x14(sp)`, and `0x16(sp)` is the literal 1 stored at
+        // `0x80019990`.
+        let count = i32::from(desc.rect.w) * i32::from(desc.rect.h);
+        // Only the OR loop is gated - on the global AND on a positive
+        // pixel count (`beq` at `0x80019998`, `blez` at `0x800199A8`).
+        // Both branches land on the emit at `0x800199EC`, not past it.
+        if host.stp_or_gate_set() && count > 0 {
+            host.stp_or_pixels(desc.pixel_data_ptr, count);
+        }
         let strip = Rect12 {
             x: desc.rect.x,
             y: desc.rect.y,
             w: desc.rect.w.saturating_mul(desc.rect.h),
             h: 1,
         };
-        host.emit_sprite(
-            strip,
-            desc.pixel_data_ptr,
-            true, // is_alpha_or_pass
-            SpriteEmitVariant::Raw,
-        );
+        host.emit_sprite(strip, desc.pixel_data_ptr, true);
     }
 
-    // Main sprite emit, picking the width-divisor variant from flags & 3.
-    let variant = SpriteEmitVariant::from_flags(desc.flags);
-    match variant {
-        SpriteEmitVariant::SkipMainSprite => {
-            // The `flags & 3 == 3` arm in the original has no
-            // `sh v0, 0x14(sp)` write, so the sprite emit reads a
-            // stale stack slot. The cleanest port is to skip the
-            // emit; the host can opt in to a different behaviour by
-            // checking the variant.
-        }
-        _ => {
-            host.emit_sprite(desc.rect, desc.pixel_data_ptr, false, variant);
-        }
-    }
+    // Main emit. Always runs, always at the raw extents of the resolved
+    // record - `flags & 3` selects nothing (see `SpriteEmitVariant`), and
+    // the `== 3` arm is not a skip.
+    host.emit_sprite(desc.main_rect, desc.main_pixel_data_ptr, false);
 }
 
 /// Y-axis viewport gate used by [`exec_centered_bar`] / [`exec_centered_text`]
@@ -522,8 +566,11 @@ mod tests {
         Sprite {
             rect: Rect12,
             pixel_data_ptr: u32,
-            is_alpha: bool,
-            variant: SpriteEmitVariant,
+            is_strip: bool,
+        },
+        StpOr {
+            pixel_data_ptr: u32,
+            count: i32,
         },
         PrimAlloc(u8),
         HBar {
@@ -569,21 +616,20 @@ mod tests {
                 dst: (dst_x, dst_y),
             });
         }
-        fn emit_sprite(
-            &mut self,
-            rect: Rect12,
-            pixel_data_ptr: u32,
-            is_alpha_or_pass: bool,
-            variant: SpriteEmitVariant,
-        ) {
+        fn emit_sprite(&mut self, rect: Rect12, pixel_data_ptr: u32, is_strip_pass: bool) {
             self.events.borrow_mut().push(Event::Sprite {
                 rect,
                 pixel_data_ptr,
-                is_alpha: is_alpha_or_pass,
-                variant,
+                is_strip: is_strip_pass,
             });
         }
-        fn alpha_or_gate_set(&self) -> bool {
+        fn stp_or_pixels(&mut self, pixel_data_ptr: u32, count: i32) {
+            self.events.borrow_mut().push(Event::StpOr {
+                pixel_data_ptr,
+                count,
+            });
+        }
+        fn stp_or_gate_set(&self) -> bool {
             self.alpha_gate
         }
         fn prim_packet_alloc(&mut self, packet_type: u8) {
@@ -673,100 +719,120 @@ mod tests {
         );
     }
 
+    /// Build a descriptor whose main record is the descriptor itself -
+    /// the `flags & 8 == 0` shape, where `0x80019A14` sets `s0 = s1`.
+    fn desc_flat(tag: u32, flags: u32, rect: Rect12, ptr: u32) -> SpriteDescriptor {
+        SpriteDescriptor {
+            tag,
+            flags,
+            rect,
+            pixel_data_ptr: ptr,
+            main_rect: rect,
+            main_pixel_data_ptr: ptr,
+        }
+    }
+
     #[test]
     fn tag_0x11_descriptor_emits_one_raw_sprite() {
         let mut host = RecHost::default();
-        let desc = SpriteDescriptor {
-            tag: 0x11,
-            flags: 0xFFFF_FFFF, // intentionally ignored on tag-0x11
-            rect: Rect12::new(64, 32, 128, 64),
-            pixel_data_ptr: 0x8010_1234,
-        };
+        // Flags are read only past the tag-0x11 early-out at 0x80019940.
+        let desc = desc_flat(0x11, 0xFFFF_FFFF, Rect12::new(64, 32, 128, 64), 0x8010_1234);
         exec_sprite_descriptor(&mut host, &desc);
         assert_eq!(
             host.take(),
             vec![Event::Sprite {
                 rect: desc.rect,
                 pixel_data_ptr: desc.pixel_data_ptr,
-                is_alpha: false,
-                variant: SpriteEmitVariant::Raw,
+                is_strip: false,
             }]
         );
     }
 
     #[test]
-    fn complex_descriptor_without_alpha_emits_one_sprite_with_variant() {
+    fn complex_descriptor_without_strip_bit_emits_only_the_main_sprite() {
         let mut host = RecHost::default();
-        let desc = SpriteDescriptor {
-            tag: 0x42,
-            flags: 0x02, // bit3 clear, low2 = 0b10 = Raw
-            rect: Rect12::new(0, 0, 16, 16),
-            pixel_data_ptr: 0x8020_0000,
-        };
+        let desc = desc_flat(0x42, 0x02, Rect12::new(0, 0, 16, 16), 0x8020_0000);
         exec_sprite_descriptor(&mut host, &desc);
         assert_eq!(
             host.take(),
             vec![Event::Sprite {
                 rect: desc.rect,
                 pixel_data_ptr: desc.pixel_data_ptr,
-                is_alpha: false,
-                variant: SpriteEmitVariant::Raw,
+                is_strip: false,
             }]
         );
     }
 
     #[test]
-    fn complex_descriptor_with_alpha_bit_runs_pre_pass_when_gate_set() {
+    fn strip_bit_runs_the_stp_or_pass_then_the_strip_then_the_main_sprite() {
         let mut host = RecHost {
             alpha_gate: true,
             ..Default::default()
         };
-        let desc = SpriteDescriptor {
-            tag: 0x42,
-            flags: 0x08 | 0x02, // bit3 set, low2 = Raw
-            rect: Rect12::new(5, 7, 4, 3),
-            pixel_data_ptr: 0x8030_0000,
-        };
+        let desc = desc_flat(0x42, 0x08 | 0x02, Rect12::new(5, 7, 4, 3), 0x8030_0000);
         exec_sprite_descriptor(&mut host, &desc);
         assert_eq!(
             host.take(),
             vec![
-                Event::Sprite {
-                    rect: Rect12::new(5, 7, 12, 1), // w * h, h=1
+                Event::StpOr {
                     pixel_data_ptr: 0x8030_0000,
-                    is_alpha: true,
-                    variant: SpriteEmitVariant::Raw,
+                    count: 12,
+                },
+                Event::Sprite {
+                    rect: Rect12::new(5, 7, 12, 1), // w * h, h = 1
+                    pixel_data_ptr: 0x8030_0000,
+                    is_strip: true,
                 },
                 Event::Sprite {
                     rect: desc.rect,
                     pixel_data_ptr: 0x8030_0000,
-                    is_alpha: false,
-                    variant: SpriteEmitVariant::Raw,
+                    is_strip: false,
                 },
             ]
         );
     }
 
+    /// `_DAT_8007B998` gates the STP-OR loop and nothing else: the `beq`
+    /// at `0x80019998` branches to `0x800199EC`, which is the emit.
     #[test]
-    fn complex_descriptor_with_alpha_bit_skips_pre_pass_when_gate_clear() {
-        let mut host = RecHost::default();
-        // alpha_gate defaults to false
-        let desc = SpriteDescriptor {
-            tag: 0x42,
-            flags: 0x08 | 0x02,
-            rect: Rect12::new(0, 0, 8, 4),
-            pixel_data_ptr: 0x8040_0000,
+    fn clear_gate_drops_the_stp_or_pass_but_still_emits_the_strip() {
+        let mut host = RecHost::default(); // alpha_gate = false
+        let desc = desc_flat(0x42, 0x08 | 0x02, Rect12::new(0, 0, 8, 4), 0x8040_0000);
+        exec_sprite_descriptor(&mut host, &desc);
+        assert_eq!(
+            host.take(),
+            vec![
+                Event::Sprite {
+                    rect: Rect12::new(0, 0, 32, 1),
+                    pixel_data_ptr: 0x8040_0000,
+                    is_strip: true,
+                },
+                Event::Sprite {
+                    rect: desc.rect,
+                    pixel_data_ptr: 0x8040_0000,
+                    is_strip: false,
+                },
+            ],
+            "the gate must not suppress the strip emit"
+        );
+    }
+
+    /// A zero pixel count takes the `blez` at `0x800199A8` past the loop -
+    /// to the same emit.
+    #[test]
+    fn zero_pixel_count_drops_the_stp_or_pass_but_still_emits_the_strip() {
+        let mut host = RecHost {
+            alpha_gate: true,
+            ..Default::default()
         };
+        let desc = desc_flat(0x42, 0x08, Rect12::new(3, 4, 0, 9), 0x8045_0000);
         exec_sprite_descriptor(&mut host, &desc);
         let events = host.take();
-        assert_eq!(events.len(), 1, "no pre-pass when gate is clear");
-        assert!(matches!(
-            &events[0],
-            Event::Sprite {
-                is_alpha: false,
-                ..
-            }
-        ));
+        assert!(
+            !events.iter().any(|e| matches!(e, Event::StpOr { .. })),
+            "no OR pass over an empty array"
+        );
+        assert_eq!(events.len(), 2, "strip + main still emit");
     }
 
     #[test]
@@ -782,7 +848,7 @@ mod tests {
         assert_eq!(SpriteEmitVariant::from_flags(2), SpriteEmitVariant::Raw);
         assert_eq!(
             SpriteEmitVariant::from_flags(3),
-            SpriteEmitVariant::SkipMainSprite
+            SpriteEmitVariant::NoWidthStore
         );
         // Upper bits ignored.
         assert_eq!(
@@ -791,41 +857,60 @@ mod tests {
         );
     }
 
+    /// All four `flags & 3` arms converge on the common tail at
+    /// `0x80019AAC`, which reloads the **raw** extents into `0x14(sp)` /
+    /// `0x16(sp)` right before `jal 0x800583C8`. So the arm changes
+    /// nothing - and `== 3` is not a skip, it just jumps there directly
+    /// (`0x80019A4C`).
     #[test]
-    fn skip_main_sprite_variant_emits_no_main_sprite() {
+    fn every_flags_and_3_arm_emits_the_same_raw_extents() {
+        let rect = Rect12::new(0, 0, 16, 16);
+        for low in 0..=3u32 {
+            let mut host = RecHost::default();
+            let desc = desc_flat(0x42, low, rect, 0x8050_0000);
+            exec_sprite_descriptor(&mut host, &desc);
+            assert_eq!(
+                host.take(),
+                vec![Event::Sprite {
+                    rect,
+                    pixel_data_ptr: 0x8050_0000,
+                    is_strip: false,
+                }],
+                "flags & 3 == {low} must emit the raw rect exactly once"
+            );
+        }
+    }
+
+    /// With `flags & 8` set, `0x800199F8..0x80019A10` re-bases the main
+    /// emit onto `desc + ((u32 @ +0x08 & !3) + 8)` - a different
+    /// sub-record. The strip still comes from the `+0x0C` rect.
+    #[test]
+    fn strip_bit_moves_the_main_emit_onto_the_resolved_sub_record() {
         let mut host = RecHost::default();
         let desc = SpriteDescriptor {
             tag: 0x42,
-            flags: 0x03, // bit3 clear, low2 = 0b11 = SkipMainSprite
-            rect: Rect12::new(0, 0, 16, 16),
-            pixel_data_ptr: 0x8050_0000,
-        };
-        exec_sprite_descriptor(&mut host, &desc);
-        assert!(
-            host.take().is_empty(),
-            "SkipMainSprite variant emits nothing"
-        );
-    }
-
-    #[test]
-    fn alpha_pre_pass_runs_even_when_main_sprite_skipped() {
-        // flags = 0x08 | 0x03 → pre-pass fires (bit3+gate), but the
-        // main sprite is skipped (low 2 == SkipMainSprite). The
-        // dispatcher emits exactly one sprite (the pre-pass).
-        let mut host = RecHost {
-            alpha_gate: true,
-            ..Default::default()
-        };
-        let desc = SpriteDescriptor {
-            tag: 0x42,
-            flags: 0x08 | 0x03,
+            flags: 0x08,
             rect: Rect12::new(1, 2, 3, 4),
             pixel_data_ptr: 0x8060_0000,
+            main_rect: Rect12::new(9, 9, 32, 8),
+            main_pixel_data_ptr: 0x8060_1000,
         };
         exec_sprite_descriptor(&mut host, &desc);
-        let events = host.take();
-        assert_eq!(events.len(), 1);
-        assert!(matches!(&events[0], Event::Sprite { is_alpha: true, .. }));
+        assert_eq!(
+            host.take(),
+            vec![
+                Event::Sprite {
+                    rect: Rect12::new(1, 2, 12, 1),
+                    pixel_data_ptr: 0x8060_0000,
+                    is_strip: true,
+                },
+                Event::Sprite {
+                    rect: Rect12::new(9, 9, 32, 8),
+                    pixel_data_ptr: 0x8060_1000,
+                    is_strip: false,
+                },
+            ]
+        );
     }
 
     // ----- exec_centered_bar (FUN_801E36C4) ------------------------------

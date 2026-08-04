@@ -43,15 +43,7 @@ pub fn cmd_prim_trace(
     let mut counts: std::collections::HashMap<&'static str, usize> =
         std::collections::HashMap::new();
     for p in &prims {
-        let key: &'static str = match p {
-            prim_pool::Prim::PolyFt4 { .. } => "POLY_FT4",
-            prim_pool::Prim::PolyGt4 { .. } => "POLY_GT4",
-            prim_pool::Prim::PolyFt3 { .. } => "POLY_FT3",
-            prim_pool::Prim::PolyGt3 { .. } => "POLY_GT3",
-            prim_pool::Prim::Sprt16 { .. } => "SPRT_16",
-            prim_pool::Prim::Sprt8 { .. } => "SPRT_8",
-        };
-        *counts.entry(key).or_insert(0) += 1;
+        *counts.entry(p.kind()).or_insert(0) += 1;
     }
 
     println!("[prim-trace] save  {}", save_path.display());

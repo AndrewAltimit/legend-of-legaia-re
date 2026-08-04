@@ -30,6 +30,7 @@ pub mod bisect;
 pub mod container;
 pub mod diff;
 pub mod extract;
+pub mod game_anchors;
 pub mod gpu;
 pub mod prim_dispatch;
 pub mod prim_pool;
@@ -41,6 +42,7 @@ pub mod spu;
 pub use container::{SaveState, Section, SubEntry};
 pub use diff::{RamDiff, RegionDiff};
 pub use extract::{PSX_RAM_KSEG0, PSX_RAM_SIZE, ram_slice};
+pub use game_anchors::{StateIdentity, game_mode_label, identify};
 pub use gpu::{
     GpuRegs, PsxGpu, VRAM_BYTES, VRAM_HEIGHT, VRAM_WIDTH, bgr555_to_rgba8, vram_to_rgba8,
 };

@@ -45,14 +45,29 @@
 //!   globals `DAT_80078D54` / `DAT_80078D57`. The engine's renderer has one
 //!   battle view and no mirrored or half-width mode, so the transform has no
 //!   mode byte to be selected by.
-//! - `FUN_80046870` ([`advance_gauge`]) ramps the `gp + 0x2E8` word. That word
-//!   has no engine analogue - and note which other routine reads it: the
-//!   validator's arm-`0x82` gate `FUN_80046898` tests **the same word**
-//!   against `0xE0`. Read together the pair is gauge-shaped (`+0x40` per call,
-//!   ceiling `0x100`, threshold `0xE0`), which is why
-//!   `battle_action::validator`'s "inventory item count" reading of `gp+0x2E8`
-//!   is recorded there as unconfirmed. Wiring this needs that identity settled
-//!   first, since the value is what a host would have to produce.
+//! - `FUN_80046870` ([`advance_gauge`]) ramps the `gp + 0x2E8` word, which the
+//!   validator's arm-`0x82` gate `FUN_80046898` tests against `0xE0`. **That
+//!   word's identity is now settled, and it is not an inventory count.**
+//!   `gp` is `0x8007B318` (`80026ca8` `lui gp,0x8008` + `80026cac`
+//!   `addiu gp,gp,-0x4ce8`), so `gp + 0x2E8` is `_DAT_8007B600` - the same
+//!   `0x8007Bxxx` overlay-scratch band that holds the camera pitch
+//!   (`gp+0x478`) and the tile-board install pointer (`gp+0x138`), not the
+//!   `0x80084xxx` save/game-state window an inventory length would live in.
+//!   Two overlay sites reach it by its absolute address and both read it as a
+//!   **frame countdown**: one decrements it by 1 and stores it back, firing
+//!   its expiry action only on the transition to zero
+//!   (`lui v1,0x8008` / `lw v0,-0x4a00(v1)` / `addiu v0,v0,-0x1` /
+//!   `sw v0,-0x4a00(v1)`), and one gates on it being zero before proceeding
+//!   (`lw v0,-0x4a00(v0)` / `bne v0,zero,<skip>`). A count of held items is
+//!   neither ticked down per frame nor tested for zero as a busy gate.
+//!
+//!   So the pair is a **cooldown**: [`advance_gauge`] tops the window up by
+//!   `0x40` frames and caps it at `0x100`, and the arm-`0x82` gate asks
+//!   whether fewer than `0xE0` remain. What blocks the wire is therefore no
+//!   longer the identity but the engine's shape: it carries no such suppression
+//!   timer, and the expiry action the countdown fires (an install into
+//!   `_DAT_8007B450` plus a bit-set and a `FUN_80020DE0` call) is not ported,
+//!   so nothing would arm or observe the window.
 //! - `FUN_801CEE80` ([`ease_quad_interp`]) is driven from the actor tween
 //!   triple `+0x28` (target index), `+0x50` (progress) and `+0x9E`
 //!   (duration). None of the three is on the port's battle or field actor, so

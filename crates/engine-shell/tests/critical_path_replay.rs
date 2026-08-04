@@ -36,21 +36,54 @@
 //! |---|---|---|
 //! | 1 | `town01` free-roam, input released | cold boot hands control to the player |
 //! | 2 | pad-walk to the south gate -> `map01` | field locomotion + collision + walk-on trigger |
-//! | 3 | pad-walk to the `keikoku` portal -> `keikoku` | overworld locomotion + portal engage |
+//! | 3 | pad-walk `map01` across the continent | overworld remap + collision + the encounter round trip |
+//! | 4 | pad-walk onto the `keikoku` portal | overworld route + portal engage |
+//!
+//! Rungs 3 and 4 are one leg scored twice, and they are split because the
+//! overworld leg is sixty-odd tiles long: under a single portal check, "walked
+//! nowhere" and "crossed the continent and was turned back at the last ridge"
+//! are the same number. Rung 3's threshold is
+//! [`OVERWORLD_CROSSING_TILES`] **and** at least one random encounter fought
+//! and survived - the capability [`drain_battle`] documents, and the one a
+//! regression would otherwise re-break silently.
 //!
 //! ## Navigation
 //!
 //! Waypoints come from a BFS over the walkability grid, with each edge
 //! validated by [`World::field_dir_blocked`] (retail `FUN_801cfe4c`'s
-//! static-wall arm) at the source tile's centre - so the planner and the
-//! engine consult the same walls. The follower converts the desired world
-//! step into a pad mask by inverting the camera quadrant that
-//! `decode_field_direction` applies, which is what a player does when they
-//! look at the screen and press the direction that moves them the way they
-//! want.
+//! static-wall arm) *and* [`World::field_actor_dir_blocked`] (its prop / NPC
+//! sibling) at the source node - so the planner and the engine consult the
+//! same obstacles. The follower converts the desired world step into a pad
+//! mask by inverting whatever remap the world is currently walking under,
+//! which is what a player does when they look at the screen and press the
+//! direction that moves them the way they want.
+//!
+//! There are **two** such remaps and they are not interchangeable: the field
+//! walk goes through `decode_field_direction` (world axes, quadrant rotation),
+//! the overworld walk through `world_map_camera_relative_bits` (camera-relative).
+//! Inverting the field one on the overworld sends the player off at an angle,
+//! and map01's collision leaves the sea open, so nothing stops them - the leg
+//! walks off the map rather than stalling against a wall. See
+//! [`pad_for_step`].
+//!
+//! On the overworld the route has two more constraints a field route does not:
+//! other scenes' portals are **hazards** to route around, because stepping on
+//! one enters it ([`portal_hazards`]), and a scene with several doors needs
+//! the door the walk can actually reach ([`portal_tile`]).
 //!
 //! A leg that stops making progress is reported as `Stalled` with the tile it
 //! died on, not as a bare assertion failure - a stall is the finding.
+//!
+//! ## A leg is not always walking
+//!
+//! Two modes take the frame away mid-leg and they are not the same problem.
+//! A dialogue or cutscene timeline owns *input* while the world stays put
+//! ([`drain_scripted`]). A random encounter replaces the *world*: in
+//! [`SceneMode::Battle`] the player actor's `move_state` is the battle arena
+//! transform, so [`player_world`] stops meaning an overworld position at all.
+//! [`drain_battle`] sits both out, and reading its doc comment first will save
+//! re-deriving why an unguarded run reports a coordinate off the corner of a
+//! map the player is standing in the middle of.
 //!
 //! ## Ratchet
 //!
@@ -63,7 +96,7 @@
 //! Skip-pass (CLAUDE.md disc-gated convention): `LEGAIA_DISC_BIN` unset or
 //! `extracted/` missing.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 
 use legaia_engine_core::input::PadButton;
@@ -97,22 +130,62 @@ const TILE: i16 = 128;
 /// lattice deliberately oversamples it rather than matching it.
 const SUBCELL: i16 = 32;
 
-/// Rim Elm's south-gate trigger tile, as a navigation *goal* rather than a
-/// teleport target - which is why it is **not** the `(25, 46)` the spine
-/// oracle seats onto.
+/// Rim Elm's south-gate exit tile: the band carrying the `0x3F` scene change.
 ///
-/// The `.MAP` kind-1 table gives this gate two bands: record 10 over tiles
-/// `(24..26, 45)` (world `z` `5632..5887`) and record 0 over `(24..26, 46)`
-/// (`5888..6015`). Record 0's band is sealed - grid row `47` reads `7 3 B`
-/// across columns `24/25/26` and every even-`z_cell` bit is set, so
-/// `z ∈ [5888, 5951]` is a solid 64-unit wall band across the doorway. A
-/// seat lands on it; a walk cannot. Retail's captured pre-transition frame
-/// parks at `(3264, 5824)`, inside record 10's band, and warps from there.
+/// The `.MAP` kind-1 table gives this gate two bands, and only one of them is
+/// a door. Record 10 over tiles `(24..26, 45)` + `(25, 44)` is a **content-free
+/// park** - five bytes of `Nop; Nop; JmpRel`-to-self, no scene change, no
+/// walk - so standing in it does nothing by design. Record 0 over
+/// `(24..26, 46)` is the exit: its script is `CFlag.Set`, an `Effect` fade and
+/// the `0x3F` naming `map01` at entry tile `(0x60, 0x19)`.
 ///
-/// So the goal is record 10's band. Reaching it and *not* transitioning is
-/// the honest reading of the current defect - see the `town01` south-gate
-/// thread in `docs/reference/open-rev-eng-threads.md`.
-const TOWN01_SOUTH_GATE: (u8, u8) = (25, 45);
+/// Record 0's band is walled on a fresh boot, and the wall is **not** a fixed
+/// map feature: it is the gate itself, opened by
+/// [`GATE_OPEN_FLAGS`](self::GATE_OPEN_FLAGS). See that constant.
+const TOWN01_SOUTH_GATE: (u8, u8) = (25, 46);
+
+/// The two system flags Rim Elm's south gate is authored on: `327` ("the gate
+/// scenery exists") and `321` ("the gate is open").
+///
+/// `town01`'s gate-object script `P0[20]` - bound to the object at tile
+/// `(23, 43)` by the `.MAP`'s gate-0 kind-1 trigger, and run by the scene-init
+/// bind prologue (`FUN_8003A55C`) - clears the approach band with three
+/// `0x4C` nibble-7 sub-0 paints and then branches:
+///
+/// | `327` | `321` | what the script paints | gate |
+/// |---|---|---|---|
+/// | clear | - | nothing more; the base map's row-47 wall stands | shut |
+/// | set | clear | re-blocks rows 44..46 and seats the gate at `(24, 44)` | shut |
+/// | set | set | `sub-0` over cols `24..25`, rows `46..47` | **open** |
+///
+/// Only that last arm clears grid row 47 cols 24-25, and those are the cells
+/// that block the walk - so on a cold boot a player cannot leave Rim Elm, in
+/// the port or in retail, and the disc says so rather than the engine.
+///
+/// Seeding the pair here stands in for the town's story beats the same way the
+/// other progression oracles seed their gates: this ladder measures locomotion,
+/// collision and the pad remap, not story progression. Note what is *not*
+/// seeded - `562`, record 10's own `C2` gate. Setting it would spawn that
+/// content-free park as a modal timeline mid-walk; it gates a beat, not the
+/// door.
+const GATE_OPEN_FLAGS: [u16; 2] = [327, 321];
+
+/// `0x482` - the Drake **mist walls**.
+///
+/// `map01`'s partition-2 records `P2[34..36]` are `C1 = [0x482]` walk-on
+/// *beat* bands with no `0x3F`: while the flag is clear they shove the player
+/// back off a not-yet-unlocked path, and `SceneHost::dispatch_walk_on_trigger`
+/// spawns them as cutscene timelines that stand overworld locomotion down
+/// while they run (see `world-map.md`, overworld walk-on beat records). Retail
+/// lifts them on the post-Zeto Drake-revival beat.
+///
+/// So on a cold boot the Ravine is **closed by design**, and the port is
+/// faithful about it: an unseeded run walks the overworld for sixty tiles and
+/// is turned back short of every `keikoku` mouth, having run the band records
+/// on the way. Seeding it here is the same move [`GATE_OPEN_FLAGS`] makes for
+/// Rim Elm's gate and for the same reason - this ladder scores locomotion,
+/// collision and the pad remap, not story progression.
+const MIST_WALL_FLAG: u16 = 0x482;
 
 /// Frames a leg may spend before it is called a timeout.
 const LEG_FRAME_BUDGET: u32 = 6_000;
@@ -124,6 +197,28 @@ const STALL_FRAMES: u32 = 240;
 /// Frames to tick (pad neutral) waiting for the scene's opening choreography
 /// to hand control back before a leg starts driving.
 const INPUT_RELEASE_BUDGET: u32 = 3_600;
+
+/// Manhattan tile distance from the `map01` arrival that counts as having
+/// crossed the overworld rather than having taken a few steps on it.
+///
+/// The `keikoku` mouths sit 60-odd tiles from where Rim Elm's gate lands the
+/// player, and a leg that dies on the first tile and a leg that dies two
+/// tiles short are the same score under a pass/fail portal check. 24 tiles is
+/// three screens of walking - far enough that reaching it needs the remap, the
+/// collision probe, the region-encounter round trip and the replanner all
+/// working, and short enough that it does not silently become a second name
+/// for the portal rung.
+const OVERWORLD_CROSSING_TILES: i32 = 24;
+
+/// Frames one random encounter may run before the leg gives up on it.
+///
+/// A leg on the overworld **will** be interrupted: `map01` carries a live
+/// region-keyed encounter table and the walk crosses tile after tile, so a
+/// pad-driven crossing fights several battles on the way. A battle is not
+/// part of the leg's own frame or stall budget - see [`drain_battle`] - so
+/// this is sized as a safety net (an observed `map01` encounter resolves in
+/// well under a thousand ticks), not as a target.
+const BATTLE_FRAME_BUDGET: u32 = 20_000;
 
 /// BFS ceiling. A field map is 256x256 tiles = 512x512 sub-cells, so this
 /// admits a full-map flood with room to spare and still bounds a runaway.
@@ -266,6 +361,61 @@ fn pad_for_world_step(azimuth: u16, dwx: i16, dwz: i16) -> u16 {
     pad
 }
 
+/// The **overworld** pad inversion, which is a different space.
+///
+/// The two walks do not share a remap:
+/// [`World::step_field_locomotion`] routes the pad through
+/// `decode_field_direction` (world axes, quadrant rotation), while
+/// `World::step_world_map_locomotion` routes it through
+/// `world_map_camera_relative_bits` - screen-up -> world `(-cosθ, -sinθ)`,
+/// screen-right -> world `(sinθ, -cosθ)`. Inverting the field remap on the
+/// overworld sends the player off at an angle, and map01's collision grid
+/// leaves the sea open, so there is nothing to stop them: the leg walks off
+/// the map instead of stalling against a wall.
+///
+/// That 2x2 is a reflection, so it is its own inverse - the screen delta for
+/// a desired world step is the same matrix applied to the step. The `T` band
+/// matches the forward map's 8-direction quantisation.
+fn world_map_pad_for_world_step(azimuth: i32, dwx: i16, dwz: i16) -> u16 {
+    let (dx, dz) = (f32::from(dwx), f32::from(dwz));
+    let len = (dx * dx + dz * dz).sqrt();
+    if len == 0.0 {
+        return 0;
+    }
+    let theta = (azimuth as f32) / 4096.0 * std::f32::consts::TAU;
+    let (sin, cos) = theta.sin_cos();
+    let (dx, dz) = (dx / len, dz / len);
+    let sx = dx * sin - dz * cos;
+    let sy = -dx * cos - dz * sin;
+    /// sin(22.5°) - the same cardinal band `world_map_camera_relative_bits` uses.
+    const T: f32 = 0.382_683_43;
+    let mut pad = 0u16;
+    if sy > T {
+        pad |= PadButton::Up.mask();
+    } else if sy < -T {
+        pad |= PadButton::Down.mask();
+    }
+    if sx > T {
+        pad |= PadButton::Right.mask();
+    } else if sx < -T {
+        pad |= PadButton::Left.mask();
+    }
+    pad
+}
+
+/// Pick the pad for a desired world step in whichever space the world is
+/// currently walking in.
+fn pad_for_step(host: &SceneHost, dwx: i16, dwz: i16) -> u16 {
+    match host.world.mode {
+        SceneMode::WorldMap => world_map_pad_for_world_step(
+            host.world.world_map_ctrl.as_ref().map_or(0, |c| c.azimuth),
+            dwx,
+            dwz,
+        ),
+        _ => pad_for_world_step(host.world.field_camera_azimuth, dwx, dwz),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Planner
 // ---------------------------------------------------------------------------
@@ -290,8 +440,20 @@ fn pad_for_world_step(azimuth: u16, dwx: i16, dwz: i16) -> u16 {
 /// evaluated at the source node, with the lattice pitch held under the probe
 /// reach (see [`SUBCELL`]).
 ///
+/// `avoid` names **dispatch tiles** (`world >> 7`) the route must not enter.
+/// On the overworld those are the other scenes' portals: standing on one is
+/// how you enter it (`World::auto_engage_world_map_portals` matches the
+/// player's `>> 7` tile against the entity's), so a route that crosses one
+/// never arrives - it ends the leg in the wrong scene. Retail's own player has
+/// the same constraint and routes around it; the planner has to as well.
+///
 /// `None` only when nothing at all is reachable from `from`.
-fn plan_path(host: &SceneHost, from: Cell, goal_tile: (i16, i16)) -> Option<Vec<Cell>> {
+fn plan_path(
+    host: &SceneHost,
+    from: Cell,
+    goal_tile: (i16, i16),
+    avoid: &HashSet<(i32, i32)>,
+) -> Option<Vec<Cell>> {
     let goal_w = tile_center(goal_tile);
     let goal_c = cell_of(goal_w.0, goal_w.1);
     let score = |c: Cell| (c.0 - goal_c.0).abs() + (c.1 - goal_c.1).abs();
@@ -318,8 +480,16 @@ fn plan_path(host: &SceneHost, from: Cell, goal_tile: (i16, i16)) -> Option<Vec<
             if next.0 < 0 || next.1 < 0 || seen.contains_key(&next) {
                 continue;
             }
-            if host.world.field_dir_blocked(cx, cz, dir) {
+            if host.world.field_dir_blocked(cx, cz, dir)
+                || host.world.field_actor_dir_blocked(cx, cz, dir)
+            {
                 continue;
+            }
+            if !avoid.is_empty() {
+                let (nx, nz) = cell_center(next);
+                if avoid.contains(&dispatch_tile(nx, nz)) {
+                    continue;
+                }
             }
             seen.insert(next, cur);
             queue.push_back(next);
@@ -366,6 +536,12 @@ struct StallSite {
     /// its record *did* execute - the leg failed after the dispatch, not
     /// before it, which is a different defect entirely.
     scripted: u32,
+    /// Random encounters fought during the leg ([`drain_battle`]). Reported
+    /// separately because it splits "the walk never got anywhere" from "the
+    /// walk was interrupted N times and still got nowhere" - and because a
+    /// leg that fights *nothing* while crossing an overworld with a live
+    /// region-encounter table is itself a finding.
+    fought: u32,
 }
 
 /// The tile as the **walk-on dispatch** quantises it: a raw `world >> 7`,
@@ -413,6 +589,11 @@ enum Leg {
     Stalled(Box<StallSite>),
     /// Still moving, but out of frames.
     Timeout { at: (i16, i16), goal: (i16, i16) },
+    /// A random encounter never returned control to the walking mode.
+    BattleUnresolved {
+        at: (i16, i16),
+        ended_in: Option<SceneMode>,
+    },
 }
 
 /// Rendered into the printed table. Written by hand rather than derived so
@@ -445,10 +626,22 @@ impl std::fmt::Display for Leg {
                 } else {
                     Ok(())
                 }
+            })
+            .and_then(|()| {
+                if s.fought > 0 {
+                    write!(f, "; {} random encounter(s) fought", s.fought)
+                } else {
+                    Ok(())
+                }
             }),
             Leg::Timeout { at, goal } => {
                 write!(f, "out of frames at tile {at:?} heading for {goal:?}")
             }
+            Leg::BattleUnresolved { at, ended_in } => write!(
+                f,
+                "a random encounter near tile {at:?} never returned control \
+                 (mode {ended_in:?})"
+            ),
         }
     }
 }
@@ -486,6 +679,54 @@ fn drain_scripted(host: &mut SceneHost) -> Drain {
     Drain::Locked
 }
 
+/// Outcome of sitting out a random encounter.
+enum Fight {
+    /// The battle ended and the walking mode came back.
+    Survived,
+    /// Still in [`SceneMode::Battle`] after [`BATTLE_FRAME_BUDGET`] ticks.
+    Stuck,
+    /// The battle handed the world to some third mode (a wipe / game over).
+    Diverted(SceneMode),
+}
+
+/// Sit out a random encounter with a neutral pad and report how it ended.
+///
+/// **This is not an optional nicety, it is the difference between a leg that
+/// measures locomotion and a leg that measures nothing.** `map01` has a live
+/// region-keyed encounter table (`World::set_world_map_regions`), so a
+/// pad-driven crossing enters [`SceneMode::Battle`] every few hundred ticks.
+/// While that mode is up the player actor's `move_state` is the **battle
+/// arena** transform, not an overworld position, so a follower that keeps
+/// sampling [`player_world`] reads a coordinate from a different space
+/// entirely - `(0, -825)` on the first `map01` encounter, which is off the
+/// north-west corner of a map the player is standing in the middle of. Every
+/// downstream number then lies in the same direction at once: the distance
+/// check sees no progress and trips the stall detector, and the stall site
+/// reports a tile the player was never on with all four walls set (an
+/// out-of-grid probe reads as solid). Read as locomotion it looks exactly like
+/// an inverted movement axis; it is a mode confusion.
+///
+/// A neutral pad is deliberate: the engine's battle resolves under its own
+/// action state machine, and pressing into it would make the leg's outcome a
+/// function of the battle UI rather than of the walk. Battle ticks are charged
+/// to [`BATTLE_FRAME_BUDGET`], never to the leg's frame or stall budget -
+/// fighting is not stalling.
+fn drain_battle(host: &mut SceneHost, resume: SceneMode) -> Fight {
+    for _ in 0..BATTLE_FRAME_BUDGET {
+        host.world.set_pad(0);
+        if host.tick().is_err() {
+            return Fight::Stuck;
+        }
+        if host.world.mode == resume {
+            return Fight::Survived;
+        }
+        if host.world.mode != SceneMode::Battle {
+            return Fight::Diverted(host.world.mode);
+        }
+    }
+    Fight::Stuck
+}
+
 /// Tick with a neutral pad until the world hands control back, so a leg does
 /// not spend its budget shoving against a cutscene lock.
 fn wait_for_input(host: &mut SceneHost) -> bool {
@@ -501,15 +742,35 @@ fn wait_for_input(host: &mut SceneHost) -> bool {
     false
 }
 
+/// What a leg did, independently of whether it ended where it was aimed.
+///
+/// A pass/fail outcome cannot distinguish "the walk never started" from "the
+/// walk crossed the continent and was turned back at the last ridge", and on a
+/// 60-tile leg that is the whole of the interesting range. These are what the
+/// ladder scores the crossing on.
+#[derive(Default)]
+struct LegStats {
+    /// Random encounters entered and survived ([`drain_battle`]).
+    fought: u32,
+    /// Furthest Manhattan tile distance from the leg's start the player ever
+    /// reached - not the final position, which a wall-slide back can shorten.
+    reach: i32,
+}
+
 /// Drive the player to `goal` using only the pad. Returns the leg outcome.
-fn walk_to(host: &mut SceneHost, goal: (i16, i16)) -> Leg {
+fn walk_to(
+    host: &mut SceneHost,
+    goal: (i16, i16),
+    avoid: &HashSet<(i32, i32)>,
+    stats: &mut LegStats,
+) -> Leg {
     if !wait_for_input(host) {
         return Leg::InputLocked;
     }
 
     let start_w = player_world(host);
     let start = tile_of(start_w.0, start_w.1);
-    if plan_path(host, cell_of(start_w.0, start_w.1), goal).is_none() {
+    if plan_path(host, cell_of(start_w.0, start_w.1), goal, avoid).is_none() {
         return Leg::NoPath { at: start, goal };
     }
 
@@ -517,6 +778,9 @@ fn walk_to(host: &mut SceneHost, goal: (i16, i16)) -> Leg {
     let mut best = dist(start, goal);
     let mut since_progress = 0u32;
     let mut scripted = 0u32;
+    // The mode this leg walks in. A leg never changes it: leaving it means a
+    // battle (drained below) or a scene change (the leg's success).
+    let walking_mode = host.world.mode;
 
     // The plan is always rooted at the tile the player is standing on, and
     // replanned the moment they leave it. Following a fixed waypoint list
@@ -525,11 +789,39 @@ fn walk_to(host: &mut SceneHost, goal: (i16, i16)) -> Leg {
     // next waypoint, and a follower that only pops on an exact match then
     // steers back at a waypoint behind them and oscillates in place.
     let mut planned_from = cell_of(start_w.0, start_w.1);
-    let mut path = plan_path(host, planned_from, goal).unwrap_or_default();
+    let mut path = plan_path(host, planned_from, goal, avoid).unwrap_or_default();
 
     for _ in 0..LEG_FRAME_BUDGET {
+        // A random encounter took the frame. `player_world` is meaningless
+        // until it hands back (see `drain_battle`), so sit it out *before*
+        // sampling anything - and charge none of it to the leg.
+        if host.world.mode == SceneMode::Battle {
+            stats.fought += 1;
+            match drain_battle(host, walking_mode) {
+                Fight::Survived => {
+                    // Fighting is not stalling: the walk resumes from where it
+                    // was interrupted, so give it a fresh stall window.
+                    since_progress = 0;
+                    continue;
+                }
+                Fight::Stuck => {
+                    return Leg::BattleUnresolved {
+                        at: goal,
+                        ended_in: None,
+                    };
+                }
+                Fight::Diverted(mode) => {
+                    return Leg::BattleUnresolved {
+                        at: goal,
+                        ended_in: Some(mode),
+                    };
+                }
+            }
+        }
+
         let (wx, wz) = player_world(host);
         let here = tile_of(wx, wz);
+        stats.reach = stats.reach.max(dist(here, start));
         if here == goal {
             return Leg::Reached;
         }
@@ -542,24 +834,27 @@ fn walk_to(host: &mut SceneHost, goal: (i16, i16)) -> Leg {
             // empty path and press straight at the goal - that press is what
             // crosses the walk-on band. The stall detector below still bounds
             // it, so a genuine dead end is reported rather than looped on.
-            path = plan_path(host, cell, goal).unwrap_or_default();
+            path = plan_path(host, cell, goal, avoid).unwrap_or_default();
             planned_from = cell;
         }
         let (tx, tz) = match path.first() {
             Some(&c) => cell_center(c),
             None => tile_center(goal),
         };
-        let pad = pad_for_world_step(
-            host.world.field_camera_azimuth,
-            (tx - wx).signum(),
-            (tz - wz).signum(),
-        );
+        let pad = pad_for_step(host, (tx - wx).signum(), (tz - wz).signum());
 
         host.world.set_pad(pad);
         match host.tick() {
             Ok(SceneTickEvent::SceneEntered { name }) => return Leg::Transitioned(name),
             Ok(_) => {}
             Err(_) => return Leg::Timeout { at: here, goal },
+        }
+
+        // The tick that just ran may have rolled an encounter. Hand the frame
+        // straight back to the loop head rather than measuring progress off a
+        // battle-arena coordinate.
+        if host.world.mode == SceneMode::Battle {
+            continue;
         }
 
         // A dialogue or cutscene that opened mid-leg owns input now; let it
@@ -591,17 +886,36 @@ fn walk_to(host: &mut SceneHost, goal: (i16, i16)) -> Leg {
             since_progress += 1;
             if since_progress >= STALL_FRAMES {
                 let (sx, sz) = player_world(host);
+                if std::env::var_os("LEGAIA_CPR_DEBUG").is_some() {
+                    for c in &host.world.field_prop_colliders {
+                        if (c.center.0 - i32::from(sx)).abs() < 400
+                            && (c.center.1 - i32::from(sz)).abs() < 400
+                        {
+                            eprintln!("[dbg] near prop {c:?}");
+                        }
+                    }
+                    eprintln!(
+                        "[dbg] npc positions near: {:?}",
+                        host.world
+                            .field_npc_positions
+                            .values()
+                            .filter(|&&(ax, az)| (i32::from(ax) - i32::from(sx)).abs() < 400
+                                && (i32::from(az) - i32::from(sz)).abs() < 400)
+                            .collect::<Vec<_>>()
+                    );
+                }
                 let probe = |f: &dyn Fn(usize) -> bool| [f(0), f(1), f(2), f(3)];
                 return Leg::Stalled(Box::new(StallSite {
                     tile: now,
                     world: (sx, sz),
                     goal,
-                    want: plan_path(host, cell_of(sx, sz), goal)
+                    want: plan_path(host, cell_of(sx, sz), goal, avoid)
                         .and_then(|p| p.first().copied())
                         .map(tile_of_cell),
                     wall: probe(&|d| host.world.field_dir_blocked(sx, sz, d)),
                     actor: probe(&|d| host.world.field_actor_dir_blocked(sx, sz, d)),
                     scripted,
+                    fought: stats.fought,
                 }));
             }
         }
@@ -610,18 +924,84 @@ fn walk_to(host: &mut SceneHost, goal: (i16, i16)) -> Leg {
     Leg::Timeout { at, goal }
 }
 
-/// Tile of the first overworld portal to `dest` on the loaded map.
-fn portal_tile(host: &SceneHost, dest: &str) -> Option<(i16, i16)> {
+/// Tile of the overworld portal to `dest` the player can actually **walk to**.
+///
+/// Two things make "the first row naming that scene" the wrong answer, and the
+/// second one is not obvious:
+///
+/// 1. `world_map_entity_positions` is in **world** units; [`walk_to`] navigates
+///    in tiles. Handing the raw world pair straight through overflows
+///    `tile_center`'s `t * 128` on an `i16` and aims the follower at a wrapped
+///    coordinate off the map - which, because map01's collision leaves the sea
+///    open, it then walks to without ever hitting a wall.
+/// 2. **A scene has several overworld doors and they are not interchangeable.**
+///    `map01` carries six `keikoku` portals - the Ravine is a corridor with
+///    entrances on both sides of the continent. From Rim Elm's exit the
+///    table's *first* one is on the far side of terrain the walk cannot cross,
+///    and the follower's best-effort push toward it runs it over a **different
+///    scene's** portal on the way (`suimon`), which auto-engages and ends the
+///    leg in the wrong place. That reads as a navigation failure and is really
+///    a goal-selection failure.
+///
+/// So the goal is chosen by flooding the walkability grid once per candidate
+/// and keeping the one the flood gets closest to - the same
+/// [`plan_path`] the follower will use, so "reachable" means reachable to the
+/// thing that has to do the walking, not to a straight line.
+fn portal_tile(host: &SceneHost, dest: &str, avoid: &HashSet<(i32, i32)>) -> Option<(i16, i16)> {
+    let from = {
+        let (x, z) = player_world(host);
+        cell_of(x, z)
+    };
     host.world
         .world_map_entity_configs
         .iter()
         .zip(host.world.world_map_entity_positions.iter())
-        .find_map(|(cfg, &(x, z))| match cfg {
+        .filter_map(|(cfg, &(x, z))| match cfg {
             WorldMapEntityConfig::OverworldPortal { scene_name, .. } if scene_name == dest => {
-                Some((x, z))
+                Some(tile_of(x, z))
             }
             _ => None,
         })
+        .map(|goal| {
+            let goal_w = tile_center(goal);
+            let goal_c = cell_of(goal_w.0, goal_w.1);
+            // Residual = how close the flood gets. `None` (nothing reachable
+            // at all) scores worse than any route.
+            let residual = plan_path(host, from, goal, avoid)
+                .and_then(|p| p.last().copied())
+                .map_or(i32::MAX, |end| {
+                    i32::from((end.0 - goal_c.0).abs() + (end.1 - goal_c.1).abs())
+                });
+            if std::env::var_os("LEGAIA_CPR_DEBUG").is_some() {
+                eprintln!("[dbg] candidate {dest} @ {goal:?} residual {residual}");
+            }
+            (residual, goal)
+        })
+        .min_by_key(|&(residual, _)| residual)
+        .map(|(_, goal)| goal)
+}
+
+/// Dispatch tiles of every overworld portal that is **not** a door to `dest`.
+///
+/// These are hazards, not obstacles in the collision sense: the grid says they
+/// are walkable and the engine agrees, but stepping on one ends the leg in
+/// another scene. The route has to go round them, so they are handed to
+/// [`plan_path`] as blocked cells. Keyed in the dispatch frame (`world >> 7`)
+/// because that is the frame `World::auto_engage_world_map_portals` compares
+/// in - matching it in the planner's `(world - 0x40) >> 7` frame would leave a
+/// half-tile band of the hazard open.
+fn portal_hazards(host: &SceneHost, dest: &str) -> HashSet<(i32, i32)> {
+    host.world
+        .world_map_entity_configs
+        .iter()
+        .zip(host.world.world_map_entity_positions.iter())
+        .filter_map(|(cfg, &(x, z))| match cfg {
+            WorldMapEntityConfig::OverworldPortal { scene_name, .. } if scene_name != dest => {
+                Some(dispatch_tile(x, z))
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -640,19 +1020,36 @@ struct Rung {
 fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     let mut rungs = Vec::new();
 
-    // Rim Elm's south exit is **story-locked**, and correctly so: its walk-on
-    // record (P2[10], on the only band a player can stand in) carries the
-    // gates `c1=[563] c2=[562]`, so it spawns once system flag 562 is set and
-    // 563 is not. The other band - P2[0] on tiles (24..26, 46) - is ungated
-    // but sealed, because grid row 47 walls `z ∈ [5888, 5951]` across the
-    // whole doorway until a story `0x4C` nibble-7 paint clears it.
+    // Run the collision model **both shipped hosts run**. `play-window`
+    // (`window/run.rs`) and the browser play page (`web-viewer/runtime.rs`)
+    // each set this pair; a bare `World` defaults both off, so a ladder that
+    // left them alone would be scoring a third model no player ever meets.
     //
-    // So a cold boot cannot leave Rim Elm, in the port or in retail. Seeding
-    // 562 stands in for the town's story beats (which are their own rung to
-    // write, not this one's job), and keeps this ladder measuring what it
-    // exists to measure: locomotion, collision and the pad remap, not story
-    // progression. Without it rung 2 is unwinnable by construction.
-    host.world.system_flag_set(562);
+    // It is also what makes the planner honest. `plan_path` certifies its
+    // edges with `field_dir_blocked`, and its doc calls that "the same probe
+    // the locomotion step runs" - true only under `leading_edge_wall_probes`.
+    // With the flag off, `advance_with_collision` tests the *candidate centre*
+    // (`field_tile_is_wall`) instead, so planner and mover disagree about
+    // where the walls are, and the disagreement surfaces as a stall whose site
+    // reports "walls none" while the player does not move.
+    //
+    // `solid_field_npcs` only became survivable once `plan_path` started
+    // consulting `field_actor_dir_blocked` as well: with solid NPCs and a
+    // wall-only planner, a Rim Elm townsperson parked in the route stalls
+    // rung 2 at tile `(25, 22)`. The two edits belong together.
+    host.world.leading_edge_wall_probes = true;
+    host.world.solid_field_npcs = true;
+
+    // Rim Elm's south exit is **story-locked**, and correctly so - but the
+    // lock is the gate's own collision, not a script gate on the `0x3F`. The
+    // exit record P2[0] (tiles (24..26, 46)) has empty C1/C2; what stops a
+    // cold boot leaving is grid row 47, which `P0[20]` only cuts through on
+    // its `327`+`321` arm. See `GATE_OPEN_FLAGS`.
+    for flag in GATE_OPEN_FLAGS {
+        host.world.system_flag_set(flag);
+    }
+    // The overworld's own story gate. See `MIST_WALL_FLAG`.
+    host.world.system_flag_set(MIST_WALL_FLAG);
 
     // --- 1. Cold boot into Rim Elm free-roam with control released. -------
     host.enter_field_scene("town01", 0).expect("enter town01");
@@ -679,7 +1076,9 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
         i16::from(TOWN01_SOUTH_GATE.0),
         i16::from(TOWN01_SOUTH_GATE.1),
     );
-    let leg = walk_to(host, goal);
+    // No hazards in a town: a field scene's exits are walk-on trigger bands,
+    // not entity portals, and the only one on the route is the goal.
+    let leg = walk_to(host, goal, &HashSet::new(), &mut LegStats::default());
     let cleared = matches!(&leg, Leg::Transitioned(n) if n == "map01");
     rungs.push(Rung {
         label: "pad-walk town01 south gate -> map01",
@@ -691,23 +1090,43 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     }
 
     // --- 3. Walk the overworld onto the Ravine portal. --------------------
-    let detail;
-    let cleared = match portal_tile(host, "keikoku") {
-        None => {
-            detail = "no keikoku overworld portal on map01".to_string();
-            false
-        }
+    let hazards = portal_hazards(host, "keikoku");
+    let arrival = {
+        let (x, z) = player_world(host);
+        tile_of(x, z)
+    };
+    let (leg, stats) = match portal_tile(host, "keikoku", &hazards) {
+        None => (None, LegStats::default()),
         Some(goal) => {
-            let leg = walk_to(host, goal);
-            let ok = matches!(&leg, Leg::Transitioned(n) if n == "keikoku");
-            detail = format!("{leg}");
-            ok
+            let mut stats = LegStats::default();
+            let leg = walk_to(host, goal, &hazards, &mut stats);
+            (Some(leg), stats)
         }
     };
+
+    // --- 3. …and the crossing itself, which is the leg's first half. ------
+    let crossed = stats.fought > 0 && stats.reach >= OVERWORLD_CROSSING_TILES;
+    rungs.push(Rung {
+        label: "pad-walk map01 across the continent",
+        detail: match &leg {
+            None => "no keikoku overworld portal on map01".to_string(),
+            Some(_) => format!(
+                "reached {} tiles from the {arrival:?} arrival, {} random encounter(s) fought \
+                 (needs {OVERWORLD_CROSSING_TILES} and 1)",
+                stats.reach, stats.fought
+            ),
+        },
+        cleared: crossed,
+    });
+    if !crossed {
+        return rungs;
+    }
+
+    // --- 4. …and the portal engage at the end of it. ----------------------
     rungs.push(Rung {
         label: "pad-walk map01 -> keikoku (Ravine)",
-        detail,
-        cleared,
+        detail: leg.as_ref().map_or_else(String::new, |l| format!("{l}")),
+        cleared: matches!(&leg, Some(Leg::Transitioned(n)) if n == "keikoku"),
     });
 
     rungs
@@ -805,6 +1224,43 @@ mod tests {
                     forward(azimuth, pad),
                     (dwx, dwz),
                     "azimuth {azimuth} step ({dwx},{dwz}) did not round-trip (pad {pad:#06x})"
+                );
+            }
+        }
+    }
+
+    /// The overworld inversion is checked against the engine's **own** forward
+    /// remap, not a re-derivation of it - the two walks use different spaces
+    /// and the field inversion above is silently wrong here.
+    ///
+    /// The contract is *not* an exact round trip, and asserting one would be a
+    /// bug in the test: a 4-way d-pad through
+    /// `world_map_camera_relative_bits` reaches only 8 world directions, and
+    /// which 8 depends on the azimuth, so at a rotated framing no press yields
+    /// a pure cardinal. What the follower needs - and what is asserted - is
+    /// that the press always moves the player *toward* the request: the
+    /// resulting world direction has a strictly positive dot product with it,
+    /// i.e. it is within 90°. Disc-free.
+    #[test]
+    fn world_map_pad_inversion_always_moves_toward_the_request() {
+        use legaia_engine_core::world::world_map_camera_relative_bits;
+
+        for azimuth in [0i32, 700, 1024, 1800, 2048, 2900, 3072, 4000] {
+            for (dwx, dwz) in [(1i16, 0i16), (-1, 0), (0, 1), (0, -1)] {
+                let pad = world_map_pad_for_world_step(azimuth, dwx, dwz);
+                assert_ne!(pad, 0, "azimuth {azimuth} step ({dwx},{dwz}): no press");
+                let sx = i32::from(pad & PadButton::Right.mask() != 0)
+                    - i32::from(pad & PadButton::Left.mask() != 0);
+                let sy = i32::from(pad & PadButton::Up.mask() != 0)
+                    - i32::from(pad & PadButton::Down.mask() != 0);
+                let bits = world_map_camera_relative_bits(azimuth, sx, sy);
+                let gz = i32::from(bits & 0x1000 != 0) - i32::from(bits & 0x4000 != 0);
+                let gx = i32::from(bits & 0x2000 != 0) - i32::from(bits & 0x8000 != 0);
+                let dot = gx * i32::from(dwx) + gz * i32::from(dwz);
+                assert!(
+                    dot > 0,
+                    "azimuth {azimuth} step ({dwx},{dwz}) walked the wrong way \
+                     (pad {pad:#06x} -> screen ({sx},{sy}) -> world ({gx},{gz}))"
                 );
             }
         }

@@ -52,9 +52,10 @@
 //! - `0x00` `Init` - entry pass. Zeroes ~12 state fields, sets the
 //!   countdown to `0x5DC`, then writes `state[+0x204] = 0x02`
 //!   (line 374, `0x801DD920`). A conditional branch (line 397,
-//!   `0x801DD97C`) routes to `state[+0x204] = 0x11` instead when a
-//!   sentinel at `_DAT_80084500` reads `1` - the "skip intro / direct
-//!   to attract" hand-off.
+//!   `0x801DD97C`) routes to `state[+0x204] = 0x11` instead when the
+//!   entry-context word at `_DAT_8007BB00` reads `1` - the "skip intro
+//!   / direct to attract" hand-off, and the same word retail's four
+//!   `game_mode = 0x16` sites raise (see `engine-core::game_over`).
 //! - `0x01` `Idle` - handler PC is the post-dispatch body tail. No
 //!   per-mode work; the function just exits.
 //! - `0x10` `AttractIdle` - the "Press Start" wait state. Polls for
@@ -65,7 +66,7 @@
 //!   countdown-decrement as belonging here.
 //! - `0x11` `AttractDelay` - the wait state that precedes
 //!   `AttractIdle`. Decrements an `8 * frame_scalar` accumulator at
-//!   `_DAT_8008454C`; when it reaches zero, writes
+//!   `_DAT_8007BAB4`; when it reaches zero, writes
 //!   `state[+0x204] = 0x10` (line 479, `0x801DDAC4`) and resets the
 //!   countdown to `0x5DC`.
 //!
@@ -113,6 +114,16 @@
 //!   "Top-of-tick sub-mode dispatcher".
 //! - State struct field offsets sourced from disassembly observation
 //!   in `overlay_title_801ddccc.txt`.
+//!
+//! Both globals above are reached by a `lui 0x8008` paired with a
+//! **negative** displacement, so the resolved address is one 64 KB page
+//! *below* the `lui` immediate: `0x801DD968`'s `lw a0,-0x4500(v0)` is
+//! `0x8007BB00`, and `0x801DDAEC`'s `sw v0,-0x454c(a0)` is
+//! `0x8007BAB4`. Transcribing such a pair by concatenating its literals
+//! yields `0x80084500` / `0x8008454C` - two unrelated live globals in
+//! the save-block window, which is why the wrong name reads plausible.
+//! Resolve the pair before naming it; the same slip produced the
+//! `0x800846A8` / `0x8007B6A8` confusion in the pause-menu save gate.
 //!
 //! No Sony bytes are stored in this module - the JT entries are PSX
 //! virtual addresses (numbers), not extracted overlay contents.
@@ -170,7 +181,7 @@ pub enum TitleOverlaySubMode {
     /// site) reaches the attract-fire transition from this state.
     AttractIdle = 0x10,
     /// `0x11` - AttractDelay. Decrements an `8 * frame_scalar`
-    /// accumulator at `_DAT_8008454C`; on reach-zero transitions to
+    /// accumulator at `_DAT_8007BAB4`; on reach-zero transitions to
     /// [`AttractIdle`] with the countdown reset to `0x5DC`.
     ///
     /// [`AttractIdle`]: TitleOverlaySubMode::AttractIdle

@@ -61,6 +61,28 @@ else if (dir &amp; 0x8000) and collide(player, scene, 1) == clear:  player.X -= 
   </ol>
 </section>
 
+<section class="doc-section" id="frame-denomination">
+  <h2>How fast is a frame?</h2>
+  <p>Step 4 above multiplies the walk speed by <code>DAT_1f800393</code>, and that byte is the whole reason walking looks the same on a busy screen as on an empty one. Retail runs <strong>two clocks</strong>, and reading a per-frame number in the wrong one is where "the player moves 1.67&times; too fast" bugs come from.</p>
+  <ul>
+    <li><strong>The vsync</strong> - the display frame, 60 per second.</li>
+    <li><strong>The game tick</strong> - one pass of the master frame driver <code>FUN_80016444</code>, which is what actually runs the whole field frame.</li>
+  </ul>
+  <p><code>DAT_1f800393</code> is how many vsyncs one game tick spans. <code>FUN_80016B6C</code> re-picks it every frame: it times the last frame with <code>VSync(1)</code>, chooses <code>1..4</code> from the measurement, raises that to a per-mode floor (<code>2</code> in field scenes, <code>3</code> on the overworlds), and waits. So on an ordinary field frame the driver runs <strong>30 times a second</strong>, not 60 - and the locomotion controller runs once per pass, with no cadence gate of its own.</p>
+  <p>That would make the player's speed depend on the frame rate, except that every duration and every velocity inside the pass is counted <em>in vsyncs</em> and scaled by the byte. At the field floor the controller runs 30&times; a second and spends <code>2 &times; base_step</code> each time; at cadence 1 it runs 60&times; and spends <code>base_step</code>. Both cover the same ground per second. A cadence change moves the <em>sample rate</em> - how many in-between poses exist - and never a speed. The same scaling appears in the NPC glide kernel <code>FUN_8003774C</code>, the dialogue-pacing timer, and the vertical-settle glide.</p>
+  <p>So the honest units are <strong>per second</strong>, not per frame:</p>
+  <table>
+    <thead><tr><th>base step</th><th>selector</th><th>units/vsync</th><th>units/second</th><th>tiles/second</th></tr></thead>
+    <tbody>
+      <tr><td><code>5</code></td><td>forced slow</td><td>5</td><td>300</td><td>2.34</td></tr>
+      <tr><td><code>8</code></td><td>plain walk</td><td>8</td><td><strong>480</strong></td><td>3.75</td></tr>
+      <tr><td><code>0xC</code></td><td>run</td><td>12</td><td><strong>720</strong></td><td>5.63</td></tr>
+      <tr><td><code>0x18</code></td><td>debug turbo</td><td>24</td><td>1440</td><td>11.25</td></tr>
+    </tbody>
+  </table>
+  <p>A collision tile is 128 units, so Vahn walks 3.75 tiles a second. The clean-room port ticks its world once per vsync with the scalar at 1 - the fine-grained half of the same identity - so it lands on the same 480 units a second out of 60 steps of 8 rather than 30 of 16, and draws twice as many in-between poses. Both hosts (the native window and the browser play page) drive that tick at exactly 60 Hz off a wall-clock accumulator, which is what keeps them the same speed as each other.</p>
+</section>
+
 <section class="doc-section" id="collision">
   <h2>Collision - FUN_801cfe4c</h2>
   <p><code>FUN_801cfe4c(player, scene, dir)</code> returns <code>0</code> when the move is clear and <code>2</code> when a static wall blocks it (plus bits <code>1</code>/<code>4</code> from the finer <code>FUN_801cfc40</code> actor/edge probe). It samples a <strong>per-scene collision tile map</strong> through the base pointer <code>_DAT_1f8003ec</code>:</p>

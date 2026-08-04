@@ -296,6 +296,110 @@ One gate declares `web_toggle = None` with a reason rather than a twin:
 one implementation both hosts call, and `std::env::var` answers `Err` under
 `wasm32` - default-off by construction rather than by a second toggle.
 
+## Tier 7 - render kernels: same draw list, same kernel, every surface
+
+`RENDER_KERNEL_RULES` in
+[`check-ui-host-drift.py`](../../scripts/ci/check-ui-host-drift.py).
+
+Every tier above measures a UI screen, a constant, a simulation injection
+site, a trait hook or a keyboard table. None of them asks the question that
+has now shipped **five** separate bugs: two surfaces assemble the same kind of
+draw list and only one runs the kernel that makes it correct.
+
+| what shipped | who missed it |
+|---|---|
+| coplanar draw lifts never computed | browser play page |
+| hand-rolled white vertex streams | Muscle Dome's three bodies |
+| synthetic Lambert on both shader paths | every site 3D page |
+| ground heightfield left out of the coplanar soup | every host |
+| occlusion-fade radius staged at a different value | browser play page |
+
+The last one is tier 2's; the other four are this tier's, and each was
+invisible in a diff because no file held two of the columns.
+
+### Why this is not another `SIM_PAIRS` row
+
+The denominator. A tier-3 row names **two** function bodies by hand, so a
+third surface that grows the same draw list is outside the measurement by
+construction - and this tree has **five** render surfaces, not two:
+
+| surface | assembles |
+|---|---|
+| native `play-window` | `field_render.rs` + `geometry.rs` |
+| browser play page | `play.rs` |
+| browser field-scene viewer | `field_scene.rs` (+ `scene_geom.rs` for the world map) |
+| browser dance-hall venue | `minigames_dance.rs` |
+| browser fishing venue | `minigames_fishing_scene.rs` |
+
+The last two resolve `EnvDraw`s and instance env-pack meshes exactly like the
+first three, and the tier-3 coplanar rows named three of the five. So here the
+surface is **derived**: every non-test source under the render roots. A new
+surface joins the measurement by existing.
+
+### The two rule kinds
+
+| kind | assertion |
+|---|---|
+| `requires` | a file whose comment-stripped source matches `trigger` must also match every `requires` pattern |
+| `forbids` | a file matching `trigger` may not match `forbids` inside any 3-line window |
+
+The 3-line window is the statement scale: these kernels are written as
+`self.flat` / newline / `.extend(...)` as often as on one line, and a
+line-scoped detector misses the multi-line half. Comments are stripped first,
+in both languages, for the same reason tier 1 strips them - a doc comment
+naming `coplanar_draw_offsets` is prose, not a wiring, and under-counting
+"satisfied" is the safe direction.
+
+### Rules on the surface today
+
+| kernel | rule |
+|---|---|
+| cross-draw coplanar lifts | resolving `EnvDraw`s requires `draw_plane_summaries` + `coplanar_draw_offsets` |
+| walk-ground heightfield sink | emitting the heightfield's vertices requires `GROUND_SINK` |
+| packet-colour stream fill | a packet-colour stream may not be filled with white |
+| placement tilt composition | reading `placement_rot_y` requires `rot_x` + `rot_z` |
+
+**The heightfield rule triggers on the emitter, not the type.** An early draft
+keyed on `WalkHeightfield` / `walk_heightfield` and reported four files that
+only pass the struct on - one of them a log line reading `hf.positions.len()`.
+The trigger is the vertex walk (`for p in &hf.positions`, `.clone()`), which is
+what "this file is a render site for the ground" actually looks like.
+
+**The white-fill rule is a prohibition because there is no legal case.** The
+shader reads `a_flat_rgba` as `texel * rgb * 255/128`, so a fabricated stream
+of white is `texel * 2`; the one correct fill for geometry with no colour word
+is `MODULATION_NEUTRAL` (`0x80`). The rule has to distinguish that from the
+*flag* byte, which is legitimately `255` on every textured vertex -
+`[c[0], c[1], c[2], 255]` is correct and `[255u8; 4]` is not, and the control
+suite pins both.
+
+**The tilt rule earns its place on measured data, not on plausibility.** The
+comment it replaced said "the handful of disc placements carrying a real X/Z
+tilt". Over 49 field scenes that is 94 of 1667 placements - and `juui1` tilts
+all nine of its by a quarter turn about X.
+
+### `blocked_on` and `exempt`
+
+`blocked_on` marks a divergence that is known and being closed elsewhere, and
+is validated in both directions exactly like a waiver: an entry whose file has
+gone clean **fails**, demanding the entry be deleted, and so does one whose
+file no longer assembles that draw list at all.
+
+`exempt` is the stronger claim - the rule does not apply to that file - and it
+must rest on the **data**, not on the schedule. The two on the surface are the
+world-map walk placements, whose records carry `rot_x = rot_z = 0` across the
+retail corpus: the yaw-only path there is not a shortcut, it is what the disc
+says.
+
+### What tier 7 does not prove
+
+It asks whether a file that assembles a draw list *names* the kernel. It says
+nothing about the arguments, the order, or whether the call runs. A host can
+name `coplanar_draw_offsets` and drop the map on the floor, and this tier will
+report it clean - that is tier 3's shape of question, one function body down.
+It also cannot see a kernel nobody has written a rule for; the rule list is
+the claim, and it grows one defect at a time.
+
 ## What a waiver may say
 
 Both waiver files are validated for staleness on every run, so they cannot

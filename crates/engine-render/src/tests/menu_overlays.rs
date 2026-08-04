@@ -296,13 +296,10 @@ fn status_screen_label_icons_suppresses_ap_text_and_empty_equips() {
     assert!(!with_icons.iter().any(|d| d.dst.1 == 138));
 }
 
-#[test]
-fn game_over_dim_continue_when_disabled() {
-    let font = legaia_font::synthetic_for_tests();
-    let draws = game_over_draws_for(&font, 1, false, (100, 80));
-    let any_dim = draws.iter().any(|d| d.color[0] < 0.5);
-    assert!(any_dim);
-}
+// There is no game-over panel test here any more, because there is no
+// game-over panel. The one that stood here asserted a dimmed Continue row on
+// a three-row chooser retail never had - a test asserting the defect. The
+// wipe hand-off's own assertions live in `legaia_engine_core::game_over`.
 
 #[test]
 fn options_draws_render_rows() {

@@ -216,6 +216,127 @@ pub fn summon_creature_id(spell_id: u8, battle_data_entry: &[u8]) -> Option<u16>
     })
 }
 
+/// One entry of the four-slot **big-summon** band `0x9A..=0xA0` - the Sim-Seru
+/// summons (Palma / Mule / Horn / Jedo) and the three Ra-Seru summons
+/// (Meta / Terra / Ozma). These are the summons whose creature body is
+/// **bespoke**: unlike `0x81..=0x95`, their mesh byte-matches no `battle_data`
+/// archive record, so [`summon_creature_id`] returns `None` for them and the
+/// mesh has to come out of the cast's own `summon.dat` group
+/// ([`legaia_asset::summon_readef::parse_cast`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BigSummon {
+    /// Spell / action id (`actor[+0x1DF]`).
+    pub spell_id: u8,
+    /// The summon's own name - what the player selects in the magic menu.
+    pub name: &'static str,
+    /// The cast's attack name. This is the string carried **on the disc** at
+    /// the group's actor-record `rec[0]` offset, which is what pins each
+    /// name to its id (see [`BIG_SUMMONS`]).
+    pub attack: &'static str,
+    /// Element id the actor record's `+0x1D` byte carries for this cast
+    /// (`0`=earth `1`=water `2`=fire `3`=wind `4`=thunder `5`=light `6`=dark
+    /// `7`=none) - the value the damage pipeline attributes to the cast.
+    pub element: u8,
+}
+
+/// The big-summon band, id-ascending.
+///
+/// Every row is pinned to its id by **two independent disc reads**, not by
+/// ordering assumption:
+///
+/// 1. the `summon.dat` group's actor record carries the cast's attack name as
+///    an inline ASCII string at `rec[0]`, and it equals [`BigSummon::attack`];
+/// 2. the same record's `+0x1D` element byte equals [`BigSummon::element`].
+///
+/// Both are asserted against the real disc by the disc-gated
+/// `summon_cast_real` / `summon_view_real` oracles. `0x99` (Evil Seru Magic,
+/// "Dark Eclipse") shares the band's spell range but is a three-slot group
+/// with a per-cast creature, so it is not a member here.
+pub const BIG_SUMMONS: &[BigSummon] = &[
+    BigSummon {
+        spell_id: 0x9A,
+        name: "Palma",
+        attack: "Meteor Cluster",
+        element: 0,
+    },
+    BigSummon {
+        spell_id: 0x9B,
+        name: "Mule",
+        attack: "Deep Avalanche",
+        element: 1,
+    },
+    BigSummon {
+        spell_id: 0x9C,
+        name: "Horn",
+        attack: "Resurrector",
+        element: 5,
+    },
+    BigSummon {
+        spell_id: 0x9D,
+        name: "Jedo",
+        attack: "Deadly Promise",
+        element: 6,
+    },
+    BigSummon {
+        spell_id: 0x9E,
+        name: "Meta",
+        attack: "Inferno",
+        element: 2,
+    },
+    BigSummon {
+        spell_id: 0x9F,
+        name: "Terra",
+        attack: "Queen Twister",
+        element: 3,
+    },
+    BigSummon {
+        spell_id: 0xA0,
+        name: "Ozma",
+        attack: "Voltagor",
+        element: 4,
+    },
+];
+
+/// The [`BigSummon`] row for `spell_id`, or `None` outside `0x9A..=0xA0`.
+pub fn big_summon(spell_id: u8) -> Option<&'static BigSummon> {
+    BIG_SUMMONS.iter().find(|s| s.spell_id == spell_id)
+}
+
+/// The [`BigSummon`] row named `name` (case-insensitive), or `None`.
+pub fn big_summon_by_name(name: &str) -> Option<&'static BigSummon> {
+    BIG_SUMMONS
+        .iter()
+        .find(|s| s.name.eq_ignore_ascii_case(name))
+}
+
+/// The two live **rare-Seru flute** summons, whose ids sit between the evolved
+/// block and the high block and so are covered by neither
+/// [`legaia_asset::summon_creatures`] nor [`BIG_SUMMONS`]. Both are
+/// capture-pinned mid-cast on the player path (see [`FLUTE_SUMMON_IDS`]);
+/// `0x98` is retail's unused third slot and stays unnamed.
+const FLUTE_SUMMON_NAMES: &[(u8, &str)] = &[(0x96, "Lippian"), (0x97, "Spikefish")];
+
+/// Display name of the creature a player summon spell brings out, across the
+/// whole `0x81..=0xA0` span: the namesake `battle_data` creature for the base
+/// and evolved blocks ([`legaia_asset::summon_creatures`]), the summon's own
+/// name for the big-summon band ([`BIG_SUMMONS`]), and the spell-table name
+/// otherwise. `None` for an id that is not a player summon.
+pub fn summon_display_name(spell_id: u8) -> Option<&'static str> {
+    if let Some(c) = legaia_asset::summon_creatures::creature_for_spell(spell_id) {
+        return Some(c.name);
+    }
+    if let Some(b) = big_summon(spell_id) {
+        return Some(b.name);
+    }
+    if let Some((_, n)) = FLUTE_SUMMON_NAMES.iter().find(|(id, _)| *id == spell_id) {
+        return Some(n);
+    }
+    PLAYER_SUMMON_IDS
+        .contains(&spell_id)
+        .then(|| crate::retail_magic::get(spell_id).map(|s| s.name))
+        .flatten()
+}
+
 /// Upper bound on a `model_sel` that names a real mesh (`DAT_8007C018[model_sel
 /// + base]`). The model library is small (~30 entries), so a part whose
 /// `model_sel` is `-1` (transform node) or a large sentinel (`0x1000`, `0x4000`,
@@ -849,6 +970,50 @@ mod tests {
         assert_eq!(summon_stager_prot_entry(0x9E), Some(932)); // Meta
         assert_eq!(summon_stager_prot_entry(0xA0), Some(934)); // Ozma
         assert_eq!(summon_stager_prot_entry(0xA1), None); // above the high block
+    }
+
+    #[test]
+    fn big_summons_cover_the_seven_named_summons_exactly() {
+        // The seven names players know them by, each on exactly one id, in one
+        // contiguous run that is the whole four-slot band.
+        let ids: Vec<u8> = BIG_SUMMONS.iter().map(|s| s.spell_id).collect();
+        assert_eq!(ids, (0x9A..=0xA0).collect::<Vec<u8>>());
+        for want in ["Meta", "Ozma", "Terra", "Horn", "Jedo", "Palma", "Mule"] {
+            let s = big_summon_by_name(want).unwrap_or_else(|| panic!("{want} resolves"));
+            assert_eq!(s.name, want);
+            assert!(!s.attack.is_empty(), "{want} names its cast");
+        }
+        // Every element id is distinct and inside the 0..=7 space - a
+        // duplicated element would mean a row was copied, not read.
+        let mut elems: Vec<u8> = BIG_SUMMONS.iter().map(|s| s.element).collect();
+        elems.sort_unstable();
+        assert_eq!(elems, vec![0, 1, 2, 3, 4, 5, 6]);
+        // 0x99 (Evil Seru Magic) shares the high block but not the band.
+        assert!(big_summon(0x99).is_none());
+        assert!(big_summon(0xA1).is_none());
+        assert!(big_summon_by_name("Juggernaut").is_none());
+    }
+
+    #[test]
+    fn display_names_span_the_whole_player_summon_run() {
+        // Base / evolved: the namesake battle_data creature.
+        assert_eq!(summon_display_name(0x81), Some("Gimard"));
+        assert_eq!(summon_display_name(0x95), Some("Gilium"));
+        // Big-summon band: the summon's own name, not a creature id.
+        assert_eq!(summon_display_name(0x9E), Some("Meta"));
+        assert_eq!(summon_display_name(0xA0), Some("Ozma"));
+        assert_eq!(summon_display_name(0x9A), Some("Palma"));
+        // The flute pair, which neither of the other two maps covers.
+        assert_eq!(summon_display_name(0x96), Some("Lippian"));
+        assert_eq!(summon_display_name(0x97), Some("Spikefish"));
+        // 0x98 is retail's unused slot and 0x99's creature resolves per cast,
+        // so neither gets a name here - the host falls back to the disc's own
+        // attack string rather than guessing.
+        assert_eq!(summon_display_name(0x98), None);
+        assert_eq!(summon_display_name(0x99), None);
+        // Outside the run.
+        assert_eq!(summon_display_name(0x80), None);
+        assert_eq!(summon_display_name(0xA1), None);
     }
 
     #[test]

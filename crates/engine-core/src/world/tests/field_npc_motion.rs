@@ -4,11 +4,15 @@ use super::*;
 // Field-NPC motion (motion-VM wiring) + prop walk-touch dispatch
 // ---------------------------------------------------------------------------
 
-/// Tick the world until `n` retail field frames have elapsed. NPC glide
-/// legs step on the ~60 Hz retail frame clock (`field_frame_step == 1`),
-/// not the 100 Hz sim tick - see the gate on
-/// [`World::tick_field_npc_motions`] - so motion assertions count frames,
-/// not ticks.
+/// Tick the world until `n` retail field frames have elapsed. NPC glide legs
+/// step on the retail frame clock (`field_frame_step == 1`, the gate on
+/// [`World::tick_field_npc_motions`]), so motion assertions count frames
+/// rather than ticks.
+///
+/// Under the 1:1 denomination a sim tick *is* a retail frame, so this now
+/// runs exactly `n` ticks - but it stays written in frames because that is
+/// the unit the glide speed is denominated in (`dt = _DAT_1f800393` at 1 per
+/// call), and a future host that oversampled would need it.
 fn tick_retail_frames(world: &mut World, n: usize) {
     let mut fired = 0;
     while fired < n {
