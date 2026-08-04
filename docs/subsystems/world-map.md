@@ -1002,8 +1002,14 @@ arrival seat, not Down.
 **Rim Elm's south gate is a story gate, enforced in the collision grid.** The
 exit trigger band is walled off on a fresh New Game - you cannot leave Rim Elm,
 exactly as retail plays. The seal is not a script gate on the `0x3F` but a
-**collision delta**: `town0c` `P1[0]` first clears the approach band
-(three `0x4C` nibble-7 sub-0 paints), then branches on system flags `327` and
+**collision delta**, and the record carrying it is **not the same one in every
+Rim Elm variant**: `town0c` holds the sequence twice - in its entry script
+`P1[0]` *and* in `P0[20]`, the gate object's own record (bound by the `.MAP`
+gate-0 kind-1 trigger at tile `(23, 43)`, executed by the scene-init bind
+prologue `FUN_8003A55C`) - while **`town01` holds it only in `P0[20]`**. An
+engine that applies nibble-7 deltas from entry scripts alone therefore leaves
+`town01`'s gate sealed in every story state. The record first clears the
+approach band (three `0x4C` nibble-7 sub-0 paints), then branches on system flags `327` and
 `321`. With `327` clear the script skips both arms and the base map's wall
 stands; with `327` set and `321` clear it re-blocks the band (`sub-1`
 `x=23..29 z=44..45` and friends); with **both set** it takes the open-gate arm -

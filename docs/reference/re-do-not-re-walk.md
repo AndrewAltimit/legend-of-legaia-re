@@ -537,11 +537,37 @@ that the samples can tell the two readings apart.
 | Thread | Verdict | Why |
 |---|---|---|
 | "~270 undumped field-overlay functions" (recomp dispatch-entry seed list) | falsified (not a function inventory gap) | [details ↓](#270-undumped-field-overlay-functions-recomp-dispatch-entry-seeds) |
+| Rim Elm's reachable south-gate band force-walks the player through the wall | falsified (the record is five inert bytes) | [details ↓](#the-reachable-bands-record-force-walks-the-player-through-the-wall) |
 | Scene-bundle type-6 descriptors are "all small placeholders" | falsified (12 are walker tables) | Plausible: the modal slot really is a 4-byte `count = 0` filler (85 of 97 bundles) and the three kingdom tables had been attributed to a "kingdom slot 5" special. But the 80/172/516-byte type-6 payloads (`garmel`, `dohaty`, the `geremi`/`rayman`/tunnel/`son`/`edson` family) parse as the same CLUT-walk table, installed identically for every bundle - the water/waterfall shimmer. The `rayman`-family carrier is the count-4 MAN-less table variant the strict detector rejects; resolve **by type byte** ([field-ambient-fx.md](../subsystems/field-ambient-fx.md#mechanism-1---the-scene-walker-table-bundle-type-6-slot)). |
 | Move-VM loop op `0x19` "retires past itself (size 2), loops back to the saved PC" | falsified (both halves inverted by the C rendering) | Wrong against the raw arm (`80023070.txt` `0x800235DC` + the `0x80024150` epilogue): retail **loops while the decremented count has not underflowed**, retires on underflow with size **1**, and the loop-back lands at **saved + 2** (the epilogue adds `a2 = 2` after the PC store) - re-running the `0x18` itself would re-seed the counter forever. jou's 15-instance cycler fan-out is the disc witness. Sibling correction: ext `0x1E` returns size **4**, hidden behind a `func_0x801d4a3c()` label-call return ([move-vm-overlay-ext.md](../subsystems/move-vm-overlay-ext.md#self-modifying-bytecode-ops-0x04--0x1b--0x1e)). |
 | Field-VM op `4C` nE sub-3 "syncs the resolved actor's position to the active camera" | falsified (copy direction inverted) | Plausible because the handler tail (`0x801E3178..0x801E31AC`) really does refresh the camera-scroll globals - but that tail is a player-ctx-only side path. The op body (`0x801E3108`) copies the operand-resolved actor's `+0x14/16/18` position and `+0x26` facing **into the executing ctx** - it is the seat primitive of every mid-visit crowd swap (dolk2 `P2[11]`'s eight `CC <crowd> E3 <day>` pairs). Reading the tail as the op's purpose inverted the semantics. See [script-vm.md](../subsystems/script-vm.md#mid-visit-npc-re-arrangement-beats-dolk2-market-swap--garmel-boss-staging). |
 | Extraction-0874 §2 F-variant pixels are written by a pause-menu-path uploader (and then: are a parked wrap-scroll phase) | falsified twice | Plausible: 6/6 pause captures held the variant; then the 3 words equal row 273's content, reading as a +2-row scroll park. But the whole pause walk issues **zero** image transfers (DMA2 chain-walk + GP0 PIO hook) and plain field saves carry the variant - session-history correlation; and the strip is not shift-invariant while the wrap-scroll installer ops never fire across the s2→s3 flip window - the row-273 equality is frame-content coincidence. The real writer is the town01 opening record's one-shot `4C 60` face-frame stamp (settled - [details](re-settled-threads.md#field--locomotion)). |
 | Prologue gold grade = per-node `+0x74`/`+0x78` depth-cue crush | falsified (grade is a palette-space collapse; the nodes carry no `IR0`) | Plausible because `FUN_8002735C` really does load per-node DPCS far colour + `IR0`, and the motion/move VMs carry op `0x0C` writers of those fields - but the opening never uses them: a live recomp capture reads node `+0x78` (`IR0`) = **0 on every node at every beat**, and the `opdeene` MAN motion section has no op `0x0C`. The real mechanism is a load-time CLUT/TMD palette collapse `L=max(r,g,b) -> (L, max(L-1,0), L>>1)` ([cutscene.md](../subsystems/cutscene.md#full-scene-sepia-grade-the-gold-prologue-look)); the far-field crush is that law seen through dark authored gouraud. |
+
+### The reachable band's record force-walks the player through the wall
+
+*Status:* falsified - disassembling the record settled it in five bytes.
+
+*The reading:* record 10 covers the only band a player can stand in, its
+timeline ran for two frames and moved the player `+8` in `z` before ending, and
+`+8` is one locomotion step - so the record must force-walk the player through
+the sealed band and then run the `0x3F`, which would also explain how retail
+crosses a wall that blocks ordinary locomotion.
+
+*Why it is wrong:* record 10's entire body is `21 21 26 FE FF`. There is no
+walk op and no `0x3F` in it. The two-frame termination is the choreography-wrap
+rule doing its job on a `Nop`+`JmpRel`-to-self park, and the `+8` is one frame
+of the player's own pad locomotion, observed only because the modal-timeline
+install is what stopped it. The `0x3F` lives in record 0, on the *other* band,
+and that band is opened by a collision paint rather than crossed by a scripted
+walk - see
+[`re-settled-threads.md` § Rim Elm's south gate](re-settled-threads.md#rim-elms-south-gate).
+
+*The general lesson:* a timeline that "ends without doing the thing" is
+evidence about the runner only if the record contains the thing. Disassemble
+the record before theorising about the interpreter - five bytes settled a
+thread that had already cost several diagnosis cycles on collision, grids,
+standoffs and dispatch.
 
 ### 270 undumped field-overlay functions (recomp dispatch-entry seeds)
 

@@ -1780,7 +1780,8 @@ impl World {
     ///   finisher, on the contest's PsyQ `rand()` stream), the same one the
     ///   browser host resolves with. A session with no model installed
     ///   resolves to no damage rather than to invented constants.
-    /// - **TurnOver / decided**: [`Cross`] takes the next turn, or leaves a
+    /// - **TurnOver / decided**: the next turn is taken automatically (retail
+    ///   confirms nothing at a turn boundary), and [`Cross`] leaves a
     ///   finished leg (via [`World::exit_muscle_dome`], crediting the reward
     ///   Seru capture on a win). A leg finishes on a KO and on nothing else:
     ///   turns are counted, never budgeted. Retail agrees - the arena hands
@@ -1831,7 +1832,15 @@ impl World {
                 }
             }
             MusclePhase::TurnOver => {
-                if confirm && let Some(s) = self.muscle_dome.as_mut() {
+                // Retail's turn boundary is automatic, not confirmed: the
+                // battle-action SM writes `ctx[6] = 0x14` at `0x801E67F0` and
+                // the round driver re-enters its own command cluster with no
+                // press. The arena hub - the only thing that draws an
+                // INTERVAL screen - runs in arena mode `0x18` and is not
+                // executing during a leg, so a confirm gate here was a silent
+                // one-press stall with nothing on screen to explain it.
+                // REF: FUN_801e295c (turn-top arm)
+                if let Some(s) = self.muscle_dome.as_mut() {
                     s.next_turn();
                 }
             }

@@ -1315,6 +1315,7 @@ This relies on the **runtime actor frame == MAN placement frame** finding: `FUN_
 
 | Thread | Status | Evidence | Answer |
 |---|---|---|---|
+| Rim Elm's south gate - why a seated player exits and a walking one does not | resolved | `disassembly` | Neither walk-on band was the mechanism: the exit record is ungated, the other is five inert bytes, and the wall is a collision row the gate object's own script paints. [details ↓](#rim-elms-south-gate) |
 | Town/field free-movement locomotion | resolved | `capture` | [details ↓](#townfield-free-movement-locomotion) |
 | Field ambient animation - what makes jou's ground pulse and the water shimmer | resolved | `disassembly` | Three mechanisms: the bundle type-6 CLUT-walk table (12 carriers, 9 of them field scenes), the ambient move-VM tree the MAN P1 placements install at entry, and jou's flesh pulse = the mode-3 CLUT-cell HSV cycler (`FUN_80019D50`, lightning = flag `0x364`). Full chain + two move-VM decode corrections: [`field-ambient-fx.md`](../subsystems/field-ambient-fx.md). |
 | Ambient render-mode 4 - what the op-`0x1E` seat animates | resolved | `disassembly` | A **cyclic VRAM-rect scroller**, and it is what makes waterfalls fall. Per fired period (`+0xC6` drained by the frame step alone, no speed scalar) the render tail rotates the seated rect `+0xD0..+0xD6` left by `+0xCC * frame_step` and up by `+0xCE * frame_step`, each axis as StoreImage / MoveImage / LoadImage over a bump-allocated strip (`80021df4.txt` `0x80022CB8..0x80022EE0`). Seventeen scenes carry one at plain entry; sixteen scroll upward over a texture-band rect, `tunnelc`'s second seat scrolls a CLUT row sideways. Ported as `engine-core::world::ambient::vram_scroll`. [details ↓](#ambient-render-mode-4---the-vram-rect-scroller) |
@@ -1512,6 +1513,47 @@ The boot sound-bank loader `FUN_8001FA88` writes the same slot and then
 immediately saves *its* bank's record-0 address at `gp+0x678`, precisely
 because the next scene load overwrites the slot - so the two readings are
 complementary, not contradictory.
+
+### Rim Elm's south gate
+
+*What it looked like:* the first scene exit of the game fires when an oracle
+seats the player onto `(25, 46)` and never fires when a player walks there, so
+the walk-on dispatch looked broken.
+
+*What it is:* neither of the gate's two `.MAP` kind-1 gate-1 bands is the
+mechanism the symptom suggested.
+
+| Record | Tiles | Script |
+|---|---|---|
+| `P2[10]` | `(24..26, 45)`, `(25, 44)` | `21 21 26 FE FF` - `Nop; Nop; JmpRel`-to-self. Five bytes, no scene change. |
+| `P2[0]` | `(24..26, 46)` | `CFlag.Set`, an `Effect` fade, `0x3F` naming `map01` at entry `(0x60, 0x19)`. `C1=[] C2=[]`. |
+
+The exit record is **ungated**; the other record is **inert**. What holds a
+player inside Rim Elm is the collision grid - grid row 47 walls
+`z ∈ [5888, 5951]` across the doorway - and that row *is* the gate. It is cut
+by `town01` `P0[20]`, the gate object's own record, bound by the gate-0 kind-1
+trigger at tile `(23, 43)` and executed by the scene-init bind prologue
+(`FUN_8003A55C`). The record clears the approach with three `4C 70` paints and
+then branches on system flags `327` / `321`:
+
+| `327` | `321` | paints | gate |
+|---|---|---|---|
+| clear | - | none; the base row-47 wall stands | shut |
+| set | clear | re-blocks rows 44..46, seats the gate at `(24, 44)` | shut |
+| set | set | `4C 70 18 2D 19 2E` - cols `24..25`, rows `46..47` | **open** |
+
+So a cold boot cannot leave Rim Elm in the port *or* in retail, and the disc
+says so rather than the engine. The port already executes the whole chain:
+measured on its loaded grid, the three flag states give exactly the three
+collision states above, with col 26 correctly re-blocked in the open one.
+Pinned by `crates/engine-core/tests/south_gate_disc.rs`; the pad-driven exit is
+a rung of `crates/engine-shell/tests/critical_path_replay.rs`.
+
+Carrier note, because it decides whether a port can open the gate at all:
+`town0c` holds the same paint sequence **twice** (its entry script `P1[0]` and
+`P0[20]`); `town01` holds it only in `P0[20]`. An engine that applies nibble-7
+deltas from entry scripts alone leaves `town01`'s gate sealed in every story
+state.
 
 ### Town/field free-movement locomotion
 
