@@ -33,6 +33,7 @@ struct TestHost {
     party_removed: Vec<u8>,
     interacts: Vec<(u8, u8)>,
     scene_transitions: Vec<u8>,
+    minigame_door_warps: Vec<u8>, // op 0x3E `op0 >= 100` sub-ids
     named_scene_transitions: Vec<(String, u8, u8, u8)>, // (scene, entry_x, entry_z, dir)
     render_long: Vec<(u8, u8, u8, u8)>,
     render_short: Vec<(u8, u8, u8, u8)>,
@@ -284,6 +285,9 @@ impl FieldHost for TestHost {
     }
     fn scene_transition(&mut self, map_id: u8) {
         self.scene_transitions.push(map_id);
+    }
+    fn minigame_door_warp(&mut self, sub_id: u8) {
+        self.minigame_door_warps.push(sub_id);
     }
     fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8, dir: u8) {
         self.named_scene_transitions

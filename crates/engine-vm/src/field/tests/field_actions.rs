@@ -457,8 +457,12 @@ fn warp_interact_handles_0xff_sentinel() {
 }
 
 #[test]
-fn warp_scene_transition_path_advances_6_and_clears_flag() {
-    // op0 = 105 (>= 100) → WARP. map_id = 5.
+fn warp_minigame_door_path_advances_6_and_clears_flag() {
+    // op0 = 105 (>= 100) → the mode-24 minigame door warp. sub_id = 5.
+    //
+    // This used to assert `scene_transitions == [5]`, which was the defect:
+    // the arm calls no scene-change packet, and `sub_id` selects a code
+    // overlay rather than a map. See `engine-core`'s `minigame_entry`.
     let mut host = TestHost::default();
     let mut ctx = FieldCtx {
         flags: 0xFFFF_FFFF,
@@ -467,7 +471,11 @@ fn warp_scene_transition_path_advances_6_and_clears_flag() {
     let bc = [0x3E, 105, 0, 0, 0, 0];
     let r = step(&mut host, &mut ctx, &bc, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 6 });
-    assert_eq!(host.scene_transitions, vec![5u8]);
+    assert_eq!(host.minigame_door_warps, vec![5u8]);
+    assert!(
+        host.scene_transitions.is_empty(),
+        "the door-warp arm must not reach the map-id transition"
+    );
     // Bit 0x80000 cleared on the active ctx.
     assert_eq!(ctx.flags & 0x80000, 0);
     // Other bits preserved.
