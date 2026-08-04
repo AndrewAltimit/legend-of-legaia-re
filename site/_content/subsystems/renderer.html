@@ -126,6 +126,27 @@
   <p><code>tmd vram-dump &lt;PATH&gt; -o vram.png [--vram-dir ...] [--annotate]</code> exports the post-upload software VRAM as a 1024x512 PNG with optional red CLUT-row + green texture-page outlines, so collisions are obvious without firing up the GUI.</p>
 </section>
 
+<section class="doc-section" id="render-surfaces">
+  <h2>Render kernels by surface</h2>
+  <p>The port draws through <strong>five</strong> surfaces, not two, and every one of them assembles its own draw list before a shader ever runs. Two are easy to forget because they live in the minigames page rather than in something called a renderer &mdash; and both resolve <code>EnvDraw</code>s and instance environment-pack meshes exactly like the field hosts do.</p>
+  <table>
+    <thead><tr><th>Surface</th><th>Draw-list assembly</th></tr></thead>
+    <tbody>
+      <tr><td>native <code>play-window</code></td><td><code>engine-shell</code> <code>window/field_render.rs</code> + <code>window/geometry.rs</code></td></tr>
+      <tr><td>browser play page</td><td><code>web-viewer</code> <code>play.rs</code> + <code>play_battle_render.rs</code></td></tr>
+      <tr><td>browser field-scene viewer</td><td><code>web-viewer</code> <code>field_scene.rs</code>; <code>scene_geom.rs</code> for the world map</td></tr>
+      <tr><td>browser dance-hall venue</td><td><code>web-viewer</code> <code>minigames_dance.rs</code></td></tr>
+      <tr><td>browser fishing venue</td><td><code>web-viewer</code> <code>minigames_fishing_scene.rs</code></td></tr>
+    </tbody>
+  </table>
+  <p>A kernel wired into one surface and not another is invisible in a diff, because no file holds two of the columns. <code>engine-render</code> links wgpu, so the browser crate cannot depend on it: every kernel that lives there is native-only <em>as code</em>, and a browser twin has to be a second implementation in GLSL or JS. Kernels living in <code>engine-core</code>, <code>engine-vm</code> or <code>legaia-tmd</code> are one implementation all five surfaces can call &mdash; and those are the ones a checker can pair by name.</p>
+  <p>Not every asymmetry is a defect. <code>set_psx_mode</code> and dynamic lighting are opt-in and default off, so a browser with no toggle renders the same <em>default</em> the native window does; what it lacks is the switch, not the faithful output.</p>
+
+  <h3>Placement rotation is three angles on every surface</h3>
+  <p>A <code>.MAP</code> object record carries three authored angles (<code>+0x08</code> pitch, <code>+0x0A</code> yaw, <code>+0x0C</code> roll) and retail composes all three as <code>Rx * Ry * Rz</code>. The yaw-only builders take a <strong>negated</strong> yaw because their inline <code>Ry</code> is transposed and the two negations cancel &mdash; a cancellation specific to <code>Ry</code>, so a tilted placement cannot go through them at all and has to be handed a whole model matrix.</p>
+  <p>Measured across 49 field scenes: <strong>94 of 1667 placements carry a nonzero pitch or roll</strong>, and the distribution is lumpy rather than uniform &mdash; <code>juui1</code> tilts all nine of its by a quarter turn about X. Terrain cells tilt too, and more often than the placed layer. A surface that reads only the yaw does not lose a curiosity; on those scenes it loses the scene.</p>
+</section>
+
 <section class="doc-section" id="psx-mode">
   <h2>Rendering knobs: what is faithful, what is a choice</h2>
   <p><strong>Simulation is faithful, with no opt-out. Shading defaults to retail; rasterisation defaults to clean.</strong></p>

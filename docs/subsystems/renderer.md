@@ -1187,6 +1187,79 @@ renderer and the site's WebGL viewers:
   the near plane with the framing distance (`buildMvp`), which restores the
   same sub-unit resolution at real mesh scale.
 
+## Render kernels by surface
+
+The port draws through **five** surfaces, not two, and every one of them
+assembles its own draw list before a shader ever runs. Two of the five are
+easy to forget because they live in the minigames page rather than in
+something called a renderer, and both resolve `EnvDraw`s and instance
+env-pack meshes exactly like the field hosts do.
+
+| # | Surface | Draw-list assembly |
+|---|---|---|
+| 1 | native `play-window` | `engine-shell` `window/field_render.rs` + `window/geometry.rs` |
+| 2 | browser play page | `web-viewer` `play.rs` + `play_battle_render.rs` |
+| 3 | browser field-scene viewer | `web-viewer` `field_scene.rs`; `scene_geom.rs` for the world map |
+| 4 | browser dance-hall venue | `web-viewer` `minigames_dance.rs` |
+| 5 | browser fishing venue | `web-viewer` `minigames_fishing_scene.rs` |
+
+A kernel wired into one and not another is invisible in a diff, because no
+file holds two of the columns. The gate that measures this is host-drift
+[tier 7](../tooling/host-drift.md#tier-7---render-kernels-same-draw-list-same-kernel-every-surface);
+what follows is the shape of the answer it measures, not a status table.
+
+### The structural split: what a browser surface *can* share
+
+`engine-render` links wgpu, so `web-viewer` cannot depend on it. Every kernel
+that lives there - the GTE projector, `psx_dither`, `psx_blend`,
+`screen_overlay`, `vram_capture`, `battle_intro`, `dyn_light`,
+`scene_lights`, `occlusion_fade`, `billboard`, `streak_pass` - is native-only
+**as code**, and a browser twin has to be a second implementation in GLSL or
+JS. Kernels that live in `engine-core`, `engine-vm` or `legaia-tmd` are shared
+as one implementation and are the ones tier 7 can pair by name.
+
+That is why the two halves of the render law are policed differently: the
+draw-list half is one kernel both hosts call, so a checker can ask "does this
+surface call it"; the fragment half is one law expressed twice in two shading
+languages, and only a rendered frame from each host can compare those (see
+[host-drift.md](../tooling/host-drift.md#the-two-hosts-do-not-share-a-shading-law)).
+
+### Kernels that are native-only by intent
+
+Not every asymmetry is a defect. Three are deliberate:
+
+- **`set_psx_mode`** (vertex snap + 15-bit dither) is opt-in and defaults off,
+  so a browser with no toggle renders the same *default* the native window
+  does. What the browser lacks is the switch, not the faithful output.
+- **`set_dynamic_lighting`** and its shadow sub-layer are an enhancement,
+  default off, pixel-identical when off.
+- **`LEGAIA_DIAG_*`** bisect gates are development instruments; the
+  [tier 6](../tooling/host-drift.md#tier-6---diagnostics-is-a-debug-draw-off-on-both-hosts)
+  rule is only that an *additive* one needs a default-off twin.
+
+### Placement rotation is three angles on every surface
+
+A `.MAP` object record carries three authored angles (`+0x08` pitch, `+0x0A`
+yaw, `+0x0C` roll) and retail composes all three in `Rx * Ry * Rz`
+(`FUN_80026988`; the port's pinned copy is
+`engine_render::battle_intro::placement_rotation`, and the browser's is
+`placementModelEuler` in `site/js/webgl-math.js`).
+
+The yaw-only builders (`placementModelScaled*`) take a **negated** yaw,
+because their inline `Ry` is transposed and the two negations cancel. That
+cancellation is specific to `Ry`: a tilted placement cannot go through them at
+all, it has to be handed a whole model matrix. Which is why "most placements
+are pure yaw" is a performance note and never a licence to drop the other two
+angles.
+
+The corpus, measured across 49 field scenes: **94 of 1667 placements carry a
+nonzero `rot_x` or `rot_z`**, and the distribution is lumpy rather than
+uniform - `juui1` tilts all nine of its by a quarter turn about X, `vozz` 31 of
+119, `jouina` 21 of 103, `koin3` 17 of 63. Terrain-layer cells tilt too, and
+more often than the placed layer: `retona` composes 56 tilted draws in total
+against 3 tilted *placements*. A surface that reads only the yaw does not lose
+a curiosity; on those scenes it loses the scene.
+
 ## Rendering knobs: what is faithful, what is a choice
 
 **Simulation is faithful, with no opt-out. Shading defaults to retail;

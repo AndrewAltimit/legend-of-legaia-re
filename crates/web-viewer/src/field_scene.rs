@@ -777,6 +777,33 @@ impl LegaiaViewer {
             .unwrap_or_default()
     }
 
+    /// Per-placement authored pitch (object record `+0x08`), PSX angle units,
+    /// in placement order - the sibling of [`Self::field_scene_placement_rot_y`]
+    /// on the X axis.
+    ///
+    /// A placement carrying a nonzero `rot_x` or `rot_z` cannot go through the
+    /// yaw-only `placementModelScaled*` path: that builder's negated-yaw
+    /// convention is a cancellation specific to `Ry`. The page composes
+    /// retail's `Rx * Ry * Rz` instead (`placementModelEuler`), which is what
+    /// `legaia_engine_render::battle_intro::placement_rotation` applies on the
+    /// native host. Not a rarity to skip: across the field corpus ~6% of
+    /// placements tilt, and some scenes tilt every one of theirs.
+    pub fn field_scene_placement_rot_x(&self) -> Vec<u16> {
+        self.field_scene
+            .as_ref()
+            .map(|f| f.placements.iter().map(|d| d.rot_x).collect())
+            .unwrap_or_default()
+    }
+
+    /// Per-placement authored roll (object record `+0x0C`); see
+    /// [`Self::field_scene_placement_rot_x`].
+    pub fn field_scene_placement_rot_z(&self) -> Vec<u16> {
+        self.field_scene
+            .as_ref()
+            .map(|f| f.placements.iter().map(|d| d.rot_z).collect())
+            .unwrap_or_default()
+    }
+
     /// Per-terrain-tile env-pack slot (the dense `CELL_VISIBLE` decor layer).
     pub fn field_scene_terrain_slots(&self) -> Vec<u32> {
         self.field_scene
@@ -806,6 +833,26 @@ impl LegaiaViewer {
         self.field_scene
             .as_ref()
             .map(|f| f.terrain.iter().map(|d| d.rot_y).collect())
+            .unwrap_or_default()
+    }
+
+    /// Per-terrain-tile authored pitch / roll, same encoding as
+    /// [`Self::field_scene_placement_rot_x`]. The native shell composes all
+    /// three angles for the terrain layer too (one `static_env_draws` list
+    /// feeds one `placement_rotation`), so the layer is exported here rather
+    /// than assumed flat.
+    pub fn field_scene_terrain_rot_x(&self) -> Vec<u16> {
+        self.field_scene
+            .as_ref()
+            .map(|f| f.terrain.iter().map(|d| d.rot_x).collect())
+            .unwrap_or_default()
+    }
+
+    /// See [`Self::field_scene_terrain_rot_x`].
+    pub fn field_scene_terrain_rot_z(&self) -> Vec<u16> {
+        self.field_scene
+            .as_ref()
+            .map(|f| f.terrain.iter().map(|d| d.rot_z).collect())
             .unwrap_or_default()
     }
 
