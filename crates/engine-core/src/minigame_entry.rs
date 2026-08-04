@@ -61,12 +61,14 @@
 
 use crate::world::SceneMode;
 
-/// Base parameter the mode-24 init passes to the overlay loader for `sub_id 0`
-/// (`FUN_8003EBE4(sub_id + 0x4D)`).
-const OVERLAY_LOADER_BASE: u32 = 0x4D;
-
 /// Re-key from the loader's in-RAM TOC index space to the extraction PROT
 /// index space (see `docs/subsystems/boot.md` - overlay loaders).
+///
+/// The `+ 0x4D` bias and the `+ 2` step are **not** repeated here: they belong
+/// to the mode-24 init and are already ported as
+/// [`crate::mode::other_warp_init_stage`], which this module calls. Copying
+/// that arithmetic would give the disc two sources of truth for the same seven
+/// numbers.
 const PROT_INDEX_REKEY: u32 = 0x37F;
 
 /// The seven mode-24 door-warp slots, indexed by the `sub_id` field-VM op
@@ -129,12 +131,27 @@ impl MinigameSubId {
         self.sub_id() + 100
     }
 
-    /// PROT extraction index of this slot's overlay - retail's own loader
-    /// arithmetic (see the module docs).
+    /// PROT extraction index of this slot's overlay.
+    ///
+    /// The bias and the `sub_id >= 6` step come from the ported mode-24 init
+    /// staging plan ([`crate::mode::other_warp_init_stage`]) rather than being
+    /// re-derived here; this only re-keys its loader param into extraction
+    /// index space. Every slot is in range, so the `None` arm is unreachable -
+    /// it falls back to the raw bias so a future id-space change cannot make
+    /// this silently return a neighbouring entry.
     pub fn prot_index(self) -> u32 {
-        let sub = u32::from(self.sub_id());
-        let stepped = if sub >= 6 { sub + 2 } else { sub };
-        stepped + OVERLAY_LOADER_BASE + PROT_INDEX_REKEY
+        let sub_id = self.sub_id();
+        let param = crate::mode::other_warp_init_stage(i16::from(sub_id))
+            .map(|stage| stage.overlay_a_param)
+            .unwrap_or(i32::from(sub_id) + 0x4D);
+        param as u32 + PROT_INDEX_REKEY
+    }
+
+    /// The overlay init VA retail `jalr`s for this slot, from the mode-24
+    /// jump table at `0x80010AE4`.
+    pub fn overlay_init_va(self) -> Option<u32> {
+        crate::mode::other_warp_init_stage(i16::from(self.sub_id()))
+            .map(|stage| stage.overlay_entry)
     }
 
     /// The scene mode the engine suspends into for this slot, or `None` for

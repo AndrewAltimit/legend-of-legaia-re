@@ -137,6 +137,22 @@ match, and two of those live in this wave's off-limits files
 (`engine-shell/src/bin/**`, `web-viewer`). If a later pass wants the event
 variant, that is the one-line follow-up plus ~2 match arms.
 
+### One `NOT WIRED` disclosure this falsified
+
+`crate::mode::other_warp_init_stage` is the ported mode-24 **staging plan**
+(`PORT: FUN_80025980`) and already computed retail's `sub_id -> loader param`
+arithmetic exactly - the `+ 0x4D` bias and the `+2` step at `sub_id >= 6`. It
+carried a `NOT WIRED:` disclosure saying nothing stages a per-sub-id overlay.
+
+`MinigameSubId::prot_index` / `overlay_init_va` now call it, so it has a live
+caller and the seven PROT indices exist in exactly one place instead of two -
+the first draft of this lane re-derived them, which would have given the disc
+two sources of truth for the same numbers. The disclosure is downgraded to
+`PARTIALLY WIRED` and now says precisely what is still missing: the overlay
+*residency* model (load an image at a base and `jalr` `overlay_entry` out of
+the `0x80010AE4` table). The engine's minigames are resident Rust rules
+engines, so that half remains genuinely absent.
+
 ## The ladder
 
 `crates/engine-shell/tests/minigame_replay.rs`, ratchet
