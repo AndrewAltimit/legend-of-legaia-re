@@ -1548,6 +1548,41 @@ are spawnable; what never happens for the editor is its *band* gate. "No `jal`"
 is not "unreachable" until the literal-word form has been checked too - which
 is the whole point of sweeping five reference forms rather than one.
 
+## The SCUS battle-kernel block: one wire, and where its reach really ends
+
+`scus_battle_helpers` disclosed four arithmetic kernels behind four different
+missing halves. One of the four closed, and it is worth recording as a shape
+rather than as a row, because the clause that gave way was not the one the
+disclosure leaned hardest on.
+
+`bgr555_to_grey` (`8004ce2c`) named three prerequisites: no per-actor palette
+copy, no `actor[+0x220..=+0x223]` status latch, no mid-battle CLUT re-upload
+path. The first two were accurate and are now supplied by
+`engine-core::battle_status_clut` (the copy, the latch) armed from
+`BattleHud::sync_status`, the one per-slot-per-frame call every host already
+makes with the tracker in hand. The third was already close to false when it
+was written: the native window's face-stamp pass had been mutating the stashed
+battle VRAM mid-battle and re-uploading it with the resident-generation
+bookkeeping - it moved texels rather than CLUT rows, which is a different
+*payload* on an existing *path*.
+
+**A disclosure that lists three blockers is three claims, and they can be at
+three different ages.** Re-read each on its own; one being solidly true does
+not carry the others.
+
+The wire's own limits, stated so the next reader does not re-derive them:
+
+- The **Rot** arm of the same pass (status bits `0x08`/`0x10`/`0x20`, latches
+  `+0x221..=+0x223`) is still out. It applies its ramp over a per-character
+  index window read from the 3-pair table at `DAT_80078630`, and no crate in
+  the workspace parses that table.
+- The pass is live but **does not fire in ordinary play**, for a reason that
+  sits upstream of every address on this page: the port has no monster-side
+  `enemy_effect` source. The only production `stage_art_profile` call is the
+  party-caster path `World::arm_party_art`, so status flows party -> monster
+  and never monster -> party, and rows `481..=483` are the party's. Reachable
+  and non-trivial is not the same as exercised; both are worth saying.
+
 ## See also
 
 - [`port-catalog.md`](port-catalog.md) - the catalog, the `live` axis and the

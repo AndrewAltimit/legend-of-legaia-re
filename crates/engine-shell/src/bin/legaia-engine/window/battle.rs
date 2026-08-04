@@ -1849,6 +1849,40 @@ impl PlayWindowApp {
         }
     }
 
+    /// Status CLUT recolour - the fourth pass of `FUN_8004CE2C`. An actor
+    /// whose Stone latch fired this frame has its party CLUT row
+    /// (`481 + slot`) restaged grey from the pristine palette copy
+    /// ([`legaia_engine_core::battle_status_clut`]); the latch itself is
+    /// armed inside `BattleHud::sync_status`, which
+    /// [`Self::drain_and_log_battle_events`] already runs once per slot per
+    /// frame.
+    ///
+    /// Shares the mid-battle re-upload protocol with
+    /// [`Self::tick_battle_face_stamps`]: mutate the stashed battle VRAM,
+    /// re-upload, and move the expected resident generation with it so
+    /// [`Self::check_battle_vram_residency`] does not read the refresh as a
+    /// clobber.
+    pub(super) fn tick_battle_status_clut(&mut self) {
+        if !self.battle_hud.status_clut.armed() {
+            return;
+        }
+        let Some(vram) = self.battle_vram.as_mut() else {
+            return;
+        };
+        if !self.battle_hud.status_clut.step(vram) {
+            return;
+        }
+        if let (Some(r), Some(vram)) = (self.win.renderer.as_ref(), self.battle_vram.as_ref()) {
+            match r.upload_vram(vram) {
+                Ok(v) => {
+                    self.battle_vram_generation = Some(v.generation());
+                    self.uploaded_vram = Some(v);
+                }
+                Err(e) => log::error!("play-window: status-CLUT VRAM re-upload: {e:#}"),
+            }
+        }
+    }
+
     /// Residency guard: while a battle texture is expected to be GPU-resident,
     /// verify no other path re-uploaded VRAM over it this frame. The
     /// white-speckle party bug (a background CLUT animator re-uploading the

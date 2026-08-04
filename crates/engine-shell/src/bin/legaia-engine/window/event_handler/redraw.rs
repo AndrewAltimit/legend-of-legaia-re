@@ -378,6 +378,7 @@ impl PlayWindowApp {
             // reaches - ticking them again here would run them at 2x.
             if self.session.host.world.mode == SceneMode::Battle {
                 self.tick_battle_face_stamps();
+                self.tick_battle_status_clut();
             }
             // World-map ocean shimmer: cycle the 13-frame CLUT animation
             // (self-gates to None off the world map).

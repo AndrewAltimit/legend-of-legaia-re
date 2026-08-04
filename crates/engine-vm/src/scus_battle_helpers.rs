@@ -14,7 +14,8 @@
 //! is the faithful, testable computation the retail routine repeats inline:
 //!
 //! - [`bgr555_to_grey`] - the desaturate step of the stone/petrify CLUT-fade
-//!   builder `FUN_8004ce2c`.
+//!   builder `FUN_8004ce2c`. **Wired**: `engine-core::battle_status_clut`
+//!   calls it per latched party slot; see the note below.
 //! - [`depth_cue_scale_channel`] - the per-channel depth-brightness ramp of the
 //!   actor colour/OTZ setup `FUN_8004a908`.
 //! - [`invert_bgr24`] - the "negative colour" status recolour, also from
@@ -34,6 +35,10 @@
 //! cores are documented, with provenance, in `docs/subsystems/battle.md`.
 //!
 //! # NOT WIRED
+//!
+//! Three of the four. [`bgr555_to_grey`] is no longer one of them - the note
+//! it used to carry is kept below, rewritten, because *how* it got a consumer
+//! is the pattern the other three still lack.
 //!
 //! "The battle path is expected to grow a consumer" is a forecast, not a
 //! reason, and it is not the one that holds. Each kernel is the arithmetic
@@ -85,10 +90,26 @@
 //!   and a 1-pixel-tall rect uploads it to VRAM CLUT row `481 + slot`
 //!   (`0x8004D764..0x8004D798`). Those rows are not missing either:
 //!   `legaia_asset::battle_char_palette` decodes the party CLUTs and the loader
-//!   STP-copies them to `481 + slot`. What is missing is everything between -
-//!   the engine's battle context carries no per-actor palette copy, no status
-//!   latch (`actor[+0x220..=+0x223]`, set once per affliction, cleared as it
-//!   fires), and no mid-battle CLUT re-upload path for the recolour to land in.
+//!   STP-copies them to `481 + slot`.
+//!
+//!   The three things listed here as missing between those ends - a per-actor
+//!   palette copy, the `actor[+0x220..=+0x223]` latch, and a mid-battle CLUT
+//!   re-upload path - now exist: `engine-core::battle_status_clut` holds the
+//!   copy and the latch, `BattleHud::sync_status` arms it, and the native
+//!   window's `tick_battle_status_clut` runs the pass against the stashed
+//!   battle VRAM. The third clause was the one that was closest to already
+//!   being false: `tick_battle_face_stamps` had been mutating battle VRAM
+//!   mid-battle and re-uploading with the resident-generation bookkeeping for
+//!   some time; it just moved texels rather than CLUT rows.
+//!
+//!   Two honest limits on that wire. The **Rot arm** is still out: it tints
+//!   over a per-character index window from `DAT_80078630`, which no crate
+//!   parses. And the pass, though live, does not fire in ordinary play yet -
+//!   the port has no monster-side `enemy_effect` source at all (the only
+//!   production `stage_art_profile` call is the party-caster path
+//!   `World::arm_party_art`), so nothing petrifies a *party* slot, which is
+//!   the only side rows `481..=483` cover. That is an applier gap upstream of
+//!   this kernel, not a property of it.
 //! * [`depth_cue_scale_channel`] and [`invert_bgr24`] belong to the actor
 //!   colour/OTZ setup, whose depth term comes from the GTE transform
 //!   `FUN_8003D344` per actor per frame. `engine-render` computes its own

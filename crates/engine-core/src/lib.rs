@@ -26,6 +26,7 @@ pub mod battle_runner;
 pub mod battle_seats;
 pub mod battle_session;
 pub mod battle_stats;
+pub mod battle_status_clut;
 pub mod battle_tutorial;
 pub mod camera;
 pub mod capture_observations;

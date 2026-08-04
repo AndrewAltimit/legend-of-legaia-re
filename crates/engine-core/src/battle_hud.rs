@@ -342,6 +342,12 @@ pub struct BattleHud {
     /// new line is pushed past this cap. Default 6 - matches the retail
     /// 6-line scrolling log column.
     pub log_capacity: usize,
+    /// The status CLUT recolour latch + party palette copies - pass 4 of
+    /// `FUN_8004CE2C`. Armed by [`Self::sync_status`] (which every host and
+    /// the `battle_session` driver already call once per slot per frame) and
+    /// drained by the host's mid-battle VRAM pass through
+    /// [`crate::battle_status_clut::StatusClutState::step`].
+    pub status_clut: crate::battle_status_clut::StatusClutState,
 }
 
 impl Default for BattleHud {
@@ -357,6 +363,7 @@ impl BattleHud {
             popups: Vec::new(),
             log: Vec::new(),
             log_capacity: 6,
+            status_clut: Default::default(),
         }
     }
 
@@ -390,11 +397,18 @@ impl BattleHud {
 
     /// Pull the active status icons for `slot` from a tracker. Replaces
     /// any previously stored icons.
+    ///
+    /// Also folds the slot's Stone bit into [`Self::status_clut`] - retail's
+    /// applier writes the `actor[+0x220]` latch that `FUN_8004CE2C`'s fourth
+    /// pass consumes, and this is the one per-slot-per-frame call every host
+    /// already makes with the tracker in hand.
     pub fn sync_status(&mut self, slot: u8, tracker: &StatusEffectTracker) {
         if (slot as usize) >= self.slots.len() {
             return;
         }
         let icons: Vec<StatusKind> = tracker.statuses(slot).iter().map(|s| s.kind).collect();
+        self.status_clut
+            .arm(slot, icons.contains(&StatusKind::Stone));
         self.slots[slot as usize].set_status_icons(icons);
     }
 
@@ -1086,6 +1100,55 @@ mod tests {
             h.slots[2].status_icons,
             vec![StatusKind::Toxic, StatusKind::Venom]
         );
+    }
+
+    /// The status CLUT recolour reaches VRAM through the one per-slot call
+    /// every host already makes. Drop the `status_clut.arm(..)` line from
+    /// [`BattleHud::sync_status`] and this fails at the `armed()` assert -
+    /// the kernel is intact but nothing ever asks it to run.
+    #[test]
+    fn stone_reaches_the_party_clut_row_through_sync_status() {
+        use crate::battle_status_clut::{PARTY_CLUT_ENTRIES, PARTY_CLUT_ROW_BASE};
+
+        let mut vram = legaia_tim::Vram::new();
+        let row = PARTY_CLUT_ROW_BASE + 1;
+        // A resident party palette: STP-set, deliberately not grey.
+        let base: Vec<u16> = (0..PARTY_CLUT_ENTRIES)
+            .map(|i| 0x8000 | ((i as u16 % 31) + 1) | (0x0A << 5) | (0x1F << 10))
+            .collect();
+        let bytes: Vec<u8> = base.iter().flat_map(|w| w.to_le_bytes()).collect();
+        vram.write_clut_row(0, row, &bytes);
+
+        let mut h = BattleHud::new();
+        let mut tracker = StatusEffectTracker::new();
+
+        // Baseline: an ordinary ailment must not touch the palette.
+        tracker.apply(1, StatusKind::Venom);
+        h.sync_status(1, &tracker);
+        assert!(!h.status_clut.armed());
+        assert!(!h.status_clut.step(&mut vram));
+
+        tracker.apply(1, StatusKind::Stone);
+        h.sync_status(1, &tracker);
+        assert!(h.status_clut.armed(), "the Stone edge arms actor +0x220");
+        assert!(h.status_clut.step(&mut vram), "the pass writes VRAM");
+
+        for x in 0..PARTY_CLUT_ENTRIES {
+            let w = vram.pixel(x, row as usize);
+            let (r, g, b) = (w & 0x1F, (w >> 5) & 0x1F, (w >> 10) & 0x1F);
+            assert_eq!((r, g, b), (r, r, r), "entry {x} is not grey");
+        }
+        assert_ne!(
+            (0..PARTY_CLUT_ENTRIES)
+                .map(|x| vram.pixel(x, row as usize))
+                .collect::<Vec<_>>(),
+            base,
+            "the row actually changed"
+        );
+
+        // Held affliction: no re-run, so the row is stable frame to frame.
+        h.sync_status(1, &tracker);
+        assert!(!h.status_clut.armed());
     }
 
     #[test]
