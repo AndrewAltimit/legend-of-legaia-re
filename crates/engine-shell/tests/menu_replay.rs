@@ -32,14 +32,22 @@
 //! | # | rung | what it proves |
 //! |---|---|---|
 //! | 1 | Start edge opens the menu | the production open path off a real pad edge, not an API call |
-//! | 2 | root cursor over every offerable row | the row list + the scene's gate mask (a disabled row is skipped, not landed on) |
+//! | 2 | root cursor over all seven rows, and Cross on the greyed one buzzes | the gate is a **confirm refusal**, not a browse filter |
 //! | 3 | Items opens, drives, backs out | the root suspends and a sub-session takes the pad |
 //! | 4 | Magic | the spell screen builds off the disc spell catalog |
 //! | 5 | Equip | the equip screen builds off the disc equipment table |
 //! | 6 | Status | the party panel + its cursor |
 //! | 7 | Options, with an edit that survives | the sub-session **drain** back into session state |
-//! | 8 | Load: card rack -> read beat -> block grid -> commit | the two-stage save UI, end to end |
+//! | 8 | Load: card rack -> read beat -> block grid -> commit | the two-stage save UI's read direction, end to end |
 //! | 9 | back out to the field | the suspended scene mode is restored and the world ticks again |
+//! | 10 | Save, on a kingdom overworld | the Save row has a pad route at all, and the write direction commits |
+//!
+//! Rung 2 is worth reading twice. Retail's picker walks all seven rows
+//! unconditionally and greys a blocked one; the refusal happens at the
+//! confirm. A first draft asserted the cursor *skipped* the greyed row and
+//! would have passed against that wrong model, because the engine has a
+//! separate row **mask** that does remove rows and nothing in `town01`
+//! exercises it. Both halves are pinned.
 //!
 //! ## Held is one event
 //!
@@ -51,11 +59,25 @@
 //!
 //! ## Where the Save row is
 //!
-//! Only the three kingdom world maps set the MAN bit that enables it
-//! (`World::scene_save_allowed`), so in a town the Save row is correctly grey
-//! and rung 2 asserts the cursor skips it. Reaching it is a separate,
-//! deliberately failing-open probe - see
-//! [`save_row_is_unreachable_by_pad_in_the_port`], which records *why*.
+//! Only the three kingdom overworlds set the MAN bit that enables it
+//! (`World::scene_save_allowed`, retail `_DAT_8007B6A8`), so in a town the
+//! Save row is correctly grey - rung 2 lands on it and asserts the confirm
+//! buzzes. Rung 10 goes to `map01`, where the bit is set, and drives the row
+//! for real.
+//!
+//! That rung could not be written until the port's **menu-open** gate was
+//! corrected. It required `SceneMode::Field`, and a kingdom overworld runs as
+//! `SceneMode::WorldMap`, so the set of scenes that permit saving and the set
+//! of modes that open the menu did not intersect - the Save row had no pad
+//! route anywhere. Retail has no such split: the menu-open accept is a leg of
+//! the locomotion controller `FUN_801D01B0` (`0x801D0250`), the overworld is
+//! an ordinary `game_mode 0x03` field-run scene driven by the same
+//! `FUN_801D1344` -> `FUN_801D01B0` chain as a town, and `FUN_801E76D4` -
+//! read at the time as a second controller needing its own Start arm - is the
+//! top-view *debug* renderer that returns immediately (`0x801E779C` ->
+//! `0x801E9B14`) whenever top view is off. Both hosts' Start edges must now
+//! route through `World::field_menu_open_allowed` rather than spelling a mode
+//! test out locally. See `docs/subsystems/save-screen.md`.
 //!
 //! ## Ratchet
 //!
@@ -285,7 +307,7 @@ fn baseline_score() -> u32 {
 }
 
 /// Total rungs the ladder defines. A score of this is a full clear.
-const RUNGS: u32 = 9;
+const RUNGS: u32 = 10;
 
 // ---------------------------------------------------------------------------
 // The ladder
@@ -566,6 +588,100 @@ fn pad_driven_menu_ladder() {
         }
     }
 
+    // -- Rung 10: Save, on the only kind of scene that permits it ---------
+    //
+    // Rungs 1..9 run in a town, where the Save row is correctly grey. This
+    // one runs on a kingdom overworld, which is where retail lets you save -
+    // and, until the mode gate was widened, was also where the port refused
+    // to open the menu at all. So this rung is the intersection: the pad
+    // opens the menu on `map01`, walks to Save, and drives the *write*
+    // direction of the same two-stage card screen rung 8 read through.
+    //
+    // Retail's arrangement, which is what makes both halves necessary: the
+    // menu-open accept is a leg of the locomotion controller `FUN_801D01B0`
+    // (`0x801D0250`), which the overworld runs exactly as a town does, while
+    // the Save row is separately gated on `_DAT_8007B6A8` - set on these
+    // three scenes alone.
+    if stall.is_none() {
+        match booted("map01") {
+            None => stall = Some("map01 would not boot".into()),
+            Some(mut w) => {
+                assert_eq!(
+                    w.host.world.mode,
+                    SceneMode::WorldMap,
+                    "map01 must enter as an overworld, or this rung proves nothing"
+                );
+                tap_button(&mut w, PadButton::Start);
+                if !w.field_menu_is_open() {
+                    stall = Some(
+                        "Start did not open the pause menu on the overworld - the \
+                         Save row has no pad route"
+                            .into(),
+                    );
+                } else if !matches!(
+                    open_row(&mut w, FieldMenuRow::Save),
+                    Some(FieldMenuRow::Save)
+                ) {
+                    stall = Some("Save: the row would not open on map01".into());
+                } else {
+                    let mode = match w.field_menu_sub.as_ref() {
+                        Some(FieldMenuSubsession::Save(sel)) => Some(sel.mode()),
+                        _ => None,
+                    };
+                    if mode != Some(SaveSelectMode::Save) {
+                        stall = Some(format!(
+                            "Save: the row built a {mode:?} session, not a Save one"
+                        ));
+                    } else {
+                        // Port 1 is mounted: Cross starts the card read, the
+                        // beat accepts no input, then the 5x3 grid appears.
+                        tap_button(&mut w, PadButton::Cross);
+                        idle(&mut w, 140);
+                        let phase = sub_select_phase(&w);
+                        eprintln!("[rung 10] after read beat: {phase:?}");
+                        if !matches!(phase, Some(SelectPhase::SlotPreview { .. })) {
+                            stall = Some(format!(
+                                "Save: the card-read beat did not reach the block grid ({phase:?})"
+                            ));
+                        } else {
+                            // Confirming a block is destructive, so it raises
+                            // the overwrite prompt rather than committing -
+                            // and that prompt defaults to **No**. Answering it
+                            // is part of the leg: a rung that committed
+                            // without it would be asserting the safety default
+                            // away.
+                            tap_button(&mut w, PadButton::Cross);
+                            let prompted = matches!(sub_select_phase(&w), Some(SelectPhase::ConfirmOverwrite { cursor, .. }) if cursor == 1);
+                            tap_button(&mut w, PadButton::Left); // No -> Yes
+                            tap_button(&mut w, PadButton::Cross);
+                            match w.last_save_commit {
+                                Some(c) if c.kind == SaveCommitKind::Save && prompted => {
+                                    eprintln!(
+                                        "[rung 10] committed save: port {} cell {}",
+                                        c.port, c.cell
+                                    );
+                                    score += 1;
+                                }
+                                Some(c) if c.kind == SaveCommitKind::Save => {
+                                    stall = Some(
+                                        "Save committed without the overwrite prompt defaulting \
+                                         to No - the destructive-write guard is gone"
+                                            .into(),
+                                    );
+                                }
+                                other => {
+                                    stall = Some(format!(
+                                        "Save: confirm produced no save commit ({other:?})"
+                                    ))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if let Some(reason) = &stall {
         eprintln!("[menu-replay] STALLED at rung {}: {reason}", score + 1);
     }
@@ -598,32 +714,35 @@ fn sub_select_phase(s: &BootSession) -> Option<SelectPhase> {
 // The Save row: a probe, and a finding
 // ---------------------------------------------------------------------------
 
-/// The Save row is not reachable by pad anywhere in the port.
+/// The Save row **is** reachable by pad, and only where retail permits it.
 ///
-/// Two facts collide:
+/// This test replaces a probe that recorded the opposite. That probe was
+/// right about the port and wrong about retail: it read `FUN_801E76D4` as
+/// "the world map's controller", inferred it would need a Start arm of its
+/// own, and concluded the gap could not be closed without one. `FUN_801E76D4`
+/// is the top-view **debug** renderer - it branches from `0x801E779C`
+/// straight to its epilogue at `0x801E9B14` whenever `DAT_801F2B94 == 0`, and
+/// entering top view at all needs the debug flag `_DAT_8007B98C` that retail
+/// leaves clear. There is no second controller.
 ///
-/// * `World::scene_save_allowed` comes from the scene MAN's header bit, and
-///   across the disc only the three kingdom world maps set it. In a town the
-///   Save row is correctly grey (`save_gate_field_menu.rs` pins that).
-/// * A world map runs in [`SceneMode::WorldMap`], and **every** menu-open path
-///   in the port requires [`SceneMode::Field`] - `BootSession::tick`'s Start
-///   arm and the native window's Start edge both test it explicitly, the
-///   latter with the comment "on the world map the controller has its own"
-///   Start handler. No such handler exists: `WorldMapController` has no Start
-///   arm and nothing calls `open_field_menu` from world-map mode.
+/// What retail actually does: the overworld is an ordinary `game_mode 0x03`
+/// field-run scene walked by the same `FUN_801D01B0` a town uses, so the
+/// menu-open accept in that function's pre-movement header (`0x801D0250`)
+/// serves both. The controller says so itself - its base-step selector's
+/// `s4 = 5` arm at `0x801D0354` is taken exactly when the overworld flag
+/// `_DAT_8007B6A8` is set, which is unreachable code unless overworld scenes
+/// enter this function.
 ///
-/// So the union is empty: the scenes that permit saving are the scenes whose
-/// mode refuses to open the menu. This test asserts the *current* shape rather
-/// than the desired one, so it is a live record of the gap rather than a
-/// perpetual red - flip the assertion when the world-map Start handler lands.
+/// So the two sets now intersect, and the intersection is where a player
+/// stands to save.
 #[test]
-fn save_row_is_unreachable_by_pad_in_the_port() {
+fn the_save_row_is_reachable_by_pad_on_a_kingdom_overworld() {
     let Some(mut s) = booted("map01") else {
         eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
 
-    // The world map is where saving is legal...
+    // The overworld is where saving is legal...
     assert!(
         s.host.world.scene_save_allowed,
         "map01's MAN sets the save-allow bit"
@@ -631,26 +750,95 @@ fn save_row_is_unreachable_by_pad_in_the_port() {
     assert_eq!(
         s.host.world.mode,
         SceneMode::WorldMap,
-        "a kingdom map runs the world-map controller"
+        "a kingdom map enters as an overworld"
     );
 
-    // ...and it is where Start does nothing.
+    // ...and now also where Start works. Off a real pad edge through
+    // `BootSession::tick`'s own Start arm, not an API call.
     tap_button(&mut s, PadButton::Start);
     assert!(
-        !s.field_menu_is_open(),
-        "GAP CLOSED: Start now opens the pause menu on the world map - the Save \
-         row is reachable by pad and this test should assert that instead"
+        s.field_menu_is_open(),
+        "Start must open the pause menu on the overworld - retail's accept is \
+         a leg of FUN_801D01B0, which the overworld runs"
     );
 
-    // The gate is the mode, not the scene: the same session opened through
-    // the production entry point does offer Save here, so everything behind
-    // the row is built and waiting for a way in.
-    s.open_field_menu();
-    let menu = s.field_menu.as_ref().expect("direct open builds a session");
+    // The row is offered, and the cursor can land on it by pad.
+    let menu = s
+        .field_menu
+        .as_ref()
+        .expect("the Start edge built a session");
     assert!(
         menu.gate().save_allowed && menu.row_is_available(FieldMenuRow::Save),
-        "the Save row is offerable on a world map - only the pad path is missing"
+        "the Save row is offerable on an overworld"
     );
+    assert!(
+        walk_cursor_to(&mut s, FieldMenuRow::Save),
+        "the root cursor must reach the Save row by pad"
+    );
+}
+
+/// The contrast: widening the *open* gate did not widen the *row* gate.
+///
+/// Retail keeps the two as separate globals (`_DAT_800846D8` decides which
+/// button opens the menu, `_DAT_8007B6A8` decides whether Save is legal here)
+/// and the port must too. Without this, a build that simply enabled Save
+/// everywhere would pass the test above.
+#[test]
+fn a_town_still_refuses_the_save_row_after_the_open_gate_widened() {
+    let Some(mut s) = booted("town01") else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+    assert_eq!(s.host.world.mode, SceneMode::Field);
+    assert!(
+        !s.host.world.scene_save_allowed,
+        "town01's MAN clears the bit"
+    );
+
+    tap_button(&mut s, PadButton::Start);
+    assert!(s.field_menu_is_open(), "a town has always opened the menu");
+    assert!(
+        !s.field_menu
+            .as_ref()
+            .expect("session")
+            .row_is_available(FieldMenuRow::Save),
+        "Save must stay refused in a town"
+    );
+
+    // And the confirm refuses rather than the browse: the cursor lands on the
+    // greyed row, and Cross opens nothing.
+    assert!(
+        walk_cursor_to(&mut s, FieldMenuRow::Save),
+        "retail's picker walks every row, greyed or not"
+    );
+    tap_button(&mut s, PadButton::Cross);
+    assert!(
+        s.field_menu_sub.is_none(),
+        "Cross on the greyed Save row must buzz, not open a screen"
+    );
+}
+
+/// Start stays inert in the modes that suspend field dispatch.
+///
+/// The mode gate was widened by exactly one variant. This pins that it was
+/// one and not "all": a battle must not answer Start with a pause menu, which
+/// is the regression the original `SceneMode::Field` literal was added to fix
+/// (Start mid-fight opened the menu and froze the fight, because the boot-UI
+/// arm skips the scene tick).
+#[test]
+fn start_stays_inert_in_a_suspended_mode() {
+    let Some(mut s) = booted("town01") else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+    for mode in [SceneMode::Battle, SceneMode::Cutscene, SceneMode::Fishing] {
+        s.host.world.mode = mode;
+        tap_button(&mut s, PadButton::Start);
+        assert!(
+            !s.field_menu_is_open(),
+            "Start must be inert in {mode:?} - the widening is one mode wide"
+        );
+    }
 }
 
 /// The sub-session stack is on the session, not on a host.

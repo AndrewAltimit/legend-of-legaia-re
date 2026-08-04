@@ -813,6 +813,16 @@ impl BootSession {
     /// [`SceneMode`] and switches the world into [`SceneMode::Menu`], so
     /// field dispatch suspends while the menu owns the frame. Idempotent
     /// while a menu is already open.
+    ///
+    /// This is the **builder**, and it enforces only the refusal retail puts
+    /// inside the controller itself (the engaged bit). A host's *Start edge*
+    /// must additionally consult
+    /// [`World::field_menu_open_allowed`](legaia_engine_core::world::World::field_menu_open_allowed),
+    /// which adds the mode test, instead of spelling one out locally. That
+    /// separation is deliberate: headless drivers and oracles legitimately
+    /// build the session from any mode, but a pad route that hard-codes
+    /// `SceneMode::Field` silently drops the three kingdom overworlds, and
+    /// those are the only scenes where the Save row is legal at all.
     pub fn open_field_menu(&mut self) {
         if self.field_menu.is_some() {
             return;
@@ -1061,15 +1071,23 @@ impl BootSession {
     /// events, advance the camera follow, return the [`SceneTickEvent`] for
     /// engines that want to react to scene transitions.
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
-        // In-field pause menu (retail CARD pair, game_mode 0x17). Mirror the
-        // windowed host's Start-edge open from the field, then drive an open
-        // menu from the same pad edges; field dispatch is suspended
-        // (SceneMode::Menu) while the menu owns the frame. The windowed host
-        // never reaches this auto-path (it handles the Start edge itself and
-        // skips `tick` while its boot-UI owns the frame), so the two hosts
-        // can't double-drive the session.
+        // Pause menu (retail CARD pair, game_mode 0x17). Drive the Start edge
+        // through the shared predicate rather than a local mode test: retail's
+        // accept is a leg of the locomotion controller `FUN_801D01B0`, so the
+        // menu opens wherever that controller walks the player - towns,
+        // fields *and* the three kingdom overworlds, which are ordinary
+        // `game_mode 0x03` field-run scenes in retail even though the port
+        // models them as `SceneMode::WorldMap`. Spelling `SceneMode::Field`
+        // here is what previously made the Save row - legal only on those
+        // overworlds - unreachable by pad anywhere in the port.
+        //
+        // The windowed host never reaches this auto-path (it handles the
+        // Start edge itself and skips `tick` while its boot-UI owns the
+        // frame), so the two hosts can't double-drive the session.
+        //
+        // REF: FUN_801D01B0 (`0x801D0250`, the menu-open accept)
         let menu_opened_this_tick = if self.field_menu.is_none()
-            && matches!(self.host.world.mode, SceneMode::Field)
+            && self.host.world.field_menu_open_allowed()
             && self.host.world.input.just_pressed(PadButton::Start)
         {
             self.open_field_menu();

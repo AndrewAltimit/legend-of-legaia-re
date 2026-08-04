@@ -432,4 +432,76 @@ impl World {
         }
         None
     }
+
+    /// Whether this scene mode is one whose player is walked by the field
+    /// locomotion controller - and therefore one whose pad reaches the
+    /// **menu-open accept**.
+    ///
+    /// Retail has no global Start handler. The accept is a leg of the
+    /// pre-movement header inside `FUN_801D01B0`
+    /// (`0x801D0250..0x801D032C`): it tests the newly-pressed pad word
+    /// `_DAT_8007B874` against the configurable menu-button mask
+    /// `_DAT_800846D8`, and on a hit plays cue `0x20`, raises the player's
+    /// engaged bit `+0x10 |= 0x80000`, and spawns the menu actor through the
+    /// shared allocator `FUN_80020DE0(&DAT_8007065C, _DAT_8007C34C)`. So
+    /// "can the menu open here" is exactly "does this scene run
+    /// `FUN_801D01B0`".
+    ///
+    /// The **overworld runs it too**, and that is what makes the Save row
+    /// reachable at all. All three kingdom overworlds are ordinary
+    /// `game_mode 0x03` field-run scenes driven by the same
+    /// `FUN_801D1344` -> `FUN_801D01B0` chain as a town, so the same accept
+    /// covers both. Retail's own proof sits inside the controller: the
+    /// base-step selector's `s4 = 5` arm at `0x801D0354` is taken exactly
+    /// when the world-map flag `_DAT_8007B6A8` is set, which would be dead
+    /// code if a `_DAT_8007B6A8` scene never entered this function.
+    ///
+    /// `FUN_801E76D4` is **not** a second controller that would need its own
+    /// arm - it is the top-view debug renderer, and it branches straight to
+    /// its epilogue (`0x801E9B14`) whenever `DAT_801F2B94 == 0`. Entering
+    /// top view at all needs the debug flag `_DAT_8007B98C`, which retail
+    /// leaves clear. See [`crate::world_map::WorldMapController`].
+    ///
+    /// The port splits the one retail mode in two -
+    /// [`SceneMode::Field`](crate::world::SceneMode::Field) for towns and
+    /// fields, [`SceneMode::WorldMap`](crate::world::SceneMode::WorldMap)
+    /// for the kingdom overworlds - so the predicate has to name both. Every
+    /// other mode (battle, cutscene, the minigames, an already-open menu)
+    /// suspends field dispatch and never reaches the accept.
+    ///
+    /// REF: FUN_801D01B0 (`0x801D0250..0x801D032C`, the menu-open accept)
+    /// REF: FUN_801D1344 (the per-frame tick that calls it, `0x801D16F4`)
+    /// REF: FUN_801E76D4 (`0x801E779C`, the not-top-view branch to the epilogue)
+    pub fn scene_mode_takes_menu_open(&self) -> bool {
+        matches!(
+            self.mode,
+            crate::world::SceneMode::Field | crate::world::SceneMode::WorldMap
+        )
+    }
+
+    /// The whole menu-open precondition, in the order retail tests it.
+    ///
+    /// Both shipped hosts and the shared `BootSession` driver must route
+    /// their Start edge through this one predicate rather than spelling the
+    /// mode test out locally - a host that writes its own copy is how the
+    /// overworld lost the pause menu in the first place.
+    ///
+    /// 1. The engaged bit. `FUN_801D01B0`'s **first** test (`0x801D01F0`)
+    ///    branches past the entire header when `player+0x10 & 0x80000` is
+    ///    set, so a talking player's Start opens nothing and does not even
+    ///    buzz. The engine's stand-in is
+    ///    [`World::dialogue_owns_input`](crate::world::World::dialogue_owns_input).
+    /// 2. The scene mode - [`Self::scene_mode_takes_menu_open`].
+    ///
+    /// Note this is the *open* gate only. Whether the opened menu's **Save**
+    /// row then accepts is a separate, per-scene question answered by
+    /// [`World::scene_save_allowed`](crate::world::World::scene_save_allowed)
+    /// at the row's confirm, exactly as retail keeps `_DAT_800846D8` (which
+    /// button opens the menu) and `_DAT_8007B6A8` (whether Save is legal
+    /// here) as two independent globals.
+    ///
+    /// REF: FUN_801D01B0 (`0x801D01F0` engaged bit, `0x801D0250` accept)
+    pub fn field_menu_open_allowed(&self) -> bool {
+        self.scene_mode_takes_menu_open() && !self.dialogue_owns_input()
+    }
 }

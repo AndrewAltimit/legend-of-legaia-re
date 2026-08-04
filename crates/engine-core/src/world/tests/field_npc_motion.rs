@@ -166,6 +166,16 @@ fn start_field_npc_motion_requires_installed_slot() {
     assert!(world.field_npc_motions.is_empty());
 }
 
+/// The walk-on half of the mode-24 **minigame door warp**.
+///
+/// `WalkTouchEvent::Warp` carries a `sub_id`, not a map id: the field-VM arm
+/// and this walk-on arm are the same `0x3E` opcode reached two ways, and
+/// neither calls a scene-change packet. So the contact must post
+/// `pending_minigame_warp` and leave `pending_scene_transition` alone -
+/// routing the sub-id through the map-id resolver is what used to warp a
+/// player who touched a casino cabinet into an unrelated scene. The sibling
+/// pin on the field-VM side is
+/// `field_op_3e_warp_arms_the_minigame_door_not_a_scene_change`.
 #[test]
 fn walk_touch_warp_posts_once_per_contact_and_arms_the_minigame_door() {
     use crate::man_field_scripts::WalkTouchEvent;
@@ -196,11 +206,11 @@ fn walk_touch_warp_posts_once_per_contact_and_arms_the_minigame_door() {
     assert_eq!(
         world.pending_minigame_warp,
         Some(3),
-        "the door-warp arms through the same path the 0x3E op uses"
+        "the walk-on cabinet arms the same door the 0x3E op arms"
     );
     assert_eq!(
         world.pending_scene_transition, None,
-        "a mode-24 sub-id must not reach the map-id resolver"
+        "the door-warp sub-id must not reach the map-id resolver"
     );
     let events = world.drain_field_events();
     let touches: Vec<_> = events

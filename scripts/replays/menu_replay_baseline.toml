@@ -7,9 +7,10 @@
 #
 # Rungs (see the test's module docs for what each proves):
 #   1 Start edge opens the menu
-#   2 root cursor over every offerable row
+#   2 root cursor over all seven rows; Cross on the greyed one buzzes
 #   3 Items      4 Magic      5 Equip      6 Status
 #   7 Options, with an edit that survives the drain
 #   8 Load: card rack -> read beat -> block grid -> commit
 #   9 back out to the field
-reached = 9
+#  10 Save on a kingdom overworld: the row's pad route + the write commit
+reached = 10

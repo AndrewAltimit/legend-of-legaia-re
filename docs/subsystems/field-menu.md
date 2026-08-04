@@ -487,6 +487,25 @@ gauges via the shared `ap_gauge_sprites` widget). The engine shows the
 coin row only when the casino bank is nonzero; the health-tier ink
 thresholds stay untraced.
 
+### Which scenes the menu opens in
+
+Where the accept sits also answers the wider question. Because it is a leg of
+`FUN_801D01B0`, the menu opens in every scene that controller walks - and that
+includes the three kingdom overworlds, which are ordinary `game_mode 0x03`
+field-run scenes on the same `FUN_801D1344` → `FUN_801D01B0` chain as a town
+rather than a mode of their own. That is the only reason the Save row is
+reachable at all, since `DAT_8007b6a8` enables it on exactly those three
+scenes. `FUN_801E76D4` is the top-view *debug* renderer, not a second
+controller needing its own arm; the full account, including the instruction
+evidence and the two independent globals involved, is on
+[`save-screen.md`](save-screen.md#where-the-save-rows-pad-route-is).
+
+The port splits that one retail mode into `SceneMode::Field` and
+`SceneMode::WorldMap`, so the open gate names both:
+`World::field_menu_open_allowed` is the whole precondition (the mode test plus
+the engaged-bit stand-in above), and it is what a host's Start edge must call
+instead of spelling a mode test out locally.
+
 ## Equip screen
 
 The Equip screen composes four descriptor-table windows (draw order: tab 2,

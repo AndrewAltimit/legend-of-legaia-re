@@ -16,7 +16,7 @@ below to jump within this page.
 - [Panel window system](#the-panel-window-system---fun_801e9b3c--fun_801e9dc8--fun_801ea9b0) - the script interpreter, the shared list cursor, the dev-menu row dispatcher
 - [Panel actor state machines](#the-panel-actor-state-machines) - the six `ctx[+0x54]` phase machines, the field party HUD, and the engine host under them
 - [Place-label pass](#the-place-label-pass---0x801cebb60x801cec30) - the named markers drawn over the map
-- [Key functions](#key-functions) - [controller `FUN_801E76D4`](#fun_801e76d4---world-map-controller-9320-bytes) · [debug-menu renderer `FUN_801EAD98`](#fun_801ead98---world-map-debug-menu-renderer-7280-bytes) · [entity tick `FUN_801DA51C`](#fun_801da51c---world-map-entity-tick-260-bytes)
+- [Key functions](#key-functions) - [top-view controller `FUN_801E76D4`](#fun_801e76d4---top-view-debug-controller-9320-bytes) · [debug-menu renderer `FUN_801EAD98`](#fun_801ead98---world-map-debug-menu-renderer-7280-bytes) · [entity tick `FUN_801DA51C`](#fun_801da51c---world-map-entity-tick-260-bytes)
 
 **Entity / encounter SM**
 - [Encounter-record installation](#encounter-record-installation) · [clean-room port](#clean-room-port---both-overworld-and-field) · [NPC dialogue text source](#npc-dialogue-text-source)
@@ -59,9 +59,11 @@ now defaults to the wider window.
 
 ## Key functions
 
-### `FUN_801E76D4` - world map controller (9320 bytes)
+### `FUN_801E76D4` - top-view debug controller (9320 bytes)
 
-Entry: `(ctx_ptr)`. Handles:
+Entry: `(ctx_ptr)`. **It is not the overworld's per-frame controller**, and
+reading it as one has consequences well outside this page - see
+[below](#there-is-no-normal-walk-path-here). Handles:
 
 1. **Top-view debug toggle** - fires when `_DAT_8007B98C != 0` (debug flag) AND
    `_DAT_8007B850 == 0x4A` (pad mask) AND `_DAT_8007B874 == 0x40` (held mask).
@@ -77,8 +79,38 @@ Entry: `(ctx_ptr)`. Handles:
    - Bit `DAT_801F2B95 & 1`: enables `FUN_801E75DC`, the [screen-dim pass](#fun_801e75dc---top-view-screen-dim-pass-248-bytes)
    - Bit `DAT_801F2B95 & 2`: second animation flag
 
-3. **Normal-walk path** (`DAT_801F2B94 == 0`): standard per-frame world-map update
-   (field VM tick, actor step, camera follow via motion VM).
+#### There is no normal-walk path here
+
+The `DAT_801F2B94 == 0` branch is **not** a per-frame overworld update. The
+test at `0x801E779C` jumps to `0x801E9B14`, which is the function's own
+epilogue - eight register restores, `jr ra`, and the stack adjust in the delay
+slot. With top view off the function does nothing at all, and since entering
+top view needs the debug flag `_DAT_8007B98C` that retail leaves clear, that
+is the only path retail ever takes through it.
+
+```text
+801e7794  lbu   v0,0x2b94(v0)     ; DAT_801F2B94 (top-view flag)
+801e779c  beq   v0,zero,0x801e9b14
+...
+801e9b14  lw    ra,0x44(sp)       ; <- the epilogue
+801e9b34  jr    ra
+```
+
+The overworld's actual per-frame chain is the field one: `FUN_801D1344` →
+`FUN_801D01B0` (`jal` at `0x801D16F4`), the same pair a town runs, because the
+overworld is an ordinary `game_mode 0x03` field-run scene. `FUN_801D1344` opens
+by reading the map-view fade ramp `_DAT_8007BAF4` and, while it is non-zero,
+suppressing locomotion (`player+0x10 |= 0x80000`) and ticking `FUN_800196A4`
+instead - which is how the top view is entered in the first place.
+
+An earlier revision of this page described item 3 as "standard per-frame
+world-map update (field VM tick, actor step, camera follow via motion VM)".
+That reading is **falsified** by the branch target above. It mattered:
+`FUN_801E76D4` being "the world-map controller" is what supported the
+inference that the overworld would need a menu-open arm of its own, which in
+turn left the port's pause menu - and with it the Save row, legal only on
+these three scenes - unreachable on the overworld. See
+[`save-screen.md`](save-screen.md#where-the-save-rows-pad-route-is).
 
 ### `FUN_801E75DC` - top-view screen-dim pass (248 bytes)
 
@@ -2496,7 +2528,7 @@ Standard tick functions observed in the world-map render passes:
 |---|---|---|
 | `FUN_80021DF4` (SCUS) | per-frame actor tick | Steps the move VM via `FUN_80023070(actor)`. The eight actors in list `_DAT_8007C350` use this tick. |
 | `FUN_8003BC08` (SCUS) | per-actor tick | Calls the motion VM (`FUN_8003774C`), move-buffer setup (`FUN_800204F8`), and overlay helper `FUN_801D79E8`. The fourteen actors in list `_DAT_8007C354` use this tick. |
-| `FUN_801E76D4` (world_map overlay) | world-map controller | Top-view debug toggle + camera scroll/azimuth/zoom + dev-menu render. |
+| `FUN_801E76D4` (world_map overlay) | top-view debug controller | Top-view toggle + camera scroll/azimuth/zoom + dev-menu render. Returns immediately when top view is off - it is not the overworld walk tick. |
 | `FUN_801DA51C` (world_map overlay) | per-entity tick | 5-state SM on `entity[+0x8A]` (see [actor-vm](actor-vm.md)). |
 | `FUN_801D1344` (world_map overlay) | horizon gate-arm wrapper | See the gate-arm chain below. |
 
