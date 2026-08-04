@@ -883,6 +883,19 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.pending_scene_transition = Some(map_id);
     }
 
+    fn minigame_door_warp(&mut self, sub_id: u8) {
+        // Retail's arm does two things this host can do inline - zero the
+        // session-winnings accumulator `_DAT_80084440` and back the departure
+        // scene up for the return trip (the backup is `FUN_80025980`'s half of
+        // the same entry, and the engine keeps the field state resident, so
+        // arming here is equivalent and keeps the round trip in one place).
+        self.world.arm_minigame_warp();
+        // The mode change itself is deferred like every other transition: the
+        // field bytecode is still borrowed for this step, and entering a
+        // minigame swaps the world's scene mode out from under it.
+        self.world.pending_minigame_warp = Some(sub_id);
+    }
+
     fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8, dir: u8) {
         // Named scene-change (op 0x3F): the destination name is inline, so no
         // map-id resolver is needed. Recorded for SceneHost::tick to drain,

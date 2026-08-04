@@ -168,13 +168,34 @@ pub trait FieldHost {
         let _ = (interact_id, slot);
     }
 
-    /// Trigger a scene transition (op 0x3E, `op0 >= 100` path). The original
-    /// stores `_DAT_8007BA34 = op0 - 100` (the new map id), sets
-    /// `_DAT_8007B83C = 0x18`, clears `player.flags & 0x80000`, and invokes
-    /// `func_0x8003CE08(0xE)`. The VM clears `ctx.flags & 0x80000` itself
-    /// so a no-op host still mirrors the player-flag write.
+    /// Trigger a scene transition by map id.
+    ///
+    /// **Not reachable from op `0x3E` any more.** The `op0 >= 100` arm is the
+    /// mode-24 minigame door-warp, not a scene change - see
+    /// [`Self::minigame_door_warp`]. This entry point survives for hosts that
+    /// drive a map-id transition from a *non*-script producer (the field MAP's
+    /// walk-on door triggers), which do carry real map ids.
     fn scene_transition(&mut self, map_id: u8) {
         let _ = map_id;
+    }
+
+    /// The **mode-24 minigame door-warp** (op `0x3E`, `op0 >= 100`).
+    ///
+    /// `sub_id` is `op0 - 100` and selects a *code overlay*, not a scene: the
+    /// arm stores `_DAT_8007BA34 = sub_id` and `_DAT_8007B83C = 0x18` (game
+    /// mode 24 `OTHER INIT`), zeroes the session-winnings accumulator
+    /// `_DAT_80084440` and `_DAT_8007BAC0`, clears `player[+0x10] & 0x80000`,
+    /// and calls `func_0x8003CE08(0xE)`. It calls **no** scene-change packet -
+    /// the op carries no destination name, because the destination is the
+    /// overlay the mode-24 init loads with `FUN_8003EBE4(sub_id + 0x4D)`. The
+    /// VM clears `ctx.flags & 0x80000` itself, so a no-op host still mirrors
+    /// the player-flag write.
+    ///
+    /// The whole `sub_id` space is `0..=6`; hosts decode it with
+    /// `engine-core`'s `MinigameSubId`.
+    // REF: FUN_801DE840 case 0x3e at 0x801E078C
+    fn minigame_door_warp(&mut self, sub_id: u8) {
+        let _ = sub_id;
     }
 
     /// Trigger a *named* scene transition (op `0x3F`, the named scene-change /

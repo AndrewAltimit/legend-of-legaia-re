@@ -143,6 +143,14 @@ pub struct SceneHost {
     /// Tracks whether the move-power table install was attempted, so the disc
     /// read (PROT 0898) only happens once per host even when it fails.
     move_power_loaded: bool,
+    /// What the last **mode-24 minigame door-warp** drain did, if one has run.
+    ///
+    /// Deliberately a host field rather than a [`SceneTickEvent`] variant: the
+    /// warp is not a scene transition, and every existing consumer of that enum
+    /// matches it exhaustively. A host that cares reads this after
+    /// [`SceneHost::tick`]; one that does not is unaffected. See
+    /// [`crate::minigame_entry`].
+    pub last_minigame_warp: Option<MinigameWarpOutcome>,
     /// The current scene's disc-sourced **named scene-change destinations**
     /// (`0x3F` ops), decoded from its MAN on entry via
     /// [`crate::man_field_scripts::scene_destinations`]. Empty for scenes with
@@ -207,8 +215,10 @@ pub struct SceneHost {
 mod audio_dialog;
 mod effects;
 mod lifecycle;
+mod minigame_warp;
 mod scene_entry;
 mod sustained_sfx;
 
 pub use effects::*;
+pub use minigame_warp::MinigameWarpOutcome;
 pub use sustained_sfx::{SPU_VOICE_COUNT, SUSTAINED_BASE_VOICE, SustainedSfx};

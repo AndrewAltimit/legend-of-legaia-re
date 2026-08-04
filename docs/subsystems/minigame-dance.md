@@ -6,6 +6,16 @@ It is one of the minigame-hub family that shares a single overlay binary with fi
 
 All provenance is `overlay_dance_<addr>.txt` (locally-dumped, Sony-derived; not committed). Confidence is marked **Confirmed** (read directly from the dump) or **Inferred** (consistent reading not pinned by a separate observation).
 
+## Entry from the field
+
+The dance hall's contest is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 106` (`sub_id 6`), which sets game mode `0x18` and loads PROT 0980. The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp); the port's id decoder is `legaia_engine_core::minigame_entry::MinigameSubId`.
+
+The `sub_id` -> PROT arithmetic is the one place retail's loader steps: `prot_index = sub_id + (2 if sub_id >= 6) + 0x4D + 0x37F`, so `sub_id 6` resolves to 0980 rather than 0978.
+
+A disc-wide walk of every scene MAN puts every dance door in `koin3` - P1[16] plus the partition-2 contest records P2[6] and P2[9] (a fourth site sits in P2[5], inside a record whose walk desyncs upstream in dialogue, so only its raw byte window resolves). Notably the hall's own scene module `other7` carries **no** genuine warp; its `0x3E` hits are cross-context text phantoms. Census test: `crates/engine-core/tests/minigame_entry_census_disc.rs`.
+
+**Why `FUN_801cf470` has no caller.** It is not called; it is the `+0x08` tick word of the static 24-byte actor template at `0x801D42E4`. The sub-id-6 init `FUN_801CEF54` materialises that template and spawns an actor from it (`jal FUN_80020DE0` at `0x801CF210`), and the per-frame pool walk reaches it through `jalr actor[+0x0C]` in `FUN_8002519C`.
+
 ## Step / rhythm state machine
 
 The per-frame controller is `FUN_801cf470` (the overlay's dance tick). It is a `switch` on the game-state global `DAT_801d5334`. The states form a linear flow with two animation ramps and a play loop:

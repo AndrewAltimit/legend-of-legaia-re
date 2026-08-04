@@ -1744,6 +1744,13 @@ impl SceneHost {
                 }
             }
         }
+        // The mode-24 minigame door-warp drains ahead of the map-id
+        // transition: it is the op-`0x3E` `op0 >= 100` arm, and its id is a
+        // minigame sub-id, not a map id (see `crate::minigame_entry`).
+        if let Some(outcome) = self.drain_minigame_warp() {
+            self.last_minigame_warp = Some(outcome);
+            return Ok(SceneTickEvent::Stepped);
+        }
         if let Some(map_id) = self.world.pending_scene_transition.take() {
             match self.map_resolver.resolve(map_id) {
                 Some(name) => {

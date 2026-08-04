@@ -14,6 +14,16 @@ documented elsewhere and are **not** Baka-Fighter-specific; see
 only the fight logic, which lives in the `0x801d4c50`-`0x801d6f44` band of the
 overlay.
 
+## Entry from the field
+
+The cabinet is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 104` (`sub_id 4`), which sets game mode `0x18` and loads PROT 0976. The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp); the port's id decoder is `legaia_engine_core::minigame_entry::MinigameSubId`.
+
+A disc-wide walk of every scene MAN finds four sites: the three interchangeable cabinet placements in the Sol casino (`koin1` P1[51], P1[52], P1[53]) and one in `map03` P2[20]. That last one is **dev residue** - a bare record with nothing but the warp, in a partition-2 slot no reachable script spawns. Census test: `crates/engine-core/tests/minigame_entry_census_disc.rs`.
+
+The `koin1` doors sit behind an entry gate: an `0x4E` inventory compare and a one-coin `0x4C 0xE5` debit before the fade and the warp. Failing it skips the warp.
+
+**Why the state machines have no callers.** They are not called. This minigame is **two-stage**: the sub-id-4 init `FUN_801CF00C` spawns the template at `0x801D75DC`, whose `+0x08` tick word is the cabinet SM `FUN_801CF388`; that SM in turn spawns the template at `0x801D75F4`, whose tick word is the round/match SM `FUN_801D3468`. Both are reached through `jalr actor[+0x0C]` in the pool walk `FUN_8002519C`, so a `jal` search for either address returns zero by construction.
+
 ## Character meshes (PROT 1204 reuse)
 
 Baka Fighter lets you fight *as* a battle-form party member, so it reuses the

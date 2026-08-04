@@ -70,6 +70,16 @@ across them).
 Port: `engine-vm::move_no_effect_guard` (`queued_magic_message` /
 `follow_up_hook_install`). `see ghidra/scripts/funcs/overlay_muscle_dome_801f3d3c.txt`.
 
+## Entry from the field
+
+The arena is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 105` (`sub_id 5`), which sets game mode `0x18` and loads the door/init slot PROT 0977. The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp); the port's id decoder is `legaia_engine_core::minigame_entry::MinigameSubId`.
+
+A disc-wide walk of every scene MAN puts every dome door in `koin1` P1[9] - three sites in one record, which is the **course menu**: each arm debits its entry fee through `0x4C 0xE5` and latches one of the course flags before its own `0x3E 0x69`. That is why one record carries three warps. Notably `taiku` carries none: its only `0x3E` sites are `0xFF` interacts, so it is not the arena's door despite the label. Census test: `crates/engine-core/tests/minigame_entry_census_disc.rs`.
+
+**Why `FUN_801cf870` has no caller.** The hub is not called; it is the `+0x08` tick word of the static 24-byte actor template at `0x801D1A20`. The sub-id-5 init `FUN_801CEA6C` materialises that template and spawns an actor from it (`jal FUN_80020DE0` at `0x801CEAFC`), and the per-frame pool walk reaches it through `jalr actor[+0x0C]` in `FUN_8002519C`.
+
+The match SM `FUN_801D0748` is the exception to that shape, and the reason is the one this page already makes: the arena reuses the battle engine, so the match runs as an ordinary battle and its driver is reached through the **battle** overlay's own template (`0x800767DC`, tick `FUN_80046A20`), not through the 0977 slot. `FUN_80046A20` is also the second of only two writers of game mode 24 on the disc: with `_DAT_8007BAC0 & 0x100` set it stores `0x18` rather than the field's `0x2`, which is what returns a finished round to the arena instead of to the field.
+
 ## Two state machines, not one
 
 The dome runs **two** state machines stacked, and confusing them for one is
