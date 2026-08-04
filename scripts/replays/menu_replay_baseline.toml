@@ -1,0 +1,15 @@
+# Ratchet for `crates/engine-shell/tests/menu_replay.rs`.
+#
+# `reached` is the highest rung the pad-driven pause-menu / save-UI ladder has
+# cleared. The test asserts `score >= reached` and never writes this file:
+# raising it is a reviewed edit, the same contract
+# `scripts/ci/disc-coverage.py` uses for its baseline.
+#
+# Rungs (see the test's module docs for what each proves):
+#   1 Start edge opens the menu
+#   2 root cursor over every offerable row
+#   3 Items      4 Magic      5 Equip      6 Status
+#   7 Options, with an edit that survives the drain
+#   8 Load: card rack -> read beat -> block grid -> commit
+#   9 back out to the field
+reached = 9

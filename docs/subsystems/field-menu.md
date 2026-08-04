@@ -391,6 +391,29 @@ gated row stays **navigable** and draws grey, matching the picker's
 unconditional 7-row cursor walk; the engine's separate row mask is the one
 that removes a row from the browse order.
 
+### The menu is two levels, and the second one lives on the session
+
+A confirm does not run a screen - it **suspends** the root list
+(`FieldMenuPhase::Suspended { row }`) and the routed sub-screen owns the pad
+until it reaches its own terminal state, at which point the host drains the
+outcome and calls `FieldMenuSession::resume`.
+
+Both levels are driven by `BootSession`: `field_menu` is the root list and
+`field_menu_sub` is the `FieldMenuSubsession` beneath it, built by
+`FieldMenuSubsession::build` from the world's disc-parsed tables and the
+installed `SaveRack` (`BootSession::set_save_rack`). Per frame the session
+routes the pad edge through `tick_pad_edge`, then on completion through the
+matching `field_menu_dispatch::apply_*_outcome` before resuming. Persistence
+is the exception and is deliberate: a finished Save / Load leaves a
+`save_screen::SaveCommit` on `BootSession::last_save_commit` rather than
+touching a backend, because the bytes behind a rack are the host's (a save
+directory, an imported card image).
+
+Keeping the stack on the session rather than in a host is what lets an oracle
+walk the same screens a player does - `crates/engine-shell/tests/menu_replay.rs`
+drives all seven rows and the save UI's two-stage rack from `World::set_pad`
+alone.
+
 ### The menu does not open at all while a dialogue is up
 
 Retail's Start handler is not a separate handler: the menu-open accept sits

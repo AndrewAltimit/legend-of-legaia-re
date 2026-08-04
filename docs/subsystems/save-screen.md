@@ -718,6 +718,29 @@ A host supplies only the bytes: the fifteen snapshots behind a port, and the
 load / write against them. `scripts/ci/check-ui-host-drift.py` pins the rack
 kind each host declares.
 
+### The Save row has no pad route in the port
+
+Two scene-scoped facts intersect to nothing, and the intersection is where a
+player would have to stand:
+
+- **Save is world-map-only.** `_DAT_8007B6A8` is seeded from the scene MAN's
+  header bit, and across the disc that bit is set on the three kingdom world
+  maps alone (see [`field-menu.md`](field-menu.md#top-level-pause-menu)). In
+  any other scene the row draws grey and buzzes.
+- **The menu opens in field mode only.** Retail's menu-open accept is not a
+  global Start handler - it sits inside the *locomotion* controller
+  `FUN_801D01B0`, so the world map's controller `FUN_801E76D4` would need its
+  own. The port mirrors the field half: every menu-open path tests
+  `SceneMode::Field`, and nothing opens the menu from `SceneMode::WorldMap`.
+
+So the port reaches every save-UI stage through the **Load** row, which is not
+scene-gated and builds the same `SaveSelectSession` over the same rack, and
+reaches the Save row not at all. Whether retail's world-map controller carries
+a menu-open arm of its own is not settled here; it needs a disassembly pass
+over `FUN_801E76D4`'s pad handling before the port's gate is widened.
+`crates/engine-shell/tests/menu_replay.rs` holds the current shape as a live
+probe, so closing the gap fails the probe rather than passing silently.
+
 ## Relationship to `legaia_save`
 
 The memory-card write calls through `_DAT_8007B44C` (PSX LibC card handle set
