@@ -202,6 +202,75 @@ frame to its chrome. The double-buffered duplicate of every packet is
 collapsed, so the report reads as one screen. It accepts either emulator's
 state (dispatched on extension) or a raw main-RAM `.bin`.
 
+### Index the whole save-state corpus by scene
+
+```bash
+scripts/mednafen/state-index.py                  # sweep the default roots
+scripts/mednafen/state-index.py --scene teien    # only rows in one scene
+scripts/mednafen/state-index.py --json out.json
+```
+
+Save states accumulate one capture at a time and nothing names what is in
+them: mednafen writes `<title>.<hash>.mc{0..9}`, PCSX-Redux writes
+`SCUS94254.sstate{0..9}`, and capture runs drop `autosave_a/b` pairs plus
+scene-tagged `snap_*` files. The sweep answers it from the bytes instead -
+both `mednafen-state identify` and `pcsxr-state identify` read the same
+anchors (`legaia_mednafen::game_anchors`: scene name `0x8007050C`, game mode
+`0x8007B83C`, player position off `*0x8007C364`), so the two emulators' corpora
+index into **one** table. "Is there a state inside scene X?" becomes a lookup
+rather than a play session, which is what gates every display-list read.
+
+Two distinctions the sweep makes that are easy to get wrong by hand:
+
+- **`~/.mednafen/sav/*.mcr` are memory cards, not save states.** They are
+  128 KiB PSX card images (`MC` magic) carrying save blocks - no main RAM, so
+  no scene anchor and no display list. The real mednafen states are
+  `~/.mednafen/mcs/*.mc{0..9}`. The sweep skips cards and reports the count so
+  the difference stays visible.
+- **A `snap_*_scene_<name>` filename is the scene the probe tagged, not proof
+  the frame is that scene's.** Read the state's own mode: a snapshot taken at
+  the scene-change trigger reports `field-init`, and its display list still
+  holds the *previous* scene's frame.
+
+### Read a frame's display list (libgpu ordering table)
+
+```bash
+mednafen-state display-list <state.mc0|ram.bin> [--coincident] [--list]
+scripts/mednafen/display-list.py <state.mc0|state.sstate|ram.bin> [...]
+```
+
+libgpu builds each frame's primitive packets in a main-RAM work buffer and
+links them into an ordering table, so **a RAM image is that frame's display
+list** - the packets retail submitted are sitting in the bytes, with no
+emulator run. That turns "does retail actually draw this?" into a read instead
+of an inference from an emitter's gate condition. The wrapper script dispatches
+a PCSX-Redux `.sstate` through `pcsxr-state extract` first; the Rust subcommand
+opens mednafen states and raw dumps directly.
+
+The command reports the packet census by opcode, by `(clut, tpage)` texture
+family with screen bounds, and the chain in draw order. `--coincident` groups
+packets whose projected screen geometry is identical - the measurement behind
+"does retail draw both copies of a stacked mesh, and which wins?".
+
+Three properties of the format decide whether a report means anything:
+
+- **The pool is not the frame.** The packet pool holds stale packets from
+  earlier frames; only the chain reachable from an ordering table is live. A
+  pool census over-counts, sometimes wildly - a scene-transition state can show
+  hundreds of pool packets while its live chain is 44 packets of fade quad.
+- **Draw order is chain order, not address order.** The PSX has no depth
+  buffer, so the ordering table *is* the depth policy and the packet linked
+  later overwrites the earlier one. `chain_walk` follows `next_addr`.
+- **Retail double-buffers.** Ordering tables come in pairs holding frame N and
+  frame N-1, with near-identical packet counts. Merging a pair makes every
+  surface appear twice, which is exactly the false positive `--coincident` must
+  not have; the command walks one table by default and needs `--all-ots` to
+  merge. `--ot-addr` selects one explicitly.
+
+The tables are located by their `ClearOTagR` signature - an empty bucket holds
+its own predecessor's address, so a cleared table is a run of self-referential
+words - and the head is the highest bucket.
+
 ### Byte-match a player battle file (`battle_data` block) against VRAM
 
 ```bash

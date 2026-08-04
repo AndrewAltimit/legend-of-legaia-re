@@ -24,16 +24,18 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+mod display_list;
 mod gpu_ops;
 mod prim;
 mod ram_ops;
 mod world_map;
 
+use display_list::cmd_display_list;
 use gpu_ops::{cmd_clut_trace, cmd_spu, cmd_vram_dump};
 use prim::{cmd_prim_dispatch_survey, cmd_prim_dispatch_table, cmd_prim_trace};
 use ram_ops::{
-    DiffArgs, cmd_bisect, cmd_diff, cmd_extract, cmd_info, cmd_scenarios, cmd_trace, cmd_watch,
-    cmd_write_taxonomy,
+    DiffArgs, cmd_bisect, cmd_diff, cmd_extract, cmd_identify, cmd_info, cmd_scenarios, cmd_trace,
+    cmd_watch, cmd_write_taxonomy,
 };
 use world_map::cmd_world_map_camera;
 
@@ -53,6 +55,58 @@ enum Cmd {
         /// MAIN section.
         #[arg(long)]
         all: bool,
+    },
+    /// Print scene / game-mode / player position for one or more save states.
+    ///
+    /// Mirrors `pcsxr-state identify`, so a sweep script can dispatch on file
+    /// extension and treat both emulators' corpora as one index. Unreadable
+    /// states report as an `!` row rather than aborting the sweep.
+    Identify {
+        /// One or more save states.
+        saves: Vec<PathBuf>,
+        /// Emit one JSON object per state instead of the aligned table.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a frame's libgpu ordering table out of a state (or a raw 2 MiB
+    /// main-RAM dump) and report what retail drew, in draw order.
+    ///
+    /// Accepts a mednafen `.mc{0..9}` or a raw `.bin`; for a PCSX-Redux
+    /// `.sstate`, pipe it through `pcsxr-state extract` first (or use
+    /// `scripts/mednafen/display-list.py`, which dispatches for you).
+    DisplayList {
+        save: PathBuf,
+        /// Force the pool window instead of scanning for it.
+        #[arg(long, value_parser = parse_addr)]
+        pool_base: Option<u32>,
+        #[arg(long, value_parser = parse_addr)]
+        pool_end: Option<u32>,
+        /// Minimum accepted packets for a RAM run to count as a pool.
+        #[arg(long, default_value_t = 64)]
+        min_prims: usize,
+        /// How many texture families to print.
+        #[arg(long, default_value_t = 24)]
+        top: usize,
+        /// Print every packet in draw order.
+        #[arg(long)]
+        list: bool,
+        /// Report packets whose projected screen geometry coincides - the
+        /// "does retail draw both copies, and which wins?" measurement.
+        #[arg(long)]
+        coincident: bool,
+        /// Minimum screen-space bounding-box area for --coincident.
+        #[arg(long, default_value_t = 16)]
+        min_area: i32,
+        /// Merge every adjacent ordering table instead of walking one.
+        /// Both halves of the double buffer are then present, so each
+        /// primitive appears twice - useful for census, wrong for --coincident.
+        #[arg(long)]
+        all_ots: bool,
+        /// Walk exactly the ordering table at this start (or head) address.
+        #[arg(long, value_parser = parse_addr)]
+        ot_addr: Option<u32>,
+        #[arg(long)]
+        json: Option<PathBuf>,
     },
     /// Extract a PSX-virtual-address window out of a save state's main RAM.
     Extract {
@@ -326,6 +380,32 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Info { save, all } => cmd_info(&save, all),
+        Cmd::Identify { saves, json } => cmd_identify(&saves, json),
+        Cmd::DisplayList {
+            save,
+            pool_base,
+            pool_end,
+            min_prims,
+            top,
+            list,
+            coincident,
+            min_area,
+            all_ots,
+            ot_addr,
+            json,
+        } => cmd_display_list(
+            &save,
+            pool_base,
+            pool_end,
+            min_prims,
+            top,
+            list,
+            coincident,
+            min_area,
+            all_ots,
+            ot_addr,
+            json.as_deref(),
+        ),
         Cmd::Extract {
             save,
             start,

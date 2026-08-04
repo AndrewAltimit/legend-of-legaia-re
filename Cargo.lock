@@ -1528,6 +1528,7 @@ dependencies = [
  "flate2",
  "legaia-art",
  "legaia-mednafen",
+ "serde_json",
 ]
 
 [[package]]

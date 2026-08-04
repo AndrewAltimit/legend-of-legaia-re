@@ -27,6 +27,17 @@ struct Cli {
 enum Cmd {
     /// Print the scene name, game mode and player position of a state.
     Info { save: PathBuf },
+    /// Print scene / game-mode / player position for one or more states.
+    ///
+    /// Mirrors `mednafen-state identify` so a sweep script can dispatch on file
+    /// extension and index both emulators' corpora as one table. Unreadable
+    /// states report as an `!` row rather than aborting the sweep.
+    Identify {
+        saves: Vec<PathBuf>,
+        /// Emit one JSON object per state instead of the aligned table.
+        #[arg(long)]
+        json: bool,
+    },
     /// Extract a PSX-virtual-address window out of a state's main RAM.
     Extract {
         save: PathBuf,
@@ -59,6 +70,63 @@ fn main() -> Result<()> {
             match st.player_pos() {
                 Some((x, z)) => println!("player    x={x} z={z}"),
                 None => println!("player    (no actor)"),
+            }
+            Ok(())
+        }
+        Cmd::Identify { saves, json } => {
+            anyhow::ensure!(!saves.is_empty(), "no save states given");
+            for path in &saves {
+                match SaveState::from_path(path) {
+                    Ok(st) => {
+                        let id = st.identity();
+                        let label = legaia_mednafen::game_anchors::game_mode_label(id.game_mode);
+                        if json {
+                            println!(
+                                "{}",
+                                serde_json::json!({
+                                    "file": path.display().to_string(),
+                                    "emulator": "pcsx-redux",
+                                    "scene": id.scene,
+                                    "game_mode": id.game_mode,
+                                    "mode_label": label,
+                                    "player": id.player.map(|(x, z)| [x, z]),
+                                })
+                            );
+                        } else {
+                            let pos = match id.player {
+                                Some((x, z)) => format!("x={x} z={z}"),
+                                None => "-".to_string(),
+                            };
+                            println!(
+                                "{:<10} {:<14} {:<16} {}",
+                                id.scene,
+                                label,
+                                pos,
+                                path.display()
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        if json {
+                            println!(
+                                "{}",
+                                serde_json::json!({
+                                    "file": path.display().to_string(),
+                                    "emulator": "pcsx-redux",
+                                    "error": e.to_string(),
+                                })
+                            );
+                        } else {
+                            println!(
+                                "{:<10} {:<14} {:<16} {}",
+                                "!",
+                                "unreadable",
+                                "-",
+                                path.display()
+                            );
+                        }
+                    }
+                }
             }
             Ok(())
         }

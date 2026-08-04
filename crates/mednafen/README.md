@@ -5,7 +5,8 @@ Mednafen save-state parser + watchpoint-equivalent automation toolkit.
 ## Scope
 
 - Parse gzipped `MDFNSVST` save states (`.mc{0..9}` files in
-  `~/.mednafen/mcs/`).
+  `~/.mednafen/mcs/`). Note `~/.mednafen/sav/*.mcr` are **memory cards**, not
+  states - 128 KiB card images carrying save blocks, with no main RAM in them.
 - Index PSX-module sections (`MAIN`, `GPU`, `SPU`, `CDC`, …) and resolve
   `MAIN.MainRAM.data8` as 2 MiB of main RAM.
 - Typed accessors over the `GPU` section (`PsxGpu` - VRAM bytes + control
@@ -15,6 +16,10 @@ Mednafen save-state parser + watchpoint-equivalent automation toolkit.
   `EON` mask). The SPU accessor backs the audio-trace parity oracle in
   `engine-shell`; the reverb-routing accessors pinned retail's global
   Studio C reverb (the C7-REVERB hunt - see `docs/subsystems/audio.md`).
+- Decode the frame's GPU primitive pool and libgpu ordering table
+  (`prim_pool`): every standard textured and untextured polygon plus both
+  sprite sizes, pool discovery, ordering-table discovery by the `ClearOTagR`
+  signature, and a cycle-guarded chain walk that recovers true draw order.
 - Diff main RAM between two snapshots - coalesce per-byte changes into
   contiguous "regions" with PSX virtual addresses, suitable for handing to
   Ghidra to look up writers.
@@ -41,8 +46,38 @@ mednafen-state vram-dump SAVE [--out PNG --out-bin BIN --regs --display-crop]
 mednafen-state spu SAVE [--all]      # reverb routing: master enable, mode, EON mask, per-voice
 mednafen-state clut-trace --pack PROT_ENTRY SAVE... [--json PATH --include-tmd-body]
 mednafen-state prim-dispatch-table SAVE [--overlay-targets-only]
+mednafen-state identify SAVE...      # scene / game mode / player position
+mednafen-state display-list SAVE [--coincident --list --all-ots --ot-addr ADDR]
 mednafen-state scenarios [--manifest PATH]
 ```
+
+`identify` prints the scene name, game mode and player position of a batch of
+states, mirroring `pcsxr-state identify` so `scripts/mednafen/state-index.py`
+can sweep both emulators' corpora into one scene index. Unreadable states report
+as an `!` row instead of aborting the sweep. The anchors live in the shared
+`game_anchors` module, which `legaia-pcsxr` delegates to - so a mednafen `.mc`
+and a PCSX-Redux `.sstate` answer "which scene is this?" identically.
+
+`display-list` reads a frame's libgpu ordering table straight out of a RAM
+image: the packets retail submitted are sitting in the bytes, so "does retail
+actually draw this?" becomes a read rather than an inference from an emitter's
+gate condition. It reports the packet census by opcode and by `(clut, tpage)`
+texture family, and the chain in draw order; `--coincident` groups packets whose
+projected screen geometry is identical, which is the "does retail stack two
+copies of this surface, and which wins?" measurement.
+
+Three things decide whether a `display-list` report means anything:
+
+- **The pool is not the frame.** Stale packets from earlier frames sit in the
+  packet pool; only the chain reachable from an ordering table is live. A
+  scene-transition state can show hundreds of pool packets over a live chain of
+  44 fade quads.
+- **Draw order is chain order, not address order.** The PSX has no depth buffer,
+  so the ordering table *is* the depth policy and the later packet wins.
+- **Retail double-buffers.** Ordering tables come in pairs holding frame N and
+  N-1 at near-identical counts, so merging a pair makes every surface look
+  stacked with itself. One table is walked by default; `--all-ots` opts into the
+  merged view and `--ot-addr` selects one explicitly.
 
 `vram-dump --display-crop` writes only the **on-screen framebuffer** (the
 display-area sub-rect: `display_fb` origin sized by the resolution decoded from

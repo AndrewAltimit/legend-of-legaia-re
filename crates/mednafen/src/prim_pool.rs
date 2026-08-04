@@ -81,7 +81,8 @@ pub enum Prim {
         clut: u16,
         tpage: u16,
     },
-    /// Fixed 16x16 sprite. Cmd 0x74..0x77. 4 u32 words (1 tag + 3 payload).
+    /// Fixed 16x16 textured sprite. Cmd **0x7C..0x7F**. 4 u32 words
+    /// (1 tag + 3 payload).
     Sprt16 {
         cmd: u8,
         color: [u8; 3],
@@ -89,13 +90,37 @@ pub enum Prim {
         uv: (u8, u8),
         clut: u16,
     },
-    /// Fixed 8x8 sprite. Cmd 0x7C..0x7F. 4 u32 words.
+    /// Fixed 8x8 textured sprite. Cmd **0x74..0x77**. 4 u32 words.
     Sprt8 {
         cmd: u8,
         color: [u8; 3],
         pos: (i16, i16),
         uv: (u8, u8),
         clut: u16,
+    },
+    /// Flat-shaded untextured triangle. Cmd 0x20..0x23. 4 payload words.
+    PolyF3 {
+        cmd: u8,
+        color: [u8; 3],
+        verts: [(i16, i16); 3],
+    },
+    /// Flat-shaded untextured quad. Cmd 0x28..0x2B. 5 payload words.
+    PolyF4 {
+        cmd: u8,
+        color: [u8; 3],
+        verts: [(i16, i16); 4],
+    },
+    /// Gouraud-shaded untextured triangle. Cmd 0x30..0x33. 6 payload words.
+    PolyG3 {
+        cmd: u8,
+        colors: [[u8; 3]; 3],
+        verts: [(i16, i16); 3],
+    },
+    /// Gouraud-shaded untextured quad. Cmd 0x38..0x3B. 8 payload words.
+    PolyG4 {
+        cmd: u8,
+        colors: [[u8; 3]; 4],
+        verts: [(i16, i16); 4],
     },
 }
 
@@ -108,8 +133,85 @@ impl Prim {
             | Prim::PolyFt3 { cmd, .. }
             | Prim::PolyGt3 { cmd, .. }
             | Prim::Sprt16 { cmd, .. }
-            | Prim::Sprt8 { cmd, .. } => *cmd,
+            | Prim::Sprt8 { cmd, .. }
+            | Prim::PolyF3 { cmd, .. }
+            | Prim::PolyF4 { cmd, .. }
+            | Prim::PolyG3 { cmd, .. }
+            | Prim::PolyG4 { cmd, .. } => *cmd,
         }
+    }
+
+    /// Short opcode name, e.g. `"POLY_FT4"`.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Prim::PolyFt4 { .. } => "POLY_FT4",
+            Prim::PolyGt4 { .. } => "POLY_GT4",
+            Prim::PolyFt3 { .. } => "POLY_FT3",
+            Prim::PolyGt3 { .. } => "POLY_GT3",
+            Prim::Sprt16 { .. } => "SPRT_16",
+            Prim::Sprt8 { .. } => "SPRT_8",
+            Prim::PolyF3 { .. } => "POLY_F3",
+            Prim::PolyF4 { .. } => "POLY_F4",
+            Prim::PolyG3 { .. } => "POLY_G3",
+            Prim::PolyG4 { .. } => "POLY_G4",
+        }
+    }
+
+    /// True when the primitive samples a texture page (so it can carry a
+    /// ground/wall atlas). Untextured flat and Gouraud polys cannot.
+    pub fn is_textured(&self) -> bool {
+        matches!(
+            self,
+            Prim::PolyFt4 { .. }
+                | Prim::PolyGt4 { .. }
+                | Prim::PolyFt3 { .. }
+                | Prim::PolyGt3 { .. }
+                | Prim::Sprt16 { .. }
+                | Prim::Sprt8 { .. }
+        )
+    }
+
+    /// `(clut, tpage)` for textured primitives. Sprites carry no tpage of their
+    /// own (they inherit the last `DR_TPAGE`), so their tpage reports `None`.
+    pub fn clut_tpage(&self) -> Option<(u16, Option<u16>)> {
+        match self {
+            Prim::PolyFt4 { clut, tpage, .. }
+            | Prim::PolyGt4 { clut, tpage, .. }
+            | Prim::PolyFt3 { clut, tpage, .. }
+            | Prim::PolyGt3 { clut, tpage, .. } => Some((*clut, Some(*tpage))),
+            Prim::Sprt16 { clut, .. } | Prim::Sprt8 { clut, .. } => Some((*clut, None)),
+            _ => None,
+        }
+    }
+
+    /// Screen-space vertices of the primitive. Sprites expand to their
+    /// top-left corner plus the implied extent.
+    pub fn verts(&self) -> Vec<(i16, i16)> {
+        match self {
+            Prim::PolyFt4 { verts, .. }
+            | Prim::PolyGt4 { verts, .. }
+            | Prim::PolyF4 { verts, .. }
+            | Prim::PolyG4 { verts, .. } => verts.to_vec(),
+            Prim::PolyFt3 { verts, .. }
+            | Prim::PolyGt3 { verts, .. }
+            | Prim::PolyF3 { verts, .. }
+            | Prim::PolyG3 { verts, .. } => verts.to_vec(),
+            Prim::Sprt16 { pos, .. } => vec![*pos, (pos.0 + 16, pos.1 + 16)],
+            Prim::Sprt8 { pos, .. } => vec![*pos, (pos.0 + 8, pos.1 + 8)],
+        }
+    }
+
+    /// Screen-space axis-aligned bounds `(min_x, min_y, max_x, max_y)`.
+    pub fn bounds(&self) -> (i16, i16, i16, i16) {
+        let vs = self.verts();
+        let mut b = (i16::MAX, i16::MAX, i16::MIN, i16::MIN);
+        for (x, y) in vs {
+            b.0 = b.0.min(x);
+            b.1 = b.1.min(y);
+            b.2 = b.2.max(x);
+            b.3 = b.3.max(y);
+        }
+        b
     }
 }
 
@@ -337,6 +439,272 @@ pub fn tile_signatures(prims: &[Prim]) -> Vec<TileSignature> {
     out
 }
 
+/// One contiguous run of primitive packets found by [`find_pools`].
+#[derive(Debug, Clone, Serialize)]
+pub struct PoolRegion {
+    /// KSEG0 address of the first accepted packet's tag word.
+    pub start: u32,
+    /// KSEG0 address one past the last accepted packet's payload.
+    pub end: u32,
+    /// How many packets were accepted inside the run.
+    pub prims: usize,
+}
+
+impl PoolRegion {
+    pub fn len(&self) -> usize {
+        (self.end - self.start) as usize
+    }
+    pub fn is_empty(&self) -> bool {
+        self.end <= self.start
+    }
+}
+
+/// Locate the frame's primitive pool(s) inside a whole main-RAM image.
+///
+/// [`POOL_BASE_DEFAULT`] is a world-map constant, so anything that wants the
+/// display list of an arbitrary scene has to *find* the pool rather than assume
+/// it. libgpu builds each frame's packets contiguously in one work buffer, so
+/// the pool shows up as a dense run of packets whose chain tags point at each
+/// other. Two extra constraints keep the whole-RAM scan from drowning in false
+/// positives (a scan bounded only by "somewhere in 2 MiB" accepts far too much):
+///
+/// - a tag's `next_addr` must be the terminator **or** land within `NEAR_WINDOW`
+///   bytes of the tag itself - real OT links are short-range because the pool is
+///   one buffer, whereas a random word that happens to look like a tag points
+///   anywhere;
+/// - a run must hold at least `min_prims` accepted packets to be reported.
+///
+/// Runs are separated when the gap between consecutive accepted packets exceeds
+/// `MAX_GAP` bytes.
+pub fn find_pools(ram: &[u8], ram_base: u32, min_prims: usize) -> Vec<PoolRegion> {
+    /// How far a legitimate chain link may reach. The PSX work buffer for one
+    /// frame is a few hundred KB at most.
+    const NEAR_WINDOW: u32 = 512 * 1024;
+    /// Bytes of non-primitive slack tolerated inside one run.
+    const MAX_GAP: usize = 4096;
+
+    let mut accepted: Vec<(usize, usize)> = Vec::new(); // (offset, total_bytes)
+    let n_words = ram.len() / 4;
+    let mut w = 0usize;
+    while w < n_words {
+        let i = w * 4;
+        if i + 8 > ram.len() {
+            break;
+        }
+        let tag = read_u32(ram, i);
+        let length = ((tag >> 24) & 0xFF) as usize;
+        let next_addr = tag & 0x00FF_FFFF;
+        if !(1..=12).contains(&length) || i + 4 + length * 4 > ram.len() {
+            w += 1;
+            continue;
+        }
+        let here = (ram_base + i as u32) & 0x00FF_FFFF;
+        let near = next_addr == 0x00FF_FFFF || here.abs_diff(next_addr) <= NEAR_WINDOW;
+        if !near {
+            w += 1;
+            continue;
+        }
+        let cmd = ((read_u32(ram, i + 4) >> 24) & 0xFF) as u8;
+        let (_, prim) = decode_packet(ram, i, cmd, length);
+        if prim.is_some() {
+            accepted.push((i, 4 + length * 4));
+            w += length + 1;
+        } else {
+            w += 1;
+        }
+    }
+
+    let mut out: Vec<PoolRegion> = Vec::new();
+    let mut run_start: Option<usize> = None;
+    let mut run_end = 0usize;
+    let mut run_count = 0usize;
+    for (off, size) in accepted {
+        match run_start {
+            Some(_) if off.saturating_sub(run_end) <= MAX_GAP => {
+                run_end = off + size;
+                run_count += 1;
+            }
+            Some(s) => {
+                if run_count >= min_prims {
+                    out.push(PoolRegion {
+                        start: ram_base + s as u32,
+                        end: ram_base + run_end as u32,
+                        prims: run_count,
+                    });
+                }
+                run_start = Some(off);
+                run_end = off + size;
+                run_count = 1;
+            }
+            None => {
+                run_start = Some(off);
+                run_end = off + size;
+                run_count = 1;
+            }
+        }
+    }
+    if let Some(s) = run_start.filter(|_| run_count >= min_prims) {
+        out.push(PoolRegion {
+            start: ram_base + s as u32,
+            end: ram_base + run_end as u32,
+            prims: run_count,
+        });
+    }
+    out.sort_by_key(|r| std::cmp::Reverse(r.prims));
+    out
+}
+
+/// A located libgpu ordering table: the bucket array itself, not the packets.
+#[derive(Debug, Clone, Serialize)]
+pub struct OtArray {
+    /// KSEG0 address of the lowest bucket (`ot[0]`).
+    pub start: u32,
+    /// KSEG0 address one past the highest bucket.
+    pub end: u32,
+    /// Number of `u32` buckets.
+    pub buckets: usize,
+    /// KSEG0 address of the entry `DrawOTag` is handed - the chain head. With
+    /// `ClearOTagR` this is the **highest** bucket, because the reverse-cleared
+    /// table threads `ot[N-1] -> ot[N-2] -> ... -> ot[0] -> terminator`.
+    pub head: u32,
+}
+
+/// Find the frame's ordering-table array(s) in a main-RAM image.
+///
+/// The packet pool and the ordering table are different objects, and the chain
+/// head lives in the **table**, not the pool - which is why walking a pool in
+/// isolation reports hundreds of spurious "heads" (every packet whose
+/// predecessor link sits outside the window looks like a head). To get real
+/// draw order the walk has to start at the table.
+///
+/// `ClearOTagR` leaves a recognisable signature: an empty bucket at address `A`
+/// holds `0x00` in its length byte and `A - 4` in its 24-bit next field, so a
+/// cleared table is a run of words each pointing at its own predecessor. Buckets
+/// that received primitives break the pattern by pointing into the pool instead,
+/// so the run is detected on the empty ones and then extended across the
+/// occupied ones.
+pub fn find_ot_arrays(ram: &[u8], ram_base: u32, min_buckets: usize) -> Vec<OtArray> {
+    let n_words = ram.len() / 4;
+    let is_empty_bucket = |w: usize| -> bool {
+        let i = w * 4;
+        if i + 4 > ram.len() {
+            return false;
+        }
+        let word = read_u32(ram, i);
+        if (word >> 24) != 0 {
+            return false;
+        }
+        let here = (ram_base + i as u32) & 0x00FF_FFFF;
+        (word & 0x00FF_FFFF) == here.wrapping_sub(4) & 0x00FF_FFFF
+    };
+    // A bucket that received prims points somewhere else entirely; accept it as
+    // part of the table so an occupied bucket does not split one array in two.
+    let is_occupied_bucket = |w: usize| -> bool {
+        let i = w * 4;
+        if i + 4 > ram.len() {
+            return false;
+        }
+        let word = read_u32(ram, i);
+        (word >> 24) == 0 && (word & 0x00FF_FFFF) != 0
+    };
+
+    let mut out = Vec::new();
+    let mut w = 0usize;
+    while w < n_words {
+        if !is_empty_bucket(w) {
+            w += 1;
+            continue;
+        }
+        // Walk back over any occupied buckets that precede this empty one.
+        let mut lo = w;
+        while lo > 0 && (is_empty_bucket(lo - 1) || is_occupied_bucket(lo - 1)) {
+            lo -= 1;
+        }
+        // Walk forward likewise.
+        let mut hi = w;
+        while hi + 1 < n_words && (is_empty_bucket(hi + 1) || is_occupied_bucket(hi + 1)) {
+            hi += 1;
+        }
+        let buckets = hi - lo + 1;
+        if buckets >= min_buckets {
+            out.push(OtArray {
+                start: ram_base + (lo * 4) as u32,
+                end: ram_base + ((hi + 1) * 4) as u32,
+                buckets,
+                head: ram_base + (hi * 4) as u32,
+            });
+        }
+        w = hi + 1;
+    }
+    out.sort_by_key(|o| std::cmp::Reverse(o.buckets));
+    out
+}
+
+/// One primitive in submission order, with the pool offset it came from.
+#[derive(Debug, Clone, Serialize)]
+pub struct ChainedPrim {
+    /// Position along the walked chain - this **is** the effective draw order.
+    pub order: usize,
+    /// Byte offset of the packet's tag inside the pool buffer.
+    pub offset: usize,
+    pub prim: Prim,
+}
+
+/// Walk the OT chain from `head_offset` and return the primitives in the order
+/// the GPU consumes them.
+///
+/// This is the part that answers "which copy wins". The PSX has no depth
+/// buffer: the ordering table *is* the depth policy, and within one frame the
+/// packet drawn **later** in the chain overwrites the pixels of the one drawn
+/// earlier. So for two coincident surfaces, the winner is simply the one with
+/// the higher `order`. Walking the chain rather than scanning the pool in
+/// address order is what makes that readable - libgpu appends packets to
+/// whichever OT bucket their z lands in, so address order and draw order are
+/// unrelated.
+///
+/// The walk is cycle-guarded: a corrupt or misidentified pool can produce a
+/// link loop, and a loop must terminate the walk rather than hang it.
+pub fn chain_walk(pool: &[u8], pool_base: u32, head_offset: usize) -> Vec<ChainedPrim> {
+    let pool_lo = pool_base & 0x00FF_FFFF;
+    let mut seen = vec![false; pool.len() / 4 + 1];
+    let mut out = Vec::new();
+    let mut cursor = head_offset;
+    let mut order = 0usize;
+    loop {
+        if cursor + 8 > pool.len() {
+            break;
+        }
+        let wi = cursor / 4;
+        if wi >= seen.len() || seen[wi] {
+            break; // terminator, out of range, or a link cycle
+        }
+        seen[wi] = true;
+        let tag = read_u32(pool, cursor);
+        let length = ((tag >> 24) & 0xFF) as usize;
+        let next_addr = tag & 0x00FF_FFFF;
+        if (1..=12).contains(&length) && cursor + 4 + length * 4 <= pool.len() {
+            let cmd = ((read_u32(pool, cursor + 4) >> 24) & 0xFF) as u8;
+            if let (_, Some(prim)) = decode_packet(pool, cursor, cmd, length) {
+                out.push(ChainedPrim {
+                    order,
+                    offset: cursor,
+                    prim,
+                });
+                order += 1;
+            }
+        }
+        if next_addr == 0x00FF_FFFF {
+            break;
+        }
+        let next_off = next_addr.wrapping_sub(pool_lo) as usize;
+        if next_off >= pool.len() {
+            break;
+        }
+        cursor = next_off;
+    }
+    out
+}
+
 fn decode_in(pool: &[u8], pool_base: u32, _scratch: &mut Vec<u8>) -> Vec<Prim> {
     let pool_lo = pool_base & 0x00FF_FFFF;
     let pool_hi = pool_lo + pool.len() as u32;
@@ -456,8 +824,29 @@ fn decode_packet(pool: &[u8], i: usize, cmd: u8, length: usize) -> (bool, Option
                 }),
             )
         }
-        // SPRT_16 (fixed 16x16): 3 payload words.
+        // GP0 rectangle commands encode size in bits 4-3 of the opcode:
+        // `00`=variable, `01`=1x1, `10`=8x8, `11`=16x16, with bit 2 = textured.
+        // So 0x74..0x77 is the **8x8** textured sprite and 0x7C..0x7F the
+        // **16x16** one - the reverse of an earlier reading here, which made
+        // every 8x8 sprite decode as `Sprt16` and render at double size in the
+        // web-viewer's `sprite_to_quad` call.
+        //
+        // SPRT_8 (fixed 8x8): 3 payload words.
         0x74..=0x77 if length == 3 => {
+            let (color, pos, uv, clut) = decode_sprt(pool, i);
+            (
+                true,
+                Some(Prim::Sprt8 {
+                    cmd,
+                    color,
+                    pos,
+                    uv,
+                    clut,
+                }),
+            )
+        }
+        // SPRT_16 (fixed 16x16): 3 payload words.
+        0x7C..=0x7F if length == 3 => {
             let (color, pos, uv, clut) = decode_sprt(pool, i);
             (
                 true,
@@ -470,19 +859,60 @@ fn decode_packet(pool: &[u8], i: usize, cmd: u8, length: usize) -> (bool, Option
                 }),
             )
         }
-        // SPRT_8 (fixed 8x8): 3 payload words.
-        0x7C..=0x7F if length == 3 => {
-            let (color, pos, uv, clut) = decode_sprt(pool, i);
-            (
-                true,
-                Some(Prim::Sprt8 {
-                    cmd,
-                    color,
-                    pos,
-                    uv,
-                    clut,
-                }),
-            )
+        // POLY_F3 (flat untextured tri): 4 payload words.
+        0x20..=0x23 if length == 4 => {
+            let p = i + 4;
+            let color = rgb(read_u32(pool, p));
+            let verts = [
+                vert(read_u32(pool, p + 4)),
+                vert(read_u32(pool, p + 8)),
+                vert(read_u32(pool, p + 12)),
+            ];
+            (true, Some(Prim::PolyF3 { cmd, color, verts }))
+        }
+        // POLY_F4 (flat untextured quad): 5 payload words.
+        0x28..=0x2B if length == 5 => {
+            let p = i + 4;
+            let color = rgb(read_u32(pool, p));
+            let verts = [
+                vert(read_u32(pool, p + 4)),
+                vert(read_u32(pool, p + 8)),
+                vert(read_u32(pool, p + 12)),
+                vert(read_u32(pool, p + 16)),
+            ];
+            (true, Some(Prim::PolyF4 { cmd, color, verts }))
+        }
+        // POLY_G3 (Gouraud untextured tri): 6 payload words.
+        0x30..=0x33 if length == 6 => {
+            let p = i + 4;
+            let colors = [
+                rgb(read_u32(pool, p)),
+                rgb(read_u32(pool, p + 8)),
+                rgb(read_u32(pool, p + 16)),
+            ];
+            let verts = [
+                vert(read_u32(pool, p + 4)),
+                vert(read_u32(pool, p + 12)),
+                vert(read_u32(pool, p + 20)),
+            ];
+            (true, Some(Prim::PolyG3 { cmd, colors, verts }))
+        }
+        // POLY_G4 (Gouraud untextured quad): 8 payload words.
+        0x38..=0x3B if length == 8 => {
+            let p = i + 4;
+            let colors = [
+                rgb(read_u32(pool, p)),
+                rgb(read_u32(pool, p + 8)),
+                rgb(read_u32(pool, p + 16)),
+                rgb(read_u32(pool, p + 24)),
+            ];
+            let verts = [
+                vert(read_u32(pool, p + 4)),
+                vert(read_u32(pool, p + 12)),
+                vert(read_u32(pool, p + 20)),
+                vert(read_u32(pool, p + 28)),
+            ];
+            (true, Some(Prim::PolyG4 { cmd, colors, verts }))
         }
         // Other known cmds we don't handle yet (POLY_F4, POLY_G4, tiles,
         // lines, GP0 control words). Treat as "known kind, wrong length"
@@ -657,6 +1087,175 @@ fn decode_sprt(pool: &[u8], i: usize) -> ([u8; 3], (i16, i16), (u8, u8), u16) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Build one packet: `[tag][payload...]`, returning the bytes.
+    fn packet(len: u8, next: u32, words: &[u32]) -> Vec<u8> {
+        assert_eq!(len as usize, words.len());
+        let mut v = Vec::new();
+        v.extend_from_slice(&(((len as u32) << 24) | (next & 0x00FF_FFFF)).to_le_bytes());
+        for w in words {
+            v.extend_from_slice(&w.to_le_bytes());
+        }
+        v
+    }
+
+    fn xy(x: i16, y: i16) -> u32 {
+        ((y as u16 as u32) << 16) | (x as u16 as u32)
+    }
+
+    /// The GP0 rectangle opcode encodes size in bits 4-3: `0x74..0x77` is 8x8
+    /// and `0x7C..0x7F` is 16x16. An earlier reading had these swapped, which
+    /// made every 8x8 sprite decode as `Sprt16` and draw at double size.
+    #[test]
+    fn sprite_opcode_sizes_follow_the_gp0_encoding() {
+        let mut buf = packet(3, 0xFFFFFF, &[0x7400_0000, xy(10, 20), 0x0000_1234]);
+        assert!(matches!(
+            decode(&buf, 0x8000_0000).as_slice(),
+            [Prim::Sprt8 { .. }]
+        ));
+        buf = packet(3, 0xFFFFFF, &[0x7C00_0000, xy(10, 20), 0x0000_1234]);
+        assert!(matches!(
+            decode(&buf, 0x8000_0000).as_slice(),
+            [Prim::Sprt16 { .. }]
+        ));
+    }
+
+    #[test]
+    fn sprite_bounds_use_the_real_extent() {
+        let s8 = &decode(
+            &packet(3, 0xFFFFFF, &[0x7400_0000, xy(10, 20), 0]),
+            0x8000_0000,
+        )[0]
+        .bounds();
+        assert_eq!(*s8, (10, 20, 18, 28));
+        let s16 = &decode(
+            &packet(3, 0xFFFFFF, &[0x7C00_0000, xy(10, 20), 0]),
+            0x8000_0000,
+        )[0]
+        .bounds();
+        assert_eq!(*s16, (10, 20, 26, 36));
+    }
+
+    /// Untextured polys carry no texture page at all, so a reader that only
+    /// knows the textured opcodes silently drops them - and flat/Gouraud
+    /// geometry is a large share of a real field frame.
+    #[test]
+    fn untextured_polygon_families_decode() {
+        let f3 = packet(4, 0xFFFFFF, &[0x2000_0000, xy(0, 0), xy(10, 0), xy(0, 10)]);
+        let f4 = packet(
+            5,
+            0xFFFFFF,
+            &[0x2800_0000, xy(0, 0), xy(10, 0), xy(0, 10), xy(10, 10)],
+        );
+        let g3 = packet(
+            6,
+            0xFFFFFF,
+            &[0x3000_0000, xy(0, 0), 0, xy(10, 0), 0, xy(0, 10)],
+        );
+        let g4 = packet(
+            8,
+            0xFFFFFF,
+            &[
+                0x3800_0000,
+                xy(0, 0),
+                0,
+                xy(10, 0),
+                0,
+                xy(0, 10),
+                0,
+                xy(10, 10),
+            ],
+        );
+        for (bytes, want) in [
+            (f3, "POLY_F3"),
+            (f4, "POLY_F4"),
+            (g3, "POLY_G3"),
+            (g4, "POLY_G4"),
+        ] {
+            let got = decode(&bytes, 0x8000_0000);
+            assert_eq!(got.len(), 1, "{want} did not decode");
+            assert_eq!(got[0].kind(), want);
+            assert!(!got[0].is_textured(), "{want} must not report a texture");
+            assert!(got[0].clut_tpage().is_none());
+        }
+    }
+
+    /// The chain is the draw order, and it is not address order: a packet
+    /// linked later wins on a machine with no depth buffer. Build a pool whose
+    /// link order is the reverse of its address order and check the walk
+    /// follows the links.
+    #[test]
+    fn chain_walk_follows_links_not_addresses() {
+        let base = 0x8000_0000u32;
+        // Three F3 packets at offsets 0, 20, 40; link 40 -> 0 -> 20 -> end.
+        let mut pool = Vec::new();
+        pool.extend_from_slice(&packet(
+            4,
+            base + 20,
+            &[0x2000_0000, xy(0, 0), xy(9, 0), xy(0, 9)],
+        ));
+        pool.extend_from_slice(&packet(
+            4,
+            0xFFFFFF,
+            &[0x2000_0000, xy(1, 1), xy(9, 1), xy(1, 9)],
+        ));
+        pool.extend_from_slice(&packet(
+            4,
+            base,
+            &[0x2000_0000, xy(2, 2), xy(9, 2), xy(2, 9)],
+        ));
+        let walked = chain_walk(&pool, base, 40);
+        assert_eq!(walked.len(), 3);
+        assert_eq!(
+            walked.iter().map(|c| c.offset).collect::<Vec<_>>(),
+            vec![40, 0, 20],
+            "walk must follow next_addr, not ascending address"
+        );
+        assert_eq!(walked[2].order, 2, "last walked packet wins");
+    }
+
+    /// A malformed pool can link a packet back into the chain; the walk must
+    /// terminate rather than spin.
+    #[test]
+    fn chain_walk_terminates_on_a_link_cycle() {
+        let base = 0x8000_0000u32;
+        let mut pool = Vec::new();
+        pool.extend_from_slice(&packet(
+            4,
+            base + 20,
+            &[0x2000_0000, xy(0, 0), xy(9, 0), xy(0, 9)],
+        ));
+        pool.extend_from_slice(&packet(
+            4,
+            base,
+            &[0x2000_0000, xy(1, 1), xy(9, 1), xy(1, 9)],
+        ));
+        let walked = chain_walk(&pool, base, 0);
+        assert_eq!(walked.len(), 2, "cycle must stop after revisiting a packet");
+    }
+
+    /// `ClearOTagR` leaves every empty bucket pointing at its own predecessor;
+    /// that signature is how the ordering table is told apart from the packet
+    /// pool, and the head is the highest bucket.
+    #[test]
+    fn ot_array_is_found_by_its_cleared_signature() {
+        let base = 0x8000_0000u32;
+        let buckets = 128usize;
+        let mut ram = vec![0u8; buckets * 4 + 64];
+        for i in 0..buckets {
+            let addr = base + (i * 4) as u32;
+            let prev = (addr.wrapping_sub(4)) & 0x00FF_FFFF;
+            ram[i * 4..i * 4 + 4].copy_from_slice(&prev.to_le_bytes());
+        }
+        let found = find_ot_arrays(&ram, base, 64);
+        assert_eq!(found.len(), 1, "expected exactly one table");
+        assert_eq!(found[0].buckets, buckets);
+        assert_eq!(
+            found[0].head,
+            base + ((buckets - 1) * 4) as u32,
+            "head is the highest bucket (reverse-cleared table)"
+        );
+    }
 
     #[test]
     fn ft4_packet_round_trip() {

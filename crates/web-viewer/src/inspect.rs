@@ -180,6 +180,18 @@ impl LegaiaViewer {
                 } => {
                     sprite_to_quad(&mut verts, cmd, color, pos, uv, clut, 8);
                 }
+                // Untextured flat / Gouraud polygons. The decoder learned these
+                // for the display-list reader (a field frame is largely made of
+                // them), but this replay path emits a textured-vertex stream -
+                // every vertex carries a CLUT + texpage the shader samples - and
+                // there is no untextured vertex flag to fall back on. Skipping
+                // them keeps this viewer's output exactly what it was when the
+                // decoder produced textured primitives only; rendering them
+                // needs an untextured path on both sides of the buffer.
+                legaia_mednafen::prim_pool::Prim::PolyF3 { .. }
+                | legaia_mednafen::prim_pool::Prim::PolyF4 { .. }
+                | legaia_mednafen::prim_pool::Prim::PolyG3 { .. }
+                | legaia_mednafen::prim_pool::Prim::PolyG4 { .. } => {}
             }
         }
         let vertex_count = (verts.len() / 14) as u32;

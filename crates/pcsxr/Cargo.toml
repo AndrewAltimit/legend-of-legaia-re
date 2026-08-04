@@ -17,6 +17,7 @@ anyhow.workspace = true
 clap.workspace = true
 flate2.workspace = true
 legaia-mednafen = { path = "../mednafen" }
+serde_json.workspace = true
 
 [dev-dependencies]
 legaia-art = { path = "../art" }

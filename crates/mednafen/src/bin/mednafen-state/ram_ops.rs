@@ -10,6 +10,73 @@ use legaia_mednafen::{
 };
 use std::path::{Path, PathBuf};
 
+/// Print scene / mode / player position for a batch of mednafen save states.
+///
+/// A state that fails to parse reports as an `!` row and the sweep continues -
+/// the corpus contains half-written and foreign-format files, and one of them
+/// must not cost the index for the other sixty-nine.
+pub fn cmd_identify(saves: &[PathBuf], json: bool) -> Result<()> {
+    use legaia_mednafen::game_anchors;
+
+    if saves.is_empty() {
+        bail!("no save states given");
+    }
+    for path in saves {
+        let parsed =
+            SaveState::from_path(path).and_then(|s| s.main_ram().map(game_anchors::identify));
+        match parsed {
+            Ok(id) => {
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "file": path.display().to_string(),
+                            "emulator": "mednafen",
+                            "scene": id.scene,
+                            "game_mode": id.game_mode,
+                            "mode_label": game_anchors::game_mode_label(id.game_mode),
+                            "player": id.player.map(|(x, z)| [x, z]),
+                        })
+                    );
+                } else {
+                    let pos = match id.player {
+                        Some((x, z)) => format!("x={x} z={z}"),
+                        None => "-".to_string(),
+                    };
+                    println!(
+                        "{:<10} {:<14} {:<16} {}",
+                        id.scene,
+                        game_anchors::game_mode_label(id.game_mode),
+                        pos,
+                        path.display()
+                    );
+                }
+            }
+            Err(e) => {
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "file": path.display().to_string(),
+                            "emulator": "mednafen",
+                            "error": e.to_string(),
+                        })
+                    );
+                } else {
+                    println!(
+                        "{:<10} {:<14} {:<16} {}",
+                        "!",
+                        "unreadable",
+                        "-",
+                        path.display()
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn cmd_info(save: &Path, all: bool) -> Result<()> {
     let s = SaveState::from_path(save)?;
     println!("[info] {}", save.display());
