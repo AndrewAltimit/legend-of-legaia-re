@@ -99,16 +99,113 @@ inputs, and the question is which input is wrong. Ruled out already:
 - **Not the encounter path** — fixed, 10 fought and survived.
 - **Not the pad remap** — see above.
 
+### Correction: the residual table is not "walls only"
+
+The table above was reported as a flood with "walls only (no props, no portal
+hazards)". That is wrong about its own instrument: `plan_path` rejects a step on
+`field_dir_blocked` **or** `field_actor_dir_blocked`, and the caller passes the
+hazard set - so those residuals were measured with props, NPCs and hazards all
+live. The correction matters because it is what made prop colliders look like
+the lead candidate.
+
+An ablation now runs under `LEGAIA_CPR_ABLATE=1` (`ablate_rung4_inputs` in the
+replay test), clearing one input at a time and re-flooding to all six mouths:
+
+| variant | best residual |
+|---|---|
+| as-is (all inputs live) | 54 |
+| hazards cleared | 54 |
+| props cleared | 54 |
+| props + hazards cleared | 54 |
+| props + NPCs + hazards (walls only) | 54 |
+
+Identical in every variant. **Prop colliders, NPC boxes and portal hazards are
+all falsified as the seal** - the walkability grid alone accounts for it, and
+candidate 1 below is closed.
+
+### What the ablation replaced it with
+
+- The reachable pocket from the `(96, 25)` arrival is **13,700 sub-cells,
+  bounding box tiles `(47, 13)..(105, 63)`** - bounded at `z = 63` across its
+  whole width, while all six `keikoku` mouths sit at `z >= 68`.
+- The terrain there is **ragged authored landscape, not a straight artificial
+  edge**, and the `x = 64` corridor is open end to end: `field_tile_is_wall`,
+  `field_dir_blocked(Z+)` and `field_actor_dir_blocked` all read clear at every
+  32-unit cell from `z 62.0` to `z 69.3`. The flood does not fail to cross the
+  corridor - it never reaches it.
+- The **arrival tile is correct**: `town01`'s `0x3F` names `map01` entry
+  `(96, 25)`, exactly where the player lands. `keikoku` exits to `map01` at
+  `(52, 94)`, so the canonical door is the `(53, 93)` / `(53, 94)` mouth pair -
+  but `portal_tile` picks `(64, 68)` because it scores the smallest residual.
+- **The spine shape is right.** `scripts/replays/chapter1_spine.toml` pins
+  `town01 -> map01 -> keikoku` with no intermediate scene, so the `suimon`
+  pass-through reading (candidate 3) is not the spine route. `suimon`'s only
+  scene-change back to `map01` carries entry tile `(0, 0)`.
+- `map01`'s MAN carries **11 `0x4C` nibble-7 collision paints** inside `P1[0]`,
+  two of them sub-0 "clear walls" over `cols 55..70, rows 43..61` and
+  `cols 70..89, rows 37..49` - the band between the pocket and the south. Under
+  a run instrumented at `paint_field_collision`, **six paints fire and all six
+  are `town01`'s gate area** (`cols 21..30, rows 44..48`); none of `map01`'s do.
+  `map01`'s entry script *is* loaded (the earlier "no load" reading was a
+  logging artifact - `load_field_script_at` runs before
+  `set_active_scene_label`, so the load logs under the previous scene's name).
+
+### Settled by the retail grid: the data is right, the probe is not
+
+The discriminating measurement has been run. `keikoku_chest_preload`
+(fingerprint `f697ac27`, validated) is a mednafen state parked on **`map01` at
+world `(8266, 8700)` = tile `(64, 67)`** - inside the very `x = 64` corridor the
+port's flood never reaches. Reading its live grid offline (scratchpad
+`_DAT_1f8003ec` = `0x80139530`, grid at main-RAM `0x13d530`) and re-indexing it
+through `field_tile_is_wall`'s exact derivation gives a wall map that is
+**byte-identical to the port's decode** over the whole `x 45..110, z 56..72`
+window, and reports `is_wall = false` at retail's own standing position.
+
+Two conclusions, both firm:
+
+- **The base grid decode is correct.** Candidate 2 is closed.
+- **The paints are not the answer either.** Retail's grid at this (post-keikoku)
+  story state matches the port's *unpainted* grid over the window that map01's
+  two sub-0 "clear walls" paints would cover, so retail has not applied them
+  here. Whether they fire is a separate question and not this one.
+
+So retail reaches `(64, 67)` **on the same collision bytes the port has**, and
+the port's own reachability says it cannot. The seal is therefore in
+`field_dir_blocked` (or in how the planner samples it), not in the data.
+
+Three measurements localise it:
+
+- **657 probe-vs-tile disagreements** on the forward flood's frontier - cells
+  whose neighbour is an open tile by `field_tile_is_wall`, with no prop or NPC,
+  that `field_dir_blocked` still refuses. They are spread across the entire
+  pocket boundary `(47,13)..(105,63)`, not clustered at one pinch point, so the
+  probe is *systematically* stricter than the walls it derives from.
+- **It is not simple probe asymmetry.** Flooding backward from retail's tile
+  reaches 27,376 sub-cells - twice the forward flood's 13,700 - and still never
+  reaches the `(96, 25)` arrival. The two are genuinely separate components
+  under the directional probe, not one component the forward direction cannot
+  enter.
+- The forward pocket is 13,700 sub-cells bounded at `z = 63`; retail's tile sits
+  at `z = 67` in the larger component.
+
+**Next step for whoever picks this up:** diff `field_dir_blocked`'s probe
+geometry against `FUN_801cfe4c`'s disassembly - specifically the lateral spread
+of `FIELD_ACTOR_PROBES` / the leading-edge sample offsets, and whether the
+overworld's 8-units-per-frame step should be sampling at a different reach from
+the field's 2-unit step. Also worth ruling out that the 32-unit 4-connected
+planner lattice is itself the limitation rather than the probe: retail's mover
+is continuous and can slide along a wall in ways a 4-connected BFS cannot
+represent. Both are port-side questions; the disc data is now exonerated.
+
 Candidates for whoever picks this up, roughly in order:
 
-- The **prop colliders on an overworld scene**. Retail's `FUN_801CF754` does
-  put placed objects in the collision candidate list, so their presence is not
-  by itself wrong — but `solid` defaults to true for every placement with no
-  `31 00`, and a ±80 box on overworld-scale scenery may be sealing corridors
-  retail leaves open. Cheapest experiment: rerun the ladder with
-  `field_prop_colliders` cleared on world-map scenes and see whether the flood
-  connects.
-- The **walkability-grid decode for a `map\d\d` scene**. `field_tile_is_wall`
+- ~~The **prop colliders on an overworld scene**.~~ **Closed** by the ablation
+  above: clearing all six changes no residual. Retail's `FUN_801CF754` does put
+  placed objects in the collision candidate list, so their presence is not wrong
+  either; they are simply not what seals this route.
+- ~~The **walkability-grid decode for a `map\d\d` scene**.~~ **Closed** by the
+  retail grid read above - byte-identical to the port's decode over the whole
+  contested window. Kept for the reasoning: `field_tile_is_wall`
   indexes `z >> 6` into the `0x12000`-byte `.MAP` block's `+0x4000..+0x8000`
   region. If an overworld map's grid has a different stride or origin from a
   town's, the landscape would still *look* plausible while the corridors landed
