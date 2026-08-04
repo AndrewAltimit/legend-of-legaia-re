@@ -54,7 +54,10 @@ pub const NOW_CHECKING_TEXT_LINE2: (i32, i32) = (78, NOW_CHECKING_TEXT_LINE2_Y);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CardMessageRow {
     pub y: i32,
-    /// Retail string-table slot (`FUN_801E2EE4`'s 4th argument).
+    /// Retail **sprite-descriptor** index (`FUN_801E2EE4`'s 4th argument,
+    /// masked to its low 10 bits): a record of the 20-byte-stride table at
+    /// `0x801E50A8` naming one pre-rendered message strip in VRAM. Not a
+    /// string-table slot - see [`card_message_rows`].
     pub msg_slot: u8,
     pub half_bright: bool,
 }
@@ -80,13 +83,30 @@ pub struct CardMessageRow {
 /// from: the rack rejects an unparseable card at insert (so "unformatted"
 /// never reaches the save screen), an empty port is an unconfirmable pill
 /// rather than a prompt, and its writes are synchronous byte patches with
-/// no retry beat. The other prerequisite is the string table: `msg_slot`
-/// indexes the slot argument retail's drawer (`FUN_801E2EE4`) resolves
-/// against the menu overlay's message pointers, and no engine caller
-/// carries that table, so even a wired host would have five rows and no
-/// text. The rest of this module - the "Now checking" panel and the
-/// confirm dialog - is wired and drawn by both hosts; only this row model
-/// is inert.
+/// no retry beat.
+///
+/// The second prerequisite is **not** a string table, and this note said it
+/// was. `FUN_801E2EE4` draws no text: its 4th argument is
+/// `(index & 0x3FF)` into a 20-byte-stride **sprite descriptor** table at
+/// `0x801E50A8` (menu overlay, PROT entry 0899 file `0x16890`), from which
+/// it builds one `0x34`-byte four-vertex GP0 packet - tpage at `+0x04`,
+/// CLUT at `+0x06`, texel origin at `+0x08`/`+0x09`, extent at
+/// `+0x0A`/`+0x0B`, two RGB triples at `+0x0C` and `+0x10` scaled by the
+/// caller's brightness, semi-transparency at `+0x0F` - and links it into
+/// the OT (`FUN_8003D2C4`). The first two records read `254x148` and
+/// `254x16` at tpage `0x0098`, i.e. the messages are **pre-rendered image
+/// strips in VRAM**, not glyph runs. `docs/reference/functions/menus.md`
+/// already classes `801E2EE4` with its two sibling GPU-primitive emitters;
+/// the disclosure here contradicted the repo's own function directory.
+///
+/// So what must exist first is a parser for that descriptor table plus its
+/// texture page resident in engine VRAM - a disc-derived asset, on the same
+/// footing as the save-icon sheet, rather than a text corpus nobody has.
+/// Until then a wired host would emit five correctly-placed quads with no
+/// texels behind them, which is a different (and cheaper) gap than five
+/// rows with no text. The rest of this module - the "Now checking" panel
+/// and the confirm dialog - is wired and drawn by both hosts; only this row
+/// model is inert.
 ///
 /// PORT: FUN_801e0418 (see
 /// `ghidra/scripts/funcs/overlay_menu_801e0418.txt`)

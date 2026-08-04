@@ -181,7 +181,23 @@ pub const CARD_SLOT_CLASSES: usize = 16;
 /// Save-filename prefixes retail matches a directory frame against, one
 /// per region. Both are 16 bytes - the exact `strncmp` length retail
 /// passes - and the two digits that follow are the slot number.
-pub const CARD_SAVE_PREFIXES: [&[u8]; 2] = [b"BASCUS-94254PRO_", b"BISCPS-10059PRO_"];
+///
+/// The separator is a **hyphen**. This constant spelled it `PRO_` for as
+/// long as the walk below was inert, which is the shape the triage page
+/// calls "right about the wiring and wrong about the bytes": nothing had
+/// ever handed the matcher a real card, so a prefix that matches nothing
+/// looked exactly like a prefix that matches everything. The retail
+/// literals live in the menu overlay's data segment at `0x801EF03C` /
+/// `0x801EF054` (PROT entry 0899 file `0x20824` / `0x2083C`) and read
+/// `"BASCUS-94254PRO-"` / `"BISCPS-10059PRO-"`; the directory frames of
+/// real cards agree. The USA entry is taken from
+/// [`legaia_save::card::LEGAIA_SAVE_FILENAME_PREFIX`] rather than
+/// respelled, so the matcher and the writer cannot drift apart again -
+/// they are one literal with one owner.
+pub const CARD_SAVE_PREFIXES: [&[u8]; 2] = [
+    legaia_save::card::LEGAIA_SAVE_FILENAME_PREFIX.as_bytes(),
+    b"BISCPS-10059PRO-",
+];
 
 /// Length retail compares a directory filename over.
 const CARD_PREFIX_LEN: usize = 16;
@@ -217,19 +233,26 @@ const CARD_PREFIX_LEN: usize = 16;
 /// same directory - so `avail_blocks` no longer has to be guessed by a
 /// caller.
 ///
-/// PORT: FUN_801E1208
+/// The index-space mismatch that once read as this walk's blocker is what
+/// it is now wired *for*. Its class array is keyed by the **filename's
+/// save index** ([`card_dir_slot_of`] parses the digits after the
+/// `BASCUS-` prefix) while the browser card rack's 5x3 preview grid is
+/// keyed by **physical block**, and the two do disagree on a real card -
+/// retail files a save by the save-select list position it was standing
+/// on, so `-03` can sit in any block. That makes "which save numbers does
+/// this card already carry" a question the rack has to ask before it
+/// claims a block, and this is the pass that answers it:
+/// `LegaiaRuntime::card_save_index` in `web-viewer::cards` reads the
+/// [`SlotContent::LegaiaSave`] entries to pick a number no file on the
+/// card is already using. Without it the rack derived the number from the
+/// block alone and wrote duplicate filenames onto a retail card.
 ///
-/// NOT WIRED: the index-space mismatch is the blocker, not the backend.
-/// The browser card rack **does** mount raw card images now and runs the
-/// sibling scan/budget pair ([`card_directory_scan`] ->
-/// [`card_free_blocks`], `web-viewer::cards`), but its 5x3 grid is keyed
-/// by **physical block** (`cell = block - 1`) while this classifier keys
-/// by the **filename's save index** ([`card_dir_slot_of`] parses the
-/// digits after the `BASCUS-` prefix), and nothing guarantees the two
-/// agree on a player's card. Adopting it means re-keying the grid to the
-/// retail name-index space; until then the one caller chain
-/// ([`card_directory_slots`] -> [`SaveSelectSession::from_card_directory`])
-/// is entered only by tests.
+/// The other index-space direction - re-keying the preview grid itself
+/// into this array - is a separate question and is still open. It is not a
+/// prerequisite for the above: a host can key its own grid however it
+/// likes and still owe the card unique filenames.
+///
+/// PORT: FUN_801E1208
 pub fn classify_card_directory(
     frames: &[&[u8]],
     avail_blocks: u32,
@@ -274,8 +297,14 @@ pub fn classify_card_directory(
 /// when it actually is a digit, so a one-digit name parses as its single
 /// digit rather than being rejected.
 ///
+/// Public because a host that writes to a card needs the same parse for a
+/// reason retail does not have: retail's save number is the save-select
+/// list position it is already standing on, so it never has to read one
+/// back off a card, while a host addressing a **block** has to ask the
+/// card what number that block's file already carries.
+///
 /// REF: FUN_801E1208 (the filename match + digit parse it inlines).
-fn card_dir_slot_of(frame: &[u8]) -> Option<usize> {
+pub fn card_dir_slot_of(frame: &[u8]) -> Option<usize> {
     if frame.len() < CARD_PREFIX_LEN + 2 {
         return None;
     }
@@ -1704,6 +1733,44 @@ mod card_directory_tests {
         f
     }
 
+    /// The prefixes are the retail literals, spelled out here rather than
+    /// re-derived from the constant under test.
+    ///
+    /// Every other test in this module builds its frames *from*
+    /// [`CARD_SAVE_PREFIXES`], so all of them passed while the separator
+    /// was an underscore and the walk matched nothing a real card carries.
+    /// That is the whole failure mode: a self-referential fixture cannot
+    /// see a wrong literal, and an inert kernel is never handed a real one.
+    /// The bytes are the menu overlay's own (`0x801EF03C` / `0x801EF054`,
+    /// PROT 0899 file `0x20824` / `0x2083C`).
+    #[test]
+    fn prefixes_are_the_retail_literals() {
+        assert_eq!(CARD_SAVE_PREFIXES[0], b"BASCUS-94254PRO-");
+        assert_eq!(CARD_SAVE_PREFIXES[1], b"BISCPS-10059PRO-");
+        for p in CARD_SAVE_PREFIXES {
+            assert_eq!(p.len(), CARD_PREFIX_LEN, "retail strncmp length");
+        }
+    }
+
+    /// The writer and the matcher are one literal: a filename the port
+    /// itself stamps on a card must classify as a Legaia save. This is
+    /// the round-trip the constant needed and did not have - the two
+    /// halves lived in different crates and only the writer was live.
+    #[test]
+    fn filenames_the_port_writes_classify_as_legaia_saves() {
+        for slot in [0u32, 1, 9, 14] {
+            let mut f = legaia_save::card::legaia_save_filename(slot).into_bytes();
+            f.resize(0x28, 0);
+            assert_eq!(
+                card_dir_slot_of(&f),
+                Some(slot as usize),
+                "legaia_save_filename({slot}) must parse back"
+            );
+            let classes = classify_card_directory(&[&f], 0);
+            assert_eq!(classes[slot as usize], SlotContent::LegaiaSave);
+        }
+    }
+
     /// A matched filename stamps its slot as a Legaia save, and both
     /// regional prefixes match.
     #[test]
@@ -2388,9 +2455,12 @@ mod tests {
         let mut io = CardIoMachine::new();
         let mut counter = 0u16;
         let mut frame = vec![0u8; CARD_DIRENTRY_STRIDE];
-        frame[..16].copy_from_slice(b"BASCUS-94254PRO_");
-        frame[16] = b'0';
-        frame[17] = b'3';
+        // Built through the writer rather than respelled: this was the one
+        // fixture in the file that named the literal itself, and it named
+        // the wrong one (`PRO_`), which is how a matcher that matched no
+        // real card kept a green test.
+        let name = legaia_save::card::legaia_save_filename(3);
+        frame[..name.len()].copy_from_slice(name.as_bytes());
         frame[CARD_DIRENTRY_SIZE_OFFSET..CARD_DIRENTRY_SIZE_OFFSET + 4]
             .copy_from_slice(&0x2000u32.to_le_bytes());
         let entries = vec![CardDirEntry::from_frame(&frame).unwrap()];

@@ -129,8 +129,12 @@ pub enum ListAlloc {
 /// `visible_rows = (content_h - 4) / 14` (signed, truncating - the
 /// `0x92492493` magic-multiply sequence at `0x8003025C..0x80030284`), one
 /// row per `0xE`-pixel pitch. Retail also mirrors `count` into the
-/// row-count global `0x8007BBA0` and zeroes the class / payload globals
-/// (`0x8007BB9C` / `0x8007BB88`); callers of this port own those mirrors.
+/// row-count global `0x8007BBA0` and resets three more on the way out
+/// (`0x8007BB9C` and `0x8007BB88` to zero, `0x8007BB60` to `-1`, plus
+/// `node+0x28 = 0`); callers of this port own those mirrors. The third
+/// was missing from this list while the routine was inert - an
+/// enumeration that stops one store short reads exactly like a complete
+/// one.
 pub fn list_alloc(count: i32, content_h: i16, persisted: &mut ListSelection) -> ListAlloc {
     if count == 0 {
         return ListAlloc::EmptyText;
