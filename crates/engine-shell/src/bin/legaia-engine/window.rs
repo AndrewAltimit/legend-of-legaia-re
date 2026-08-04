@@ -1042,76 +1042,22 @@ impl PlayWindowApp {
 // rects come from the menu overlay's **window-descriptor table** (PROT
 // 0899 @0x15F20, VA 0x801E4738 - `legaia_asset::menu_windows`), parsed
 // from the user's disc at boot into `PlayWindowApp::menu_window_table`.
-// Each descriptor rect is the window's *content* origin/extent (the
-// `a0+0xa..+0x10` rect the retail content renderers receive, e.g.
-// `FUN_801D33D8`'s `WX`/`WY`); the caller-drawn 9-slice frame extends
-// past it (`MenuWindowDescriptor::frame_rect`). The pinned fallback below
-// mirrors the disc table for the ids the engine draws (the disc-gated
-// `menu_windows_real` test asserts the mirror), so geometry stays retail
-// even without a disc table.
+// Both the resolver and its pinned fallback live in
+// `legaia_engine_ui::pause_menu` (`MenuRects` / `MENU_WINDOW_FALLBACK`),
+// shared with the browser play page: this window used to carry a
+// byte-identical private copy of the table, which is a paired constant with
+// no gate over it.
 
-/// Pinned content rects mirroring the disc descriptor table:
-/// `(descriptor id, (x, y, w, h))`.
-#[rustfmt::skip]
-const MENU_WINDOW_FALLBACK: [(usize, (i32, i32, i32, i32)); 23] = {
-    use legaia_asset::menu_windows::window_ids as w;
-    [
-        (w::TAB_ITEMS, (16, 12, 60, 12)),
-        (w::TAB_MAGIC, (16, 12, 60, 12)),
-        (w::ITEMS_COMMAND, (32, 44, 80, 38)),
-        (w::ITEMS_LIST, (174, 22, 132, 182)),
-        (w::ITEMS_INFO, (14, 108, 144, 40)),
-        (w::MAGIC_LIST, (174, 22, 132, 182)),
-        (w::MAGIC_CASTER, (14, 40, 144, 96)),
-        (w::MAGIC_INFO, (14, 152, 144, 52)),
-        (w::TAB_EQUIP, (16, 12, 60, 12)),
-        (w::TAB_STATUS, (12, 12, 60, 12)),
-        (w::TAB_OPTIONS, (16, 12, 60, 12)),
-        (w::EQUIP_PARTY, (14, 42, 80, 38)),
-        (w::EQUIP_MAIN, (14, 96, 292, 108)),
-        (w::EQUIP_LIST, (174, 22, 132, 182)),
-        (w::STATUS_PARTY_LIST, (14, 38, 60, 38)),
-        (w::STATUS_CONDITION, (14, 92, 60, 10)),
-        (w::STATUS_MAIN, (90, 16, 218, 188)),
-        (w::STATUS_SUMMARY, (14, 134, 60, 70)),
-        (w::OPTIONS_MAIN, (24, 40, 256, 148)),
-        // The options value popup's descriptor x/w (y/h are stamped per
-        // open - see `options_popup_rect`).
-        (w::OPTIONS_POPUP, (170, 132, 128, 36)),
-        (w::TOP_MONEY_TIME, (24, 178, 104, 24)),
-        (w::TOP_COMMAND_LIST, (24, 24, 104, 94)),
-        (w::TOP_INFO_PANEL, (144, 24, 152, 180)),
-    ]
-};
-
-/// Content rect used for the sub-screens whose retail window sets are not
-/// yet capture-pinned (Items / Spells / Arts) - a near-fullscreen window
-/// on the 320x240 stage.
-const MENU_SUBWINDOW_CONTENT: (i32, i32, i32, i32) = (18, 18, 284, 200);
-
-/// Options round-trip file (sibling of `legaia-input.toml`). Holds the
-/// retail settings plus the engine-only knobs (BGM / SFX volume, message
-/// speed) that the pause-menu options screen doesn't show.
+/// Options config round-trip file (sibling of `legaia-input.toml`). Holds
+/// the retail settings plus the engine-only knobs (BGM / SFX volume,
+/// message speed) that the pause-menu options screen doesn't show.
 const OPTIONS_CONFIG_FILE: &str = "legaia-options.toml";
 
 impl PlayWindowApp {
     /// Content rect for a menu window id: the disc-parsed descriptor when
-    /// available, else the pinned mirror in [`MENU_WINDOW_FALLBACK`].
+    /// available, else the shared pinned mirror.
     fn menu_window_rect(&self, id: usize) -> (i32, i32, i32, i32) {
-        if let Some(d) = self.menu_window_table.as_ref().and_then(|t| t.window(id)) {
-            return d.rect();
-        }
-        MENU_WINDOW_FALLBACK
-            .iter()
-            .find(|(i, _)| *i == id)
-            .map(|(_, r)| *r)
-            .unwrap_or(MENU_SUBWINDOW_CONTENT)
-    }
-
-    /// Content-origin pen for a menu window id.
-    fn menu_window_pen(&self, id: usize) -> (i32, i32) {
-        let (x, y, _, _) = self.menu_window_rect(id);
-        (x, y)
+        legaia_engine_render::pause_menu::MenuRects::new(self.menu_window_table.as_ref()).rect(id)
     }
 
     /// Advance `World::play_time_seconds` by the whole seconds elapsed since
@@ -1128,14 +1074,6 @@ impl PlayWindowApp {
             self.play_clock_secs = now;
             self.session.host.world.advance_play_time(delta);
         }
-    }
-
-    /// Frame rect (the 9-slice chrome box) for a menu window id: the
-    /// retail border art extends 8 px past the content rect on every
-    /// side (prim-scan pinned; `MenuWindowDescriptor::frame_rect`).
-    fn menu_window_frame_rect(&self, id: usize) -> (i32, i32, i32, i32) {
-        let (x, y, w, h) = self.menu_window_rect(id);
-        (x - 8, y - 8, w + 16, h + 16)
     }
 
     /// Apply the live side-effects of [`Self::options_state`] (currently

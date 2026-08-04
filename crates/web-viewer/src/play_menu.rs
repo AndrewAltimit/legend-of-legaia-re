@@ -31,6 +31,19 @@
 //! `legaia-engine-ui` draw builders; the site is just a different framebuffer
 //! over the same menu.
 //!
+//! ## What this module still decides
+//!
+//! Not the composition. Which windows a screen frames, which painter draws its
+//! title tab, where the modals sit in the sprite order and the final 320x240
+//! stage scale all live in
+//! [`legaia_engine_ui::pause_menu`](legaia_engine_ui::pause_menu), shared with
+//! the native window - this file used to carry a private copy, and two
+//! divergences had already grown in it (the tab painter and the Use-confirm
+//! frame order). What is left here is the **projection**: turning a live
+//! `engine-core` session into the plain view structs the composition takes,
+//! which needs `engine-core` types the wgpu-free UI crate deliberately does
+//! not depend on.
+//!
 //! ## Load / Save
 //!
 //! Load and Save drive the retail save-select screen ([`SaveSelectSession`],
@@ -58,7 +71,7 @@
 
 use super::*;
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::equip_session::{EquipSession, EquipState};
+use legaia_engine_core::equip_session::EquipSession;
 use legaia_engine_core::field_menu::{
     FieldMenuGate, FieldMenuInput, FieldMenuOutcome, FieldMenuPhase, FieldMenuRow, FieldMenuSession,
 };
@@ -82,62 +95,14 @@ use legaia_engine_ui::{
     SlotInfoView, SpriteDraw, StatusPanelView, StatusSatelliteView, StatusStatRow, TextDraw,
 };
 
-/// Boot-UI stage the retail menu lays glyphs out in (320x240), upscaled +
-/// centred onto the play surface exactly like the native window.
-const STAGE_W: u32 = ui::BOOT_UI_STAGE_W;
-const STAGE_H: u32 = ui::BOOT_UI_STAGE_H;
-
-/// Menu-overlay descriptor id of the **spell level-up notice** window
-/// (renderer `FUN_801DCCB4` - `engine-ui`'s `CharPrompt` painter). Mirrors
-/// the native window's `WIN_MAGIC_LEVEL_NOTICE` (`window/menu_draws.rs`).
-const WIN_MAGIC_LEVEL_NOTICE: usize = 7;
-
-/// Menu-overlay descriptor id of the kind-`0x0D` **notice panel** (renderer
-/// `FUN_801D6360` - `engine-ui`'s `LabelList` painter), opened by menu
-/// sub-screen `4`. Mirrors the native window's `WIN_CONTEXT_NOTICE`.
-const WIN_CONTEXT_NOTICE: usize = 6;
-/// Menu-overlay descriptor id of the kind-`0x0D` **ready check** (renderer
-/// `FUN_801D61B0` - `engine-ui`'s `TwoLineChoicePanel` painter), opened by
-/// menu sub-screen `3`. Mirrors the native window's `WIN_CONTEXT_READY`.
-const WIN_CONTEXT_READY: usize = 5;
-
-/// Near-fullscreen content rect for the screens the native shell frames with a
-/// single window rather than a capture-pinned window set: Items / Magic (the
-/// generic frame behind `inventory_use_draws_for` / `spell_menu_draws_for`).
-/// Mirrors the native window's `MENU_SUBWINDOW_CONTENT`.
-const SUBWINDOW_CONTENT: (i32, i32, i32, i32) = (18, 18, 284, 200);
-
-/// Pinned content rects mirroring the disc descriptor table, used when the
-/// parsed table is unavailable - byte-identical to the native window's
-/// `MENU_WINDOW_FALLBACK`.
-#[rustfmt::skip]
-const WINDOW_FALLBACK: [(usize, (i32, i32, i32, i32)); 23] = {
-    use legaia_asset::menu_windows::window_ids as w;
-    [
-        (w::TAB_ITEMS, (16, 12, 60, 12)),
-        (w::TAB_MAGIC, (16, 12, 60, 12)),
-        (w::ITEMS_COMMAND, (32, 44, 80, 38)),
-        (w::ITEMS_LIST, (174, 22, 132, 182)),
-        (w::ITEMS_INFO, (14, 108, 144, 40)),
-        (w::MAGIC_LIST, (174, 22, 132, 182)),
-        (w::MAGIC_CASTER, (14, 40, 144, 96)),
-        (w::MAGIC_INFO, (14, 152, 144, 52)),
-        (w::TAB_EQUIP, (16, 12, 60, 12)),
-        (w::TAB_STATUS, (12, 12, 60, 12)),
-        (w::TAB_OPTIONS, (16, 12, 60, 12)),
-        (w::EQUIP_PARTY, (14, 42, 80, 38)),
-        (w::EQUIP_MAIN, (14, 96, 292, 108)),
-        (w::EQUIP_LIST, (174, 22, 132, 182)),
-        (w::STATUS_PARTY_LIST, (14, 38, 60, 38)),
-        (w::STATUS_CONDITION, (14, 92, 60, 10)),
-        (w::STATUS_MAIN, (90, 16, 218, 188)),
-        (w::STATUS_SUMMARY, (14, 134, 60, 70)),
-        (w::OPTIONS_MAIN, (24, 40, 256, 148)),
-        (w::OPTIONS_POPUP, (170, 132, 128, 36)),
-        (w::TOP_MONEY_TIME, (24, 178, 104, 24)),
-        (w::TOP_COMMAND_LIST, (24, 24, 104, 94)),
-        (w::TOP_INFO_PANEL, (144, 24, 152, 180)),
-    ]
+/// Stage origin + integer scale that upscales the 320x240 boot-UI stage to
+/// fill the play surface, centred. Shared with the native window rather than
+/// mirrored: `legaia_engine_ui::pause_menu::stage_transform`.
+pub(crate) use legaia_engine_ui::pause_menu::stage_transform;
+use legaia_engine_ui::pause_menu::{
+    GenericContent, ItemsScreenView, MagicScreenView, MenuRects, OptionsScreenView, PauseMenuCtx,
+    PauseScreen, SpecialConfirmView, StatusScreenView, TopLevelView, equip_screen_compose,
+    pause_screen_draws, spell_level_notice_draws,
 };
 
 /// The disc-sourced menu chrome (assembled atlas + its band rects) plus the
@@ -191,26 +156,31 @@ impl PlayMenuAssets {
         self.windows.as_ref()
     }
 
+    /// Descriptor-rect resolver over the parsed table, with the pinned
+    /// fallback + the frame-box maths shared with the native window
+    /// ([`legaia_engine_ui::pause_menu::MenuRects`]).
+    fn rects(&self) -> MenuRects<'_> {
+        MenuRects::new(self.windows.as_ref())
+    }
+
     fn window_rect(&self, id: usize) -> (i32, i32, i32, i32) {
-        if let Some(d) = self.windows.as_ref().and_then(|t| t.window(id)) {
-            return d.rect();
+        self.rects().rect(id)
+    }
+
+    /// The chrome atlas' band rects, when the gold chrome resolved.
+    fn chrome_rects_opt(&self) -> Option<&SaveMenuAtlasRects> {
+        self.chrome.as_ref().map(|(_, r)| r)
+    }
+
+    /// The shared pause-menu composition context for this frame.
+    fn menu_ctx(&self, origin: (i32, i32), scale: u32) -> PauseMenuCtx<'_> {
+        PauseMenuCtx {
+            font: &self.font,
+            rects: self.rects(),
+            chrome: self.chrome_rects_opt(),
+            origin,
+            scale,
         }
-        WINDOW_FALLBACK
-            .iter()
-            .find(|(i, _)| *i == id)
-            .map(|(_, r)| *r)
-            .unwrap_or(SUBWINDOW_CONTENT)
-    }
-
-    fn pen(&self, id: usize) -> (i32, i32) {
-        let (x, y, _, _) = self.window_rect(id);
-        (x, y)
-    }
-
-    /// Frame rect (9-slice chrome box): 8 px past the content rect on each side.
-    fn frame_rect(&self, id: usize) -> (i32, i32, i32, i32) {
-        let (x, y, w, h) = self.window_rect(id);
-        (x - 8, y - 8, w + 16, h + 16)
     }
 }
 
@@ -261,18 +231,6 @@ impl PlayMenu {
             pending_load_scene: None,
         }
     }
-}
-
-/// Stage origin + integer scale that upscales the 320x240 boot-UI stage to fill
-/// the play surface, centred - identical math to the native window's
-/// `save_select_stage`.
-pub(crate) fn stage_transform(surface_w: u32, surface_h: u32) -> ((i32, i32), u32) {
-    let scale = (surface_w / STAGE_W).min(surface_h / STAGE_H).clamp(1, 4);
-    let sw = STAGE_W * scale;
-    let sh = STAGE_H * scale;
-    let x0 = (surface_w as i32 - sw as i32) / 2;
-    let y0 = (surface_h as i32 - sh as i32) / 2;
-    ((x0, y0), scale)
 }
 
 /// `(edge & button)` test on a PSX-encoded pad-edge word.
@@ -332,6 +290,41 @@ fn info_panel_slide_offset(session: &SaveSelectSession) -> i32 {
         session.info_panel_slide_anim_t(),
     );
     y - INFO_PANEL_PARKED_Y
+}
+
+/// Borrow the shared `engine-core` Equip screen model into the shared
+/// `engine-ui` compose input.
+///
+/// The only per-host line left on this screen: the phase tag has to cross
+/// from `engine-core`'s enum to `engine-ui`'s, and `engine-ui` deliberately
+/// does not depend on `engine-core`. Everything either side of it - the
+/// projection and the composition - is shared. The native window's twin is
+/// `window/menu_draws.rs::equip_compose_input`.
+fn equip_compose_input(
+    m: &legaia_engine_core::pause_screens::EquipScreenModel,
+    text_cursor: bool,
+) -> ui::pause_menu::EquipComposeInput<'_> {
+    use legaia_engine_core::pause_screens::EquipScreenPhase as Tag;
+    ui::pause_menu::EquipComposeInput {
+        party_names: &m.party_names,
+        slot_labels: &m.slot_labels,
+        slot_items: &m.slot_items,
+        candidate_names: &m.candidate_names,
+        candidate_counts: &m.candidate_counts,
+        stat_compare: &m.stat_compare,
+        phase: match m.phase {
+            Tag::SlotPicker => ui::EquipDrawPhase::SlotPicker,
+            Tag::ItemPicker => ui::EquipDrawPhase::ItemPicker,
+            Tag::Confirm => ui::EquipDrawPhase::Confirm,
+        },
+        cursor: m.cursor,
+        active_slot: m.active_slot,
+        confirm_label: m.confirm_label.as_deref(),
+        char_slot: m.char_slot as usize,
+        slot_cursor: m.slot_cursor,
+        pictogram_rows: m.pictogram_rows,
+        text_cursor,
+    }
 }
 
 /// Serialize one draw quad to JSON. `TextDraw` and `SpriteDraw` are the same
@@ -871,31 +864,14 @@ impl LegaiaRuntime {
         }
 
         // Window 7 - the spell level-up notice - overlays whichever menu
-        // screen is current while the shared runtime holds the beat, the
-        // browser twin of the native window's `magic_level_notice_draws`.
-        // Content-only, off the disc-parsed id-7 rect: like the shop's
-        // descriptor windows it draws only when the real table parsed (the
-        // painter is dispatched on the descriptor's renderer).
-        if let Some(notice) = self.menu.spell_level_notice()
-            && let Some((d, _)) = assets.window_table().and_then(|t| {
-                ui::painter_at(t, WIN_MAGIC_LEVEL_NOTICE, ui::MenuWindowPainter::CharPrompt)
-            })
-        {
-            let font = assets.font_ref();
-            let (mut text, cursor) = ui::ui_menu_window_painters::char_prompt_draws_for(
-                font,
-                ui::painter_rect(d),
+        // screen is current while the shared runtime holds the beat. Both
+        // hosts route it through the one shared composition, so neither can
+        // pick a different painter or a different stand-in cursor.
+        if let Some(notice) = self.menu.spell_level_notice() {
+            texts.extend(spell_level_notice_draws(
+                &assets.menu_ctx(origin, scale),
                 &notice.line,
-            );
-            // ASCII stand-in for the painter's corner cursor sprite, same
-            // substitution the native window makes.
-            text.extend(ui::text_draws_for(
-                &font.layout_ascii(">"),
-                (cursor.x, cursor.y),
-                ui::MENU_TEXT_GOLD,
             ));
-            ui::scale_stage_text_draws(&mut text, origin, scale);
-            texts.extend(text);
         }
 
         serde_json::json!({
@@ -953,65 +929,44 @@ impl LegaiaRuntime {
         origin: (i32, i32),
         scale: u32,
     ) -> bool {
-        use legaia_engine_ui::ui_menu_window_painters::{
-            ChoiceFlags, label_list_draws_for, two_line_choice_panel_draws_for,
-        };
         let Some(world) = self.menu_world() else {
             return false;
         };
-        let Some(table) = assets.window_table() else {
+        let ctx = assets.menu_ctx(origin, scale);
+        let labels = &world.menu_context_labels;
+        let out = if menu.session.notice_is_up() {
+            let lines: Vec<&str> = labels.notice_lines.iter().map(String::as_str).collect();
+            pause_screen_draws(&ctx, PauseScreen::ContextNotice { lines: &lines })
+        } else if let Some(cursor_row) = menu.session.ready_confirm_cursor() {
+            pause_screen_draws(
+                &ctx,
+                PauseScreen::ContextReady {
+                    headings: [
+                        labels.ready_headings[0].as_str(),
+                        labels.ready_headings[1].as_str(),
+                    ],
+                    choices: [labels.choices[0].as_str(), labels.choices[1].as_str()],
+                    cursor: u32::from(cursor_row),
+                },
+            )
+        } else {
             return false;
         };
-        let font = assets.font_ref();
-        let labels = &world.menu_context_labels;
-        let hand = |x: i32, y: i32| -> Vec<TextDraw> {
-            // ASCII stand-in for the painter's cursor sprite, the same
-            // substitution every other browser menu screen makes.
-            ui::text_draws_for(&font.layout_ascii(">"), (x, y), ui::MENU_TEXT_GOLD)
-        };
-        if menu.session.notice_is_up() {
-            let Some((d, _)) =
-                ui::painter_at(table, WIN_CONTEXT_NOTICE, ui::MenuWindowPainter::LabelList)
-            else {
-                return false;
-            };
-            let lines: Vec<&str> = labels.notice_lines.iter().map(String::as_str).collect();
-            let (mut text, cursor) = label_list_draws_for(font, ui::painter_rect(d), &lines);
-            text.extend(hand(cursor.x, cursor.y));
-            ui::scale_stage_text_draws(&mut text, origin, scale);
-            texts.extend(text);
-            return true;
+        if out.is_empty() {
+            return false;
         }
-        if let Some(cursor_row) = menu.session.ready_confirm_cursor() {
-            let Some((d, _)) = ui::painter_at(
-                table,
-                WIN_CONTEXT_READY,
-                ui::MenuWindowPainter::TwoLineChoicePanel,
-            ) else {
-                return false;
-            };
-            let (mut text, sprites) = two_line_choice_panel_draws_for(
-                font,
-                ui::painter_rect(d),
-                [
-                    labels.ready_headings[0].as_str(),
-                    labels.ready_headings[1].as_str(),
-                ],
-                [labels.choices[0].as_str(), labels.choices[1].as_str()],
-                // The flag word is the shared cursor word `FUN_801D688C`
-                // maintains; sub-screen 3 keeps the plain, non-editing form.
-                ChoiceFlags(u32::from(cursor_row)),
-            );
-            for s in sprites {
-                text.extend(hand(s.x, s.y));
-            }
-            ui::scale_stage_text_draws(&mut text, origin, scale);
-            texts.extend(text);
-            return true;
-        }
-        false
+        texts.extend(out.texts);
+        true
     }
 
+    /// Top-level command list + money/time box + party info panel.
+    ///
+    /// Money, play time, cursor and per-row ink all come off the shared
+    /// session's view - the same projection the native window renders. The
+    /// page used to substitute `world.frame / 60` for the clock and a
+    /// literal `true` for every row's ink; the first made the H:MM:SS box a
+    /// per-page-load frame counter (and wrote that number into any save
+    /// taken from the browser), and the second drew a blocked row white.
     fn build_top_level(
         &self,
         assets: &PlayMenuAssets,
@@ -1021,17 +976,9 @@ impl LegaiaRuntime {
         origin: (i32, i32),
         scale: u32,
     ) {
-        use legaia_asset::menu_windows::window_ids;
         let Some(world) = self.menu_world() else {
             return;
         };
-        let font = &assets.font;
-        // Money, play time, cursor and per-row ink all come off the shared
-        // session's view - the same projection the native window renders. The
-        // page used to substitute `world.frame / 60` for the clock and a
-        // literal `true` for every row's ink; the first made the H:MM:SS box a
-        // per-page-load frame counter (and wrote that number into any save
-        // taken from the browser), and the second drew a blocked row white.
         let view = menu.session.view();
         let rows: Vec<FieldMenuRowView<'_>> = view
             .rows
@@ -1041,15 +988,6 @@ impl LegaiaRuntime {
                 enabled: r.enabled,
             })
             .collect();
-        let mut d = ui::field_menu_draws_for(
-            font,
-            &rows,
-            view.cursor,
-            view.money,
-            view.play_time_seconds,
-            assets.pen(window_ids::TOP_COMMAND_LIST),
-            assets.pen(window_ids::TOP_MONEY_TIME),
-        );
         let snaps = status_snapshots(world);
         let party: Vec<FieldMenuPartyView<'_>> = snaps
             .iter()
@@ -1063,40 +1001,24 @@ impl LegaiaRuntime {
                 ap: s.ap as u16,
             })
             .collect();
-        d.extend(ui::field_menu_info_draws_for(
-            font,
-            &party,
-            assets.pen(window_ids::TOP_INFO_PANEL),
-        ));
-        ui::scale_stage_text_draws(&mut d, origin, scale);
-        texts.extend(d);
-
-        if let Some((_, rects)) = assets.chrome.as_ref() {
-            for &id in &legaia_asset::menu_windows::TOP_LEVEL_WINDOWS {
-                sprites.extend(ui::menu_window_chrome_draws_for(
-                    rects,
-                    assets.frame_rect(id),
-                    origin,
-                    scale,
-                ));
-            }
-            let party_ap: Vec<u16> = snaps.iter().map(|s| s.ap as u16).collect();
-            sprites.extend(ui::field_menu_icon_sprites_for(
-                rects,
-                view.cursor,
-                &party_ap,
-                assets.pen(window_ids::TOP_COMMAND_LIST),
-                assets.pen(window_ids::TOP_MONEY_TIME),
-                assets.pen(window_ids::TOP_INFO_PANEL),
-                origin,
-                scale,
-            ));
-        }
+        let party_ap: Vec<u16> = snaps.iter().map(|s| s.ap as u16).collect();
+        let out = pause_screen_draws(
+            &assets.menu_ctx(origin, scale),
+            PauseScreen::TopLevel(TopLevelView {
+                rows: &rows,
+                cursor: view.cursor,
+                money: view.money,
+                play_time_seconds: view.play_time_seconds,
+                party: &party,
+                party_ap: &party_ap,
+            }),
+        );
+        sprites.extend(out.sprites);
+        texts.extend(out.texts);
     }
 
     /// Status sub-screen: the main panel + the three satellite windows + the
     /// Status tab, with the LV/HP/MP + AP-gauge + element icon sprites.
-    /// Mirrors the native window's `FieldMenuSubsession::Status` path.
     fn build_status(
         &self,
         assets: &PlayMenuAssets,
@@ -1106,9 +1028,6 @@ impl LegaiaRuntime {
         origin: (i32, i32),
         scale: u32,
     ) {
-        use legaia_asset::menu_windows::window_ids;
-        let font = &assets.font;
-        let has_chrome = assets.chrome.is_some();
         let Some(snap) = s.current() else {
             return;
         };
@@ -1127,7 +1046,7 @@ impl LegaiaRuntime {
             .iter()
             .map(|e| (e.label, e.item_name.as_str()))
             .collect();
-        let view = StatusPanelView {
+        let panel = StatusPanelView {
             name: &snap.name,
             level: snap.level,
             xp: snap.xp,
@@ -1141,81 +1060,28 @@ impl LegaiaRuntime {
             stat_rows: &stat_rows,
             equip_rows: &equip_rows,
         };
-        let mut d = ui::status_screen_draws_for(
-            font,
-            &view,
-            None,
-            assets.pen(window_ids::STATUS_MAIN),
-            has_chrome,
-        );
         let names: Vec<&str> = s.snapshots().iter().map(|m| m.name.as_str()).collect();
-        let sat = StatusSatelliteView {
+        let satellite = StatusSatelliteView {
             party_names: &names,
             cursor: s.cursor() as usize,
             name: &snap.name,
             level: snap.level,
         };
-        d.extend(ui::status_satellite_draws_for(
-            font,
-            &sat,
-            assets.pen(window_ids::STATUS_PARTY_LIST),
-            assets.pen(window_ids::STATUS_CONDITION),
-            assets.pen(window_ids::STATUS_SUMMARY),
-            has_chrome,
-        ));
-        d.extend(ui::tab_label_draws(
-            font,
-            "Status",
-            assets.pen(window_ids::TAB_STATUS),
-        ));
-        ui::scale_stage_text_draws(&mut d, origin, scale);
-        texts.extend(d);
-
-        if let Some((_, rects)) = assets.chrome.as_ref() {
-            for &id in &legaia_asset::menu_windows::STATUS_SCREEN_WINDOWS {
-                if id <= window_ids::TAB_OPTIONS {
-                    let (_, _, w, _) = assets.window_rect(id);
-                    sprites.extend(ui::tab_banner_draws(
-                        rects,
-                        assets.pen(id),
-                        w,
-                        origin,
-                        scale,
-                    ));
-                } else {
-                    sprites.extend(ui::menu_window_chrome_draws_for(
-                        rects,
-                        assets.frame_rect(id),
-                        origin,
-                        scale,
-                    ));
-                }
-            }
-            let ap = snap.ap as u16;
-            sprites.extend(ui::status_icon_sprites_for(
-                rects,
-                assets.pen(window_ids::STATUS_MAIN),
-                ap,
-                origin,
-                scale,
-            ));
-            let atr_char = snap.slot as usize;
-            sprites.extend(ui::status_satellite_icon_sprites_for(
-                rects,
-                s.cursor() as usize,
-                atr_char,
-                assets.pen(window_ids::STATUS_PARTY_LIST),
-                assets.pen(window_ids::STATUS_CONDITION),
-                assets.pen(window_ids::STATUS_SUMMARY),
-                origin,
-                scale,
-            ));
-        }
+        let out = pause_screen_draws(
+            &assets.menu_ctx(origin, scale),
+            PauseScreen::Status(StatusScreenView {
+                panel: &panel,
+                satellite: &satellite,
+                ap: snap.ap as u16,
+                atr_char: snap.slot as usize,
+            }),
+        );
+        sprites.extend(out.sprites);
+        texts.extend(out.texts);
     }
 
     /// Options sub-screen: the settings rows + value popup + the hand cursor,
-    /// with the options window frame + tab. Mirrors the native window's
-    /// `FieldMenuSubsession::Config` path.
+    /// with the options window frame + tab.
     fn build_config(
         &self,
         assets: &PlayMenuAssets,
@@ -1225,8 +1091,6 @@ impl LegaiaRuntime {
         origin: (i32, i32),
         scale: u32,
     ) {
-        use legaia_asset::menu_windows::window_ids;
-        let font = &assets.font;
         let rows = s.state().rows();
         let row_views: Vec<ui::OptionsRowView<'_>> = rows
             .iter()
@@ -1237,72 +1101,27 @@ impl LegaiaRuntime {
                 advance: r.advance,
             })
             .collect();
-        let popup_rect = s.popup().map(|p| self.options_popup_rect(assets, &p));
-        let popup = s
-            .popup()
-            .zip(popup_rect)
-            .map(|(p, rect)| ui::OptionsPopupDraw {
-                rect,
-                choices: p.choices,
-                cursor: p.cursor,
-            });
-        let mut d = ui::options_draws_for(
-            font,
-            &row_views,
-            s.cursor(),
-            popup.as_ref(),
-            assets.pen(window_ids::OPTIONS_MAIN),
-        );
-        d.extend(ui::tab_label_draws(
-            font,
-            "Options",
-            assets.pen(window_ids::TAB_OPTIONS),
-        ));
-        ui::scale_stage_text_draws(&mut d, origin, scale);
-        texts.extend(d);
-
-        if let Some((_, rects)) = assets.chrome.as_ref() {
-            for &id in &legaia_asset::menu_windows::OPTIONS_SCREEN_WINDOWS {
-                if id <= window_ids::TAB_OPTIONS {
-                    let (_, _, w, _) = assets.window_rect(id);
-                    sprites.extend(ui::tab_banner_draws(
-                        rects,
-                        assets.pen(id),
-                        w,
-                        origin,
-                        scale,
-                    ));
-                } else {
-                    sprites.extend(ui::menu_window_chrome_draws_for(
-                        rects,
-                        assets.frame_rect(id),
-                        origin,
-                        scale,
-                    ));
-                }
-            }
-            if let Some(p) = s.popup() {
-                let (x, y, w, h) = self.options_popup_rect(assets, &p);
-                sprites.extend(ui::menu_window_chrome_draws_for(
-                    rects,
-                    (x - 6, y - 2, w + 12, h + 12),
-                    origin,
-                    scale,
-                ));
-            }
-            let row_y_off: i32 = rows
-                .iter()
-                .take(s.cursor() as usize)
-                .map(|r| r.advance)
-                .sum();
-            sprites.push(ui::options_hand_cursor_sprite(
-                rects,
-                assets.pen(window_ids::OPTIONS_MAIN),
+        let popup = s.popup().map(|p| ui::OptionsPopupDraw {
+            rect: self.options_popup_rect(assets, &p),
+            choices: p.choices,
+            cursor: p.cursor,
+        });
+        let row_y_off: i32 = rows
+            .iter()
+            .take(s.cursor() as usize)
+            .map(|r| r.advance)
+            .sum();
+        let out = pause_screen_draws(
+            &assets.menu_ctx(origin, scale),
+            PauseScreen::Options(OptionsScreenView {
+                rows: &row_views,
+                cursor: s.cursor(),
+                popup,
                 row_y_off,
-                origin,
-                scale,
-            ));
-        }
+            }),
+        );
+        sprites.extend(out.sprites);
+        texts.extend(out.texts);
     }
 
     /// Tactical Arts chain editor, inside the generic sub-window frame.
@@ -1312,7 +1131,7 @@ impl LegaiaRuntime {
     /// is projected by the shared `arts_editor_view`, so the character
     /// name, the pretty-printed sequences and the "+ New" room check are
     /// the same code the native window runs - only the borrow into
-    /// `ArtsEditorDrawArgs` and the stage transform are per host.
+    /// `ArtsEditorDrawArgs` is per host.
     fn build_arts_editor(
         &self,
         assets: &PlayMenuAssets,
@@ -1325,15 +1144,6 @@ impl LegaiaRuntime {
         let Some(world) = self.menu_world() else {
             return;
         };
-        if let Some((_, rects)) = assets.chrome.as_ref() {
-            let (x, y, w, h) = SUBWINDOW_CONTENT;
-            sprites.extend(ui::menu_window_chrome_draws_for(
-                rects,
-                (x - 8, y - 8, w + 16, h + 16),
-                origin,
-                scale,
-            ));
-        }
         let view = field_menu_dispatch::arts_editor_view(editor, world);
         let saved_rows: Vec<ui::ArtsChainRow<'_>> = view
             .saved
@@ -1359,9 +1169,12 @@ impl LegaiaRuntime {
             naming_name: &view.naming_name,
             can_add_new: view.can_add_new,
         };
-        let mut d = ui::tactical_arts_editor_draws_for(&assets.font, args, (16, 32));
-        ui::scale_stage_text_draws(&mut d, origin, scale);
-        texts.extend(d);
+        let out = pause_screen_draws(
+            &assets.menu_ctx(origin, scale),
+            PauseScreen::Generic(GenericContent::Arts(args)),
+        );
+        sprites.extend(out.sprites);
+        texts.extend(out.texts);
     }
 
     /// Answer the card read [`SaveScreenFlow`] is waiting on, if any.
@@ -1627,9 +1440,10 @@ impl LegaiaRuntime {
 
     /// Items sub-screen: the retail four-window layout (command 13 / list
     /// 15 / info 17 + the "Items" tab) fed from the engine-core session
-    /// model - identical draw lists to the native window's
-    /// `pause_items_draws`. During target-select the generic overlay
-    /// stands in (its retail window layout is unpinned).
+    /// model. During target-select retail replaces the item list with
+    /// window 14 - the party target panel (`FUN_801D0520`); the generic
+    /// overlay only stands in when there is no world (and so no roster)
+    /// behind the session.
     fn build_items(
         &self,
         assets: &PlayMenuAssets,
@@ -1639,14 +1453,9 @@ impl LegaiaRuntime {
         origin: (i32, i32),
         scale: u32,
     ) {
-        use legaia_asset::menu_windows::window_ids;
-        let font = &assets.font;
+        let ctx = assets.menu_ctx(origin, scale);
         let model = legaia_engine_core::pause_screens::items_screen_model(s);
         if model.target_select {
-            // Retail replaces the item list with window 14 - the party
-            // target panel (`FUN_801D0520`) - for the target pick. The
-            // generic overlay only stands in when there is no world (and
-            // so no roster) behind the session.
             if let Some(panel) = self
                 .menu_world()
                 .and_then(|w| legaia_engine_core::pause_screens::target_panel_view_model(s, w))
@@ -1660,65 +1469,19 @@ impl LegaiaRuntime {
                     label_icons: assets.chrome.is_some(),
                     text_cursor: assets.chrome.is_none(),
                 };
-                let pen = assets.pen(14);
-                let pen = if pen == (0, 0) {
-                    let (x, y, _, _) = ui::TARGET_PANEL_RECT;
-                    (x, y)
-                } else {
-                    pen
-                };
-                let mut d = ui::target_panel_draws_for(font, &view, pen);
-                d.extend(ui::tab_label_draws(
-                    font,
-                    "Items",
-                    assets.pen(window_ids::TAB_ITEMS),
-                ));
-                ui::scale_stage_text_draws(&mut d, origin, scale);
-                texts.extend(d);
-                if let Some((_, rects)) = assets.chrome.as_ref() {
-                    // The screen's window set for this beat is
-                    // `[TAB_ITEMS, 14]` - the tab stays and the item list is
-                    // replaced. The tab wears the carved plaque like every
-                    // other pause tab (ids <= TAB_OPTIONS take
-                    // `tab_banner_draws`, not the 9-slice frame); without it
-                    // the label floats over bare scene while the native
-                    // window draws the plaque, which is the whole reason the
-                    // set is a set and not just window 14.
-                    let (_, _, tab_w, _) = assets.window_rect(window_ids::TAB_ITEMS);
-                    sprites.extend(ui::tab_banner_draws(
-                        rects,
-                        assets.pen(window_ids::TAB_ITEMS),
-                        tab_w,
-                        origin,
-                        scale,
-                    ));
-                    // Frame window 14 itself, not the generic near-fullscreen
-                    // overlay the stand-in used.
-                    let (_, _, w, h) = ui::TARGET_PANEL_RECT;
-                    sprites.extend(ui::menu_window_chrome_draws_for(
-                        rects,
-                        (pen.0 - 8, pen.1 - 8, w + 16, h + 16),
-                        origin,
-                        scale,
-                    ));
-                    sprites.extend(ui::target_panel_sprites_for(
-                        rects, &view, pen, origin, scale,
-                    ));
-                }
+                let out = pause_screen_draws(&ctx, PauseScreen::ItemsTarget(&view));
+                sprites.extend(out.sprites);
+                texts.extend(out.texts);
                 return;
             }
-            let mut d = self.items_session_draws(assets, &s.inner);
-            ui::scale_stage_text_draws(&mut d, origin, scale);
-            texts.extend(d);
-            if let Some((_, rects)) = assets.chrome.as_ref() {
-                let (x, y, w, h) = SUBWINDOW_CONTENT;
-                sprites.extend(ui::menu_window_chrome_draws_for(
-                    rects,
-                    (x - 8, y - 8, w + 16, h + 16),
-                    origin,
-                    scale,
-                ));
-            }
+            let out = pause_screen_draws(
+                &ctx,
+                PauseScreen::Generic(GenericContent::Prebuilt(
+                    self.items_session_draws(assets, &s.inner),
+                )),
+            );
+            sprites.extend(out.sprites);
+            texts.extend(out.texts);
             return;
         }
         let rows: Vec<ui::PauseItemsRow<'_>> = model
@@ -1735,199 +1498,76 @@ impl LegaiaRuntime {
             desc: &i.desc,
             passive: i.passive.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
         });
-        let phase = if model.focus_list {
-            ui::PauseItemsPhase::List
-        } else {
-            ui::PauseItemsPhase::Command
-        };
         let view = ui::PauseItemsView {
             rows: &rows,
             page: model.page,
             pages: model.pages,
-            phase,
+            phase: if model.focus_list {
+                ui::PauseItemsPhase::List
+            } else {
+                ui::PauseItemsPhase::Command
+            },
             command_cursor: model.command_cursor,
             list_cursor: model.list_cursor_on_page,
             bag_empty: model.bag_empty,
             info,
             text_cursor: assets.chrome.is_none(),
         };
-        let mut d = ui::items_screen_draws_for(
-            font,
-            &view,
-            assets.pen(window_ids::ITEMS_COMMAND),
-            assets.pen(window_ids::ITEMS_LIST),
-            assets.pen(window_ids::ITEMS_INFO),
-        );
-        // The shared info panel's Point Card arm, the browser twin of the
-        // native host's (`window/menu_draws.rs`): retail branches on the staged
-        // id being `0xFE` and prints the live bank instead of the passive lines
-        // (`FUN_801D0F1C` at `0x801d0fd0`).
-        if model.info.as_ref().is_some_and(|i| i.is_point_card) {
-            let points = self
-                .scene_host
-                .as_ref()
-                .map(|h| h.world.point_card.max(0) as u32)
-                .unwrap_or(0);
-            d.extend(ui::item_points_panel_draws(
-                font,
-                assets.pen(window_ids::ITEMS_INFO),
-                points,
-            ));
-        }
-        d.extend(ui::tab_label_draws(
-            font,
-            "Items",
-            assets.pen(window_ids::TAB_ITEMS),
-        ));
-        // Throw Out confirm prompt (descriptor id 9, renderer FUN_801D1B20):
-        // the Yes/No window over the command window. Text overlay at the
-        // descriptor pen (frame chrome still caller-pending), pinned-rect
-        // fallback when the descriptor table is unavailable.
-        if let Some(confirm) = model.throw_confirm.as_ref() {
-            let pen = assets.pen(9);
-            let pen = if pen == (0, 0) {
-                let (x, y, _, _) = ui::ITEMS_THROW_CONFIRM_RECT;
-                (x, y)
-            } else {
-                pen
-            };
-            let view = ui::PauseThrowConfirmView {
-                name: &confirm.name,
-                count: confirm.count,
-                cursor: confirm.cursor,
+        let throw = model
+            .throw_confirm
+            .as_ref()
+            .map(|c| ui::PauseThrowConfirmView {
+                name: &c.name,
+                count: c.count,
+                cursor: c.cursor,
                 text_cursor: assets.chrome.is_none(),
-            };
-            d.extend(ui::items_throw_confirm_draws_for(font, &view, pen));
-            // The confirm's hand cursor is an atlas sprite whenever the
-            // chrome atlas is loaded; the ASCII `>` above is its stand-in.
-            if let Some((_, rects)) = assets.chrome.as_ref() {
-                sprites.extend(ui::items_throw_confirm_sprites_for(
-                    rects,
-                    confirm.cursor,
-                    pen,
-                    origin,
-                    scale,
-                ));
+            });
+        // Retail's own Use-route prompt strings live in the menu overlay's
+        // unrecovered data segment, so the port stages the item name and its
+        // own question in the retail line slots - the geometry, which is what
+        // the renderer is, is exact.
+        let special_one_line = model
+            .special_confirm
+            .as_ref()
+            .map(|sc| format!("Use {}?", sc.item_name));
+        let special_lines: Vec<&str> = match (model.special_confirm.as_ref(), &special_one_line) {
+            (Some(sc), Some(one)) => {
+                if matches!(
+                    sc.route,
+                    legaia_engine_core::pause_screens::UseRoute::Incense
+                ) {
+                    vec![sc.item_name.as_str(), "Use it?"]
+                } else {
+                    vec![one.as_str()]
+                }
             }
-        }
-        // Special Use-route confirm (submenu 0xB Door of Light -> window 10 /
-        // FUN_801D1DAC, submenu 0xD Incense -> window 12 / FUN_801D1F10). A
-        // different window and renderer from the Throw Out confirm above, and
-        // the cursor seeds to Yes rather than No. Mirrors the native window's
-        // `pause_items_draws`; retail's own prompt strings live in the menu
-        // overlay's unrecovered data segment, so the port stages the item name
-        // and its own question in the retail line slots - the geometry, which
-        // is what the renderer is, is exact.
-        let special_pen = model.special_confirm.as_ref().map(|sc| {
-            let two_line = matches!(
-                sc.route,
-                legaia_engine_core::pause_screens::UseRoute::Incense
-            );
-            let prompt_lines = if two_line { 2 } else { 1 };
-            let (win_id, fallback) = ui::use_confirm_window(prompt_lines);
-            let pen = assets.pen(win_id);
-            let pen = if pen == (0, 0) {
-                (fallback.0, fallback.1)
-            } else {
-                pen
-            };
-            (prompt_lines, pen)
-        });
-        if let (Some(sc), Some((prompt_lines, pen))) = (model.special_confirm.as_ref(), special_pen)
-        {
-            let one_line = format!("Use {}?", sc.item_name);
-            let lines: Vec<&str> = if prompt_lines == 2 {
-                vec![sc.item_name.as_str(), "Use it?"]
-            } else {
-                vec![one_line.as_str()]
-            };
-            d.extend(ui::confirm_prompt_draws(font, &lines, &["Yes", "No"], pen));
-            if assets.chrome.is_none() {
-                let (hx, hy) = ui::confirm_prompt_hand_pos(pen, prompt_lines, sc.cursor);
-                d.extend(ui::text_draws_for(
-                    &font.layout_ascii(">"),
-                    (hx, hy),
-                    ui::MENU_TEXT_GOLD,
-                ));
-            }
-        }
-        ui::scale_stage_text_draws(&mut d, origin, scale);
-        texts.extend(d);
-
-        let Some((_, rects)) = assets.chrome.as_ref() else {
-            return;
+            _ => Vec::new(),
         };
-        // The confirm's own 9-slice frame + the hand on the focused option
-        // row. The hand goes through retail's per-record quad drawer
-        // `FUN_801E3FF0` at the neutral `0x80` modulation.
-        if let (Some(sc), Some((prompt_lines, pen))) = (model.special_confirm.as_ref(), special_pen)
-        {
-            let (_, fallback) = ui::use_confirm_window(prompt_lines);
-            let rect = {
-                let r = assets.window_rect(ui::use_confirm_window(prompt_lines).0);
-                if r == (0, 0, 0, 0) { fallback } else { r }
-            };
-            sprites.extend(ui::menu_window_chrome_draws_for(
-                rects,
-                (rect.0 - 8, rect.1 - 8, rect.2 + 16, rect.3 + 16),
-                origin,
-                scale,
-            ));
-            let hand = ui::confirm_prompt_hand_pos(pen, prompt_lines, sc.cursor);
-            sprites.push(ui::save_ui_record_quad(
-                rects.cursor,
-                (0x80, 0x80, 0x80),
-                hand,
-                origin,
-                scale,
-            ));
-        }
-        for &id in &legaia_asset::menu_windows::ITEMS_SCREEN_WINDOWS {
-            if id <= window_ids::TAB_OPTIONS {
-                let (_, _, w, _) = assets.window_rect(id);
-                sprites.extend(ui::tab_banner_draws(
-                    rects,
-                    assets.pen(id),
-                    w,
-                    origin,
-                    scale,
-                ));
-            } else {
-                sprites.extend(ui::menu_window_chrome_draws_for(
-                    rects,
-                    assets.frame_rect(id),
-                    origin,
-                    scale,
-                ));
-            }
-        }
-        // The id-17 info renderer's extra widget box below its own window.
-        let (bx, by, bw, bh) = ui::ITEMS_INFO_EXTRA_BOX_RECT;
-        sprites.extend(ui::menu_window_chrome_draws_for(
-            rects,
-            (bx - 8, by - 8, bw + 16, bh + 16),
-            origin,
-            scale,
-        ));
-        sprites.extend(ui::items_screen_sprites_for(
-            rects,
-            phase,
-            model.command_cursor,
-            model.list_cursor_on_page,
-            model.page,
-            model.pages,
-            assets.pen(window_ids::ITEMS_COMMAND),
-            assets.pen(window_ids::ITEMS_LIST),
-            origin,
-            scale,
-        ));
+        let point_card = model.info.as_ref().filter(|i| i.is_point_card).map(|_| {
+            self.menu_world()
+                .map(|w| w.point_card.max(0) as u32)
+                .unwrap_or(0)
+        });
+        let out = pause_screen_draws(
+            &ctx,
+            PauseScreen::Items(ItemsScreenView {
+                view: &view,
+                point_card,
+                throw_confirm: throw.as_ref(),
+                special_confirm: model.special_confirm.as_ref().map(|sc| SpecialConfirmView {
+                    lines: &special_lines,
+                    cursor: sc.cursor,
+                }),
+            }),
+        );
+        sprites.extend(out.sprites);
+        texts.extend(out.texts);
     }
 
     /// Magic sub-screen: the retail four-window layout (list 18 / caster
     /// 19 / info 20 + the "Magic" tab) fed from the engine-core session
-    /// model - identical draw lists to the native window's
-    /// `pause_magic_draws`. During target-select the generic overlay
-    /// stands in.
+    /// model. During target-select the generic overlay stands in (its
+    /// retail window layout is unpinned).
     fn build_spells(
         &self,
         assets: &PlayMenuAssets,
@@ -1937,8 +1577,7 @@ impl LegaiaRuntime {
         origin: (i32, i32),
         scale: u32,
     ) {
-        use legaia_asset::menu_windows::window_ids;
-        let font = &assets.font;
+        let ctx = assets.menu_ctx(origin, scale);
         let model = legaia_engine_core::pause_screens::magic_screen_model(
             s,
             self.menu_world().and_then(|w| w.menu_text.as_ref()),
@@ -1968,73 +1607,31 @@ impl LegaiaRuntime {
                 desc: &i.desc,
                 mp_cost: i.mp_cost,
             });
-            let phase = if model.focus_list {
-                ui::PauseMagicPhase::List
-            } else {
-                ui::PauseMagicPhase::Caster
-            };
             let view = ui::PauseMagicView {
                 casters: &casters,
                 rows: &rows,
                 page: model.page,
                 pages: model.pages,
-                phase,
+                phase: if model.focus_list {
+                    ui::PauseMagicPhase::List
+                } else {
+                    ui::PauseMagicPhase::Caster
+                },
                 caster_cursor: model.caster_cursor,
                 list_cursor: model.list_cursor_on_page,
                 info,
                 label_icons: assets.chrome.is_some(),
                 text_cursor: assets.chrome.is_none(),
             };
-            let mut d = ui::magic_screen_draws_for(
-                font,
-                &view,
-                assets.pen(window_ids::MAGIC_CASTER),
-                assets.pen(window_ids::MAGIC_LIST),
-                assets.pen(window_ids::MAGIC_INFO),
+            let out = pause_screen_draws(
+                &ctx,
+                PauseScreen::Magic(MagicScreenView {
+                    view: &view,
+                    casters: model.casters.len(),
+                }),
             );
-            d.extend(ui::tab_label_draws(
-                font,
-                "Magic",
-                assets.pen(window_ids::TAB_MAGIC),
-            ));
-            ui::scale_stage_text_draws(&mut d, origin, scale);
-            texts.extend(d);
-
-            let Some((_, rects)) = assets.chrome.as_ref() else {
-                return;
-            };
-            for &id in &legaia_asset::menu_windows::MAGIC_SCREEN_WINDOWS {
-                if id <= window_ids::TAB_OPTIONS {
-                    let (_, _, w, _) = assets.window_rect(id);
-                    sprites.extend(ui::tab_banner_draws(
-                        rects,
-                        assets.pen(id),
-                        w,
-                        origin,
-                        scale,
-                    ));
-                } else {
-                    sprites.extend(ui::menu_window_chrome_draws_for(
-                        rects,
-                        assets.frame_rect(id),
-                        origin,
-                        scale,
-                    ));
-                }
-            }
-            sprites.extend(ui::magic_screen_sprites_for(
-                rects,
-                model.casters.len(),
-                phase,
-                model.caster_cursor,
-                model.list_cursor_on_page,
-                model.page,
-                model.pages,
-                assets.pen(window_ids::MAGIC_CASTER),
-                assets.pen(window_ids::MAGIC_LIST),
-                origin,
-                scale,
-            ));
+            sprites.extend(out.sprites);
+            texts.extend(out.texts);
             return;
         }
         let names: Vec<&str> = s.party().iter().map(|c| c.name.as_str()).collect();
@@ -2081,25 +1678,14 @@ impl LegaiaRuntime {
             cursor,
             phase,
         };
-        let mut d = ui::spell_menu_draws_for(font, args, (32, 32));
-        ui::scale_stage_text_draws(&mut d, origin, scale);
-        texts.extend(d);
-        if let Some((_, rects)) = assets.chrome.as_ref() {
-            let (x, y, w, h) = SUBWINDOW_CONTENT;
-            sprites.extend(ui::menu_window_chrome_draws_for(
-                rects,
-                (x - 8, y - 8, w + 16, h + 16),
-                origin,
-                scale,
-            ));
-        }
+        let out = pause_screen_draws(&ctx, PauseScreen::Generic(GenericContent::SpellMenu(args)));
+        sprites.extend(out.sprites);
+        texts.extend(out.texts);
     }
 
     /// Equip sub-screen: the retail multi-window layout (party / item-list /
     /// main window + the Equip tab) + the slot pictogram column and hand
-    /// cursors. Mirrors the native window's `FieldMenuSubsession::Equip` path
-    /// (`equip_session_draws` -> `equip_screen_draws_for` +
-    /// `equip_screen_sprites_for`).
+    /// cursors.
     #[allow(clippy::too_many_arguments)]
     fn build_equip(
         &self,
@@ -2111,50 +1697,15 @@ impl LegaiaRuntime {
         origin: (i32, i32),
         scale: u32,
     ) {
-        use legaia_asset::menu_windows::window_ids;
-        let mut d = self.equip_session_draws(assets, session, char_slot);
-        ui::scale_stage_text_draws(&mut d, origin, scale);
-        texts.extend(d);
-
-        let Some((_, rects)) = assets.chrome.as_ref() else {
-            return;
-        };
-        for &id in &legaia_asset::menu_windows::EQUIP_SCREEN_WINDOWS {
-            if id <= window_ids::TAB_OPTIONS {
-                let (_, _, w, _) = assets.window_rect(id);
-                sprites.extend(ui::tab_banner_draws(
-                    rects,
-                    assets.pen(id),
-                    w,
-                    origin,
-                    scale,
-                ));
-            } else {
-                sprites.extend(ui::menu_window_chrome_draws_for(
-                    rects,
-                    assets.frame_rect(id),
-                    origin,
-                    scale,
-                ));
-            }
-        }
-        let slot_cursor = match session.state() {
-            EquipState::SlotPicker { cursor } => Some(cursor as u16),
-            _ => None,
-        };
-        // Retail draws 7 pictogram rows (the 8th slot stays navigable but
-        // icon-less), matching `field_menu_chrome_sprite_draws`.
-        let n_rows = session.record().equip.len().min(7);
-        sprites.extend(ui::equip_screen_sprites_for(
-            rects,
-            n_rows,
-            assets.pen(window_ids::EQUIP_MAIN),
-            assets.pen(window_ids::EQUIP_PARTY),
-            char_slot as usize,
-            slot_cursor,
-            origin,
-            scale,
-        ));
+        let ctx = assets.menu_ctx(origin, scale);
+        let names = self
+            .menu_world()
+            .map(field_menu_dispatch::roster_names)
+            .unwrap_or_default();
+        let m = legaia_engine_core::pause_screens::equip_screen_model(session, char_slot, &names);
+        let out = equip_screen_compose(&ctx, &equip_compose_input(&m, assets.chrome.is_none()));
+        sprites.extend(out.sprites);
+        texts.extend(out.texts);
     }
 
     /// Build the inventory item-use overlay text draws. Ported verbatim from
@@ -2227,165 +1778,6 @@ impl LegaiaRuntime {
             selected_item_name,
         };
         ui::inventory_use_draws_for(font, args, (16, 32))
-    }
-
-    /// Build the equip-screen text draws. Ported from the native shell's
-    /// `equip_session_draws`; resolves the same three retail stat-compare rows
-    /// off `compute_battle_stats`.
-    fn equip_session_draws(
-        &self,
-        assets: &PlayMenuAssets,
-        session: &EquipSession,
-        char_slot: u8,
-    ) -> Vec<TextDraw> {
-        use legaia_asset::menu_windows::window_ids;
-        use legaia_engine_core::equipment::EquipSlot;
-        let font = &assets.font;
-
-        let names = self
-            .menu_world()
-            .map(field_menu_dispatch::roster_names)
-            .unwrap_or_default();
-        let party_names: Vec<&str> = names.iter().map(String::as_str).collect();
-
-        let record = session.record();
-        let mut slot_label_buf: Vec<String> = Vec::with_capacity(8);
-        for i in 0..8u8 {
-            let label = EquipSlot::from_index(i)
-                .map(|s| s.label().to_string())
-                .unwrap_or_else(|| format!("Slot {i}"));
-            slot_label_buf.push(label);
-        }
-        let mut slot_item_buf: Vec<String> = Vec::with_capacity(8);
-        for &id in record.equip.iter() {
-            slot_item_buf.push(if id == 0 {
-                String::new()
-            } else {
-                format!("Item {id:02X}")
-            });
-        }
-        let slot_rows: Vec<ui::EquipSlotRow<'_>> = (0..8usize)
-            .map(|i| ui::EquipSlotRow {
-                label: &slot_label_buf[i],
-                current_name: &slot_item_buf[i],
-            })
-            .collect();
-
-        let (phase, cursor, active_slot, confirm_label_owned) = match session.state() {
-            EquipState::SlotPicker { cursor } => {
-                (ui::EquipDrawPhase::SlotPicker, cursor as u16, cursor, None)
-            }
-            EquipState::ItemPicker { slot, cursor } => {
-                (ui::EquipDrawPhase::ItemPicker, cursor, slot, None)
-            }
-            EquipState::Confirm {
-                slot,
-                item_id,
-                cursor,
-            } => {
-                let label = format!("Equip Item {item_id:02X}?");
-                (
-                    ui::EquipDrawPhase::Confirm,
-                    cursor as u16,
-                    slot,
-                    Some(label),
-                )
-            }
-            EquipState::Done(_) => (ui::EquipDrawPhase::SlotPicker, 0, 0, None),
-        };
-
-        let (candidate_names, candidate_counts, considered_id): (Vec<String>, Vec<u8>, Option<u8>) =
-            if phase == ui::EquipDrawPhase::SlotPicker {
-                (Vec::new(), Vec::new(), None)
-            } else {
-                let items = session.items_for_slot(active_slot);
-                let names: Vec<String> = items
-                    .iter()
-                    .map(|it| format!("Item {:02X}", it.id))
-                    .collect();
-                let counts: Vec<u8> = items
-                    .iter()
-                    .map(|it| session.inventory().get(&it.id).copied().unwrap_or(0))
-                    .collect();
-                let considered = match session.state() {
-                    EquipState::Confirm { item_id, .. } => Some(item_id),
-                    _ => items.get(cursor as usize).map(|it| it.id),
-                };
-                (names, counts, considered)
-            };
-        let candidate_rows: Vec<ui::EquipCandidateRow<'_>> = candidate_names
-            .iter()
-            .zip(candidate_counts.iter())
-            .map(|(name, count)| ui::EquipCandidateRow {
-                name,
-                count: *count,
-            })
-            .collect();
-
-        let stat_compare: Vec<ui::EquipStatRow<'_>> = match considered_id {
-            Some(id) => {
-                let neutral = legaia_engine_core::battle_stats::StatusModifiers::default();
-                let cur = legaia_engine_core::battle_stats::compute_battle_stats(
-                    record,
-                    session.equipment(),
-                    &[],
-                    &neutral,
-                );
-                let mut copy = *record;
-                copy.equip[active_slot as usize] = id;
-                let new = legaia_engine_core::battle_stats::compute_battle_stats(
-                    &copy,
-                    session.equipment(),
-                    &[],
-                    &neutral,
-                );
-                vec![
-                    ui::EquipStatRow {
-                        label: "ATK",
-                        current: cur.atk,
-                        preview: new.atk,
-                    },
-                    ui::EquipStatRow {
-                        label: "UDF",
-                        current: cur.udf,
-                        preview: new.udf,
-                    },
-                    ui::EquipStatRow {
-                        label: "LDF",
-                        current: cur.ldf,
-                        preview: new.ldf,
-                    },
-                ]
-            }
-            None => Vec::new(),
-        };
-
-        let view = ui::EquipScreenView {
-            party_names: &party_names,
-            party_cursor: char_slot as usize,
-            slots: &slot_rows,
-            candidates: &candidate_rows,
-            stat_compare: &stat_compare,
-            phase,
-            cursor,
-            active_slot,
-            confirm_label: confirm_label_owned.as_deref(),
-            // Hand-cursor sprites come from the chrome atlas when resident.
-            text_cursor: assets.chrome.is_none(),
-        };
-        let mut d = ui::equip_screen_draws_for(
-            font,
-            &view,
-            assets.pen(window_ids::EQUIP_PARTY),
-            assets.pen(window_ids::EQUIP_LIST),
-            assets.pen(window_ids::EQUIP_MAIN),
-        );
-        d.extend(ui::tab_label_draws(
-            font,
-            "Equip",
-            assets.pen(window_ids::TAB_EQUIP),
-        ));
-        d
     }
 
     /// The options value popup's per-open content rect (its y/h are stamped

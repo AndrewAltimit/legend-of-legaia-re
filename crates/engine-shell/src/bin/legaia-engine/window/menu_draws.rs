@@ -1,22 +1,38 @@
-//! Extracted from `window.rs` (mechanical split; behavior-preserving).
+//! The native `play-window`'s half of the pause menu: projecting the live
+//! `engine-core` sessions into the plain view structs the shared composition
+//! takes.
+//!
+//! The composition itself - which windows a screen frames, which painter
+//! draws its title tab, where the modals sit in the sprite order and the
+//! final stage scale - lives in
+//! [`legaia_engine_ui::pause_menu`](legaia_engine_render::pause_menu), so the
+//! browser play page runs the same one. This module used to own a private
+//! copy of it, which is both a tier-7 drift risk and the reason no library
+//! test could enter a single pause-menu draw builder.
 
 use super::*;
-
-/// Menu-overlay descriptor id of the **spell level-up notice** window
-/// (renderer `FUN_801DCCB4` - `engine-ui`'s `CharPrompt` painter). Mirrored
-/// by the browser play page (`web-viewer::play_menu`).
-const WIN_MAGIC_LEVEL_NOTICE: usize = 7;
-
-/// Descriptor id of the kind-`0x0D` **notice panel** (`FUN_801D6360` -
-/// `engine-ui`'s `LabelList` painter), opened by menu sub-screen `4`'s
-/// script `0x801E4BE0`. Mirrored by the browser play page.
-const WIN_CONTEXT_NOTICE: usize = 6;
-/// Descriptor id of the kind-`0x0D` **ready check** (`FUN_801D61B0` -
-/// `engine-ui`'s `TwoLineChoicePanel` painter), opened by sub-screen `3`'s
-/// script `0x801E4BD4`. Mirrored by the browser play page.
-const WIN_CONTEXT_READY: usize = 5;
+use legaia_engine_render::pause_menu::{
+    EquipComposeInput, GenericContent, ItemsScreenView, MagicScreenView, MenuRects,
+    OptionsScreenView, PauseMenuCtx, PauseMenuDraws, PauseScreen, SpecialConfirmView,
+    StatusScreenView, TopLevelView, equip_screen_compose, pause_screen_draws,
+    spell_level_notice_draws,
+};
 
 impl PlayWindowApp {
+    /// The shared pause-menu composition context for this frame: the font,
+    /// the descriptor-rect resolver, the chrome atlas band rects (absent
+    /// without a disc) and the boot-UI stage transform.
+    pub(super) fn menu_ctx(&self, surface_w: u32, surface_h: u32) -> PauseMenuCtx<'_> {
+        let (origin, scale) = self.save_select_stage(surface_w, surface_h);
+        PauseMenuCtx {
+            font: &self.font,
+            rects: MenuRects::new(self.menu_window_table.as_ref()),
+            chrome: self.save_menu.as_ref().map(|a| &a.rects),
+            origin,
+            scale,
+        }
+    }
+
     /// Windows 6 and 5 - the pair the pause menu draws when the op-`0x49`
     /// entry context's kind byte is `0x0D`.
     ///
@@ -29,61 +45,38 @@ impl PlayWindowApp {
     /// rect, and both take their text from the overlay's own string pool
     /// via [`legaia_engine_core::pause_screens::ContextLockedLabels`], so
     /// no label is invented here.
-    pub(super) fn context_locked_screen_draws(&self) -> Vec<TextDraw> {
-        use legaia_engine_render::MenuWindowPainter;
-        use legaia_engine_render::ui_menu_window_painters::{
-            ChoiceFlags, label_list_draws_for, two_line_choice_panel_draws_for,
-        };
+    pub(super) fn context_locked_screen_draws(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> PauseMenuDraws {
         let Some(menu) = self.session.field_menu.as_ref() else {
-            return Vec::new();
+            return PauseMenuDraws::default();
         };
-        let Some(table) = self.menu_window_table.as_ref() else {
-            return Vec::new();
-        };
+        let ctx = self.menu_ctx(surface_w, surface_h);
         let labels = &self.session.host.world.menu_context_labels;
         if menu.notice_is_up() {
-            let Some((d, _)) = legaia_engine_render::painter_at(
-                table,
-                WIN_CONTEXT_NOTICE,
-                MenuWindowPainter::LabelList,
-            ) else {
-                return Vec::new();
-            };
             let lines: Vec<&str> = labels.notice_lines.iter().map(String::as_str).collect();
-            let (mut out, cursor) =
-                label_list_draws_for(&self.font, legaia_engine_render::painter_rect(d), &lines);
-            out.extend(self.painter_cursor_stand_in(cursor));
-            return out;
+            return pause_screen_draws(&ctx, PauseScreen::ContextNotice { lines: &lines });
         }
         if let Some(cursor_row) = menu.ready_confirm_cursor() {
-            let Some((d, _)) = legaia_engine_render::painter_at(
-                table,
-                WIN_CONTEXT_READY,
-                MenuWindowPainter::TwoLineChoicePanel,
-            ) else {
-                return Vec::new();
-            };
-            let (text, sprites) = two_line_choice_panel_draws_for(
-                &self.font,
-                legaia_engine_render::painter_rect(d),
-                [
-                    labels.ready_headings[0].as_str(),
-                    labels.ready_headings[1].as_str(),
-                ],
-                [labels.choices[0].as_str(), labels.choices[1].as_str()],
-                // The painter's flag word is the shared cursor word
-                // `FUN_801D688C` maintains: the low 12 bits are the
-                // selected row and the `0x1000` bit inverts the marker.
-                // Sub-screen 3 keeps the plain, non-editing form.
-                ChoiceFlags(u32::from(cursor_row)),
+            return pause_screen_draws(
+                &ctx,
+                PauseScreen::ContextReady {
+                    headings: [
+                        labels.ready_headings[0].as_str(),
+                        labels.ready_headings[1].as_str(),
+                    ],
+                    choices: [labels.choices[0].as_str(), labels.choices[1].as_str()],
+                    // The painter's flag word is the shared cursor word
+                    // `FUN_801D688C` maintains: the low 12 bits are the
+                    // selected row and the `0x1000` bit inverts the marker.
+                    // Sub-screen 3 keeps the plain, non-editing form.
+                    cursor: u32::from(cursor_row),
+                },
             );
-            let mut out = text;
-            for s in sprites {
-                out.extend(self.painter_cursor_stand_in(s));
-            }
-            return out;
         }
-        Vec::new()
+        PauseMenuDraws::default()
     }
 
     /// Window 7 - the spell level-up notice, drawn while
@@ -93,75 +86,78 @@ impl PlayWindowApp {
     /// VM the one-command script `0x801E4D50` / `0x801E4D78` (`[open window
     /// 7]`) when the `FUN_80035C00` sentinel pair changed, then stall for a
     /// press - the input side of that stall lives in the field-menu arm of
-    /// `tick_boot_ui`. Content-only, off the disc-parsed id-7 rect: like
-    /// the shop's descriptor windows, it draws only when the real table is
-    /// present (the painter is dispatched on the descriptor's renderer).
-    pub(super) fn magic_level_notice_draws(&self) -> Vec<TextDraw> {
-        use legaia_engine_render::MenuWindowPainter;
-        use legaia_engine_render::ui_menu_window_painters::char_prompt_draws_for;
+    /// `tick_boot_ui`.
+    pub(super) fn magic_level_notice_draws(&self, surface_w: u32, surface_h: u32) -> Vec<TextDraw> {
         let Some(notice) = self.menu_runtime.spell_level_notice() else {
             return Vec::new();
         };
-        let Some((d, _)) = self.menu_window_table.as_ref().and_then(|t| {
-            legaia_engine_render::painter_at(
-                t,
-                WIN_MAGIC_LEVEL_NOTICE,
-                MenuWindowPainter::CharPrompt,
-            )
-        }) else {
-            return Vec::new();
-        };
-        let (mut out, cursor) = char_prompt_draws_for(
-            &self.font,
-            legaia_engine_render::painter_rect(d),
-            &notice.line,
-        );
-        out.extend(self.painter_cursor_stand_in(cursor));
-        out
-    }
-    /// Title-tab label for a sub-screen's small banner window (descriptor
-    /// ids 0..=4). Text-only: the carved plaque behind it is chrome,
-    /// drawn from the UI-icon atlas by `field_menu_chrome_sprite_draws`
-    /// (`legaia_engine_render::tab_banner_draws`). The label lands at the
-    /// tab window's pinned content origin in the retail CLUT-7 text
-    /// white.
-    ///
-    /// REF: FUN_801DCAD8 - the Status tab's content renderer (label
-    /// string at `(a0+0xa, a0+0xc)`, staged text CLUT 7). The five tab
-    /// renderers share one shape with window 43's `FUN_801DCFE4`, so the
-    /// painter is picked by asking the descriptor which renderer it names
-    /// rather than by trusting the id: `painter_at` resolves the disc
-    /// table's `renderer_va` and hands back the descriptor whose rect the
-    /// painter hangs off. A table whose renderer moved (a modded disc), or
-    /// no disc table at all, falls back to the pinned rect.
-    fn menu_tab_title_draws(&self, tab_id: usize, label: &str) -> Vec<TextDraw> {
-        use legaia_engine_render::MenuWindowPainter;
-        use legaia_engine_render::ui_menu_window_painters::title_tab_draws_for;
-        if let Some((d, _)) = self
-            .menu_window_table
-            .as_ref()
-            .and_then(|t| legaia_engine_render::painter_at(t, tab_id, MenuWindowPainter::TitleTab))
-        {
-            return title_tab_draws_for(&self.font, legaia_engine_render::painter_rect(d), label);
-        }
-        legaia_engine_render::tab_label_draws(&self.font, label, self.menu_window_pen(tab_id))
+        spell_level_notice_draws(&self.menu_ctx(surface_w, surface_h), &notice.line)
     }
 
-    /// Build [`TextDraw`]s for an active field-menu sub-session. Each
-    /// variant maps to the matching `*_draws_for` helper in
-    /// `legaia-engine-render`. Renderer-side state stays in this method
-    /// so the sub-session enums in `legaia-engine-core` can stay
-    /// renderer-agnostic.
+    /// Top-level pause menu: the command list, the money / play-time box and
+    /// the party overview panel.
+    ///
+    /// The menu session lives on the `BootSession` (the headless host of the
+    /// CARD/menu mode); the window only renders it.
+    pub(super) fn field_menu_root_draws(&self, surface_w: u32, surface_h: u32) -> PauseMenuDraws {
+        let Some(menu) = self.session.field_menu.as_ref() else {
+            return PauseMenuDraws::default();
+        };
+        let view = menu.view();
+        let rows: Vec<legaia_engine_render::FieldMenuRowView<'_>> = view
+            .rows
+            .iter()
+            .map(|r| legaia_engine_render::FieldMenuRowView {
+                label: r.label,
+                enabled: r.enabled,
+            })
+            .collect();
+        let snaps =
+            legaia_engine_core::field_menu_dispatch::status_snapshots(&self.session.host.world);
+        let party: Vec<legaia_engine_render::FieldMenuPartyView<'_>> = snaps
+            .iter()
+            .map(|s| legaia_engine_render::FieldMenuPartyView {
+                name: &s.name,
+                level: s.level,
+                hp: s.hp,
+                hp_max: s.hp_max,
+                mp: s.mp,
+                mp_max: s.mp_max,
+                ap: s.ap as u16,
+            })
+            .collect();
+        let party_ap: Vec<u16> = snaps.iter().map(|s| s.ap as u16).collect();
+        pause_screen_draws(
+            &self.menu_ctx(surface_w, surface_h),
+            PauseScreen::TopLevel(TopLevelView {
+                rows: &rows,
+                cursor: view.cursor,
+                money: view.money,
+                play_time_seconds: view.play_time_seconds,
+                party: &party,
+                party_ap: &party_ap,
+            }),
+        )
+    }
+
+    /// Build the draw lists for an active field-menu sub-session. Each
+    /// variant projects the live session onto the plain view structs the
+    /// shared composition takes; the Save sub-session is the exception - it
+    /// renders through the save-select chrome stage
+    /// (`save_select_chrome_sprite_draws` + `boot_ui_draws`) it shares with
+    /// the boot Continue -> Load screen, and so is handled by its caller.
     pub(super) fn field_menu_sub_draws(
         &self,
         sub: &legaia_engine_core::field_menu_dispatch::FieldMenuSubsession,
-    ) -> Vec<TextDraw> {
+        surface_w: u32,
+        surface_h: u32,
+    ) -> PauseMenuDraws {
         use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+        let ctx = self.menu_ctx(surface_w, surface_h);
         match sub {
             FieldMenuSubsession::Status(s) => {
-                use legaia_asset::menu_windows::window_ids;
                 let Some(snap) = s.current() else {
-                    return Vec::new();
+                    return PauseMenuDraws::default();
                 };
                 let stat_rows: Vec<legaia_engine_render::StatusStatRow<'_>> = snap
                     .stats
@@ -178,7 +174,7 @@ impl PlayWindowApp {
                     .iter()
                     .map(|e| (e.label, e.item_name.as_str()))
                     .collect();
-                let view = legaia_engine_render::StatusPanelView {
+                let panel = legaia_engine_render::StatusPanelView {
                     name: &snap.name,
                     level: snap.level,
                     xp: snap.xp,
@@ -192,43 +188,27 @@ impl PlayWindowApp {
                     stat_rows: &stat_rows,
                     equip_rows: &equip_rows,
                 };
-                // Main panel content at the pinned FUN_801D33D8 offsets,
-                // hung off the id-28 window's content origin; satellites
-                // (party list / Condition pager / summary) + the screen
-                // tab fill their own pinned windows.
-                // Retail's status screen carries no footer hint line -
-                // navigation is implicit (L1/R1 pages, Circle backs out).
-                let mut d = legaia_engine_render::status_screen_draws_for(
-                    &self.font,
-                    &view,
-                    None,
-                    self.menu_window_pen(window_ids::STATUS_MAIN),
-                    // LV / HP / MP drawn as sprites from the UI-icon atlas
-                    // (see `field_menu_chrome_sprite_draws`); skip the text.
-                    self.save_menu.is_some(),
-                );
                 let names: Vec<&str> = s.snapshots().iter().map(|m| m.name.as_str()).collect();
-                let sat = legaia_engine_render::StatusSatelliteView {
+                let satellite = legaia_engine_render::StatusSatelliteView {
                     party_names: &names,
                     cursor: s.cursor() as usize,
                     name: &snap.name,
                     level: snap.level,
                 };
-                d.extend(legaia_engine_render::status_satellite_draws_for(
-                    &self.font,
-                    &sat,
-                    self.menu_window_pen(window_ids::STATUS_PARTY_LIST),
-                    self.menu_window_pen(window_ids::STATUS_CONDITION),
-                    self.menu_window_pen(window_ids::STATUS_SUMMARY),
-                    // Hand cursor / pager triangles / LV + ATR icons drawn
-                    // as sprites (`status_satellite_icon_sprites_for`).
-                    self.save_menu.is_some(),
-                ));
-                d.extend(self.menu_tab_title_draws(window_ids::TAB_STATUS, "Status"));
-                d
+                pause_screen_draws(
+                    &ctx,
+                    PauseScreen::Status(StatusScreenView {
+                        panel: &panel,
+                        satellite: &satellite,
+                        ap: snap.ap as u16,
+                        // ATR icon by roster character id (slot) of the
+                        // highlighted member; the icon set is Vahn / Noa /
+                        // Gala in character order.
+                        atr_char: snap.slot as usize,
+                    }),
+                )
             }
             FieldMenuSubsession::Config(s) => {
-                use legaia_asset::menu_windows::window_ids;
                 let rows = s.state().rows();
                 let row_views: Vec<legaia_engine_render::OptionsRowView<'_>> = rows
                     .iter()
@@ -244,244 +224,251 @@ impl PlayWindowApp {
                     choices: p.choices,
                     cursor: p.cursor,
                 });
-                let mut d = legaia_engine_render::options_draws_for(
-                    &self.font,
-                    &row_views,
-                    s.cursor(),
-                    popup.as_ref(),
-                    self.menu_window_pen(window_ids::OPTIONS_MAIN),
-                );
-                d.extend(self.menu_tab_title_draws(window_ids::TAB_OPTIONS, "Options"));
-                d
-            }
-            FieldMenuSubsession::Save(s) => {
-                use legaia_engine_core::save_select::SelectPhase;
-                let rows: Vec<legaia_engine_render::SaveSelectRow<'_>> = s
-                    .slots()
+                // Selected-row pointing hand at `x-10` on the cursor row
+                // (retail's FUN_8002b994 kind-0 cursor, shared with the
+                // status party list).
+                let row_y_off: i32 = rows
                     .iter()
-                    .map(|snap| legaia_engine_render::SaveSelectRow {
-                        label: &snap.label,
-                        present: snap.present,
-                        party_lv: snap.party_lv,
-                        play_time_seconds: snap.play_time_seconds,
-                        money: snap.money,
-                        location: &snap.location,
-                    })
-                    .collect();
-                let cursor = match s.phase() {
-                    SelectPhase::Browsing { cursor } => cursor as usize,
-                    SelectPhase::NowChecking { slot, .. }
-                    | SelectPhase::SlotPreview { slot }
-                    | SelectPhase::ConfirmOverwrite { slot, .. }
-                    | SelectPhase::ConfirmDelete { slot, .. } => slot as usize,
-                    SelectPhase::Done(_) => return Vec::new(),
-                };
-                // Field-menu Save subsession reuses the load-screen
-                // chrome stage so the panel/pill sprites match retail
-                // positions even when entered mid-game.
-                let (sw, sh) = self
-                    .win
-                    .renderer()
-                    .map(|r| r.surface_size())
-                    .unwrap_or((1, 1));
-                let (stage_origin, stage_scale) = self.save_select_stage(sw, sh);
-                let emit_text_cursor = self.save_menu.is_none();
-                // The title word comes from the session's MODE, not
-                // from which menu row opened it: the field menu's Load
-                // row builds the same sub-session shape as its Save
-                // row (`FieldMenuSubsession::Save` with
-                // `SaveSelectMode::Load`), and retail's header tab
-                // toggles its string on the same direction flag
-                // (`_DAT_801f0200`). A hardcoded "Save" here made the
-                // in-game Load screen carry the Save title.
-                let mut out = legaia_engine_render::save_select_draws_for(
-                    &self.font,
-                    save_select_title_word(s),
-                    &rows,
-                    cursor,
-                    None,
-                    stage_origin,
-                    stage_scale,
-                    emit_text_cursor,
-                );
-                // Phase overlays (NowChecking dialog text, slot-info
-                // panel text / captions, confirm messagebox) - shared
-                // with the boot Continue → Load screen so the two
-                // paths render identically.
-                out.extend(save_select_phase_text_draws(
-                    &self.font,
-                    s,
-                    &self.save_flow,
-                    stage_origin,
-                    stage_scale,
-                    self.save_menu.is_some(),
-                ));
-                out
+                    .take(s.cursor() as usize)
+                    .map(|r| r.advance)
+                    .sum();
+                pause_screen_draws(
+                    &ctx,
+                    PauseScreen::Options(OptionsScreenView {
+                        rows: &row_views,
+                        cursor: s.cursor(),
+                        popup,
+                        row_y_off,
+                    }),
+                )
             }
-            FieldMenuSubsession::Spells(s) => self.pause_magic_draws(s),
-            FieldMenuSubsession::Items(s) => self.pause_items_draws(s),
+            // The Save sub-session's screen belongs to the save-select
+            // stage, not to this composition - see the doc comment.
+            FieldMenuSubsession::Save(_) => PauseMenuDraws::default(),
+            FieldMenuSubsession::Spells(s) => self.pause_magic_draws(s, &ctx),
+            FieldMenuSubsession::Items(s) => self.pause_items_draws(s, &ctx),
             FieldMenuSubsession::Equip { session, char_slot } => {
-                self.equip_session_draws(session, *char_slot)
+                self.equip_session_draws(session, *char_slot, &ctx)
             }
-            FieldMenuSubsession::Arts(s) => self.arts_session_draws(s),
+            FieldMenuSubsession::Arts(s) => self.arts_session_draws(s, &ctx),
         }
     }
 
-    /// Generic spell-menu overlay - the target-select fallback while the
-    /// retail target-pick window layout stays unpinned.
-    fn spell_session_generic_draws(
+    /// Text half of the field menu's Load / Save sub-screen.
+    ///
+    /// Not part of [`Self::field_menu_sub_draws`]'s shared composition: this
+    /// screen is the **save-select** surface, and the native window reaches
+    /// the same one from the boot Continue -> Load path
+    /// (`BootUiState::SaveSelect`). Both go through
+    /// `save_select_phase_text_draws` + `save_select_chrome_sprite_draws` so
+    /// the in-game and boot entries cannot drift from each other; hoisting
+    /// only the pause half would have forked them. Pre-scaled to surface
+    /// coords, so the caller must not scale it again.
+    pub(super) fn field_save_sub_draws(
         &self,
-        s: &legaia_engine_core::spell_menu::SpellMenuSession,
+        s: &legaia_engine_core::save_select::SaveSelectSession,
+        surface_w: u32,
+        surface_h: u32,
     ) -> Vec<TextDraw> {
-        use legaia_engine_core::spell_menu::SpellMenuPhase;
-        {
-            let names: Vec<&str> = s.party().iter().map(|c| c.name.as_str()).collect();
-            let hp: Vec<(u16, u16)> = s.party().iter().map(|c| (c.hp, c.hp)).collect();
-            let mp: Vec<(u16, u16)> = s.party().iter().map(|c| (c.mp, c.mp)).collect();
-            let spell_rows = s.current_spell_rows();
-            let spell_views: Vec<legaia_engine_render::SpellRowView<'_>> = spell_rows
-                .iter()
-                .map(|sr| legaia_engine_render::SpellRowView {
-                    name: sr.name.as_str(),
-                    mp_cost: sr.mp_cost,
-                    admissible: sr.admissible,
-                })
-                .collect();
-            let target_views: Vec<legaia_engine_render::SpellTargetView<'_>> = s
-                .targets()
-                .iter()
-                .map(|t| legaia_engine_render::SpellTargetView {
-                    name: t.name.as_str(),
-                    hp: t.hp,
-                    hp_max: t.hp_max,
-                    alive: t.alive(),
-                })
-                .collect();
-            let (selected_caster, selected_spell, phase, cursor) = match s.phase() {
-                SpellMenuPhase::CharSelect { cursor } => (None, None, 0u8, *cursor),
-                SpellMenuPhase::SpellSelect { caster, cursor } => {
-                    (Some(*caster), None, 1u8, *cursor)
-                }
-                SpellMenuPhase::TargetSelect {
-                    caster,
-                    spell_id,
-                    cursor,
-                } => (Some(*caster), Some(*spell_id), 2u8, *cursor),
-                SpellMenuPhase::Done(_) => return Vec::new(),
-            };
-            let names_arr: Vec<&str> = names.to_vec();
-            let args = legaia_engine_render::SpellMenuDrawArgs {
-                party_names: &names_arr,
-                party_hp: &hp,
-                party_mp: &mp,
-                selected_caster,
-                spells: &spell_views,
-                selected_spell,
-                targets: &target_views,
-                selected_target: None,
-                cursor,
-                phase,
-            };
-            legaia_engine_render::spell_menu_draws_for(&self.font, args, (32, 32))
-        }
+        use legaia_engine_core::save_select::SelectPhase;
+        let rows: Vec<legaia_engine_render::SaveSelectRow<'_>> = s
+            .slots()
+            .iter()
+            .map(|snap| legaia_engine_render::SaveSelectRow {
+                label: &snap.label,
+                present: snap.present,
+                party_lv: snap.party_lv,
+                play_time_seconds: snap.play_time_seconds,
+                money: snap.money,
+                location: &snap.location,
+            })
+            .collect();
+        let cursor = match s.phase() {
+            SelectPhase::Browsing { cursor } => cursor as usize,
+            SelectPhase::NowChecking { slot, .. }
+            | SelectPhase::SlotPreview { slot }
+            | SelectPhase::ConfirmOverwrite { slot, .. }
+            | SelectPhase::ConfirmDelete { slot, .. } => slot as usize,
+            SelectPhase::Done(_) => return Vec::new(),
+        };
+        let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
+        // The title word comes from the session's MODE, not from which menu
+        // row opened it: the field menu's Load row builds the same
+        // sub-session shape as its Save row, and retail's header tab toggles
+        // its string on the same direction flag (`_DAT_801f0200`).
+        let mut out = legaia_engine_render::save_select_draws_for(
+            &self.font,
+            save_select_title_word(s),
+            &rows,
+            cursor,
+            None,
+            stage_origin,
+            stage_scale,
+            self.save_menu.is_none(),
+        );
+        out.extend(save_select_phase_text_draws(
+            &self.font,
+            s,
+            &self.save_flow,
+            stage_origin,
+            stage_scale,
+            self.save_menu.is_some(),
+        ));
+        out
     }
 
     /// Build draws for the retail **Magic** screen: caster window (id 19),
     /// spell-list page (id 18), spell info window (id 20) and the "Magic"
-    /// title tab (id 1), each at its disc-parsed descriptor rect via the
-    /// shared engine-ui builder. Session data (mp/mp_max, learned levels,
+    /// title tab (id 1). Session data (mp/mp_max, learned levels,
     /// descriptions) comes from the engine-core view model; during
     /// target-select the generic overlay stands in (the retail target-pick
     /// window layout is unpinned).
     pub(super) fn pause_magic_draws(
         &self,
         s: &legaia_engine_core::spell_menu::SpellMenuSession,
-    ) -> Vec<TextDraw> {
-        use legaia_asset::menu_windows::window_ids;
+        ctx: &PauseMenuCtx<'_>,
+    ) -> PauseMenuDraws {
+        use legaia_engine_core::spell_menu::SpellMenuPhase;
         let world = &self.session.host.world;
         let model =
             legaia_engine_core::pause_screens::magic_screen_model(s, world.menu_text.as_ref());
-        if model.target_select {
-            return self.spell_session_generic_draws(s);
-        }
-        let casters: Vec<legaia_engine_render::PauseMagicCaster<'_>> = model
-            .casters
-            .iter()
-            .map(
-                |(name, level, mp, mp_max)| legaia_engine_render::PauseMagicCaster {
+        if !model.target_select {
+            let casters: Vec<legaia_engine_render::PauseMagicCaster<'_>> = model
+                .casters
+                .iter()
+                .map(
+                    |(name, level, mp, mp_max)| legaia_engine_render::PauseMagicCaster {
+                        name,
+                        level: *level as u16,
+                        mp: *mp,
+                        mp_max: *mp_max,
+                    },
+                )
+                .collect();
+            let rows: Vec<legaia_engine_render::PauseMagicRow<'_>> = model
+                .page_rows
+                .iter()
+                .map(|(name, ra_seru)| legaia_engine_render::PauseMagicRow {
                     name,
-                    level: *level as u16,
-                    mp: *mp,
-                    mp_max: *mp_max,
+                    ra_seru: *ra_seru,
+                })
+                .collect();
+            let info = model
+                .info
+                .as_ref()
+                .map(|i| legaia_engine_render::PauseMagicInfo {
+                    name: &i.name,
+                    level: i.level,
+                    desc: &i.desc,
+                    mp_cost: i.mp_cost,
+                });
+            let view = legaia_engine_render::PauseMagicView {
+                casters: &casters,
+                rows: &rows,
+                page: model.page,
+                pages: model.pages,
+                phase: if model.focus_list {
+                    legaia_engine_render::PauseMagicPhase::List
+                } else {
+                    legaia_engine_render::PauseMagicPhase::Caster
                 },
-            )
-            .collect();
-        let rows: Vec<legaia_engine_render::PauseMagicRow<'_>> = model
-            .page_rows
+                caster_cursor: model.caster_cursor,
+                list_cursor: model.list_cursor_on_page,
+                info,
+                // LV / MP tags + hand cursor come from the UI-icon atlas
+                // when it is resident.
+                label_icons: ctx.chrome_present(),
+                text_cursor: !ctx.chrome_present(),
+            };
+            return pause_screen_draws(
+                ctx,
+                PauseScreen::Magic(MagicScreenView {
+                    view: &view,
+                    casters: model.casters.len(),
+                }),
+            );
+        }
+        // Generic spell-menu overlay - the target-select fallback while the
+        // retail target-pick window layout stays unpinned.
+        let names: Vec<&str> = s.party().iter().map(|c| c.name.as_str()).collect();
+        let hp: Vec<(u16, u16)> = s.party().iter().map(|c| (c.hp, c.hp)).collect();
+        let mp: Vec<(u16, u16)> = s.party().iter().map(|c| (c.mp, c.mp)).collect();
+        let spell_rows = s.current_spell_rows();
+        let spell_views: Vec<legaia_engine_render::SpellRowView<'_>> = spell_rows
             .iter()
-            .map(|(name, ra_seru)| legaia_engine_render::PauseMagicRow {
-                name,
-                ra_seru: *ra_seru,
+            .map(|sr| legaia_engine_render::SpellRowView {
+                name: sr.name.as_str(),
+                mp_cost: sr.mp_cost,
+                admissible: sr.admissible,
             })
             .collect();
-        let info = model
-            .info
-            .as_ref()
-            .map(|i| legaia_engine_render::PauseMagicInfo {
-                name: &i.name,
-                level: i.level,
-                desc: &i.desc,
-                mp_cost: i.mp_cost,
-            });
-        let view = legaia_engine_render::PauseMagicView {
-            casters: &casters,
-            rows: &rows,
-            page: model.page,
-            pages: model.pages,
-            phase: if model.focus_list {
-                legaia_engine_render::PauseMagicPhase::List
-            } else {
-                legaia_engine_render::PauseMagicPhase::Caster
-            },
-            caster_cursor: model.caster_cursor,
-            list_cursor: model.list_cursor_on_page,
-            info,
-            // LV / MP tags + hand cursor come from the UI-icon atlas when
-            // it's resident (see `field_menu_chrome_sprite_draws`).
-            label_icons: self.save_menu.is_some(),
-            text_cursor: self.save_menu.is_none(),
+        let target_views: Vec<legaia_engine_render::SpellTargetView<'_>> = s
+            .targets()
+            .iter()
+            .map(|t| legaia_engine_render::SpellTargetView {
+                name: t.name.as_str(),
+                hp: t.hp,
+                hp_max: t.hp_max,
+                alive: t.alive(),
+            })
+            .collect();
+        let (selected_caster, selected_spell, phase, cursor) = match s.phase() {
+            SpellMenuPhase::CharSelect { cursor } => (None, None, 0u8, *cursor),
+            SpellMenuPhase::SpellSelect { caster, cursor } => (Some(*caster), None, 1u8, *cursor),
+            SpellMenuPhase::TargetSelect {
+                caster,
+                spell_id,
+                cursor,
+            } => (Some(*caster), Some(*spell_id), 2u8, *cursor),
+            SpellMenuPhase::Done(_) => return PauseMenuDraws::default(),
         };
-        let mut d = legaia_engine_render::magic_screen_draws_for(
-            &self.font,
-            &view,
-            self.menu_window_pen(window_ids::MAGIC_CASTER),
-            self.menu_window_pen(window_ids::MAGIC_LIST),
-            self.menu_window_pen(window_ids::MAGIC_INFO),
-        );
-        d.extend(self.menu_tab_title_draws(window_ids::TAB_MAGIC, "Magic"));
-        d
+        let args = legaia_engine_render::SpellMenuDrawArgs {
+            party_names: &names,
+            party_hp: &hp,
+            party_mp: &mp,
+            selected_caster,
+            spells: &spell_views,
+            selected_spell,
+            targets: &target_views,
+            selected_target: None,
+            cursor,
+            phase,
+        };
+        pause_screen_draws(ctx, PauseScreen::Generic(GenericContent::SpellMenu(args)))
     }
 
     /// Build draws for the retail **Items** screen: command window (id
     /// 13), item-list page (id 15), item info window (id 17, plus its
     /// extra widget box) and the "Items" title tab (id 0). Rows carry the
     /// real bag counts + disc descriptions from the session; during
-    /// target-select the generic overlay stands in.
+    /// target-select retail swaps the item list for window 14, the party
+    /// target panel (`FUN_801D0520`), and the generic inventory overlay
+    /// only stands in when that panel has no roster to draw.
     pub(super) fn pause_items_draws(
         &self,
         s: &legaia_engine_core::pause_screens::PauseItemsSession,
-    ) -> Vec<TextDraw> {
-        use legaia_asset::menu_windows::window_ids;
+        ctx: &PauseMenuCtx<'_>,
+    ) -> PauseMenuDraws {
         let model = legaia_engine_core::pause_screens::items_screen_model(s);
         if model.target_select {
-            // Retail swaps the item list for window 14 - the party target
-            // panel (`FUN_801D0520`) - while the Use flow picks a target.
-            // The generic inventory overlay only stands in when the panel
-            // has no roster to draw.
-            if let Some(panel) = self.pause_target_panel_draws(s) {
-                return panel;
+            if let Some(panel) = self.pause_target_panel_view(s) {
+                let members = Self::target_panel_members(&panel);
+                let view = legaia_engine_render::TargetPanelView {
+                    members: &members,
+                    mode: legaia_engine_render::TargetPanelMode::from_preview_word(panel.mode),
+                    cursor: Self::target_panel_cursor(&panel),
+                    // The LV / HP / MP tags come from the UI atlas whenever
+                    // the sprite pass runs; without it the ASCII stand-ins
+                    // carry the layout.
+                    label_icons: ctx.chrome_present(),
+                    text_cursor: !ctx.chrome_present(),
+                };
+                return pause_screen_draws(ctx, PauseScreen::ItemsTarget(&view));
             }
-            return self.items_session_draws(&s.inner);
+            return pause_screen_draws(
+                ctx,
+                PauseScreen::Generic(GenericContent::Prebuilt(self.items_session_draws(&s.inner))),
+            );
         }
         let rows: Vec<legaia_engine_render::PauseItemsRow<'_>> = model
             .page_rows
@@ -513,109 +500,59 @@ impl PlayWindowApp {
             list_cursor: model.list_cursor_on_page,
             bag_empty: model.bag_empty,
             info,
-            text_cursor: self.save_menu.is_none(),
+            text_cursor: !ctx.chrome_present(),
         };
-        let info_pen = self.menu_window_pen(window_ids::ITEMS_INFO);
-        let mut d = legaia_engine_render::items_screen_draws_for(
-            &self.font,
-            &view,
-            self.menu_window_pen(window_ids::ITEMS_COMMAND),
-            self.menu_window_pen(window_ids::ITEMS_LIST),
-            info_pen,
-        );
-        // The shared info panel's Point Card arm: retail branches on the
-        // staged id being `0xFE` and prints the live bank instead of the
-        // passive lines (`FUN_801D0F1C` at `0x801d0fd0`).
-        if model.info.as_ref().is_some_and(|i| i.is_point_card) {
-            d.extend(legaia_engine_render::item_points_panel_draws(
-                &self.font,
-                info_pen,
-                self.session.host.world.point_card.max(0) as u32,
-            ));
-        }
-        d.extend(self.menu_tab_title_draws(window_ids::TAB_ITEMS, "Items"));
-        // Throw Out confirm prompt (descriptor id 9, renderer FUN_801D1B20):
-        // the Yes/No window that slides in over the command window. The
-        // window frame is chrome (still caller-pending); the text overlay
-        // sits at the descriptor pen, falling back to the pinned rect.
-        if let Some(confirm) = model.throw_confirm.as_ref() {
-            let pen = self.menu_window_pen(9);
-            let pen = if pen == (0, 0) {
-                let (x, y, _, _) = legaia_engine_render::ITEMS_THROW_CONFIRM_RECT;
-                (x, y)
-            } else {
-                pen
-            };
-            let view = legaia_engine_render::PauseThrowConfirmView {
-                name: &confirm.name,
-                count: confirm.count,
-                cursor: confirm.cursor,
-                text_cursor: self.save_menu.is_none(),
-            };
-            d.extend(legaia_engine_render::items_throw_confirm_draws_for(
-                &self.font, &view, pen,
-            ));
-        }
-        // Special Use-route confirm (submenu 0xB Door of Light -> window
-        // 10 / `FUN_801D1DAC`, submenu 0xD Incense -> window 12 /
-        // `FUN_801D1F10`). A different window and renderer from the Throw
-        // Out confirm above, and the cursor seeds to Yes rather than No.
-        //
-        // Retail's own prompt strings live in the menu overlay's data
-        // segment (the `0x801CEA94` block the renderer's `lui`/`addiu`
-        // pairs point at) and are not recovered, so the port stages the
-        // item name and its own question in the retail line slots; the
-        // geometry - which is what the renderer actually is - is exact.
-        if let Some(sc) = model.special_confirm.as_ref() {
-            let two_line = matches!(
-                sc.route,
-                legaia_engine_core::pause_screens::UseRoute::Incense
-            );
-            let prompt_lines = if two_line { 2 } else { 1 };
-            let (win_id, fallback) = legaia_engine_render::use_confirm_window(prompt_lines);
-            let pen = self.menu_window_pen(win_id);
-            let pen = if pen == (0, 0) {
-                (fallback.0, fallback.1)
-            } else {
-                pen
-            };
-            let one_line = format!("Use {}?", sc.item_name);
-            let lines: Vec<&str> = if two_line {
-                vec![sc.item_name.as_str(), "Use it?"]
-            } else {
-                vec![one_line.as_str()]
-            };
-            d.extend(legaia_engine_render::confirm_prompt_draws(
-                &self.font,
-                &lines,
-                &["Yes", "No"],
-                pen,
-            ));
-            if self.save_menu.is_none() {
-                let (hx, hy) =
-                    legaia_engine_render::confirm_prompt_hand_pos(pen, prompt_lines, sc.cursor);
-                d.extend(legaia_engine_render::text_draws_for(
-                    &self.font.layout_ascii(">"),
-                    (hx, hy),
-                    legaia_engine_render::MENU_TEXT_GOLD,
-                ));
+        let throw =
+            model
+                .throw_confirm
+                .as_ref()
+                .map(|c| legaia_engine_render::PauseThrowConfirmView {
+                    name: &c.name,
+                    count: c.count,
+                    cursor: c.cursor,
+                    text_cursor: !ctx.chrome_present(),
+                });
+        // Retail's own Use-route prompt strings live in the menu overlay's
+        // data segment (the `0x801CEA94` block the renderer's `lui`/`addiu`
+        // pairs point at) and are not recovered, so the port stages the item
+        // name and its own question in the retail line slots; the geometry -
+        // which is what the renderer actually is - is exact.
+        let special_one_line = model
+            .special_confirm
+            .as_ref()
+            .map(|sc| format!("Use {}?", sc.item_name));
+        let special_lines: Vec<&str> = match (model.special_confirm.as_ref(), &special_one_line) {
+            (Some(sc), Some(one)) => {
+                if matches!(
+                    sc.route,
+                    legaia_engine_core::pause_screens::UseRoute::Incense
+                ) {
+                    vec![sc.item_name.as_str(), "Use it?"]
+                } else {
+                    vec![one.as_str()]
+                }
             }
-        }
-        d
-    }
-
-    /// The window-14 target panel's content origin: the descriptor-table
-    /// pen when the menu overlay parsed, else the pinned rect.
-    pub(super) fn target_panel_pen(&self) -> (i32, i32) {
-        // Descriptor id 14 has no `window_ids` alias; retail dispatches it
-        // by index from the Use-flow submenu handlers.
-        let pen = self.menu_window_pen(14);
-        if pen == (0, 0) {
-            let (x, y, _, _) = legaia_engine_render::TARGET_PANEL_RECT;
-            (x, y)
-        } else {
-            pen
-        }
+            _ => Vec::new(),
+        };
+        pause_screen_draws(
+            ctx,
+            PauseScreen::Items(ItemsScreenView {
+                view: &view,
+                // The shared info panel's Point Card arm: retail branches on
+                // the staged id being `0xFE` and prints the live bank instead
+                // of the passive lines (`FUN_801D0F1C` at `0x801d0fd0`).
+                point_card: model
+                    .info
+                    .as_ref()
+                    .filter(|i| i.is_point_card)
+                    .map(|_| self.session.host.world.point_card.max(0) as u32),
+                throw_confirm: throw.as_ref(),
+                special_confirm: model.special_confirm.as_ref().map(|sc| SpecialConfirmView {
+                    lines: &special_lines,
+                    cursor: sc.cursor,
+                }),
+            }),
+        )
     }
 
     /// Map the engine-core target-panel model onto the engine-ui view.
@@ -654,45 +591,23 @@ impl PlayWindowApp {
         }
     }
 
-    /// Build the retail window-14 party target panel that replaces the
-    /// item list while the pause-menu Use flow picks a target. `None`
-    /// when the flow is not in target select or has no rows to draw.
-    pub(super) fn pause_target_panel_draws(
+    /// The window-14 target-panel model for an Items session in target
+    /// select, or `None` when the flow is not there or has no rows to draw.
+    pub(super) fn pause_target_panel_view(
         &self,
         s: &legaia_engine_core::pause_screens::PauseItemsSession,
-    ) -> Option<Vec<TextDraw>> {
-        use legaia_asset::menu_windows::window_ids;
-        let model = legaia_engine_core::pause_screens::target_panel_view_model(
-            s,
-            &self.session.host.world,
-        )?;
-        if model.members.is_empty() {
-            return None;
-        }
-        let members = Self::target_panel_members(&model);
-        let view = legaia_engine_render::TargetPanelView {
-            members: &members,
-            mode: legaia_engine_render::TargetPanelMode::from_preview_word(model.mode),
-            cursor: Self::target_panel_cursor(&model),
-            // The LV / HP / MP tags come from the UI atlas whenever the
-            // sprite pass runs (`save_menu` present); without it the
-            // ASCII stand-ins carry the layout.
-            label_icons: self.save_menu.is_some(),
-            text_cursor: self.save_menu.is_none(),
-        };
-        let mut d = legaia_engine_render::target_panel_draws_for(
-            &self.font,
-            &view,
-            self.target_panel_pen(),
-        );
-        d.extend(self.menu_tab_title_draws(window_ids::TAB_ITEMS, "Items"));
-        Some(d)
+    ) -> Option<legaia_engine_core::pause_screens::TargetPanelModel> {
+        legaia_engine_core::pause_screens::target_panel_view_model(s, &self.session.host.world)
+            .filter(|m| !m.members.is_empty())
     }
 
     /// Build draws for the inventory item-use overlay. Resolves item
     /// names through `ItemCatalog`, party / monster targets through the
     /// session's `targets` field. Drives both browsing and target-select
     /// phases via `inventory_use_draws_for`.
+    ///
+    /// Returned unscaled: the shared composition frames it and applies the
+    /// stage transform ([`GenericContent::Prebuilt`]).
     pub(super) fn items_session_draws(
         &self,
         s: &legaia_engine_core::inventory_use::InventoryUseSession,
@@ -767,176 +682,24 @@ impl PlayWindowApp {
         legaia_engine_render::inventory_use_draws_for(&self.font, args, (16, 32))
     }
 
-    /// Build draws for the equip screen in the retail multi-window
-    /// layout: party window (id 21), item-list window (id 23), main
-    /// window (id 22) and the "Equip" tab (id 2), each at its
-    /// disc-parsed descriptor rect. Slot labels resolve through
-    /// `EquipSlot::label`; the stat-compare block diffs
-    /// `compute_battle_stats` with the hovered candidate installed.
+    /// Build draws for the equip screen in the retail multi-window layout:
+    /// party window (id 21), item-list window (id 23), main window (id 22)
+    /// and the "Equip" tab (id 2). The projection - slot labels, the
+    /// candidate list, the stat compare against `compute_battle_stats` - is
+    /// the shared `engine-core` model.
     pub(super) fn equip_session_draws(
         &self,
         session: &legaia_engine_core::equip_session::EquipSession,
         char_slot: u8,
-    ) -> Vec<TextDraw> {
-        use legaia_asset::menu_windows::window_ids;
-        use legaia_engine_core::equip_session::EquipState;
-        use legaia_engine_core::equipment::EquipSlot;
-
-        // Party-window rows come from the world's roster snapshot.
+        ctx: &PauseMenuCtx<'_>,
+    ) -> PauseMenuDraws {
         let names = legaia_engine_core::field_menu_dispatch::roster_names(&self.session.host.world);
-        let party_names: Vec<&str> = names.iter().map(String::as_str).collect();
-
-        let record = session.record();
-        let mut slot_label_buf: Vec<String> = Vec::with_capacity(8);
-        for i in 0..8u8 {
-            let label = EquipSlot::from_index(i)
-                .map(|s| s.label().to_string())
-                .unwrap_or_else(|| format!("Slot {i}"));
-            slot_label_buf.push(label);
-        }
-        let mut slot_item_buf: Vec<String> = Vec::with_capacity(8);
-        for &id in record.equip.iter() {
-            slot_item_buf.push(if id == 0 {
-                String::new()
-            } else {
-                format!("Item {id:02X}")
-            });
-        }
-        let slot_rows: Vec<legaia_engine_render::EquipSlotRow<'_>> = (0..8usize)
-            .map(|i| legaia_engine_render::EquipSlotRow {
-                label: &slot_label_buf[i],
-                current_name: &slot_item_buf[i],
-            })
-            .collect();
-
-        let (phase, cursor, active_slot, confirm_label_owned) = match session.state() {
-            EquipState::SlotPicker { cursor } => (
-                legaia_engine_render::EquipDrawPhase::SlotPicker,
-                cursor as u16,
-                cursor,
-                None,
-            ),
-            EquipState::ItemPicker { slot, cursor } => (
-                legaia_engine_render::EquipDrawPhase::ItemPicker,
-                cursor,
-                slot,
-                None,
-            ),
-            EquipState::Confirm {
-                slot,
-                item_id,
-                cursor,
-            } => {
-                let label = format!("Equip Item {item_id:02X}?");
-                (
-                    legaia_engine_render::EquipDrawPhase::Confirm,
-                    cursor as u16,
-                    slot,
-                    Some(label),
-                )
-            }
-            EquipState::Done(_) => (legaia_engine_render::EquipDrawPhase::SlotPicker, 0, 0, None),
-        };
-
-        // Candidates + stat compare only matter past the slot picker.
-        let (candidate_names, candidate_counts, considered_id): (Vec<String>, Vec<u8>, Option<u8>) =
-            if phase == legaia_engine_render::EquipDrawPhase::SlotPicker {
-                (Vec::new(), Vec::new(), None)
-            } else {
-                let items = session.items_for_slot(active_slot);
-                let names: Vec<String> = items
-                    .iter()
-                    .map(|it| format!("Item {:02X}", it.id))
-                    .collect();
-                let counts: Vec<u8> = items
-                    .iter()
-                    .map(|it| session.inventory().get(&it.id).copied().unwrap_or(0))
-                    .collect();
-                // The item the compare block previews: the hovered row in
-                // the picker, the pending item in the confirm phase.
-                let considered = match session.state() {
-                    EquipState::Confirm { item_id, .. } => Some(item_id),
-                    _ => items.get(cursor as usize).map(|it| it.id),
-                };
-                (names, counts, considered)
-            };
-        let candidate_rows: Vec<legaia_engine_render::EquipCandidateRow<'_>> = candidate_names
-            .iter()
-            .zip(candidate_counts.iter())
-            .map(|(name, count)| legaia_engine_render::EquipCandidateRow {
-                name,
-                count: *count,
-            })
-            .collect();
-
-        // Stat-compare block: current vs candidate-installed stats. The
-        // session recomputes with live status modifiers on commit; the
-        // menu preview uses the neutral status set (field-menu context).
-        let stat_compare: Vec<legaia_engine_render::EquipStatRow<'_>> = match considered_id {
-            Some(id) => {
-                let neutral = legaia_engine_core::battle_stats::StatusModifiers::default();
-                let cur = legaia_engine_core::battle_stats::compute_battle_stats(
-                    record,
-                    session.equipment(),
-                    &[],
-                    &neutral,
-                );
-                let mut copy = *record;
-                copy.equip[active_slot as usize] = id;
-                let new = legaia_engine_core::battle_stats::compute_battle_stats(
-                    &copy,
-                    session.equipment(),
-                    &[],
-                    &neutral,
-                );
-                // The three retail compare rows (FUN_801D21C0 stat block).
-                vec![
-                    legaia_engine_render::EquipStatRow {
-                        label: "ATK",
-                        current: cur.atk,
-                        preview: new.atk,
-                    },
-                    legaia_engine_render::EquipStatRow {
-                        label: "UDF",
-                        current: cur.udf,
-                        preview: new.udf,
-                    },
-                    legaia_engine_render::EquipStatRow {
-                        label: "LDF",
-                        current: cur.ldf,
-                        preview: new.ldf,
-                    },
-                ]
-            }
-            None => Vec::new(),
-        };
-
-        let view = legaia_engine_render::EquipScreenView {
-            party_names: &party_names,
-            party_cursor: char_slot as usize,
-            slots: &slot_rows,
-            candidates: &candidate_rows,
-            stat_compare: &stat_compare,
-            phase,
-            cursor,
-            active_slot,
-            confirm_label: confirm_label_owned.as_deref(),
-            // Hand-cursor sprites come from the system-UI atlas when it's
-            // resident (see `field_menu_chrome_sprite_draws`).
-            text_cursor: self.save_menu.is_none(),
-        };
-        let mut d = legaia_engine_render::equip_screen_draws_for(
-            &self.font,
-            &view,
-            self.menu_window_pen(window_ids::EQUIP_PARTY),
-            self.menu_window_pen(window_ids::EQUIP_LIST),
-            self.menu_window_pen(window_ids::EQUIP_MAIN),
-        );
-        d.extend(self.menu_tab_title_draws(window_ids::TAB_EQUIP, "Equip"));
-        d
+        let model =
+            legaia_engine_core::pause_screens::equip_screen_model(session, char_slot, &names);
+        equip_screen_compose(ctx, &equip_compose_input(&model, !ctx.chrome_present()))
     }
 
-    /// Build draws for the Tactical Arts editor overlay.
+    /// Build draws for the Tactical Arts chain editor overlay.
     ///
     /// The projection out of the live `ChainEditor` (character name, the
     /// pretty-printed sequences, the phase tag, the "+ New" room check)
@@ -945,7 +708,8 @@ impl PlayWindowApp {
     pub(super) fn arts_session_draws(
         &self,
         s: &legaia_engine_core::tactical_arts_editor::ChainEditor,
-    ) -> Vec<TextDraw> {
+        ctx: &PauseMenuCtx<'_>,
+    ) -> PauseMenuDraws {
         let view =
             legaia_engine_core::field_menu_dispatch::arts_editor_view(s, &self.session.host.world);
         let saved_rows: Vec<legaia_engine_render::ArtsChainRow<'_>> = view
@@ -968,7 +732,7 @@ impl PlayWindowApp {
             naming_name: &view.naming_name,
             can_add_new: view.can_add_new,
         };
-        legaia_engine_render::tactical_arts_editor_draws_for(&self.font, args, (16, 32))
+        pause_screen_draws(ctx, PauseScreen::Generic(GenericContent::Arts(args)))
     }
 
     /// Render the seru-trade screens of the shop menu: the offer list
@@ -1048,6 +812,40 @@ impl PlayWindowApp {
             }
             _ => {}
         }
+    }
+}
+
+/// Borrow the shared `engine-core` Equip screen model into the shared
+/// `engine-ui` compose input.
+///
+/// The only per-host line left on this screen: the phase tag has to cross
+/// from `engine-core`'s enum to `engine-ui`'s, and `engine-ui` deliberately
+/// does not depend on `engine-core`. The browser twin is
+/// `web-viewer/src/play_menu.rs::equip_compose_input`.
+fn equip_compose_input(
+    m: &legaia_engine_core::pause_screens::EquipScreenModel,
+    text_cursor: bool,
+) -> EquipComposeInput<'_> {
+    use legaia_engine_core::pause_screens::EquipScreenPhase as Tag;
+    EquipComposeInput {
+        party_names: &m.party_names,
+        slot_labels: &m.slot_labels,
+        slot_items: &m.slot_items,
+        candidate_names: &m.candidate_names,
+        candidate_counts: &m.candidate_counts,
+        stat_compare: &m.stat_compare,
+        phase: match m.phase {
+            Tag::SlotPicker => legaia_engine_render::EquipDrawPhase::SlotPicker,
+            Tag::ItemPicker => legaia_engine_render::EquipDrawPhase::ItemPicker,
+            Tag::Confirm => legaia_engine_render::EquipDrawPhase::Confirm,
+        },
+        cursor: m.cursor,
+        active_slot: m.active_slot,
+        confirm_label: m.confirm_label.as_deref(),
+        char_slot: m.char_slot as usize,
+        slot_cursor: m.slot_cursor,
+        pictogram_rows: m.pictogram_rows,
+        text_cursor,
     }
 }
 

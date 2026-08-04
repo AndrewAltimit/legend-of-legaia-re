@@ -414,6 +414,47 @@ walk the same screens a player does - `crates/engine-shell/tests/menu_replay.rs`
 drives all seven rows and the save UI's two-stage rack from `World::set_pad`
 alone.
 
+### Where a pause screen is assembled
+
+The *simulation* half above is shared. So is the **composition** half - which
+windows a screen opens, which painter draws its title tab, what order the
+frames, the content and the modals land in, and the final 320x240 stage scale.
+It lives in `engine-ui::pause_menu` and both shipped hosts call it:
+
+| Layer | Owner |
+|---|---|
+| Session -> plain view structs | each host (it holds the live `World`) |
+| Descriptor rect / pen / frame box, with the pinned fallback | `pause_menu::MenuRects` |
+| Stage transform (320x240 -> surface) | `pause_menu::stage_transform` |
+| Per-screen window set, tab painter, sprite order, stage scale | `pause_menu::pause_screen_draws` |
+| Owned Equip projection (slots, candidates, stat compare) | `engine-core::pause_screens::equip_screen_model` |
+
+`engine-ui` deliberately does not depend on `engine-core` - `engine-render`
+re-exports it wholesale and is a leaf presentation crate
+([`engine.md`](engine.md)) - so the projection stays host-side and the
+composition takes the plain view structs. Two crossings remain per host and
+are named as such: the Equip phase tag, and the inventory target-select
+stand-in whose layout walks the session's bag directly.
+
+Two behaviours the hosts used to disagree about are settled by the move. The
+title tab now always resolves through the descriptor **painter** when the
+table names one (the browser page called the pinned-pen label builder
+unconditionally, so a modded disc moved the tab on one host only). And the
+Items screen's Use-route confirm frames **after** the screen's own window set
+rather than before it, so the item-list frame cannot paint over the modal.
+
+`engine-ui/tests/pause_menu_compose.rs` drives every screen through that
+composition with no disc, no GPU and no host - which is only possible because
+the assembly is in a library. While it lived in a binary's private module no
+`tests/` target could import it at all.
+
+The Load / Save sub-screen is **not** in this composition: it is the
+save-select surface, and the native window reaches the same one from the boot
+Continue -> Load path. Both go through `save_select_phase_text_draws` +
+`save_select_chrome_sprite_draws` so the in-game and boot entries cannot drift
+from each other; hoisting only the pause half would have forked them. See
+[`save-screen.md`](save-screen.md).
+
 ### The menu does not open at all while a dialogue is up
 
 Retail's Start handler is not a separate handler: the menu-open accept sits

@@ -116,6 +116,21 @@ Proves the two named constants carry equal values and that neither was renamed
 out from under the pairing. Proves nothing about how either host *uses* them,
 nor about any unpaired literal.
 
+### A deleted pair is not always lost coverage
+
+A pair exists because a value exists twice. The better outcome is that it
+exists **once**, in a crate both hosts already depend on - at which point the
+row comes out of `CONSTANT_PAIRS` and nothing is left to check. The pinned
+menu window-descriptor rect table and the near-fullscreen sub-screen rect went
+that way: both are now single constants in `engine-ui::pause_menu`, read by
+the shared pause-menu composition.
+
+So a missing pair reads two ways, and they are opposites. Before restoring
+one, look at where the constant went: a *shared* constant needs no pair, a
+*re-duplicated* one needs its row back. The checker cannot tell them apart -
+it only reports that a named constant is gone - so the reasoning belongs in
+the comment where the row used to be, which is where it now sits.
+
 ## Tier 3 - simulation: do both hosts feed the same kernel?
 
 `SIM_PAIRS`, the simulation twin of tier 2. Each row names a feature and, per
@@ -405,6 +420,35 @@ name `coplanar_draw_offsets` and drop the map on the floor, and this tier will
 report it clean - that is tier 3's shape of question, one function body down.
 It also cannot see a kernel nobody has written a rule for; the rule list is
 the claim, and it grows one defect at a time.
+
+### The version of this tier that needs no rule
+
+A rule is what you write when two surfaces each assemble the list. When there
+is only **one** assembler, the question this tier asks cannot be posed - and
+that is the cheaper fix wherever the surfaces are genuinely the same screen.
+
+The pause menu went that way. Its draw-list assembly used to live twice: in
+`engine-shell`'s `window/menu_draws.rs` + `window/title_save_draws.rs` and in
+`web-viewer`'s `play_menu.rs`. Two of the divergences that had already grown
+there are exactly this tier's shape - one host resolved a title tab through
+the descriptor painter and the other through a pinned-pen label builder, and
+the Items screen's Use-route confirm framed before the screen's window set on
+one host and after it on the other. Neither is expressible as a `requires`
+rule, because both are *ordering and choice* inside one assembly rather than a
+kernel a file does or does not name.
+
+The assembly now lives once, in `engine-ui::pause_menu`, with each host
+resolving its own rects and projecting its own model into the shared view
+structs. Two `CONSTANT_PAIRS` rows retired with it (see
+[tier 2](#a-deleted-pair-is-not-always-lost-coverage)), and the composition
+became reachable from a library test - `engine-ui/tests/pause_menu_compose.rs`
+- which it could not be while it sat inside a binary's private module, since
+a `tests/` target cannot import one.
+
+The reason this is not the answer everywhere: it needs the two surfaces to be
+the same screen with the same model. The five *render* surfaces above are not
+- the dance hall and the fishing venue bake venue-specific geometry - so there
+the rule is the instrument, and this is not a plan to replace it.
 
 ## What a waiver may say
 

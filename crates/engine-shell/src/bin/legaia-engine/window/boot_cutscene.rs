@@ -605,86 +605,32 @@ impl PlayWindowApp {
             }
             BootUiState::FieldMenu { sub } => {
                 use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
-                // The field pause menu and its sub-screens lay glyphs out
-                // in 320x240 stage pixels. Route them through the shared
-                // boot-UI stage so they upscale + center exactly like the
-                // title art and save chrome (and stay locked to the
-                // `menu_window_chrome_draws_for` frame). The Save
-                // sub-session is the exception: it pre-scales to surface
-                // coords (it reuses the load-screen chrome stage), so it
-                // must not be scaled twice.
-                let is_save_sub = matches!(sub, Some(FieldMenuSubsession::Save(_)));
                 // The kind-0x0D pair replaces the root list rather than
                 // overlaying it: both sub-screens hand the widget VM a
                 // script that opens with `05 00` (close every window) and
                 // then opens their own one, so the command rows are not on
                 // screen while either is up.
-                let context_screen = self.context_locked_screen_draws();
+                let context_screen = self.context_locked_screen_draws(surface_w, surface_h);
                 let mut draws = if !context_screen.is_empty() {
-                    context_screen
+                    context_screen.texts
+                } else if let Some(FieldMenuSubsession::Save(s)) = sub {
+                    // The Save sub-session renders through the save-select
+                    // stage it shares with the boot Continue -> Load screen,
+                    // which pre-scales to surface coords.
+                    self.field_save_sub_draws(s, surface_w, surface_h)
                 } else if let Some(active_sub) = sub {
-                    // Render the active sub-session's overlay. Each branch
-                    // builds the matching plain-data view + calls the
-                    // shipped `*_draws_for` helper.
-                    self.field_menu_sub_draws(active_sub)
+                    self.field_menu_sub_draws(active_sub, surface_w, surface_h)
+                        .texts
                 } else {
-                    // The menu session lives on the BootSession (the
-                    // headless host of the CARD/menu mode); the window
-                    // only renders it. Command rows fill the id-50 list
-                    // window, money/play-time the id-49 corner box, and
-                    // the party overview the id-51 right panel (the
-                    // pinned top-level window set).
-                    let Some(menu) = self.session.field_menu.as_ref() else {
-                        return Vec::new();
-                    };
-                    use legaia_asset::menu_windows::window_ids;
-                    let view = menu.view();
-                    let row_views: Vec<legaia_engine_render::FieldMenuRowView<'_>> = view
-                        .rows
-                        .iter()
-                        .map(|r| legaia_engine_render::FieldMenuRowView {
-                            label: r.label,
-                            enabled: r.enabled,
-                        })
-                        .collect();
-                    let mut d = legaia_engine_render::field_menu_draws_for(
-                        &self.font,
-                        &row_views,
-                        view.cursor,
-                        view.money,
-                        view.play_time_seconds,
-                        self.menu_window_pen(window_ids::TOP_COMMAND_LIST),
-                        self.menu_window_pen(window_ids::TOP_MONEY_TIME),
-                    );
-                    let snaps = legaia_engine_core::field_menu_dispatch::status_snapshots(
-                        &self.session.host.world,
-                    );
-                    let party: Vec<legaia_engine_render::FieldMenuPartyView<'_>> = snaps
-                        .iter()
-                        .map(|s| legaia_engine_render::FieldMenuPartyView {
-                            name: &s.name,
-                            level: s.level,
-                            hp: s.hp,
-                            hp_max: s.hp_max,
-                            mp: s.mp,
-                            mp_max: s.mp_max,
-                            ap: s.ap as u16,
-                        })
-                        .collect();
-                    d.extend(legaia_engine_render::field_menu_info_draws_for(
-                        &self.font,
-                        &party,
-                        self.menu_window_pen(window_ids::TOP_INFO_PANEL),
-                    ));
-                    d
+                    // Command rows fill the id-50 list window,
+                    // money/play-time the id-49 corner box, and the party
+                    // overview the id-51 right panel (the pinned top-level
+                    // window set).
+                    self.field_menu_root_draws(surface_w, surface_h).texts
                 };
                 // Window 7 - the spell level-up notice - overlays whichever
                 // menu screen is current while `MenuRuntime` holds the beat.
-                draws.extend(self.magic_level_notice_draws());
-                if !is_save_sub {
-                    let (origin, scale) = self.save_select_stage(surface_w, surface_h);
-                    legaia_engine_render::scale_stage_text_draws(&mut draws, origin, scale);
-                }
+                draws.extend(self.magic_level_notice_draws(surface_w, surface_h));
                 draws
             }
             // The wipe hand-off draws nothing: retail's next frame after the

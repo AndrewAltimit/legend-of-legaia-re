@@ -52,6 +52,7 @@ pub mod battle_hud_chrome;
 pub mod battle_name_banner;
 mod battle_tutorial_box;
 pub mod other_game_hud;
+pub mod pause_menu;
 pub mod screen_prim;
 mod ui_fishing;
 mod ui_menu;

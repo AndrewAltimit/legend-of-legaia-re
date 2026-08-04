@@ -1569,6 +1569,182 @@ impl ContextLockedLabels {
     }
 }
 
+/// Phase tag of the Equip screen, mirroring
+/// [`crate::equip_session::EquipState`] as a flat word the hosts map onto
+/// `engine-ui`'s `EquipDrawPhase`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EquipScreenPhase {
+    SlotPicker,
+    ItemPicker,
+    Confirm,
+}
+
+/// Owned view model of the Equip screen - the sibling of
+/// [`items_screen_model`] / [`magic_screen_model`] for the third
+/// descriptor-window screen.
+///
+/// It exists for the same reason those do: the projection is real work
+/// (eight slot labels, the candidate list for the active slot with its bag
+/// counts, and a full `compute_battle_stats` pass with the hovered item
+/// installed), and it was written out twice - once in the native window's
+/// `equip_session_draws`, once in the browser's. Two copies of a stat
+/// preview is two chances to preview a different number.
+pub struct EquipScreenModel {
+    /// Party-window rows.
+    pub party_names: Vec<String>,
+    /// Slot labels in engine slot order (retail identifies slots by the
+    /// pictogram column; the label is an engine hint).
+    pub slot_labels: Vec<String>,
+    /// Per-slot equipped-item display names; empty string for an empty slot.
+    pub slot_items: Vec<String>,
+    /// Candidate item names for the active slot. Empty in `SlotPicker`.
+    pub candidate_names: Vec<String>,
+    /// Bag count per candidate, parallel to [`Self::candidate_names`].
+    pub candidate_counts: Vec<u8>,
+    /// The three retail compare rows (`FUN_801D21C0`'s stat block) as
+    /// `(label, current, preview)`. Empty when nothing is previewed.
+    pub stat_compare: Vec<(&'static str, u16, u16)>,
+    pub phase: EquipScreenPhase,
+    /// Cursor row inside the active phase column.
+    pub cursor: u16,
+    /// Active slot index in `ItemPicker` / `Confirm`.
+    pub active_slot: u8,
+    /// Pending-swap label above the Yes/No prompt.
+    pub confirm_label: Option<String>,
+    /// Roster slot of the character being equipped.
+    pub char_slot: u8,
+    /// Slot-picker cursor row, or `None` past the slot picker - what the
+    /// sprite pass puts the second hand on.
+    pub slot_cursor: Option<u16>,
+    /// Pictogram rows the sprite pass draws. Retail draws exactly 7; the
+    /// engine's 8th slot row stays navigable but icon-less so the column
+    /// matches the retail capture.
+    pub pictogram_rows: usize,
+}
+
+/// Project a live [`crate::equip_session::EquipSession`] into
+/// [`EquipScreenModel`].
+///
+/// `party_names` is the world's roster snapshot, which the session does not
+/// carry. The stat preview uses the neutral status set: this is the field
+/// menu, and the session recomputes with live status modifiers on commit.
+pub fn equip_screen_model(
+    session: &crate::equip_session::EquipSession,
+    char_slot: u8,
+    party_names: &[String],
+) -> EquipScreenModel {
+    use crate::equip_session::EquipState;
+    use crate::equipment::EquipSlot;
+
+    let record = session.record();
+    let slot_labels: Vec<String> = (0..8u8)
+        .map(|i| {
+            EquipSlot::from_index(i)
+                .map(|s| s.label().to_string())
+                .unwrap_or_else(|| format!("Slot {i}"))
+        })
+        .collect();
+    let slot_items: Vec<String> = record
+        .equip
+        .iter()
+        .map(|&id| {
+            if id == 0 {
+                String::new()
+            } else {
+                format!("Item {id:02X}")
+            }
+        })
+        .collect();
+
+    let (phase, cursor, active_slot, confirm_label) = match session.state() {
+        EquipState::SlotPicker { cursor } => {
+            (EquipScreenPhase::SlotPicker, cursor as u16, cursor, None)
+        }
+        EquipState::ItemPicker { slot, cursor } => {
+            (EquipScreenPhase::ItemPicker, cursor, slot, None)
+        }
+        EquipState::Confirm {
+            slot,
+            item_id,
+            cursor,
+        } => (
+            EquipScreenPhase::Confirm,
+            cursor as u16,
+            slot,
+            Some(format!("Equip Item {item_id:02X}?")),
+        ),
+        EquipState::Done(_) => (EquipScreenPhase::SlotPicker, 0, 0, None),
+    };
+
+    // Candidates + stat compare only matter past the slot picker.
+    let (candidate_names, candidate_counts, considered_id): (Vec<String>, Vec<u8>, Option<u8>) =
+        if phase == EquipScreenPhase::SlotPicker {
+            (Vec::new(), Vec::new(), None)
+        } else {
+            let items = session.items_for_slot(active_slot);
+            let names: Vec<String> = items
+                .iter()
+                .map(|it| format!("Item {:02X}", it.id))
+                .collect();
+            let counts: Vec<u8> = items
+                .iter()
+                .map(|it| session.inventory().get(&it.id).copied().unwrap_or(0))
+                .collect();
+            // The item the compare block previews: the hovered row in the
+            // picker, the pending item in the confirm phase.
+            let considered = match session.state() {
+                EquipState::Confirm { item_id, .. } => Some(item_id),
+                _ => items.get(cursor as usize).map(|it| it.id),
+            };
+            (names, counts, considered)
+        };
+
+    let stat_compare: Vec<(&'static str, u16, u16)> = match considered_id {
+        Some(id) => {
+            let neutral = crate::battle_stats::StatusModifiers::default();
+            let cur = crate::battle_stats::compute_battle_stats(
+                record,
+                session.equipment(),
+                &[],
+                &neutral,
+            );
+            let mut copy = *record;
+            copy.equip[active_slot as usize] = id;
+            let new = crate::battle_stats::compute_battle_stats(
+                &copy,
+                session.equipment(),
+                &[],
+                &neutral,
+            );
+            vec![
+                ("ATK", cur.atk, new.atk),
+                ("UDF", cur.udf, new.udf),
+                ("LDF", cur.ldf, new.ldf),
+            ]
+        }
+        None => Vec::new(),
+    };
+
+    EquipScreenModel {
+        party_names: party_names.to_vec(),
+        slot_labels,
+        slot_items,
+        candidate_names,
+        candidate_counts,
+        stat_compare,
+        phase,
+        cursor,
+        active_slot,
+        confirm_label,
+        char_slot,
+        slot_cursor: match session.state() {
+            EquipState::SlotPicker { cursor } => Some(cursor as u16),
+            _ => None,
+        },
+        pictogram_rows: record.equip.len().min(7),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

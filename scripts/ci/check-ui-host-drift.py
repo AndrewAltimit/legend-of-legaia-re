@@ -92,14 +92,22 @@ attempt it. What it does instead is pin the one part of the divergence that
 *is* exactly decidable, and which is where the duplication actually sits:
 **geometry constants that exist twice, once per host.**
 
-`crates/web-viewer/src/play_menu.rs` carries a 23-row pinned window-rect
-table whose doc comment says it is "byte-identical to the native window's
-`MENU_WINDOW_FALLBACK`". That sentence is the entire guarantee - a prose
+The browser play page used to carry a 23-row pinned window-rect table whose
+doc comment said it was "byte-identical to the native window's
+`MENU_WINDOW_FALLBACK`". That sentence was the entire guarantee - a prose
 assertion of the kind this repo has already watched go false in the waiver
 file, where a bucket is re-derived from source every run but a *reason* is
 not. [`CONSTANT_PAIRS`] turns those sentences into a check: each pair names a
 constant on each host, and the two initialisers must normalise to the same
 token stream.
+
+A pair is the second-best outcome. The best one is that the constant exists
+**once**, in a crate both hosts already depend on, at which point there is
+nothing to pair and the row comes out of the table - which is what happened to
+that window-rect table and to the near-fullscreen sub-screen rect: both now
+live in `legaia_engine_ui::pause_menu` beside the composition that reads them.
+Deleting a pair is therefore not always a loss of coverage; check which way it
+went before restoring one.
 
 Be precise about what that does and does not establish:
 
@@ -316,19 +324,16 @@ WEB_SHADERS = "site/js/webgl-shaders.js"
 # `(8, 60)` and is deliberately NOT paired with the level-up pen, because
 # nothing says the battle HUD and the level-up banner must move together.
 CONSTANT_PAIRS: list[dict[str, object]] = [
-    {
-        "what": "pinned menu window-descriptor rects (fallback when the disc "
-        "table is absent) - fed to menu_window_chrome_draws_for / tab_banner_draws "
-        "and to every *_draws_for pen on the pause screens",
-        "native": (NATIVE_WINDOW, "MENU_WINDOW_FALLBACK"),
-        "web": (WEB_PLAY_MENU, "WINDOW_FALLBACK"),
-    },
-    {
-        "what": "near-fullscreen content rect for the sub-screens whose retail "
-        "window set is not capture-pinned (Items / Magic / Arts generic frame)",
-        "native": (NATIVE_WINDOW, "MENU_SUBWINDOW_CONTENT"),
-        "web": (WEB_PLAY_MENU, "SUBWINDOW_CONTENT"),
-    },
+    # Two pause-menu rows used to sit at the head of this list - the pinned
+    # window-descriptor rect table and the near-fullscreen sub-screen rect.
+    # They are gone because the constants are: both live once in
+    # `legaia_engine_ui::pause_menu` (`MENU_WINDOW_FALLBACK` /
+    # `MENU_SUBWINDOW_CONTENT`), read by the shared composition both hosts
+    # call. A pair proves two copies agree; one copy needs no proof. The
+    # engine-ui rect table is exercised by `tests/pause_menu_compose.rs`; the
+    # disc side is pinned separately by the disc-gated `menu_windows_real`
+    # test, which asserts the same rects against its own literal list rather
+    # than against this constant.
     {
         "what": "field shop / inn overlay pen - shop_draws_for's `pen` argument",
         "native": (NATIVE_HUD, "SHOP_OVERLAY_PEN"),
