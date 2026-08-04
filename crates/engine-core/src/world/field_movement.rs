@@ -2035,6 +2035,64 @@ impl World {
         }
     }
 
+    /// Post a player-NPC contact into the motion VM's one-slot touch mailbox
+    /// (`DAT_80073F1C`), the sibling of [`Self::check_field_walk_touch`].
+    ///
+    /// Retail's producer is the actor box test `FUN_801CFC40`, which the
+    /// per-axis collision `FUN_801CFE4C` calls three times per step: an
+    /// overlap both refuses the step and tail-calls `FUN_8003D038` with the
+    /// touched actor's `+0x50`. The consumer is the ambient motion VM's
+    /// `0x05` wait arm (`FUN_80038158` at `0x8003882C`), which ends the wait
+    /// on the frame the post names its own actor - so bumping into a town
+    /// NPC breaks it out of its idle pause instead of leaving it parked.
+    ///
+    /// The `0x801C6470` arena the guard reads is assembled from the live
+    /// channels' op-`0x17` records rather than from
+    /// [`Self::field_npc_default_moves`] (the static harvest): retail reads
+    /// the arena, and a stream that has not run its `0x17` yet still holds
+    /// the [`DEFAULT_MOVE_UNSET`](legaia_engine_vm::ambient_motion::DEFAULT_MOVE_UNSET)
+    /// sentinel there, which suppresses the post.
+    ///
+    /// REF: FUN_801cfc40, FUN_8003d038, FUN_80038158
+    pub(crate) fn post_ambient_motion_touch(&mut self) {
+        if self.field_npc_ambient.is_empty() {
+            return;
+        }
+        let Some((px, pz)) = self.player_field_position() else {
+            return;
+        };
+        // The same probe fan the NPC collision test walks
+        // (`Self::field_npc_dir_blocked`), plus the stand-inside point.
+        let mut points: Vec<(i32, i32)> = vec![(px as i32, pz as i32)];
+        for dir in Self::dirs_of_bits(self.last_move_dir_bits) {
+            for &(dx, dz) in &FIELD_ACTOR_PROBES[dir] {
+                points.push((px.saturating_add(dx) as i32, pz.saturating_sub(dz) as i32));
+            }
+        }
+        let hit = self.field_npc_ambient.keys().copied().find(|slot| {
+            let Some(&(ax, az)) = self.field_npc_positions.get(slot) else {
+                return false;
+            };
+            points.iter().any(|&(qx, qz)| {
+                (qx - ax as i32).abs() < FIELD_NPC_BOX_HALF
+                    && (qz - az as i32).abs() < FIELD_NPC_BOX_HALF
+            })
+        });
+        let Some(slot) = hit else { return };
+        let stride = vm::motion_vm::BIND_RECORD_STRIDE;
+        let slots = usize::from(*self.field_npc_ambient.keys().next_back().unwrap_or(&0)) + 1;
+        let mut arena = vec![vm::ambient_motion::DEFAULT_MOVE_UNSET; slots * stride];
+        for (&s, chan) in &self.field_npc_ambient {
+            arena[usize::from(s) * stride] = chan.vm.default_move[0];
+        }
+        let Some(posted) = vm::motion_vm::post_touch(&arena, usize::from(slot)) else {
+            return; // suppressed by the record's class byte
+        };
+        if let Some(chan) = self.field_npc_ambient.get_mut(&slot) {
+            chan.vm.pending_touch = Some(posted);
+        }
+    }
+
     /// Actor-VM glide start (`MotionAt` / `EffectMotion` → `start_motion`,
     /// retail `FUN_800358c0`): record the target on the actor and install a
     /// motion-VM leg gliding the actor's sprite position
@@ -2400,6 +2458,9 @@ impl World {
         // `FUN_801d01b0`, posting `FUN_801d5b5c` on a static-entity contact
         // with no button press): post a touched placement's walk-touch event.
         self.check_field_walk_touch();
+        // The sibling post the same probe makes: the motion VM's one-slot
+        // touch mailbox, which wakes a bumped NPC out of its ambient wait.
+        self.post_ambient_motion_touch();
 
         // Terrain follow (gated): after the X/Z step commits, snap the
         // player's Y to the per-scene floor elevation at the new tile. Done

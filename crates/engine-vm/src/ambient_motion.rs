@@ -122,6 +122,20 @@
 //!   a stream whose real yield op is one of the stepped-over ones from
 //!   spinning; the tick ends as a yield with no facing change, which is the
 //!   correct facing-channel answer for that frame.
+//!
+//! ## The `0x05` wait is interruptible
+//!
+//! Op `0x05` is not a bare countdown. Its arm opens at `0x8003882C` with a
+//! **touch-wake** head that reads the motion VM's one-slot mailbox
+//! `DAT_80073F1C` - the word the collision probe posts through `FUN_8003D038`
+//! ([`crate::motion_vm::post_touch`]) when the player's box overlaps an
+//! actor. When the mailbox names this actor and its `0x801C6470` record
+//! carries a default move, the head rewrites the wait cursor to
+//! `duration - DAT_1F800393` so the countdown immediately below expires the
+//! wait on that frame, then clears the mailbox. That is why walking into a
+//! standing town NPC breaks it out of its idle pause instead of leaving it
+//! parked for the rest of the authored countdown; see
+//! [`AmbientMotion::pending_touch`].
 
 use legaia_asset::man_motion::op_width;
 
@@ -333,11 +347,17 @@ impl RampScheduler {
         }
     }
 
-    // NOT WIRED: nothing calls it because nothing needs to. The host builds a
-    // fresh `RampScheduler` per scene rather than recycling one across the
-    // boundary, so the scene-entry reset has no live caller; it exists so a
-    // host that does keep a long-lived pool re-arms the header slot the way
-    // retail does instead of clearing all 64 and handing out slot 0.
+    // NOT WIRED, and a call site would be provably unobservable. The pool is
+    // per-channel ([`AmbientMotion::ramps`]) and every channel is rebuilt from
+    // scratch on scene entry (`World::seed_field_npc_ambient` clears the map
+    // and constructs a fresh `AmbientMotion` per placement), so no pool ever
+    // crosses a scene boundary. [`RampScheduler::new`] and this reset leave
+    // **byte-identical** state - `slots = [None; RAMP_SLOTS]`, `overflow = 0` -
+    // so adding a scene-entry call would change nothing at all: the definition
+    // of a fake wire. It exists so a host that does keep a long-lived pool
+    // re-arms the header slot the way retail does instead of clearing all 64
+    // and handing out slot 0. What would make it load-bearing is a host that
+    // recycles schedulers across scenes, not a caller.
     /// PORT: FUN_8003CDA8 - the scene-entry pool reset.
     ///
     /// Retail zeroes the busy word `+0x1E` of all **64** raw slots, clears
@@ -651,6 +671,17 @@ pub struct AmbientMotion {
     /// Seed for the `FUN_80056798` equivalent the `0x18` wander draws its
     /// direction and its continue-or-stop coin flip from.
     pub rng: u32,
+    /// The motion VM's one-slot **touch mailbox**, retail `DAT_80073F1C`:
+    /// the actor id the collision probe last posted through `FUN_8003D038`
+    /// ([`crate::motion_vm::post_touch`]).
+    ///
+    /// Retail keeps one global word and every actor's `0x05` wait arm tests
+    /// it against its own `+0x50`, so at most one actor can ever match; a
+    /// per-channel `Option` carries the same information without a shared
+    /// cell, with `None` standing for retail's `0xFF` empty sentinel. The
+    /// host writes it on contact; [`AmbientMotion::step_ops_with`]'s wait arm
+    /// consumes it, which is retail's `sw a0, 0x3f1c(a1)` at `0x8003887C`.
+    pub pending_touch: Option<u32>,
 }
 
 impl AmbientMotion {
@@ -673,6 +704,7 @@ impl AmbientMotion {
             // Any seed does; the host overrides it per actor so two NPCs
             // running the same authored stream do not wander in lockstep.
             rng: 0x1234_5678,
+            pending_touch: None,
         }
     }
 
@@ -761,7 +793,17 @@ impl AmbientMotion {
                     self.pc = 0;
                 }
                 Some(AmbientOp::Wait) => {
-                    // `0x8003882C`. The cursor is a u8 in retail (`sb`).
+                    // `0x8003882C`. The arm opens with the **touch-wake**
+                    // short-circuit (`0x8003882C..0x8003887C`), then falls
+                    // into the plain countdown at `0x80038880`.
+                    if self.take_touch_wake() {
+                        // `0x80038874`/`0x80038878`: cursor = duration - speed,
+                        // as a `sb`, so the countdown below lands exactly on
+                        // the duration and expires the wait this frame.
+                        let cut = body[1].wrapping_sub(speed);
+                        self.cursor = (self.cursor & 0xFF00) | u16::from(cut);
+                    }
+                    // The cursor is a u8 in retail (`sb`).
                     let cur = ((self.cursor & 0xFF) as u8).wrapping_add(speed);
                     self.cursor = (self.cursor & 0xFF00) | u16::from(cur);
                     if u16::from(cur) >= u16::from(body[1]) {
@@ -805,6 +847,36 @@ impl AmbientMotion {
             }
         }
         AmbientTick::Yield
+    }
+
+    /// The `0x05` wait arm's **touch-wake** head, retail
+    /// `0x8003882C..0x8003887C`.
+    ///
+    /// PORT: FUN_80038158 (`0x8003882C..0x8003887C`)
+    ///
+    /// Three gates in retail's order, all skipping to the plain countdown:
+    ///
+    /// 1. `DAT_80073F1C == 0xFF` - the mailbox is empty ([`None`] here);
+    /// 2. the posted id is not this actor's `+0x50` ([`Self::owner`]);
+    /// 3. the actor's `0x801C6470` record byte 0 is [`DEFAULT_MOVE_UNSET`] -
+    ///    an actor with no default move installed never wakes on a bump.
+    ///
+    /// Gate 3 is the same byte [`crate::motion_vm::post_touch`] tests on the
+    /// producing side, so a suppressed post and a suppressed consume agree;
+    /// retail reads it twice because the arena is live and op `0x17` can
+    /// write it between the two.
+    ///
+    /// Returns `true` when the wait must be cut short, having consumed the
+    /// mailbox (retail's `sw a0, 0x3f1c(a1)`, storing the `0xFF` sentinel).
+    fn take_touch_wake(&mut self) -> bool {
+        let Some(posted) = self.pending_touch else {
+            return false;
+        };
+        if posted != self.owner || self.default_move[0] == DEFAULT_MOVE_UNSET {
+            return false;
+        }
+        self.pending_touch = None;
+        true
     }
 
     /// `0x04` body, retail `0x800385D0`. Returns `true` if the tick is
@@ -1358,6 +1430,69 @@ mod tests {
             assert_eq!(vm.tick(&code, 2), AmbientTick::Yield);
         }
         assert_eq!(vm.pc, 2, "8 frames at scalar 2 = 4 ticks");
+    }
+
+    /// The `0x05` arm's touch-wake head (`0x8003882C`): a posted contact
+    /// naming this actor ends the wait on the frame it arrives, instead of
+    /// after the authored countdown.
+    #[test]
+    fn op05_wait_is_cut_short_by_a_posted_touch() {
+        let code = [0x05u8, 0x60, 0x01]; // wait 0x60 ticks, then restart
+        let mut vm = AmbientMotion::new(7, 0);
+        vm.default_move = [0x03, 0x00]; // op 0x17 installed a default move
+        for _ in 0..4 {
+            assert_eq!(vm.tick(&code, 1), AmbientTick::Yield);
+        }
+        assert_eq!(vm.pc, 0, "still parked in the wait");
+
+        vm.pending_touch = Some(7); // the collision probe posted this actor
+        vm.tick(&code, 1);
+        assert_eq!(vm.pc, 2, "the touch expires the wait this frame");
+        assert_eq!(vm.cursor, 0);
+        assert_eq!(vm.pending_touch, None, "retail stores the 0xFF sentinel");
+    }
+
+    /// The head's three gates, each of which leaves the countdown running.
+    #[test]
+    fn a_touch_that_fails_a_gate_leaves_the_wait_alone() {
+        let code = [0x05u8, 0x60, 0x01];
+        // Gate 2: the post names a different actor.
+        let mut other = AmbientMotion::new(7, 0);
+        other.default_move = [0x03, 0x00];
+        other.pending_touch = Some(9);
+        other.tick(&code, 1);
+        assert_eq!(other.pc, 0, "a post for another actor is not ours");
+        assert_eq!(other.pending_touch, Some(9), "and is not consumed");
+
+        // Gate 3: no default move installed - the `0x801C6470` sentinel.
+        let mut unset = AmbientMotion::new(7, 0);
+        assert_eq!(unset.default_move[0], DEFAULT_MOVE_UNSET);
+        unset.pending_touch = Some(7);
+        unset.tick(&code, 1);
+        assert_eq!(unset.pc, 0, "a sentinel record never wakes on a bump");
+
+        // Gate 1: an empty mailbox is the ordinary case.
+        let mut idle = AmbientMotion::new(7, 0);
+        idle.default_move = [0x03, 0x00];
+        idle.tick(&code, 1);
+        assert_eq!(idle.pc, 0);
+    }
+
+    /// The producer's guard and the consumer's third gate read the same
+    /// `0x801C6470` byte, so a suppressed post can never wake a wait.
+    #[test]
+    fn the_post_guard_and_the_wake_gate_agree_on_the_arena_byte() {
+        let mut arena = vec![crate::motion_vm::TOUCH_POST_SUPPRESS_CLASS; 8 * 4];
+        arena[3 * 4] = 0x03; // slot 3 has a default move; slot 5 does not
+        assert_eq!(crate::motion_vm::post_touch(&arena, 3), Some(3));
+        assert_eq!(crate::motion_vm::post_touch(&arena, 5), None);
+
+        let code = [0x05u8, 0x60, 0x01];
+        let mut vm = AmbientMotion::new(3, 0);
+        vm.default_move = [arena[3 * 4], 0];
+        vm.pending_touch = crate::motion_vm::post_touch(&arena, 3);
+        vm.tick(&code, 1);
+        assert_eq!(vm.pc, 2);
     }
 
     #[test]
