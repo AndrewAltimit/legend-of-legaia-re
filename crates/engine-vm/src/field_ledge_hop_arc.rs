@@ -142,8 +142,10 @@
 //! `FUN_801D5780` has no reference of any form anywhere in the shipped data,
 //! while its three siblings each do, so it is dead code in the retail image
 //! rather than an engine wiring gap. [`spawn_arc_with_emitter`] is a real
-//! retail entry, but its callers are the non-player arcs, which the engine's
-//! world model has no actor-pool counterpart for.
+//! retail entry with a named live caller - the field VM's op `0x43`
+//! sub-`0`/`1`/`0xA`/`0xB` arm, whose port already forwards the landing triple
+//! to a host hook - and what it lacks is a per-actor arc channel to spawn into;
+//! `World::field_ledge_hop` is the player's alone.
 //!
 //! The player hop itself is live: `World::try_field_ledge_hop` classifies the
 //! ledge and starts the session, `World::step_field_vertical` advances both
@@ -352,7 +354,28 @@ pub fn spawn_arc_helper(
 /// as `None`.
 ///
 /// PORT: FUN_801d25ec
-// NOT WIRED: see the module's `NOT WIRED` section.
+// NOT WIRED. The retail caller is not vague: the field VM's op `0x43`
+// sub-`0`/`1`/`0xA`/`0xB` arm calls it at `0x801DF5AC`, unconditionally on the
+// success side of that arm's halt-acquire (`0x801DF410 beq v0,zero` takes the
+// PC-advance path on failure). So op `0x43` sub-0/1/A/B is **halt the script
+// AND arc this actor**, not a halt alone: the landing triple is built from the
+// operand's two tile bytes (`(b & 0x7F) << 7 | 0x40`, plus `0x40` again when
+// bit 7 is set), falling back to the actor's own position when both are zero;
+// `a2` / `a3` are the decoded apex and frame count; the class byte is `1` for
+// sub-`1`/`B` and `0` for sub-`0`/`A`.
+//
+// The port's arm (`crate::field::step::actor_ctrl::op_43`) stops at the halt.
+// It already computes and forwards the landing coords -
+// `FieldHost::field_halt_acquire_apply(ctx, sub_op, resume, coords)` - so the
+// hook that would carry the spawn exists and is called. What does not exist is
+// anywhere to put the result: `World::field_ledge_hop` is a single
+// `Option<FieldLedgeHop>` for the **player**, and this entry arcs whichever
+// actor the script is running on, chaining an emitter record besides. Wiring
+// needs a per-actor arc channel (and a consumer for `HopEmitter`, whose tick
+// `FUN_801E4470` is itself inert for the same reason).
+//
+// Naming this gap "the engine has no actor pool" was too coarse - the missing
+// thing is one keyed channel, and the call site is already named and live.
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_arc_with_emitter(
     src: Option<(i16, i16, i16)>,

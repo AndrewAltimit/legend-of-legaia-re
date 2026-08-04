@@ -1162,6 +1162,60 @@ Both ticks now run from `World::step_field_vertical`, and the hop is covered
 end to end (`field_ledge_hop_wired.rs` synthetic, `field_ledge_hop_disc.rs`
 against a real scene's authored geometry).
 
+### Re-reading the rewritten reasons found five more that do not hold
+
+The rewrite above replaced reasons that named an existing symbol. Re-checking
+the replacements against the disassembly found that half of them describe the
+gap at the wrong size - three too large, one at the wrong subsystem entirely.
+
+| Anchor | The reason claimed | What holds instead |
+|---|---|---|
+| `post_touch` (`8003d038`) | the wait-for-touch arm at `0x8003882C` is unported, and the engine's slice of `FUN_80038158` is "ops `0x04` / `0x0D` plus the static MAN decode" | that arm **is** op `0x05`, ported and live; only its four-instruction mailbox head was missing. Now wired - see below |
+| `spawn_arc_with_emitter` (`801d25ec`) | its callers are "the non-player arcs", which the world model has no actor-pool counterpart for | one named caller: field-VM op `0x43` sub-`0`/`1`/`0xA`/`0xB` at `0x801DF5AC`. What is missing is one keyed channel, not a pool |
+| `fade_ramp` (`80020c14` / `80025000`) | wiring needs the retail system-actor pool behind the fade spawn | `FadeRamp` *is* the `+0x7C` block and a world field can hold it; the pool is only what `spawn_fade` needs for concurrent fades |
+| `ease_camera_yaw` (`801da390`) | the engine has no `_DAT_8007BCAC` accumulator, so wiring is a fidelity-mode decision | the **target** is the harder half: nothing writes the zone angle either |
+| `reset_pool` (`8003cda8`) | the host builds a fresh `RampScheduler` per scene | true, and it makes a call site provably unobservable - `new()` and `reset_pool()` leave byte-identical state |
+
+**Op `0x43` sub-`0`/`1`/`0xA`/`0xB` is halt *and* arc.** The port's arm stops at
+the halt-acquire, which is why `FUN_801D25EC` reads as caller-less. Retail runs
+the arc unconditionally on the acquire's success side (`0x801DF410` takes the
+PC-advance path only on failure), building the landing triple from the operand's
+two tile bytes and falling back to the actor's own position when both are zero.
+The port already forwards those coords to `FieldHost::field_halt_acquire_apply`,
+so the hook is live; the gap is that `World::field_ledge_hop` is the *player's*
+single `Option`, and this entry arcs whichever actor the script runs on.
+
+**The camera row's two inputs are both absent, and one is upstream of the
+other.** `zone_angle` is the camera-zone record's `+0x4A`, and its retail writer
+is field-VM op `0x4C` outer-nibble-4 sub-9 - the same opcode that writes
+`_DAT_8007BCAC` on its delta arm. The port dispatches that opcode but `World`
+overrides none of its three host hooks (`op4c_n4_sub9_default_write` /
+`_default_ramp` / `_delta_write_or_ramp` keep their no-op defaults), so an
+accumulator added alone would have nothing to ease toward.
+
+### The touch mailbox is now wired end to end
+
+`FUN_8003D038` posts an actor id into `DAT_80073F1C`; the reader is the head of
+the ambient VM's `0x05` wait arm, which rewrites the wait cursor to
+`duration - DAT_1F800393` when the mailbox names its own actor and its
+`0x801C6470` record byte is not the `0x8C` sentinel, then clears the mailbox.
+The port had the countdown but not the head, so an NPC parked in a wait ignored
+being walked into for the whole authored duration.
+
+`AmbientMotion::pending_touch` carries the mailbox per channel (`None` = the
+`0xFF` empty sentinel; only one actor can ever match a global post, so the
+information is the same), `AmbientMotion::take_touch_wake` is the head, and
+`World::post_ambient_motion_touch` posts from the locomotion step beside
+`check_field_walk_touch`. Covered by `ambient_touch_wake.rs` (disc-free): an
+NPC in the contact box turns, the same NPC out of it does not, and one whose
+arena byte is the sentinel does not.
+
+That also retires the blocker `motion_pause_kick`'s **superseded** reason gave
+in the `WIRE` section above ("the port's field collision path does not post
+touch events"). Its source tag had already moved on to a different and correct
+reason - a requested-move channel field NPCs do not carry - so the row does not
+move; the page's older text is what was stale.
+
 ## The dance / fishing minigame block
 
 The `dance.rs` / `dance_tutorial.rs` / `fishing_actors.rs` / `fishing_chrome.rs`
