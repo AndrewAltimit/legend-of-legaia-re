@@ -1036,9 +1036,7 @@ pub fn placement_walk_touch_event(
         // `PlacementKind::Portal` is gated by `is_genuine_warp` to `op0` in
         // `100..=106`, i.e. exactly the seven mode-24 overlay slots - so its
         // payload is a minigame sub-id, whatever the field is still called.
-        return Some(WalkTouchEvent::Warp {
-            sub_id: target_map,
-        });
+        return Some(WalkTouchEvent::Warp { sub_id: target_map });
     }
     let (region, pc0) = placement_pretext_region(man_file, man, p)?;
     player_teleport_in_region(region, pc0)

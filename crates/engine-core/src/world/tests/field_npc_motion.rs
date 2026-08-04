@@ -167,7 +167,7 @@ fn start_field_npc_motion_requires_installed_slot() {
 }
 
 #[test]
-fn walk_touch_warp_posts_once_per_contact_and_queues_transition() {
+fn walk_touch_warp_posts_once_per_contact_and_arms_the_minigame_door() {
     use crate::man_field_scripts::WalkTouchEvent;
 
     let mut world = World::new();
@@ -177,13 +177,14 @@ fn walk_touch_warp_posts_once_per_contact_and_queues_transition() {
     world.actors[0].move_state.world_z = 2000;
     world
         .field_walk_touch
-        .insert(5, ((1200, 2000), WalkTouchEvent::Warp { target_map: 3 }));
+        .insert(5, ((1200, 2000), WalkTouchEvent::Warp { sub_id: 3 }));
 
     // Baseline: standing outside the ±80 contact box posts nothing.
     let _ = world.drain_field_events();
     for _ in 0..3 {
         let _ = world.tick();
     }
+    assert!(world.pending_minigame_warp.is_none());
     assert!(world.pending_scene_transition.is_none());
     assert!(world.drain_field_events().is_empty());
 
@@ -193,9 +194,13 @@ fn walk_touch_warp_posts_once_per_contact_and_queues_transition() {
         let _ = world.tick();
     }
     assert_eq!(
-        world.pending_scene_transition,
+        world.pending_minigame_warp,
         Some(3),
-        "the door-warp queues through the same path the 0x3E op uses"
+        "the door-warp arms through the same path the 0x3E op uses"
+    );
+    assert_eq!(
+        world.pending_scene_transition, None,
+        "a mode-24 sub-id must not reach the map-id resolver"
     );
     let events = world.drain_field_events();
     let touches: Vec<_> = events
