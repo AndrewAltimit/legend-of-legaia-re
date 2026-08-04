@@ -8,10 +8,18 @@
 # Rungs (see the test's module docs for the full table):
 #   1  town01 free-roam, input released
 #   2  pad-walk town01 south gate -> map01
-#   3  pad-walk map01 -> keikoku (Ravine)
+#   3  pad-walk map01 across the continent (>= 24 tiles, >= 1 encounter fought)
+#   4  pad-walk map01 -> keikoku (Ravine)
 #
 # Unlike the other progression oracles, this number is denominated in what a
 # player can do, not in what the disc decodes. Raise it only when the run
 # actually clears the rung - never to make a red test green.
+#
+# Rung 4 does not clear. The overworld walk crosses ~79 tiles from the map01
+# arrival and stops beside the `suimon` cluster, on a solid `.MAP` placed
+# object (anchor `(54, 64)`); independently, a walkability flood from the
+# arrival cannot reach ANY of map01's six `keikoku` mouths - the closest
+# residual is 54 sub-cells. That is a terrain-connectivity question about the
+# overworld's collision inputs, not a locomotion one; see `handoff/lane6.md`.
 
-reached = 2
+reached = 3
