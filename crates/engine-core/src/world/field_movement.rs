@@ -1961,27 +1961,34 @@ impl World {
         // Post through the same dispatch path the button-gated interact uses.
         self.trigger_field_interact(0, touch_slot);
         match event {
-            WalkTouchEvent::Warp { sub_id } => {
-                // The same opcode the field VM's own arm handles, reached by
-                // walking onto the placement instead of by a script step - so
-                // it stages the same way (`FieldHostImpl::minigame_door_warp`).
-                // Posting `sub_id` into `pending_scene_transition` instead
-                // resolved a code-overlay selector through a CDNAME ordinal
-                // and warped the player to an unrelated scene.
-                //
-                // Body contact takes the **decoded** effect, not the record
-                // run: the warp drains this same frame, so a record run armed
-                // by the `trigger_field_interact` above would be suspended
-                // mid-conversation for the whole minigame and then resume, on
-                // the return frame, as a box the player never opened. The
-                // record's own path is the button probe
-                // ([`Self::field_interact_probe_slot`]), which does not warp
-                // out from under it.
-                self.active_inline_prologue = None;
-                self.active_inline_slot = None;
-                self.arm_minigame_warp();
-                self.pending_minigame_warp = Some(sub_id);
-            }
+            // A `Warp` event is, by construction, **only** ever a mode-24
+            // minigame sub-id: `is_genuine_warp` gates the decoded `0x3E`'s
+            // `op0` to `100..=106`, and every carrier of that id space is a
+            // venue cabinet (see [`crate::minigame_entry`]).
+            //
+            // Body contact must NOT execute it. Retail's contact kernel
+            // `FUN_801d5b5c` **resumes the placement's script**; it does not
+            // shortcut to that script's terminal warp. A koin1 cabinet's
+            // script is a coin compare into a confirm dialogue, and only the
+            // taken arm reaches the `0x3E` - which is why brushing a slot
+            // machine in retail costs nothing and opens nothing.
+            //
+            // Executing the *decoded* effect here instead skipped the compare
+            // and the confirm, and made the whole casino floor a trap: the
+            // contact box is +/-`FIELD_PROP_BOX_HALF` around the placement
+            // and koin1's casino NPCs stand inside their neighbouring
+            // cabinets' boxes, so walking up to an NPC to talk entered a
+            // minigame. No shipped host has a player-reachable exit from one
+            // (the browser play page does not even draw them), so the entry
+            // read as a freeze: field stopped, BGM kept playing.
+            //
+            // The entry stays on the button probe
+            // ([`Self::field_interact_probe_slot`]) - retail's actual
+            // trigger - which runs the record and lets its own `0x3E` arm
+            // ([`crate::world::vm_hosts`]) do the warp when the script gets
+            // there. Contact still posts the interact above, which is the
+            // script resume `FUN_801d5b5c` does model.
+            WalkTouchEvent::Warp { .. } => {}
             WalkTouchEvent::PlayerMoveTo {
                 world_x,
                 world_z,

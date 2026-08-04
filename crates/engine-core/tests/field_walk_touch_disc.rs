@@ -8,8 +8,10 @@
 //! kernel the button-gated interact uses - and the dispatched script runs.
 //! The engine mirrors the decoded script effects:
 //!
-//! - a genuine `0x3E` door-warp placement (`koin1`'s mine exits) queues the
-//!   scene transition the op's host path (`scene_transition`) would;
+//! - a genuine `0x3E` door-warp placement (`koin1`'s casino cabinets) posts
+//!   the interact and **nothing else** - the decoded warp is the script's
+//!   terminal instruction, past a coin compare and a confirm the contact does
+//!   not clear, so entering the minigame on contact is not the retail effect;
 //! - a cross-context `0x23` player-channel MOVE_TO placement (`cave01`'s
 //!   throw-back guards) snaps the player to the decoded world position.
 //!
@@ -79,7 +81,7 @@ fn walk_into(world: &mut World, target: (i16, i16), done: impl Fn(&World) -> boo
 }
 
 #[test]
-fn koin1_portal_walk_touch_queues_the_door_warp() {
+fn koin1_cabinet_walk_touch_posts_the_interact_but_does_not_enter() {
     let Some(mut world) = world_for_scene("koin1") else {
         return;
     };
@@ -122,23 +124,32 @@ fn koin1_portal_walk_touch_queues_the_door_warp() {
         "no touch post while far from every portal"
     );
 
-    // Walk into the cabinet's contact box: the touch posts once and arms the
-    // mode-24 door warp through the same path the `0x3E` op uses. It must NOT
-    // reach `pending_scene_transition` - resolving a sub-id through the map-id
-    // resolver is what used to warp the player to an unrelated scene.
-    walk_into(&mut world, pos, |w| w.pending_minigame_warp.is_some());
+    // Walk into the cabinet's contact box. The touch posts once - retail's
+    // `FUN_801d5b5c` script resume - and that is ALL it does. It must reach
+    // neither warp channel:
+    //
+    // - `pending_scene_transition`, because resolving a minigame sub-id
+    //   through the map-id resolver warped the player to an unrelated scene;
+    // - `pending_minigame_warp`, because a cabinet's script is a coin compare
+    //   into a confirm dialogue and only its taken arm reaches the `0x3E`.
+    //   Running the *decoded* warp on contact skipped both gates, and koin1's
+    //   casino NPCs stand inside their neighbouring cabinets' contact boxes,
+    //   so walking up to an NPC to talk dropped the player into a minigame.
+    let _ = sub_id;
+    walk_into(&mut world, pos, |w| {
+        w.pending_minigame_warp.is_some() || w.pending_scene_transition.is_some()
+    });
     assert_eq!(
-        world.pending_minigame_warp,
-        Some(sub_id),
-        "the walk-touch armed the placement's minigame door warp"
+        world.pending_minigame_warp, None,
+        "brushing a koin1 cabinet must not enter its minigame"
     );
     assert_eq!(
         world.pending_scene_transition, None,
         "a cabinet's sub-id must not reach the map-id resolver"
     );
     assert!(
-        world.minigame_scene_backup.is_some(),
-        "the departure scene is backed up for the return trip"
+        world.minigame_scene_backup.is_none(),
+        "no mode-24 round trip is armed by a brush"
     );
     let events = world.drain_field_events();
     let posts = events

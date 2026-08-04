@@ -461,14 +461,12 @@ The derivation and the footprint rest positions are pinned by two cheat-free Rim
   `World::check_field_walk_touch` runs on the locomotion step: contact is tested with the **same
   forward probe points that block movement** (the `DAT_801f21b4` rows of the directions held this
   tick, plus the stand-inside fallback) against the placement's static ±80 contact box, posting once
-  per contact through the same `trigger_field_interact` dispatch the button-gated interact uses and
-  applying the decoded effect (arm the **mode-24 minigame door warp** / snap the player) - so a
+  per contact through the same `trigger_field_interact` dispatch the button-gated interact uses - so a
   **solid** doorway object still fires its teleport while the player stands pressed against its box,
   exactly as retail's one probe both refuses the step and posts the touch.
-  A `Warp` payload is the door-warp `op0 - 100`, i.e. a minigame sub-id
-  ([`minigame-entry`](../../crates/engine-core/src/minigame_entry.rs)), and it is staged exactly as the
-  field-VM arm stages it - never through the map-id resolver.
-  Not modelled: the facing save/restore and touch counters of the post kernel. Disc-gated: `engine-core/tests/field_walk_touch_disc.rs` (koin1 casino-cabinet door warps; cave01 guard throw-backs).
+  Only `PlayerMoveTo` and `SpawnRecord` also apply their decoded effect. A `Warp` payload applies
+  none: see [Contact resumes the script, it does not run the script's last instruction](#contact-resumes-the-script-it-does-not-run-the-scripts-last-instruction).
+  Not modelled: the facing save/restore and touch counters of the post kernel. Disc-gated: `engine-core/tests/field_walk_touch_disc.rs` (koin1 casino cabinets; cave01 guard throw-backs) and `engine-shell/tests/casino_floor_softlock.rs`.
 - **A door placement's own record is installed, and the action probe reaches it.** Retail runs the
   touched placement's record through the dialog SM whatever it contains
   (see [`script-vm.md`](script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts)), so
@@ -476,11 +474,37 @@ The derivation and the footprint rest positions are pinned by two cheat-free Rim
   `0x3E` placement as well as every talk NPC, entered at the interaction cursor, and
   `field_interact_probe_slot` admits those slots off their `field_walk_touch` anchors - retail's
   probe walks the whole actor list, so a cabinet is as probe-able as a villager, where the engine's
-  NPC-only probe set left it unreachable. **Body contact keeps the decoded effect**: the warp drains
-  the same frame, so the contact arm drops the record run it armed rather than leave a conversation
-  suspended across the minigame. Disc-gated:
+  NPC-only probe set left it unreachable. Disc-gated:
   `engine-core/tests/placement_interact_disc.rs` reports, per door, whether the record reaches its
   box or its own warp and the `(pc, byte)` it comes to rest on.
+
+#### Contact resumes the script, it does not run the script's last instruction
+
+`WalkTouchEvent::Warp` is, by construction, only ever a **mode-24 minigame sub-id**:
+`is_genuine_warp` gates the decoded `0x3E`'s `op0` to `100..=106`, and every carrier of that id
+space is a venue cabinet ([`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp)).
+Body contact does **not** execute it.
+
+The distinction the classifier hides is between a placement's *script* and that script's *terminal
+instruction*. `FUN_801d5b5c` resumes the script. A koin1 cabinet's script is a coin compare into a
+confirm dialogue, and only the taken arm reaches the `0x3E` - which is why brushing a slot machine
+in retail costs nothing and opens nothing. Applying the structurally-decoded effect instead skipped
+both gates.
+
+That made the whole Sol casino floor a trap rather than one bad placement, and the reason is
+geometry, not the classifier: the contact box is ±`FIELD_PROP_BOX_HALF` (`0x50`) about the
+placement *plus* the directional probe offsets, and koin1 seats its casino NPCs inside their
+neighbouring cabinets' boxes. Walking up to an NPC to talk and using a cabinet were therefore the
+same input. Compounding it, an entered minigame had no player-reachable exit on any host, so the
+entry was terminal and read as a freeze - field stopped, BGM still playing. The exit is now an
+engine affordance ([`engine.md` § fidelity and enhancements](engine.md#fidelity-and-enhancements)).
+
+The entry lives on the button probe (`field_interact_probe_slot`), which is retail's trigger: it
+runs the record, and the record's own `0x3E` arm performs the warp when the script gets there.
+Contact still posts the interact, which is the part of `FUN_801d5b5c` that *is* a contact effect.
+Pinned by `engine-shell/tests/casino_floor_softlock.rs`, which walks the real player into every
+koin1 cabinet and every koin1 NPC from four sides and asserts the scene mode never leaves the
+field.
 - **Prop bind records run through the field VM on touch / interact - the door swing, its collision
   drop, and the cupboard search.** A static-class prop touch (`World::pending_prop_touch`, the bit-4
   auto-post) or an interact-class confirm press (`World::field_interact_prop_anchor`, the

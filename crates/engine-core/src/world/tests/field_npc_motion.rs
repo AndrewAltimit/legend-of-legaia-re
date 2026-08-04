@@ -166,18 +166,26 @@ fn start_field_npc_motion_requires_installed_slot() {
     assert!(world.field_npc_motions.is_empty());
 }
 
-/// The walk-on half of the mode-24 **minigame door warp**.
+/// Body contact with a minigame cabinet posts the interact and **nothing
+/// else** - it does not enter the minigame, and it does not warp.
 ///
-/// `WalkTouchEvent::Warp` carries a `sub_id`, not a map id: the field-VM arm
-/// and this walk-on arm are the same `0x3E` opcode reached two ways, and
-/// neither calls a scene-change packet. So the contact must post
-/// `pending_minigame_warp` and leave `pending_scene_transition` alone -
-/// routing the sub-id through the map-id resolver is what used to warp a
-/// player who touched a casino cabinet into an unrelated scene. The sibling
-/// pin on the field-VM side is
+/// `WalkTouchEvent::Warp` is by construction only ever a mode-24 minigame
+/// `sub_id` (`is_genuine_warp` gates the decoded `0x3E`'s `op0` to
+/// `100..=106`). Retail's contact kernel `FUN_801d5b5c` resumes the
+/// placement's *script*, and a cabinet's script is a coin compare into a
+/// confirm dialogue - only the taken arm reaches the `0x3E`. Executing the
+/// structurally-decoded warp on contact skipped both, and because the contact
+/// box is +/-`FIELD_PROP_BOX_HALF` and koin1's casino NPCs stand inside their
+/// neighbouring cabinets' boxes, walking up to an NPC entered a minigame no
+/// shipped host could then leave.
+///
+/// Two things are pinned here, and they fail for different reasons: the
+/// contact still posts exactly one `FieldInteract` (the script resume retail
+/// *does* model), and neither warp channel is touched. The entry lives on the
+/// button probe instead; the field-VM side is unchanged and pinned by
 /// `field_op_3e_warp_arms_the_minigame_door_not_a_scene_change`.
 #[test]
-fn walk_touch_warp_posts_once_per_contact_and_arms_the_minigame_door() {
+fn walk_touch_warp_posts_the_interact_but_does_not_enter_the_minigame() {
     use crate::man_field_scripts::WalkTouchEvent;
 
     let mut world = World::new();
@@ -204,13 +212,19 @@ fn walk_touch_warp_posts_once_per_contact_and_arms_the_minigame_door() {
         let _ = world.tick();
     }
     assert_eq!(
-        world.pending_minigame_warp,
-        Some(3),
-        "the walk-on cabinet arms the same door the 0x3E op arms"
+        world.pending_minigame_warp, None,
+        "brushing a cabinet must not enter its minigame - retail resumes the \
+         record's script (coin compare + confirm), it does not run the \
+         script's terminal warp"
     );
     assert_eq!(
         world.pending_scene_transition, None,
-        "the door-warp sub-id must not reach the map-id resolver"
+        "the door-warp sub-id must not reach the map-id resolver either"
+    );
+    assert_eq!(
+        world.mode,
+        SceneMode::Field,
+        "contact leaves the player in the field"
     );
     let events = world.drain_field_events();
     let touches: Vec<_> = events

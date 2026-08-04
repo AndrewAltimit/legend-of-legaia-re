@@ -40,6 +40,7 @@
       <tr><td><code>set_semi_blend</code></td><td><strong>on</strong></td><td>Retail ABE semi-transparency blending. On because it <em>is</em> retail.</td></tr>
       <tr><td>Camera distance (<code>T</code>) / debug orbit (<code>C</code>)</td><td><code>Far</code> / off</td><td>Framing only; never feeds the simulation.</td></tr>
       <tr><td><a href="vr-mode.html">WebXR VR mode</a></td><td>off</td><td>Stereo presentation on the site's WebGL pages, not the wgpu path.</td></tr>
+      <tr><td>Start leaves a minigame (<code>World::poll_minigame_escape</code>)</td><td><strong>on</strong>, not a knob</td><td>Retail quits each of the five minigames through its own overlay - a different control per game - and none of those is wired to a control a player can find here, so without this an entered minigame is a softlock. Each game's own exit runs, so the cash-out and score bookkeeping match a deliberate exit.</td></tr>
     </tbody>
   </table>
 
