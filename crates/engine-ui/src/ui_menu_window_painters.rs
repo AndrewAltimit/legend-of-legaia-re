@@ -491,7 +491,11 @@ pub fn amount_prompt_draws_for(
 /// NOT WIRED: same rect first and adds this count on top. The engine's equip
 /// NOT WIRED: screen (`engine-ui::ui_menu::equipment`) is a slot list with no
 /// NOT WIRED: item-info panel at all, so there is no rect to add a count to
-/// NOT WIRED: yet. Waived in scripts/ci/ui-host-drift-waivers.toml
+/// NOT WIRED: yet. Note the count itself is not what is missing: that screen
+/// NOT WIRED: already draws each candidate's owned count inline on its list
+/// NOT WIRED: row (`EquipCandidateRow::count`, drawn at the row pen + 104), so
+/// NOT WIRED: adopting window 24 *relocates* a count into a panel rather than
+/// NOT WIRED: adding one. Waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn count_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -599,19 +603,42 @@ fn choice_marker_sprites(rows: &[ChoiceRow; 2], flags: ChoiceFlags) -> Vec<Paint
 /// "No is the default" convention.
 ///
 /// PORT: FUN_801D603C
-/// NOT WIRED: what must exist first is the **prize-exchange window set** -
-/// NOT WIRED: the tab (43), the list container (44), the coin counter (45)
-/// NOT WIRED: and this confirm, over the disc prize block at PROT 0899 file
-/// NOT WIRED: `0x15D00`. Its *trigger* is no longer missing: sub-screen
-/// NOT WIRED: `0x20` is selected at exactly one site in the overlay
-/// NOT WIRED: (`0x801dc8cc`, on entry-context kind `7`), and the op-`0x49`
-/// NOT WIRED: arm now records its sub-op, so that kind is reachable. The
-/// NOT WIRED: flags word is not a gap either: it is the shared cursor word
-/// NOT WIRED: `FUN_801D688C` maintains, whose four-way decode is live as
+/// REF: FUN_801d5de0 - window 44's content renderer, the prize list this
+/// confirm sits over. Ported as `engine-core::shop::shop_stock_row_ink`.
+/// REF: FUN_801d688c - the shared picker that maintains the cursor word the
+/// `flags` argument carries. Ported as `engine-core::shop::shop_cursor_mode`.
+/// NOT WIRED: what must exist first is a **host for sub-screen `0x20`**, the
+/// NOT WIRED: casino prize exchange - not "the other three windows" this note
+/// NOT WIRED: used to name, none of which is missing. Read off the disc
+/// NOT WIRED: descriptor table (`legaia_asset::menu_windows`): window 43's
+/// NOT WIRED: renderer is `FUN_801DCFE4` -> [`title_tab_draws_for`] and
+/// NOT WIRED: window 45's is `FUN_801DD028` -> [`counter_panel_draws_for`],
+/// NOT WIRED: both painters in this file and both already called by live
+/// NOT WIRED: hosts for their sibling ids; and window 44 is **not** a
+/// NOT WIRED: renderer-less list container - its descriptor carries
+/// NOT WIRED: `renderer_va = 0x801D5DE0`, whose record base is the prize
+/// NOT WIRED: table `0x801E4518` (`addiu s4,v0,0x4518`; that VA is PROT 0899
+/// NOT WIRED: file `0x15D00`, `legaia_patcher::casino`'s table), whose block
+/// NOT WIRED: selector is the entry-context pointer's second byte
+/// NOT WIRED: (`lw v0,-0x4bb0(s6)` -> `_DAT_8007B450`, then `lbu a0,0x1(v0)`
+/// NOT WIRED: and `a0 * 0x60`) and whose affordability test is the coin bank
+/// NOT WIRED: `0x800845A4` (`lw v0,0x464(s7)`, `s7 = 0x80084140`). Its ink
+/// NOT WIRED: rule is already ported - as `engine-core::shop::
+/// NOT WIRED: shop_stock_row_ink`, which carries `PORT: FUN_801d5de0` but is
+/// NOT WIRED: filed under the shop and reached live by both hosts for the
+/// NOT WIRED: shop's stock list; that attribution wants a second look.
+/// NOT WIRED: What is absent is the screen itself: nothing constructs
+/// NOT WIRED: `engine-core::prize_exchange::PrizeExchangeSession`, and the
+/// NOT WIRED: prize block at PROT 0899 file `0x15D00` has no engine-side
+/// NOT WIRED: reader - the only one is `legaia_patcher::casino`, which
+/// NOT WIRED: `engine-core` takes as a dev-dependency. Its *trigger* is not a
+/// NOT WIRED: gap: sub-screen `0x20` is selected at exactly one site in the
+/// NOT WIRED: overlay (`0x801dc8cc`, on entry-context kind `7`), and the
+/// NOT WIRED: op-`0x49` arm now records its sub-op. Nor is the flags word: it
+/// NOT WIRED: is the shared cursor word `FUN_801D688C` maintains, whose
+/// NOT WIRED: four-way decode is live as
 /// NOT WIRED: `engine-core::shop::shop_cursor_mode` - the same three bits,
-/// NOT WIRED: the same arms as [`ChoiceFlags::marker_variant`]. What is
-/// NOT WIRED: missing is the other three windows: drawing this one alone
-/// NOT WIRED: would be a Yes/No box over nothing. Waived in
+/// NOT WIRED: the same arms as [`ChoiceFlags::marker_variant`]. Waived in
 /// NOT WIRED: scripts/ci/ui-host-drift-waivers.toml
 pub fn choice_panel_draws_for(
     font: &legaia_font::Font,
