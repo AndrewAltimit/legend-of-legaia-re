@@ -1226,6 +1226,27 @@ No open items.
   `+0x10` at `overlay_baka_fighter_801d3f44.txt` `0x801d4534`. See
   [Player input + actions](#player-input--actions).
 
+## The tally drain scaler is shared with the Muscle Dome
+
+`FUN_801D14B0` (PROT 0977, the contest hub) and `FUN_801D6710` (this overlay)
+are **the same routine linked into two overlays**, not two implementations of a
+shared idea. The dumps agree opcode for opcode and register for register across
+all 24 instructions; they differ only in the `lui`/`lw` pair that loads the
+bypass flag - `DAT_801D1AB4` in the hub image, `DAT_801DBF00` here - and in
+branch targets relocated by the load-base delta.
+
+The routine is the step scaler the tally drain runs per row: it picks the
+per-frame decrement band, so a large pot drains in a visibly faster sweep than a
+small one. The port keeps one implementation
+(`engine-core::other_game_overlay::step_scale`) and
+`baka_fighter::tally_drain_step` delegates to it.
+
+This is the same shape as the `sin_4096` duplication recorded in the
+[live-audit triage](../tooling/live-audit-triage.md): one retail routine, two
+link sites, and a port that reproduced it twice with only one copy reachable.
+When a second dump appears at a different VA with an identical body, suspect a
+second link site before concluding there are two routines.
+
 ## See also
 
 **Reference** -

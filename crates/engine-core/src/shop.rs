@@ -907,12 +907,29 @@ pub fn shop_root_command_rows(
     rows
 }
 
-/// Text ink for one row of the shop **stock list** (menu-overlay window
-/// renderer `FUN_801D5DE0`).
+/// Last-rule-wins row ink for a priced list row.
 ///
-/// `held` is the party's held count of the row's item (retail's bag scan
-/// `FUN_80042F4C`), `marker` the stock record's `+2` halfword, `gold` the
-/// party purse `_DAT_800845A4` and `price` the record's `+4` word.
+/// **`FUN_801D5DE0` is the casino prize list's row renderer, not the shop's.**
+/// Read off its disassembly (`ghidra/scripts/funcs/overlay_menu_801d5de0.txt`),
+/// it indexes the casino prize table `0x801E4518` at `base + block*0x60 +
+/// row*8` with the block byte from the entry-context pointer `_DAT_8007B450[1]`,
+/// and its affordability compare is against `_DAT_800845A4`, the **coin bank**.
+/// The party gold purse `_DAT_8008459C` appears nowhere in its 72 instructions.
+/// The `overlay_shop_save_801d5de0.txt` dump filename names the *image* the
+/// routine was dumped from - that overlay carries menu and casino code too -
+/// and is not evidence about what it does.
+///
+/// The engine reuses the kernel for shop stock rows because the *shape* matches
+/// (held-cap gate, marker re-ink, affordability gate) and both callers pass the
+/// party purse in `gold` with `marker` fixed at `0`, so only the two outer tests
+/// can fire. That reuse is unverified against the shop's own retail builder -
+/// `FUN_80030628` case `0x0B`, which reads `_DAT_8008459C` against the item
+/// table's price and is currently disclosed inert. Confirm the two agree before
+/// treating this as the shop's traced behaviour.
+///
+/// `held` is the held count of the row's item (retail's bag scan
+/// `FUN_80042F4C`), `marker` the record's `+2` halfword, `gold` the currency the
+/// caller gates on, and `price` the record's `+4` word.
 ///
 /// The three tests are applied in a fixed order and each **overwrites** the
 /// previous verdict, so the precedence is not the "first rule wins" reading
@@ -920,8 +937,9 @@ pub fn shop_root_command_rows(
 /// then re-inks it to `6` *even though the stack is full*, and an
 /// unaffordable price finally greys it again regardless of the marker.
 ///
-/// PORT: FUN_801d5de0 (stock-row ink selection, `0x801D5EA0..0x801D5F6C`)
+/// PORT: FUN_801d5de0 (prize/stock row ink selection, `0x801D5EA0..0x801D5F6C`)
 /// REF: FUN_80042f4c (the held-count bag scan whose result `held` carries)
+/// REF: FUN_80030628 (the shop's own list builder, case `0x0B`)
 pub fn shop_stock_row_ink(held: i16, marker: i16, gold: i32, price: i32) -> u8 {
     let mut ink = SHOP_INK_NORMAL;
     if held >= SHOP_HELD_CAP as i16 {

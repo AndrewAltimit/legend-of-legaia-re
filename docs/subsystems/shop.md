@@ -8,7 +8,8 @@ exists. (The inn is *not* a menu-overlay session - see [inn.md](inn.md).)
 Per-scene stock lives inline in the scene MAN's field-VM script and prices in
 the static `SCUS_942.54` item table (see [Gold-shop stock
 source](#gold-shop-stock-source) below); the menu overlay supplies the UI. The
-buy-list render layout is traced from `FUN_801d5de0` in `overlay_shop_save.bin`.
+buy list has no dedicated renderer of its own - see [Row layout: whose list this
+is](#row-layout-whose-list-this-is).
 
 ## Flow overview
 
@@ -222,11 +223,32 @@ Key methods:
 - `try_buy(world_money) -> Option<(item_id, qty, gold_delta)>` - validates affordability; `gold_delta` is negative
 - `try_sell(held_count) -> Option<(item_id, qty, gold_delta)>` - clamps to held quantity; `gold_delta` is positive
 
-## Buy-list render layout
+## Row layout: whose list this is
 
-Traced from `FUN_801d5de0` (`overlay_shop_save.bin`). The buy list iterates up
-to 8 visible rows (scroll managed by `_DAT_8007bb98` / `_DAT_8007bb90`), each
-row rendered at a fixed vertical stride:
+**The layout below is the casino prize list's, not the shop's.** It was traced
+from `FUN_801D5DE0`, which this page previously filed as the shop buy list on
+the strength of the `overlay_shop_save.bin` dump filename. That filename names
+the *image* the routine was dumped from, and that overlay carries menu and
+casino code as well - it is not evidence about what the routine does. The same
+mistake reached `crates/engine-core/src/shop.rs` and the browser host's module
+docs; both now carry the correction.
+
+What the disassembly says: `FUN_801D5DE0` indexes the casino prize table
+`0x801E4518` at `base + block*0x60 + row*8`, taking the block byte from the
+entry-context pointer `_DAT_8007B450[1]`, and gates affordability on
+`_DAT_800845A4` - the **coin bank**. The party gold purse `_DAT_8008459C`
+appears nowhere in its 72 instructions. It is window 44's `renderer_va` in the
+prize-exchange window set (43 tab / 44 list / 45 coin counter / 46 confirm).
+
+The shop's own buy list appears to have no dedicated renderer: it is a
+content-builder list window, `FUN_80030628` case `0x0B`, which reads
+`_DAT_8008459C` against the item table's price. That builder is ported and
+currently disclosed inert, so the shop's real row layout is **untraced** - the
+strides below should not be assumed to carry over.
+
+The prize list iterates up to 8 visible rows (scroll managed by
+`_DAT_8007bb98` / `_DAT_8007bb90`), each row rendered at a fixed vertical
+stride:
 
 | Element | X offset (px) | Y stride (px) | Notes |
 |---|---|---|---|
@@ -234,10 +256,10 @@ row rendered at a fixed vertical stride:
 | Item name | +20 (`0x14`) | +14 (`0x0E`) per row | `func_0x80036888` |
 | Price | +112 (`0x70`) | same row | `func_0x80034b78`, 6-digit field |
 
-The row count is the byte at `DAT_801EF0D0` and each row indexes the stock
+The row count is the byte at `DAT_801EF0D0` and each row indexes the prize
 table through the row-order byte array at `DAT_801EF0E0`; the window renderer
-draws **no gold footer** - the purse is its own window, and `FUN_801D5DE0`
-reads `_DAT_800845A4` only to decide a row's ink.
+draws **no currency footer** - the counter is its own window (45), and
+`FUN_801D5DE0` reads the coin bank `_DAT_800845A4` only to decide a row's ink.
 
 ### Row ink is last-rule-wins, not first-match
 

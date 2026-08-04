@@ -264,8 +264,9 @@ window belongs to the casino counter, which spends the **coin bank**
 part of that screen.
 
 The blocking capability is the **prize-exchange window set**: the tab (43,
-`RENDERER_TAB_EXCHANGE`), the list container (44), the coin counter (45,
-`RENDERER_COUNTER_COINS`) and this confirm, driven by
+`RENDERER_TAB_EXCHANGE`), the prize list (44, whose `renderer_va` is
+`0x801D5DE0` - it is not the renderer-less container this waiver once called
+it), the coin counter (45, `RENDERER_COUNTER_COINS`) and this confirm, driven by
 `engine-core::prize_exchange::PrizeExchangeSession` (complete - its state 2 is
 exactly this beat) over the disc prize block at PROT 0899 file `0x15D00`,
 which nothing parses outside `legaia_patcher::casino`. The confirm cannot be

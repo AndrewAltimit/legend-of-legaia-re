@@ -433,9 +433,13 @@ def main() -> int:
             print(f"    | {preview}")
 
     if not args.quiet:
+        # Report the scanned count, not only the flagged count. "across 0
+        # file(s)" alone reads as "scanned nothing" and makes a vacuous run --
+        # an empty scope, a bad filter -- indistinguishable from a clean one.
         print(
             f"\n[check-port-tags --{mode_label}] "
-            f"{total_warnings} drift warning(s) across {total_files} file(s)"
+            f"{total_warnings} drift warning(s) in {total_files} file(s), "
+            f"{len(files)} scanned"
         )
 
     return 1 if (args.strict and total_warnings > 0) else 0

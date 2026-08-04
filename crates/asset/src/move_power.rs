@@ -273,7 +273,7 @@ pub const CUE_GROUP_STRIDE: usize = 5;
 /// Number of cue-group records. The table is bounded on the disc by the
 /// `data\battle\summon.DAT` path literal that follows it: 13 records fill
 /// `0x801F6470..0x801F64B5`, then three bytes of padding align the string to
-/// `0x801F64B8`. Retail's own callers agree - the twelve `jal 0x801E22C8` sites
+/// `0x801F64B8`. Retail's own callers agree - the eleven `jal 0x801E22C8` sites
 /// in `FUN_800402F4` pass group ids no higher than `0xC`.
 pub const CUE_GROUP_TABLE_LEN: usize = 13;
 

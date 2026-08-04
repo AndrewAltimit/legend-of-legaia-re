@@ -41,6 +41,13 @@
 //! (`FUN_801D4868` / `FUN_801D5DE0`), so an empty bag greys the Sell row and a
 //! full stack / unaffordable price greys a stock row on this host too.
 //!
+//! Caveat on the second of those: `FUN_801D5DE0` is the **casino prize list's**
+//! row renderer - it indexes the prize table `0x801E4518` and gates on the coin
+//! bank `_DAT_800845A4`, never on the gold purse. Both hosts reuse the kernel
+//! for shop rows with the purse passed in and `marker` fixed at `0`; the shop's
+//! own retail builder (`FUN_80030628` case `0x0B`) is disclosed inert and the
+//! two are not yet verified to agree. See `shop_stock_row_ink`'s own docs.
+//!
 //! # The retail descriptor windows
 //!
 //! Retail's shop is not one panel. The window-script runner slides in five
