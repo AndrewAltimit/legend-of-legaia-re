@@ -1,52 +1,18 @@
 use crate::*;
 
-/// Surface-pixel pen the game-over panel is laid out from.
-///
-/// Shared rather than paired: both hosts draw this panel over a frozen frame
-/// with no stage transform, so there is nothing host-specific for the two to
-/// disagree about - and they did disagree, the browser centring it off the
-/// live surface size while the native window pinned it here, so the same
-/// screen sat in two different places.
-pub const GAME_OVER_PEN: (i32, i32) = (96, 100);
-
-/// Build [`TextDraw`]s for the game-over panel.
-pub fn game_over_draws_for(
-    font: &legaia_font::Font,
-    cursor: u8,
-    continue_enabled: bool,
-    pen: (i32, i32),
-) -> Vec<TextDraw> {
-    const LINE_H: i32 = 16;
-    let red: [f32; 4] = [1.0, 0.4, 0.4, 1.0];
-    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
-    let dim: [f32; 4] = [0.4, 0.4, 0.4, 1.0];
-    let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
-
-    let mut out = Vec::new();
-    out.extend(text_draws_for(&font.layout_ascii("GAME OVER"), pen, red));
-
-    let rows = ["Continue", "Retry", "Quit"];
-    for (i, row) in rows.iter().enumerate() {
-        let y = pen.1 + LINE_H * 2 + i as i32 * LINE_H;
-        let row_disabled = i == 0 && !continue_enabled;
-        let color = if row_disabled {
-            dim
-        } else if i as u8 == cursor {
-            gold
-        } else {
-            white
-        };
-        if i as u8 == cursor && !row_disabled {
-            out.extend(text_draws_for(&font.layout_ascii(">"), (pen.0, y), color));
-        }
-        out.extend(text_draws_for(
-            &font.layout_ascii(row),
-            (pen.0 + 14, y),
-            color,
-        ));
-    }
-    out
-}
+// There is deliberately no game-over panel builder here.
+//
+// Retail draws nothing on a party wipe: the wipe arm of `FUN_8003AEB0`
+// stores `game_mode = 0x16` + `_DAT_8007BB00 = 1` (`0x8003B5D0` /
+// `0x8003B5E0`) and the next thing on screen is the title overlay fading
+// in at its `0x11` sub-mode. The only `GAME OVER` artwork on the disc
+// belongs to the mode-18/19 overlay (PROT 0902), which no retail path
+// reaches. The panel that used to live here - a red `GAME OVER` heading
+// over Continue / Retry / Quit rows - was an engine invention from the
+// period when the destination was unpinned; see
+// `legaia_engine_core::game_over` for the four sites that pin it. If a
+// wipe presentation is ever wanted again it belongs behind an
+// enhancement toggle, not on the default path.
 
 /// One row in the options panel (mirrors
 /// `legaia_engine_core::options::OptionsRowView`).

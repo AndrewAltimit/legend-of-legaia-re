@@ -548,20 +548,21 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["FieldMenuGate", "SceneMode::Menu", "dialogue_owns_input"],
     },
     {
-        "what": "game-over panel - both hosts must project the live "
-        "`GameOverSession` (its cursor, and the save-scan `continue_enabled`), "
-        "not a pinned pair of literals. The browser drew `(1, false)` for a "
-        "long time, which is a picture of a menu: the cursor never moved and "
-        "Continue was permanently greyed on a host that could already load "
-        "saves. `pattern_same` over the argument list says the two calls must "
-        "agree without saying what they must agree on, so it keeps working if "
-        "the arguments change",
+        "what": "party wipe - both hosts must route it to the title screen "
+        "and nowhere else. Retail's wipe arm has exactly one exit store "
+        "(`game_mode = 0x16` + `_DAT_8007BB00 = 1`), so a host that offers "
+        "the player a row here has invented one. The panel that used to sit "
+        "in this slot was exactly that, and the browser drew it from a pinned "
+        "`(1, false)` while the native window drew it from a live cursor - "
+        "two pictures of a menu that never existed. Pairing the routing "
+        "sites, not the draw sites, is what keeps a second destination from "
+        "reappearing on one host only",
         "sites": {
-            "native": (NATIVE_BOOT_CUTSCENE, "game_over_draws"),
-            "web": (WEB_PLAY_BATTLE, "game_over_draws"),
+            "native": (NATIVE_BOOT_CUTSCENE, "tick_boot_ui"),
+            "web": (WEB_PLAY_BATTLE, "game_over_input"),
         },
-        "mode": "pattern_same",
-        "pattern": r"game_over_draws_for\(\s*[^,]+,\s*(.*?),\s*(?:ui::|legaia_engine_render::)?GAME_OVER_PEN",
+        "mode": "symbols_all",
+        "symbols": ["GameOverOutcome::ReturnToTitle"],
     },
     {
         "what": "BGM start - a music change must install the incoming track "

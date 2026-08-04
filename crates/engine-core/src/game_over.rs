@@ -1,222 +1,157 @@
-//! Game-over screen.
+//! Party wipe -> the title screen.
 //!
-//! **This screen is an engine invention.** Retail's game over is not a
-//! menu: the content lives in PROT 0902, whose only readable string is
-//! `GAME OVER` and whose single unconditional exit writes `game_mode = 0`.
-//! There is no Continue / Retry / Quit vocabulary anywhere in it, and one
-//! exit store cannot express three outcomes - so the rows below are ours,
-//! not the game's.
+//! **Retail's game over is not a screen and not a menu.** It is two stores
+//! and a hand-off, and the disc carries the same pair at four sites:
 //!
-//! Retail's **trigger** is unpinned too. The battle action SM's `0x5A`
-//! gate does detect a party wipe (`DAT_8007BD71 = 0xFE`, cause
-//! `_DAT_8007BD2C = 5`), but the battle-exit mode selector never reads that
-//! cause, and no static writer of the game-over mode exists anywhere on the
-//! disc. See `docs/subsystems/battle.md` § party wipe + the game-over
-//! overlay; closing that question needs a runtime probe.
+//! ```text
+//!   game_mode      (_DAT_8007B83C) = 0x16    ; 22 = CARD INIT
+//!   title context  (_DAT_8007BB00) = 1       ; "run the CARD overlay as the title screen"
+//! ```
 //!
-//! What the port does in the meantime is show this panel. Both hosts
-//! construct a [`GameOverSession`] off [`crate::world::World::game_over`]
-//! (native `BootUiState::GameOver`, the browser's post-battle overlay).
-//! The alternative shipped for a long time and was worse: a wipe raised a
-//! flag nothing read, so losing every fight silently returned the player to
-//! the field - and, once post-battle HP started persisting, returned them
-//! there with a dead party. An owned presentation over an observed retail
-//! one is the trade being made here, and it is confined to this module.
+//! | Site | Where the pair lives | Reached by |
+//! |---|---|---|
+//! | `FUN_8003AEB0` `0x8003B5D0` / `0x8003B5E0` | inline in MAIN INIT's back-from-battle arm | a real party wipe |
+//! | `FUN_8003C7EC` `0x8003C7F8` / `0x8003C808` | the standalone helper twin | field-VM op `4C EA` (scripted loss) |
+//! | `FUN_801D84B4` `0x801D84B8` / `0x801D84CC` | a 7-instruction leaf, whole body | field/cutscene "back to title" |
+//! | `0x801CF050` / `0x801CF048` | the STR overlay's attract exit | the demo movie ending |
 //!
-//! The rows: Continue drops into save-select, Retry stands the party back
-//! up ([`crate::world::World::revive_party_full`]) and returns to the
-//! scene, Quit returns to the title.
+//! The wipe arm is selected by two branches in `FUN_8003AEB0`:
+//! `0x8003B57C` `beq v0, zero, 0x8003B598` takes the wipe path when the
+//! party-survived latch `DAT_8007BD60 & 0x80` is **clear**, and
+//! `0x8003B5BC` `bne v1, zero, 0x8003B5F8` skips the hand-off again when
+//! story-flag index 0 (the scripted-loss latch) is set. Falling through
+//! both lands on the `0x16` store. The battle itself never forks: the
+//! battle-exit mode selector `FUN_80046A20` writes mode 2 on every ending
+//! and never reads the wipe cause `_DAT_8007BD2C`.
 //!
-//! Renderer-agnostic state machine. Engines drive [`GameOverSession::tick`]
-//! each frame and react to the [`GameOverEvent`] stream.
+//! On the far side the title overlay reads the context word at
+//! `0x801DD968` (`lw a0, -0x4500(v0)`) and, when it is non-zero, enters at
+//! sub-mode `0x11` `AttractDelay` (`0x801DD97C`) instead of its usual
+//! `0x02`: a fade, then sub-mode `0x10` `AttractIdle` - the title screen
+//! with its own NEW GAME / CONTINUE rows (cursor word `_DAT_8007B820`,
+//! masked `& 1`, so retail's post-wipe choice is the *title's* two rows,
+//! not a game-over panel's).
+//!
+//! There is therefore no Continue / Retry / Quit vocabulary anywhere on
+//! this path, and no artwork: the only `GAME OVER` string on the disc is
+//! in PROT 0902, the mode-18/19 overlay, which no retail path reaches
+//! (see [`crate::mode::GameMode::GameOverInit`] and
+//! `docs/subsystems/battle.md` § party wipe + the game-over overlay).
+//! The port's former three-row chooser was an engine invention standing in
+//! for a destination that was, at the time it was written, unpinned. It is
+//! pinned now, so the invention is gone.
+//!
+//! What is left is the hand-off itself: a short hold on the frozen frame -
+//! retail spends it streaming the menu overlay off the disc - and then the
+//! title. Both hosts construct a [`GameOverSession`] off
+//! [`crate::world::World::game_over`] (native `BootUiState::GameOver`, the
+//! browser's post-battle overlay) and route [`GameOverOutcome::ReturnToTitle`]
+//! into the same title session their boot path uses.
 
-use crate::input::PadButton;
+// REF: FUN_8003C7EC - the standalone form of the hand-off, and
+// REF: FUN_801D84B4 - its 7-instruction twin, whose whole body is the pair.
+// Tagged `REF:` rather than `PORT:` because `world::vm_hosts` carries the
+// `PORT:` for `FUN_8003C7EC` (the field-VM `4C EA` arm) and the catalog
+// counts occurrences - one address cannot have two port sites. This module
+// is the state those two stores put the engine into, not the store site.
 
-/// Outcome rows on the game-over panel.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GameOverRow {
-    Continue,
-    Retry,
-    Quit,
-}
+/// Frames the hand-off holds before the title takes over.
+///
+/// Retail's own number for the transition is the title overlay's
+/// `AttractDelay` fade: sub-mode `0x11` drains the screen-fade level
+/// `_DAT_8007BAB4` by `8 * frame_scalar` per frame (`0x801DDAEC`) and the
+/// level is clamped to `0xFF` where it is consumed (`0x801DD38C` ->
+/// `FUN_80024EE4(0, 1, level * 0x10101)`), so a full-black entry needs
+/// `ceil(0xFF / 8)` = 32 drain frames before the title is at full ink.
+///
+/// It is the fade's length, not a timing claim about the whole transition:
+/// retail also spends an unmeasured disc read on the menu overlay between
+/// the wipe store and the overlay's first tick, and the port has no disc
+/// read to spend. 32 frames is the part of the window that is pinned.
+pub const TITLE_HANDOFF_FRAMES: u16 = 0xFFu16.div_ceil(8);
 
-impl GameOverRow {
-    pub const ALL: [Self; 3] = [Self::Continue, Self::Retry, Self::Quit];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Continue => "Continue",
-            Self::Retry => "Retry",
-            Self::Quit => "Quit",
-        }
-    }
-
-    pub fn from_index(idx: u8) -> Option<Self> {
-        Self::ALL.get(idx as usize).copied()
-    }
-
-    pub fn index(self) -> u8 {
-        Self::ALL.iter().position(|r| *r == self).unwrap() as u8
-    }
-}
-
-/// Phase of the SM.
+/// Phase of the hand-off.
+///
+/// Two phases, no input: retail offers the player nothing here. The pad is
+/// deliberately not plumbed in - a session that accepted a button would be
+/// the invention coming back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameOverPhase {
-    /// Opening fade-to-red. No input until this counter drains.
-    FadeIn { frames_remaining: u16 },
-    /// Player picks an outcome.
-    Choosing { cursor: u8 },
-    /// Player committed; engine inspects [`GameOverSession::outcome`].
-    Done(GameOverOutcome),
+    /// Holding on the frozen frame. Retail spends this window loading the
+    /// menu overlay (mode 22 `CARD INIT`) off the disc.
+    Hold { frames_remaining: u16 },
+    /// Hold drained; the host owes the title screen.
+    Done,
 }
 
+/// The only thing a party wipe can resolve to.
+///
+/// A single variant on purpose: retail's wipe path has exactly one exit
+/// store (`game_mode = 0x16`), and one store cannot express a choice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameOverOutcome {
-    Continue,
-    Retry,
-    Quit,
+    /// Mode 22 `CARD INIT` with `_DAT_8007BB00 = 1` - the title screen.
+    ReturnToTitle,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct GameOverInput {
-    pub up: bool,
-    pub down: bool,
-    pub cross: bool,
-}
-
-impl GameOverInput {
-    pub fn from_pad_edge(pressed: u16) -> Self {
-        Self {
-            up: pressed & PadButton::Up.mask() != 0,
-            down: pressed & PadButton::Down.mask() != 0,
-            cross: pressed & PadButton::Cross.mask() != 0,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GameOverEvent {
-    FadeInDone,
-    CursorMoved { row: u8 },
-    Confirmed { row: GameOverRow },
-}
-
-#[derive(Debug, Clone)]
+/// The party-wipe hand-off, driven one [`GameOverSession::tick`] per frame.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameOverSession {
-    pub phase: GameOverPhase,
-    pub fade_in_frames: u16,
-    /// Disable Continue when no save data is present (engines pass false).
-    pub continue_enabled: bool,
+    phase: GameOverPhase,
 }
 
 impl GameOverSession {
+    /// Start the hand-off with the retail-derived hold
+    /// ([`TITLE_HANDOFF_FRAMES`]).
     pub fn new() -> Self {
-        Self {
-            phase: GameOverPhase::FadeIn {
-                frames_remaining: 60,
-            },
-            fade_in_frames: 60,
-            continue_enabled: true,
-        }
+        Self::with_hold(TITLE_HANDOFF_FRAMES)
     }
 
-    pub fn with_no_save() -> Self {
-        let mut s = Self::new();
-        s.continue_enabled = false;
-        s
+    /// Start the hand-off with an explicit hold, in frames. `0` resolves on
+    /// the first tick.
+    pub fn with_hold(frames: u16) -> Self {
+        Self {
+            phase: GameOverPhase::Hold {
+                frames_remaining: frames,
+            },
+        }
     }
 
     pub fn phase(&self) -> GameOverPhase {
         self.phase
     }
 
-    pub fn cursor(&self) -> u8 {
+    /// Frames left on the hold; `0` once it is done.
+    pub fn frames_remaining(&self) -> u16 {
         match self.phase {
-            GameOverPhase::Choosing { cursor } => cursor,
-            _ => 0,
+            GameOverPhase::Hold { frames_remaining } => frames_remaining,
+            GameOverPhase::Done => 0,
         }
     }
 
     pub fn is_done(&self) -> bool {
-        matches!(self.phase, GameOverPhase::Done(_))
+        self.phase == GameOverPhase::Done
     }
 
+    /// The resolved destination, or `None` while the hold is still running.
+    /// Sticky once set.
     pub fn outcome(&self) -> Option<GameOverOutcome> {
         match self.phase {
-            GameOverPhase::Done(o) => Some(o),
-            _ => None,
+            GameOverPhase::Done => Some(GameOverOutcome::ReturnToTitle),
+            GameOverPhase::Hold { .. } => None,
         }
     }
 
-    fn first_admissible(&self) -> u8 {
-        if !self.continue_enabled {
-            GameOverRow::Retry.index()
-        } else {
-            0
+    /// Advance one frame. Takes no input - see [`GameOverPhase`].
+    pub fn tick(&mut self) {
+        if let GameOverPhase::Hold { frames_remaining } = self.phase {
+            self.phase = match frames_remaining.checked_sub(1) {
+                Some(n) if n > 0 => GameOverPhase::Hold {
+                    frames_remaining: n,
+                },
+                _ => GameOverPhase::Done,
+            };
         }
-    }
-
-    fn step(&self, cursor: u8, dir: i8) -> u8 {
-        let n = GameOverRow::ALL.len() as i8;
-        let mut i = cursor as i8;
-        for _ in 0..n {
-            i = (i + dir).rem_euclid(n);
-            let row = GameOverRow::from_index(i as u8).unwrap();
-            if row == GameOverRow::Continue && !self.continue_enabled {
-                continue;
-            }
-            return i as u8;
-        }
-        cursor
-    }
-
-    pub fn tick(&mut self, input: GameOverInput) -> Vec<GameOverEvent> {
-        let mut events = Vec::new();
-        match self.phase {
-            GameOverPhase::FadeIn { frames_remaining } => {
-                if frames_remaining == 0 {
-                    self.phase = GameOverPhase::Choosing {
-                        cursor: self.first_admissible(),
-                    };
-                    events.push(GameOverEvent::FadeInDone);
-                } else {
-                    self.phase = GameOverPhase::FadeIn {
-                        frames_remaining: frames_remaining.saturating_sub(1),
-                    };
-                    if frames_remaining == 1 {
-                        self.phase = GameOverPhase::Choosing {
-                            cursor: self.first_admissible(),
-                        };
-                        events.push(GameOverEvent::FadeInDone);
-                    }
-                }
-            }
-            GameOverPhase::Choosing { cursor } => {
-                let mut new_cursor = cursor;
-                if input.up {
-                    new_cursor = self.step(cursor, -1);
-                } else if input.down {
-                    new_cursor = self.step(cursor, 1);
-                }
-                if new_cursor != cursor {
-                    self.phase = GameOverPhase::Choosing { cursor: new_cursor };
-                    events.push(GameOverEvent::CursorMoved { row: new_cursor });
-                }
-                if input.cross {
-                    let row = GameOverRow::from_index(new_cursor).unwrap_or(GameOverRow::Quit);
-                    let outcome = match row {
-                        GameOverRow::Continue => GameOverOutcome::Continue,
-                        GameOverRow::Retry => GameOverOutcome::Retry,
-                        GameOverRow::Quit => GameOverOutcome::Quit,
-                    };
-                    self.phase = GameOverPhase::Done(outcome);
-                    events.push(GameOverEvent::Confirmed { row });
-                }
-            }
-            GameOverPhase::Done(_) => {}
-        }
-        events
     }
 }
 
@@ -231,57 +166,44 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fade_in_drains_to_choosing() {
-        let mut s = GameOverSession::new();
-        s.fade_in_frames = 2;
-        s.phase = GameOverPhase::FadeIn {
-            frames_remaining: 2,
-        };
-        let _ = s.tick(GameOverInput::default());
-        let _ = s.tick(GameOverInput::default());
-        assert!(matches!(s.phase, GameOverPhase::Choosing { cursor: 0 }));
+    fn hold_drains_to_done() {
+        let mut s = GameOverSession::with_hold(3);
+        for _ in 0..2 {
+            s.tick();
+            assert!(!s.is_done());
+            assert_eq!(s.outcome(), None);
+        }
+        s.tick();
+        assert!(s.is_done());
     }
 
+    /// The one thing this module promises: a wipe has exactly one
+    /// destination. If a second variant ever appears, whoever added it owes
+    /// the disassembly for a second exit store.
     #[test]
-    fn choosing_cursor_moves() {
-        let mut s = GameOverSession::new();
-        s.phase = GameOverPhase::Choosing { cursor: 0 };
-        let evs = s.tick(GameOverInput {
-            down: true,
-            ..Default::default()
-        });
-        assert_eq!(s.cursor(), 1);
-        assert_eq!(evs, vec![GameOverEvent::CursorMoved { row: 1 }]);
+    fn the_only_outcome_is_the_title() {
+        let mut s = GameOverSession::with_hold(1);
+        s.tick();
+        assert_eq!(s.outcome(), Some(GameOverOutcome::ReturnToTitle));
     }
 
+    /// A zero hold is legal and resolves on the first tick, so a host that
+    /// wants retail's "no visible pause at all" reading can ask for it.
     #[test]
-    fn cross_commits_outcome() {
-        let mut s = GameOverSession::new();
-        s.phase = GameOverPhase::Choosing { cursor: 1 };
-        let _ = s.tick(GameOverInput {
-            cross: true,
-            ..Default::default()
-        });
-        assert_eq!(s.outcome(), Some(GameOverOutcome::Retry));
+    fn zero_hold_resolves_immediately() {
+        let mut s = GameOverSession::with_hold(0);
+        assert!(!s.is_done());
+        s.tick();
+        assert_eq!(s.outcome(), Some(GameOverOutcome::ReturnToTitle));
     }
 
+    /// 32, not 31: the drain runs *while* the level is `>= 1`, so a level of
+    /// `0xFF` still needs a 32nd frame to take the remainder off. Truncating
+    /// division is the easy way to be one frame short here.
     #[test]
-    fn no_save_skips_continue_row() {
-        let mut s = GameOverSession::with_no_save();
-        s.phase = GameOverPhase::Choosing {
-            cursor: GameOverRow::Retry.index(),
-        };
-        let _ = s.tick(GameOverInput {
-            up: true,
-            ..Default::default()
-        });
-        assert_eq!(s.cursor(), GameOverRow::Quit.index());
-    }
-
-    #[test]
-    fn pad_edge_decoder() {
-        let m = PadButton::Cross.mask();
-        let i = GameOverInput::from_pad_edge(m);
-        assert!(i.cross && !i.up && !i.down);
+    fn default_hold_is_the_traced_title_fade() {
+        assert_eq!(GameOverSession::new().frames_remaining(), 32);
+        assert_eq!(TITLE_HANDOFF_FRAMES, 32);
+        assert!(u32::from(TITLE_HANDOFF_FRAMES) * 8 >= 0xFF);
     }
 }

@@ -189,12 +189,11 @@ pub struct LegaiaRuntime {
     /// scene change cannot stomp the SFX samples.
     #[cfg(target_arch = "wasm32")]
     pub(crate) sfx_vabs: std::collections::BTreeMap<u8, legaia_engine_audio::VabBank>,
-    /// The live game-over panel, when a party wipe raised one. The browser
-    /// used to draw the panel from a pinned `(cursor = 1, continue_enabled =
-    /// false)` and route every confirm key to a bare Retry, so it was a
-    /// picture of a menu rather than a menu; this is the same
+    /// The live party-wipe hand-off, when a wipe raised one: the same
     /// [`legaia_engine_core::game_over::GameOverSession`] the native window
-    /// builds, seeded from the same save scan.
+    /// builds, holding for the same number of frames and resolving to the
+    /// same single destination (the title screen). Not a panel - retail draws
+    /// nothing here and offers no choice.
     pub(crate) game_over: Option<legaia_engine_core::game_over::GameOverSession>,
     /// Live WebAudio output + its clean-room SPU. Crate-visible so the SFX
     /// channel ([`crate::play_sfx`]) can key one-shot cues into the same SPU the

@@ -299,10 +299,11 @@ impl LegaiaRuntime {
         let font = assets.font_ref();
         let mut out: Vec<TextDraw> = Vec::new();
 
-        // Party wipe owns the frame. The panel is the live session's - see
-        // `game_over_draws`.
-        if let Some(s) = self.game_over.as_ref() {
-            out.extend(self.game_over_draws(font, s));
+        // Party wipe owns the frame, and draws nothing on it: retail's next
+        // frame after the wipe store is the title overlay fading in, so the
+        // hand-off holds the frozen battle frame and adds no chrome. The
+        // native host's `boot_ui_draws` arm is silent for the same reason.
+        if self.game_over.is_some() {
             return out;
         }
 
@@ -1148,97 +1149,53 @@ impl LegaiaRuntime {
         host.world.force_encounter(id)
     }
 
-    /// `true` while the game-over panel owns the frame. The page draws the
-    /// panel and routes pad edges into it through
-    /// [`Self::game_over_input`].
+    /// `true` while the party-wipe hand-off owns the frame. The page stops
+    /// feeding the pad into the world and drives
+    /// [`Self::game_over_input`] instead.
     pub fn is_game_over(&self) -> bool {
         self.game_over.is_some()
     }
 
-    /// Whether the panel's **Continue** row is offered - `false` greys it.
-    /// The browser's save data is the memory-card rack, so the scan is "does
-    /// any inserted card hold a readable block", the twin of the native
-    /// window's `scan_save_dir` probe.
-    pub fn game_over_continue_enabled(&self) -> bool {
-        self.game_over
-            .as_ref()
-            .map(|s| s.continue_enabled)
-            .unwrap_or(false)
-    }
-
-    /// Drive the game-over panel one frame from an edge-triggered PSX pad
-    /// word. Returns `""` while it runs, or the picked row once the player
-    /// confirms: `"continue"`, `"retry"` or `"quit"`.
+    /// Drive the party-wipe hand-off one frame. Returns `""` while it holds,
+    /// then `"quit"` once - the page's cue to stop the view and re-run the
+    /// boot title.
     ///
-    /// Routing matches the native window's `BootUiState::GameOver` arm:
-    /// **Continue** opens the retail save-select on the card rack (through
-    /// the shared pause-menu Load row), **Retry** stands the party back up
-    /// and returns to the scene, **Quit** hands back to the page, which
-    /// re-runs the boot title.
-    pub fn game_over_input(&mut self, edge: u16) -> String {
-        use legaia_engine_core::game_over::{GameOverInput, GameOverOutcome};
+    /// The `_edge` pad word is accepted and **ignored**, and the name is kept
+    /// because it is the page's ABI. Retail asks the player nothing here: the
+    /// wipe arm of `FUN_8003AEB0` stores `game_mode = 0x16` (22, CARD INIT)
+    /// and `_DAT_8007BB00 = 1` at `0x8003B5D0` / `0x8003B5E0` and the title
+    /// overlay takes the screen. Reading a button here would be the deleted
+    /// Continue / Retry / Quit panel growing back. Routing matches the native
+    /// window's `BootUiState::GameOver` arm exactly - one destination.
+    pub fn game_over_input(&mut self, _edge: u16) -> String {
+        use legaia_engine_core::game_over::GameOverOutcome;
         let Some(session) = self.game_over.as_mut() else {
             return String::new();
         };
-        let _ = session.tick(GameOverInput::from_pad_edge(edge));
-        let Some(outcome) = session.outcome() else {
+        session.tick();
+        let Some(GameOverOutcome::ReturnToTitle) = session.outcome() else {
             return String::new();
         };
         self.game_over = None;
         if let Some(h) = self.scene_host.as_mut() {
             h.world.game_over = false;
         }
-        match outcome {
-            GameOverOutcome::Continue => {
-                self.play_menu_open_row("Load");
-                "continue".to_string()
-            }
-            GameOverOutcome::Retry => {
-                // Post-battle HP survives the fight, so a wiped party dropped
-                // straight back into the field would simply re-wipe.
-                if let Some(h) = self.scene_host.as_mut() {
-                    h.world.revive_party_full();
-                }
-                "retry".to_string()
-            }
-            GameOverOutcome::Quit => "quit".to_string(),
-        }
+        "quit".to_string()
     }
 }
 
 impl LegaiaRuntime {
-    /// Raise the game-over panel on the `World::game_over` edge - the browser
-    /// twin of the native window's redraw-loop probe. Seeds
-    /// `continue_enabled` off the card rack, exactly as the native side seeds
-    /// it off `scan_save_dir`.
+    /// Raise the return-to-title hand-off on the `World::game_over` edge -
+    /// the browser twin of the native window's redraw-loop probe. Nothing is
+    /// scanned off the card rack any more: the hand-off has one destination
+    /// whether or not a save exists, because retail's wipe arm has one exit
+    /// store.
     pub(crate) fn poll_game_over(&mut self) {
         let wiped = self.scene_host.as_ref().is_some_and(|h| h.world.game_over);
         if !wiped || self.game_over.is_some() {
             return;
         }
-        use legaia_engine_core::game_over::GameOverSession;
-        let has_saves = (0..crate::cards::CARD_SLOTS)
-            .any(|port| self.card_block_snapshots(port).iter().any(|b| b.present));
-        self.game_over = Some(if has_saves {
-            GameOverSession::new()
-        } else {
-            GameOverSession::with_no_save()
-        });
-    }
-
-    /// The game-over panel's draws, off the live session.
-    ///
-    /// A named site rather than an inline branch so it can be paired against
-    /// the native window's `game_over_draws`: both hosts must project the
-    /// *session* here (cursor and the save-scan `continue_enabled`), not a
-    /// pinned pair of literals, and the pen is the shared `engine-ui`
-    /// constant so the panel cannot land in two places.
-    fn game_over_draws(
-        &self,
-        font: &legaia_font::Font,
-        s: &legaia_engine_core::game_over::GameOverSession,
-    ) -> Vec<TextDraw> {
-        ui::game_over_draws_for(font, s.cursor(), s.continue_enabled, ui::GAME_OVER_PEN)
+        self.game_over = Some(legaia_engine_core::game_over::GameOverSession::new());
     }
 }
 
