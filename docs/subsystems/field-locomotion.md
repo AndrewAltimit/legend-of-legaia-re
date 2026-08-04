@@ -24,6 +24,109 @@ static call site to follow. See [Provenance](#provenance).
 - [Intra-scene doorways](#intra-scene-doorways---the-walk-touch-teleport-family) - [the three player-move op forms](#the-three-player-move-op-forms) · [the record is a branch](#the-record-is-a-branch-not-a-constant) · [pairing convention](#the-pairing-convention) · [geometry](#geometry) · [landing records](#landing-records) · [Rim Elm](#rim-elm) · [engine port](#engine-port-1)
 - [Open](#open) · [NPC initial facing](#npc-initial-facing) · [NPC dynamic facing](#npc-dynamic-facing) · [NPC glide speed](#npc-glide-speed)
 - [Engine port: movement compass + opt-in precise movement](#engine-port-movement-compass--opt-in-precise-movement)
+- [The frame denomination law](#the-frame-denomination-law) - [retail's two clocks](#retails-two-clocks) · [cadence invariance](#cadence-invariance) · [the engine's rule](#the-engines-rule-one-tick-is-one-vsync) · [walk speed in units per second](#walk-speed-in-units-per-second)
+
+## The frame denomination law
+
+Before reading a per-frame number anywhere on this page, settle which *frame*
+it is counted in. Retail has two clocks and the port has one, and every
+"why is this 1.67x fast / 0.6x slow" question in the field subsystem has
+turned out to be a confusion between them.
+
+### Retail's two clocks
+
+- **The vsync.** The display frame, 60 per second.
+- **The game tick.** One pass of the master frame driver `FUN_80016444`.
+
+`DAT_1F800393` (scratchpad `0x1F800393`, reached as `0x7f` off the
+`0x1F800314` base) is the number of vsyncs one game tick spans.
+`FUN_80016B6C` resolves it once per frame at `0x80017044..0x800171D8`: it
+samples the frame time with `VSync(1)` through `FUN_800173BC`, picks `1..4`
+from the measurement, raises the result to the per-mode floor `DAT_8007B9D8`
+(`2` in field scenes, installed by the scene loader `FUN_801D6704`; `3` on the
+kingdom overworlds), and then `VSync(n)`-waits on the previous frame's value.
+So on an ordinary field frame the driver runs **30 times a second**, not 60.
+
+The whole field frame lives inside that one pass. `FUN_80016444` runs the
+actor-pool sweeps `FUN_8002519C`, which `jalr`s each actor's `+0x0C` handler;
+the player's handler is the field frame pump `FUN_801D1344`, and the pump
+calls the locomotion controller `FUN_801D01B0` unconditionally
+(`jal 0x801D01B0` at `0x801D16F4` - the only gates ahead of it are the
+engaged-flag / warp-timer / dialogue-pacing tests, not a cadence gate).
+
+### Cadence invariance
+
+Because a pass covers a variable number of vsyncs, everything measured inside
+it is denominated **in vsyncs and scaled by `DAT_1F800393`**, never in passes:
+
+| Site | What it scales | Address |
+|---|---|---|
+| `FUN_801D01B0` | the frame's travel budget | `0x801D0564..0x801D05C4` |
+| `FUN_801D01B0` | the walk-regen accumulator `_DAT_801F2274` | `0x801D0910..0x801D0928` |
+| `FUN_8003774C` | every NPC glide leg | `0x80037868` then each `mult` |
+| `FUN_801D1344` | the dialogue-pacing timer `_DAT_8007B6B4` | `0x801D1618..0x801D1630` |
+| `FUN_801D1344` | the field-control byte `+0x62` | `0x801D1670..0x801D1690` |
+| `FUN_801D1BA0` | the vertical settle's glide rate | `0x801D1C30..0x801D1C68` |
+
+The travel budget is the clearest case:
+
+```text
+speed = ((base_step * player[+0x72]) >> 12) * DAT_1f800393
+```
+
+`mult s4,v0` then `sra s4,t1,0xc` then `lbu v1,0x7f(a1)` then `mult s4,v1`.
+At the field floor the controller therefore runs 30 times a second and spends
+`2 * base_step` each time; at cadence 1 it runs 60 times and spends
+`base_step`. **Both cover the same ground per second.** A cadence change moves
+the *sample rate* - how many intermediate poses exist - and never a duration
+or a speed.
+
+### The engine's rule: one tick is one vsync
+
+`World::tick` is denominated in **retail display frames**: one call advances
+the simulation by exactly one vsync. Both hosts drive it that way and must
+keep doing so - the native window's fixed-timestep accumulator
+(`EngineWindow::drain_ticks`, `TICK_DT = 1.0/60.0`, backlog capped at 4) and
+the browser play page (`site/js/play-app.js`, `TICK_DT = 1000/60`, same cap).
+`World::field_frame_step` is consequently `1` on every tick and
+`World::field_frames == World::frame`; it survives as a *unit marker* on the
+consumers whose durations are authored in display frames, not as a throttle.
+
+The port takes the fine-grained half of retail's identity - the controller
+once per vsync with the scalar at `1` (`World::move_ramp_ratio`) - rather than
+retail's once per game tick with the scalar at `2`. Same wall speed, twice the
+poses. `World::frame_step` still carries the retail cadence for the consumers
+that genuinely sample at game-tick rate (the actor pool, the CLUT / ambient
+game-tick banks).
+
+A sub-clock that oversamples - a sim rate above 60 with the retail frame
+derived from a fixed-point accumulator - is the shape to avoid. One shipped in
+this tree denominated against a 100 Hz sim that no host ever ran, which
+withheld two of every five retail frames from the gated consumers (36 Hz)
+while the ungated ones kept the correct 60. It survived review because the
+tree's only wall-time oracle divided ticks by 100 *and* measured a consumer
+emitting 0.6 frames per tick, so the seconds came out right while the unit
+stayed wrong. If oversampling ever returns, every consumer has to be
+re-derived, not just the constant.
+
+### Walk speed in units per second
+
+The retail-derived figures the port is measured against, with
+`player[+0x72] = 0x1000` (1.0, seeded by `FUN_8003AEB0`) cancelling the `>> 12`:
+
+| base step | selector | units/vsync | units/second | tiles/second |
+|---|---|---|---|---|
+| `5` | forced slow | 5 | 300 | 2.34 |
+| `8` | plain walk | 8 | **480** | 3.75 |
+| `0xC` | run | 12 | **720** | 5.63 |
+| `0x18` | debug turbo | 24 | 1440 | 11.25 |
+
+One collision tile is `0x80` = 128 units. The diagonal normalise trims
+x0.75 on the quantised path. Pinned by `engine-core/tests/sim_cadence_wall_speed.rs`,
+which measures displacement per second of held pad on both the walk and run
+arms, asserts the gated and ungated halves of the frame advance the same
+number of retail frames over one span, and asserts the speed does not move
+when `World::frame_step` sweeps `1..=4`.
 
 ## Player actor fields used
 

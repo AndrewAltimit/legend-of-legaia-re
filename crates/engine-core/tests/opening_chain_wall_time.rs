@@ -8,12 +8,15 @@
 //! once per `dt` display frames credits exactly one unit per display frame,
 //! and every authored duration is a duration in 60 Hz frames.
 //!
-//! The engine's sim clock runs at 100 Hz, so a timeline stepped once per sim
-//! tick drains those waits 1.67x too fast. `World::step_spawned_record_contexts`
-//! paces the timeline off the retail-frame sub-clock instead; this test pins
-//! the resulting wall-times against a headless retail capture of the same
-//! chain (per-leg display-frame counts read off the live scene-label global
-//! while a recompiled retail build played the opening with zero input):
+//! The engine's sim clock is denominated in those same display frames - one
+//! `World::tick` is one vsync, on both hosts (`EngineWindow::drain_ticks`
+//! `TICK_DT = 1.0/60.0`; `site/js/play-app.js` `TICK_DT = 1000/60`) - so a
+//! tick count converts to seconds by `SIM_HZ` below and
+//! `World::step_spawned_record_contexts` credits exactly one authored frame
+//! per tick. This test pins the resulting wall-times against a headless retail
+//! capture of the same chain (per-leg display-frame counts read off the live
+//! scene-label global while a recompiled retail build played the opening with
+//! zero input):
 //!
 //! | leg       | retail frames | retail seconds |
 //! |-----------|---------------|----------------|
@@ -48,8 +51,17 @@
 use legaia_engine_core::scene::SceneHost;
 use std::path::PathBuf;
 
-/// Engine sim ticks per second.
-const SIM_HZ: f64 = 100.0;
+/// Engine sim ticks per second - the rate both hosts drive `World::tick` at,
+/// and (by the 1:1 denomination) the retail display-frame rate.
+///
+/// This read `100.0` while the world's sub-clock emitted 0.6 retail frames per
+/// tick. The two errors cancelled exactly - `(N / 0.6) / 100 == N / 60` - so
+/// the seconds printed below were right, the tick counts were 1.67x what they
+/// should have been, and the unit was wrong in a way no assertion here could
+/// see. Both halves are corrected together: the sub-clock now emits one retail
+/// frame per tick and this divides by 60. The **seconds are unchanged**; only
+/// the observed tick counts moved.
+const SIM_HZ: f64 = 60.0;
 /// Retail display frames per second.
 const RETAIL_FPS: f64 = 60.0;
 
@@ -149,8 +161,9 @@ fn opening_chain_legs_run_at_retail_wall_time() {
             assert!(
                 signed.abs() < 0.25,
                 "{scene} leg is {err_pct:.1}% off retail wall-time \
-                 (engine {engine_s:.1}s vs retail {retail_s:.1}s) - a leg stepped at the \
-                 100 Hz sim rate instead of the 60 Hz retail-frame sub-clock runs ~67% fast"
+                 (engine {engine_s:.1}s vs retail {retail_s:.1}s) - a leg whose \
+                 record contexts are stepped at a rate other than one authored \
+                 display frame per sim tick lands here"
             );
         }
     }

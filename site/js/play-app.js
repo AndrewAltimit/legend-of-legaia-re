@@ -1508,7 +1508,20 @@
       if (advance && !menuOpen && !shopOpen && !namingOpen) {
         /* Run the engine at a fixed 60 Hz regardless of the display refresh
          * (see the `_simAccum` note in the constructor). `Step 1 frame` forces
-         * exactly one tick; free play consumes the real elapsed time. */
+         * exactly one tick; free play consumes the real elapsed time.
+         *
+         * THE DENOMINATION LAW, and it is shared with the native host: one
+         * `World::tick` advances the simulation by exactly ONE RETAIL DISPLAY
+         * FRAME. `TICK_DT` is therefore not a tuning knob - it is the retail
+         * vsync period, and `engine-core`'s frame tick assumes it
+         * (`SIM_HZ == RETAIL_FPS`, `field_frame_step == 1` every tick). The
+         * native window states the same constant as `TICK_DT = 1.0/60.0` in
+         * `EngineWindow::drain_ticks`, with the same 4-tick backlog cap below.
+         * Change one and the two hosts run the same engine at different
+         * speeds, which is invisible in a diff - see
+         * `docs/tooling/host-drift.md` and the units-per-second oracle
+         * `crates/engine-core/tests/sim_cadence_wall_speed.rs`
+         * (retail walk = 480 world units/second, run = 720). */
         const TICK_DT = 1000 / 60;
         let steps;
         if (stepping) {

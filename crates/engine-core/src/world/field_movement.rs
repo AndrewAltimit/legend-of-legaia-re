@@ -2214,6 +2214,33 @@ impl World {
     /// movement-disabled flag (`+0x10 & 0x80000`) is set (encounter queued
     /// / cutscene owns the player). Reads only pad bits + grid + actor
     /// state, so it is deterministic across identical pad streams.
+    ///
+    /// # Call cadence, and why it is not `frame_step`-gated
+    ///
+    /// Retail calls `FUN_801D01B0` **once per game tick** - unconditionally,
+    /// from the field frame pump `FUN_801D1344` (`jal 0x801D01B0` at
+    /// `0x801D16F4`) - and a game tick spans `DAT_1F800393` vsyncs. The call's
+    /// travel budget is scaled by that same byte
+    /// (`0x801D0564..0x801D05C4`), so the *wall* speed is cadence-invariant:
+    /// `base_step` units per **vsync**, i.e. `base_step * 60` units per second,
+    /// at every cadence the resolver can pick.
+    ///
+    /// This port takes the fine-grained half of that identity - one call per
+    /// vsync with the scalar ([`World::move_ramp_ratio`]) at `1` - because a
+    /// sim tick is one retail display frame (see [`World::tick`]). Same wall
+    /// speed, twice the intermediate poses at retail's field floor of 2.
+    /// Gating it on [`World::field_frame_step`] would be a tautology under
+    /// that denomination and a 0.6x slowdown under any other.
+    ///
+    /// | base step | selector | units/vsync | units/second |
+    /// |---|---|---|---|
+    /// | `5` | forced slow | 5 | 300 |
+    /// | `8` | walk (default) | 8 | 480 |
+    /// | `0xC` | run | 12 | 720 |
+    /// | `0x18` | debug turbo | 24 | 1440 |
+    ///
+    /// (`player[+0x72]` is `0x1000` = 1.0 for the field player, so the
+    /// `>> 12` multiplier drops out; the diagonal normalise trims x0.75.)
     pub fn step_field_locomotion(&mut self) {
         // Retail `0x801d0550` clears the step-delta pair before the frame's
         // direction decode, so an input-free (or fully wall-blocked) frame
@@ -2300,17 +2327,19 @@ impl World {
         } else {
             self.advance_with_collision(slot, dir_bits, speed);
         }
-        // Walk-regen accumulator (retail `_DAT_801F2274`, drained `0x20` per
-        // [`crate::walk_regen::tick_walk_regen`] call): a frame in which the
-        // step actually committed counts as walked. Advanced on the
-        // retail-frame sub-clock so the cadence is frame-rate independent
-        // like every other duration in the tick.
+        // Walk-regen accumulator (retail `_DAT_801F2274`): a frame in which
+        // the step actually committed counts as walked.
         //
-        // The DRAIN is retail-pinned (`> 0x20` gate, `-= 0x20`, the three
-        // per-member bumps); the FILL is not - no dump in the corpus carries
-        // the writer of `_DAT_801F2274`, so "one unit per moved field frame"
-        // is the engine's unit, not a decoded one. See
-        // [`World::tick_field_walk_regen`].
+        // The FILL is retail's, and it lives in this very function - the tail
+        // at `0x801D0910..0x801D0928` (`lui a0,0x801f` / `lbu v1,0x393(v1)`
+        // with `v1 = 0x1F800000` / `lw v0,0x2274(a0)` / `addu v0,v0,v1` /
+        // `sw v0,0x2274(a0)`) adds `DAT_1F800393` to it, behind the
+        // step-delta-non-zero test at `0x801D08F4..0x801D090C`. So retail
+        // credits one unit per **vsync** whose step committed, matching the
+        // per-vsync denomination the rest of the controller uses; adding
+        // `field_frame_step` (`1`) once per sim tick is the same rate.
+        // The DRAIN is retail-pinned too (`> 0x20` gate, `-= 0x20`, the three
+        // per-member bumps). See [`World::tick_field_walk_regen`].
         {
             let ms = &self.actors[slot].move_state;
             if (ms.world_x, ms.world_z) != before {
