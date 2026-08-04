@@ -41,8 +41,11 @@ that file was touched.
 
 3. **`site/_content/home.html`** — the home launcher grid lists the explore
    pages by hand and does not yet include `magic.html`. The left rail, the
-   explore sidebar and the nav all do (`site/js/layout.js`). Whoever owns
-   `home.html` should add a tile.
+   explore sidebar and the nav all do (`site/js/layout.js`). **Still not
+   touched** — it is outside this lane's file list and is a shared landing page
+   three other lanes could also be editing, so adding the tile at
+   reconciliation is the safer sequencing. One `<a>` in the launcher grid,
+   pointing at `magic.html`.
 
 4. **`crates/engine-core/src/summon.rs` `SummonScene`** (the move-VM stand-in)
    is untouched. This lane only added the naming tables (`BIG_SUMMONS`,
@@ -57,5 +60,27 @@ that file was touched.
   **third (raw) slot**, not the actor record; the raw slot's first `0x81E0`
   bytes are a monster texture pool byte-for-byte, at monster battle **slot 2**.
 - A summon TMD's objects are object-local, so `centroid_bounds` over the raw
-  mesh gives a huge radius. Framing must use the **posed** AABB — that is what
-  made the first render draw every summon as a speck.
+  mesh gives a huge radius. Framing must use the **posed** geometry — that is
+  what made the first render draw every summon as a speck.
+- ... and posing alone is not enough. A summon rig routinely holds one part far
+  from the body (Meta's thrown sword), so even the *posed* bounding box is
+  dominated by that separation. `summon_view.rs` frames in two steps: reject
+  parts whose centroid is a distance outlier among the parts (median + k×MAD),
+  then take a percentile of vertex distance over what is left. Neither step
+  works alone, and both readings were measured rather than argued — a plain
+  vertex percentile has no value that frames Meta without cropping Terra.
+
+## Measuring the framing
+
+`site/js/summon-view.js` exposes `__summonApp.frameOutlierK` (null = the WASM
+default). It exists so the framing can be swept and scored against **rendered
+pixels** instead of tuned by eye: screenshot the canvas, decode the PNG back
+inside the page, and take the vertical extent holding the middle 80 % of the
+drawn ink. Two traps that cost a run each:
+
+- the canvas has a 1 px CSS border, so a naive bounding box of "pixels that
+  differ from the corner" reports *every* model as filling the frame;
+- bounding-box height is the wrong score. Meta's box spans body **and** sword
+  and reads "large" while the body is a speck; and it under-rates wide models
+  (Terra's wings are width, not height), so `fill` and `bulkH` have to be read
+  together, never `bulkH` alone across differently-shaped bodies.

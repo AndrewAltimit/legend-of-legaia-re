@@ -38,6 +38,234 @@ use legaia_engine_core::summon as summon_core;
 /// `summon.dat` in extraction PROT index space.
 const SUMMON_PROT_INDEX: u32 = summon_readef::SUMMON_PROT_INDEX as u32;
 
+// ---------------------------------------------------------------------------
+// Camera framing over a posed point cloud
+// ---------------------------------------------------------------------------
+
+/// How many scaled MADs from the median a **part** may sit before it stops
+/// setting the camera scale.
+///
+/// The extremes cannot set the scale. A summon's rig routinely holds one part
+/// a very long way from the body - Meta's sword is a separate object thrown
+/// clear of the knight - and a bound over *every* vertex is then dominated by
+/// that separation: the camera pulls back to fit a mostly empty volume and the
+/// body renders as a speck. That is the bounding box behaving correctly and
+/// still producing a useless frame.
+///
+/// A percentile of *vertex* distance does not fix it either, and measuring
+/// said so: the value that framed Meta's knight (0.80) cropped Terra's wings,
+/// and the value that kept Terra whole (0.90) left Meta a speck. A vertex
+/// percentile cannot tell "one big contiguous body" from "small body plus a
+/// distant part" - both just have vertices far from the centre.
+///
+/// The discriminating measurement is per **part**: take each animated object's
+/// centroid distance from the body centre, and reject the ones that are
+/// outliers *against the spread of the other parts* (median + `k` × scaled
+/// MAD). Terra's wings sit at distances comparable to her other parts, so they
+/// are kept and she frames whole; Meta's sword sits far outside the spread of
+/// the knight's parts, so it is dropped and the knight fills the frame. The
+/// cost is that such a part can sit outside the frame - which is what the
+/// page's "frame the whole cast" toggle is for.
+pub const FRAMING_OUTLIER_K: f32 = 3.0;
+
+/// Vertex-distance percentile used only when there is no usable part index
+/// (an unrigged point cloud), where the part-level test cannot run.
+pub const FRAMING_FALLBACK_PERCENTILE: f32 = 0.90;
+
+/// Scale factor making the median absolute deviation a standard-deviation
+/// estimate for normally distributed data, so `k` reads as "sigmas".
+const MAD_TO_SIGMA: f32 = 1.4826;
+
+/// Per-axis median of the eligible vertices - the framing centre.
+///
+/// Median rather than mean: the mean is still dragged by a distant part in
+/// proportion to its vertex count, whereas the median lands on whichever mode
+/// holds the bulk of the geometry, which is the body.
+fn framing_center_of(positions: &[f32], object_ids: &[u32], part_count: u32) -> [f32; 3] {
+    let mut axes: [Vec<f32>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+    for (i, p) in positions.chunks_exact(3).enumerate() {
+        if !object_ids.is_empty() && object_ids.get(i).is_none_or(|&o| o >= part_count) {
+            continue;
+        }
+        for k in 0..3 {
+            axes[k].push(p[k]);
+        }
+    }
+    let mut out = [0.0f32; 3];
+    for (k, v) in axes.iter_mut().enumerate() {
+        if v.is_empty() {
+            continue;
+        }
+        let mid = v.len() / 2;
+        v.select_nth_unstable_by(mid, f32::total_cmp);
+        out[k] = v[mid];
+    }
+    out
+}
+
+/// Median of `v` (mutates the order). `None` when empty.
+fn median(v: &mut [f32]) -> Option<f32> {
+    if v.is_empty() {
+        return None;
+    }
+    let mid = v.len() / 2;
+    v.select_nth_unstable_by(mid, f32::total_cmp);
+    Some(v[mid])
+}
+
+fn dist(p: &[f32], c: [f32; 3]) -> f32 {
+    let (dx, dy, dz) = (p[0] - c[0], p[1] - c[1], p[2] - c[2]);
+    (dx * dx + dy * dy + dz * dz).sqrt()
+}
+
+/// Centroid distance from `c` for every animated object that owns at least one
+/// vertex, as `(object index, distance)`.
+fn part_centroid_distances(
+    positions: &[f32],
+    object_ids: &[u32],
+    part_count: u32,
+    c: [f32; 3],
+) -> Vec<(u32, f32)> {
+    let n = part_count as usize;
+    let mut sum = vec![[0f64; 3]; n];
+    let mut count = vec![0usize; n];
+    for (i, p) in positions.chunks_exact(3).enumerate() {
+        let Some(&o) = object_ids.get(i) else {
+            continue;
+        };
+        if o >= part_count {
+            continue;
+        }
+        let o = o as usize;
+        for k in 0..3 {
+            sum[o][k] += p[k] as f64;
+        }
+        count[o] += 1;
+    }
+    (0..n)
+        .filter(|&o| count[o] > 0)
+        .map(|o| {
+            let m = count[o] as f64;
+            let ct = [
+                (sum[o][0] / m) as f32,
+                (sum[o][1] / m) as f32,
+                (sum[o][2] / m) as f32,
+            ];
+            (o as u32, dist(&ct, c))
+        })
+        .collect()
+}
+
+/// The set of objects whose centroid is **not** a distance outlier among the
+/// parts (median + `k` × scaled MAD). `None` when there is no usable spread to
+/// judge against - fewer than three parts, or every part at the same distance.
+fn retained_parts(parts: &[(u32, f32)], k: f32) -> Option<Vec<u32>> {
+    if parts.len() < 3 {
+        return None;
+    }
+    let mut d: Vec<f32> = parts.iter().map(|&(_, d)| d).collect();
+    let med = median(&mut d)?;
+    let mut dev: Vec<f32> = parts.iter().map(|&(_, d)| (d - med).abs()).collect();
+    let mad = median(&mut dev)? * MAD_TO_SIGMA;
+    if mad <= 0.0 {
+        return None;
+    }
+    let cutoff = med + k.max(0.0) * mad;
+    let kept: Vec<u32> = parts
+        .iter()
+        .filter(|&&(_, d)| d <= cutoff)
+        .map(|&(o, _)| o)
+        .collect();
+    (!kept.is_empty() && kept.len() < parts.len()).then_some(kept)
+}
+
+/// `[cx, cy, cz, radius]` for a posed point cloud.
+///
+/// The centre is the per-axis vertex median. The radius is built in two steps,
+/// and the composition is the point - neither step works alone:
+///
+/// 1. **Reject outlier parts.** Any object whose centroid sits more than `k`
+///    scaled MADs beyond the median part distance stops counting. This is what
+///    drops Meta's thrown sword while keeping every one of Terra's wings, which
+///    sit at distances comparable to her other parts.
+/// 2. **Take a percentile over what is left.** The scale is then the
+///    [`FRAMING_FALLBACK_PERCENTILE`] of vertex distance *among the retained
+///    parts*, so a single stretched limb inside the body still cannot set it.
+///
+/// Step 1 alone leaves the radius at the retained set's maximum, which for a
+/// body with no outlier is just the naive bound again - measured, and it was
+/// worse than the percentile everywhere. Step 2 alone cannot tell a wide body
+/// from a body plus a distant part - also measured, and it traded Meta against
+/// Terra. See [`FRAMING_OUTLIER_K`].
+///
+/// `object_ids` may be empty, in which case every vertex counts and only step 2
+/// runs; otherwise a vertex is eligible only when its object index is below
+/// `part_count`, the same filter the page's poser applies.
+fn framing_bound_of(positions: &[f32], object_ids: &[u32], part_count: u32, k: f32) -> [f32; 4] {
+    let c = framing_center_of(positions, object_ids, part_count);
+
+    // Step 1: which objects still count.
+    let kept = (!object_ids.is_empty() && part_count > 0)
+        .then(|| {
+            let parts = part_centroid_distances(positions, object_ids, part_count, c);
+            retained_parts(&parts, k)
+        })
+        .flatten();
+
+    // Step 2: a percentile of vertex distance over the retained objects.
+    let mut d: Vec<f32> = positions
+        .chunks_exact(3)
+        .enumerate()
+        .filter(|(i, _)| match object_ids.get(*i) {
+            _ if object_ids.is_empty() => true,
+            Some(&o) if o < part_count => kept.as_ref().is_none_or(|s| s.contains(&o)),
+            _ => false,
+        })
+        .map(|(_, p)| dist(p, c))
+        .collect();
+    if d.is_empty() {
+        return [c[0], c[1], c[2], 1.0];
+    }
+    let q = FRAMING_FALLBACK_PERCENTILE.clamp(0.05, 1.0);
+    let idx = (((d.len() as f32 - 1.0) * q).round() as usize).min(d.len() - 1);
+    d.select_nth_unstable_by(idx, f32::total_cmp);
+    [c[0], c[1], c[2], d[idx].max(1.0)]
+}
+
+/// `[cx, cy, cz, radius]` for a posed point cloud - see [`FRAMING_OUTLIER_K`]
+/// for why the radius rejects distant parts instead of bounding everything.
+///
+/// The page calls this once when a clip starts (to set both centre and radius)
+/// and [`summon_framing_center`] every frame afterwards (to follow the body
+/// without the scale breathing). Both live here rather than in the page so
+/// there is one implementation of the statistic, and so it can be tested.
+#[wasm_bindgen]
+pub fn summon_framing_bound(
+    positions: Vec<f32>,
+    object_ids: Vec<u32>,
+    part_count: u32,
+    outlier_k: f32,
+) -> Vec<f32> {
+    framing_bound_of(&positions, &object_ids, part_count, outlier_k).to_vec()
+}
+
+/// `[cx, cy, cz]` - the framing centre alone, for the per-frame follow.
+#[wasm_bindgen]
+pub fn summon_framing_center(
+    positions: Vec<f32>,
+    object_ids: Vec<u32>,
+    part_count: u32,
+) -> Vec<f32> {
+    framing_center_of(&positions, &object_ids, part_count).to_vec()
+}
+
+/// The default part-outlier cutoff, exported so the page does not hard-code a
+/// second copy of the constant.
+#[wasm_bindgen]
+pub fn summon_framing_outlier_k() -> f32 {
+    FRAMING_OUTLIER_K
+}
+
 /// Log a decode degradation. Browser console on wasm; stderr natively (the
 /// disc-gated tests drive this module natively).
 fn summon_log(s: &str) {
@@ -443,5 +671,186 @@ impl LegaiaSummons {
             .and_then(|c| c.fx_pages.get(index as usize))
             .map(|p| vec![p.width as u32, p.height as u32])
             .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod framing_tests {
+    use super::*;
+
+    /// Vertices per body part in the synthetic rigs.
+    const PART_VERTS: usize = 60;
+
+    /// A rig: `parts` small clusters spread evenly out to `spread` from the
+    /// origin (one object each), optionally plus one extra object of
+    /// `far_verts` vertices parked at `far`. This is the shape the real
+    /// summons have - a body made of many parts, sometimes with one part
+    /// thrown clear of it.
+    ///
+    /// `far_verts` matters: give the outlier only a handful of vertices and a
+    /// plain distance percentile would suppress it on its own, so the test
+    /// would pass without the part-level rejection doing anything. The tests
+    /// below hand it a share big enough to survive the percentile, which is
+    /// what makes them about step 1.
+    fn rig(
+        parts: usize,
+        spread: f32,
+        far: Option<[f32; 3]>,
+        far_verts: usize,
+    ) -> (Vec<f32>, Vec<u32>) {
+        let mut pos = Vec::new();
+        let mut ids = Vec::new();
+        for o in 0..parts {
+            let t = o as f32 / parts as f32;
+            let a = t * std::f32::consts::TAU;
+            let c = [spread * a.cos(), spread * (t * 3.1 - 1.5), spread * a.sin()];
+            for i in 0..PART_VERTS {
+                let u = i as f32 / PART_VERTS as f32;
+                pos.extend_from_slice(&[
+                    c[0] + spread * 0.08 * (u * 19.0).sin(),
+                    c[1] + spread * 0.08 * (u * 23.0).cos(),
+                    c[2] + spread * 0.08 * (u * 29.0).sin(),
+                ]);
+                ids.push(o as u32);
+            }
+        }
+        if let Some(f) = far {
+            for _ in 0..far_verts {
+                pos.extend_from_slice(&f);
+                ids.push(parts as u32);
+            }
+        }
+        (pos, ids)
+    }
+
+    /// Plain maximum distance from the origin over every vertex - the naive
+    /// bound the framing statistic replaces.
+    fn naive_max(pos: &[f32]) -> f32 {
+        pos.chunks_exact(3)
+            .map(|p| (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt())
+            .fold(0.0f32, f32::max)
+    }
+
+    /// The defect this statistic exists for: one part thrown clear of the body
+    /// must not set the camera scale. Meta's sword is the live case.
+    #[test]
+    fn a_single_distant_part_cannot_set_the_scale() {
+        // The outlier gets a third of the vertices, so a distance percentile
+        // alone would keep it - only the part-level rejection can drop it.
+        let (pos, ids) = rig(12, 10.0, Some([900.0, 0.0, 0.0]), 12 * PART_VERTS / 2);
+        let b = framing_bound_of(&pos, &ids, 13, FRAMING_OUTLIER_K);
+        // Centre stays on the body, not drawn out toward the outlier.
+        assert!(
+            b[0].abs() < 15.0,
+            "centre x {} drifted to the outlier",
+            b[0]
+        );
+        // Radius is the body's, not the separation's.
+        assert!(
+            b[3] < 40.0,
+            "radius {} was set by the distant part (body spread is ~10)",
+            b[3]
+        );
+        // Non-vacuity, two ways. The input really does hold far geometry ...
+        assert!(naive_max(&pos) > 800.0, "control: max distance is tame");
+        // ... and with the outlier test switched off (a cutoff nothing can
+        // exceed) that geometry does set the radius. So the assertion above is
+        // about step 1, not about an input the percentile handled anyway.
+        let wide = framing_bound_of(&pos, &ids, 13, 1.0e6);
+        assert!(
+            wide[3] > 800.0,
+            "control: with no outlier rejection the radius is {}",
+            wide[3]
+        );
+    }
+
+    /// The control that keeps the fix from becoming a crop: a body whose parts
+    /// are genuinely spread out must keep its radius. Terra's wings are the
+    /// live case, and a vertex-percentile version of this statistic cropped
+    /// them - the part-level test is what tells her apart from Meta.
+    #[test]
+    fn a_wide_body_of_many_parts_keeps_its_radius() {
+        let (pos, ids) = rig(14, 100.0, None, 0);
+        let b = framing_bound_of(&pos, &ids, 14, FRAMING_OUTLIER_K);
+        assert!(
+            b[3] > 90.0,
+            "radius {} cropped a legitimately wide body (spread 100)",
+            b[3]
+        );
+    }
+
+    /// The two cases side by side: the same *number* of far vertices reads as
+    /// "the body" when many parts share that distance, and as "an outlier"
+    /// when only one part does.
+    #[test]
+    fn spread_out_parts_and_one_distant_part_are_told_apart() {
+        let wide = rig(14, 100.0, None, 0);
+        let compact = rig(14, 8.0, Some([100.0, 0.0, 0.0]), 14 * PART_VERTS / 2);
+        let bw = framing_bound_of(&wide.0, &wide.1, 14, FRAMING_OUTLIER_K);
+        let bc = framing_bound_of(&compact.0, &compact.1, 15, FRAMING_OUTLIER_K);
+        assert!(
+            bw[3] > 90.0 && bc[3] < 30.0,
+            "wide body radius {} must stay large while the compact body with a \
+             part at the same distance stays small (got {})",
+            bw[3],
+            bc[3]
+        );
+    }
+
+    /// The centre follows the body when it sits off the origin.
+    #[test]
+    fn the_centre_tracks_the_body_not_the_origin() {
+        let (mut pos, ids) = rig(10, 8.0, Some([-900.0, 700.0, 0.0]), 60);
+        for (i, p) in pos.chunks_exact_mut(3).enumerate() {
+            if ids[i] < 10 {
+                p[0] += 200.0;
+                p[1] -= 50.0;
+                p[2] += 30.0;
+            }
+        }
+        let c = framing_center_of(&pos, &ids, 11);
+        assert!((c[0] - 200.0).abs() < 25.0, "cx {}", c[0]);
+        assert!((c[1] + 50.0).abs() < 25.0, "cy {}", c[1]);
+        assert!((c[2] - 30.0).abs() < 25.0, "cz {}", c[2]);
+    }
+
+    /// Vertices whose object index is at or past `part_count` are not animated
+    /// by the clip, so they must not be framed either - the same filter the
+    /// page's poser applies.
+    #[test]
+    fn vertices_past_the_rig_width_are_excluded() {
+        let (pos, ids) = rig(6, 5.0, Some([400.0, 0.0, 0.0]), 6 * PART_VERTS);
+        // part_count = 6 -> the `far` object (index 6) is out of the rig.
+        let b = framing_bound_of(&pos, &ids, 6, 1.0e6);
+        assert!(
+            b[3] < 20.0,
+            "radius {} included vertices past the rig width",
+            b[3]
+        );
+        // With the rig wide enough to include it AND no outlier rejection, it
+        // does count - proving the width filter is what excluded it above.
+        let b2 = framing_bound_of(&pos, &ids, 7, 1.0e6);
+        assert!(b2[3] > 300.0, "control radius {}", b2[3]);
+    }
+
+    #[test]
+    fn degenerate_inputs_do_not_panic() {
+        assert_eq!(
+            framing_bound_of(&[], &[], 0, FRAMING_OUTLIER_K),
+            [0.0, 0.0, 0.0, 1.0]
+        );
+        assert_eq!(framing_center_of(&[], &[], 0), [0.0, 0.0, 0.0]);
+        // No eligible vertex (every object past the rig width).
+        let b = framing_bound_of(&[1.0, 2.0, 3.0], &[7], 1, FRAMING_OUTLIER_K);
+        assert_eq!(b[3], 1.0, "radius floors at 1 rather than collapsing");
+        // An empty object-id list means "every vertex counts", via the
+        // percentile fallback.
+        let b = framing_bound_of(&[0.0, 0.0, 0.0, 100.0, 0.0, 0.0], &[], 0, FRAMING_OUTLIER_K);
+        assert!(b[3] >= 50.0, "radius {} with no id filter", b[3]);
+        // Fewer than three parts gives no spread to judge an outlier against,
+        // so nothing is rejected.
+        let (pos, ids) = rig(1, 5.0, Some([500.0, 0.0, 0.0]), PART_VERTS);
+        let b = framing_bound_of(&pos, &ids, 2, FRAMING_OUTLIER_K);
+        assert!(b[3] > 400.0, "two parts: keep everything, got {}", b[3]);
     }
 }

@@ -56,23 +56,35 @@
    * ids no name map covers - never to a guess. */
   const label = (c) => c.summon || plain(c.attack) || hex2(c.spell_id);
 
-  /* Camera framing: OFF frames the creature on the cast's first pose (a
-   * summon's own body fills the canvas); ON accumulates over every frame, so
-   * a summon that flies in from off-screen stays visible - and shrinks to a
-   * speck, because these casts translate very far. Off is the useful default
-   * for a model viewer. */
+  /* Camera framing. OFF (default) frames the creature's own body and follows
+   * it: the scale is set by the farthest part that is not a distance outlier
+   * among the parts, so one part thrown clear of the body cannot shrink
+   * everything, at the cost of that part sometimes sitting outside the frame. ON hands framing back to
+   * MeshView's own fit over the union of every frame, which guarantees the
+   * whole cast is visible and is therefore the way to see a far part - at the
+   * cost of drawing the body small, because these casts travel a long way. */
   const FIT_KEY = 'legaia-magic-fit-all';
+
+  /* Headroom on the robust framing radius: enough that a limb swinging out
+   * mid-clip is not clipped at the canvas edge, small enough that the body
+   * still fills the frame. Tuned by measuring the drawn pixel extent of all
+   * seven summons, not by eye. */
+  const FRAME_SLACK = 1.15;
 
   class SummonViewerApp {
     /* els: { canvas, status, stage, now, note, clips, fx, gallery, grid } */
     constructor(els) {
       this.els = els;
       this.api = null;        /* LegaiaSummons */
+      this.mod = null;        /* the wasm module (framing helpers live there) */
       this.view = null;       /* MeshView */
       this.casts = null;      /* catalog().casts */
       this.state = null;      /* set_cast() JSON for the current cast */
       this.currentId = null;
       this.fitAll = false;
+      /* Null = use the WASM default. Overridable so the framing can be swept
+       * and measured against the rendered pixels rather than tuned by eye. */
+      this.frameOutlierK = null;
       try {
         this.fitAll = window.localStorage.getItem(FIT_KEY) === '1';
       } catch (e) { /* private mode */ }
@@ -104,6 +116,9 @@
           return;
         }
         this.api = new mod.LegaiaSummons();
+        /* The framing statistic is a free function on the module, not a method
+         * on the instance - keep the handle so the camera can reach it. */
+        this.mod = mod;
         prog.indeterminate('Parsing PROT.DAT…');
         await prog.paint();
         this.api.load_disc(buf);
@@ -310,42 +325,54 @@
       this._markClip('all');
     }
 
-    /* Keep the creature centred while its cast plays.
+    /* Keep the creature framed and centred while its cast plays.
      *
-     * MeshView frames once, on the clip's first pose. A summon cast translates
-     * the whole body a very long way (it flies in, dives, lands), so a fixed
-     * frame either loses the creature off-screen or - with `fitAll`, which
-     * sizes the camera to the union of every frame - shrinks it to a speck.
-     * Following the posed centroid each frame gives both: constant size, and
-     * the creature always in view. The radius stays whatever the first pose
-     * set, so the model does not breathe. Skipped when the user has asked to
-     * frame the whole cast.
+     * MeshView frames once, on the clip's first pose, using the bounding box
+     * of every posed vertex. Two things break that here:
+     *
+     *  1. a cast TRANSLATES the whole body a long way (it flies in, dives,
+     *     lands), so a frame fixed on pose 0 loses the creature; and
+     *  2. a summon rig routinely holds ONE part far from the body - Meta's
+     *     sword is thrown clear of the knight - so the box is dominated by
+     *     that separation and the camera pulls back to fit a mostly empty
+     *     volume. The box is correct and the frame is still useless.
+     *
+     * So the scale comes from a percentile of vertex distance rather than the
+     * extremes (`summon_framing_bound`), and the centre is re-read each frame
+     * from the same statistic (`summon_framing_center`). Both live in WASM -
+     * `crates/web-viewer/src/summon_view.rs` - so there is one implementation
+     * and it is unit-tested against exactly the "body plus distant part" case.
+     * The radius is fixed at clip start so the model does not breathe.
+     *
+     * Both are skipped when the user ticks "frame the whole cast", which is
+     * the deliberate way to see a far part that this framing crops.
      */
     _follow() {
       const v = this.view;
-      if (!v || !v.anim || this.fitAll) return;
+      if (!v || !v.anim || this.fitAll || !this.mod) return;
       const out = v.anim.out, ids = v._objIds, pc = v.anim.partCount;
       if (!out || !ids) return;
-      const lo = [Infinity, Infinity, Infinity];
-      const hi = [-Infinity, -Infinity, -Infinity];
-      for (let i = 0, n = out.length / 3; i < n; i++) {
-        if (ids[i] >= pc) continue;
-        for (let k = 0; k < 3; k++) {
-          const x = out[i * 3 + k];
-          if (x < lo[k]) lo[k] = x;
-          if (x > hi[k]) hi[k] = x;
-        }
-      }
-      if (lo[0] === Infinity) return;
-      v.center = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
+      const c = this.mod.summon_framing_center(out, ids, pc);
+      if (c && c.length === 3) v.center = [c[0], c[1], c[2]];
     }
 
-    /* Arm the follow-cam and give the first-pose radius a little slack, so a
-     * limb that swings out mid-clip does not clip the canvas edge. */
+    /* Set the clip's scale from the robust bound, then arm the follow-cam. */
     _armCamera() {
       if (!this.view) return;
-      if (!this.fitAll) this.view.radius = Math.max(1, this.view.radius * 1.35);
-      this.view.onFrame = () => this._follow();
+      const v = this.view;
+      if (!this.fitAll && this.mod && v.anim && v.anim.out && v._objIds) {
+        const k = this.frameOutlierK != null
+          ? this.frameOutlierK : this.mod.summon_framing_outlier_k();
+        const b = this.mod.summon_framing_bound(
+          v.anim.out, v._objIds, v.anim.partCount, k);
+        if (b && b.length === 4 && b[3] > 0) {
+          v.center = [b[0], b[1], b[2]];
+          /* Slack so a limb that swings out mid-clip is not clipped at the
+           * canvas edge; the percentile already excluded the far outliers. */
+          v.radius = b[3] * FRAME_SLACK;
+        }
+      }
+      v.onFrame = () => this._follow();
       this._follow();
     }
 
