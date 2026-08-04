@@ -1333,13 +1333,20 @@ void main() {
       try { return rt.play_shop_is_open(); } catch (e) { return false; }
     }
 
-    /* Start only opens the menu in ordinary field play - not on the world map,
-     * in battle, or while a dialogue box is up (Start is inert there in
-     * retail). */
+    /* Whether Start opens the menu right now.
+     *
+     * The engine owns the rule and answers it through `play_menu_can_open()`
+     * (`World::field_menu_open_allowed`): the scene mode plus retail's
+     * engaged-bit refusal. This used to be a page-side `scene_mode() !==
+     * 'Field'` test whose comment asserted Start was inert "on the world
+     * map" - false, since the overworld runs the same locomotion controller
+     * the field does, and a page-side copy of an engine rule is drift no gate
+     * can see because no Rust symbol is missing.
+     *
+     * What stays here is page-owned presentation state the engine has no view
+     * of: a dialog box the page is drawing, and the opening chain. */
     _canOpenFieldMenu() {
-      let mode = '';
-      try { mode = this.rt.scene_mode(); } catch (e) { return false; }
-      if (mode !== 'Field') return false;
+      try { if (!this.rt.play_menu_can_open()) return false; } catch (e) { return false; }
       if (this._hudState && this._hudState.dialog) return false;
       /* The opening chain / a narration beat owns the scene - Start is inert. */
       if (this._cut && (this._cut.locked || this._cut.chain)) return false;

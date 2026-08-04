@@ -445,16 +445,18 @@ impl LegaiaRuntime {
         if self.play_menu.is_some() {
             return;
         }
-        // Start is inert while a dialogue engagement owns the player - the
-        // same refusal `BootSession::open_field_menu` makes, off the same
-        // shared `World::dialogue_owns_input`. Retail's menu-open accept sits
-        // behind `FUN_801D01B0`'s engaged-bit branch (`0x801D01F0`), so a
-        // talking player cannot reach it.
+        // The whole menu-open precondition, asked of the engine rather than
+        // spelled out here: the engaged bit (a talking player's Start opens
+        // nothing) and the scene mode (the field *and* the overworld, since
+        // retail runs one locomotion controller across both). This is the
+        // same predicate `BootSession::tick` and the native window route
+        // through - three local copies of the mode test is how the overworld
+        // lost the pause menu.
         // REF: FUN_801D01B0
         if self
             .scene_host
             .as_ref()
-            .is_some_and(|h| h.world.dialogue_owns_input())
+            .is_some_and(|h| !h.world.field_menu_open_allowed())
         {
             return;
         }
@@ -524,6 +526,22 @@ impl LegaiaRuntime {
         if let Some(host) = self.scene_host.as_mut() {
             host.world.mode = menu.resume_mode;
         }
+    }
+
+    /// Whether a Start edge would open the pause menu right now:
+    /// [`World::field_menu_open_allowed`] over the wire, so the page can grey
+    /// its own affordance without re-deriving the rule.
+    ///
+    /// The page used to answer this itself by comparing
+    /// [`Self::scene_mode`] against the string `"Field"`, with a comment
+    /// asserting Start was inert "on the world map". Retail says otherwise -
+    /// the overworld runs the same locomotion controller the field does - and
+    /// a page-side copy of an engine rule is drift the drift gates cannot
+    /// see, because no Rust symbol is missing.
+    pub fn play_menu_can_open(&self) -> bool {
+        self.scene_host
+            .as_ref()
+            .is_some_and(|h| h.world.field_menu_open_allowed())
     }
 
     pub fn play_menu_is_open(&self) -> bool {

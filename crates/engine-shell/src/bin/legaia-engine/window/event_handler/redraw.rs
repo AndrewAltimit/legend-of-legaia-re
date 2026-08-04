@@ -160,16 +160,24 @@ impl PlayWindowApp {
                 self.prev_pad = self.pad;
                 continue;
             }
-            // Start opens the pause menu **in the field only**. Retail's
-            // Start handler is the field controller's; in battle Start is
-            // inert, and on the world map the controller has its own. The
-            // guard used to be `!menu_runtime.is_open()` alone, so Start
+            // Start opens the pause menu wherever retail's locomotion
+            // controller runs, which is the field **and the overworld**.
+            // The guard used to be `!menu_runtime.is_open()` alone, so Start
             // mid-battle opened the menu and froze the fight - the boot-UI
             // arm above skips the scene tick, so nothing advanced until the
-            // player backed out. The browser play page already required
-            // Field here; this is the native side catching up.
+            // player backed out.
+            //
+            // It then spelled the mode test out locally as
+            // `mode == SceneMode::Field`, on the premise that "on the world
+            // map the controller has its own" Start handler. That premise is
+            // false: `FUN_801E76D4` is the top-view debug renderer, and the
+            // overworld runs the ordinary `FUN_801D01B0` chain. A local copy
+            // of the test is exactly how the overworld lost the pause menu,
+            // so this asks the engine instead
+            // ([`World::field_menu_open_allowed`]) and every host that opens
+            // the menu asks the same question.
             if pressed_edge & 0x0008 != 0
-                && self.session.host.world.mode == SceneMode::Field
+                && self.session.host.world.field_menu_open_allowed()
                 && !self.menu_runtime.is_open()
             {
                 // Start: open the BootSession-hosted pause menu (the

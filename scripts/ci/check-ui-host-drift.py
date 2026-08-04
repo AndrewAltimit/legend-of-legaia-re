@@ -422,6 +422,7 @@ NATIVE_BOOT = "crates/engine-shell/src/boot.rs"
 NATIVE_SAVE_HELPERS = "crates/engine-shell/src/bin/legaia-engine/window/save_select_helpers.rs"
 NATIVE_FRAME_TICK = "crates/engine-core/src/world/frame_tick.rs"
 NATIVE_BOOT_CUTSCENE = "crates/engine-shell/src/bin/legaia-engine/window/boot_cutscene.rs"
+NATIVE_REDRAW = "crates/engine-shell/src/bin/legaia-engine/window/event_handler/redraw.rs"
 NATIVE_FIELD_RENDER = "crates/engine-shell/src/bin/legaia-engine/window/field_render.rs"
 NATIVE_GEOMETRY = "crates/engine-shell/src/bin/legaia-engine/window/geometry.rs"
 WEB_MINIGAMES_MUSCLE = "crates/web-viewer/src/minigames_muscle.rs"
@@ -550,7 +551,29 @@ SIM_PAIRS: list[dict[str, object]] = [
             "web": (WEB_PLAY_MENU, "play_menu_open"),
         },
         "mode": "symbols_all",
-        "symbols": ["FieldMenuGate", "SceneMode::Menu", "dialogue_owns_input"],
+        "symbols": ["FieldMenuGate", "SceneMode::Menu"],
+    },
+    {
+        "what": "menu-open precondition - every host that turns a Start edge "
+        "into an open menu must ask `World::field_menu_open_allowed` rather "
+        "than spell the test out locally. Three hosts each wrote their own "
+        "copy and all three said `mode == Field`, which is how the OVERWORLD "
+        "lost the pause menu: retail runs one locomotion controller "
+        "(`FUN_801D01B0`) across the field and the kingdom overworlds, and "
+        "the port splits that one retail mode into `Field` + `WorldMap`. The "
+        "premise the copies rested on - that `FUN_801E76D4` is the "
+        "overworld's controller with a Start handler of its own - is false; "
+        "it is the top-view debug renderer. The symptom was silent in the "
+        "worst way: the Save row is legal in exactly the three scenes no host "
+        "would open the menu in, so the SAVE direction was unreachable by pad "
+        "anywhere in the port while every oracle stayed green",
+        "sites": {
+            "native_window": (NATIVE_REDRAW, "handle_redraw"),
+            "native_boot": (NATIVE_BOOT, "tick"),
+            "web": (WEB_PLAY_MENU, "play_menu_open"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["field_menu_open_allowed"],
     },
     {
         "what": "party wipe - both hosts must route it to the title screen "
@@ -819,7 +842,18 @@ def sim_pair_divergence(pair: dict) -> tuple[list[str], list[str]]:
             errors.append(f"SIM {pair['what']!r}: {problem}")
         else:
             bodies[host] = text
-    if errors or len(bodies) != 2:
+    # A row may name any number of sites from two up. This used to demand
+    # EXACTLY two and return `([], [])` otherwise - so a three-site row was
+    # not a failure and not an error, it was silently unevaluated, and the
+    # gate reported clean while checking nothing. That is the worst shape a
+    # checker can have, and it hid behind the fact that every row happened to
+    # be a pair when the guard was written. A row with fewer than two sites is
+    # now a hard error, because it cannot compare anything either.
+    if len(bodies) < 2 and not errors:
+        errors.append(
+            f"SIM {pair['what']!r}: needs at least two resolvable sites, got {len(bodies)}"
+        )
+    if errors:
         return errors, []
 
     hosts = sorted(bodies)
@@ -839,23 +873,27 @@ def sim_pair_divergence(pair: dict) -> tuple[list[str], list[str]]:
                 diffs.append(
                     f"`{sym}` is not called at {', '.join(where(h) for h in missing)}"
                 )
-            elif mode == "symbols_same" and seen[a] != seen[b]:
-                has = a if seen[a] else b
-                lacks = b if seen[a] else a
+            elif mode == "symbols_same" and len(set(seen.values())) > 1:
+                has = [h for h in hosts if seen[h]]
+                lacks = [h for h in hosts if not seen[h]]
                 diffs.append(
-                    f"`{sym}` is called at {where(has)} but not at {where(lacks)} - "
-                    f"both must, or neither may"
+                    f"`{sym}` is called at {', '.join(where(h) for h in has)} "
+                    f"but not at {', '.join(where(h) for h in lacks)} - "
+                    f"all must, or none may"
                 )
     elif mode == "pattern_same":
         pat = re.compile(pair["pattern"])  # type: ignore[arg-type]
         found = {h: {m.group(1) for m in pat.finditer(bodies[h])} for h in hosts}
-        if found[a] != found[b]:
-            only_a = sorted(found[a] - found[b])
-            only_b = sorted(found[b] - found[a])
-            if only_a:
-                diffs.append(f"only {where(a)}: {', '.join(only_a)}")
-            if only_b:
-                diffs.append(f"only {where(b)}: {', '.join(only_b)}")
+        # Every site must agree with the union, so a third host cannot carry a
+        # stray match that a pairwise `a != b` comparison would never look at.
+        union: set[str] = set().union(*found.values())
+        for h in hosts:
+            extra = sorted(found[h] - set().union(*(found[o] for o in hosts if o != h)))
+            missing = sorted(union - found[h])
+            if extra:
+                diffs.append(f"only {where(h)}: {', '.join(extra)}")
+            if missing:
+                diffs.append(f"missing at {where(h)}: {', '.join(missing)}")
     else:
         errors.append(f"SIM {pair['what']!r}: unknown mode {mode!r}")
     return errors, diffs
