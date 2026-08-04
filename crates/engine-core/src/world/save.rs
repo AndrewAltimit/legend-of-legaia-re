@@ -388,19 +388,42 @@ impl World {
     /// card driver directly), `0x0D` is the context that blocks the menu's
     /// Load row and turns its cancel into a Yes/No confirm.
     ///
-    /// The port has no single global to read - it tags each park with the
-    /// context that armed it ([`crate::field_submode_screen::Op49ParkOwner`])
-    /// and resolves three sub-ops through dedicated host paths - so the kind
-    /// is recovered from those paths instead: an armed inline shop is sub-op
-    /// `0` and an installed tile board is sub-op `5`. Both are `!= 0x0D`, so
-    /// they take the same allow branch retail takes, and a park whose sub-op
-    /// the engine does not track reads `None` (also the allow branch). The
-    /// blocking kind is therefore reachable only once the op-`0x49` arm
-    /// records its sub-op, which is the one edit that would make this
-    /// function able to return `0x0D`.
+    /// The port has no single global to read, because it tags each park with
+    /// the context that armed it
+    /// ([`crate::field_submode_screen::Op49ParkOwner`]), so it keeps the byte
+    /// itself instead - on
+    /// [`crate::field_submode_screen::SubmodeScreen::park_sub_op`], written
+    /// by the arm ([`World::record_op49_park`]) and cleared by the resume.
+    /// That covers every sub-op, including the three the port resolves
+    /// through dedicated host paths, because retail's store happens before
+    /// those paths diverge.
+    ///
+    /// The two legacy derivations below it stay as a fallback for a host
+    /// that arms a shop or a tile board **without** going through the field
+    /// VM (`World::try_arm_field_shop` and `World::try_install_tile_board`
+    /// are both callable directly, and several tests do exactly that). They
+    /// agree with the park by construction - an inline shop is sub-op `0`
+    /// and a tile board sub-op `5`.
+    ///
+    /// Retail's own consumers of this byte, and which value selects each:
+    ///
+    /// | kind | consumer |
+    /// |---|---|
+    /// | `0` | save/menu driver opens sub-screen `0x1A` |
+    /// | `1` | opens `0x19` - a field save point goes straight to the card |
+    /// | `7` | opens `0x20` - the casino prize exchange |
+    /// | `0x0D` | opens `4`, blocks the root Load row, arms the leave confirm |
+    ///
+    /// (`FUN_801DC6B4` at `0x801dc88c..0x801dc8e4`.) Which of those a real
+    /// disc ever arms is measured by
+    /// `crates/engine-core/tests/op49_sub_op_census.rs`.
     ///
     /// REF: FUN_801de840 (op `0x49` Idle arm, `_DAT_8007B450 = operand`)
+    /// REF: FUN_801dc6b4 (the routing consumer)
     pub fn menu_entry_context_kind(&self) -> Option<u8> {
+        if let Some(sub_op) = self.submode_screen.park_sub_op {
+            return Some(sub_op);
+        }
         if self.field_shop_armed {
             return Some(0);
         }

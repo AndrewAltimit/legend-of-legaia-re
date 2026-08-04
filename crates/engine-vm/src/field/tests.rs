@@ -50,7 +50,9 @@ struct TestHost {
     inventory_pairs: std::collections::HashMap<(u8, u8), (i32, i32)>,
     // 0x49 STATE_RESUME: tristate (Idle/Armed/Done) + last arm record.
     op49_state_value: Op49State,
-    op49_arms: Vec<(usize, u32)>,
+    /// `(sub_op, pc, field_90)` per arm - the sub-op is retail's park
+    /// kind byte (`*_DAT_8007B450`), not a spare argument.
+    op49_arms: Vec<(u8, usize, u32)>,
     op49_clears: u32,
     op49_setups: u32,
     // 0x34 sub-3 / 0x43 sub-8 callbacks.
@@ -336,8 +338,8 @@ impl FieldHost for TestHost {
     fn op49_state(&self) -> Op49State {
         self.op49_state_value
     }
-    fn op49_arm(&mut self, pc: usize, field_90: u32) {
-        self.op49_arms.push((pc, field_90));
+    fn op49_arm(&mut self, sub_op: u8, pc: usize, field_90: u32) {
+        self.op49_arms.push((sub_op, pc, field_90));
     }
     fn op49_clear(&mut self) {
         self.op49_clears += 1;

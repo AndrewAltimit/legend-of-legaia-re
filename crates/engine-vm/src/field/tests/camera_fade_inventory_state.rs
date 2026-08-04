@@ -369,8 +369,35 @@ fn op_49_idle_arms_and_halts() {
     // Sub-op 1: captures field_90 into the arm record.
     let r = step(&mut host, &mut ctx, &[0x49, 1, 0, 0, 0], 0);
     assert_eq!(r, StepResult::Halt { final_pc: 0 });
-    assert_eq!(host.op49_arms, vec![(0, 0xDEAD_BEEF)]);
+    // The arm carries the operand's first byte - retail's park kind - so a
+    // host can answer "which flow armed this" without re-reading bytecode.
+    assert_eq!(host.op49_arms, vec![(1, 0, 0xDEAD_BEEF)]);
     assert_eq!(host.op49_setups, 1);
+}
+
+/// Every sub-op the Idle arm accepts reports **its own** kind byte, not a
+/// constant and not one of the three the port used to be able to infer.
+///
+/// Retail's park is the operand pointer and every consumer dereferences its
+/// first byte (`FUN_801DC6B4` routes on `0`, `1`, `7` and `0x0D`), so a host
+/// that could only distinguish the sub-ops it happened to have a dedicated
+/// path for could never select those screens.
+#[test]
+fn op_49_arms_report_the_whole_sub_op_space() {
+    for sub_op in 0..=0x0Du8 {
+        let mut host = TestHost {
+            op49_state_value: Op49State::Idle,
+            ..Default::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &[0x49, sub_op, 0, 0, 0, 0, 0], 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 }, "sub-op {sub_op:#x}");
+        assert_eq!(
+            host.op49_arms.iter().map(|a| a.0).collect::<Vec<_>>(),
+            vec![sub_op],
+            "sub-op {sub_op:#x} must arm with its own kind byte"
+        );
+    }
 }
 
 #[test]

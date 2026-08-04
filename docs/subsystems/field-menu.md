@@ -1658,10 +1658,10 @@ What it settles for the windows whose painters had no screen:
 
 | Window | Script | Sub-screen | Screen |
 |---|---|---|---|
-| 5 | `0x801E4BD4` | `3` (`FUN_801D6D38`) | leave-confirm, reached only from the pause root's cancel with entry-context byte `0x0D` |
+| 5 | `0x801E4BD4` | `3` (`FUN_801D6D38`) | battle-start ready check, reached only from the pause root's cancel with entry-context byte `0x0D` |
 | 6 | `0x801E4BE0` | `4` (`FUN_801DD1B8`) | notice panel; the menu's entry screen for the same `0x0D` context |
 | 7 | `0x801E4D50` / `0x801E4D78` | `0xF` / `0x10` | spell level-up notice, opened by a magic cast only when the apply raised the sentinel |
-| 24 + 25 | `0x801E4DC8` | `0x13` (`FUN_801D9C14`) | the Equip screen's slot-browse step, with window 2's Equip tab |
+| 24 + 25 | `0x801E4DC8` | `0x14` (`FUN_801D9C14`) | the Equip screen's slot-browse step, with window 2's Equip tab |
 | 31 | `0x801E4EDC` / `0x801E4EA8` | `0x1D` / `0x1C` | the shop's Point Card toast |
 | 46 | `0x801E4F2C` | `0x20` (`FUN_801DC1CC`) | the casino prize counter's Yes/No confirm |
 
@@ -1677,6 +1677,16 @@ pause-list windows: they are the pair belonging to entry-context kind `0x0D`,
 `FUN_801D6B20` routing to sub-screen 3 on cancel (`0x801d6cf8..0x801d6d18`)
 and `FUN_801DC6B4` selecting sub-screen 4 on entry (`0x801dc8d0..0x801dc8e4`).
 
+Window 5's own content settles what that pair *is*. Its renderer loads two
+heading strings, and they are a **battle-start ready check**, not the
+"really leave?" prompt the routing alone suggests - so the `0x0D` context is
+a scripted pre-battle party menu whose Yes exits into the fight. Window 6's
+six labels are the matching briefing, and they are six static VAs in the
+overlay's own pool (`lui a0,0x801d` + `addiu` pairs at
+`0x801d636c..0x801d6448`), not content the entry-context record owns. Both
+readings were the other way round on this page until the string pointers
+were followed.
+
 **Window 31** joins the dispatch-drawn set on the shop's Point Card beat. Which flow opens it
 is settled by the disc rather than inferred: both retail buy commits hand
 the widget VM a script whose entire body is `01 1F` plus the terminator -
@@ -1686,9 +1696,38 @@ and then park in a phase that only a confirm / cancel press releases. The
 engine keeps the bank on `World::point_card` and the beat on
 `MenuRuntime::point_card_toast`; see [shop.md](shop.md#point-card).
 
-The painters for windows no host **opens** yet - 5, 6, 7, 24, 46 - stay
-unreached by a screen rather than by a mechanism; each one's remaining blocker
-is recorded per builder in `scripts/ci/ui-host-drift-waivers.toml`.
+Windows 5 and 6 are drawn on both hosts. Their trigger is the entry-context
+kind byte, which the op-`0x49` arm now records (see
+[save-screen.md](save-screen.md#root-command-picker-fun_801d6b20)): `FieldMenuSession`
+carries the two phases retail's dispatcher selects for kind `0x0D` - `Notice`
+as the *entry* screen and `ReadyConfirm` as the root picker's cancel
+destination - and each host resolves the window id off the disc table through
+`painter_at`. Their labels are read out of the caller's own PROT 0899 image at
+the VAs the two renderers load (`pause_screens::ContextLockedLabels`),
+installed by the `install_menu_overlay_tables` call both hosts already make.
+
+The painters for windows 24 and 46 stay unreached by a **screen** rather than
+by a mechanism; each one's remaining blocker is recorded per builder in
+`scripts/ci/ui-host-drift-waivers.toml`.
+
+### Which screen a window belongs to is settled by the open scripts
+
+Two sweeps over PROT 0899 do the settling, and both are byte measurements
+rather than readings of a decompile:
+
+- every `01 <id>` command in the widget-script pool names the one screen
+  that opens that window;
+- every `sw rt,0x46a4(rs)` in the image names a writer of the sub-screen
+  selector `DAT_801E46A4`, and the immediate loaded into `rt` a few
+  instructions earlier names the value.
+
+The second is what pins the two screens above to the entry-context kind and
+to nothing else: of 66 selector writers, sub-screen `4` is written at exactly
+one (`0x801dc8e4`, on kind `0x0D`) and sub-screen `0x20` at exactly one
+(`0x801dc8cc`, on kind `7`), both inside `FUN_801DC6B4`'s entry decode. It
+also corrects the Equip set's own id - the script `0x801E4DC8` is loaded at
+`0x801d9d00`, inside the routine the pointer table lists at index `0x14`, not
+`0x13`.
 
 Three rules the block encodes are worth naming on their own:
 

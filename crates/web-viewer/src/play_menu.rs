@@ -92,6 +92,15 @@ const STAGE_H: u32 = ui::BOOT_UI_STAGE_H;
 /// the native window's `WIN_MAGIC_LEVEL_NOTICE` (`window/menu_draws.rs`).
 const WIN_MAGIC_LEVEL_NOTICE: usize = 7;
 
+/// Menu-overlay descriptor id of the kind-`0x0D` **notice panel** (renderer
+/// `FUN_801D6360` - `engine-ui`'s `LabelList` painter), opened by menu
+/// sub-screen `4`. Mirrors the native window's `WIN_CONTEXT_NOTICE`.
+const WIN_CONTEXT_NOTICE: usize = 6;
+/// Menu-overlay descriptor id of the kind-`0x0D` **ready check** (renderer
+/// `FUN_801D61B0` - `engine-ui`'s `TwoLineChoicePanel` painter), opened by
+/// menu sub-screen `3`. Mirrors the native window's `WIN_CONTEXT_READY`.
+const WIN_CONTEXT_READY: usize = 5;
+
 /// Near-fullscreen content rect for the screens the native shell frames with a
 /// single window rather than a capture-pinned window set: Items / Magic (the
 /// generic frame behind `inventory_use_draws_for` / `spell_menu_draws_for`).
@@ -466,6 +475,9 @@ impl LegaiaRuntime {
                     entry_context_kind: world.menu_entry_context_kind(),
                     save_allowed: world.scene_save_allowed,
                 });
+                // Same entry decode the native window runs: a locked context
+                // opens on the notice panel, not on the root picker.
+                session.open_entry_screen();
                 let resume = world.mode;
                 world.mode = SceneMode::Menu;
                 resume
@@ -744,6 +756,10 @@ impl LegaiaRuntime {
         let input = FieldMenuInput {
             up: pressed(edge, PadButton::Up),
             down: pressed(edge, PadButton::Down),
+            // The kind-0x0D ready check is a horizontal two-row choice, so
+            // the picker needs left / right as well as up / down.
+            left: pressed(edge, PadButton::Left),
+            right: pressed(edge, PadButton::Right),
             cross: pressed(edge, PadButton::Cross),
             circle: pressed(edge, PadButton::Circle),
             start: pressed(edge, PadButton::Start),
@@ -814,7 +830,14 @@ impl LegaiaRuntime {
         let mut sprites: Vec<SpriteDraw> = Vec::new();
         let mut texts: Vec<TextDraw> = Vec::new();
 
+        // The kind-0x0D entry pair replaces the root list rather than
+        // overlaying it: both sub-screens open with `05 00` (close every
+        // window) before opening their own, so the command rows are not on
+        // screen while either is up. Browser twin of the native window's
+        // `context_locked_screen_draws`.
+        let context_screen = self.build_context_locked(assets, menu, &mut texts, origin, scale);
         match &menu.sub {
+            _ if context_screen => {}
             None => self.build_top_level(assets, menu, &mut sprites, &mut texts, origin, scale),
             Some(PlaySub::Session(sub)) => match sub.as_ref() {
                 FieldMenuSubsession::Save(s) => {
@@ -913,6 +936,82 @@ impl LegaiaRuntime {
     /// Top-level command list + money/time box + party info panel, with gold
     /// window chrome + the cursor / icon sprites. Mirrors the native window's
     /// `BootUiState::FieldMenu { sub: None }` path.
+    /// Windows 6 and 5 - the pair the pause menu draws when the op-`0x49`
+    /// entry context's kind byte is `0x0D`. Browser twin of the native
+    /// window's `context_locked_screen_draws`, off the same session phases,
+    /// the same disc-parsed rects and the same
+    /// [`legaia_engine_core::pause_screens::ContextLockedLabels`] - so
+    /// neither host can invent a label the other does not have.
+    ///
+    /// Returns `true` when one of the two drew, which is what suppresses
+    /// the root list for the frame.
+    fn build_context_locked(
+        &self,
+        assets: &PlayMenuAssets,
+        menu: &PlayMenu,
+        texts: &mut Vec<TextDraw>,
+        origin: (i32, i32),
+        scale: u32,
+    ) -> bool {
+        use legaia_engine_ui::ui_menu_window_painters::{
+            ChoiceFlags, label_list_draws_for, two_line_choice_panel_draws_for,
+        };
+        let Some(world) = self.menu_world() else {
+            return false;
+        };
+        let Some(table) = assets.window_table() else {
+            return false;
+        };
+        let font = assets.font_ref();
+        let labels = &world.menu_context_labels;
+        let hand = |x: i32, y: i32| -> Vec<TextDraw> {
+            // ASCII stand-in for the painter's cursor sprite, the same
+            // substitution every other browser menu screen makes.
+            ui::text_draws_for(&font.layout_ascii(">"), (x, y), ui::MENU_TEXT_GOLD)
+        };
+        if menu.session.notice_is_up() {
+            let Some((d, _)) =
+                ui::painter_at(table, WIN_CONTEXT_NOTICE, ui::MenuWindowPainter::LabelList)
+            else {
+                return false;
+            };
+            let lines: Vec<&str> = labels.notice_lines.iter().map(String::as_str).collect();
+            let (mut text, cursor) = label_list_draws_for(font, ui::painter_rect(d), &lines);
+            text.extend(hand(cursor.x, cursor.y));
+            ui::scale_stage_text_draws(&mut text, origin, scale);
+            texts.extend(text);
+            return true;
+        }
+        if let Some(cursor_row) = menu.session.ready_confirm_cursor() {
+            let Some((d, _)) = ui::painter_at(
+                table,
+                WIN_CONTEXT_READY,
+                ui::MenuWindowPainter::TwoLineChoicePanel,
+            ) else {
+                return false;
+            };
+            let (mut text, sprites) = two_line_choice_panel_draws_for(
+                font,
+                ui::painter_rect(d),
+                [
+                    labels.ready_headings[0].as_str(),
+                    labels.ready_headings[1].as_str(),
+                ],
+                [labels.choices[0].as_str(), labels.choices[1].as_str()],
+                // The flag word is the shared cursor word `FUN_801D688C`
+                // maintains; sub-screen 3 keeps the plain, non-editing form.
+                ChoiceFlags(u32::from(cursor_row)),
+            );
+            for s in sprites {
+                text.extend(hand(s.x, s.y));
+            }
+            ui::scale_stage_text_draws(&mut text, origin, scale);
+            texts.extend(text);
+            return true;
+        }
+        false
+    }
+
     fn build_top_level(
         &self,
         assets: &PlayMenuAssets,

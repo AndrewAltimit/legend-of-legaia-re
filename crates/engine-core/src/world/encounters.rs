@@ -264,6 +264,16 @@ impl World {
         if let Ok(rank) = crate::menu_arrange::parse_arrange_rank_table(overlay) {
             self.menu_arrange_rank = Some(rank);
         }
+        // The same image carries the two entry-context screens' label
+        // strings (`FUN_801D6360` / `FUN_801D61B0` load them straight out of
+        // the overlay's own pool). Installing them here rather than at
+        // menu-open means both hosts get them from the one call they already
+        // make, so neither can ship the panels text-less while the other
+        // draws them.
+        let labels = crate::pause_screens::ContextLockedLabels::from_menu_overlay(overlay);
+        if labels.is_installed() {
+            self.menu_context_labels = labels;
+        }
     }
 
     /// Rebuild every party member's ability bitfield from their equipped

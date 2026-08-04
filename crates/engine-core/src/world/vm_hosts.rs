@@ -690,7 +690,17 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             }
         }
     }
+    fn op49_arm(&mut self, sub_op: u8, _pc: usize, _field_90: u32) {
+        // Retail's `sw s6,-0x4bb0(s0)`: the park holds the operand pointer,
+        // whose first byte is this sub-op. Recording it is what lets
+        // `World::menu_entry_context_kind` answer with anything other than
+        // the two sub-ops the port could previously infer from its own
+        // dedicated host paths.
+        self.world.record_op49_park(sub_op);
+    }
     fn op49_clear(&mut self) {
+        // Retail's `sw zero,-0x4bb0(s0)` on the Done edge.
+        self.world.clear_op49_park();
         // The shop op's resume ran: drop the arm so a later op-0x49 can open
         // the next merchant. (Name-entry clears via its own pending flags.)
         self.world.field_shop_armed = false;

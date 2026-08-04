@@ -7,7 +7,85 @@ use super::*;
 /// by the browser play page (`web-viewer::play_menu`).
 const WIN_MAGIC_LEVEL_NOTICE: usize = 7;
 
+/// Descriptor id of the kind-`0x0D` **notice panel** (`FUN_801D6360` -
+/// `engine-ui`'s `LabelList` painter), opened by menu sub-screen `4`'s
+/// script `0x801E4BE0`. Mirrored by the browser play page.
+const WIN_CONTEXT_NOTICE: usize = 6;
+/// Descriptor id of the kind-`0x0D` **ready check** (`FUN_801D61B0` -
+/// `engine-ui`'s `TwoLineChoicePanel` painter), opened by sub-screen `3`'s
+/// script `0x801E4BD4`. Mirrored by the browser play page.
+const WIN_CONTEXT_READY: usize = 5;
+
 impl PlayWindowApp {
+    /// Windows 6 and 5 - the pair the pause menu draws when the op-`0x49`
+    /// entry context's kind byte is `0x0D`.
+    ///
+    /// Retail opens the menu on sub-screen `4` for that kind and routes the
+    /// root picker's cancel to sub-screen `3`
+    /// (`FUN_801DC6B4` `0x801dc8d0..0x801dc8e4`; `FUN_801D6B20`
+    /// `0x801d6cf8..0x801d6d18`), and each of those sub-screens hands the
+    /// widget VM a one-command open script - `[open window 6]` and
+    /// `[open window 5]`. Both are content-only draws off the disc-parsed
+    /// rect, and both take their text from the overlay's own string pool
+    /// via [`legaia_engine_core::pause_screens::ContextLockedLabels`], so
+    /// no label is invented here.
+    pub(super) fn context_locked_screen_draws(&self) -> Vec<TextDraw> {
+        use legaia_engine_render::MenuWindowPainter;
+        use legaia_engine_render::ui_menu_window_painters::{
+            ChoiceFlags, label_list_draws_for, two_line_choice_panel_draws_for,
+        };
+        let Some(menu) = self.session.field_menu.as_ref() else {
+            return Vec::new();
+        };
+        let Some(table) = self.menu_window_table.as_ref() else {
+            return Vec::new();
+        };
+        let labels = &self.session.host.world.menu_context_labels;
+        if menu.notice_is_up() {
+            let Some((d, _)) = legaia_engine_render::painter_at(
+                table,
+                WIN_CONTEXT_NOTICE,
+                MenuWindowPainter::LabelList,
+            ) else {
+                return Vec::new();
+            };
+            let lines: Vec<&str> = labels.notice_lines.iter().map(String::as_str).collect();
+            let (mut out, cursor) =
+                label_list_draws_for(&self.font, legaia_engine_render::painter_rect(d), &lines);
+            out.extend(self.painter_cursor_stand_in(cursor));
+            return out;
+        }
+        if let Some(cursor_row) = menu.ready_confirm_cursor() {
+            let Some((d, _)) = legaia_engine_render::painter_at(
+                table,
+                WIN_CONTEXT_READY,
+                MenuWindowPainter::TwoLineChoicePanel,
+            ) else {
+                return Vec::new();
+            };
+            let (text, sprites) = two_line_choice_panel_draws_for(
+                &self.font,
+                legaia_engine_render::painter_rect(d),
+                [
+                    labels.ready_headings[0].as_str(),
+                    labels.ready_headings[1].as_str(),
+                ],
+                [labels.choices[0].as_str(), labels.choices[1].as_str()],
+                // The painter's flag word is the shared cursor word
+                // `FUN_801D688C` maintains: the low 12 bits are the
+                // selected row and the `0x1000` bit inverts the marker.
+                // Sub-screen 3 keeps the plain, non-editing form.
+                ChoiceFlags(u32::from(cursor_row)),
+            );
+            let mut out = text;
+            for s in sprites {
+                out.extend(self.painter_cursor_stand_in(s));
+            }
+            return out;
+        }
+        Vec::new()
+    }
+
     /// Window 7 - the spell level-up notice, drawn while
     /// [`legaia_engine_core::menu_runtime::MenuRuntime`] holds the beat a
     /// leveled menu cast armed (`apply_spell_outcome` ->

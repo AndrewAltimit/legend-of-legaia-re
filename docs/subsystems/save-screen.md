@@ -261,10 +261,35 @@ double read that keeps retail's renderer and confirm arm from disagreeing.
 Its gate inputs are sampled off the world when the menu opens: the scene's
 save permission (`World::scene_save_allowed`, seeded at scene load by
 `World::install_scene_save_permission`) and the entry-context kind
-(`World::menu_entry_context_kind`). The save half is fully fed; the
-entry-context half cannot yet reach `0x0D`, because the port tags each
-op-`0x49` park with its owning context rather than keeping retail's single
-pointer and no path records the armed sub-op. See
+(`World::menu_entry_context_kind`). Both halves are fed.
+
+The kind byte is the op-`0x49` **sub-op**, and that is not an inference: the
+Idle arm reads the operand's first byte and then stores the operand *pointer*
+into the park, so what every consumer dereferences is the byte the arm just
+read.
+
+```text
+801e0984  lbu   v0,0x0(s6)        ; sub_op = *operand
+801e098c  sltiu v0,v0,0xe         ; >= 0x0E never arms at all
+801e09a8  sw    s6,-0x4bb0(s0)    ; _DAT_8007B450 = operand
+```
+
+The resume clears it again (`sw zero,-0x4bb0(s0)` at `0x801e08d8`, on the
+`== 1` Done sentinel). The port carries the byte itself rather than a
+pointer - `SubmodeScreen::park_sub_op`, written by `World::record_op49_park`
+from the field VM's arm and read by `World::menu_entry_context_kind` - still
+tagged with the context that armed it, because the port steps several
+field-VM contexts inside one `World::tick` where retail has one global.
+
+Only two routines in the whole image write a *dereferenceable* pointer
+there: this arm, and `FUN_801D0B90`'s countdown expiry, which points at the
+static record `DAT_801F2278` whose kind byte is `0x0B`. Every other writer
+stores `0` (clear) or the `1` Done sentinel - a sweep of all ten
+`sw rt,0xb450(rs)` sites across `SCUS_942.54` and every extracted PROT
+entry, which land in three images: SCUS, the field overlay and this one.
+So a kind byte other than `0x0B` is always a field script's own operand,
+which makes "which of these screens can retail reach" a **disc** question;
+`crates/engine-core/tests/op49_sub_op_census.rs` is the measurement. See
 [field-menu.md](field-menu.md#top-level-pause-menu).
 
 ### Engine port of the sub-screen graph

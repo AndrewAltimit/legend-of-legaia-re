@@ -599,15 +599,19 @@ fn choice_marker_sprites(rows: &[ChoiceRow; 2], flags: ChoiceFlags) -> Vec<Paint
 /// "No is the default" convention.
 ///
 /// PORT: FUN_801D603C
-/// NOT WIRED: what must exist first is a **host that mounts the prize
-/// NOT WIRED: exchange**. The session is ported and complete
-/// NOT WIRED: (`engine-core::prize_exchange::PrizeExchangeSession`, whose
-/// NOT WIRED: state 2 is exactly this confirm), but no host opens it, so
-/// NOT WIRED: nothing reaches the confirm beat. The flags word is **not** a
-/// NOT WIRED: gap: it is the shared cursor word `FUN_801D688C` maintains,
-/// NOT WIRED: and its four-way decode is already ported live as
+/// NOT WIRED: what must exist first is the **prize-exchange window set** -
+/// NOT WIRED: the tab (43), the list container (44), the coin counter (45)
+/// NOT WIRED: and this confirm, over the disc prize block at PROT 0899 file
+/// NOT WIRED: `0x15D00`. Its *trigger* is no longer missing: sub-screen
+/// NOT WIRED: `0x20` is selected at exactly one site in the overlay
+/// NOT WIRED: (`0x801dc8cc`, on entry-context kind `7`), and the op-`0x49`
+/// NOT WIRED: arm now records its sub-op, so that kind is reachable. The
+/// NOT WIRED: flags word is not a gap either: it is the shared cursor word
+/// NOT WIRED: `FUN_801D688C` maintains, whose four-way decode is live as
 /// NOT WIRED: `engine-core::shop::shop_cursor_mode` - the same three bits,
-/// NOT WIRED: the same arms as [`ChoiceFlags::marker_variant`]. Waived in
+/// NOT WIRED: the same arms as [`ChoiceFlags::marker_variant`]. What is
+/// NOT WIRED: missing is the other three windows: drawing this one alone
+/// NOT WIRED: would be a Yes/No box over nothing. Waived in
 /// NOT WIRED: scripts/ci/ui-host-drift-waivers.toml
 pub fn choice_panel_draws_for(
     font: &legaia_font::Font,
@@ -645,19 +649,18 @@ pub fn choice_panel_draws_for(
 /// Yes routes to sub-screen `0` (leave the menu) and whose No returns to
 /// the pause root. The pause root reaches it from **cancel**, and only
 /// under one condition - `_DAT_8007B450` non-null with its first byte
-/// `0x0D`, the entry-context kind (`0x801d6cf8..0x801d6d18`). So this is
-/// the "really leave?" gate on a scripted menu, not a general confirm.
+/// `0x0D`, the entry-context kind (`0x801d6cf8..0x801d6d18`).
+///
+/// It is a **battle-start ready check**, not a "really leave?" gate: the
+/// renderer's own two heading pointers are `0x801CEC78` / `0x801CEC94`, and
+/// its Yes exits the menu into the fight the entry context was staged for.
+/// The distinction matters because the routing alone reads either way.
 ///
 /// PORT: FUN_801D61B0
-/// NOT WIRED: what must exist first is the **entry-context kind**. Retail
-/// NOT WIRED: keeps one global pointer whose first byte says which flow
-/// NOT WIRED: opened the menu, and the port deliberately replaced it with a
-/// NOT WIRED: per-context tagged park, so nothing holds a byte to compare
-/// NOT WIRED: against `0x0D` - the same gap that gates the pause root's
-/// NOT WIRED: entry-context row (see docs/tooling/live-audit-triage.md).
-/// NOT WIRED: Until the op-`0x49` arm records its sub-op there is no
-/// NOT WIRED: condition under which this screen opens. Waived in
-/// NOT WIRED: scripts/ci/ui-host-drift-waivers.toml
+///
+/// Live on both hosts: `FieldMenuSession::ReadyConfirm` is the phase, and
+/// the same two host builders that draw window 6 draw this one, off the
+/// same disc-parsed rects and the same disc-read labels.
 pub fn two_line_choice_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -703,14 +706,19 @@ pub fn two_line_choice_panel_draws_for(
 /// (`0x801dc8d0..0x801dc8e4`) - the same kind whose exit confirm is
 /// [`two_line_choice_panel_draws_for`]'s window 5.
 ///
+/// Its six labels are **static VAs in the menu overlay's own pool**, loaded
+/// by the `lui a0,0x801d` + `addiu` pairs at `0x801d636c..0x801d6448` - a
+/// multi-line battle briefing plus a one-byte control string, not content
+/// the entry-context record owns. `engine-core::pause_screens` carries the
+/// six coordinates and reads the text out of the caller's own image.
+///
 /// PORT: FUN_801D6360
-/// NOT WIRED: same missing prerequisite as window 5 - the **entry-context
-/// NOT WIRED: kind**. The port replaced retail's single entry-context
-/// NOT WIRED: pointer with a per-context tagged park, so no byte exists to
-/// NOT WIRED: match against `0x0D`, and nothing selects this screen. The
-/// NOT WIRED: six labels are also content the entry-context record owns, so
-/// NOT WIRED: a host has neither the trigger nor the text. Waived in
-/// NOT WIRED: scripts/ci/ui-host-drift-waivers.toml
+///
+/// Live on both hosts: `FieldMenuSession::Notice` is the phase, entered by
+/// `open_entry_screen` when the op-`0x49` park's kind byte is `0x0D`, and
+/// each host resolves this id off the disc window table
+/// (`window/menu_draws.rs::context_locked_screen_draws`,
+/// `web-viewer/src/play_menu.rs::build_context_locked`).
 pub fn label_list_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,

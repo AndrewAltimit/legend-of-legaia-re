@@ -372,6 +372,10 @@ impl PlayWindowApp {
                 let input = FieldMenuInput {
                     up,
                     down,
+                    // The kind-0x0D ready check is a horizontal two-row
+                    // choice, so the picker needs left / right too.
+                    left,
+                    right,
                     cross,
                     circle,
                     start,
@@ -610,7 +614,15 @@ impl PlayWindowApp {
                 // coords (it reuses the load-screen chrome stage), so it
                 // must not be scaled twice.
                 let is_save_sub = matches!(sub, Some(FieldMenuSubsession::Save(_)));
-                let mut draws = if let Some(active_sub) = sub {
+                // The kind-0x0D pair replaces the root list rather than
+                // overlaying it: both sub-screens hand the widget VM a
+                // script that opens with `05 00` (close every window) and
+                // then opens their own one, so the command rows are not on
+                // screen while either is up.
+                let context_screen = self.context_locked_screen_draws();
+                let mut draws = if !context_screen.is_empty() {
+                    context_screen
+                } else if let Some(active_sub) = sub {
                     // Render the active sub-session's overlay. Each branch
                     // builds the matching plain-data view + calls the
                     // shipped `*_draws_for` helper.

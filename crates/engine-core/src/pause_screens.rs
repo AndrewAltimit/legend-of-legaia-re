@@ -1446,6 +1446,129 @@ pub fn root_menu_cancel_route(entry_context_kind: Option<u8>) -> u8 {
     }
 }
 
+// ---------------------------------------------------------------------------
+// The kind-`0x0D` entry screens: sub-screens 4 and 3
+// ---------------------------------------------------------------------------
+
+/// Sub-screen the save/menu driver **opens on** for entry-context kind
+/// [`ROOT_MENU_CONTEXT_LOCKED`] - the notice panel that draws window 6.
+///
+/// `FUN_801DC6B4`'s entry decode writes the sub-screen id four ways, one per
+/// kind, and `4` is exactly one of them:
+///
+/// ```text
+/// 801dc8d0  lbu  v1,0x0(a0)          ; the kind byte
+/// 801dc8d4  li   v0,0xd
+/// 801dc8d8  bne  v1,v0,0x801dc8ec
+/// 801dc8e0  li   v0,0x4
+/// 801dc8e4  sw   v0,0x46a4(a1)       ; DAT_801E46A4 = 4
+/// ```
+///
+/// Nothing else in the overlay writes `4` there, and nothing else writes
+/// `0x20` (the prize exchange) either - a sweep of every
+/// `sw rt,0x46a4(rs)` in PROT 0899 finds 66 writers and exactly one for
+/// each of those two ids, both inside this decode. So these screens hang
+/// off the entry-context kind and off nothing else.
+///
+/// PORT: FUN_801DC6B4 (`0x801dc8d0..0x801dc8e4`)
+pub const CONTEXT_LOCKED_ENTRY_SUBSCREEN: u8 = 4;
+
+/// Sub-screen the root picker's **cancel** hands to under the same kind -
+/// the ready check that draws window 5. See [`root_menu_cancel_route`].
+pub const CONTEXT_LOCKED_CANCEL_SUBSCREEN: u8 = 3;
+
+/// Load base of the menu overlay's string pool - the image
+/// [`menu_overlay_string`] slices.
+pub const MENU_OVERLAY_BASE_VA: u32 = legaia_asset::menu_windows::MENU_OVERLAY_BASE_VA;
+
+/// The six label VAs `FUN_801D6360` loads into the string primitive, in
+/// draw order (`lui a0,0x801d` + `addiu a0,a0,-0x1358` and its five
+/// siblings at `0x801d636c..0x801d6448`).
+///
+/// Coordinates only - the text is read from the caller's own image, the
+/// same rule `legaia_asset::battle_ui_strings` follows. The sixth entry is
+/// a one-byte control string rather than a line, which is why the panel
+/// reads as five lines plus the advance hand.
+pub const NOTICE_PANEL_LABEL_VAS: [u32; 6] = [
+    0x801C_ECA8,
+    0x801C_ECD4,
+    0x801C_ECFC,
+    0x801C_ED20,
+    0x801C_ED38,
+    0x801C_ED58,
+];
+
+/// The two heading VAs `FUN_801D61B0` loads above its choice group.
+pub const READY_CONFIRM_HEADING_VAS: [u32; 2] = [0x801C_EC78, 0x801C_EC94];
+
+/// The one heading VA `FUN_801D603C` loads above its choice group (window
+/// 46, the prize-exchange redeem confirm).
+pub const CHOICE_PANEL_HEADING_VA: u32 = 0x801C_EAC8;
+
+/// The shared Yes / No choice labels both choice painters load.
+pub const CHOICE_YES_VA: u32 = 0x801C_EA84;
+/// See [`CHOICE_YES_VA`].
+pub const CHOICE_NO_VA: u32 = 0x801C_EA8C;
+
+/// Read one NUL-terminated menu-overlay string at `va` out of a PROT 0899
+/// image, dropping the leading `@` the string primitive uses as its
+/// lead-in marker.
+///
+/// Stops at the first byte outside printable ASCII as well as at the NUL,
+/// so an entry that is really a one-byte control code comes back empty
+/// rather than as mojibake. `None` means the VA is outside the image.
+///
+/// No text is committed anywhere in this crate: the VAs above are the
+/// coordinates and this reads the bytes from the image the user supplied.
+pub fn menu_overlay_string(overlay: &[u8], va: u32) -> Option<String> {
+    let off = va.checked_sub(MENU_OVERLAY_BASE_VA)? as usize;
+    let rest = overlay.get(off..)?;
+    let body = rest.strip_prefix(b"@").unwrap_or(rest);
+    let end = body
+        .iter()
+        .position(|&b| !(0x20..0x7F).contains(&b))
+        .unwrap_or(body.len());
+    Some(String::from_utf8_lossy(&body[..end]).into_owned())
+}
+
+/// Every label the kind-`0x0D` pair needs, read off one PROT 0899 image.
+///
+/// A host installs this on its session at menu-open; a session without it
+/// draws the panels with no text rather than with invented text.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ContextLockedLabels {
+    /// The notice panel's lines, empty entries dropped (window 6).
+    pub notice_lines: Vec<String>,
+    /// The ready check's two heading lines (window 5).
+    pub ready_headings: [String; 2],
+    /// Yes / No, shared by both choice painters.
+    pub choices: [String; 2],
+}
+
+impl ContextLockedLabels {
+    /// Read every label out of a PROT 0899 image.
+    pub fn from_menu_overlay(overlay: &[u8]) -> Self {
+        let s = |va: u32| menu_overlay_string(overlay, va).unwrap_or_default();
+        Self {
+            notice_lines: NOTICE_PANEL_LABEL_VAS
+                .iter()
+                .map(|&va| s(va))
+                .filter(|l| !l.is_empty())
+                .collect(),
+            ready_headings: [
+                s(READY_CONFIRM_HEADING_VAS[0]),
+                s(READY_CONFIRM_HEADING_VAS[1]),
+            ],
+            choices: [s(CHOICE_YES_VA), s(CHOICE_NO_VA)],
+        }
+    }
+
+    /// `true` once a host has installed real disc text.
+    pub fn is_installed(&self) -> bool {
+        !self.notice_lines.is_empty() || !self.ready_headings[0].is_empty()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

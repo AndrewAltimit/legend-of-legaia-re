@@ -1905,6 +1905,46 @@ why every post-opening save carries the variant; the first battle effect-texture
 restores the disc bytes. See [character-mesh.md](../formats/character-mesh.md#runtime-
 scroll-cell-residue-why-a-live-vram-dump-can-differ-from-the-tim).
 
+### What the op-`0x49` entry-context kind byte is, and which screens it selects
+
+*Status:* resolved (disassembly + disc measurement) -
+[`save-screen.md § Root command picker`](../subsystems/save-screen.md#root-command-picker-fun_801d6b20)
+
+The pause / save driver `FUN_801DC6B4` routes on `*_DAT_8007B450`, and the
+question was what can put a value there. Two routines write a
+**dereferenceable** pointer, out of ten `sw rt,0xb450(rs)` sites across
+`SCUS_942.54` and every extracted PROT entry: the field VM's op-`0x49` Idle
+arm (`0x801E09A8`, storing the script's *operand pointer*, whose first byte
+the arm read at `0x801E0984` - so the kind byte **is** the sub-op) and
+`FUN_801D0B90`'s countdown expiry (`0x801D0D04`, pointing at the static
+record `DAT_801F2278`, kind `0x0B`). The other eight store `0` or the `1`
+Done sentinel, and the resume clears the slot at `0x801E08D8`.
+
+Four kinds select a screen, each at exactly one selector write in PROT 0899
+(of 66 `sw rt,0x46a4(rs)` writers): `0` -> sub-screen `0x1A`, `1` -> `0x19`,
+`7` -> `0x20` (the casino prize exchange), `0x0D` -> `4`. Kind `0x0D` also
+sends the root picker's cancel to sub-screen `3` (`0x801D6D18`).
+
+What kind `0x0D` *is* comes from the two screens' own string pointers rather
+than from their routing: sub-screen `4` draws window `6`, six static VAs in
+the overlay pool loaded at `0x801d636c..0x801d6448` - a pre-battle briefing;
+sub-screen `3` draws window `5`, whose two headings (`0x801CEC78` /
+`0x801CEC94`) are a **battle-start ready check**, not the "really leave?"
+gate the routing suggests. So the context is a scripted pre-battle party
+menu, briefed on entry and ready-checked on exit.
+
+Reachability is disc-measured, not inferred:
+`crates/engine-core/tests/op49_sub_op_census.rs` walks every scene MAN's
+field-VM script and tallies the sub-op operands twice - a bounded,
+offset-deduped opcode walk and a raw byte upper bound - and kinds `7` and
+`0x0D` both appear in both tallies. The two tallies disagree in both
+directions by design: the walk decodes no tile-board sub-op (`5`) that the
+byte bound plainly finds, so an absent walk row means "not decoded here",
+never "not on the disc".
+
+Ports: `World::record_op49_park` / `World::menu_entry_context_kind`,
+`FieldMenuSession::{open_entry_screen, Notice, ReadyConfirm}`.
+
 ## Text / fonts / dialog
 
 | Thread | Status | Evidence | Answer |

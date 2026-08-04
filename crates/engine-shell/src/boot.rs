@@ -840,6 +840,10 @@ impl BootSession {
             entry_context_kind: world.menu_entry_context_kind(),
             save_allowed: world.scene_save_allowed,
         });
+        // Retail's driver picks the *starting* sub-screen off that same kind
+        // byte, so a locked context opens on the notice panel rather than on
+        // the root picker (`FUN_801DC6B4`, `0x801dc8d0..0x801dc8e4`).
+        session.open_entry_screen();
         self.field_menu_resume = world.mode;
         world.mode = SceneMode::Menu;
         self.field_menu = Some(session);
@@ -909,6 +913,8 @@ impl BootSession {
         let input = FieldMenuInput {
             up: pad.just_pressed(PadButton::Up),
             down: pad.just_pressed(PadButton::Down),
+            left: pad.just_pressed(PadButton::Left),
+            right: pad.just_pressed(PadButton::Right),
             cross: pad.just_pressed(PadButton::Cross),
             circle: pad.just_pressed(PadButton::Circle),
             start: pad.just_pressed(PadButton::Start),

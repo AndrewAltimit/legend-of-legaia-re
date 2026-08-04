@@ -326,12 +326,33 @@ pub trait FieldHost {
         Op49State::Idle
     }
 
-    /// Arm the op-49 state machine. `pc` is the bytecode offset of the
-    /// opcode byte, `field_90` is the opaque actor-handle captured for
-    /// sub-op 1 (and `_DAT_8007B44C` in the original). Hosts hold this
-    /// until [`FieldHost::op49_state`] returns `Done`.
-    fn op49_arm(&mut self, pc: usize, field_90: u32) {
-        let _ = (pc, field_90);
+    /// Arm the op-49 state machine. `sub_op` is the operand's first byte,
+    /// `pc` the bytecode offset of the opcode byte, and `field_90` the
+    /// opaque actor-handle captured for sub-op 1 (`_DAT_8007B44C` in the
+    /// original). Hosts hold this until [`FieldHost::op49_state`] returns
+    /// `Done`.
+    ///
+    /// `sub_op` is not decoration: retail arms the park with the **operand
+    /// pointer**, and every downstream consumer dereferences that pointer's
+    /// first byte, so the sub-op *is* the park's kind byte.
+    ///
+    /// ```text
+    /// 801e0984  lbu   v0,0x0(s6)        ; sub_op = *operand
+    /// 801e098c  sltiu v0,v0,0xe         ; sub_op < 0xE or no arm at all
+    /// 801e09a0  jal   0x80020de0        ; spawn the driver
+    /// 801e09a8  sw    s6,-0x4bb0(s0)    ; _DAT_8007B450 = operand
+    /// ```
+    ///
+    /// The menu overlay's outer dispatcher then routes on exactly that byte
+    /// (`FUN_801DC6B4` at `0x801dc88c..0x801dc8e4`): `0` opens sub-screen
+    /// `0x1A`, `1` opens `0x19`, `7` opens `0x20` and `0x0D` opens `4`. A
+    /// host that drops the sub-op here can never answer "which flow opened
+    /// this menu", which is why the trait carries it rather than leaving
+    /// hosts to re-read the bytecode.
+    ///
+    /// REF: FUN_801DE840 (op `0x49` Idle arm), FUN_801DC6B4 (the consumer)
+    fn op49_arm(&mut self, sub_op: u8, pc: usize, field_90: u32) {
+        let _ = (sub_op, pc, field_90);
     }
 
     /// Clear the op-49 state machine back to `Idle`. Called when the

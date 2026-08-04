@@ -1504,6 +1504,15 @@ pub struct World {
     /// load without the overlay - Arrange then falls back to id order.
     pub menu_arrange_rank: Option<crate::menu_arrange::ArrangeRankTable>,
 
+    /// Labels for the two entry-context screens the pause menu opens under
+    /// kind [`crate::pause_screens::ROOT_MENU_CONTEXT_LOCKED`] - the notice
+    /// panel's lines (window `6`) and the ready check's headings (window
+    /// `5`), read out of the same PROT 0899 image
+    /// ([`crate::pause_screens::ContextLockedLabels`]). Empty on a load
+    /// without the overlay, and an empty set is what keeps the panels from
+    /// drawing invented text.
+    pub menu_context_labels: crate::pause_screens::ContextLockedLabels,
+
     /// Party-global 4×u32 ability mask - the engine mirror of retail
     /// `DAT_80074358..0x80074368` (every member's `+0xF4` bitfield OR'd
     /// together each rebuild). Bit-tested via [`World::party_has_ability`]
@@ -2767,6 +2776,7 @@ impl World {
             accessory_passives: Default::default(),
             menu_text: None,
             menu_arrange_rank: None,
+            menu_context_labels: Default::default(),
             party_ability_mask: [0; crate::accessory_passives::ABILITY_WORDS],
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
             active_scene_label: String::new(),
