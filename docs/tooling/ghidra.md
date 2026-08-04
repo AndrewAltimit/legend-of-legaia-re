@@ -349,6 +349,27 @@ at. Those are a separate axis with their own sweep:
 
 The label-call idiom (intra-function labels promoted to fake `FUN_` entries) is the eighth member of this family; it has its own catalogue in [`script-vm.md`](../subsystems/script-vm.md#intra-function-label-catalogue).
 
+### `lui` plus a negative displacement, transcribed by its literal
+
+Not a decompiler artifact - a **disassembly transcription hazard**, and it has
+now produced three wrong global names in committed source. A `lui reg,0x8008`
+several instructions above an `lw`/`sw` with a *negative* displacement resolves
+to a `0x8007xxxx` address, not a `0x8008xxxx` one: `lui a0,0x8008` then
+`sw v0,-0x454c(a0)` writes `0x8007BAB4`. Transcribing the `lui` immediate and
+the displacement separately, or reading the displacement as positive, lands the
+name a whole 64 KiB page high.
+
+Recorded instances: `_DAT_80084500` for `0x8007BB00` and `_DAT_8008454C` for
+`0x8007BAB4` (both in `title_overlay.rs`, both comment-only, both fixed), and
+`0x800846A8` for `0x8007B6A8` in the pause-menu save gate. All three named
+globals that other pages then cited.
+
+**How to spot it:** any `0x8008xxxx` global whose cited site loads or stores
+with a negative displacement. **What counts as evidence:** resolve the pair -
+`(lui_imm << 16) + sign_extend(displacement)` - rather than reading either half
+alone. The hazard is worse than it looks because the wrong name is plausible:
+`0x8008xxxx` is a real RAM region, so nothing downstream trips.
+
 The absolute-only-sweep row is worth dwelling on, because it is the one that compounds. "Zero writers" became "BSS zero-init establishes the value", which became "retail runs with the flag at 0", which inverted the documented polarity of `_DAT_8007B8C2` across a dozen pages and two crates. Neither downstream inference was independently checked - and the second was wrong on its own terms too, since `SCUS_942.54`'s PS-X EXE header has `b_size = 0` and the BIOS therefore clears no BSS here at all. Treat a negative result about writers as a claim needing the same evidence bar as a positive one.
 
 ### Two rules for any negative, code or data

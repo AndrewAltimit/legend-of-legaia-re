@@ -3367,6 +3367,38 @@ excluded by the same comparison rather than by arithmetic.
 | Thread | Status | Evidence | Answer |
 |---|---|---|---|
 | Does any retail shot author a non-zero camera roll? | resolved (yes) | `capture` + `disassembly` | Eight scenes stage a reachable, executing op-`0x45` slot-2 roll, from `10` units (0.9 deg) to `-660` (-58 deg). [details ↓](#does-any-retail-shot-author-a-non-zero-camera-roll) |
+| Does retail stack coincident curved shells? | resolved (no) | `capture` | Field-run display-list reads in `jouine` / `jouind` find zero screen-coincident surface groups; every surface is submitted once. [details ↓](#does-retail-stack-coincident-curved-shells) |
+
+### Does retail stack coincident curved shells?
+
+*Status:* resolved - **no**.
+
+Field-run display-list reads inside `jouine` and `jouind` report zero
+screen-coincident surface groups above a 16 px² floor; every surface in the
+live ordering table is submitted exactly once (1218 packets walked in
+`jouind`, 972 in `jouine`). The coplanar kernel's same-position curved-shell
+residual is therefore a property of how the *port* assembles a scene's env
+TMDs, not something retail resolves by ordering - there is nothing for retail
+to order. The only coincidence in either image is one mesh drawn three times
+in a single texture family (`clut=0x7F86 tpage=0x001F`), which is the
+multi-pass semi-transparency idiom rather than a mesh stack: its members share
+a material, and two different env TMDs would not.
+
+Two false positives this measurement has to avoid, both of which turn a clean
+frame into an apparent stack. Retail **double-buffers**, so ordering tables
+come in pairs holding frame N and frame N-1 with near-identical packet counts -
+merging a pair makes every surface look stacked with itself. And distant
+geometry projects to 1-3 pixel slivers that coincide constantly without saying
+anything about meshes, which is what the area floor exists for.
+
+Coverage limit, stated because the result is a negative: each read is one
+frame and therefore one camera, and the corpus holds no second viewpoint for
+either scene - the curated library's `jouine`/`jouind` entries are
+byte-identical backups of these two (a library filename is the sha256 of its
+contents). `chitei2` is not covered at all and inherits the conclusion rather
+than being measured. What carries the negative anyway is its scale: a stacked
+shell would double many adjacent surfaces at once, and in cave interiors the
+walls are the dominant on-screen geometry.
 
 ### Does any retail shot author a non-zero camera roll?
 
