@@ -131,11 +131,107 @@ party, its bag, a memory card in port 1) and everything else arrives by pad.
 
 ## Coverage delta
 
-TBD
+**Measured.** `cargo llvm-cov --release -p legaia-engine-shell --test menu_replay`
+joined through `scripts/ci/replay-port-coverage.py`, against the critical-path
+replay's report as the baseline.
 
-## Residue - rows the ladder visited and still did not enter
+- baseline live-unentered rows, all files: **501**
+- of those, in the pause-menu / save-UI slice: **84**
+- **entered by the menu ladder: 20**
+- residue (in the slice, still unentered): **64**
 
-TBD
+Per file, baseline slice -> residue:
+
+| file | before | after |
+|---|---|---|
+| `engine-core/src/spell_menu.rs` | 4 | **0** |
+| `engine-core/src/pause_screens.rs` | 10 | 5 |
+| `engine-core/src/save_select.rs` | 9 | 5 |
+| `engine-core/src/equip_session.rs` | 4 | 2 |
+| `engine-core/src/options.rs` | 3 | 0 |
+| `engine-core/src/field_menu.rs` | 1 | 0 |
+| `engine-ui/**` (five files) | 36 | 36 |
+| `engine-core/src/save_subscreen.rs` | 11 | 11 |
+| `engine-core/src/card_bu_io.rs` | 4 | 4 |
+
+Non-vacuity, the way this repo means it: the ladder run reports 9/9 with per-rung
+output and takes ~1.2 s; run from a directory with no `extracted/` it prints three
+`[skip]` lines in 0.01 s. Both were run and the outputs differ. (`LEGAIA_DISC_BIN`
+is **not** this test's gate - like `save_gate_field_menu.rs` its data source is
+`extracted/`, and unsetting the variable changes nothing. Said plainly here so
+nobody reads a green run as a disc-gated one.)
+
+## Residue - and it is four different things, not one
+
+This is the part of the lane worth more than the 20. "Live, never entered" reads
+like one worklist; the 64 rows split into four causes, and only the last is
+about how far a replay walks.
+
+### A. Reachable only from host-private modules - 37 rows
+
+Every `engine-ui` row (36) plus `save_select::SlotInfoMode`. The shared draw
+builders have **no shared caller**: the only code that assembles a pause-menu
+draw list lives in `crates/engine-shell/src/bin/legaia-engine/window/menu_draws.rs`
+and `crates/web-viewer/src/play_menu.rs`. A `tests/` integration test cannot
+import a bin's modules, so no library-level oracle can enter these - not this
+ladder, and not one twice as long.
+
+This is the same drift shape as Finding 1, one layer up: the *simulation* half
+of the menu is now shared, the *draw* half still is not. Moving the assembly
+into a library crate (`engine-ui` or `engine-render`) is what makes those 36
+rows measurable at all. Note `check-ui-host-drift.py` already waives six of
+these painters as orphans, which is the same fact arrived at from the other
+side.
+
+### B. Disclosed `NOT WIRED` - 15 rows
+
+`save_subscreen.rs` (11) and `card_bu_io.rs` (4). Both modules say so in their
+own doc comments: nothing constructs a `SaveScreenMachine` outside that
+module's tests, and nothing services a `CardOp`. The engine's save UI runs on
+`save_select`'s player-facing phase model instead, with `save_subscreen` kept
+as the retail control-flow mirror beside it.
+
+These were never a replay-reach question, and no ladder will ever turn them
+green. They belong on a wiring worklist, not this one.
+
+### C. A parser with no caller - 4 rows
+
+`classify_card_directory`, `card_directory_scan`, `card_free_blocks`,
+`CardIoMachine`. All four are reachable only through
+`SaveSelectSession::from_card_directory`, which has **no caller anywhere in the
+repo**. Both hosts build their rack from `card_port_snapshot` plus
+host-scanned blocks, so a real memory-card *directory* is never parsed into a
+session - the browser's `.mcr` import is the one place that would.
+
+### D. Screen paths the ladder did not drive deep enough - 8 rows
+
+The only rows where "extend the replay" is the right answer:
+
+| row | what would reach it |
+|---|---|
+| `equip_session::apply_best_equipment` | the Equip screen's Best Equipment command |
+| `equip_session::preview_candidate` | hovering a candidate in a slot's list |
+| `pause_screens::target_panel_mode` | Items -> Use -> target select |
+| `pause_screens::use_route_for_effect` | the same, one step further |
+| `pause_screens::SpecialUseSession` (x3) | a special-route item (the landmark / warp class) |
+| `field_save_screen_actor::tick` | the save screen's actor-VM display script |
+
+Each is a few more taps on a rung that already exists. Worth doing; worth doing
+*after* A, because A is 37 rows and a structural fix.
+
+## Files touched
+
+| File | What |
+|---|---|
+| `crates/engine-shell/src/boot.rs` | the sub-session stack (Finding 1) |
+| `crates/engine-shell/tests/menu_replay.rs` | new - the ladder + two probes |
+| `scripts/replays/menu_replay_baseline.toml` | new - ratchet, `reached = 9` |
+| `docs/subsystems/field-menu.md` | the two-level model + where the stack lives |
+| `docs/subsystems/save-screen.md` | the Save-row pad-route gap (Finding 2) |
+
+Nothing outside the lane's declared scope was edited. `crates/engine-core/src/field_menu_dispatch.rs`
+was in scope and needed no change - its API was already the right shape; it was
+the caller that was missing.
 
 ## For the integration pass
 
