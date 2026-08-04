@@ -1109,7 +1109,7 @@ impl World {
     /// list order, so it picks the hit nearest the probe point instead
     /// (tie-break: lowest slot) - identical whenever NPCs stand more than
     /// 144 units apart, which every authored placement does.
-    pub(crate) fn field_interact_probe_slot(&self) -> Option<u8> {
+    pub fn field_interact_probe_slot(&self) -> Option<u8> {
         let slot = self.player_actor_slot? as usize;
         if slot >= self.actors.len() || !self.actors[slot].active {
             return None;
@@ -1121,14 +1121,36 @@ impl World {
         let px = x.saturating_add(dx) as i32;
         let pz = z.saturating_sub(dz) as i32;
         let mut best: Option<(i32, u8)> = None;
-        for (&npc_slot, &(ax, az)) in &self.field_npc_positions {
+        let consider = |slot: u8, ax: i16, az: i16, best: &mut Option<(i32, u8)>| {
             let (ex, ez) = ((px - ax as i32).abs(), (pz - az as i32).abs());
             if ex < FIELD_INTERACT_BOX_HALF && ez < FIELD_INTERACT_BOX_HALF {
                 let d = ex * ex + ez * ez;
-                if best.is_none_or(|(bd, bs)| d < bd || (d == bd && npc_slot < bs)) {
-                    best = Some((d, npc_slot));
+                if best.is_none_or(|(bd, bs)| d < bd || (d == bd && slot < bs)) {
+                    *best = Some((d, slot));
                 }
             }
+        };
+        for (&npc_slot, &(ax, az)) in &self.field_npc_positions {
+            consider(npc_slot, ax, az, &mut best);
+        }
+        // Retail's probe walks the **actor list** and box-tests every placed
+        // actor, with no "is this one a talk NPC" filter - the touched actor's
+        // own record is what the dialog SM then runs. The engine's
+        // `field_npc_positions` is seeded only for text-bearing NPC placements,
+        // so a **minigame door** (a casino cabinet, the dance-hall desk) sat
+        // outside the probe entirely and pressing the action button at one did
+        // nothing at all. Its placement anchor is already carried by
+        // `field_walk_touch`; admit exactly the slots that also carry an
+        // interaction record and are not already NPC anchors, which is the door
+        // set and nothing else.
+        // REF: FUN_801cf9f4 (the actor-list walk), FUN_80039B7C
+        for (&slot, &((ax, az), _)) in &self.field_walk_touch {
+            if self.field_npc_positions.contains_key(&slot)
+                || !self.field_npc_dialog_prologue.contains_key(&slot)
+            {
+                continue;
+            }
+            consider(slot, ax, az, &mut best);
         }
         best.map(|(_, s)| s)
     }
@@ -1854,9 +1876,9 @@ impl World {
     /// press, the same dispatch path the button-gated interact uses
     /// ([`Self::trigger_field_interact`]) plus the decoded script effect:
     ///
-    /// - [`WalkTouchEvent::Warp`] → queue the door-warp scene transition
-    ///   (the effect of the record's `0x3E` op through the host's
-    ///   `scene_transition` path);
+    /// - [`WalkTouchEvent::Warp`] → arm the **mode-24 minigame door-warp**
+    ///   (the effect of the record's `0x3E` op, staged exactly as the
+    ///   field-VM arm stages it - see [`crate::minigame_entry`]);
     /// - [`WalkTouchEvent::PlayerMoveTo`] → snap the player to the decoded
     ///   world coords (the record's cross-context `0x23` into the player
     ///   channel) and surface a [`FieldEvent::MoveTo`].
@@ -1939,9 +1961,34 @@ impl World {
         // Post through the same dispatch path the button-gated interact uses.
         self.trigger_field_interact(0, touch_slot);
         match event {
-            WalkTouchEvent::Warp { target_map } => {
-                self.pending_scene_transition = Some(target_map);
-            }
+            // A `Warp` event is, by construction, **only** ever a mode-24
+            // minigame sub-id: `is_genuine_warp` gates the decoded `0x3E`'s
+            // `op0` to `100..=106`, and every carrier of that id space is a
+            // venue cabinet (see [`crate::minigame_entry`]).
+            //
+            // Body contact must NOT execute it. Retail's contact kernel
+            // `FUN_801d5b5c` **resumes the placement's script**; it does not
+            // shortcut to that script's terminal warp. A koin1 cabinet's
+            // script is a coin compare into a confirm dialogue, and only the
+            // taken arm reaches the `0x3E` - which is why brushing a slot
+            // machine in retail costs nothing and opens nothing.
+            //
+            // Executing the *decoded* effect here instead skipped the compare
+            // and the confirm, and made the whole casino floor a trap: the
+            // contact box is +/-`FIELD_PROP_BOX_HALF` around the placement
+            // and koin1's casino NPCs stand inside their neighbouring
+            // cabinets' boxes, so walking up to an NPC to talk entered a
+            // minigame. No shipped host has a player-reachable exit from one
+            // (the browser play page does not even draw them), so the entry
+            // read as a freeze: field stopped, BGM kept playing.
+            //
+            // The entry stays on the button probe
+            // ([`Self::field_interact_probe_slot`]) - retail's actual
+            // trigger - which runs the record and lets its own `0x3E` arm
+            // ([`crate::world::vm_hosts`]) do the warp when the script gets
+            // there. Contact still posts the interact above, which is the
+            // script resume `FUN_801d5b5c` does model.
+            WalkTouchEvent::Warp { .. } => {}
             WalkTouchEvent::PlayerMoveTo {
                 world_x,
                 world_z,

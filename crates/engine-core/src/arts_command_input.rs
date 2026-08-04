@@ -7,13 +7,29 @@
 //! input): each d-pad press appends one directional command to the acting
 //! actor's buffer (`actor+0x1DF`) and debits the command's per-(character,
 //! weapon) AP cost (`DAT_801C9360[char][cmd] + 0x74`) from the turn pool
-//! (`ctx+0x6DC`, seeded from the actor's AGL `+0x154`). Entry **ends by
-//! itself** the moment no command is affordable (retail `0x50 -> 0x5A` on
-//! the exhausting press, no confirm); the review screen's next press
-//! reaches the **Begin | Reselect** menu (`0x6E`): Begin plays the round
-//! out, Reselect returns to a clean input. **Triangle** cycles the learned
-//! arts list (closed -> page 1 -> ... -> closed) and is inert when the
-//! character has no learned art.
+//! (`ctx+0x6DC`, seeded from the actor's AGL `+0x154`).
+//!
+//! Entry leaves state `0x50` three ways, and the pad drives two of them.
+//! It **ends by itself** the moment no command is affordable - the
+//! affordability scan at `801d2054`..`801d2078` walks the four costs at
+//! `ctx+0x14` and `801d208c bne s0,zero,801d20ac` takes `0x5A` when none
+//! fits. The **confirm** mask `_DAT_800846D0` ends it early
+//! (`801d20a0 and v0,s2,v0`), and the **cancel** mask `_DAT_800846D4`
+//! either restarts the entry or leaves it; both are gated on the committed
+//! count `ctx+0x19` and both are detailed at their sites in
+//! [`ArtsCommandInputSession::input`].
+//!
+//! The review screen's next press reaches the **Begin | Reselect** menu
+//! (`0x6E`): Begin plays the round out, Reselect returns to a clean input.
+//! **Triangle** cycles the learned arts list (closed -> page 1 -> ... ->
+//! closed) and is inert when the character has no learned art.
+//!
+//! The four accepted presses are **d-pad directions**. `FUN_801D0748` tests
+//! them against `s2 = _DAT_8007B874 | _DAT_8007B938`, which is the
+//! **packed** pad word (`crate::world_map_panel_host::packed_pad` - the
+//! byte halves are swapped against the raw BIOS word), so the literals
+//! `0x8000 / 0x1000 / 0x4000 / 0x2000` at `801d1e60`..`801d1f38` are Left /
+//! Up / Down / Right and *not* the face buttons a raw reading makes them.
 //!
 //! The entered sequence resolves to arts through the matcher family in
 //! `legaia-art`: an exact Miracle string replaces the whole queue, a
@@ -23,15 +39,25 @@
 //! ([`resolve_entered_commands`]).
 //!
 //! **Disclosed divergences from retail** (see
-//! `docs/subsystems/arts-command-gauge.md` § Units):
-//! - The pool seeds from the roster record's AGL when one is loaded and
-//!   falls back to [`DEFAULT_POOL`] (the pinned input bar's 100-AP span)
-//!   in the disc-free case; retail always has a live AGL.
-//! - Cross confirms the entry early (an engine convenience; retail entry
-//!   only auto-ends) and Circle with an empty buffer backs out to the
-//!   command menu (retail's Arts command cannot be backed out of).
-//! - The art itself is not additionally charged from the Spirit gauge;
-//!   the swing costs above are the whole price of the turn.
+//! `docs/subsystems/arts-command-gauge.md`):
+//! - **Disc-free fallback, not a behavioural divergence.** The pool seeds
+//!   from the roster record's AGL exactly as retail does
+//!   (`801d3a28 lhu v0,0x154(v0)` -> `801d3a30 sh v0,0x6(s6)`); it falls
+//!   back to [`DEFAULT_POOL`] (the pinned input bar's 100-AP span) only
+//!   when no roster is loaded, which retail never is.
+//! - **Open gap.** The art itself is not additionally charged from the
+//!   Spirit gauge, so the swing costs above are the whole price of the
+//!   turn. Retail pays the art body out of `actor[+0x170]` through the
+//!   accumulator `actor[+0x224]`; the mechanism is decoded in
+//!   `arts-command-gauge.md` § What an art costs in AP but is not wired
+//!   here.
+//!
+//! Two entries previously disclosed here as engine conveniences - "Cross
+//! confirms early" and "Circle backs out" - were **not** divergences: both
+//! are retail behaviour, driven by the configurable confirm / cancel masks,
+//! and the sites are cited in [`ArtsCommandInputSession::input`]. The claim
+//! they rested on ("retail entry only auto-ends", "retail's Arts command
+//! cannot be backed out of at all") is falsified by the disassembly.
 //!
 //! PORT: FUN_801D0748 (state 0x50 / 0x5A / 0x6E flow)
 //! PORT: FUN_801D388C (case 9 cost read + case 0xB pool debit)
@@ -233,12 +259,40 @@ impl ArtsCommandInputSession {
                         ArtsInputPhase::Review
                     };
                 } else if ev.cross && !self.buffer.is_empty() {
-                    // Engine convenience: early confirm (disclosed
-                    // divergence - retail only auto-ends).
+                    // Retail's configurable confirm mask `_DAT_800846D0`
+                    // ends the entry, gated on the committed count
+                    // `ctx+0x19`: `801d207c lbu v0,0x8(s1)` /
+                    // `801d2084 beq v0,zero,..` skips the mask test with an
+                    // empty buffer, and `801d20a0 and v0,s2,v0` /
+                    // `801d20ac sb v0,0x0(s3)` writes state `0x5A`.
                     self.phase = ArtsInputPhase::Review;
-                } else if ev.circle && self.buffer.is_empty() {
-                    // Engine convenience: back out to the command menu.
-                    self.phase = ArtsInputPhase::Aborted;
+                } else if ev.circle {
+                    // Retail's cancel mask `_DAT_800846D4`
+                    // (`801d20ec lw v0,0x46d4(v0)` / `801d20f4 and v0,s2,v0`)
+                    // forks on the same committed count at
+                    // `801d210c lbu v0,0x8(s1)`:
+                    //
+                    // - buffer **non-empty** (`801d2114 bne v0,zero,801d21a8`)
+                    //   calls `FUN_801D388C` case `0x26`, which wipes all
+                    //   sixteen queue bytes (`801d52d4 sb zero,0x1df(v0)`
+                    //   under `801d52d8 sltiu v0,s3,0x10`), re-seeds the pool
+                    //   from the actor's AGL (`801d535c lhu v0,0x154(v0)` ->
+                    //   `801d5364 sh v0,0x6(s6)`) and zeros the count
+                    //   (`801d536c sb zero,0x8(s4)`) - the entry restarts
+                    //   clean and `ctx+0x06` is never written, so the flow
+                    //   stays in `0x50`.
+                    // - buffer **empty** leaves the entry entirely, to the
+                    //   attack-mode prompt `0x78` (`801d219c`/`801d21a0`) or
+                    //   the command ring `0x28` (`801d218c`) when
+                    //   `_DAT_800846C4` is set.
+                    if self.buffer.is_empty() {
+                        self.phase = ArtsInputPhase::Aborted;
+                    } else {
+                        self.buffer.clear();
+                        self.spent.clear();
+                        self.pool = self.pool_max;
+                        self.phase = ArtsInputPhase::Entering;
+                    }
                 } else {
                     self.phase = ArtsInputPhase::Entering;
                 }
@@ -611,6 +665,35 @@ mod tests {
     #[test]
     fn circle_on_empty_buffer_aborts() {
         let mut s = ArtsCommandInputSession::new(0, 0, 60, [30; 4], 0);
+        s.input(press("o"), party3(), one_monster());
+        assert_eq!(s.resolved(), Some(ArtsInputResolution::Aborted));
+    }
+
+    /// Retail's cancel mask on a **non-empty** buffer is `FUN_801D388C`
+    /// case `0x26`: the sixteen queue bytes are wiped, the pool is re-seeded
+    /// from AGL and the committed count is zeroed, with `ctx+0x06` never
+    /// written - so the entry restarts in place instead of ending.
+    ///
+    /// The distinction from [`circle_on_empty_buffer_aborts`] is the whole
+    /// point: the same button leaves the entry only when there is nothing
+    /// to clear, which is why one press cannot be read as the other.
+    #[test]
+    fn circle_on_a_typed_buffer_resets_the_entry_instead_of_leaving_it() {
+        let mut s = ArtsCommandInputSession::new(0, 0, 60, [30; 4], 0);
+        s.input(press("U"), party3(), one_monster());
+        assert_eq!(s.buffer.len(), 1, "the direction was accepted");
+        assert_eq!(s.pool, 30, "and debited its cost");
+
+        s.input(press("o"), party3(), one_monster());
+
+        assert_eq!(s.resolved(), None, "the entry is still open, not aborted");
+        assert!(matches!(s.phase, ArtsInputPhase::Entering), "still in 0x50");
+        assert!(s.buffer.is_empty(), "the queue is wiped");
+        assert!(s.spent.is_empty());
+        assert_eq!(s.pool, s.pool_max, "the pool is re-seeded in full");
+
+        // And a second Circle - now on the empty buffer it just made - is
+        // the leave press, so the reset is not a one-way trap.
         s.input(press("o"), party3(), one_monster());
         assert_eq!(s.resolved(), Some(ArtsInputResolution::Aborted));
     }

@@ -215,7 +215,10 @@ pub struct EffectModel {
 pub enum WorldMapEntityKind {
     /// A roaming-encounter zone ([`WorldMapEntityConfig::EncounterZone`]).
     EncounterZone,
-    /// A town / dungeon portal ([`WorldMapEntityConfig::Portal`]).
+    /// A walk-onto destination marker: either a town / dungeon entrance
+    /// ([`WorldMapEntityConfig::OverworldPortal`]) or a minigame door
+    /// ([`WorldMapEntityConfig::MinigameDoor`]). The two differ in where they
+    /// lead, not in how the marker draws, so they share one render kind.
     Portal,
     /// A plain interactable NPC / signpost ([`WorldMapEntityConfig::Npc`]),
     /// also the fallback for an entity with no config row.
@@ -798,18 +801,22 @@ pub enum WorldMapEntityConfig {
     /// entity is the one that fires, it spawns `formation_id` (instead of the
     /// map-wide [`WorldMapEncounterState::formation_id`]).
     EncounterZone { formation_id: u16 },
-    /// A town / dungeon portal: engaging it (via
-    /// [`World::engage_world_map_entity`]) transitions to `target_map`,
-    /// surfaced as [`crate::field_events::FieldEvent::WorldMapTransition`].
+    /// A **mode-24 minigame door** placed on the overworld: engaging it (via
+    /// [`World::engage_world_map_entity`]) arms the same door warp the field
+    /// VM's op-`0x3E` arm does ([`crate::minigame_entry::MinigameSubId`]).
     ///
-    /// This is the **door-warp** `map_id` (the `0x3E`, `op0 >= 100` selector,
-    /// `0..=6`) the placement classifier reads off a partition-1 actor's
-    /// script. Its name resolution goes through a
-    /// [`crate::scene::MapIdResolver`] (a 7-id scene-*type* space). The
-    /// overworld's town/dungeon entrances are **not** this - they are
+    /// `sub_id` is the op's `op0 - 100`, which selects a *code overlay*, not a
+    /// scene - so this variant never reaches a
+    /// [`crate::scene::MapIdResolver`]. It is sourced from the placement
+    /// classifier's `PlacementKind::Portal`, which `is_genuine_warp` gates to
+    /// `op0` in `100..=106`; on the three overworld scenes the only such
+    /// placements are the `map02` / `map03` fishing signboards (`sub_id 0`).
+    ///
+    /// The overworld's town / dungeon entrances are **not** this - they are
     /// [`Self::OverworldPortal`], sourced from the `0x3F` named-scene-change
-    /// bridge below.
-    Portal { target_map: u16 },
+    /// bridge below, and they are the only producer of
+    /// [`crate::field_events::FieldEvent::WorldMapTransition`].
+    MinigameDoor { sub_id: u8 },
     /// An overworld town / dungeon entrance sourced from the disc's `.MAP`
     /// walk-on tile-trigger → MAN partition-2 record → `0x3F`
     /// named-scene-change bridge (pinned on the `map01` hub: each gate-1

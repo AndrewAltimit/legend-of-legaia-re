@@ -164,9 +164,12 @@ reserved sub-rect, guarded on the staged item id. This was waived on "window
 24's rect is byte-identical to window 17's, so which screen opens 24 rather
 than 17 is unknown". The geometry could not answer it; the open scripts can.
 Exactly one command in the menu overlay opens window `0x18` - script
-`0x801E4DC8`, run by sub-screen `0x13` (`FUN_801D9C14`) - and the same script
+`0x801E4DC8`, run by sub-screen `0x14` (`FUN_801D9C14`) - and the same script
 opens windows `2` and `0x19` beside it, the **Equip** title tab and the
 active-character stat compare. Window 24 is the Equip screen's item panel.
+(The sub-screen id read `0x13` here until it was checked against the pointer
+table: the script is loaded at `0x801d9d00`, inside the routine the table
+lists at index `0x14`; index `0x13` is `0x801D99F0`.)
 
 What still blocks it is the other half of the old reason, which stands: the
 painter is only the **delta**. The renderer's gated body opens with
@@ -176,73 +179,98 @@ top. The engine's equip screen is a slot list with no item-info panel at all,
 so there is no rect to add a count to yet.
 """
 
+# `two_line_choice_panel_draws_for` (window 5) and `label_list_draws_for`
+# (window 6) were waived here as orphans blocked on "the entry-context kind
+# reaching `0x0D`", because the port tagged each op-`0x49` park by its owning
+# context instead of recording the armed sub-op. Both waivers said in as many
+# words: close it by making the arm record its sub-op, not by adding a draw
+# call. That is what happened. `FieldHost::op49_arm` now carries the sub-op -
+# which is what retail's park holds, since `_DAT_8007B450` is the *operand
+# pointer* (`sw s6,-0x4bb0(s0)` at `0x801e09a8`) and every consumer reads its
+# first byte (`lbu v0,0x0(s6)` at `0x801e0984`) - so
+# `World::menu_entry_context_kind` answers with any of the fourteen sub-ops
+# rather than with the two the port could previously infer.
+#
+# Both screens then followed, on both hosts. `FieldMenuSession` grew the two
+# phases retail's own dispatcher selects for this kind - `Notice` (sub-screen
+# `4`, `FUN_801DD1B8`) as the *entry* screen and `ReadyConfirm` (sub-screen
+# `3`, `FUN_801D6D38`) as the cancel destination - and each host draws them
+# off the disc-parsed rect through `painter_at`
+# (`window/menu_draws.rs::context_locked_screen_draws` and
+# `web-viewer/src/play_menu.rs::build_context_locked`). The labels are read
+# out of the caller's own PROT 0899 image at the VAs the two renderers load
+# (`pause_screens::ContextLockedLabels`), installed by the one
+# `install_menu_overlay_tables` call both hosts already made - so neither host
+# can ship the panels text-less while the other draws them, and no string is
+# committed.
+#
+# Two things the old prose had wrong, both now corrected where they were
+# written down:
+#
+#   * Window 5 is **not** a "really leave?" gate. `FUN_801D61B0`'s own string
+#     pointers are `0x801CEC78` / `0x801CEC94`, a battle-start ready check;
+#     its Yes exits the menu *into the fight*.
+#   * Window 6's six labels are **not** "content that record owns". They are
+#     six static VAs in the menu overlay's own pool, loaded by
+#     `lui a0,0x801d` + `addiu` pairs at `0x801d636c..0x801d6448` - a
+#     multi-line battle briefing plus a one-byte control string. So the text
+#     was never the obstacle; only the trigger was.
+#
+# Reachability was measured rather than assumed, because a screen that hangs
+# off a kind byte no script ever arms is not worth a host:
+# `crates/engine-core/tests/op49_sub_op_census.rs` walks every scene MAN's
+# field-VM script and tallies the op-`0x49` sub-op operands. Kind `0x0D` is
+# armed on the real disc; so is kind `7` below.
+#
+# One half of this is still short of retail, and it is disclosed on
+# `FieldMenuSession::open_entry_screen` rather than hidden by the deletion.
+# Retail's op-`0x49` arm spawns a driver actor that **opens the menu itself**
+# and keeps the park armed until that screen hands back; the port has no path
+# from a parked field script to opening a host-owned pause menu, so the close
+# tick retires the park within a few frames. The decode runs on both hosts and
+# the screens draw - but a player reaches them only if the menu opens while
+# the park is still armed. Closing that is the inline gold shop's shape (a
+# `take_pending_field_menu` channel plus a host-called finish), not a draw
+# call, and it is a different gap from the one these waivers described.
+
 [[waiver]]
 builder = "choice_panel_draws_for"
 kind = "orphan"
 reason = """
-Window id 46 (`FUN_801D603C`). This was waived as needing "a two-row choice
-screen whose state is the `DAT_801E46D0` flags word", with the options screen
-named as the screen it would have to replace. Both halves were wrong.
+Window id 46 (`FUN_801D603C`) - the **casino prize counter's Yes/No confirm**.
+Script `0x801E4F2C` (`01 2E`, "open window `0x2E`") is the only command in the
+overlay that opens it, and it runs from sub-screen `0x20` (`FUN_801DC1CC`, the
+prize exchange) where a chosen prize clears the coin and held-cap gates;
+`0x801E4F34` closes it again on No or cancel, and the cursor is seeded to row 1
+- retail's "No is the default". Its heading is `0x801CEAC8` and its two rows
+are the shared Yes / No pair at `0x801CEA84` / `0x801CEA8C`.
 
-It is the **casino prize counter's Yes/No confirm**. Script `0x801E4F2C` is the
-only command in the overlay that opens window `0x2E`, and it runs from
-sub-screen `0x20` (`FUN_801DC1CC`, the prize exchange) at the point where a
-chosen prize clears the coin and held-cap gates; `0x801E4F34` closes it again
-on No or cancel, and the cursor is seeded to row 1 - retail's "No is the
-default". And the flags word is not unmodelled state: it is the shared cursor
-word `FUN_801D688C` maintains, whose four-way decode is already ported and
-**live** as `engine-core::shop::shop_cursor_mode` - the same three bits and the
-same arms as this crate's `ChoiceFlags::marker_variant`.
+Two premises of the previous reason are corrected here rather than repeated.
 
-The blocking capability is a **host that mounts the prize exchange**. The
-session is ported and complete (`engine-core::prize_exchange`, whose state 2 is
-this confirm); nothing opens it, so nothing reaches the beat.
-"""
+**The kind byte is no longer the blocker.** Sub-screen `0x20` is written to
+`DAT_801E46A4` at exactly one site in PROT 0899 - `0x801dc8cc`, inside
+`FUN_801DC6B4`'s entry decode, on entry-context kind `7` (a sweep of all 66
+`sw rt,0x46a4(rs)` writers finds no other). Kind `7` is now producible: the
+op-`0x49` arm records its sub-op, and the disc census
+(`crates/engine-core/tests/op49_sub_op_census.rs`) finds sub-op `7` armed by
+real scene scripts. So the trigger exists.
 
-[[waiver]]
-builder = "two_line_choice_panel_draws_for"
-kind = "orphan"
-reason = """
-Window id 5 (`FUN_801D61B0`). It shares window 46's marker branch chain, which
-is why it was waived for the same reason - but it belongs to a different
-screen. Script `0x801E4BD4` is its only opener, from sub-screen `3`
-(`FUN_801D6D38`): a two-row confirm seeded to No whose Yes routes to
-sub-screen `0` (leave the menu) and whose No returns to the pause root. The
-root reaches it from **cancel**, under one condition only - the entry-context
-pointer `_DAT_8007B450` non-null with first byte `0x0D`
-(`0x801d6cf8..0x801d6d18`). It is the "really leave?" gate on a scripted menu.
+**The browser is not "already close".** `web-viewer/src/minigames_fishing.rs`
+does carry a `prize_exchange(venue)` resolver, and it is a **different
+subsystem**: the fishing point exchange (`legaia_asset::fishing_exchange`,
+spending the pond session's *points* against a per-venue rod table). This
+window belongs to the casino counter, which spends the **coin bank**
+`_DAT_800845A4` against the `0x801E4518` prize table. Neither host has any
+part of that screen.
 
-The blocking capability is the **entry-context kind reaching `0x0D`**. The
-kind byte itself is modeled now: `World::menu_entry_context_kind` is the
-engine's read of retail `*_DAT_8007B450`, and the pause root already compares
-it against `ROOT_MENU_CONTEXT_LOCKED = 0x0D` (`pause_screens::
-root_menu_confirm_route`, live on both hosts). But no producer can yield the
-blocking value: the port tags each op-`0x49` park with its owning context
-(shop = sub-op `0`, tile board = `5`) and no path records the armed sub-op,
-so the kind resolves to `0`, `5` or `None` - all allow branches, and no
-condition ever selects this screen. Close it by making the op-`0x49` arm
-record its sub-op, not by adding a draw call.
-"""
-
-[[waiver]]
-builder = "label_list_draws_for"
-kind = "orphan"
-reason = """
-Window id 6 (`FUN_801D6360`): six stacked labels with the only cursor in this
-block anchored to the window *extent*. Waived as "no host opens window 6 and
-which flow does is unknown" - the flow is now known. Script `0x801E4BE0` is its
-only opener, from sub-screen `4` (`FUN_801DD1B8`), which opens the window,
-waits for a confirm / cancel press and returns to the pause root. That makes it
-a **notice panel**, which is what the corner advance hand is for.
-`FUN_801DC6B4` selects sub-screen `4` as the menu's entry screen when the
-entry-context byte is `0x0D` (`0x801dc8d0..0x801dc8e4`) - the same kind whose
-exit confirm is window 5 above.
-
-Same blocking capability as window 5, then: the entry-context kind is modeled
-(`World::menu_entry_context_kind`, compared against `0x0D` at the pause root
-on both hosts) but no producer can yield `0x0D` - the op-`0x49` park never
-records its armed sub-op. The six labels are content that record owns, so a
-host has neither the trigger nor the text.
+The blocking capability is the **prize-exchange window set**: the tab (43,
+`RENDERER_TAB_EXCHANGE`), the list container (44), the coin counter (45,
+`RENDERER_COUNTER_COINS`) and this confirm, driven by
+`engine-core::prize_exchange::PrizeExchangeSession` (complete - its state 2 is
+exactly this beat) over the disc prize block at PROT 0899 file `0x15D00`,
+which nothing parses outside `legaia_patcher::casino`. The confirm cannot be
+wired on its own: it is one window of a four-window screen, and a host that
+drew it alone would be a Yes/No box over nothing.
 """
 
 # `equip_target_list_draws_for` (window 36) and `compare_panel_draws_for`

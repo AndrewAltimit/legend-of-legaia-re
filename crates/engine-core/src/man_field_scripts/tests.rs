@@ -532,7 +532,7 @@ fn walk_touch_event_classifies_portal_and_player_moveto() {
     let placements = mf.actor_placements(&man);
     assert_eq!(
         placement_walk_touch_event(&mf, &man, &placements[0]),
-        Some(WalkTouchEvent::Warp { target_map: 3 })
+        Some(WalkTouchEvent::Warp { sub_id: 3 })
     );
 
     // A cross-context player-channel MOVE_TO (`0xA3 0xF8 xb zb`) ->

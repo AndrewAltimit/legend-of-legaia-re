@@ -117,6 +117,25 @@ impl World {
                 self.field_npc_positions
                     .insert(slot, (placement.world_x, placement.world_z));
             }
+            // A **minigame door** placement (`PlacementKind::Portal`, i.e. a
+            // genuine `0x3E` `op0 >= 100` record - the casino cabinets, the
+            // dance-hall desk, the fishing signboards). Retail dispatches an
+            // interaction on it through the same dialog SM as a talk NPC
+            // (`FUN_80039B7C` on the placement's own record), so it needs the
+            // same interaction record installed; what it must NOT get is a
+            // `field_npc_dialog` entry, because the simplified path would then
+            // type the record's refusal line as if it were an NPC's greeting.
+            // Without this the door had no interaction dispatch at all: the
+            // record was only ever reached by the walk-touch arm's decoded
+            // effect, never executed.
+            // REF: FUN_80039B7C, FUN_801d5b5c
+            if matches!(kind, crate::man_field_scripts::PlacementKind::Portal { .. })
+                && let Some(record) = crate::man_field_scripts::placement_interaction_record(
+                    man_file, man, &placement,
+                )
+            {
+                self.field_npc_dialog_prologue.insert(slot, record);
+            }
             if let crate::man_field_scripts::PlacementKind::Npc {
                 dialog_inline: Some(inline),
                 ..

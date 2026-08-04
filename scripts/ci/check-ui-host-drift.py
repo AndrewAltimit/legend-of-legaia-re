@@ -92,14 +92,22 @@ attempt it. What it does instead is pin the one part of the divergence that
 *is* exactly decidable, and which is where the duplication actually sits:
 **geometry constants that exist twice, once per host.**
 
-`crates/web-viewer/src/play_menu.rs` carries a 23-row pinned window-rect
-table whose doc comment says it is "byte-identical to the native window's
-`MENU_WINDOW_FALLBACK`". That sentence is the entire guarantee - a prose
+The browser play page used to carry a 23-row pinned window-rect table whose
+doc comment said it was "byte-identical to the native window's
+`MENU_WINDOW_FALLBACK`". That sentence was the entire guarantee - a prose
 assertion of the kind this repo has already watched go false in the waiver
 file, where a bucket is re-derived from source every run but a *reason* is
 not. [`CONSTANT_PAIRS`] turns those sentences into a check: each pair names a
 constant on each host, and the two initialisers must normalise to the same
 token stream.
+
+A pair is the second-best outcome. The best one is that the constant exists
+**once**, in a crate both hosts already depend on, at which point there is
+nothing to pair and the row comes out of the table - which is what happened to
+that window-rect table and to the near-fullscreen sub-screen rect: both now
+live in `legaia_engine_ui::pause_menu` beside the composition that reads them.
+Deleting a pair is therefore not always a loss of coverage; check which way it
+went before restoring one.
 
 Be precise about what that does and does not establish:
 
@@ -316,19 +324,16 @@ WEB_SHADERS = "site/js/webgl-shaders.js"
 # `(8, 60)` and is deliberately NOT paired with the level-up pen, because
 # nothing says the battle HUD and the level-up banner must move together.
 CONSTANT_PAIRS: list[dict[str, object]] = [
-    {
-        "what": "pinned menu window-descriptor rects (fallback when the disc "
-        "table is absent) - fed to menu_window_chrome_draws_for / tab_banner_draws "
-        "and to every *_draws_for pen on the pause screens",
-        "native": (NATIVE_WINDOW, "MENU_WINDOW_FALLBACK"),
-        "web": (WEB_PLAY_MENU, "WINDOW_FALLBACK"),
-    },
-    {
-        "what": "near-fullscreen content rect for the sub-screens whose retail "
-        "window set is not capture-pinned (Items / Magic / Arts generic frame)",
-        "native": (NATIVE_WINDOW, "MENU_SUBWINDOW_CONTENT"),
-        "web": (WEB_PLAY_MENU, "SUBWINDOW_CONTENT"),
-    },
+    # Two pause-menu rows used to sit at the head of this list - the pinned
+    # window-descriptor rect table and the near-fullscreen sub-screen rect.
+    # They are gone because the constants are: both live once in
+    # `legaia_engine_ui::pause_menu` (`MENU_WINDOW_FALLBACK` /
+    # `MENU_SUBWINDOW_CONTENT`), read by the shared composition both hosts
+    # call. A pair proves two copies agree; one copy needs no proof. The
+    # engine-ui rect table is exercised by `tests/pause_menu_compose.rs`; the
+    # disc side is pinned separately by the disc-gated `menu_windows_real`
+    # test, which asserts the same rects against its own literal list rather
+    # than against this constant.
     {
         "what": "field shop / inn overlay pen - shop_draws_for's `pen` argument",
         "native": (NATIVE_HUD, "SHOP_OVERLAY_PEN"),
@@ -417,6 +422,7 @@ NATIVE_BOOT = "crates/engine-shell/src/boot.rs"
 NATIVE_SAVE_HELPERS = "crates/engine-shell/src/bin/legaia-engine/window/save_select_helpers.rs"
 NATIVE_FRAME_TICK = "crates/engine-core/src/world/frame_tick.rs"
 NATIVE_BOOT_CUTSCENE = "crates/engine-shell/src/bin/legaia-engine/window/boot_cutscene.rs"
+NATIVE_REDRAW = "crates/engine-shell/src/bin/legaia-engine/window/event_handler/redraw.rs"
 NATIVE_FIELD_RENDER = "crates/engine-shell/src/bin/legaia-engine/window/field_render.rs"
 NATIVE_GEOMETRY = "crates/engine-shell/src/bin/legaia-engine/window/geometry.rs"
 WEB_MINIGAMES_MUSCLE = "crates/web-viewer/src/minigames_muscle.rs"
@@ -545,7 +551,29 @@ SIM_PAIRS: list[dict[str, object]] = [
             "web": (WEB_PLAY_MENU, "play_menu_open"),
         },
         "mode": "symbols_all",
-        "symbols": ["FieldMenuGate", "SceneMode::Menu", "dialogue_owns_input"],
+        "symbols": ["FieldMenuGate", "SceneMode::Menu"],
+    },
+    {
+        "what": "menu-open precondition - every host that turns a Start edge "
+        "into an open menu must ask `World::field_menu_open_allowed` rather "
+        "than spell the test out locally. Three hosts each wrote their own "
+        "copy and all three said `mode == Field`, which is how the OVERWORLD "
+        "lost the pause menu: retail runs one locomotion controller "
+        "(`FUN_801D01B0`) across the field and the kingdom overworlds, and "
+        "the port splits that one retail mode into `Field` + `WorldMap`. The "
+        "premise the copies rested on - that `FUN_801E76D4` is the "
+        "overworld's controller with a Start handler of its own - is false; "
+        "it is the top-view debug renderer. The symptom was silent in the "
+        "worst way: the Save row is legal in exactly the three scenes no host "
+        "would open the menu in, so the SAVE direction was unreachable by pad "
+        "anywhere in the port while every oracle stayed green",
+        "sites": {
+            "native_window": (NATIVE_REDRAW, "handle_redraw"),
+            "native_boot": (NATIVE_BOOT, "tick"),
+            "web": (WEB_PLAY_MENU, "play_menu_open"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["field_menu_open_allowed"],
     },
     {
         "what": "party wipe - both hosts must route it to the title screen "
@@ -814,7 +842,18 @@ def sim_pair_divergence(pair: dict) -> tuple[list[str], list[str]]:
             errors.append(f"SIM {pair['what']!r}: {problem}")
         else:
             bodies[host] = text
-    if errors or len(bodies) != 2:
+    # A row may name any number of sites from two up. This used to demand
+    # EXACTLY two and return `([], [])` otherwise - so a three-site row was
+    # not a failure and not an error, it was silently unevaluated, and the
+    # gate reported clean while checking nothing. That is the worst shape a
+    # checker can have, and it hid behind the fact that every row happened to
+    # be a pair when the guard was written. A row with fewer than two sites is
+    # now a hard error, because it cannot compare anything either.
+    if len(bodies) < 2 and not errors:
+        errors.append(
+            f"SIM {pair['what']!r}: needs at least two resolvable sites, got {len(bodies)}"
+        )
+    if errors:
         return errors, []
 
     hosts = sorted(bodies)
@@ -834,23 +873,27 @@ def sim_pair_divergence(pair: dict) -> tuple[list[str], list[str]]:
                 diffs.append(
                     f"`{sym}` is not called at {', '.join(where(h) for h in missing)}"
                 )
-            elif mode == "symbols_same" and seen[a] != seen[b]:
-                has = a if seen[a] else b
-                lacks = b if seen[a] else a
+            elif mode == "symbols_same" and len(set(seen.values())) > 1:
+                has = [h for h in hosts if seen[h]]
+                lacks = [h for h in hosts if not seen[h]]
                 diffs.append(
-                    f"`{sym}` is called at {where(has)} but not at {where(lacks)} - "
-                    f"both must, or neither may"
+                    f"`{sym}` is called at {', '.join(where(h) for h in has)} "
+                    f"but not at {', '.join(where(h) for h in lacks)} - "
+                    f"all must, or none may"
                 )
     elif mode == "pattern_same":
         pat = re.compile(pair["pattern"])  # type: ignore[arg-type]
         found = {h: {m.group(1) for m in pat.finditer(bodies[h])} for h in hosts}
-        if found[a] != found[b]:
-            only_a = sorted(found[a] - found[b])
-            only_b = sorted(found[b] - found[a])
-            if only_a:
-                diffs.append(f"only {where(a)}: {', '.join(only_a)}")
-            if only_b:
-                diffs.append(f"only {where(b)}: {', '.join(only_b)}")
+        # Every site must agree with the union, so a third host cannot carry a
+        # stray match that a pairwise `a != b` comparison would never look at.
+        union: set[str] = set().union(*found.values())
+        for h in hosts:
+            extra = sorted(found[h] - set().union(*(found[o] for o in hosts if o != h)))
+            missing = sorted(union - found[h])
+            if extra:
+                diffs.append(f"only {where(h)}: {', '.join(extra)}")
+            if missing:
+                diffs.append(f"missing at {where(h)}: {', '.join(missing)}")
     else:
         errors.append(f"SIM {pair['what']!r}: unknown mode {mode!r}")
     return errors, diffs
@@ -1886,6 +1929,22 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
             "site/js/world-overview-app.js":
                 "consumer of the same walk-placement accessors; see above",
         },
+    },
+    {
+        "kernel": "screen-space fade quad",
+        "why": "the transition fade's ABR mode - not its colour - decides "
+        "whether the screen darkens or brightens, and it travels in the "
+        "packet beside an OT layer that looks exactly like it. Swapping the "
+        "two puts every style's fade on ABR 0 (0.5B + 0.5F): the additive "
+        "styles top out at washed grey instead of a white-out and the "
+        "subtractive ones never reach black. `screen_prim::fade_prim` is the "
+        "one packet builder both hosts call, and a surface that resolves the "
+        "ramp and then hand-rolls the quad is how that swap gets made a "
+        "second time",
+        # The EMITTER: a file that resolves the fade ramp. Naming the type
+        # would catch every file that passes an `IntroFade` along.
+        "trigger": r"\bintro_fade\s*\(",
+        "requires": [r"\bfade_prim\b"],
     },
 ]
 

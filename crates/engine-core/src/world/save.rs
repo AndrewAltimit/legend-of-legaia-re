@@ -388,19 +388,42 @@ impl World {
     /// card driver directly), `0x0D` is the context that blocks the menu's
     /// Load row and turns its cancel into a Yes/No confirm.
     ///
-    /// The port has no single global to read - it tags each park with the
-    /// context that armed it ([`crate::field_submode_screen::Op49ParkOwner`])
-    /// and resolves three sub-ops through dedicated host paths - so the kind
-    /// is recovered from those paths instead: an armed inline shop is sub-op
-    /// `0` and an installed tile board is sub-op `5`. Both are `!= 0x0D`, so
-    /// they take the same allow branch retail takes, and a park whose sub-op
-    /// the engine does not track reads `None` (also the allow branch). The
-    /// blocking kind is therefore reachable only once the op-`0x49` arm
-    /// records its sub-op, which is the one edit that would make this
-    /// function able to return `0x0D`.
+    /// The port has no single global to read, because it tags each park with
+    /// the context that armed it
+    /// ([`crate::field_submode_screen::Op49ParkOwner`]), so it keeps the byte
+    /// itself instead - on
+    /// [`crate::field_submode_screen::SubmodeScreen::park_sub_op`], written
+    /// by the arm ([`World::record_op49_park`]) and cleared by the resume.
+    /// That covers every sub-op, including the three the port resolves
+    /// through dedicated host paths, because retail's store happens before
+    /// those paths diverge.
+    ///
+    /// The two legacy derivations below it stay as a fallback for a host
+    /// that arms a shop or a tile board **without** going through the field
+    /// VM (`World::try_arm_field_shop` and `World::try_install_tile_board`
+    /// are both callable directly, and several tests do exactly that). They
+    /// agree with the park by construction - an inline shop is sub-op `0`
+    /// and a tile board sub-op `5`.
+    ///
+    /// Retail's own consumers of this byte, and which value selects each:
+    ///
+    /// | kind | consumer |
+    /// |---|---|
+    /// | `0` | save/menu driver opens sub-screen `0x1A` |
+    /// | `1` | opens `0x19` - a field save point goes straight to the card |
+    /// | `7` | opens `0x20` - the casino prize exchange |
+    /// | `0x0D` | opens `4`, blocks the root Load row, arms the leave confirm |
+    ///
+    /// (`FUN_801DC6B4` at `0x801dc88c..0x801dc8e4`.) Which of those a real
+    /// disc ever arms is measured by
+    /// `crates/engine-core/tests/op49_sub_op_census.rs`.
     ///
     /// REF: FUN_801de840 (op `0x49` Idle arm, `_DAT_8007B450 = operand`)
+    /// REF: FUN_801dc6b4 (the routing consumer)
     pub fn menu_entry_context_kind(&self) -> Option<u8> {
+        if let Some(sub_op) = self.submode_screen.park_sub_op {
+            return Some(sub_op);
+        }
         if self.field_shop_armed {
             return Some(0);
         }
@@ -408,5 +431,77 @@ impl World {
             return Some(5);
         }
         None
+    }
+
+    /// Whether this scene mode is one whose player is walked by the field
+    /// locomotion controller - and therefore one whose pad reaches the
+    /// **menu-open accept**.
+    ///
+    /// Retail has no global Start handler. The accept is a leg of the
+    /// pre-movement header inside `FUN_801D01B0`
+    /// (`0x801D0250..0x801D032C`): it tests the newly-pressed pad word
+    /// `_DAT_8007B874` against the configurable menu-button mask
+    /// `_DAT_800846D8`, and on a hit plays cue `0x20`, raises the player's
+    /// engaged bit `+0x10 |= 0x80000`, and spawns the menu actor through the
+    /// shared allocator `FUN_80020DE0(&DAT_8007065C, _DAT_8007C34C)`. So
+    /// "can the menu open here" is exactly "does this scene run
+    /// `FUN_801D01B0`".
+    ///
+    /// The **overworld runs it too**, and that is what makes the Save row
+    /// reachable at all. All three kingdom overworlds are ordinary
+    /// `game_mode 0x03` field-run scenes driven by the same
+    /// `FUN_801D1344` -> `FUN_801D01B0` chain as a town, so the same accept
+    /// covers both. Retail's own proof sits inside the controller: the
+    /// base-step selector's `s4 = 5` arm at `0x801D0354` is taken exactly
+    /// when the world-map flag `_DAT_8007B6A8` is set, which would be dead
+    /// code if a `_DAT_8007B6A8` scene never entered this function.
+    ///
+    /// `FUN_801E76D4` is **not** a second controller that would need its own
+    /// arm - it is the top-view debug renderer, and it branches straight to
+    /// its epilogue (`0x801E9B14`) whenever `DAT_801F2B94 == 0`. Entering
+    /// top view at all needs the debug flag `_DAT_8007B98C`, which retail
+    /// leaves clear. See [`crate::world_map::WorldMapController`].
+    ///
+    /// The port splits the one retail mode in two -
+    /// [`SceneMode::Field`](crate::world::SceneMode::Field) for towns and
+    /// fields, [`SceneMode::WorldMap`](crate::world::SceneMode::WorldMap)
+    /// for the kingdom overworlds - so the predicate has to name both. Every
+    /// other mode (battle, cutscene, the minigames, an already-open menu)
+    /// suspends field dispatch and never reaches the accept.
+    ///
+    /// REF: FUN_801D01B0 (`0x801D0250..0x801D032C`, the menu-open accept)
+    /// REF: FUN_801D1344 (the per-frame tick that calls it, `0x801D16F4`)
+    /// REF: FUN_801E76D4 (`0x801E779C`, the not-top-view branch to the epilogue)
+    pub fn scene_mode_takes_menu_open(&self) -> bool {
+        matches!(
+            self.mode,
+            crate::world::SceneMode::Field | crate::world::SceneMode::WorldMap
+        )
+    }
+
+    /// The whole menu-open precondition, in the order retail tests it.
+    ///
+    /// Both shipped hosts and the shared `BootSession` driver must route
+    /// their Start edge through this one predicate rather than spelling the
+    /// mode test out locally - a host that writes its own copy is how the
+    /// overworld lost the pause menu in the first place.
+    ///
+    /// 1. The engaged bit. `FUN_801D01B0`'s **first** test (`0x801D01F0`)
+    ///    branches past the entire header when `player+0x10 & 0x80000` is
+    ///    set, so a talking player's Start opens nothing and does not even
+    ///    buzz. The engine's stand-in is
+    ///    [`World::dialogue_owns_input`](crate::world::World::dialogue_owns_input).
+    /// 2. The scene mode - [`Self::scene_mode_takes_menu_open`].
+    ///
+    /// Note this is the *open* gate only. Whether the opened menu's **Save**
+    /// row then accepts is a separate, per-scene question answered by
+    /// [`World::scene_save_allowed`](crate::world::World::scene_save_allowed)
+    /// at the row's confirm, exactly as retail keeps `_DAT_800846D8` (which
+    /// button opens the menu) and `_DAT_8007B6A8` (whether Save is legal
+    /// here) as two independent globals.
+    ///
+    /// REF: FUN_801D01B0 (`0x801D01F0` engaged bit, `0x801D0250` accept)
+    pub fn field_menu_open_allowed(&self) -> bool {
+        self.scene_mode_takes_menu_open() && !self.dialogue_owns_input()
     }
 }

@@ -550,6 +550,8 @@ impl World {
                 self.text_balloon = None;
             }
         }
+        // A minigame the player can enter must be one the player can leave.
+        self.poll_minigame_escape();
         match self.mode {
             SceneMode::Battle => {
                 // Battle animation advance. This is SIMULATION, not
@@ -1403,6 +1405,68 @@ impl World {
             self.casino_coins = m.cash_out().max(0) as u32;
         }
         machine
+    }
+
+    /// The five mode-24 minigame scene modes, in `sub_id` order.
+    pub const MINIGAME_MODES: [SceneMode; 5] = [
+        SceneMode::Fishing,
+        SceneMode::SlotMachine,
+        SceneMode::BakaFighter,
+        SceneMode::MuscleDome,
+        SceneMode::Dance,
+    ];
+
+    /// Whether the world is inside one of the five mode-24 minigames.
+    pub fn in_minigame(&self) -> bool {
+        Self::MINIGAME_MODES.contains(&self.mode)
+    }
+
+    /// **Engine affordance, not a retail port: Start leaves any minigame.**
+    ///
+    /// Retail's five minigames each quit through their own overlay's SM - the
+    /// slot cabinet's exit menu row, the duel's decided-match confirm, the
+    /// arena's give-up arm - and every one of those is a *different* control
+    /// in a *different* overlay. The port has none of them wired to a control
+    /// a player can find: the native window exposes developer hotkeys
+    /// (`O` / `B` / `M`), and the browser play page does not draw four of the
+    /// five modes at all, so entering one there leaves a frozen field with the
+    /// BGM still running and no input that does anything.
+    ///
+    /// That is the invariant [`crate::scene::SceneHost::drain_minigame_warp`]
+    /// already states for its *failure* arms - "a script that armed a warp must
+    /// never be left in a mode with no exit" - and it has to hold for the
+    /// successful ones too, on every host, or a reachable minigame is a
+    /// softlock. Each game's own `exit_*` runs, so the bookkeeping (cash-out,
+    /// leg report, point bank) is the same as the deliberate exit; a door-warp
+    /// entry additionally closes its round trip through
+    /// [`Self::minigame_return_warp`].
+    fn poll_minigame_escape(&mut self) {
+        if !self.in_minigame() || !self.input.just_pressed(input::PadButton::Start) {
+            return;
+        }
+        match self.mode {
+            SceneMode::Fishing => {
+                self.exit_fishing();
+            }
+            SceneMode::SlotMachine => {
+                self.exit_slot_machine();
+            }
+            SceneMode::BakaFighter => {
+                self.exit_baka_fighter();
+            }
+            SceneMode::MuscleDome => {
+                self.exit_muscle_dome();
+            }
+            SceneMode::Dance => {
+                self.exit_dance();
+            }
+            _ => unreachable!("guarded by in_minigame"),
+        }
+        // Close the mode-24 round trip when the entry came through the door
+        // warp (`exit_baka_fighter` already does its own).
+        if self.minigame_scene_backup.is_some() {
+            self.minigame_return_warp();
+        }
     }
 
     /// Arm the mode-24 minigame door-warp: back up the active scene name and

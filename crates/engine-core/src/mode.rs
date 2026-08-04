@@ -719,11 +719,17 @@ pub struct ModeInitStage {
 /// words `_DAT_8007BC3C`/`BC4C = -1`, kingdom-base snapshot
 /// (`gp+0x7AC` <- `_DAT_80084540`), and a `FUN_80058104(0)` teardown call.
 // REF: FUN_80058104
-// NOT WIRED: the engine has no mode-table overlay-residency model, so
-// nothing stages a per-sub-id "other game" overlay or `jalr`s its init entry
-// out of the `0x80010AE4` table. Its minigames are resident Rust rules
-// engines entered as suspended in-place scene modes (`World::enter_fishing`
-// / `enter_slot_machine` / `enter_dance` / ...), which is also why the
+// PARTIALLY WIRED: `crate::minigame_entry::MinigameSubId::prot_index` /
+// `overlay_init_va` call this for every mode-24 door-warp, and the field-VM
+// `0x3E` arm now reaches it - `SceneHost::drain_minigame_warp` reads the
+// staged sub-id's PROT entry off the disc, parses its tables and installs the
+// session. So the staging *plan* has a live caller and the seven PROT indices
+// are no longer duplicated anywhere.
+//
+// What is still absent is the mode-table overlay-*residency* model: nothing
+// loads the image at a base and `jalr`s `overlay_entry` out of the
+// `0x80010AE4` table. The engine's minigames are resident Rust rules engines
+// entered as suspended in-place scene modes, which is also why the
 // warp-shared reset half of the retail body has no state to clear. Same
 // missing prerequisite as `crate::overlay_loader`.
 //

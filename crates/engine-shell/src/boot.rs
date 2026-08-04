@@ -22,7 +22,15 @@ use anyhow::{Context, Result};
 use legaia_engine_audio::{AudioOut, Spu, SpuAllocator, VabBank};
 use legaia_engine_core::camera::Camera;
 use legaia_engine_core::field_menu::{FieldMenuGate, FieldMenuInput, FieldMenuSession};
+use legaia_engine_core::field_menu_dispatch::{
+    FieldMenuSubsession, apply_arts_outcome, apply_equip_outcome, apply_inventory_outcome,
+    apply_spell_outcome, try_open_arts_editor,
+};
 use legaia_engine_core::input::PadButton;
+use legaia_engine_core::magic_xp::SpellLevelNotice;
+use legaia_engine_core::options::OptionsState;
+use legaia_engine_core::save_screen::{SaveCommit, SaveScreenFlow};
+use legaia_engine_core::save_select::{SaveRack, SlotSnapshot};
 use legaia_engine_core::scene::{BgmDirector, DefaultMapIdResolver, SceneHost, SceneTickEvent};
 use legaia_engine_core::world::SceneMode;
 
@@ -172,6 +180,44 @@ pub struct BootSession {
     /// Start-edge path inside [`BootSession::tick`]); the windowed host
     /// layers its sub-session UI stack on top of this same session.
     pub field_menu: Option<FieldMenuSession>,
+    /// The sub-session beneath a **suspended** [`Self::field_menu`] - the
+    /// screen a confirmed row opened (Items / Magic / Equip / Status /
+    /// Options / Load / Save).
+    ///
+    /// Retail's pause menu is two levels deep: the root list suspends itself
+    /// on confirm and the routed sub-screen owns the pad until it finishes.
+    /// [`Self::tick`] drives that second level, so a driver that only calls
+    /// `set_pad` + `tick` reaches every pause-menu screen rather than
+    /// bouncing off the root list. Hosts that own their own UI stack (the
+    /// windowed shell, the browser play page) never enter `tick`'s menu arm
+    /// and keep driving their own.
+    pub field_menu_sub: Option<FieldMenuSubsession>,
+    /// Options the Config sub-session is built from, and written back to when
+    /// it closes. Retail commits option edits inside the value popup and
+    /// never reverts, so the session's final state is the state.
+    pub options_state: OptionsState,
+    /// Rack behind the Load / Save rows. Its *kind* is what puts the
+    /// sub-session in retail's two-stage card flow
+    /// ([`SaveRack::CardPorts`]), which is why a host supplies a rack rather
+    /// than a mode flag. Defaults to an empty flat rack - a driver that wants
+    /// the save legs calls [`Self::set_save_rack`].
+    save_rack: SaveRack,
+    /// The fifteen blocks behind each port of [`Self::save_rack`], indexed by
+    /// port. Answers [`SaveScreenFlow::pending_read`] when the card-read beat
+    /// resolves; a port past the end of this list reads as unmounted.
+    save_port_blocks: Vec<Vec<SlotSnapshot>>,
+    /// Driver for the two-stage card flow (pill row -> block grid). Shared
+    /// with the windowed host so the second stage is one implementation.
+    save_flow: SaveScreenFlow,
+    /// The save / load pick the last finished Save sub-session produced, if
+    /// any. **Not** acted on here: the persistence backend is host-owned (a
+    /// save directory, a card image), so `BootSession` runs the *flow* and
+    /// hands the caller the block it landed on.
+    pub last_save_commit: Option<SaveCommit>,
+    /// Spell level-up notice a menu cast produced. Retail's window 7 owns the
+    /// pad until dismissed; headless drivers that don't render it just read
+    /// and clear this.
+    pub spell_level_notice: Option<SpellLevelNotice>,
     /// Scene mode the world ran before the pause menu opened, restored by
     /// [`BootSession::close_field_menu`].
     field_menu_resume: SceneMode,
@@ -728,6 +774,13 @@ impl BootSession {
             spell_catalog,
             dialog_font,
             field_menu: None,
+            field_menu_sub: None,
+            options_state: OptionsState::default(),
+            save_rack: SaveRack::Blocks(Vec::new()),
+            save_port_blocks: Vec::new(),
+            save_flow: SaveScreenFlow::new(),
+            last_save_commit: None,
+            spell_level_notice: None,
             field_menu_resume: SceneMode::Field,
         })
     }
@@ -760,6 +813,16 @@ impl BootSession {
     /// [`SceneMode`] and switches the world into [`SceneMode::Menu`], so
     /// field dispatch suspends while the menu owns the frame. Idempotent
     /// while a menu is already open.
+    ///
+    /// This is the **builder**, and it enforces only the refusal retail puts
+    /// inside the controller itself (the engaged bit). A host's *Start edge*
+    /// must additionally consult
+    /// [`World::field_menu_open_allowed`](legaia_engine_core::world::World::field_menu_open_allowed),
+    /// which adds the mode test, instead of spelling one out locally. That
+    /// separation is deliberate: headless drivers and oracles legitimately
+    /// build the session from any mode, but a pad route that hard-codes
+    /// `SceneMode::Field` silently drops the three kingdom overworlds, and
+    /// those are the only scenes where the Save row is legal at all.
     pub fn open_field_menu(&mut self) {
         if self.field_menu.is_some() {
             return;
@@ -787,6 +850,10 @@ impl BootSession {
             entry_context_kind: world.menu_entry_context_kind(),
             save_allowed: world.scene_save_allowed,
         });
+        // Retail's driver picks the *starting* sub-screen off that same kind
+        // byte, so a locked context opens on the notice panel rather than on
+        // the root picker (`FUN_801DC6B4`, `0x801dc8d0..0x801dc8e4`).
+        session.open_entry_screen();
         self.field_menu_resume = world.mode;
         world.mode = SceneMode::Menu;
         self.field_menu = Some(session);
@@ -797,6 +864,11 @@ impl BootSession {
     /// menu is open.
     pub fn close_field_menu(&mut self) {
         if self.field_menu.take().is_some() {
+            // The sub-session goes with it: a menu closed out from under an
+            // open screen must not leave that screen holding the pad the next
+            // time the menu opens.
+            self.field_menu_sub = None;
+            self.save_flow.reset();
             self.host.world.mode = self.field_menu_resume;
         }
     }
@@ -806,6 +878,161 @@ impl BootSession {
     /// is [`SceneMode::Menu`] while `true`).
     pub fn field_menu_is_open(&self) -> bool {
         self.field_menu.is_some()
+    }
+
+    /// Install the rack the Load / Save rows build their sub-session against,
+    /// plus the block list behind each of its ports.
+    ///
+    /// The rack's kind decides the flow ([`SaveRack::CardPorts`] = retail's
+    /// two-stage pill-row -> block-grid screen), which is why it arrives as
+    /// one value instead of a rack and a mode flag: a host cannot make that
+    /// call differently from another host. `port_blocks[p]` answers the
+    /// card-read beat for port `p`; ports past its end read as unmounted.
+    pub fn set_save_rack(&mut self, rack: SaveRack, port_blocks: Vec<Vec<SlotSnapshot>>) {
+        self.save_rack = rack;
+        self.save_port_blocks = port_blocks;
+        self.save_flow.reset();
+    }
+
+    /// The rack currently behind the Load / Save rows.
+    pub fn save_rack(&self) -> &SaveRack {
+        &self.save_rack
+    }
+
+    /// The two-stage card flow driving an open Save / Load sub-session -
+    /// the block grid, its cursor, and which port was read.
+    pub fn save_flow(&self) -> &SaveScreenFlow {
+        &self.save_flow
+    }
+
+    /// Drive one frame of the open pause menu, both levels. Returns `true`
+    /// when the root session reached an outcome and the caller should close.
+    ///
+    /// Retail's pause menu suspends the root list on confirm and hands the
+    /// pad to the routed sub-screen; this is that second level. Before it
+    /// existed here, a confirmed row was resumed on the spot, so a driver
+    /// built on `set_pad` + [`Self::tick`] could move the root cursor and
+    /// gate rows but could not enter Items / Equip / Save at all - while both
+    /// shipped hosts implemented the stack privately. Keeping it on the
+    /// session is what lets an oracle and a host walk the same screens.
+    fn tick_field_menu(&mut self) -> bool {
+        let pad = &self.host.world.input;
+        // The edge word every menu surface in this subsystem reads. A held
+        // mask is one event: `just_pressed` is `pad & !pad_prev`.
+        let pressed = pad.pad() & !pad.pad_prev();
+        let input = FieldMenuInput {
+            up: pad.just_pressed(PadButton::Up),
+            down: pad.just_pressed(PadButton::Down),
+            left: pad.just_pressed(PadButton::Left),
+            right: pad.just_pressed(PadButton::Right),
+            cross: pad.just_pressed(PadButton::Cross),
+            circle: pad.just_pressed(PadButton::Circle),
+            start: pad.just_pressed(PadButton::Start),
+        };
+
+        if self.field_menu_sub.is_some() {
+            self.tick_field_menu_sub(pressed);
+        } else {
+            // Root list. A confirm suspends it on the routed row; build that
+            // row's sub-session and control moves there next frame.
+            let suspended_row = {
+                let menu = self.field_menu.as_mut().expect("field_menu is Some");
+                let _ = menu.tick(input);
+                match menu.phase() {
+                    legaia_engine_core::field_menu::FieldMenuPhase::Suspended { row } => Some(row),
+                    _ => None,
+                }
+            };
+            if let Some(row) = suspended_row {
+                self.save_flow.reset();
+                let world = &self.host.world;
+                let chain_library = world.chain_library();
+                self.field_menu_sub = Some(FieldMenuSubsession::build(
+                    row,
+                    world,
+                    &self.options_state,
+                    &self.save_rack,
+                    &chain_library,
+                    &world.spell_catalog,
+                    &world.equipment_table,
+                ));
+            }
+        }
+
+        self.field_menu.as_ref().and_then(|m| m.outcome()).is_some()
+    }
+
+    /// Route one pad edge into the open sub-session and, when it finishes,
+    /// drain its outcome into the world before resuming the root list.
+    fn tick_field_menu_sub(&mut self, pressed: u16) {
+        let Some(active) = self.field_menu_sub.as_mut() else {
+            return;
+        };
+        // Engine extension: Triangle on the Status screen swaps it for the
+        // Tactical Arts chain editor (retail's seven rows carry no Arts row).
+        // The edge is consumed so the same press doesn't also drive the
+        // screen it replaced.
+        let opened_arts = try_open_arts_editor(active, pressed, &self.host.world);
+        if !opened_arts {
+            // The Save / Load rows run under the two-stage card flow: it
+            // pre-empts the grid edges and resolves the card-read beat.
+            if let FieldMenuSubsession::Save(s) = active {
+                if let Some(port) = self.save_flow.pending_read(s) {
+                    let blocks = self
+                        .save_port_blocks
+                        .get(port as usize)
+                        .cloned()
+                        .unwrap_or_default();
+                    self.save_flow.install_blocks(port, blocks);
+                }
+                let edge = self.save_flow.before_tick(s, pressed);
+                s.tick(legaia_engine_core::save_select::SelectInput::from_pad_edge(
+                    edge,
+                ));
+            } else {
+                active.tick_pad_edge(pressed);
+            }
+        }
+        if !self
+            .field_menu_sub
+            .as_ref()
+            .is_some_and(FieldMenuSubsession::is_done)
+        {
+            return;
+        }
+        let finished = self.field_menu_sub.take().expect("sub was Some");
+        match finished {
+            FieldMenuSubsession::Items(s) => {
+                apply_inventory_outcome(&s.inner, &mut self.host.world);
+            }
+            FieldMenuSubsession::Equip { session, char_slot } => {
+                let _ = apply_equip_outcome(&session, char_slot, &mut self.host.world);
+            }
+            FieldMenuSubsession::Spells(s) => {
+                // A leveled menu cast returns the window-7 notice pair; a
+                // renderer-less driver just latches it.
+                self.spell_level_notice = apply_spell_outcome(&s, &mut self.host.world);
+            }
+            FieldMenuSubsession::Arts(editor) => {
+                let mut library = self.host.world.chain_library();
+                if apply_arts_outcome(editor, &mut library).is_ok() {
+                    self.host.world.store_chain_library(&library);
+                }
+            }
+            FieldMenuSubsession::Status(_) => {}
+            FieldMenuSubsession::Save(s) => {
+                // The outcome names the card port, the grid names the block.
+                // Persisting it is the host's: `BootSession` has no save
+                // backend, so the pick is latched for the caller.
+                self.last_save_commit = self.save_flow.commit(&s);
+            }
+            FieldMenuSubsession::Config(o) => {
+                self.options_state = o.state().clone();
+            }
+        }
+        if let Some(menu) = self.field_menu.as_mut() {
+            let _ = menu.resume(false);
+        }
     }
 
     /// Start a **global-pool** `music_01` track (`bgm_id >= 2000`) through the
@@ -844,15 +1071,23 @@ impl BootSession {
     /// events, advance the camera follow, return the [`SceneTickEvent`] for
     /// engines that want to react to scene transitions.
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
-        // In-field pause menu (retail CARD pair, game_mode 0x17). Mirror the
-        // windowed host's Start-edge open from the field, then drive an open
-        // menu from the same pad edges; field dispatch is suspended
-        // (SceneMode::Menu) while the menu owns the frame. The windowed host
-        // never reaches this auto-path (it handles the Start edge itself and
-        // skips `tick` while its boot-UI owns the frame), so the two hosts
-        // can't double-drive the session.
+        // Pause menu (retail CARD pair, game_mode 0x17). Drive the Start edge
+        // through the shared predicate rather than a local mode test: retail's
+        // accept is a leg of the locomotion controller `FUN_801D01B0`, so the
+        // menu opens wherever that controller walks the player - towns,
+        // fields *and* the three kingdom overworlds, which are ordinary
+        // `game_mode 0x03` field-run scenes in retail even though the port
+        // models them as `SceneMode::WorldMap`. Spelling `SceneMode::Field`
+        // here is what previously made the Save row - legal only on those
+        // overworlds - unreachable by pad anywhere in the port.
+        //
+        // The windowed host never reaches this auto-path (it handles the
+        // Start edge itself and skips `tick` while its boot-UI owns the
+        // frame), so the two hosts can't double-drive the session.
+        //
+        // REF: FUN_801D01B0 (`0x801D0250`, the menu-open accept)
         let menu_opened_this_tick = if self.field_menu.is_none()
-            && matches!(self.host.world.mode, SceneMode::Field)
+            && self.host.world.field_menu_open_allowed()
             && self.host.world.input.just_pressed(PadButton::Start)
         {
             self.open_field_menu();
@@ -861,26 +1096,7 @@ impl BootSession {
             false
         };
         if !menu_opened_this_tick && self.field_menu.is_some() {
-            let pad = &self.host.world.input;
-            let input = FieldMenuInput {
-                up: pad.just_pressed(PadButton::Up),
-                down: pad.just_pressed(PadButton::Down),
-                cross: pad.just_pressed(PadButton::Cross),
-                circle: pad.just_pressed(PadButton::Circle),
-                start: pad.just_pressed(PadButton::Start),
-            };
-            let close = {
-                let menu = self.field_menu.as_mut().expect("field_menu is Some");
-                let _ = menu.tick(input);
-                // Headless hosting has no sub-session UI stack: a confirmed
-                // row suspends the menu awaiting one, so resume straight back
-                // into browsing. Windowed hosts drive the session themselves
-                // and push the real sub-session instead.
-                if menu.is_suspended() {
-                    let _ = menu.resume(false);
-                }
-                menu.outcome().is_some()
-            };
+            let close = self.tick_field_menu();
             if close {
                 self.close_field_menu();
             }

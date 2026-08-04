@@ -176,8 +176,18 @@ impl World {
             // cleared; liveness restored so the SM's scans see them alive.
             self.status_effects.cure_all(slot as u8);
             let a = &mut self.actors[slot].battle;
+            let before = a.hp;
             a.hp = max_hp;
             a.liveness = 1;
+            // ...including that routine's readout seed. A revive that writes
+            // live HP alone leaves `hp != hp_display` with a zero accumulator,
+            // and the ramp's `+0x10 != 0` guard makes that pair absorbing - the
+            // `0x51` gate would then park the fight on the member Final Heal
+            // just saved.
+            let delta = i32::from(a.hp) - i32::from(before);
+            if delta != 0 {
+                a.assign_hp_bar(delta.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16);
+            }
             self.battle_hit_fx.push(BattleHitFx {
                 target_slot: slot as u8,
                 amount: max_hp,
@@ -589,17 +599,20 @@ impl World {
         Some(outcome)
     }
 
-    /// Put the open command session onto its round-open `Begin | Run` prompt
-    /// when the flow byte says this is the round's first party command.
+    /// Backstop for a session that was already open when the flow byte moved
+    /// onto the round-open `Begin | Run` prompt.
     ///
     /// Retail's `0x14` arm sets `ctx[+0x06] = 0x1E` before any member picks,
     /// and the ring (`0x28`) is only reached through it - so the prompt is a
     /// property of the **round**, not of the turn. The port reads that off
     /// [`crate::battle_flow::BattleFlowState::TurnPrompt`]: the round boundary
-    /// parks the flow there, `open_battle_command` parks it there at battle
-    /// entry, and the first frame a session is live consumes it. A session
-    /// reopened mid-round (a submenu backed out of) finds the flow already on
-    /// the ring and is left alone, which is where retail's own rewind lands.
+    /// parks the flow there and battle entry leaves it at `Idle`, and
+    /// [`World::open_battle_command`] now builds the session **already on the
+    /// prompt** in both cases. What is left for this pass is the one ordering
+    /// it cannot cover - a session opened while the flow was elsewhere and
+    /// still open when the boundary parks it here. A session reopened
+    /// mid-round (a submenu backed out of) finds the flow on a window state
+    /// and is left alone, which is where retail's own cancel arms land.
     ///
     /// An **ambushed** party never reaches here on its lost round: the
     /// `ctx[+0x290]` side lockout ([`World::reseed_initiative`]) zeroes every

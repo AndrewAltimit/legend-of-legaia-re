@@ -6,6 +6,14 @@ The per-frame driver is `FUN_801cf3bc` (`overlay_fishing_801cf3bc.txt`). It is d
 
 **BGM.** Fishing loads **no BGM track of its own** - the overlay has no streaming-loader call (`8001fc00`). The `func_0x80026478(&DAT_8007056c)` calls in the fishing state machine are the **actor sound-source attach / re-pan** primitive (`FUN_80026478` in [`functions.md`](../reference/functions.md)) - the positional reel / water / cast **SFX** voice, not a BGM stream. So the music is whatever the **field / town scene the fishing spot lives in** was already playing (its op-`0x35` BGM), inherited unchanged - a spot in one town sounds different from a spot in another. This is the same host-scene-inherited shape as the [slot machine](minigame-slot-machine.md); there is no single "fishing theme" to pin.
 
+## Entry from the field
+
+The pond is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 100` (`sub_id 0`), which sets game mode `0x18` and loads PROT 0972. The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp); the port's id decoder is `legaia_engine_core::minigame_entry::MinigameSubId`.
+
+The op is the *only* way in - there is no menu, no dedicated opcode, and the fishing venue bundle (`other1`) carries essentially no field-VM script of its own. A disc-wide walk of every scene MAN finds the fishing door at exactly two sites, both signboard placements on the overworld: `map02` P1[7] and `map03` P1[19]. Census test: `crates/engine-core/tests/minigame_entry_census_disc.rs`.
+
+**Why `FUN_801cf3bc` has no caller.** It is not called; it is the `+0x08` tick word of the static 24-byte actor template at `0x801D8FF4`. The sub-id-0 init `FUN_801CF070` materialises that template and spawns an actor from it (`jal FUN_80020DE0` at `0x801CF22C`), and the per-frame pool walk then reaches it through `jalr actor[+0x0C]` in `FUN_8002519C`. A `jal` search for the driver's address returns zero by construction, which is the correct answer rather than a corpus gap.
+
 ## State machine
 
 `FUN_801cf3bc` switches on the mode-state word `DAT_801d926c` through a jump table, then runs a shared tail (`LAB_801d01a4`) that drives auxiliary animation timers, the HUD, and the global "press confirm to leave" check. The state values are sparse (the designers left gaps), and many states `+1` to advance to the next. Confirmed states:

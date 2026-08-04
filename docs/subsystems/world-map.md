@@ -16,13 +16,13 @@ below to jump within this page.
 - [Panel window system](#the-panel-window-system---fun_801e9b3c--fun_801e9dc8--fun_801ea9b0) - the script interpreter, the shared list cursor, the dev-menu row dispatcher
 - [Panel actor state machines](#the-panel-actor-state-machines) - the six `ctx[+0x54]` phase machines, the field party HUD, and the engine host under them
 - [Place-label pass](#the-place-label-pass---0x801cebb60x801cec30) - the named markers drawn over the map
-- [Key functions](#key-functions) - [controller `FUN_801E76D4`](#fun_801e76d4---world-map-controller-9320-bytes) · [debug-menu renderer `FUN_801EAD98`](#fun_801ead98---world-map-debug-menu-renderer-7280-bytes) · [entity tick `FUN_801DA51C`](#fun_801da51c---world-map-entity-tick-260-bytes)
+- [Key functions](#key-functions) - [top-view controller `FUN_801E76D4`](#fun_801e76d4---top-view-debug-controller-9320-bytes) · [debug-menu renderer `FUN_801EAD98`](#fun_801ead98---world-map-debug-menu-renderer-7280-bytes) · [entity tick `FUN_801DA51C`](#fun_801da51c---world-map-entity-tick-260-bytes)
 
 **Entity / encounter SM**
 - [Encounter-record installation](#encounter-record-installation) · [clean-room port](#clean-room-port---both-overworld-and-field) · [NPC dialogue text source](#npc-dialogue-text-source)
 
 **Overworld player + scenes**
-- [Player movement + region-keyed encounters](#overworld-player-movement--region-keyed-encounters) · [collision / walkability](#overworld-collision--walkability) · [camera-relative movement remap](#camera-relative-movement-remap) · [axis convention](#overworld-axis-convention) · [boot-path seeding](#boot-path-seeding)
+- [Player movement + region-keyed encounters](#overworld-player-movement--region-keyed-encounters) · [collision / walkability](#overworld-collision--walkability) · [not one walk component](#the-overworld-is-not-one-walk-component) · [camera-relative movement remap](#camera-relative-movement-remap) · [axis convention](#overworld-axis-convention) · [boot-path seeding](#boot-path-seeding)
 - [Entity / actor placement table](#entity--actor-placement-table) · [classifying the entity kind](#classifying-the-entity-kind-from-its-script) · [scene destinations](#scene-destinations) · [chapter-1 Drake hub sweep](#chapter-1-drake-hub-sweep)
 
 **Terrain + geometry**
@@ -59,9 +59,11 @@ now defaults to the wider window.
 
 ## Key functions
 
-### `FUN_801E76D4` - world map controller (9320 bytes)
+### `FUN_801E76D4` - top-view debug controller (9320 bytes)
 
-Entry: `(ctx_ptr)`. Handles:
+Entry: `(ctx_ptr)`. **It is not the overworld's per-frame controller**, and
+reading it as one has consequences well outside this page - see
+[below](#there-is-no-normal-walk-path-here). Handles:
 
 1. **Top-view debug toggle** - fires when `_DAT_8007B98C != 0` (debug flag) AND
    `_DAT_8007B850 == 0x4A` (pad mask) AND `_DAT_8007B874 == 0x40` (held mask).
@@ -77,8 +79,38 @@ Entry: `(ctx_ptr)`. Handles:
    - Bit `DAT_801F2B95 & 1`: enables `FUN_801E75DC`, the [screen-dim pass](#fun_801e75dc---top-view-screen-dim-pass-248-bytes)
    - Bit `DAT_801F2B95 & 2`: second animation flag
 
-3. **Normal-walk path** (`DAT_801F2B94 == 0`): standard per-frame world-map update
-   (field VM tick, actor step, camera follow via motion VM).
+#### There is no normal-walk path here
+
+The `DAT_801F2B94 == 0` branch is **not** a per-frame overworld update. The
+test at `0x801E779C` jumps to `0x801E9B14`, which is the function's own
+epilogue - eight register restores, `jr ra`, and the stack adjust in the delay
+slot. With top view off the function does nothing at all, and since entering
+top view needs the debug flag `_DAT_8007B98C` that retail leaves clear, that
+is the only path retail ever takes through it.
+
+```text
+801e7794  lbu   v0,0x2b94(v0)     ; DAT_801F2B94 (top-view flag)
+801e779c  beq   v0,zero,0x801e9b14
+...
+801e9b14  lw    ra,0x44(sp)       ; <- the epilogue
+801e9b34  jr    ra
+```
+
+The overworld's actual per-frame chain is the field one: `FUN_801D1344` →
+`FUN_801D01B0` (`jal` at `0x801D16F4`), the same pair a town runs, because the
+overworld is an ordinary `game_mode 0x03` field-run scene. `FUN_801D1344` opens
+by reading the map-view fade ramp `_DAT_8007BAF4` and, while it is non-zero,
+suppressing locomotion (`player+0x10 |= 0x80000`) and ticking `FUN_800196A4`
+instead - which is how the top view is entered in the first place.
+
+An earlier revision of this page described item 3 as "standard per-frame
+world-map update (field VM tick, actor step, camera follow via motion VM)".
+That reading is **falsified** by the branch target above. It mattered:
+`FUN_801E76D4` being "the world-map controller" is what supported the
+inference that the overworld would need a menu-open arm of its own, which in
+turn left the port's pause menu - and with it the Save row, legal only on
+these three scenes - unreachable on the overworld. See
+[`save-screen.md`](save-screen.md#where-the-save-rows-pad-route-is).
 
 ### `FUN_801E75DC` - top-view screen-dim pass (248 bytes)
 
@@ -874,31 +906,36 @@ via `install_world_map_entities_with_configs`):
 
 - `EncounterZone { formation_id }` - the entity spawns its own formation when
   it fires, instead of the map-wide shared one.
-- `Portal { target_map }` - engaging the entity
+- `MinigameDoor { sub_id }` - engaging the entity
   (`World::engage_world_map_entity`, the clean-room stand-in for retail's
-  player-position-in-zone trigger) drives the SM to its transition state and
-  surfaces a `FieldEvent::WorldMapTransition { target_map, slot }` for the host
-  to load the target scene. `target_map` is the 7-id door-warp `map_id` the
-  placement classifier reads off a partition-1 actor's `0x3E` warp.
+  player-position-in-zone trigger) drives the SM to its transition state, whose
+  arm arms the **mode-24 minigame door warp** (`World::arm_minigame_warp` +
+  `pending_minigame_warp`) exactly as the field-VM `0x3E` arm and the walk-touch
+  arm do. `sub_id` is `op0 - 100` off a partition-1 actor's genuine `0x3E`, a
+  *code-overlay* selector - never a map id, and never a scene transition. On the
+  three overworld scenes the disc's only such placements are the `map02` /
+  `map03` fishing signboards (`sub_id 0`).
 - `OverworldPortal { scene_name, index, entry_x, entry_z, dir }` - an overworld
   town/dungeon entrance sourced from the disc's `.MAP` walk-on tile-trigger ->
   MAN partition-2 record -> `0x3F` named-scene-change bridge
   (`man_field_scripts::overworld_portal_sites`). This is the **real** overworld
-  hop: the kingdom hubs (`map01`) have **no** partition-1 `Portal` placements -
+  hop: the kingdom hubs (`map01`) have **no** partition-1 door placements -
   each gate-1 kind-1 tile trigger references a partition-2 record whose script's
   `0x3F` carries the destination scene name + arrival tile straight from
-  bytecode. Engaging it surfaces the same `WorldMapTransition` (the `slot` points
-  back at the config); unlike `Portal`, it needs no `MapIdResolver` - the CDNAME
-  destination is in the data. `SceneHost::enter_world_map_scene` seeds one per
+  bytecode. Engaging it surfaces `FieldEvent::WorldMapTransition { dest_index,
+  slot }` - the **only** producer of that event - where `slot` points back at
+  the config and `dest_index` echoes the `0x3F` index. No `MapIdResolver` is
+  involved on any overworld path: the CDNAME destination is in the data.
+  `SceneHost::enter_world_map_scene` seeds one per
   bridge site at its trigger-tile centre, and the auto-engage-on-walkover trigger
   fires it when the player steps onto that tile.
 
 The producer/consumer seam: `WorldMapTransition` is emitted by the entity SM's
 `on_scene_transition` and **drained by `SceneHost::tick`** (the sibling of the
-named-`0x3F` drain). For an `OverworldPortal` the drain loads `scene_name`
+named-`0x3F` drain). The drain loads the `OverworldPortal`'s `scene_name`
 (field or world-map) and seats the player at the entry tile - the same arrival
-semantics as the named warp; for a door `Portal` it resolves `target_map`
-through the `MapIdResolver`. The story-gating is **the entrance record's own
+semantics as the named warp; a `MinigameDoor` raises no event at all, so it
+never reaches this drain. The story-gating is **the entrance record's own
 C1/C2 gate**: `SceneHost::enter_world_map_scene` runs each bridge site's
 partition-2 record through `partition2_record_gates` + `World::p2_record_gates_pass`
 (retail `FUN_8003BDE0` - C1 blocks the spawn if ANY listed flag is set, C2
@@ -1173,6 +1210,69 @@ path as the field and steps the overworld player through the shared
 `World::advance_with_collision`, so walls stop the player exactly as on the
 field.
 
+**Same probe, same step, both walks.** The world-map overlay's copy of
+`FUN_801cfe4c` is instruction-identical to the field overlay's - all 217
+instructions match by VA, from base-tagged dumps of both loads (see
+`ghidra/scripts/funcs/overlay_0897_801cfe4c.txt` and
+`ghidra/scripts/funcs/overlay_world_map_top_801cfe4c.txt`). The probe offset
+tables it indexes (`DAT_801f21b4`, `DAT_801f2214`) are data in overlay 0897,
+the same overlay in both cases - "world-map" is a subsystem of the field
+overlay, not a separate PROT entry. And the world-map-walk copy of
+`FUN_801d01b0` commits its axis steps in the same **2-unit** increments as the
+field (`addiu v0, v0, 0x2` / `-0x2` on the actor's `+0x14` / `+0x18`, loop
+cursor advanced by `2` per pass; see
+`ghidra/scripts/funcs/overlay_world_map_walk_801d01b0.txt`). So the overworld
+does not sample at a longer reach to match its higher per-frame speed - it
+takes more 2-unit sub-steps per frame, each re-probing at the same 47-48 units.
+
+### The overworld is not one walk component
+
+`map01`'s wall bits split the kingdom into **two** walk components, and what
+joins them is a scene, not a pass. Flooding the grid from Rim Elm's arrival
+tile `(96, 25)` reaches roughly 850 tiles' worth of ground and never reaches
+any of the six `keikoku` (Ravine) mouths; the two components are separated by
+at minimum four 64-unit wall sub-cells everywhere, the thinnest crossing
+sitting around world `(7584, 7584..7776)`.
+
+`suimon` is the crossing. `map01`'s partition-2 record `18`, fired by the
+kind-1 gate-1 trigger tiles `(55, 62)` and `(56, 61)` on the northern
+component, changes scene to `suimon`; `suimon`'s own records `0`/`1` return to
+`map01` tile `(54, 61)` on the northern side and its record `2` returns to
+`map01` tile `(59, 61)` on the **southern** one. Every `keikoku` mouth
+(`map01` partition-2 records `21`/`23`/`25`/`27`, tiles `(53, 93)`,
+`(53, 94)`, `(64, 68)`, `(77, 69)`, `(81, 82)`, `(81, 83)`) is on that
+southern side. So the chapter-1 approach to the Ravine is
+`map01 -> suimon -> map01 -> keikoku`, and a router that treats `suimon` as a
+portal to route around on the way to `keikoku` seals the route.
+
+Neither `suimon` record carries a spawn gate (`C1`/`C2` both empty); the
+`keikoku` records are gated `C1 = 0x193` (blocked *after* the Ravine is
+cleared), and the mist-wall band records `34`/`35`/`36` are gated
+`C1 = 0x482`.
+
+**Which chamber of `suimon` the crossing lands in is flag `0x27B`.** `map01`
+P2[18] is a two-armed `0x3F`: a `SysFlag.Test 0x27B` at bytecode `+0x0E`
+branches to `+0x2D` when the flag is set (the field VM's `0x7_` route takes
+the branch on **set**), and the two arms name the same scene at different
+entry tiles - `suimon (0x44, 0x2C)` = `(68, 44)` on the clear arm,
+`(0x15, 0x54)` = `(21, 84)` on the set one.
+
+They are opposite ends of the scene, and only one crosses. Flooding `suimon`'s
+own grid with its trigger tiles honoured, `(68, 44)` reaches a few thousand
+sub-cells and **none** of record `2`'s twenty southern-door tiles - its only
+exits are records `0`/`1`, back to the northern component. `(21, 84)` reaches
+the whole scene and all twenty. So with `0x27B` clear the crossing is a
+deliberate dead end: `suimon` is a sluice-gate puzzle, and its own scene-entry
+script `P1[0]` is what sets the flag.
+
+Recovering that second arm is what
+[`man_field_scripts::partition2_scene_changes`](../../crates/engine-core/src/man_field_scripts/scene_triggers.rs)
+does, and the trap is that "the arms differ" has to mean the whole
+destination, not the scene name. A post-beat dungeon variant differs by name
+(`map01`'s `dolk` -> `dolk2` on flag `0x142`); a two-ended pass names one
+scene twice and differs only in the arrival tile. A name-only comparison keeps
+the flag-clear arm forever and the pass never opens.
+
 ### Camera-relative movement remap
 
 The held d-pad is remapped through the overworld camera azimuth so "screen up"
@@ -1396,12 +1496,11 @@ linearly disassembles each placement's per-entity interaction script (records
 `1..` are the actor interaction scripts) and reads the kind off its
 distinguishing opcodes:
 
-- a **genuine warp** (the *base* `0x3E` with `op0` in `100..=106`, retail
-  `scene_transition`) → a **Portal** whose target is the field-VM map id
-  `op0 - 100` (`0..=6`). The map id selects a scene-*type* code overlay
-  (PROT `0x4d + map_id`), **not** a unique scene - the destination scene *name*
-  is set separately by the pre-WARP handler / scene-change packet, which lives in
-  an uncaptured overlay, so the id is reported raw (see
+- a **genuine warp** (the *base* `0x3E` with `op0` in `100..=106`) → a
+  **minigame door** carrying the mode-24 `sub_id = op0 - 100` (`0..=6`). The
+  sub-id selects a *code overlay* (PROT `0x4d + sub_id`), not a scene: the arm
+  calls no scene-change packet and the op carries no destination name, so there
+  is no map-id space here to resolve (see
   [`asset-loader.md` → WARP opcode flow](asset-loader.md#warp-opcode--minigame-door-warp-flow-sub_id));
 - an inline `0x1F`-lead **dialog-text block** or a **field interact** (`0x3E`
   with `op0 < 100`) and no warp → an **NPC** (sign / talk-to / event trigger).
@@ -1420,14 +1519,15 @@ text bytes), so the genuine-warp gate (`!extended && op0 in 100..=106`, see
 rejects it - `geremi` (a talk NPC, `op0=200`) and the leftover-JP `other7`
 (`op0=175/179`) used to mis-classify as portals to non-existent maps 75 / 79 / 86
 / 100. Real data: `town01` classifies 14 NPCs / 38 plain; across the whole PROT
-corpus exactly **11** genuine door-warp portals survive (all map_id `0..=6`),
-clustered in interior/town scenes (`koin1` exposes exits to maps 3/4/5, `koin3`
-to 6, `balden` to 3) plus a single overworld fishing-spot warp each on
-`map02`/`map03` (map id 0). A disc-gated regression
-(`world_map_portal_classification_disc.rs`) pins the invariant.
+corpus **12** genuine door placements survive (all `sub_id 0..=6`), clustered in
+interior/town scenes (`koin1` P1[9] / P1[51..53] / P1[54..56] to sub-ids 5 / 4 /
+3, `koin3` P1[16] to 6, `balden` and `balden2` P1[24] to 3) plus a single
+overworld fishing signboard each on `map02` P1[7] / `map03` P1[19] (sub-id 0). A
+disc-gated regression (`world_map_portal_classification_disc.rs`) pins the id
+range; `placement_interact_disc.rs` pins the per-door interaction records.
 
 `SceneHost::enter_world_map_scene` seeds these typed entities on the
-boot/transition path via [`World::install_world_map_entities_at`]: each Portal /
+boot/transition path via [`World::install_world_map_entities_at`]: each door /
 NPC placement installs a matching
 [`WorldMapEntityConfig`](../../crates/engine-core/src/world.rs) **with its spawn
 position** (Plain placements are skipped). So overworld portals + NPCs are
@@ -2132,7 +2232,8 @@ axes equally, so a diagonal would otherwise travel ~1.41x the cardinal speed.
 
 The portals fire themselves. [`World::auto_engage_world_map_portals`] runs each
 `tick_world_map` (right after locomotion, before the entity-SM step): any
-`Portal` entity whose placement tile (`pos >> 7`) matches the player's current
+walk-onto entity (`OverworldPortal` or `MinigameDoor`) whose placement tile
+(`pos >> 7`) matches the player's current
 tile is driven to its transition state - exactly what a host
 [`World::engage_world_map_entity`] call does - so the same tick's SM step
 surfaces the [`FieldEvent::WorldMapTransition`] with the portal's target map and
@@ -2433,7 +2534,7 @@ Standard tick functions observed in the world-map render passes:
 |---|---|---|
 | `FUN_80021DF4` (SCUS) | per-frame actor tick | Steps the move VM via `FUN_80023070(actor)`. The eight actors in list `_DAT_8007C350` use this tick. |
 | `FUN_8003BC08` (SCUS) | per-actor tick | Calls the motion VM (`FUN_8003774C`), move-buffer setup (`FUN_800204F8`), and overlay helper `FUN_801D79E8`. The fourteen actors in list `_DAT_8007C354` use this tick. |
-| `FUN_801E76D4` (world_map overlay) | world-map controller | Top-view debug toggle + camera scroll/azimuth/zoom + dev-menu render. |
+| `FUN_801E76D4` (world_map overlay) | top-view debug controller | Top-view toggle + camera scroll/azimuth/zoom + dev-menu render. Returns immediately when top view is off - it is not the overworld walk tick. |
 | `FUN_801DA51C` (world_map overlay) | per-entity tick | 5-state SM on `entity[+0x8A]` (see [actor-vm](actor-vm.md)). |
 | `FUN_801D1344` (world_map overlay) | horizon gate-arm wrapper | See the gate-arm chain below. |
 

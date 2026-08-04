@@ -261,10 +261,35 @@ double read that keeps retail's renderer and confirm arm from disagreeing.
 Its gate inputs are sampled off the world when the menu opens: the scene's
 save permission (`World::scene_save_allowed`, seeded at scene load by
 `World::install_scene_save_permission`) and the entry-context kind
-(`World::menu_entry_context_kind`). The save half is fully fed; the
-entry-context half cannot yet reach `0x0D`, because the port tags each
-op-`0x49` park with its owning context rather than keeping retail's single
-pointer and no path records the armed sub-op. See
+(`World::menu_entry_context_kind`). Both halves are fed.
+
+The kind byte is the op-`0x49` **sub-op**, and that is not an inference: the
+Idle arm reads the operand's first byte and then stores the operand *pointer*
+into the park, so what every consumer dereferences is the byte the arm just
+read.
+
+```text
+801e0984  lbu   v0,0x0(s6)        ; sub_op = *operand
+801e098c  sltiu v0,v0,0xe         ; >= 0x0E never arms at all
+801e09a8  sw    s6,-0x4bb0(s0)    ; _DAT_8007B450 = operand
+```
+
+The resume clears it again (`sw zero,-0x4bb0(s0)` at `0x801e08d8`, on the
+`== 1` Done sentinel). The port carries the byte itself rather than a
+pointer - `SubmodeScreen::park_sub_op`, written by `World::record_op49_park`
+from the field VM's arm and read by `World::menu_entry_context_kind` - still
+tagged with the context that armed it, because the port steps several
+field-VM contexts inside one `World::tick` where retail has one global.
+
+Only two routines in the whole image write a *dereferenceable* pointer
+there: this arm, and `FUN_801D0B90`'s countdown expiry, which points at the
+static record `DAT_801F2278` whose kind byte is `0x0B`. Every other writer
+stores `0` (clear) or the `1` Done sentinel - a sweep of all ten
+`sw rt,0xb450(rs)` sites across `SCUS_942.54` and every extracted PROT
+entry, which land in three images: SCUS, the field overlay and this one.
+So a kind byte other than `0x0B` is always a field script's own operand,
+which makes "which of these screens can retail reach" a **disc** question;
+`crates/engine-core/tests/op49_sub_op_census.rs` is the measurement. See
 [field-menu.md](field-menu.md#top-level-pause-menu).
 
 ### Engine port of the sub-screen graph
@@ -717,6 +742,68 @@ Everything between the session and the bytes is
 A host supplies only the bytes: the fifteen snapshots behind a port, and the
 load / write against them. `scripts/ci/check-ui-host-drift.py` pins the rack
 kind each host declares.
+
+### Where the Save row's pad route is
+
+Two scene-scoped facts have to intersect for the row to be reachable at all,
+and the intersection is the overworld:
+
+- **Save is overworld-only.** `_DAT_8007B6A8` is seeded from the scene MAN's
+  header bit, and across the disc that bit is set on the three kingdom
+  overworlds alone (see
+  [`field-menu.md`](field-menu.md#top-level-pause-menu)). In any other scene
+  the row draws grey and buzzes.
+- **The menu opens wherever the locomotion controller runs.** Retail's
+  menu-open accept is not a global Start handler - it is a leg of
+  `FUN_801D01B0`'s pre-movement header at `0x801D0250..0x801D032C`. So the
+  question "can the menu open here" is exactly "does this scene run
+  `FUN_801D01B0`", and the overworld does.
+
+**The overworld is not a separate mode.** All three kingdom overworlds are
+ordinary field-run scenes at `game_mode 0x03`, walked by the same
+`FUN_801D1344` → `FUN_801D01B0` chain as a town; only the loaded scene bundle
+differs (see [`world-map.md`](world-map.md#overworld-collision--walkability)).
+The controller carries its own proof: the base-step selector's `s4 = 5` arm at
+`0x801D0354` is taken exactly when `_DAT_8007B6A8` is set, which would be
+unreachable code if an overworld scene never entered the function.
+
+`FUN_801E76D4` is **not** a second controller that would need a Start arm of
+its own. It is the top-view debug renderer, and its `DAT_801F2B94 == 0` branch
+at `0x801E779C` jumps straight to the function epilogue at `0x801E9B14`;
+entering top view at all additionally needs the debug flag `_DAT_8007B98C`,
+which retail leaves clear. Reading it as the overworld's per-frame controller
+is what once made the port's Save row unreachable.
+
+The accept's own inputs, in order:
+
+| Step | Site | Test |
+|---|---|---|
+| Engaged bit | `0x801D01F0` | `player+0x10 & 0x80000` set → skip the whole header |
+| Menu button | `0x801D0250` | newly-pressed `_DAT_8007B874` vs the configurable mask `_DAT_800846D8` |
+| Lock refusal | `0x801D02C0` | `_DAT_1F800394 & 0x08000000` → deny buzz `0x23`, no menu |
+| Accept | `0x801D02E8` | cue `0x20`, raise `+0x10 \|= 0x80000`, spawn the menu actor via `FUN_80020DE0(&DAT_8007065C, _DAT_8007C34C)` |
+
+Note the two gates are independent globals: `_DAT_800846D8` decides which
+button opens the menu, `_DAT_8007B6A8` decides whether Save is legal in this
+scene. Widening one must not widen the other.
+
+**Engine port.** The port splits retail's single `game_mode 0x03` into
+`SceneMode::Field` (towns, fields) and `SceneMode::WorldMap` (the kingdom
+overworlds), so the open gate has to name both:
+`World::field_menu_open_allowed` is the whole precondition - the mode test
+`scene_mode_takes_menu_open` plus the engaged-bit stand-in
+`World::dialogue_owns_input` - and a host's Start edge calls it rather than
+spelling a mode test out locally. `BootSession::open_field_menu` stays the
+builder and enforces only the engaged-bit refusal, so headless drivers can
+still construct the session from any mode.
+
+Pinned from both directions:
+`crates/engine-core/tests/world_map_menu_gate.rs` asserts the mode partition
+(both walking modes admit, every suspended mode refuses) and that the scene the
+gate admits is the scene whose MAN sets the Save bit;
+`crates/engine-shell/tests/menu_replay.rs` rung 10 walks it by pad on `map01`
+through to a save commit, and its siblings pin that a town still greys the row
+and that Start stays inert in a battle.
 
 ## Relationship to `legaia_save`
 

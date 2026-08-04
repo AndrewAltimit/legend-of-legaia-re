@@ -87,6 +87,7 @@ pub mod menu_item_category;
 pub mod menu_list_rows;
 pub mod menu_open_sequence;
 pub mod menu_runtime;
+pub mod minigame_entry;
 pub mod minigame_floor;
 pub mod mode;
 pub mod monster_ai;

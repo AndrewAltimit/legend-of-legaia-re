@@ -1179,9 +1179,16 @@ impl SceneHost {
                     .into_iter()
                     .filter_map(|(p, kind)| {
                         let cfg = match kind {
+                            // `PlacementKind::Portal` is gated by
+                            // `is_genuine_warp` to `op0` in `100..=106`, so its
+                            // payload is the mode-24 minigame sub-id
+                            // (`op0 - 100`), not a map id - the same value the
+                            // field-VM and walk-touch arms carry. On the three
+                            // overworld scenes the disc's only such placements
+                            // are the `map02` / `map03` fishing signboards.
                             PlacementKind::Portal { target_map } => {
-                                crate::world::WorldMapEntityConfig::Portal {
-                                    target_map: target_map as u16,
+                                crate::world::WorldMapEntityConfig::MinigameDoor {
+                                    sub_id: target_map,
                                 }
                             }
                             PlacementKind::Npc {
@@ -1693,56 +1700,49 @@ impl SceneHost {
         // BGM-router `leftover`. Drain it here (the overworld->dungeon hop) and
         // load the destination.
         //
-        // The `slot` points back at the engaged entity's config:
-        // - an [`crate::world::WorldMapEntityConfig::OverworldPortal`] carries
-        //   the exact CDNAME destination + arrival tile (the `map01` `0x3F`
-        //   bridge), so it loads that scene and seats the player at the entry
-        //   tile - the same arrival semantics as the named `0x3F` warp above;
-        // - a door-warp [`crate::world::WorldMapEntityConfig::Portal`] carries
-        //   only the 7-id door `map_id`, resolved through the [`MapIdResolver`]
-        //   (the same `0..=6` scene-*type* space the field-VM `0x3E` warp uses).
-        if let Some((target_map, slot)) = self.world.take_world_map_transition() {
+        // The `slot` points back at the engaged entity's config, and only an
+        // [`crate::world::WorldMapEntityConfig::OverworldPortal`] raises the
+        // event: it carries the exact CDNAME destination + arrival tile (the
+        // `map01` `0x3F` bridge), so it loads that scene and seats the player
+        // at the entry tile - the same arrival semantics as the named `0x3F`
+        // warp above. `dest_index` is that entrance's `0x3F` index and is
+        // **not** resolved as a map id; the door-warp id space belongs to
+        // [`crate::world::WorldMapEntityConfig::MinigameDoor`], which arms the
+        // minigame warp drained below instead of raising this event.
+        if let Some((dest_index, slot)) = self.world.take_world_map_transition() {
             self.world.pending_scene_transition = None;
-            match self.world.world_map_entity_configs.get(slot as usize) {
-                Some(crate::world::WorldMapEntityConfig::OverworldPortal {
-                    scene_name,
-                    entry_x,
-                    entry_z,
-                    dir,
-                    ..
-                }) => {
-                    let name = scene_name.clone();
-                    let (entry_x, entry_z, dir) = (*entry_x, *entry_z, *dir);
-                    if is_world_map_scene(&name) {
-                        self.enter_world_map_scene(&name)?;
-                    } else {
-                        self.enter_field_scene(&name, 0)?;
-                    }
-                    self.world.seat_player_at_tile(entry_x, entry_z);
-                    self.world.face_player_sector(dir);
-                    self.spawn_arrival_trigger_record(entry_x, entry_z);
-                    return Ok(SceneTickEvent::SceneEntered { name });
+            if let Some(crate::world::WorldMapEntityConfig::OverworldPortal {
+                scene_name,
+                entry_x,
+                entry_z,
+                dir,
+                ..
+            }) = self.world.world_map_entity_configs.get(slot as usize)
+            {
+                let name = scene_name.clone();
+                let (entry_x, entry_z, dir) = (*entry_x, *entry_z, *dir);
+                if is_world_map_scene(&name) {
+                    self.enter_world_map_scene(&name)?;
+                } else {
+                    self.enter_field_scene(&name, 0)?;
                 }
-                _ => {
-                    // Door-warp portal (or a portal whose config row is gone):
-                    // resolve the 7-id door `map_id` through the resolver.
-                    match self.map_resolver.resolve(target_map as u8) {
-                        Some(name) => {
-                            if is_world_map_scene(&name) {
-                                self.enter_world_map_scene(&name)?;
-                            } else {
-                                self.enter_field_scene(&name, 0)?;
-                            }
-                            return Ok(SceneTickEvent::SceneEntered { name });
-                        }
-                        None => {
-                            return Ok(SceneTickEvent::UnknownMapId {
-                                map_id: target_map as u8,
-                            });
-                        }
-                    }
-                }
+                self.world.seat_player_at_tile(entry_x, entry_z);
+                self.world.face_player_sector(dir);
+                self.spawn_arrival_trigger_record(entry_x, entry_z);
+                return Ok(SceneTickEvent::SceneEntered { name });
             }
+            // The config row is gone (a host installed the event by hand, or
+            // the entity set was replaced mid-tick). There is no id space left
+            // to resolve `dest_index` against, so drop it rather than route it
+            // through a resolver it does not belong to.
+            let _ = dest_index;
+        }
+        // The mode-24 minigame door-warp drains ahead of the map-id
+        // transition: it is the op-`0x3E` `op0 >= 100` arm, and its id is a
+        // minigame sub-id, not a map id (see `crate::minigame_entry`).
+        if let Some(outcome) = self.drain_minigame_warp() {
+            self.last_minigame_warp = Some(outcome);
+            return Ok(SceneTickEvent::Stepped);
         }
         if let Some(map_id) = self.world.pending_scene_transition.take() {
             match self.map_resolver.resolve(map_id) {

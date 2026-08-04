@@ -110,6 +110,31 @@ pub struct SubmodeScreen {
     /// The field-VM context that armed this park - see [`Op49ParkOwner`].
     /// Only that context's op-`0x49` reads [`Self::open`] / [`Self::done`].
     pub owner: Op49ParkOwner,
+    /// The armed park's **kind byte**: retail's `*_DAT_8007B450`.
+    ///
+    /// Retail stores the op-`0x49` *operand pointer* in the park
+    /// (`sw s6,-0x4bb0(s0)` at `0x801e09a8`) and every consumer
+    /// dereferences its first byte, which is the sub-op the arm read one
+    /// instruction earlier (`lbu v0,0x0(s6)` at `0x801e0984`). The port has
+    /// no RAM pointer, so it keeps the byte itself - the whole of the
+    /// pointer any consumer actually uses.
+    ///
+    /// `None` is retail's null park (nothing armed). It is set for **every**
+    /// sub-op, including the three the port resolves through dedicated host
+    /// paths ([`OP49_DEDICATED_SUB_OPS`]), because retail's single global is
+    /// written before the port's paths diverge.
+    ///
+    /// Cleared on resume, which retail also does: the Done arm reads the
+    /// sentinel and zeroes the slot before advancing.
+    ///
+    /// ```text
+    /// 801e08c8  lw   v0,-0x4bb0(s0)     ; the park
+    /// 801e08d0  bne  v0,s1,0x801e097c   ; s1 = 1, the Done sentinel
+    /// 801e08d8  sw   zero,-0x4bb0(s0)   ; resume clears it
+    /// ```
+    ///
+    /// REF: FUN_801DE840 (op `0x49` arm + Done arms)
+    pub park_sub_op: Option<u8>,
     /// `_DAT_8007BB9C` - the selected menu-list row's **class nibble**, which
     /// the entry list's equipment sub-panel reads to decide where its
     /// comparison candidate comes from (see [`World::set_hub_equip_mode`]).
@@ -238,6 +263,36 @@ impl World {
             Op49ParkOwner::CutsceneTimeline
         } else {
             Op49ParkOwner::HelperContext
+        }
+    }
+
+    /// Record an op-`0x49` arm's **kind byte** - retail's
+    /// `_DAT_8007B450 = operand`, reduced to the one byte every consumer
+    /// dereferences.
+    ///
+    /// Called from the field VM's arm edge for every sub-op, so the three
+    /// the port resolves through dedicated host paths are recorded too;
+    /// retail's store happens before any of those paths would diverge.
+    ///
+    /// The owner tag is the same one [`World::open_field_submode_screen`]
+    /// applies, for the same reason: retail has one global and the port
+    /// steps several field-VM contexts inside one `World::tick`, so a park
+    /// armed by one context must not answer another context's question.
+    ///
+    /// PORT: FUN_801DE840 (`0x801e0984` / `0x801e09a8`)
+    pub fn record_op49_park(&mut self, sub_op: u8) {
+        self.submode_screen.owner = self.op49_park_owner();
+        self.submode_screen.park_sub_op = Some(sub_op);
+    }
+
+    /// Clear the park on resume - retail's `sw zero,-0x4bb0(s0)` at
+    /// `0x801e08d8`, which runs on the Done edge before the PC advances.
+    ///
+    /// Only the context that armed the park may clear it, for the same
+    /// reason it is the only one that may read it.
+    pub fn clear_op49_park(&mut self) {
+        if self.submode_screen.owner == self.op49_park_owner() {
+            self.submode_screen.park_sub_op = None;
         }
     }
 

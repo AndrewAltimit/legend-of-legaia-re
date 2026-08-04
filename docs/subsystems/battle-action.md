@@ -117,6 +117,18 @@ over", not "the battle is over".
 Read the two rows together and the table already said so: the `0x5A` row routes wipes to
 the signal and only the everyone-has-acted path to `0xFF`.
 
+**What the `0xFF` handler does, and why the C never shows it.** Slot `0xFF` of the jump
+table at `0x801CED44` points at `0x801E67E8`, whose whole body is two writes into the
+battle context: `ctx[+0x06] = 0x14` (`0x801E67F4`), which hands the round back to the
+command-flow SM's round-start arm, and `ctx[+0x28A] += 1` (`0x801E6810`) around a call to
+`FUN_801F45A4`. Nothing inside `FUN_801E295C` branches to that address - the only way in
+is the `jr v0` at `0x801E2AAC` - so a decompiler pass that does not resolve the table
+reports `Removing unreachable block (ram,0x801E67E8)` and the round bump disappears from
+the C. Take it off the table and the disassembly. The command-flow side of the same
+handshake is in [`battle.md`](battle.md#the-round-loop---what-re-arms-0x1e); `0x14` then
+stores `0x1E` unconditionally, which is why the `Begin` / `Run` prompt is a property of
+the round rather than of a battle's first turn.
+
 **Port.** `engine_vm::battle_action` maps `0xFF` to `ActionState::RoundEnd`, whose
 handler rewinds the turn cursor and hands control back through the
 `EndOfAction` state - the state the arming driver keys the next turn on; the retail
@@ -744,6 +756,35 @@ holds its own `0x51` open until every party readout settles, so **the drain a
 menu restore could interrupt has always finished before the menu can act** -
 the inter-action race is closed by the very wait this page documents. The
 intra-action Final Heal is the one crack, and it is measured tight above.
+
+##### Port: the seed is per call site, and dropping it is unconditional
+
+Retail cannot reach the absorbing state without the timing race above, because
+the applier that writes live HP is the same routine that seeds the accumulator.
+A port that separates them loses that guarantee: a heal that writes live HP
+alone leaves `hp != hp_display` with `+0x10 == 0` on *every* use, not on a
+raced one, and the next party-targeted action parks at `0x51` with no exit -
+not even winning the fight, because the turn pump that resolves a wipe is the
+thing waiting.
+
+`engine-core`'s `World::use_item` is exactly that split: it is shared with the
+field menu, where there is no readout to move. The battle call sites therefore
+carry the seed themselves, through
+[`BattleActor::assign_hp_bar`](../../crates/engine-vm/src/battle_action/types.rs)
+(the `-delta` assign, `battle_hp_bar::assign_pending`):
+
+| Port site | Retail counterpart |
+|---|---|
+| `World::apply_battle_item` (the battle item menu's applier) | `FUN_800402F4` class 0 / 1 heal arms |
+| `fold_spell_outcome`'s `Revive` arm | `FUN_800402F4` class 4 revive arm |
+| `apply_final_heal_revives` | `FUN_801E6968`'s two `FUN_800402F4(4, 1, slot)` calls |
+
+Damage and heal spells already route through `World::apply_battle_hp_delta`,
+which is the accumulating convention (`FUN_801EC3E4`). Regression:
+`engine-core` `a_battle_item_heal_keeps_the_readout_and_the_turn_pump_alive`
+(pad-driven, disc-free) and the `item` rung of `engine-shell`'s
+`battle_depth_replay`, which runs in the same fight as the rungs after it so a
+park costs rungs instead of being restarted around.
 
 #### The `(class, tier)` seed at state `0x3C`
 

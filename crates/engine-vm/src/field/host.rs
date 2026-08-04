@@ -168,13 +168,34 @@ pub trait FieldHost {
         let _ = (interact_id, slot);
     }
 
-    /// Trigger a scene transition (op 0x3E, `op0 >= 100` path). The original
-    /// stores `_DAT_8007BA34 = op0 - 100` (the new map id), sets
-    /// `_DAT_8007B83C = 0x18`, clears `player.flags & 0x80000`, and invokes
-    /// `func_0x8003CE08(0xE)`. The VM clears `ctx.flags & 0x80000` itself
-    /// so a no-op host still mirrors the player-flag write.
+    /// Trigger a scene transition by map id.
+    ///
+    /// **Not reachable from op `0x3E` any more.** The `op0 >= 100` arm is the
+    /// mode-24 minigame door-warp, not a scene change - see
+    /// [`Self::minigame_door_warp`]. This entry point survives for hosts that
+    /// drive a map-id transition from a *non*-script producer (the field MAP's
+    /// walk-on door triggers), which do carry real map ids.
     fn scene_transition(&mut self, map_id: u8) {
         let _ = map_id;
+    }
+
+    /// The **mode-24 minigame door-warp** (op `0x3E`, `op0 >= 100`).
+    ///
+    /// `sub_id` is `op0 - 100` and selects a *code overlay*, not a scene: the
+    /// arm stores `_DAT_8007BA34 = sub_id` and `_DAT_8007B83C = 0x18` (game
+    /// mode 24 `OTHER INIT`), zeroes the session-winnings accumulator
+    /// `_DAT_80084440` and `_DAT_8007BAC0`, clears `player[+0x10] & 0x80000`,
+    /// and calls `func_0x8003CE08(0xE)`. It calls **no** scene-change packet -
+    /// the op carries no destination name, because the destination is the
+    /// overlay the mode-24 init loads with `FUN_8003EBE4(sub_id + 0x4D)`. The
+    /// VM clears `ctx.flags & 0x80000` itself, so a no-op host still mirrors
+    /// the player-flag write.
+    ///
+    /// The whole `sub_id` space is `0..=6`; hosts decode it with
+    /// `engine-core`'s `MinigameSubId`.
+    // REF: FUN_801DE840 case 0x3e at 0x801E078C
+    fn minigame_door_warp(&mut self, sub_id: u8) {
+        let _ = sub_id;
     }
 
     /// Trigger a *named* scene transition (op `0x3F`, the named scene-change /
@@ -326,12 +347,33 @@ pub trait FieldHost {
         Op49State::Idle
     }
 
-    /// Arm the op-49 state machine. `pc` is the bytecode offset of the
-    /// opcode byte, `field_90` is the opaque actor-handle captured for
-    /// sub-op 1 (and `_DAT_8007B44C` in the original). Hosts hold this
-    /// until [`FieldHost::op49_state`] returns `Done`.
-    fn op49_arm(&mut self, pc: usize, field_90: u32) {
-        let _ = (pc, field_90);
+    /// Arm the op-49 state machine. `sub_op` is the operand's first byte,
+    /// `pc` the bytecode offset of the opcode byte, and `field_90` the
+    /// opaque actor-handle captured for sub-op 1 (`_DAT_8007B44C` in the
+    /// original). Hosts hold this until [`FieldHost::op49_state`] returns
+    /// `Done`.
+    ///
+    /// `sub_op` is not decoration: retail arms the park with the **operand
+    /// pointer**, and every downstream consumer dereferences that pointer's
+    /// first byte, so the sub-op *is* the park's kind byte.
+    ///
+    /// ```text
+    /// 801e0984  lbu   v0,0x0(s6)        ; sub_op = *operand
+    /// 801e098c  sltiu v0,v0,0xe         ; sub_op < 0xE or no arm at all
+    /// 801e09a0  jal   0x80020de0        ; spawn the driver
+    /// 801e09a8  sw    s6,-0x4bb0(s0)    ; _DAT_8007B450 = operand
+    /// ```
+    ///
+    /// The menu overlay's outer dispatcher then routes on exactly that byte
+    /// (`FUN_801DC6B4` at `0x801dc88c..0x801dc8e4`): `0` opens sub-screen
+    /// `0x1A`, `1` opens `0x19`, `7` opens `0x20` and `0x0D` opens `4`. A
+    /// host that drops the sub-op here can never answer "which flow opened
+    /// this menu", which is why the trait carries it rather than leaving
+    /// hosts to re-read the bytecode.
+    ///
+    /// REF: FUN_801DE840 (op `0x49` Idle arm), FUN_801DC6B4 (the consumer)
+    fn op49_arm(&mut self, sub_op: u8, pc: usize, field_90: u32) {
+        let _ = (sub_op, pc, field_90);
     }
 
     /// Clear the op-49 state machine back to `Idle`. Called when the

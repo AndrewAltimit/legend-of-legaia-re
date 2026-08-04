@@ -477,11 +477,14 @@ pub fn step<H: FieldHost>(
         // - INTERACT (`op0 == 0xFF` or `op0 < 100`): `[3E, op0, op1]`,
         //   PC += 3. Calls `host.field_interact(op0, op1)`.
         //
-        // - WARP / scene transition (`op0 >= 100`): `[3E, op0, _, _, _, _]`,
-        //   PC += 6. `map_id = op0 - 100`. The original clears the player
-        //   ctx's bit `0x80000`; we mirror that on the active ctx (which is
-        //   the player at the time scripts call this) and let the host
-        //   override scene-side state.
+        // - WARP (`op0 >= 100`): `[3E, op0, _, _, _, _]`, PC += 6. This is the
+        //   **mode-24 minigame door-warp**, not a scene change: `sub_id =
+        //   op0 - 100` selects a code overlay (`FUN_8003EBE4(sub_id + 0x4D)`
+        //   in the mode-24 init), and the arm calls no scene-change packet at
+        //   all. See `host.minigame_door_warp`. The original clears the
+        //   player ctx's bit `0x80000`; we mirror that on the active ctx
+        //   (which is the player at the time scripts call this) and let the
+        //   host own the mode transition.
         0x3E => {
             let Some(&op0) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -495,9 +498,9 @@ pub fn step<H: FieldHost>(
                     next_pc: pc + header_size + 2,
                 }
             } else {
-                let map_id = op0 - 100;
+                let sub_id = op0 - 100;
                 ctx.flags &= !0x80000;
-                host.scene_transition(map_id);
+                host.minigame_door_warp(sub_id);
                 StepResult::Advance {
                     next_pc: pc + header_size + 5,
                 }

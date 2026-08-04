@@ -36,11 +36,20 @@ The port draws a hard line between the retail-faithful mode and everything layer
 | `Renderer::set_semi_blend` | **on** | Retail ABE semi-transparency blending. On because it *is* retail. |
 | `CameraDistance` (`T`) / debug orbit camera (`C`) | `Far` / off | Framing only; never feeds the simulation. |
 | WebXR [VR mode](vr-mode.md) | off | Stereo presentation on the site's WebGL pages, not the wgpu path. |
+| `World::poll_minigame_escape` (Start inside a minigame) | **on**, not a knob | Leaves any of the five mode-24 minigames. Retail quits each through its own overlay's SM - a different control in a different overlay per game - and the port has none of those arms wired to a control a player can find, so without this an entered minigame is a softlock ([below](#every-minigame-must-be-leavable)). Each game's own `exit_*` runs, so the cash-out / leg report / point bank match a deliberate exit. |
 
 Two details are worth having straight, because the direction is not uniform:
 
 - **Shading defaults to retail.** The field path has no runtime light source at all - both retail TMD renderers issue exactly one GTE colour op (`DPCS`, the depth cue) and never an `NC*` op, so shading is baked into the TMD colour words and applied as `texel * colour / 128`. The engine's field pipelines draw exactly that. `dyn_light` is layered *over* it and is an exact identity when disabled, which is what keeps the render oracles honest. See [`crates/engine-render/src/dyn_light.rs`](../../crates/engine-render/src/dyn_light.rs) and [renderer](renderer.md).
 - **Rasterisation defaults to clean.** `psx_mode` is off, so the default image is sharper than a PlayStation's: no sub-pixel vertex snap and no 15-bit ordered dither. Here faithfulness is the mode you opt into, not the default.
+
+### Every minigame must be leavable
+
+A mode the player can *enter* has to be one the player can *leave*, on every host, or reaching it is a softlock. `SceneHost::drain_minigame_warp` already states that invariant for its failure arms - "a script that armed a warp must never be left in a mode with no exit" - and it holds for the successful ones too.
+
+It is not free, because retail does not have one exit to port. Each of the five minigames quits through its own overlay's state machine: the slot cabinet's exit menu row, the duel's decided-match confirm, the arena's give-up arm. None of those was wired to a control on any shipped host - the native window exposes developer hotkeys (`O` / `B` / `M`) and the browser play page does not draw four of the five modes at all, so entering one there left a frozen field with the BGM still running and no input that did anything.
+
+`World::poll_minigame_escape` is therefore an engine affordance rather than a port: Start leaves whichever minigame is live, through that game's own `exit_*`, and closes the mode-24 round trip ([`minigame_return_warp`](#)) when the entry came through a door warp. It lives in `World::tick`, so both hosts inherit it and neither can drift from the other. Pinned by `engine-shell/tests/casino_floor_softlock.rs`, which enters each of the five the way the door warp does and asserts a pad press gets back out.
 
 `CameraDistance::Far` is the interactive `play-window` default (1.35x retail's eye-back distance); `CameraDistance::Retail` is the pinned retail framing and the type's own `Default`.
 

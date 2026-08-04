@@ -611,12 +611,26 @@ transition-frame primitive rather than something to run every frame.
 
 ### Screen-space ordering-table pass
 
-`engine-render`'s `screen_overlay` is the 2D half of the renderer: PSX
-`POLY_FT4` / `POLY_GT4` quads plus flat quads, drawn back-to-front by
-ordering-table bucket with per-ABR semi-transparency, sampling the shared VRAM
-through the same CLUT decode the 3D VRAM-mesh path uses. `order_primitives`
-reproduces `AddPrim` + `DrawOTag` exactly: descending OT index, LIFO within a
-bucket.
+The 2D half of the renderer: PSX `POLY_FT4` / `POLY_GT4` quads plus flat quads,
+drawn back-to-front by ordering-table bucket with per-ABR semi-transparency,
+sampling the shared VRAM through the same CLUT decode the 3D VRAM-mesh path
+uses. `order_primitives` reproduces `AddPrim` + `DrawOTag` exactly: descending
+OT index, LIFO within a bucket.
+
+**The model is renderer-agnostic and lives in `engine-ui::screen_prim`**: the
+primitive record (`ScreenPrim` / `ScreenQuad` / `FlatQuad`), the ABR extraction,
+the ordering-table sort, and `build_geometry`, which is the *only* public route
+from a primitive list to something drawable. `engine-render`'s `screen_overlay`
+re-exports all of it at its old path and adds the wgpu-side wiring plus the
+afterimage packet builder; the browser play page links the same module and
+uploads the same three arrays to WebGL2.
+
+A host never receives a primitive list, only `build_geometry`'s output - a
+vertex buffer, an index buffer and a run table - so the OT order is baked into
+the index buffer before either host sees it. Two hosts cannot disagree about a
+sort neither of them performs, which is the point of putting it in the shared
+leaf: an ordering divergence surfaces as one blended quad stacking wrong on one
+host, under one camera angle, which no diff and no single screenshot catches.
 
 Two things about how it reaches the frame:
 
@@ -641,10 +655,14 @@ colours (`POLY_GT4`). The gradient is not decoration: a transition quad's
 descriptor carries a separate top-edge and bottom-edge colour, and the two
 differing is what makes the quad a gradient.
 
-The pass is native-only. The browser hosts have the VRAM page and the 3D CLUT
-decode but no screen-space primitive type - see
-[`host-drift.md`](../tooling/host-drift.md#screen-space-psx-primitives-what-the-web-host-would-need)
-for exactly what would have to exist.
+Both the native window and the browser play page draw this list; the page's
+WebGL2 pass runs the same fragment decode, binds the same four ABR equations its
+3D blend pass uses, and consumes the shared builder's output verbatim. What the
+page cannot do is *produce* the list: the emitters live in `engine-render`
+(which links wgpu) and every transition style textures its geometry with a
+captured field frame the page never reads back. See
+[`host-drift.md`](../tooling/host-drift.md#screen-space-psx-primitives-across-the-two-hosts)
+for the capability ledger.
 
 ### The field-to-battle transition emitter
 
@@ -674,8 +692,11 @@ it - the ordinary random encounter's tile shatter included - see
 [`cutscene.md`](cutscene.md#which-style-a-battle-gets) for how a battle's style
 is selected.
 
-The native play window is the only host that reaches any of this; see
-[`host-drift.md`](../tooling/host-drift.md#screen-space-psx-primitives-what-the-web-host-would-need).
+The native play window is the only host that reaches the *style bodies*. The
+browser page draws the transition's **fade** layer - resolved by the same shared
+`intro_fade` ramp and built by the same shared `screen_prim::fade_prim` packet -
+over its still-rendering field, and nothing else of the transition; see
+[`host-drift.md`](../tooling/host-drift.md#screen-space-psx-primitives-across-the-two-hosts).
 
 ### Targeted VRAM upload
 

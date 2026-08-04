@@ -36,8 +36,16 @@
 //! [`FieldMenuSession::resume`] when control returns.
 
 use crate::pause_screens::{
-    ROOT_MENU_ROUTES, ROOT_MENU_ROWS, RootMenuRoute, root_menu_confirm_route,
+    ROOT_MENU_ROUTES, ROOT_MENU_ROWS, RootMenuRoute, root_menu_cancel_route,
+    root_menu_confirm_route,
 };
+
+/// The ready check's Yes row (`DAT_801E46D0 & 0xFFF == 0` at `0x801d6de4`).
+pub const READY_CONFIRM_YES_ROW: u8 = 0;
+/// The row retail seeds the ready check's cursor to - `1`, which is No
+/// (`li v0,0x1; sw v0,0x46d0(v1)` at `0x801d6d78`). Same "No is the
+/// default" convention the prize confirm and the shop confirm follow.
+pub const READY_CONFIRM_DEFAULT_ROW: u8 = 1;
 
 /// One menu row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -178,8 +186,46 @@ impl Default for FieldMenuGate {
 /// Phase of the field-menu SM.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldMenuPhase {
+    /// Retail sub-screen `4` (`FUN_801DD1B8`) - the notice panel the
+    /// save/menu driver **opens on** when the entry-context kind is
+    /// [`crate::pause_screens::ROOT_MENU_CONTEXT_LOCKED`]. It opens window
+    /// `6` (script `0x801E4BE0`), waits for a confirm-or-cancel press and
+    /// hands to the root picker; there is no cursor and no second exit.
+    ///
+    /// ```text
+    /// 801dd224  lw   v1,0x590(v0)     ; the confirm mask
+    /// 801dd228  lw   a0,0x594(v0)     ; the cancel mask
+    /// 801dd230  or   v1,v1,a0         ; either press
+    /// 801dd23c  ...
+    /// 801dd24c  sw   s1,0x46a4(v0)    ; s1 = 1 -> the root picker
+    /// ```
+    ///
+    /// PORT: FUN_801DD1B8
+    Notice,
     /// Player is browsing the row list.
     Browsing { cursor: u8 },
+    /// Retail sub-screen `3` (`FUN_801D6D38`) - the two-row ready check the
+    /// root picker's **cancel** hands to under the same kind
+    /// ([`root_menu_cancel_route`]). It opens window `5` (script
+    /// `0x801E4BD4`) with the cursor seeded to row `1`, and its two
+    /// headings are a battle-start ready check rather than a leave prompt
+    /// (`FUN_801D61B0`'s own string pointers - see
+    /// [`crate::pause_screens::READY_CONFIRM_HEADING_VAS`]).
+    ///
+    /// Row `0` (Yes) routes to sub-screen `0`, which ends the menu; row `1`
+    /// (No) and the cancel button both return to the root picker
+    /// (`0x801d6dbc..0x801d6df8`).
+    ///
+    /// PORT: FUN_801D6D38
+    ReadyConfirm {
+        /// The two-row choice cursor (`DAT_801E46D0`): `0` = Yes, `1` = No.
+        cursor: u8,
+        /// The root picker's row to come back to. Retail's picker cursor is
+        /// its own global (`DAT_801E46BC`) and this screen never touches it,
+        /// so returning lands the player back on the row they cancelled
+        /// from rather than at the top of the list.
+        resume_row: u8,
+    },
     /// Player confirmed a row; shell pushes the sub-session and engines call
     /// [`FieldMenuSession::resume`] when control returns.
     Suspended { row: FieldMenuRow },
@@ -197,10 +243,18 @@ pub enum FieldMenuOutcome {
 }
 
 /// Per-frame input bundle.
+///
+/// `left` / `right` exist for the horizontal two-row choice group the
+/// kind-`0x0D` ready check drives (`FUN_801D688C(&DAT_801E46D0, 2, 1)` -
+/// the trailing `1` is the horizontal flag, the same call shape the prize
+/// confirm and the shop's Yes/No use). Every other screen here is vertical
+/// and leaves them `false`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FieldMenuInput {
     pub up: bool,
     pub down: bool,
+    pub left: bool,
+    pub right: bool,
     pub cross: bool,
     pub circle: bool,
     pub start: bool,
@@ -219,6 +273,16 @@ pub enum FieldMenuEvent {
         row: FieldMenuRow,
     },
     Cancelled,
+    /// The kind-`0x0D` notice panel (sub-screen `4`) took its press and
+    /// handed to the root picker.
+    NoticeDismissed,
+    /// Cancel opened the kind-`0x0D` ready check (sub-screen `3`) instead
+    /// of closing the menu.
+    ReadyConfirmOpened,
+    /// The ready check's cursor moved (`0` = Yes, `1` = No).
+    ReadyConfirmMoved {
+        cursor: u8,
+    },
     /// Shell is about to push the matching sub-session.
     EnteringSub {
         row: FieldMenuRow,
@@ -381,8 +445,63 @@ impl FieldMenuSession {
     pub fn tick(&mut self, input: FieldMenuInput) -> Vec<FieldMenuEvent> {
         let mut events = Vec::new();
         match self.phase {
+            // Sub-screen 4: one press, either button, then the root picker.
+            // Retail stalls on `confirm | cancel` and nothing else - it ORs
+            // the two masks at `0x801dd230` - so Start does not dismiss it
+            // even though Start closes the picker underneath.
+            FieldMenuPhase::Notice => {
+                if input.cross || input.circle {
+                    self.phase = FieldMenuPhase::Browsing { cursor: 0 };
+                    events.push(FieldMenuEvent::NoticeDismissed);
+                }
+            }
+            // Sub-screen 3: a horizontal two-row choice seeded to No.
+            FieldMenuPhase::ReadyConfirm { cursor, resume_row } => {
+                if input.circle {
+                    // Retail's cancel arm returns to the root picker - the
+                    // same destination row 1 takes.
+                    self.phase = FieldMenuPhase::Browsing { cursor: resume_row };
+                    events.push(FieldMenuEvent::Cancelled);
+                    return events;
+                }
+                let mut new_cursor = cursor;
+                if input.left {
+                    new_cursor = cursor.saturating_sub(1);
+                } else if input.right {
+                    new_cursor = (cursor + 1).min(1);
+                }
+                if new_cursor != cursor {
+                    self.phase = FieldMenuPhase::ReadyConfirm {
+                        cursor: new_cursor,
+                        resume_row,
+                    };
+                    events.push(FieldMenuEvent::ReadyConfirmMoved { cursor: new_cursor });
+                }
+                if input.cross {
+                    if new_cursor == READY_CONFIRM_YES_ROW {
+                        // Sub-screen 0: the menu ends.
+                        self.phase = FieldMenuPhase::Done(FieldMenuOutcome::Closed);
+                        events.push(FieldMenuEvent::Cancelled);
+                    } else {
+                        self.phase = FieldMenuPhase::Browsing { cursor: resume_row };
+                    }
+                }
+            }
             FieldMenuPhase::Browsing { cursor } => {
                 if input.circle || input.start {
+                    // Retail's cancel arm routes through the entry-context
+                    // kind rather than closing unconditionally: kind 0x0D
+                    // hands to sub-screen 3 and the menu stays up.
+                    if root_menu_cancel_route(self.gate.entry_context_kind)
+                        == crate::pause_screens::CONTEXT_LOCKED_CANCEL_SUBSCREEN
+                    {
+                        self.phase = FieldMenuPhase::ReadyConfirm {
+                            cursor: READY_CONFIRM_DEFAULT_ROW,
+                            resume_row: cursor,
+                        };
+                        events.push(FieldMenuEvent::ReadyConfirmOpened);
+                        return events;
+                    }
                     self.phase = FieldMenuPhase::Done(FieldMenuOutcome::Closed);
                     events.push(FieldMenuEvent::Cancelled);
                     return events;
@@ -420,6 +539,61 @@ impl FieldMenuSession {
             FieldMenuPhase::Done(_) => {}
         }
         events
+    }
+
+    /// Open on the entry screen the installed gate calls for.
+    ///
+    /// Retail does not always start a menu on the root picker: the
+    /// save/menu driver's entry decode picks the starting sub-screen off
+    /// the entry-context kind byte, and kind
+    /// [`crate::pause_screens::ROOT_MENU_CONTEXT_LOCKED`] starts on
+    /// sub-screen `4` - the notice panel. Every other kind (and a null
+    /// context) starts on the picker, which is what the session already
+    /// did.
+    ///
+    /// Hosts call this right after [`Self::set_gate`], so the two hosts
+    /// cannot disagree about which screen a locked context opens on.
+    ///
+    /// PORT: FUN_801DC6B4 (`0x801dc8d0..0x801dc8e4`)
+    ///
+    /// ## What is still short of retail, stated plainly
+    ///
+    /// The *decode* is complete and both hosts run it, but the window in
+    /// which a real field script's `0x0D` park is visible to this call is
+    /// narrower than retail's. Retail's op-`0x49` arm spawns a driver actor
+    /// that **opens the menu itself**, and the park stays armed until that
+    /// screen hands back. The port has no path from a parked field script to
+    /// opening the pause menu, because the session is host state
+    /// (`BootSession::field_menu` / the page's `PlayMenu`) and not world
+    /// state: `World::open_field_submode_screen` runs the close tick
+    /// instead, which retires within a few frames and lets
+    /// `FieldHost::op49_clear` drop the park. So the kind byte is produced,
+    /// carried and acted on - but a player only sees these two screens if
+    /// the menu opens while the park is still armed.
+    ///
+    /// Closing that is the same shape the inline gold shop already uses:
+    /// a pending-request channel the hosts drain
+    /// ([`crate::world::World::take_pending_field_shop`]) plus a
+    /// host-called finish that flips the op to Done. It wants a
+    /// `take_pending_field_menu` twin on both hosts, not a change here.
+    pub fn open_entry_screen(&mut self) {
+        if self.gate.entry_context_kind == Some(crate::pause_screens::ROOT_MENU_CONTEXT_LOCKED) {
+            self.phase = FieldMenuPhase::Notice;
+        }
+    }
+
+    /// The kind-`0x0D` notice panel is up (window `6` should draw).
+    pub fn notice_is_up(&self) -> bool {
+        matches!(self.phase, FieldMenuPhase::Notice)
+    }
+
+    /// The kind-`0x0D` ready check is up, and its cursor row (window `5`
+    /// should draw). `0` = Yes, `1` = No.
+    pub fn ready_confirm_cursor(&self) -> Option<u8> {
+        match self.phase {
+            FieldMenuPhase::ReadyConfirm { cursor, .. } => Some(cursor),
+            _ => None,
+        }
     }
 
     /// Sub-session finished and shell hands control back. The caller chooses

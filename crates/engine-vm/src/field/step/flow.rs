@@ -187,7 +187,11 @@ pub(super) fn op_49<H: FieldHost>(
             host.op49_menu_request(sub_op, &bytecode[operand - 1..]);
             host.op49_invoke_setup();
             let captured = if sub_op == 1 { ctx.field_90 } else { 0 };
-            host.op49_arm(pc, captured);
+            // Retail stores the *operand pointer* here (`sw s6,-0x4bb0(s0)`
+            // at `0x801e09a8`), and every consumer reads that pointer's
+            // first byte - the sub-op. The port has no RAM pointer, so the
+            // sub-op is handed over directly.
+            host.op49_arm(sub_op, pc, captured);
             StepResult::Halt { final_pc: pc }
         }
         Op49State::Armed => StepResult::Halt { final_pc: pc },

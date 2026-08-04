@@ -9,17 +9,19 @@
 #   1  town01 free-roam, input released
 #   2  pad-walk town01 south gate -> map01
 #   3  pad-walk map01 across the continent (>= 24 tiles, >= 1 encounter fought)
-#   4  pad-walk map01 -> keikoku (Ravine)
+#   4  pad-walk map01 -> suimon -> map01 -> keikoku (Ravine)
 #
 # Unlike the other progression oracles, this number is denominated in what a
 # player can do, not in what the disc decodes. Raise it only when the run
 # actually clears the rung - never to make a red test green.
 #
-# Rung 4 does not clear. The overworld walk crosses ~79 tiles from the map01
-# arrival and stops beside the `suimon` cluster, on a solid `.MAP` placed
-# object (anchor `(54, 64)`); independently, a walkability flood from the
-# arrival cannot reach ANY of map01's six `keikoku` mouths - the closest
-# residual is 54 sub-cells. That is a terrain-connectivity question about the
-# overworld's collision inputs, not a locomotion one; see `handoff/lane6.md`.
+# Rung 4 clears. It took three findings, none of them in the collision probe:
+# map01's wall bits split the kingdom into two walk components (the arrival
+# `(96, 25)` north, all six `keikoku` mouths south); the crossing is the
+# `suimon` scene, not a pass; and which of suimon's two chambers the crossing
+# lands in is selected by story flag `0x27B`, which the port was discarding
+# because both arms of map01 P2[18]'s `0x3F` name the same scene. The probe
+# geometry, the grid decode and the planner lattice are all exonerated against
+# retail - see `handoff/rung4-probe.md` and `docs/subsystems/world-map.md`.
 
-reached = 3
+reached = 4

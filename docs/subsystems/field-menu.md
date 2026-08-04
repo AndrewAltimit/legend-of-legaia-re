@@ -391,6 +391,70 @@ gated row stays **navigable** and draws grey, matching the picker's
 unconditional 7-row cursor walk; the engine's separate row mask is the one
 that removes a row from the browse order.
 
+### The menu is two levels, and the second one lives on the session
+
+A confirm does not run a screen - it **suspends** the root list
+(`FieldMenuPhase::Suspended { row }`) and the routed sub-screen owns the pad
+until it reaches its own terminal state, at which point the host drains the
+outcome and calls `FieldMenuSession::resume`.
+
+Both levels are driven by `BootSession`: `field_menu` is the root list and
+`field_menu_sub` is the `FieldMenuSubsession` beneath it, built by
+`FieldMenuSubsession::build` from the world's disc-parsed tables and the
+installed `SaveRack` (`BootSession::set_save_rack`). Per frame the session
+routes the pad edge through `tick_pad_edge`, then on completion through the
+matching `field_menu_dispatch::apply_*_outcome` before resuming. Persistence
+is the exception and is deliberate: a finished Save / Load leaves a
+`save_screen::SaveCommit` on `BootSession::last_save_commit` rather than
+touching a backend, because the bytes behind a rack are the host's (a save
+directory, an imported card image).
+
+Keeping the stack on the session rather than in a host is what lets an oracle
+walk the same screens a player does - `crates/engine-shell/tests/menu_replay.rs`
+drives all seven rows and the save UI's two-stage rack from `World::set_pad`
+alone.
+
+### Where a pause screen is assembled
+
+The *simulation* half above is shared. So is the **composition** half - which
+windows a screen opens, which painter draws its title tab, what order the
+frames, the content and the modals land in, and the final 320x240 stage scale.
+It lives in `engine-ui::pause_menu` and both shipped hosts call it:
+
+| Layer | Owner |
+|---|---|
+| Session -> plain view structs | each host (it holds the live `World`) |
+| Descriptor rect / pen / frame box, with the pinned fallback | `pause_menu::MenuRects` |
+| Stage transform (320x240 -> surface) | `pause_menu::stage_transform` |
+| Per-screen window set, tab painter, sprite order, stage scale | `pause_menu::pause_screen_draws` |
+| Owned Equip projection (slots, candidates, stat compare) | `engine-core::pause_screens::equip_screen_model` |
+
+`engine-ui` deliberately does not depend on `engine-core` - `engine-render`
+re-exports it wholesale and is a leaf presentation crate
+([`engine.md`](engine.md)) - so the projection stays host-side and the
+composition takes the plain view structs. Two crossings remain per host and
+are named as such: the Equip phase tag, and the inventory target-select
+stand-in whose layout walks the session's bag directly.
+
+Two behaviours the hosts used to disagree about are settled by the move. The
+title tab now always resolves through the descriptor **painter** when the
+table names one (the browser page called the pinned-pen label builder
+unconditionally, so a modded disc moved the tab on one host only). And the
+Items screen's Use-route confirm frames **after** the screen's own window set
+rather than before it, so the item-list frame cannot paint over the modal.
+
+`engine-ui/tests/pause_menu_compose.rs` drives every screen through that
+composition with no disc, no GPU and no host - which is only possible because
+the assembly is in a library. While it lived in a binary's private module no
+`tests/` target could import it at all.
+
+The Load / Save sub-screen is **not** in this composition: it is the
+save-select surface, and the native window reaches the same one from the boot
+Continue -> Load path. Both go through `save_select_phase_text_draws` +
+`save_select_chrome_sprite_draws` so the in-game and boot entries cannot drift
+from each other; hoisting only the pause half would have forked them. See
+[`save-screen.md`](save-screen.md).
+
 ### The menu does not open at all while a dialogue is up
 
 Retail's Start handler is not a separate handler: the menu-open accept sits
@@ -463,6 +527,25 @@ Engine port: `engine-ui::field_menu_draws_for` +
 gauges via the shared `ap_gauge_sprites` widget). The engine shows the
 coin row only when the casino bank is nonzero; the health-tier ink
 thresholds stay untraced.
+
+### Which scenes the menu opens in
+
+Where the accept sits also answers the wider question. Because it is a leg of
+`FUN_801D01B0`, the menu opens in every scene that controller walks - and that
+includes the three kingdom overworlds, which are ordinary `game_mode 0x03`
+field-run scenes on the same `FUN_801D1344` → `FUN_801D01B0` chain as a town
+rather than a mode of their own. That is the only reason the Save row is
+reachable at all, since `DAT_8007b6a8` enables it on exactly those three
+scenes. `FUN_801E76D4` is the top-view *debug* renderer, not a second
+controller needing its own arm; the full account, including the instruction
+evidence and the two independent globals involved, is on
+[`save-screen.md`](save-screen.md#where-the-save-rows-pad-route-is).
+
+The port splits that one retail mode into `SceneMode::Field` and
+`SceneMode::WorldMap`, so the open gate names both:
+`World::field_menu_open_allowed` is the whole precondition (the mode test plus
+the engaged-bit stand-in above), and it is what a host's Start edge must call
+instead of spelling a mode test out locally.
 
 ## Equip screen
 
@@ -1635,10 +1718,10 @@ What it settles for the windows whose painters had no screen:
 
 | Window | Script | Sub-screen | Screen |
 |---|---|---|---|
-| 5 | `0x801E4BD4` | `3` (`FUN_801D6D38`) | leave-confirm, reached only from the pause root's cancel with entry-context byte `0x0D` |
+| 5 | `0x801E4BD4` | `3` (`FUN_801D6D38`) | battle-start ready check, reached only from the pause root's cancel with entry-context byte `0x0D` |
 | 6 | `0x801E4BE0` | `4` (`FUN_801DD1B8`) | notice panel; the menu's entry screen for the same `0x0D` context |
 | 7 | `0x801E4D50` / `0x801E4D78` | `0xF` / `0x10` | spell level-up notice, opened by a magic cast only when the apply raised the sentinel |
-| 24 + 25 | `0x801E4DC8` | `0x13` (`FUN_801D9C14`) | the Equip screen's slot-browse step, with window 2's Equip tab |
+| 24 + 25 | `0x801E4DC8` | `0x14` (`FUN_801D9C14`) | the Equip screen's slot-browse step, with window 2's Equip tab |
 | 31 | `0x801E4EDC` / `0x801E4EA8` | `0x1D` / `0x1C` | the shop's Point Card toast |
 | 46 | `0x801E4F2C` | `0x20` (`FUN_801DC1CC`) | the casino prize counter's Yes/No confirm |
 
@@ -1654,6 +1737,16 @@ pause-list windows: they are the pair belonging to entry-context kind `0x0D`,
 `FUN_801D6B20` routing to sub-screen 3 on cancel (`0x801d6cf8..0x801d6d18`)
 and `FUN_801DC6B4` selecting sub-screen 4 on entry (`0x801dc8d0..0x801dc8e4`).
 
+Window 5's own content settles what that pair *is*. Its renderer loads two
+heading strings, and they are a **battle-start ready check**, not the
+"really leave?" prompt the routing alone suggests - so the `0x0D` context is
+a scripted pre-battle party menu whose Yes exits into the fight. Window 6's
+six labels are the matching briefing, and they are six static VAs in the
+overlay's own pool (`lui a0,0x801d` + `addiu` pairs at
+`0x801d636c..0x801d6448`), not content the entry-context record owns. Both
+readings were the other way round on this page until the string pointers
+were followed.
+
 **Window 31** joins the dispatch-drawn set on the shop's Point Card beat. Which flow opens it
 is settled by the disc rather than inferred: both retail buy commits hand
 the widget VM a script whose entire body is `01 1F` plus the terminator -
@@ -1663,9 +1756,38 @@ and then park in a phase that only a confirm / cancel press releases. The
 engine keeps the bank on `World::point_card` and the beat on
 `MenuRuntime::point_card_toast`; see [shop.md](shop.md#point-card).
 
-The painters for windows no host **opens** yet - 5, 6, 7, 24, 46 - stay
-unreached by a screen rather than by a mechanism; each one's remaining blocker
-is recorded per builder in `scripts/ci/ui-host-drift-waivers.toml`.
+Windows 5 and 6 are drawn on both hosts. Their trigger is the entry-context
+kind byte, which the op-`0x49` arm now records (see
+[save-screen.md](save-screen.md#root-command-picker-fun_801d6b20)): `FieldMenuSession`
+carries the two phases retail's dispatcher selects for kind `0x0D` - `Notice`
+as the *entry* screen and `ReadyConfirm` as the root picker's cancel
+destination - and each host resolves the window id off the disc table through
+`painter_at`. Their labels are read out of the caller's own PROT 0899 image at
+the VAs the two renderers load (`pause_screens::ContextLockedLabels`),
+installed by the `install_menu_overlay_tables` call both hosts already make.
+
+The painters for windows 24 and 46 stay unreached by a **screen** rather than
+by a mechanism; each one's remaining blocker is recorded per builder in
+`scripts/ci/ui-host-drift-waivers.toml`.
+
+### Which screen a window belongs to is settled by the open scripts
+
+Two sweeps over PROT 0899 do the settling, and both are byte measurements
+rather than readings of a decompile:
+
+- every `01 <id>` command in the widget-script pool names the one screen
+  that opens that window;
+- every `sw rt,0x46a4(rs)` in the image names a writer of the sub-screen
+  selector `DAT_801E46A4`, and the immediate loaded into `rt` a few
+  instructions earlier names the value.
+
+The second is what pins the two screens above to the entry-context kind and
+to nothing else: of 66 selector writers, sub-screen `4` is written at exactly
+one (`0x801dc8e4`, on kind `0x0D`) and sub-screen `0x20` at exactly one
+(`0x801dc8cc`, on kind `7`), both inside `FUN_801DC6B4`'s entry decode. It
+also corrects the Equip set's own id - the script `0x801E4DC8` is loaded at
+`0x801d9d00`, inside the routine the pointer table lists at index `0x14`, not
+`0x13`.
 
 Three rules the block encodes are worth naming on their own:
 

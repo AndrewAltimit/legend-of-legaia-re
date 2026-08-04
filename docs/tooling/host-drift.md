@@ -116,6 +116,21 @@ Proves the two named constants carry equal values and that neither was renamed
 out from under the pairing. Proves nothing about how either host *uses* them,
 nor about any unpaired literal.
 
+### A deleted pair is not always lost coverage
+
+A pair exists because a value exists twice. The better outcome is that it
+exists **once**, in a crate both hosts already depend on - at which point the
+row comes out of `CONSTANT_PAIRS` and nothing is left to check. The pinned
+menu window-descriptor rect table and the near-fullscreen sub-screen rect went
+that way: both are now single constants in `engine-ui::pause_menu`, read by
+the shared pause-menu composition.
+
+So a missing pair reads two ways, and they are opposites. Before restoring
+one, look at where the constant went: a *shared* constant needs no pair, a
+*re-duplicated* one needs its row back. The checker cannot tell them apart -
+it only reports that a named constant is gone - so the reasoning belongs in
+the comment where the row used to be, which is where it now sits.
+
 ## Tier 3 - simulation: do both hosts feed the same kernel?
 
 `SIM_PAIRS`, the simulation twin of tier 2. Each row names a feature and, per
@@ -358,6 +373,7 @@ naming `coplanar_draw_offsets` is prose, not a wiring, and under-counting
 | walk-ground heightfield sink | emitting the heightfield's vertices requires `GROUND_SINK` |
 | packet-colour stream fill | a packet-colour stream may not be filled with white |
 | placement tilt composition | reading `placement_rot_y` requires `rot_x` + `rot_z` |
+| screen-space fade quad | resolving the intro fade ramp requires `fade_prim` |
 
 **The heightfield rule triggers on the emitter, not the type.** An early draft
 keyed on `WalkHeightfield` / `walk_heightfield` and reported four files that
@@ -372,6 +388,11 @@ is `MODULATION_NEUTRAL` (`0x80`). The rule has to distinguish that from the
 *flag* byte, which is legitimately `255` on every textured vertex -
 `[c[0], c[1], c[2], 255]` is correct and `[255u8; 4]` is not, and the control
 suite pins both.
+
+**The fade rule keys on the ramp call, not on the type.** A rule naming
+`IntroFade` would fire on every file that merely passes one along; a file that
+calls `intro_fade(...)` is one that has just decided what this frame's fade is,
+and is therefore the file about to build - or hand-roll - the packet.
 
 **The tilt rule earns its place on measured data, not on plausibility.** The
 comment it replaced said "the handful of disc placements carrying a real X/Z
@@ -400,6 +421,35 @@ report it clean - that is tier 3's shape of question, one function body down.
 It also cannot see a kernel nobody has written a rule for; the rule list is
 the claim, and it grows one defect at a time.
 
+### The version of this tier that needs no rule
+
+A rule is what you write when two surfaces each assemble the list. When there
+is only **one** assembler, the question this tier asks cannot be posed - and
+that is the cheaper fix wherever the surfaces are genuinely the same screen.
+
+The pause menu went that way. Its draw-list assembly used to live twice: in
+`engine-shell`'s `window/menu_draws.rs` + `window/title_save_draws.rs` and in
+`web-viewer`'s `play_menu.rs`. Two of the divergences that had already grown
+there are exactly this tier's shape - one host resolved a title tab through
+the descriptor painter and the other through a pinned-pen label builder, and
+the Items screen's Use-route confirm framed before the screen's window set on
+one host and after it on the other. Neither is expressible as a `requires`
+rule, because both are *ordering and choice* inside one assembly rather than a
+kernel a file does or does not name.
+
+The assembly now lives once, in `engine-ui::pause_menu`, with each host
+resolving its own rects and projecting its own model into the shared view
+structs. Two `CONSTANT_PAIRS` rows retired with it (see
+[tier 2](#a-deleted-pair-is-not-always-lost-coverage)), and the composition
+became reachable from a library test - `engine-ui/tests/pause_menu_compose.rs`
+- which it could not be while it sat inside a binary's private module, since
+a `tests/` target cannot import one.
+
+The reason this is not the answer everywhere: it needs the two surfaces to be
+the same screen with the same model. The five *render* surfaces above are not
+- the dance hall and the fishing venue bake venue-specific geometry - so there
+the rule is the instrument, and this is not a plan to replace it.
+
 ## What a waiver may say
 
 Both waiver files are validated for staleness on every run, so they cannot
@@ -419,7 +469,7 @@ If the answer is "someone has to type the method body", write the body.
 
 ## Known gaps no gate fails on
 
-Four host differences are large enough to be projects rather than wiring, and
+These host differences are large enough to be projects rather than wiring, and
 none of them is expressible as a waiver, because a waiver names a *builder* or
 a *hook* and these are whole subsystems one host does not have. Recorded here
 so a future reader does not mistake a green gate suite for host parity.
@@ -432,82 +482,100 @@ about these is contested.
 | Gap | Shape |
 |---|---|
 | save-model unification | The two hosts build their save-slot model separately; the tier-3 `set_card_slots_mode` row is one symptom of it, not the whole of it. |
+| framebuffer readback on web | Native reads a drawn frame back into software VRAM (`vram_capture`); nothing on the page reads a drawn frame back at all. The blocker under the row below, and under any future effect that samples the frame it draws over. |
 | shared camera on web | The browser page runs its own orbit projection beside the engine's camera controller instead of consuming it. |
 | MDEC on web | `crates/mdec` decodes STR video for the native `play-str` path; the play page has no video decode, so an FMV beat has nothing to show. |
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
-| screen-space PSX primitives on web | The native renderer draws PSX `POLY_FT4`/`POLY_GT4` quads in ordering-table order; the browser has no equivalent, because `SpriteDraw` cannot carry a PSX primitive. See below. |
-| field-to-battle transition on web | The native play window opens a battle with the retail transition - the fade on every style, the curtain where retail selects it. The browser page cuts straight to the battle, because the transition is drawn entirely out of the row above. |
+| field-to-battle style bodies on web | Both hosts now draw screen-space PSX primitives, and both draw the transition's fade. The browser cannot draw a *style body* - the confetti, tiles, curtain and swirl - because every one textures itself with a captured field frame and is emitted by a wgpu-linked crate. See below. |
 
-### Screen-space PSX primitives: what the web host would need
+### Screen-space PSX primitives across the two hosts
 
-This one is worth spelling out, because the surface tier 1 measures makes it
-invisible - **and it is now a shipped asymmetry rather than a latent one.**
-The native play window drives the field-to-battle intro emitter
-(`engine-render`'s `battle_intro`) through
-`RenderTarget::SceneWithScreenPrims` on every encounter; the browser play page
-has no path that could and cuts straight into the battle. The simulation half
-is shared and identical on both hosts - `World::tick_encounter` runs the
-transition state machine either way, so the handoff timing, the BGM swap and
-the battle that opens are the same. What differs is only whether anything is
-drawn during it.
-
-That is the honest shape of this gap, and it is deliberately **not** closed by
-a waiver: no gate fails, because no gate can see a capability that has no type
-to be measured through. Every screen-space effect retail draws - the field-to-battle
-transition styles, the move-FX afterimage streak, any `screen_fx` sprite - is a
-PSX primitive: a quad whose texels come out of VRAM through a per-primitive
-CLUT/texpage pair, blended by one of four fixed ABR equations, ordered by an
-ordering-table bucket rather than by a depth test. `engine-render` has that pass
+Every screen-space effect retail draws - the field-to-battle transition styles,
+the move-FX afterimage streak, any `screen_fx` sprite - is a PSX primitive: a
+quad whose texels come out of VRAM through a per-primitive CLUT/texpage pair,
+blended by one of four fixed ABR equations, ordered by an ordering-table bucket
+rather than by a depth test
 ([`renderer.md`](../subsystems/renderer.md#screen-space-ordering-table-pass)).
-The browser does not, and the reason is a type: `engine-ui`'s `SpriteDraw` is a
+
+This was for a long time a capability only the native window had, and *why it
+stayed invisible* is the part worth keeping: `engine-ui`'s `SpriteDraw` is a
 **semantic alias of `TextDraw`** - an axis-aligned destination rect, an atlas
 source rect and one flat RGBA tint. Nothing in it can express a texpage, a CLUT,
-per-vertex UVs, per-vertex colour, an ABR mode or an OT bucket, so a builder
-returning `SpriteDraw` is on tier 1's surface while the *capability* is not.
+per-vertex UVs, per-vertex colour, an ABR mode or an OT bucket. A builder
+returning `SpriteDraw` is therefore on tier 1's surface while a whole capability
+beside it is not, and no gate can fail on a type that does not exist.
 
-The browser is not starting from nothing: the play page already uploads a
-1024x512 VRAM page (`field_vram_bytes`) and already samples it with the 4/8/15
-bpp + CLUT decode for **3D** meshes. What is missing is the 2D half.
+#### What both hosts share
 
-Five things, in the order they block each other:
+The model is `engine-ui`'s `screen_prim` - the wgpu-free leaf both hosts already
+link:
 
-1. **A draw record that is a PSX primitive.** Four corners rather than a rect,
-   four `(u, v)` pairs, a `(cba, tsb)` pair, per-vertex colour, a
-   semi-transparency flag and an OT index. `engine-render`'s
-   `screen_overlay::ScreenPrim` is that record, and it is renderer-agnostic
-   apart from its `bytemuck` vertex struct - the shape to lift into `engine-ui`,
-   not to re-invent.
-2. **An ordering-table sort, shared.** `order_primitives` is back-to-front by OT
-   index with LIFO tie-breaking, which is `AddPrim` + `DrawOTag`. Two hosts
-   sorting the same list differently is a divergence no gate would catch, so
-   this is the one piece that must be *shared code* rather than a second
-   implementation.
-3. **A WebGL fragment path with the same CLUT decode as the 2D pass.** The 3D
-   decode already exists on the page; the 2D pass needs the same function with
-   no texture-window remap.
-4. **Four ABR blend modes.** WebGL2 can express modes 1-3 with `blendFunc`;
-   mode 0 (`0.5*B + 0.5*F`) needs a constant blend factor, exactly as the native
-   pipeline does.
-5. **A framebuffer capture.** The transition styles texture their strips with a
-   *captured field frame*. Native does this by reading the drawn frame back into
-   the software VRAM (`vram_capture`); the browser would render to an FBO and
-   blit into its VRAM texture instead - cheaper there, since it never has to
-   leave the GPU.
+| piece | what it is |
+|---|---|
+| `ScreenPrim` / `ScreenQuad` / `FlatQuad` | four corners, four `(u, v)` pairs, a `(cba, tsb)` pair, flat **or** per-vertex colour, a semi-transparency flag, an OT index |
+| `abr_mode` | the blend-equation selector, TSB bits 5..=6 |
+| `order_primitives` | `AddPrim` + `DrawOTag`: descending OT index, LIFO within a bucket |
+| `build_geometry` | the only public route from a primitive list to something drawable |
+| `ScreenVertex` + the `SCREEN_VERTEX_OFF_*` offsets | one byte layout, read as bytes by wgpu and by WebGL2 alike |
+| `fade_prim` / `display_rect_flat_quad` | the display-rect packets the transition family emits |
 
-Items 1 and 2 are the ones that decide whether this ends as one model or two.
-Doing them in `engine-ui`, where both hosts already meet, is what keeps the next
-transition from being written twice.
+The sort needs no gate of its own, because the shape of the API removes the
+second place to do it: neither host is ever handed a primitive list.
+`build_geometry` runs the ordering-table walk itself and returns a vertex
+buffer, an index buffer and a run table, so by the time either host sees the
+data the order is already baked into the index buffer. `engine-render`'s
+`screen_overlay` re-exports the module at its old path (so native call sites and
+tests read unchanged) and pins its display-rect constants against
+`vram_capture`'s with a compile-time assertion rather than a comment; the play
+page reads the same three arrays through `play_screen_prim_vertex_bytes` /
+`_indices` / `_runs`.
 
-**This is not a kernel waiting to be hoisted.** The transition's simulation and
-geometry already live where the browser can reach them - `engine-vm`'s
-`battle_intro_styles` / `battle_intro_swirl` / `battle_intro_tiles` /
-`battle_intro_transition`, all wgpu-free. What `engine-render`'s `battle_intro`
-adds on top is entirely the render half: it reaches `crate::gte`,
-`crate::billboard`, `crate::screen_overlay`, `crate::vram_capture`, and takes a
-`&Renderer` + `RenderTarget`. Moving *it* would move the wgpu dependency, not
-the logic. The five items above are the work, in that order, and item 5 is the
-one with no browser analogue at all today: nothing on the page reads a drawn
-frame back.
+The browser was not starting from nothing on the GPU side either: the play page
+already uploads a 1024x512 VRAM page (`field_vram_bytes`) and already samples it
+with the 4/8/15 bpp + CLUT decode for **3D** meshes. Its screen-prim pass runs
+that same decode with the texture-window remap dropped (screen sprites never use
+GP0(E2)), and binds the four ABR equations through `TmdRenderer._setSemiBlend` -
+the page's *existing* blend table, not a second copy of it. `blendColor` carries
+mode 0's `0.5` and mode 3's `0.25`, which is why WebGL2 needs no shader
+pre-scale where the native pipeline uses one.
+
+#### What the page still cannot draw, and why
+
+The fade, and only the fade. The browser emits one primitive per transition
+frame - the full-screen fade quad, resolved by the shared
+`battle_intro_styles::intro_fade` ramp off the live transition entity's clock and
+built by the shared `fade_prim`. The style bodies (confetti, tile shatter,
+curtain, swirl) do not reach it, for two independent reasons, and closing either
+one alone changes nothing:
+
+1. **The emitter is in a wgpu-linked crate.** `engine-render`'s `battle_intro`
+   is where the five styles turn into primitives. Its *simulation* is already
+   shared - `engine-vm`'s `battle_intro_styles` / `_swirl` / `_tiles` /
+   `_transition` are wgpu-free and `web-viewer` links them - but the emitter
+   reaches `crate::gte`, `crate::billboard`, `crate::screen_overlay` and
+   `crate::vram_capture`, and `web-viewer` does not depend on `engine-render`.
+   Only `update_field_capture` genuinely needs a `&Renderer`; the rest is
+   ordinary arithmetic that happens to live in a crate linking wgpu.
+2. **No framebuffer readback on the page.** Every style textures its geometry
+   with a *captured field frame*: the particles are 8x8 patches of it, the tiles
+   and curtain strips sample it, the swirl bands sample it. Native reads the
+   drawn frame back into software VRAM once as the transition arms
+   (`vram_capture`); the browser would render to an FBO and blit into its VRAM
+   texture instead - cheaper there, since it never has to leave the GPU - but
+   nothing on the page reads a drawn frame back at all today.
+
+One further primitive is deliberately **not** emitted on the browser: the native
+emitter's `backdrop_prim`, an opaque black display-rect quad standing in for
+"retail's field renderer is not in the ordering table". It is only correct
+underneath a style body that reconstructs the frame out of the capture; on its
+own it would black the field out for the whole 132-frame window. Drawing the
+fade over the still-rendering field is the honest subset, and it is a divergence
+stated here rather than left in a comment.
+
+The simulation half was never the gap and still is not: `World::tick_encounter`
+runs the transition state machine on both hosts, so the clock, the BGM swap and
+the battle that opens are already identical. What differs is how much of the
+window gets drawn.
 
 ### The two hosts do not share a shading law
 

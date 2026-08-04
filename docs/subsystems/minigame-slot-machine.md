@@ -17,6 +17,16 @@ same latch the payout multiplies. See
 
 Provenance: the dumps are `ghidra/scripts/funcs/overlay_slot_machine_<addr>.txt`. Confidence is marked per-claim; the reel layout, RNG, bet charge, feature odds, payout lookup, entry seed and coin commit are **Confirmed** from the disassembly. Table *values* (payout bytes, HUD descriptors) decode from the user's disc and are not reproduced here.
 
+## Entry from the field
+
+The cabinet is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 103` (`sub_id 3`), which sets game mode `0x18` and loads PROT 0975. The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp); the port's id decoder is `legaia_engine_core::minigame_entry::MinigameSubId`.
+
+A disc-wide walk of every scene MAN finds five slot doors: three cabinet placements in the Sol casino (`koin1` P1[54], P1[55], P1[56]) and one in the Vidna casino, present in both that scene's bundle MAN and its streaming variant (`balden` / `balden2`, P1[24] in each). The three `koin1` cabinets are interchangeable doors to one machine - the `0x3E` operand byte after `op0` tracks the cabinet instance and the VM never reads it. Census test: `crates/engine-core/tests/minigame_entry_census_disc.rs`.
+
+The cabinet doors sit behind an entry gate, and the gate is a **coin-bank compare**, not an item check: the record's `0x4E` is sub-op `9`, whose value loader (`0x801E0B34`) reads the casino coin bank `_DAT_800845A4`, compared `<` against the literal `1`. Taking that branch jumps past the warp to the record's own refusal line; falling through runs the casino-coin debit `0x4C 0xE5` - the sub-op that exists **only** in the two casino scenes' MANs - a white fade, and then the `0x3E`. So a player with no coins never reaches mode 24, and the *first* `0x1F` text segment in a cabinet record is that refusal line, which is why entering the record anywhere but at its [interaction cursor](script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts) reads as "the door is shut".
+
+**Why `FUN_801cf0d8` has no caller.** It is not called; it is the `+0x08` tick word of the static 24-byte actor template at `0x801D3618`. The sub-id-3 init `FUN_801CEC94` materialises that template and spawns an actor from it (`jal FUN_80020DE0` at `0x801CEEA8`), and the per-frame pool walk reaches it through `jalr actor[+0x0C]` in `FUN_8002519C`.
+
 ## Reel state machine
 
 The machine is a single per-frame handler, `FUN_801cf0d8` (`overlay_slot_machine_801cf0d8.txt`), dispatched on the state word `DAT_801d3c84` through a jump table (the overlay-resident table just below `0x801d2ac0`; the `< 0x65` bound on the index is in the dispatcher prologue). **Confirmed** states:

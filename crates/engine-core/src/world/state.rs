@@ -1258,6 +1258,19 @@ pub struct World {
     /// into [`World::casino_coins`].
     pub minigame_winnings: u32,
 
+    /// Pending **mode-24 minigame door-warp** (field-VM op `0x3E`, `op0 >=
+    /// 100`): `Some(sub_id)` for the frame the arm ran on. Drained by
+    /// [`crate::scene::SceneHost::tick`], which decodes it with
+    /// [`crate::minigame_entry::MinigameSubId`] and enters that minigame.
+    ///
+    /// **Not a map id.** `sub_id` selects a code overlay, not a scene - the op
+    /// carries no destination name at all. It reads like a map id (a small
+    /// dense integer on a warp opcode), which is exactly why the engine used
+    /// to resolve it through a CDNAME-ordinal scene table and warp the player
+    /// somewhere unrelated instead of into the minigame. See
+    /// [`crate::minigame_entry`] for the arm's disassembly.
+    pub pending_minigame_warp: Option<u8>,
+
     /// The scripted countdown timer the field VM arms with `0x4C 0xD3`
     /// (`SCHEDULE_TIMED_FLAGS`). Retail keeps it in three globals -
     /// `_DAT_800845A0` remaining, `_DAT_800845BC` below-threshold trigger,
@@ -1503,6 +1516,15 @@ pub struct World {
     /// [`crate::menu_arrange::parse_arrange_rank_table`]). `None` on a
     /// load without the overlay - Arrange then falls back to id order.
     pub menu_arrange_rank: Option<crate::menu_arrange::ArrangeRankTable>,
+
+    /// Labels for the two entry-context screens the pause menu opens under
+    /// kind [`crate::pause_screens::ROOT_MENU_CONTEXT_LOCKED`] - the notice
+    /// panel's lines (window `6`) and the ready check's headings (window
+    /// `5`), read out of the same PROT 0899 image
+    /// ([`crate::pause_screens::ContextLockedLabels`]). Empty on a load
+    /// without the overlay, and an empty set is what keeps the panels from
+    /// drawing invented text.
+    pub menu_context_labels: crate::pause_screens::ContextLockedLabels,
 
     /// Party-global 4×u32 ability mask - the engine mirror of retail
     /// `DAT_80074358..0x80074368` (every member's `+0xF4` bitfield OR'd
@@ -2683,6 +2705,7 @@ impl World {
             submode_screen: crate::field_submode_screen::SubmodeScreen::default(),
             minigame_scene_backup: None,
             minigame_winnings: 0,
+            pending_minigame_warp: None,
             escape_timer: Default::default(),
             escape_timer_flag_word: 0,
             escape_timer_hud: None,
@@ -2767,6 +2790,7 @@ impl World {
             accessory_passives: Default::default(),
             menu_text: None,
             menu_arrange_rank: None,
+            menu_context_labels: Default::default(),
             party_ability_mask: [0; crate::accessory_passives::ABILITY_WORDS],
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
             active_scene_label: String::new(),

@@ -33,6 +33,7 @@ struct TestHost {
     party_removed: Vec<u8>,
     interacts: Vec<(u8, u8)>,
     scene_transitions: Vec<u8>,
+    minigame_door_warps: Vec<u8>, // op 0x3E `op0 >= 100` sub-ids
     named_scene_transitions: Vec<(String, u8, u8, u8)>, // (scene, entry_x, entry_z, dir)
     render_long: Vec<(u8, u8, u8, u8)>,
     render_short: Vec<(u8, u8, u8, u8)>,
@@ -50,7 +51,9 @@ struct TestHost {
     inventory_pairs: std::collections::HashMap<(u8, u8), (i32, i32)>,
     // 0x49 STATE_RESUME: tristate (Idle/Armed/Done) + last arm record.
     op49_state_value: Op49State,
-    op49_arms: Vec<(usize, u32)>,
+    /// `(sub_op, pc, field_90)` per arm - the sub-op is retail's park
+    /// kind byte (`*_DAT_8007B450`), not a spare argument.
+    op49_arms: Vec<(u8, usize, u32)>,
     op49_clears: u32,
     op49_setups: u32,
     // 0x34 sub-3 / 0x43 sub-8 callbacks.
@@ -283,6 +286,9 @@ impl FieldHost for TestHost {
     fn scene_transition(&mut self, map_id: u8) {
         self.scene_transitions.push(map_id);
     }
+    fn minigame_door_warp(&mut self, sub_id: u8) {
+        self.minigame_door_warps.push(sub_id);
+    }
     fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8, dir: u8) {
         self.named_scene_transitions
             .push((scene.to_string(), entry_x, entry_z, dir));
@@ -336,8 +342,8 @@ impl FieldHost for TestHost {
     fn op49_state(&self) -> Op49State {
         self.op49_state_value
     }
-    fn op49_arm(&mut self, pc: usize, field_90: u32) {
-        self.op49_arms.push((pc, field_90));
+    fn op49_arm(&mut self, sub_op: u8, pc: usize, field_90: u32) {
+        self.op49_arms.push((sub_op, pc, field_90));
     }
     fn op49_clear(&mut self) {
         self.op49_clears += 1;

@@ -35,9 +35,18 @@ use super::*;
 /// genuine warp records carry no inline text block to confuse it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlacementKind {
-    /// The script warps to another scene. `target_map` is the field-VM map id
-    /// (`op0 - 100`), resolvable through the same `MapIdResolver` a
-    /// `scene_transition` uses.
+    /// The script carries a genuine **mode-24 minigame door warp** (field-VM
+    /// `0x3E` with `op0` in `100..=106`; see `is_genuine_warp`).
+    ///
+    /// **`target_map` is a misnomer kept for compile compatibility.** The value
+    /// is `op0 - 100`, the mode-24 `sub_id`
+    /// ([`crate::minigame_entry::MinigameSubId`]), and it selects a *code
+    /// overlay*, not a scene - the arm calls no scene-change packet and the op
+    /// carries no destination name. Routing it through a `MapIdResolver`
+    /// resolves a code-overlay selector against a CDNAME ordinal and warps the
+    /// player somewhere unrelated; every consumer in this crate reads it as a
+    /// sub-id. The field name survives only because the one out-of-crate
+    /// consumer sits in a crate this rename cannot reach in the same change.
     Portal { target_map: u8 },
     /// The actor carries an inline dialog-text block and/or a field-interact
     /// op but never warps - a talk-to NPC / sign / event trigger.
@@ -175,30 +184,81 @@ pub fn classify_placement(man_file: &ManFile, man: &[u8], p: &ActorPlacement) ->
     }
 }
 
-/// The prologue-aware form of a talk NPC's inline interaction script.
+/// The prologue-aware form of a placement's inline interaction script.
 ///
 /// [`classify_placement`]'s [`PlacementKind::Npc::dialog_inline`] is the record
 /// truncated to start at the first `0x1F` text segment - enough for the
 /// simplified renderer, but it discards the **interaction prologue**: the
-/// field-VM bytecode between the record's `script_pc0` and that first segment
-/// (story-flag `SysFlag.Test` / `JmpRel` chains, `CFlag.Set`, NPC move-to-tile).
-/// Retail runs that prologue first; its `SysFlag.Test` branches are how the box
-/// *selects which segment to start at* per story state. This struct carries the
-/// untruncated record so the opt-in field-VM dialogue runner can execute it.
+/// field-VM bytecode between the interaction entry and that first segment
+/// (story-flag `SysFlag.Test` / `JmpRel` chains, `CFlag.Set`, NPC move-to-tile,
+/// and for a minigame door the whole camera / affordability / fade run that
+/// precedes its `0x3E` warp). Retail runs that prologue first; its
+/// `SysFlag.Test` branches are how the box *selects which segment to start at*
+/// per story state. This struct carries the untruncated record so the field-VM
+/// dialogue runner can execute it.
 ///
 /// `entry_pc` and `first_segment` are byte offsets **into `body`** (the record
 /// from `record_offset` to its bounded end). The runner steps the VM from
 /// `entry_pc`; if the prologue reaches a text segment it opens there, otherwise
-/// it falls back to `first_segment` (the old start), so it is never worse than
-/// the truncated path.
+/// it falls back to `first_segment`, so it is never worse than the truncated
+/// path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InlineDialogPrologue {
     /// The full interaction record body (`man[record_offset..record_end]`).
     pub body: Vec<u8>,
-    /// Offset of the interaction-script entry (`script_pc0`) within `body`.
+    /// Offset of the **interaction** entry within `body` - see
+    /// [`placement_interaction_entry_pc`]. This is the record's `script_pc0`
+    /// only when the record has no spawn section.
     pub entry_pc: usize,
     /// Offset of the first `0x1F` text segment within `body`.
     pub first_segment: usize,
+}
+
+/// The PC an *interaction* on this record resumes at: one instruction past the
+/// record's **spawn-section terminator**, the raw `0x21` byte.
+///
+/// A partition-1 placement record is one stream carrying two consecutive
+/// scripts, and retail keeps a single cursor over both. The scene setup spawns
+/// a script context per record (`FUN_8003A1E4`: base `actor[+0x90]`, PC
+/// `actor[+0x9E]`), which runs the record's **spawn** section - class-flag
+/// setup, the initial camera / seat pokes - and stops at the first raw `0x21`.
+/// The dialog SM `FUN_80039B7C` then resumes that same `actor[+0x9E]` on an
+/// interaction, so the interaction begins where the spawn section stopped.
+///
+/// The `0x21` stop is explicit in the SM's own run loop: it keeps `s4 = 0x21`
+/// live across the dispatcher call and breaks on `beq s0,s4` at `0x80039E20`
+/// **after** `sh a1,0x9e(s2)` has already stored the forwarded PC, so the
+/// stored cursor points past the terminator; the arm it breaks to
+/// (`0x80039E5C`, `a2 == 0x21`) is the conversation-end teardown, not the
+/// pager. The engine's runner mirrors the same raw-`0x21` rule from
+/// `FUN_8003CF7C`'s run-to-next-text helper.
+///
+/// So entering an interaction at `script_pc0` re-runs the spawn section and
+/// then trips that terminator immediately - which for the port's runner means
+/// falling straight through to the first text segment, skipping the whole
+/// interaction prologue. For a minigame door that skip lands in the record's
+/// *refusal* branch: `koin1`'s cabinets check the coin bank at `0x57`
+/// (`0x4E` sub-9 vs 1) and their first `0x1F` is the "no tokens" line the
+/// failed check jumps to.
+///
+/// `limit` bounds the scan (the caller passes the first text segment, so the
+/// walk can never desync inside message bytes and read an ASCII `!` as a
+/// terminator). Returns `script_pc0` unchanged when the record has no spawn
+/// section before `limit`.
+///
+/// REF: FUN_80039B7C (`s4 = 0x21`, the `+0x9E` cursor), FUN_8003A1E4 (the
+///      spawn context), FUN_8003CF7C (the run-to-next-text helper)
+pub fn placement_interaction_entry_pc(body: &[u8], script_pc0: usize, limit: usize) -> usize {
+    for insn in LinearWalker::new(body, script_pc0).flatten() {
+        if insn.pc >= limit {
+            break;
+        }
+        if body.get(insn.pc).copied() == Some(0x21) {
+            let next = insn.pc + insn.size;
+            return if next < limit { next } else { script_pc0 };
+        }
+    }
+    script_pc0
 }
 
 /// Recover the [`InlineDialogPrologue`] for placement `p`, or `None` when the
@@ -206,6 +266,11 @@ pub struct InlineDialogPrologue {
 /// `body`/`entry_pc`/`first_segment` are derived from the same bounds
 /// [`classify_placement`] uses, so `body[first_segment..]` equals that
 /// placement's `dialog_inline` byte-for-byte.
+///
+/// `entry_pc` here is the record's `script_pc0`, **not** the interaction cursor
+/// [`placement_interaction_entry_pc`] derives - see
+/// [`placement_interaction_record`] for why the two are separate entry points
+/// today.
 pub fn placement_inline_prologue(
     man_file: &ManFile,
     man: &[u8],
@@ -223,4 +288,35 @@ pub fn placement_inline_prologue(
         entry_pc: p.script_pc0,
         first_segment,
     })
+}
+
+/// [`placement_inline_prologue`] entered at the **interaction cursor**
+/// ([`placement_interaction_entry_pc`]) instead of at `script_pc0`.
+///
+/// This is what retail's dialog SM resumes (`actor[+0x9E]`, left past the spawn
+/// section's `0x21`), and it is the entry a **minigame door** needs: a cabinet
+/// record's interaction section is camera work, an affordability compare and
+/// the `0x3E` warp, and its *first* text segment is the line the **failed**
+/// compare jumps to - so entering at `script_pc0`, tripping the terminator and
+/// falling through to that segment lands in the refusal branch.
+///
+/// ## Why talk NPCs are not on this entry yet
+///
+/// The rule is general - retail runs one SM over one cursor for every
+/// placement - but switching the NPC path to it regresses at least one pinned,
+/// working conversation: `retock`'s innkeeper resolves its picker and then
+/// neither charges nor restores (`inn_stay_field_vm_disc`). Whatever the inn
+/// record does between its spawn terminator and its first line, the port's VM
+/// does not come out of it where the old entry did. Until that is understood,
+/// the corrected cursor ships for the door records it was derived on, and the
+/// NPC path keeps the entry its behaviour is pinned against.
+pub fn placement_interaction_record(
+    man_file: &ManFile,
+    man: &[u8],
+    p: &ActorPlacement,
+) -> Option<InlineDialogPrologue> {
+    let mut record = placement_inline_prologue(man_file, man, p)?;
+    record.entry_pc =
+        placement_interaction_entry_pc(&record.body, record.entry_pc, record.first_segment);
+    Some(record)
 }

@@ -243,8 +243,9 @@ not a party battle path.
 `legaia_engine_core::arts_command_input` is the retail flow: the Arts command
 opens a per-press directional entry, each press appends its command byte to the
 actor's buffer and debits that command's `+0x74` cost from the turn pool, and
-entry **ends by itself** the moment nothing is affordable (`0x50 -> 0x5A`, no
-confirm). The review screen's next press reaches **Begin | Reselect** (`0x6E`).
+entry ends either by itself once nothing is affordable or on the confirm mask
+([`0x50` exits](#leaving-state-0x50)). The review screen's next press reaches
+**Begin | Reselect** (`0x6E`).
 The entered sequence resolves through the `legaia-art` matcher family - an
 exact Miracle string replaces the whole queue, a recognised sequence ending on
 a Super combination replaces the tail, and otherwise each named art contributes
@@ -262,8 +263,9 @@ itself, since retail moves the status plate off-screen for the whole session.
 |---|---|---|
 | pool | actor AGL (`+0x154`) | actor AGL; `100` with no roster loaded |
 | direction command | the `+0x74` byte | the `+0x74` byte, per equipped set |
-| ending entry | auto-end only | auto-end, **plus** Cross to confirm early |
-| leaving the command | not possible | Circle on an empty buffer backs out |
+| ending entry | auto-end, **or** confirm mask | same |
+| cancel, buffer typed | clears the entry, refunds the pool | same |
+| cancel, buffer empty | leaves to `0x78` / `0x28` | leaves to the command menu |
 | art body | paid from **Spirit** `+0x170` | free - the swings are the whole price |
 | target | pre-picked with the command | picked after Begin |
 
@@ -273,9 +275,62 @@ weapon-specialty mechanic was invisible to it. `ap_gauge` still backs the
 Spirit-command path and the [AP override hook](#arts-ap-override-hook); it is
 no longer what an Arts input spends.
 
-The remaining rows are engine conveniences or the un-closed half of the
+Rows three to five were previously recorded here as port-only conveniences -
+"retail auto-ends only", "retail cannot back out of the Arts command". Both
+claims are **falsified**; see [Leaving state `0x50`](#leaving-state-0x50) for
+the instructions. The port already matched retail on the confirm and on the
+empty-buffer cancel; what it was actually missing, undisclosed, was the
+typed-buffer cancel, and that is now wired.
+
+The one real remaining gap is the un-closed half of the
 [two-gauge split](#what-an-art-costs-in-ap): the port does not yet charge the
 art body out of Spirit, so a turn's whole cost is its swings.
+
+### Leaving state `0x50`
+
+Three exits, two of them pad-driven. All three are in `FUN_801D0748`'s `0x50`
+arm, and all three consult the committed count `ctx+0x19` (`0x8(s1)`).
+
+**Auto-end.** `801d2054`..`801d2078` walks the four costs at `ctx+0x14`
+against the pool, leaving `s0 = 0` when at least one is affordable and `s0 = 4`
+when none is. `801d208c bne s0,zero,801d20ac` then writes `0x5A`.
+
+**Confirm** - the configurable mask `_DAT_800846D0`, the same one the round
+prompt and every menu in the game read:
+
+```text
+801d207c  lbu  v0,0x8(s1)        ; committed count; 0 skips to the cancel test
+801d2084  beq  v0,zero,0x801d20e4
+801d2094  lui  v0,0x8008
+801d2098  lw   v0,0x46d0(v0)     ; _DAT_800846D0, the confirm mask
+801d20a0  and  v0,s2,v0          ; s2 = the packed pad word built at 801d0b20
+801d20ac  sb   v0,0x0(s3)        ; ctx+0x06 = 0x5A
+```
+
+**Cancel** - the sibling mask `_DAT_800846D4`, which forks on the same count:
+
+```text
+801d20ec  lw   v0,0x46d4(v0)     ; _DAT_800846D4, the cancel mask
+801d20f4  and  v0,s2,v0
+801d210c  lbu  v0,0x8(s1)
+801d2114  bne  v0,zero,0x801d21a8 ; typed -> case 0x26, ctx+0x06 untouched
+801d219c  li   v0,0x78            ; empty -> the attack-mode prompt
+801d21a0  sb   v0,0x0(s3)         ; (0x28 instead when _DAT_800846C4 is set)
+```
+
+With a typed buffer the cancel is a **restart, not an exit**: case `0x26` of
+`FUN_801D388C` wipes all sixteen queue bytes
+(`801d52d4 sb zero,0x1df(v0)` under `801d52d8 sltiu v0,s3,0x10`), re-seeds the
+pool from AGL (`801d535c lhu v0,0x154(v0)` -> `801d5364 sh v0,0x6(s6)`) and
+zeros the count (`801d536c sb zero,0x8(s4)`). Nothing writes `ctx+0x06`, so the
+flow stays in `0x50`.
+
+Note the pad word these masks are tested against. `s2` is built at `801d0b20`
+as `_DAT_8007B874 | _DAT_8007B938` - the **packed** layout, whose byte halves
+are swapped against the raw BIOS word. So the entry's four direction tests at
+`801d1e60`..`801d1f38` (`0x8000 / 0x1000 / 0x4000 / 0x2000`) are Left / Up /
+Down / Right, not Square / Triangle / Cross / Circle. Reading them raw turns a
+d-pad entry into a face-button one and makes the confirm mask look unreachable.
 
 ### Where a saved chain belongs
 

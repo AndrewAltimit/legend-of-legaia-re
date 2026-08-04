@@ -1446,6 +1446,305 @@ pub fn root_menu_cancel_route(entry_context_kind: Option<u8>) -> u8 {
     }
 }
 
+// ---------------------------------------------------------------------------
+// The kind-`0x0D` entry screens: sub-screens 4 and 3
+// ---------------------------------------------------------------------------
+
+/// Sub-screen the save/menu driver **opens on** for entry-context kind
+/// [`ROOT_MENU_CONTEXT_LOCKED`] - the notice panel that draws window 6.
+///
+/// `FUN_801DC6B4`'s entry decode writes the sub-screen id four ways, one per
+/// kind, and `4` is exactly one of them:
+///
+/// ```text
+/// 801dc8d0  lbu  v1,0x0(a0)          ; the kind byte
+/// 801dc8d4  li   v0,0xd
+/// 801dc8d8  bne  v1,v0,0x801dc8ec
+/// 801dc8e0  li   v0,0x4
+/// 801dc8e4  sw   v0,0x46a4(a1)       ; DAT_801E46A4 = 4
+/// ```
+///
+/// Nothing else in the overlay writes `4` there, and nothing else writes
+/// `0x20` (the prize exchange) either - a sweep of every
+/// `sw rt,0x46a4(rs)` in PROT 0899 finds 66 writers and exactly one for
+/// each of those two ids, both inside this decode. So these screens hang
+/// off the entry-context kind and off nothing else.
+///
+/// PORT: FUN_801DC6B4 (`0x801dc8d0..0x801dc8e4`)
+pub const CONTEXT_LOCKED_ENTRY_SUBSCREEN: u8 = 4;
+
+/// Sub-screen the root picker's **cancel** hands to under the same kind -
+/// the ready check that draws window 5. See [`root_menu_cancel_route`].
+pub const CONTEXT_LOCKED_CANCEL_SUBSCREEN: u8 = 3;
+
+/// Load base of the menu overlay's string pool - the image
+/// [`menu_overlay_string`] slices.
+pub const MENU_OVERLAY_BASE_VA: u32 = legaia_asset::menu_windows::MENU_OVERLAY_BASE_VA;
+
+/// The six label VAs `FUN_801D6360` loads into the string primitive, in
+/// draw order (`lui a0,0x801d` + `addiu a0,a0,-0x1358` and its five
+/// siblings at `0x801d636c..0x801d6448`).
+///
+/// Coordinates only - the text is read from the caller's own image, the
+/// same rule `legaia_asset::battle_ui_strings` follows. The sixth entry is
+/// a one-byte control string rather than a line, which is why the panel
+/// reads as five lines plus the advance hand.
+pub const NOTICE_PANEL_LABEL_VAS: [u32; 6] = [
+    0x801C_ECA8,
+    0x801C_ECD4,
+    0x801C_ECFC,
+    0x801C_ED20,
+    0x801C_ED38,
+    0x801C_ED58,
+];
+
+/// The two heading VAs `FUN_801D61B0` loads above its choice group.
+pub const READY_CONFIRM_HEADING_VAS: [u32; 2] = [0x801C_EC78, 0x801C_EC94];
+
+/// The one heading VA `FUN_801D603C` loads above its choice group (window
+/// 46, the prize-exchange redeem confirm).
+pub const CHOICE_PANEL_HEADING_VA: u32 = 0x801C_EAC8;
+
+/// The shared Yes / No choice labels both choice painters load.
+pub const CHOICE_YES_VA: u32 = 0x801C_EA84;
+/// See [`CHOICE_YES_VA`].
+pub const CHOICE_NO_VA: u32 = 0x801C_EA8C;
+
+/// Read one NUL-terminated menu-overlay string at `va` out of a PROT 0899
+/// image, dropping the leading `@` the string primitive uses as its
+/// lead-in marker.
+///
+/// Stops at the first byte outside printable ASCII as well as at the NUL,
+/// so an entry that is really a one-byte control code comes back empty
+/// rather than as mojibake. `None` means the VA is outside the image.
+///
+/// No text is committed anywhere in this crate: the VAs above are the
+/// coordinates and this reads the bytes from the image the user supplied.
+pub fn menu_overlay_string(overlay: &[u8], va: u32) -> Option<String> {
+    let off = va.checked_sub(MENU_OVERLAY_BASE_VA)? as usize;
+    let rest = overlay.get(off..)?;
+    let body = rest.strip_prefix(b"@").unwrap_or(rest);
+    let end = body
+        .iter()
+        .position(|&b| !(0x20..0x7F).contains(&b))
+        .unwrap_or(body.len());
+    Some(String::from_utf8_lossy(&body[..end]).into_owned())
+}
+
+/// Every label the kind-`0x0D` pair needs, read off one PROT 0899 image.
+///
+/// A host installs this on its session at menu-open; a session without it
+/// draws the panels with no text rather than with invented text.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ContextLockedLabels {
+    /// The notice panel's lines, empty entries dropped (window 6).
+    pub notice_lines: Vec<String>,
+    /// The ready check's two heading lines (window 5).
+    pub ready_headings: [String; 2],
+    /// Yes / No, shared by both choice painters.
+    pub choices: [String; 2],
+}
+
+impl ContextLockedLabels {
+    /// Read every label out of a PROT 0899 image.
+    pub fn from_menu_overlay(overlay: &[u8]) -> Self {
+        let s = |va: u32| menu_overlay_string(overlay, va).unwrap_or_default();
+        Self {
+            notice_lines: NOTICE_PANEL_LABEL_VAS
+                .iter()
+                .map(|&va| s(va))
+                .filter(|l| !l.is_empty())
+                .collect(),
+            ready_headings: [
+                s(READY_CONFIRM_HEADING_VAS[0]),
+                s(READY_CONFIRM_HEADING_VAS[1]),
+            ],
+            choices: [s(CHOICE_YES_VA), s(CHOICE_NO_VA)],
+        }
+    }
+
+    /// `true` once a host has installed real disc text.
+    pub fn is_installed(&self) -> bool {
+        !self.notice_lines.is_empty() || !self.ready_headings[0].is_empty()
+    }
+}
+
+/// Phase tag of the Equip screen, mirroring
+/// [`crate::equip_session::EquipState`] as a flat word the hosts map onto
+/// `engine-ui`'s `EquipDrawPhase`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EquipScreenPhase {
+    SlotPicker,
+    ItemPicker,
+    Confirm,
+}
+
+/// Owned view model of the Equip screen - the sibling of
+/// [`items_screen_model`] / [`magic_screen_model`] for the third
+/// descriptor-window screen.
+///
+/// It exists for the same reason those do: the projection is real work
+/// (eight slot labels, the candidate list for the active slot with its bag
+/// counts, and a full `compute_battle_stats` pass with the hovered item
+/// installed), and it was written out twice - once in the native window's
+/// `equip_session_draws`, once in the browser's. Two copies of a stat
+/// preview is two chances to preview a different number.
+pub struct EquipScreenModel {
+    /// Party-window rows.
+    pub party_names: Vec<String>,
+    /// Slot labels in engine slot order (retail identifies slots by the
+    /// pictogram column; the label is an engine hint).
+    pub slot_labels: Vec<String>,
+    /// Per-slot equipped-item display names; empty string for an empty slot.
+    pub slot_items: Vec<String>,
+    /// Candidate item names for the active slot. Empty in `SlotPicker`.
+    pub candidate_names: Vec<String>,
+    /// Bag count per candidate, parallel to [`Self::candidate_names`].
+    pub candidate_counts: Vec<u8>,
+    /// The three retail compare rows (`FUN_801D21C0`'s stat block) as
+    /// `(label, current, preview)`. Empty when nothing is previewed.
+    pub stat_compare: Vec<(&'static str, u16, u16)>,
+    pub phase: EquipScreenPhase,
+    /// Cursor row inside the active phase column.
+    pub cursor: u16,
+    /// Active slot index in `ItemPicker` / `Confirm`.
+    pub active_slot: u8,
+    /// Pending-swap label above the Yes/No prompt.
+    pub confirm_label: Option<String>,
+    /// Roster slot of the character being equipped.
+    pub char_slot: u8,
+    /// Slot-picker cursor row, or `None` past the slot picker - what the
+    /// sprite pass puts the second hand on.
+    pub slot_cursor: Option<u16>,
+    /// Pictogram rows the sprite pass draws. Retail draws exactly 7; the
+    /// engine's 8th slot row stays navigable but icon-less so the column
+    /// matches the retail capture.
+    pub pictogram_rows: usize,
+}
+
+/// Project a live [`crate::equip_session::EquipSession`] into
+/// [`EquipScreenModel`].
+///
+/// `party_names` is the world's roster snapshot, which the session does not
+/// carry. The stat preview uses the neutral status set: this is the field
+/// menu, and the session recomputes with live status modifiers on commit.
+pub fn equip_screen_model(
+    session: &crate::equip_session::EquipSession,
+    char_slot: u8,
+    party_names: &[String],
+) -> EquipScreenModel {
+    use crate::equip_session::EquipState;
+    use crate::equipment::EquipSlot;
+
+    let record = session.record();
+    let slot_labels: Vec<String> = (0..8u8)
+        .map(|i| {
+            EquipSlot::from_index(i)
+                .map(|s| s.label().to_string())
+                .unwrap_or_else(|| format!("Slot {i}"))
+        })
+        .collect();
+    let slot_items: Vec<String> = record
+        .equip
+        .iter()
+        .map(|&id| {
+            if id == 0 {
+                String::new()
+            } else {
+                format!("Item {id:02X}")
+            }
+        })
+        .collect();
+
+    let (phase, cursor, active_slot, confirm_label) = match session.state() {
+        EquipState::SlotPicker { cursor } => {
+            (EquipScreenPhase::SlotPicker, cursor as u16, cursor, None)
+        }
+        EquipState::ItemPicker { slot, cursor } => {
+            (EquipScreenPhase::ItemPicker, cursor, slot, None)
+        }
+        EquipState::Confirm {
+            slot,
+            item_id,
+            cursor,
+        } => (
+            EquipScreenPhase::Confirm,
+            cursor as u16,
+            slot,
+            Some(format!("Equip Item {item_id:02X}?")),
+        ),
+        EquipState::Done(_) => (EquipScreenPhase::SlotPicker, 0, 0, None),
+    };
+
+    // Candidates + stat compare only matter past the slot picker.
+    let (candidate_names, candidate_counts, considered_id): (Vec<String>, Vec<u8>, Option<u8>) =
+        if phase == EquipScreenPhase::SlotPicker {
+            (Vec::new(), Vec::new(), None)
+        } else {
+            let items = session.items_for_slot(active_slot);
+            let names: Vec<String> = items
+                .iter()
+                .map(|it| format!("Item {:02X}", it.id))
+                .collect();
+            let counts: Vec<u8> = items
+                .iter()
+                .map(|it| session.inventory().get(&it.id).copied().unwrap_or(0))
+                .collect();
+            // The item the compare block previews: the hovered row in the
+            // picker, the pending item in the confirm phase.
+            let considered = match session.state() {
+                EquipState::Confirm { item_id, .. } => Some(item_id),
+                _ => items.get(cursor as usize).map(|it| it.id),
+            };
+            (names, counts, considered)
+        };
+
+    let stat_compare: Vec<(&'static str, u16, u16)> = match considered_id {
+        Some(id) => {
+            let neutral = crate::battle_stats::StatusModifiers::default();
+            let cur = crate::battle_stats::compute_battle_stats(
+                record,
+                session.equipment(),
+                &[],
+                &neutral,
+            );
+            let mut copy = *record;
+            copy.equip[active_slot as usize] = id;
+            let new = crate::battle_stats::compute_battle_stats(
+                &copy,
+                session.equipment(),
+                &[],
+                &neutral,
+            );
+            vec![
+                ("ATK", cur.atk, new.atk),
+                ("UDF", cur.udf, new.udf),
+                ("LDF", cur.ldf, new.ldf),
+            ]
+        }
+        None => Vec::new(),
+    };
+
+    EquipScreenModel {
+        party_names: party_names.to_vec(),
+        slot_labels,
+        slot_items,
+        candidate_names,
+        candidate_counts,
+        stat_compare,
+        phase,
+        cursor,
+        active_slot,
+        confirm_label,
+        char_slot,
+        slot_cursor: match session.state() {
+            EquipState::SlotPicker { cursor } => Some(cursor as u16),
+            _ => None,
+        },
+        pictogram_rows: record.equip.len().min(7),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

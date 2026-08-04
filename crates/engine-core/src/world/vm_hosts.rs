@@ -392,30 +392,33 @@ impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
         // Pending scene/portal data copy - no engine-side scene buffer yet.
     }
     fn on_scene_transition(&mut self, entity_idx: usize) {
-        // A portal entity reached the transition state. When it carries a
-        // target map, surface the richer transition event; otherwise fall back
-        // to the generic interaction marker.
+        // A portal entity reached the transition state. Which of the two
+        // portal shapes it is decides where the number goes - and they are
+        // *different id spaces*, which is the whole reason this arm is split.
         match self.world.world_map_entity_configs.get(entity_idx) {
-            Some(WorldMapEntityConfig::Portal { target_map }) => {
-                let target_map = *target_map;
-                self.world
-                    .pending_field_events
-                    .push(FieldEvent::WorldMapTransition {
-                        target_map,
-                        slot: entity_idx as u8,
-                    });
+            // A **minigame door** on the overworld (the `map02` / `map03`
+            // fishing signboards): its payload is the op-`0x3E` `op0 - 100`
+            // mode-24 sub-id, so it arms the door warp exactly as the field
+            // VM's own arm and the walk-touch arm do. Routing it as a map id
+            // instead resolved a code-overlay selector through a CDNAME
+            // ordinal and warped the player to an unrelated scene.
+            // REF: FUN_801DE840 case 0x3e at 0x801E078C
+            Some(WorldMapEntityConfig::MinigameDoor { sub_id }) => {
+                let sub_id = *sub_id;
+                self.world.arm_minigame_warp();
+                self.world.pending_minigame_warp = Some(sub_id);
             }
-            // An overworld town/dungeon entrance (the `0x3F`-bridge portal).
-            // The event only carries `slot`; the host's transition drain reads
-            // the real CDNAME destination from `world_map_entity_configs[slot]`.
-            // `target_map` echoes the `0x3F` index so a host without config
-            // access still has the destination id.
+            // An overworld town/dungeon entrance (the `0x3F`-bridge portal) -
+            // the only producer of `WorldMapTransition`. The event carries the
+            // `0x3F` destination index and the `slot`; the host's transition
+            // drain reads the real CDNAME destination from
+            // `world_map_entity_configs[slot]`.
             Some(WorldMapEntityConfig::OverworldPortal { index, .. }) => {
                 let index = *index;
                 self.world
                     .pending_field_events
                     .push(FieldEvent::WorldMapTransition {
-                        target_map: index as u16,
+                        dest_index: index as u16,
                         slot: entity_idx as u8,
                     });
             }
@@ -690,7 +693,17 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             }
         }
     }
+    fn op49_arm(&mut self, sub_op: u8, _pc: usize, _field_90: u32) {
+        // Retail's `sw s6,-0x4bb0(s0)`: the park holds the operand pointer,
+        // whose first byte is this sub-op. Recording it is what lets
+        // `World::menu_entry_context_kind` answer with anything other than
+        // the two sub-ops the port could previously infer from its own
+        // dedicated host paths.
+        self.world.record_op49_park(sub_op);
+    }
     fn op49_clear(&mut self) {
+        // Retail's `sw zero,-0x4bb0(s0)` on the Done edge.
+        self.world.clear_op49_park();
         // The shop op's resume ran: drop the arm so a later op-0x49 can open
         // the next merchant. (Name-entry clears via its own pending flags.)
         self.world.field_shop_armed = false;
@@ -871,6 +884,19 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // step returns so the bytecode swap doesn't invalidate the
         // borrow we're stepping through.
         self.world.pending_scene_transition = Some(map_id);
+    }
+
+    fn minigame_door_warp(&mut self, sub_id: u8) {
+        // Retail's arm does two things this host can do inline - zero the
+        // session-winnings accumulator `_DAT_80084440` and back the departure
+        // scene up for the return trip (the backup is `FUN_80025980`'s half of
+        // the same entry, and the engine keeps the field state resident, so
+        // arming here is equivalent and keeps the round trip in one place).
+        self.world.arm_minigame_warp();
+        // The mode change itself is deferred like every other transition: the
+        // field bytecode is still borrowed for this step, and entering a
+        // minigame swaps the world's scene mode out from under it.
+        self.world.pending_minigame_warp = Some(sub_id);
     }
 
     fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8, dir: u8) {

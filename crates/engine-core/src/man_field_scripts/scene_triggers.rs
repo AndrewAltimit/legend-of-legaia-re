@@ -200,9 +200,22 @@ fn partition2_scene_changes(
                     let primary = (index, name, entry_x, entry_z, dir);
                     // A conditional entrance: a preceding flag-test branches to
                     // a *different* second `0x3F` (the flag-SET destination).
+                    //
+                    // "Different" is the whole destination, not just the scene
+                    // name. A two-ended pass branches to the **same** scene at
+                    // a different arrival tile, and that is the case the
+                    // difference matters most in: `map01`'s `suimon` entrance
+                    // (P2[18]) tests flag `0x27B` and names `suimon` on both
+                    // arms - entry `(0x44, 0x2C)` clear, `(0x15, 0x54)` set -
+                    // and the two are opposite chambers of the scene, one of
+                    // which is the only route to the southern half of the
+                    // kingdom. Comparing names alone silently kept the clear
+                    // arm forever. Comparing the tuple still rejects the
+                    // degenerate shape where the branch target falls through
+                    // to the very same `0x3F`, which decodes identically.
                     let alt = pending_test.and_then(|(flag, target)| {
                         let dest = first_scene_change_from(body, target)?;
-                        (dest.1 != primary.1).then_some((flag, dest))
+                        (dest != primary).then_some((flag, dest))
                     });
                     return Some((primary, alt));
                 }

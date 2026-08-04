@@ -1,0 +1,29 @@
+# Minigame replay baseline.
+#
+# The highest rung `crates/engine-shell/tests/minigame_replay.rs` has reached
+# driving the five minigames through the DISC'S OWN door bytecode - the field-VM
+# op-`0x3E` mode-24 warp - rather than through `World::enter_*`. The test
+# asserts `score >= reached`, so the number is a ratchet: it may go up in a
+# reviewed edit, and a drop fails the run.
+#
+# Rungs (see the test's module docs for the full table):
+#   1  every playable minigame's door record is located on the disc
+#   2  each door's bytecode publishes its sub_id through the ported 0x3E arm
+#   3  the host drain enters each minigame's scene mode off real overlay tables
+#   4  each minigame advances under a pad stream
+#   5  each returns to the field
+#
+# This number is denominated in what the disc's own entry path reaches, not in
+# what the engine's test-only `enter_*` constructors can install. The five
+# `engine-core/tests/*_minigame_real.rs` oracles cover the rules engines; they
+# are silent about reachability, which is what this ladder measures.
+#
+# Raise it only when the run actually clears the rung - never to make a red
+# test green.
+
+# All five rungs clear. What the ladder does NOT yet claim: every door clears
+# only past its own prologue - each record's conversation comes to rest before
+# the warp (the test prints the `(pc, opcode)` each died on). Closing that needs
+# the placement-interaction dispatch, not a change to the warp arm.
+
+reached = 5
