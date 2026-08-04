@@ -649,8 +649,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           paging on each press &mdash; and a sequence that spells a Tactical Art raises the
           arts banner when it plays out. <kbd data-pad-key="Cross">Z</kbd> reviews the queue, then
           <b>Begin&nbsp;/&nbsp;Reselect</b> confirms or redoes it (<kbd>Esc</kbd> backs out).
-          Between turns <kbd data-pad-key="Cross">Z</kbd> advances the interval tally. Drag the arena to
-          orbit, wheel to zoom.
+          A settled turn goes straight back to the command menu &mdash; retail has no beat
+          between turns. Between <em>fights</em> the arena's <b>INTERVAL</b> screen counts the
+          cleared round up, and <kbd data-pad-key="Cross">Z</kbd> stages the next one. Drag the
+          arena to orbit, wheel to zoom.
         </p>
         <div class="mg-row">
           <button class="mg-btn mg-primary" type="button" id="muscle-confirm">Fight / Next<span class="mg-key" data-pad-key="Cross">Z</span></button>
@@ -723,8 +725,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
             white speed-line rays (polygonal in retail, procedural here) and the SUPER/MIRACLE
             banner word composition (atlas layout &mdash; only the HYPER strip's draw is
             packet-pinned); the chips' glide-in motion (the page parks them at the element
-            table's arrived endpoints); the interval panel's info layout (its INTERVAL/ROUND
-            headings are the retail art, the rows below are a page aid); the time-meter
+            table's arrived endpoints); the between-fights INTERVAL screen's hold time (its
+            heading and six count-up rows are the retail emitters' own; retail's fade/hold
+            counters are unported); the time-meter
             placement (its ramp is the traced <code>FUN_801d3444</code> shape); which of the
             three traced UI blips fires on which page event; the KO clip pick (slot&nbsp;4 of
             the pinned party hit-reaction family &mdash; the flinch, slot 2, is traced); the
@@ -3224,6 +3227,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
    * (window.MgMuscle). */
   let muscleR = null;
   let muscleLastPhase = null;
+  let muscleLastTurn = -1;
 
   const muscleEsc = (s) => String(s).replace(/[&<>"]/g,
     (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
@@ -3308,6 +3312,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   function muscleReset() {
     if (!api || !muscleR) return;
     muscleLastPhase = null;
+    muscleLastTurn = -1;
     verdict($('muscle-verdict'), '', '');
     if (!muscleR.start(muscleOpts())) {
       verdict($('muscle-verdict'),
@@ -3330,7 +3335,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     muscleSync();
   }
 
-  /* Space / Confirm: fight, skip the playback, advance the interval, rematch. */
+  /* Space / Confirm: fight, skip the playback, leave the between-FIGHTS interval
+   * screen (a settled turn needs no press - it returns to the cluster itself),
+   * rematch. */
   function muscleConfirm() {
     if (!api || !muscleR) return;
     MgBgm.start('muscle');    /* first confirm is the user gesture that lets audio play */
@@ -3372,15 +3379,23 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     }
 
     /* Verdict per phase transition (the canvas carries the banners; this is
-     * the accessible text mirror). */
-    if (st.phase !== muscleLastPhase) {
+     * the accessible text mirror).
+     *
+     * A settled TURN gets a line but no screen: retail goes straight back to
+     * the command cluster between turns, so the panel never stops on
+     * `turn_over` and the mirror keys off the turn counter instead of the
+     * phase. Only a settled LEG raises a screen (the INTERVAL + tally hub). */
+    if (st.turn !== muscleLastTurn && st.turn > 0 && st.phase === 'select') {
+      verdict($('muscle-verdict'),
+        `Turn ${st.turn} settled — you took ${st.last_damage[0]}, ` +
+        `${st.names ? st.names[1] : 'the opponent'} took ${st.last_damage[1]}. ` +
+        `${st.hp_left}% of the opponent is left. Enter the next turn's commands.`, '');
+      muscleLastTurn = st.turn;
+      muscleLastPhase = st.phase;
+    } else if (st.phase !== muscleLastPhase) {
       if (st.phase === 'select') verdict($('muscle-verdict'),
         `Left = Attack (arrows enter directions), Down = Spirit, Space begins the turn. ` +
         `Fight until one side drops — there is no turn limit.`, '');
-      else if (st.phase === 'turn_over') verdict($('muscle-verdict'),
-        `Turn ${st.turn} settled — you took ${st.last_damage[0]}, ` +
-        `${st.names ? st.names[1] : 'the opponent'} took ${st.last_damage[1]}. ` +
-        `${st.hp_left}% of the opponent is left.`, '');
       else if (st.phase === 'won') verdict($('muscle-verdict'),
         run
           ? `Round cleared — ${run.tally} coins banked so far. ` +

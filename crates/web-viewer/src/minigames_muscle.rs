@@ -859,6 +859,25 @@ impl LegaiaMinigames {
         run.take_hp_restore(0, hp_max) as i32
     }
 
+    /// Whether the leg boundary just reported by [`Self::muscle_report_leg`]
+    /// raises the arena's between-legs INTERVAL + score-tally screen.
+    ///
+    /// The answer is the shared rule's
+    /// ([`legaia_engine_core::muscle_dome::leg_boundary_raises_interval`]) -
+    /// the same call the native window's `tick_muscle_hub` makes - so the page
+    /// cannot grow a cadence of its own. It says `true` only for a survived leg
+    /// with the course not yet exhausted; a lost, run-from or final leg settles
+    /// and shows nothing.
+    ///
+    /// It is not a *turn* question. A turn boundary keeps the leg open and the
+    /// arena hub unreached, so the page must go straight back to the command
+    /// cluster there ([`legaia_engine_core::muscle_dome::MusclePhase::ends_turn`]).
+    pub fn muscle_leg_shows_interval(&self) -> bool {
+        legaia_engine_core::muscle_dome::leg_boundary_raises_interval(
+            self.muscle_run.as_ref().map(|r| r.state()),
+        )
+    }
+
     /// Settle the open contest if it has run out: pay the tally into the
     /// page's coin bank and latch the one-shot Master-course prize.
     ///
