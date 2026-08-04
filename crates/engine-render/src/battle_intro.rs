@@ -108,11 +108,8 @@
 
 use crate::billboard::{psx_cos, psx_sin};
 use crate::gte::{GteMat3, GteVec3, ScreenXY, avsz4_with_scale, gte_divide, gte_persp_term, nclip};
-use crate::screen_overlay::{FlatQuad, ScreenPrim, ScreenQuad};
-use crate::vram_capture::{
-    CaptureOpts, FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS, PSX_SCREEN_HEIGHT, PSX_SCREEN_WIDTH,
-    VramRect,
-};
+use crate::screen_overlay::{FlatQuad, ScreenPrim, ScreenQuad, display_rect_flat_quad, fade_prim};
+use crate::vram_capture::{CaptureOpts, FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS, VramRect};
 use legaia_engine_vm::battle_intro_styles::{
     self as styles, IntroFade, IntroStyle, PARTICLE_TICK_A, PARTICLE_TICK_B, ParticleTickStyle,
 };
@@ -404,19 +401,17 @@ pub const PARTICLE_WASH_RGB: u32 = 0x0010_1010;
 /// pixels. Over [`BACKDROP_RGB`] the subtraction is a near-no-op, which is
 /// the honest outcome rather than a fabricated one.
 pub fn wash_prim(gp0_rgb_word: u32) -> ScreenPrim {
-    let (w, h) = (PSX_SCREEN_WIDTH as i16, PSX_SCREEN_HEIGHT as i16);
-    ScreenPrim::Flat(FlatQuad {
-        xy: [(0, 0), (w, 0), (0, h), (w, h)],
-        color: [
+    display_rect_flat_quad(
+        [
             (gp0_rgb_word & 0xFF) as u8,
             ((gp0_rgb_word >> 8) & 0xFF) as u8,
             ((gp0_rgb_word >> 16) & 0xFF) as u8,
             0xFF,
         ],
-        semi_transparent: true,
-        abr_mode: WASH_ABR_SUBTRACT,
-        ot_index: u32::MAX,
-    })
+        true,
+        WASH_ABR_SUBTRACT,
+        u32::MAX,
+    )
 }
 
 /// The ABR mode `FUN_80046978` passes for the armed wash: `2`, i.e. `B - F`.
@@ -457,19 +452,17 @@ pub const BACKDROP_RGB: u32 = 0x0000_0000;
 /// style draws nothing on, which is also what keeps the host's target choice
 /// on the compositing arm for the whole transition.
 pub fn backdrop_prim() -> ScreenPrim {
-    let (w, h) = (PSX_SCREEN_WIDTH as i16, PSX_SCREEN_HEIGHT as i16);
-    ScreenPrim::Flat(FlatQuad {
-        xy: [(0, 0), (w, 0), (0, h), (w, h)],
-        color: [
+    display_rect_flat_quad(
+        [
             (BACKDROP_RGB & 0xFF) as u8,
             ((BACKDROP_RGB >> 8) & 0xFF) as u8,
             ((BACKDROP_RGB >> 16) & 0xFF) as u8,
             0xFF,
         ],
-        semi_transparent: false,
-        abr_mode: 0,
-        ot_index: u32::MAX,
-    })
+        false,
+        0,
+        u32::MAX,
+    )
 }
 
 /// A GP0 colour word (`R` in the low byte) as [`ScreenQuad::color`]'s
@@ -1405,20 +1398,11 @@ pub fn intro_quad_to_screen(q: &IntroQuad) -> ScreenQuad {
 /// white-out, and the subtractive ones never reached black. The OT layer is
 /// `a0` - [`legaia_engine_vm::battle_intro_styles::INTRO_FADE_LAYER`], the
 /// same `2` for all five styles - so that is what the bucket carries.
+/// The quad itself is [`legaia_engine_ui::screen_prim::fade_prim`], which is
+/// also what the browser play page emits: the fade is the one part of this
+/// transition both hosts draw, so the two must not each build the packet.
 pub fn fade_quad(f: &IntroFade) -> ScreenPrim {
-    let (w, h) = (PSX_SCREEN_WIDTH as i16, PSX_SCREEN_HEIGHT as i16);
-    ScreenPrim::Flat(FlatQuad {
-        xy: [(0, 0), (w, 0), (0, h), (w, h)],
-        color: [
-            ((f.rgb >> 16) & 0xFF) as u8,
-            ((f.rgb >> 8) & 0xFF) as u8,
-            (f.rgb & 0xFF) as u8,
-            0xFF,
-        ],
-        semi_transparent: true,
-        abr_mode: f.abr,
-        ot_index: u32::from(f.layer),
-    })
+    fade_prim(f.rgb, f.abr, u32::from(f.layer))
 }
 
 /// Compose the object record's three authored angles into a model rotation,

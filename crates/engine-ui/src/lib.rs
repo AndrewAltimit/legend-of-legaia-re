@@ -31,6 +31,10 @@
 //!   live window's `+0x28`.
 //! * [`ui_title_save`] - title menu, 9-slice window chrome, save-select,
 //!   save-slot grid + info panel, "Now checking" dialog.
+//! * [`screen_prim`] - screen-space PSX primitives (`POLY_FT4`/`POLY_GT4`
+//!   corners, CLUT/texpage, ABR mode, ordering-table bucket) plus the shared
+//!   OT sort and vertex builder. The one draw record here that is *not* a
+//!   [`TextDraw`] in disguise.
 //!
 //! Extracted from `legaia-engine-render`, which re-exports every item here at
 //! its old path so native code + tests compile unchanged. The GPU-resident
@@ -48,6 +52,7 @@ pub mod battle_hud_chrome;
 pub mod battle_name_banner;
 mod battle_tutorial_box;
 pub mod other_game_hud;
+pub mod screen_prim;
 mod ui_fishing;
 mod ui_menu;
 pub mod ui_menu_window_dispatch;

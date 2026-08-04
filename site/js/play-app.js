@@ -254,6 +254,249 @@
     }
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Screen-space PSX primitive pass (2D `POLY_FT4` / `POLY_GT4` quads).   */
+  /* ------------------------------------------------------------------ */
+
+  /* The 2D half of the PSX GPU, which this page did not have.
+   *
+   * The engine hands over a vertex/index/run triple built by the SHARED
+   * `legaia_engine_ui::screen_prim` builder - the same code the native window
+   * feeds to wgpu. Positions arrive already in NDC and the triangles already
+   * in ordering-table order (farthest OT bucket first, LIFO within a bucket),
+   * so there is nothing here to project and nothing here to sort: this class
+   * uploads three arrays and issues one draw per run.
+   *
+   * The fragment path is the 3D VRAM-mesh decode with the texture-window
+   * remap dropped (screen sprites never use GP0(E2)): 4/8/15-bpp texture
+   * pages out of the same 1024x512 R16UI VRAM texture, CLUT lookup through
+   * CBA, BGR555 -> RGBA, `0x0000` discarded. `flags` bit 0 picks textured vs
+   * flat; `a_color` is a `/128` modulation factor on the textured path and a
+   * straight `/255` colour on the flat one.
+   *
+   * The per-run blend state is NOT a table in this file - it is
+   * `TmdRenderer._setSemiBlend`, the same four ABR equations the 3D blend
+   * pass binds. A second copy here is precisely how the two halves of one
+   * GPU model drift apart.
+   *
+   * See docs/tooling/host-drift.md for what this pass can and cannot draw. */
+  const VS_SCREEN_PRIM = `#version 300 es
+precision highp float;
+precision highp int;
+
+in vec2 a_pos;          /* already NDC - built by the shared Rust builder */
+in vec2 a_uv;           /* texel coordinates inside the texture page */
+in uvec2 a_cba_tsb;     /* GP0 CLUT base + texpage words */
+in vec4 a_color;        /* textured: /128 factor. flat: /255 colour. */
+in uint a_flags;        /* bit 0 = textured */
+
+out vec2 v_uv;
+flat out uvec2 v_cba_tsb;
+out vec4 v_color;
+flat out uint v_flags;
+
+void main() {
+  v_uv = a_uv;
+  v_cba_tsb = a_cba_tsb;
+  v_color = a_color;
+  v_flags = a_flags;
+  gl_Position = vec4(a_pos, 0.0, 1.0);
+}
+`;
+
+  const FS_SCREEN_PRIM = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp usampler2D;
+
+uniform usampler2D u_vram;
+
+in vec2 v_uv;
+flat in uvec2 v_cba_tsb;
+in vec4 v_color;
+flat in uint v_flags;
+
+out vec4 o_color;
+
+vec4 bgr555_to_rgba(uint c) {
+  float r = float(c & 31u) / 31.0;
+  float g = float((c >> 5u) & 31u) / 31.0;
+  float b = float((c >> 10u) & 31u) / 31.0;
+  uint stp = (c >> 15u) & 1u;
+  float a = (c == 0u && stp == 0u) ? 0.0 : 1.0;
+  return vec4(r, g, b, a);
+}
+
+uint fetch_vram_word(vec2 uv, uint cba, uint tsb) {
+  uint u_pix = uint(max(uv.x, 0.0)) & 255u;
+  uint v_pix = uint(max(uv.y, 0.0)) & 255u;
+  uint tpage_x = (tsb & 15u) * 64u;
+  uint tpage_y = ((tsb >> 4u) & 1u) * 256u;
+  uint depth   = (tsb >> 7u) & 3u;   /* 0=4bpp, 1=8bpp, 2=15bpp */
+  if (depth == 0u) {
+    int vx = int(tpage_x + (u_pix >> 2u));
+    int vy = int(tpage_y + v_pix);
+    uint word = texelFetch(u_vram, ivec2(vx, vy), 0).r;
+    uint nibble = u_pix & 3u;
+    uint pal_idx = (word >> (nibble * 4u)) & 15u;
+    int cx = int((cba & 63u) * 16u + pal_idx);
+    int cy = int((cba >> 6u) & 511u);
+    return texelFetch(u_vram, ivec2(cx, cy), 0).r;
+  } else if (depth == 1u) {
+    int vx = int(tpage_x + (u_pix >> 1u));
+    int vy = int(tpage_y + v_pix);
+    uint word = texelFetch(u_vram, ivec2(vx, vy), 0).r;
+    uint byte_sel = u_pix & 1u;
+    uint pal_idx = (word >> (byte_sel * 8u)) & 255u;
+    int cx = int((cba & 63u) * 16u + pal_idx);
+    int cy = int((cba >> 6u) & 511u);
+    return texelFetch(u_vram, ivec2(cx, cy), 0).r;
+  }
+  int vx = int(tpage_x + u_pix);
+  int vy = int(tpage_y + v_pix);
+  return texelFetch(u_vram, ivec2(vx, vy), 0).r;
+}
+
+void main() {
+  if ((v_flags & 1u) != 0u) {
+    uint word = fetch_vram_word(v_uv, v_cba_tsb.x, v_cba_tsb.y);
+    if (word == 0u) discard;
+    vec4 texel = bgr555_to_rgba(word);
+    o_color = vec4(texel.rgb * v_color.rgb, v_color.a * texel.a);
+  } else {
+    o_color = v_color;
+  }
+}
+`;
+
+  /* Byte layout of `legaia_engine_ui::screen_prim::ScreenVertex`. Pinned on
+   * the Rust side by `the_vertex_field_offsets_match_the_layout_hosts_read_as_bytes`
+   * so a field reorder fails a test rather than a shader. */
+  const SCREEN_VERTEX_STRIDE = 44;
+  const SCREEN_VERTEX_OFF_POS = 0;
+  const SCREEN_VERTEX_OFF_UV = 8;
+  const SCREEN_VERTEX_OFF_CBA_TSB = 16;
+  const SCREEN_VERTEX_OFF_COLOR = 24;
+  const SCREEN_VERTEX_OFF_FLAGS = 40;
+
+  class ScreenPrimPass {
+    /* `renderer` is the live TmdRenderer: this pass borrows its GL context,
+     * its uploaded VRAM texture and its ABR blend table rather than keeping
+     * a second copy of any of the three. */
+    constructor(renderer) {
+      const gl = renderer.gl;
+      this.renderer = renderer;
+      this.gl = gl;
+      this.program = compileScreenPrimProgram(gl);
+      this.locVram = gl.getUniformLocation(this.program, 'u_vram');
+      this.vao = gl.createVertexArray();
+      this.vbo = gl.createBuffer();
+      this.ibo = gl.createBuffer();
+      gl.bindVertexArray(this.vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
+      const s = SCREEN_VERTEX_STRIDE;
+      /* A driver is free to optimise an attribute away and hand back -1;
+       * `enableVertexAttribArray(-1)` is an INVALID_VALUE, so bind by name and
+       * skip the missing ones rather than taking the pass down. */
+      const bindF = (name, size, off) => {
+        const l = gl.getAttribLocation(this.program, name);
+        if (l < 0) return;
+        gl.enableVertexAttribArray(l);
+        gl.vertexAttribPointer(l, size, gl.FLOAT, false, s, off);
+      };
+      const bindI = (name, size, off) => {
+        const l = gl.getAttribLocation(this.program, name);
+        if (l < 0) return;
+        gl.enableVertexAttribArray(l);
+        gl.vertexAttribIPointer(l, size, gl.UNSIGNED_INT, s, off);
+      };
+      bindF('a_pos', 2, SCREEN_VERTEX_OFF_POS);
+      bindF('a_uv', 2, SCREEN_VERTEX_OFF_UV);
+      bindI('a_cba_tsb', 2, SCREEN_VERTEX_OFF_CBA_TSB);
+      bindF('a_color', 4, SCREEN_VERTEX_OFF_COLOR);
+      bindI('a_flags', 1, SCREEN_VERTEX_OFF_FLAGS);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ibo);
+      gl.bindVertexArray(null);
+    }
+
+    /* Draw one frame's screen primitives over whatever is already in the
+     * framebuffer. `vertexBytes` is a Uint8Array in the ScreenVertex layout,
+     * `indices` a Uint32Array, `runs` a Uint32Array of
+     * `[class_code, index_start, index_count]` triples where class_code 0 is
+     * opaque and `1 + abr` is semi-transparent. */
+    draw(vertexBytes, indices, runs) {
+      const gl = this.gl;
+      if (!indices.length || !runs.length) return;
+      gl.bindVertexArray(this.vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
+      gl.bufferData(gl.ARRAY_BUFFER, vertexBytes, gl.STREAM_DRAW);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ibo);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STREAM_DRAW);
+      gl.useProgram(this.program);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.renderer.tex);
+      gl.uniform1i(this.locVram, 0);
+      /* Screen-space packets carry no depth: they composite in ordering-table
+       * order over the finished scene, so the depth buffer takes no part. */
+      const depthWasOn = gl.isEnabled(gl.DEPTH_TEST);
+      gl.disable(gl.DEPTH_TEST);
+      gl.depthMask(false);
+      gl.disable(gl.CULL_FACE);
+      let blendOn = false;
+      for (let i = 0; i + 2 < runs.length; i += 3) {
+        const code = runs[i], start = runs[i + 1], count = runs[i + 2];
+        if (!count) continue;
+        if (code === 0) {
+          if (blendOn) { gl.disable(gl.BLEND); blendOn = false; }
+        } else {
+          if (!blendOn) { gl.enable(gl.BLEND); blendOn = true; }
+          /* One ABR table on this page, and it lives in webgl-tmd.js. */
+          this.renderer._setSemiBlend((code - 1) & 3);
+        }
+        gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_INT, start * 4);
+      }
+      if (blendOn) {
+        gl.disable(gl.BLEND);
+        gl.blendEquation(gl.FUNC_ADD);
+      }
+      gl.depthMask(true);
+      if (depthWasOn) gl.enable(gl.DEPTH_TEST);
+      gl.bindVertexArray(null);
+    }
+
+    dispose() {
+      const gl = this.gl;
+      gl.deleteProgram(this.program);
+      gl.deleteVertexArray(this.vao);
+      gl.deleteBuffer(this.vbo);
+      gl.deleteBuffer(this.ibo);
+    }
+  }
+
+  function compileScreenPrimProgram(gl) {
+    const mk = (type, src, tag) => {
+      const s = gl.createShader(type);
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+        throw new Error(tag + ': ' + gl.getShaderInfoLog(s));
+      }
+      return s;
+    };
+    const v = mk(gl.VERTEX_SHADER, VS_SCREEN_PRIM, 'screen-prim VS');
+    const f = mk(gl.FRAGMENT_SHADER, FS_SCREEN_PRIM, 'screen-prim FS');
+    const p = gl.createProgram();
+    gl.attachShader(p, v);
+    gl.attachShader(p, f);
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      throw new Error('screen-prim link: ' + gl.getProgramInfoLog(p));
+    }
+    gl.deleteShader(v);
+    gl.deleteShader(f);
+    return p;
+  }
+
   class PlayView {
     /* `runtime` is the WASM LegaiaRuntime (disc already loaded); `canvas` an
      * unused <canvas> in the DOM. `opts.onState` fires once per frame with the
@@ -296,6 +539,12 @@
        * null otherwise. `_camBeforeBattle` restores the field framing after. */
       this._battle = null;
       this._camBeforeBattle = null;
+      /* Screen-space PSX primitive pass (the 2D half of the GPU), built on
+       * the first frame that carries a primitive. `_screenPrimBroken` latches
+       * a driver that could not link it, so a failure costs the effect and
+       * not the session. */
+      this._screenPrims = null;
+      this._screenPrimBroken = false;
       /* Camera-occlusion fade (see-through walls) - the browser twin of the
        * native play-window's default-on enhancement: field geometry between
        * the camera and the player screen-doors open around the character
@@ -1895,6 +2144,12 @@
         return;
       }
 
+      /* Screen-space PSX primitives over the finished 3D frame (the
+       * field-to-battle transition's fade today). Outside the try/catch above
+       * only in the sense that it has its own: a shader link failure on some
+       * driver must not take the whole play loop down with it. */
+      if (!skipDraw) this._drawScreenPrims(rt);
+
       /* FPS + HUD, sampled twice a second. */
       this._fpsFrames++;
       const now = performance.now();
@@ -1915,6 +2170,37 @@
        * blitted onto the 2D overlay canvas over the GL view. Skipped while VR
        * presents. */
       if (!skipDraw) this._drawOverlay();
+    }
+
+    /* One frame of the screen-space PSX primitive pass.
+     *
+     * The engine builds the whole draw list - the ordering-table sort and the
+     * NDC vertex stream both come out of the shared
+     * `legaia_engine_ui::screen_prim` builder, so this method has nothing to
+     * order and nothing to project. It asks how many primitives the frame
+     * carries, early-outs on none (every frame outside a transition), and
+     * otherwise uploads three arrays and lets `ScreenPrimPass` draw the runs.
+     *
+     * Guarded against a cached WASM bundle predating the exports, and against
+     * a driver that cannot link the pass: either way the page keeps playing
+     * with the pass switched off for the session. */
+    _drawScreenPrims(rt) {
+      if (this._screenPrimBroken) return;
+      if (typeof rt.play_screen_prim_count !== 'function') return;
+      let n = 0;
+      try { n = rt.play_screen_prim_count() | 0; } catch (e) { return; }
+      if (n <= 0) return;
+      try {
+        if (!this._screenPrims) this._screenPrims = new ScreenPrimPass(this.renderer);
+        this._screenPrims.draw(
+          rt.play_screen_prim_vertex_bytes(),
+          rt.play_screen_prim_indices(),
+          rt.play_screen_prim_runs(),
+        );
+      } catch (e) {
+        this._screenPrimBroken = true;
+        try { console.warn('screen-prim pass disabled:', e); } catch (_) { /* no console */ }
+      }
     }
 
     /* ---------- battle 3D scene ---------- */
@@ -2219,6 +2505,7 @@
       window.removeEventListener('keydown', this._onDown);
       window.removeEventListener('keyup', this._onUp);
       window.removeEventListener('blur', this._onBlur);
+      if (this._screenPrims) { this._screenPrims.dispose(); this._screenPrims = null; }
       if (this.renderer) { this.renderer.dispose(); this.renderer = null; }
     }
   }

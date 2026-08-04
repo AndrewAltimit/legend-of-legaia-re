@@ -1887,6 +1887,22 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
                 "consumer of the same walk-placement accessors; see above",
         },
     },
+    {
+        "kernel": "screen-space fade quad",
+        "why": "the transition fade's ABR mode - not its colour - decides "
+        "whether the screen darkens or brightens, and it travels in the "
+        "packet beside an OT layer that looks exactly like it. Swapping the "
+        "two puts every style's fade on ABR 0 (0.5B + 0.5F): the additive "
+        "styles top out at washed grey instead of a white-out and the "
+        "subtractive ones never reach black. `screen_prim::fade_prim` is the "
+        "one packet builder both hosts call, and a surface that resolves the "
+        "ramp and then hand-rolls the quad is how that swap gets made a "
+        "second time",
+        # The EMITTER: a file that resolves the fade ramp. Naming the type
+        # would catch every file that passes an `IntroFade` along.
+        "trigger": r"\bintro_fade\s*\(",
+        "requires": [r"\bfade_prim\b"],
+    },
 ]
 
 BLOCK_COMMENT_ANY_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
