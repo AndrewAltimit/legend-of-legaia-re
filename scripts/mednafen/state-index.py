@@ -22,10 +22,18 @@ Usage:
     scripts/mednafen/state-index.py --json out.json     # machine-readable
     scripts/mednafen/state-index.py --root /some/dir    # extra search root
 
-Memory cards are skipped by design: `~/.mednafen/sav/*.mcr` are 128 KiB PSX
-memory-card images (`MC` magic), not save states. They carry save blocks, not
-main RAM, so no scene anchor and no display list can be read from one. The
-sweep reports how many it skipped so the distinction stays visible.
+Every file is classified by its **content**, never its extension, because in
+this project the extension is actively misleading: `.mcr` names two opposite
+things. `~/.mednafen/sav/*.mcr` and `saves/library/cards/*.mcr` are 128 KiB PSX
+memory-card images (`MC` magic) carrying save blocks - no main RAM, so no scene
+anchor and no display list. But `saves/library/mednafen/*.mcr` are **save
+states** (gzip magic), because the backup helper keeps the source slot's
+extension. A sweep that dispatches on the suffix drops the entire curated
+library, which is the corpus most likely to hold the state you actually want.
+
+So: sniff the magic, and for a gzip stream decompress the first block to tell a
+mednafen `MDFNSVST` container from a PCSX-Redux protobuf. Memory cards are
+skipped and counted, so the distinction stays visible in the output.
 """
 
 from __future__ import annotations
@@ -46,35 +54,65 @@ DEFAULT_ROOTS = [
     Path.home() / ".config" / "pcsx-redux",
     Path.home() / "Tools" / "pcsx-redux",
     REPO / "captures",
+    # The curated library: states other oracles in this repo are pinned
+    # against, deliberately captured at interesting moments. Named by
+    # sha256 with the *source slot's* extension retained, so the mednafen
+    # ones are `.mcr` despite being save states.
+    REPO / "saves" / "library" / "mednafen",
+    REPO / "saves" / "library" / "pcsx-redux",
 ]
-
-MEDNAFEN_SUFFIXES = tuple(f".mc{i}" for i in range(10))
-# PCSX-Redux writes `.sstate`, `.sstate0`..`.sstate9`, and occasionally
-# `.sstate.sstate` when a name already carrying the suffix is re-saved.
-PCSXR_MARKER = ".sstate"
 
 # PSX memory card: exactly 128 KiB opening with the "MC" block-allocation magic.
 MEMCARD_BYTES = 131072
+GZIP_MAGIC = b"\x1f\x8b"
+MEDNAFEN_MAGIC = b"MDFNSVST"
+# Every save state embeds 2 MiB of main RAM, so even a well-compressed one runs
+# north of a megabyte (observed: ~1.7 MB gzipped, ~19 MB bare). The floor is what
+# keeps a source checkout out of the index - one of the default roots is
+# `~/Tools/pcsx-redux`, which is the *emulator's own source tree*, and its files
+# carry "PCSX" in their license headers. Sniffing content without a size floor
+# indexes several hundred `.cpp` and `.md` files as save states.
+MIN_STATE_BYTES = 512 * 1024
 
 
 def classify(path: Path) -> str | None:
-    """Return 'mednafen' / 'pcsx-redux' / None for a candidate file."""
-    name = path.name
-    if name.endswith(MEDNAFEN_SUFFIXES):
-        return "mednafen"
-    if PCSXR_MARKER in name:
-        return "pcsx-redux"
-    return None
+    """Return 'mednafen' / 'pcsx-redux' / 'card' / None by sniffing content.
 
-
-def is_memory_card(path: Path) -> bool:
+    Extensions cannot be trusted here - `.mcr` is both a memory card and a
+    mednafen save state depending on which directory it came from - so every
+    decision below is made on bytes.
+    """
     try:
-        if path.stat().st_size != MEMCARD_BYTES:
-            return False
+        size = path.stat().st_size
         with path.open("rb") as fh:
-            return fh.read(2) == b"MC"
+            head = fh.read(4)
+            if head[:2] == b"MC" and size == MEMCARD_BYTES:
+                return "card"
+            if size < MIN_STATE_BYTES:
+                return None
+            if head[:2] == GZIP_MAGIC:
+                # Both emulators gzip; decompress a block to tell them apart.
+                import gzip
+
+                try:
+                    with gzip.open(path, "rb") as gz:
+                        prefix = gz.read(4096)
+                except OSError:
+                    return None
+                if prefix.startswith(MEDNAFEN_MAGIC):
+                    return "mednafen"
+                if b"PCSX" in prefix[:64]:
+                    return "pcsx-redux"
+                return None
+            # Bare (ungzipped) PCSX-Redux protobuf, as written by a Lua probe:
+            # a length-delimited field 1 (`0x0A`) whose payload names the core.
+            if head[:1] == b"\x0a":
+                fh.seek(0)
+                if b"PCSX" in fh.read(32):
+                    return "pcsx-redux"
     except OSError:
-        return False
+        return None
+    return None
 
 
 def collect(roots: list[Path]) -> tuple[dict[str, list[Path]], int]:
@@ -91,14 +129,13 @@ def collect(roots: list[Path]) -> tuple[dict[str, list[Path]], int]:
             resolved = path.resolve()
             if resolved in seen:
                 continue
-            if is_memory_card(path):
-                memcards += 1
-                seen.add(resolved)
-                continue
             kind = classify(path)
             if kind is None:
                 continue
             seen.add(resolved)
+            if kind == "card":
+                memcards += 1
+                continue
             found[kind].append(path)
     return found, memcards
 

@@ -38,6 +38,28 @@ Fixed by dispatching on the `1f 8b` magic. Before: 21 scenes indexed. After:
 **50**. Both threads' scenes only became visible after this fix - it is the
 single change that unblocked the task.
 
+## 2b. A third corpus was missing, and my own classifier was why
+
+The coordinator caught that the first sweep never looked at `saves/library/` -
+the **curated** corpus, the states other oracles in this repo are pinned
+against. The reason it was invisible is a defect in my script: `classify()`
+dispatched on **extension**, and the library's mednafen states are named `.mcr`
+(the backup helper keeps the source slot's suffix) - the same suffix as the
+memory cards I had just correctly identified as *not* states. Two populations,
+one extension, opposite contents.
+
+Fixed by classifying on **content**: sniff the magic, and for a gzip stream
+decompress the first block to tell an `MDFNSVST` container from a PCSX-Redux
+protobuf. That needed one more guard - a naive content sniff indexed several
+hundred `.cpp` and `.md` files as save states, because a default root is
+`~/Tools/pcsx-redux`, which is the *emulator's own source tree*, and its files
+carry "PCSX" in their license headers. A 512 KiB size floor fixes it: every
+state embeds 2 MiB of main RAM.
+
+**Corrected totals: 186 mednafen + 292 pcsx-redux = 478 states, 13 memory cards
+skipped, 0 unreadable, 55 scenes.** (The intermediate "941 states" figure was
+the un-floored sniff counting source files; it is not a real number.)
+
 ## 3. Scene coverage index (new, reusable)
 
 `scripts/mednafen/state-index.py` + `mednafen-state identify` +
@@ -45,15 +67,22 @@ single change that unblocked the task.
 `legaia_mednafen::game_anchors` (which `legaia_pcsxr` now delegates to instead of
 duplicating), so the two corpora index into one table.
 
-50 scenes covered. Headline rows for this task:
+55 scenes covered across the complete corpus. Headline rows for this task:
 
-| scene | states | modes |
+| scene | states | what they are |
 |---|---|---|
-| `teien` | 2 | `field-init`, `battle-init` - **no field-run** |
-| `jou` | 10 | 2 `mode_01`, 8 `battle` |
-| `jouine` | 2 | `field-run`, `battle` |
-| `jouind` | 1 | `field-run` |
-| `chitei2` | 0 | not covered |
+| `teien` | 2 | `field-init` + `battle-init` - **still no field-run** |
+| `chitei2` | 0 | **still not covered at all** |
+| `jouine` | 4 | 2 field-run, but byte-identical (see below) |
+| `jouind` | 14 | 2 field-run, byte-identical; 12 battle |
+| `edteien` | 3 | field-run **mednafen** - new, see section 5b |
+
+The library's `jouine`/`jouind` field-run states are **not** new cameras: a
+library filename *is* the sha256 of its contents, and
+`sha256(~/.config/pcsx-redux/SCUS94254.sstate2)` equals the library entry's
+name exactly. They are backups of the states already swept, so they cannot
+retire the one-frame-one-camera caveat. All three `edteien` states report the
+identical player position too.
 
 Full table: run the script, or `--json` it.
 
@@ -101,18 +130,52 @@ OT.
 Limits, stated so nobody relays this as broader than it is: each read is **one
 frame, one camera**, and a surface outside that view contributes no packet. The
 negative carries weight because a stacked shell would double many adjacent
-surfaces at once and none of 1218 + 971 walked packets is doubled anywhere - but
+surfaces at once and none of 1218 + 972 walked packets is doubled anywhere - but
 a second field-run state per scene at a different camera would retire the
-caveat. `chitei2` is not covered at all, so its slope inherits the conclusion
-rather than being measured.
+caveat. **The full corpus does not contain one** - the library's `jouine` /
+`jouind` field-run states are byte-identical backups of the ones already read,
+so the caveat stands. `chitei2` is not covered at all, so its slope inherits the
+conclusion rather than being measured.
 
-**Thread 1 (teien hedge-base ground fill): BLOCKED, with the blocker pinned.**
-No `teien` field-run state exists. The `field-init` one is mid-fade - three
-stacked full-screen untextured quads in a 44-packet chain. Needs **one mednafen
-state in `teien` at mode `0x03`**; mednafen specifically, because the per-cell
-join needs the object grid at `*(_DAT_1F8003EC)`, which lives in the scratchpad
-that only mednafen states carry. `mednafen-state`'s `scratch_ram()` already
-reads it - the brief's step-2 concern was already implemented.
+**Thread 1 (teien hedge-base ground fill): BLOCKED against the complete corpus.**
+No `teien` field-run state exists in any of the three populations. The
+`field-init` one is mid-fade - three stacked full-screen untextured quads in a
+44-packet chain. Needs **one mednafen state in `teien` at mode `0x03`**;
+mednafen specifically, because the per-cell join needs the object grid at
+`*(_DAT_1F8003EC)`, which lives in the scratchpad that only mednafen states
+carry. `mednafen-state`'s `scratch_ram()` already reads it - the brief's step-2
+concern was already implemented.
+
+### 5b. `edteien` is a lead, not an answer
+
+The library turned up three field-run **mednafen** states in `edteien` - the
+epilogue variant of the teien garden, and the only garden field-run states in
+the corpus. Two things make it interesting and one stops it short of answering
+thread 1.
+
+Interesting: its frame draws the *same texture families* as the teien capture
+(`0x7C40/0x001A`, `0x7EC0/0x000C`, `0x7F00/0x000B`, `0x7F41/0x001B`), so it is
+the same garden art. And reading its live object grid through the scratchpad
+(`0x1F8003EC` -> `0x80139530`, grid at `+0x8000`, 0x80x0x80 u16) shows
+**exactly the thread's cell pattern**: of 479 nonzero cells, 400 carry `0x1000`,
+52 carry `0x0800`, and **45 carry `0x0800` without `0x1000`**. So the
+configuration the thread is about is not unique to `teien`, and a mednafen state
+that exhibits it does exist.
+
+Stops short: `edteien` is a different CDNAME scene with its own `.MAP`, so a
+result there is not a result about teien's cells. And my OT detector only
+reaches 254 of that frame's 1624 pool packets - see the limitation below - so I
+could not even measure it cleanly. I did **not** answer thread 1 from this, and
+nothing in the engine changed.
+
+### Known limitation: OT detection is not exhaustive
+
+`find_ot_arrays` keys on the `ClearOTagR` empty-bucket signature. It finds the
+live table in every `jou`/`teien` state read here, but in `edteien` the tables it
+finds account for 254 of 1624 pool packets, so at least one table is missed
+(likely one whose buckets are densely enough occupied to erase the signature).
+A frame whose walked count is far below its pool count should be treated as
+under-read, not as a small frame.
 
 ## 6. Decoder defect found and fixed, with a downstream visual consequence
 

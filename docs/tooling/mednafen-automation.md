@@ -222,11 +222,17 @@ rather than a play session, which is what gates every display-list read.
 
 Two distinctions the sweep makes that are easy to get wrong by hand:
 
-- **`~/.mednafen/sav/*.mcr` are memory cards, not save states.** They are
-  128 KiB PSX card images (`MC` magic) carrying save blocks - no main RAM, so
-  no scene anchor and no display list. The real mednafen states are
-  `~/.mednafen/mcs/*.mc{0..9}`. The sweep skips cards and reports the count so
-  the difference stays visible.
+- **`.mcr` names two opposite things.** `~/.mednafen/sav/*.mcr` and
+  `saves/library/cards/*.mcr` are 128 KiB PSX card images (`MC` magic) carrying
+  save blocks - no main RAM, so no scene anchor and no display list. But
+  `saves/library/mednafen/*.mcr` are **save states**, because the backup helper
+  keeps the source slot's extension. Classify on content, never suffix: a sweep
+  that dispatches on `.mcr` either drops the curated library or indexes cards as
+  states. The sweep skips cards and reports the count so the split stays visible.
+- **Sniffing content needs a size floor.** One default root is
+  `~/Tools/pcsx-redux`, the emulator's own source tree, whose files carry "PCSX"
+  in their license headers. Without a floor a content sniff indexes several
+  hundred source files as states; every real state embeds 2 MiB of main RAM.
 - **A `snap_*_scene_<name>` filename is the scene the probe tagged, not proof
   the frame is that scene's.** Read the state's own mode: a snapshot taken at
   the scene-change trigger reports `field-init`, and its display list still
@@ -269,7 +275,18 @@ Three properties of the format decide whether a report means anything:
 
 The tables are located by their `ClearOTagR` signature - an empty bucket holds
 its own predecessor's address, so a cleared table is a run of self-referential
-words - and the head is the highest bucket.
+words - and the head is the highest bucket. Which table feeds which pool is not
+decidable from addresses (a table sits either side of the packets it links, and
+retail leaves cleared-but-unused tables at full size), so the default picks the
+one that yields the most packets rather than the one with the most buckets.
+
+That detection is **not exhaustive**: a table whose buckets are densely occupied
+has few empty ones left to key on and can be missed. Compare the walked count
+against the pool count the command prints - a frame walking far fewer packets
+than its pool holds is under-read, not a small frame.
+
+The corresponding sweep for "which states exist at all" is
+`state-index.py` above; the two are meant to be used in that order.
 
 ### Byte-match a player battle file (`battle_data` block) against VRAM
 

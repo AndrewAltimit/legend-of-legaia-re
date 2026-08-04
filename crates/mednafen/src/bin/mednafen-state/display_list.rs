@@ -295,11 +295,11 @@ pub fn cmd_display_list(
     // Caveat worth stating: cross-table order is the order the `DrawOTag` calls
     // are made, which is assumed here to match address order. Within one table
     // the order is exact.
-    const SAME_BUFFER: u32 = 256 * 1024;
-    let mut mine: Vec<&prim_pool::OtArray> = ots
-        .iter()
-        .filter(|o| o.end <= region.start && region.start - o.start <= SAME_BUFFER)
-        .collect();
+    // Which table feeds which pool is not decidable from addresses - a table
+    // can sit either side of the packets it links, and retail leaves several
+    // cleared-but-unused tables at full size lying around. So rank by the only
+    // thing that actually answers it: how many packets the table yields.
+    let mut mine: Vec<&prim_pool::OtArray> = ots.iter().collect();
     mine.sort_by_key(|o| o.start);
     // Retail double-buffers: the two ordering tables of a pair hold frame N and
     // frame N-1, and their packet counts come out near-identical. Merging them
@@ -308,15 +308,30 @@ pub fn cmd_display_list(
     // buffer, not a second mesh. So walk ONE table by default and require
     // `--all-ots` to opt into the merged view.
     if let Some(want) = ot_addr {
-        mine.retain(|o| o.start == want || o.head == want);
+        // Select from *every* table, not just the pool-adjacent ones: the
+        // buffer-half filter is a heuristic, and an explicit address is the
+        // user overriding it.
+        mine = ots
+            .iter()
+            .filter(|o| o.start == want || o.head == want)
+            .collect();
         if mine.is_empty() {
             println!("[chain] no ordering table at 0x{want:08X}");
         }
     } else if !all_ots && mine.len() > 1 {
-        let chosen = *mine.iter().max_by_key(|o| o.buckets).unwrap();
+        // Pick by how many packets the table actually yields, not by how many
+        // buckets it declares: retail leaves cleared-but-unused tables at full
+        // size, so "the biggest table" is regularly an empty one and a
+        // bucket-count heuristic silently reports a frame of nothing.
+        let chosen = *mine
+            .iter()
+            .max_by_key(|o| {
+                prim_pool::chain_walk(&ram, PSX_RAM_KSEG0, (o.head - PSX_RAM_KSEG0) as usize).len()
+            })
+            .unwrap();
         println!(
-            "[chain] {} adjacent tables (double buffer); walking one - \
-             pass --all-ots to merge",
+            "[chain] {} ordering tables; walking the one yielding the most \
+             packets - pass --all-ots to merge, --ot-addr to choose",
             mine.len()
         );
         mine = vec![chosen];

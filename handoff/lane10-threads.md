@@ -34,9 +34,11 @@ of the section with:
 > kind-2-cell draw channel**.
 >
 > **The corpus cannot answer this yet, and the reason is now precise rather than
-> assumed.** The state index (`scripts/mednafen/state-index.py`) covers 50
-> scenes across both emulators, and `teien` is one of them - but neither of its
-> two states carries a `teien` field frame. One is `battle-init`; the other is
+> assumed.** The state index (`scripts/mednafen/state-index.py`) covers 55
+> scenes across both emulators and all three state populations - the live
+> emulator slots, the repo's probe captures, and the curated `saves/library/` -
+> and `teien` is one of them, but neither of its two states carries a `teien`
+> field frame. One is `battle-init`; the other is
 > `field-init`, and reading its display list settles what that means: the live
 > ordering table holds **44 packets**, three of which are stacked full-screen
 > untextured `POLY_F4` quads spanning `(0,-4)..(320,228)`. That is a
@@ -54,6 +56,15 @@ of the section with:
 > state the read is `mednafen-state display-list <state> --list` plus the grid
 > slice; see
 > [`mednafen-automation.md`](../tooling/mednafen-automation.md#read-a-frames-display-list-libgpu-ordering-table).
+>
+> **The cell configuration itself is confirmed to exist, in a sibling scene.**
+> `edteien` - the epilogue variant of the same garden, drawing the same texture
+> families - has three field-run *mednafen* states, and its live object grid
+> read through the scratchpad holds 400 cells with `0x1000` and **45 with
+> `0x0800` and no `0x1000`**: exactly the shape the thread describes. That
+> settles that the pattern is not a teien-specific authoring accident. It does
+> not answer the thread, because `edteien` is a different scene with its own
+> `.MAP`, and a draw-channel result there is not a result about teien's cells.
 >
 > Until then the engine must not grow a speculative fill.
 
@@ -81,7 +92,7 @@ Replace the text from "First, **same-position stacks of curved shells**" up to
 > field-run save states inside `jouine` and `jouind` (`mednafen-state
 > display-list --coincident`) finds **zero** screen-coincident groups among
 > surfaces of at least 16 px² in either scene's live frame - 1218 packets walked
-> in `jouind`, 971 in `jouine`, every surface submitted exactly once. The
+> in `jouind`, 972 in `jouine`, every surface submitted exactly once. The
 > scripts swap these meshes as state/morph variants rather than stacking them,
 > which is what the thread suspected.
 >
@@ -109,7 +120,9 @@ Replace the text from "First, **same-position stacks of curved shells**" up to
 > cave interiors, whose walls are the dominant on-screen geometry, both shells
 > being off-camera in both frames is implausible. It is not impossible, and a
 > second field-run state per scene at a different camera would retire the
-> caveat.
+> caveat - **the corpus does not contain one**: the curated library's
+> `jouine`/`jouind` field-run states are byte-identical backups of the two read
+> here (a library filename is the sha256 of its contents), not new viewpoints.
 >
 > `chitei2` is **not** covered by the state corpus, so its res41/res45 slope is
 > asserted only by the two `jou` scenes' result, not measured directly.
