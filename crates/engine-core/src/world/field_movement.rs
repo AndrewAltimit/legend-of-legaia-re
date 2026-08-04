@@ -1854,9 +1854,9 @@ impl World {
     /// press, the same dispatch path the button-gated interact uses
     /// ([`Self::trigger_field_interact`]) plus the decoded script effect:
     ///
-    /// - [`WalkTouchEvent::Warp`] → queue the door-warp scene transition
-    ///   (the effect of the record's `0x3E` op through the host's
-    ///   `scene_transition` path);
+    /// - [`WalkTouchEvent::Warp`] → arm the **mode-24 minigame door-warp**
+    ///   (the effect of the record's `0x3E` op, staged exactly as the
+    ///   field-VM arm stages it - see [`crate::minigame_entry`]);
     /// - [`WalkTouchEvent::PlayerMoveTo`] → snap the player to the decoded
     ///   world coords (the record's cross-context `0x23` into the player
     ///   channel) and surface a [`FieldEvent::MoveTo`].
@@ -1939,8 +1939,15 @@ impl World {
         // Post through the same dispatch path the button-gated interact uses.
         self.trigger_field_interact(0, touch_slot);
         match event {
-            WalkTouchEvent::Warp { target_map } => {
-                self.pending_scene_transition = Some(target_map);
+            WalkTouchEvent::Warp { sub_id } => {
+                // The same opcode the field VM's own arm handles, reached by
+                // walking onto the placement instead of by a script step - so
+                // it stages the same way (`FieldHostImpl::minigame_door_warp`).
+                // Posting `sub_id` into `pending_scene_transition` instead
+                // resolved a code-overlay selector through a CDNAME ordinal
+                // and warped the player to an unrelated scene.
+                self.arm_minigame_warp();
+                self.pending_minigame_warp = Some(sub_id);
             }
             WalkTouchEvent::PlayerMoveTo {
                 world_x,

@@ -84,12 +84,16 @@ fn koin1_portal_walk_touch_queues_the_door_warp() {
         return;
     };
 
-    // koin1 (the mines) carries several genuine 0x3E door-warp placements.
+    // koin1 is the **casino**, and its several genuine `0x3E` door placements
+    // are the venue's cabinets: the census (`minigame_entry_census_disc`)
+    // decodes P1[54..56] as sub-id 3 (slot machine), P1[51..53] as sub-id 4
+    // (Baka Fighter) and P1[9] as sub-id 5 (Muscle Dome). So the payload is a
+    // mode-24 overlay selector, not a map id - see `minigame_entry`.
     let warps: Vec<(u8, (i16, i16), u8)> = world
         .field_walk_touch
         .iter()
         .filter_map(|(&slot, &(pos, event))| match event {
-            WalkTouchEvent::Warp { target_map } => Some((slot, pos, target_map)),
+            WalkTouchEvent::Warp { sub_id } => Some((slot, pos, sub_id)),
             _ => None,
         })
         .collect();
@@ -98,8 +102,8 @@ fn koin1_portal_walk_touch_queues_the_door_warp() {
         "koin1 derives several walk-touch door warps (got {})",
         warps.len()
     );
-    let (slot, pos, target_map) = warps[0];
-    eprintln!("[koin1] walking into portal slot {slot} at {pos:?} (target_map {target_map})");
+    let (slot, pos, sub_id) = warps[0];
+    eprintln!("[koin1] walking into cabinet slot {slot} at {pos:?} (minigame sub_id {sub_id})");
 
     // Baseline: standing far from every portal posts no TOUCH. The
     // assertion is scoped to the walk-touch surface: channel stepping (when
@@ -118,13 +122,23 @@ fn koin1_portal_walk_touch_queues_the_door_warp() {
         "no touch post while far from every portal"
     );
 
-    // Walk into the portal's contact box: the touch posts once and queues
-    // the door-warp transition through the same path the 0x3E op uses.
-    walk_into(&mut world, pos, |w| w.pending_scene_transition.is_some());
+    // Walk into the cabinet's contact box: the touch posts once and arms the
+    // mode-24 door warp through the same path the `0x3E` op uses. It must NOT
+    // reach `pending_scene_transition` - resolving a sub-id through the map-id
+    // resolver is what used to warp the player to an unrelated scene.
+    walk_into(&mut world, pos, |w| w.pending_minigame_warp.is_some());
     assert_eq!(
-        world.pending_scene_transition,
-        Some(target_map),
-        "the walk-touch queued the placement's door-warp"
+        world.pending_minigame_warp,
+        Some(sub_id),
+        "the walk-touch armed the placement's minigame door warp"
+    );
+    assert_eq!(
+        world.pending_scene_transition, None,
+        "a cabinet's sub-id must not reach the map-id resolver"
+    );
+    assert!(
+        world.minigame_scene_backup.is_some(),
+        "the departure scene is backed up for the return trip"
     );
     let events = world.drain_field_events();
     let posts = events

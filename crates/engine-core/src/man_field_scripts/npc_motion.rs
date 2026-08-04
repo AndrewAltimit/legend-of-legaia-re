@@ -519,9 +519,18 @@ pub const PLAYER_CHANNEL: u8 = 0xF8;
 /// partner, which runs the touched entity's script - no button press).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WalkTouchEvent {
-    /// The script door-warps (`0x3E`, `op0 = map_id + 100`): walking into the
-    /// placement leaves the scene through the 7-id scene-type selector.
-    Warp { target_map: u8 },
+    /// The script runs the **mode-24 minigame door-warp** (`0x3E` with
+    /// `op0 >= 100`): walking into the placement enters the minigame whose
+    /// code overlay `sub_id = op0 - 100` selects.
+    ///
+    /// `sub_id` is **not** a map id, and reading it as one is the trap
+    /// [`crate::minigame_entry`] documents: the arm calls no scene-change
+    /// packet, and resolving the small dense integer through a CDNAME
+    /// ordinal warps the player to an unrelated scene instead of into the
+    /// venue. The field-VM arm and this walk-on arm are the same opcode
+    /// reached two ways, so both post
+    /// [`crate::world::World::pending_minigame_warp`].
+    Warp { sub_id: u8 },
     /// The script teleports the **player** (cross-context `0x23 | 0x80` into
     /// the [`PLAYER_CHANNEL`]): walking into the placement snaps the player to
     /// `(world_x, world_z)` - the cave-guard throw-back / intra-scene door
@@ -1024,7 +1033,12 @@ pub fn placement_walk_touch_event(
         return None;
     }
     if let PlacementKind::Portal { target_map } = classify_placement(man_file, man, p) {
-        return Some(WalkTouchEvent::Warp { target_map });
+        // `PlacementKind::Portal` is gated by `is_genuine_warp` to `op0` in
+        // `100..=106`, i.e. exactly the seven mode-24 overlay slots - so its
+        // payload is a minigame sub-id, whatever the field is still called.
+        return Some(WalkTouchEvent::Warp {
+            sub_id: target_map,
+        });
     }
     let (region, pc0) = placement_pretext_region(man_file, man, p)?;
     player_teleport_in_region(region, pc0)
