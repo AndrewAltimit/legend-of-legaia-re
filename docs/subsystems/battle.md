@@ -2785,7 +2785,7 @@ an unavailable command, while a *forbidden* one wears the red cross-out X
 
 **Port.** The cluster's draw side is
 [`engine-ui::battle_command_ui`](../../crates/engine-ui/src/battle_command_ui.rs) -
-plate run, both clusters, the shared face-button cell and the `-` chip - and
+plate run, both clusters, the shared D-pad glyph cell and the `-` chip - and
 both battle hosts seat their command menu through it, so the menu is chips
 rather than a text list on either. Every chip sits on a pinned arm: the two
 clusters are three **phases**, not two rows of one menu, and the phase a frame
@@ -3812,7 +3812,7 @@ the working-set arithmetic.
 
 The battle command UI is **not one menu**. `FUN_801D0748` walks the flow byte
 `ctx[+0x06]` through three separate selection surfaces, each a small cluster of
-plate chips around a face-button glyph, and none of them is a scrolling list.
+plate chips around a D-pad glyph, and none of them is a scrolling list.
 The whole sequence is readable off the disc: the dispatcher's state chain is a
 binary-search `beq` ladder at `0x801D0C84`, and every chip's seat and label
 comes from the [screen-element placement table](#the-widget-class-table---where-every-chrome-sprite-comes-from)
@@ -3841,24 +3841,39 @@ is the only way into it, and the action SM's round end (`0x801E67E8`) writes
 opens with `Begin` / `Run`, and each party member then picks from the ring in
 turn.
 
-### Each surface is a face-button map
+### Each surface is a D-pad map
 
-There is no cursor. Every chip is one face button, which is why a glyph sits at
-the centre of each cluster (`FUN_801DB8F4(x, y)`, the textured-quad emitter,
-drawn every frame of all three states).
+There is no face-button map. Every chip is seated on a **D-pad arm** and its
+`s2` test is the **packed direction mask** for that arm (packed = byte-swapped
+against the raw BIOS word - the trap
+[`s2` is not the pad](#s2-is-not-the-pad-and-how-a-command-commits) catalogues;
+an earlier revision of this table read the same masks raw and attributed the
+arms to Triangle / Square / Circle / Cross). That is why a **D-pad glyph** sits
+at the centre of each cluster (`FUN_801DB8F4(x, y)`, the textured-quad emitter,
+drawn every frame of all three states). Capture cross-check from the
+`cort_evolved_battle_first_menu` state
+(`scripts/pcsx-redux/autorun_battle_item_window_capture.lua`): in the ring, a
+single Up press opened the item window within three vsyncs while nineteen
+Triangle presses changed nothing.
 
-| State | Button | Chip | Next |
+| State | Packed mask | Chip | Next |
 |---|---|---|---|
-| `0x1E` | Square / confirm mask `0x800846D0` | `Begin` | `0x28` (or `0x6E`) |
-| `0x1E` | Circle | `Run` | `0x32` |
-| `0x28` | Triangle | `Item` (up arm) | `0x3C` |
-| `0x28` | Square / confirm mask | `Attack` (left arm) | `0x78` / `0x5A` / `0x50` by option `0x800846C4` |
-| `0x28` | Circle | Ra-Seru magic (right arm) | `0x46` |
-| `0x28` | Cross | `Spirit` (down arm) | commit; `0x6E` on the last member |
+| `0x1E` | Left `0x8000` / confirm mask `0x800846D0` | `Begin` | `0x28` (or `0x6E`) |
+| `0x1E` | Right `0x2000` | `Run` | `0x32` |
+| `0x28` | Up `0x1000` (`0x801D1364`) | `Item` (up arm) | `0x3C` |
+| `0x28` | Left `0x8000` (`0x801D1404`) | `Attack` (left arm) | `0x78` / `0x5A` / `0x50` by option `0x800846C4` |
+| `0x28` | Right `0x2000` (`0x801D136C`) | Ra-Seru magic (right arm) | `0x46` |
+| `0x28` | Down `0x4000` (`0x801D1544`) | `Spirit` (down arm) | commit; `0x6E` on the last member |
 | `0x28` | cancel mask `0x800846D4` | - | back to `0x1E` |
-| `0x78` | Square / confirm mask | `Auto` | `0x5A` (target cursor) |
-| `0x78` | Circle | `Command` | `0x50` (directional arts entry) |
+| `0x78` | Left / confirm mask | `Auto` | `0x5A` (target cursor) |
+| `0x78` | Right | `Command` | `0x50` (directional arts entry) |
 | `0x78` | cancel mask | - | back to `0x28` |
+
+With the selection widget up (`_DAT_800846C8` / `ctx[+0x275]`), the same table
+reads as highlight-then-confirm: the pre-dispatch block walks the highlight on
+direction presses and rewrites `s2` to the highlighted arm's mask on the
+confirm press, so each handler's direction test doubles as "take the
+highlighted chip".
 
 `Attack` is therefore **not** the plain strike: it is the door to the
 attack-mode prompt, and option `0x800846C4` decides whether that prompt is shown
@@ -3925,9 +3940,46 @@ seating for each; `engine-core::battle_open` composes the banner and
 set, and which a mid-round reopen does not. The ambush's lost round is already
 the `ctx[+0x290]` side lockout in `World::reseed_initiative`.
 
-The port keeps a cursor on top of the face-button seating so a keyboard host has
-something to move: Left / Right toggle within the drawn row, Up / Down walk the
-ring linearly.
+The port keeps a cursor + Cross-confirm on top of the seating (retail's
+direct-commit press stays a fidelity gap), and the direction → seat map is
+**spatial**, mirroring retail's own per-arm dispatch: on the ring Up seats
+`Item`, Left `Attack`, Right the magic arm, Down `Spirit`
+(`battle_input::ring_seat`), and on both two-chip prompts Left is always the
+left chip and Right the right chip (`battle_input::pair_seat`) - a direction
+press never toggles. `engine-shell`'s
+`direction_presses_land_on_the_chip_drawn_on_that_side` holds the map equal to
+the drawn seating.
+
+## The battle item window (`0x3C`) - packet-pinned
+
+What state `0x3C` actually puts on screen, read out of its own display list:
+the `battle_item_window` / `battle_item_window_cursor1` captures
+(`scripts/pcsx-redux/autorun_battle_item_window_capture.lua`, pad-walked from
+`cort_evolved_battle_first_menu`) hold the window open and one Down press
+apart, and the OT walk gives:
+
+| Piece | Pin |
+|---|---|
+| item-list window | system-UI window-skin tile grid (widget page `(896, 256)`, CLUT row 511 sub-palette 2), spanning x `166..=313`, y `28..=164` |
+| description window | same skin, x `8..=167`, y `122..=164`; shows the highlighted item's info-window line |
+| hand cursor | 16x16 pointing-finger `POLY_FT4` (CLUT row 511 sub-palette 7) at `(167, 45 + 14*row)` - the two captures pin the row pitch at 14 |
+| rows | eight per page; `PAGE n/m` header top-right, counts right-aligned at the interior's right edge |
+| breadcrumbs | gold tab plates `Begin` \| acting member's name \| `Item` top-left, replacing the actor-name plaque while the window is up |
+
+Content pens (row text, header, description line, breadcrumb seats) are
+screenshot-read off the same captures - the glyph packets ride a different
+draw pass than the window tiles.
+
+**Port.** `engine-ui::battle_item_ui` carries the pins and composes the two
+windows through the shared 9-slice menu-window chrome + tab-banner 3-slice +
+save-select hand cell; the projection (dedup row list with the cursor mapped
+into it, disc description, breadcrumb name, target roster) is
+`engine-core::World::battle_item_menu_model` /
+`InventoryUseSession::menu_view`, consumed by both play hosts. Known
+divergences, disclosed in the module doc: breadcrumb tabs are sized per label
+(the engine font is wider than retail's tab glyphs), and target select swaps
+the list column to the roster - retail's state-`0x64` target panel is not yet
+packet-pinned.
 
 ## See also
 

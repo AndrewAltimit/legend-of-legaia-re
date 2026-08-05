@@ -1220,7 +1220,7 @@ impl PlayWindowApp {
                     | CommandPhase::Menu { .. }
                     | CommandPhase::AttackMode { .. } => {
                         // Retail's command surfaces are clusters of framed
-                        // chips around a face-button glyph, not lists: the
+                        // chips around a D-pad glyph, not lists: the
                         // round-open `Begin | Run` pair, the packet-pinned
                         // four-arm diamond at `(228, 70)`, and the
                         // `Auto | Command` pair that re-uses the diamond's
