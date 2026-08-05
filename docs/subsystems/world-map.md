@@ -484,7 +484,10 @@ is walking.
 Otherwise it compares the player object's `+0x14` / `+0x18` against the pair
 cached at `_DAT_801F3488` / `_DAT_801F348A`. A mismatch rearms the countdown
 `_DAT_801F348C` (`0x28` frames in view mode 0, `0xA0` otherwise) and caches
-the new position. A match decrements the countdown by `_DAT_1F80038F`, and the
+the new position. A match decrements the countdown by `_DAT_1F800393` - the
+load at `0x801D0EF8` is `lbu v1,0x7f(t1)` against the scratchpad base
+`t1 = 0x1F800314`, and the soft-reset actor reads the same cell at
+`0x801EE02C`. A `_DAT_1F80038F` reading is four bytes short. The
 panel is built once it reaches zero. The scene-entry path arms the same
 countdown but consults `_DAT_8007B5F4` as well, shortening it to `0` in view
 mode 0 and to `0x50` in view mode 1.

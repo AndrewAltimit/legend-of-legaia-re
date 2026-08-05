@@ -56,10 +56,24 @@
 //! Tests use hand-authored synthetic bytecode (no Sony bytes).
 //!
 //! PORT: FUN_801D5630, FUN_801D596C, FUN_801D65D8, FUN_801D835C, FUN_801DB8EC
-//! PORT: FUN_801DD9D4, FUN_801DDE34, FUN_801DDFE4, FUN_801DE084, FUN_801DE2B0
+//! PORT: FUN_801DDE34, FUN_801DDFE4, FUN_801DE084, FUN_801DE2B0
 //! PORT: FUN_801DE3E0, FUN_801DE698, FUN_801DE754, FUN_801DE7BC, FUN_801E4C58
 //! PORT: FUN_801E573C, FUN_801E5668, FUN_801F8004, FUN_801F88FC, FUN_801F8D4C
 //! PORT: FUN_801F8E6C, FUN_801F8F28
+//!
+//! REF: FUN_801DD9D4 - **not ported here, and it was tagged `PORT:` in error.**
+//! The field VM only ever passes this address as a *token*: op `0x43` sub-`0xE`
+//! hands it to `func_0x8003CF04(_DAT_8007C34C, FUN_801DD9D4)` as the actor-list
+//! search predicate ([`host::FieldHost::op43_mark_actor_flag_8`], whose default
+//! body is empty, and the `0x801DF8D8` tail note in
+//! `step::menu_ctrl::nibble_5_6_7` that says the lookup is not modelled). The
+//! routine's own 69 instructions are a **per-actor GPU-primitive emitter** -
+//! it stages a `0x05000000` header plus a `0x28808080` flat-colour packet at
+//! `_DAT_1F8003A0`, copies `actor[+0xB8/+0xBA/+0xBC]` in as RGB, and walks the
+//! 8-entry jump table at `0x801CEC40` calling `func_0x8003D2C4` once per slot
+//! (seven base-tagged field-image dumps agree instruction for instruction;
+//! `overlay_0897_801dd9d4.txt` is a different function's interior and is not
+//! evidence for this VA). Nothing in this crate implements any of that.
 //!
 //! REF: FUN_8003AEB0, FUN_8003C764, FUN_8003CA38, FUN_8003CE9C, FUN_8003CF04
 //! REF: FUN_80042EE0, FUN_80056798, FUN_80058104, FUN_800583C8, FUN_8005842C, FUN_801D2D38

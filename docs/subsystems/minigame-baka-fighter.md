@@ -1125,8 +1125,12 @@ the static `SCUS_942.54` item table's own record fields: the routine bases at
 `0x80074368` with a `0x0c` stride and reads words `1` and `2`, which is
 `0x8007436c + id * 0x0c` - the item-name pointer of
 [`item-table.md`](../formats/item-table.md) - and the record's next word. The
-id `0xfe` is the money pseudo-item: it adds a fixed caption and prints the
-eight-digit amount at `_DAT_800845b4`. The Ghidra dump stops after that arm
+id `0xfe` is the **Point Card**, not money: it adds a fixed caption and prints
+the eight-digit total at `_DAT_800845b4`, the Point Card counter of
+[`memory-map.md`](../reference/memory-map.md) - the same counter the shop's buy
+commit credits behind a `FUN_80042f4c(0xfe)` inventory-has gate
+([`shop.md`](shop.md)). Party gold is `_DAT_8008459c` and the casino coin bank
+`_DAT_800845a4`; neither is read here. The Ghidra dump stops after that arm
 with no epilogue (`Control flow encountered bad instruction data`), so the
 body past the number draw is unrecovered.
 
