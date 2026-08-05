@@ -714,21 +714,23 @@ pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
 /// still removes it. Without the fallback the item survives on the
 /// character and the script's precondition silently fails.
 ///
-/// NOT WIRED, and the remaining gap is now one override. The claim that the
-/// engine's field VM has "no take-item opcode at all" was **wrong**: the arm
-/// is decoded and executed - it was simply modelled as a "menu activation
-/// poll" that halted at PC, so it both named the wrong thing and stalled the
-/// script. That is fixed; `FieldHost::op4c_n5_sub2_take_item(item_id)` now
-/// fires on every `[4C, 52, id]` and the VM advances by 3 either way.
+/// Wired. `FieldHostImpl` in [`crate::world::vm_hosts`] overrides
+/// `op4c_n5_sub2_take_item` - consume one from the bag, and **only** on the
+/// `0x100` miss call this kernel.
 ///
-/// What is left is the world-side override. `FieldHostImpl` in `engine-core`'s
-/// `world::vm_hosts` implements the give side (`FieldHost::give_item`, op
-/// `0x39`) and nothing in the take family, so the hook lands on the default
-/// no-op body and the party keeps the item. Wiring is one method there:
-/// consume one `item_id` from the bag, and on the miss call this kernel. Until
-/// then a script that takes away a worn accessory leaves it worn - which is
-/// the failure this function exists to prevent. The kernel is exercised by
-/// this module's tests meanwhile.
+/// The order is asserted rather than described: `world::tests::take_item`
+/// fails 4 of 5 without the override, and reading the sentinel the other way
+/// round (running both effects) leaves only
+/// `take_item_prefers_the_bag_over_the_worn_copy` failing - so each half of
+/// the branch is pinned by a test that distinguishes it.
+///
+/// Two earlier readings of this row were wrong and are recorded because both
+/// were plausible. "The engine's field VM has no take-item opcode at all" was
+/// false - the arm was decoded and executed, just modelled as a "menu
+/// activation poll" that halted at PC, which both named the wrong thing and
+/// stalled the script on 63 disc sites across 13 scenes. And the follow-up
+/// "what is left is the world-side override" was true only until that override
+/// landed; this paragraph is what replaced it.
 pub fn party_unequip_accessory_by_id(party: &mut legaia_save::Party, item_id: u8) -> bool {
     for member in &mut party.members {
         let mut eq = member.equipment();
