@@ -12,9 +12,7 @@ use legaia_prot::archive::Archive;
 use std::path::PathBuf;
 
 fn menu_overlay_bytes() -> Option<Vec<u8>> {
-    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
-        return None;
-    }
+    std::env::var_os("LEGAIA_DISC_BIN")?;
     let prot = [
         PathBuf::from("extracted/PROT.DAT"),
         PathBuf::from("../../extracted/PROT.DAT"),

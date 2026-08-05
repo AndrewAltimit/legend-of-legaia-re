@@ -238,8 +238,10 @@ mod tests {
 
     #[test]
     fn synthetic_program_drives_window_list() {
-        let mut st = MenuWidgetState::default();
-        st.defaults = vec![vm::Position::default(); 8];
+        let mut st = MenuWidgetState {
+            defaults: vec![vm::Position::default(); 8],
+            ..Default::default()
+        };
         st.defaults[2] = vm::Position::new(40, 60);
         vm::run(&mut st, SYNTH).unwrap();
         assert_eq!(st.open_ids(), vec![2]);
