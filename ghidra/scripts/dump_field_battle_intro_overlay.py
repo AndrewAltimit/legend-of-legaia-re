@@ -64,6 +64,8 @@ TARGETS = [
     "801d1888",  # 408 bytes   -- unique to field_battle_intro
     "801d0d24",  # 304 bytes   -- unique to field_battle_intro
     "801d1cd4",  # 40 bytes    -- unique to field_battle_intro
+    "801d1d9c",  # curtain mid-pass emitter
+    "801d1cfc",  # spin-up ring tail
 ]
 
 OUT_DIR = "/scripts/funcs"
