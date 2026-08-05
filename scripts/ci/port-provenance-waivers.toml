@@ -40,39 +40,6 @@ overlay. Re-dumping the routine would settle it. See dump-corpus-integrity.md.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/world/frame_tick.rs:801ef2b0"
-reason = """
-Host-dispatcher module, a category this signal cannot distinguish from a wrong
-tag. frame_tick.rs tags the per-mode entry state machines it dispatches - the
-slot machine, fishing, dance and the Muscle Dome hub, each in its own overlay
-with its own tables - so no two of them corroborate on data and the odd one out
-is arbitrary. FUN_801ef2b0 is the tile-board walk SM (docs/subsystems/
-tile-board.md), which is what it is tagged as.
-"""
-
-# ---------------------------------------------------------------------------
-# dual-label, reviewed address by address against the disassembly.
-#
-# Two shapes account for every row below, and neither is a provenance defect:
-#
-#   (a) The signal decides page relatedness on filename tokens, so a coarse
-#       directory page (menus.md, script-vms.md, battle.md) and the fine
-#       subsystem page that owns the write-up (save-screen.md, world-map.md,
-#       field-locomotion.md) always read as "unrelated names" even when they
-#       are one claim filed twice by design. The checker now excludes the part
-#       of this class it can see structurally - a site that links to the page
-#       it is said to contradict, and pages outside DEFINING_DOC_ROOTS - so the
-#       rows still here are the ones where the index entry names no link.
-#   (b) A VA at or above 0x801C0000 names an object only together with its
-#       image. Two pages describing two overlays' occupants of one VA are two
-#       true claims, not a contradiction.
-#
-# Rows corrected rather than dismissed say so and name what was fixed; the
-# signal is structural and keeps firing after the fix, exactly as it does for
-# dual-label:801d5de0 above.
-# ---------------------------------------------------------------------------
-
-[[waiver]]
 key = "dual-label:80021934"
 reason = """
 All three carriers say scene-transition streaming actor. 80021934.txt is the
@@ -342,256 +309,6 @@ actor-band command loop script-vm.md documents, forming the actor band
 # fourteen rows are one property of the subsystem, not fourteen mistakes.
 
 [[waiver]]
-key = "module-orphan:crates/engine-ui/src/ui_menu_window_painters.rs:801dcfe4"
-reason = """
-overlay_menu_801dcfe4.txt, 17 instructions: set DAT_8007B454 = 7, draw the
-overlay literal 0x801CEC6C at the descriptor's (+0xA, +0xC) through 0x80036888,
-return. That is exactly `title_tab_draws_for` - one label at the content origin.
-Orphan because its only distinctive datum is its own string VA.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-ui/src/ui_menu_window_painters.rs:801dca0c"
-reason = """
-overlay_menu_801dca0c.txt, 17 instructions, byte-for-byte the same body as
-801DCFE4 with string 0x801CE9D0 instead of 0x801CEC6C. The port deliberately
-serves all six title tabs from `title_tab_draws_for`, which the tag says.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-ui/src/ui_menu_window_painters.rs:801dca50"
-reason = """
-overlay_menu_801dca50.txt, 17 instructions, identical to 801DCA0C except
-`addiu a0,a0,-0x1628` (string 0x801CE9D8). Same painter, different label.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-ui/src/ui_menu_window_painters.rs:801dca94"
-reason = """
-Same 17-instruction title-tab body at string 0x801CE9E0; verified against
-overlay_menu_801dca94.txt alongside its four twins.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-ui/src/ui_menu_window_painters.rs:801dcad8"
-reason = """
-Same 17-instruction title-tab body at string 0x801CE9E8; verified against
-overlay_menu_801dcad8.txt alongside its four twins.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-ui/src/ui_menu_window_painters.rs:801dcb1c"
-reason = """
-overlay_menu_801dcb1c.txt, 17 instructions, `addiu a0,a0,-0x160c` = string
-0x801CE9F4. Last of the five pause-tab twins the one painter serves.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-ui/src/ui_menu_window_painters.rs:801dcf14"
-reason = """
-overlay_menu_801dcf14.txt, 28 instructions: saves the glyph-advance byte at
-0x80073F20, forces 0x10, reads the record pointer _DAT_8007B450, computes
-`record + record[2] + 3` and draws that string, then restores the advance. The
-port's `record_title_tab_draws_for` plus `title_record_text_offset` is exactly
-that arithmetic (`lbu v0,0x2(a1); addiu v0,v0,0x3; addu a0,a1,v0`).
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-ui/src/ui_menu_window_painters.rs:801dccb4"
-reason = """
-overlay_menu_801dccb4.txt, 41 instructions: forms the rodata sentence 0x801E46E4,
-substitutes one byte into its index 1 from `0x80084140 + n*0x414 + 0x705`
-(`sll v0,v1,6; addu v0,v0,v1; sll v0,v0,2; addu v0,v0,v1; sll v0,v0,2` = *0x414,
-plus the list index at 0x8007BB78), draws it at (WX, WY) and emits the marker
-FUN_8002B994(1,1, WX+0xE6, WY+0xD). `char_prompt_draws_for` matches, including
-the sprite offsets.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-ui/src/ui_menu_window_painters.rs:801dce20"
-reason = """
-overlay_menu_801dce20.txt, 52 instructions: heading string 0x801CEA40 at
-(WX, WY); row pitch 0xE; the 8-digit counter `lw a0,0x45b4(0x80084140)` =
-0x800845B4 in pen 6 at (WX, WY+0xE); the unit string 0x801CEA50 at (WX+0x40,
-WY+0xE); marker at (WX+0xE6, WY+0xD). `amount_prompt_draws_for` matches field
-for field, and PAINTER_ROW_PITCH is 0x0E.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-ui/src/ui_menu_window_painters.rs:801dcc20"
-reason = """
-overlay_menu_801dcc20.txt, 37 instructions: the whole body is gated on
-`lw v0,0x46b0(0x801e) > 0`; the gated arm calls the shared item-info panel
-0x801D0F1C, then FUN_80042F4C on the selection index and draws a 2-digit count
-at WX+0x80 in pen 6; either way FUN_8002C69C emits the 0x90 x 0x28 box at
-(WX, WY+0x38). `count_panel_draws_for` reproduces the reserve-either-way rule.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-ui/src/ui_menu_window_painters.rs:801d6360"
-reason = """
-overlay_menu_801d6360.txt, 82 instructions: six `lui 0x801d` + `addiu` string
-loads (0x801CECA8 / CECD4 / CECFC / CED20 / CED38 / CED58) stacked from (WX, WY)
-at pitch 0xE, then the marker at `WX + w - 0x10, WY + h - 0xE` using the
-descriptor's +0xE / +0x10. It is the only painter in the block that reads the
-extent at all, exactly as the tag says. `label_list_draws_for` matches.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-ui/src/ui_menu_window_painters.rs:801d4a80"
-reason = """
-overlay_menu_801d4a80.txt, 106 instructions: guards on DAT_801E46B0 > 0; name
-from `0x80074368 + id*12 + 4` in pen 6; owned count via FUN_80042EE0 with the
-0x100 "not held" sentinel, 2 digits at WX+0x94; description at (WX+8, WY+0xE) in
-pen 7, routed by the kind byte - kind 2 goes through
-`0x800752C0 + effect*4 + 3` and only draws when that index passes BOTH the
-`sltiu ..,0x40` and the `slti ..,0x40` test, from `0x8007625C + index*12 + 8`.
-`description_source` / `owned_count_or_zero` / `item_description_draws_for`
-carry all of it, double bound check included.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-ui/src/ui_menu_window_painters.rs:801d56fc"
-reason = """
-overlay_menu_801d56fc.txt, 146 instructions: header at WX+0x18 with its marker at
-WX+4; party count 0x80084594 and class bytes 0x80084598+i; the equip mask from
-`0x80074F68 + equip_id*8 + 6` ANDed against the four-byte class table
-0x801E43F0, a zero result storing 0 into the draw-order word rather than
-skipping the row; rows step 0xE with marker index i+1 off DAT_801E46C0.
-`equip_class_mask` / `equip_row_enabled` / `equip_target_list_draws_for` match,
-and the port's comment that a non-equippable row still emits glyphs is what the
-`sw zero,-0x4bac(s4)` arm does.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-ui/src/ui_menu_window_painters.rs:801d5944"
-reason = """
-overlay_menu_801d5944.txt, 105 instructions: heading 0x801CEC38 at (WX, WY); row
-at WY+0x14 carrying quantity (0x801E46B4) at WX+0x10, the separator glyph at
-WX+0x20 and the held count (0x801E46B8) at WX+0x28; then the digit ladder on the
-item record's own `+2` unit price - `sltiu ..,0x2710` assigns 5 before
-`sltiu ..,0x3e8` and `sltiu ..,0x64` each add one - and the pictogram / total
-right-packed against `WX-8 + 0x88` / `WX-8 + 0x94` minus `digits*8`. The total is
-`mult` then `sra ..,1`. `sell_total_digits`, `sell_total` and
-`sell_quantity_draws_for` match all of it.
-"""
-
-# ---------------------------------------------------------------------------
-# crates/engine-vm/src/baka_hub_actors.rs - 11 rows, the same structural cause
-# ---------------------------------------------------------------------------
-# The four corroborating siblings (801f159c dispatcher, 801f1d90, 801f20b0,
-# 801f2134) share the submode cursor context 0x801C6EA4 and the panel-install
-# callee 0x801E9B3C. Both of those are common enough across the corpus to sit
-# above the distinctiveness cut, so even the orphans that DO form 0x801C6EA4 and
-# DO `jal 0x801E9B3C` (801f1138, 801f1e48) read as sharing nothing. The rest are
-# panel painters whose only distinctive data is their own string-pool VA. Again
-# one structural property, not eleven mistakes.
-
-[[waiver]]
-key = "module-orphan:crates/engine-vm/src/baka_hub_actors.rs:801f0adc"
-reason = """
-overlay_0897_801f0adc.txt is base-tagged [overlay_0897.bin] and carries the whole
-264-instruction body (the five minigame-named dumps of this VA truncate at 46).
-It holds the /100 reciprocal multiply (lui 0x51eb), party gold 0x8008459C, the
-coin bank 0x800845A4, the published ceiling 0x8007BB90 clamped to 9,999,999, the
-digit cursor 0x8007BB9C and the eight digit cells at 0x801F35F0. `coin_exchange`
-plus COIN_BANK_MAX / GOLD_PER_COIN reproduce it, and the credit/debit stay in
-separate HubAction fields as the doc requires.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-vm/src/baka_hub_actors.rs:801f1138"
-reason = """
-overlay_baka_fighter_801f1138.txt, 80 instructions. State 0 counts the non-zero
-bytes at _DAT_8007B450 +1..+3 (base 1, or 2 when +1 is non-zero), sizes the panel
-to `n*14 - 2` via `sll 3; subu; sll 1; addiu -2` into 0x801F2C86, centres it as
-`0x2C - (h >> 1)` into 0x801F2C82 and installs 0x801F3370 through 0x801E9B3C.
-State 1 gates on 0x8007BB80, tests 0x800846D0|0x800846D4 against 0x8007B874,
-plays cue 0x20 via 0x80035BD0 and hands back through 0x801C6EA4 (+0x2E = -1,
-+0x40 = state, state = 0x1A). `start_menu` matches exactly.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-vm/src/baka_hub_actors.rs:801f16c0"
-reason = """
-overlay_baka_fighter_801f16c0.txt, 70 instructions: saves and restores the entry
-code byte 0x8007B469, walks the party count 0x80084594 / ids 0x80084598, skips
-codes >= 3 (`sltiu v0,v0,0x3`) while still costing a loop step, draws
-`0x801F29B0[(code+2)]` at the running y, advances 0xD, `jal 0x801e5b4c` for the
-sub-panel, advances 0x2A, and restores +0xC at the end. `entry_list` matches
-including the splice point of EntrySubPanel between the two advances.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-vm/src/baka_hub_actors.rs:801f17d8"
-reason = """
-overlay_baka_fighter_801f17d8.txt, 46 instructions: header string 0x801CF09C at
-the actor origin via 0x8003CC98, then a cell row starting +0x10 on both axes and
-stepping 0x20 per column, cell id = `0x801C6EA4->[+0x54 + i] + 0x37`, row length
-`lw s0,-0x4478(0x8008)` = _DAT_8007BB88 (not the entry count). `column_row`
-matches, and the tag says the row length is 8007BB88.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-vm/src/baka_hub_actors.rs:801f1890"
-reason = """
-Five images (baka_fighter / dance / debug_menu / fishing / slot_machine) print
-this VA byte-identically at 48 instructions, which is the module header's own
-claim about the resident field overlay. Body: string 0x801CF108 at (x+0x24, y)
-palette 7; 0x801CF10C at (x+0x4C, y+0x10) palette 5; 0x801CF110 at (x+0x4C,
-y+0x1E); sprite (0,1) at (x+0x38, y+0x10 + row*0x0E) where the pitch is spelled
-`sll a3,v0,3; subu a3,a3,v0; sllv a3,a3,1` off _DAT_8007BB98.
-`three_line_panel` matches.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-vm/src/baka_hub_actors.rs:801f1950"
-reason = """
-overlay_baka_fighter_801f1950.txt, 51 instructions: reads _DAT_8007BB88 twice,
-once before each label, drawing the cursor at (x, y) / (x, y+0xE) only when the
-global selects that row, with labels 0x801CF138 / 0x801CF140 at x+0x14 between
-the two tests. `two_option_panel` reproduces the read-twice ordering the tag
-calls out.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-vm/src/baka_hub_actors.rs:801f1a1c"
-reason = """
-overlay_baka_fighter_801f1a1c.txt, 37 instructions: `lbu v0,0x4594(0x8008)` then
-`sltiu v0,v0,0x2` picks 0x801CF170 below 2 and 0x801CF14C otherwise, draws it at
-x+0xC, and finishes with the shared right-edge cursor (1,1) at (x + width - 0x10,
-y - 2). `count_gated_label` and `edge_cursor` match.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-vm/src/baka_hub_actors.rs:801f1ab0"
-reason = """
-overlay_baka_fighter_801f1ab0.txt, 45 instructions: strings 0x801CF190 and
-0x801CF198 at (x+0xC, y) and (x+0xC, y+0x10); sprite (0,1) at (x-8, y + row*0x10)
-off _DAT_8007BB88; then `jal 0x80024ee4` with (3, 0, 0) - the only screen-effect
-push in the family, as the tag says. `two_line_panel` matches.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-vm/src/baka_hub_actors.rs:801f1b64"
-reason = """
-overlay_baka_fighter_801f1b64.txt, 29 instructions: string 0x801CF1A4 at
-(x+0xC, y) and the same right-edge cursor as 801F1A1C, with no count test.
-`single_label` is literally `count_gated_label` minus the branch, which is what
-the tag claims.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-vm/src/baka_hub_actors.rs:801f1e48"
-reason = """
-overlay_baka_fighter_801f1e48.txt, 65 instructions, three states on +0x54: state
-0 clears _DAT_8007BB88 and installs 0x801F3294; state 1 gates on 0x8007BB80,
-tests the same 0x800846D0|0x800846D4 vs 0x8007B874 pad pair, plays cue 0x20 and
-installs 0x801F32A4; state 2 clears _DAT_8007B450 and hands back through
-0x801C6EA4. `submenu` matches state for state.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-vm/src/baka_hub_actors.rs:801f90dc"
 reason = """
 Reviewed and the routine identity holds: the printed head draws the item name
@@ -626,31 +343,6 @@ machine and payout eval, which share slot globals this renderer never touches.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-audio/src/seq_calc.rs:80063aa8"
-reason = """
-80063aa8.txt is base-tagged [SCUS_942.54], 145 instructions: channel record at
-`_DAT_801CD2C0[slot] + channel*0xB0` (the `*3*4 - 1` then `<< 4` idiom),
-increments the repeat counter at +0x21, compares against the limit at +0x20, and
-on each leg rewinds the cursor to +0xC or +0x4 depending on flag bit 0x400 -
-then on exhaustion clears bits 0x2/0x8/0x1, sets 0x200 and 0x4, restarts the
-chained successor at +0x22/+0x23 through 0x80064090 and kills notes through
-0x800684CC. That is the track-end / loop-repeat handler the tag names. It reads
-as an orphan only because both its callees are ported next door in seq_events.rs
-rather than in this module, and 0x801CD2C0 is shared corpus-wide.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-audio/src/seq_events.rs:800638d8"
-reason = """
-800638d8.txt, [SCUS_942.54], 39 instructions: the same channel-record addressing,
-then `jal 0x800684cc` over the packed (slot, channel) handle, `sb zero,0x14(s1)`
-and `flags &= ~0x2`. `stop_channel` writes `playing = 0` and clears flag::STOP,
-which is 0x2 - and the tag explicitly hands the voice sweep to the engine pool.
-Orphan because it forms no distinctive data at all and its one callee is the
-corpus-wide note kill.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-render/src/battle_intro.rs:801d1a20"
 reason = """
 overlay_field_battle_intro_801d1a20.txt is base-tagged
@@ -681,48 +373,6 @@ corpus-wide drawing primitive.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-ui/src/ui_menu/pause_lists.rs:801d0d18"
-reason = """
-overlay_menu_801d0d18.txt, 129 instructions: three labels (0x801CEA10 /
-0x801CEA18 / 0x801CEA24) at WX+0x14 stepping 0xE, each preceded by the
-DAT_801E46C0 marker test that puts the hand at WX on the matching row, and a
-leading bag scan over `0x80085958 + n*2` that drops the draw order to 0 when the
-bag is empty. The tag here is scoped - "(command hand)" - and covers exactly the
-marker placement `items_screen_sprites_for` emits at
-`(X, Y + row*0xE)`; the label pass and the empty-bag grey are tagged separately
-at lines 282 and 315 of the same module.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-ui/src/ui_menu/pause_lists.rs:801d1b20"
-reason = """
-overlay_menu_801d1b20.txt, 163 instructions: item name from
-`0x80074368 + id*12 + 4` at (WX, WY); pen advanced by `WX + 8 + name[0]*0xC`;
-the 1-digit count then `+8`, or `+0x10` when the count is >= 10
-(`slti v0,s3,0xa` selects one or two `addiu s1,s1,0x8`); "You are about to"
-(0x801CEA60) on that row; 0x801CEA74 at (WX+6, WY+0xE); then palette 5 and the
-Yes / No pair (0x801CEA84 / 0x801CEA8C) at WX+0x3C on rows WY+0x1C and WY+0x2A
-with the hand at WX+0x28. THROW_CONFIRM_YES_Y / NO_Y / CHOICE_X / HAND_X and
-`items_throw_confirm_draws_for` match every one of those offsets.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-vm/src/battle_action/queue_applier.rs:801da34c"
-reason = """
-overlay_battle_action_801da34c.txt (and three more images agreeing at 148
-instructions): reads the battle context _DAT_8007BD24, takes the participant id
-at +0x13 through _DAT_8007BD10 and subtracts one, gates on the enter flag
-_DAT_8007BD04, and either zero-fills the 16-byte window at `actor[+0x1DF]` or
-copies it from `0x80084140 + (id-1)*0x414 + 0x76F` / `+0x77F` - selected by
-`u16[+0x156] < u16[+0x154]`, with a head-byte fallback on the first leg and NO
-fallback on the second (the 0x801DA4A8 block's empty-head exit at 0x801DA51C is
-the zero-fill loop). `preseed_action_queue` reproduces that asymmetry exactly,
-and its doc's record-relative +0x1A7 / +0x1B7 is the correct restatement of the
-two literals. Orphan because the module's other three ports live in the 0x801EF
-queue-builder band and share none of this routine's tables.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-vm/src/battle_cast_dispatch.rs:801dba90"
 reason = """
 overlay_battle_action_801dba90.txt, 39 instructions, and the body is the module
@@ -738,145 +388,8 @@ touches.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-vm/src/battle_party_panel.rs:801dbc30"
-reason = """
-Four base-tagged images (battle_action, magic_capture, magic_level_up,
-muscle_dome) print 53 instructions identically; overlay_0897's 4-instruction
-slice at this VA is mis-based, which the module header already states. Body:
-gated on `_DAT_8007BD24[+0x6CE] == 0`, it appends one 0x28-byte 0x09000000
-primitive with colour 0x2C808080 spanning (x-8, y-4)..(x+0x37, y+0xB), UVs
-(0,0x60)/(0x3F,0x60)/(0,0x6F)/(0x3F,0x6F), clut 7, tpage 0x7704, then AddPrim.
-`cross_out_mark` reproduces every constant. Orphan because its two siblings
-share the label-state block 0x801F4E08 that this leaf does not read.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-vm/src/world_map_overlay.rs:801ed710"
-reason = """
-overlay_world_map_801ed710.txt is base-tagged
-[overlay_world_map base=0x801C0000], 508 instructions. The play-time block reads
-`lw v1,0x49c(0x80084140)` = _DAT_800845DC and divides by 60 three times with the
-0x88888889 reciprocal and `sra 5`, taking remainders for seconds and minutes,
-then `slti v0,a0,0x64` clamps to (99, 59, 59). `decompose_play_time` is that
-arithmetic and `records_screen` is the surrounding model. Orphan because the
-module's siblings are world-map controllers that share the camera globals this
-records screen never reads.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-vm/src/world_map_panel_actors.rs:801d0d38"
-reason = """
-overlay_world_map_801d0d38.txt, base-tagged [overlay_world_map base=0x801C0000],
-387 instructions. It suppresses on _DAT_8007B868, on `_DAT_800845C4 == 2` and on
-`_DAT_8007B850 & 0xF000`; otherwise clears _DAT_8007B5F4, compares the cached
-(x, z) at 0x801F3488 / 0x801F348A against the player object's +0x14 / +0x18,
-decrements the countdown _DAT_801F348C by _DAT_1F800393 and rearms it to 0xA0 /
-0x28 / 0x50 per view mode. Every constant in HUD_IDLE_FRAMES_* /
-HUD_SUPPRESS_PAD_MASK / HudInput's field docs is one of those. Orphan because
-the module's other tagged actors are panel state machines sharing 0x801F35B8,
-which this HUD does not touch.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-vm/src/world_map_panel_actors.rs:801edf00"
-reason = """
-801edf00.txt (plus seven agreeing images), 101 instructions, four states on
-+0x54: state 0 writes 0xE6 into _DAT_801F35B8 and calls FUN_80042558(0x20);
-state 1 walks it down to 0xE, calls FUN_801ED710 at the current value each
-frame, and on `_DAT_8007B850 & 0x9F0` fires FUN_801D58F0(2, 0, 0xFFFFFF, 0,
-0x78, -1); state 2 accumulates _DAT_1F800393 and at 0x78 calls
-FUN_80017714(0x801CF5A0) to reload the executable; every path ends in
-FUN_80031D00. SOFT_RESET_* and `SoftResetEffect` name exactly those. Orphan
-because the row's one distinctive datum, 0x801F35B8, is this actor's private
-slide counter.
-"""
-
-# ---------------------------------------------------------------------------
-# Lane A: module-orphan in engine-core. Reviewed address by address against
-# the disassembly.
-# ---------------------------------------------------------------------------
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/shop.rs:801d4868"
-reason = "Disassembly (overlay_menu_801d4868.txt): three rows from 0x801CEB94/9C/A4, ink _DAT_8007B454 staged 7 then cleared after the Buy row by the 0x80085958 bag scan bounded by _DAT_8007B5EA.._DAT_8007B5EC. This is the shop root command window; orphan only because its siblings are the sub-screen drivers."
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/shop.rs:801d5de0"
-reason = "Known, disclosed kernel reuse. The routine is the casino prize row renderer (prize table 0x801E4518, block byte _DAT_8007B450[1], coin bank 0x800845A4) and shop.rs says so in the tag itself; the shared cursor decode at 0x801D5E40..0x801D5E9C is genuinely common with FUN_801d4868."
-
-[[waiver]]
 key = "module-orphan:crates/engine-core/src/shop.rs:801d5ae8"
 reason = "Disassembly (overlay_menu_801d5ae8.txt): item table 0x80074368 name/description, price halfword +2 printed halved (sell price), passive chain 0x801D5C5C..0x801D5CC8 into 0x80074F68/0x800752C0/0x8007625C. Exactly the item-detail / sell panel the module claims."
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/screen_fx.rs:801f8004"
-reason = "Disassembly: FUN_80020DE0(0x801F8FE4, _DAT_8007C34C) - the sprite widget's own binding descriptor, which the module header tabulates. Orphan because a spawn API forms the descriptor its handler never does."
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/screen_fx.rs:801f88fc"
-reason = "Disassembly: FUN_80020DE0(0x801F9014, _DAT_8007C34C) - the panel widget's binding descriptor. Same spawn-API shape as 801f8004."
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/screen_fx.rs:801f8e6c"
-reason = """
-Checker artifact. The reported data (0x80077024/3c/54/6c, callee 0x801d5718)
-comes only from overlay_0897_801f8e6c.txt, which reports 192 bytes / 48
-instructions - a window opening on a bare jal, not a function entry in that
-image, and the odd one out of the seven dumps at this VA.
-
-The other six all carry a matching header tag and all report 188 bytes / 47
-instructions (baka_fighter, dance, debug_menu, fishing, muscle_dome,
-slot_machine). Their agreed body is the panel move/scale API:
-FUN_8003CF04(_DAT_8007C34C, 0x801F849C), then +0x3c/+0x3e = x/y,
-+0xb8/ba/bc * scale >> 12 into +0x40/+0x42/+0x26, +0x9e = duration.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/save_subscreen.rs:801d6d38"
-reason = "Save-screen handler table PTR_FUN_801e4f40 slot [0x03], and the body agrees: seeds window 0x801E4BD4, cursor 1, FUN_801d688c(&0x801E46D0, 2, 1), writes 0x801E46A4. Orphan because the window descriptor is not shared with its sibling screens."
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/save_subscreen.rs:801d98f0"
-reason = "Handler table slot [0x12]; body opens window 0x801E4D88 and navigates a list of _DAT_80084594 (party count) entries, confirm -> screen 0x13, cancel -> screen 1. The party-count picker."
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/save_subscreen.rs:801dafd4"
-reason = "Handler table slot [0x1A]; body opens window 0x801E4E38, three rows, row 0 -> 0x1B, row 1 gated on the 0x80085958 bag scan, row 2 and cancel -> screen 0 with the extra 0x37 cue. Matches the port row for row."
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/baka_fighter_chrome.rs:801d59d4"
-reason = "Disassembly: t<30 / t<100 gates, brightness (t-30)*8 clamped at 0x10, widget 0x28 at (0xA0,0x80) through FUN_801D5ED0, latch 0x801DBE8C, announcer FUN_8003d53c(0x20, 0x0E, 0x3F). The intro title card."
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/baka_fighter_chrome.rs:801d21fc"
-reason = "Disassembly: state 0x801DC134, timer 0x801DC138, loading flag 0x8007BC20, banner level 0x801DBEB4 gated at 0x11, round counter 0x801DC110 final 0xE, frame step 0x1F800393. The READY/FIGHT countdown."
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/baka_fighter_chrome.rs:801d65f8"
-reason = "Disassembly: table 0x801DBE84 + index*4, pitch = byte0>>2 + 0x340, pan = byte1 + 0x80, trailing constants (6, 0x18) written only in the mode==0 arm, func_0x80058490(&rec, 0x340, 0x86). The positional SFX helper, exactly as tagged."
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/world/frame_tick.rs:800267a8"
-reason = "Disassembly (SCUS): five gp cells +0x808/+0x80c/+0x810/+0x814/+0x81c from _DAT_8007B910, tail-call FUN_80062004(*(u16*)0x80070536, level>>1, deadline|1). The timed sound-source auto-release arm."
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/world/frame_tick.rs:801d0748"
-reason = "The battle overlay's round / flow SM (context _DAT_8007BD24, phase byte ctx+6). A dome leg is an ordinary battle, so the host dispatcher reaches it on the retail chain; the tag now says so explicitly. Orphan because a 2781-instruction dispatcher shares nothing with the small minigame SMs beside it."
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/world/field_movement.rs:801d5c08"
-reason = "Disassembly (overlay_cutscene_dialogue_801d5c08.txt): cursor +0x9c stepped by +0x9e * DAT_1F800393, clamped at 0x1000, result written into the parent actor at +0x90's +0x14/+0x18 via FUN_801e45bc. The ledge-hop arc helper, as tagged."
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/baka_fighter.rs:801d2a28"
-reason = "Disassembly: combo 0x801DBEC8 clamped to 0x13, combo table 0x801D70C4 into row 0x801DBED8; HP 0x801DBFC4 == 0xC80 -> +50000, else HP/0x140 into halfword table 0x801D711C, both into row 0x801DBEDC. The per-round score accumulation."
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/baka_fighter.rs:801d4c50"
-reason = "Disassembly: FUN_80017888(0, 0x46000), dev arm gated on _DAT_8007B8C2 == 0, PROT arm folds roster >= 3 and takes entry folded + 0x4B6, chunk walk stride ((size>>2)<<2)+4 into FUN_8001F05C(payload, hdr, 0, 1). All four ported constants match."
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/world/encounters.rs:800431d0"
-reason = "Eleven instructions, one-to-one with the port: (&DAT_80074358)[index >> 5] & 1 << (index & 0x1F). A genuinely unrelated leaf living beside the encounter consumers that call it."
 
 [[waiver]]
 key = "module-orphan:crates/engine-core/src/slot_machine.rs:801e6f70"
@@ -887,41 +400,8 @@ key = "module-orphan:crates/engine-core/src/pause_screens.rs:801d7e50"
 reason = "Handler table slot [0x06]; body reads item-effect record 0x800752C0 + idx*4 and routes class 0x80/0x81/0x82 to screens 0xB/0xC/0xD, else flag byte +2 & 0x20 to 9, else 0xA. The Use-list phase-2 dispatch, as tagged."
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/minigame_floor.rs:801d6028"
-reason = "Disassembly: _DAT_1F8003EC grid + 0x8000 indexed by actor +0x14/+0x18 >> 6, flag word +0x10 with the 0x00800000 off-floor bit, step-layer lookup FUN_801D79E0. The ground-height solver."
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/field_submode.rs:801e6984"
-reason = "Disassembly: ctx _DAT_8007B450 (+3 count, +2 scroll), first row at origin.y + (count-1)*0x10 counting down, highlight vs _DAT_8007BB88, glyph base 0x58/0x4F vs _DAT_8007BB9C, second run skipped for entry 0. The submode list panel layout."
-
-[[waiver]]
 key = "module-orphan:crates/engine-core/src/field_menu.rs:801d6d38"
 reason = "Same routine as the save_subscreen row and the same disassembly; it runs under two entry contexts, which is why two modules model it. Window 0x801E4BD4, FUN_801d688c(&0x801E46D0, 2, 1), next-screen word 0x801E46A4 written 0 unconditionally then overwritten with 1 on the default row."
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/dev_menu.rs:801db8b4"
-reason = "Checker artifact plus VA aliasing. The reported 0x801c94bc exists in no dump: it is synthesised from the battle overlay's different body at the same VA (lui/addiu forms 0x801C9370, plus a 0x14c displacement off a register reloaded by lw). The overlay_0897 body is the flag-list cursor increment on 0x801F2E90 / table 0x801F2E94 stride 0xA with the 'X' sentinel - it reads the cursor register-relative, which is the only reason it fails to corroborate its sibling FUN_801db8f4 forty bytes later."
-
-# ---------------------------------------------------------------------------
-# doc-citation, reviewed row by row against the disassembly.
-#
-# What survives after the two classes that were fixed rather than waived - the
-# six typo'd data globals (each corrected to the address the body forms) and
-# the three rows describing a routine no dump of that VA carries - is one shape
-# and two residues:
-#
-#   (a) The row cites an address that belongs to a *different* routine: a
-#       caller's `jal` site, a table its dispatcher reads, an interior of the
-#       neighbour in the same tail, a load base named as provenance. The
-#       checker exempts citations written `FUN_xxxxxxxx`; these are written as
-#       bare `0x` or `DAT_` because they are not function entries, and no
-#       written form distinguishes "the table I read" from "the table that
-#       indexes me".
-#   (b) A falsified reading kept in place so it stays findable. Quoting the
-#       wrong address is the point of the sentence.
-#   (c) The row names the image its claim is about and the corpus holds only a
-#       different image's occupant of that VA.
-# ---------------------------------------------------------------------------
 
 [[waiver]]
 key = "doc-citation:docs/reference/functions/audio.md:8001d230:801ce628"
@@ -992,15 +472,6 @@ not an operand of the callee.
 """
 
 [[waiver]]
-key = "doc-citation:docs/reference/functions/battle.md:801f0450:801f02d0"
-reason = """
-0x801F02D0 is an interior of a different routine and the row says which:
-overlay_muscle_dome_801efe44.txt is 1284 bytes from 0x801EFE44, so
-0x801EFE44 + 0x48C = 0x801F02D0 lands inside it. The parenthetical is
-inventorying what else occupies 0898's render tail, not claiming an operand.
-"""
-
-[[waiver]]
 key = "doc-citation:docs/reference/functions/battle.md:801f3990:801e3e04"
 reason = """
 The caller's call site, verified: overlay_muscle_dome_801e295c.txt line 1327 is
@@ -1066,17 +537,6 @@ minigames-debug.md is where 0x801D1AC8 collects them.
 """
 
 [[waiver]]
-key = "doc-citation:docs/reference/functions/renderer.md:801f69d8:801f725c"
-reason = """
-Two reasons at once and both hold. 0x801F725C is a capture-pinned return address
-- a caller's site, not an operand - and the row is image-qualified to
-overlay_world_map_top_ext while the only dump at this VA is
-overlay_muscle_dome_801f69d8.txt, which is PROT 0900's slot-B link base (18
-table words, no `jal` at all). The checker compares against every dump of an
-address without asking which image the row named.
-"""
-
-[[waiver]]
 key = "doc-citation:docs/reference/functions/runtime-libs.md:801d9c3c:8003b444"
 reason = """
 The caller's call site, verified in the caller's own dump: 8003aeb0.txt line 362
@@ -1131,12 +591,3 @@ return - so the "jumps to 0x801EC96C" reading has no dump behind it. The row now
 says that and keeps the address so the falsified reading stays searchable.
 """
 
-[[waiver]]
-key = "doc-citation:docs/reference/functions/script-vms.md:801e30e4:801d0a6c"
-reason = """
-0x801D0A6C is the FMV dispatch table, read by the STR player, not by the op
-handler that writes the index into it. docs/formats/str-fmv-table.md places the
-23 x 32-byte table there and script-vms.md's own 801CF098 row shows the player
-forming `0x801D0A6C + (s16)_DAT_8007BA78 * 0x20`. This routine writes
-_DAT_8007BA78 and stops, which is what its single dump shows.
-"""
