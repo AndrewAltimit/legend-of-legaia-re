@@ -1263,3 +1263,187 @@ mod capture_rects {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// The curtain's no-clear accumulation (FUN_801D1D9C + the per-frame wash)
+// ---------------------------------------------------------------------------
+
+/// The two decays and where they sit, pinned against the dump
+/// (`ghidra/scripts/funcs/overlay_field_battle_intro_801d1d9c.txt` and the
+/// wash arm at `0x801D1228..0x801D1230` of `..._801d11d0.txt`).
+mod curtain_accumulation {
+    use super::*;
+    use crate::battle_intro::{
+        CURTAIN_DISPLAY_DECAY_5, CURTAIN_MIDPASS_ABR, CURTAIN_MIDPASS_DECAY_5, CURTAIN_MIDPASS_OT,
+        CURTAIN_MIDPASS_RGB, CURTAIN_TRAIL_OT, CURTAIN_TRAIL_RECT,
+    };
+    use legaia_engine_vm::battle_intro_styles::{
+        CURTAIN_COL_OT_DEPTH, CURTAIN_ROW_OT_DEPTH, CURTAIN_WASH_RGB,
+    };
+
+    #[test]
+    fn the_midpass_emitter_is_a_subtractive_decay_between_the_area_install_and_the_columns() {
+        // FUN_801D1D9C(0x1EA, 2, 0x808080): the OT layer sits between the
+        // draw-area install at 0x1F4 (draws first) and the column strips at
+        // 0x1C2, so the decay lands on the previous frame's intermediate
+        // before this frame's columns draw over it. `black_box` keeps
+        // clippy's constant-assertion lint out of what is deliberately a
+        // pinned-constants test.
+        use std::hint::black_box as bb;
+        assert!(bb(CURTAIN_MIDPASS_OT) < 0x1F4);
+        assert!(bb(CURTAIN_MIDPASS_OT) > CURTAIN_COL_OT_DEPTH);
+        assert_eq!(bb(CURTAIN_MIDPASS_ABR), 2, "B - F, a decay, not a fill");
+        // 0x80 per 8-bit channel is 0x10 per 5-bit level: two frames to black.
+        assert_eq!(bb(CURTAIN_MIDPASS_RGB), 0x0080_8080);
+        assert_eq!(bb(CURTAIN_MIDPASS_DECAY_5), 0x80 >> 3);
+        // The display wash 0x80808 is one 5-bit level per frame: ~31 frames.
+        assert_eq!(bb(CURTAIN_WASH_RGB), 0x0008_0808);
+        assert_eq!(bb(CURTAIN_DISPLAY_DECAY_5), 0x08 >> 3);
+        // The trail draws behind the on-screen rows and in front of nothing
+        // else the style emits.
+        assert!(bb(CURTAIN_TRAIL_OT) > CURTAIN_ROW_OT_DEPTH);
+    }
+
+    #[test]
+    fn a_culled_column_leaves_a_two_frame_ghost_in_the_intermediate() {
+        let mut it = intro(IntroStyle::Curtain, 400);
+        it.seed_capture_for_test(vram_with_capture());
+        // Frame 1 at the identity: every column draws, the intermediate is the
+        // (modulated) field.
+        it.tick(0, 1);
+        it.compose_intermediate_for_test();
+        let rect = FIELD_CAPTURE_ROWS;
+        let before: Vec<u16> = (0..rect.w as usize)
+            .map(|x| {
+                it.captured_vram()
+                    .unwrap()
+                    .pixel(rect.x as usize + x, rect.y as usize + 100)
+            })
+            .collect();
+        // Frame 2 far into the warp: most columns are culled, and the x each
+        // survivor lands on is sparse - the rest of the rect must now hold the
+        // previous content one mid-pass step down, not black and not intact.
+        it.tick(100, 1);
+        let drawn: std::collections::HashSet<i32> = it
+            .pending_column_quads()
+            .iter()
+            .map(|q| i32::from(q.verts[0].x) - i32::from(rect.x))
+            .collect();
+        it.compose_intermediate_for_test();
+        assert!(
+            drawn.len() < rect.w as usize / 2,
+            "the premise: most columns are culled at clock 100"
+        );
+        let mut ghosts = 0;
+        for (x, &v) in before.iter().enumerate() {
+            if drawn.contains(&(x as i32)) {
+                continue;
+            }
+            let got = it
+                .captured_vram()
+                .unwrap()
+                .pixel(rect.x as usize + x, rect.y as usize + 100);
+            let want = {
+                (v & 0x1F).saturating_sub(CURTAIN_MIDPASS_DECAY_5)
+                    | ((v >> 5) & 0x1F).saturating_sub(CURTAIN_MIDPASS_DECAY_5) << 5
+                    | ((v >> 10) & 0x1F).saturating_sub(CURTAIN_MIDPASS_DECAY_5) << 10
+                    | (v & 0x8000)
+            };
+            assert_eq!(
+                got, want,
+                "x {x}: an undrawn intermediate column must decay by one mid-pass step"
+            );
+            ghosts += 1;
+        }
+        assert!(ghosts > 0, "no undrawn column found; the test is vacuous");
+    }
+
+    #[test]
+    fn the_display_trail_is_the_decayed_capture_before_the_rows_land() {
+        let mut it = intro(IntroStyle::Curtain, 400);
+        it.seed_capture_for_test(vram_with_capture());
+        let f1 = it.tick(0, 1);
+        // Before the first capture step there is no model, so no trail quads.
+        assert!(
+            !f1.prims.iter().any(|p| p.ot_index() == CURTAIN_TRAIL_OT),
+            "no trail before the model is seeded"
+        );
+        it.compose_intermediate_for_test();
+        it.update_display_trail_for_test();
+        // The uploaded trail rect is the capture one wash step down: the model
+        // seeds from the field frame (retail's init lands it in both display
+        // buffers) and the wash is re-armed on every frame including the
+        // first. The rows land in the model only after the upload.
+        let r = CURTAIN_TRAIL_RECT;
+        for (x, y) in [(0usize, 0usize), (10, 100), (319, 239)] {
+            let got = it
+                .captured_vram()
+                .unwrap()
+                .pixel(r.x as usize + x, r.y as usize + y);
+            let c = source_c5(x, y);
+            let want = u16::from(c[0].saturating_sub(1))
+                | u16::from(c[1].saturating_sub(1)) << 5
+                | u16::from(c[2].saturating_sub(1)) << 10
+                | 0x8000;
+            assert_eq!(got, want, "({x}, {y})");
+        }
+        // The model itself now carries the rows: at the identity warp they
+        // redraw every scanline, so the accum is non-black wherever the field
+        // was.
+        let accum = it.display_accum_for_test();
+        let mid = accum[100 * PSX_SCREEN_WIDTH as usize + 10];
+        assert_ne!(
+            mid & 0x7FFF,
+            0,
+            "the rows must have landed in the display model"
+        );
+        // And the next frame emits the trail quads behind the strips: five
+        // 64-px pages tiling the display, opaque, at the trail bucket.
+        let f2 = it.tick(1, 1);
+        let trail: Vec<_> = f2
+            .prims
+            .iter()
+            .filter_map(|p| match p {
+                ScreenPrim::Textured(q) if q.ot_index == CURTAIN_TRAIL_OT => Some(q),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(trail.len(), 5, "five 64-px pages tile the 320 columns");
+        for (k, q) in trail.iter().enumerate() {
+            assert_eq!(q.xy[0], (k as i16 * 64, 0));
+            assert_eq!(q.xy[3], (k as i16 * 64 + 64, PSX_SCREEN_HEIGHT as i16));
+            assert_eq!(q.tpage, 0x11A + k as u16, "page {k} of the trail rect");
+            assert!(!q.semi_transparent);
+            assert_eq!(q.color, 0x0080_8080, "neutral modulation");
+        }
+    }
+
+    #[test]
+    fn a_gap_scanline_keeps_decaying_instead_of_going_black() {
+        let mut it = intro(IntroStyle::Curtain, 400);
+        it.seed_capture_for_test(vram_with_capture());
+        // Run the full per-frame chain twice, the second far into the warp so
+        // most destination scanlines lose their strip.
+        for clock in [0i16, 28] {
+            it.tick(clock, 1);
+            it.compose_intermediate_for_test();
+            it.update_display_trail_for_test();
+        }
+        // At clock 28 the row warp doubles the spread, so odd source rows skip
+        // destination scanlines; find a y no row landed on this frame.
+        let landed: std::collections::HashSet<i16> = it
+            .pending_row_quads_for_test()
+            .iter()
+            .map(|q| q.verts[0].y)
+            .collect();
+        let gap_y = (0..PSX_SCREEN_HEIGHT as i16)
+            .find(|y| !landed.contains(y))
+            .expect("some scanline must be a gap at clock 28");
+        // That scanline of the model is its frame-1 content one more wash step
+        // down - a fading trail, not black.
+        let accum = it.display_accum_for_test();
+        let px = accum[gap_y as usize * PSX_SCREEN_WIDTH as usize + 10];
+        assert_ne!(px & 0x7FFF, 0, "the gap must not be black this early");
+        assert_eq!(px & 0x8000, 0x8000, "the model must stay opaque");
+    }
+}

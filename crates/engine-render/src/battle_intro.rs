@@ -98,18 +98,47 @@
 //! render-to-VRAM target; the arithmetic is the same quad
 //! `legaia_engine_vm::battle_intro_transition::build_intro_quad` produced.
 //!
-//! One piece of that chain is *not* modelled: `FUN_801D1D9C` is only dumped at
-//! a VA that aliases another overlay, so what the mid-pass emitter draws into
-//! the intermediate is not established from a trustworthy image (see
-//! `docs/tooling/call-target-integrity.md`). Its arguments read as a
-//! full-intermediate ABR-2 quad, i.e. a per-frame *decay* of what the last
-//! frame left there rather than a clear. The port clears instead, which loses
-//! the trail retail accumulates but invents nothing.
+//! The mid-pass emitter is established now. `FUN_801D1D9C` is dumped from the
+//! `overlay_field_battle_intro` image itself
+//! (`ghidra/scripts/funcs/overlay_field_battle_intro_801d1d9c.txt` - the
+//! earlier note that it existed only at a VA aliasing another overlay is
+//! retired), and it is `FUN_80024EE4`'s shape pointed at the intermediate: a
+//! five-word `0x2B` (untextured, semi-transparent) quad over
+//! `x 0x140..0x140+W, y -4..H` - the display halfwords `_DAT_1F80038C` /
+//! `_DAT_1F80038E` biased one screen right - preceded by a
+//! `SetDrawMode((abr << 5) | 0xE)` packet at the same OT layer. With the
+//! curtain's arguments `(0x1EA, 2, 0x808080)` that is a **subtractive decay of
+//! `0x80` per channel per frame over the whole intermediate**, between the
+//! draw-area install at `0x1F4` and the column strips at `0x1C2` - so a column
+//! the warp has culled leaves a ghost that reaches black in two frames rather
+//! than vanishing. [`BattleIntro`] carries it: the intermediate persists
+//! across frames and decays by [`CURTAIN_MIDPASS_DECAY_5`] instead of being
+//! cleared.
+//!
+//! The **display** side of the same no-clear law is carried for the curtain
+//! too. `FUN_801D11D0` re-arms the screen wash `FUN_8004695C(0x80808)` at the
+//! top of **every** frame (`0x801D1228..0x801D1230`, unconditional), and
+//! nothing clears the display buffer during the transition - so the gap a
+//! departing row strip leaves shows the previous frames' pixels decaying by 8
+//! per 8-bit channel per frame (~31 frames to black), not flat black.
+//! [`BattleIntro`] models that display buffer on the CPU
+//! ([`CURTAIN_TRAIL_RECT`] holds it), seeds it from the same field capture
+//! retail's init lands in both display buffers, decays it by
+//! [`CURTAIN_DISPLAY_DECAY_5`] each frame, and emits it as textured backdrop
+//! quads behind the live row strips. Two disclosed approximations: the wash
+//! drain (`FUN_80046978`) scales its constant by the scratchpad brightness
+//! byte, taken here at full brightness; and retail's display is
+//! double-buffered, so its per-buffer decay may interleave at half this rate -
+//! settling that needs a retail frame capture of a curtain formation
+//! (hypothesis, graded inference).
 
 use crate::billboard::{psx_cos, psx_sin};
 use crate::gte::{GteMat3, GteVec3, ScreenXY, avsz4_with_scale, gte_divide, gte_persp_term, nclip};
 use crate::screen_overlay::{FlatQuad, ScreenPrim, ScreenQuad, display_rect_flat_quad, fade_prim};
-use crate::vram_capture::{CaptureOpts, FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS, VramRect};
+use crate::vram_capture::{
+    CaptureOpts, FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS, PSX_SCREEN_HEIGHT, PSX_SCREEN_WIDTH,
+    VramRect,
+};
 use legaia_engine_vm::battle_intro_styles::{
     self as styles, IntroFade, IntroStyle, PARTICLE_TICK_A, PARTICLE_TICK_B, ParticleTickStyle,
 };
@@ -396,10 +425,19 @@ pub const PARTICLE_WASH_RGB: u32 = 0x0010_1010;
 ///
 /// Retail is therefore darkening whatever the framebuffer already holds, not
 /// painting an opaque background. The port models the packet faithfully; what
-/// it cannot reproduce is the accumulation the effect rides on, because each
-/// port frame is composed from scratch rather than from the previous frame's
-/// pixels. Over [`BACKDROP_RGB`] the subtraction is a near-no-op, which is
-/// the honest outcome rather than a fabricated one.
+/// this *primitive* cannot reproduce is the accumulation the effect rides on,
+/// because each port frame is composed from scratch rather than from the
+/// previous frame's pixels. Over [`BACKDROP_RGB`] the subtraction is a
+/// near-no-op, which is the honest outcome rather than a fabricated one.
+///
+/// The **curtain** no longer relies on this: its per-frame `0x80808` wash is
+/// carried as the CPU display model's decay
+/// ([`CURTAIN_DISPLAY_DECAY_5`], see the module docs), which is why its tick
+/// emits no wash primitive at all. The two `0x101010` washes this function
+/// still draws - the scatter field's and the swirl's late phase - keep the
+/// from-scratch caveat: their styles redraw nearly the whole display every
+/// frame, so the residual is the absence of a short motion trail behind the
+/// flying patches, not a wrongly-lit frame.
 pub fn wash_prim(gp0_rgb_word: u32) -> ScreenPrim {
     display_rect_flat_quad(
         [
@@ -790,6 +828,62 @@ impl swirl::SwirlTrig for SwirlTables {
     }
 }
 
+// ---------------------------------------------------------------------------
+// The curtain's no-clear accumulation (FUN_801D1D9C + the per-frame wash)
+// ---------------------------------------------------------------------------
+
+/// OT layer `FUN_801D11D0` hands the mid-pass emitter (`0x801D14A4`:
+/// `FUN_801D1D9C(0x1EA, 2, 0x808080)`) - between the draw-area install at
+/// `0x1F4` and the column strips at `0x1C2`, so the decay lands on the
+/// intermediate **before** this frame's columns draw over it.
+pub const CURTAIN_MIDPASS_OT: u32 = 0x1EA;
+/// The emitter's second argument: ABR mode `2`, `B - F` - the quad subtracts.
+pub const CURTAIN_MIDPASS_ABR: u8 = 2;
+/// The emitter's third argument: `0x80` per channel, the amount subtracted
+/// from the whole intermediate each frame.
+pub const CURTAIN_MIDPASS_RGB: u32 = 0x0080_8080;
+/// [`CURTAIN_MIDPASS_RGB`] as a 5-bit-channel step (`0x80 >> 3`): what one
+/// frame of the mid-pass quad takes off a 15-bpp intermediate pixel.
+pub const CURTAIN_MIDPASS_DECAY_5: u16 = 0x10;
+
+/// The per-frame display wash the curtain arms
+/// (`legaia_engine_vm::battle_intro_styles::CURTAIN_WASH_RGB` = `0x80808`,
+/// re-armed unconditionally at `0x801D1228..0x801D1230` on **every** frame),
+/// as a 5-bit-channel step: 8 per 8-bit channel is one 5-bit level, so an
+/// undrawn display pixel takes ~31 frames to reach black.
+pub const CURTAIN_DISPLAY_DECAY_5: u16 = 1;
+
+/// Where the port keeps its CPU model of the transition's display buffer in
+/// the cloned VRAM page, so the trail can be drawn as textured quads. Retail
+/// needs no such rect - on the console the display buffer *is* VRAM and the
+/// no-clear accumulation is free. The rect is otherwise unused during a
+/// transition: whatever scene data the clone holds there is invisible for the
+/// whole window (the backdrop covers the live scene), and the clone is
+/// dropped when the transition ends.
+pub const CURTAIN_TRAIL_RECT: VramRect = VramRect::new(640, 256, 320, 240);
+
+/// OT bucket the trail's backdrop quads link at: farther than every on-screen
+/// strip (rows at `0x12C`), nearer than the opaque backdrop - the trail *is*
+/// the frame the strips draw over.
+pub const CURTAIN_TRAIL_OT: u32 = 0x300;
+
+/// Subtract `step` from each 5-bit channel of every 15-bpp pixel, saturating
+/// at zero and preserving the mask bit - one application of an ABR-2
+/// (`B - F`) full-rect quad with `step` in every channel. A whole-word zero
+/// (the overlay shader's hole) stays a hole.
+fn decay_15bpp(buf: &mut [u16], step: u16) {
+    for p in buf.iter_mut() {
+        let v = *p;
+        if v == 0 {
+            continue;
+        }
+        *p = (v & 0x1F).saturating_sub(step)
+            | ((v >> 5) & 0x1F).saturating_sub(step) << 5
+            | ((v >> 10) & 0x1F).saturating_sub(step) << 10
+            | (v & 0x8000);
+    }
+}
+
 /// Overlay VA of the transition sprite descriptor table, inside PROT 0979
 /// `field_battle_intro`.
 pub const INTRO_QUAD_TABLE_VA: u32 = 0x801D_1EC4;
@@ -922,6 +1016,23 @@ pub struct BattleIntro {
     /// rasterises them into the intermediate). Only the curtain fills it - see
     /// the module docs on why these never reach the screen.
     pending_columns: Vec<IntroQuad>,
+    /// This frame's **row**-pass quads, kept alongside their on-screen
+    /// emission so [`BattleIntro::update_field_capture`] can also land them in
+    /// the CPU display model the trail decays. Only the curtain fills it.
+    pending_rows: Vec<IntroQuad>,
+    /// The curtain's intermediate ([`FIELD_CAPTURE_ROWS`] content) as a
+    /// persistent buffer: retail never clears it - `FUN_801D1D9C` decays it by
+    /// [`CURTAIN_MIDPASS_DECAY_5`] each frame before the column strips draw.
+    /// Empty for every other style.
+    intermediate: Vec<u16>,
+    /// The CPU model of the transition's display buffer: seeded from the field
+    /// capture (retail's init lands the drawn frame in both display buffers),
+    /// decayed by [`CURTAIN_DISPLAY_DECAY_5`] each frame (the re-armed
+    /// `0x80808` wash), and overdrawn with each frame's row strips. Uploaded
+    /// into [`CURTAIN_TRAIL_RECT`] *before* the rows land, so the on-screen
+    /// trail quads show exactly what retail's undrawn gaps show. Empty for
+    /// every other style.
+    display_accum: Vec<u16>,
 }
 
 impl BattleIntro {
@@ -1005,6 +1116,9 @@ impl BattleIntro {
             shade_pack: None,
             capture_src: Vec::new(),
             pending_columns: Vec::new(),
+            pending_rows: Vec::new(),
+            intermediate: Vec::new(),
+            display_accum: Vec::new(),
         }
     }
 
@@ -1104,6 +1218,7 @@ impl BattleIntro {
             return Ok(if first { self.captured.as_ref() } else { None });
         }
         self.compose_curtain_intermediate();
+        self.update_curtain_display_trail();
         Ok(self.captured.as_ref())
     }
 
@@ -1122,6 +1237,25 @@ impl BattleIntro {
         self.compose_curtain_intermediate();
     }
 
+    /// Run the curtain's display-model step. Test seam for the other
+    /// renderer-free half of [`BattleIntro::update_field_capture`].
+    #[cfg(test)]
+    pub(crate) fn update_display_trail_for_test(&mut self) {
+        self.update_curtain_display_trail();
+    }
+
+    /// The CPU display model, for inspection.
+    #[cfg(test)]
+    pub(crate) fn display_accum_for_test(&self) -> &[u16] {
+        &self.display_accum
+    }
+
+    /// This frame's row-pass quads, for inspection.
+    #[cfg(test)]
+    pub(crate) fn pending_row_quads_for_test(&self) -> &[IntroQuad] {
+        &self.pending_rows
+    }
+
     /// Rasterise this frame's column-pass quads into [`FIELD_CAPTURE_ROWS`],
     /// the intermediate the curtain's row pass samples.
     ///
@@ -1131,21 +1265,122 @@ impl BattleIntro {
     /// a per-column vertical resample rather than a general triangle setup -
     /// exactly the shape `build_intro_quad` produced.
     ///
-    /// The rect is cleared to opaque black first. Retail decays it instead
-    /// (the `FUN_801D1D9C` mid-pass emitter), which is the trail the port does
-    /// not carry - see the module docs.
+    /// The intermediate is **not cleared between frames**. Retail's mid-pass
+    /// emitter `FUN_801D1D9C(0x1EA, 2, 0x808080)` pushes an ABR-2 quad over
+    /// the whole rect between the draw-area install and the column strips, so
+    /// the previous frame's content decays by [`CURTAIN_MIDPASS_DECAY_5`] per
+    /// channel and this frame's columns draw over the ghost - a culled column
+    /// fades out over two frames instead of vanishing (see the module docs).
+    ///
+    /// PORT: FUN_801D1D9C
     fn compose_curtain_intermediate(&mut self) {
         let rect = FIELD_CAPTURE_ROWS;
         let (rw, rh) = (rect.w as usize, rect.h as usize);
         if self.capture_src.len() < rw * rh {
             return;
         }
-        let mut buf = vec![0x8000u16; rw * rh];
+        if self.intermediate.len() != rw * rh {
+            // First frame: the rect starts opaque black (nothing has drawn the
+            // intermediate yet; the identity-warp columns cover it entirely
+            // this same frame).
+            self.intermediate = vec![0x8000u16; rw * rh];
+        } else {
+            decay_15bpp(&mut self.intermediate, CURTAIN_MIDPASS_DECAY_5);
+        }
         for q in &self.pending_columns {
-            blit_intro_quad_column(q, &self.capture_src, rect, &mut buf);
+            blit_intro_quad(
+                q,
+                &self.capture_src,
+                FIELD_CAPTURE_COLS,
+                rect,
+                &mut self.intermediate,
+            );
         }
         if let Some(page) = self.captured.as_mut() {
-            page.write_block(rect.x, rect.y, rect.w, rect.h, bytemuck::cast_slice(&buf));
+            page.write_block(
+                rect.x,
+                rect.y,
+                rect.w,
+                rect.h,
+                bytemuck::cast_slice(&self.intermediate),
+            );
+        }
+    }
+
+    /// Advance the CPU model of the transition's display buffer and land it in
+    /// [`CURTAIN_TRAIL_RECT`].
+    ///
+    /// Order matters and is retail's: the wash decays what the display already
+    /// holds, the row strips then draw over it. So the model is decayed and
+    /// **uploaded first** - that snapshot is what the trail quads show under
+    /// this frame's live GPU-drawn strips - and this frame's rows are
+    /// rasterised into it afterwards, for the next frame's trail.
+    ///
+    /// Seeded from the field capture: retail's transition init lands the drawn
+    /// field frame in *both* display buffers (`DrawSync` + `MoveImage`), so
+    /// the first frame's background is the field itself, already one wash step
+    /// down (the wash is re-armed on every frame including the first).
+    fn update_curtain_display_trail(&mut self) {
+        let (w, h) = (PSX_SCREEN_WIDTH as usize, PSX_SCREEN_HEIGHT as usize);
+        if self.capture_src.len() < w * h {
+            return;
+        }
+        if self.display_accum.len() != w * h {
+            self.display_accum = self.capture_src.clone();
+        }
+        decay_15bpp(&mut self.display_accum, CURTAIN_DISPLAY_DECAY_5);
+        if let Some(page) = self.captured.as_mut() {
+            let r = CURTAIN_TRAIL_RECT;
+            page.write_block(
+                r.x,
+                r.y,
+                r.w,
+                r.h,
+                bytemuck::cast_slice(&self.display_accum),
+            );
+        }
+        let screen = VramRect::new(0, 0, PSX_SCREEN_WIDTH, PSX_SCREEN_HEIGHT);
+        let rows = std::mem::take(&mut self.pending_rows);
+        for q in &rows {
+            blit_intro_quad(
+                q,
+                &self.intermediate,
+                FIELD_CAPTURE_ROWS,
+                screen,
+                &mut self.display_accum,
+            );
+        }
+        self.pending_rows = rows;
+    }
+
+    /// The five textured backdrop quads that put [`CURTAIN_TRAIL_RECT`] on
+    /// screen behind the live row strips - the port's stand-in for the display
+    /// buffer retail draws over without clearing. Five because a 15-bpp
+    /// texture page is 64 texels wide, so the 320 columns tile five pages
+    /// (the same scheme the particle capture pages use).
+    fn curtain_trail_prims(&self, prims: &mut Vec<ScreenPrim>) {
+        if self.display_accum.is_empty() {
+            return;
+        }
+        let r = CURTAIN_TRAIL_RECT;
+        let base_page = (r.x / 64) | ((r.y / 256) << 4) | (2 << 7);
+        for k in 0..(r.w / 64) {
+            let x0 = (k * 64) as i16;
+            prims.push(ScreenPrim::Textured(ScreenQuad {
+                xy: [
+                    (x0, 0),
+                    (x0 + 64, 0),
+                    (x0, r.h as i16),
+                    (x0 + 64, r.h as i16),
+                ],
+                uv: [(0, 0), (64, 0), (0, r.h as u8), (64, r.h as u8)],
+                clut: 0,
+                tpage: base_page + k,
+                color: 0x0080_8080,
+                gouraud: None,
+                semi_transparent: false,
+                ot_index: CURTAIN_TRAIL_OT,
+            }));
         }
     }
 
@@ -1166,6 +1401,14 @@ impl BattleIntro {
         self.clock = elapsed;
         let mut out = IntroFrame::default();
         out.prims.push(backdrop_prim());
+        // The curtain's display trail: the previous frames' pixels, decayed by
+        // the per-frame wash, drawn under this frame's live strips - retail
+        // gets it by never clearing the display buffer. Empty (no quads) until
+        // the first `update_field_capture` has seeded the model, which is also
+        // the frame the capture itself lands.
+        if self.style == IntroStyle::Curtain {
+            self.curtain_trail_prims(&mut out.prims);
+        }
 
         match &mut self.set {
             WorkingSet::Particles { grid, style } => {
@@ -1223,11 +1466,13 @@ impl BattleIntro {
                 // screen; the columns render the intermediate the rows sample.
                 // See the module docs for the OT-bucket evidence.
                 self.pending_columns.clear();
+                self.pending_rows.clear();
                 out.prims.reserve(tick.quads.len());
                 for q in &tick.quads {
                     if q.desc_index == styles::CURTAIN_COL_DESC {
                         self.pending_columns.push(q.quad);
                     } else {
+                        self.pending_rows.push(q.quad);
                         out.prims
                             .push(ScreenPrim::Textured(intro_quad_to_screen(&q.quad)));
                     }
@@ -1295,26 +1540,27 @@ fn modulate5(c5: u16, colour: u8) -> u16 {
     ((u32::from(c5) * u32::from(colour) + 64) >> 7).min(31) as u16
 }
 
-/// Rasterise one column-pass quad into the curtain's intermediate rect.
+/// Rasterise one axis-aligned curtain quad from one buffer into another.
 ///
-/// `src` is [`FIELD_CAPTURE_COLS`] as a flat `rect.w x rect.h` halfword image,
-/// `dst` the [`FIELD_CAPTURE_ROWS`] rect the quad's absolute-VRAM coordinates
-/// are clipped against, and `out` that rect as a flat buffer.
-///
-/// The quad is a `POLY_GT4` with axis-aligned corners, one texel wide and its
-/// `v` spanning the whole source column, so the mapping is a per-column
-/// vertical resample.
-fn blit_intro_quad_column(q: &IntroQuad, src: &[u16], dst: VramRect, out: &mut [u16]) {
+/// `src` is `src_rect` as a flat halfword image and `out` is `dst` as one;
+/// the quad's coordinates are in `dst`'s space (absolute VRAM for the column
+/// pass, whose draw offset is zero; screen space for the row pass) and its
+/// texture page must resolve inside `src_rect`. Both passes' quads are
+/// `POLY_GT4`s with axis-aligned corners - a column is one texel wide with
+/// `v` spanning the whole source column, a row one pixel tall with `u`
+/// spanning its half of the source scanline - so the mapping is a per-line
+/// resample rather than a general triangle setup.
+fn blit_intro_quad(q: &IntroQuad, src: &[u16], src_rect: VramRect, dst: VramRect, out: &mut [u16]) {
     let (tx, ty, depth) = (
         ((q.tpage & 0x0F) as i32) * 64,
         if q.tpage & 0x10 != 0 { 256 } else { 0 },
         (q.tpage >> 7) & 0x3,
     );
-    // Only a 15-bpp page inside the capture rect can be resolved out of `src`.
-    if depth != 2 || ty != i32::from(FIELD_CAPTURE_COLS.y) {
+    // Only a 15-bpp page inside the source rect can be resolved out of `src`.
+    if depth != 2 || ty != i32::from(src_rect.y) {
         return;
     }
-    let (sw, sh) = (FIELD_CAPTURE_COLS.w as i32, FIELD_CAPTURE_COLS.h as i32);
+    let (sw, sh) = (src_rect.w as i32, src_rect.h as i32);
     let (x0, y0) = (i32::from(q.verts[0].x), i32::from(q.verts[0].y));
     let (x1, y1) = (i32::from(q.verts[3].x), i32::from(q.verts[3].y));
     let (w, h) = (x1 - x0, y1 - y0);
@@ -1336,7 +1582,7 @@ fn blit_intro_quad_column(q: &IntroQuad, src: &[u16], dst: VramRect, out: &mut [
         });
         for dx in x0.max(rx)..x1.min(rx + rw) {
             let u = u0 + (dx - x0) * (u1 - u0) / w;
-            let (sx, sy) = (tx + u - i32::from(FIELD_CAPTURE_COLS.x), v);
+            let (sx, sy) = (tx + u - i32::from(src_rect.x), v);
             if !(0..sw).contains(&sx) || !(0..sh).contains(&sy) {
                 continue;
             }
