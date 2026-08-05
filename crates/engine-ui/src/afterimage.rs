@@ -171,6 +171,25 @@ pub struct AfterimageQuad {
     pub semi_transparent: bool,
 }
 
+impl AfterimageQuad {
+    /// This packet as a screen-space primitive for the shared overlay pass
+    /// ([`crate::screen_prim`]) - the route the browser play page draws the
+    /// streak through (the native window batches the same fields into its
+    /// own VRAM-sampling mesh; either way the packet is this struct).
+    pub fn to_screen_prim(&self, ot_index: u32) -> crate::screen_prim::ScreenPrim {
+        crate::screen_prim::ScreenPrim::Textured(crate::screen_prim::ScreenQuad {
+            xy: self.xy,
+            uv: self.uv,
+            clut: self.clut,
+            tpage: self.tpage,
+            color: self.color,
+            gouraud: None,
+            semi_transparent: self.semi_transparent,
+            ot_index,
+        })
+    }
+}
+
 /// Build one afterimage quad from four projected screen corners, the move's
 /// trail-texture id (`move-power +0x0b`), and an injected random source.
 ///

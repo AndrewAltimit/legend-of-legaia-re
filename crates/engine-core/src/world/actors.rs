@@ -260,6 +260,7 @@ impl World {
                 // tag alone, is what maps retail's "id 0 = idle" here.
                 let non_idle =
                     actor.battle_staged_anim.is_some() || actor.battle_reaction.is_some();
+                let clip_key = player.attach_key();
                 let ghost_eligible = if actor.battle_monster_id.is_none() {
                     actor.battle.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B
                 } else {
@@ -273,6 +274,7 @@ impl World {
                         i32::from(actor.move_state.world_z),
                     ],
                     ghost_eligible,
+                    clip_key,
                 });
                 actor
                     .battle_pose_history
@@ -439,6 +441,71 @@ impl World {
                     pos: f.pos,
                     pose: f.pose.clone(),
                     color: p.color,
+                });
+            }
+        }
+        out
+    }
+
+    /// Plan this frame's weapon-trail sweeps - the engine seat of the
+    /// retail trigger `FUN_8005112C` + sweep driver `FUN_80048310`
+    /// (kernels in `legaia_engine_vm::battle_trail`; geometry emission in
+    /// `legaia_engine_ui::battle_trail`).
+    ///
+    /// For each party battle actor whose committed clip's `+0x77`
+    /// identity byte matches its character's trigger row, sample the pose
+    /// ring at even depths (one sweep step per two frames - the retail
+    /// `2 * rate` cursor rewind under the per-frame `rate` advance),
+    /// stopping at the clip boundary (ring `clip_key` mismatch), the
+    /// 16-step budget, or a pose without the trigger's control points.
+    /// A sweep below two steps draws nothing (`FUN_80048310`'s
+    /// `slti 0x2` gate).
+    // PORT: FUN_8005112C (trigger; table in `engine-vm::battle_trail`)
+    // REF: FUN_80048310 (sweep capture - the ring sampling here replaces
+    // the rewound re-decode; see `engine-vm::battle_trail` module docs)
+    pub fn battle_weapon_trail_draws(&self) -> Vec<BattleWeaponTrailDraw> {
+        use vm::battle_trail as wt;
+        let mut out = Vec::new();
+        for (i, actor) in self.actors.iter().enumerate() {
+            // Party-only: retail's trigger gates on seat < 3; the engine
+            // keys party-ness on identity, not slot (monsters may sit
+            // anywhere - the slot-gate trap).
+            if actor.battle_monster_id.is_some() {
+                continue;
+            }
+            let Some(player) = &actor.battle_animation else {
+                continue;
+            };
+            let key = player.attach_key();
+            // Retail char id space: `DAT_8007BD10[seat]` = roster ordinal
+            // + 1 (1 = Vahn, 2 = Noa, 3 = Gala).
+            let char_id = self.party_roster_slot(i) as u8 + 1;
+            let Some(trig) = wt::trail_trigger(char_id, key) else {
+                continue;
+            };
+            let hist = &actor.battle_pose_history;
+            let mut steps = Vec::new();
+            'sweep: for k in 0..wt::MAX_SWEEP_STEPS {
+                let Some(f) = hist.get(k * wt::SWEEP_FRAMES_PER_STEP) else {
+                    break;
+                };
+                if f.clip_key != key {
+                    break;
+                }
+                let mut pts = [[0i16; 3]; wt::TRAIL_POINTS];
+                for (p, pt) in pts.iter_mut().enumerate() {
+                    match f.pose.bone_outputs.get(trig.base_part + p) {
+                        Some((t, _rot)) => *pt = *t,
+                        None => break 'sweep,
+                    }
+                }
+                steps.push(pts);
+            }
+            if steps.len() >= 2 {
+                out.push(BattleWeaponTrailDraw {
+                    actor_slot: i as u8,
+                    steps,
+                    rgb: trig.rgb,
                 });
             }
         }

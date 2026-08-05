@@ -2104,7 +2104,13 @@ impl PlayWindowApp {
             // sees the frame that is presented. Capturing `Scene(&scene)` here
             // instead would silently drop every transition style from the PNGs
             // - the harness's own blind spot, not the emitter's.
-            let target = |scene| present_target(scene, &battle_intro_prims);
+            // Screen-space primitives composited over the scene this
+            // frame: the field-to-battle intro's styles, plus the in-battle
+            // weapon-trail bands (mutually exclusive in practice - the
+            // trail only draws once a swing clip plays inside the battle).
+            let mut screen_prims = battle_intro_prims;
+            screen_prims.extend(self.weapon_trail_screen_prims(r));
+            let target = |scene| present_target(scene, &screen_prims);
             // Periodic sweep (`--screenshot-every`): capture a frame every N
             // ticks into the sweep dir (named for the tick), keep running,
             // and exit after the capture at/past `--screenshot-last-tick`.

@@ -8,6 +8,7 @@ fn pose_test_clip(action_id: u8, frames: usize, tx: i16) -> MonsterAnimation {
     MonsterAnimation {
         action_id,
         rate: 2,
+        attach_key: 0,
         effect_script: Vec::new(),
         part_count: 1,
         frame_count: frames,

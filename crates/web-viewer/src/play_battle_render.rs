@@ -93,7 +93,7 @@ use wasm_bindgen::prelude::*;
 /// per-draw scale for those is `1.0`. The camera's translation trio is
 /// authored in this scaled space, so a class left at raw 1x would be
 /// orbited at four times the intended radius.
-const BATTLE_WORLD_SCALE: f32 = 4.0;
+pub(crate) const BATTLE_WORLD_SCALE: f32 = 4.0;
 
 /// PROT entry of the monster stat/mesh archive (`0867_battle_data`).
 const MONSTER_ARCHIVE_PROT_INDEX: u32 = 867;
@@ -1489,7 +1489,7 @@ impl LegaiaRuntime {
         }
     }
 
-    fn battle_cam_pose(&self) -> legaia_engine_vm::battle_cam_script::BattleCamPose {
+    pub(crate) fn battle_cam_pose(&self) -> legaia_engine_vm::battle_cam_script::BattleCamPose {
         self.battle_render
             .as_ref()
             .and_then(|b| b.camera.as_ref())

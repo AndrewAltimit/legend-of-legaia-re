@@ -1536,23 +1536,42 @@ impl LegaiaRuntime {
     /// so the per-frame accessors below must read a cache rather than
     /// re-tick.
     pub(crate) fn tick_battle_intro(&mut self) {
+        let mut prims = self.tick_battle_intro_prims().unwrap_or_default();
+        // In-battle screen FX ride the same overlay pass: the weapon-trail
+        // bands and the move-FX afterimage streak. Mutually exclusive with
+        // the intro in practice (transition vs. live battle).
+        prims.extend(self.battle_fx_screen_prims());
+        self.battle_intro_geom = (!prims.is_empty()).then(|| {
+            (
+                prims.len() as u32,
+                legaia_engine_ui::screen_prim::build_geometry(
+                    &prims,
+                    legaia_engine_ui::screen_prim::PSX_DISPLAY_W as u32,
+                    legaia_engine_ui::screen_prim::PSX_DISPLAY_H as u32,
+                ),
+            )
+        });
+    }
+
+    /// The intro emitter's half of [`Self::tick_battle_intro`]: arm /
+    /// advance / drop the emitter, return this frame's primitives (`None`
+    /// outside a transition or before the entity's first tick).
+    fn tick_battle_intro_prims(
+        &mut self,
+    ) -> Option<Vec<legaia_engine_ui::screen_prim::ScreenPrim>> {
         use legaia_engine_core::encounter::EncounterPhase;
 
-        let Some(host) = self.scene_host.as_ref() else {
-            self.drop_battle_intro();
-            return;
-        };
+        let host = self.scene_host.as_ref()?;
         let phase = host.world.encounter.as_ref().map(|s| s.phase());
         let Some(EncounterPhase::Transition { roll, .. }) = phase else {
             self.drop_battle_intro();
-            return;
+            return None;
         };
         let Some(entity) = host.world.battle_intro else {
             // The transition is armed but its entity has not ticked yet:
             // keep the emitter (the native window does the same), just show
             // nothing this frame.
-            self.battle_intro_geom = None;
-            return;
+            return None;
         };
         let total = host
             .world
@@ -1574,16 +1593,91 @@ impl LegaiaRuntime {
             self.field_vram_dirty = true;
         }
         self.battle_intro = Some(intro);
-        self.battle_intro_geom = (!frame.prims.is_empty()).then(|| {
-            (
-                frame.prims.len() as u32,
-                legaia_engine_ui::screen_prim::build_geometry(
-                    &frame.prims,
-                    legaia_engine_ui::screen_prim::PSX_DISPLAY_W as u32,
-                    legaia_engine_ui::screen_prim::PSX_DISPLAY_H as u32,
-                ),
-            )
-        });
+        Some(frame.prims)
+    }
+
+    /// This frame's in-battle screen FX primitives - the browser seat of
+    /// the two effects the native window composites over its battle scene:
+    ///
+    /// * the **weapon-trail** bands (`World::battle_weapon_trail_draws` -
+    ///   retail `FUN_8005112C` / `FUN_80048310`; packets from the shared
+    ///   `legaia_engine_ui::battle_trail::weapon_trail_prims` port of
+    ///   `FUN_800485BC`), projected with the page's own `battle_vp` in its
+    ///   scaled placement space (`(pos + local) * BATTLE_WORLD_SCALE`, the
+    ///   same composition the actor draws use - world Y goes through
+    ///   as-is, the VP's trailing flip handles it);
+    /// * the **move-FX afterimage streak** (the shared
+    ///   `legaia_engine_ui::streak_pass` schedule of `FUN_801E09F8`, quad
+    ///   packets from the ported `FUN_801E1AB0` / `FUN_801E1D98`) - the
+    ///   layer this page previously did not draw at all.
+    // REF: FUN_800485BC / FUN_801E1AB0 - per-host projection seat; the
+    // packets and schedules live in engine-ui.
+    fn battle_fx_screen_prims(&self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
+        use legaia_engine_ui::battle_trail as bt;
+        use legaia_engine_ui::streak_pass::{
+            MOVE_FX_STREAK_OT, StreakSource, streak_quads_scheduled,
+        };
+        use legaia_engine_vm::battle_trail::TRAIL_POINTS;
+
+        let Some(host) = self.scene_host.as_ref() else {
+            return Vec::new();
+        };
+        let world = &host.world;
+        if world.mode != legaia_engine_core::world::SceneMode::Battle {
+            return Vec::new();
+        }
+        let scale = crate::play_battle_render::BATTLE_WORLD_SCALE;
+        let pose = self.battle_cam_pose();
+        let vp = legaia_engine_vm::battle_cam_script::battle_vp(&pose, scale, 4.0 / 3.0);
+        let mut out = Vec::new();
+        for d in world.battle_weapon_trail_draws() {
+            let Some(actor) = world.actors.get(d.actor_slot as usize) else {
+                continue;
+            };
+            let pos = [
+                f32::from(actor.move_state.world_x),
+                f32::from(actor.move_state.world_y),
+                f32::from(actor.move_state.world_z),
+            ];
+            let mut steps = Vec::with_capacity(d.steps.len());
+            'draw: for s in &d.steps {
+                let mut pts = [(0i16, 0i16); TRAIL_POINTS];
+                for (i, t) in s.iter().enumerate() {
+                    // Page placement law (see the actor draw loop in
+                    // play-app.js): posed local point + raw translation,
+                    // both scaled by BATTLE_WORLD_SCALE; no Y negation -
+                    // the battle VP's trailing flip carries it.
+                    let p = [
+                        (pos[0] + f32::from(t[0])) * scale,
+                        (pos[1] + f32::from(t[1])) * scale,
+                        (pos[2] + f32::from(t[2])) * scale,
+                    ];
+                    match bt::project_stage_point_cols(&vp, p) {
+                        Some(xy) => pts[i] = xy,
+                        None => break 'draw,
+                    }
+                }
+                steps.push(pts);
+            }
+            out.extend(bt::weapon_trail_prims(&steps, d.rgb, bt::WEAPON_TRAIL_OT));
+        }
+        // Move-FX streak: same source block + emitter schedule as the
+        // native window's `move_fx_streak_quads`.
+        if let Some(trail) = world.active_move_fx_trail_texpage() {
+            let block = world.move_fx_streak();
+            if let Some(src) =
+                StreakSource::from_block(block.launch, block.half_width(), Some(trail))
+            {
+                let mvp = glam::Mat4::from_cols_array(&vp)
+                    * glam::Mat4::from_scale(glam::Vec3::splat(scale));
+                let party = world.battle_ctx.active_actor < 3;
+                let frame = world.field_frames as u32;
+                for q in streak_quads_scheduled(&src, &mvp, frame, block.counter_word, party) {
+                    out.push(q.to_screen_prim(MOVE_FX_STREAK_OT));
+                }
+            }
+        }
+        out
     }
 
     /// Tear the emitter down when the transition ends (battle handoff, or a

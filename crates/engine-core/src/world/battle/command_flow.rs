@@ -1211,9 +1211,29 @@ impl World {
             .map(|t| t.name.clone())
             .unwrap_or_else(|| format!("P{}", actor + 1));
         let targets = view.target_select.then(|| {
+            // Only the rows on the selected item's own side are LISTED -
+            // retail's state-0x64 panel is the party roster and its cursor
+            // walk wraps inside the party band `[0, ctx[+0x00])`; the
+            // enemy-side item states ring the monster seats instead
+            // (`FUN_801D0748`; rule pinned at
+            // `crate::inventory_use::target_on_effect_side`). The session
+            // cursor indexes the full roster, so it is remapped onto the
+            // filtered list.
+            let side_ok = |t: &crate::inventory_use::TargetRow| {
+                menu.current_item()
+                    .map(|e| crate::inventory_use::target_on_effect_side(&e.effect, t))
+                    .unwrap_or(!t.is_enemy)
+            };
+            let cursor = menu
+                .targets
+                .iter()
+                .take(view.target_cursor)
+                .filter(|t| side_ok(t))
+                .count();
             (
                 menu.targets
                     .iter()
+                    .filter(|t| side_ok(t))
                     .map(|t| crate::inventory_use::BattleItemTargetRow {
                         name: t.name.clone(),
                         hp: t.hp,
@@ -1221,7 +1241,7 @@ impl World {
                         alive: t.alive,
                     })
                     .collect(),
-                view.target_cursor,
+                cursor,
             )
         });
         Some(crate::inventory_use::BattleItemMenuModel {

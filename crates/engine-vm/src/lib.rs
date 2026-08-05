@@ -122,6 +122,7 @@ pub mod battle_scatter;
 pub mod battle_separation;
 pub mod battle_stream_slot;
 pub mod battle_target_group;
+pub mod battle_trail;
 pub mod battle_value_readout;
 pub mod camera_mover;
 pub mod camera_rel_actor;

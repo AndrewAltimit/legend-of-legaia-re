@@ -24,6 +24,7 @@ legaia-xa = { path = "../xa" }
 legaia-mdec = { path = "../mdec" }
 legaia-engine-vm = { path = "../engine-vm" }
 legaia-engine-ui = { path = "../engine-ui" }
+glam.workspace = true
 legaia-font = { path = "../font" }
 legaia-save = { path = "../save" }
 legaia-engine-core = { path = "../engine-core" }

@@ -461,7 +461,9 @@ impl InventoryUseSession {
                     .and_then(|eff| {
                         // Land on the target that actually benefits (the hurt
                         // ally / the afflicted member), falling back to the
-                        // first merely-valid row, then row 0.
+                        // first merely-valid row, then the first row on the
+                        // item's own side (retail seeds the party band's
+                        // cursor even when nobody needs the item), then 0.
                         self.targets
                             .iter()
                             .position(|t| effect_benefits_target(&eff, t))
@@ -469,6 +471,11 @@ impl InventoryUseSession {
                                 self.targets
                                     .iter()
                                     .position(|t| target_valid_for_effect(&eff, t))
+                            })
+                            .or_else(|| {
+                                self.targets
+                                    .iter()
+                                    .position(|t| target_on_effect_side(&eff, t))
                             })
                     })
                     .unwrap_or(0);
@@ -485,14 +492,48 @@ impl InventoryUseSession {
         }
     }
 
-    fn input_target_select(&mut self, item_cursor: usize, cursor: usize, input: InventoryUseInput) {
+    /// Step the target cursor to the next row **on the item's own side**,
+    /// wrapping - the retail walk shape. In battle state `0x64`
+    /// (`FUN_801D0748`, `0x801D2BE8`/`0x801D2C78`) the item target cursor
+    /// wraps strictly inside the seated party band `[0, ctx[+0x00])`; the
+    /// enemy-side states (`0x5B`) ring over the monster seats instead. A
+    /// wrong-side row is never reachable, whatever else (liveness, effect
+    /// relevance) it may satisfy - retail's walk applies no other predicate.
+    fn step_target_cursor(&self, cursor: usize, forward: bool) -> Option<usize> {
         let n = self.targets.len();
+        if n == 0 {
+            return None;
+        }
+        let side_ok = |i: usize| {
+            self.current_item()
+                .map(|e| target_on_effect_side(&e.effect, &self.targets[i]))
+                .unwrap_or(true)
+        };
+        let step = |i: usize| {
+            if forward {
+                if i + 1 >= n { 0 } else { i + 1 }
+            } else if i == 0 {
+                n - 1
+            } else {
+                i - 1
+            }
+        };
+        let mut i = step(cursor);
+        for _ in 0..n {
+            if side_ok(i) {
+                return Some(i);
+            }
+            i = step(i);
+        }
+        None
+    }
+
+    fn input_target_select(&mut self, item_cursor: usize, cursor: usize, input: InventoryUseInput) {
         match input {
             InventoryUseInput::Up => {
-                if n == 0 {
+                let Some(new_cursor) = self.step_target_cursor(cursor, false) else {
                     return;
-                }
-                let new_cursor = if cursor == 0 { n - 1 } else { cursor - 1 };
+                };
                 self.state = InventoryUseState::TargetSelect {
                     item_cursor,
                     cursor: new_cursor,
@@ -500,10 +541,9 @@ impl InventoryUseSession {
                 self.events.push(InventoryUseEvent::CursorMoved);
             }
             InventoryUseInput::Down => {
-                if n == 0 {
+                let Some(new_cursor) = self.step_target_cursor(cursor, true) else {
                     return;
-                }
-                let new_cursor = if cursor + 1 >= n { 0 } else { cursor + 1 };
+                };
                 self.state = InventoryUseState::TargetSelect {
                     item_cursor,
                     cursor: new_cursor,
@@ -678,6 +718,23 @@ fn effect_benefits_target(effect: &ItemEffect, target: &TargetRow) -> bool {
     }
 }
 
+/// Which side of the field an effect's target roster lives on - the retail
+/// rule the battle item window enforces **structurally**, not per-confirm.
+/// `FUN_801D0748`'s state-`0x3C` descriptor-flag fork sends an item either
+/// to state `0x64`, whose cursor walk wraps inside the seated party band
+/// `[0, ctx[+0x00])` and cannot represent a monster seat, or (for the
+/// enemy-side classes - reachable code with **no reachable data** on the
+/// retail disc, see `docs/formats/item-effect-table.md`) to the monster
+/// ring states `0x5B`/`0x5D`. So a heal item's target list simply never
+/// contains an enemy row; the port's synthetic offensive items take the
+/// mirror rule.
+pub(crate) fn target_on_effect_side(effect: &ItemEffect, target: &TargetRow) -> bool {
+    match effect {
+        ItemEffect::Damage { .. } | ItemEffect::Capture { .. } => target.is_enemy,
+        _ => !target.is_enemy,
+    }
+}
+
 /// Validate that the picked target makes sense for the chosen effect, and
 /// that it is on the right side of the field. Revive needs a dead ally;
 /// offensive items (Damage / Capture) need a living enemy; Escape doesn't
@@ -833,9 +890,12 @@ mod tests {
     }
 
     #[test]
-    fn healing_item_buzzes_when_confirmed_on_an_enemy_row() {
-        // Healing Leaf (0x01) is ally-only. Force the cursor onto the enemy
-        // row and confirm - it must reject with InvalidConfirm.
+    fn healing_item_cursor_never_reaches_an_enemy_row() {
+        // Healing Leaf (0x01) is ally-only. Retail's item target walk wraps
+        // strictly inside the party band (state 0x64, `FUN_801D0748`
+        // `0x801D2BE8`/`0x801D2C78`) - an enemy seat is unrepresentable, so
+        // stepping the cursor must skip the enemy row entirely rather than
+        // land on it and buzz at confirm.
         let mut s = InventoryUseSession::new(
             test_catalog(),
             vec![0x01],
@@ -843,18 +903,42 @@ mod tests {
             InventoryContext::Battle,
         );
         s.input(InventoryUseInput::Confirm); // -> TargetSelect, cursor on ally (0)
-        s.input(InventoryUseInput::Down); // move onto the enemy row
+        s.input(InventoryUseInput::Down); // wraps within the party band
         s.drain_events();
+        match s.state {
+            InventoryUseState::TargetSelect { cursor, .. } => {
+                assert_eq!(cursor, 0, "sole ally row - the walk wraps onto itself");
+            }
+            ref other => panic!("expected TargetSelect, got {other:?}"),
+        }
+        s.input(InventoryUseInput::Up);
+        match s.state {
+            InventoryUseState::TargetSelect { cursor, .. } => assert_eq!(cursor, 0),
+            ref other => panic!("expected TargetSelect, got {other:?}"),
+        }
+        // Confirm lands on the ally and uses the item.
         s.input(InventoryUseInput::Confirm);
-        assert!(
-            matches!(s.state, InventoryUseState::TargetSelect { .. }),
-            "still selecting - the enemy is not a valid heal target"
+        assert!(matches!(s.state, InventoryUseState::Done(_)));
+    }
+
+    #[test]
+    fn offensive_item_cursor_never_reaches_an_ally_row() {
+        // The mirror rule: the Bomb's walk rings the enemy seats only
+        // (retail state 0x5B's monster ring).
+        let mut s = InventoryUseSession::new(
+            test_catalog(),
+            vec![0x13],
+            mixed_targets(),
+            InventoryContext::Battle,
         );
-        assert!(
-            s.drain_events()
-                .contains(&InventoryUseEvent::InvalidConfirm),
-            "buzzed on the wrong-side target"
-        );
+        s.input(InventoryUseInput::Confirm); // -> TargetSelect on the enemy
+        s.input(InventoryUseInput::Down);
+        match s.state {
+            InventoryUseState::TargetSelect { cursor, .. } => {
+                assert_eq!(cursor, 1, "sole enemy row - the ring wraps onto itself");
+            }
+            ref other => panic!("expected TargetSelect, got {other:?}"),
+        }
     }
 
     #[test]

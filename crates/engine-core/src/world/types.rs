@@ -395,6 +395,32 @@ pub struct BattleGhostFrame {
     pub pos: [i32; 3],
     /// Retail ring-id gate result for this frame.
     pub ghost_eligible: bool,
+    /// The committed clip's attach-key / identity byte that frame
+    /// (`MonsterAnimation::attach_key`, entry `+0x77`; `0` = idle / no
+    /// entry header). The weapon-trail sweep samples the ring at even
+    /// depths and stops where this stops matching the live clip - the
+    /// engine equivalent of retail's cursor-underflow stop
+    /// (`FUN_80048310` rewinds within the current clip only).
+    pub clip_key: u8,
+}
+
+/// One planned weapon-trail draw, resolved by
+/// `World::battle_weapon_trail_draws`: the ring-sampled sweep of an
+/// actor's three trail control points (the weapon bone chain
+/// `base_part..base_part+3` of its trigger row -
+/// `legaia_engine_vm::battle_trail`), in actor-local space, newest step
+/// first, consecutive steps two frames apart. Hosts transform the points
+/// with the same model matrix the live body draws with, project them into
+/// the 320x240 stage, and hand the projected sweep to
+/// `legaia_engine_ui::battle_trail::weapon_trail_prims`.
+#[derive(Debug, Clone)]
+pub struct BattleWeaponTrailDraw {
+    pub actor_slot: u8,
+    /// `steps[k][i]` = local-space position of control point `i` at sweep
+    /// step `k`.
+    pub steps: Vec<[[i16; 3]; legaia_engine_vm::battle_trail::TRAIL_POINTS]>,
+    /// Trail tint (the trigger row's RGB).
+    pub rgb: [u8; 3],
 }
 
 /// One planned after-image ghost draw, resolved by

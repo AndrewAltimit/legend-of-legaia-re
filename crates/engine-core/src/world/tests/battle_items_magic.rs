@@ -51,6 +51,43 @@ fn battle_item_bomb_damages_enemy_and_cursor_lands_on_the_monster() {
     assert_eq!(fx[0].target_slot, 1);
 }
 
+/// The target panel the hosts draw lists ONLY the selected item's side -
+/// retail's rule is structural, not a confirm-time buzz: state `0x64`'s
+/// cursor walk wraps inside the seated party band `[0, ctx[+0x00])`
+/// (`FUN_801D0748` `0x801D2BE8`/`0x801D2C78`), so a heal item's panel is
+/// the party roster and an enemy row is unrepresentable; the (test-only)
+/// offensive items take the monster-ring side (`0x5B`).
+#[test]
+fn heal_item_target_panel_lists_party_rows_only() {
+    use crate::input::PadButton;
+
+    let mut world = offensive_item_world(500, 7);
+    world.actors[0].battle.hp = 120; // hurt, so the heal is admissible
+    world.inventory.insert(0x01, 1); // Heal (ally-side).
+    world.battle_item_menu = Some(world.build_battle_item_session());
+    // The session roster still carries both sides (the offensive items
+    // need the enemy rows) - the model is where the side rule lands.
+    assert_eq!(world.battle_item_menu.as_ref().unwrap().targets.len(), 2);
+    world.set_pad(0);
+    world.set_pad(PadButton::Cross.mask());
+    world.tick_battle_item_menu(); // confirm the heal -> target select
+    let m = world.battle_item_menu_model().expect("menu model");
+    let (rows, cursor) = m.targets.expect("target select armed");
+    assert_eq!(rows.len(), 1, "party rows only - no enemy in a heal panel");
+    assert_eq!(cursor, 0);
+    // The mirror side: the Bomb's panel lists only the enemy.
+    let mut world = offensive_item_world(500, 7);
+    world.inventory.insert(0x13, 1);
+    world.battle_item_menu = Some(world.build_battle_item_session());
+    world.set_pad(0);
+    world.set_pad(PadButton::Cross.mask());
+    world.tick_battle_item_menu();
+    let m = world.battle_item_menu_model().expect("menu model");
+    let (rows, cursor) = m.targets.expect("target select armed");
+    assert_eq!(rows.len(), 1, "enemy rows only in an offensive panel");
+    assert_eq!(cursor, 0, "session cursor remapped onto the filtered list");
+}
+
 #[test]
 fn battle_item_bomb_downs_a_low_hp_enemy() {
     use crate::input::PadButton;
