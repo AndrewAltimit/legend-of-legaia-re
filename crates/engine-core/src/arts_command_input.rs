@@ -306,7 +306,18 @@ impl ArtsCommandInputSession {
                 };
             }
             ArtsInputPhase::BeginMenu { cursor } => {
-                let cursor = if ev.up || ev.down { 1 - cursor } else { cursor };
+                // Spatial seating on the drawn pair: the menu is two stacked
+                // rows (`Begin` above `Reselect` -
+                // `legaia_engine_ui::arts_input::BEGIN_MENU_SEAT` + pitch), so
+                // Up always highlights the top row and Down the bottom one -
+                // never a toggle.
+                let cursor = if ev.up {
+                    0
+                } else if ev.down {
+                    1
+                } else {
+                    cursor
+                };
                 if ev.cross {
                     if cursor == 0 {
                         // Begin: pick the target, then run.
@@ -633,7 +644,14 @@ mod tests {
         // Any press reaches Begin | Reselect.
         s.input(press("c"), party3(), one_monster());
         assert!(matches!(s.phase, ArtsInputPhase::BeginMenu { cursor: 0 }));
-        // Down moves to Reselect; Cross takes it.
+        // Down moves to Reselect (the bottom drawn row) and stays there on a
+        // second Down - spatial seating, not a toggle; Up returns to Begin,
+        // then Down + Cross takes Reselect.
+        s.input(press("D"), party3(), one_monster());
+        s.input(press("D"), party3(), one_monster());
+        assert!(matches!(s.phase, ArtsInputPhase::BeginMenu { cursor: 1 }));
+        s.input(press("U"), party3(), one_monster());
+        assert!(matches!(s.phase, ArtsInputPhase::BeginMenu { cursor: 0 }));
         s.input(press("D"), party3(), one_monster());
         s.input(press("c"), party3(), one_monster());
         assert!(matches!(s.phase, ArtsInputPhase::Entering));

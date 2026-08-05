@@ -83,10 +83,7 @@ pub const CRUMB_MIN_INTERIOR_W: i32 = 24;
 /// Per-tab breadcrumb layout for the `Begin | <actor> | Item` trail:
 /// `(label pen, interior width)` per tab, advancing left-to-right from
 /// [`CRUMB_SEAT0`] with each tab sized to its own label.
-pub fn crumb_layout(
-    font: &legaia_font::Font,
-    actor_name: &str,
-) -> [((i32, i32), i32); 3] {
+pub fn crumb_layout(font: &legaia_font::Font, actor_name: &str) -> [((i32, i32), i32); 3] {
     let mut x = CRUMB_SEAT0.0;
     let mut out = [((0, 0), 0); 3];
     for (i, label) in ["Begin", actor_name, "Item"].into_iter().enumerate() {
@@ -423,7 +420,13 @@ mod tests {
     fn both_windows_draw_their_chrome_at_the_pinned_rects() {
         let r = rects();
         let all = rows(3);
-        let sprites = battle_item_window_sprites(&legaia_font::Font::placeholder(), &r, &frame(&all, 0), (0, 0), 1);
+        let sprites = battle_item_window_sprites(
+            &legaia_font::Font::placeholder(),
+            &r,
+            &frame(&all, 0),
+            (0, 0),
+            1,
+        );
         // A 9-slice panel is at least 9 sprites; two windows + 3 crumb
         // plates (3 sprites each) + the hand.
         let list_only = crate::menu_window_chrome_draws_for(&r, LIST_WINDOW, (0, 0), 1);
@@ -464,7 +467,13 @@ mod tests {
         let r = rects();
         let all = rows(3);
         let hand_at = |cursor: usize| {
-            let sprites = battle_item_window_sprites(&legaia_font::Font::placeholder(), &r, &frame(&all, cursor), (0, 0), 1);
+            let sprites = battle_item_window_sprites(
+                &legaia_font::Font::placeholder(),
+                &r,
+                &frame(&all, cursor),
+                (0, 0),
+                1,
+            );
             let hand = sprites.last().unwrap();
             assert_eq!(hand.src, r.cursor);
             (hand.dst.0, hand.dst.1)
@@ -485,7 +494,8 @@ mod tests {
         // Page 2 draws the remainder (3 rows), and the hand wraps onto the
         // page-relative seat.
         let r = rects();
-        let sprites = battle_item_window_sprites(&legaia_font::Font::placeholder(), &r, &f9, (0, 0), 1);
+        let sprites =
+            battle_item_window_sprites(&legaia_font::Font::placeholder(), &r, &f9, (0, 0), 1);
         let hand = sprites.last().unwrap();
         assert_eq!(hand.dst.1, 45 + ROW_PITCH); // row 9 = page row 1
         // An empty bag still has one page, like retail's PAGE 1/1 header.
@@ -554,7 +564,8 @@ mod tests {
         ];
         let mut f = frame(&all, 1);
         f.targets = Some((&targets, 1));
-        let sprites = battle_item_window_sprites(&legaia_font::Font::placeholder(), &r, &f, (0, 0), 1);
+        let sprites =
+            battle_item_window_sprites(&legaia_font::Font::placeholder(), &r, &f, (0, 0), 1);
         // Windows still framed; hand on target row 1, not item row 1's page seat.
         let hand = sprites.last().unwrap();
         assert_eq!((hand.dst.0, hand.dst.1), (167, 59));
@@ -579,8 +590,20 @@ mod tests {
     fn stage_scale_multiplies_every_prim() {
         let r = rects();
         let all = rows(2);
-        let one = battle_item_window_sprites(&legaia_font::Font::placeholder(), &r, &frame(&all, 0), (0, 0), 1);
-        let two = battle_item_window_sprites(&legaia_font::Font::placeholder(), &r, &frame(&all, 0), (7, 11), 2);
+        let one = battle_item_window_sprites(
+            &legaia_font::Font::placeholder(),
+            &r,
+            &frame(&all, 0),
+            (0, 0),
+            1,
+        );
+        let two = battle_item_window_sprites(
+            &legaia_font::Font::placeholder(),
+            &r,
+            &frame(&all, 0),
+            (7, 11),
+            2,
+        );
         assert_eq!(one.len(), two.len());
         for (a, b) in one.iter().zip(two.iter()) {
             assert_eq!(b.dst.0, 7 + a.dst.0 * 2);
