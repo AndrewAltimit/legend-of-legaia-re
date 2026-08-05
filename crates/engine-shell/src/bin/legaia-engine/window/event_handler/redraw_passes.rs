@@ -605,11 +605,16 @@ impl PlayWindowApp {
     pub(super) fn build_battle_ghost_uploads(
         &self,
         r: &legaia_engine_render::Renderer,
-    ) -> Vec<(UploadedColorMesh, Mat4)> {
+    ) -> Vec<(UploadedColorMesh, Mat4, [f32; 3], [f32; 3])> {
         use legaia_engine_render::psx_blend::pack_blend_word;
         let world = &self.session.host.world;
         let mut out = Vec::new();
         if world.mode != SceneMode::Battle {
+            return out;
+        }
+        // A/B diagnostic: drop the whole ghost pass so a suspect additive
+        // wash can be attributed to (or exonerated from) this pass alone.
+        if std::env::var_os("LEGAIA_DIAG_NO_GHOSTS").is_some() {
             return out;
         }
         for g in world.battle_ghost_draws() {
@@ -640,19 +645,24 @@ impl PlayWindowApp {
                     } else {
                         Mat4::IDENTITY
                     };
-                    let model = Mat4::from_translation(Vec3::new(
-                        g.pos[0] as f32,
-                        g.pos[1] as f32,
-                        g.pos[2] as f32,
-                    )) * rot
+                    let gpos = [g.pos[0] as f32, g.pos[1] as f32, g.pos[2] as f32];
+                    let model = Mat4::from_translation(Vec3::from(gpos))
+                        * rot
                         * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                    // The live body's current position, for the render-side
+                    // eye push that parks the ghost behind it.
+                    let bpos = [
+                        f32::from(actor.move_state.world_x),
+                        f32::from(actor.move_state.world_y),
+                        f32::from(actor.move_state.world_z),
+                    ];
                     log::debug!(
                         "arts ghost: actor {} at {:?} colour {:?}",
                         g.actor_slot,
                         g.pos,
                         g.color
                     );
-                    out.push((m, model));
+                    out.push((m, model, gpos, bpos));
                 }
                 Err(e) => log::warn!("ghost mesh upload: {e:#}"),
             }

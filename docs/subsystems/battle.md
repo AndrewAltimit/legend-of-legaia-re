@@ -3678,6 +3678,19 @@ by `World::tick_battle_intro` for as long as the encounter session sits in its
 advancing, and bit 0 comes from the post-switch spin test, so `ready == 3` is
 the completion state.
 
+**Every battle entry rides this phase**, not just the field step roll: a
+scripted carrier fight (the op-`0x3E FF` / dialogue-engage path,
+`World::begin_field_carrier_battle`) and a world-map contact
+(`World::begin_world_map_encounter`) both arm the same session `Transition`
+instead of flipping the mode on the spot - retail runs the intro overlay for
+all of them. A scene with no session of its own (towns, the overworld) gets a
+bare bracket installed on demand (`World::install_encounter_bracket`), a
+post-battle `Grace` window never swallows a story fight (it is reset before
+arming), and the drain into the actual entry runs in every relevant mode:
+`live_field_tick` under the live loop, a live-loop-off arm of the `Field`
+tick (`--no-live-loop` gates the roll, never an armed fight), and the
+`WorldMap` tick (which drains into `World::enter_world_map_battle`).
+
 The **visual** half is live end to end. The five style kernels are ported in
 `engine-vm` and drawn by `engine-render::battle_intro`, the per-frame
 working-set owner the native play window arms for every encounter (the browser
@@ -3940,13 +3953,15 @@ seating for each; `engine-core::battle_open` composes the banner and
 set, and which a mid-round reopen does not. The ambush's lost round is already
 the `ctx[+0x290]` side lockout in `World::reseed_initiative`.
 
-The port keeps a cursor + Cross-confirm on top of the seating (retail's
-direct-commit press stays a fidelity gap), and the direction → seat map is
-**spatial**, mirroring retail's own per-arm dispatch: on the ring Up seats
+The port follows retail's **direct-commit press**: a direction press takes the
+chip drawn on that side of the screen in the same frame, no confirm. The map is
+spatial, mirroring retail's own per-arm dispatch: on the ring Up commits
 `Item`, Left `Attack`, Right the magic arm, Down `Spirit`
 (`battle_input::ring_seat`), and on both two-chip prompts Left is always the
-left chip and Right the right chip (`battle_input::pair_seat`) - a direction
-press never toggles. `engine-shell`'s
+left chip and Right the right chip (`battle_input::pair_seat`). Cross
+additionally commits whatever the cursor rests on - the route a scripted
+harness that cannot aim a direction drives - and Circle keeps its back-out /
+outright-`Run` roles. `engine-shell`'s
 `direction_presses_land_on_the_chip_drawn_on_that_side` holds the map equal to
 the drawn seating.
 

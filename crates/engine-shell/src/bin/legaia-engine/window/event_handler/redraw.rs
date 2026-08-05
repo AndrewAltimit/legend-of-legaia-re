@@ -1687,15 +1687,42 @@ impl PlayWindowApp {
                     }
                 }
                 // Arts after-image ghosts trail the live bodies: additive
-                // flat-colour copies at the rate-scheduled historical poses
-                // (retail FUN_80049348 draws them 0x50 OT buckets behind
-                // the body; here the opaque body's depth occludes the
-                // additive pass the same way).
+                // flat-colour copies at the rate-scheduled historical poses.
+                // Retail pushes each ghost 0x50 OT buckets deeper than the
+                // live body (FUN_80048A08), so under painter ordering the
+                // body covers the coincident screen area REGARDLESS of true
+                // depth - including the attack camera's behind-the-attacker
+                // framings, where the trailing ghost is genuinely nearer the
+                // camera than the body. A depth buffer cannot express that
+                // with any compare function (the blend pass's GreaterEqual
+                // passed every coincident fragment and washed the whole mesh
+                // additive - the "monster glows yellow" defect), so each
+                // ghost is scaled uniformly ABOUT THE EYE until it sits past
+                // the body's distance: every vertex slides along its own
+                // camera ray (screen silhouette unchanged) while the body's
+                // opaque depth wins wherever they overlap.
                 if in_battle {
-                    for (mesh, model) in &battle_ghost_uploads {
+                    use legaia_engine_core::battle_afterimage as ai;
+                    let eye = ai::camera_eye_from_vp(&actor_cam.to_cols_array());
+                    for (mesh, model, gpos, bpos) in &battle_ghost_uploads {
+                        let push = match eye {
+                            Some(e) => {
+                                let k = ai::ghost_eye_push_scale(
+                                    e,
+                                    *gpos,
+                                    *bpos,
+                                    ai::GHOST_EYE_PUSH_MARGIN,
+                                );
+                                let ev = Vec3::from(e);
+                                Mat4::from_translation(ev)
+                                    * Mat4::from_scale(Vec3::splat(k))
+                                    * Mat4::from_translation(-ev)
+                            }
+                            None => Mat4::IDENTITY,
+                        };
                         color_draws.push(ColorSceneDraw {
                             mesh,
-                            mvp: actor_cam * *model,
+                            mvp: actor_cam * push * *model,
                         });
                     }
                 }

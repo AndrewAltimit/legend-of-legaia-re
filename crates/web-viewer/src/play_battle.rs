@@ -1669,8 +1669,10 @@ impl LegaiaRuntime {
         if !armed {
             return false;
         }
-        // The pending carrier battle is drained by the field tick.
-        for _ in 0..4 {
+        // The pending carrier battle is drained by the field tick, and the
+        // field-to-battle intro transition holds the mode in Field for its
+        // 132 display frames before the flip.
+        for _ in 0..220 {
             if self
                 .scene_host
                 .as_ref()

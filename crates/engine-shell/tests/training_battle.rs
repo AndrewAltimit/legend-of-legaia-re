@@ -307,11 +307,12 @@ fn training_reaches_battle_via_field_carrier_sm() {
         );
     }
 
-    // The dialogue-accept advances the sparring carrier; the SM runs the
-    // transition and flips Field -> Battle within a couple of ticks.
+    // The dialogue-accept advances the sparring carrier; the SM latches the
+    // fight, the field-to-battle intro transition runs its 132 display
+    // frames, and only then does the mode flip Field -> Battle.
     session.host.world.engage_field_carrier(sparring_idx);
     let mut reached_battle = false;
-    for _ in 0..8 {
+    for _ in 0..220 {
         let _ = session.tick().expect("tick");
         if session.host.world.mode == SceneMode::Battle {
             reached_battle = true;
@@ -436,13 +437,13 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
         "cursor moved to the fight option"
     );
 
-    // Confirm the fight option: the SM runs the transition and flips Field ->
-    // Battle within a few ticks.
+    // Confirm the fight option: the SM latches the fight, the intro
+    // transition runs its 132 display frames, and the mode flips.
     world.input.set_pad(0);
     let _ = world.tick();
     world.input.set_pad(PadButton::Cross.mask());
     let mut reached_battle = false;
-    for _ in 0..8 {
+    for _ in 0..220 {
         let _ = world.tick();
         if world.mode == SceneMode::Battle {
             reached_battle = true;
@@ -560,7 +561,8 @@ fn training_reaches_battle_via_interaction_probe() {
     let _ = session.host.world.tick();
     session.host.world.input.set_pad(PadButton::Cross.mask());
     let mut reached_battle = false;
-    for _ in 0..8 {
+    // Through the 132-frame intro transition to the flip.
+    for _ in 0..220 {
         let _ = session.host.world.tick();
         if session.host.world.mode == SceneMode::Battle {
             reached_battle = true;

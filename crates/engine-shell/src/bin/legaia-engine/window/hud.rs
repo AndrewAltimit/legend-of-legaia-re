@@ -2600,16 +2600,19 @@ mod battle_hud_wiring_tests {
         assert_eq!(bcu::ATTACK_MODE_SEATS[1], bcu::MENU_SEATS[2]);
     }
 
-    /// A direction press must land the cursor on the chip **drawn on that
-    /// side of the screen**. `engine-core` cannot see the seating table (it
-    /// does not link `engine-ui`), so it carries the direction → seat map as
-    /// its own `match`; this is where that map is held equal to the drawn
-    /// geometry: from every starting arm, Up lands on the topmost plate,
-    /// Down the bottommost, Left the leftmost and Right the rightmost.
+    /// A direction press must commit the chip **drawn on that side of the
+    /// screen**. `engine-core` cannot see the seating table (it does not
+    /// link `engine-ui`), so it carries the direction → seat map as its own
+    /// `match`; this is where that map is held equal to the drawn geometry:
+    /// from every starting arm, Up commits the topmost plate, Down the
+    /// bottommost, Left the leftmost and Right the rightmost. The committed
+    /// arm is read back out of the phase the one press leaves the session
+    /// in (retail's direct-commit dispatch - there is no highlight step to
+    /// inspect).
     #[test]
     fn direction_presses_land_on_the_chip_drawn_on_that_side() {
         use legaia_engine_core::battle_input::{
-            BattleCommand, BattleCommandInput, BattleCommandSession, CommandPhase,
+            BattleCommand, BattleCommandInput, BattleCommandSession, CommandPhase, Resolution,
         };
         use legaia_engine_core::target_picker::SlotState;
         use legaia_engine_render::battle_command_ui as bcu;
@@ -2637,10 +2640,20 @@ mod battle_hud_wiring_tests {
                 let mut ev = BattleCommandInput::default();
                 dir(&mut ev);
                 s.input(ev, party, monsters);
+                let committed = if s.attack_mode().is_some() {
+                    BattleCommand::Attack
+                } else {
+                    match s.resolved() {
+                        Some(Resolution::OpenItemMenu) => BattleCommand::Item,
+                        Some(Resolution::OpenSpellMenu) => BattleCommand::Magic,
+                        Some(Resolution::SpiritGuard) => BattleCommand::Spirit,
+                        other => panic!("the press committed no ring arm: {other:?}"),
+                    }
+                };
                 let to = BattleCommand::MENU
                     .iter()
-                    .position(|c| Some(*c) == s.menu_command())
-                    .expect("the cursor stayed in the menu");
+                    .position(|c| *c == committed)
+                    .expect("the committed arm is a ring arm");
                 let landed = axis(&bcu::MENU_SEATS[to]);
                 let extreme = bcu::MENU_SEATS
                     .iter()

@@ -630,7 +630,9 @@ fn v0_1_battle_leg_reaches_battle_from_new_game() {
     modes.push(w.mode);
     let cross = PadButton::Cross.mask();
     let down = PadButton::Down.mask();
-    for i in 0..16u32 {
+    // The confirm lands within the first few frames; the field-to-battle
+    // intro transition then clocks its 132 display frames before the flip.
+    for i in 0..220u32 {
         w.set_pad(match i {
             0 | 2 => down,
             4 => cross,
@@ -812,7 +814,8 @@ fn v0_1_battle_leg_walk_talk_accept() {
         let _ = session.host.world.tick();
     }
     let mut reached_battle = false;
-    for _ in 0..8 {
+    // Through the 132-frame intro transition to the flip.
+    for _ in 0..220 {
         if session.host.world.mode == SceneMode::Battle {
             reached_battle = true;
             break;

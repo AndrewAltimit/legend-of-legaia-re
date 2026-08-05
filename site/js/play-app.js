@@ -2310,23 +2310,32 @@ void main() {
          * decay) drawn as flat-coloured additive copies behind the body -
          * the saturated cue (nearZ -1, maxIr0 1) paints the whole mesh the
          * ghost RGB, and the mesh's forced ABE|ABR1 prims ride the blend
-         * pass. Depth-tested against the opaque body, so the live mesh
-         * occludes its own trail exactly like retail's deeper OT bucket. */
+         * pass with `strictDepth` (gl.LESS), so a ghost pose coincident
+         * with the live body is rejected fragment-for-fragment instead of
+         * additively washing the whole mesh - the retail look of a trail
+         * in a deeper OT bucket than the body. */
         if (a.ghostMeshIds && a.ghostMeshIds.length && a.objectIds.length
             && typeof rt.play_battle_actor_ghosts === 'function') {
           const gh = rt.play_battle_actor_ghosts(i);
-          const count = Math.min(gh.length / 6, a.ghostMeshIds.length);
+          /* 7 floats per ghost: pushed position, RGB, and the eye-push
+           * scale k (the engine already moved the position to
+           * eye + k*(pos - eye); multiplying the draw scale by k completes
+           * the scale-about-the-eye, so the silhouette is unchanged while
+           * the depth sits behind the live body). */
+          const STRIDE = 7;
+          const count = Math.min(gh.length / STRIDE, a.ghostMeshIds.length);
           for (let g = 0; g < count; g++) {
             const pose = rt.play_battle_actor_ghost_pose(i, g);
             if (!pose.length) continue;
             poseInto(a.out, a.base, a.objectIds, pose, pose.length / 6, 0);
             this.renderer.updateSceneMeshPositions(a.ghostMeshIds[g], a.out);
-            const j = g * 6;
+            const j = g * STRIDE;
             draws.push({
               meshId: a.ghostMeshIds[g],
               x: gh[j] * S, y: gh[j + 1] * S, z: gh[j + 2] * S,
               rotY: tf[o + 3] > 0.5 ? Math.PI : 0,
-              scale: S,
+              scale: S * gh[j + 6],
+              strictDepth: true,
               cue: {
                 far: [gh[j + 3], gh[j + 4], gh[j + 5]],
                 nearZ: -1, farZ: 0, maxIr0: 1,

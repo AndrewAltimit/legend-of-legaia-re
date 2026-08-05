@@ -124,7 +124,14 @@ fn battle_world(monsters: &[MonsterDef], slots: &[FormationSlot]) -> World {
     w.set_formation_table(table, catalog);
     w.mode = SceneMode::Field;
     assert!(w.trigger_scripted_battle(1), "formation row 1 registers");
-    w.tick();
+    // The scripted entry runs the field-to-battle intro transition (132
+    // display frames) before the mode flips.
+    for _ in 0..200 {
+        if w.mode == SceneMode::Battle {
+            break;
+        }
+        w.tick();
+    }
     assert_eq!(w.mode, SceneMode::Battle);
     w
 }
@@ -181,7 +188,13 @@ fn battle_entry_clears_a_stale_monster_defence_split() {
     w.set_formation_table(table, catalog);
     w.mode = SceneMode::Field;
     assert!(w.trigger_scripted_battle(2));
-    w.tick();
+    for _ in 0..200 {
+        if w.mode == SceneMode::Battle {
+            break;
+        }
+        w.tick();
+    }
+    assert_eq!(w.mode, SceneMode::Battle);
     assert_eq!(
         w.battle_defense_split[4], None,
         "a monster slot must not defend with the split a previous occupant left"

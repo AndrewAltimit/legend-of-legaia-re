@@ -119,9 +119,128 @@ pub fn plan_ghosts(
     out
 }
 
+/// Centre of projection (the camera eye) of a perspective view-projection
+/// matrix, in the matrix's own input space. `vp` is column-major
+/// (`vp[col * 4 + row]`). Returns `None` for a singular / orthographic
+/// matrix (no finite eye).
+///
+/// The eye is the unique input point the projection collapses: rows 0, 1
+/// and 3 of `vp` all evaluate to zero on `(eye, 1)` (screen centre and
+/// `w = 0`), which is a 3x3 linear solve.
+pub fn camera_eye_from_vp(vp: &[f32; 16]) -> Option<[f32; 3]> {
+    let at = |r: usize, c: usize| vp[c * 4 + r];
+    // Rows 0, 1, 3 as [a b c | d] with a*x + b*y + c*z + d = 0.
+    let rows = [0usize, 1, 3].map(|r| [at(r, 0), at(r, 1), at(r, 2), at(r, 3)]);
+    let m = &rows;
+    let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+    if det.abs() < 1e-12 {
+        return None;
+    }
+    // Cramer's rule on A * eye = -d.
+    let rhs = [-m[0][3], -m[1][3], -m[2][3]];
+    let col = |k: usize| {
+        let mut a = [[0.0f32; 3]; 3];
+        for (i, row) in m.iter().enumerate() {
+            for j in 0..3 {
+                a[i][j] = if j == k { rhs[i] } else { row[j] };
+            }
+        }
+        (a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1])
+            - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0])
+            + a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]))
+            / det
+    };
+    Some([col(0), col(1), col(2)])
+}
+
+/// The uniform scale-about-the-eye factor that parks a ghost **behind** the
+/// live body along its own camera rays (`>= 1`; `1.0` = no push needed).
+///
+/// Retail draws each ghost `0x50` OT buckets deeper than the body
+/// (`FUN_80048A08`), which under the console's painter ordering means the
+/// body covers the coincident screen area **regardless of true depth** -
+/// including the attack camera's behind-the-attacker framings, where the
+/// trailing ghost is genuinely *nearer* the camera than the body. A
+/// depth-buffer host cannot reproduce that with any compare function or
+/// fixed offset; scaling the ghost uniformly about the eye keeps its screen
+/// silhouette exactly (every vertex slides along its own ray) while placing
+/// it `margin` world units beyond the body's distance, so the body's depth
+/// always wins where they overlap and only the separated trail shows.
+pub fn ghost_eye_push_scale(
+    eye: [f32; 3],
+    ghost_pos: [f32; 3],
+    body_pos: [f32; 3],
+    margin: f32,
+) -> f32 {
+    let dist = |p: [f32; 3]| {
+        let d = [p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]];
+        (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+    };
+    let d_ghost = dist(ghost_pos).max(1.0);
+    let d_body = dist(body_pos);
+    ((d_body + margin) / d_ghost).max(1.0)
+}
+
+/// The default [`ghost_eye_push_scale`] margin, in raw actor-space world
+/// units: comfortably past a battle mesh's camera-facing extent (a few
+/// hundred units) so the ghost's own front surface clears the body's.
+pub const GHOST_EYE_PUSH_MARGIN: f32 = 400.0;
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A synthetic perspective vp (translate-then-project) hands its eye
+    /// back through the row solve.
+    #[test]
+    fn camera_eye_recovers_from_a_synthetic_perspective() {
+        // View: translate the eye (10, -20, 30) to the origin, look down +z.
+        // Projection: x' = x, y' = y, z' = z, w' = z (a bare pinhole).
+        let (ex, ey, ez) = (10.0f32, -20.0, 30.0);
+        // Column-major: col*4 + row.
+        let mut vp = [0.0f32; 16];
+        vp[0] = 1.0; // x row
+        vp[5] = 1.0; // y row
+        vp[10] = 1.0; // z row
+        vp[11] = 1.0; // w row = z_view
+        // Translation column (col 3): view = world - eye.
+        vp[12] = -ex;
+        vp[13] = -ey;
+        vp[14] = -ez;
+        vp[15] = -ez; // w row's constant: w = z - ez
+        let eye = camera_eye_from_vp(&vp).expect("perspective has an eye");
+        assert!((eye[0] - ex).abs() < 1e-3, "{eye:?}");
+        assert!((eye[1] - ey).abs() < 1e-3, "{eye:?}");
+        assert!((eye[2] - ez).abs() < 1e-3, "{eye:?}");
+    }
+
+    /// An orthographic matrix (constant w row) has no eye.
+    #[test]
+    fn camera_eye_rejects_an_orthographic_matrix() {
+        let mut vp = [0.0f32; 16];
+        vp[0] = 1.0;
+        vp[5] = 1.0;
+        vp[10] = 1.0;
+        vp[15] = 1.0; // w = 1 always
+        assert_eq!(camera_eye_from_vp(&vp), None);
+    }
+
+    /// A ghost nearer the camera than the body gets pushed past it; a ghost
+    /// already beyond the body + margin is left alone.
+    #[test]
+    fn eye_push_parks_a_near_ghost_behind_the_body() {
+        let eye = [0.0, 0.0, -1000.0];
+        let body = [0.0, 0.0, 600.0]; // 1600 from the eye
+        let near_ghost = [0.0, 0.0, 200.0]; // 1200 from the eye
+        let k = ghost_eye_push_scale(eye, near_ghost, body, 400.0);
+        assert!((k - 2000.0 / 1200.0).abs() < 1e-4, "k={k}");
+        // Pushed distance = body distance + margin.
+        assert!((k * 1200.0 - 2000.0).abs() < 1e-2);
+        let far_ghost = [0.0, 0.0, 2000.0]; // 3000 from the eye, past margin
+        assert_eq!(ghost_eye_push_scale(eye, far_ghost, body, 400.0), 1.0);
+    }
 
     #[test]
     fn normal_rate_ghosts_trail_one_and_two_frames() {

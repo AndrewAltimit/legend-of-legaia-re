@@ -16,13 +16,15 @@
 # No `[[event]]` rows: unlike the Field leg, the battle-leg builder drives
 # the field-VM dialogue-accept itself (it injects the interact + advance
 # bytecode), so there is no replay-supplied pad stream to expand. `frames`
-# is the tick budget the builder runs; the engine reaches Battle within the
-# first couple of frames and stays there for the remainder.
+# is the tick budget the builder runs; the confirm lands within the first
+# few frames, the field-to-battle intro transition then clocks its 132
+# display frames (the screen-shatter overlay riding the encounter session's
+# Transition phase), and the engine sits in Battle for the remainder.
 [meta]
 schema = "j-replay-v1"
 scenario = "v0_1_battle_loading_tetsu"
 rng_seed = 3735929054
-frames = 64
+frames = 200
 
 # Pre-transition: still on the field, parked on the carrier before the
 # confirm press resolves.
@@ -31,11 +33,11 @@ frame = 0
 scene_mode = "Field"
 active_scene = "town01"
 
-# Post-transition: the scripted lone-Tetsu encounter has flipped the scene
-# mode to Battle (overlay on town01). The retail ground-truth for this is
-# the BattleMode anchor `v0_1_battle_loading_tetsu` (game_mode 0x15); see
-# scripts/scenarios.toml.
+# Post-transition: the scripted lone-Tetsu encounter has run the 132-frame
+# intro transition and flipped the scene mode to Battle (overlay on
+# town01). The retail ground-truth for this is the BattleMode anchor
+# `v0_1_battle_loading_tetsu` (game_mode 0x15); see scripts/scenarios.toml.
 [[expected]]
-frame = 32
+frame = 180
 scene_mode = "Battle"
 active_scene = "town01"

@@ -59,7 +59,14 @@ fn world_in_a_battle() -> World {
 fn a_party_wipe_hands_the_frame_to_the_title() {
     let mut w = world_in_a_battle();
     assert!(w.trigger_scripted_battle(0) || w.trigger_scripted_battle(1));
-    w.tick();
+    // The scripted entry runs the field-to-battle intro transition
+    // (132 display frames) before the mode flips.
+    for _ in 0..200 {
+        if w.mode == SceneMode::Battle {
+            break;
+        }
+        w.tick();
+    }
     assert_eq!(w.mode, SceneMode::Battle);
 
     for i in 0..3 {

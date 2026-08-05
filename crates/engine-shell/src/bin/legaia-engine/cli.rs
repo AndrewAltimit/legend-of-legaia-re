@@ -808,7 +808,8 @@ pub(crate) enum Cmd {
         /// auto-attacks the first living monster instead of running the
         /// retail open flow - the round's `Begin | Run` prompt, then the
         /// Item / Attack / magic / Spirit ring, then `Auto | Command` under
-        /// Attack (arrows move, Cross confirms, Circle backs out).
+        /// Attack (a direction press commits the chip on that side of the
+        /// screen, retail's own one-press dispatch; Circle backs out).
         /// Player-driven is the default, matching the browser play page.
         #[arg(long, default_value_t = false)]
         no_player_battle: bool,

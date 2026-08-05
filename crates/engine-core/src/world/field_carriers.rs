@@ -560,35 +560,104 @@ impl World {
         }
     }
 
-    /// Resolve a field carrier's latched `formation_id` against
-    /// [`Self::formation_table`] and flip Field -> Battle, snapshotting the
-    /// field context so [`Self::finish_battle`] returns to [`SceneMode::Field`].
-    /// No-op when the id isn't registered.
+    /// Arm the field-to-battle transition for a field carrier's latched
+    /// `formation_id`. A carrier battle is a forced encounter against a
+    /// registered MAN formation, and retail runs the intro overlay (the
+    /// screen-shatter transition) for it exactly as for a step roll - so it
+    /// enters through the same [`crate::encounter::EncounterPhase::Transition`]
+    /// bracket instead of flipping `Field -> Battle` on the spot. The
+    /// per-frame field tick drains `Triggered` into
+    /// [`Self::begin_encounter_battle`] once the transition elapses.
     fn begin_field_carrier_battle(&mut self, formation_id: u16) {
-        // Reuse the field-encounter battle entry: a carrier transition is a
-        // forced encounter against a registered MAN formation.
-        self.begin_encounter_battle(crate::encounter::EncounterRoll {
+        let roll = crate::encounter::EncounterRoll {
             formation_id,
             row_index: 0,
             roll_q8: 0,
-        });
+        };
+        // Towns roll nothing of their own and may have no session installed:
+        // a bare bracket carries the transition + grace state machine only.
+        if self.encounter.is_none() {
+            self.install_encounter_bracket();
+        }
+        // A post-battle grace window suppresses step rolls, never a story
+        // fight - reset it and arm.
+        if let Some(s) = self.encounter.as_mut()
+            && matches!(s.phase(), crate::encounter::EncounterPhase::Grace { .. })
+        {
+            s.reset();
+        }
+        let armed = self
+            .encounter
+            .as_mut()
+            .is_some_and(|s| s.trigger_with(roll));
+        if !armed {
+            // Non-Idle session (a roll already mid-transition): enter
+            // directly rather than drop a scripted fight.
+            self.begin_encounter_battle(roll);
+        }
     }
 
-    /// Resolve `formation_id` against [`Self::formation_table`] and flip from
-    /// the world map into a battle, snapshotting the world-map context so
-    /// [`Self::finish_battle`] returns to [`SceneMode::WorldMap`].
+    /// Arm the field-to-battle transition for a world-map encounter against
+    /// `formation_id`. Retail runs the same intro overlay (the screen-shatter
+    /// transition) for an overworld contact as for a field step roll, so the
+    /// entry defers through [`crate::encounter::EncounterPhase::Transition`];
+    /// the world-map tick drains `Triggered` into
+    /// [`Self::enter_world_map_battle`] when it elapses.
     ///
     /// An unregistered id drops the encounter, and says so: the world-map roll
     /// that produced it is destructive, so a silent return spends a fight
     /// nothing ever sees - the same shape of defect that made nine consecutive
     /// field rolls vanish.
     pub(crate) fn begin_world_map_encounter(&mut self, formation_id: u16) {
-        let Some(formation) = self.formation_table.formation(formation_id).cloned() else {
+        if self.formation_table.formation(formation_id).is_none() {
             log::error!(
                 "world-map encounter: formation {formation_id} is not registered \
                  ({} rows in the table) - the roll is dropped",
                 self.formation_table.len()
             );
+            return;
+        }
+        let roll = crate::encounter::EncounterRoll {
+            formation_id,
+            row_index: 0,
+            roll_q8: 0,
+        };
+        // The overworld may have no step-roll session installed: a bare
+        // bracket carries the transition + grace state machine only.
+        if self.encounter.is_none() {
+            self.install_encounter_bracket();
+        }
+        // A post-battle grace window suppresses step rolls, not a contact
+        // the entity SM already committed to - reset it and arm.
+        if let Some(s) = self.encounter.as_mut()
+            && matches!(s.phase(), crate::encounter::EncounterPhase::Grace { .. })
+        {
+            s.reset();
+        }
+        let armed = self
+            .encounter
+            .as_mut()
+            .is_some_and(|s| s.trigger_with(roll));
+        if !armed {
+            // A transition is already pending: the earlier fight wins.
+            log::warn!(
+                "world-map encounter: formation {formation_id} arrived while a transition \
+                 is already pending - dropped"
+            );
+        }
+    }
+
+    /// Resolve a drained world-map [`crate::encounter::EncounterRoll`] and
+    /// flip into the battle, snapshotting the world-map context so
+    /// [`Self::finish_battle`] returns to [`SceneMode::WorldMap`].
+    pub(crate) fn enter_world_map_battle(&mut self, roll: crate::encounter::EncounterRoll) {
+        let Some(formation) = self.formation_table.formation(roll.formation_id).cloned() else {
+            log::error!(
+                "world-map encounter: drained formation {} vanished from the table - the \
+                 battle is dropped",
+                roll.formation_id
+            );
+            self.end_encounter_battle();
             return;
         };
         self.field_return = Some(FieldReturnState {

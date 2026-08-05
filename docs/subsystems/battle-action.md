@@ -2876,7 +2876,16 @@ law), history ring on `Actor::battle_pose_history`, plan API
 `World::battle_ghost_draws`. The native window draws each ghost as a
 flat-coloured additive posed mesh on the colour pipeline; the browser play
 page uploads per-actor ghost mesh copies on its flat + additive path and
-poses them from `play_battle_actor_ghost_pose`.
+poses them from `play_battle_actor_ghost_pose`. Both hosts must carry
+retail's deeper-bucket ordering explicitly, because their additive passes
+deliberately pass on **equal** depth (coplanar decals) - so a ghost pose
+coincident with the live body would otherwise blend over every body
+fragment and wash the whole mesh additive (the "monster glows yellow"
+defect). The native window scales the ghost's clip z toward the far plane
+(`GHOST_DEPTH_PUSH` in the redraw pass); the play page draws ghost
+placements with a strictly-nearer depth test (`strictDepth` → `gl.LESS`).
+Either way the live body hides the overlap and only the separated trail
+shows, which is what retail's `+0x50`-bucket push produces on the console.
 
 ### The streak emitter schedule (decoded dispatcher)
 
