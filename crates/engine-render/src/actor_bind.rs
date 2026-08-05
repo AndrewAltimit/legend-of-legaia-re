@@ -11,9 +11,16 @@
 //! actor pool lives in `legaia_engine_core` (scene host + actor list) and the
 //! engine resolves scene geometry per placement record at scene-build time
 //! rather than per actor per frame, so nothing here owns the struct to write
-//! into. What closes the gap is the scene host calling [`bind_actor_render`]
-//! when it spawns an actor and honouring [`ActorBind::render_node`], which is
-//! `legaia_engine_core`'s file scope, not this crate's.
+//! into.
+//!
+//! What closes the gap is **not** "the scene host calls [`bind_actor_render`]",
+//! which an earlier note said and the crate graph forbids: `legaia-engine-core`
+//! does not depend on `legaia-engine-render` (and the reverse edge does not
+//! exist either - the two are siblings over `legaia-engine-vm`). The scene host
+//! cannot name this function. The two routes that do exist are `engine-shell`,
+//! the one crate that sees both, driving the pass over the core's actor list;
+//! or moving the binding rule down into `engine-vm`, where the actor state
+//! already lives. Either is a structural change, not a call insertion.
 //!
 //! The **mesh-index rule** the pass establishes is what matters most and is
 //! already load-bearing elsewhere: an object's mesh id is its placement

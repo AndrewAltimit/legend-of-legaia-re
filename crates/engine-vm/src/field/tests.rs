@@ -212,8 +212,7 @@ struct TestHost {
     // Round 20 - STATE_RESUME-entangled 0x4C n5/n6/n8 sub-cases.
     #[allow(clippy::type_complexity)]
     n_5_sub_1_npc_runs: Vec<(u16, u16, u8, u8, bool)>, // (x, z, depth, move_id, is_player)
-    n_5_sub_2_menu_state: std::collections::HashMap<u8, bool>,
-    n_5_sub_2_polls: std::cell::RefCell<Vec<u8>>,
+    n_5_sub_2_take_items: std::cell::RefCell<Vec<u8>>,
     n_6_sub_61_emitter_calls: Vec<[u8; 14]>,
     n_8_sub_0_allocator_calls: Vec<(u8, Vec<u8>)>,
 }
@@ -809,12 +808,8 @@ impl FieldHost for TestHost {
         self.n_5_sub_1_npc_runs
             .push((world_x, world_z, depth_byte, move_id, is_player));
     }
-    fn op4c_n5_sub2_menu_activation(&mut self, menu_id: u8) -> bool {
-        self.n_5_sub_2_polls.borrow_mut().push(menu_id);
-        self.n_5_sub_2_menu_state
-            .get(&menu_id)
-            .copied()
-            .unwrap_or(false)
+    fn op4c_n5_sub2_take_item(&mut self, item_id: u8) {
+        self.n_5_sub_2_take_items.borrow_mut().push(item_id);
     }
     fn op4c_n6_sub_61_emitter(&mut self, _ctx: &mut FieldCtx, payload: [u8; 14]) {
         self.n_6_sub_61_emitter_calls.push(payload);

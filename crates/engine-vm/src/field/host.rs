@@ -2460,24 +2460,49 @@ pub trait FieldHost {
         let _ = (ctx, world_x, world_z, depth_byte, move_id, is_player);
     }
 
-    /// Op 0x4C n5 sub-2 - menu / sub-screen activation poll.
+    /// Op 0x4C n5 sub-2 - **TAKE_ITEM**: remove one `item_id` from the party.
     ///
-    /// 3-byte instruction `[4C, 0x52, menu_id]`. The original at dump lines
-    /// 6286-6294 calls `func_0x8004313c()` then
-    /// `sVar9 = func_0x80042310(menu_id, 1)`. If `sVar9 == 0x100` (menu
-    /// activation finished), the dispatcher calls `func_0x800430ac(menu_id)`
-    /// and exits through `switchD_801e00f4::default()` - advance PC by 3.
-    /// Otherwise the dispatcher routes through `LAB_801e00bc` which halts
-    /// at PC - the script polls each tick until the menu transition lands.
+    /// 3-byte instruction `[4C, 0x52, item_id]`, and the give-side mirror of
+    /// op `0x39` `GIVE_ITEM` (which is `FUN_8004313C()` then
+    /// `FUN_800421D4(item_id, 1)`). Read off the arm at `0x801E1ABC` in
+    /// `FUN_801DE840`, not off the decompile:
     ///
-    /// Returns `true` when the menu activation finalised (advance PC),
-    /// `false` while still in transit (halt at PC). Default returns `false`
-    /// (the menu never activates) so engines without a menu compositor
-    /// halt indefinitely - they MUST override if they want this opcode to
-    /// progress.
-    fn op4c_n5_sub2_menu_activation(&mut self, menu_id: u8) -> bool {
-        let _ = menu_id;
-        false
+    /// ```text
+    /// 801e1abc  jal 0x8004313c        ; inventory active-window setup
+    /// 801e1ac4  lbu a0,0x1(s6)        ; operand byte = ITEM id
+    /// 801e1ac8  jal 0x80042310        ; bag consume (item_id, 1)
+    /// 801e1acc  _li a1,0x1
+    /// 801e1ad0  sll v0,v0,0x10        ; sign-extend the i16 result
+    /// 801e1ad4  sra v0,v0,0x10
+    /// 801e1ad8  li v1,0x100           ; the NOT-FOUND sentinel
+    /// 801e1adc  bne v0,v1,0x801e00b8  ; found -> common exit
+    /// 801e1ae4  lbu a0,0x1(s6)
+    /// 801e1ae8  jal 0x800430ac        ; miss -> party unequip-by-id fallback
+    /// 801e1aec  _addiu s8,s8,0x3      ; PC += 3, in the DELAY SLOT
+    /// ```
+    ///
+    /// Two things an earlier reading of this arm got backwards, both of them
+    /// the decompiler artifacts `docs/tooling/ghidra.md` catalogues:
+    ///
+    /// * **`0x100` is the bag *miss* sentinel, not a "finished" signal.**
+    ///   `FUN_80042310` is the inventory consume primitive (the same one the
+    ///   sell-quantity confirm and the Door-of-Light use run); `0x100` is what
+    ///   it returns when no slot holds the id. So the `== 0x100` branch is the
+    ///   fallback, and `FUN_800430AC` -
+    ///   `legaia_engine_core::equipment::party_unequip_accessory_by_id` - takes
+    ///   the item off whoever is *wearing* it.
+    /// * **There is no poll and no halt.** The PC delta sits in the branch
+    ///   delay slot, so it retires on both paths; the `bne` target
+    ///   `0x801E00B8` is the shared advancing exit. Reading
+    ///   `switchD_801e00f4::default()` as "no advance" is the exact trap
+    ///   `docs/subsystems/script-vm.md` warns about.
+    ///
+    /// The VM therefore advances by 3 unconditionally and this hook is a pure
+    /// side effect. Default is a no-op: the script still steps, the party just
+    /// keeps the item. A host that owns an inventory overrides it, consumes one
+    /// `item_id`, and on a miss runs the unequip fallback.
+    fn op4c_n5_sub2_take_item(&mut self, item_id: u8) {
+        let _ = item_id;
     }
 
     /// Op 0x4C n6 sub-0x61 - 16-byte halt-acquire emitter (FUN_801E4C58 caller).

@@ -459,13 +459,13 @@ pub(super) fn decode_menu_ctrl(
                         },
                     )
                 }
-                // Sub-2: 3-byte menu-activation poll `[4C, 0x52, menu_id]`.
-                // The step handler halts at PC until the host returns
-                // activated; for the disasm we just emit the 3-byte form.
+                // Sub-2: 3-byte TAKE_ITEM `[4C, 0x52, item_id]` - retail arm
+                // `0x801E1ABC`, the give-side mirror of op 0x39. Advances
+                // unconditionally; see `MenuCtrlKind::Nibble5TakeItem`.
                 2 => {
                     need(2)?;
-                    let menu_id = bytecode[operand + 1];
-                    mk(header_size + 2, MenuCtrlKind::Nibble5MenuPoll { menu_id })
+                    let item_id = bytecode[operand + 1];
+                    mk(header_size + 2, MenuCtrlKind::Nibble5TakeItem { item_id })
                 }
                 3 | 4 => mk(header_size + 1, MenuCtrlKind::Nibble5Dialog { sub }),
                 _ => Err(DisasmError::UnknownSubOp {

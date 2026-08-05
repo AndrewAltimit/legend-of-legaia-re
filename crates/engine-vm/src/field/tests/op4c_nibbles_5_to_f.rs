@@ -2,6 +2,21 @@
 
 use super::*;
 
+/// A host that overrides nothing - every `FieldHost` method takes its default
+/// body. Used where the point of the test is what the VM does *without* host
+/// cooperation, which `TestHost` (which records and answers) cannot show.
+struct InertHost;
+
+impl FieldHost for InertHost {
+    fn global_flags(&self) -> u32 {
+        0
+    }
+    fn set_global_flags(&mut self, _value: u32) {}
+    fn frame_delta(&self) -> u16 {
+        1
+    }
+}
+
 // -- 0x4C outer-nibbles 5..F ----------------------------------------
 
 #[test]
@@ -221,27 +236,38 @@ fn op_4c_n5_sub_1_is_player_when_flag_bit_set() {
 }
 
 #[test]
-fn op_4c_n5_sub_2_advances_when_menu_activated() {
+fn op_4c_n5_sub_2_take_item_hands_the_operand_to_the_host() {
     let bytecode = [0x4Cu8, 0x52, 0x05];
-    let mut host = TestHost {
-        n_5_sub_2_menu_state: std::collections::HashMap::from([(0x05u8, true)]),
-        ..TestHost::default()
-    };
+    let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 3 });
-    assert_eq!(host.n_5_sub_2_polls.borrow().as_slice(), &[0x05]);
+    // The operand is an ITEM id, and it reaches the host verbatim.
+    assert_eq!(host.n_5_sub_2_take_items.borrow().as_slice(), &[0x05]);
 }
 
+/// The retail arm's `addiu s8,s8,0x3` sits in the branch **delay slot** of
+/// `jal 0x800430ac`, and the `bne` that skips that `jal` targets the shared
+/// advancing exit `0x801E00B8` - so the PC advances whether or not the bag
+/// held the item. A default host that models no inventory must therefore step
+/// past the instruction, not stall on it.
+///
+/// This is the regression that matters: the arm previously modelled sub-2 as a
+/// "menu activation poll" that halted at PC until a host said otherwise, and
+/// no host ever did. Sixty-three `[4C, 52, id]` sites decode across thirteen
+/// disc scenes (`cargo run -p legaia-engine-core --example scan_4c_n5`), so a
+/// halt here was a permanent field-VM stall on real scene scripts.
 #[test]
-fn op_4c_n5_sub_2_halts_while_menu_still_loading() {
+fn op_4c_n5_sub_2_advances_even_with_a_host_that_does_nothing() {
     let bytecode = [0x4Cu8, 0x52, 0x05];
-    let mut host = TestHost::default();
-    // Menu state defaults to false - polling halts at PC.
+    let mut host = InertHost;
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Halt { final_pc: 0 });
-    assert!(host.n_6_sub_61_emitter_calls.is_empty());
+    assert_eq!(
+        r,
+        StepResult::Advance { next_pc: 3 },
+        "sub-2 must never halt: retail advances on both arms"
+    );
 }
 
 #[test]

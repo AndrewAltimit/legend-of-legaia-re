@@ -92,22 +92,21 @@ pub(super) fn op_4c_n5<H: FieldHost>(
                 next_pc: pc + header_size + 5,
             }
         }
-        // Sub-2: 3-byte `[4C, 0x52, menu_id]`. Menu activation
-        // poll. Dispatcher lines 6286-6294: host returns `true`
-        // once `func_0x80042310(menu_id, 1) == 0x100` (the
-        // "menu fully activated" sentinel); the VM advances by 3.
-        // Otherwise the script halts at PC and polls next tick.
+        // Sub-2: 3-byte `[4C, 0x52, item_id]` - TAKE_ITEM, the
+        // give-side mirror of op 0x39. Retail arm `0x801E1ABC`:
+        // window setup, bag consume, and on the `0x100` miss the
+        // party unequip-by-id fallback. The `addiu s8,s8,0x3` is
+        // in the `jal 0x800430ac` delay slot and the `bne` target
+        // `0x801E00B8` advances too, so **both** paths advance -
+        // there is no poll and no halt here. See
+        // `FieldHost::op4c_n5_sub2_take_item` for the arm.
         2 => {
             if operand + 1 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
-            let menu_id = bytecode[operand + 1];
-            if host.op4c_n5_sub2_menu_activation(menu_id) {
-                StepResult::Advance {
-                    next_pc: pc + header_size + 2,
-                }
-            } else {
-                StepResult::Halt { final_pc: pc }
+            host.op4c_n5_sub2_take_item(bytecode[operand + 1]);
+            StepResult::Advance {
+                next_pc: pc + header_size + 2,
             }
         }
         _ => StepResult::Halt { final_pc: pc },

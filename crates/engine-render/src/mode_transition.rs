@@ -12,10 +12,15 @@
 //! writes `legaia_engine_core`'s warp-coordinate globals. The engine also does
 //! not need the VRAM stash at all - it keeps the actor pool in host memory
 //! across a mode change instead of parking it in spare VRAM - so
-//! [`ACTOR_POOL_STASH_RECT`] is documented rather than executed. What closes
-//! the gap is `legaia_engine_core`'s mode dispatcher calling
-//! [`mode_entry_prologue`] on every mode change, which is a sibling lane's file
-//! scope.
+//! [`ACTOR_POOL_STASH_RECT`] is documented rather than executed.
+//!
+//! An earlier note here said the gap closes when "`legaia_engine_core`'s mode
+//! dispatcher calls [`mode_entry_prologue`]". It cannot: `legaia-engine-core`
+//! does not depend on `legaia-engine-render`, and the reverse edge does not
+//! exist either - the two are siblings over `legaia-engine-vm`, so neither can
+//! name the other's items. A caller has to be `engine-shell` (the crate that
+//! sees both) driving this around the core's mode change, or the pass has to
+//! move down into a crate the dispatcher can reach.
 //!
 //! REF: FUN_80016b6c - the adaptive frame-skip pass whose 16-sample hblank ring
 //! this clears.

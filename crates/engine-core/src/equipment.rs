@@ -693,10 +693,14 @@ pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
 /// Faithful edge: retail compares the raw slot byte, so `item_id == 0`
 /// matches the first *empty* accessory slot and still reports success.
 ///
-/// The caller is pinned, and it is not a menu flow: the **field VM's
-/// take-item opcode** reaches it as a *fallback*. At
-/// `0x801E1ABC..0x801E1AEC` in `FUN_801DE840` (disassembly, not the
-/// decompile) the opcode installs the active item window
+/// The caller is pinned, and it is not a menu flow: the field VM's
+/// **TAKE_ITEM** arm reaches it as a *fallback*. That arm is op `0x4C`
+/// `MENU_CTRL` outer-nibble **5**, sub-op **2** - `[4C, 52, item_id]`, entry 2
+/// of the 5-entry sub-table at VA `0x801CEF30` (field overlay 0897, file
+/// `+0x718`), dispatched at `0x801E1790`. It is *not* a top-level opcode,
+/// which is why looking for it in the `0x21..0x4F` main table finds nothing.
+/// At `0x801E1ABC..0x801E1AEC` in `FUN_801DE840` (disassembly, not the
+/// decompile) the arm installs the active item window
 /// (`FUN_8004313C`), consumes one of the operand id from the bag
 /// (`FUN_80042310(id, 1)`), sign-extends the result and compares it
 /// against the `0x100` not-found sentinel - and **only when the bag does
@@ -710,17 +714,21 @@ pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
 /// still removes it. Without the fallback the item survives on the
 /// character and the script's precondition silently fails.
 ///
-/// NOT WIRED: the engine's field VM has **no take-item opcode at all**.
-/// It decodes the give side (`0x39` `GIVE_ITEM` in `engine-vm`'s field
-/// `step`, serviced by `FieldHost::give_item` and
-/// `FieldHostImpl::give_item` in `engine-core`'s `world::vm_hosts`) and
-/// nothing else in that family, so there is no bag consume for a bag-miss
-/// branch to hang off - the earlier reading, that the take host merely
-/// lacked the fallback, overstated what exists. Wiring is therefore two
-/// edits in two files this module cannot reach: decode the take opcode
-/// and add a `take_item` to `FieldHost`, then have the world's
-/// implementation call this on the `0x100` not-found sentinel. The kernel
-/// is exercised by this module's tests meanwhile.
+/// NOT WIRED, and the remaining gap is now one override. The claim that the
+/// engine's field VM has "no take-item opcode at all" was **wrong**: the arm
+/// is decoded and executed - it was simply modelled as a "menu activation
+/// poll" that halted at PC, so it both named the wrong thing and stalled the
+/// script. That is fixed; `FieldHost::op4c_n5_sub2_take_item(item_id)` now
+/// fires on every `[4C, 52, id]` and the VM advances by 3 either way.
+///
+/// What is left is the world-side override. `FieldHostImpl` in `engine-core`'s
+/// `world::vm_hosts` implements the give side (`FieldHost::give_item`, op
+/// `0x39`) and nothing in the take family, so the hook lands on the default
+/// no-op body and the party keeps the item. Wiring is one method there:
+/// consume one `item_id` from the bag, and on the miss call this kernel. Until
+/// then a script that takes away a worn accessory leaves it worn - which is
+/// the failure this function exists to prevent. The kernel is exercised by
+/// this module's tests meanwhile.
 pub fn party_unequip_accessory_by_id(party: &mut legaia_save::Party, item_id: u8) -> bool {
     for member in &mut party.members {
         let mut eq = member.equipment();
