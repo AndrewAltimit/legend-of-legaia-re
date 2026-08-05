@@ -78,7 +78,7 @@ pub fn ghost_depths(rate: u8, monster: bool) -> [usize; GHOST_COUNT] {
     let mut step = if rate == 0 {
         HISTORY_DEPTH / 2 - 1
     } else {
-        ((8 / rate as usize).max(1)).min(HISTORY_DEPTH / 2 - 1)
+        (8 / rate as usize).clamp(1, HISTORY_DEPTH / 2 - 1)
     };
     if monster {
         step = (step * 2).min(HISTORY_DEPTH / 2 - 1);

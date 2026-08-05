@@ -253,10 +253,17 @@ impl World {
                 // slot `0x11` (the Super / Miracle SpecialStarter dash);
                 // monster ring ids are `clip_tag + 0x10`, so any non-idle
                 // tag is eligible.
-                let ghost_eligible = if i < 3 {
+                // Retail's monster ring id is the committed clip's tag; the
+                // engine's ambient monster loop is `idle_animation`'s pick,
+                // which (because `animations` filters malformed entries) may
+                // wear a non-zero tag - so the loop-player state, not the
+                // tag alone, is what maps retail's "id 0 = idle" here.
+                let non_idle =
+                    actor.battle_staged_anim.is_some() || actor.battle_reaction.is_some();
+                let ghost_eligible = if actor.battle_monster_id.is_none() {
                     actor.battle.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B
                 } else {
-                    clip_tag != 0
+                    non_idle && clip_tag != 0
                 };
                 actor.battle_pose_history.push_front(BattleGhostFrame {
                     pose: pose.clone(),
@@ -409,7 +416,7 @@ impl World {
             if actor.battle_pose_history.is_empty() {
                 continue;
             }
-            let monster = i >= 3;
+            let monster = actor.battle_monster_id.is_some();
             let base = if monster {
                 ai::GHOST_COLOR_MONSTER
             } else {
@@ -496,7 +503,11 @@ impl World {
             let decayed = rl::commit_rate_decay(self.actors[i].battle.anim_rate);
             self.actors[i].battle.anim_rate = decayed;
             let marker = self.battle_ctx.gauge_rearm_latch != 0;
-            match rl::staged_commit_rate_effect(q, i < 3, marker) {
+            // Party-ness is the actor's identity, not its slot: the engine
+            // seats monsters wherever the formation put them (retail's
+            // 0..2 / 3..7 split is `battle_monster_id` here).
+            let is_party = self.actors[i].battle_monster_id.is_none();
+            match rl::staged_commit_rate_effect(q, is_party, marker) {
                 rl::CommitRateEffect::StarterFreeze => {
                     for a in self.actors.iter_mut() {
                         a.battle.anim_rate = rl::AnimRate(rl::RATE_FROZEN);

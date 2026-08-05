@@ -579,13 +579,8 @@ impl PlayWindowApp {
         // acting side: party = afterimage shrinking toward the ribbon,
         // monster = ribbon throughout (`FUN_801E09F8`).
         let party = world.battle_ctx.active_actor < 3;
-        let quads = streak_quads_scheduled(
-            &src,
-            &mvp,
-            self.tick_no as u32,
-            block.counter_word,
-            party,
-        );
+        let quads =
+            streak_quads_scheduled(&src, &mvp, self.tick_no as u32, block.counter_word, party);
         log::debug!(
             "move-FX streak: launch {:?} counter {:#x} half-width {} -> {} quad(s)",
             block.launch,
@@ -628,7 +623,8 @@ impl PlayWindowApp {
             let Some((tmd, raw)) = self.scene_tmd_data.get(tmd_idx) else {
                 continue;
             };
-            let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &g.pose.bone_outputs);
+            let vmesh =
+                legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &g.pose.bone_outputs);
             if vmesh.indices.is_empty() {
                 continue;
             }
@@ -650,6 +646,12 @@ impl PlayWindowApp {
                         g.pos[2] as f32,
                     )) * rot
                         * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                    log::debug!(
+                        "arts ghost: actor {} at {:?} colour {:?}",
+                        g.actor_slot,
+                        g.pos,
+                        g.color
+                    );
                     out.push((m, model));
                 }
                 Err(e) => log::warn!("ghost mesh upload: {e:#}"),

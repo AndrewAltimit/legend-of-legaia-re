@@ -1697,7 +1697,7 @@ Port: `engine-core::action_effect_script::MoveFxStreak` is the block (record id 
 
 Two disclosed departures. The **projection** is the engine camera's, not the GTE's: `project_streak_corners_mvp` takes the screen-space gradient of the battle MVP and fans the corners out along the screen axes, which is the same operation `FUN_800195A8` performs in view space - but the engine's battle camera carries no GTE rotation/translation pair to feed the exact port (`billboard::project_billboard`). And retail links each packet at the projected billboard's own OT bucket, inside the scene; the engine's screen-space batch draws them over the actors instead of interleaved with them.
 
-The chained-ribbon sibling `FUN_801E1D98` stays unwired. Its projector uses a constant half-size and no Y push, so it consumes neither context word, and which of the two emitters a move takes is a dispatcher choice (`0x801E0CA0` vs `0x801E0CD0`) that is not decoded.
+The chained-ribbon sibling `FUN_801E1D98` is wired through the same pass, and the dispatcher choice (`0x801E0CA0` vs `0x801E0CD0`) is decoded: the phase driver `FUN_801E09F8` walks the counter `ctx[+0x6C6]` down `DAT_1F800393 << 2` per frame and selects by value - party afterimage at `>= 0x281`, ribbon below `0x201` (nothing in the dead band), monster ribbon at every value (`0x801E0C64..0x801E0CE8`). Port: `streak_pass::streak_quads_scheduled` + `engine-core::MoveFxStreak::tick_counter`. See [`battle-action.md` § Arts presentation](battle-action.md#arts-presentation-slow-motion-and-after-image-ghosts).
 
 **Reachability today.** The pass is wired into the native window's screen-FX
 builder, but a live `--battle` fight emits **zero** quads. It is gated on

@@ -13,6 +13,7 @@ A two-level finite state machine that drives the per-actor execution of a chosen
 - [Notes for the engine port](#notes-for-the-engine-port) · [decompile quirks](#decompile-quirks-worth-knowing) · [engine port](#engine-port) · [where an action leaves its combatants](#where-an-action-leaves-its-combatants) · [the sound a melee swing makes](#the-sound-a-melee-swing-makes-and-which-half-of-it-the-port-has) · [three readings the port already satisfied](#three-readings-the-port-already-satisfied)
 - [The per-action effect script (`FUN_801DEA50`)](#the-per-action-effect-script-fun_801dea50)
 - [Action validator (`FUN_8003FB10`)](#action-validator-fun_8003fb10) · [action queue + Tactical Arts trigger ordering](#action-queue-and-tactical-arts-trigger-ordering) · [Miracle / Super in the live Arts submenu](#miracle--super-in-the-live-player-driven-arts-submenu) · [the no-directional-input attack queue](#the-no-directional-input-attack-queue) - what a basic Attack queues
+- [Arts presentation: slow-motion + after-image ghosts](#arts-presentation-slow-motion-and-after-image-ghosts) - the `+0x21D` anim-rate channel, the `FUN_80049348` ghost walk, the decoded streak-emitter schedule
 - [Screen-element placement table `0x80076C10`](#screen-element-placement-table-0x80076c10-and-its-copy-helpers) · [overlay-local PRNG](#overlay-local-prng-fun_801d0290) · [open work](#open-work)
 
 ## One-paragraph overview
@@ -2794,6 +2795,103 @@ consumes the turn through the Done band. The escape *probability* is the retail
 plus the two Chicken accessory bits - ported as `battle_formulas::escape_roll` and rolled by
 `World::roll_battle_escape`.
 
+## Arts presentation: slow-motion and after-image ghosts
+
+The two channels that make a retail art read as an *event* - the battle clock
+slowing while the art plays, and the mesh trail behind a Super / Miracle
+dash - are one per-actor byte and one per-actor draw walk, both SCUS-resident.
+
+### The animation-rate byte `actor[+0x21D]`
+
+`+0x21D` is the per-actor **animation-rate scalar**, normal `8`. The anim
+tick `FUN_80047430` advances each render node's 12.4 anim cursor by
+`(DAT_1F800393 * actor[+0x21D] * clip[+0x78]) >> 1` per game frame - `>> 2`
+on the idle branch (anim id `0`; `0x800476EC..0x80047764`) - so `4` is half
+speed, `2` quarter speed and `0` a freeze, and every animation-driven edge
+(swing pacing, root motion, the strike loop's per-clip gate) stretches with
+it. Battle seating (`FUN_800513F0`, `0x80051608`/`0x80051888`) seeds it from
+the scratchpad speed scalar `0x1F80037D`. The strike loop multiplies the same
+byte into its per-frame impact drift, which is where the earlier "impact-step
+magnitude" name came from - that is one consumer, not the field.
+
+The writers are the anim-commit `FUN_8004AD80`'s arms, all on the **party**
+ladder (the monster path branches clear at `0x8004B6F4`):
+
+| Trigger (raw staged id `+0x1DA`) | Effect | Site |
+|---|---|---|
+| any commit, rate `!= 8` | rate = `4` | `0x8004B080..0x8004B090` |
+| `0x1A` SpecialStarter | all slots `0`, acting actor `2` | `0x8004B728..0x8004B750` |
+| `>= 0x1B` art constant | all slots `2` if `ctx[+0x243]` set, else `4` | `0x8004BB78..0x8004BBA8` |
+
+So a Super / Miracle starter is a freeze-frame with only the dashing actor
+moving at quarter speed; each art strike then plays the whole battle at half
+speed; direction swings (`0x0C..=0x0F`) never slow anything. The same `0x1A`
+arm raises the `ARTS!!` banner byte `ctx[+0x28B]` (from the queue-builder's
+side-array mark at `0x801F6990` / the Miracle marker; default `2`), zeroes
+the banner clock `+0x28C`, and queues the per-character arts shout
+(`FUN_8004FCC8` ids `0x101/0x111/0x121` + per-follow-up variants) - which
+pins the `+0x28B` writer [`flash_ramp`](#arts-announcement-banner-fun_801e2524--fun_801e2650)
+was still missing. The restore is `FUN_801E93C8` (called from the Done arm at
+`0x801E5F64`): once the acting actor's materialised art clip has ended
+(party: `+0x1D9 < 0x10`; monster: committed record flag `+0x87 == 0`) every
+slot returns to `8` and `ctx[+0x243]` clears.
+
+**Port.** Kernel `legaia_engine_vm::battle_anim_rate`
+(`BattleActor::anim_rate`, default 8); commit arms in `engine-core`'s
+`commit_staged_battle_anim`; the rate-scaled advance in
+`battle_anim::MonsterAnimPlayer::tick_rated`; the restore was already ported
+as `battle_gauge_rearm::rearm_gauge` (whose old "arts-gauge arm width"
+reading of `+0x21D` is superseded).
+
+### The after-image ghost walk (`FUN_80049348`)
+
+The anim tick keeps four 32-deep per-actor **history rings**, shifted one
+slot per frame with slot 0 taking the live values
+(`0x80047E58..0x80048060`): position (`+0x4C`, 8-byte stride), anim cursor
+(`+0x17A`), committed clip record (`+0x234`) and committed anim id
+(`+0x1FB`; party = `+0x1D9`, monster = `clip_tag + 0x10`, or `0x11` when the
+record flag `+0x87` is set). The per-actor draw tick `FUN_800480D8` then runs
+`FUN_80049348`, which draws **two ghosts** of the actor's own mesh from the
+ring:
+
+- **Spacing** `step = 8 / actor[+0x21D]` (monster seats double it), depths
+  `step` and `2*step` - the trail stretches exactly when slow-motion drops
+  the rate (quarter speed → depths 4 and 8).
+- **Gate**: ring id `> 0x10`. A party art materialises at dynamic slot
+  `0x10` except the `0x1A` / re-staged-`0x10` commits, which land at `0x11` -
+  so party mesh ghosts belong to the **SpecialStarter dash** (ordinary art
+  swings leave the 2D weapon-trail streak instead); a monster ghosts on any
+  non-idle clip tag.
+- **Colour**: flat additive. The draw wrapper `FUN_80043390` decodes the
+  colour word's mode byte (`0x85`): bit `0x80` → the GP0 ABE bit, low bits →
+  ABR mode 1 (B + F), bit `0x04` → the flat-colour prim bank with the GTE far
+  colour as the RGB. Base per character - SCUS word table `0x80076908`
+  (Vahn red `0x60/0x30/0x30`, Noa green, Gala blue; monsters `0x80076914`
+  olive `0x50/0x50/0x30`) - stepped down `0x101010` per drawn ghost. The
+  ghost's OT depth is pushed `0x50` buckets deeper than the live body
+  (`FUN_80048A08`, the `+0x10` bit-`0x800000` arms).
+
+**Port.** Kernel `engine-core::battle_afterimage` (schedule / gate / colour
+law), history ring on `Actor::battle_pose_history`, plan API
+`World::battle_ghost_draws`. The native window draws each ghost as a
+flat-coloured additive posed mesh on the colour pipeline; the browser play
+page uploads per-actor ghost mesh copies on its flat + additive path and
+poses them from `play_battle_actor_ghost_pose`.
+
+### The streak emitter schedule (decoded dispatcher)
+
+The choice between the two 2D trail emitters -
+`FUN_801E1AB0` single-quad afterimage vs `FUN_801E1D98` chained ribbon - is
+not per-move data: the phase driver `FUN_801E09F8` walks the streak counter
+`ctx[+0x6C6]` down by `DAT_1F800393 << 2` per frame (`0x801E0C1C..0x801E0C40`,
+floored at 0) and selects by its value (`0x801E0C64..0x801E0CE8`): a party
+acting actor draws the afterimage while the counter is `>= 0x281` (its
+half-width is `counter - 0x200`, so the quad shrinks), nothing through
+`0x280..0x201`, and the ribbon below `0x201`; a monster acting actor draws
+the ribbon at every value. Port:
+`engine-render::streak_pass::streak_quads_scheduled` +
+`MoveFxStreak::tick_counter`.
+
 ## Screen-element placement table `0x80076C10` and its copy helpers
 
 The battle animation dispatcher [`FUN_801D388C`](../reference/functions.md)
@@ -2923,9 +3021,14 @@ Geometry, per layer:
 
 Ported as `engine-vm::battle_action::flash_ramp` (`step_flash_ramp` +
 `flash_quads`), both disclosed `NOT WIRED`: `BattleActionCtx` carries neither
-byte, and retail's writer of `+0x28B` is not in the dumped battle-overlay
-corpus. The engine-side raiser would sit at the Super / Miracle chain match in
-`engine-core`'s battle command flow.
+byte. Retail's writer of `+0x28B` **is** pinned now - it is SCUS-resident,
+not overlay-resident: the anim commit `FUN_8004AD80`'s SpecialStarter arm
+(`0x8004B7D8..0x8004B87C`) raises the banner from the queue-builder's
+side-array mark at `0x801F6990[+0x15 - 1]` (Super = `4`), the Miracle marker
+path writes `3`, and the default arm writes `2` when the byte is clear; the
+same arm zeroes the clock `+0x28C` (`0x8004BB44`). So the engine-side raiser
+belongs in the staged-anim commit (`commit_staged_battle_anim`), beside the
+slow-motion arms - see [Arts presentation](#arts-presentation-slow-motion-and-after-image-ghosts).
 
 ## Open work
 
