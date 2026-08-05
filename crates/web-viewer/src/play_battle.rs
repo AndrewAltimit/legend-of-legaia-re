@@ -1563,7 +1563,10 @@ impl LegaiaRuntime {
     ) -> Option<Vec<legaia_engine_ui::screen_prim::ScreenPrim>> {
         use legaia_engine_core::encounter::EncounterPhase;
 
-        let host = self.scene_host.as_ref()?;
+        let Some(host) = self.scene_host.as_ref() else {
+            self.drop_battle_intro();
+            return None;
+        };
         let phase = host.world.encounter.as_ref().map(|s| s.phase());
         let Some(EncounterPhase::Transition { roll, .. }) = phase else {
             self.drop_battle_intro();
