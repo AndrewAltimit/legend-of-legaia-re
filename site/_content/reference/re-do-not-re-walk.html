@@ -216,6 +216,20 @@
   <p><strong>Generalises to:</strong> treat "the dump prints an address" as evidence about the <em>import</em>, never about the game. Which image, which offset, is this a function at all - those are answered from the extracted image at its mapped base, and only from there. The same deltas drive the <a href="../tooling/static-overlay-pipeline.html">static overlay pipeline</a>, which attaches each image's identity from its PROT entry rather than from a filename.</p>
 </section>
 
+<section class="doc-section" id="menus-ui" data-doc="menus--ui">
+  <h2>Menus / UI</h2>
+  <table>
+    <thead><tr><th>Thread</th><th>Verdict</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Actor VM = "the title screen's sprite-walk interpreter", with an ANM-trigger opcode</td>
+        <td>falsified (it is the menu overlay's window-widget script interpreter)</td>
+        <td>Two readings fell together. <code>FUN_801D6628</code> is resident in PROT <code>0899</code> (the menu overlay), and its base materialisation <code>lui 0x801e / addiu 0x4738</code> indexes the <strong>window descriptor table</strong> - instruction byte 1 is a window id, not a sprite-actor slot. And no arm of the 13-way dispatch hands off an ANM id; "trigger animation" was a guess from the sprite-VM framing. The programs are overlay-resident data (<a href="../formats/window-script.html">window widget scripts</a>), so "find the per-scene program carrier" was never answerable - there is no per-scene carrier.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
 <section class="doc-section" id="measurement" data-doc="measurement-readings">
   <h2>Measurement readings</h2>
   <p>Falsified claims about the <em>instruments</em>, not about the game. They belong here for the same reason the rest do: each was a plausible reading, each was believed, and each shaped what work looked worth doing.</p>

@@ -729,6 +729,12 @@ the *import*, never about the game. The identity questions - which image,
 which offset, is this a function at all - are answered from the extracted
 image at its mapped base, and only from there.
 
+## Menus / UI
+
+| Thread | Verdict | Why |
+|---|---|---|
+| Actor VM = "the title screen's sprite-walk interpreter", with an ANM-trigger opcode | falsified (it is the menu overlay's window-widget script interpreter) | Two readings fell together. `FUN_801D6628` is resident in PROT 0899 (the menu overlay), and its base materialisation `lui 0x801e / addiu 0x4738` indexes the **window descriptor table** - instruction byte 1 is a window id, not a sprite-actor slot. And no arm of the 13-way dispatch hands off an ANM id (`see ghidra/scripts/funcs/overlay_menu_801d6628.txt`); "trigger animation" was a guess from the sprite-VM framing. Programs are overlay-resident data ([window-script.md](../formats/window-script.md)), so "find the per-scene carrier" was never answerable. |
+
 ## Measurement readings
 
 Falsified claims about the *instruments*, not about the game. They belong here

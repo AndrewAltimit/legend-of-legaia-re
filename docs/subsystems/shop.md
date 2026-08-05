@@ -375,7 +375,10 @@ Input lives in the picker dispatcher `FUN_801dafd4` (its sub-state var is
 (rows 0..2); on confirm, row 2 runs the Quit action at `0x801DB0D0`
 (sound cue + session exit) and rows 0/1 fall through to the buy/sell check
 at `0x801DB0E8`. The shop's window choreography is actor-VM widget scripts
-interpreted by `FUN_801d6628` over the window table: the open script
+interpreted by `FUN_801d6628` over the window table
+([format page](../formats/window-script.md); parser
+`legaia_asset::widget_script`; the engine runs the same disc programs on
+the same transitions via `engine-core::menu_widget`): the open script
 `DAT_801E4E38` slides in windows `0x21` (vendor name) / `0x2A` (this picker)
 / `0x20` (gold) / `0x28` / `0x22`, and the Sell transition's close script
 `DAT_801E4E54` slides away `0x28` / `0x2A` / `0x22` while keeping the gold +

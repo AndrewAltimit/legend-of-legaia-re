@@ -242,6 +242,10 @@
 <section class="doc-section" id="auxiliary">
   <h2>Auxiliary</h2>
   <div class="card-grid">
+    <a class="card" href="window-script.html">
+      <div class="card-title"><span>Window widget scripts</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">The bytecode programs behind the UI's window choreography - the shop's slide-in/slide-away, the menu's staged windows. Fixed 4-byte instructions <code>[opcode][window id][operand]</code>, resident as a program table in the menu overlay's own data segment, interpreted by <code>FUN_801D6628</code>.</div>
+    </a>
     <a class="card" href="sfx-table.html">
       <div class="card-title"><span>SFX descriptor table</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">The sound-effect lookup table: static <code>DAT_8006F198</code> (8-byte stride, 100 entries). Per cue: VAB program/tone, voice count, mixer channel. Byte-exact vs live save-state RAM.</div>

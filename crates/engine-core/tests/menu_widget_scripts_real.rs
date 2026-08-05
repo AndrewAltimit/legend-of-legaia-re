@@ -111,13 +111,7 @@ fn sell_transition_runs_disc_slide_away_script() {
     assert_eq!(world.menu_widgets.open_ids().len(), 5);
 
     // Drive the picker to the Sell row (Buy / Sell / Exit) and confirm.
-    runtime.tick(
-        &mut world,
-        MenuInput {
-            down: true,
-            ..IDLE
-        },
-    );
+    runtime.tick(&mut world, MenuInput { down: true, ..IDLE });
     runtime.tick(
         &mut world,
         MenuInput {

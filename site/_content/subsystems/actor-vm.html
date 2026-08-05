@@ -1,14 +1,14 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; actor / sprite VM</div>
   <h1>Actor / sprite VM</h1>
-  <p class="lede">The interpreter that animates the title screen: the little sprites that move, blink and cycle while the game waits for you to press Start are each running a tiny script, and this VM is what runs those scripts. It is the simplest of Legaia's <a href="move-vm.html#vm-family">five runtime VMs</a> (bytecode interpreters - each reads a stream of instruction bytes, "opcodes", and runs a handler per byte): just 13 opcodes, byte-stream operands, no cross-context targeting. The driver function is <code>FUN_801D6628</code> (Ghidra's name for the traced routine at that RAM address); it lives in the title-screen overlay, a chunk of code the game loads into RAM only while the title screen is up. <span class="tag tag-done">Fully ported</span></p>
+  <p class="lede">The interpreter that choreographs the game's UI windows: when the shop's gold box, vendor plate and Buy/Sell picker slide onto the screen together, that entrance is a tiny script, and this VM is what runs it. It is the simplest of Legaia's <a href="move-vm.html#vm-family">five runtime VMs</a> (bytecode interpreters - each reads a stream of instruction bytes, "opcodes", and runs a handler per byte): just 13 opcodes, fixed 4-byte instructions, no cross-context targeting. The driver function is <code>FUN_801D6628</code> (Ghidra's name for the traced routine at that RAM address); it lives in the menu overlay (PROT <code>0899</code>), the code chunk that hosts the pause menu, shop and save UI. An earlier reading placed it in the title-screen overlay - the menu-overlay base recovery resolved the same image. <span class="tag tag-done">Fully ported</span></p>
 </header>
 
 <section class="doc-section" id="how-it-works">
   <h2>How it works</h2>
-  <p>If you've ever written a sprite-walk script for an old arcade game, this is exactly that. There's an array of "actors" (an actor is the engine's record for one on-screen entity; here, a sprite is an actor), each one carries a small amount of per-instance state and a cursor into a bytecode buffer. Every frame, the VM reads the next byte at each actor's cursor and runs the corresponding handler. The handler might move the sprite, trigger an animation, set a flag, or wait for N frames. After the handler runs, the cursor advances and we're done with this actor for this frame.</p>
+  <p>A caller hands the VM a pointer to a program - a run of fixed 4-byte instructions <code>[opcode][window id][operand u16]</code> ending in a zero opcode - and the VM executes the whole thing in one call. Each instruction names a UI window by its id in the menu overlay's 52-record window descriptor table at <code>0x801E4738</code> (the table behind every pause-menu screen), reads that record's home <code>x</code>/<code>y</code>, and calls the executable's window helpers: look the window up, create it if missing, snap or slide it toward a target, close it, or tick the global window system. The sliding itself happens over the following frames - the VM installs targets; the per-frame window walker animates them.</p>
 
-  <p>The whole VM has 13 opcodes - the minimum you need for a sprite-animation system: spawn / despawn, position writes, motion, animation triggers, flag set / clear / test, wait, and a terminator. Operands are simple: typically zero or one byte after the opcode. There is no "switch context to a different actor" or "call this other script as a subroutine"; an actor's bytecode runs against itself only.</p>
+  <p>The whole VM has 13 jump-table slots - the minimum you need for window choreography: open at home, open at a packed position, a style-byte write, close, a global tick, motion-flag clears, slide-to, and a close-reopen-slide-back composite (three slots are no-ops). There is no "switch context" or "call this other script as a subroutine"; a program is a flat command list.</p>
 
   <p>Because everything is fixed-width and self-contained, the actor VM serves as the reference implementation pattern for the clean-room engine's VM ports (a <code>Host</code> trait abstracts the platform-side hooks; the dispatcher is a plain match statement over opcode bytes).</p>
 </section>
@@ -18,36 +18,41 @@
   <dl class="kv">
     <dt>Driver</dt><dd><code>FUN_801D6628</code></dd>
     <dt>Dispatch table</dt><dd><code>0x801CED70</code> (13 entries)</dd>
-    <dt>Lives in</dt><dd>Title-screen overlay. <code>PROT.DAT</code> is the disc's single big archive (nearly everything except movies and audio streams lives in its numbered entries); the title overlay has no PROT id of its own - it rides the unindexed <code>PROT.DAT</code> gap after entry 0899 (see <code>crates/asset/data/static-overlays.toml</code>); PROT <code>0971</code> is the <em>debug-menu</em> overlay.</dd>
-    <dt>Operand format</dt><dd>Byte stream (1 byte opcode + zero-or-more operand bytes per instruction)</dd>
+    <dt>Lives in</dt><dd>Menu overlay, PROT <code>0899</code> (slot-A base <code>0x801CE818</code>). <code>PROT.DAT</code> is the disc's single big archive (nearly everything except movies and audio streams lives in its numbered entries); this is the same overlay that hosts the pause menu, shop, inn and save UI, so the VM is resident whenever any of those screens can appear.</dd>
+    <dt>Operand format</dt><dd>Fixed 4-byte instructions: <code>[opcode u8][window id u8][operand u16 LE]</code></dd>
+    <dt>Programs</dt><dd>Data in the same overlay image (file <code>0x16260..0x16740</code>) - see <a href="../formats/window-script.html">window widget scripts</a></dd>
   </dl>
 </section>
 
 <section class="doc-section" id="opcodes">
   <h2>Opcodes</h2>
-  <p>The 13 opcodes cover the basics every sprite-animation system needs:</p>
+  <p>The 13 jump-table slots cover the basics every window-choreography system needs:</p>
   <ul class="bullets">
-    <li>Spawn / despawn actors.</li>
-    <li>Set / clear a per-actor flag bit (mirrors the lower script-VM banks).</li>
-    <li>Position writes (immediate and packed).</li>
-    <li>Motion: linear interpolation between two endpoints.</li>
-    <li>Trigger an animation (an ANM container indexed by id).</li>
-    <li>Wait / yield.</li>
-    <li>Conditional skip on a flag.</li>
-    <li>Terminator.</li>
+    <li>Open a window at its descriptor-table home position, or at a packed position from the operand.</li>
+    <li>Close a window.</li>
+    <li>Slide a window toward a target (home or packed).</li>
+    <li>Write a window's style byte; clear its motion flag.</li>
+    <li>Tick the global window system.</li>
+    <li>A close / re-open / slide-back composite.</li>
+    <li>Terminator (opcode <code>0x00</code>); three slots are no-ops.</li>
   </ul>
   <p>Full opcode table and Rust port: <code>crates/engine-vm/src/lib.rs</code>.</p>
 </section>
 
+<section class="doc-section" id="program-source">
+  <h2>Where the programs come from</h2>
+  <p>The interpreted programs are data resident in the menu overlay itself - a program table in PROT <code>0899</code>'s data segment, not a scene file or an asset bundle. Each caller materialises a program pointer and calls <code>FUN_801D6628(&amp;program)</code>: the shop's picker dispatcher runs the open script (slide in the vendor plate, picker, gold box and two panels) when the Buy/Sell picker comes up, and the slide-away script (close three of them, keep the gold + vendor plates) on the Sell transition. The byte-level spec and the pinned program list live on the <a href="../formats/window-script.html">window widget scripts</a> page; the clean-room engine resolves the same programs out of the user's disc and runs them through the ported interpreter on the same shop transitions.</p>
+</section>
+
 <section class="doc-section" id="separate-from-field">
   <h2>Why it's separate from the field VM</h2>
-  <p>The actor VM is a fixed-width 13-opcode dispatcher tailored to the title screen's sprite-walk loop. The <a href="script-vm.html">field VM</a> (<code>FUN_801DE840</code>) is a 43-opcode variable-length dispatcher with cross-context targeting, halt-acquire semantics, sub-dispatcher families, and far richer ctx state. They serve different layers of the engine - actors at the rendering primitive level, scripts at the gameplay-event level - and were almost certainly written by different people on the dev team.</p>
+  <p>The actor VM is a fixed-width 13-opcode dispatcher tailored to window choreography. The <a href="script-vm.html">field VM</a> (<code>FUN_801DE840</code>) is a 43-opcode variable-length dispatcher with cross-context targeting, halt-acquire semantics, sub-dispatcher families, and far richer ctx state. They serve different layers of the engine - UI widgets at the presentation level, scripts at the gameplay-event level - and were almost certainly written by different people on the dev team.</p>
 </section>
 
 <section class="doc-section" id="anm-connection">
-  <h2>Connection to ANM</h2>
-  <p>The "trigger animation" opcode hands off an <a href="../formats/anm.html">ANM container</a> ID to the animation runner. <code>crates/anm</code> parses the container header + per-bone keyframe tables, and <code>legaia_anm::AnimPlayer</code> drives per-frame keyframe interpolation against the actor's bone count (<code>tick()</code> returns a <code>PoseFrame</code> the engine uploads as a posed mesh).</p>
-  <p>The per-frame anim driver itself lives in <code>SCUS_942.54</code>, not in an overlay. <code>FUN_80021DF4</code> is the tick the field/battle scenes call once per frame for every active actor. It reads three fixed offsets on the per-actor record:</p>
+  <h2>The per-actor anim tick (a separate system)</h2>
+  <p>This page also covers <code>FUN_80021DF4</code>, the per-actor animation tick - related to the VM only in that both touch actor records. <code>crates/anm</code> parses the <a href="../formats/anm.html">ANM container</a> header + per-bone keyframe tables, and <code>legaia_anm::AnimPlayer</code> drives per-frame keyframe interpolation against the actor's bone count (<code>tick()</code> returns a <code>PoseFrame</code> the engine uploads as a posed mesh).</p>
+  <p>The per-frame anim driver lives in <code>SCUS_942.54</code>, not in an overlay. <code>FUN_80021DF4</code> is the tick the field/battle scenes call once per frame for every active actor. It reads three fixed offsets on the per-actor record:</p>
   <table>
     <thead><tr><th>Offset</th><th>Type</th><th>Field</th><th>Notes</th></tr></thead>
     <tbody>

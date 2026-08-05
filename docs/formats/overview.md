@@ -73,6 +73,7 @@ Static `SCUS_942.54` rodata tables that drive stats, items, and magic. These are
 | [Steal table](steal-table.md) | Confirmed | `DAT_80077828`, 1-based monster id, 2-byte `[chance, item]` - chance FIRST, the reverse of the drop field order. What the Evil God Icon steals; **not** in the PROT 867 record. |
 | [SFX descriptor table](sfx-table.md) | Confirmed | `DAT_8006F198`, 8-byte stride, 100 entries `0x00..=0x63`. Per cue: VAB program/tone, voice count, mixer channel. |
 | [New-game starting party](new-game-table.md) | Confirmed | 4-record template at `0x80078C4C` (26-byte stride) that seeds the live `0x80084708` character records; opening scene `town01`. |
+| [Window widget scripts](window-script.md) | Confirmed | The window-script VM's bytecode programs: fixed 4-byte `[opcode][window id][operand u16]` instructions, resident as a program table in the menu overlay's own data segment (PROT 0899). Parser + `jal`-site scanner `legaia_asset::widget_script`. |
 
 ## Streaming + scene containers
 

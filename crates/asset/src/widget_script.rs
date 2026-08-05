@@ -213,8 +213,7 @@ fn recover_a0(words: &[u32], i: usize) -> Option<u32> {
             }
             // Any other I-type write to a0 (addiu from another base, load,
             // ...) breaks the pair.
-            0x08 | 0x09 | 0x0A | 0x0B | 0x0C | 0x0D | 0x0E
-            | 0x20..=0x26 | 0x30..=0x32
+            0x08 | 0x09 | 0x0A | 0x0B | 0x0C | 0x0D | 0x0E | 0x20..=0x26 | 0x30..=0x32
                 if rt == A0 =>
             {
                 hi = None;
@@ -310,7 +309,11 @@ mod tests {
 
     #[test]
     fn parse_rejects_unterminated() {
-        let img = synth(&[], 0x100, &[0x01u8, 0x02, 0, 0].repeat(MAX_SCRIPT_INSNS + 2));
+        let img = synth(
+            &[],
+            0x100,
+            &[0x01u8, 0x02, 0, 0].repeat(MAX_SCRIPT_INSNS + 2),
+        );
         assert!(parse_at(&img, MENU_OVERLAY_BASE_VA + 0x100).is_err());
     }
 
@@ -321,10 +324,10 @@ mod tests {
         let hi = (script_va >> 16) + u32::from(script_va & 0x8000 != 0);
         let lo = script_va & 0xFFFF;
         let code = [
-            0x3C04_0000 | hi,      // lui a0, hi
-            0x2484_0000 | lo,      // addiu a0, a0, lo
+            0x3C04_0000 | hi,       // lui a0, hi
+            0x2484_0000 | lo,       // addiu a0, a0, lo
             jal_word(WIDGET_VM_VA), // jal FUN_801D6628
-            0x0000_0000,           // nop (delay slot)
+            0x0000_0000,            // nop (delay slot)
         ];
         let img = synth(
             &code,

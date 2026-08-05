@@ -295,8 +295,9 @@ blocks a (b) row, or the disclosure state of a (c) row.
 
 The `disclosed` rows carry a `NOT WIRED` disclosure at their own tag, so they
 are inert by the source's own account; they appear here only because the
-permissive graph also calls them live. The `lib.rs` row is the one that does
-not, and it is written up under [The actor VM has no host caller](#the-actor-vm-has-no-host-caller).
+permissive graph also calls them live. The `lib.rs` row was measured before
+the widget-script resolver landed and is superseded - written up under
+[The actor VM: a resolved bytecode source](#the-actor-vm-a-resolved-bytecode-source).
 
 The world-map cluster splits three ways and the split is worth keeping: the
 `dev-menu` rows sit behind a host hotkey a pad ladder cannot press, the
@@ -461,49 +462,39 @@ enter the module it is tagged in.
 on a resolution path; its two consumers are the disc-gated parity oracle and
 `prot-extract retail-names`.
 
-## The actor VM has no host caller
+## The actor VM: a resolved bytecode source
 
 `FUN_801D6628` is the actor / sprite VM - the first VM ported and the `Host`
 trait shape every later VM port follows. Its interpreter is
-`legaia_engine_vm::run`, and the six SCUS helper addresses tagged beside it on
-the same module doc share its fate. No ladder executes any of the seven, and
-neither does any host.
+`legaia_engine_vm::run`. This section previously graded the seven tagged
+addresses "(c): no host reaches it" and pinned the reason precisely: **the
+missing prerequisite was a bytecode source, not a call site** - nothing
+resolved the VM's programs out of the disc, so any new call site could only
+synthesize its operands, and a call proving the interpreter runs on invented
+input would have been a fake wire.
 
-The chain is short enough to state completely. `World::run_actor_bytecode`
-(`crates/engine-core/src/world/effects.rs`) is the only production wrapper. Its
-only caller is `FieldDemoHandler::run` in `crates/engine-core/src/mode.rs`, and
-that handler both synthesizes its own bytecode - a `SpawnDefault` per actor
-followed by `End`, not disc bytes - and is constructed nowhere outside the
-`#[cfg(test)]` module in the same file. `ModeHandler` has no registry: the trait
-name appears in `mode.rs` and in no other file in the workspace.
+The prerequisite is resolved. The programs are **data resident in the menu
+overlay itself** (PROT 0899 - a program table in the overlay's data segment,
+[`window-script.md`](../formats/window-script.md)), which also dissolves the
+"per-scene lookup" framing: the carrier is per-boot overlay data, and what
+selects a program is the menu code path, not a field-VM or scene-entry
+event. The wired chain: `legaia_asset::widget_script` parses + scans the
+programs, `World::install_menu_overlay_tables` (both hosts call it with the
+real overlay bytes) resolves them, and `MenuRuntime::tick` feeds them into
+`legaia_engine_vm::run` over the `engine-core::menu_widget` window-list host
+on the shop picker entry / Sell transition edges - the transitions retail's
+`FUN_801DAFD4` drives. Disc-gated pins:
+`crates/engine-core/tests/menu_widget_scripts_real.rs`.
 
-So the permissive graph is right that an edge exists, and the edge leads to a
-handler nothing installs. That is why this cluster is (c) and not (a): a ladder
-would not reach it however far it walked.
-
-[`vm-inventory.md`](../subsystems/vm-inventory.md#ported-but-inert) already
-grades the actor VM inert, which is the right verdict; what it gets wrong is the
-supporting detail, and the detail is the part someone wiring this would act on.
-"Only its `Position` type is imported elsewhere; the interpreter itself has no
-caller" understates the problem in one direction and overstates it in another -
-there *is* a caller, and its existence is exactly what keeps the address out of
-the disclosed-inert audit.
-
-**The missing prerequisite is a bytecode source, not a call site.** Adding a
-call from a live host would be a fake wire: nothing currently resolves a scene's
-actor-VM programs out of the disc into a byte slice, so any new call site would
-have to synthesize its operands the way `FieldDemoHandler` does, and the call
-would then prove only that the interpreter runs on input the port invented. What
-has to exist first is the per-scene program lookup - which carrier holds the
-programs, and which field-VM or scene-entry event selects one. Until that
-resolver exists there is nothing to feed [`run`](../subsystems/actor-vm.md).
-
-No `NOT WIRED` token is added at the tag. The token's audit is a *static*
-one, and this port is statically live through a real edge, so tagging it would
-file seven fresh rows in the stale-`NOT WIRED` list -
-[the shape that page calls FALSE-EDGE](stale-not-wired-triage.md) - and move the
-finding into a queue that is about tag hygiene rather than about wiring. The
-disclosure lives here and in the module doc instead.
+What stays true from the old verdict: `World::run_actor_bytecode`
+(`crates/engine-core/src/world/effects.rs`), the field-actor host, is still
+reached only from `FieldDemoHandler::run` in
+`crates/engine-core/src/mode.rs` - a handler that synthesizes its bytecode
+and is constructed nowhere outside the `#[cfg(test)]` module in the same
+file. That edge is a demo, disclosed at both ends; the production route is
+the menu-widget one above. A rerun of the replay reach report is what moves
+the seven addresses out of the (c) table rows above, which record the
+pre-resolver measurement.
 
 ## Ladder proposals
 
