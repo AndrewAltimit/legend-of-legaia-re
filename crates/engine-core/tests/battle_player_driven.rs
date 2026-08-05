@@ -117,12 +117,12 @@ fn battle_waits_for_player_command_then_resolves() {
 
     // --- Phase 3: drive the command picker through retail's open flow.
     // Presses are edge-triggered, so alternate press/release frames. `Begin`
-    // on the round prompt, the ring's `Attack` arm (one Down off the `Item`
+    // on the round prompt, the ring's `Attack` arm (one Left onto the `Attack`
     // arm it opens on), `Auto` on the attack-mode prompt, then the target
     // cursor's confirm; the strike commits and the single-monster formation
     // wipes. ---
     use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
-    let down = InputState::mask_of([PadButton::Down]);
+    let left = InputState::mask_of([PadButton::Left]);
     let mut returned = false;
     let mut release = false;
     for _ in 0..2000 {
@@ -134,7 +134,7 @@ fn battle_waits_for_player_command_then_resolves() {
                 Some((CommandPhase::Menu { .. }, s))
                     if s.menu_command() != Some(BattleCommand::Attack) =>
                 {
-                    down
+                    left
                 }
                 _ => cross,
             }

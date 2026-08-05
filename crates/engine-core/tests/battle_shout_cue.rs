@@ -145,12 +145,13 @@ fn drive_arts_entry_and_collect_shouts(
             // Retail's open flow: `Begin` on the round prompt, the ring's
             // `Attack` arm, then the `Auto | Command` prompt - `Command` is
             // the directional arts entry, `Auto` the plain swing. Cross takes
-            // whatever the cursor is on; the only other press needed is the
-            // ring walk and the one Right that reaches `Command`.
+            // whatever the cursor is on; the other presses are the spatial
+            // seatings - Left onto the `Attack` arm, Left/Right onto the
+            // `Auto`/`Command` chip.
             use legaia_engine_core::battle_input::{AttackMode, CommandPhase};
             match cmd.phase {
                 CommandPhase::Menu { .. } if cmd.menu_command() != Some(BattleCommand::Attack) => {
-                    InputState::mask_of([PadButton::Down])
+                    InputState::mask_of([PadButton::Left])
                 }
                 CommandPhase::AttackMode { .. } => {
                     // First party turn drives the arts entry; later turns take
@@ -162,6 +163,8 @@ fn drive_arts_entry_and_collect_shouts(
                     };
                     if cmd.attack_mode() == Some(want) {
                         InputState::mask_of([PadButton::Cross])
+                    } else if want == AttackMode::Auto {
+                        InputState::mask_of([PadButton::Left])
                     } else {
                         InputState::mask_of([PadButton::Right])
                     }

@@ -165,7 +165,8 @@ fn drive_art_and_collect_shouts(
             use legaia_engine_core::battle_input::{AttackMode, CommandPhase};
             match cmd.phase {
                 CommandPhase::Menu { .. } if cmd.menu_command() != Some(BattleCommand::Attack) => {
-                    InputState::mask_of([PadButton::Down])
+                    // Spatial seating: Left is the `Attack` arm's own side.
+                    InputState::mask_of([PadButton::Left])
                 }
                 CommandPhase::AttackMode { .. } => {
                     let want = if arts_turns == 0 {
@@ -175,6 +176,8 @@ fn drive_art_and_collect_shouts(
                     };
                     if cmd.attack_mode() == Some(want) {
                         InputState::mask_of([PadButton::Cross])
+                    } else if want == AttackMode::Auto {
+                        InputState::mask_of([PadButton::Left])
                     } else {
                         InputState::mask_of([PadButton::Right])
                     }

@@ -313,12 +313,20 @@ fn pick_command(session: &mut BootSession, want: BattleCommand) -> bool {
                     if cmd.menu_command() == Some(ring_arm) {
                         PadButton::Cross
                     } else {
-                        PadButton::Down
+                        // Spatial seating: tap the wanted arm's own side.
+                        match ring_arm {
+                            BattleCommand::Item => PadButton::Up,
+                            BattleCommand::Attack => PadButton::Left,
+                            BattleCommand::Magic => PadButton::Right,
+                            _ => PadButton::Down,
+                        }
                     }
                 }
                 CommandPhase::AttackMode { .. } => {
                     if cmd.attack_mode() == Some(want_mode) {
                         PadButton::Cross
+                    } else if want_mode == AttackMode::Auto {
+                        PadButton::Left
                     } else {
                         PadButton::Right
                     }
