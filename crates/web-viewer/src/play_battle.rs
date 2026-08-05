@@ -1439,13 +1439,15 @@ mod live_hud_tests {
                     if cmd == Some(BattleCommand::Attack) {
                         tap(&mut rt, PadButton::Cross);
                     } else {
-                        tap(&mut rt, PadButton::Down);
+                        // Spatial seating: Attack sits on the ring's left arm.
+                        tap(&mut rt, PadButton::Left);
                     }
                 } else if atk_mode {
                     if mode == Some(AttackMode::Auto) {
                         tap(&mut rt, PadButton::Cross);
                     } else {
-                        tap(&mut rt, PadButton::Right);
+                        // Spatial seating: Auto is the left chip of Auto|Command.
+                        tap(&mut rt, PadButton::Left);
                     }
                 } else {
                     break;
