@@ -49,6 +49,7 @@ pub use legaia_tim;
 pub mod arts_input;
 pub mod battle_command_ui;
 pub mod battle_hud_chrome;
+pub mod battle_item_ui;
 pub mod battle_name_banner;
 mod battle_tutorial_box;
 pub mod other_game_hud;

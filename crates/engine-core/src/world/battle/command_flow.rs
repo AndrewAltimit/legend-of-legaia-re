@@ -1178,6 +1178,60 @@ impl World {
         )
     }
 
+    /// Owned projection of the open battle item menu for the windowed item
+    /// surface (`legaia_engine_ui::battle_item_ui` on both hosts): the
+    /// dedup row list + mapped cursor
+    /// ([`InventoryUseSession::menu_view`]), the highlighted item's disc
+    /// info-window line, the acting member's name (the middle breadcrumb of
+    /// retail's `Begin | <name> | Item` trail) and the target roster while
+    /// the session is picking a target.
+    ///
+    /// `None` while no battle item menu is up or a dialogue box owns the
+    /// frame - the same suppression the command chips follow. Living here
+    /// rather than in each host keeps the two hosts on one projection
+    /// (host-drift tier: paired simulation injection sites).
+    pub fn battle_item_menu_model(&self) -> Option<crate::inventory_use::BattleItemMenuModel> {
+        if self.mode != crate::world::SceneMode::Battle {
+            return None;
+        }
+        if self.current_dialog.is_some() || self.inline_dialogue.is_some() {
+            return None;
+        }
+        let menu = self.battle_item_menu.as_ref()?;
+        let view = menu.menu_view();
+        let description = view
+            .selected_id
+            .and_then(|id| self.menu_text.as_ref().and_then(|t| t.item_desc(id)))
+            .map(str::to_string);
+        let actor = self.battle_ctx.active_actor;
+        let actor_name = menu
+            .targets
+            .iter()
+            .find(|t| t.slot == actor)
+            .map(|t| t.name.clone())
+            .unwrap_or_else(|| format!("P{}", actor + 1));
+        let targets = view.target_select.then(|| {
+            (
+                menu.targets
+                    .iter()
+                    .map(|t| crate::inventory_use::BattleItemTargetRow {
+                        name: t.name.clone(),
+                        hp: t.hp,
+                        hp_max: t.hp_max,
+                        alive: t.alive,
+                    })
+                    .collect(),
+                view.target_cursor,
+            )
+        });
+        Some(crate::inventory_use::BattleItemMenuModel {
+            view,
+            description,
+            actor_name,
+            targets,
+        })
+    }
+
     /// Drive the open battle inventory submenu one frame from [`World::input`].
     ///
     /// Edge-triggered pad → one [`crate::inventory_use::InventoryUseInput`] per

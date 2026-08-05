@@ -180,6 +180,61 @@ pub enum InventoryUseEvent {
     Cancelled,
 }
 
+/// One rendered row of the item-use list: a unique item id with its stack
+/// count, in first-seen bag order (see [`InventoryUseSession::menu_view`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ItemMenuRow {
+    pub id: u8,
+    /// Catalog display name, or the `Item NN` fallback for an uncataloged id.
+    pub name: String,
+    /// Stack count across every bag slot holding this id.
+    pub count: u8,
+    /// `true` when the id passes the active context filter; failing rows
+    /// draw dimmed but stay visible.
+    pub admissible: bool,
+}
+
+/// Windowed-menu projection of an [`InventoryUseSession`] - the row list
+/// both hosts render, with the cursor already mapped into it.
+#[derive(Debug, Clone, Default)]
+pub struct ItemMenuView {
+    pub rows: Vec<ItemMenuRow>,
+    /// Index into [`Self::rows`] of the row under the item cursor (the
+    /// browsing cursor, or the held row during target select). `None` when
+    /// the filtered bag is empty or the session is terminal.
+    pub cursor_row: Option<usize>,
+    /// `true` while the session is picking a target.
+    pub target_select: bool,
+    /// Cursor into the session's `targets` while `target_select`.
+    pub target_cursor: usize,
+    /// The item id under the cursor, if any.
+    pub selected_id: Option<u8>,
+}
+
+/// One target row of the battle item window's target-select column.
+#[derive(Debug, Clone, Default)]
+pub struct BattleItemTargetRow {
+    pub name: String,
+    pub hp: u16,
+    pub hp_max: u16,
+    pub alive: bool,
+}
+
+/// Owned projection of the open **battle** item menu - what both play
+/// hosts hand to `legaia_engine_ui::battle_item_ui` (built by
+/// `World::battle_item_menu_model`, which is the single place the gating
+/// and text resolution live).
+#[derive(Debug, Clone, Default)]
+pub struct BattleItemMenuModel {
+    pub view: ItemMenuView,
+    /// The highlighted item's disc info-window line, when resolved.
+    pub description: Option<String>,
+    /// Acting party member's display name (the middle breadcrumb).
+    pub actor_name: String,
+    /// `(rows, cursor)` while the session is picking a target.
+    pub targets: Option<(Vec<BattleItemTargetRow>, usize)>,
+}
+
 /// One inventory use session.
 #[derive(Debug, Clone)]
 pub struct InventoryUseSession {
@@ -292,6 +347,61 @@ impl InventoryUseSession {
     /// UI blips / log entries.
     pub fn drain_events(&mut self) -> Vec<InventoryUseEvent> {
         std::mem::take(&mut self.events)
+    }
+
+    /// Project the session into the shared windowed-menu shape: one row per
+    /// unique item id in first-seen bag order with its stack count, plus
+    /// where the cursor sits **in that row list**.
+    ///
+    /// The cursor mapping is the point: [`InventoryUseState::Browsing`]'s
+    /// cursor indexes [`Self::filtered_items`], while the drawn list shows
+    /// every owned id (inadmissible ones dimmed) - so a renderer that
+    /// highlights `rows[cursor]` directly puts the highlight on the wrong
+    /// row as soon as a filtered-out item precedes the selection. Both
+    /// hosts draw from this projection instead.
+    pub fn menu_view(&self) -> ItemMenuView {
+        let filter_set: std::collections::HashSet<usize> =
+            self.filtered_items.iter().copied().collect();
+        let mut rows: Vec<ItemMenuRow> = Vec::new();
+        let mut row_of_id: std::collections::HashMap<u8, usize> = std::collections::HashMap::new();
+        for (i, id) in self.items.iter().enumerate() {
+            match row_of_id.get(id) {
+                Some(&r) => rows[r].count = rows[r].count.saturating_add(1),
+                None => {
+                    row_of_id.insert(*id, rows.len());
+                    let name = self
+                        .catalog
+                        .get(*id)
+                        .map(|e| e.name.to_string())
+                        .unwrap_or_else(|| format!("Item {id:02X}"));
+                    rows.push(ItemMenuRow {
+                        id: *id,
+                        name,
+                        count: 1,
+                        admissible: filter_set.contains(&i),
+                    });
+                }
+            }
+        }
+        let (item_cursor, target_select, target_cursor) = match self.state {
+            InventoryUseState::Browsing { cursor } => (Some(cursor), false, 0),
+            InventoryUseState::TargetSelect {
+                item_cursor,
+                cursor,
+            } => (Some(item_cursor), true, cursor),
+            _ => (None, false, 0),
+        };
+        let selected_id = item_cursor
+            .and_then(|c| self.filtered_items.get(c).copied())
+            .and_then(|idx| self.items.get(idx).copied());
+        let cursor_row = selected_id.and_then(|id| row_of_id.get(&id).copied());
+        ItemMenuView {
+            rows,
+            cursor_row,
+            target_select,
+            target_cursor,
+            selected_id,
+        }
     }
 
     /// Advance the session by one input event.
@@ -1053,5 +1163,39 @@ mod tests {
         let spirit = cat.get(0x10).unwrap();
         assert!(InventoryContext::Battle.allows(spirit));
         assert!(!InventoryContext::Field.allows(spirit));
+    }
+
+    /// `menu_view` dedups stacks in first-seen order and maps the filtered
+    /// cursor into the **drawn** row list - the case that breaks a naive
+    /// `rows[cursor]` highlight is an inadmissible row ahead of the
+    /// selection, which is exactly this bag: the field-only 0x0E sits at
+    /// row 0, dimmed, while the battle cursor's row 0 is really drawn row 1.
+    #[test]
+    fn menu_view_maps_the_filtered_cursor_onto_drawn_rows() {
+        let mut s = InventoryUseSession::new(
+            test_catalog(),
+            vec![0x0E, 0x01, 0x01, 0x02],
+            party_targets(),
+            InventoryContext::Battle,
+        );
+        let v = s.menu_view();
+        assert_eq!(v.rows.len(), 3, "stacks dedup to one row per id");
+        assert_eq!(
+            (v.rows[0].id, v.rows[0].count, v.rows[0].admissible),
+            (0x0E, 1, false),
+            "field-only item keeps its row, dimmed"
+        );
+        assert_eq!((v.rows[1].id, v.rows[1].count), (0x01, 2));
+        // Browsing cursor 0 = first *filtered* item (0x01) = drawn row 1.
+        assert_eq!(v.cursor_row, Some(1));
+        assert_eq!(v.selected_id, Some(0x01));
+        assert!(!v.target_select);
+        // Walk one down and enter target select: the held row stays mapped.
+        s.input(InventoryUseInput::Down);
+        s.input(InventoryUseInput::Confirm);
+        let v = s.menu_view();
+        assert!(v.target_select);
+        assert_eq!(v.selected_id, Some(0x01), "second bag slot of the stack");
+        assert_eq!(v.cursor_row, Some(1));
     }
 }

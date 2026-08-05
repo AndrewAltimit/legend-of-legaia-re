@@ -98,6 +98,52 @@ fn battle_hud_slot_views(hud: &BattleHud) -> Vec<HudSlotView<'_>> {
 }
 
 /// Project the HUD model's popup queue into the shared builder's view type.
+/// Borrow an engine-core battle-item-window model as the shared builder's
+/// frame, handing it to `f` - the same CPS borrow glue the native window
+/// carries (`window/hud.rs`); the projection itself is
+/// `World::battle_item_menu_model`, shared by both hosts.
+fn with_battle_item_frame<R>(
+    model: &legaia_engine_core::inventory_use::BattleItemMenuModel,
+    f: impl FnOnce(&legaia_engine_ui::battle_item_ui::BattleItemMenuFrame<'_>) -> R,
+) -> R {
+    use legaia_engine_ui::battle_item_ui as bii;
+    let rows: Vec<bii::BattleItemRowView<'_>> = model
+        .view
+        .rows
+        .iter()
+        .map(|r| bii::BattleItemRowView {
+            name: &r.name,
+            count: r.count,
+            admissible: r.admissible,
+        })
+        .collect();
+    let target_rows: Vec<bii::BattleItemTargetView<'_>> = model
+        .targets
+        .as_ref()
+        .map(|(rows, _)| {
+            rows.iter()
+                .map(|t| bii::BattleItemTargetView {
+                    name: &t.name,
+                    hp: t.hp,
+                    hp_max: t.hp_max,
+                    alive: t.alive,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let frame = bii::BattleItemMenuFrame {
+        rows: &rows,
+        cursor: model.view.cursor_row,
+        description: model.description.as_deref(),
+        actor_name: &model.actor_name,
+        targets: model
+            .targets
+            .as_ref()
+            .map(|(_, cursor)| (target_rows.as_slice(), *cursor)),
+    };
+    f(&frame)
+}
+
 fn battle_hud_popup_views(hud: &BattleHud) -> Vec<HudPopupView> {
     hud.popup_views()
         .into_iter()
@@ -598,6 +644,23 @@ impl LegaiaRuntime {
         let mut out = self
             .battle_hud_frame_draws(assets, surface_w, surface_h)
             .sprites;
+        // The battle item window's chrome (both packet-pinned 9-slice
+        // windows, the breadcrumb tabs and the hand cursor) rides the same
+        // atlas array as the rest of the menu chrome.
+        if let (Some(rects), Some(model)) = (
+            assets.chrome_rects(),
+            self.scene_host
+                .as_ref()
+                .and_then(|h| h.world.battle_item_menu_model()),
+        ) {
+            let (origin, scale) =
+                crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
+            out.extend(with_battle_item_frame(&model, |frame| {
+                legaia_engine_ui::battle_item_ui::battle_item_window_sprites(
+                    rects, frame, origin, scale,
+                )
+            }));
+        }
         // The command chips sample the same blue plate 3-slice the party
         // bar does, so they ride this array rather than a second one.
         if let (Some(rects), Some((chips, cursor, phase))) = (
@@ -824,8 +887,21 @@ impl LegaiaRuntime {
                 }
                 _ => {}
             }
-        } else if let Some(menu) = &bw.battle_item_menu {
-            out.extend(self.items_session_draws(assets, menu));
+        } else if bw.battle_item_menu.is_some() {
+            // Retail's item window (state 0x3C): the packet-pinned list +
+            // description windows with breadcrumbs and the hand cursor.
+            // Same engine-core projection + engine-ui builder the native
+            // window uses; the chrome sprites ride
+            // `battle_chrome_sprite_draws`.
+            if let Some(model) = bw.battle_item_menu_model() {
+                let (origin, scale) =
+                    crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
+                out.extend(with_battle_item_frame(&model, |frame| {
+                    legaia_engine_ui::battle_item_ui::battle_item_window_text(
+                        font, frame, origin, scale,
+                    )
+                }));
+            }
         } else if let Some(cmd) = &bw.battle_command {
             let mut my = MENU_Y;
             match &cmd.phase {
