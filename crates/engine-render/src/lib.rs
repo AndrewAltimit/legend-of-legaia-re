@@ -24,13 +24,11 @@
 
 pub mod actor_bind;
 pub mod actor_cull;
-pub mod afterimage;
 pub mod attach_swap;
 pub mod battle_actor_tick;
 pub mod battle_intro;
 pub mod battle_on_screen;
 pub mod battle_sideband;
-pub mod billboard;
 pub mod gte_trace;
 pub mod mode_transition;
 pub mod window;
@@ -56,7 +54,6 @@ mod renderer;
 pub mod scene_lights;
 pub mod screen_overlay;
 mod shaders;
-pub mod streak_pass;
 
 pub use renderer::*;
 
