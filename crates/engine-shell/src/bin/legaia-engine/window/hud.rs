@@ -1876,7 +1876,15 @@ impl PlayWindowApp {
                 solid_src: self.battle_hud_solid_src(),
                 surface: (w, h),
                 chrome: self.save_menu.as_ref().map(|a| &a.rects),
-                plaque: active.as_ref().map(|(_, n)| n.as_str()),
+                // The actor-name plaque shares its top-left seat with the
+                // item window's Begin | <name> | Item breadcrumb trail, and
+                // retail parks the plaque while that window is up (the
+                // battle_item_window capture shows the crumbs alone), so the
+                // frame draws one or the other, never both.
+                plaque: active
+                    .as_ref()
+                    .filter(|_| w_ref.battle_item_menu.is_none())
+                    .map(|(_, n)| n.as_str()),
                 plaque_badge: legaia_engine_core::battle_hud::battle_plaque_element_badge(w_ref),
                 banner: banner.as_deref(),
                 // The sparring-tutorial prompt is a box the host draws
@@ -2077,6 +2085,7 @@ impl PlayWindowApp {
             let (origin, scale) = self.save_select_stage(surface_w, surface_h);
             out.extend(with_battle_item_frame(&model, |frame| {
                 legaia_engine_render::battle_item_ui::battle_item_window_sprites(
+                    &self.font,
                     &assets.rects,
                     frame,
                     origin,

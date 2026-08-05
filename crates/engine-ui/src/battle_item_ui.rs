@@ -68,12 +68,36 @@ pub const COUNT_RIGHT_X: i32 = 307;
 pub const PAGE_SEAT: (i32, i32) = (248, 33);
 /// Description line pen (screenshot-read).
 pub const DESC_SEAT: (i32, i32) = (16, 132);
-/// Breadcrumb tab glyph pens (screenshot-read): `Begin`, the acting
-/// member's name, `Item`.
-pub const CRUMB_SEATS: [(i32, i32); 3] = [(14, 14), (62, 14), (108, 14)];
-/// Interior width every breadcrumb tab is drawn at (screenshot-read; the
-/// three retail tabs are equal-width plates like a chip cluster's).
-pub const CRUMB_INTERIOR_W: i32 = 34;
+/// First breadcrumb tab's glyph pen (screenshot-read: the `Begin` plate
+/// starts at x 10, and a tab plate insets its pen by the 8-px cap).
+pub const CRUMB_SEAT0: (i32, i32) = (18, 14);
+/// Gap between one breadcrumb plate's right cap and the next plate's left
+/// cap (screenshot-read).
+pub const CRUMB_GAP: i32 = 6;
+/// Minimum interior width of a breadcrumb tab (screenshot-read off the
+/// retail `Vahn` tab; a longer label widens its own tab - the engine font
+/// is wider than retail's tab glyphs, so tabs are sized per label rather
+/// than pinned to the retail plate widths).
+pub const CRUMB_MIN_INTERIOR_W: i32 = 24;
+
+/// Per-tab breadcrumb layout for the `Begin | <actor> | Item` trail:
+/// `(label pen, interior width)` per tab, advancing left-to-right from
+/// [`CRUMB_SEAT0`] with each tab sized to its own label.
+pub fn crumb_layout(
+    font: &legaia_font::Font,
+    actor_name: &str,
+) -> [((i32, i32), i32); 3] {
+    let mut x = CRUMB_SEAT0.0;
+    let mut out = [((0, 0), 0); 3];
+    for (i, label) in ["Begin", actor_name, "Item"].into_iter().enumerate() {
+        let interior = (font.layout_ascii(label).advance_x as i32).max(CRUMB_MIN_INTERIOR_W);
+        out[i] = ((x, CRUMB_SEAT0.1), interior);
+        // Advance past this tab's interior + right cap, the gap, and the
+        // next tab's left cap.
+        x += interior + 8 + CRUMB_GAP + 8;
+    }
+    out
+}
 
 // ----------------------------------------------------------------- palette
 
@@ -157,8 +181,9 @@ fn scaled(
 }
 
 /// The window's sprite half: both 9-slice windows, the three breadcrumb
-/// tab plates and the hand cursor.
+/// tab plates (sized per label via [`crumb_layout`]) and the hand cursor.
 pub fn battle_item_window_sprites(
+    font: &legaia_font::Font,
     rects: &SaveMenuAtlasRects,
     frame: &BattleItemMenuFrame<'_>,
     stage_origin: (i32, i32),
@@ -178,13 +203,13 @@ pub fn battle_item_window_sprites(
         stage_origin,
         stage_scale,
     ));
-    // Breadcrumb trail: three gold tab plates, equal width like a chip
-    // cluster's - the same 3-slice the pause menu's title tab banner uses.
-    for (cx, cy) in CRUMB_SEATS {
+    // Breadcrumb trail: three gold tab plates - the same 3-slice the pause
+    // menu's title tab banner uses.
+    for (pen, interior) in crumb_layout(font, frame.actor_name) {
         out.extend(crate::tab_banner_draws(
             rects,
-            (cx, cy),
-            CRUMB_INTERIOR_W,
+            pen,
+            interior,
             stage_origin,
             stage_scale,
         ));
@@ -239,11 +264,11 @@ pub fn battle_item_window_text(
     let mut out = Vec::new();
     let white = [1.0, 1.0, 1.0, 1.0];
 
-    for (label, (cx, cy)) in ["Begin", frame.actor_name, "Item"]
+    for (label, (pen, _)) in ["Begin", frame.actor_name, "Item"]
         .into_iter()
-        .zip(CRUMB_SEATS)
+        .zip(crumb_layout(font, frame.actor_name))
     {
-        emit(&mut out, font, label, (cx, cy), white, stage_origin, scale);
+        emit(&mut out, font, label, pen, white, stage_origin, scale);
     }
 
     match frame.targets {
@@ -398,7 +423,7 @@ mod tests {
     fn both_windows_draw_their_chrome_at_the_pinned_rects() {
         let r = rects();
         let all = rows(3);
-        let sprites = battle_item_window_sprites(&r, &frame(&all, 0), (0, 0), 1);
+        let sprites = battle_item_window_sprites(&legaia_font::Font::placeholder(), &r, &frame(&all, 0), (0, 0), 1);
         // A 9-slice panel is at least 9 sprites; two windows + 3 crumb
         // plates (3 sprites each) + the hand.
         let list_only = crate::menu_window_chrome_draws_for(&r, LIST_WINDOW, (0, 0), 1);
@@ -439,7 +464,7 @@ mod tests {
         let r = rects();
         let all = rows(3);
         let hand_at = |cursor: usize| {
-            let sprites = battle_item_window_sprites(&r, &frame(&all, cursor), (0, 0), 1);
+            let sprites = battle_item_window_sprites(&legaia_font::Font::placeholder(), &r, &frame(&all, cursor), (0, 0), 1);
             let hand = sprites.last().unwrap();
             assert_eq!(hand.src, r.cursor);
             (hand.dst.0, hand.dst.1)
@@ -460,7 +485,7 @@ mod tests {
         // Page 2 draws the remainder (3 rows), and the hand wraps onto the
         // page-relative seat.
         let r = rects();
-        let sprites = battle_item_window_sprites(&r, &f9, (0, 0), 1);
+        let sprites = battle_item_window_sprites(&legaia_font::Font::placeholder(), &r, &f9, (0, 0), 1);
         let hand = sprites.last().unwrap();
         assert_eq!(hand.dst.1, 45 + ROW_PITCH); // row 9 = page row 1
         // An empty bag still has one page, like retail's PAGE 1/1 header.
@@ -503,7 +528,7 @@ mod tests {
         // Description line at its pen.
         assert!(draws.iter().any(|d| d.dst.1 == DESC_SEAT.1));
         // The three breadcrumb labels are drawn.
-        assert!(draws.iter().any(|d| d.dst.1 == CRUMB_SEATS[0].1));
+        assert!(draws.iter().any(|d| d.dst.1 == CRUMB_SEAT0.1));
     }
 
     /// Target select swaps the list column to the roster and moves the
@@ -529,7 +554,7 @@ mod tests {
         ];
         let mut f = frame(&all, 1);
         f.targets = Some((&targets, 1));
-        let sprites = battle_item_window_sprites(&r, &f, (0, 0), 1);
+        let sprites = battle_item_window_sprites(&legaia_font::Font::placeholder(), &r, &f, (0, 0), 1);
         // Windows still framed; hand on target row 1, not item row 1's page seat.
         let hand = sprites.last().unwrap();
         assert_eq!((hand.dst.0, hand.dst.1), (167, 59));
@@ -554,8 +579,8 @@ mod tests {
     fn stage_scale_multiplies_every_prim() {
         let r = rects();
         let all = rows(2);
-        let one = battle_item_window_sprites(&r, &frame(&all, 0), (0, 0), 1);
-        let two = battle_item_window_sprites(&r, &frame(&all, 0), (7, 11), 2);
+        let one = battle_item_window_sprites(&legaia_font::Font::placeholder(), &r, &frame(&all, 0), (0, 0), 1);
+        let two = battle_item_window_sprites(&legaia_font::Font::placeholder(), &r, &frame(&all, 0), (7, 11), 2);
         assert_eq!(one.len(), two.len());
         for (a, b) in one.iter().zip(two.iter()) {
             assert_eq!(b.dst.0, 7 + a.dst.0 * 2);

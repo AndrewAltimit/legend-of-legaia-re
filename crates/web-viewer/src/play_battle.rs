@@ -484,7 +484,17 @@ impl LegaiaRuntime {
                 solid_src: ui::font_solid_src(font),
                 surface: (surface_w, surface_h),
                 chrome: assets.chrome_rects(),
-                plaque: active.as_ref().map(|(_, n)| n.as_str()),
+                // The plaque shares its top-left seat with the item window's
+                // breadcrumb trail; retail parks it while that window is up
+                // (battle_item_window capture), so one or the other draws.
+                plaque: active
+                    .as_ref()
+                    .filter(|_| {
+                        self.scene_host
+                            .as_ref()
+                            .is_none_or(|h| h.world.battle_item_menu.is_none())
+                    })
+                    .map(|(_, n)| n.as_str()),
                 // The element badge the plaque wears in front of the name;
                 // `None` draws the bare name.
                 plaque_badge: self
@@ -657,7 +667,11 @@ impl LegaiaRuntime {
                 crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
             out.extend(with_battle_item_frame(&model, |frame| {
                 legaia_engine_ui::battle_item_ui::battle_item_window_sprites(
-                    rects, frame, origin, scale,
+                    assets.font_ref(),
+                    rects,
+                    frame,
+                    origin,
+                    scale,
                 )
             }));
         }
