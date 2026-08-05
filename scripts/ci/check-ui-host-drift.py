@@ -1669,6 +1669,7 @@ DIAG_GATES: list[dict[str, object]] = [
     },
     # --- subtractive / logging only ----------------------------------------
     {"env": "LEGAIA_DIAG_NOFX", "additive": False, "note": "suppress the effect layer"},
+    {"env": "LEGAIA_DIAG_NO_GHOSTS", "additive": False, "note": "suppress the battle after-image ghost pass (A/B attribution)"},
     {"env": "LEGAIA_DIAG_NOSEMI", "additive": False, "note": "semi-transparent blend off"},
     {"env": "LEGAIA_DIAG_LAYERS", "additive": False, "note": "draw only the named layers"},
     {"env": "LEGAIA_DIAG_PLACE_RANGE", "additive": False, "note": "draw only placements [a,b)"},
@@ -1930,22 +1931,13 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
                 "consumer of the same walk-placement accessors; see above",
         },
     },
-    {
-        "kernel": "screen-space fade quad",
-        "why": "the transition fade's ABR mode - not its colour - decides "
-        "whether the screen darkens or brightens, and it travels in the "
-        "packet beside an OT layer that looks exactly like it. Swapping the "
-        "two puts every style's fade on ABR 0 (0.5B + 0.5F): the additive "
-        "styles top out at washed grey instead of a white-out and the "
-        "subtractive ones never reach black. `screen_prim::fade_prim` is the "
-        "one packet builder both hosts call, and a surface that resolves the "
-        "ramp and then hand-rolls the quad is how that swap gets made a "
-        "second time",
-        # The EMITTER: a file that resolves the fade ramp. Naming the type
-        # would catch every file that passes an `IntroFade` along.
-        "trigger": r"\bintro_fade\s*\(",
-        "requires": [r"\bfade_prim\b"],
-    },
+    # RETIRED: "screen-space fade quad" (resolving `intro_fade(...)` requires
+    # `fade_prim`). The whole transition emission - fade included - became
+    # single-assembler when the `battle_intro` emitter moved to `engine-ui`
+    # and both hosts started ticking it: no render surface resolves the ramp
+    # any more, so the rule matched nothing and was deleted rather than left
+    # standing vacuous. See host-drift.md "The version of this tier that
+    # needs no rule".
 ]
 
 BLOCK_COMMENT_ANY_RE = re.compile(r"/\*.*?\*/", re.DOTALL)

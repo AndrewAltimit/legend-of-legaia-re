@@ -1190,6 +1190,7 @@ class TmdRenderer {
      * prims never occlude. Mirrors the retail GPU: the ordering table draws
      * blend prims against the already-rendered background. */
     let blendOn = false;
+    let strictOn = false;
     for (const [meshId, list] of byMesh) {
       const m = this.sceneMeshes.get(meshId);
       if (!m || !m.semiRanges || m.indexCount === 0) continue;
@@ -1208,6 +1209,17 @@ class TmdRenderer {
       for (const p of list) {
         const wantCue = p.cue || this.cueParams;
         if (wantCue !== cueOn) { this._setCue(wantCue); cueOn = wantCue; }
+        /* Strictly-nearer depth test for placements that ask for it (the
+         * arts after-image ghosts): at LEQUAL a ghost pose coincident with
+         * the live body passes on every fragment and washes the whole mesh
+         * additive; LESS rejects the equal-depth overlap so the tint only
+         * builds where the delayed pose has separated - the retail look of
+         * a trail drawn in a deeper OT bucket than the body. */
+        const wantStrict = !!p.strictDepth;
+        if (wantStrict !== strictOn) {
+          gl.depthFunc(wantStrict ? gl.LESS : gl.LEQUAL);
+          strictOn = wantStrict;
+        }
         gl.uniformMatrix4fv(this.locModel, false, this._placementModel(p, m));
         gl.uniform1i(this.locOcclAllow, p.noOccl ? 0 : 1);
         for (const r of m.semiRanges) {
@@ -1226,6 +1238,7 @@ class TmdRenderer {
       gl.blendEquation(gl.FUNC_ADD);
       gl.uniform1i(this.locSemiPass, 0);
     }
+    if (strictOn) gl.depthFunc(gl.LEQUAL);
     gl.bindVertexArray(null);
   }
 

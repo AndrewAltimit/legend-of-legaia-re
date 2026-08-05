@@ -380,6 +380,35 @@ pub struct GlobalTmd {
     pub raw: Vec<u8>,
 }
 
+/// One entry of an actor's battle **pose-history ring** (see
+/// [`Actor::battle_pose_history`]): the posed frame + world position the
+/// actor rendered with on that frame, and whether the frame is
+/// ghost-eligible under the retail ring-id gate
+/// ([`crate::battle_afterimage::GHOST_RING_ID_MIN`] - party: the committed
+/// clip slot is `0x11`, the Super / Miracle SpecialStarter dash; monster:
+/// any non-idle clip tag).
+#[derive(Debug, Clone)]
+pub struct BattleGhostFrame {
+    /// The pose the actor rendered with (the `pose_frame` of that tick).
+    pub pose: PoseFrame,
+    /// World position that frame (retail ring `actor[+0x4C + i*8]`).
+    pub pos: [i32; 3],
+    /// Retail ring-id gate result for this frame.
+    pub ghost_eligible: bool,
+}
+
+/// One planned after-image ghost draw, resolved by
+/// [`World::battle_ghost_draws`]: draw `actor_slot`'s mesh posed with
+/// `pose` at `pos`, flat-coloured `color`, additive semi-transparent,
+/// behind the live body.
+#[derive(Debug, Clone)]
+pub struct BattleGhostDraw {
+    pub actor_slot: u8,
+    pub pos: [i32; 3],
+    pub pose: PoseFrame,
+    pub color: [u8; 3],
+}
+
 /// Per-actor record held by the world. Composes the per-VM state structs.
 ///
 /// Each VM's `Host` trait reads/writes only the slice it owns, so the per-VM
@@ -576,6 +605,15 @@ pub struct Actor {
     /// (engine cadence choice so a walk clip's footstep effects refire per
     /// cycle).
     pub battle_effect_cursor: u8,
+
+    /// Per-frame battle pose **history ring** - the engine mirror of the
+    /// retail rings `FUN_80047430` shifts every frame (position `+0x4C`,
+    /// anim cursor `+0x17A`, clip `+0x234`, committed anim id `+0x1FB`;
+    /// 32 slots). Front = last frame. Feeds the arts after-image ghost walk
+    /// ([`crate::battle_afterimage`], `World::battle_ghost_draws`).
+    /// Maintained only while a battle animation plays; cleared on battle
+    /// exit with the rest of the battle anim state.
+    pub battle_pose_history: std::collections::VecDeque<BattleGhostFrame>,
 
     /// Battle monster texture slot (`0..=4`). The monster TMD's on-disc CBA/TSB
     /// are nominal defaults the battle loader relocates per slot

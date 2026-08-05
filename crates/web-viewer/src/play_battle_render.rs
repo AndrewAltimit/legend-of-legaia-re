@@ -1315,6 +1315,109 @@ impl LegaiaRuntime {
         a.rest_pose.clone()
     }
 
+    /// Battle actor `i`'s **arts after-image ghosts** this frame - the
+    /// browser seat of the retail walk `FUN_80049348`
+    /// (`legaia_engine_core::battle_afterimage`; the plan comes from the
+    /// shared `World::battle_ghost_draws`). Seven `f32` per ghost:
+    /// `[world_x, world_y, world_z, r, g, b, k]` with RGB normalized `0..1`
+    /// (the page draws each ghost flat-coloured additive via its cue
+    /// override) and `k` the eye-push scale factor: the position is already
+    /// pushed to `eye + k * (pos - eye)` and the page multiplies its draw
+    /// scale by `k`, which together is retail's deeper-OT-bucket ordering
+    /// under a depth buffer (see
+    /// `legaia_engine_core::battle_afterimage::ghost_eye_push_scale` - the
+    /// screen silhouette is unchanged, the body's opaque depth wins where
+    /// they overlap). The matching pose is
+    /// [`Self::play_battle_actor_ghost_pose`]. Empty outside a
+    /// SpecialStarter dash / non-idle monster clip.
+    pub fn play_battle_actor_ghosts(&self, i: u32) -> Vec<f32> {
+        use legaia_engine_core::battle_afterimage as ai;
+        let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.as_ref()) else {
+            return Vec::new();
+        };
+        let Some(a) = br.actors.get(i as usize) else {
+            return Vec::new();
+        };
+        // The eye of the page's own vp (aspect only shapes the projection
+        // rows, not the centre of projection). The vp's input space is the
+        // page's scaled placement space, so the eye comes back scaled - the
+        // ghost push runs in raw actor units.
+        let pose = self.battle_cam_pose();
+        let vp =
+            legaia_engine_vm::battle_cam_script::battle_vp(&pose, BATTLE_WORLD_SCALE, 4.0 / 3.0);
+        let eye_raw = ai::camera_eye_from_vp(&vp).map(|e| e.map(|c| c / BATTLE_WORLD_SCALE));
+        let body = host.world.actors.get(a.actor_idx).map(|w| {
+            [
+                f32::from(w.move_state.world_x),
+                f32::from(w.move_state.world_y),
+                f32::from(w.move_state.world_z),
+            ]
+        });
+        let mut out = Vec::new();
+        for g in host.world.battle_ghost_draws() {
+            if g.actor_slot as usize != a.actor_idx {
+                continue;
+            }
+            let gpos = [g.pos[0] as f32, g.pos[1] as f32, g.pos[2] as f32];
+            let (pos, k) = match (eye_raw, body) {
+                (Some(e), Some(b)) => {
+                    let k = ai::ghost_eye_push_scale(e, gpos, b, ai::GHOST_EYE_PUSH_MARGIN);
+                    (
+                        [
+                            e[0] + k * (gpos[0] - e[0]),
+                            e[1] + k * (gpos[1] - e[1]),
+                            e[2] + k * (gpos[2] - e[2]),
+                        ],
+                        k,
+                    )
+                }
+                _ => (gpos, 1.0),
+            };
+            out.extend_from_slice(&[
+                pos[0],
+                pos[1],
+                pos[2],
+                f32::from(g.color[0]) / 255.0,
+                f32::from(g.color[1]) / 255.0,
+                f32::from(g.color[2]) / 255.0,
+                k,
+            ]);
+        }
+        out
+    }
+
+    /// Ghost `g` of battle actor `i`'s pose, in the
+    /// [`Self::play_battle_actor_pose`] shape (6 `i32` per part). Empty when
+    /// the ghost is not active this frame.
+    pub fn play_battle_actor_ghost_pose(&self, i: u32, g: u32) -> Vec<i32> {
+        let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.as_ref()) else {
+            return Vec::new();
+        };
+        let Some(a) = br.actors.get(i as usize) else {
+            return Vec::new();
+        };
+        let draws = host.world.battle_ghost_draws();
+        let Some(d) = draws
+            .iter()
+            .filter(|d| d.actor_slot as usize == a.actor_idx)
+            .nth(g as usize)
+        else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(d.pose.bone_outputs.len() * 6);
+        for (t, r) in &d.pose.bone_outputs {
+            out.extend_from_slice(&[
+                t[0] as i32,
+                t[1] as i32,
+                t[2] as i32,
+                r[0] as i32,
+                r[1] as i32,
+                r[2] as i32,
+            ]);
+        }
+        out
+    }
+
     /// The battle camera pose for this frame, in the retail value space:
     /// `{"active":true,"pitch":P,"yaw":Y,"tr":[x,y,z],"focus":[x,y,z],
     /// "h":256}` - pitch/yaw in PSX 12-bit units, `tr` the eye-space

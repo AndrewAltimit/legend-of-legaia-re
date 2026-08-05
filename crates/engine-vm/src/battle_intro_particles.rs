@@ -331,6 +331,70 @@ impl IntroRng {
     }
 }
 
+/// The trig / sqrt / PRNG the intro styles' seeders reach into - the one
+/// [`ParticleEnv`] every host that arms an intro shares.
+///
+/// Retail reads two 4096-entry tables at `_DAT_8007B7F8` / `_DAT_8007B81C`,
+/// which are runtime-built and which the engine does not carry, so this
+/// computes the same q12 sine and cosine instead. All five styles draw, so
+/// the substitution *is* visible - it decides which way a tile-shatter record
+/// tumbles and where a particle flies, but not whether either happens.
+/// Recorded here rather than hidden because it is the reason the working sets
+/// tick with plausible rather than retail-identical values.
+///
+/// The draws themselves are **not** a local detail: the tile seeder's spawn
+/// delays are 256 consecutive `rand()` results, so a generator that converges
+/// gives every record the same delay and the whole style freezes at its
+/// seeded pose. Hence the shared [`IntroRng`]. Lives here rather than in a
+/// host so the native window and the browser play page cannot drift apart on
+/// what an intro's randomness looks like.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IntroEnv {
+    rng: IntroRng,
+}
+
+impl IntroEnv {
+    pub fn new(seed: u32) -> Self {
+        Self {
+            rng: IntroRng::new(seed),
+        }
+    }
+
+    fn sin_q12(units: i32) -> i16 {
+        let r = (units.rem_euclid(0x1000) as f64) * std::f64::consts::TAU / 4096.0;
+        (r.sin() * 4096.0) as i16
+    }
+}
+
+impl ParticleEnv for IntroEnv {
+    fn heading(&mut self, x: i32, z: i32) -> i32 {
+        let a = (z as f64).atan2(x as f64);
+        ((a * 4096.0 / std::f64::consts::TAU) as i32).rem_euclid(0x1000)
+    }
+    fn sin(&mut self, h: i32) -> i16 {
+        Self::sin_q12(h)
+    }
+    fn cos(&mut self, h: i32) -> i16 {
+        Self::sin_q12(h + 0x400)
+    }
+    fn sqrt(&mut self, v: i32) -> i32 {
+        if v <= 0 { 0 } else { (v as f64).sqrt() as i32 }
+    }
+    fn rand(&mut self) -> i32 {
+        // A 15-bit draw, the range the seeders' `%` arms expect.
+        self.rng.draw()
+    }
+}
+
+impl crate::battle_intro_swirl::SwirlTrig for IntroEnv {
+    fn table_x(&mut self, e: i32) -> i16 {
+        Self::sin_q12(e + 0x400)
+    }
+    fn table_y(&mut self, e: i32) -> i16 {
+        Self::sin_q12(e)
+    }
+}
+
 #[cfg(test)]
 mod intro_rng_tests {
     use super::*;

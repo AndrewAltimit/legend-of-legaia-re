@@ -1594,7 +1594,8 @@ impl PlayWindowApp {
         let intro = intro?;
         let base = base?;
         let first = intro.needs_capture();
-        let page = match intro.update_field_capture(
+        let page = match legaia_engine_render::battle_intro::update_field_capture(
+            intro,
             renderer,
             legaia_engine_render::RenderTarget::Scene(scene),
             base,
@@ -1966,69 +1967,12 @@ impl PlayWindowApp {
     }
 }
 
-/// The trig / sqrt / PRNG the intro styles' seeders reach into.
-///
-/// Retail reads two 4096-entry tables at `_DAT_8007B7F8` / `_DAT_8007B81C`,
-/// which are runtime-built and which the engine does not carry, so this
-/// computes the same q12 sine and cosine instead. All five styles draw now, so
-/// the substitution *is* visible - it decides which way a tile-shatter record
-/// tumbles and where a particle flies, but not whether either happens.
-/// Recorded here rather than hidden because it is the reason the working sets
-/// tick with plausible rather than retail-identical values.
-///
-/// The draws themselves are **not** a local detail: the tile seeder's spawn
-/// delays are 256 consecutive `rand()` results, so a generator that converges
-/// gives every record the same delay and the whole style freezes at its
-/// seeded pose. Hence the shared
-/// [`IntroRng`](legaia_engine_vm::battle_intro_particles::IntroRng).
-struct IntroEnv {
-    rng: legaia_engine_vm::battle_intro_particles::IntroRng,
-}
-
-impl IntroEnv {
-    fn new(seed: u32) -> Self {
-        Self {
-            // Shared with every other host that arms an intro - a local LCG
-            // here is what let a degenerate multiplier stop the tile shatter
-            // dead. See `battle_intro_particles::INTRO_RNG_MULTIPLIER`.
-            rng: legaia_engine_vm::battle_intro_particles::IntroRng::new(seed),
-        }
-    }
-
-    fn sin_q12(units: i32) -> i16 {
-        let r = (units.rem_euclid(0x1000) as f64) * std::f64::consts::TAU / 4096.0;
-        (r.sin() * 4096.0) as i16
-    }
-}
-
-impl legaia_engine_vm::battle_intro_particles::ParticleEnv for IntroEnv {
-    fn heading(&mut self, x: i32, z: i32) -> i32 {
-        let a = (z as f64).atan2(x as f64);
-        ((a * 4096.0 / std::f64::consts::TAU) as i32).rem_euclid(0x1000)
-    }
-    fn sin(&mut self, h: i32) -> i16 {
-        Self::sin_q12(h)
-    }
-    fn cos(&mut self, h: i32) -> i16 {
-        Self::sin_q12(h + 0x400)
-    }
-    fn sqrt(&mut self, v: i32) -> i32 {
-        if v <= 0 { 0 } else { (v as f64).sqrt() as i32 }
-    }
-    fn rand(&mut self) -> i32 {
-        // A 15-bit draw, the range the seeders' `%` arms expect.
-        self.rng.draw()
-    }
-}
-
-impl legaia_engine_vm::battle_intro_swirl::SwirlTrig for IntroEnv {
-    fn table_x(&mut self, e: i32) -> i16 {
-        Self::sin_q12(e + 0x400)
-    }
-    fn table_y(&mut self, e: i32) -> i16 {
-        Self::sin_q12(e)
-    }
-}
+// The trig / sqrt / PRNG the intro styles' seeders reach into moved to
+// `legaia_engine_vm::battle_intro_particles::IntroEnv` - the browser play
+// page arms the same emitter now, and a per-host env is exactly the drift
+// (a degenerate local LCG once stopped the tile shatter dead) the shared
+// type exists to prevent.
+use legaia_engine_vm::battle_intro_particles::IntroEnv;
 
 /// Drop the `tmd_binding` of every actor slot the battle loader did **not**
 /// just register, and report the slots dropped.

@@ -306,8 +306,20 @@ impl ArtsCommandInputSession {
                 };
             }
             ArtsInputPhase::BeginMenu { cursor } => {
-                let cursor = if ev.up || ev.down { 1 - cursor } else { cursor };
-                if ev.cross {
+                // Spatial seating on the drawn pair: the menu is two stacked
+                // rows (`Begin` above `Reselect` -
+                // `legaia_engine_ui::arts_input::BEGIN_MENU_SEAT` + pitch), so
+                // Up is always the top row and Down the bottom one - and the
+                // direction press itself commits the row, like every other
+                // battle prompt. Cross commits the cursor's row.
+                let (cursor, pressed) = if ev.up {
+                    (0, true)
+                } else if ev.down {
+                    (1, true)
+                } else {
+                    (cursor, false)
+                };
+                if pressed || ev.cross {
                     if cursor == 0 {
                         // Begin: pick the target, then run.
                         let picker = TargetPickerSession::new(
@@ -633,9 +645,10 @@ mod tests {
         // Any press reaches Begin | Reselect.
         s.input(press("c"), party3(), one_monster());
         assert!(matches!(s.phase, ArtsInputPhase::BeginMenu { cursor: 0 }));
-        // Down moves to Reselect; Cross takes it.
+        // One Down press takes Reselect (the bottom drawn row) on the press
+        // itself - spatial seating with retail's direct commit, same as
+        // every other battle prompt.
         s.input(press("D"), party3(), one_monster());
-        s.input(press("c"), party3(), one_monster());
         assert!(matches!(s.phase, ArtsInputPhase::Entering));
         assert!(s.buffer.is_empty());
         assert_eq!(s.pool, 60, "Reselect restores the pool");

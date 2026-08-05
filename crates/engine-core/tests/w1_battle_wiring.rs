@@ -76,7 +76,7 @@ fn open_target_cursor(w: &mut World) {
         match session.phase {
             CommandPhase::Targeting { .. } => return,
             CommandPhase::Menu { .. } if session.menu_command() != Some(BattleCommand::Attack) => {
-                w.set_pad(InputState::mask_of([PadButton::Down]));
+                w.set_pad(InputState::mask_of([PadButton::Left]));
             }
             _ => w.set_pad(InputState::mask_of([PadButton::Cross])),
         }

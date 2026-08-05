@@ -28,11 +28,21 @@
 //! (round armed, no input), which is why an ambushed party never gets to enter
 //! a command that round.
 //!
-//! The command ring's four arms are seated on the pinned diamond, and each is a
-//! face button rather than a cursor stop: Triangle picks the up arm (`Item`),
-//! Square the left (`Attack`), Circle the right (magic), Cross the down
-//! (`Spirit`). The port keeps a cursor on top of the same four seats so a
-//! keyboard host has something to move, but the seating is retail's.
+//! The command ring's four arms are seated on the pinned diamond, and retail
+//! selects them with the **D-pad, not the face buttons**: the state-`0x28`
+//! handler tests the packed pad mask - Up `0x1000` stores the item window
+//! `0x3C` (`0x801D1364..0x801D1384`), Right `0x2000` the magic window `0x46`
+//! (`0x801D136C`/`0x801D1458`), Left `0x8000` the attack-mode prompt `0x78`
+//! (`0x801D1404`/`0x801D1604`), Down `0x4000` commits Spirit
+//! (`0x801D1544`) - and the arm **commits on the press itself** (no cursor,
+//! no confirm). Capture cross-check: from the `cort_evolved_battle_first_menu`
+//! state, a single Up press opened the item window within three vsyncs while
+//! repeated Triangle presses were ignored outright. The port follows retail:
+//! a direction press commits the chip seated on that side of the screen in
+//! the same frame. Cross additionally commits whatever the cursor rests on,
+//! which is what a scripted harness that cannot aim a direction drives.
+//!
+//! REF: FUN_801D0748 (state `0x28`, `0x801D1188..0x801D1670`)
 //!
 //! **`Attack` is not the plain strike** - it is the door to the attack-mode
 //! prompt (`0x78`), whose two chips are retail's `Auto` (auto-target the swing)
@@ -474,28 +484,55 @@ fn menu_index(command: BattleCommand) -> u8 {
         .unwrap_or(0) as u8
 }
 
-/// The ring entry seated beside `i` on its own row of the drawn diamond.
+/// The ring seat a direction press lands on, or `None` for a press the
+/// ring ignores.
 ///
 /// The ring is a four-arm cluster, not a list
-/// (`legaia_engine_ui::battle_command_ui`): `Attack` and the magic arm are the
-/// diamond's two flanking seats and share a row, while `Item` and `Spirit` sit
-/// alone on the vertical arms and therefore stay put under Left / Right.
+/// (`legaia_engine_ui::battle_command_ui`), and the mapping is **spatial**:
+/// each direction seats the cursor on the arm drawn on that side of the
+/// screen - Up = `Item` (top), Left = `Attack` (left), Right = magic
+/// (right), Down = `Spirit` (bottom). That is retail's own dispatch: the
+/// state-`0x28` handler routes the packed D-pad mask per arm (Up `0x1000` →
+/// `0x3C`, Right `0x2000` → `0x46`, Left `0x8000` → `0x78`, Down `0x4000` →
+/// Spirit) and commits on the press, which is what [`step_menu`] does too.
 ///
-/// Up / Down remain the linear walk over [`BattleCommand::MENU`], which is
-/// what still reaches every chip from every chip on a keyboard host. Retail
-/// needs neither: each arm is one face button.
-const fn row_neighbour(i: u8) -> u8 {
-    match i {
-        1 => 2, // Attack -> magic
-        2 => 1, // magic -> Attack
-        other => other,
+/// REF: FUN_801D0748 (state `0x28`, direction arms at `0x801D1364` /
+/// `0x801D136C` / `0x801D1404` / `0x801D1544`)
+const fn ring_seat(ev: BattleCommandInput) -> Option<u8> {
+    if ev.up {
+        Some(0) // Item - the diamond's top arm
+    } else if ev.left {
+        Some(1) // Attack - left arm
+    } else if ev.right {
+        Some(2) // magic - right arm
+    } else if ev.down {
+        Some(3) // Spirit - bottom arm
+    } else {
+        None
     }
 }
 
-/// One frame of the **round prompt** (retail `0x1E`). Left / Right walk the
-/// pair, Cross takes the highlighted chip, and Circle takes `Run` outright. A
-/// scripted no-escape battle refuses both routes into `Run` and leaves the
-/// prompt up.
+/// The pair seat a direction press lands on for a two-chip left/right
+/// prompt (`Begin | Run`, `Auto | Command`): Left always highlights the
+/// chip drawn on the left, Right the chip on the right. Matches retail's
+/// own direction dispatch for the round prompt (Left `0x8000` takes
+/// `Begin`, Right `0x2000` takes `Run` - see [`step_round_prompt`]).
+const fn pair_seat(ev: BattleCommandInput) -> Option<u8> {
+    if ev.left {
+        Some(0)
+    } else if ev.right {
+        Some(1)
+    } else {
+        None
+    }
+}
+
+/// One frame of the **round prompt** (retail `0x1E`). Left takes `Begin`
+/// (the left chip) and Right takes `Run` (the right chip) **on the press
+/// itself** - direction = screen side, one press commits, exactly retail's
+/// own dispatch. Cross commits whatever the cursor rests on (the scripted
+/// harness route), and Circle takes `Run` outright. A scripted no-escape
+/// battle refuses every route into `Run` and leaves the prompt up.
 ///
 /// **The Circle route is the port's, not retail's, and the citation it used to
 /// carry was a raw-pad misread.** `FUN_801D0748`'s handlers test **packed**
@@ -513,14 +550,20 @@ const fn row_neighbour(i: u8) -> u8 {
 fn step_round_prompt(cursor: u8, ev: BattleCommandInput, no_escape: bool) -> CommandPhase {
     let len = RoundChoice::PROMPT.len() as u8;
     let mut cursor = cursor.min(len - 1);
-    if ev.left || ev.right {
-        cursor = (cursor + 1) % len;
-    }
+    // Retail's state 0x1E commits on the direction press itself: Left
+    // (packed 0x8000) takes Begin, Right (0x2000) takes Run.
+    let pressed = match pair_seat(ev) {
+        Some(seat) => {
+            cursor = seat;
+            true
+        }
+        None => false,
+    };
     let run_now = ev.circle && !no_escape;
     if run_now {
         return CommandPhase::RunAway;
     }
-    if ev.cross {
+    if pressed || ev.cross {
         match RoundChoice::PROMPT[cursor as usize] {
             RoundChoice::Begin => {
                 let ring = BattleCommand::MENU
@@ -536,9 +579,11 @@ fn step_round_prompt(cursor: u8, ev: BattleCommandInput, no_escape: bool) -> Com
     CommandPhase::RoundPrompt { cursor }
 }
 
-/// One frame of the **attack-mode prompt** (retail `0x78`). Left / Right walk
-/// the pair; Cross takes the highlighted chip; Circle backs out to the ring
-/// with the cursor on the `Attack` arm it came from.
+/// One frame of the **attack-mode prompt** (retail `0x78`). Left takes
+/// `Auto` (seated on the diamond's left arm) and Right takes `Command` (the
+/// right arm) **on the press itself** - direction = screen side, one press
+/// commits. Cross commits whatever the cursor rests on; Circle backs out to
+/// the ring with the cursor on the `Attack` arm it came from.
 fn step_attack_mode(
     cursor: u8,
     ev: BattleCommandInput,
@@ -548,15 +593,19 @@ fn step_attack_mode(
 ) -> CommandPhase {
     let len = AttackMode::PROMPT.len() as u8;
     let mut cursor = cursor.min(len - 1);
-    if ev.left || ev.right {
-        cursor = (cursor + 1) % len;
-    }
+    let pressed = match pair_seat(ev) {
+        Some(seat) => {
+            cursor = seat;
+            true
+        }
+        None => false,
+    };
     if ev.circle {
         return CommandPhase::Menu {
             cursor: menu_index(BattleCommand::Attack),
         };
     }
-    if ev.cross {
+    if pressed || ev.cross {
         return match AttackMode::PROMPT[cursor as usize] {
             AttackMode::Command => CommandPhase::OpenArtsMenu,
             AttackMode::Auto => {
@@ -607,15 +656,18 @@ fn step_menu(
     let len = BattleCommand::MENU.len() as u8;
     let mut cursor = cursor.min(len - 1);
 
-    if ev.up {
-        cursor = (cursor + len - 1) % len;
-    } else if ev.down {
-        cursor = (cursor + 1) % len;
-    } else if ev.left || ev.right {
-        cursor = row_neighbour(cursor);
-    }
+    // Retail's state-0x28 dispatch: each direction is the diamond arm drawn
+    // on that side of the screen, and the press itself commits the arm (see
+    // `ring_seat`).
+    let pressed = match ring_seat(ev) {
+        Some(seat) => {
+            cursor = seat;
+            true
+        }
+        None => false,
+    };
 
-    if ev.cross {
+    if pressed || ev.cross {
         let command = BattleCommand::MENU[cursor as usize];
         // Magic / Item hand off to the host's own submenus instead of opening
         // a target cursor here - the picker can't show spell / item rows.
@@ -676,14 +728,12 @@ mod tests {
         ev
     }
 
-    /// Walk the ring cursor onto `command` with Down presses and hand back the
-    /// session sitting on it.
-    fn ring_on(command: BattleCommand) -> BattleCommandSession {
+    /// A session sitting on the `Auto | Command` prompt: one Left press on
+    /// the ring commits the Attack arm (the diamond's left seat).
+    fn on_attack_mode() -> BattleCommandSession {
         let mut s = BattleCommandSession::new(0, 0);
-        for _ in 0..menu_index(command) {
-            s.input(press(|e| e.down = true), party3(), one_monster());
-        }
-        assert_eq!(s.menu_command(), Some(command));
+        s.input(press(|e| e.left = true), party3(), one_monster());
+        assert_eq!(s.attack_mode(), Some(AttackMode::Auto));
         s
     }
 
@@ -702,28 +752,29 @@ mod tests {
         assert_eq!(BattleCommandSession::new(0, 0).round_choice(), None);
     }
 
-    /// Left / Right walk the pair and Cross on `Begin` falls through to the
-    /// ring - which is the only way into it.
+    /// One Left press takes `Begin` (the left chip) and lands on the ring -
+    /// retail's state-0x1E direction dispatch, no confirm press. Cross also
+    /// commits the cursor's chip (the harness route).
     #[test]
     fn begin_falls_through_to_the_command_ring() {
         let mut s = BattleCommandSession::new_round_open(0, 0, false);
-        s.input(press(|e| e.right = true), party3(), one_monster());
-        assert_eq!(s.round_choice(), Some(RoundChoice::Run));
         s.input(press(|e| e.left = true), party3(), one_monster());
-        assert_eq!(s.round_choice(), Some(RoundChoice::Begin));
-        s.input(press_cross(), party3(), one_monster());
         assert_eq!(s.menu_command(), Some(BattleCommand::MENU[0]));
         assert!(s.resolved().is_none());
+
+        let mut by_cross = BattleCommandSession::new_round_open(0, 0, false);
+        by_cross.input(press_cross(), party3(), one_monster());
+        assert_eq!(by_cross.menu_command(), Some(BattleCommand::MENU[0]));
+        assert!(by_cross.resolved().is_none());
     }
 
-    /// Both routes into `Run`: the highlighted chip under Cross, and Circle
-    /// outright - retail's own `801d10bc` arm.
+    /// Both routes into `Run`: one Right press (the right chip, retail's
+    /// packed 0x2000 arm), and Circle outright - retail's own `801d10bc` arm.
     #[test]
-    fn run_resolves_from_the_prompt_by_cross_or_circle() {
-        let mut by_cross = BattleCommandSession::new_round_open(0, 0, false);
-        by_cross.input(press(|e| e.right = true), party3(), one_monster());
-        by_cross.input(press_cross(), party3(), one_monster());
-        assert_eq!(by_cross.resolved(), Some(Resolution::RunAway));
+    fn run_resolves_from_the_prompt_by_right_or_circle() {
+        let mut by_right = BattleCommandSession::new_round_open(0, 0, false);
+        by_right.input(press(|e| e.right = true), party3(), one_monster());
+        assert_eq!(by_right.resolved(), Some(Resolution::RunAway));
 
         let mut by_circle = BattleCommandSession::new_round_open(0, 0, false);
         by_circle.input(press(|e| e.circle = true), party3(), one_monster());
@@ -731,7 +782,7 @@ mod tests {
     }
 
     /// A scripted no-escape battle refuses both routes and leaves the prompt
-    /// up, so Circle can't quietly flee a boss fight.
+    /// up, so neither Right nor Circle can quietly flee a boss fight.
     #[test]
     fn a_no_escape_battle_refuses_run_from_either_route() {
         for circle in [false, true] {
@@ -778,89 +829,77 @@ mod tests {
         assert!(s.resolved().is_none());
     }
 
-    /// Left / Right toggle within the drawn row: `Attack` and the magic arm
-    /// flank the diamond, while `Item` and `Spirit` are alone on the vertical
-    /// arms and stay put.
+    /// Every direction commits the arm drawn on that side of the screen in
+    /// one press, from **any** starting cursor - retail's own per-arm
+    /// direction dispatch (state `0x28`: Up `0x1000` = Item, Left `0x8000`
+    /// = Attack, Right `0x2000` = magic, Down `0x4000` = Spirit, each arm
+    /// taken on the press itself).
     #[test]
-    fn left_right_step_along_the_drawn_row() {
-        let seat = |from: u8, right: bool| {
+    fn each_direction_commits_its_own_arm_in_one_press() {
+        let after = |from: u8, dir: fn(&mut BattleCommandInput)| {
             let mut s = BattleCommandSession::new(0, 0);
             s.phase = CommandPhase::Menu { cursor: from };
-            s.input(
-                BattleCommandInput {
-                    left: !right,
-                    right,
-                    ..Default::default()
-                },
-                party3(),
-                one_monster(),
-            );
-            s.menu_command()
+            s.input(press(dir), party3(), one_monster());
+            s
         };
-        assert_eq!(seat(1, true), Some(BattleCommand::Magic));
-        assert_eq!(seat(2, false), Some(BattleCommand::Attack));
-        assert_eq!(seat(0, true), Some(BattleCommand::Item));
-        assert_eq!(seat(3, false), Some(BattleCommand::Spirit));
+        for from in 0..BattleCommand::MENU.len() as u8 {
+            assert_eq!(
+                after(from, |e| e.up = true).resolved(),
+                Some(Resolution::OpenItemMenu)
+            );
+            assert_eq!(
+                after(from, |e| e.left = true).attack_mode(),
+                Some(AttackMode::Auto)
+            );
+            assert_eq!(
+                after(from, |e| e.right = true).resolved(),
+                Some(Resolution::OpenSpellMenu)
+            );
+            assert_eq!(
+                after(from, |e| e.down = true).resolved(),
+                Some(Resolution::SpiritGuard)
+            );
+        }
     }
 
-    /// Up / Down keep the linear walk, so every arm stays reachable from
-    /// every arm on a host with no face-button diamond.
+    /// The Cross route still commits the cursor's own arm - the scripted
+    /// harness path that cannot aim a direction.
     #[test]
-    fn up_down_still_reach_every_command() {
+    fn cross_commits_the_cursor_arm() {
         let mut s = BattleCommandSession::new(0, 0);
-        let mut seen = vec![s.menu_command().unwrap()];
-        for _ in 1..BattleCommand::MENU.len() {
-            s.input(press(|e| e.down = true), party3(), one_monster());
-            seen.push(s.menu_command().unwrap());
-        }
-        assert_eq!(seen, BattleCommand::MENU.to_vec());
-    }
-
-    #[test]
-    fn item_and_magic_and_spirit_resolve_straight_off_the_ring() {
-        for (command, want) in [
-            (BattleCommand::Item, Resolution::OpenItemMenu),
-            (BattleCommand::Magic, Resolution::OpenSpellMenu),
-            (BattleCommand::Spirit, Resolution::SpiritGuard),
-        ] {
-            let mut s = ring_on(command);
-            s.input(press_cross(), party3(), one_monster());
-            assert_eq!(s.resolved(), Some(want), "{command:?}");
-        }
+        assert_eq!(s.menu_command(), Some(BattleCommand::Item));
+        s.input(press_cross(), party3(), one_monster());
+        assert_eq!(s.resolved(), Some(Resolution::OpenItemMenu));
     }
 
     // -------------------------------------------------- the attack-mode prompt
 
-    /// `Attack` is a door, not a strike: it opens the `Auto | Command` prompt.
+    /// `Attack` is a door, not a strike: one Left press opens the
+    /// `Auto | Command` prompt.
     #[test]
     fn the_attack_arm_opens_the_attack_mode_prompt() {
-        let mut s = ring_on(BattleCommand::Attack);
-        s.input(press_cross(), party3(), one_monster());
-        assert_eq!(s.attack_mode(), Some(AttackMode::Auto));
+        let mut s = on_attack_mode();
         assert!(s.resolved().is_none());
         // Circle backs out onto the arm it came from.
         s.input(press(|e| e.circle = true), party3(), one_monster());
         assert_eq!(s.menu_command(), Some(BattleCommand::Attack));
     }
 
-    /// `Command` is where the port's arts entry lives - retail's `0x50`.
+    /// `Command` is where the port's arts entry lives - retail's `0x50`:
+    /// one Right press on the mode prompt commits it.
     #[test]
     fn command_opens_the_arts_entry() {
-        let mut s = ring_on(BattleCommand::Attack);
-        s.input(press_cross(), party3(), one_monster());
+        let mut s = on_attack_mode();
         s.input(press(|e| e.right = true), party3(), one_monster());
-        assert_eq!(s.attack_mode(), Some(AttackMode::Command));
-        s.input(press_cross(), party3(), one_monster());
         assert_eq!(s.resolved(), Some(Resolution::OpenArtsMenu));
     }
 
-    /// `Auto` is the plain strike: it opens the target cursor, and a second
-    /// Cross commits - retail's `0x5A`.
+    /// `Auto` is the plain strike - retail's `0x5A`: one Left press on the
+    /// mode prompt opens the target cursor, and Cross commits the target.
     #[test]
     fn auto_opens_the_target_cursor_then_confirms() {
-        let mut s = ring_on(BattleCommand::Attack);
-        s.input(press_cross(), party3(), one_monster());
-        s.input(press_cross(), party3(), one_monster());
+        let mut s = on_attack_mode();
+        s.input(press(|e| e.left = true), party3(), one_monster());
         assert!(matches!(s.phase, CommandPhase::Targeting { .. }));
         assert!(s.resolved().is_none());
         s.input(press_cross(), party3(), one_monster());
@@ -875,22 +914,22 @@ mod tests {
     }
 
     /// The whole chain end to end, from the round prompt to a committed
-    /// strike - the flow the player actually walks.
+    /// strike - one press per prompt, the flow the player actually walks:
+    /// Left (Begin), Left (Attack), Left (Auto), then aim and confirm.
     #[test]
     fn the_open_flow_runs_prompt_then_ring_then_mode_then_target() {
         let mut monsters = one_monster();
         monsters[1] = alive(true);
         monsters[2] = alive(true);
         let mut s = BattleCommandSession::new_round_open(0, 0, false);
-        // Begin.
-        s.input(press_cross(), party3(), monsters);
-        // Ring: Item -> Attack.
-        s.input(press(|e| e.down = true), party3(), monsters);
-        assert_eq!(s.menu_command(), Some(BattleCommand::Attack));
-        // Attack -> the mode prompt -> Auto.
-        s.input(press_cross(), party3(), monsters);
+        // Begin - the left chip.
+        s.input(press(|e| e.left = true), party3(), monsters);
+        assert_eq!(s.menu_command(), Some(BattleCommand::MENU[0]));
+        // Ring: Left commits the left arm - Attack - onto the mode prompt.
+        s.input(press(|e| e.left = true), party3(), monsters);
         assert_eq!(s.attack_mode(), Some(AttackMode::Auto));
-        s.input(press_cross(), party3(), monsters);
+        // Auto - the left chip - opens the target cursor.
+        s.input(press(|e| e.left = true), party3(), monsters);
         // Target cursor: walk two right, confirm.
         s.input(press(|e| e.right = true), party3(), monsters);
         s.input(press(|e| e.right = true), party3(), monsters);
@@ -909,9 +948,8 @@ mod tests {
     fn circle_in_targeting_returns_to_the_ring() {
         let mut monsters = one_monster();
         monsters[1] = alive(true);
-        let mut s = ring_on(BattleCommand::Attack);
-        s.input(press_cross(), party3(), monsters);
-        s.input(press_cross(), party3(), monsters);
+        let mut s = on_attack_mode();
+        s.input(press(|e| e.left = true), party3(), monsters);
         assert!(matches!(s.phase, CommandPhase::Targeting { .. }));
         s.input(press(|e| e.circle = true), party3(), monsters);
         assert_eq!(s.menu_command(), Some(BattleCommand::Attack));
@@ -927,9 +965,8 @@ mod tests {
             SlotState::default(),
             SlotState::default(),
         ];
-        let mut s = ring_on(BattleCommand::Attack);
-        s.input(press_cross(), party3(), dead_monsters);
-        s.input(press_cross(), party3(), dead_monsters);
+        let mut s = on_attack_mode();
+        s.input(press(|e| e.left = true), party3(), dead_monsters);
         assert_eq!(s.resolved(), Some(Resolution::Aborted));
     }
 }

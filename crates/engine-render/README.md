@@ -297,8 +297,10 @@ hands `build_geometry` that space and the overlay stretches over the whole
 surface.
 
 Fixed-point GTE math helpers (`q3.12` rotation, `q19.12` translation)
-live in [`gte`](src/gte.rs); production rendering still uses f32 wgpu
-math, but the module is the single citation point for retail-correct
+live in [`gte`](../engine-ui/src/gte.rs) - hosted wgpu-free in
+`legaia-engine-ui` so the browser play page links the same arithmetic, and
+re-exported here at its historical path; production rendering still uses f32
+wgpu math, but the module is the single citation point for retail-correct
 fixed-point arithmetic when re-targeting captured GTE traces.
 
 ## Landing a drawn frame back in VRAM
@@ -306,7 +308,8 @@ fixed-point arithmetic when re-targeting captured GTE traces.
 On the console the framebuffer *is* VRAM - the display area is a rect inside
 the same 1024x512 halfword page textures are read from - so a primitive can
 sample pixels the GPU drew moments earlier. The renderer only ever pushed
-the software page *to* the GPU; [`vram_capture`](src/vram_capture.rs) is the
+the software page *to* the GPU; [`vram_capture`](../engine-ui/src/vram_capture.rs)
+(wgpu-free in `legaia-engine-ui`, re-exported here) is the
 missing direction. `blit_rgba_into_vram` quantises an RGBA8 readback to
 BGR555 and writes it into a `legaia_tim::Vram` rect, and
 `Renderer::capture_into_vram` wires that to `capture_rgba`. The write lands
@@ -326,11 +329,16 @@ renders into every frame, and no style samples it from the capture.
 
 ## Field-to-battle transition emitter
 
-[`battle_intro`](src/battle_intro.rs) is the per-frame, per-style working-set
+`battle_intro` is the per-frame, per-style working-set
 owner that stands between the (already live) transition state machine in
 `engine-core` and the ordering table above. It seeds the selected style's
 working set, advances it off the transition entity's own clock, and emits
-`ScreenPrim`s plus the per-style fade.
+`ScreenPrim`s plus the per-style fade. The emitter itself is wgpu-free and
+lives in [`engine-ui`](../engine-ui/src/battle_intro.rs) - both hosts arm it -
+and [`src/battle_intro.rs`](src/battle_intro.rs) here re-exports it plus the
+one renderer-bound wrapper, `update_field_capture`, which turns
+`Renderer::capture_rgba` output into the emitter's `land_capture_rgba` /
+`refresh_captured_page` calls.
 
 All five styles tick and all five emit: `emit_particle_field` (both particle
 arms) plus `emit_spinup_ring`, `emit_tile`, `emit_swirl_band`, and
@@ -359,7 +367,7 @@ fading trails where the port's leave black.
 
 ## GTE register-transfer + memory ops
 
-Beyond the cop2 instruction set the [`gte`](src/gte.rs) module ships
+Beyond the cop2 instruction set the [`gte`](../engine-ui/src/gte.rs) module ships
 the four MIPS register-transfer ops (`MFC2` / `MTC2` / `CFC2` / `CTC2`)
 and the two memory ops (`LWC2` / `SWC2`) so engines can replay a captured
 GTE trace without re-deriving the cop2 register layout. `read_data` /

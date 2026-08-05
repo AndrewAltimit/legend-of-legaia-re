@@ -239,7 +239,7 @@ impl ChipPhase {
         }
     }
 
-    /// The cluster whose centre carries this phase's face-button glyph.
+    /// The cluster whose centre carries this phase's D-pad glyph.
     /// Retail draws it every frame of all three states - at `(152, 84)` for
     /// the round prompt (`801d102c`) and `(220, 62)` for the ring and the
     /// attack-mode prompt (`801d1188` / `801d16e8`).
@@ -409,7 +409,7 @@ pub fn battle_command_chip_sprites(
             stage_scale,
         ));
     }
-    // The face-button glyph sits at the centre of whichever cluster this
+    // The D-pad glyph sits at the centre of whichever cluster this
     // phase is drawing - retail draws exactly one, every frame of all
     // three selection states.
     if any {
@@ -603,7 +603,7 @@ mod tests {
         assert_eq!(ATTACK_MODE_SEATS[1], MENU_SEATS[2]);
     }
 
-    /// Each phase draws its own face-button glyph, at its own cluster
+    /// Each phase draws its own D-pad glyph, at its own cluster
     /// centre - `(152, 84)` for the round prompt, `(220, 62)` for the two
     /// that sit on the diamond.
     #[test]
@@ -700,7 +700,7 @@ mod tests {
             .iter()
             .filter(|s| s.color == CHIP_TINT_SELECTED)
             .collect();
-        // The Item chip's five pieces, plus the face-button glyph.
+        // The Item chip's five pieces, plus the D-pad glyph.
         assert_eq!(bright.len(), 6);
         let item = CLUSTER_COMMAND.plate_origin(ChipSeat::Up);
         assert!(

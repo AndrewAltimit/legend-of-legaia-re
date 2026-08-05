@@ -128,12 +128,23 @@ fn pick_command(w: &mut World, want: legaia_engine_core::battle_input::BattleCom
                 if session.menu_command() == Some(ring_arm) {
                     tap(w, PadButton::Cross);
                 } else {
-                    tap(w, PadButton::Down);
+                    // Spatial seating: each arm is one direction press
+                    // (Up = Item, Left = Attack, Right = magic, Down =
+                    // Spirit), so the walk taps the wanted arm's own side.
+                    let dir = match ring_arm {
+                        BattleCommand::Item => PadButton::Up,
+                        BattleCommand::Attack => PadButton::Left,
+                        BattleCommand::Magic => PadButton::Right,
+                        _ => PadButton::Down,
+                    };
+                    tap(w, dir);
                 }
             }
             CommandPhase::AttackMode { .. } => {
                 if session.attack_mode() == Some(want_mode) {
                     tap(w, PadButton::Cross);
+                } else if want_mode == AttackMode::Auto {
+                    tap(w, PadButton::Left);
                 } else {
                     tap(w, PadButton::Right);
                 }

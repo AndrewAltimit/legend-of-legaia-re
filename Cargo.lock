@@ -1362,6 +1362,7 @@ dependencies = [
  "bytemuck",
  "glam",
  "legaia-asset",
+ "legaia-engine-vm",
  "legaia-font",
  "legaia-tim",
  "serde",

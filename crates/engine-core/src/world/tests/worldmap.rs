@@ -314,9 +314,15 @@ fn world_map_encounter_flips_to_battle_returning_to_world_map() {
     world.install_world_map_entities(1);
     world.set_world_map_encounter(true, 0, 7, 64);
 
-    // Tick once: the entity SM fires the encounter and the world flips into
+    // The entity SM fires the encounter, the field-to-battle intro
+    // transition clocks its 132 display frames, and the world flips into
     // battle, tagged to return to the overworld.
-    let _ = world.tick();
+    for _ in 0..200 {
+        if world.mode == SceneMode::Battle {
+            break;
+        }
+        let _ = world.tick();
+    }
     assert_eq!(world.mode, SceneMode::Battle);
     assert_eq!(world.battle_return_mode, SceneMode::WorldMap);
     assert!(world.field_return.is_some());
@@ -405,7 +411,14 @@ fn world_map_encounter_zone_uses_its_own_formation() {
     }]);
     world.set_world_map_encounter(true, 0, 7, 64);
 
-    let _ = world.tick();
+    // The contact arms the intro transition; the flip lands once its 132
+    // display frames elapse.
+    for _ in 0..200 {
+        if world.mode == SceneMode::Battle {
+            break;
+        }
+        let _ = world.tick();
+    }
     assert_eq!(world.mode, SceneMode::Battle);
     assert_eq!(
         world.active_formation.as_ref().map(|f| f.formation_id),

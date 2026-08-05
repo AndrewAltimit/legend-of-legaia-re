@@ -373,7 +373,6 @@ naming `coplanar_draw_offsets` is prose, not a wiring, and under-counting
 | walk-ground heightfield sink | emitting the heightfield's vertices requires `GROUND_SINK` |
 | packet-colour stream fill | a packet-colour stream may not be filled with white |
 | placement tilt composition | reading `placement_rot_y` requires `rot_x` + `rot_z` |
-| screen-space fade quad | resolving the intro fade ramp requires `fade_prim` |
 
 **The heightfield rule triggers on the emitter, not the type.** An early draft
 keyed on `WalkHeightfield` / `walk_heightfield` and reported four files that
@@ -389,10 +388,13 @@ is `MODULATION_NEUTRAL` (`0x80`). The rule has to distinguish that from the
 `[c[0], c[1], c[2], 255]` is correct and `[255u8; 4]` is not, and the control
 suite pins both.
 
-**The fade rule keys on the ramp call, not on the type.** A rule naming
-`IntroFade` would fire on every file that merely passes one along; a file that
-calls `intro_fade(...)` is one that has just decided what this frame's fade is,
-and is therefore the file about to build - or hand-roll - the packet.
+**A retired rule is worth one line: the fade quad.** The rule "resolving the
+intro fade ramp requires `fade_prim`" existed while two surfaces each resolved
+`intro_fade(...)` and could each hand-roll the packet. The whole transition
+emission - fade included - is single-assembler now (`engine-ui`'s
+`battle_intro`, ticked by both hosts), so the question the rule asked can no
+longer be posed and the rule is deleted rather than left matching nothing.
+See [the section below](#the-version-of-this-tier-that-needs-no-rule).
 
 **The tilt rule earns its place on measured data, not on plausibility.** The
 comment it replaced said "the handful of disc placements carrying a real X/Z
@@ -482,11 +484,9 @@ about these is contested.
 | Gap | Shape |
 |---|---|
 | save-model unification | The two hosts build their save-slot model separately; the tier-3 `set_card_slots_mode` row is one symptom of it, not the whole of it. |
-| framebuffer readback on web | Native reads a drawn frame back into software VRAM (`vram_capture`); nothing on the page reads a drawn frame back at all. The blocker under the row below, and under any future effect that samples the frame it draws over. |
 | shared camera on web | The browser page runs its own orbit projection beside the engine's camera controller instead of consuming it. |
 | MDEC on web | `crates/mdec` decodes STR video for the native `play-str` path; the play page has no video decode, so an FMV beat has nothing to show. |
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
-| field-to-battle style bodies on web | Both hosts now draw screen-space PSX primitives, and both draw the transition's fade. The browser cannot draw a *style body* - the confetti, tiles, curtain and swirl - because every one textures itself with a captured field frame and is emitted by a wgpu-linked crate. See below. |
 
 ### Screen-space PSX primitives across the two hosts
 
@@ -539,43 +539,41 @@ the page's *existing* blend table, not a second copy of it. `blendColor` carries
 mode 0's `0.5` and mode 3's `0.25`, which is why WebGL2 needs no shader
 pre-scale where the native pipeline uses one.
 
-#### What the page still cannot draw, and why
+#### The style bodies draw on both hosts, from one emitter
 
-The fade, and only the fade. The browser emits one primitive per transition
-frame - the full-screen fade quad, resolved by the shared
-`battle_intro_styles::intro_fade` ramp off the live transition entity's clock and
-built by the shared `fade_prim`. The style bodies (confetti, tile shatter,
-curtain, swirl) do not reach it, for two independent reasons, and closing either
-one alone changes nothing:
+The page draws the whole transition now - confetti, tile shatter, curtain,
+swirl, spin-up ring, backdrop and fade - and the closure is worth recording
+because it required both of the reasons the gap existed to fall together:
 
-1. **The emitter is in a wgpu-linked crate.** `engine-render`'s `battle_intro`
-   is where the five styles turn into primitives. Its *simulation* is already
-   shared - `engine-vm`'s `battle_intro_styles` / `_swirl` / `_tiles` /
-   `_transition` are wgpu-free and `web-viewer` links them - but the emitter
-   reaches `crate::gte`, `crate::billboard`, `crate::screen_overlay` and
-   `crate::vram_capture`, and `web-viewer` does not depend on `engine-render`.
-   Only `update_field_capture` genuinely needs a `&Renderer`; the rest is
-   ordinary arithmetic that happens to live in a crate linking wgpu.
-2. **No framebuffer readback on the page.** Every style textures its geometry
-   with a *captured field frame*: the particles are 8x8 patches of it, the tiles
-   and curtain strips sample it, the swirl bands sample it. Native reads the
-   drawn frame back into software VRAM once as the transition arms
-   (`vram_capture`); the browser would render to an FBO and blit into its VRAM
-   texture instead - cheaper there, since it never has to leave the GPU - but
-   nothing on the page reads a drawn frame back at all today.
+1. **The emitter moved out of the wgpu-linked crate.** `battle_intro` (with
+   the `gte` arithmetic and `vram_capture` blit it reaches) lives in
+   `engine-ui` now, re-exported at its old `engine-render` paths so native
+   call sites read unchanged. The one genuinely renderer-bound step - turning
+   "the frame just drawn" into RGBA bytes - stayed per-host:
+   `engine-render::battle_intro::update_field_capture` wraps
+   `Renderer::capture_rgba` natively; the shared emitter itself only exposes
+   `land_capture_rgba` / `refresh_captured_page`.
+2. **The page reads its own frame back.** After the field 3D pass and before
+   the screen-prim pass, the page `gl.readPixels` the frame it just drew,
+   hands it to the `play_intro_land_capture` export (rows arrive bottom-up;
+   the emitter's blit flips them), and re-uploads its VRAM texture in the same
+   frame so the first styled frame samples the field, not stale texels. The
+   readback is a one-shot per transition; the curtain's per-frame intermediate
+   afterwards rides the ordinary `field_vram_take_dirty` re-upload.
 
-One further primitive is deliberately **not** emitted on the browser: the native
-emitter's `backdrop_prim`, an opaque black display-rect quad standing in for
-"retail's field renderer is not in the ordering table". It is only correct
-underneath a style body that reconstructs the frame out of the capture; on its
-own it would black the field out for the whole 132-frame window. Drawing the
-fade over the still-rendering field is the honest subset, and it is a divergence
-stated here rather than left in a comment.
+Two page-side specifics keep this honest rather than symmetric. The page has
+**one** VRAM texture where the native window keeps the transition's captured
+clone separate, so during the window its field meshes sample the same texture
+the capture rects landed in - invisible in practice, because the emitter's
+opaque `backdrop_prim` (now emitted on both hosts) covers the display from the
+first armed frame. And `field_vram_bytes` returns the emitter's captured clone
+while one is live, snapping back to the pristine scene page when the
+transition drops.
 
-The simulation half was never the gap and still is not: `World::tick_encounter`
-runs the transition state machine on both hosts, so the clock, the BGM swap and
-the battle that opens are already identical. What differs is how much of the
-window gets drawn.
+The simulation half was never the gap: `World::tick_encounter` runs the
+transition state machine on both hosts, so the clock, the BGM swap and the
+battle that opens were always identical. What differed - how much of the
+window got drawn - no longer does.
 
 ### The two hosts do not share a shading law
 

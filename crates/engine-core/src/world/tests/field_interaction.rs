@@ -107,13 +107,21 @@ fn field_dialogue_accept_auto_arms_scripted_carrier() {
         "no battle while the prompt is still up"
     );
 
-    // Accept (just-pressed Cross): dismiss -> engage -> SM -> Field -> Battle.
+    // Accept (just-pressed Cross): dismiss -> engage -> SM -> the intro
+    // transition -> Battle once its 132 display frames elapse.
     world.input.set_pad(PadButton::Cross.mask());
     let _ = world.tick();
     assert!(
         world.pending_carrier_engage.is_none(),
         "the armed engage is consumed on the accept"
     );
+    world.input.set_pad(0);
+    for _ in 0..200 {
+        if world.mode == SceneMode::Battle {
+            break;
+        }
+        let _ = world.tick();
+    }
     assert_eq!(
         world.mode,
         SceneMode::Battle,
@@ -289,11 +297,19 @@ fn interaction_probe_walk_up_to_scripted_carrier_starts_fight() {
         "no battle while the prompt is up"
     );
 
-    // Release, then accept: the probe dismisses the box and engages -> Battle.
+    // Release, then accept: the probe dismisses the box and engages, and
+    // the intro transition clocks through to the Battle flip.
     world.input.set_pad(0);
     let _ = world.tick();
     world.input.set_pad(PadButton::Cross.mask());
     let _ = world.tick();
+    world.input.set_pad(0);
+    for _ in 0..200 {
+        if world.mode == SceneMode::Battle {
+            break;
+        }
+        let _ = world.tick();
+    }
     assert_eq!(
         world.mode,
         SceneMode::Battle,
@@ -529,12 +545,13 @@ fn carrier_spar_menu_fight_option_starts_battle() {
     );
     assert_eq!(world.mode, SceneMode::Field, "still field while navigating");
 
-    // Confirm: flips to Battle within a tick or two.
+    // Confirm: the engage arms the intro transition, and the mode flips
+    // once its 132 display frames elapse.
     world.input.set_pad(0);
     let _ = world.tick();
     world.input.set_pad(PadButton::Cross.mask());
     let mut reached = false;
-    for _ in 0..4 {
+    for _ in 0..200 {
         let _ = world.tick();
         if world.mode == SceneMode::Battle {
             reached = true;

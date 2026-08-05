@@ -657,16 +657,17 @@ differing is what makes the quad a gradient.
 
 Both the native window and the browser play page draw this list; the page's
 WebGL2 pass runs the same fragment decode, binds the same four ABR equations its
-3D blend pass uses, and consumes the shared builder's output verbatim. What the
-page cannot do is *produce* the list: the emitters live in `engine-render`
-(which links wgpu) and every transition style textures its geometry with a
-captured field frame the page never reads back. See
+3D blend pass uses, and consumes the shared builder's output verbatim. Both
+also *produce* it from the one shared emitter: `battle_intro` is wgpu-free
+(`engine-ui`, re-exported at its old `engine-render` path), and each host owns
+only the readback that lands the captured field frame the styles sample -
+`capture_rgba` on the native window, `gl.readPixels` on the page. See
 [`host-drift.md`](../tooling/host-drift.md#screen-space-psx-primitives-across-the-two-hosts)
-for the capability ledger.
+for how the capture reaches each host's VRAM.
 
 ### The field-to-battle transition emitter
 
-The two capabilities above exist for one consumer, and `engine-render`'s
+The two capabilities above exist for one consumer, and
 `battle_intro` is it: the per-frame, per-style working-set owner that stands
 between the transition state machine (live in `engine-core`, driven by
 `World::tick_encounter`) and the ordering table. It seeds the selected style's
@@ -692,10 +693,15 @@ it - the ordinary random encounter's tile shatter included - see
 [`cutscene.md`](cutscene.md#which-style-a-battle-gets) for how a battle's style
 is selected.
 
-The native play window is the only host that reaches the *style bodies*. The
-browser page draws the transition's **fade** layer - resolved by the same shared
-`intro_fade` ramp and built by the same shared `screen_prim::fade_prim` packet -
-over its still-rendering field, and nothing else of the transition; see
+Both hosts reach the style bodies through the one emitter. The native window
+re-renders the scene offscreen and lands the readback through
+`battle_intro::update_field_capture` (the crate's one renderer-bound wrapper);
+the browser page reads back its own drawn frame (`gl.readPixels`, rows
+bottom-up - the emitter's blit flips them) and re-uploads its single VRAM
+texture with the captured clone for the length of the window. The clone also
+covers the page's one-texture nuance: its field meshes sample the same texture
+the capture rects land in, but the emitter's opaque backdrop covers the
+display from the first armed frame, so nothing corrupted is ever visible. See
 [`host-drift.md`](../tooling/host-drift.md#screen-space-psx-primitives-across-the-two-hosts).
 
 ### Targeted VRAM upload
@@ -1232,12 +1238,15 @@ what follows is the shape of the answer it measures, not a status table.
 ### The structural split: what a browser surface *can* share
 
 `engine-render` links wgpu, so `web-viewer` cannot depend on it. Every kernel
-that lives there - the GTE projector, `psx_dither`, `psx_blend`,
-`screen_overlay`, `vram_capture`, `battle_intro`, `dyn_light`,
-`scene_lights`, `occlusion_fade`, `billboard`, `streak_pass` - is native-only
-**as code**, and a browser twin has to be a second implementation in GLSL or
-JS. Kernels that live in `engine-core`, `engine-vm` or `legaia-tmd` are shared
-as one implementation and are the ones tier 7 can pair by name.
+that lives there - `psx_dither`, `psx_blend`, `dyn_light`, `scene_lights`,
+`occlusion_fade`, `billboard`, `streak_pass` - is native-only **as code**, and
+a browser twin has to be a second implementation in GLSL or JS. Kernels that
+live in `engine-core`, `engine-vm`, `engine-ui` or `legaia-tmd` are shared as
+one implementation and are the ones tier 7 can pair by name - which is why
+`gte`, `vram_capture` and the `battle_intro` emitter migrated to `engine-ui`
+(re-exported at their old `engine-render` paths): they were ordinary
+arithmetic that happened to live beside wgpu, and moving them is what let the
+play page draw the transition style bodies at all.
 
 That is why the two halves of the render law are policed differently: the
 draw-list half is one kernel both hosts call, so a checker can ask "does this
@@ -1263,7 +1272,7 @@ Not every asymmetry is a defect. Three are deliberate:
 A `.MAP` object record carries three authored angles (`+0x08` pitch, `+0x0A`
 yaw, `+0x0C` roll) and retail composes all three in `Rx * Ry * Rz`
 (`FUN_80026988`; the port's pinned copy is
-`engine_render::battle_intro::placement_rotation`, and the browser's is
+`engine_ui::battle_intro::placement_rotation`, and the browser's is
 `placementModelEuler` in `site/js/webgl-math.js`).
 
 The yaw-only builders (`placementModelScaled*`) take a **negated** yaw,

@@ -31,7 +31,6 @@ pub mod battle_intro;
 pub mod battle_on_screen;
 pub mod battle_sideband;
 pub mod billboard;
-pub mod gte;
 pub mod gte_trace;
 pub mod mode_transition;
 pub mod window;
@@ -58,7 +57,6 @@ pub mod scene_lights;
 pub mod screen_overlay;
 mod shaders;
 pub mod streak_pass;
-pub mod vram_capture;
 
 pub use renderer::*;
 

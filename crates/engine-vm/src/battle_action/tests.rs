@@ -832,12 +832,12 @@ fn done_cleanup_rearms_the_command_gauge_slots() {
     host.actors[1].current_anim = 0x0C;
     for (i, a) in host.actors.iter_mut().enumerate() {
         a.render_flag = if i % 2 == 0 { 1 } else { 200 };
-        a.impact_step = 0;
+        a.anim_rate = crate::battle_anim_rate::AnimRate(0);
     }
     step(&mut host, &mut ctx);
     for i in 0..crate::battle_gauge_rearm::GAUGE_SLOTS {
         assert_eq!(
-            host.actors[i].impact_step,
+            host.actors[i].anim_rate.get(),
             crate::battle_gauge_rearm::ARM_WIDTH_SEED,
             "slot {i} arm width seeded"
         );
@@ -845,7 +845,7 @@ fn done_cleanup_rearms_the_command_gauge_slots() {
         assert_eq!(host.actors[i].render_flag, expect_latch, "slot {i} latch");
     }
     // Slot 7 is outside retail's `while (i < 7)` walk.
-    assert_eq!(host.actors[7].impact_step, 0);
+    assert_eq!(host.actors[7].anim_rate.get(), 0);
     assert_eq!(ctx.gauge_rearm_latch, 0);
 }
 
@@ -859,10 +859,10 @@ fn done_cleanup_skips_the_rearm_for_a_materialised_art() {
     host.actors[1].current_anim = 0x1B;
     for a in &mut host.actors {
         a.render_flag = 1;
-        a.impact_step = 0;
+        a.anim_rate = crate::battle_anim_rate::AnimRate(0);
     }
     step(&mut host, &mut ctx);
-    assert!(host.actors.iter().all(|a| a.impact_step == 0));
+    assert!(host.actors.iter().all(|a| a.anim_rate.get() == 0));
     assert!(host.actors.iter().all(|a| a.render_flag == 1));
     assert_eq!(ctx.gauge_rearm_latch, 7);
 }
@@ -877,11 +877,11 @@ fn done_cleanup_rearm_gate_for_a_monster_slot_uses_the_record_flag() {
     // reports a clear record flag, so the re-arm runs.
     host.actors[4].current_anim = 0xFF;
     for a in &mut host.actors {
-        a.impact_step = 0;
+        a.anim_rate = crate::battle_anim_rate::AnimRate(0);
     }
     step(&mut host, &mut ctx);
     assert_eq!(
-        host.actors[0].impact_step,
+        host.actors[0].anim_rate.get(),
         crate::battle_gauge_rearm::ARM_WIDTH_SEED
     );
 }

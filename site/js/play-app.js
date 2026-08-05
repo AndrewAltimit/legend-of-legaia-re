@@ -2151,8 +2151,30 @@ void main() {
         return;
       }
 
-      /* Screen-space PSX primitives over the finished 3D frame (the
-       * field-to-battle transition's fade today). Outside the try/catch above
+      /* Field-to-battle transition capture: every intro style textures its
+       * geometry with the field frame the player was just looking at, so on
+       * the frame the emitter arms, read back the frame drawn above
+       * (readPixels hands rows bottom-up; the engine's blit flips them) and
+       * re-upload the VRAM texture immediately - this same frame's strips
+       * sample the capture, not stale texels. One-shot per transition; the
+       * curtain's per-frame intermediate afterwards rides the ordinary
+       * field_vram_take_dirty re-upload. */
+      if (!skipDraw && typeof rt.play_intro_wants_capture === 'function' &&
+          rt.play_intro_wants_capture()) {
+        try {
+          const gl = this.renderer.gl;
+          const cw = gl.drawingBufferWidth, ch = gl.drawingBufferHeight;
+          const buf = new Uint8Array(cw * ch * 4);
+          gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+          rt.play_intro_land_capture(buf, cw, ch);
+          this.renderer.uploadVram(rt.field_vram_bytes());
+        } catch (e) { /* presentation-only; keep playing without the capture */ }
+      }
+
+      /* Screen-space PSX primitives over the finished 3D frame: the
+       * field-to-battle transition's five style bodies + backdrop + fade,
+       * emitted by the shared `legaia_engine_ui::battle_intro` and ordered by
+       * the shared `screen_prim` builder. Outside the try/catch above
        * only in the sense that it has its own: a shader link failure on some
        * driver must not take the whole play loop down with it. */
       if (!skipDraw) this._drawScreenPrims(rt);
@@ -2305,6 +2327,44 @@ void main() {
             }
             : null,
         });
+        /* Arts after-image ghosts: the engine's ghost plan (rate-scheduled
+         * pose-history depths + per-character colour with the per-ghost
+         * decay) drawn as flat-coloured additive copies behind the body -
+         * the saturated cue (nearZ -1, maxIr0 1) paints the whole mesh the
+         * ghost RGB, and the mesh's forced ABE|ABR1 prims ride the blend
+         * pass with `strictDepth` (gl.LESS), so a ghost pose coincident
+         * with the live body is rejected fragment-for-fragment instead of
+         * additively washing the whole mesh - the retail look of a trail
+         * in a deeper OT bucket than the body. */
+        if (a.ghostMeshIds && a.ghostMeshIds.length && a.objectIds.length
+            && typeof rt.play_battle_actor_ghosts === 'function') {
+          const gh = rt.play_battle_actor_ghosts(i);
+          /* 7 floats per ghost: pushed position, RGB, and the eye-push
+           * scale k (the engine already moved the position to
+           * eye + k*(pos - eye); multiplying the draw scale by k completes
+           * the scale-about-the-eye, so the silhouette is unchanged while
+           * the depth sits behind the live body). */
+          const STRIDE = 7;
+          const count = Math.min(gh.length / STRIDE, a.ghostMeshIds.length);
+          for (let g = 0; g < count; g++) {
+            const pose = rt.play_battle_actor_ghost_pose(i, g);
+            if (!pose.length) continue;
+            poseInto(a.out, a.base, a.objectIds, pose, pose.length / 6, 0);
+            this.renderer.updateSceneMeshPositions(a.ghostMeshIds[g], a.out);
+            const j = g * STRIDE;
+            draws.push({
+              meshId: a.ghostMeshIds[g],
+              x: gh[j] * S, y: gh[j + 1] * S, z: gh[j + 2] * S,
+              rotY: tf[o + 3] > 0.5 ? Math.PI : 0,
+              scale: S * gh[j + 6],
+              strictDepth: true,
+              cue: {
+                far: [gh[j + 3], gh[j + 4], gh[j + 5]],
+                nearZ: -1, farZ: 0, maxIr0: 1,
+              },
+            });
+          }
+        }
       }
       this._battleFxDraws(rt, b, draws);
 
@@ -2450,7 +2510,30 @@ void main() {
           meshId, base,
           objectIds: rt.play_battle_actor_object_ids(i),
           out: new Float32Array(base.length),
+          ghostMeshIds: [],
         };
+        /* Arts after-image ghosts (retail FUN_80049348, plan from the shared
+         * `World::battle_ghost_draws`): two extra copies of the actor mesh on
+         * the flat-colour path (flatRgba flag 0), every prim forced
+         * semi-transparent additive (TSB = ABE bit | ABR mode 1), posed per
+         * frame from the engine's pose-history ring and coloured per draw by
+         * the cue override. Guarded so a cached WASM without the export just
+         * skips the layer. */
+        if (rec.objectIds.length
+            && typeof rt.play_battle_actor_ghosts === 'function') {
+          const gcb = rt.play_battle_actor_cba_tsb(i);
+          const ghostCt = new Uint16Array(gcb.length);
+          for (let k = 0; k + 1 < gcb.length; k += 2) {
+            ghostCt[k] = gcb[k];
+            ghostCt[k + 1] = 0x8020;   /* ABE | ABR 1 (B + F additive) */
+          }
+          const ghostFlat = new Uint8Array((base.length / 3) * 4);
+          for (let g = 0; g < 2; g++) {
+            const gid = up(BATTLE_MESH_BASE + 32 + i * 2 + g, base,
+              rt.play_battle_actor_uvs(i), ghostCt, idx, ghostFlat);
+            if (gid) rec.ghostMeshIds.push(gid);
+          }
+        }
         /* Pose to the rest/idle frame immediately: an unposed multi-part
          * character is a heap of limbs at the origin. (Empty objectIds =
          * the engine uploaded a statically-posed fallback mesh.) */

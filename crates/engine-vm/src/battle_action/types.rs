@@ -1,5 +1,7 @@
 //! Core battle-action types: actor slots, action categories/states, poses, and the per-actor `BattleActor` / `BattleActionCtx` state structs.
 
+pub use crate::battle_anim_rate::AnimRate;
+
 /// Number of battle actor pointer-table slots (`0x801C9370` in retail).
 /// Slots `0..3` are party members, `3..8` are monsters.
 pub const ACTOR_SLOTS: usize = 8;
@@ -402,9 +404,25 @@ pub struct BattleActor {
     pub hp_bar_pending: i32,
     /// `+0x178` - last-action MP cost (used to display `-N MP` on screen).
     pub last_mp_cost: u16,
-    /// `+0x21D` - impact-step magnitude - multiplied into the per-frame X/Z
-    /// drift during attacks.
-    pub impact_step: u8,
+    /// `+0x21D` - the per-actor **animation-rate scalar** (normal `8`). Three
+    /// consumers read it in the dumped corpus, which is what settles the
+    /// name:
+    ///
+    /// * the SCUS anim tick `FUN_80047430` advances the render node's 12.4
+    ///   anim cursor by `(frame_dt * rate * clip_rate) >> 1` (`>> 2` on the
+    ///   idle branch), so `4` is half speed, `2` quarter speed, `0` a freeze;
+    /// * the arts after-image walk `FUN_80049348` spaces its two mesh ghosts
+    ///   `8 / rate` frames apart, so the trail stretches as time slows;
+    /// * the attack band multiplies it into the per-frame X/Z impact drift,
+    ///   so knockback slows with the clock (the reading this field was
+    ///   previously named for - "impact-step magnitude" - is that one
+    ///   consumer, not the field).
+    ///
+    /// Writers: the anim commit `FUN_8004AD80` drives the arts slow-motion
+    /// (see [`crate::battle_anim_rate`]), and `FUN_801E93C8` restores every
+    /// slot to `8` once the art clip has ended
+    /// ([`crate::battle_gauge_rearm::rearm_gauge`]).
+    pub anim_rate: AnimRate,
     /// `+0x224` - action recoil magnitude - written by `DoneCleanup`.
     pub action_recoil: u8,
     /// `+0x225` - capture state byte - `2` while captured.

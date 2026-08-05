@@ -177,8 +177,8 @@ impl World {
             .filter(|&s| s != 0);
         match speed {
             Some(s) => {
-                let scale = if a.battle.impact_step != 0 {
-                    a.battle.impact_step
+                let scale = if a.battle.anim_rate.get() != 0 {
+                    a.battle.anim_rate.get()
                 } else {
                     DEFAULT_SPEED_SCALE
                 };

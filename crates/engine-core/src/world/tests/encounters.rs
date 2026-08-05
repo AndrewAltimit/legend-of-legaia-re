@@ -337,9 +337,15 @@ fn field_carrier_engage_launches_battle_and_returns_to_field() {
 
     // The dialogue-accept advances the carrier to Activating; the next tick
     // runs the state-1 body (formation copy) and the case 2/3 fall-through
-    // (battle handoff), flipping Field -> Battle, tagged to return to field.
+    // (battle handoff), which arms the field-to-battle intro transition -
+    // the mode flips once its 132 display frames elapse.
     world.engage_field_carrier(0);
-    world.tick();
+    for _ in 0..200 {
+        if world.mode == SceneMode::Battle {
+            break;
+        }
+        world.tick();
+    }
     assert_eq!(world.mode, SceneMode::Battle);
     assert_eq!(world.battle_return_mode, SceneMode::Field);
     assert!(world.field_return.is_some());
@@ -527,8 +533,15 @@ fn boss_battle_entry_writes_no_flags() {
     world
         .formation_table
         .insert(FormationDef::new(17, vec![FormationSlot::new(73)]));
+    world.mode = SceneMode::Field;
     assert!(world.trigger_scripted_battle(17));
-    world.tick_field_carriers();
+    // Drain the latch, then clock the intro transition through to the flip.
+    for _ in 0..200 {
+        if world.mode == SceneMode::Battle {
+            break;
+        }
+        world.tick();
+    }
     assert!(matches!(world.mode, SceneMode::Battle));
     // The scripted fight refuses the Run command (retail `ctx+0x287`).
     assert!(world.battle_no_escape, "scripted battle sets no-escape");

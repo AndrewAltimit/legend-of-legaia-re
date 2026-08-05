@@ -233,22 +233,18 @@ fn clamp(v: i32, bound: i32) -> i32 {
 ///
 /// PORT: FUN_801D1564
 ///
-/// WIRED, without a draw. `legaia_engine_render::battle_intro::BattleIntro`
-/// owns the [`SwirlMesh`] between frames and ticks it from the live transition
-/// clock; `select_intro_style` reaches this style for one formation on the
-/// disc.
+/// WIRED. `legaia_engine_render::battle_intro::BattleIntro` owns the
+/// [`SwirlMesh`] between frames, ticks it from the live transition clock, and
+/// **draws it** through `emit_swirl_band`; `select_intro_style` reaches this
+/// style for one formation on the disc.
 ///
-/// NOT DRAWN, and this one has a **named structural prerequisite** rather than
-/// only missing work. A drawn band half submits 32 primitives out of a
-/// 198-vertex fan - triangles, and
-/// `legaia_engine_render::screen_overlay::ScreenPrim` has no triangle variant
-/// at all: it is quads only, textured or flat. So this style cannot be emitted
-/// through the existing ordering-table pass however much of the packet
-/// assembly gets ported; the pass needs a triangle primitive first.
-///
-/// The two capture texpages the band draws sample **are** filled now -
-/// `vram_capture` lands the drawn field frame in the software VRAM, closing
-/// the gap an earlier note here named as the real blocker.
+/// A superseded note here once named a structural prerequisite - "the
+/// screen-prim pass has no triangle variant" - on the reading that a band
+/// half was a 32-triangle fan. That reading is falsified by the packet
+/// itself: `FUN_801D1A20`'s 32-iteration loop writes two `POLY_FT4` **quads**
+/// per column pair (ring + wall), which is exactly what the quad-only
+/// screen-prim pass carries. The capture texpages the band samples are
+/// likewise filled (`vram_capture`).
 pub fn build_swirl_mesh(allocated: bool, trig: &mut dyn SwirlTrig) -> SwirlBuildOutcome {
     if !allocated {
         return SwirlBuildOutcome::OutOfMemory;

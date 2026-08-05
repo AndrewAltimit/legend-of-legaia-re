@@ -70,6 +70,25 @@ HUD helpers are ports in their own right (`FUN_801d13f0`, `FUN_801d1580`,
 rather than simulation state, so they sit beside their consumer here instead
 of in `engine-core`, which keeps the minigame's numeric kernels.
 
+Three modules are not UI at all but live here for the same structural reason -
+they are wgpu-free draw kernels both hosts must share, and this crate is the
+shared leaf:
+
+- `screen_prim` - screen-space PSX primitives (`ScreenPrim` / `ScreenQuad` /
+  `FlatQuad`), the four ABR blend classes, and `build_geometry`, the one
+  ordering-table walk either host consumes.
+- `gte` - fixed-point GTE arithmetic (`q3.12` rotation, `q19.12`
+  translation, the UNR divide, NCLIP/AVSZ, register-transfer + memory ops,
+  the clean-room `psx_sin` / `psx_cos` trig LUT).
+- `vram_capture` - quantising an RGBA8 frame readback to BGR555 and blitting
+  it into a `legaia_tim::Vram` rect, plus the transition's capture-rect
+  constants.
+- `battle_intro` - the field-to-battle transition emitter: per-style working
+  sets, the five retail packet builders, the curtain's CPU two-pass
+  composition, and the `land_capture_rgba` / `refresh_captured_page` seam a
+  host feeds its own frame readback through (native: `capture_rgba`; browser:
+  `gl.readPixels`).
+
 ## Composition
 
 `legaia-engine-render` re-exports every item here at its historical crate-root
@@ -78,8 +97,9 @@ tests reference the builders unchanged. The GPU-resident batch wrappers
 (`TextOverlay` / `SpriteOverlay` / `UploadedSpriteAtlas`) stay in
 `legaia-engine-render` because they hold wgpu handles.
 
-Depends only on `legaia-asset`, `legaia-font`, `legaia-tim`, `glam`, `serde`,
-and `bytemuck` - no wgpu, no winit - so it links into the lean WASM play build.
+Depends only on `legaia-asset`, `legaia-engine-vm`, `legaia-font`,
+`legaia-tim`, `glam`, `serde`, and `bytemuck` - no wgpu, no winit - so it
+links into the lean WASM play build.
 
 ## Whole-screen compositions
 

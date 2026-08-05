@@ -1199,8 +1199,19 @@ impl PlayWindowApp {
                     }
                     _ => {}
                 }
-            } else if let Some(menu) = &bw.battle_item_menu {
-                out.extend(self.items_session_draws(menu));
+            } else if bw.battle_item_menu.is_some() {
+                // Retail's item window (state 0x3C): the packet-pinned list
+                // + description windows with breadcrumbs and the hand
+                // cursor. Text half here; the window chrome + hand ride the
+                // sprite layer (`battle_chrome_sprite_draws`).
+                if let Some(model) = self.battle_item_menu_model() {
+                    let (origin, scale) = self.save_select_stage(w, h);
+                    out.extend(with_battle_item_frame(&model, |frame| {
+                        legaia_engine_render::battle_item_ui::battle_item_window_text(
+                            &self.font, frame, origin, scale,
+                        )
+                    }));
+                }
             } else if let Some(cmd) = &bw.battle_command {
                 let menu_x = 8i32;
                 let mut my = 210i32;
@@ -1209,7 +1220,7 @@ impl PlayWindowApp {
                     | CommandPhase::Menu { .. }
                     | CommandPhase::AttackMode { .. } => {
                         // Retail's command surfaces are clusters of framed
-                        // chips around a face-button glyph, not lists: the
+                        // chips around a D-pad glyph, not lists: the
                         // round-open `Begin | Run` pair, the packet-pinned
                         // four-arm diamond at `(228, 70)`, and the
                         // `Auto | Command` pair that re-uses the diamond's
@@ -1865,7 +1876,15 @@ impl PlayWindowApp {
                 solid_src: self.battle_hud_solid_src(),
                 surface: (w, h),
                 chrome: self.save_menu.as_ref().map(|a| &a.rects),
-                plaque: active.as_ref().map(|(_, n)| n.as_str()),
+                // The actor-name plaque shares its top-left seat with the
+                // item window's Begin | <name> | Item breadcrumb trail, and
+                // retail parks the plaque while that window is up (the
+                // battle_item_window capture shows the crumbs alone), so the
+                // frame draws one or the other, never both.
+                plaque: active
+                    .as_ref()
+                    .filter(|_| w_ref.battle_item_menu.is_none())
+                    .map(|(_, n)| n.as_str()),
                 plaque_badge: legaia_engine_core::battle_hud::battle_plaque_element_badge(w_ref),
                 banner: banner.as_deref(),
                 // The sparring-tutorial prompt is a box the host draws
@@ -1958,6 +1977,16 @@ impl PlayWindowApp {
     /// the menu is up. The suppression rules mirror the text block's
     /// if-else chain exactly: a dialogue box, an arts-entry session or any
     /// open submenu parks the command chrome, which is what retail does.
+    /// The engine-core battle-item-window projection (shared with the
+    /// browser play page - `World::battle_item_menu_model` owns the gating
+    /// and text resolution; this window only borrows it into the builder's
+    /// frame via [`with_battle_item_frame`]).
+    pub(super) fn battle_item_menu_model(
+        &self,
+    ) -> Option<legaia_engine_core::inventory_use::BattleItemMenuModel> {
+        self.session.host.world.battle_item_menu_model()
+    }
+
     pub(super) fn battle_command_menu_chips(
         &self,
     ) -> Option<(
@@ -2049,6 +2078,21 @@ impl PlayWindowApp {
             );
         }
         let mut out = self.battle_hud_frame_draws(surface_w, surface_h).sprites;
+        // The battle item window's chrome (both packet-pinned 9-slice
+        // windows, the breadcrumb tabs and the hand cursor) rides the same
+        // atlas slot as the rest of the menu chrome.
+        if let Some(model) = self.battle_item_menu_model() {
+            let (origin, scale) = self.save_select_stage(surface_w, surface_h);
+            out.extend(with_battle_item_frame(&model, |frame| {
+                legaia_engine_render::battle_item_ui::battle_item_window_sprites(
+                    &self.font,
+                    &assets.rects,
+                    frame,
+                    origin,
+                    scale,
+                )
+            }));
+        }
         // The command chips sample the same blue plate 3-slice the party
         // bar does, so they ride this list rather than a second slot.
         if let (Some(rects), Some((chips, cursor, phase))) =
@@ -2114,6 +2158,51 @@ impl PlayWindowApp {
             legaia_engine_render::enemy_target_menu_rows_y(self.battle_tutorial_stage_rect()),
         ))
     }
+}
+
+/// Borrow an engine-core battle-item-window model as the shared builder's
+/// frame, handing it to `f` (the frame borrows row views built here, so
+/// this is CPS-shaped).
+pub(super) fn with_battle_item_frame<R>(
+    model: &legaia_engine_core::inventory_use::BattleItemMenuModel,
+    f: impl FnOnce(&legaia_engine_render::battle_item_ui::BattleItemMenuFrame<'_>) -> R,
+) -> R {
+    use legaia_engine_render::battle_item_ui as bii;
+    let rows: Vec<bii::BattleItemRowView<'_>> = model
+        .view
+        .rows
+        .iter()
+        .map(|r| bii::BattleItemRowView {
+            name: &r.name,
+            count: r.count,
+            admissible: r.admissible,
+        })
+        .collect();
+    let target_rows: Vec<bii::BattleItemTargetView<'_>> = model
+        .targets
+        .as_ref()
+        .map(|(rows, _)| {
+            rows.iter()
+                .map(|t| bii::BattleItemTargetView {
+                    name: &t.name,
+                    hp: t.hp,
+                    hp_max: t.hp_max,
+                    alive: t.alive,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let frame = bii::BattleItemMenuFrame {
+        rows: &rows,
+        cursor: model.view.cursor_row,
+        description: model.description.as_deref(),
+        actor_name: &model.actor_name,
+        targets: model
+            .targets
+            .as_ref()
+            .map(|(_, cursor)| (target_rows.as_slice(), *cursor)),
+    };
+    f(&frame)
 }
 
 /// Project the HUD model's slot array into the shared builder's view type.
@@ -2511,14 +2600,19 @@ mod battle_hud_wiring_tests {
         assert_eq!(bcu::ATTACK_MODE_SEATS[1], bcu::MENU_SEATS[2]);
     }
 
-    /// The Left / Right step the command session takes has to land on the
-    /// chip actually drawn beside the current one. `engine-core` cannot see
-    /// the seating table (it does not link `engine-ui`), so it carries the
-    /// pairing as its own `match`; this is where the two are held equal.
+    /// A direction press must commit the chip **drawn on that side of the
+    /// screen**. `engine-core` cannot see the seating table (it does not
+    /// link `engine-ui`), so it carries the direction → seat map as its own
+    /// `match`; this is where that map is held equal to the drawn geometry:
+    /// from every starting arm, Up commits the topmost plate, Down the
+    /// bottommost, Left the leftmost and Right the rightmost. The committed
+    /// arm is read back out of the phase the one press leaves the session
+    /// in (retail's direct-commit dispatch - there is no highlight step to
+    /// inspect).
     #[test]
-    fn left_right_steps_land_on_the_neighbouring_drawn_chip() {
+    fn direction_presses_land_on_the_chip_drawn_on_that_side() {
         use legaia_engine_core::battle_input::{
-            BattleCommand, BattleCommandInput, BattleCommandSession, CommandPhase,
+            BattleCommand, BattleCommandInput, BattleCommandSession, CommandPhase, Resolution,
         };
         use legaia_engine_core::target_picker::SlotState;
         use legaia_engine_render::battle_command_ui as bcu;
@@ -2531,38 +2625,47 @@ mod battle_hud_wiring_tests {
             SlotState::default(),
             SlotState::default(),
         ];
+        type Dir = fn(&mut BattleCommandInput);
+        type Axis = fn(&bcu::CommandSeat) -> i32;
+        let dirs: [(Dir, Axis, bool); 4] = [
+            (|e| e.up = true, |s| s.plate_origin().1, false),
+            (|e| e.down = true, |s| s.plate_origin().1, true),
+            (|e| e.left = true, |s| s.plate_origin().0, false),
+            (|e| e.right = true, |s| s.plate_origin().0, true),
+        ];
         for from in 0..BattleCommand::MENU.len() {
-            let mut s = BattleCommandSession::new(0, 0);
-            s.phase = CommandPhase::Menu { cursor: from as u8 };
-            s.input(
-                BattleCommandInput {
-                    right: true,
-                    ..Default::default()
-                },
-                party,
-                monsters,
-            );
-            let to = BattleCommand::MENU
-                .iter()
-                .position(|c| Some(*c) == s.menu_command())
-                .expect("the cursor stayed in the menu");
-            let (a, b) = (bcu::MENU_SEATS[from], bcu::MENU_SEATS[to]);
-            if to == from {
-                // A lone chip on a vertical arm: nothing is drawn beside it.
-                assert!(
-                    bcu::MENU_SEATS
-                        .iter()
-                        .enumerate()
-                        .all(|(j, s)| j == from || s.plate_origin().1 != a.plate_origin().1),
-                    "entry {from} refused to step but shares its row"
+            for (dir, axis, want_max) in dirs {
+                let mut s = BattleCommandSession::new(0, 0);
+                s.phase = CommandPhase::Menu { cursor: from as u8 };
+                let mut ev = BattleCommandInput::default();
+                dir(&mut ev);
+                s.input(ev, party, monsters);
+                let committed = if s.attack_mode().is_some() {
+                    BattleCommand::Attack
+                } else {
+                    match s.resolved() {
+                        Some(Resolution::OpenItemMenu) => BattleCommand::Item,
+                        Some(Resolution::OpenSpellMenu) => BattleCommand::Magic,
+                        Some(Resolution::SpiritGuard) => BattleCommand::Spirit,
+                        other => panic!("the press committed no ring arm: {other:?}"),
+                    }
+                };
+                let to = BattleCommand::MENU
+                    .iter()
+                    .position(|c| *c == committed)
+                    .expect("the committed arm is a ring arm");
+                let landed = axis(&bcu::MENU_SEATS[to]);
+                let extreme = bcu::MENU_SEATS
+                    .iter()
+                    .map(axis)
+                    .reduce(|a, b| if want_max { a.max(b) } else { a.min(b) })
+                    .unwrap();
+                assert_eq!(
+                    landed, extreme,
+                    "from arm {from}, the press did not land on the outermost \
+                     drawn chip along its axis (want_max={want_max})"
                 );
-                continue;
             }
-            assert_eq!(
-                a.plate_origin().1,
-                b.plate_origin().1,
-                "the Left/Right step off entry {from} left its drawn row"
-            );
         }
     }
 

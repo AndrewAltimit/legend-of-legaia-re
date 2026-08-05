@@ -20,10 +20,13 @@
 //! rotation takes the shortest-path 12-bit-angle step. The per-tick phase
 //! advance is retail-pinned when the clip carries its entry's rate byte:
 //! `FUN_80047430` advances the node's 12.4 cursor by
-//! `(frame_dt * actor[+0x21D] * record[+0x78]) >> 1` per frame, which with the
-//! normal `+0x21D == 4` and a 1-frame delta is `rate / 8` keyframes per tick
-//! ([`step_for_rate`]). A zero rate (clip built without entry context) keeps
-//! the historical display default.
+//! `(frame_dt * actor[+0x21D] * record[+0x78]) >> 1` per frame (`>> 2` on
+//! the idle branch), where `actor[+0x21D]` is the per-actor anim-rate byte
+//! (normal `8` - the arts slow-motion channel, see
+//! `legaia_engine_vm::battle_anim_rate`). [`step_for_rate`] is the idle
+//! advance at the normal rate; [`MonsterAnimPlayer::tick_rated`] applies the
+//! rate and the idle/action branch split. A zero clip rate (clip built
+//! without entry context) keeps the historical display default.
 
 use legaia_anm::PoseFrame;
 use legaia_asset::monster_archive::{MonsterAnimation, PartPose};
@@ -59,14 +62,22 @@ pub struct MonsterAnimPlayer {
     finished: bool,
 }
 
-/// Retail-pinned per-tick phase advance for an entry rate byte: the
-/// `FUN_80047430` cursor delta `(1 * 4 * rate) >> 1` = `2 * rate` units of
-/// 1/16 keyframe, scaled to this player's 8.8 phase (`rate * 32`). A zero
-/// rate (no entry context) falls back to the historical display default
-/// (`64`, which equals rate `2` - the faster of the two retail values).
+/// Retail-pinned **base** per-tick phase advance for an entry rate byte:
+/// the `FUN_80047430` idle-branch cursor delta at the normal anim rate -
+/// `(dt * 8 * rate) >> 2` per game frame, per engine tick `2 * rate` units
+/// of 1/16 keyframe, scaled to this player's 8.8 phase (`rate * 32`). A
+/// zero rate (no entry context) falls back to the historical display
+/// default (`64`, which equals clip rate `2`).
+///
+/// This is the **idle** advance; a playing action clip runs double
+/// (`>> 1` vs `>> 2` at `0x800476EC..0x8004775C`), and both scale by the
+/// per-actor anim-rate byte `actor[+0x21D]` - see
+/// [`MonsterAnimPlayer::tick_rated`] and
+/// `legaia_engine_vm::battle_anim_rate`.
 // PORT: FUN_80047430 - the per-frame anim-node cursor advance
-// (`node+0x68 += (DAT_1F800393 * actor[+0x21D] * record[+0x78]) >> 1`),
-// reduced to the normal case `frame_dt = 1`, `actor[+0x21D] = 4`.
+// (`node+0x68 += (DAT_1F800393 * actor[+0x21D] * record[+0x78]) >> 1`, idle
+// branch `>> 2`), reduced to the idle case at the normal rate
+// `actor[+0x21D] = 8` with a 1-vsync engine tick.
 pub fn step_for_rate(rate: u8) -> u32 {
     if rate == 0 { 64 } else { rate as u32 * 32 }
 }
@@ -136,16 +147,36 @@ impl MonsterAnimPlayer {
     /// player wraps over the clip (`PoseFrame::finished` always `false`); a
     /// one-shot player clamps at the last keyframe and reports `finished`.
     pub fn tick(&mut self) -> PoseFrame {
+        self.advance(self.step)
+    }
+
+    /// Advance one tick under the retail anim-rate law: the effective step is
+    /// `base_step * rate * (idle ? 1 : 2) / 8`
+    /// (`legaia_engine_vm::battle_anim_rate::scaled_anim_step`, mirroring the
+    /// `FUN_80047430` `>> 1` / `>> 2` branch pair). At the normal rate `8` an
+    /// action clip runs at retail's double-idle speed; the arts slow-motion
+    /// rates (`4` / `2` / `0`) stretch or freeze it.
+    // REF: FUN_80047430 (the rate-scaled cursor advance)
+    pub fn tick_rated(
+        &mut self,
+        rate: legaia_engine_vm::battle_anim_rate::AnimRate,
+        idle: bool,
+    ) -> PoseFrame {
+        let step = legaia_engine_vm::battle_anim_rate::scaled_anim_step(self.step, rate, idle);
+        self.advance(step)
+    }
+
+    fn advance(&mut self, step: u32) -> PoseFrame {
         let total = self.frame_count * PHASE_ONE;
         let (f0, f1);
         if self.looping {
-            self.phase = (self.phase + self.step) % total;
+            self.phase = (self.phase + step) % total;
             f0 = (self.phase >> PHASE_FRAC_BITS) as usize % self.frames.len();
             f1 = (f0 + 1) % self.frames.len();
         } else {
             // One-shot: clamp the cursor on the final keyframe.
             let last = (self.frame_count - 1) * PHASE_ONE;
-            self.phase = (self.phase + self.step).min(last);
+            self.phase = (self.phase + step).min(last);
             self.finished = self.phase >= last;
             f0 = (self.phase >> PHASE_FRAC_BITS) as usize % self.frames.len();
             f1 = (f0 + 1).min(self.frames.len() - 1);

@@ -3,16 +3,19 @@
 //!
 //! PORT: FUN_800480d8
 //!
-//! NOT WIRED: every one of the five calls this pass sequences is a retail
-//! function this crate does not own. `FUN_8004A908` (tint / fade), `FUN_80048A08`
-//! (the TMD draw pass), `FUN_80049348` (the arts after-image walk),
-//! `FUN_8005112C` (the per-character signature effect) and `FUN_801F7B88` all
-//! live on the battle side, and the engine's battle render path draws party and
-//! monster bodies directly from `legaia_engine_core`'s battle scene rather than
-//! through a per-actor call sequence. So the port is the **schedule**, not the
-//! calls: [`battle_actor_tick`] returns the ordered [`BattleDrawStep`] list and
-//! the colour word to stamp, and a host that grows those five passes replays it
-//! verbatim. Nothing calls it today.
+//! NOT WIRED: the calls this pass sequences are retail functions this crate
+//! does not own - `FUN_8004A908` (tint / fade), `FUN_80048A08` (the TMD draw
+//! pass), `FUN_8005112C` (the per-character signature effect) and
+//! `FUN_801F7B88` - and the engine's battle render path draws party and
+//! monster bodies directly from `legaia_engine_core`'s battle scene rather
+//! than through a per-actor call sequence. So the port is the **schedule**,
+//! not the calls: [`battle_actor_tick`] returns the ordered
+//! [`BattleDrawStep`] list and the colour word to stamp, and a host that
+//! grows those passes replays it verbatim. Nothing calls the schedule today.
+//! One of the five sequenced calls now runs live by another route:
+//! `FUN_80049348` (the arts after-image walk) is ported as
+//! `legaia_engine_core::battle_afterimage` + `World::battle_ghost_draws`,
+//! which both hosts draw per battle frame.
 //!
 //! Its own retail caller is **`FUN_8001ADA4`** at `8001AEF4`
 //! (`jal 0x800480d8` with `a0 = s0`, under the `slti v0,v0,0xa1` guard that

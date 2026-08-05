@@ -39,7 +39,14 @@ fn battle_with(monster: MonsterDef, party_spd: u16) -> World {
     w.set_formation_table(table, catalog);
     w.mode = SceneMode::Field;
     assert!(w.trigger_scripted_battle(1), "formation row 1 registers");
-    w.tick();
+    // The scripted entry runs the field-to-battle intro transition
+    // (132 display frames) before the mode flips.
+    for _ in 0..200 {
+        if w.mode == SceneMode::Battle {
+            break;
+        }
+        w.tick();
+    }
     assert_eq!(w.mode, SceneMode::Battle);
     w
 }

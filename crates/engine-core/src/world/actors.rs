@@ -237,8 +237,47 @@ impl World {
             let actor = &mut self.actors[i];
             let frame = if let Some(player) = &mut actor.battle_animation {
                 let before = player.current_frame();
-                actor.pose_frame = Some(player.tick());
+                // Retail rate law (`FUN_80047430`): the cursor advance
+                // scales by the per-actor anim-rate byte `+0x21D` - the
+                // arts slow-motion channel - and the idle branch runs at
+                // half the action-clip shift (`>> 2` vs `>> 1`).
+                let rate = actor.battle.anim_rate;
+                let idle = actor.battle.current_anim == 0 && actor.battle_reaction.is_none();
+                let pose = player.tick_rated(rate, idle);
                 let after = player.current_frame();
+                let clip_tag = player.action_id();
+                // History-ring push (retail `FUN_80047430`
+                // `0x80047E58..0x80048060`): slot 0 takes this frame's pose
+                // + position; the arts after-image walk samples it. The
+                // ring-id gate: party ghosts only on the committed dynamic
+                // slot `0x11` (the Super / Miracle SpecialStarter dash);
+                // monster ring ids are `clip_tag + 0x10`, so any non-idle
+                // tag is eligible.
+                // Retail's monster ring id is the committed clip's tag; the
+                // engine's ambient monster loop is `idle_animation`'s pick,
+                // which (because `animations` filters malformed entries) may
+                // wear a non-zero tag - so the loop-player state, not the
+                // tag alone, is what maps retail's "id 0 = idle" here.
+                let non_idle =
+                    actor.battle_staged_anim.is_some() || actor.battle_reaction.is_some();
+                let ghost_eligible = if actor.battle_monster_id.is_none() {
+                    actor.battle.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B
+                } else {
+                    non_idle && clip_tag != 0
+                };
+                actor.battle_pose_history.push_front(BattleGhostFrame {
+                    pose: pose.clone(),
+                    pos: [
+                        i32::from(actor.move_state.world_x),
+                        i32::from(actor.move_state.world_y),
+                        i32::from(actor.move_state.world_z),
+                    ],
+                    ghost_eligible,
+                });
+                actor
+                    .battle_pose_history
+                    .truncate(crate::battle_afterimage::HISTORY_DEPTH);
+                actor.pose_frame = Some(pose);
                 if after < before {
                     // Looping clip wrapped: refire the effect script next
                     // cycle (engine cadence choice - see the cursor's docs).
@@ -256,6 +295,10 @@ impl World {
                 self.step_actor_effect_script(i, frame);
             }
         }
+        // The move-FX streak counter walk (retail `FUN_801E09F8` phase 1):
+        // `ctx[+0x6C6]` falls 4 per frame, shrinking the trail's half-width
+        // and scheduling the afterimage -> ribbon emitter handoff.
+        self.move_fx_streak.tick_counter();
     }
 
     /// Walk actor `i`'s committed effect script for one frame and queue the
@@ -355,6 +398,53 @@ impl World {
         self.move_fx_streak
     }
 
+    /// Plan this frame's arts after-image ghosts - the engine seat of the
+    /// retail per-actor walk `FUN_80049348` (see
+    /// [`crate::battle_afterimage`]). For every battle actor with a pose
+    /// history, sample the two rate-scheduled ring depths, keep the
+    /// ghost-eligible ones, and resolve each ghost's flat additive colour
+    /// (per-character base from the SCUS `0x80076908` table via the
+    /// present-party ordinal; monsters share the `0x80076914` word; each
+    /// drawn ghost decays by `0x101010`). Hosts draw each returned pose as
+    /// a flat-coloured additive copy of the actor's mesh, behind the live
+    /// body (retail pushes the ghost `0x50` OT buckets deeper).
+    // REF: FUN_80049348 (the walk; kernel in `crate::battle_afterimage`)
+    pub fn battle_ghost_draws(&self) -> Vec<BattleGhostDraw> {
+        use crate::battle_afterimage as ai;
+        let mut out = Vec::new();
+        for (i, actor) in self.actors.iter().enumerate() {
+            if actor.battle_pose_history.is_empty() {
+                continue;
+            }
+            let monster = actor.battle_monster_id.is_some();
+            let base = if monster {
+                ai::GHOST_COLOR_MONSTER
+            } else {
+                *ai::GHOST_COLOR_PARTY
+                    .get(self.party_roster_slot(i))
+                    .unwrap_or(&ai::GHOST_COLOR_MONSTER)
+            };
+            let hist = &actor.battle_pose_history;
+            let plans = ai::plan_ghosts(actor.battle.anim_rate.get(), monster, base, |depth| {
+                hist.get(depth.saturating_sub(1))
+                    .map(|f| f.ghost_eligible)
+                    .unwrap_or(false)
+            });
+            for p in plans {
+                let Some(f) = hist.get(p.depth.saturating_sub(1)) else {
+                    continue;
+                };
+                out.push(BattleGhostDraw {
+                    actor_slot: i as u8,
+                    pos: f.pos,
+                    pose: f.pose.clone(),
+                    color: p.color,
+                });
+            }
+        }
+        out
+    }
+
     /// Commit every actor's staged battle anim id (`queued_anim` vs
     /// `current_anim`) through the retail anim-commit ladder. Engine port of
     /// the per-frame consumer that converges `+0x1D9` toward `+0x1DA`:
@@ -399,6 +489,39 @@ impl World {
         // dynamic slot number - so the latch keeps the RAW staged id, which
         // is the id space both battle-camera dispatch tables index.
         self.actors[i].battle.latched_anim = q;
+        // The arts slow-motion arms (`FUN_8004AD80`; kernel
+        // `legaia_engine_vm::battle_anim_rate`). Order is retail's: the
+        // unconditional decay first (`0x8004B080` - a non-normal actor's
+        // committing clip rises to half speed), then the staged-id arms.
+        // The SpecialStarter (`0x1A`) freezes every slot and puts the
+        // acting actor at quarter speed; an art constant (`>= 0x1B`) drops
+        // the whole battle to half speed (quarter under an armed
+        // `ctx[+0x243]`). The restore back to normal is the SM's Done arm
+        // (`FUN_801E93C8` via `battle_gauge_rearm::rearm_gauge`).
+        {
+            use vm::battle_anim_rate as rl;
+            let decayed = rl::commit_rate_decay(self.actors[i].battle.anim_rate);
+            self.actors[i].battle.anim_rate = decayed;
+            let marker = self.battle_ctx.gauge_rearm_latch != 0;
+            // Party-ness is the actor's identity, not its slot: the engine
+            // seats monsters wherever the formation put them (retail's
+            // 0..2 / 3..7 split is `battle_monster_id` here).
+            let is_party = self.actors[i].battle_monster_id.is_none();
+            match rl::staged_commit_rate_effect(q, is_party, marker) {
+                rl::CommitRateEffect::StarterFreeze => {
+                    for a in self.actors.iter_mut() {
+                        a.battle.anim_rate = rl::AnimRate(rl::RATE_FROZEN);
+                    }
+                    self.actors[i].battle.anim_rate = rl::AnimRate(rl::RATE_QUARTER);
+                }
+                rl::CommitRateEffect::StrikeSlow { rate } => {
+                    for a in self.actors.iter_mut() {
+                        a.battle.anim_rate = rl::AnimRate(rate);
+                    }
+                }
+                rl::CommitRateEffect::None => {}
+            }
+        }
         let actor = &self.actors[i];
         // Staged idle: converge and resume the loop. A staged clip in
         // flight is dropped (retail: the commit replaces the playing

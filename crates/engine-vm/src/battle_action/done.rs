@@ -88,7 +88,7 @@ fn rearm_action_gauge<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut Batt
     for i in 0..GAUGE_SLOTS {
         if let Some(a) = host.actor(i as u8) {
             slots.latch[i] = a.render_flag;
-            slots.arm_width[i] = a.impact_step;
+            slots.arm_width[i] = a.anim_rate.get();
         }
     }
     if !rearm_gauge(staged, &mut slots) {
@@ -97,7 +97,7 @@ fn rearm_action_gauge<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut Batt
     for i in 0..GAUGE_SLOTS {
         if let Some(a) = host.actor_mut(i as u8) {
             a.render_flag = slots.latch[i];
-            a.impact_step = slots.arm_width[i];
+            a.anim_rate = crate::battle_anim_rate::AnimRate(slots.arm_width[i]);
         }
     }
     ctx.gauge_rearm_latch = 0;

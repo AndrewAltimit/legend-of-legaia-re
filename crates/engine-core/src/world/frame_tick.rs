@@ -732,6 +732,15 @@ impl World {
                 self.tick_screen_fx();
                 if self.live_gameplay_loop {
                     self.live_field_tick();
+                } else {
+                    // `--no-live-loop` gates the encounter *roll* only: a
+                    // battle something else armed (a scripted carrier's
+                    // transition) is still clocked and drained, so the
+                    // intro plays and the fight opens.
+                    self.tick_encounter();
+                    if let Some(roll) = self.drain_encounter_formation() {
+                        self.begin_encounter_battle(roll);
+                    }
                 }
                 None
             }
@@ -764,6 +773,14 @@ impl World {
                 // record) execute concurrently, same as the field arm - both
                 // are retail-frame paced.
                 self.step_spawned_record_contexts();
+                // Clock a committed overworld encounter's field-to-battle
+                // transition (the intro overlay rides this phase) and open
+                // the fight when it elapses - the world-map twin of the
+                // field drain in `live_field_tick`.
+                self.tick_encounter();
+                if let Some(roll) = self.drain_encounter_formation() {
+                    self.enter_world_map_battle(roll);
+                }
                 self.tick_world_map();
                 None
             }

@@ -111,12 +111,12 @@ fn acting_slot(w: &World) -> usize {
 /// Retail's open flow is three prompts deep - `Begin` on the round prompt,
 /// the ring's `Attack` arm, `Auto` on the attack-mode prompt, then the target
 /// cursor - so this steers by **phase** rather than by a press count: the only
-/// non-Cross input it ever needs is the Down that walks the ring cursor off
-/// its opening `Item` arm.
+/// non-Cross input it ever needs is the Left that seats the ring cursor on
+/// the `Attack` arm (spatial seating - Left is the diamond's left arm).
 fn confirm_attack(w: &mut World) {
     use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
     let cross = InputState::mask_of([PadButton::Cross]);
-    let down = InputState::mask_of([PadButton::Down]);
+    let left = InputState::mask_of([PadButton::Left]);
     let mut release = false;
     for _ in 0..256 {
         let Some(session) = w.battle_command.as_ref() else {
@@ -129,7 +129,7 @@ fn confirm_attack(w: &mut World) {
                 CommandPhase::Menu { .. }
                     if session.menu_command() != Some(BattleCommand::Attack) =>
                 {
-                    down
+                    left
                 }
                 _ => cross,
             }

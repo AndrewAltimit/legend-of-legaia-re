@@ -1697,7 +1697,7 @@ Port: `engine-core::action_effect_script::MoveFxStreak` is the block (record id 
 
 Two disclosed departures. The **projection** is the engine camera's, not the GTE's: `project_streak_corners_mvp` takes the screen-space gradient of the battle MVP and fans the corners out along the screen axes, which is the same operation `FUN_800195A8` performs in view space - but the engine's battle camera carries no GTE rotation/translation pair to feed the exact port (`billboard::project_billboard`). And retail links each packet at the projected billboard's own OT bucket, inside the scene; the engine's screen-space batch draws them over the actors instead of interleaved with them.
 
-The chained-ribbon sibling `FUN_801E1D98` stays unwired. Its projector uses a constant half-size and no Y push, so it consumes neither context word, and which of the two emitters a move takes is a dispatcher choice (`0x801E0CA0` vs `0x801E0CD0`) that is not decoded.
+The chained-ribbon sibling `FUN_801E1D98` is wired through the same pass, and the dispatcher choice (`0x801E0CA0` vs `0x801E0CD0`) is decoded: the phase driver `FUN_801E09F8` walks the counter `ctx[+0x6C6]` down `DAT_1F800393 << 2` per frame and selects by value - party afterimage at `>= 0x281`, ribbon below `0x201` (nothing in the dead band), monster ribbon at every value (`0x801E0C64..0x801E0CE8`). Port: `streak_pass::streak_quads_scheduled` + `engine-core::MoveFxStreak::tick_counter`. See [`battle-action.md` § Arts presentation](battle-action.md#arts-presentation-slow-motion-and-after-image-ghosts).
 
 **Reachability today.** The pass is wired into the native window's screen-FX
 builder, but a live `--battle` fight emits **zero** quads. It is gated on
@@ -2785,7 +2785,7 @@ an unavailable command, while a *forbidden* one wears the red cross-out X
 
 **Port.** The cluster's draw side is
 [`engine-ui::battle_command_ui`](../../crates/engine-ui/src/battle_command_ui.rs) -
-plate run, both clusters, the shared face-button cell and the `-` chip - and
+plate run, both clusters, the shared D-pad glyph cell and the `-` chip - and
 both battle hosts seat their command menu through it, so the menu is chips
 rather than a text list on either. Every chip sits on a pinned arm: the two
 clusters are three **phases**, not two rows of one menu, and the phase a frame
@@ -3678,11 +3678,25 @@ by `World::tick_battle_intro` for as long as the encounter session sits in its
 advancing, and bit 0 comes from the post-switch spin test, so `ready == 3` is
 the completion state.
 
-The **visual** half is live end to end. The five style kernels are ported in
-`engine-vm` and drawn by `engine-render::battle_intro`, the per-frame
-working-set owner the native play window arms for every encounter (the browser
-hosts have no screen-space primitive path - see
-[`host-drift.md`](../tooling/host-drift.md)):
+**Every battle entry rides this phase**, not just the field step roll: a
+scripted carrier fight (the op-`0x3E FF` / dialogue-engage path,
+`World::begin_field_carrier_battle`) and a world-map contact
+(`World::begin_world_map_encounter`) both arm the same session `Transition`
+instead of flipping the mode on the spot - retail runs the intro overlay for
+all of them. A scene with no session of its own (towns, the overworld) gets a
+bare bracket installed on demand (`World::install_encounter_bracket`), a
+post-battle `Grace` window never swallows a story fight (it is reset before
+arming), and the drain into the actual entry runs in every relevant mode:
+`live_field_tick` under the live loop, a live-loop-off arm of the `Field`
+tick (`--no-live-loop` gates the roll, never an armed fight), and the
+`WorldMap` tick (which drains into `World::enter_world_map_battle`).
+
+The **visual** half is live end to end, on both hosts. The five style kernels
+are ported in `engine-vm` and drawn by `engine-ui::battle_intro` (re-exported
+at its old `engine-render::battle_intro` path), the per-frame working-set
+owner the native play window **and** the browser play page each arm for every
+encounter - the hosts differ only in how the captured field frame is read back
+(see [`host-drift.md`](../tooling/host-drift.md#screen-space-psx-primitives-across-the-two-hosts)):
 
 | Style | Retail tick | Simulation port | Packet builder port |
 |---|---|---|---|
@@ -3694,10 +3708,12 @@ hosts have no screen-space primitive path - see
 
 The chain: `BattleIntro` holds the style's working set between frames and
 synchronises its clock from the live transition entity; the one-shot field
-frame capture (`Renderer::capture_rgba` → `vram_capture`) lands the drawn
-field in the texture pages each style's packets name; and the emitted
-`ScreenPrim`s composite over the scene through
-`RenderTarget::SceneWithScreenPrims`.
+frame capture lands the drawn field in the texture pages each style's packets
+name (`Renderer::capture_rgba` → `land_capture_rgba` on the native window,
+`gl.readPixels` → `play_intro_land_capture` on the page); and the emitted
+`ScreenPrim`s composite over the scene - through
+`RenderTarget::SceneWithScreenPrims` natively, through the page's
+screen-prim pass in the browser.
 
 ### The curtain is a render-to-texture, and only its row pass is on screen
 
@@ -3731,17 +3747,36 @@ rasterised somewhere, which `engine-render::battle_intro`'s
 has no render-to-VRAM target. Reading the two rects as "two copies of the same
 capture" instead left the curtain stretching in one axis only.
 
-What is still missing is the accumulation the effect rides on. Retail never
-clears: the transition's own `FUN_8004695C(0x80808)` subtracts 8 per channel
-per frame from the display buffer, so a scanline drawn on one frame decays over
-~31 frames behind the ones drawn after it, and the mid-pass emitter does the
-same to the intermediate at a steeper rate. The port composes each frame from
-scratch over `backdrop_prim`, so the gaps between strips are pure black rather
-than a fading trail, and the transition reads far darker than retail's from
-about a third of the way in. `FUN_801D1D9C` is only dumped at a VA that aliases
-another overlay ([`call-target-integrity.md`](../tooling/call-target-integrity.md)),
-so its exact decay is not established; the port clears the intermediate instead
-of guessing.
+The accumulation the effect rides on is carried, and both of its decays are
+pinned from the overlay's own image. Retail never clears. The display side:
+`FUN_801D11D0` re-arms the screen wash `FUN_8004695C(0x80808)` unconditionally
+at the top of **every** frame (`0x801D1228..0x801D1230`), so a scanline drawn
+on one frame decays by 8 per channel behind the ones drawn after it - ~31
+frames to black. The intermediate side: the mid-pass emitter `FUN_801D1D9C`
+(dumped from the `field_battle_intro` image itself,
+`ghidra/scripts/funcs/overlay_field_battle_intro_801d1d9c.txt` - the old
+aliased-VA caveat is retired) is `FUN_80024EE4`'s shape pointed one screen
+right: a five-word `0x2B` semi-transparent quad over `x 0x140..0x140+W,
+y -4..H` (the display halfwords `_DAT_1F80038C` / `_DAT_1F80038E` biased by
+`0x140`) behind a `SetDrawMode((abr << 5) | 0xE)` packet at the same layer.
+With the curtain's `(0x1EA, 2, 0x808080)` arguments that subtracts `0x80` per
+channel from the whole intermediate each frame, between the draw-area install
+at `0x1F4` and the column strips at `0x1C2` - a culled column ghosts out over
+two frames rather than vanishing.
+
+The port carries both: the intermediate persists across frames and decays by
+one mid-pass step instead of being cleared, and a CPU model of the display
+buffer - seeded from the same field capture retail's init lands in both
+display buffers, decayed one wash step per frame, overdrawn with each frame's
+row strips - is uploaded into a spare VRAM rect and drawn as textured backdrop
+quads behind the live strips, so the gaps between departing rows show the
+fading trail rather than black
+(`engine-render::battle_intro::CURTAIN_TRAIL_RECT` + siblings). Two disclosed
+approximations: the wash drain (`FUN_80046978`) scales its constant by the
+scratchpad brightness byte, taken at full brightness; and retail's display is
+double-buffered, so its per-buffer trail may interleave at half this rate -
+settling that needs a retail frame capture of one of the three curtain
+formations (hypothesis, graded inference).
 
 ### The window has no field in it
 
@@ -3793,7 +3828,7 @@ the working-set arithmetic.
 
 The battle command UI is **not one menu**. `FUN_801D0748` walks the flow byte
 `ctx[+0x06]` through three separate selection surfaces, each a small cluster of
-plate chips around a face-button glyph, and none of them is a scrolling list.
+plate chips around a D-pad glyph, and none of them is a scrolling list.
 The whole sequence is readable off the disc: the dispatcher's state chain is a
 binary-search `beq` ladder at `0x801D0C84`, and every chip's seat and label
 comes from the [screen-element placement table](#the-widget-class-table---where-every-chrome-sprite-comes-from)
@@ -3822,24 +3857,39 @@ is the only way into it, and the action SM's round end (`0x801E67E8`) writes
 opens with `Begin` / `Run`, and each party member then picks from the ring in
 turn.
 
-### Each surface is a face-button map
+### Each surface is a D-pad map
 
-There is no cursor. Every chip is one face button, which is why a glyph sits at
-the centre of each cluster (`FUN_801DB8F4(x, y)`, the textured-quad emitter,
-drawn every frame of all three states).
+There is no face-button map. Every chip is seated on a **D-pad arm** and its
+`s2` test is the **packed direction mask** for that arm (packed = byte-swapped
+against the raw BIOS word - the trap
+[`s2` is not the pad](#s2-is-not-the-pad-and-how-a-command-commits) catalogues;
+an earlier revision of this table read the same masks raw and attributed the
+arms to Triangle / Square / Circle / Cross). That is why a **D-pad glyph** sits
+at the centre of each cluster (`FUN_801DB8F4(x, y)`, the textured-quad emitter,
+drawn every frame of all three states). Capture cross-check from the
+`cort_evolved_battle_first_menu` state
+(`scripts/pcsx-redux/autorun_battle_item_window_capture.lua`): in the ring, a
+single Up press opened the item window within three vsyncs while nineteen
+Triangle presses changed nothing.
 
-| State | Button | Chip | Next |
+| State | Packed mask | Chip | Next |
 |---|---|---|---|
-| `0x1E` | Square / confirm mask `0x800846D0` | `Begin` | `0x28` (or `0x6E`) |
-| `0x1E` | Circle | `Run` | `0x32` |
-| `0x28` | Triangle | `Item` (up arm) | `0x3C` |
-| `0x28` | Square / confirm mask | `Attack` (left arm) | `0x78` / `0x5A` / `0x50` by option `0x800846C4` |
-| `0x28` | Circle | Ra-Seru magic (right arm) | `0x46` |
-| `0x28` | Cross | `Spirit` (down arm) | commit; `0x6E` on the last member |
+| `0x1E` | Left `0x8000` / confirm mask `0x800846D0` | `Begin` | `0x28` (or `0x6E`) |
+| `0x1E` | Right `0x2000` | `Run` | `0x32` |
+| `0x28` | Up `0x1000` (`0x801D1364`) | `Item` (up arm) | `0x3C` |
+| `0x28` | Left `0x8000` (`0x801D1404`) | `Attack` (left arm) | `0x78` / `0x5A` / `0x50` by option `0x800846C4` |
+| `0x28` | Right `0x2000` (`0x801D136C`) | Ra-Seru magic (right arm) | `0x46` |
+| `0x28` | Down `0x4000` (`0x801D1544`) | `Spirit` (down arm) | commit; `0x6E` on the last member |
 | `0x28` | cancel mask `0x800846D4` | - | back to `0x1E` |
-| `0x78` | Square / confirm mask | `Auto` | `0x5A` (target cursor) |
-| `0x78` | Circle | `Command` | `0x50` (directional arts entry) |
+| `0x78` | Left / confirm mask | `Auto` | `0x5A` (target cursor) |
+| `0x78` | Right | `Command` | `0x50` (directional arts entry) |
 | `0x78` | cancel mask | - | back to `0x28` |
+
+With the selection widget up (`_DAT_800846C8` / `ctx[+0x275]`), the same table
+reads as highlight-then-confirm: the pre-dispatch block walks the highlight on
+direction presses and rewrites `s2` to the highlighted arm's mask on the
+confirm press, so each handler's direction test doubles as "take the
+highlighted chip".
 
 `Attack` is therefore **not** the plain strike: it is the door to the
 attack-mode prompt, and option `0x800846C4` decides whether that prompt is shown
@@ -3906,9 +3956,48 @@ seating for each; `engine-core::battle_open` composes the banner and
 set, and which a mid-round reopen does not. The ambush's lost round is already
 the `ctx[+0x290]` side lockout in `World::reseed_initiative`.
 
-The port keeps a cursor on top of the face-button seating so a keyboard host has
-something to move: Left / Right toggle within the drawn row, Up / Down walk the
-ring linearly.
+The port follows retail's **direct-commit press**: a direction press takes the
+chip drawn on that side of the screen in the same frame, no confirm. The map is
+spatial, mirroring retail's own per-arm dispatch: on the ring Up commits
+`Item`, Left `Attack`, Right the magic arm, Down `Spirit`
+(`battle_input::ring_seat`), and on both two-chip prompts Left is always the
+left chip and Right the right chip (`battle_input::pair_seat`). Cross
+additionally commits whatever the cursor rests on - the route a scripted
+harness that cannot aim a direction drives - and Circle keeps its back-out /
+outright-`Run` roles. `engine-shell`'s
+`direction_presses_land_on_the_chip_drawn_on_that_side` holds the map equal to
+the drawn seating.
+
+## The battle item window (`0x3C`) - packet-pinned
+
+What state `0x3C` actually puts on screen, read out of its own display list:
+the `battle_item_window` / `battle_item_window_cursor1` captures
+(`scripts/pcsx-redux/autorun_battle_item_window_capture.lua`, pad-walked from
+`cort_evolved_battle_first_menu`) hold the window open and one Down press
+apart, and the OT walk gives:
+
+| Piece | Pin |
+|---|---|
+| item-list window | system-UI window-skin tile grid (widget page `(896, 256)`, CLUT row 511 sub-palette 2), spanning x `166..=313`, y `28..=164` |
+| description window | same skin, x `8..=167`, y `122..=164`; shows the highlighted item's info-window line |
+| hand cursor | 16x16 pointing-finger `POLY_FT4` (CLUT row 511 sub-palette 7) at `(167, 45 + 14*row)` - the two captures pin the row pitch at 14 |
+| rows | eight per page; `PAGE n/m` header top-right, counts right-aligned at the interior's right edge |
+| breadcrumbs | gold tab plates `Begin` \| acting member's name \| `Item` top-left, replacing the actor-name plaque while the window is up |
+
+Content pens (row text, header, description line, breadcrumb seats) are
+screenshot-read off the same captures - the glyph packets ride a different
+draw pass than the window tiles.
+
+**Port.** `engine-ui::battle_item_ui` carries the pins and composes the two
+windows through the shared 9-slice menu-window chrome + tab-banner 3-slice +
+save-select hand cell; the projection (dedup row list with the cursor mapped
+into it, disc description, breadcrumb name, target roster) is
+`engine-core::World::battle_item_menu_model` /
+`InventoryUseSession::menu_view`, consumed by both play hosts. Known
+divergences, disclosed in the module doc: breadcrumb tabs are sized per label
+(the engine font is wider than retail's tab glyphs), and target select swaps
+the list column to the roster - retail's state-`0x64` target panel is not yet
+packet-pinned.
 
 ## See also
 

@@ -69,9 +69,15 @@ fn a_battle_entered_with_default_flags_still_resolves() {
         w.trigger_scripted_battle(0) || w.trigger_scripted_battle(1),
         "the vanilla formation table should register a scripted row"
     );
-    // One ordinary `tick` in Field mode drains the latched scripted battle
-    // through `tick_field_carriers` - no test-side glue.
-    w.tick();
+    // Ordinary `tick`s in Field mode drain the latched scripted battle
+    // through `tick_field_carriers` and clock its intro transition (132
+    // display frames) - no test-side glue.
+    for _ in 0..200 {
+        if w.mode == SceneMode::Battle {
+            break;
+        }
+        w.tick();
+    }
     assert_eq!(
         w.mode,
         SceneMode::Battle,
@@ -103,7 +109,14 @@ fn a_battle_entered_with_default_flags_still_resolves() {
 fn party_hp_and_mp_survive_the_battle() {
     let mut w = world_in_a_battle();
     assert!(w.trigger_scripted_battle(0) || w.trigger_scripted_battle(1));
-    w.tick();
+    // The scripted entry runs the field-to-battle intro transition
+    // (132 display frames) before the mode flips.
+    for _ in 0..200 {
+        if w.mode == SceneMode::Battle {
+            break;
+        }
+        w.tick();
+    }
     assert_eq!(w.mode, SceneMode::Battle);
 
     // Take a chunk out of party slot 0 mid-battle and spend some MP, the way
@@ -145,7 +158,14 @@ fn party_hp_and_mp_survive_the_battle() {
 fn a_party_wipe_raises_game_over_and_leaves_the_party_down() {
     let mut w = world_in_a_battle();
     assert!(w.trigger_scripted_battle(0) || w.trigger_scripted_battle(1));
-    w.tick();
+    // The scripted entry runs the field-to-battle intro transition
+    // (132 display frames) before the mode flips.
+    for _ in 0..200 {
+        if w.mode == SceneMode::Battle {
+            break;
+        }
+        w.tick();
+    }
     assert_eq!(w.mode, SceneMode::Battle);
 
     for i in 0..3 {
@@ -185,7 +205,15 @@ fn a_party_wipe_raises_game_over_and_leaves_the_party_down() {
 fn a_victory_arms_the_spoils_panel() {
     let mut w = world_in_a_battle();
     assert!(w.trigger_scripted_battle(0) || w.trigger_scripted_battle(1));
-    w.tick();
+    // Through the intro transition into the fight first, so the resolution
+    // loop below cannot pass vacuously off the pre-battle Field mode.
+    for _ in 0..200 {
+        if w.mode == SceneMode::Battle {
+            break;
+        }
+        w.tick();
+    }
+    assert_eq!(w.mode, SceneMode::Battle);
     for _ in 0..20_000 {
         w.tick();
         if w.mode != SceneMode::Battle {
