@@ -286,7 +286,7 @@ hardware, not detail:
   quotient, and the corner lands near `OFX + 2 * IR1` rather than at any
   sentinel - the classic PSX behind-the-lens smear.
 
-Port: [`legaia_engine_render::billboard`](../../crates/engine-render/src/billboard.rs),
+Port: [`legaia_engine_render::billboard`](../../crates/engine-ui/src/billboard.rs),
 which runs both through the same `gte_divide` / `saturate_sxy` kernels the
 `Camera::transform` COP2 oracle is pinned against.
 
@@ -323,7 +323,7 @@ screen above or below the viewport still reads as on-screen.
 
 Port: [`legaia_engine_render::battle_on_screen`](../../crates/engine-render/src/battle_on_screen.rs)
 (`battle_actor_on_screen`), riding
-[`billboard::project_billboard`](../../crates/engine-render/src/billboard.rs).
+[`billboard::project_billboard`](../../crates/engine-ui/src/billboard.rs).
 It is inert, and so is retail's. `0x8005126C` has **no reference of any kind**
 on the disc - no literal address word in any table or actor template, no `jal`,
 no `j`, no PC-relative branch, no `lui`+`addiu` materialisation - across

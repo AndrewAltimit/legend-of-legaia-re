@@ -232,7 +232,7 @@ faithfully.
 
 Toggle is global - apply once per frame before submitting draws.
 
-The [`afterimage`](src/afterimage.rs) module ports the battle move-FX
+The [`afterimage`](../engine-ui/src/afterimage.rs) (wgpu-free in `engine-ui`, re-exported here) module ports the battle move-FX
 streak draw (`FUN_801e1ab0`): `build_afterimage_quad` assembles one
 jittered, semi-transparent textured quad (`POLY_FT4`) from four projected
 screen corners + the move's trail-texture id, reproducing the per-corner
@@ -259,7 +259,7 @@ the renderer uploads once per frame and draws one indexed run at a time
 prim is treated as fully blended (no per-texel STP split yet - faithful for
 the additive afterimage trail and flat quads; documented in the module).
 
-The corner projection itself is ported in [`billboard`](src/billboard.rs)
+The corner projection itself is ported in [`billboard`](../engine-ui/src/billboard.rs)
 (`FUN_800195a8`): `project_billboard` transforms a center point to view
 space under the ambient camera (MVMVA, low-halfword wrap), fans out the
 four ±half-size corners, optionally spins them in-plane (`Rz` from the
