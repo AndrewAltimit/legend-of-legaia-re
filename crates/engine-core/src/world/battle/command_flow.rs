@@ -1271,9 +1271,18 @@ impl World {
             return;
         };
 
-        let ev = if self.input.just_pressed(PadButton::Up) {
+        // Retail's state 0x64 steps the target on the HORIZONTAL pad masks
+        // (`0x2000`/`0x8000` at `0x801D2A50..0x801D2A5C` - the same pair the
+        // ring uses), so during target select Left/Right drive the strip
+        // cursor alongside Up/Down.
+        let target_select = matches!(menu.state, InventoryUseState::TargetSelect { .. });
+        let ev = if self.input.just_pressed(PadButton::Up)
+            || (target_select && self.input.just_pressed(PadButton::Left))
+        {
             Some(InventoryUseInput::Up)
-        } else if self.input.just_pressed(PadButton::Down) {
+        } else if self.input.just_pressed(PadButton::Down)
+            || (target_select && self.input.just_pressed(PadButton::Right))
+        {
             Some(InventoryUseInput::Down)
         } else if self.input.just_pressed(PadButton::Cross) {
             Some(InventoryUseInput::Confirm)
