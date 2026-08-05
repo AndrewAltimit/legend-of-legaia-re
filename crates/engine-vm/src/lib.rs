@@ -112,6 +112,7 @@ pub mod battle_gauge_rearm;
 pub mod battle_ground_grid;
 pub mod battle_helpers;
 pub mod battle_hp_bar;
+pub mod battle_impact_fx;
 pub mod battle_intro_particles;
 pub mod battle_intro_styles;
 pub mod battle_intro_swirl;

@@ -1657,6 +1657,33 @@ impl PlayWindowApp {
                                 }
                                 _ => {}
                             }
+                            // Per-clip impact tint (`FUN_8004CE2C` pass 2
+                            // via `engine-vm::battle_impact_fx`; the world
+                            // tick owns the writes + decay): while the
+                            // actor's +0x21F selector is armed, the packed
+                            // +0x04 colour word rides the same saturated
+                            // DrawCue seam. Overrides the cursor arms (the
+                            // impact target is retail's tint owner) and
+                            // loses to the hit flash below.
+                            {
+                                use legaia_engine_vm::battle_impact_fx as ifx;
+                                if b.impact_state != 0
+                                    && b.render_color != ifx::IMPACT_NEUTRAL_STATE
+                                    && b.render_color != 0
+                                {
+                                    let c = ifx::unpack_actor_state_rgb(b.render_color);
+                                    cue = Some(legaia_engine_render::DrawCue {
+                                        far: [
+                                            f32::from(c[0]) / 255.0,
+                                            f32::from(c[1]) / 255.0,
+                                            f32::from(c[2]) / 255.0,
+                                        ],
+                                        near_z: -1.0,
+                                        far_z: 0.0,
+                                        max_ir0: ifx::IMPACT_TINT_CUE_STRENGTH,
+                                    });
+                                }
+                            }
                             // Hit reaction: the struck actor ramps toward
                             // white for a few frames after damage lands.
                             // Retail's own recolour is the per-actor colour
