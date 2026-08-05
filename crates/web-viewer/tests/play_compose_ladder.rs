@@ -529,6 +529,50 @@ fn rung4_pause_menu(rt: &mut LegaiaRuntime, tally: &mut Tally) -> Result<(), Str
         run(rt, tally, 2);
     }
 
+    // Two rows get a second, deeper visit. Items: confirm a row so the item
+    // action / target surface opens, then step and cancel out. Load: confirm
+    // into the card rack so the read beat and the block grid render, then
+    // cancel without committing (a commit would swap the scene under the
+    // ladder). Both drives are draw-composed per edge.
+    for (row, drive) in [
+        (
+            "Items",
+            [
+                PadButton::Cross.mask(),
+                PadButton::Down.mask(),
+                PadButton::Cross.mask(),
+                PadButton::Down.mask(),
+            ],
+        ),
+        (
+            "Load",
+            [
+                PadButton::Cross.mask(),
+                PadButton::Down.mask(),
+                PadButton::Cross.mask(),
+                PadButton::Right.mask(),
+            ],
+        ),
+    ] {
+        if !rt.play_menu_open_row(row) {
+            return Err(format!("menu row {row} did not re-open"));
+        }
+        for edge in drive {
+            rt.play_menu_input(edge);
+            step(rt, tally);
+            run(rt, tally, 3);
+        }
+        for _ in 0..8 {
+            if !rt.play_menu_is_open() {
+                break;
+            }
+            rt.play_menu_input(PadButton::Circle.mask());
+            step(rt, tally);
+        }
+        rt.play_menu_close();
+        run(rt, tally, 2);
+    }
+
     // The Save row is scene-gated and town01's MAN does not set the bit, so
     // the confirm must refuse - the gate check that keeps this rung honest.
     if rt.play_scene_save_allowed() {

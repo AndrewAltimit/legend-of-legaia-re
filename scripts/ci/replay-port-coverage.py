@@ -212,6 +212,18 @@ class FileCoverage:
         self.spans.append((line_start, line_end, executed))
 
     def finalize(self):
+        # One llvm-cov export carries a record for every binary in the target
+        # dir - `cargo llvm-cov --test X` still merges the coverage *mappings*
+        # of the sibling test binaries built earlier into the same report, as
+        # zero-count duplicates of the same functions. Collapse identical
+        # spans with OR before sorting, or an unexecuted duplicate from a
+        # binary the run never launched shadows the executed record and the
+        # entered count collapses (measured: 265 -> 122 on the same run the
+        # moment a second test binary existed in the target dir).
+        merged: dict[tuple[int, int], bool] = {}
+        for lo, hi, ex in self.spans:
+            merged[(lo, hi)] = merged.get((lo, hi), False) or ex
+        self.spans = [(lo, hi, ex) for (lo, hi), ex in merged.items()]
         self.spans.sort(key=lambda s: s[0])
         self._starts = [s[0] for s in self.spans]
 
