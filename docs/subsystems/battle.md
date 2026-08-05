@@ -2030,11 +2030,31 @@ Noa and Gala records are byte-identical across the same pair - the level-up even
 
 ## Battle main dispatcher (`FUN_801D0748`)
 
-11 KB / 182 calls. The top of the per-frame battle loop. Routes through every active battle subsystem (rendering, AI, animation, hit detection).
+11124 bytes / 2781 instructions. The top of the per-frame battle loop: it opens
+by loading the battle context pointer `_DAT_8007BD24` and dispatching on the
+**sub-state byte** at `ctx+6`, then routes through every active battle
+subsystem (rendering, AI, animation, hit detection).
+
+One body serves four game modes. The dumps taken from the battle-action,
+magic-capture, magic-level-up and Muscle Dome captures - and the static
+`overlay_0898` print - are **byte-identical across all 2781 instructions**, so
+"the capture dispatcher", "the level-up tick" and "the dome match controller"
+name the same routine reached in different modes, not three routines at one VA.
+The dome's use of it is written up under
+[`minigame-muscle-dome.md`](minigame-muscle-dome.md); the sub-states `0x1E` /
+`0x32` / `0x6E` / `0xFE` update the camera yaw `_DAT_8007B792`.
 
 ## Hottest battle utility (`FUN_801D8DE8`)
 
-3 KB / 77 incoming refs. The single most-cited battle helper - likely a per-actor utility that every state arm bottoms out into.
+3028 bytes / 757 instructions, 77 incoming refs - the single most-cited battle
+helper, and it is the **HUD element renderer**: `(elem_id, mode, ...)` bounded
+by `sltiu v0,v1,0x50` and dispatched through the 80-entry jump table at
+`0x801CEB68`, one case per on-screen element. Not a per-actor utility. The
+battle HUD and the Muscle Dome plate share it - per-`elem_id` breakdown in
+[`minigame-muscle-dome.md`](minigame-muscle-dome.md#hud-elements-fun_801d8de8)
+and [`functions/battle.md`](../reference/functions/battle.md). The tiny 3- and
+4-instruction bodies at this VA in the fishing / dance / slot-machine /
+debug-menu / Baka Fighter images are a different overlay's occupant.
 
 ## Weapon / effect trail builder (`FUN_80048310` + `FUN_800485BC`)
 

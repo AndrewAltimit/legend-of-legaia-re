@@ -394,6 +394,12 @@ that instant and need not be the pair the slot-A code was linked against.
 Treat all eighteen as data. None is a port site, and the surrounding real
 functions of that band belong to PROT 0900, not to the Muscle Dome.
 
+This is a per-image verdict, not a verdict on the address. In
+`world_map_top_ext.bin` the word at `0x801F69D8` is `addiu sp,sp,-0x70` opening
+a real 643-instruction routine, the top-view tile-visibility dispatcher
+([`functions/renderer.md`](../reference/functions/renderer.md)). Same VA, two
+images, one table head and one function entry.
+
 The four `overlay_muscle_dome_*` rows are the instructive ones, because their
 base is *right* and the label is wrong. PROT 0977 (Muscle Dome) is a slot-A
 overlay; a dome capture's slot B holds whatever render library is resident, and

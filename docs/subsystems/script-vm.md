@@ -1364,6 +1364,14 @@ Both dumps are decompiled-C only (no disassembly), so store order is unverified;
 
 `FUN_801F71E0` (1070 instr) and `FUN_801F5748` (2777 instr, overlay base `0x801CE818`, contains `switchD_801D2830`) iterate the per-actor pointer band based at `0x801C9370` (`= 0x801D0000 - 0x6C90`), touching command fields `+0x1D9`, `+0x1DF` (the [move-power](../formats/move-power.md) action id), `+0x249`, `+0x24D` and the HP field `+0x14C`. They are large, global-entangled queue/command processors, and because the `0x801Fxxxx` VA aliases across the field (0897) and battle (0898) overlays their owning overlay must be confirmed before any port; documented, not ported.
 
+`0x801F71E0` is exactly that alias. The body above is the field-overlay
+occupant, with its own `addiu sp,sp,-0x40` prologue. In **PROT 0967** loaded at
+its own base `0x801F69D8` the same VA is not an entry at all - it is a `bne`
+target inside the tutorial-message routine, and the `lui`/`lw` halves of one
+address load straddle it
+([`functions/battle.md`](../reference/functions/battle.md#801f71e0-is-a-label-not-an-entry)).
+Neither reading generalises past its own image.
+
 > **These rows are mostly VA-aliased or truncated, not standalone field-VM
 > entries.** The direct `overlay_0897_<addr>.txt` dump at many of these VAs is a
 > mis-based slice - a 1-instruction stub carrying only decompiled C, or a

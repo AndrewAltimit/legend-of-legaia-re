@@ -120,7 +120,7 @@ Content-only panel draws in the menu overlay (`overlay_menu` and `overlay_shop_s
 
 | Address | Role |
 |---|---|
-| `80034A6C` | Menu / HUD globals reset. Initialises `0x80084594..0x800845B8` and `0x800846D0..0x800846DC` to default UI palette / cursor positions. Zeros the 512-byte save-data scratch slot at `0x80084340..0x8008453F`. Calls `FUN_8003CE08(0x1A)` (set 4th-flag-bank bit `0x1A`) when `_DAT_8007B868 != 0`. |
+| `80034A6C` | **New-game data-init**, not a menu routine - [details ↓](#80034a6c) - listed here because its seed writes land in the `0x800845xx` window this page's screens read. |
 | `800337B0` | Menu-string formatter and renderer. 27 KB switch-on-mode that drives the character-status / equipment / spell-screen pages via `FUN_8003CD00` (multi-line) and `FUN_80036888` (raw draw) keyed on string buffers at `&DAT_8007B4B0..` and the multi-line label table at `gp + 0x13c + 0x7F86`. |
 | `8004313C` | Inventory active-window setup, gated on party member count (`DAT_80084594`) - [details ↓](#8004313c) |
 | `801D688C` | **Menu cursor-navigation primitive.** `(cursor: *u32, count, mode) -> 0/1/2/3`. The shared list-navigation helper across the menu / shop / save-slot state-handlers. Reads the overlay confirm / cancel pad masks (`DAT_801EF0F0` / `DAT_801EF0F4`) against `_DAT_8007B874`: confirm → SFX cue `0x36`, return `1`; cancel → SFX `0x37`, return `2`. Otherwise (when `count != 0`) reads held-pad `_DAT_8007BB84`: left (`0x1000`) decrements the low-12-bit cursor (when `> 0`), right (`0x4000`) increments it (when `cursor+1 < count`), each playing SFX `0x21` and returning `3` (moved); `mode != 0` is the wrap variant. SFX go through the cue enqueue `FUN_80035B50`. Ported: `engine_core::menu_input::menu_cursor_nav`. `see ghidra/scripts/funcs/overlay_save_ui_select_801d688c.txt`. |
@@ -156,6 +156,29 @@ Callees of the pause/field menu overlay (loaded by the mode-22 CARD pair via `FU
 ## Function details
 
 Full write-ups for the rows above whose detail outgrew a table cell. Linked from each section table by **[details ↓]**.
+
+### `80034A6C`
+
+**New-game data-init**, and the row above is on this page only because of where
+it writes. Every store is an `sb` / `sw` off `s0 = 0x80084140`, the live
+game-state window (`see ghidra/scripts/funcs/80034a6c.txt`), and the canonical
+description is [`game-modes.md`](game-modes.md)'s row - party gold
+`0x8008459C = 500` (`li v0,0x1f4` at `0x80034A94`), party count
+`0x80084594 = 3`, the `0x800846D0..0x800846DC` quad `0x44 / 0x21 / 0x10 / 0x48`,
+the starting-item seed `SC+0x1818 = 0x77` count `5`, and the tail call
+`FUN_800560B4` that expands the starting-party template.
+
+Two claims that read as menu work do not survive the disassembly:
+
+- **The zeroed block is the story-flag bank, not a save-data scratch slot.** The
+  descending loop at `0x80034B1C` stores through `0x1618(v1)` with `v1` starting
+  at `s0 + 0x1FF`, so the addresses written are `0x80085758..0x80085957` - the
+  256-bit fourth flag bank `FUN_8003CE08` / `CE34` / `CE64` operate on
+  ([`runtime-libs.md`](runtime-libs.md)). `0x80084340..0x8008453F` is the range
+  the *register* sweeps, not the range any store lands in.
+- **The `0x800845xx` writes are new-game seeds, not UI defaults.** They are
+  cursor-shaped only by coincidence of address; the port models the same fifteen
+  cells as `legaia_asset::new_game::new_game_seed_words`, keyed by `SC` offset.
 
 ### `80035274`
 

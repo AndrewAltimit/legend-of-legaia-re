@@ -131,13 +131,22 @@ taken during the capture animation. Shares actor struct layout
 with the regular battle overlay (`_DAT_8007BD24` context pointer, `+0x1DE`
 sub-state, `+0x07` action-type).
 
-| Address | Role |
+**There is no separate capture overlay image.** The capture capture is the
+battle-action overlay 0898, so a `overlay_magic_capture_<addr>` dump and the
+`overlay_battle_action_<addr>` / `overlay_0898_<addr>` dumps of the same VA are
+**byte-identical** - including `FUN_801E295C`, whose 4099 instructions match
+exactly. The rows below therefore name the *capture-mode behaviour* of routines
+documented above, not second copies at one address; a filename prefix names the
+image a dump was taken from, never a second routine
+([`dump-corpus-integrity.md`](../../tooling/dump-corpus-integrity.md)).
+
+| Address | Capture-mode role of the routine documented above |
 |---|---|
-| `801D0748` | Capture outer dispatcher (11 KB, 26 outgoing). Same sub-state structure as the battle outer dispatcher; sub-states `0x1E`/`0x32`/`0x6E`/`0xFE` update camera yaw. `overlay_magic_capture_801d0748.txt`. |
-| `801D388C` | Capture animation dispatcher (7.8 KB, 39 callers). Same interface as the battle overlay's `FUN_801D388C`. `overlay_magic_capture_801d388c.txt`. |
-| `801D5854` | Capture actor pose driver (6.5 KB, 47 callers). Same interface as the battle overlay's `FUN_801D5854`. `overlay_magic_capture_801d5854.txt`. |
-| `801D8DE8` | Hottest capture utility (3 KB, 75 callers). JT dispatcher; only callee is `FUN_801DB7B0` (the generic 4-byte JT helper). `overlay_magic_capture_801d8de8.txt`. |
-| `801E295C` | **Capture battle state machine** (16.4 K-, 19 outgoing). Outer switch on `_DAT_8007BD24[7]` cases `0xB`/`0xC` (capture-specific action types). Inner switch on `actor[+0x1DE]`. Distinct from `overlay_battle_action_801e295c.txt` despite sharing the same entry address. `overlay_magic_capture_801e295c.txt`. |
+| `801D0748` | The round driver in capture mode. Same body, same `ctx+6` sub-states `0x1E`/`0x32`/`0x6E`/`0xFE` updating camera yaw. |
+| `801D388C` | The battle actor animation dispatcher, unchanged. |
+| `801D5854` | The per-pose camera/presentation driver, unchanged. |
+| `801D8DE8` | The HUD element renderer, unchanged - 757 instructions, the 80-entry jump table at `0x801CEB68`. |
+| `801E295C` | The battle action state machine reached with `_DAT_8007BD24[7]` holding the capture-specific action types `0xB`/`0xC`; the arms are cases of the one 4099-instruction body, not a capture build of it. |
 | `801EC3E4` | Large capture helper (10 KB, 0 incoming - top-level from game-mode dispatch). Calls `FUN_801E91E8`. `overlay_magic_capture_801ec3e4.txt`. |
 | `801E9FD4` | Capture sub-system (8.5 KB, 1 incoming). Calls `FUN_801EC0DC`. `overlay_magic_capture_801e9fd4.txt`. |
 
@@ -168,7 +177,9 @@ New battle-overlay (`0898`) functions the S5 trace found live (`game_mode 0x15`)
 
 | Address | Role |
 |---|---|
-| `801E2524` / `801E2650` | **Battle Arts announcement banner** - `NEW` / `HYPER` / `MIRACLE` / `SUPER` `ARTS!!`. `FUN_801E2524` reads the banner selector `ctx[+0x28B]` (`_DAT_8007BD24`) and, while `1..4`, emits four layers via `FUN_801E2650(offset, percent, semi, position)`, then walks the slide clock `ctx[+0x28C]` by `DAT_1F800393*8` (capped `0xF0`). Each layer is a **pair of textured quads** off the value-readout sheet sliding in from opposite sides; the four are the banner at four points of its travel - a ghost trail. The earlier "flash / fade overlay" reading is [falsified](../re-do-not-re-walk.md#the-flash-ramp-is-the-arts-announcement-banner); geometry in [`battle-action.md`](../../subsystems/battle-action.md#arts-announcement-banner-fun_801e2524--fun_801e2650). |
+| `801E2524` / `801E2650` | **Battle Arts announcement banner** - `NEW` / `HYPER` / `MIRACLE` / `SUPER` `ARTS!!`. `FUN_801E2524` reads the banner selector `ctx[+0x28B]` (`_DAT_8007BD24`) and, while `1..4`, emits four layers via `FUN_801E2650(offset, percent, semi, position)`, then walks the slide clock `ctx[+0x28C]` by `DAT_1F800393*8` (capped `0xF0`). Each layer is a **pair of textured quads** off the value-readout sheet sliding in from opposite sides; the four are the banner at four points of its travel - a ghost trail. The earlier "flash / fade overlay" reading is [falsified](../re-do-not-re-walk.md#the-flash-ramp-is-the-arts-announcement-banner); geometry and port in [`battle-action.md`](../../subsystems/battle-action.md#arts-announcement-banner-fun_801e2524--fun_801e2650). |
+| `801E1AB0` | **Move-FX 2D afterimage / streak draw.** `(trail_id)`. Emits one semi-transparent textured quad (`POLY_FT4`, cmd `0x2e`, colour `0x808080`) per call: a billboard at the move actor's screen point (`+0x120` px down, `0x100` half-size, projected by GTE helper `FUN_800195a8`), jittered per corner via BIOS `rand` (`FUN_80056798`) - X `-2 + r%5`, top corners Y `-8 + r%9`, bottom `-4 + r%9` - with a brightness band `(r&3)<<5` picking a `0x20`-wide texture sub-column (UVs `band\|0x1f`/`band`, V `0..0x3f`), texpage `0x27`, CLUT `0x7700 + trail_id`. Ported as `legaia_engine_render::afterimage::build_afterimage_quad`; projection + OT link stay caller-side. `see ghidra/scripts/funcs/overlay_battle_action_801e1ab0.txt`. |
+| `801E1D98` | **Move-FX 2D chained streak ribbon.** `(actor_point, trail_id)`. The sibling of `801E1AB0` in the same move-FX draw dispatcher (`0x801E0CA0` calls the single quad, `0x801E0CD0` this) over the same move-power `+0x0b` trail id. Projects one billboard through `FUN_800195A8`, then emits a chain of `POLY_FT4`s whose every segment reuses the previous segment's top edge as its own bottom edge, climbing until the baseline leaves the screen. Draw law, jitter magnitudes and packet fields: [`battle.md` § Move-FX streak ribbon](../../subsystems/battle.md#move-fx-streak-ribbon-fun_801e1d98). Ported as `legaia_engine_render::afterimage::build_streak_ribbon`. |
 | `801DF6B8` | **Per-actor battle draw/position loop** (1848 bytes). Iterates the 8 battle actors via the ctx order/select tables (`ctx+0x318` → `DAT_801C9370` slot, `ctx+idx*4+0x83C` liveness gate), reading each live actor's screen transform (`+0x3C`) and applying a `/10` scale (`0x66666667` magic). The builder that positions the on-screen per-actor elements (HP tags / markers) each frame; the top consumer of the SCUS on-screen-element helpers above. |
 | `801D829C` | **Camera-state per-actor transform builder** (548 bytes). Reads the battle camera-state registers `DAT_8007B790/2/4` and composes per-actor transforms over the actor table (`DAT_801C9370`) + `DAT_800840BC` - the billboard/rotation setup that orients battle 2D-in-3D elements toward the orbit camera. |
 | `801D71B8` | **Per-art attack-camera framing** (4.3 KB). Gated on the active actor (`ctx+0x13`) having a live target (`+0x14C != 0`), action category `+0x1DE == 3` (Attack), and `ctx+6 == 0xFF`. Builds a rotation / distance / look-at halfword triple on the stack (`0x400` seeds, look-at = the actor's *negated* position and facing) and dispatches per participant id `1`/`2`/`3` and then per art id `0x1A..=0x2A` through a 17-slot `jr` table, each arm folding its own halfword track from the per-phase data at `0x801F4E10`. One of the hottest attack-chain bodies. Gate + pose seed + dispatch + the `(anim_frame - 0x60) << 4` push ported as `engine-vm::battle_attack_camera`; the arms need the `0x801F4E10` table parsed. |
@@ -205,6 +216,15 @@ The dump that reported a self-entry 167-instruction body has the right bytes
 at the right base; only its `entry=` is wrong, because
 `dump_effect_overlay_0967.py` creates a function at each traced hit address
 and a trace hit lands on whatever instruction the breakpoint sat on.
+
+**"Label, not an entry" is a statement about PROT 0967 and only about it.** At
+the same VA in the field overlay 0897 (base `0x801CE818`) the bytes are a clean
+`addiu sp,sp,-0x40` prologue opening a 1070-instruction routine that forms the
+per-actor pointer band `0x801C9370` - the actor-band command loop written up in
+[`script-vm.md`](../../subsystems/script-vm.md#the-actor-band-command-loops-fun_801f71e0--fun_801f5748).
+A VA above `0x801C0000` names an object only together with its image
+([`port-provenance.md`](../../tooling/port-provenance.md)), so the two readings
+are two occupants, not a contradiction.
 
 ## Battle command-block persistence + target menu (overlay 0898, trace-surfaced)
 
