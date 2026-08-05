@@ -1013,6 +1013,54 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .push(FieldEvent::GiveItem { item_id });
     }
 
+    // PORT: FUN_800430AC
+    // REF: FUN_80042310
+    // REF: FUN_80042EE0
+    fn op4c_n5_sub2_take_item(&mut self, item_id: u8) {
+        // Op 0x4C n5 sub-2 TAKE_ITEM `[4C, 52, item_id]`, the give-side mirror
+        // of `give_item` above. Retail's arm at `0x801E1ABC` consumes one of
+        // the id from the bag (`FUN_80042310(item_id, 1)`) and, **only when
+        // the bag does not hold it**, falls back to taking it off whoever is
+        // wearing it (`FUN_800430AC`). The fallback is why a script can
+        // confiscate an equipped accessory at all.
+        //
+        // The ordering is the half that is easy to invert: `0x100` is the
+        // consume primitive's *not-found* sentinel, so the `== 0x100` branch
+        // is the fallback and not a success path. A bag hit must therefore
+        // leave equipment alone - `take_item_prefers_the_bag_over_the_worn_copy`
+        // pins that direction, because an implementation that unequips first
+        // (or always) passes every other assertion here.
+        //
+        // `item_id == 0` is a bag miss by construction:
+        // `RetailInventory::find_slot` (retail `FUN_80042EE0`) treats 0 as the
+        // empty-slot sentinel and never matches it, so a zero operand goes
+        // straight to the fallback, which then clears the first *empty*
+        // accessory slot - a no-op the retail kernel reports as success.
+        //
+        // No `FieldEvent` is emitted. The give side has one because a host
+        // renders an acquisition banner off it; nothing consumes a take yet,
+        // and the observable this wire exists for is the world state - the bag
+        // count and the accessory slot - which is what the tests read.
+        let held = if item_id == 0 {
+            None
+        } else {
+            self.world.inventory.get(&item_id).copied()
+        };
+        match held {
+            Some(count) if count > 0 => {
+                let left = count - 1;
+                if left == 0 {
+                    self.world.inventory.remove(&item_id);
+                } else {
+                    self.world.inventory.insert(item_id, left);
+                }
+            }
+            _ => {
+                crate::equipment::party_unequip_accessory_by_id(&mut self.world.roster, item_id);
+            }
+        }
+    }
+
     fn open_dialog(
         &mut self,
         text_id: u16,
