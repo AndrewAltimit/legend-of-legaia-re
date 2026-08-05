@@ -195,6 +195,26 @@ because the callee is the sibling's own address rather than a shared third
 party, and `save_select.rs` read as having an orphan that calls four of its own
 siblings. Fixing it took `module-orphan` from 110 findings to 67.
 
+A fifth came out of `doc-citation` triage, and it is the same mistake in a new
+place. Both citation signals exempt a cited **function entry**, because prose
+about a routine names its callers, its siblings and the dispatcher that reaches
+it, and none of those is in its own bytes. That exemption was keyed on whether
+the cited address had a *dump*, which inverts it: a row naming a caller we had
+read passed, and the same row naming a caller we had not read as unsupported
+evidence. Roughly two thirds of the signal's output was that shape. The test is
+now the citation's **written form** - `FUN_8003D53C` is a function reference
+whether or not it is in the corpus.
+
+What survived that fix split three ways. Six rows named a data global the body
+does not form and a sibling page had right, all of them a hex digit out
+(`0x801D1CBC` for the SEQ voice count `0x801CE344`, `0x801DADD8` for the libcd
+FS table `0x801CADD8`, `0x801D04B8` for the format string `0x801CF4B8`). Three
+described a routine no dump of that VA carries. The rest cite an address that
+belongs to a *different* routine - a caller's `jal` site, a table its dispatcher
+reads, a load base named as provenance - and no written form separates "the
+table I read" from "the table that indexes me", so those are waived rather than
+signalled.
+
 The lesson generalises past this script: when a new measurement's first output
 is a pile of findings, the first hypothesis to test is that the measurement is
 wrong, and hand-triage of the top rows is how you test it.

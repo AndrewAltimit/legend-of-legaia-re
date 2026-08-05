@@ -252,6 +252,10 @@ PORT_ADDR_RE = re.compile(
 # `FUN_8...`, `DAT_8...`, `_DAT_8...`, backticked. Deliberately wider than
 # PORT_ADDR_RE - this one is looking for the port's own evidence, not its claim.
 CITED_ADDR_RE = re.compile(r"(?:0x|FUN_|_?DAT_|PTR_)([0-9a-fA-F]{8})", re.IGNORECASE)
+# The subset of the above written as a *function entry*: `FUN_8003D53C`,
+# `func_0x8003d064`, `LAB_`-style entries. Prose naming another routine is a
+# cross-reference, whether or not that routine has been dumped.
+FUNC_REF_RE = re.compile(r"(?:\bFUN_|\bfunc_0x|\bLAB_)([0-9a-fA-F]{8})", re.IGNORECASE)
 
 MD_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)")
 
@@ -937,19 +941,30 @@ def _unsupported(
     annotations and the globals the register tracker gives up on, and it is what
     keeps the signal at a handful of findings instead of hundreds.
 
-    Citations of **other dumped function entries** are skipped outright. Prose
-    about a routine names its callers, its siblings and the dispatcher that
-    reaches it, and none of those has to appear in its own bytes; flagging them
-    buried the signal under cross-references that were all correct. What is left
-    is the claim worth checking - a data global or an interior range the routine
-    is said to own and does not touch.
+    Citations of **other function entries** are skipped outright. Prose about a
+    routine names its callers, its siblings and the dispatcher that reaches it,
+    and none of those has to appear in its own bytes; flagging them buried the
+    signal under cross-references that were all correct. What is left is the
+    claim worth checking - a data global or an interior range the routine is
+    said to own and does not touch.
+
+    "Is a function entry" is read off the **citation's written form**, not off
+    whether we happen to hold a dump of it. Keying it on the dump corpus was an
+    accident of implementation and it inverted the policy: a row naming a
+    caller we have dumped passed, and the same row naming a caller we have not
+    read as unsupported evidence. Two thirds of this signal's output was that
+    shape - `FUN_8003D53C`, `FUN_80021B04`, `FUN_8004998C`, all correctly named
+    as somebody else's routine, none of them in the corpus.
     """
+    func_refs = {m.group(1).lower() for m in FUNC_REF_RE.finditer(text)}
     missing: list[str] = []
     for m in CITED_ADDR_RE.finditer(text):
         c = m.group(1).lower()
         if c in claimed or c in missing:
             continue
         if not re.fullmatch(CODE_ADDR, c, re.IGNORECASE) or c in entries:
+            continue
+        if c in func_refs:
             continue
         ci = int(c, 16)
         ok = False

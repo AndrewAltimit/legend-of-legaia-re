@@ -901,3 +901,242 @@ reason = "Same routine as the save_subscreen row and the same disassembly; it ru
 [[waiver]]
 key = "module-orphan:crates/engine-core/src/dev_menu.rs:801db8b4"
 reason = "Checker artifact plus VA aliasing. The reported 0x801c94bc exists in no dump: it is synthesised from the battle overlay's different body at the same VA (lui/addiu forms 0x801C9370, plus a 0x14c displacement off a register reloaded by lw). The overlay_0897 body is the flag-list cursor increment on 0x801F2E90 / table 0x801F2E94 stride 0xA with the 'X' sentinel - it reads the cursor register-relative, which is the only reason it fails to corroborate its sibling FUN_801db8f4 forty bytes later."
+
+# ---------------------------------------------------------------------------
+# doc-citation, reviewed row by row against the disassembly.
+#
+# What survives after the two classes that were fixed rather than waived - the
+# six typo'd data globals (each corrected to the address the body forms) and
+# the three rows describing a routine no dump of that VA carries - is one shape
+# and two residues:
+#
+#   (a) The row cites an address that belongs to a *different* routine: a
+#       caller's `jal` site, a table its dispatcher reads, an interior of the
+#       neighbour in the same tail, a load base named as provenance. The
+#       checker exempts citations written `FUN_xxxxxxxx`; these are written as
+#       bare `0x` or `DAT_` because they are not function entries, and no
+#       written form distinguishes "the table I read" from "the table that
+#       indexes me".
+#   (b) A falsified reading kept in place so it stays findable. Quoting the
+#       wrong address is the point of the sentence.
+#   (c) The row names the image its claim is about and the corpus holds only a
+#       different image's occupant of that VA.
+# ---------------------------------------------------------------------------
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/audio.md:8001d230:801ce628"
+reason = """
+0x801CE628 is not this routine's; the row cites it as a section link. The
+8001d230.txt body runs libpad / libcard init and the address it does form for
+the pad path is the report block 0x800840F8. 0x801CE628 is libpad's two-port
+context block, written up in docs/subsystems/audio.md as the not-SsAPI cluster
+and cleared by PadInitDirect (FUN_8006E2B4), which this routine calls.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/audio.md:800267a8:801e01b4"
+reason = """
+0x801E01B4 is the caller's call site, and it is there: the field-VM dumps carry
+`801e01b4  jal 0x800267a8` (overlay_world_map_801de840.txt line 1634, identical
+in the dialog_typing / dialog_mc4 prints). An instruction address inside
+FUN_801DE840 cannot appear in FUN_800267A8's own bytes.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/audio.md:80035bac:801e03d8"
+reason = """
+Same shape, same verification: `801e03d8  jal 0x80035bac` at line 1771 of
+overlay_world_map_801de840.txt. The row cites the field VM's op-0x36 call site,
+not a global of its own.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:801d0f60:801ce818+801c0000"
+reason = """
+Both are load bases the row names as provenance, not operands. 0x801CE818 is
+PROT 0977's slot-A base (the row reads "at slot-A base 0x801CE818, file
++0x2748") and 0x801C0000 is the mis-based import the superseded FUN_801C2748
+citation came from. A base cannot appear in the body it bases.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:801d829c:801c9370"
+reason = """
+Corrected, and the wrong address is quoted deliberately. All three dumps
+(magic_capture / magic_level_up / muscle_dome, 137 instructions) form exactly
+three bases - 0x8007B790, 0x800840B8 and 0x80089118 - and nothing in 0x801C____
+at all; a grep for `lui` against `0x801c` over the dump returns nothing. The row
+now says the routine tweens those three trios and that the DAT_801C9370
+actor-table reading is in no dump of it, which keeps the falsified reading
+findable and keeps the citation in the text.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:801d8de8:801f4d34"
+reason = """
+PTR_DAT_801F4D34 is read by FUN_801D388C, not by this routine. The row says so -
+"the (elem_id, mode) pairs are the ones PTR_DAT_801f4d34 indexes" - and
+docs/subsystems/minigame-muscle-dome.md documents the table as the per-step
+sub-draw script-record table walked at FUN_801D388C's tail. This routine's own
+dispatch is `sltiu v0,v1,0x50` over 0x801CEB68, which every dump carries.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:801e1d98:801e0ca0+801e0cd0"
+reason = """
+Both are call sites in the move-FX draw dispatcher, one level up. The pair is
+what the row is about: 0x801E0CA0 reaches FUN_801E1AB0 and 0x801E0CD0 reaches
+this routine (docs/subsystems/battle.md and docs/formats/move-power.md both
+record the `jal 0x801e1ab0 at 0x801e0ca4`). A caller's instruction address is
+not an operand of the callee.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:801f0450:801f02d0"
+reason = """
+0x801F02D0 is an interior of a different routine and the row says which:
+overlay_muscle_dome_801efe44.txt is 1284 bytes from 0x801EFE44, so
+0x801EFE44 + 0x48C = 0x801F02D0 lands inside it. The parenthetical is
+inventorying what else occupies 0898's render tail, not claiming an operand.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:801f3990:801e3e04"
+reason = """
+The caller's call site, verified: overlay_muscle_dome_801e295c.txt line 1327 is
+`801e3e04  jal 0x801f3990`. The row cites it precisely because there is only
+one - "one jal at 0x801E3E04 in FUN_801E295C".
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:801f452c:801c0000"
+reason = """
+0x801C0000 is named as an import base, not an operand: the row records that the
+overlay_0896 / 0897 programs are 0x801C0000-band imports carrying 0898's image
+shifted, so their "801f452c" fragments are interiors of FUN_801D388C /
+FUN_801DDB30. That is the dump-corpus-integrity law being applied, and the base
+of an import cannot appear in the imported bytes.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:801f8004:801df918"
+reason = """
+Field-VM caller call site, verified: `801df918  jal 0x801f8004` at line 1083 of
+overlay_world_map_801de840.txt (identical in dialog_typing / dialog_mc4). The
+row labels it "Field-VM caller: op 0x43 sub-0x10".
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:801f8d4c:801df974"
+reason = """
+Same, one op along: `801df974  jal 0x801f8d4c` at line 1106 of the same field-VM
+dumps. Cited as the caller's site, not as an operand.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/game-modes.md:801d362c:801d52d0"
+reason = """
+A jump-table target, and the table is outside the body. The row states the JT is
+at 0x801CE868 (PROT 0897 file +0x50), so the 61 sub-opcode entries live in data,
+not in the dispatcher's 1293 instructions. Two of the sub-handlers the same
+sentence lists - 0x801D31B0 and 0x801D3748 - do appear in the print as branch
+targets, which is why only 0x801D52D0 is flagged; that is an artifact of where
+Ghidra stopped following, not a claim about the routine.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/minigames-debug.md:801cf870:801d00b8"
+reason = """
+The corpus cannot answer it: the same gap already waived for
+absent-citation:crates/engine-core/src/muscle_dome.rs:801cf870. Its one dump,
+overlay_0977_slotA_801cf870.txt, reports 437 instructions / 1748 bytes but
+prints across 2088 and stops at 0x801D0094, below the cited 0x801D00B8. A
+re-dump of the routine from 0977_other_game.BIN would settle it.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/minigames-debug.md:801d1184:801d1ac8"
+reason = """
+DAT_801D1AC8 is the downstream accumulator, written by the hub state and not by
+this routine, which is what the row says ("the first three drain into"). Read
+overlay_0977_slotA_801d1184.txt: the 65 instructions store DAT_801D1ACC,
+DAT_801D1AD0, DAT_801D1AD4 and DAT_801D1AAC and read DAT_801D1A90 /
+DAT_801D1A94 / &DAT_801D1860 / &LAB_801D1A5C - the three-row table further down
+minigames-debug.md is where 0x801D1AC8 collects them.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/renderer.md:801f69d8:801f725c"
+reason = """
+Two reasons at once and both hold. 0x801F725C is a capture-pinned return address
+- a caller's site, not an operand - and the row is image-qualified to
+overlay_world_map_top_ext while the only dump at this VA is
+overlay_muscle_dome_801f69d8.txt, which is PROT 0900's slot-B link base (18
+table words, no `jal` at all). The checker compares against every dump of an
+address without asking which image the row named.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/runtime-libs.md:801d9c3c:8003b444"
+reason = """
+The caller's call site, verified in the caller's own dump: 8003aeb0.txt line 362
+is `8003b444  jal 0x801d9c3c`. The row reads "called from the SCUS MAN decoder
+FUN_8003AEB0 at 0x8003B444", which is exactly that instruction.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/script-vms.md:801cf9f4:801f2254"
+reason = """
+Caller-side. Neither the 0897 print (147 instructions) nor the cutscene /
+mapview / 0896_bat_back copies forms anything in 0x801F____ - a grep for `lui`
+against `0x801f` returns nothing across all four. The row says the *interact
+dispatch* calls this routine with the DAT_801F2254 facing-compass point, so the
+global belongs to the dispatcher.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/script-vms.md:801d33d8:801e4738"
+reason = """
+The window descriptor table is read by the runner, not by the panel renderer.
+docs/subsystems/field-menu.md records that FUN_801D6628 passes
+`0x801E4738 + id*0x10` to the renderer it dispatches; this row cites the table
+to say which descriptor id selects this panel (28, rect (90,16,218,188)). No
+dump of 801D33D8 contains the string, which is the expected result.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/script-vms.md:801d5a24:801ce818"
+reason = """
+A load base named as provenance: the row reads "read from overlay_field_0897.bin
+at base 0x801CE818". That is the image's link base, the same one
+docs/tooling/call-target-integrity.md keys its untrusted window on. A base
+cannot occur in the bytes it bases.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/script-vms.md:801d5b5c:801f2254"
+reason = """
+Same global, same caller, same verdict as the 801CF9F4 row above. Both cutscene
+dumps of 801D5B5C (43 instructions) form nothing in 0x801F____; the row
+attributes DAT_801F2254 to FUN_801d01b0's touch dispatch, which is where the
+facing probe lives.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/script-vms.md:801ddfe4:801ec96c"
+reason = """
+Corrected, and the wrong address is quoted deliberately. All eight images that
+carry this VA print the same eight instructions - a frame, `jal 0x801de004`,
+return - so the "jumps to 0x801EC96C" reading has no dump behind it. The row now
+says that and keeps the address so the falsified reading stays searchable.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/script-vms.md:801e30e4:801d0a6c"
+reason = """
+0x801D0A6C is the FMV dispatch table, read by the STR player, not by the op
+handler that writes the index into it. docs/formats/str-fmv-table.md places the
+23 x 32-byte table there and script-vms.md's own 801CF098 row shows the player
+forming `0x801D0A6C + (s16)_DAT_8007BA78 * 0x20`. This routine writes
+_DAT_8007BA78 and stops, which is what its single dump shows.
+"""
