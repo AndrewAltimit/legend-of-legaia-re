@@ -159,8 +159,9 @@ pub struct VoiceAttrCue {
 // NOT WIRED: this decode is correct and tested, but its only caller is
 // [`arena_voice_cue`] directly below, which is itself inert - so no host root
 // reaches this function either. The blocker is that one's, not a second
-// independent gap: `FUN_801CF074` plus the two hosts holding the tally's ramp
-// state. Read that tag for the full shape. Stated separately because the
+// independent gap: the tally tick plus the two hosts holding its ramp state.
+// Read that tag for the named function and the full shape. Stated separately
+// because the
 // module's blanket heading was narrowed to the sites it actually described,
 // which left this anchor covered by nothing.
 #[inline]
