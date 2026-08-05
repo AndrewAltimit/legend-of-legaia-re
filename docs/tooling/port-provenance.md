@@ -64,6 +64,34 @@ and it lifts the row when the same rare table turns up under a module with an
 unrelated name. For `FUN_801D5DE0` in `shop.rs` that second half reads
 `0x801E4518 is also formed by FUN_801dc1cc, PORT-tagged in prize_exchange.rs`.
 
+### `dual-label` compares defining pages, and a pointer is not a claim
+
+Page relatedness starts from filename tokens, and that alone over-fires by a
+wide margin. The function directory is named for coarse topics (`menus`,
+`script-vms`, `battle`) and the write-ups for fine ones (`save-screen`,
+`field-locomotion`, `battle-action`), so an index entry and the page it indexes
+always read as "two unrelated names". Two exclusions cut that class:
+
+- **A site that links to the counterpart page is a pointer.** A directory row
+  whose own text sends the reader to the page it is said to contradict is
+  filing that page's claim rather than competing with it. Scoped to the pair -
+  a row pointing at `save-screen.md` is still an independent claim against
+  `world-map.md` - and scoped to *every* site the page has for that address, so
+  a page that defines a routine twice and links once still counts as a rival.
+- **Only `docs/subsystems/`, `docs/formats/` and `docs/reference/functions/`
+  define a routine.** A thread ledger records which readings are falsified and
+  a `docs/tooling/` page describes an instrument; naming an address there is
+  not a second label for it. Two of the rows this drops are titled "X is *not*
+  Y".
+
+Neither reaches `FUN_801D5DE0`, whose carriers cited nobody. Neither is a
+substitute for reading the two texts, either: once a human reconciles a pair,
+the corrected pages agree and the fine page usually gains a link *because* of
+the correction, so the row goes quiet through the pointer rule rather than
+through any test of whether it was ever a conflict. That is what a waiver
+records, and it is why the pointer rule is validated against the doc state the
+conflicts were found in rather than the state after they were fixed.
+
 ### Distinctiveness is the whole trick
 
 Without a corpus denominator every routine looks related to every other one.

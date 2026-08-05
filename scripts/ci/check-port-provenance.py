@@ -225,6 +225,19 @@ STOPWORD_TOKENS = {
 UNTRUSTED_JAL_IMAGE = "overlay_0896"
 UNTRUSTED_JAL_BELOW = 0x801CE818
 
+# The three doc roots that say what a routine *is*. Everything else under
+# `docs/` answers a different question about it: `docs/tooling/` describes the
+# instruments, `docs/guides/` the tasks, and the thread ledgers
+# (`re-settled-threads.md`, `re-do-not-re-walk.md`, `open-rev-eng-threads.md`)
+# record which questions are answered and which readings are falsified. A
+# falsification titled "X is *not* Y" names an address without claiming it, so
+# it is not a second label - `dual-label` only compares defining pages.
+DEFINING_DOC_ROOTS = (
+    "docs/subsystems/",
+    "docs/formats/",
+    "docs/reference/functions/",
+)
+
 # ---------------------------------------------------------------------------
 # Regexes
 # ---------------------------------------------------------------------------
@@ -239,6 +252,8 @@ PORT_ADDR_RE = re.compile(
 # `FUN_8...`, `DAT_8...`, `_DAT_8...`, backticked. Deliberately wider than
 # PORT_ADDR_RE - this one is looking for the port's own evidence, not its claim.
 CITED_ADDR_RE = re.compile(r"(?:0x|FUN_|_?DAT_|PTR_)([0-9a-fA-F]{8})", re.IGNORECASE)
+
+MD_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)")
 
 # The image tag is optional here and required later: a third of the corpus
 # predates it, and those dumps are still valid witnesses for how *common* an
@@ -788,6 +803,21 @@ def find_doc_row_citations(by_addr: dict[str, list[Dump]]) -> list[Finding]:
     return out
 
 
+def _link_targets(page: Path, line: str) -> set[str]:
+    """Repo-relative pages a markdown line links to, `#anchors` stripped."""
+    out: set[str] = set()
+    for m in MD_LINK_RE.finditer(line):
+        target = m.group(1).split("#")[0]
+        if not target or target.startswith(("http://", "https://", "mailto:")):
+            continue
+        try:
+            resolved = (page.parent / target).resolve().relative_to(REPO)
+        except (OSError, ValueError):
+            continue
+        out.add(str(resolved))
+    return out
+
+
 def find_dual_labels(by_addr: dict[str, list[Dump]]) -> list[Finding]:
     """One routine given a defining description on two unrelated docs pages.
 
@@ -804,16 +834,36 @@ def find_dual_labels(by_addr: dict[str, list[Dump]]) -> list[Finding]:
 
     Page relatedness is decided on filename tokens, the same rule the module
     comparison uses, so `field-menu.md` and `menus.md` are one topic and
-    `world-map.md` and `menus.md` are two.
+    `world-map.md` and `menus.md` are two. That rule alone over-fires by a wide
+    margin, because the function directory is named for coarse topics
+    (`menus`, `script-vms`, `battle`) and the write-ups for fine ones
+    (`save-screen`, `field-locomotion`, `battle-action`), so the index entry and
+    the page it indexes always read as "unrelated names". Two exclusions cut
+    that class without touching the shape the signal exists for:
+
+    - **A site that links to the counterpart page is a pointer, not a rival.**
+      A directory row whose own text sends the reader to the page it is said to
+      contradict is filing that page's claim, not competing with it. Scoped to
+      the pair: a row that points at `save-screen.md` is still an independent
+      claim against `world-map.md`. `FUN_801D5DE0`'s carriers cited nobody, so
+      it keeps firing.
+    - **Only defining pages count** (`DEFINING_DOC_ROOTS`). A thread ledger or a
+      tooling page naming an address describes a question or an instrument, not
+      the routine.
     """
     docs = REPO / "docs"
     if not docs.is_dir():
         return []
     head_re = re.compile(r"^#{2,4}\s+(.*)$")
     row_re = re.compile(r"^\|\s*`?(?:FUN_)?([0-9a-fA-F]{8})`?\s*\|")
-    sites: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+    # {addr: {page: [(site label, pages this site links to)]}}
+    sites: dict[str, dict[str, list[tuple[str, set[str]]]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
     for page in sorted(docs.rglob("*.md")):
         rel = str(page.relative_to(REPO))
+        if not rel.startswith(DEFINING_DOC_ROOTS):
+            continue
         is_directory_page = "reference/functions/" in rel
         for lineno, line in enumerate(page.read_text().splitlines(), start=1):
             found: set[str] = set()
@@ -829,9 +879,12 @@ def find_dual_labels(by_addr: dict[str, list[Dump]]) -> list[Finding]:
                 m = row_re.match(line)
                 if m:
                     found.add(m.group(1).lower())
+            if not found:
+                continue
+            links = _link_targets(page, line)
             for a in found:
                 if a in by_addr:
-                    sites[a][rel].append(f"{rel}:{lineno}")
+                    sites[a][rel].append((f"{rel}:{lineno}", links))
 
     out: list[Finding] = []
     for addr, per_page in sites.items():
@@ -840,20 +893,32 @@ def find_dual_labels(by_addr: dict[str, list[Dump]]) -> list[Finding]:
             continue
         toks = {p: {t for t in re.split(r"[^a-z0-9]+", Path(p).stem.lower())
                     if len(t) >= 3} for p in pages}
-        # Only unrelated page names are a contradiction; a subsystem section
-        # plus its directory row is one claim filed twice by design.
-        if not any(
-            not (toks[a] & toks[b])
+
+        def points_at(src: str, dst: str) -> bool:
+            """Every one of `src`'s sites for this address links to `dst`."""
+            return all(dst in links for _, links in per_page[src])
+
+        rivals = [
+            (a, b)
             for i, a in enumerate(pages)
             for b in pages[i + 1:]
-        ):
+            if not (toks[a] & toks[b])
+            and not points_at(a, b)
+            and not points_at(b, a)
+        ]
+        if not rivals:
             continue
         lines = [
             f"FUN_{addr} carries a defining description on {len(pages)} docs "
-            f"pages with unrelated names; at most one can be right:"
+            f"pages with unrelated names, neither pointing at the other; at "
+            f"most one can be right:"
         ]
         for pg in pages:
-            lines.append("    " + ", ".join(per_page[pg]))
+            lines.append("    " + ", ".join(label for label, _ in per_page[pg]))
+        lines.append(
+            "    rival pair(s): "
+            + "; ".join(f"{a} vs {b}" for a, b in rivals)
+        )
         out.append(
             Finding("dual-label", f"dual-label:{addr}", addr,
                     ", ".join(pages), 8.0 + len(pages), lines)
