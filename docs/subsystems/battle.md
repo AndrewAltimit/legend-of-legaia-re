@@ -3731,17 +3731,36 @@ rasterised somewhere, which `engine-render::battle_intro`'s
 has no render-to-VRAM target. Reading the two rects as "two copies of the same
 capture" instead left the curtain stretching in one axis only.
 
-What is still missing is the accumulation the effect rides on. Retail never
-clears: the transition's own `FUN_8004695C(0x80808)` subtracts 8 per channel
-per frame from the display buffer, so a scanline drawn on one frame decays over
-~31 frames behind the ones drawn after it, and the mid-pass emitter does the
-same to the intermediate at a steeper rate. The port composes each frame from
-scratch over `backdrop_prim`, so the gaps between strips are pure black rather
-than a fading trail, and the transition reads far darker than retail's from
-about a third of the way in. `FUN_801D1D9C` is only dumped at a VA that aliases
-another overlay ([`call-target-integrity.md`](../tooling/call-target-integrity.md)),
-so its exact decay is not established; the port clears the intermediate instead
-of guessing.
+The accumulation the effect rides on is carried, and both of its decays are
+pinned from the overlay's own image. Retail never clears. The display side:
+`FUN_801D11D0` re-arms the screen wash `FUN_8004695C(0x80808)` unconditionally
+at the top of **every** frame (`0x801D1228..0x801D1230`), so a scanline drawn
+on one frame decays by 8 per channel behind the ones drawn after it - ~31
+frames to black. The intermediate side: the mid-pass emitter `FUN_801D1D9C`
+(dumped from the `field_battle_intro` image itself,
+`ghidra/scripts/funcs/overlay_field_battle_intro_801d1d9c.txt` - the old
+aliased-VA caveat is retired) is `FUN_80024EE4`'s shape pointed one screen
+right: a five-word `0x2B` semi-transparent quad over `x 0x140..0x140+W,
+y -4..H` (the display halfwords `_DAT_1F80038C` / `_DAT_1F80038E` biased by
+`0x140`) behind a `SetDrawMode((abr << 5) | 0xE)` packet at the same layer.
+With the curtain's `(0x1EA, 2, 0x808080)` arguments that subtracts `0x80` per
+channel from the whole intermediate each frame, between the draw-area install
+at `0x1F4` and the column strips at `0x1C2` - a culled column ghosts out over
+two frames rather than vanishing.
+
+The port carries both: the intermediate persists across frames and decays by
+one mid-pass step instead of being cleared, and a CPU model of the display
+buffer - seeded from the same field capture retail's init lands in both
+display buffers, decayed one wash step per frame, overdrawn with each frame's
+row strips - is uploaded into a spare VRAM rect and drawn as textured backdrop
+quads behind the live strips, so the gaps between departing rows show the
+fading trail rather than black
+(`engine-render::battle_intro::CURTAIN_TRAIL_RECT` + siblings). Two disclosed
+approximations: the wash drain (`FUN_80046978`) scales its constant by the
+scratchpad brightness byte, taken at full brightness; and retail's display is
+double-buffered, so its per-buffer trail may interleave at half this rate -
+settling that needs a retail frame capture of one of the three curtain
+formations (hypothesis, graded inference).
 
 ### The window has no field in it
 
