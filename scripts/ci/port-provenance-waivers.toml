@@ -49,3 +49,454 @@ with its own tables - so no two of them corroborate on data and the odd one out
 is arbitrary. FUN_801ef2b0 is the tile-board walk SM (docs/subsystems/
 tile-board.md), which is what it is tagged as.
 """
+
+# ---------------------------------------------------------------------------
+# dual-label, reviewed address by address against the disassembly.
+#
+# Two shapes account for every row below, and neither is a provenance defect:
+#
+#   (a) The signal decides page relatedness on filename tokens, so a coarse
+#       directory page (menus.md, script-vms.md, battle.md) and the fine
+#       subsystem page that owns the write-up (save-screen.md, world-map.md,
+#       field-locomotion.md) always read as "unrelated names" even when they
+#       are one claim filed twice by design.
+#   (b) A VA at or above 0x801C0000 names an object only together with its
+#       image. Two pages describing two overlays' occupants of one VA are two
+#       true claims, not a contradiction.
+#
+# Rows corrected rather than dismissed say so and name what was fixed; the
+# signal is structural and keeps firing after the fix, exactly as it does for
+# dual-label:801d5de0 above.
+# ---------------------------------------------------------------------------
+
+[[waiver]]
+key = "dual-label:80021934"
+reason = """
+All three carriers say scene-transition streaming actor. 80021934.txt is the
+only dump (SCUS_942.54, 116 instructions), so there is no second occupant to
+confuse: scene-v12-table.md resolves which asset it stages, asset-loader.md
+covers the FUN_8001FD44 spawn path, game-modes.md carries the directory row.
+"""
+
+[[waiver]]
+key = "dual-label:80021df4"
+reason = """
+One SCUS routine, 1183 instructions, described from three angles that do not
+compete: game-modes.md's row (per-frame actor tick), actor-vm.md (the anim tick
+and its DAT_1F800393 cadence) and move-vm.md (the +0x5A render-mode dispatch
+wrapped around the FUN_80023070 call). Every text agrees it steps the move VM.
+"""
+
+[[waiver]]
+key = "dual-label:801d0748"
+reason = """
+Corrected, and the correction is the point. All five dumps - overlay_0898,
+battle_action, magic_capture, magic_level_up, muscle_dome - are byte-identical
+across 2781 instructions, opening lui 0x8008 / lw -0x42dc (= _DAT_8007BD24) /
+lbu 0x6(v0). So it is one routine: the battle-action overlay's round driver,
+dispatching on the sub-state byte ctx+6. minigames-debug.md called it a
+"Distinct overlay (not the hub family)" running a "card pick/commit/resolve/
+score loop"; both are now corrected there, and battle.md's section says which
+modes share the body.
+"""
+
+[[waiver]]
+key = "dual-label:801d1344"
+reason = """
+One routine, 333 instructions, byte-identical in every capture image
+(cutscene_dialogue / cutscene_mapview / dialog / dialog_mc4 / dialog_typing /
+world_map / world_map_top / world_map_walk). The field overlay's player master
+frame handler: asset-loading.md and boot.md cover its intro-skip leg,
+world-map.md the FUN_801D8258 gate-arm forward. The overlay_0897_801d1344.txt
+dumps are the filename trap - their header reads entry=801d1314.
+"""
+
+[[waiver]]
+key = "dual-label:801d8de8"
+reason = """
+Corrected. The 757-instruction body is byte-identical in overlay_0898,
+battle_action, magic_capture, magic_level_up and muscle_dome, and its dispatch
+is sltiu v0,v1,0x50 at 0x801D8EA0 over the 80-entry table at 0x801CEB68 - the
+HUD element renderer both functions/battle.md and minigame-muscle-dome.md
+describe. battle.md's section still guessed "likely a per-actor utility" and now
+does not. The 3- and 4-instruction bodies at this VA in the fishing / dance /
+slot-machine / debug-menu / baka_fighter images are a different occupant.
+"""
+
+[[waiver]]
+key = "dual-label:800198e0"
+reason = """
+Same claim, two readers. renderer.md defines the per-TIM VRAM uploader and its
+texpage->CLUT-row table 0x8007BEC0; character-mesh.md documents the one CLUT
+upload semantic that matters to a mesh - the flat-strip LoadImage rect. One
+SCUS dump, 146 instructions, no alias.
+"""
+
+[[waiver]]
+key = "dual-label:80034a6c"
+reason = """
+Corrected. Reading the 64 instructions with s0 = 0x80084140: sw 0x1F4 at
+SC+0x45C is party gold = 500, the descending loop at 0x80034B1C stores through
+0x1618(v1) into 0x80085758..0x80085957 (the fourth flag bank), and the tail
+jal 0x800560B4 expands the starting-party template. That is game-modes.md's
+new-game data-init. menus.md called it a menu/HUD globals reset and named the
+zeroed block 0x80084340..0x8008453F - the range the register sweeps, not the
+range any store lands in; its row now points at the corrected write-up.
+"""
+
+[[waiver]]
+key = "dual-label:80035274"
+reason = """
+menus.md defines the item / equipment passive-name draw; battle.md's row is a
+cell in the no-live-consumer comparison table naming the same routine with the
+same words. Not two claims.
+"""
+
+[[waiver]]
+key = "dual-label:8003ce9c"
+reason = """
+Seven instructions: sign-extend an s16 read at the bytecode pointer. Both
+carriers say so; only the lead name differed, and script-vms.md now uses
+runtime-libs.md's ("signed-16-bit operand decoder") with a pointer to it.
+"""
+
+[[waiver]]
+key = "dual-label:80046494"
+reason = """
+One SCUS routine, 213 instructions. script-vms.md's row states the interface
+(movement-direction + footprint collision resolver);
+field-locomotion.md#wall-slide-resolution states what the returned mask means
+when the held direction is blocked. Complementary, not competing.
+"""
+
+[[waiver]]
+key = "dual-label:800508dc"
+reason = """
+Both carriers describe the same cue walk over the playing action entry's
+(u16 frame, u16 cue) track at +0x54, resuming from actor +0x1F6. battle.md
+files the row, audio.md explains it as the second shout trigger.
+"""
+
+[[waiver]]
+key = "dual-label:8005126c"
+reason = """
+battle.md defines the battle actor on-screen test; re-settled-threads.md
+records the answered question about who consults its verdict (nobody). A thread
+page describing a settled question is not a second subsystem claim.
+"""
+
+[[waiver]]
+key = "dual-label:8005567c"
+reason = """
+One SCUS routine, 79 instructions, expanding DAT_8007b7fc into the formation
+cell 0x8007BD0C..0F. battle.md files the row; encounter.md documents it as the
+second of the two paths that populate that cell.
+"""
+
+[[waiver]]
+key = "dual-label:801cf388"
+reason = """
+One dump, overlay_baka_fighter_801cf388.txt, 2973 instructions switching on
+DAT_801DBF44. Both carriers call it the Baka Fighter cabinet state machine;
+minigames-debug.md is the directory row and minigame-baka-fighter.md the
+write-up it links to.
+"""
+
+[[waiver]]
+key = "dual-label:801cf5bc"
+reason = """
+One dump, overlay_field_battle_intro_801cf5bc.txt, 382 instructions. Both
+carriers describe the same phase counter at +0x22 sequencing the battle
+handoff; battle.md files it under the field->battle transition overlay,
+cutscene.md under the transition tick. Same routine, same phases.
+"""
+
+[[waiver]]
+key = "dual-label:801cfc40"
+reason = """
+Corrected. The body's only stores are the probe point into scratchpad
+0x1F800020/22/24, the mutual +0x98 partner links and the result accumulator; it
+box-tests each entry of DAT_801C93C8 (count _DAT_8007B6B8) and calls
+FUN_8003D038 on contact. No primitive is emitted and 0x1F800020 is scratchpad
+RAM, not a GPU port. So script-vms.md's actor-collision box probe is right and
+world-map.md's "world map sprite batcher, top-view only" was not; world-map.md
+now carries the falsified reading as a correction section, which is why the
+structural signal still fires. The 110-instruction PROT 0897 print is a
+truncation of the 131-instruction body, not a second occupant.
+"""
+
+[[waiver]]
+key = "dual-label:801cfe4c"
+reason = """
+One 217-instruction body, identical in overlay_0897 and every capture image.
+script-vms.md's row gives the signature and return bits;
+field-locomotion.md#collision gives the grid layout it samples and which nibble
+it reads. The 24-instruction overlay_0896 print at this VA is the mis-based
+window call-target-integrity.md already covers.
+"""
+
+[[waiver]]
+key = "dual-label:801cfe98"
+reason = """
+Nine instructions forwarding to the PsyQ DMACallback entry FUN_8005FDE8 with
+channel 0. Byte-identical in the debug_menu and str_fmv images. runtime-libs.md
+files the leaf, cutscene.md explains why channel 0 (MDECin) is the FMV path's
+hook. Same sentence twice.
+"""
+
+[[waiver]]
+key = "dual-label:801d0750"
+reason = """
+One dump, overlay_dance_801d0750.txt, 770 instructions over the actor's +0x9C
+step counter. Both carriers call it the dance setumei tutorial script;
+minigames-debug.md's row links straight to minigame-dance.md's section.
+"""
+
+[[waiver]]
+key = "dual-label:801d1288"
+reason = """
+One dump, overlay_0977_other_game_801d1288.txt, 32 instructions: one
+FUN_80065034 voice-attr call per frame across voices 0x10..0x13 on
+DAT_801D1AE4 & 3. minigames-debug.md's row and
+minigame-muscle-dome.md#the-arenas-per-frame-voice-cue state the same call
+shape and the same constants.
+"""
+
+[[waiver]]
+key = "dual-label:801d1ec4"
+reason = """
+One 245-instruction routine with two arms. runtime-libs.md documents the warp
+reposition animator, asset-loading.md the tile-crossing trigger post; both name
+FUN_8003BDE0 as the thing it fires. asset-loading.md's row now points at the
+other half so neither reads as the whole routine.
+"""
+
+[[waiver]]
+key = "dual-label:801d3380"
+reason = """
+One dump, overlay_slot_machine_801d3380.txt, 63 instructions emitting five
+LINE_F2 prims from DAT_801d3680. Both carriers say payline draw. The row moved
+off audio.md - where it was a pure draw routine on the audio directory page -
+onto minigames-debug.md, which is its correct home and still tokenises
+differently from minigame-slot-machine.md.
+"""
+
+[[waiver]]
+key = "dual-label:801d362c"
+reason = """
+vm-inventory.md's section exists precisely to answer how many copies there are:
+one, in field overlay 0897, with the six capture dumps identical and the static
+0897 print a strict subset. game-modes.md's row says the same thing in a
+sentence. Confirmed here: all seven dumps hash identically at 1293 instructions.
+"""
+
+[[waiver]]
+key = "dual-label:801d4a60"
+reason = """
+One 756-instruction body, identical across overlay_0897 and every capture
+image. script-vms.md's row names the scripted-scene actor and links
+field-locomotion.md for the 38-state table at 0x801CE960, which is where the
+full decode lives.
+"""
+
+[[waiver]]
+key = "dual-label:801d5780"
+reason = """
+Both carriers describe the four-argument standalone spawn half of FUN_801D25EC
+allocating from template 0x801F227C. runtime-libs.md files the row, actor-vm.md
+explains the arc apex it seats. The 801d5780.txt dump is the filename trap -
+its header reads entry=801d56fc.
+"""
+
+[[waiver]]
+key = "dual-label:801d5ae8"
+reason = """
+One 190-instruction body, byte-identical in overlay_menu and overlay_shop_save.
+Both carriers call it the item detail / sell panel; menus.md files the row,
+shop.md gives the window rect and row offsets.
+"""
+
+[[waiver]]
+key = "dual-label:801d688c"
+reason = """
+One 114-instruction body, byte-identical in overlay_menu, both save_ui captures
+and overlay_shop_save. Both carriers call it the shared list-cursor navigator
+and cite the same pad masks DAT_801EF0F0 / DAT_801EF0F4.
+"""
+
+[[waiver]]
+key = "dual-label:801d6e18"
+reason = """
+One 890-instruction body, identical in overlay_menu, the save_ui captures and
+overlay_shop_save. Both carriers call it the developer character-parameter
+editor. (overlay_801d6e18.txt is a different, 901-instruction print whose
+header reads entry=801d6704 - the filename trap, not a rival occupant.)
+"""
+
+[[waiver]]
+key = "dual-label:801d7bb8"
+reason = """
+Both carriers make the same point in the same words: byte-identical polar
+offset helper in the fishing / slot-machine / debug-menu images, and the PROT
+0897 dump at this VA reports 0 instructions. Confirmed - the three real prints
+hash identically at 30 instructions.
+"""
+
+[[waiver]]
+key = "dual-label:801d84d0"
+reason = """
+Both carriers call it the dialog pager in the dialog overlay; mes.md documents
+the 26-state machine, field-menu.md the box geometry it draws. The 1499- and
+544-instruction bodies split by image (dialog/cutscene/world_map versus
+field_battle_intro/world_map_top), and neither page claims the other's image.
+"""
+
+[[waiver]]
+key = "dual-label:801d9c14"
+reason = """
+save-screen.md's section opens with "Not a save-screen function at all" and
+hands it to the pause menu's equip-candidate list, which is exactly what
+menus.md's row says. The two texts agree; only the page names disagree.
+"""
+
+[[waiver]]
+key = "dual-label:801d9d3c"
+reason = """
+script-vm.md's section is titled "0x801D9D3C is two functions, and the battle
+one is the real entry" - it states the alias rather than contradicting it.
+Confirmed: overlay_0897 prints 4 instructions, the battle-family images all
+print the same 388. battle.md's row is that 388-instruction routine.
+"""
+
+[[waiver]]
+key = "dual-label:801da2a0"
+reason = """
+One 470-instruction body in overlay_save_ui and overlay_shop_save. Both
+carriers call it sub-screen 0x15, one body serving three per-character lists
+selected by the step counter, and save-screen.md's section explicitly retires
+the two earlier readings.
+"""
+
+[[waiver]]
+key = "dual-label:801da51c"
+reason = """
+Both carriers call it the world-map / field entity SM. Confirmed against the
+181-instruction body: 5-state dispatch on entity[+0x8A] through 0x801CEC28,
+FUN_800243F0 poll, encounter fill at 0x801DA620..0x801DA678. The 65-instruction
+prints in the minigame images stop at the jr v0 and are truncations;
+world-map.md's stale "260 bytes" and its _DAT_80083808 (really _DAT_8007B868)
+are corrected.
+"""
+
+[[waiver]]
+key = "dual-label:801dbc30"
+reason = """
+re-do-not-re-walk.md's entry is titled "FUN_801DBC30 is not the battle name
+plate" - it retires a reading and agrees with battle.md's cross-out mark blit.
+A falsification page naming the address is not a rival definition.
+"""
+
+[[waiver]]
+key = "dual-label:801dd35c"
+reason = """
+One 3026-instruction body in overlay_menu, both save_ui captures and
+overlay_shop_save. script-vms.md files it as the top-level menu dispatcher;
+save-screen.md documents the load/save sub-screens that call it. Same routine,
+narrower view.
+"""
+
+[[waiver]]
+key = "dual-label:801de840"
+reason = """
+phantom-print-index.md's section says these printed VAs re-key *into*
+FUN_801DE840 and that the enclosing routine is the field/event VM whose real
+entry is 0x801DE840 in PROT 0897 - it cites script-vms.md rather than competing
+with it. Confirmed: the 4998-instruction body is identical in overlay_0897 and
+every field-band capture; the 138-instruction prints belong to the minigame
+overlays.
+"""
+
+[[waiver]]
+key = "dual-label:801e13b8"
+reason = """
+One 202-instruction body in overlay_menu and overlay_shop_save. Both carriers
+describe the same card write / format sequencer over DAT_801F329C and name
+FUN_801E1114 as its ticker.
+"""
+
+[[waiver]]
+key = "dual-label:801e1c1c"
+reason = """
+One 1130-instruction body across overlay_menu, both save_ui captures and
+overlay_shop_save. save-screen.md gives the signature and the inlined 12-bit
+lerp; script-vms.md's row was a bare size stub and now states the same
+signature and links it.
+"""
+
+[[waiver]]
+key = "dual-label:801e3294"
+reason = """
+One 259-instruction body in overlay_menu and both save_ui captures. Both
+carriers call it the libcd card I/O state machine, 5 states, and name the same
+retry budget.
+"""
+
+[[waiver]]
+key = "dual-label:801ead98"
+reason = """
+Corrected. The 1820-instruction body indexes a 24-entry jump table at
+0x801CF46C and loads the label strings at 0x801CF344, drawing through
+FUN_8002C69C and FUN_80036888 - the world-map debug-menu list renderer
+world-map.md tabulates, and what engine-vm::world_map_overlay /
+engine-ui::ui_menu::dev_menu_list port. script-vms.md's "Field subsystem hub
+(town overlay). 5.9 KB / 35 calls" was a stub with a wrong size and a wrong
+label; it now carries the same description.
+"""
+
+[[waiver]]
+key = "dual-label:801f12d0"
+reason = """
+re-do-not-re-walk.md's entry retires reading this routine out of the
+overlay_0897 dump, which is a mid-function fragment (47 instructions against
+the muscle_dome image's 330). battle.md's row is the 330-instruction body. The
+falsification page and the definition agree about which dump is real.
+"""
+
+[[waiver]]
+key = "dual-label:801f17f8"
+reason = """
+One 125-instruction body, byte-identical in overlay_battle, battle_action and
+muscle_dome. Both carriers call it the summon.dat / readef.DAT side-band
+transfer SM reached from FUN_800520F0 case 0xFF.
+"""
+
+[[waiver]]
+key = "dual-label:801f3990"
+reason = """
+move-power.md's section exists to say this address is a real function and *not*
+a consumer of that table, and it describes the same body battle.md's row does -
+ctx[+0x13] plus the char-kind table 0x8007BD10. A negative finding filed on the
+format page is not a rival label.
+"""
+
+[[waiver]]
+key = "dual-label:801f69d8"
+reason = """
+Per-image alias, both true. In world_map_top_ext.bin the first word is
+addiu sp,sp,-0x70 opening the 643-instruction top-view tile-visibility
+dispatcher renderer.md documents. In overlay_muscle_dome.bin the same VA is
+PROT 0900's slot-B link base and the eighteen FUN_ pseudo-entries across
+0x801F69D8..0x801F6A84 are table words, which is dump-corpus-integrity.md's
+subject. Both pages now say so and cite each other.
+"""
+
+[[waiver]]
+key = "dual-label:801f71e0"
+reason = """
+Per-image alias, both true. Read at PROT 0967's own base 0x801F69D8 the word at
+0x801F71E0 is lw v1,-0x42dc(v0), the second half of an address load and the
+target of a bne sixteen bytes earlier - battle.md's "label, not an entry". In
+overlay 0897 the same VA is addiu sp,sp,-0x40 opening the 1070-instruction
+actor-band command loop script-vm.md documents, forming the actor band
+0x801C9370. Both pages now qualify by image and cite each other.
+"""
