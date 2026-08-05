@@ -42,6 +42,14 @@
 //! coin/inventory/flag deltas through [`apply_redeem`], then calls
 //! [`PrizeExchangeSession::rebuild`] - mirroring how the retail commit
 //! rebuilds the row list in place.
+//!
+//! NOT WIRED: no host opens the screen. [`PrizeExchangeSession`] is
+//! constructed only by this file's tests, and nothing routes to menu-overlay
+//! sub-screen `0x20`: `field_submode_screen::slot_for_op49_sub_op` collapses
+//! every non-dedicated op-`0x49` sub-op to `slot::CLOSE_TICK`, so the casino
+//! counter's script cannot select this sub-screen however it is written. A
+//! per-sub-screen route off the entry-context byte is the prerequisite. See
+//! `docs/tooling/reach-triage.md`.
 
 use crate::menu_input::{CursorNav, NavButtons, menu_cursor_nav};
 use std::collections::HashMap;

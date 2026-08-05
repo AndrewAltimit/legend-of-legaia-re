@@ -172,7 +172,7 @@ pub struct HubEnv {
     pub progress_b: i32,
     /// `DAT_801E46B0` - the item id the acquisition caption names.
     pub caption_item: i32,
-    /// `_DAT_800845B4` - the amount the money pseudo-item prints.
+    /// `_DAT_800845B4` - the Point Card bank the `0xFE` caption arm prints.
     pub caption_amount: i32,
     /// Everything the per-entry sub-panel `FUN_801E5B4C` reads that is not
     /// already on this struct: the per-entry character records and the two
@@ -478,8 +478,11 @@ pub const COIN_BANK_MAX: i32 = 0x0098_967F;
 /// Gold per coin.
 pub const GOLD_PER_COIN: i32 = 100;
 
-/// The item id that means "money" rather than an inventory item.
-pub const CAPTION_MONEY_ID: i32 = 0xFE;
+/// The item id whose caption arm prints a counter rather than an item.
+///
+/// `0xFE` is the **Point Card** (`engine-core::shop::POINT_CARD_ITEM_ID`), and
+/// the arm prints its bank `_DAT_800845B4`. It is not a money pseudo-item.
+pub const CAPTION_POINT_CARD_ID: i32 = 0xFE;
 
 // ---------------------------------------------------------------------------
 // dispatcher
@@ -1320,11 +1323,19 @@ pub fn two_line_panel(actor: &HubActor, env: &HubEnv) -> HubFrame {
 /// `DAT_801E46B0` is an **item id**, and the two strings come from the static
 /// `SCUS_942.54` item table (`0x8007436C + id * 0x0C`, see
 /// [`docs/formats/item-table.md`]) - the name at the record's word `0` and the
-/// detail line at word `1`. The special id [`CAPTION_MONEY_ID`] is the money
-/// pseudo-item: it adds a fixed caption and prints the eight-digit amount from
-/// `_DAT_800845B4`.
+/// detail line at word `1`. The special id [`CAPTION_POINT_CARD_ID`] is the
+/// **Point Card**, not money: it adds a fixed caption and prints the
+/// eight-digit total from `_DAT_800845B4`, which is the Point Card counter
+/// (`docs/reference/memory-map.md`) and not a purse. Party gold is
+/// `_DAT_8008459C` and the casino coin bank `_DAT_800845A4`, both named
+/// separately in this module's globals list - and `0xFE` is the id the shop's
+/// buy commit tests with `FUN_80042F4C(0xFE)` before crediting that same
+/// counter (`engine-core::shop::POINT_CARD_ITEM_ID`).
 ///
-/// The Ghidra dump of this body stops after the money arm with no epilogue
+/// REF: FUN_80042F4C - the inventory-has query that gate uses; ported on the
+/// engine side as the shop session's Point Card check, not here.
+///
+/// The Ghidra dump of this body stops after the Point Card arm with no epilogue
 /// (`Control flow encountered bad instruction data`), so anything past the
 /// number draw is unrecovered; what is here is the whole disassembled extent.
 pub fn acquisition_caption(actor: &HubActor, env: &HubEnv) -> HubFrame {
@@ -1344,7 +1355,7 @@ pub fn acquisition_caption(actor: &HubActor, env: &HubEnv) -> HubFrame {
         y: y.wrapping_add(0x10),
         // palette 7 is selected before this call
     });
-    if id == CAPTION_MONEY_ID {
+    if id == CAPTION_POINT_CARD_ID {
         out.draw(HubDraw::Text {
             text: HubString::Literal(STR_CAPTION),
             x: x.wrapping_add(0x18),
@@ -1904,12 +1915,12 @@ mod tests {
     }
 
     #[test]
-    fn acquisition_caption_adds_the_amount_only_for_the_money_id() {
+    fn acquisition_caption_adds_the_amount_only_for_the_point_card_id() {
         let a = HubActor::default();
         let mut e = env();
         e.caption_item = 3;
         assert_eq!(acquisition_caption(&a, &e).draws.len(), 2);
-        e.caption_item = CAPTION_MONEY_ID;
+        e.caption_item = CAPTION_POINT_CARD_ID;
         e.caption_amount = 1234;
         let f = acquisition_caption(&a, &e);
         assert_eq!(f.draws.len(), 4);

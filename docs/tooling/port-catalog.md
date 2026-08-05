@@ -313,7 +313,8 @@ python3 scripts/ci/port-catalog.py --dashboard           # open-work rollup -> o
 python3 scripts/ci/port-catalog.py --live                # add the reachability column
 python3 scripts/ci/port-catalog.py --not-live            # ported but unreachable from any host root
 python3 scripts/ci/port-catalog.py --live-audit          # reachability vs `NOT WIRED:` disclosures
-python3 scripts/ci/port-catalog.py --check               # ratchet against the committed baseline
+python3 scripts/ci/port-catalog.py --check --live        # ratchet every baselined figure
+python3 scripts/ci/port-catalog.py --check --allow-uncompared   # fast pass, skips the disclosure gap
 python3 scripts/ci/port-catalog.py --live --update-baseline
 ```
 
@@ -333,7 +334,8 @@ workflow - a wave could widen a worklist or drop a `// PORT:` tag, move a
 published number, and report nothing. `--check` compares against
 `scripts/ci/port-catalog-baseline.json` and is a hard pre-commit gate; the same
 step runs in CI, where it reports `SKIPPED` because the `dumped` column reads
-the gitignored Ghidra corpus.
+the gitignored Ghidra corpus. The hook is therefore the only place any of these
+figures is ever compared.
 
 | Figure | Direction |
 |---|---|
@@ -355,8 +357,31 @@ a property of the tags, the docs and the dump corpus.
 `live/disclosure_gap` is the one entry taken from the permissive graph, and it
 is sound in that direction precisely because that graph *over*-reports
 reachability: a port it still calls inert really is inert, so an inert anchor
-with no disclosure is a lower bound. It needs `--live`, and a run without it
-prints `NOT COMPARED THIS RUN` rather than counting the figure as passed.
+with no disclosure is a lower bound.
+
+### A figure the default path never computes is not ratcheted
+
+`live/disclosure_gap` needs `--live`. It was baselined at 0, the hook ran
+`--check` without `--live`, the run printed `NOT COMPARED THIS RUN` and exited
+0 - so the figure drifted to 1 and stayed there with every gate green. Printing
+a line is not a comparison. Three things follow, and the third is the one that
+would have caught it:
+
+- **`--check` fails on an uncompared figure.** A caller that cannot afford the
+  slow pass says `--allow-uncompared` at the call site, which makes "the slow
+  pass did not run" a visible decision rather than a default.
+- **The hook spends the pass when it can matter.** `--live` costs about 20s
+  against 3s for the default run. The disclosure gap is a property of the Rust
+  call graph and the `NOT WIRED:` tags, both under `crates/`, so the hook runs
+  the full compare when the commit stages `crates/` and passes
+  `--allow-uncompared` otherwise. The CI step never passes it - it is inert
+  today for want of the dump corpus, and must be the complete invocation if
+  that ever changes.
+- **`--update-baseline` no longer drops what it did not compute.** A snapshot
+  carries only the figures its run produced, so writing it verbatim deleted the
+  whole `live` block on any run without `--live` - one command, ratchet gone,
+  nothing said. Uncomputed figures are now carried forward from the existing
+  baseline and named in the output.
 
 A regression report is a prompt to open the per-row pages - `--missing-ports`,
 `--live-audit`, and the triage pages under

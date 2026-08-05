@@ -478,7 +478,26 @@ The `+0x16E` writes:
 | `3` | `\|= 1` (**Venom**) | `rand & 7 == 0` (1/8) | - |
 | `4` | `\|= 2` (**Toxic**) | `rand & 7 == 0` (1/8) | - |
 | `5` | `\|= 1 << (rand%3 + 3)` (**Rot** - disables one random strike command: bit `8` grays the LEFT arrow, `0x10` the RIGHT, `0x20` UP **and** DOWN; `== 0x38` blocks Attack entirely - the pinned map in [arts-command-gauge.md § status limb gating](arts-command-gauge.md#status-limb-gating)) | always (party target) | char `+0xF4` bit 24 (passive `0x18` Rot Guard) or bit 28 (`0x1C` Master Guard) nullifies |
-| `6` | `\|= 0x1000` (**Curse** - grays the whole Magic command; the block the menu + AI affordability checks read) | `rand & 3 == 0` (1/4) | - |
+| `6` | `\|= 0x1000` (**Curse** - grays the whole Magic command; the block the menu + AI affordability checks read) | `rand & 3 == 0` (1/4) | **physical-strike resolver only** - see below |
+
+**The two resolvers' ladders are different lengths, so the byte space is not
+shared end to end.** `801ec3e4`'s ladder tests `4` / `<5` / `3` / `5` / `6`
+(the last at `li v0,0x6` / `beq` `0x801EE478..0x801EE47C`). `801e09f8`'s stops
+at `5`: the compare at `0x801E1620` is against `5` and the fall-through jumps
+straight to the join at `0x801E178C`, with no `6` arm in the routine. A
+**monster special attack therefore cannot inflict Curse**; only the
+physical/arts path can. Byte `5`'s party-target restriction is likewise
+structural in `801e09f8` - the `sltiu v0,a1,0x3` at `0x801E1690` precedes the
+guard-bitfield read, which is a character-record field.
+
+`801e09f8`'s byte does not come from an art record. `FUN_801DEA50` writes
+`ctx[+0x1014]` (`sw v0,0x1014(a0)` at `0x801DF284`) with the **move-power
+record** for the actor's queued move id (`0x801F4F5C + map[actor[+0x1DF]] * 26`),
+so the applier byte is that record's `+0x0A`
+[impact-effect selector](../formats/move-power.md#record-layout-26-bytes) -
+already parsed by `legaia_asset::move_power`. The engine drives the ladder from
+there: `engine-core::world::battle::monster_ai::enemy_impact_status_proc`, called
+by `World::apply_enemy_move_status` after a monster cast folds.
 
 **Venom / Toxic each carry two mechanical effects** (both dump-pinned, and not
 mutually exclusive - the same two `+0x16E` bits drive both): the
@@ -490,8 +509,18 @@ scale `×9/10` (Venom) / `×7/10` (Toxic) in `FUN_801dd864`.
 around an enemy Glare cast (the petrify lands as `+0x16E: 0 → 4` with HP
 untouched; the victim's queued action category at `+0x1DE` clears, and the
 `+0x220` flag near the lingering-status visual marker drops). Bit `0x04` is
-exactly the hole the applier byte map above leaves unassigned; the petrify
-applier itself (Glare's effect path) is not in the dumped corpus. While the bit
+exactly the hole the applier byte map above leaves unassigned - because its
+applier is a **different routine**: `FUN_800402F4`, the SCUS item/effect
+applier, at `0x80041CEC..0x80041CF8` (`lhu 0x16e` / `ori 0x4` / `sh 0x16e`),
+behind the accuracy roll `rand % (attacker[+0x168] + target[+0x168])` vs the
+target's own `+0x168` (`div`/`mfhi`/`slt`/`beq` at `0x80041CD4..0x80041CE4`).
+Its success arm goes on to clear the target's `+0x1DE` at `0x80041D4C`, which
+is the second half of the capture above - so the capture and the routine are
+the same event, and the sibling `ori 0x1000` (Curse) arm sits at `0x80041EE8`
+in the same band. `see ghidra/scripts/funcs/800402f4.txt`. This arm is
+**unported** (the port models the roll as
+`battle_formulas::accuracy_roll` and applies no bit), which is why nothing in
+play petrifies a party slot. While the bit
 is set the render/update pass `FUN_8004ce2c` (`8004ce2c.txt:1011-1042`) grays
 the afflicted actor's **full sprite** - each texel recoloured to its luminance
 `(r+g+b) >> 2` (5-bit channels) and re-stamped via `MoveImage`.

@@ -26,7 +26,7 @@ Part of the [key function directory](../functions.md) - the conventions for read
 | `0x8007326C` (data) | Per-prim-mode descriptor table. 6 entries × 8 bytes - see [`formats/tmd.md`](../../formats/tmd.md). |
 | `0x8007C018` (data) | Global TMD pointer table - [details ↓](#0x8007c018-data) |
 | `80026B4C` | Per-TMD installer. Verifies TMD magic `0x80000002`, stores `tmd_ptr` at `DAT_8007C018[DAT_8007B774++]`, then calls `FUN_800268DC` (builds the `+0xC` group descriptors). Reached from `FUN_8001F05C` case 2 (TMD-pack) and case 9 (TMD2). 35 instructions; tiny. |
-| `801F69D8` | World-map top-view tile-visibility dispatcher (in `overlay_world_map_top_ext`). 643 instr / 2572 B. Bulk-copies camera struct from `0x8007BF10` into scratchpad, nested-loops over visible tile cells in scratchpad table `_DAT_1F8003EC + 0x8000`, dereferences each 0x20-byte object record, applies frustum + GTE RTPT, then routes the TMD via `DAT_8007C018[(object_kind8 + DAT_8007B6F8)*4]` and calls `FUN_80043390(tmd+0xC, color, fog)`. Color = `0xD0D0D0` default / `0x40D0D0D0` if interactive / OR `0x10000000` if extra flag. Fog = `clamp((GTE_z - 0x5000) >> 3, 0, 0x1000)`. The warp-transition cluster-A caller (capture-pinned: Drake Read-bp's `ra = 0x801F725C`). |
+| `801F69D8` | World-map top-view tile-visibility dispatcher (in `overlay_world_map_top_ext`). 643 instr / 2572 B. Bulk-copies camera struct from `0x8007BF10` into scratchpad, nested-loops over visible tile cells in scratchpad table `_DAT_1F8003EC + 0x8000`, dereferences each 0x20-byte object record, applies frustum + GTE RTPT, then routes the TMD via `DAT_8007C018[(object_kind8 + DAT_8007B6F8)*4]` and calls `FUN_80043390(tmd+0xC, color, fog)`. Color = `0xD0D0D0` default / `0x40D0D0D0` if interactive / OR `0x10000000` if extra flag. Fog = `clamp((GTE_z - 0x5000) >> 3, 0, 0x1000)`. The warp-transition cluster-A caller (capture-pinned: Drake Read-bp's `ra = 0x801F725C`). Image-qualified - [details ↓](#801f69d8). |
 | `801D8280` | `DAT_8007C018` table walker (overlay-resident, in every world-map / cutscene-mapview / 0897 overlay variant). Iterates entries `0..DAT_8007BB38` and for each pointed-to TMD calls `FUN_801D5E20` on each 0x1C-byte sub-record. 55 instr. |
 | `801D77F4` | Overlay-resident actor allocator (alt to `FUN_80021B04`) - [details ↓](#801d77f4) |
 | `80021B04` | SCUS-resident actor-spawn helper. Looks up `DAT_8007C018[actor[+0x64].i16]`, copies position/rotation into actor fields, populates per-actor OBJECT pointer table at `actor[+0x44]` (`[0] = tmd_group_count`, `[1..n] = sub-record pointers at stride 0x1C`). Then calls `FUN_80023070` (move-VM entry) and `FUN_8003D344` (5-op GTE transform). |
@@ -237,6 +237,18 @@ the after-image ghost and the move-FX streak use, and the mask beside it is
 `0x00FFFFFF`. It is not a `0x80808080` flag word. Ported as
 `legaia_engine_render::battle_actor_tick`, `NOT WIRED` (none of the five passes it
 sequences live in that crate). `see ghidra/scripts/funcs/800480d8.txt`.
+
+### `801F69D8`
+
+The row's `overlay_world_map_top_ext` qualifier is load-bearing, because this VA
+is an overlay-band alias. There the first word is `addiu sp,sp,-0x70`, a clean
+prologue opening the 643-instruction dispatcher above. In a Muscle Dome capture
+the same VA is PROT 0900's slot-B **link base** and the eighteen `FUN_`
+pseudo-entries printed across `0x801F69D8..0x801F6A84` are the module's head
+table, not code - see
+[`dump-corpus-integrity.md`](../../tooling/dump-corpus-integrity.md#prot-0900s-head-window-0x801f69d80x801f6a84).
+Neither dump contradicts the other; a VA above `0x801C0000` names an object only
+together with its image.
 
 ### `80059BD4`
 

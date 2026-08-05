@@ -38,6 +38,12 @@ idiom) plus the `jal` targets it calls.
     a module with an unrelated name. That conjunction is the shop shape, and
     `shop.rs` / `FUN_801D5DE0` reproduces it.
 
+    "Distinctive" is measured at a cut that follows the module, because a fixed
+    one is blind to a whole kind of module rather than to a random sample of
+    them: a painter's only private datum is its own string pool and a host
+    dispatcher's members are unrelated by design, so both report one orphan per
+    member. See `DF_LADDER`.
+
 `dual-label`
     One routine given a defining description - a `###` section, or a row in the
     function directory - on two docs pages whose names share nothing. At most
@@ -93,6 +99,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import re
 import sys
 from collections import defaultdict
@@ -143,6 +150,57 @@ OVERLAY_BASE = 0x801C0000
 # `module-orphan` needs enough siblings for "shares nothing" to mean anything.
 ORPHAN_MIN_SIBLINGS = 3
 
+# What share of its own address span a dump has to print before "this routine
+# touches nothing its siblings touch" is a statement about the routine rather
+# than about the dump. A jump-table dispatcher is routinely dumped as its head
+# plus its shared epilogue and nothing in between - `FUN_801EA9B0` prints 25
+# instructions across a 250-instruction span, so 90% of it was never read.
+#
+# Two distinct shapes live under 1.0 and the floor sits between them: a stub of
+# that kind prints a tenth or less, while a body with one arm skipped prints
+# about half (`FUN_801DD9D4`: 69 instructions over a 147-slot span, 0.47). A
+# floor at 0.5 would have taken the second kind with the first - and did, in
+# testing, silence a known-real defect.
+DUMP_COVERAGE_MIN = 0.25
+
+# One fixed distinctiveness cut cannot read every module, and the failure is not
+# random: it is a property of what the module ports.
+#
+# A window-descriptor **painter** has exactly one datum of its own - its private
+# overlay string pool - and calls only the corpus-wide text writer `0x80036888`,
+# number writer `0x80034B78` and marker blitter `0x8002B994`. Its siblings share
+# the choice-state word and the panel-install callee, both far above the cut. So
+# every painter in a painter module reads as sharing nothing with every other
+# one, and the module reports as many orphans as it has members. The same shape
+# one level up produced eleven more from one actor-hub module.
+#
+# The fix is to let the cut follow the module. A module whose members really do
+# belong together links up at *some* rarity; where that happens says how private
+# its shared vocabulary is, and only a member that stays unlinked there is
+# saying anything. `ui_menu_window_painters.rs` links at 96 and has no orphan
+# left; `world/field_movement.rs` is already cohesive at the base cut and its
+# orphan stays one at every cut on the ladder.
+DF_LADDER = (8, 12, 16, 24, 32, 48, 64, 96)
+
+# ...but a per-module estimate needs pairs to estimate from. Five tags are ten
+# pairs and several of those are vacuous; the cut such a module "needs" is one
+# pair's accident. Below this many tagged addresses the base cut stands, and
+# the cheapest way to see why is `ui_menu_window_painters_large.rs`: four tags,
+# two of them corroborating, and its one genuinely wrong tag stops reading as an
+# orphan the moment the cut reaches 16.
+ADAPTIVE_MIN_TAGS = 6
+
+# What "the module reads as cohesive" means: this share of its tagged addresses
+# corroborating at least one other. Under it, "shares nothing" is the module's
+# normal condition and says nothing about any member.
+#
+# This is a fitted number and it should be read as one. It was chosen by
+# sweeping it against the 66 hand-reviewed verdicts behind
+# `docs/tooling/port-provenance.md`, under the constraint that every one of the
+# four real defects keeps firing. 0.95 breaks that constraint - it absorbs three
+# of the four - so the constraint, not the sweep, is what fixes the ceiling.
+ADAPTIVE_TARGET = 0.85
+
 # Tokens too generic to make two module names "related".
 STOPWORD_TOKENS = {
     "mod",
@@ -167,6 +225,19 @@ STOPWORD_TOKENS = {
 UNTRUSTED_JAL_IMAGE = "overlay_0896"
 UNTRUSTED_JAL_BELOW = 0x801CE818
 
+# The three doc roots that say what a routine *is*. Everything else under
+# `docs/` answers a different question about it: `docs/tooling/` describes the
+# instruments, `docs/guides/` the tasks, and the thread ledgers
+# (`re-settled-threads.md`, `re-do-not-re-walk.md`, `open-rev-eng-threads.md`)
+# record which questions are answered and which readings are falsified. A
+# falsification titled "X is *not* Y" names an address without claiming it, so
+# it is not a second label - `dual-label` only compares defining pages.
+DEFINING_DOC_ROOTS = (
+    "docs/subsystems/",
+    "docs/formats/",
+    "docs/reference/functions/",
+)
+
 # ---------------------------------------------------------------------------
 # Regexes
 # ---------------------------------------------------------------------------
@@ -181,11 +252,21 @@ PORT_ADDR_RE = re.compile(
 # `FUN_8...`, `DAT_8...`, `_DAT_8...`, backticked. Deliberately wider than
 # PORT_ADDR_RE - this one is looking for the port's own evidence, not its claim.
 CITED_ADDR_RE = re.compile(r"(?:0x|FUN_|_?DAT_|PTR_)([0-9a-fA-F]{8})", re.IGNORECASE)
+# The subset of the above written as a *function entry*: `FUN_8003D53C`,
+# `func_0x8003d064`, `LAB_`-style entries. Prose naming another routine is a
+# cross-reference, whether or not that routine has been dumped.
+FUNC_REF_RE = re.compile(r"(?:\bFUN_|\bfunc_0x|\bLAB_)([0-9a-fA-F]{8})", re.IGNORECASE)
 
+MD_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)")
+
+# The image tag is optional here and required later: a third of the corpus
+# predates it, and those dumps are still valid witnesses for how *common* an
+# address is even though they cannot say which image a body belongs to.
 HEADER_RE = re.compile(
-    r"^==\s+\S+\s+([0-9a-fA-F]{8})\s+\(entry=([0-9a-fA-F]{8})\)\s+\[([^\]]+)\]"
+    r"^==\s+\S+\s+([0-9a-fA-F]{8})\s+\(entry=([0-9a-fA-F]{8})\)\s*(?:\[([^\]]+)\])?"
 )
 SIZE_RE = re.compile(r"^size=(\d+) bytes, (\d+) instructions")
+PC_RE = re.compile(r"^([0-9a-f]{8})\s")
 
 LUI_RE = re.compile(r"^([0-9a-f]{8})\s+_?lui\s+(\w+),0x([0-9a-f]+)\s*$")
 ADD_RE = re.compile(r"^([0-9a-f]{8})\s+_?(addiu|ori)\s+(\w+),(\w+),(-?)0x([0-9a-f]+)\s*$")
@@ -196,12 +277,20 @@ ADD_RE = re.compile(r"^([0-9a-f]{8})\s+_?(addiu|ori)\s+(\w+),(\w+),(-?)0x([0-9a-
 ADDU_RE = re.compile(r"^([0-9a-f]{8})\s+_?add[u]?\s+(\w+),(\w+),(\w+)\s*$")
 MEM_RE = re.compile(
     r"^([0-9a-f]{8})\s+_?(lw|lh|lhu|lb|lbu|sw|sh|sb|lwl|lwr|swl|swr|lwc2|swc2)\s+"
-    r"\w+,(-?)0x([0-9a-f]+)\((\w+)\)\s*$"
+    r"(\w+),(-?)0x([0-9a-f]+)\((\w+)\)\s*$"
 )
 JAL_RE = re.compile(r"^([0-9a-f]{8})\s+_?jal\s+0x([0-9a-f]{8})")
 # Generic "this instruction writes its first operand" fallback, used to kill a
 # tracked register when something other than the forms above redefines it.
 WRITE_RE = re.compile(r"^[0-9a-f]{8}\s+_?([a-z0-9.]+)\s+(\w+),")
+# The same fallback for the one-operand writers, which carry no comma and so
+# slipped past `WRITE_RE` entirely: `mflo v0` redefines `v0` as surely as any
+# `addu` does, and a `lui` half kept across one is a synthesised address.
+WRITE1_RE = re.compile(r"^[0-9a-f]{8}\s+_?(mflo|mfhi)\s+(\w+)\s*$")
+
+# Loads. Their destination register is redefined from memory, which ends the
+# `lui` provenance the tracker was carrying in it - see `parse_dump`.
+LOAD_OPS = {"lw", "lh", "lhu", "lb", "lbu", "lwl", "lwr", "lwc2"}
 
 # MIPS instructions whose first operand is a *source*, not a destination. Getting
 # this list wrong in either direction only loosens or tightens the tracker, but a
@@ -227,7 +316,7 @@ class Dump:
     """One `ghidra/scripts/funcs/<stem>.txt` file, read as disassembly only."""
 
     __slots__ = ("path", "stem", "addr", "entry", "size", "n_instr", "image",
-                 "formed", "jals", "text", "last")
+                 "formed", "jals", "text", "last", "printed", "body")
 
     def __init__(self, path: Path):
         self.path = path
@@ -237,6 +326,13 @@ class Dump:
         self.size = 0
         self.n_instr = 0
         self.image = ""
+        # Instructions actually printed, and a fingerprint of them. A dump that
+        # printed none carries no evidence at all (`ghidra.md` catalogues the
+        # "0 instructions, decompiled C only" shape), and two dumps of one VA
+        # whose fingerprints differ are two different routines - the VA-aliasing
+        # case, which no amount of reading either body can resolve.
+        self.printed = 0
+        self.body = ""
         # Last printed instruction address. The header's `size` is the
         # instruction count times four, which is NOT the extent when Ghidra
         # skipped undefined bytes inside the body: `overlay_0977_slotA_801cf870`
@@ -274,6 +370,7 @@ def parse_dump(path: Path) -> Dump | None:
     d.text = raw
     hi: dict[str, int] = {}
     full: dict[str, int] = {}
+    body: list[str] = []
     in_dis = False
     for line in raw.splitlines():
         if not in_dis:
@@ -281,7 +378,7 @@ def parse_dump(path: Path) -> Dump | None:
             if m:
                 d.addr = m.group(1).lower()
                 d.entry = int(m.group(2), 16)
-                d.image = m.group(3)
+                d.image = m.group(3) or ""
                 continue
             m = SIZE_RE.match(line)
             if m:
@@ -296,6 +393,15 @@ def parse_dump(path: Path) -> Dump | None:
         s = line.strip()
         if not s:
             continue
+
+        # Every printed instruction, before the opcode arms consume it: the
+        # earlier placement counted only the lines no arm matched, so `d.last`
+        # silently omitted every `lui` / `addiu` / load in the body.
+        pc = PC_RE.match(s)
+        if pc:
+            d.last = max(d.last, int(pc.group(1), 16))
+            d.printed += 1
+            body.append(s)
 
         m = LUI_RE.match(s)
         if m:
@@ -337,16 +443,23 @@ def parse_dump(path: Path) -> Dump | None:
 
         m = MEM_RE.match(s)
         if m:
-            _, _op, sign, off, base = m.groups()
+            _, _op, dst, sign, off, base = m.groups()
             val = int(off, 16) * (-1 if sign == "-" else 1)
             addr = _resolve(hi, full, base, val)
             if addr is not None:
                 d.formed.setdefault(addr, m.group(1))
+            # A load redefines its destination from memory. Carrying the old
+            # `lui` provenance through it is how the checker manufactured a
+            # data address that exists in no dump: `lui/addiu` forms
+            # 0x801C9370, `lw v0,0x0(a0)` reloads `v0` from a pointer table,
+            # and the next `lhu v0,0x14c(v0)` was then read as forming
+            # 0x801C94BC - a field offset off a runtime pointer, reported as a
+            # global the routine owns. Every `base + small offset` chain behind
+            # a pointer load has this shape, so this is a class, not a case.
+            if _op in LOAD_OPS:
+                hi.pop(dst, None)
+                full.pop(dst, None)
             continue
-
-        pc = re.match(r"^([0-9a-f]{8})\s", s)
-        if pc:
-            d.last = max(d.last, int(pc.group(1), 16))
 
         m = JAL_RE.match(s)
         if m:
@@ -364,6 +477,14 @@ def parse_dump(path: Path) -> Dump | None:
             reg = m.group(2)
             hi.pop(reg, None)
             full.pop(reg, None)
+            continue
+
+        m = WRITE1_RE.match(s)
+        if m:
+            reg = m.group(2)
+            hi.pop(reg, None)
+            full.pop(reg, None)
+    d.body = hashlib.sha1("\n".join(body).encode()).hexdigest()
     return d
 
 
@@ -378,25 +499,79 @@ def load_corpus() -> tuple[dict[str, list[Dump]], dict[int, int], dict[int, int]
     DF counts **distinct addresses**, not dump files. Several routines have two
     or three dumps of the same VA from different images, and counting files
     would inflate exactly the aliased addresses the checker must not over-weight.
+
+    Two populations, deliberately different:
+
+    - The **denominator** is every dump that printed instructions. How many
+      routines form an address is a property of the corpus, and an untagged
+      dump is as good a witness to it as a tagged one. Restricting it to
+      image-tagged dumps measured the commonality of half the corpus and called
+      the result distinctive.
+    - The **evidence** map keeps only image-tagged dumps, because attributing a
+      body to a VA in the overlay band needs the image
+      (`docs/tooling/dump-corpus-integrity.md`).
+
+    Both drop a dump whose header `entry` is not the address asked for: that
+    file is a window opening inside a *different* routine, and reading a
+    routine's identity off it is the trap this whole checker exists to catch.
     """
     by_addr: dict[str, list[Dump]] = defaultdict(list)
     df: dict[int, int] = defaultdict(int)
     cdf: dict[int, int] = defaultdict(int)
     if not FUNCS_DIR.exists():
         return by_addr, df, cdf
+    every: list[Dump] = []
     for p in sorted(FUNCS_DIR.glob("*.txt")):
         if p.name.endswith(("_index.txt", "_survey.txt")):
             continue
         d = parse_dump(p)
-        if d is None or not d.addr:
+        if d is None or not d.addr or not d.printed:
             continue
-        by_addr[d.addr].append(d)
-    for addr, dumps in by_addr.items():
-        for a in {x for d in dumps for x in d.formed}:
-            df[a] += 1
-        for j in {x for d in dumps for x in trusted_jals(d)}:
-            cdf[j] += 1
+        if d.entry != int(d.addr, 16):
+            continue
+        every.append(d)
+        if d.image:
+            by_addr[d.addr].append(d)
+    seen_data: dict[int, set[str]] = defaultdict(set)
+    seen_call: dict[int, set[str]] = defaultdict(set)
+    for d in every:
+        for a in d.formed:
+            seen_data[a].add(d.addr)
+        for j in trusted_jals(d):
+            seen_call[j].add(d.addr)
+    for a, who in seen_data.items():
+        df[a] = len(who)
+    for j, who in seen_call.items():
+        cdf[j] = len(who)
     return by_addr, df, cdf
+
+
+def consensus(dumps: list[Dump]) -> list[Dump]:
+    """The dumps of one address that agree on what the routine is.
+
+    Several images link different code over one overlay VA, so an address's
+    dumps are not all the same routine, and unioning their formed addresses
+    attributes one routine's tables to another. Group by body fingerprint and
+    keep the plurality; a tie means the corpus cannot say which body the port
+    implements, and the address contributes no evidence rather than the wrong
+    evidence.
+
+    Worked case: `0x801F8E6C` has six dumps agreeing at 47 instructions with a
+    real prologue, and one 48-instruction window in `overlay_0897` that opens on
+    a bare `jal` mid-routine. Unioned, the odd one's callee and string-pool
+    reads read as the routine's own.
+    """
+    if len(dumps) < 2:
+        return dumps
+    groups: dict[str, list[Dump]] = defaultdict(list)
+    for d in dumps:
+        groups[d.body].append(d)
+    if len(groups) == 1:
+        return dumps
+    ranked = sorted(groups.values(), key=len, reverse=True)
+    if len(ranked[0]) == len(ranked[1]):
+        return []
+    return ranked[0]
 
 
 # ---------------------------------------------------------------------------
@@ -505,17 +680,28 @@ def trusted_jals(d: Dump) -> set[int]:
     return d.jals
 
 
+def coverage(d: Dump) -> float:
+    """Printed instructions over the address span the dump printed across."""
+    span = d.last - d.entry + 4
+    return (d.printed * 4) / span if span > 0 else 1.0
+
+
 def features(
-    dumps: list[Dump], df: dict[int, int], cdf: dict[int, int], df_max: int
+    dumps: list[Dump],
+    df: dict[int, int],
+    cdf: dict[int, int],
+    df_max: int,
+    callee_max: int | None = None,
 ) -> tuple[set[int], set[int]]:
     """(distinctive data addresses, distinctive callees) over an address's dumps."""
+    cm = CALLEE_DF_MAX if callee_max is None else callee_max
     g: set[int] = set()
     j: set[int] = set()
-    for d in dumps:
+    for d in consensus(dumps):
         g |= {
             a for a in d.formed if df.get(a, 0) <= df_max and RAM_LO <= a <= RAM_HI
         }
-        j |= {x for x in trusted_jals(d) if cdf.get(x, 0) <= CALLEE_DF_MAX}
+        j |= {x for x in trusted_jals(d) if cdf.get(x, 0) <= cm}
     return g, j
 
 
@@ -550,8 +736,8 @@ def elsewhere_claims(
             continue
         prof[(t.file, t.addr)] = (
             features(dumps, df, cdf, SPLIT_DF_MAX)[0],
-            {d.image.split(".")[0].split(" ")[0] for d in dumps},
-            [extent_of(d) for d in dumps],
+            {d.image.split(".")[0].split(" ")[0] for d in consensus(dumps)},
+            [extent_of(d) for d in consensus(dumps)],
         )
 
     users: dict[int, list[tuple[str, str]]] = defaultdict(list)
@@ -621,6 +807,21 @@ def find_doc_row_citations(by_addr: dict[str, list[Dump]]) -> list[Finding]:
     return out
 
 
+def _link_targets(page: Path, line: str) -> set[str]:
+    """Repo-relative pages a markdown line links to, `#anchors` stripped."""
+    out: set[str] = set()
+    for m in MD_LINK_RE.finditer(line):
+        target = m.group(1).split("#")[0]
+        if not target or target.startswith(("http://", "https://", "mailto:")):
+            continue
+        try:
+            resolved = (page.parent / target).resolve().relative_to(REPO)
+        except (OSError, ValueError):
+            continue
+        out.add(str(resolved))
+    return out
+
+
 def find_dual_labels(by_addr: dict[str, list[Dump]]) -> list[Finding]:
     """One routine given a defining description on two unrelated docs pages.
 
@@ -637,16 +838,36 @@ def find_dual_labels(by_addr: dict[str, list[Dump]]) -> list[Finding]:
 
     Page relatedness is decided on filename tokens, the same rule the module
     comparison uses, so `field-menu.md` and `menus.md` are one topic and
-    `world-map.md` and `menus.md` are two.
+    `world-map.md` and `menus.md` are two. That rule alone over-fires by a wide
+    margin, because the function directory is named for coarse topics
+    (`menus`, `script-vms`, `battle`) and the write-ups for fine ones
+    (`save-screen`, `field-locomotion`, `battle-action`), so the index entry and
+    the page it indexes always read as "unrelated names". Two exclusions cut
+    that class without touching the shape the signal exists for:
+
+    - **A site that links to the counterpart page is a pointer, not a rival.**
+      A directory row whose own text sends the reader to the page it is said to
+      contradict is filing that page's claim, not competing with it. Scoped to
+      the pair: a row that points at `save-screen.md` is still an independent
+      claim against `world-map.md`. `FUN_801D5DE0`'s carriers cited nobody, so
+      it keeps firing.
+    - **Only defining pages count** (`DEFINING_DOC_ROOTS`). A thread ledger or a
+      tooling page naming an address describes a question or an instrument, not
+      the routine.
     """
     docs = REPO / "docs"
     if not docs.is_dir():
         return []
     head_re = re.compile(r"^#{2,4}\s+(.*)$")
     row_re = re.compile(r"^\|\s*`?(?:FUN_)?([0-9a-fA-F]{8})`?\s*\|")
-    sites: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+    # {addr: {page: [(site label, pages this site links to)]}}
+    sites: dict[str, dict[str, list[tuple[str, set[str]]]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
     for page in sorted(docs.rglob("*.md")):
         rel = str(page.relative_to(REPO))
+        if not rel.startswith(DEFINING_DOC_ROOTS):
+            continue
         is_directory_page = "reference/functions/" in rel
         for lineno, line in enumerate(page.read_text().splitlines(), start=1):
             found: set[str] = set()
@@ -662,9 +883,12 @@ def find_dual_labels(by_addr: dict[str, list[Dump]]) -> list[Finding]:
                 m = row_re.match(line)
                 if m:
                     found.add(m.group(1).lower())
+            if not found:
+                continue
+            links = _link_targets(page, line)
             for a in found:
                 if a in by_addr:
-                    sites[a][rel].append(f"{rel}:{lineno}")
+                    sites[a][rel].append((f"{rel}:{lineno}", links))
 
     out: list[Finding] = []
     for addr, per_page in sites.items():
@@ -673,20 +897,32 @@ def find_dual_labels(by_addr: dict[str, list[Dump]]) -> list[Finding]:
             continue
         toks = {p: {t for t in re.split(r"[^a-z0-9]+", Path(p).stem.lower())
                     if len(t) >= 3} for p in pages}
-        # Only unrelated page names are a contradiction; a subsystem section
-        # plus its directory row is one claim filed twice by design.
-        if not any(
-            not (toks[a] & toks[b])
+
+        def points_at(src: str, dst: str) -> bool:
+            """Every one of `src`'s sites for this address links to `dst`."""
+            return all(dst in links for _, links in per_page[src])
+
+        rivals = [
+            (a, b)
             for i, a in enumerate(pages)
             for b in pages[i + 1:]
-        ):
+            if not (toks[a] & toks[b])
+            and not points_at(a, b)
+            and not points_at(b, a)
+        ]
+        if not rivals:
             continue
         lines = [
             f"FUN_{addr} carries a defining description on {len(pages)} docs "
-            f"pages with unrelated names; at most one can be right:"
+            f"pages with unrelated names, neither pointing at the other; at "
+            f"most one can be right:"
         ]
         for pg in pages:
-            lines.append("    " + ", ".join(per_page[pg]))
+            lines.append("    " + ", ".join(label for label, _ in per_page[pg]))
+        lines.append(
+            "    rival pair(s): "
+            + "; ".join(f"{a} vs {b}" for a, b in rivals)
+        )
         out.append(
             Finding("dual-label", f"dual-label:{addr}", addr,
                     ", ".join(pages), 8.0 + len(pages), lines)
@@ -705,19 +941,30 @@ def _unsupported(
     annotations and the globals the register tracker gives up on, and it is what
     keeps the signal at a handful of findings instead of hundreds.
 
-    Citations of **other dumped function entries** are skipped outright. Prose
-    about a routine names its callers, its siblings and the dispatcher that
-    reaches it, and none of those has to appear in its own bytes; flagging them
-    buried the signal under cross-references that were all correct. What is left
-    is the claim worth checking - a data global or an interior range the routine
-    is said to own and does not touch.
+    Citations of **other function entries** are skipped outright. Prose about a
+    routine names its callers, its siblings and the dispatcher that reaches it,
+    and none of those has to appear in its own bytes; flagging them buried the
+    signal under cross-references that were all correct. What is left is the
+    claim worth checking - a data global or an interior range the routine is
+    said to own and does not touch.
+
+    "Is a function entry" is read off the **citation's written form**, not off
+    whether we happen to hold a dump of it. Keying it on the dump corpus was an
+    accident of implementation and it inverted the policy: a row naming a
+    caller we have dumped passed, and the same row naming a caller we have not
+    read as unsupported evidence. Two thirds of this signal's output was that
+    shape - `FUN_8003D53C`, `FUN_80021B04`, `FUN_8004998C`, all correctly named
+    as somebody else's routine, none of them in the corpus.
     """
+    func_refs = {m.group(1).lower() for m in FUNC_REF_RE.finditer(text)}
     missing: list[str] = []
     for m in CITED_ADDR_RE.finditer(text):
         c = m.group(1).lower()
         if c in claimed or c in missing:
             continue
         if not re.fullmatch(CODE_ADDR, c, re.IGNORECASE) or c in entries:
+            continue
+        if c in func_refs:
             continue
         ci = int(c, 16)
         ok = False
@@ -749,6 +996,11 @@ def find_module_orphans(
     for no reason at all. What lifts a row to the top of the list is the second
     half - the same routine's rare table turning up under a module with an
     unrelated name (`elsewhere_claims`). That conjunction is the shop shape.
+
+    The cut at which "distinctive" is measured follows the module (`DF_LADDER`),
+    because a fixed one reads some modules and not others, and the modules it
+    cannot read are a recognisable kind rather than a random sample - see the
+    ladder's own comment.
     """
     claims = elsewhere_claims(tags, by_addr, df, cdf)
     per_file: dict[str, set[str]] = defaultdict(set)
@@ -756,39 +1008,86 @@ def find_module_orphans(
         if t.addr in by_addr:
             per_file[t.file].add(t.addr)
 
+    # Who calls what, over the whole corpus. Two routines a third one calls are
+    # siblings in that caller's eyes whatever tables they touch, and this is the
+    # one corroboration channel the feature intersection cannot express: it is
+    # not a shared third party and not an edge between the two.
+    callers: dict[int, set[str]] = defaultdict(set)
+    for a, dumps in by_addr.items():
+        for d in consensus(dumps):
+            for t in trusted_jals(d):
+                callers[t].add(a)
+
     out: list[Finding] = []
     for rel, addrs in sorted(per_file.items()):
         if len(addrs) < ORPHAN_MIN_SIBLINGS:
             continue
-        feats = {
-            a: features(by_addr[a], df, cdf, DISTINCTIVE_DF_MAX) for a in addrs
-        }
-        # Only meaningful if the module is cohesive to begin with: at least one
-        # sibling pair must corroborate, or "shares nothing" says nothing.
-        pairs = [
-            (a, b)
-            for i, a in enumerate(sorted(addrs))
-            for b in sorted(addrs)[i + 1:]
-        ]
+        srt = sorted(addrs)
+        pairs = [(a, b) for i, a in enumerate(srt) for b in srt[i + 1:]]
         # Calling a sibling is the strongest corroboration there is, and the
         # feature-set intersection misses it entirely: the callee is the
         # sibling's own address, never a shared third party. `save_select.rs`
         # read as having an orphan that calls four of its own siblings.
-        def linked(a: str, b: str) -> bool:
-            if feats[a][0] & feats[b][0] or feats[a][1] & feats[b][1]:
-                return True
-            ia, ib = int(a, 16), int(b, 16)
-            return any(ib in d.jals for d in by_addr[a]) or any(
-                ia in d.jals for d in by_addr[b]
-            )
+        calls_sibling = {
+            (a, b)
+            for a, b in pairs
+            if any(int(b, 16) in d.jals for d in consensus(by_addr[a]))
+            or any(int(a, 16) in d.jals for d in consensus(by_addr[b]))
+            or callers[int(a, 16)] & callers[int(b, 16)]
+        }
 
-        cohesive = {x for a, b in pairs if linked(a, b) for x in (a, b)}
-        if len(cohesive) < 2:
+        def cohesion(cut: int) -> tuple[dict[str, tuple[set[int], set[int]]], set[str]]:
+            fe = {a: features(by_addr[a], df, cdf, cut, cut) for a in addrs}
+            linked = {
+                (a, b)
+                for a, b in pairs
+                if (a, b) in calls_sibling
+                or fe[a][0] & fe[b][0]
+                or fe[a][1] & fe[b][1]
+            }
+            return fe, {x for a, b in linked for x in (a, b)}
+
+        adopted = DISTINCTIVE_DF_MAX
+        feats, cohesive = cohesion(adopted)
+        if len(addrs) >= ADAPTIVE_MIN_TAGS:
+            # Raise the cut until the module reads as cohesive. A module that
+            # never does is one the signal cannot read at all, and silence is
+            # the honest output - not one finding per member.
+            for adopted in DF_LADDER:
+                feats, cohesive = cohesion(adopted)
+                if len(cohesive) >= ADAPTIVE_TARGET * len(addrs):
+                    break
+            if len(cohesive) < ADAPTIVE_TARGET * len(addrs):
+                continue
+        # The floor under both paths: a *majority* of the module's
+        # evidence-bearing tags must corroborate before a member of the minority
+        # can be called foreign. A tag whose routine forms nothing distinctive
+        # cannot corroborate anything, so counting it against the module's
+        # cohesion measures the corpus, not the module - which is why the
+        # denominator here is the informative tags and not all of them.
+        informative = {a for a in addrs if feats[a][0] or feats[a][1]}
+        if len(cohesive) < 2 or 2 * len(cohesive) <= len(informative):
             continue
         for a in sorted(addrs - cohesive):
             g, j = feats[a]
-            if not g and not j:
-                continue  # nothing to contradict - a stub or an unparsed dump
+            # A routine with no formed data of its own has one bit of evidence -
+            # a single callee it does not share - and one bit does not carry a
+            # claim about which subsystem the routine belongs to.
+            if not g:
+                continue
+            # Corroboration and orphanhood need different evidence, and the
+            # asymmetry is the whole reason this test sits here and not in
+            # `features`. "These two touch the same table" is an existence
+            # claim a fragment can settle, so a fragmentary sibling still
+            # corroborates. "This one touches nothing any of them touch" is a
+            # claim about the whole body, and a dump that printed a tenth of it
+            # cannot make it. Putting the floor in `features` instead silenced
+            # the field VM's own wrong tag, because its module's dispatcher
+            # sibling is dumped as a fragment.
+            if all(
+                coverage(d) < DUMP_COVERAGE_MIN for d in consensus(by_addr[a])
+            ):
+                continue
             elsewhere = claims.get((rel, a), [])
             # Rank by how isolated the routine is and how specific its evidence
             # is, NOT by how much of it there is: an earlier formula multiplied
@@ -805,7 +1104,8 @@ def find_module_orphans(
             lines = [
                 f"FUN_{a} shares no distinctive data address and no callee with "
                 f"any of the {len(cohesive)} corroborating siblings tagged in "
-                f"this module ({', '.join(sorted(cohesive))}).",
+                f"this module ({', '.join(sorted(cohesive))}); "
+                f"distinctive = formed by at most {adopted} dumped routine(s).",
                 "    its distinctive data: "
                 + (", ".join(f"0x{x:08x}" for x in sorted(g)) or "(none)"),
                 "    its callees: "

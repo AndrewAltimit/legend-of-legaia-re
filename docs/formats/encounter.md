@@ -51,7 +51,7 @@ The reader copies `monster_ids[0..count]` into the global formation cell at `0x8
 
 ## Reader
 
-`FUN_801DA51C` (the world-map / field entity tick, see [`subsystems/world-map.md`](../subsystems/world-map.md#fun_801da51c---world-map-entity-tick-260-bytes)) at offsets `0x801DA620..0x801DA678`:
+`FUN_801DA51C` (the world-map / field entity tick, see [`subsystems/world-map.md`](../subsystems/world-map.md#fun_801da51c---world-map-entity-tick)) at offsets `0x801DA620..0x801DA678`:
 
 ```mips
 801da620  lui v0,0x8008

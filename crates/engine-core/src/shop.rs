@@ -914,7 +914,7 @@ pub fn shop_root_command_rows(
 /// it indexes the casino prize table `0x801E4518` at `base + block*0x60 +
 /// row*8` with the block byte from the entry-context pointer `_DAT_8007B450[1]`,
 /// and its affordability compare is against `_DAT_800845A4`, the **coin bank**.
-/// The party gold purse `_DAT_8008459C` appears nowhere in its 72 instructions.
+/// The party gold purse `_DAT_8008459C` appears nowhere in its 151 instructions.
 /// The `overlay_shop_save_801d5de0.txt` dump filename names the *image* the
 /// routine was dumped from - that overlay carries menu and casino code too -
 /// and is not evidence about what it does.

@@ -1073,7 +1073,11 @@ pub struct HudInput {
     pub short_idle: bool,
     /// `_DAT_801F348C` - the idle countdown.
     pub timer: i16,
-    /// `_DAT_1F80038F` - the countdown's per-frame decrement.
+    /// `_DAT_1F800393` - the countdown's per-frame decrement. Retail reads it
+    /// as `lbu v1,0x7f(t1)` off the scratchpad base `t1 = 0x1F800314`
+    /// (`0x801D0EF8`); the same cell drives the soft-reset actor's counter at
+    /// `0x801EE02C`. An earlier note said `0x1F80038F`, which is four bytes
+    /// short of the address the load forms.
     pub timer_delta: i16,
     /// True when the cached `(x, z)` at `_DAT_801F3488/348A` still match the
     /// player object's `+0x14` / `+0x18`.

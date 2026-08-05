@@ -5,6 +5,92 @@
 
 use super::*;
 
+/// Accessory-passive index `0x18` = **Rot Guard** (Forest Amulet), i.e. bit
+/// `0x0100_0000` of the character record's `+0xF4` ability bitfield - the
+/// first of the two words the Rot arm tests
+/// (`lui v0,0x100; and; bne` at `0x801E16D0..0x801E16D8`).
+/// See [`docs/formats/accessory-passive-table.md`](../../../../../docs/formats/accessory-passive-table.md).
+const ROT_GUARD_BIT: u32 = 1 << 0x18;
+/// Accessory-passive index `0x1C` = **Master Guard** (Wonder Amulet), bit
+/// `0x1000_0000`, the second word the Rot arm tests
+/// (`lui v0,0x1000; and; bne` at `0x801E16E0..0x801E16E8`).
+const MASTER_GUARD_BIT: u32 = 1 << 0x1C;
+
+/// What the impact status proc rolled - see [`enemy_impact_status_proc`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::world) struct ImpactStatusProc {
+    /// The status byte to feed
+    /// [`legaia_engine_vm::status_effects::StatusEffectTracker::apply_from_enemy_effect`].
+    pub effect: legaia_art::record::EnemyEffect,
+    /// The rolled limb (`rand % 3`) when the selector was the Rot arm.
+    pub rot_limb: Option<u8>,
+}
+
+/// The four-way branch `FUN_801E09F8` takes on a move-power record's `+0x0A`
+/// impact-effect selector once the strike arm reaches the impact phase.
+/// Disassembly, `0x801E15F8..0x801E1788`:
+///
+/// | selector | retail | port |
+/// |---|---|---|
+/// | `0` | `beq v1,zero,0x801E1788` - whole block skipped | `None` |
+/// | `3` | `jal rand`, `andi v0,v0,0x7`, on `0` `ori 0x1` (`0x801E1630..0x801E165C`) | 1-in-8 Venom |
+/// | `4` | `jal rand`, `andi v0,v0,0x7`, on `0` `ori 0x2` (`0x801E1660..0x801E168C`) | 1-in-8 Toxic |
+/// | `5` | target slot `< 3` (`sltiu v0,a1,0x3`) and neither guard bit set, then `ori 1 << (rand%3 + 3)` (`0x801E1690..0x801E1740`) | Rot with the rolled limb |
+/// | else | falls through | `None` |
+///
+/// The selector-`3` arm's comparison constant is the register `a2`, which
+/// still holds the impact-phase byte `3` loaded at `0x801E156C` and proved
+/// equal to `3` by the `bne` at `0x801E1574` - a register-economy trick, not a
+/// separate constant.
+///
+/// **Selector `6` (Curse) is deliberately absent.** The sibling arts/melee
+/// kernel `FUN_801EC3E4` has a fifth arm (`li v0,0x6` / `beq` at
+/// `0x801EE478..0x801EE47C` -> `andi v0,v0,0x3` / `ori 0x1000` at
+/// `0x801EE698..0x801EE6C8`, a 1-in-4 roll), but this routine's ladder ends at
+/// `5`: `0x801E1620` tests only `5` and otherwise jumps to the join at
+/// `0x801E178C`. An enemy *special* therefore cannot Curse; only the
+/// physical/arts path can.
+///
+/// **RNG draw counts are faithful.** Arms `3`/`4` draw exactly one `rand()`.
+/// The Rot arm reads the guard bitfield *before* its draw
+/// (`lw v1,0x6bc(v0)` at `0x801E16CC`, both `bne`s taken out before the
+/// `jal 0x80056798` at `0x801E16FC`), so a guarded - or non-party - target
+/// draws nothing at all.
+///
+/// PORT: FUN_801E09F8 (interior: the `+0x0A` selector ladder)
+pub(in crate::world) fn enemy_impact_status_proc(
+    selector: u8,
+    target_is_party: bool,
+    target_ability_bits: u32,
+    rng: &mut dyn FnMut() -> u32,
+) -> Option<ImpactStatusProc> {
+    let effect = legaia_art::record::EnemyEffect::from_byte(selector);
+    match selector {
+        // Weak DoT (Venom) and strong DoT (Toxic): the same `rand & 7 == 0`
+        // gate, one draw each.
+        3 | 4 => (rng() & 7 == 0).then_some(ImpactStatusProc {
+            effect,
+            rot_limb: None,
+        }),
+        // Random limb disable (Rot). Party seats only - the guard bitfield the
+        // arm reads is a *character record* field, so retail's `< 3` test is
+        // both a seat test and the precondition for the read.
+        5 => {
+            if !target_is_party {
+                return None;
+            }
+            if target_ability_bits & (ROT_GUARD_BIT | MASTER_GUARD_BIT) != 0 {
+                return None;
+            }
+            Some(ImpactStatusProc {
+                effect,
+                rot_limb: Some((rng() % 3) as u8),
+            })
+        }
+        _ => None,
+    }
+}
+
 impl World {
     pub(in crate::world) fn take_monster_turn(&mut self, slot: u8) {
         use vm::battle_action::ActionState;
@@ -23,11 +109,17 @@ impl World {
                 // A confused caster's spell lands on the opposite side.
                 self.confuse_retarget_cast(slot, &mut targets);
                 let def = self.spell_catalog.get(spell_id).cloned();
-                if let Some(def) = def
-                    && self.cast_spell_on_slots(slot, &def, &targets)
-                {
-                    self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
-                    return;
+                if let Some(def) = def {
+                    // Mark where this cast's damage popups start, so the
+                    // status applier below can tell which targets the move
+                    // actually reached impact on (see
+                    // [`Self::apply_enemy_move_status`]).
+                    let hit_fx_start = self.battle_hit_fx.len();
+                    if self.cast_spell_on_slots(slot, &def, &targets) {
+                        self.apply_enemy_move_status(slot, def.id, hit_fx_start);
+                        self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
+                        return;
+                    }
                 }
                 // Cast didn't fold (no catalog entry / unaffordable after the
                 // pick) - fall through to a physical strike.
@@ -54,6 +146,109 @@ impl World {
                 // break-off and removes the monster from the pool.
                 self.battle_ctx.queued_action = 5;
                 self.battle_ctx.action_state = ActionState::Begin.as_byte();
+            }
+        }
+    }
+
+    /// Roll the **enemy special-attack impact status proc** onto every target
+    /// this cast reached, and push what lands into the status tracker.
+    ///
+    /// This is the monster -> party half of the status system, and the source
+    /// is the move-power record, not an art record. Retail's chain, read off
+    /// the instruction stream:
+    ///
+    /// 1. `FUN_801DEA50` (action setup) maps the acting actor's queued move id
+    ///    at `actor[+0x1DF]` through the id -> index map at `0x801F4E63` and
+    ///    stashes the resulting 26-byte move-power record pointer in the battle
+    ///    context: `sw v0,0x1014(a0)` at `0x801DF284`, with the `x26` stride
+    ///    built as `13a << 1` at `0x801DF264..0x801DF274`.
+    /// 2. `FUN_801E09F8` (the per-frame action tick) waits for the arm's phase
+    ///    byte to reach the impact value 3 (`lbu a2,0x24e(v0)` / `li v0,0x3` /
+    ///    `bne` at `0x801E156C..0x801E1574`), then reads the record's
+    ///    **`+0x0A` impact-effect selector** (`lbu v1,0xa(v0)` at
+    ///    `0x801E1584`). A zero selector skips the whole block.
+    /// 3. The non-zero selector latches on the *target* as the lingering status
+    ///    visual (`sb v1,0x21f(v0)` at `0x801E15AC`, tint word from
+    ///    `0x801F53D4[(sel-1)]` into `target+0x04`), then branches four ways -
+    ///    ported in [`enemy_impact_status_proc`].
+    ///
+    /// The map is **special-attack-only** (see
+    /// [`docs/formats/move-power.md`](../../../../../docs/formats/move-power.md)):
+    /// a monster's *basic* attack id resolves to the all-zero record 0, whose
+    /// `+0x0A` is `0`, so routing every monster move through here automatically
+    /// gives basic attacks no status - no extra guard needed.
+    ///
+    /// **Which targets.** Retail rolls once per arm that reaches the impact
+    /// phase. The engine's cast folds a `SpellOutcome` per target and pushes
+    /// exactly one damage-coloured [`BattleHitFx`] for each one that resolved
+    /// as damage, so the popups appended since `hit_fx_start` are this cast's
+    /// impact list. Magnitude is not consulted: retail's arm is upstream of the
+    /// damage subtraction and a fully-mitigated (or Stone-absorbed) hit still
+    /// reaches impact.
+    ///
+    /// PORT: FUN_801E09F8 (status-proc arm, `0x801E1584..0x801E1788`)
+    /// REF: FUN_801DEA50 (the `ctx+0x1014` move-power record the arm reads)
+    /// REF: FUN_801EC3E4 (the sibling arts/melee arm, whose selector comes from
+    /// the art record's `+0x7A` instead - the party -> monster direction)
+    pub(in crate::world) fn apply_enemy_move_status(
+        &mut self,
+        caster: u8,
+        move_id: u8,
+        hit_fx_start: usize,
+    ) {
+        // The move-power table is the *enemy* special-attack table; a party
+        // caster's art power comes from the art record instead, and its status
+        // byte rides the `ApplyArtStrike` event (`World::fold_battle_event`).
+        if (caster as usize) < self.party_count as usize {
+            return;
+        }
+        let Some(selector) = self
+            .move_power
+            .as_ref()
+            .and_then(|c| c.record_for_move_id(move_id))
+            .map(|r| r.impact_effect())
+            .filter(|&s| s != 0)
+        else {
+            return;
+        };
+        let targets: Vec<u8> = self
+            .battle_hit_fx
+            .get(hit_fx_start..)
+            .unwrap_or(&[])
+            .iter()
+            .filter(|fx| !fx.is_heal)
+            .map(|fx| fx.target_slot)
+            .collect();
+        let party_count = self.party_count;
+        for target in targets {
+            // `sb v1,0x21f(...)` - the lingering status visual latches on the
+            // selector itself, before and independent of the proc roll.
+            if let Some(a) = self.actors.get_mut(target as usize) {
+                a.pending_status = Some(legaia_art::record::EnemyEffect::from_byte(selector));
+            }
+            let target_is_party = target < party_count;
+            let ability_bits = if target_is_party {
+                self.character_ability_bits
+                    .get(target as usize)
+                    .copied()
+                    .unwrap_or(0)
+            } else {
+                0
+            };
+            let rolled = {
+                let rng = &mut || self.next_rng();
+                enemy_impact_status_proc(selector, target_is_party, ability_bits, rng)
+            };
+            let Some(proc) = rolled else {
+                continue;
+            };
+            let applied = self
+                .status_effects
+                .apply_from_enemy_effect(target, proc.effect);
+            if let (Some(vm::status_effects::StatusKind::Rot), Some(limb)) =
+                (applied, proc.rot_limb)
+            {
+                self.status_effects.set_rot_limb(target, limb);
             }
         }
     }
@@ -671,5 +866,110 @@ impl World {
         } else {
             clear_category_self(self);
         }
+    }
+}
+
+#[cfg(test)]
+mod impact_proc_tests {
+    use super::{ImpactStatusProc, enemy_impact_status_proc};
+    use legaia_art::record::EnemyEffect;
+
+    /// `FUN_801E09F8`'s selector ladder covers exactly `3` / `4` / `5`. The
+    /// Curse arm (`selector 6`, a 1-in-4 `ori 0x1000`) exists only in the
+    /// sibling arts/melee kernel `FUN_801EC3E4`, so an enemy **special** cannot
+    /// Curse. Driven with an all-zero RNG, i.e. every probability gate passes -
+    /// so a `None` here is the ladder's shape, not a failed roll.
+    #[test]
+    fn ladder_covers_three_four_five_only() {
+        let mut rng = || 0u32;
+        assert_eq!(enemy_impact_status_proc(0, true, 0, &mut rng), None);
+        assert_eq!(enemy_impact_status_proc(1, true, 0, &mut rng), None);
+        assert_eq!(enemy_impact_status_proc(2, true, 0, &mut rng), None);
+        assert_eq!(
+            enemy_impact_status_proc(3, true, 0, &mut rng),
+            Some(ImpactStatusProc {
+                effect: EnemyEffect::Other(3),
+                rot_limb: None
+            })
+        );
+        assert_eq!(
+            enemy_impact_status_proc(4, true, 0, &mut rng),
+            Some(ImpactStatusProc {
+                effect: EnemyEffect::Other(4),
+                rot_limb: None
+            })
+        );
+        assert_eq!(
+            enemy_impact_status_proc(5, true, 0, &mut rng),
+            Some(ImpactStatusProc {
+                effect: EnemyEffect::Other(5),
+                rot_limb: Some(0)
+            })
+        );
+        assert_eq!(
+            enemy_impact_status_proc(6, true, 0, &mut rng),
+            None,
+            "no Curse arm in FUN_801E09F8 - that arm is FUN_801EC3E4's"
+        );
+        assert_eq!(enemy_impact_status_proc(7, true, 0, &mut rng), None);
+    }
+
+    /// The DoT arms gate on `rand & 7 == 0`: exactly one of any eight
+    /// consecutive RNG values passes, and each arm draws exactly one value.
+    #[test]
+    fn dot_arms_gate_on_rand_and_seven() {
+        for selector in [3u8, 4] {
+            let mut draws = 0usize;
+            let landed = (0u32..8)
+                .filter(|&v| {
+                    let mut rng = || {
+                        draws += 1;
+                        v
+                    };
+                    enemy_impact_status_proc(selector, true, 0, &mut rng).is_some()
+                })
+                .count();
+            assert_eq!(
+                landed, 1,
+                "selector {selector} passes on exactly `rand & 7 == 0`"
+            );
+            assert_eq!(draws, 8, "one draw per call, no more");
+        }
+    }
+
+    /// The Rot arm's limb is `rand % 3`, and the guard bitfield is read
+    /// *before* the draw - a guarded (or non-party) target consumes no RNG at
+    /// all, which is what keeps the shared cursor faithful.
+    #[test]
+    fn rot_arm_rolls_a_limb_and_guards_draw_nothing() {
+        for (v, limb) in [(0u32, 0u8), (1, 1), (2, 2), (3, 0), (7, 1)] {
+            let mut rng = || v;
+            assert_eq!(
+                enemy_impact_status_proc(5, true, 0, &mut rng)
+                    .and_then(|p| p.rot_limb)
+                    .unwrap(),
+                limb
+            );
+        }
+        for bits in [super::ROT_GUARD_BIT, super::MASTER_GUARD_BIT] {
+            let mut draws = 0usize;
+            let mut rng = || {
+                draws += 1;
+                0u32
+            };
+            assert_eq!(enemy_impact_status_proc(5, true, bits, &mut rng), None);
+            assert_eq!(draws, 0, "a guarded target draws no RNG");
+        }
+        let mut draws = 0usize;
+        let mut rng = || {
+            draws += 1;
+            0u32
+        };
+        assert_eq!(
+            enemy_impact_status_proc(5, false, 0, &mut rng),
+            None,
+            "selector 5 on a monster target does nothing (retail's `sltiu a1,0x3`)"
+        );
+        assert_eq!(draws, 0, "a non-party target draws no RNG");
     }
 }

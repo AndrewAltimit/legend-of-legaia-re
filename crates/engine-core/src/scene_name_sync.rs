@@ -24,6 +24,13 @@
 //! Clean-room boundary: `ghidra/scripts/funcs/8001d7f8.txt` is the spec; the
 //! name table itself is built from the user's disc at runtime (CDNAME), so
 //! no Sony bytes live here. Tests use synthetic tables.
+//!
+//! NOT WIRED: this module tag names the same address as
+//! [`sync_scene_name`], whose own tag already discloses the gap - the engine
+//! changes scene by label through the scene host and carries no staged-name /
+//! active-buffer / scene-index-word triple to resolve between, so the only
+//! callers are this file's tests. The disclosure is repeated here because the
+//! module tag is what carries the address's liveness verdict.
 
 /// Both scene-name buffers are 8 bytes in retail (`0x8007050C` /
 /// `0x80084548`), NUL-terminated.

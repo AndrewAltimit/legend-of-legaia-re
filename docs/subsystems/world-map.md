@@ -16,7 +16,7 @@ below to jump within this page.
 - [Panel window system](#the-panel-window-system---fun_801e9b3c--fun_801e9dc8--fun_801ea9b0) - the script interpreter, the shared list cursor, the dev-menu row dispatcher
 - [Panel actor state machines](#the-panel-actor-state-machines) - the six `ctx[+0x54]` phase machines, the field party HUD, and the engine host under them
 - [Place-label pass](#the-place-label-pass---0x801cebb60x801cec30) - the named markers drawn over the map
-- [Key functions](#key-functions) - [top-view controller `FUN_801E76D4`](#fun_801e76d4---top-view-debug-controller-9320-bytes) · [debug-menu renderer `FUN_801EAD98`](#fun_801ead98---world-map-debug-menu-renderer-7280-bytes) · [entity tick `FUN_801DA51C`](#fun_801da51c---world-map-entity-tick-260-bytes)
+- [Key functions](#key-functions) - [top-view controller `FUN_801E76D4`](#fun_801e76d4---top-view-debug-controller-9320-bytes) · [debug-menu renderer `FUN_801EAD98`](#fun_801ead98---world-map-debug-menu-renderer-7280-bytes) · [entity tick `FUN_801DA51C`](#fun_801da51c---world-map-entity-tick)
 
 **Entity / encounter SM**
 - [Encounter-record installation](#encounter-record-installation) · [clean-room port](#clean-room-port---both-overworld-and-field) · [NPC dialogue text source](#npc-dialogue-text-source)
@@ -484,7 +484,10 @@ is walking.
 Otherwise it compares the player object's `+0x14` / `+0x18` against the pair
 cached at `_DAT_801F3488` / `_DAT_801F348A`. A mismatch rearms the countdown
 `_DAT_801F348C` (`0x28` frames in view mode 0, `0xA0` otherwise) and caches
-the new position. A match decrements the countdown by `_DAT_1F80038F`, and the
+the new position. A match decrements the countdown by `_DAT_1F800393` - the
+load at `0x801D0EF8` is `lbu v1,0x7f(t1)` against the scratchpad base
+`t1 = 0x1F800314`, and the soft-reset actor reads the same cell at
+`0x801EE02C`. A `_DAT_1F80038F` reading is four bytes short. The
 panel is built once it reaches zero. The scene-entry path arms the same
 countdown but consults `_DAT_8007B5F4` as well, shortening it to `0` in view
 mode 0 and to `0x50` in view mode 1.
@@ -809,18 +812,41 @@ function at the `jr v0` and list only the 32-instruction dispatch head
 that truncation is a boundary artifact of the listing, not a second body at
 the same VA. The bytes are identical across every dump at this address.
 
-### `FUN_801CFC40` - world map sprite batcher (524 bytes, top-view only)
+### `FUN_801CFC40` is the actor-collision box probe, not a sprite batcher
 
-Entry: `(actor_ptr, ?, screen_x, screen_y, ?, ?)`. When `_DAT_8007B6B8 == 0x20`
-delegates to `FUN_801CF9F4`; otherwise writes actor screen coordinates into
-GPU registers `0x1F800020/22/24` from `actor[+0x14/+0x16/+0x18]`, then
-iterates the sprite-descriptor list at `DAT_801C93C8`. Present only in the
-`world_map_top` overlay variant.
+The reading of this VA as a **world-map sprite batcher present only in the
+`world_map_top` variant** is falsified, and the correction is worth keeping
+where the wrong reading was, because the operands it cited are all real:
+`_DAT_8007B6B8`, the `0x20` compare, the `FUN_801CF9F4` delegate, the
+scratchpad triple `0x1F800020/22/24` and the list at `DAT_801C93C8` are every
+one of them in the body. Only the subsystem label was invented.
 
-### `FUN_801DA51C` - world map entity tick (260 bytes)
+`FUN_801CFC40(actor, scene, dx, dz, ex, ez)` is the field band's **actor
+collision / touch box probe**, specified in
+[`field-locomotion.md`](field-locomotion.md#collision---fun_801cfe4c) and ported
+as `engine-core::world::field_movement`. Three facts settle it:
 
-Entry: `(entity_ptr)`. 5-state dispatcher on `entity[+0x8A]` (jump table at
-`0x801CEC28`). When `_DAT_80083808 == 0` and the entity state is 0: calls
+- **It emits nothing.** The body's only stores are the probe point into
+  scratchpad RAM `0x1F800020/22/24`, the mutual `+0x98` partner links on a hit,
+  and the result accumulator. `0x1F800020` is scratchpad, not a GPU port - the
+  GP0/GP1 registers are at `0x1F801810`/`0x1F801814`. There is no packet, no OT
+  link and no texture page anywhere in the 131 instructions.
+- **The list is the collision candidate table.** `DAT_801C93C8` with count
+  `_DAT_8007B6B8` (cap `0x20`, built by `FUN_801CF754`) is the same table the
+  locomotion probes walk; the loop box-tests each entry's anchor at
+  `tile*128 + (i8)sub*16` against the probe point with half-extent `0x40` widened
+  by the caller's `(ex, ez)`, then calls `FUN_8003D038(entry[+0x50])` on contact.
+- **Every image carries it.** The static PROT 0897 print stops at 110
+  instructions because Ghidra could not follow past the loop; the capture dumps
+  print all 131 with a byte-identical prologue. There is no `world_map_top`-only
+  body at this VA.
+
+### `FUN_801DA51C` - world map entity tick
+
+Entry: `(entity_ptr)`. 724 bytes / 181 instructions - the 65-instruction print
+some dumps carry stops at the `jr v0` and is a truncation, not a second body.
+5-state dispatcher on `entity[+0x8A]` (jump table at
+`0x801CEC28`). When `_DAT_8007B868 == 0` and the entity state is 0: calls
 `FUN_800243F0` (the per-frame **BGM/asset poller** - it resolves the pending
 BGM id to a PROT slot, see [`asset-loader.md`](asset-loader.md#music--sfx-selection-bgm-lookup); it is
 *not* a location→scene resolver) and handles pad-button checks against

@@ -777,8 +777,20 @@ pub struct RecipientPickerView<'a> {
 /// it and painted one panel more than retail; the field is gone, so neither
 /// can. See `docs/subsystems/field-menu.md` ("Which screen opens a window").
 ///
-/// PORT: FUN_801db380 (the sub-screen's draw half; the session state machine
-/// is `legaia_engine_core::shop::BuyRecipientSession`)
+/// REF: FUN_801DB380 - the sub-screen this composition serves, **not** a
+/// routine any of this implements. `FUN_801DB380` draws nothing: it is a
+/// three-phase state machine over `DAT_801E46AC` that opens actor-VM scripts
+/// (`0x801E4E84` on entry, `0x801E4EA8` after a commit) through
+/// `FUN_801D6628`, navigates `party_count + 1` rows with `FUN_801D688C`, and
+/// commits a buy / equip. The window painters this function composes are
+/// separately tagged, and the state machine's own port is
+/// `legaia_engine_core::shop::BuyRecipientSession`
+/// (`PORT: FUN_801DB380` there). An earlier `PORT:` tag here claimed "the
+/// sub-screen's draw half", a half the 285-instruction body does not have.
+///
+/// REF: FUN_801D6628 - the actor / widget VM those open scripts run on.
+/// REF: FUN_801D688C - the row-navigation helper its phase 1 walks the
+/// `party_count + 1` rows with.
 pub fn recipient_picker_draws_for(
     font: &legaia_font::Font,
     rects: RecipientWindowRects,

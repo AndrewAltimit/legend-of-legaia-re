@@ -671,6 +671,15 @@ pub enum CardIoEffect {
 /// PORT: FUN_801E3294 (see
 /// `ghidra/scripts/funcs/overlay_menu_801e3294.txt`; the state table in
 /// `docs/subsystems/save-screen.md` is the same machine)
+///
+/// NOT WIRED: no host owns one. The disclosure was written on the ticker
+/// [`card_frame_tick`], which is the only thing that advances this machine
+/// and is itself called from no production site - so the gap was invisible
+/// from this type, which is what the port catalog keys `FUN_801E3294` to.
+/// The prerequisite is a host that keeps a [`CardIoMachine`] across frames:
+/// [`SaveSelectSession`] runs its `NowChecking` beat off [`card_status_poll`]
+/// alone, and the browser card rack patches container bytes synchronously
+/// with no asynchronous I/O beat to tick.
 #[derive(Debug, Clone, Default)]
 pub struct CardIoMachine {
     /// `DAT_801EF188`.
@@ -1622,12 +1631,13 @@ impl SaveSelectSession {
         }
     }
 
-    // PORT: FUN_801d688c (the Yes/No confirm cursor - retail sub-screen 0x03
-    // drives it with `FUN_801D688C(&DAT_801E46D0, 2, 1)`). The shared
-    // navigator lives in `crate::menu_input`; here it advances the 2-item
-    // horizontal cursor and reports confirm / cancel / move, and the Yes/No
-    // branch is decided from the resulting cursor (retail return `1` = the
-    // caller inspects the cursor to pick Yes vs No).
+    // REF: FUN_801d688c (the Yes/No confirm cursor - retail sub-screen 0x03
+    // drives it with `FUN_801D688C(&DAT_801E46D0, 2, 1)`). A cross-reference,
+    // not a port: the routine itself is `crate::menu_input` (`//! PORT:
+    // FUN_801d688c`), whose `menu_cursor_nav` this calls. Here it advances the
+    // 2-item horizontal cursor and reports confirm / cancel / move, and the
+    // Yes/No branch is decided from the resulting cursor (retail return `1` =
+    // the caller inspects the cursor to pick Yes vs No).
     fn tick_confirm(
         &mut self,
         kind: ConfirmKind,

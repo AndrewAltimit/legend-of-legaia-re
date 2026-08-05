@@ -156,6 +156,14 @@ pub struct VoiceAttrCue {
 /// plain `>> 1`.
 ///
 /// PORT: FUN_801d1288 (volume decode)
+// NOT WIRED: this decode is correct and tested, but its only caller is
+// [`arena_voice_cue`] directly below, which is itself inert - so no host root
+// reaches this function either. The blocker is that one's, not a second
+// independent gap: the tally tick plus the two hosts holding its ramp state.
+// Read that tag for the named function and the full shape. Stated separately
+// because the
+// module's blanket heading was narrowed to the sites it actually described,
+// which left this anchor covered by nothing.
 #[inline]
 pub fn cue_volume(word: u32) -> i32 {
     ((word << 15) as i32) >> 16

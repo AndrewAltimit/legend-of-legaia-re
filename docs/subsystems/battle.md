@@ -2030,11 +2030,31 @@ Noa and Gala records are byte-identical across the same pair - the level-up even
 
 ## Battle main dispatcher (`FUN_801D0748`)
 
-11 KB / 182 calls. The top of the per-frame battle loop. Routes through every active battle subsystem (rendering, AI, animation, hit detection).
+11124 bytes / 2781 instructions. The top of the per-frame battle loop: it opens
+by loading the battle context pointer `_DAT_8007BD24` and dispatching on the
+**sub-state byte** at `ctx+6`, then routes through every active battle
+subsystem (rendering, AI, animation, hit detection).
+
+One body serves four game modes. The dumps taken from the battle-action,
+magic-capture, magic-level-up and Muscle Dome captures - and the static
+`overlay_0898` print - are **byte-identical across all 2781 instructions**, so
+"the capture dispatcher", "the level-up tick" and "the dome match controller"
+name the same routine reached in different modes, not three routines at one VA.
+The dome's use of it is written up under
+[`minigame-muscle-dome.md`](minigame-muscle-dome.md); the sub-states `0x1E` /
+`0x32` / `0x6E` / `0xFE` update the camera yaw `_DAT_8007B792`.
 
 ## Hottest battle utility (`FUN_801D8DE8`)
 
-3 KB / 77 incoming refs. The single most-cited battle helper - likely a per-actor utility that every state arm bottoms out into.
+3028 bytes / 757 instructions, 77 incoming refs - the single most-cited battle
+helper, and it is the **HUD element renderer**: `(elem_id, mode, ...)` bounded
+by `sltiu v0,v1,0x50` and dispatched through the 80-entry jump table at
+`0x801CEB68`, one case per on-screen element. Not a per-actor utility. The
+battle HUD and the Muscle Dome plate share it - per-`elem_id` breakdown in
+[`minigame-muscle-dome.md`](minigame-muscle-dome.md#hud-elements-fun_801d8de8)
+and [`functions/battle.md`](../reference/functions/battle.md). The tiny 3- and
+4-instruction bodies at this VA in the fishing / dance / slot-machine /
+debug-menu / Baka Fighter images are a different overlay's occupant.
 
 ## Weapon / effect trail builder (`FUN_80048310` + `FUN_800485BC`)
 
@@ -2205,19 +2225,40 @@ access). Lifecycle writers:
 status-kind byte (`see ghidra/scripts/funcs/overlay_battle_action_801ec3e4.txt` /
 `overlay_battle_action_801e09f8.txt`):
 
-- the on-hit leg inside `FUN_801EC3E4` reads the action descriptor's kind byte
-  (`lbu v0,0x7a(t4)` at `0x801EE3D4`) and dispatches at `0x801EE448`;
-- the cast leg inside `FUN_801E09F8` reads the spell descriptor byte `+0x0A` off `ctx[+0x1014]`
-  (`0x801E1584`) and dispatches at `0x801E1600`.
+- the on-hit leg inside `FUN_801EC3E4` reads the **art record**'s kind byte
+  (`lbu v0,0x7a(t4)` at `0x801EE3D4`, `t4` reloaded from the `param_2` spill at `0x54(sp)`)
+  and dispatches at `0x801EE448`. That is the party-caster direction;
+- the special-attack leg inside `FUN_801E09F8` reads `+0x0A` off `ctx[+0x1014]`
+  (`0x801E1584`) and dispatches at `0x801E1600`. `ctx[+0x1014]` is not a spell descriptor:
+  `FUN_801DEA50` writes it (`sw v0,0x1014(a0)` at `0x801DF284`) with the **move-power record**
+  address for the acting actor's queued move id - `0x801F4F5C + map[actor[+0x1DF]] * 26`,
+  the `x26` built as `13a << 1` at `0x801DF264..0x801DF274`. So the kind byte is the
+  move-power record's `+0x0A` [impact-effect selector](../formats/move-power.md#record-layout-26-bytes),
+  and the arm fires when that strike arm's phase byte reaches the impact value
+  (`lbu a2,0x24e(v0)` / `li v0,0x3` / `bne` at `0x801E156C..0x801E1574`).
 
-| kind | bit written | writer PCs (hit leg / cast leg) | gate |
+| kind | bit written | writer PCs (hit leg / special leg) | gate |
 |---|---|---|---|
 | `1`, `2` | none directly - only the `+0x21F` latch (below) | consumed by `FUN_80047430`: `ori 0x380` + `sh` at `0x80047F88`/`0x80047F90`, then `+0x21F` cleared | `+0x21F != 0` |
 | `3` | `ori v0,v0,0x1` | `0x801EE4C4` / `0x801E1654` | `rng & 7 == 0` |
 | `4` | `ori v0,v0,0x2` | `0x801EE508` / `0x801E1684` | `rng & 7 == 0` |
-| `5` | one random bit of `0x38` - `1 << ((rng % 3) + 3)` via `sllv`/`or` | `0x801EE618`/`0x801EE61C` / `0x801E1738`/`0x801E173C` | accessory-passive immunity bits `0x01000000`/`0x10000000` of char `+0x6BC` skip |
-| `6` | `ori v0,v0,0x1000` | `0x801EE6C8` / (cast leg routes to the same band) | - |
+| `5` | one random bit of `0x38` - `1 << ((rng % 3) + 3)` via `sllv`/`or` | `0x801EE618`/`0x801EE61C` / `0x801E1738`/`0x801E173C` | target slot `< 3` (`sltiu`), then accessory-passive immunity bits `0x01000000`/`0x10000000` of char `+0x6BC` skip - the read precedes the roll, so a guarded target draws no RNG |
+| `6` | `ori v0,v0,0x1000` | `0x801EE6C8` / **absent** | `rng & 3 == 0` (hit leg only) |
 | `>= 7` | nothing - falls through with no bit write | - | - |
+
+**The two legs' ladders are not the same length.** The hit leg tests `4`, `< 5`, `3`, `5`, then
+`6` (`li v0,0x6` / `beq` at `0x801EE478`..`0x801EE47C`). The special leg's ladder stops at `5`:
+`0x801E1620` compares against `5` and otherwise jumps straight to the join at `0x801E178C`,
+with no `6` arm anywhere in the routine. **An enemy special attack therefore cannot inflict
+Curse** - only the physical/arts leg can. (The special leg's `3` comparison reuses register
+`a2`, which still holds the impact-phase byte `3` the `bne` at `0x801E1574` just proved equal
+to `3` - a register-economy trick, not a second constant.)
+
+**Engine.** The special leg's ladder is ported as
+`engine-core::world::battle::monster_ai::enemy_impact_status_proc`, driven by
+`World::apply_enemy_move_status` off the installed `MovePowerCatalog` at the end of a monster
+cast. Because the id→index map is special-attack-only, a monster's *basic* attack resolves to
+the all-zero record 0 and inflicts nothing without a separate guard.
 
 Kinds `1..5` additionally latch `actor[+0x21F] = kind` and stage the effect word `actor[+0x4]`
 from the table `0x801F53D4[kind-1]` (hit leg `0x801EE3E8..0x801EE430`, guard `sltiu v0,v0,6`

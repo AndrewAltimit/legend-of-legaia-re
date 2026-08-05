@@ -64,6 +64,34 @@ and it lifts the row when the same rare table turns up under a module with an
 unrelated name. For `FUN_801D5DE0` in `shop.rs` that second half reads
 `0x801E4518 is also formed by FUN_801dc1cc, PORT-tagged in prize_exchange.rs`.
 
+### `dual-label` compares defining pages, and a pointer is not a claim
+
+Page relatedness starts from filename tokens, and that alone over-fires by a
+wide margin. The function directory is named for coarse topics (`menus`,
+`script-vms`, `battle`) and the write-ups for fine ones (`save-screen`,
+`field-locomotion`, `battle-action`), so an index entry and the page it indexes
+always read as "two unrelated names". Two exclusions cut that class:
+
+- **A site that links to the counterpart page is a pointer.** A directory row
+  whose own text sends the reader to the page it is said to contradict is
+  filing that page's claim rather than competing with it. Scoped to the pair -
+  a row pointing at `save-screen.md` is still an independent claim against
+  `world-map.md` - and scoped to *every* site the page has for that address, so
+  a page that defines a routine twice and links once still counts as a rival.
+- **Only `docs/subsystems/`, `docs/formats/` and `docs/reference/functions/`
+  define a routine.** A thread ledger records which readings are falsified and
+  a `docs/tooling/` page describes an instrument; naming an address there is
+  not a second label for it. Two of the rows this drops are titled "X is *not*
+  Y".
+
+Neither reaches `FUN_801D5DE0`, whose carriers cited nobody. Neither is a
+substitute for reading the two texts, either: once a human reconciles a pair,
+the corrected pages agree and the fine page usually gains a link *because* of
+the correction, so the row goes quiet through the pointer rule rather than
+through any test of whether it was ever a conflict. That is what a waiver
+records, and it is why the pointer rule is validated against the doc state the
+conflicts were found in rather than the state after they were fixed.
+
 ### Distinctiveness is the whole trick
 
 Without a corpus denominator every routine looks related to every other one.
@@ -71,8 +99,55 @@ The text writer `0x80036888` is called from 82 dumps and the string blitter
 `0x8002b994` from 39, so "these two share a callee" is true of almost any pair.
 The checker therefore counts, across every dump, how many addresses form each
 data address and call each target, and only features below a cut carry
-information. The cuts are constants at the top of the script, and they are
-precision dials, not fitted numbers.
+information.
+
+The denominator is taken over **every** dump that printed instructions, not
+only the image-tagged ones. How many routines form an address is a property of
+the corpus; a dump with no `[image]` header is a worse witness to *which* body
+sits at a VA and an equally good one to how common that address is. A third of
+the corpus carries no image tag, so restricting the count to the tagged part
+measured half the corpus and called the result distinctive.
+
+### The cut has to follow the module
+
+One fixed cut cannot read every module, and the modules it fails on are a kind,
+not a sample. A window-descriptor **painter** has exactly one datum of its own -
+its private overlay string pool - and calls only the corpus-wide text writer,
+number writer and marker blitter. Its siblings share the choice-state word and
+the panel-install callee, both far above any fixed cut. So every painter in a
+painter module shares nothing distinctive with every other painter, and the
+module reports as many orphans as it has members: fourteen from one file,
+eleven more from an actor-hub module with the same shape one level up, and a
+host-dispatcher module reports the per-mode state machines it dispatches, each
+in its own overlay with its own tables.
+
+So the cut climbs a ladder per module until the module reads as cohesive, and
+only a member still unlinked *there* is saying anything. A painter module links
+at 96 and has no orphan left; `world/field_movement.rs` is cohesive at the base
+cut and its one wrong tag stays an orphan at every cut on the ladder. A module
+that never reads as cohesive is one the signal cannot read, and it produces
+silence rather than one finding per member.
+
+Two guards keep the ladder honest. A module with too few tags does not get a
+per-module cut at all - the "cut it needs" would be one pair's accident - and
+under both paths a *majority* of the module's evidence-bearing tags must
+corroborate before a member of the minority can be called foreign. Tags whose
+routine forms nothing distinctive are outside that denominator: they cannot
+corroborate anything, so counting them against the module measures the corpus
+rather than the module.
+
+Corroboration and orphanhood need different evidence, and the asymmetry decides
+where a filter belongs. "These two touch the same table" is an existence claim a
+fragmentary dump can settle, so a fragmentary sibling still corroborates. "This
+one touches nothing any of them touch" is a claim about a whole body, and a dump
+that printed a tenth of it - a jump-table dispatcher dumped as its head plus its
+shared epilogue - cannot make it. Applying the coverage floor to corroboration
+instead silenced a real defect whose module's dispatcher sibling is such a dump.
+
+The thresholds are precision dials. `ADAPTIVE_TARGET` in particular was chosen
+by sweeping it against the hand-reviewed verdicts under the constraint that
+every known-real defect keeps firing, and the script says so where it is
+defined.
 
 ## What was tried and deleted
 
@@ -120,9 +195,60 @@ because the callee is the sibling's own address rather than a shared third
 party, and `save_select.rs` read as having an orphan that calls four of its own
 siblings. Fixing it took `module-orphan` from 110 findings to 67.
 
+A fifth came out of `doc-citation` triage, and it is the same mistake in a new
+place. Both citation signals exempt a cited **function entry**, because prose
+about a routine names its callers, its siblings and the dispatcher that reaches
+it, and none of those is in its own bytes. That exemption was keyed on whether
+the cited address had a *dump*, which inverts it: a row naming a caller we had
+read passed, and the same row naming a caller we had not read as unsupported
+evidence. Roughly two thirds of the signal's output was that shape. The test is
+now the citation's **written form** - `FUN_8003D53C` is a function reference
+whether or not it is in the corpus.
+
+What survived that fix split three ways. Six rows named a data global the body
+does not form and a sibling page had right, all of them a hex digit out
+(`0x801D1CBC` for the SEQ voice count `0x801CE344`, `0x801DADD8` for the libcd
+FS table `0x801CADD8`, `0x801D04B8` for the format string `0x801CF4B8`). Three
+described a routine no dump of that VA carries. The rest cite an address that
+belongs to a *different* routine - a caller's `jal` site, a table its dispatcher
+reads, a load base named as provenance - and no written form separates "the
+table I read" from "the table that indexes me", so those are waived rather than
+signalled.
+
 The lesson generalises past this script: when a new measurement's first output
 is a pile of findings, the first hypothesis to test is that the measurement is
 wrong, and hand-triage of the top rows is how you test it.
+
+### The tracker synthesised addresses that exist in no dump
+
+`FUN_801DB8B4`'s reported distinctive data included `0x801C94BC`, which appears
+in none of its dumps. Its sixteen instructions form `0x801C9370` with a
+`lui`/`addiu` pair, reload the register from a pointer table with `lw v0,0x0(a0)`
+and then read `lhu v0,0x14c(v0)` - a field off a runtime pointer. The tracker
+carried the `lui` provenance **through the load** and reported the sum as a
+global the routine owns. Every `base + small offset` chain behind a pointer load
+has that shape, so this was a class rather than a case: a load now ends its
+destination register's provenance, as do the one-operand writers (`mflo`,
+`mfhi`) that carry no comma and so slipped past the generic write rule.
+
+Three corpus-shape filters landed with it, each a case the checker had been
+reading as evidence:
+
+- **A dump whose header `entry` is not the address asked for** is a window
+  opening inside a *different* routine, and one such file was the sole
+  disagreeing body for an address whose other seven dumps agree.
+- **A dump that printed no instructions at all** - the "0 instructions,
+  decompiled C only" shape [`ghidra.md`](ghidra.md) catalogues - was still
+  counted as a body. One `dual-label` finding rested entirely on an address
+  whose only tagged dump was of that kind.
+- **Bodies that disagree at one VA.** Overlays link different code over one
+  overlay address, so an address's dumps are not all the same routine and
+  unioning their formed addresses attributes one routine's tables to another.
+  Dumps are grouped by body fingerprint and only the plurality is read; a tie
+  means the corpus cannot say which body the port implements, and the address
+  contributes nothing rather than the wrong thing. `0x801F8E6C` is the worked
+  case - six dumps agree at 47 instructions with a real prologue, and one
+  48-instruction window opens on a bare `jal` mid-routine.
 
 ## Reading a report
 
@@ -142,6 +268,15 @@ anything, and a blocking check that a reader learns to skip is worse than no
 check. `--strict` fails on any finding without a waiver, for a reader who has
 worked the list down.
 
+`module-orphan` is the signal that has been pushed hardest on precision, and it
+is still not a gate on its own numbers. Against a hand-reviewed set of 66 rows -
+four of them real - the structural fixes above take the class from 67 findings
+to 15 while every one of the four keeps firing, so roughly one row in four is
+now real where it was one in seventeen. Four in fifteen is a worklist a reader
+can finish; it is not a check that may fail a commit. What can gate is the
+*delta*: with the reviewed rows waived, `--strict` fires only on rows nobody has
+read, and those arrive a handful at a time.
+
 Reviewed findings go in `scripts/ci/port-provenance-waivers.toml`, keyed by the
 finding key, each with a `reason` that says what was read and what it showed.
 "Probably fine" is not a reason - it would be equally true of a real defect, and
@@ -154,7 +289,13 @@ an unreviewed row belongs in the report where it can still be seen.
   identical bodies at different VAs never produce a finding.
 - **VA aliasing.** Overlays are linked over `0x801C0000+`, several at the same
   base, so a VA at or above it identifies an object only together with its
-  image. Corroboration across the overlay band requires a shared image tag.
+  image. Corroboration across the overlay band requires a shared image tag, and
+  an address whose dumps disagree on the body is read from the plurality body
+  only - or from none, when they tie.
+- **Fragmentary dumps.** A jump-table dispatcher is routinely dumped as its
+  head plus its shared epilogue, printing a tenth of its own address span.
+  Such a dump can still corroborate a sibling, and can never make a routine an
+  orphan.
 - **Untrusted call targets.** `jal` targets decoded from the `overlay_0896`
   window below `0x801CE818` are a property of a wrong load base
   ([`call-target-integrity.md`](call-target-integrity.md)); those dumps

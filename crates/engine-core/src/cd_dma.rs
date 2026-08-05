@@ -807,6 +807,13 @@ pub struct StreamLoadDescriptor {
 /// retail routine brackets each append with; hardware side-band, not
 /// modelled here)
 ///
+/// NOT WIRED: nothing enqueues. The queue is fed by the CD-DMA host, and the
+/// only implementor of [`CdDmaHost`] outside this file's tests is
+/// [`ProtCdDmaHost`], which no host crate constructs - every engine host
+/// resolves assets through `Scene` / `SceneAssets` synchronously instead of
+/// through a streaming queue. A host that owns a [`ProtCdDmaHost`] across
+/// frames is the prerequisite. See `docs/tooling/reach-triage.md`.
+///
 /// Retail `FUN_8003DDA0(idx)` appends a load descriptor for PROT entry
 /// `idx` to the queue and advances a running byte cursor by the entry's
 /// byte size, reading the in-RAM TOC at `0x801C70F0` with the standard

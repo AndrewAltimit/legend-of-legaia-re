@@ -120,7 +120,7 @@ Content-only panel draws in the menu overlay (`overlay_menu` and `overlay_shop_s
 
 | Address | Role |
 |---|---|
-| `80034A6C` | Menu / HUD globals reset. Initialises `0x80084594..0x800845B8` and `0x800846D0..0x800846DC` to default UI palette / cursor positions. Zeros the 512-byte save-data scratch slot at `0x80084340..0x8008453F`. Calls `FUN_8003CE08(0x1A)` (set 4th-flag-bank bit `0x1A`) when `_DAT_8007B868 != 0`. |
+| `80034A6C` | **New-game data-init**, not a menu routine - [details ↓](#80034a6c) - listed here because its seed writes land in the `0x800845xx` window this page's screens read. |
 | `800337B0` | Menu-string formatter and renderer. 27 KB switch-on-mode that drives the character-status / equipment / spell-screen pages via `FUN_8003CD00` (multi-line) and `FUN_80036888` (raw draw) keyed on string buffers at `&DAT_8007B4B0..` and the multi-line label table at `gp + 0x13c + 0x7F86`. |
 | `8004313C` | Inventory active-window setup, gated on party member count (`DAT_80084594`) - [details ↓](#8004313c) |
 | `801D688C` | **Menu cursor-navigation primitive.** `(cursor: *u32, count, mode) -> 0/1/2/3`. The shared list-navigation helper across the menu / shop / save-slot state-handlers. Reads the overlay confirm / cancel pad masks (`DAT_801EF0F0` / `DAT_801EF0F4`) against `_DAT_8007B874`: confirm → SFX cue `0x36`, return `1`; cancel → SFX `0x37`, return `2`. Otherwise (when `count != 0`) reads held-pad `_DAT_8007BB84`: left (`0x1000`) decrements the low-12-bit cursor (when `> 0`), right (`0x4000`) increments it (when `cursor+1 < count`), each playing SFX `0x21` and returning `3` (moved); `mode != 0` is the wrap variant. SFX go through the cue enqueue `FUN_80035B50`. Ported: `engine_core::menu_input::menu_cursor_nav`. `see ghidra/scripts/funcs/overlay_save_ui_select_801d688c.txt`. |
@@ -144,7 +144,7 @@ Callees of the pause/field menu overlay (loaded by the mode-22 CARD pair via `FU
 | `801E1934` | **Save-block composer.** Stamps the PSX header (`"SC"`, icon descriptor `0x11`, block count `1`), writes the slot number into the title as two full-width digits (`0x4F + digit`), copies the party summary (per member: name from record `+0x2A7`, level `+0x130`, HP/MP cur+max), grabs the three icon frames and the CLUT **out of** VRAM with `StoreImage`, then `memcpy`s `0x1A18` bytes of live state and stores `FUN_801E38D8`'s checksum at `+0x1FFC`. The `/10` is the two title digits, not a counter readout. Ported: `engine-core::card_flow::save_block_summary`. `see ghidra/scripts/funcs/overlay_menu_801e1934.txt`. |
 | `801E3A00` / `801E3A98` | Kernel event-handle poll helpers (call `TestEvent` `FUN_80056658`). `see ghidra/scripts/funcs/overlay_menu_801e3a00.txt`. |
 | `801E3BEC` | Formatted-string build + print (sprintf-shape `FUN_80056738` + print `FUN_800567A8`). `see ghidra/scripts/funcs/overlay_menu_801e3bec.txt`. |
-| `801E37CC` | **Three-argument dev trace print** - the sibling of `801E3BEC`. Formats into a `0x20`-byte stack buffer with `FUN_800567B8(buf, &DAT_801D04B8, a, b, c)` (the `printf`-class formatter) and hands the buffer to the BIOS B-vector thunk `FUN_80056718`, whose routine selector is the caller-set `$t1`. Sixteen instructions, no game state touched. Dumped identically under `overlay_menu_` and `overlay_shop_save_`. `see ghidra/scripts/funcs/overlay_menu_801e37cc.txt`. |
+| `801E37CC` | **Three-argument dev trace print** - the sibling of `801E3BEC`. Formats into a `0x20`-byte stack buffer with `FUN_800567B8(buf, &DAT_801CF4B8, a, b, c)` (the `printf`-class formatter) and hands the buffer to the BIOS B-vector thunk `FUN_80056718`, whose routine selector is the caller-set `$t1`. Sixteen instructions, no game state touched. Dumped identically under `overlay_menu_` and `overlay_shop_save_`. `see ghidra/scripts/funcs/overlay_menu_801e37cc.txt`. |
 | `801E4140` | Widget frame/box draw wrapper (`FUN_8002C69C`). `see ghidra/scripts/funcs/overlay_menu_801e4140.txt`. |
 | `801D4A80` | **Window 34 content renderer** - the item / accessory description box, rect `(138, 166, 168, 38)`. Gated on the selected item id `_DAT_801E46B0 > 0`; draws the item's name from `0x80074368 + id*0x0C` (`+0x04`) at ink `6`, then either the accessory-passive description (`0x8007625C + idx*0x0C`, `+0x08`) when the item record's leading byte is `2` and the item-effect `+0x03` index is `< 0x40`, or the item's own `+0x08` string. See [`field-menu.md`](../../subsystems/field-menu.md). `see ghidra/scripts/funcs/overlay_menu_801d4a80.txt`. |
 | `801DCA0C` / `801DCA50` / `801DCA94` / `801DCAD8` / `801DCB1C` / `801DCFE4` | **The plain title-tab renderers** (windows 0..=4 and 43) - six copies of one 17-instruction routine: stage ink `7`, then `FUN_80036888(str, 0, 0, WX, WY)`. They differ **only** in the string pointer (`addiu a0,a0,-0x1630` vs `-0x1394`), which is why one painter serves all six. Ported: `engine-ui::title_tab_draws_for`, selected by [renderer_va dispatch](../../subsystems/field-menu.md#which-painter-draws-a-descriptor-renderer_va-dispatch). `see ghidra/scripts/funcs/overlay_menu_801dca0c.txt`. |
@@ -156,6 +156,29 @@ Callees of the pause/field menu overlay (loaded by the mode-22 CARD pair via `FU
 ## Function details
 
 Full write-ups for the rows above whose detail outgrew a table cell. Linked from each section table by **[details ↓]**.
+
+### `80034A6C`
+
+**New-game data-init**, and the row above is on this page only because of where
+it writes. Every store is an `sb` / `sw` off `s0 = 0x80084140`, the live
+game-state window (`see ghidra/scripts/funcs/80034a6c.txt`), and the canonical
+description is [`game-modes.md`](game-modes.md)'s row - party gold
+`0x8008459C = 500` (`li v0,0x1f4` at `0x80034A94`), party count
+`0x80084594 = 3`, the `0x800846D0..0x800846DC` quad `0x44 / 0x21 / 0x10 / 0x48`,
+the starting-item seed `SC+0x1818 = 0x77` count `5`, and the tail call
+`FUN_800560B4` that expands the starting-party template.
+
+Two claims that read as menu work do not survive the disassembly:
+
+- **The zeroed block is the story-flag bank, not a save-data scratch slot.** The
+  descending loop at `0x80034B1C` stores through `0x1618(v1)` with `v1` starting
+  at `s0 + 0x1FF`, so the addresses written are `0x80085758..0x80085957` - the
+  256-bit fourth flag bank `FUN_8003CE08` / `CE34` / `CE64` operate on
+  ([`runtime-libs.md`](runtime-libs.md)). `0x80084340..0x8008453F` is the range
+  the *register* sweeps, not the range any store lands in.
+- **The `0x800845xx` writes are new-game seeds, not UI defaults.** They are
+  cursor-shaped only by coincidence of address; the port models the same fifteen
+  cells as `legaia_asset::new_game::new_game_seed_words`, keyed by `SC` offset.
 
 ### `80035274`
 
