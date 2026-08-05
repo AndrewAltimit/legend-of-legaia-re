@@ -38,7 +38,7 @@
 //! | 2 | pad-walk to the south gate -> `map01` | field locomotion + collision + walk-on trigger |
 //! | 3 | pad-walk `map01` across the continent | overworld remap + collision + the encounter round trip |
 //! | 4 | pad-walk on to the Ravine, via `suimon` | multi-scene overworld route + portal engage |
-//! | 5 | pad-walk the Ravine interior to its far exit | dungeon locomotion + the scene's own exit bands |
+//! | 5 | pad-walk the Ravine interior out of a *different* door | dungeon locomotion + the scene's own exit bands |
 //!
 //! Rung 5 exists because rungs 2-4 all end the instant a door fires, so none
 //! of them walks a dungeon *interior*. That is its own surface: the exits are
@@ -47,6 +47,12 @@
 //! the corridors are the narrowest geometry the leading-edge probe meets.
 //! Under a four-rung ladder "the Ravine loads" and "the Ravine can be walked"
 //! scored the same.
+//!
+//! It is scored on **which door the player came out of**, not on the bare
+//! transition. `keikoku` carries four scene-change records and all four return
+//! to `map01`, each at its own tile, so the arrival coordinate names the door
+//! exactly ([`ExitRecord`]) - and the one thing a step back through the
+//! entrance can never produce is a different one.
 //!
 //! Rung 3 is the first leg of rung 4's route, scored on its own, because that
 //! leg is sixty-odd tiles long: under a single portal check, "walked nowhere"
@@ -85,6 +91,13 @@
 //! one enters it ([`portal_hazards`]), and a scene with several doors needs
 //! the door the walk can actually reach ([`portal_tile`]).
 //!
+//! A hazard is a tile it is unsafe to **enter**, never a tile it is unsafe to
+//! *occupy*, and the difference is not cosmetic. Retail's dispatcher fires on
+//! a tile *change*, so a step that stays inside one tile fires nothing - and a
+//! dungeon arrival is seated on the door it came in through, i.e. inside a
+//! hazard. A planner that tests only the destination tile therefore refuses
+//! its own first step and reports the scene as sealed. See [`plan_path`].
+//!
 //! A leg that stops making progress is reported as `Stalled` with the tile it
 //! died on, not as a bare assertion failure - a stall is the finding.
 //!
@@ -92,7 +105,10 @@
 //!
 //! Two modes take the frame away mid-leg and they are not the same problem.
 //! A dialogue or cutscene timeline owns *input* while the world stays put
-//! ([`drain_scripted`]). A random encounter replaces the *world*: in
+//! ([`drain_scripted`], which pages through it the way a player does - a
+//! neutral pad is enough for a sequence that runs on its own clock and is not
+//! enough for one that waits on a confirm). A random encounter replaces the
+//! *world*: in
 //! [`SceneMode::Battle`] the player actor's `move_state` is the battle arena
 //! transform, so [`player_world`] stops meaning an overworld position at all.
 //! [`drain_battle`] sits both out, and reading its doc comment first will save
@@ -330,24 +346,25 @@ const MAX_PLAN_NODES: usize = 300_000;
 /// counts as having traversed the dungeon.
 ///
 /// The Ravine is a corridor with mouths on both sides of the continent, so
-/// both its ends are `map01` doors and `Transitioned("map01")` alone cannot
-/// tell "crossed the Ravine" from "turned round and walked back out the way I
-/// came in". The same shape [`OVERWORLD_CROSSING_TILES`] guards on rung 3, and
-/// the same fix: score the distance, not just the event.
+/// every one of its ends is a `map01` door and `Transitioned("map01")` alone
+/// cannot tell "crossed the Ravine" from "turned round and walked back out the
+/// way I came in". The same shape [`OVERWORLD_CROSSING_TILES`] guards on rung
+/// 3, and the same fix: score the distance, not just the event.
 ///
 /// The first draft of rung 5 applied it to the **goal** instead, which reads
 /// the same and measures nothing: it aimed 47 tiles away, walked two, tripped
-/// the entrance band and reported a clean `Transitioned("map01")`. The
-/// distance has to be on the walk, and the entrance band has to be routed
-/// around ([`arrival_exit_hazards`]).
+/// the entrance band and reported a clean `Transitioned("map01")`.
 ///
-/// 12 tiles is under the corridor's own length and well past the entry
-/// chamber, so it cannot be cleared by a step back through the entrance.
+/// This threshold is the *second* of the rung's two conditions, not the whole
+/// of it. The first is which door the leg came out of - see [`ExitRecord`] -
+/// and that one is a disc coordinate rather than a heuristic. 12 tiles is
+/// under the corridor's own length and well past the entry chamber, so
+/// together they cannot be cleared by a step back through the entrance.
 const DUNGEON_TRAVERSE_TILES: i32 = 12;
 
-/// How many candidate exit tiles [`field_exit_candidates`] scores with a full
-/// flood. A trigger *band* is many adjacent tiles, so an unbounded list costs
-/// dozens of BFS passes to rank rows that are the same door.
+/// How many tiles of one exit band the rung-5 goal picker scores with a full
+/// flood. A band is many adjacent tiles, so an unbounded list costs dozens of
+/// BFS passes to rank rows that are the same door.
 const MAX_EXIT_CANDIDATES: usize = 12;
 
 // ---------------------------------------------------------------------------
@@ -613,7 +630,19 @@ fn plan_path(
             }
             if !avoid.is_empty() {
                 let (nx, nz) = cell_center(next);
-                if avoid.contains(&dispatch_tile(nx, nz)) {
+                let (nt, ct) = (dispatch_tile(nx, nz), dispatch_tile(cx, cz));
+                // A hazard tile is dangerous to **enter**, and a step that
+                // stays inside one tile is not an entry: retail's dispatcher
+                // fires on a tile *change*
+                // (`SceneHost::dispatch_walk_on_trigger` compares against the
+                // previous frame's tile), so the band under the player's own
+                // feet has already fired and cannot fire again while it is
+                // occupied. Testing the destination alone conflates "occupy"
+                // with "enter", and that is a **self-block** whenever the walk
+                // starts inside an avoided tile - which a dungeon arrival
+                // always does, because the player is seated on the door they
+                // came in through. See [`ExitRecord`].
+                if nt != ct && avoid.contains(&nt) {
                     continue;
                 }
             }
@@ -704,8 +733,17 @@ enum Leg {
     /// Standing on the goal tile with no transition.
     Reached,
     /// Control never came back: the opening choreography or a dialogue box
-    /// held input for the whole budget.
-    InputLocked,
+    /// held input for the whole budget. Carries the world position it
+    /// happened at, because a scripted sequence that never ends is a
+    /// **record**, and the tile is what names which one - a lock at the leg's
+    /// first frame and a lock seven tiles in are different defects.
+    ///
+    /// The world pair, not the tile: the trigger that spawned the sequence was
+    /// matched in the dispatch frame (`world >> 7`) and the two frames differ
+    /// by a half tile, so a lock reported only in planner tiles names the tile
+    /// *before* the band it is standing in. This one did - `(56, 29)` for a
+    /// record whose band starts at `(56, 30)`.
+    InputLocked { at: (i16, i16) },
     /// The walkability grid offers no route from here to the goal.
     NoPath { at: (i16, i16), goal: (i16, i16) },
     /// Movement stopped closing distance. Carries what the engine itself
@@ -730,7 +768,12 @@ impl std::fmt::Display for Leg {
         match self {
             Leg::Transitioned(name) => write!(f, "entered {name}"),
             Leg::Reached => write!(f, "reached the goal tile"),
-            Leg::InputLocked => write!(f, "control never released"),
+            Leg::InputLocked { at } => write!(
+                f,
+                "control never released at world {at:?} tile {:?} (dispatch tile {:?})",
+                tile_of(at.0, at.1),
+                dispatch_tile(at.0, at.1)
+            ),
             Leg::NoPath { at, goal } => {
                 write!(f, "no walkable route {at:?} -> {goal:?}")
             }
@@ -791,11 +834,30 @@ enum Drain {
 /// Tick with a neutral pad while a dialogue or cutscene owns input, surfacing
 /// a scene change if the sequence performs one.
 fn drain_scripted(host: &mut SceneHost) -> Drain {
-    for _ in 0..INPUT_RELEASE_BUDGET {
+    for f in 0..INPUT_RELEASE_BUDGET {
         if !host.world.cutscene_timeline_active() && !host.world.dialogue_owns_input() {
             return Drain::Released;
         }
-        host.world.set_pad(0);
+        // Page through it the way a player does. A neutral pad is enough for a
+        // sequence that runs on its own clock (`town01`'s opening, the arrival
+        // beats), but it is **not** enough for one that pages: `keikoku`'s
+        // partition-2 record `7` - the shared band across all four chambers'
+        // inner doorways, guarded by the one-shot `SysFlag 0x2BB` - is a story
+        // cutscene with narration pages, and a page waits on a confirm. Held
+        // neutral it never advances and the whole leg reads as an engine hang
+        // at the tile the band starts on.
+        //
+        // Pulsed, not held: the advance is edge-triggered, so a held Cross
+        // reads as one press and pages once. The duty cycle is
+        // press-2-release-14, which is a human mash rather than a per-frame
+        // strobe - fast enough to clear a long sequence inside the budget,
+        // slow enough that a page that opens an option picker is not
+        // double-answered by the same press.
+        host.world.set_pad(if f % 16 < 2 {
+            PadButton::Cross.mask()
+        } else {
+            0
+        });
         match host.tick() {
             Ok(SceneTickEvent::SceneEntered { name }) => return Drain::Entered(name),
             Ok(_) => {}
@@ -891,7 +953,9 @@ fn walk_to(
     stats: &mut LegStats,
 ) -> Leg {
     if !wait_for_input(host) {
-        return Leg::InputLocked;
+        return Leg::InputLocked {
+            at: player_world(host),
+        };
     }
 
     let start_w = player_world(host);
@@ -994,7 +1058,21 @@ fn walk_to(
             match drain_scripted(host) {
                 Drain::Entered(name) => return Leg::Transitioned(name),
                 Drain::Released => {}
-                Drain::Locked => return Leg::InputLocked,
+                Drain::Locked => {
+                    let (x, z) = player_world(host);
+                    if std::env::var_os("LEGAIA_CPR_DEBUG").is_some() {
+                        eprintln!(
+                            "[dbg] input lock at world ({x},{z}) tile {:?} dispatch {:?}: \
+                             timeline {} dialog {} inline {}",
+                            tile_of(x, z),
+                            dispatch_tile(x, z),
+                            host.world.cutscene_timeline_active(),
+                            host.world.current_dialog.is_some(),
+                            host.world.inline_dialogue.is_some(),
+                        );
+                    }
+                    return Leg::InputLocked { at: (x, z) };
+                }
             }
         }
 
@@ -1130,111 +1208,86 @@ fn portal_hazards(host: &SceneHost, dest: &str) -> HashSet<(i32, i32)> {
         .collect()
 }
 
-/// Walk-on exit tiles of the **field** scene the player is standing in, far
-/// enough from `from_tile` to count as a traverse, sorted nearest-route first.
+/// One of the current field scene's **scene-change records**: a partition-2
+/// record whose script carries a `0x3F`, together with every `.MAP` gate-1
+/// trigger tile that spawns it and the arrival tile it lands on.
 ///
 /// A field scene has no entity portals - the overworld's [`portal_tile`] has
-/// nothing to read here. Its doors are `.MAP` kind-1 gate-1 trigger bands, and
-/// [`SceneHost::tile_has_walk_on_trigger`] is the read-only view of exactly
-/// the table the per-frame dispatch compares against, so scanning the tile
-/// grid through it asks the engine where its own doors are rather than
-/// hard-coding a coordinate off a disc dump.
-///
-/// Two filters, and both are load-bearing:
-///
-/// 1. **Distance.** The arrival sits on or beside the door the player came in
-///    through, and that band is a live exit - a route to "the nearest trigger
-///    tile" is a route back out the entrance. Only tiles at least
-///    `min_tiles` away are candidates. See [`DUNGEON_TRAVERSE_TILES`].
-/// 2. **Reachability by the thing that has to walk it.** Candidates are
-///    ordered by the residual [`plan_path`] leaves, the same measure
-///    [`portal_tile`] picks its overworld door with - a band across a wall is
-///    a band the follower cannot use, however close it looks.
-///
-/// Not every gate-1 tile is a scene change (a story beat is one too), so the
-/// caller scores the leg on what it actually entered, not on arrival.
-fn field_exit_candidates(
-    host: &SceneHost,
-    from_tile: (i16, i16),
-    min_tiles: i32,
-    avoid: &HashSet<(i32, i32)>,
-) -> Vec<((i16, i16), i32)> {
-    let from = {
-        let (x, z) = player_world(host);
-        cell_of(x, z)
-    };
-    let mut tiles: Vec<((i16, i16), i32)> = Vec::new();
-    for tz in 0i16..128 {
-        for tx in 0i16..128 {
-            let d = (tx - from_tile.0).abs() as i32 + (tz - from_tile.1).abs() as i32;
-            if d < min_tiles {
-                continue;
-            }
-            let (wx, wz) = tile_center((tx, tz));
-            if host.tile_has_walk_on_trigger(wx, wz) {
-                tiles.push(((tx, tz), d));
-            }
-        }
-    }
-    // A band is many adjacent tiles, so the raw list is long and a residual is
-    // a whole flood each. Rank by straight-line distance first and pay for the
-    // flood only on the nearest few - which is also the order a player would
-    // try them in.
-    tiles.sort_by_key(|&(_, d)| d);
-    tiles.truncate(MAX_EXIT_CANDIDATES);
-    let mut out: Vec<((i16, i16), i32)> = tiles
-        .into_iter()
-        .map(|(tile, _)| {
-            let (wx, wz) = tile_center(tile);
-            let goal_c = cell_of(wx, wz);
-            let residual = plan_path(host, from, tile, avoid)
-                .and_then(|p| p.last().copied())
-                .map_or(i32::MAX, |end| {
-                    i32::from((end.0 - goal_c.0).abs() + (end.1 - goal_c.1).abs())
-                });
-            (tile, residual)
-        })
-        .collect();
-    out.sort_by_key(|&(_, residual)| residual);
-    out
+/// nothing to read here. Its doors are `.MAP` kind-1 gate-1 trigger bands
+/// joined to their partition-2 records, which is exactly the join
+/// `man_field_scripts::overworld_portal_sites` performs for the overworld, so
+/// this asks the disc where the scene's doors are rather than probing tiles.
+struct ExitRecord {
+    /// Partition-2 record index.
+    record: u8,
+    /// Destination CDNAME scene label from the record's `0x3F`.
+    dest: String,
+    /// Arrival tile at the destination - the coordinate that tells two doors
+    /// of the same scene apart, since every `keikoku` door returns to `map01`.
+    dest_tile: (i16, i16),
+    /// Every trigger tile that spawns this record.
+    tiles: Vec<(i16, i16)>,
 }
 
-/// The walk-on bands **around the arrival**, as a [`plan_path`] `avoid` set.
-///
-/// A dungeon arrival is seated on the approach to the door it came in through,
-/// and that door is a live exit in both directions. So the route to the far
-/// end starts inside a band that ends the leg the moment it is crossed, and
-/// the first version of rung 5 did exactly that: it aimed at a tile 47 tiles
-/// away, walked **two**, tripped the entrance band and reported
-/// `Transitioned("map01")` - the right event off the wrong door.
-///
-/// This is [`portal_hazards`]' idea in a field scene: the grid says these
-/// tiles are walkable, the engine agrees, and stepping on one ends the leg
-/// somewhere else. Same `min_tiles` radius that disqualifies them as goals
-/// disqualifies them as route nodes, so the two halves cannot drift apart.
-///
-/// Keyed in the dispatch frame (`world >> 7`), which is the frame
-/// [`plan_path`] compares its `avoid` set in. A tile centre lands on the same
-/// pair in both frames (`(128t + 64) >> 7 == t`), so the mapping is exact at
-/// the sample points and only the half-tile margins differ.
-fn arrival_exit_hazards(
-    host: &SceneHost,
-    from_tile: (i16, i16),
-    min_tiles: i32,
-) -> HashSet<(i32, i32)> {
-    let mut out = HashSet::new();
-    for tz in 0i16..128 {
-        for tx in 0i16..128 {
-            let d = (tx - from_tile.0).abs() as i32 + (tz - from_tile.1).abs() as i32;
-            if d >= min_tiles {
-                continue;
-            }
-            let (wx, wz) = tile_center((tx, tz));
-            if host.tile_has_walk_on_trigger(wx, wz) {
-                out.insert((i32::from(tx), i32::from(tz)));
-            }
-        }
+impl ExitRecord {
+    /// Manhattan tile distance from `t` to the nearest tile of this band.
+    fn near(&self, t: (i16, i16)) -> i32 {
+        self.tiles
+            .iter()
+            .map(|&(tx, tz)| ((tx - t.0).abs() + (tz - t.1).abs()) as i32)
+            .min()
+            .unwrap_or(i32::MAX)
     }
+
+    /// This band as a [`plan_path`] `avoid` set.
+    fn hazard(&self) -> HashSet<(i32, i32)> {
+        self.tiles
+            .iter()
+            .map(|&(tx, tz)| (i32::from(tx), i32::from(tz)))
+            .collect()
+    }
+}
+
+/// Every scene-change record of the loaded field scene, grouped by record.
+///
+/// Grouping by **record** rather than by tile is what makes a dungeon leg
+/// scoreable. `keikoku` is one connected canyon with four such records - 0, 1,
+/// 2, 3, returning to `map01` tiles `(52, 94)`, `(64, 67)`, `(77, 68)` and
+/// `(82, 83)` - plus 31 further gate-1 tiles that are story *beats* and change
+/// no scene at all. A tile-keyed view cannot tell those three populations
+/// apart, so a leg aimed at "the nearest trigger tile 12+ away" routinely aims
+/// at a beat band while treating the corridor onward as an obstacle.
+fn exit_records(host: &SceneHost) -> Vec<ExitRecord> {
+    let Some(scene) = host.scene.as_ref() else {
+        return Vec::new();
+    };
+    let Ok(Some(man)) = scene.field_man_payload(&host.index) else {
+        return Vec::new();
+    };
+    let Ok(mf) = legaia_asset::man_section::parse(&man) else {
+        return Vec::new();
+    };
+    let Ok((primary, fallback)) = scene.field_tile_triggers(&host.index) else {
+        return Vec::new();
+    };
+    let mut triggers = primary;
+    triggers.extend(fallback);
+    let mut by_record: HashMap<u8, ExitRecord> = HashMap::new();
+    for site in legaia_engine_core::man_field_scripts::overworld_portal_sites(&mf, &man, &triggers)
+    {
+        by_record
+            .entry(site.record)
+            .or_insert_with(|| ExitRecord {
+                record: site.record,
+                dest: site.scene_name.clone(),
+                dest_tile: (i16::from(site.entry_x), i16::from(site.entry_z)),
+                tiles: Vec::new(),
+            })
+            .tiles
+            .push((i16::from(site.overworld_x), i16::from(site.overworld_z)));
+    }
+    let mut out: Vec<ExitRecord> = by_record.into_values().collect();
+    out.sort_by_key(|r| r.record);
     out
 }
 
@@ -1823,66 +1876,119 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     // hardest on. Under the four-rung ladder "the Ravine loads" and "the Ravine
     // can be walked" were the same score.
     //
-    // Success is a transition **after walking** at least
-    // [`DUNGEON_TRAVERSE_TILES`] - see that constant for why the bare event is
-    // not enough on a corridor with a door at each end, and
-    // [`arrival_exit_hazards`] for why the route has to be told about the door
-    // it arrived through.
+    // Success is leaving by a **different scene-change record** than the one
+    // the player arrived through, after walking at least
+    // [`DUNGEON_TRAVERSE_TILES`]. See [`ExitRecord`] for why the unit is a
+    // record and not a tile, and [`DUNGEON_TRAVERSE_TILES`] for why a bare
+    // `Transitioned` event is not enough on a scene whose every door returns
+    // to `map01`.
     let entry_tile = {
         let (x, z) = player_world(host);
         tile_of(x, z)
     };
-    let hazards5 = arrival_exit_hazards(host, entry_tile, DUNGEON_TRAVERSE_TILES);
-    let mut candidates = field_exit_candidates(host, entry_tile, DUNGEON_TRAVERSE_TILES, &hazards5);
-    // If honouring the arrival band leaves no route at all, drop it and walk
-    // anyway. The rung is still scored on reach, so this cannot turn a
-    // non-traverse into a pass - what it buys is the difference between "no
-    // walkable route" (which says nothing about why) and the leg outcome the
-    // player would actually get, which is the finding.
-    let mut avoid5 = hazards5.clone();
-    let sealed = candidates.iter().all(|&(_, r)| r == i32::MAX);
-    if sealed {
-        avoid5 = HashSet::new();
-        candidates = field_exit_candidates(host, entry_tile, DUNGEON_TRAVERSE_TILES, &avoid5);
-    }
+    let records = exit_records(host);
+    // The door the player came in through is the record whose band the arrival
+    // is standing on the approach to. On `keikoku` that is unambiguous by a
+    // factor of twenty: the arriving chamber's own record is 2 tiles away and
+    // the next-nearest is 41.
+    let arrival_rec = records
+        .iter()
+        .min_by_key(|r| r.near(entry_tile))
+        .map(|r| r.record);
+    let hazards5 = arrival_rec
+        .and_then(|rec| records.iter().find(|r| r.record == rec))
+        .map(ExitRecord::hazard)
+        .unwrap_or_default();
+    // Rank the *other* records' band tiles by the residual `plan_path` leaves,
+    // the same measure `portal_tile` picks an overworld door with - a band
+    // across a wall is a band the follower cannot use, however close it looks.
+    let from5 = {
+        let (x, z) = player_world(host);
+        cell_of(x, z)
+    };
+    // Non-vacuity control (`LEGAIA_CPR_RUNG5_BACKOUT=1`): aim the leg at the
+    // arrival record's **own** band and hazard nothing, i.e. walk straight
+    // back out the door the player came in through. That reproduces the exact
+    // observable the first draft of this rung passed on - a clean
+    // `Transitioned("map01")` a couple of tiles into the scene - so a run
+    // under this flag must report the rung **unclear**. If it ever clears, the
+    // rung is measuring the event again instead of the traverse.
+    let backout = std::env::var_os("LEGAIA_CPR_RUNG5_BACKOUT").is_some();
+    let hazards5 = if backout { HashSet::new() } else { hazards5 };
+    let mut candidates: Vec<(u8, (i16, i16), i32)> = records
+        .iter()
+        .filter(|r| (Some(r.record) == arrival_rec) == backout)
+        .filter_map(|r| {
+            let mut tiles = r.tiles.clone();
+            tiles.sort_by_key(|&(tx, tz)| {
+                ((tx - entry_tile.0).abs() + (tz - entry_tile.1).abs()) as i32
+            });
+            tiles.truncate(MAX_EXIT_CANDIDATES);
+            tiles
+                .into_iter()
+                .map(|t| {
+                    let (wx, wz) = tile_center(t);
+                    let goal_c = cell_of(wx, wz);
+                    let residual = plan_path(host, from5, t, &hazards5)
+                        .and_then(|p| p.last().copied())
+                        .map_or(i32::MAX, |end| {
+                            i32::from((end.0 - goal_c.0).abs() + (end.1 - goal_c.1).abs())
+                        });
+                    (r.record, t, residual)
+                })
+                .min_by_key(|&(_, _, residual)| residual)
+        })
+        .collect();
+    candidates.sort_by_key(|&(_, _, residual)| residual);
     if std::env::var_os("LEGAIA_CPR_DEBUG").is_some() {
-        let mut h: Vec<_> = hazards5.iter().copied().collect();
-        h.sort_unstable();
+        for r in &records {
+            eprintln!(
+                "[dbg] keikoku exit record {} -> {} @ {:?}: {} band tile(s), nearest {} tiles",
+                r.record,
+                r.dest,
+                r.dest_tile,
+                r.tiles.len(),
+                r.near(entry_tile)
+            );
+        }
         eprintln!(
-            "[dbg] keikoku entry tile {entry_tile:?}, sealed-by-arrival-band {sealed}, \
-             hazards {h:?}, exit candidates {candidates:?}"
+            "[dbg] keikoku entry tile {entry_tile:?}, arrival record {arrival_rec:?}, \
+             candidates {candidates:?}"
         );
     }
     let mut stats5 = LegStats::default();
     let leg_d = candidates
         .first()
-        .map(|&(goal, _)| walk_to(host, goal, &avoid5, &mut stats5));
-    // Scored on the distance **walked**, not on the distance to the goal. A
-    // transition alone is the entrance band firing behind the player; the two
-    // are the same event and only the reach separates them. Same shape rung 3
-    // uses, and for the same reason.
+        .map(|&(_, goal, _)| walk_to(host, goal, &hazards5, &mut stats5));
+    // Where the transition put the player names **which door** it was, because
+    // every `keikoku` record returns to `map01` at its own tile. That is the
+    // check a step back through the entrance cannot pass, and it comes off the
+    // disc rather than off a distance heuristic. The reach threshold is kept
+    // alongside it: together they say "walked the canyon" rather than "a door
+    // fired".
+    let landed = matches!(&leg_d, Some(Leg::Transitioned(_))).then(|| {
+        let (x, z) = player_world(host);
+        tile_of(x, z)
+    });
+    let arrival_return = arrival_rec
+        .and_then(|rec| records.iter().find(|r| r.record == rec))
+        .map(|r| r.dest_tile);
     let traversed =
-        matches!(&leg_d, Some(Leg::Transitioned(_))) && stats5.reach >= DUNGEON_TRAVERSE_TILES;
+        left_by_another_door(landed, arrival_return) && stats5.reach >= DUNGEON_TRAVERSE_TILES;
     rungs.push(Rung {
-        label: "pad-walk the Ravine interior to its far exit",
+        label: "pad-walk the Ravine out of a different door",
         detail: match (&leg_d, candidates.first()) {
             (None, _) => format!(
-                "keikoku carries no walk-on exit band {DUNGEON_TRAVERSE_TILES}+ tiles from the \
-                 {entry_tile:?} arrival"
+                "keikoku carries no scene-change record other than the {arrival_rec:?} the \
+                 {entry_tile:?} arrival came through ({} record(s) found)",
+                records.len()
             ),
-            (Some(leg), Some(&(goal, residual))) => format!(
-                "from arrival {entry_tile:?} toward exit {goal:?} (route residual {residual}, \
-                 {} candidate band tile(s), {} arrival-band hazard tile(s){}): {leg}; \
-                 reached {} tiles (needs {DUNGEON_TRAVERSE_TILES}), {} random encounter(s) fought",
-                candidates.len(),
-                hazards5.len(),
-                if sealed {
-                    ", which seal every route - re-run ignoring them"
-                } else {
-                    ""
-                },
-                stats5.reach,
-                stats5.fought,
+            (Some(leg), Some(&(rec, goal, residual))) => format!(
+                "from arrival {entry_tile:?} (record {arrival_rec:?}, returns to {arrival_return:?}) \
+                 toward record {rec}'s band at {goal:?} (route residual {residual}): {leg} at \
+                 {landed:?}; reached {} tiles (needs {DUNGEON_TRAVERSE_TILES}), \
+                 {} random encounter(s) fought",
+                stats5.reach, stats5.fought,
             ),
             (Some(leg), None) => format!("{leg}"),
         },
@@ -1890,6 +1996,20 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     });
 
     rungs
+}
+
+/// Did the dungeon leg come out somewhere other than where its entrance
+/// record returns to?
+///
+/// `landed` is the tile the transition seated the player on, `arrival_return`
+/// the tile the record the player came in through returns to. Both are `None`
+/// when there was no transition / no identifiable entrance record, and a
+/// missing half is **not** a pass: an unknown door is not a different one.
+/// Split out so this can be exercised without a two-minute disc run - the
+/// clause is the half of rung 5 that the `LEGAIA_CPR_RUNG5_BACKOUT` control
+/// cannot isolate, because a backed-out leg also fails the reach threshold.
+fn left_by_another_door(landed: Option<(i16, i16)>, arrival_return: Option<(i16, i16)>) -> bool {
+    matches!((landed, arrival_return), (Some(l), Some(a)) if l != a)
 }
 
 /// Render an optional leg, so a missing goal reads as a leg outcome rather
@@ -2030,6 +2150,30 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Rung 5's door-identity clause. The four real `keikoku` return tiles
+    /// are used as the fixture, because the shape that matters is "two doors
+    /// of the same scene differ only in their arrival tile" - the case a
+    /// scene-name comparison silently passes. Disc-free.
+    #[test]
+    fn a_door_is_only_different_when_both_ends_are_known() {
+        // keikoku partition-2 records 0..3, in order.
+        const RETURNS: [(i16, i16); 4] = [(52, 94), (64, 67), (77, 68), (82, 83)];
+        let entrance = RETURNS[1]; // arrived through record 1
+        for (i, &r) in RETURNS.iter().enumerate() {
+            assert_eq!(
+                left_by_another_door(Some(r), Some(entrance)),
+                i != 1,
+                "landing on record {i}'s return tile {r:?} after entering by record 1"
+            );
+        }
+        // No transition at all is not a traverse, however far the walk went.
+        assert!(!left_by_another_door(None, Some(entrance)));
+        // Nor is a transition whose entrance record could not be identified:
+        // an unknown door is not a different door.
+        assert!(!left_by_another_door(Some(RETURNS[0]), None));
+        assert!(!left_by_another_door(None, None));
     }
 
     /// A missing baseline file reads as zero rather than panicking, so a

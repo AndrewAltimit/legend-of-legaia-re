@@ -631,24 +631,38 @@ alone reports precisely the subsystems the other two ladders walk as
 never-entered - and a worklist ordered off it is ordered against a measurement
 that excluded its own top rows by construction.
 
-Produce one export per ladder, then join them together:
+Produce one export per ladder, then join them. **The union is the default** -
+a bare invocation globs `target/cov-*.json`, so the short command is the honest
+one and the single-binary join is now the thing you have to ask for:
 
 ```bash
 for t in critical_path_replay menu_replay minigame_replay v0_1_playthrough; do
   cargo llvm-cov --release -p legaia-engine-shell \
       --test "$t" --json --output-path "target/cov-$t.json"
 done
-scripts/ci/replay-port-coverage.py \
-    --json target/cov-critical_path_replay.json \
-    --json target/cov-menu_replay.json \
-    --json target/cov-minigame_replay.json \
-    --json target/cov-v0_1_playthrough.json
+scripts/ci/replay-port-coverage.py
 ```
 
 Separate exports rather than one multi-`--test` run, because the report's
 per-ladder table then says what each contributed and how much of it no other
 ladder reached - which is what makes "drop a ladder from the join" a visible
 cost rather than a quieter number.
+
+The script also carries the canonical ladder list and **names any member whose
+export is absent**, on stdout and in a `Partial union` note in the report. A
+union over three of the four is not a conservative version of the number, it is
+a number about three ladders, and without the note it reads identically to the
+full one.
+
+### Why this stays a manual step
+
+Each export is an instrumented release build plus a full disc-gated ladder run,
+so a complete union is minutes of work and needs the disc - it cannot be a
+pre-commit gate, and a gate that silently degrades to a partial union would
+reintroduce exactly the understated denominator this section exists to name.
+`--fail-on-disclosed` is the gateable part: it asks whether a passing oracle
+executed disclosed-stub code, which is a defect at any coverage level and needs
+no complete union to mean something.
 
 The join needs no source edits - the `// PORT:` tags already carry the
 address→symbol mapping, and coverage supplies execution counts against the same

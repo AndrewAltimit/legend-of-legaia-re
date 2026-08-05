@@ -10,7 +10,7 @@
 #   2  pad-walk town01 south gate -> map01
 #   3  pad-walk map01 across the continent (>= 24 tiles, >= 1 encounter fought)
 #   4  pad-walk map01 -> suimon -> map01 -> keikoku (Ravine)
-#   5  pad-walk the Ravine interior to its far exit (>= 12 tiles walked)
+#   5  pad-walk the Ravine interior out of a *different* door (>= 12 tiles)
 #
 # Unlike the other progression oracles, this number is denominated in what a
 # player can do, not in what the disc decodes. Raise it only when the run
@@ -25,20 +25,56 @@
 # geometry, the grid decode and the planner lattice are all exonerated against
 # retail - see `handoff/rung4-probe.md` and `docs/subsystems/world-map.md`.
 
-# Rung 5 does NOT clear, and the first draft of it is worth recording because
-# it *did*. It aimed at an exit band 47 tiles away and scored the rung on
-# `Transitioned(_)`: the run reported a clean "entered map01" after walking
-# **two** tiles, because the arrival at keikoku tile (58, 24) sits beside the
-# band it came in through and the route to the far end crosses it. Scoring the
-# goal's distance instead of the walked distance reads identically and measures
-# nothing.
+# Rung 5 clears. The run walks 65 tiles of Ravine from the (58, 24) arrival to
+# partition-2 record 0's band at (40, 71) and comes out on map01 at (52, 94) -
+# the far side of the continent, and not the (64, 67) the entrance record
+# returns to.
 #
-# Scored on reach and with the arrival band routed around, the leg stalls
-# instead: with those 24 band tiles excluded the flood cannot leave the
-# entrance chamber at all (every exit candidate comes back with an infinite
-# residual), so on this mouth the port's Ravine interior is not reachable by
-# pad. Note which mouth: `portal_tile` picks map01's (64, 68) keikoku portal on
-# smallest residual, not the (53, 93)/(53, 94) pair the spine uses. Whether the
-# seal is the arrival seat, that mouth, or the interior grid is open.
+# None of the three candidate seals the earlier attempt left open was the
+# cause. The arrival seat, the mouth and the interior grid are all fine: from
+# every one of the four mouths the unhazarded flood covers the whole canyon and
+# reaches 93 of the scene's 100 gate-1 trigger tiles, 70 of them 12+ tiles out.
+# Two defects in the *harness* accounted for the whole of it, and both were
+# load-bearing - fixing either alone still leaves the leg stuck.
+# `cargo run -p legaia-engine-shell --example keikoku_reach_probe` re-measures
+# all four floods, per mouth; from the (58, 24) arrival they read:
+#
+#   sub-cells reached  avoid set
+#   -----------------  ---------
+#             400,001  nothing (capped; the grid's & 0x7F wrap makes it endless)
+#                   1  the radius hazard set, seat tile included
+#               1,114  the same, seat tile dropped   (89 tiles - one chamber)
+#              25,939  the arrival record's band, and only that
+#
+#   1. `plan_path` refused its own first step - the 1. Its `avoid` test asked
+#      whether the destination tile is hazarded, which conflates occupying a
+#      tile with entering one, and a dungeon arrival is seated on the door it
+#      came in through: the start tile was in its own avoid set, and at 32-unit
+#      lattice pitch all four neighbours are still that same 128-unit tile.
+#      Retail's dispatcher fires on a tile *change*, so the fix is to compare
+#      source and destination tiles rather than to shrink the set.
+#   2. The goal picker was tile-keyed and radius-filtered - the 1,114. keikoku's
+#      100 gate-1 tiles are three populations: four scene-change records (0..3,
+#      returning to map01 (52,94) / (64,67) / (77,68) / (82,83), 69 tiles), four
+#      single-tile arrival beats, and one 27-tile shared beat record across the
+#      chambers' inner doorways. A radius cannot tell them apart, so it hazarded
+#      the corridor onward (that shared beat band, 6 tiles out) and aimed at a
+#      tile 13 tiles away the same set walls it off from (route residual 38).
+#      Keyed by record instead, the residual to all three other doors is 0.
+#
+# The leg then hit a third thing, which is neither: `drain_scripted` held the
+# pad neutral, and keikoku's record 7 - the shared band across all four
+# chambers' inner doorways, one-shot-latched on SysFlag 0x2BB - is a story
+# cutscene with narration pages. A page waits on a confirm, so the sequence
+# never advanced and the leg read as an engine hang at the band's first tile.
+# The drain now pulses Cross.
+#
+# Non-vacuity: `LEGAIA_CPR_RUNG5_BACKOUT=1` re-aims the leg at the arrival
+# record's own band and hazards nothing - the walk the first draft scored as a
+# pass. Under that flag the rung must read `[--]`, and it does: the leg ends 2
+# tiles in, on record 1's own band, and the ratchet fails at 4 < 5. The door
+# clause is exercised on its own by the disc-free
+# `a_door_is_only_different_when_both_ends_are_known`, since a backed-out leg
+# also fails the reach threshold and so cannot isolate it.
 
-reached = 4
+reached = 5

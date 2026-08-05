@@ -44,6 +44,21 @@ that no other ladder reached. A union across separate sessions is not one
 continuous playthrough and the report says so; what it does measure honestly is
 "code some pad-driven run entered" versus "code no pad-driven run entered".
 
+## The union is the default, and a short join says so
+
+With no `--json`, the script discovers `target/cov-*.json` and joins **all** of
+them, so the bare invocation is the union rather than one binary. It also knows
+the canonical ladder set ([`CANONICAL_LADDERS`]) and names any member whose
+export is missing, in the report and on stdout - because a union over three of
+the four is not a smaller version of the number, it is a different number, and
+the earlier single-binary default understated the denominator by 1.7x without
+saying anything at all.
+
+The cost is why this stays a manual step rather than a pre-commit gate: each
+export is an instrumented release build plus a full disc-gated ladder run, and
+the ladders are minutes each. `--fail-on-disclosed` is the gateable part, and
+it is the part that needs no complete union to be meaningful.
+
 Usage:
     # produce one export per ladder (slow: instrumented release build of the
     # engine crates). One export each rather than one multi---test run: the
@@ -54,12 +69,8 @@ Usage:
             --test "$t" --json --output-path "target/cov-$t.json"
     done
 
-    # then join them - the headline is the union
-    scripts/ci/replay-port-coverage.py \\
-        --json target/cov-critical_path_replay.json \\
-        --json target/cov-menu_replay.json \\
-        --json target/cov-minigame_replay.json \\
-        --json target/cov-v0_1_playthrough.json
+    # then join them - no arguments needed, the union is the default
+    scripts/ci/replay-port-coverage.py
 
 Skips (exit 0) when every coverage JSON is absent, so a disc-free or
 coverage-toolless CI run is a pass, matching the `LEGAIA_DISC_BIN` convention.
@@ -78,8 +89,44 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 CATALOG = REPO / "scripts" / "ci" / "port-catalog.py"
-DEFAULT_JSON = REPO / "target" / "replay-cov.json"
+COV_DIR = REPO / "target"
+COV_GLOB = "cov-*.json"
+LEGACY_JSON = COV_DIR / "replay-cov.json"
 DEFAULT_OUT = REPO / "target" / "port-catalog" / "replay-port-entry.md"
+
+# The pad-only ladders that make up the canonical denominator, in the order the
+# usage block exports them. Membership is "drives the engine with `set_pad` and
+# nothing else" - a ladder that seats the player is measuring a different thing
+# (see `critical_path_replay`'s module docs on the spine oracle).
+#
+# This list exists so a *partial* union is visible. Three of the four is not a
+# conservative version of the number; it is a number about three ladders, and
+# without naming the absentee it reads exactly like the full one.
+CANONICAL_LADDERS = [
+    "critical_path_replay",
+    "menu_replay",
+    "minigame_replay",
+    "v0_1_playthrough",
+]
+
+
+def discover_inputs() -> tuple[list[Path], list[str]]:
+    """`(paths, missing_canonical_labels)` for a bare invocation.
+
+    Every `target/cov-*.json` is joined, not just the canonical four, so a
+    ladder added later is picked up without editing this file. The legacy
+    single-file path is honoured only when the glob finds nothing at all.
+    """
+    found = sorted(COV_DIR.glob(COV_GLOB))
+    if not found and LEGACY_JSON.is_file():
+        # The pre-per-ladder path: one merged export whose contents cannot be
+        # attributed to a ladder. Every canonical name is reported unjoined,
+        # which is the honest reading - the per-ladder table cannot be built
+        # from it, so nothing here can say which ladders it covers.
+        return [LEGACY_JSON], list(CANONICAL_LADDERS)
+    labels = {p.stem.removeprefix("cov-") for p in found}
+    missing = [name for name in CANONICAL_LADDERS if name not in labels]
+    return found, missing
 
 
 def load_catalog_module():
@@ -201,7 +248,10 @@ def main() -> int:
         action="append",
         dest="jsons",
         metavar="PATH",
-        help="llvm-cov export for one ladder; repeat to union several",
+        help=(
+            "llvm-cov export for one ladder; repeat to union several. "
+            f"Default: every {COV_GLOB} under target/ (the union)"
+        ),
     )
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument(
@@ -211,7 +261,12 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    inputs = args.jsons or [DEFAULT_JSON]
+    if args.jsons:
+        inputs = args.jsons
+        given = {p.stem.removeprefix("cov-") for p in inputs}
+        missing_canonical = [n for n in CANONICAL_LADDERS if n not in given]
+    else:
+        inputs, missing_canonical = discover_inputs()
     # A missing input is a skip, not a failure - the whole invocation is
     # optional (see the module docstring). A *present* input with no function
     # regions is also a skip, because llvm-cov emits that shape for a build
@@ -341,6 +396,16 @@ def main() -> int:
                 others |= per_source_live[other]
         w(f"| `{label}` | {len(mine)} | {len(mine - others)} |")
     w("")
+    if missing_canonical:
+        w(
+            "**Partial union.** No per-ladder export was joined for "
+            + ", ".join(f"`{n}`" for n in missing_canonical)
+            + ". Every number above is about the ladders listed, not about the "
+            "canonical set, and the live-unentered worklist below is "
+            "correspondingly long. Re-export the missing ladder(s) before "
+            "reading a row as work."
+        )
+        w("")
 
     def table(title: str, rows: list[tuple[str, dict]], note: str):
         w(f"## {title}")
@@ -400,6 +465,12 @@ def main() -> int:
             if other != label:
                 others |= per_source_live[other]
         print(f"  {label:<28}: {len(mine):>4} live entered, {len(mine - others):>4} unique")
+    if missing_canonical:
+        print(
+            "PARTIAL UNION - no per-ladder export for: "
+            + ", ".join(missing_canonical),
+            file=sys.stderr,
+        )
     # `relative_to` raises on an --out that is not under the repo (a relative
     # path resolved against a different cwd, /tmp, ...), which would throw away
     # the whole report after writing it. Fall back to the path as given.
