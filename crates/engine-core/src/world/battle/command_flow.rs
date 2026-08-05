@@ -1238,6 +1238,8 @@ impl World {
                         name: t.name.clone(),
                         hp: t.hp,
                         hp_max: t.hp_max,
+                        mp: t.mp,
+                        mp_max: t.mp_max,
                         alive: t.alive,
                     })
                     .collect(),

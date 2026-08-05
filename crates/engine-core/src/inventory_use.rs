@@ -211,12 +211,14 @@ pub struct ItemMenuView {
     pub selected_id: Option<u8>,
 }
 
-/// One target row of the battle item window's target-select column.
+/// One target row of the battle item window's target-select panel.
 #[derive(Debug, Clone, Default)]
 pub struct BattleItemTargetRow {
     pub name: String,
     pub hp: u16,
     pub hp_max: u16,
+    pub mp: u16,
+    pub mp_max: u16,
     pub alive: bool,
 }
 

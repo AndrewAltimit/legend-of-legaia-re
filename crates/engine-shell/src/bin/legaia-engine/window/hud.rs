@@ -2187,6 +2187,8 @@ pub(super) fn with_battle_item_frame<R>(
                     name: &t.name,
                     hp: t.hp,
                     hp_max: t.hp_max,
+                    mp: t.mp,
+                    mp_max: t.mp_max,
                     alive: t.alive,
                 })
                 .collect()
