@@ -671,6 +671,15 @@ pub enum CardIoEffect {
 /// PORT: FUN_801E3294 (see
 /// `ghidra/scripts/funcs/overlay_menu_801e3294.txt`; the state table in
 /// `docs/subsystems/save-screen.md` is the same machine)
+///
+/// NOT WIRED: no host owns one. The disclosure was written on the ticker
+/// [`card_frame_tick`], which is the only thing that advances this machine
+/// and is itself called from no production site - so the gap was invisible
+/// from this type, which is what the port catalog keys `FUN_801E3294` to.
+/// The prerequisite is a host that keeps a [`CardIoMachine`] across frames:
+/// [`SaveSelectSession`] runs its `NowChecking` beat off [`card_status_poll`]
+/// alone, and the browser card rack patches container bytes synchronously
+/// with no asynchronous I/O beat to tick.
 #[derive(Debug, Clone, Default)]
 pub struct CardIoMachine {
     /// `DAT_801EF188`.
