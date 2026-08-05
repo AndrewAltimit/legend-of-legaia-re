@@ -648,11 +648,13 @@ tag to the whole file). It reports three sets:
 ### The denominator is a union of ladders, not one binary
 
 `--json` is repeatable, and joining only one test binary is the trap here. The
-repo drives three pad-only ladders, each its own test target and each at full
-score: `critical_path_replay` (the world spine), `menu_replay` (pause menu +
-save UI), `minigame_replay` (the five minigame doors). Menus and minigames are
-also the two largest clusters in `live-unentered`, so a join over the spine
-alone reports precisely the subsystems the other two ladders walk as
+repo drives five pad-only ladders, each its own test target: the four
+`engine-shell` ones - `critical_path_replay` (the world spine), `menu_replay`
+(pause menu + save UI), `minigame_replay` (the five minigame doors),
+`v0_1_playthrough` (the cold-boot field anchor) - and the `web-viewer`
+draw-composition ladder `play_compose_ladder` (next section). Menus and
+minigames are two of the largest clusters in `live-unentered`, so a join over
+the spine alone reports precisely the subsystems the other ladders walk as
 never-entered - and a worklist ordered off it is ordered against a measurement
 that excluded its own top rows by construction.
 
@@ -665,6 +667,8 @@ for t in critical_path_replay menu_replay minigame_replay v0_1_playthrough; do
   cargo llvm-cov --release -p legaia-engine-shell \
       --test "$t" --json --output-path "target/cov-$t.json"
 done
+cargo llvm-cov --release -p legaia-web-viewer --test play_compose_ladder \
+    --json --output-path target/cov-play_compose_ladder.json
 scripts/ci/replay-port-coverage.py
 ```
 
@@ -673,11 +677,35 @@ per-ladder table then says what each contributed and how much of it no other
 ladder reached - which is what makes "drop a ladder from the join" a visible
 cost rather than a quieter number.
 
-The script also carries the canonical ladder list and **names any member whose
-export is absent**, on stdout and in a `Partial union` note in the report. A
-union over three of the four is not a conservative version of the number, it is
-a number about three ladders, and without the note it reads identically to the
+The script also carries the canonical ladder list - as `(test, package)`
+pairs, since the composition ladder lives in a different crate - and **names
+any member whose export is absent**, on stdout and in a `Partial union` note in
+the report. A partial union is not a conservative version of the number, it is
+a number about fewer ladders, and without the note it reads identically to the
 full one.
+
+### One ladder is a rendering host
+
+The `engine-shell` ladders drive the headless `BootSession`, which constructs
+no renderer and no draw list, so their union structurally cannot execute the
+draw-list builders - `engine-ui` reported zero executed regions however far
+those ladders walked, and the report was blind to the browser hosts entirely
+([`reach-triage.md`](reach-triage.md) carries the full account). The native
+window's composition cannot close that gap from a test: it lives in a `bin/`
+target, and `cargo llvm-cov --test` links the crate's *library*, never enters
+the binary.
+
+`crates/web-viewer/tests/play_compose_ladder.rs` is the ladder that can,
+because the browser play page's composition is library code. It drives
+`LegaiaRuntime` - the object `site/js/play-app.js` constructs - with pad words
+per tick and calls the page's per-frame read surface (`play_overlay_draws_json`
+and the menu / battle / fishing / dev-menu / name-entry overlays, the
+screen-prim route, the battle 3D + FX exports) across a ten-rung ratchet
+(`scripts/replays/play_compose_baseline.toml`). Still pad-only - nothing is
+seated or poked - but every frame is composed, which is the half of a rendering
+host the headless ladders cannot supply. What stays outside even this union:
+`engine-render` (a hard wgpu link `web-viewer` does not carry) and the
+`engine-shell` `bin/` modules.
 
 ### Why this stays a manual step
 

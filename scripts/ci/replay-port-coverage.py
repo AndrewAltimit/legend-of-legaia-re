@@ -30,13 +30,29 @@ address -> (file, line) anchors, reporting three sets:
 ## The denominator is a union of ladders, not one session
 
 `--json` is **repeatable**, and the difference matters more than it looks. The
-repo drives three pad-only ladders, each its own test binary and each at full
+repo drives several pad-only ladders, each its own test binary and each at full
 score: `critical_path_replay` (the world spine), `menu_replay` (the pause menu
-and save UI), `minigame_replay` (the five minigame doors). A join over only the
+and save UI), `minigame_replay` (the five minigame doors), `v0_1_playthrough`
+(the cold-boot field anchor), and `play_compose_ladder` (the browser play
+page's draw composition - see below). A join over only the
 first reports the menu and minigame subsystems as never-entered - and those two
 are the largest clusters in the live-unentered list, so a worklist ordered off
 a single-binary run is ordered against a measurement that structurally excluded
 its own top rows.
+
+## One ladder is a rendering host
+
+The four `engine-shell` ladders drive the headless `BootSession`, which builds
+no draw list - so `engine-ui` reported zero executed regions across their whole
+union, and the largest NO-LADDER cluster in `docs/tooling/reach-triage.md` was
+invisible to this report by construction. `play_compose_ladder`
+(`crates/web-viewer/tests/`) closes that shape: the browser play page's
+composition is *library* code, so the ladder feeds pad words per tick and calls
+the page's per-frame read surface (`play_overlay_draws_json`, the menu / battle
+/ fishing / dev-menu overlays, the screen-prim route, the battle 3D + FX
+exports). It is still pad-only - nothing is seated or poked - but its frames
+are composed, which is exactly the half of a rendering host the native window
+keeps locked in its `bin/` target.
 
 So the headline number is the **union** across every `--json` given, and the
 per-source table below it reports what each ladder contributed and how much of
@@ -63,11 +79,17 @@ Usage:
     # produce one export per ladder (slow: instrumented release build of the
     # engine crates). One export each rather than one multi---test run: the
     # per-ladder table is only possible when the exports are separate, and
-    # that table is what makes dropping a ladder a visible cost.
+    # that table is what makes dropping a ladder a visible cost. The package
+    # differs per ladder ([`CANONICAL_LADDERS`] carries it): the engine-shell
+    # ladders and the web-viewer composition ladder are different crates, and
+    # `--test` links each crate's LIBRARY - which is why the web-viewer route
+    # can execute composition code the engine-shell `bin/` never exposes.
     for t in critical_path_replay menu_replay minigame_replay v0_1_playthrough; do
         cargo llvm-cov --release -p legaia-engine-shell \\
             --test "$t" --json --output-path "target/cov-$t.json"
     done
+    cargo llvm-cov --release -p legaia-web-viewer --test play_compose_ladder \\
+        --json --output-path target/cov-play_compose_ladder.json
 
     # then join them - no arguments needed, the union is the default
     scripts/ci/replay-port-coverage.py
@@ -94,26 +116,31 @@ COV_GLOB = "cov-*.json"
 LEGACY_JSON = COV_DIR / "replay-cov.json"
 DEFAULT_OUT = REPO / "target" / "port-catalog" / "replay-port-entry.md"
 
-# The pad-only ladders that make up the canonical denominator, in the order the
-# usage block exports them. Membership is "drives the engine with `set_pad` and
-# nothing else" - a ladder that seats the player is measuring a different thing
-# (see `critical_path_replay`'s module docs on the spine oracle).
+# The pad-only ladders that make up the canonical denominator, in the order
+# the usage block exports them, as `(test_name, cargo_package)`. Membership is
+# "drives the engine with `set_pad` and nothing else" - a ladder that seats the
+# player is measuring a different thing (see `critical_path_replay`'s module
+# docs on the spine oracle). `play_compose_ladder` additionally *composes* a
+# frame per tick from the browser play page's builders, which is what makes
+# the union see a rendering host at all (see the module docstring).
 #
-# This list exists so a *partial* union is visible. Three of the four is not a
-# conservative version of the number; it is a number about three ladders, and
+# This list exists so a *partial* union is visible. Four of the five is not a
+# conservative version of the number; it is a number about four ladders, and
 # without naming the absentee it reads exactly like the full one.
 CANONICAL_LADDERS = [
-    "critical_path_replay",
-    "menu_replay",
-    "minigame_replay",
-    "v0_1_playthrough",
+    ("critical_path_replay", "legaia-engine-shell"),
+    ("menu_replay", "legaia-engine-shell"),
+    ("minigame_replay", "legaia-engine-shell"),
+    ("v0_1_playthrough", "legaia-engine-shell"),
+    ("play_compose_ladder", "legaia-web-viewer"),
 ]
+CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
 
 def discover_inputs() -> tuple[list[Path], list[str]]:
     """`(paths, missing_canonical_labels)` for a bare invocation.
 
-    Every `target/cov-*.json` is joined, not just the canonical four, so a
+    Every `target/cov-*.json` is joined, not just the canonical set, so a
     ladder added later is picked up without editing this file. The legacy
     single-file path is honoured only when the glob finds nothing at all.
     """
@@ -123,9 +150,9 @@ def discover_inputs() -> tuple[list[Path], list[str]]:
         # attributed to a ladder. Every canonical name is reported unjoined,
         # which is the honest reading - the per-ladder table cannot be built
         # from it, so nothing here can say which ladders it covers.
-        return [LEGACY_JSON], list(CANONICAL_LADDERS)
+        return [LEGACY_JSON], list(CANONICAL_LADDER_NAMES)
     labels = {p.stem.removeprefix("cov-") for p in found}
-    missing = [name for name in CANONICAL_LADDERS if name not in labels]
+    missing = [name for name in CANONICAL_LADDER_NAMES if name not in labels]
     return found, missing
 
 
@@ -264,7 +291,7 @@ def main() -> int:
     if args.jsons:
         inputs = args.jsons
         given = {p.stem.removeprefix("cov-") for p in inputs}
-        missing_canonical = [n for n in CANONICAL_LADDERS if n not in given]
+        missing_canonical = [n for n in CANONICAL_LADDER_NAMES if n not in given]
     else:
         inputs, missing_canonical = discover_inputs()
     # A missing input is a skip, not a failure - the whole invocation is
