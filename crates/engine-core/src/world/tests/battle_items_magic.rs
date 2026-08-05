@@ -39,11 +39,21 @@ fn battle_item_bomb_damages_enemy_and_cursor_lands_on_the_monster() {
     assert_eq!(world.actors[1].battle.hp, 300, "500 -> 300 after Bomb");
     assert_eq!(world.inventory.get(&0x13).copied(), None, "Bomb consumed");
     assert!(world.battle_item_menu.is_none(), "menu closed after use");
+    // The use arms the action SM's Item band (retail category 1 through
+    // `FUN_801E295C`'s item arm) rather than parking at EndOfAction - the
+    // band is what fires the cast cue + cue group; the live loop's cycle
+    // reaches EndOfAction when it completes (battle_item_cast_band.rs).
     assert_eq!(
         world.battle_ctx.action_state,
-        ActionState::EndOfAction.as_byte(),
-        "turn parked at EndOfAction"
+        ActionState::Begin.as_byte(),
+        "the item use arms the SM's Item band"
     );
+    let active = world.battle_ctx.active_actor as usize;
+    assert_eq!(
+        world.actors[active].battle.action_category,
+        legaia_engine_vm::battle_action::ActionCategory::Item.as_byte()
+    );
+    assert_eq!(world.actors[active].battle.params[0], 0x13);
     let fx = world.drain_battle_hit_fx();
     assert_eq!(fx.len(), 1);
     assert!(!fx[0].is_heal, "damage-coloured popup");

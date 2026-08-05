@@ -117,7 +117,18 @@ impl World {
                     let hit_fx_start = self.battle_hit_fx.len();
                     if self.cast_spell_on_slots(slot, &def, &targets) {
                         self.apply_enemy_move_status(slot, def.id, hit_fx_start);
+                        self.apply_enemy_agl_status(slot, def.id, &targets);
                         self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
+                        // NOT cycled here: take_monster_turn is itself called
+                        // from `cycle_battle_turn`'s re-arm, so the caller's
+                        // own next tick claims the turn (a monster's stale
+                        // category is `2`, whose phantom re-seed carries no
+                        // strike reconciliation - but the queue is still
+                        // cleared below to keep the SM off it).
+                        self.clear_action_stream(slot);
+                        if let Some(a) = self.actors.get_mut(slot as usize) {
+                            a.battle.action_category = 0;
+                        }
                         return;
                     }
                 }
@@ -250,6 +261,89 @@ impl World {
             {
                 self.status_effects.set_rot_limb(target, limb);
             }
+        }
+    }
+
+    /// The **Stone / Curse infliction arm** of a capture-class boss cast -
+    /// the engine stand-in for the streamed module's
+    /// `FUN_800402F4(9 | 10, ..)` calls (jump-table entries decoded off the
+    /// disc: class 9 = `0x80041C70` `ori 0x4` Stone, class 10 = `0x80041E64`
+    /// `ori 0x1000` Curse; roll kernel
+    /// [`vm::status_effects::agl_status_inflict_roll`]).
+    ///
+    /// **Which moves** is the disclosed-inference half: the class byte is a
+    /// literal in the streamed capture-class module code (no spell-table
+    /// field carries it, and the modules reach the applier through runtime
+    /// dispatch, so no static scan recovers the pairing). The list is
+    /// therefore keyed on the four capture-class records whose effect is the
+    /// status: **Glare** `0x3C` (Stone - capture-pinned: the `status_effects`
+    /// module doc's Glare before/after save pair shows `+0x16E` `0 -> 4`),
+    /// **Stone Circle** `0xB9` (Stone), **Curse** `0x40` and **Curse All**
+    /// `0x53` (Curse) - the latter three graded inference from the records'
+    /// names + published behaviour.
+    ///
+    /// Faithful shape per the disassembly (`800402f4.txt`
+    /// `0x80041C70..0x80041FB0`): party seats only, one `rand()` draw per
+    /// rolled target, `target_agl < rand % (attacker_agl + target_agl)`
+    /// lands the bit. Two engine-model equivalences, both disclosed: the
+    /// guard accessories gate at infliction (retail's applier writes the bit
+    /// unconditionally and the per-frame guard sweep `FUN_8004CE2C` clears
+    /// it next frame - same steady state); and the group arm's queued-action
+    /// drop (`sb zero,0x1de`) rides the engine's status block gates (a
+    /// petrified actor's turn is skipped), while its reserved-item refund
+    /// (`FUN_800421D4(id, 1)`) is not modelled.
+    ///
+    /// PORT: FUN_800402F4 (class-9 / class-10 arms - live wiring; the roll
+    /// kernel carries the instruction-level cite)
+    pub(in crate::world) fn apply_enemy_agl_status(
+        &mut self,
+        caster: u8,
+        move_id: u8,
+        targets: &[u8],
+    ) {
+        use vm::status_effects::{StatusKind, agl_status_inflict_roll};
+        /// Accessory-passive index `0x19` = **Curse Guard** (Magic Amulet).
+        const CURSE_GUARD_BIT: u32 = 1 << 0x19;
+        /// Accessory-passive index `0x1A` = **Stone Guard** (Stone Amulet).
+        const STONE_GUARD_BIT: u32 = 1 << 0x1A;
+        let kind = match move_id {
+            0x3C | 0xB9 => StatusKind::Stone,
+            0x40 | 0x53 => StatusKind::Curse,
+            _ => return,
+        };
+        if (caster as usize) < self.party_count as usize {
+            return;
+        }
+        let attacker_agl = self
+            .battle_accuracy
+            .get(caster as usize)
+            .copied()
+            .unwrap_or(0);
+        let pc = self.party_count;
+        for &t in targets {
+            // Retail's `sltiu v0,s0,0x3` party gate (both arms).
+            if t >= pc {
+                continue;
+            }
+            let target_agl = self.battle_accuracy.get(t as usize).copied().unwrap_or(0);
+            // One draw per rolled target, in retail call order.
+            let rand = self.next_rng();
+            if !agl_status_inflict_roll(attacker_agl, target_agl, rand) {
+                continue;
+            }
+            let guard_bit = match kind {
+                StatusKind::Stone => STONE_GUARD_BIT,
+                _ => CURSE_GUARD_BIT,
+            };
+            let bits = self
+                .character_ability_bits
+                .get(t as usize)
+                .copied()
+                .unwrap_or(0);
+            if bits & (guard_bit | MASTER_GUARD_BIT) != 0 {
+                continue;
+            }
+            self.status_effects.apply(t, kind);
         }
     }
 

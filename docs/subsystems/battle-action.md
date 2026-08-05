@@ -858,6 +858,63 @@ applier's single SM one (state `0x3F`, `0x801E4134`): the acting actor's
 to the effect pool / SFX scheduler through the host. The `+0x1E8` / `+0x1E9`
 seed itself is state `0x3C`'s - see the state table.
 
+#### `FUN_800402F4`'s Stone and Curse arms (classes 9 / 10)
+
+Two of the classes that never reach the cue expander are status inflictors,
+and their class bytes appear in **no** spell or item record - a scan of the
+whole spell table (`0x800754C8`) and item-effect table (`0x800752C0`) finds no
+class-9 or class-10 row. The callers are the streamed capture-class boss
+modules (PROT 935..966), which pass the class as a code literal and reach the
+applier through runtime dispatch, so no static reference scan recovers the
+pairing either. Decoded off the disc's own jump table at `0x80014FA0`: entry
+`9` = `0x80041C70`, entry `10` = `0x80041E64`.
+
+Both arms share one roll, in a single-target form (`sltiu v0,s0,0x3` - party
+seats only) and a `param_3 == 8` all-party loop (one `rand()` draw per
+member):
+
+```text
+80041c90  jal 0x80056798            ; rand()
+80041cc4  addu v1, atk+0x168, tgt+0x168
+80041cd4  div v0,v1 ; mfhi v1       ; roll = rand % (atk_agl + tgt_agl)
+80041ce0  slt a0, tgt_agl, v1       ; lands when tgt_agl < roll
+80041cf4  ori v0,v0,0x4             ; class 9: Stone   (class 10: ori 0x1000, Curse)
+```
+
+The group arm additionally zeroes a landed target's queued action category
+(`sb zero,0x1de`) and refunds a reserved battle item
+(`jal 0x800421d4` with `a1 = 1` when `+0x1DE == 1` and the initiative key
+`+0x16C` is live). No guard-accessory read appears in either arm: retail
+writes the bit unconditionally and the per-frame guard sweep (`FUN_8004CE2C`'s
+guard-clear half) removes it next frame for a protected wearer.
+
+Port: roll kernel `legaia_engine_vm::status_effects::agl_status_inflict_roll`;
+live wiring `World::apply_enemy_agl_status` on the monster cast fold, with the
+guard gate applied at infliction (steady-state-equivalent to retail's
+clear-next-frame) and the move-id list carried there as a disclosed inference
+(Glare `0x3C` capture-pinned, Stone Circle `0xB9` / Curse `0x40` / Curse All
+`0x53` from record names + published behaviour). A landed Stone is what arms
+the status-CLUT recolour (`FUN_8004CE2C`'s fourth pass,
+`engine-core::battle_status_clut`).
+
+#### Menu-committed actions must be claimed the tick they park
+
+Three live-loop arms conclude a player's turn by writing `EndOfAction`
+directly (the spell cast, the Spirit guard, the Tactical-Arts fallback), and
+the monster cast fold does the same. The SM's own `0x5A` handler is not a
+parking spot: retail's non-wipe arm advances `EndOfAction ->
+PreActionWait -> ActionSeed` on the assumption that the flow SM
+(`FUN_801D0748`) has already staged the *next* action. An engine arm that
+parks and returns therefore hands the next tick's seed the **stale** action
+bytes of the actor that just acted - which in practice was the battle-entry
+attack queue, so every Spirit guard and every menu cast granted its actor a
+free physical strike. The engine's rule: every site that writes `EndOfAction`
+outside the SM step calls `World::cycle_battle_turn` in the same tick, so the
+next combatant (or the round boundary) claims the state before the SM can
+re-seed it. Ladder coverage:
+`crates/engine-core/tests/seru_cast_magic_xp_ladder.rs` (the test that caught
+the double-turn), `battle_item_cast_band.rs`, `battle_flee_ladder.rs`.
+
 ### The clamp asymmetry: two overkill guards against different references
 
 The corpus contains two ways to apply damage to a party actor, and they clamp

@@ -282,6 +282,14 @@ impl World {
             self.set_battle_flow(crate::battle_flow::BattleFlowState::Idle);
         }
 
+        // `ctx.menu_open` is retail's cast-menu latch: the summon-invoke arm
+        // sets it and the menu system clears it when the battle menu closes.
+        // The engine's menus are the session objects the early returns above
+        // gate on, so reaching this line IS "no menu open" - release the
+        // latch here, or the Done band's `0x51` gate (which stays while it is
+        // set) parks every summon-band action forever.
+        self.battle_ctx.menu_open = 0;
+
         // Battle locomotion - the anim tick's root-motion drive
         // (`FUN_80047430`): the attack band's approach walk toward the
         // target and the recovery band's walk back to the seat. Retail runs
@@ -489,6 +497,71 @@ impl World {
             }
         }
 
+        // Summon-band settle glue, three siblings of the MagicSustain retire
+        // above (reached by the SummonFlute items `0x98`/`0x99`, whose
+        // `item_seed_band` stages `sub_route = 9`):
+        //
+        // * `SummonFadeIn` (`0x2A`) waits on the caster's anim-cue byte, which
+        //   retail's cast-animation driver raises when the windup lands. The
+        //   port has no such driver - cue it on the frame the state is
+        //   reached.
+        // * `SummonActorFreeze` (`0x2B`-family `0x35`) waits for the caster's
+        //   invoke clip (queued id 9) to converge back to idle. With a real
+        //   action-clip bank the one-shot's end converges it
+        //   (`tick_battle_animations`); a clip-less actor never converges, so
+        //   settle it here exactly as the zero-length-swing arm does.
+        // * `summon_invoke` parks `ctx.menu_open = 1` (retail's cast-menu
+        //   latch, cleared by the menu system); the release lives at the top
+        //   of this function - reaching the SM step means no engine menu
+        //   session is open - so the `0x51` gate and `QueuedFromMenu` see it
+        //   down. The `anim_cue` latch is dropped at `EndOfAction` below.
+        if self.battle_ctx.action_state == ActionState::SummonFadeIn.as_byte() {
+            let caster = self.battle_ctx.active_actor as usize;
+            if let Some(a) = self.actors.get_mut(caster) {
+                a.battle.anim_cue = 1;
+            }
+        }
+        if self.battle_ctx.action_state == ActionState::SummonActorFreeze.as_byte() {
+            let caster = self.battle_ctx.active_actor as usize;
+            if let Some(a) = self.actors.get_mut(caster)
+                && a.battle_staged_anim.is_none()
+            {
+                a.battle.queued_anim = 0;
+                a.battle.current_anim = 0;
+            }
+        }
+        if self.battle_ctx.action_state == ActionState::EndOfAction.as_byte() {
+            let caster = self.battle_ctx.active_actor as usize;
+            if let Some(a) = self.actors.get_mut(caster) {
+                a.battle.anim_cue = 0;
+            }
+        }
+
+        self.cycle_battle_turn();
+
+        if matches!(outcome, StepOutcome::BattleComplete) {
+            self.finish_battle();
+        }
+        Some(outcome)
+    }
+
+    /// Turn cycling for the live loop: the round boundary + the next-combatant
+    /// re-arm, both keyed on the SM idling at `EndOfAction`.
+    ///
+    /// Extracted so every site that PARKS the SM at `EndOfAction` mid-tick
+    /// (the spell / Spirit / tutorial arms and the monster cast fold, which
+    /// all run in a menu tick that returns before the step) can claim the
+    /// turn in the same tick. The SM's own `end_of_action` handler otherwise
+    /// steps `EndOfAction -> PreActionWait -> ActionSeed` on the NEXT tick
+    /// and re-seeds the same actor's **stale** action bytes - the shape that
+    /// made every Spirit guard and every spell cast grant its actor a free
+    /// bonus attack off the battle-entry queue (caught by the
+    /// `seru_cast_magic_xp_ladder` test).
+    ///
+    /// REF: FUN_801D0748 (retail's flow SM owns this arming; the SM's 0x5A
+    /// self-advance assumes the flow SM has already staged the next action)
+    pub(in crate::world) fn cycle_battle_turn(&mut self) {
+        use vm::battle_action::ActionState;
         // Re-arm the next combatant when the SM idles at EndOfAction, cycling
         // across the whole actor table (party AND monsters) in slot order so
         // monsters take their turns. Only re-arm while BOTH sides still have a
@@ -592,11 +665,6 @@ impl World {
                 self.arm_party_physical(next);
             }
         }
-
-        if matches!(outcome, StepOutcome::BattleComplete) {
-            self.finish_battle();
-        }
-        Some(outcome)
     }
 
     /// Backstop for a session that was already open when the flow byte moved

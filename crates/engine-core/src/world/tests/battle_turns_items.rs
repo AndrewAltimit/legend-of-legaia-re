@@ -160,11 +160,19 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
         "one Healing Leaf consumed"
     );
     assert!(world.battle_item_menu.is_none(), "menu closed after use");
+    // The use arms the action SM's Item band (retail category 1 through
+    // `FUN_801E295C`'s item arm) rather than parking at EndOfAction; the
+    // live loop cycles when the band completes (battle_item_cast_band.rs).
     assert_eq!(
         world.battle_ctx.action_state,
-        ActionState::EndOfAction.as_byte(),
-        "turn parked at EndOfAction so the loop cycles"
+        ActionState::Begin.as_byte(),
+        "the item use arms the SM's Item band"
     );
+    assert_eq!(
+        world.actors[0].battle.action_category,
+        legaia_engine_vm::battle_action::ActionCategory::Item.as_byte()
+    );
+    assert_eq!(world.actors[0].battle.params[0], 0x01);
     let fx = world.drain_battle_hit_fx();
     assert_eq!(fx.len(), 1);
     assert!(fx[0].is_heal);

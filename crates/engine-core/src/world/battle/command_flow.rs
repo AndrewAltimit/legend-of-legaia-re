@@ -202,6 +202,11 @@ impl World {
                 self.battle_ctx.active_actor = actor;
                 self.battle_ctx.action_state =
                     vm::battle_action::ActionState::EndOfAction.as_byte();
+                // Claim the turn NOW (see `World::cycle_battle_turn`): a
+                // parked EndOfAction is re-seeded by the SM's 0x5A
+                // self-advance next tick, which made Spirit a guard PLUS a
+                // free attack off the stale entry queue.
+                self.cycle_battle_turn();
             }
             Some(Resolution::RunAway) => {
                 // Player picked Run: roll the escape and arm the action SM's
@@ -703,6 +708,8 @@ impl World {
             target_slot,
         );
         self.battle_ctx.action_state = vm::battle_action::ActionState::EndOfAction.as_byte();
+        // Claim the turn NOW (see `World::cycle_battle_turn`).
+        self.cycle_battle_turn();
     }
 
     /// Stage a Tactical-Arts turn on the acting actor and arm the action SM's
@@ -1064,6 +1071,10 @@ impl World {
                 } else {
                     self.battle_ctx.action_state =
                         vm::battle_action::ActionState::EndOfAction.as_byte();
+                    // Claim the turn NOW: left parked, the SM's own 0x5A
+                    // self-advance re-seeds this actor's stale action bytes
+                    // next tick (see `World::cycle_battle_turn`).
+                    self.cycle_battle_turn();
                 }
             }
             Some(SpellResolution::Aborted) => {
@@ -1318,9 +1329,40 @@ impl World {
                 // Escape item succeeded: leave the encounter now (no loot, no
                 // game-over) instead of cycling the turn.
                 self.finish_battle();
+            } else if let Some(item_id) = item_before {
+                // Using an item is the actor's whole turn - and in retail the
+                // turn *is* the action SM's Item band: the committed category-1
+                // action seeds through `FUN_801E295C`'s item arm
+                // (`item_seed_band`) into the `0x3C..0x40` cast states, which
+                // fire the cast-audio cue (`FUN_801F3990` via `spirit_wait`),
+                // stamp the item's effect-descriptor `(class, tier)` pair, and
+                // expand the item's cue group (`FUN_800402F4`'s eleven
+                // `FUN_801E22C8` sites via `place_cue_group`). Parking straight
+                // at EndOfAction skipped all of it - no cast cue, no cue-group
+                // spawns, no `0x4C` HUD label - on every battle item use.
+                //
+                // The simulation fold stays above (the menu applies the item's
+                // effect and consumes the copy, exactly as before); the band's
+                // own `apply_damage` hook is the presentation seam. The two
+                // SummonFlute ids (`0x98`/`0x99`) reroute inside `action_seed`
+                // to the summon band, which the live loop's settle glue
+                // (`live_battle_tick`) walks to completion.
+                let actor = self.battle_ctx.active_actor;
+                let target = if used_slots.len() > 1 {
+                    vm::battle_cue_group::TARGET_PARTY_WIDE
+                } else {
+                    used_slots[0]
+                };
+                self.clear_action_stream(actor);
+                if let Some(a) = self.actors.get_mut(actor as usize) {
+                    a.battle.active_target = target;
+                    a.battle.action_category = vm::battle_action::ActionCategory::Item.as_byte();
+                    a.battle.params[0] = item_id;
+                }
+                self.battle_ctx.queued_action = vm::battle_action::ActionCategory::Item.as_byte();
+                self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
             } else {
-                // Using an item is the actor's whole turn: park at EndOfAction
-                // so the live loop's re-arm block cycles to the next combatant.
+                // No item id resolved (defensive) - consume the turn directly.
                 self.battle_ctx.action_state =
                     vm::battle_action::ActionState::EndOfAction.as_byte();
             }

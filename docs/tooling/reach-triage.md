@@ -117,7 +117,7 @@ address in it is accounted for below.
 | bucket | addresses |
 |---|---|
 | NO-LADDER | 88 |
-| GATED | 8 |
+| GATED | 7 |
 | HOST-DEAD | 45 |
 | NOT-PLAYTHROUGH | 5 |
 
@@ -249,16 +249,25 @@ save or a longer spine, not a pad stream.
 | group | n | addresses | gate |
 |---|---|---|---|
 | `field_actor_program.rs` | 2 | `801d4a60` `801d5a24` | the `MAN_LOAD_RESUME` story flags that arm the four voice-over programs |
-| `world/battle/casting.rs` | 2 | `801dd4b0` `801dd6b4` | a capture-class boss cast |
+| `world/battle/casting.rs` | 2 | `801dd4b0` `801dd6b4` | a capture-class boss cast. The gate now has a seeded oracle - `world/tests/battle_capture_class_disc.rs` folds Guilty Cross / Neo Star Slash off the real spell + move-power tables and pins the folded damage to each wrapper's own roll - but no pad ladder seeds a boss encounter, so the rows stay |
 | `world/vm_hosts.rs` | 1 | `801d2d38` | system flag `0xD`, the three-actor talk lock |
 | `world/battle/monster_ai.rs` | 1 | `801e7320` | a monster whose `field_flags & 0x380` is set |
-| `magic_xp.rs` | 1 | `801f452c` | a Seru spell crossing its XP threshold |
 | `world/field_movement.rs` | 1 | `801d2404` | a scene with a ledge-hop trigger |
 
-Two former rows left this bucket through the composition ladder: the `town01`
-opening naming prompt (`801f03f0` - the ladder's opening rung drives the
-prompt to its commit instead of booting past it) and the status-ailment CLUT
-stamp (`8004ce2c` - a driven fight now lands one).
+Three former rows of this table converted. The `town01` opening naming prompt
+(`801f03f0`) left through the composition ladder, whose opening rung drives
+the prompt to its commit instead of booting past it. `battle_status_clut.rs`
+(`8004ce2c`) was gated on "a Stone landed on an actor", and no gameplay path
+could land one: the impact-selector ladder carries only Venom / Toxic / Rot,
+and Stone's applier is `FUN_800402F4`'s class-9 arm, reached only by the
+streamed capture-class boss modules with the class as a code literal. The arm
+is now ported and wired (`World::apply_enemy_agl_status`, roll kernel
+`status_effects::agl_status_inflict_roll`),
+`world/tests/battle_stone_gaze.rs` drives cast -> Stone -> `sync_status` ->
+CLUT-row grey end to end, and the composition ladder's driven fight lands an
+ailment stamp in play. `magic_xp.rs` (`801f452c`) is driven by the pad ladder
+`seru_cast_magic_xp_ladder` - round prompt to spell submenu to the threshold
+cross and the level-up banner.
 
 ### NOT-PLAYTHROUGH
 
@@ -291,11 +300,8 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | `baka_hub_actors.rs` | 13 | (a) | baka-hub | `801f0adc` `801f1138` `801f16c0` `801f17d8` `801f1890` `801f1950` `801f1a1c` `801f1ab0` `801f1b64` `801f1d90` `801f1e48` `801f1fdc` `801f20b0` |
 | `battle_action/overlay_rng.rs` | 1 | (c) | disclosed | `801d0290` |
 | `battle_action/pool_ops.rs` | 3 | (a) | battle-target | `801d8a88` `801d8d00` `801db124` |
-| `battle_action/spirit.rs` | 1 | (b) | spirit-cast | `801f3990` |
-| `battle_action/summon.rs` | 1 | (b) | summon-cast | `801f3c34` |
 | `battle_burst.rs` | 1 | (c) | disclosed | `801f30c4` |
-| `battle_cast_dispatch.rs` | 3 | (b) | spirit-cast | `801dba90` `801f1ed4` `801f2160` |
-| `battle_cue_group.rs` | 1 | (b) | spirit-cast | `801e22c8` |
+| `battle_cast_dispatch.rs` | 3 | (c) | disclosed | `801dba90` `801f1ed4` `801f2160` |
 | `battle_formulas/stat_init.rs` | 1 | (a) | minigames-page | `80053cb8` |
 | `battle_gauge_rearm.rs` | 1 | (a) | battle-render | `801f44a0` |
 | `battle_helpers.rs` | 1 | (c) | disclosed | `80046870` |
@@ -310,7 +316,7 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | `code_lock_actor.rs` | 1 | (c) | disclosed | `801eed58` |
 | `dev_equip_commit.rs` | 1 | (a) | dev-menu | `801e5a08` |
 | `effect_vm/pool.rs` | 1 | (a) | field-actors | `801de914` |
-| `escape_timer.rs` | 1 | (b) | battle-escape | `801d2ebc` |
+| `escape_timer.rs` | 1 | (b) | timed-flags scene | `801d2ebc` |
 | `field_ledge_hop_arc.rs` | 1 | (b) | ledge-hop | `801d2298` |
 | `field_party_cursor.rs` | 1 | (c) | disclosed | `801f1278` |
 | `lib.rs` | 7 | (c) | **actor VM** (pseudo-entered - see the attribution note above) | `800319a8` `800326ac` `80035334` `800357fc` `80035978` `80035a4c` `801d6628` |
@@ -331,6 +337,28 @@ are inert by the source's own account; they appear here only because the
 permissive graph also calls them live. The `lib.rs` row was measured before
 the widget-script resolver landed and is superseded - written up under
 [The actor VM: a resolved bytecode source](#the-actor-vm-a-resolved-bytecode-source).
+
+Four former "spirit-cast" / "summon-cast" rows left the table when the wiring
+landed: the live loop's battle **Item** command now arms the action SM's
+category-1 band instead of parking at `EndOfAction`, which puts
+`battle_action/spirit.rs` (`801f3990`, the cast-audio cue),
+`battle_cue_group.rs` (`801e22c8`, the cue-group expansion) and - through the
+SummonFlute reroute - `battle_action/summon.rs` (`801f3c34`, the queued-magic
+guard) on the playthrough path of all three hosts; the pad ladder is
+`crates/engine-core/tests/battle_item_cast_band.rs`. The three
+`battle_cast_dispatch.rs` addresses were re-bucketed on their own module's
+account: the two dispatchers are disclosed `NOT WIRED` (they resolve to retail
+VAs with no engine channel), and `801dba90` is a retail-dead entry point whose
+instruction-identical twin (`FUN_801D8DE8` case `0x59`) is the wired one -
+none of that is a "spirit-cast" gate.
+
+`escape_timer.rs` is kept but its gate was misnamed: `FUN_801D2EBC` is the
+field-VM `4C D3` scripted countdown (chitei2's collapsing-dungeon clock), not
+the battle flee. Fleeing a battle runs the action SM's run band and the
+`FUN_801E791C` roll, both ladder-covered
+(`crates/engine-core/tests/battle_flee_ladder.rs`); what no ladder reaches is
+a *scene* whose script arms the timed-flags countdown. The world-tick join is
+oracle-covered (`escape_timer_world`, `w2_timed_flag_scheduler_chain`).
 
 The world-map cluster splits three ways and the split is worth keeping: the
 `dev-menu` rows sit behind a host hotkey a pad ladder cannot press, the
@@ -413,7 +441,15 @@ WebAudio route is wasm-gated out of a native test.
 | `face_anim.rs` | 1 | (a) | battle-render | `8004c7b4` |
 | `minigame_slot_scene.rs` | 5 | (b) | slot-bonus | `801cec94` `801cfff0` `801d069c` `801d0fa8` `801d3230` |
 | `save_icon.rs` | 1 | (a) | menu-render | `801e1934` |
-| `summon_readef.rs` | 2 | (b) | summon-cast | `801f12d0` `801f19ec` |
+| `summon_readef.rs` | 2 | (a) | battle-render | `801f12d0` `801f19ec` |
+
+The `summon_readef` rows moved from the summon-cast gate to the render
+ladder: a live Seru cast now stages its spawn request on the playthrough path
+(`World::request_summon_spawn`, ladder `seru_cast_magic_xp_ladder`), and what
+consumes the side-band slots is the render half - the native window's
+`spawn_summon_creature` (`bin/`, structurally test-unreachable) and the
+browser summon page (`web-viewer::summon_view`, outside the union). The parse
+layer has its own disc oracle (`crates/asset/tests/summon_readef_real.rs`).
 
 `asset` is not bulk-classifiable and the bulk reading would have been wrong: 72
 of its 114 files in the coverage data do execute, because the ladders resolve
@@ -562,9 +598,12 @@ remain outside the union and keep their harness-blind rows above.
 
 | gate | rows | what has to happen |
 |---|---|---|
-| spirit-cast | 5 | a multi-cast / spirit-gauge cast reaching its cue group |
 | slot-bonus | 5 | the casino slot machine's bonus round and its marquee |
-| summon-cast | 3 | a summon cast, which streams its own side-band slots |
 | quick-travel | 2 | a world-map quick-travel with at least one visited destination |
-| battle-escape | 1 | fleeing a battle, so the escape countdown arms |
+| timed-flags scene | 1 | a scene whose script arms the `4C D3` countdown (chitei2) |
 | ledge-hop | 1 | a field ledge with a hop arc |
+
+The former spirit-cast (5 rows) and summon-cast (3 rows) gates opened with
+the item-band wiring and the summon-spawn ladder; the "battle-escape" gate
+was a misnomer for the timed-flags scene countdown - see the engine-vm
+section's conversion notes.
