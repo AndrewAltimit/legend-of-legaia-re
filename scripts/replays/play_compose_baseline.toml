@@ -1,0 +1,19 @@
+# Ratchet for `crates/web-viewer/tests/play_compose_ladder.rs`.
+#
+# `reached` is the highest rung the browser play page's draw-composition
+# ladder has cleared. The test asserts `score >= reached` and never writes
+# this file: raising it is a reviewed edit, the same contract the other
+# replay baselines use.
+#
+# Rungs (see the test's module docs for what each proves):
+#   1 boot title to its main menu
+#   2 town01 opening: name entry commits, timeline finishes
+#   3 town01 field walk, composed per tick
+#   4 pause menu: seven rows + five sub-screens
+#   5 field shop + equipment shop overlays
+#   6 fishing session + prize venues
+#   7 demo tile board
+#   8 dev menu list + records page
+#   9 scripted battle to its action camera
+#  10 map01 overworld walk + forced encounter with intro prims
+reached = 10
