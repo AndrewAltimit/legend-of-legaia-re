@@ -104,12 +104,27 @@
 //!
 //!   Two honest limits on that wire. The **Rot arm** is still out: it tints
 //!   over a per-character index window from `DAT_80078630`, which no crate
-//!   parses. And the pass, though live, does not fire in ordinary play yet -
-//!   the port has no monster-side `enemy_effect` source at all (the only
-//!   production `stage_art_profile` call is the party-caster path
-//!   `World::arm_party_art`), so nothing petrifies a *party* slot, which is
-//!   the only side rows `481..=483` cover. That is an applier gap upstream of
-//!   this kernel, not a property of it.
+//!   parses.
+//!
+//!   And the pass, though live, still does not fire in ordinary play - but the
+//!   reason recorded here was wrong, and half of it is now fixed. The claim
+//!   was "the port has no monster-side `enemy_effect` source at all". It has
+//!   one, and it is not an art record: retail's enemy-special status source is
+//!   the **move-power record's `+0x0A` impact-effect selector**, which
+//!   `FUN_801DEA50` parks at `ctx+0x1014` and `FUN_801E09F8` branches on at
+//!   the impact phase. `legaia_asset::move_power` has parsed that byte all
+//!   along; nothing applied it. `engine-core`'s
+//!   `World::apply_enemy_move_status` now does, so a monster special puts
+//!   Venom / Toxic / Rot on a *party* slot in play.
+//!
+//!   What is left is narrower and is a property of the **byte space**, not of
+//!   the wiring: no `+0x0A` selector value maps to Stone. That ladder ends at
+//!   `5` (`0x801E1620` tests only `5`), and `FUN_801EC3E4`'s sibling ladder
+//!   adds only `6` = Curse. Petrification's applier is elsewhere entirely -
+//!   `ori 0x4` at `0x80041CF4` / `0x80041DE4`, in the SCUS `0x80041...`
+//!   item/effect band around `FUN_800402F4` - and that one is unported. Since
+//!   `BattleHud::sync_status` arms the CLUT latch on `StatusKind::Stone` only,
+//!   rows `481..=483` stay unexercised until that applier lands.
 //! * [`depth_cue_scale_channel`] and [`invert_bgr24`] belong to the actor
 //!   colour/OTZ setup, whose depth term comes from the GTE transform
 //!   `FUN_8003D344` per actor per frame. `engine-render` computes its own
