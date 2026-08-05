@@ -321,16 +321,16 @@ fn ribbon_uv(band: u8) -> [(u8, u8); 4] {
 
 /// PORT: FUN_801e1d98 (battle move-FX chained streak ribbon)
 ///
-/// NOT WIRED: the module's sibling emitter *is* wired
-/// ([`crate::streak_pass`] drives [`build_afterimage_quad`] every move-FX
-/// frame), but the ribbon is not, and the blocker is a decode gap rather than
-/// a missing model. Retail picks between the two at the move-FX draw
-/// dispatcher (`0x801E0CA0` calls the afterimage, `0x801E0CD0` calls this),
-/// and which moves take which branch is not decoded. The pass cannot guess:
-/// the ribbon projects at a **constant** half-size with no Y push
-/// ([`project_ribbon_corners`]), so unlike the afterimage it consumes neither
-/// of the two context words the action script's terminator stages - firing it
-/// on the same trigger would be inventing the dispatch, not porting it.
+/// Wired through [`crate::streak_pass::streak_quads_scheduled`]. The
+/// dispatcher choice that used to block this (`0x801E0CA0` afterimage vs
+/// `0x801E0CD0` ribbon) is decoded from the caller `FUN_801E09F8`
+/// (`0x801E0C64..0x801E0CE8`): the selector is the streak **counter**
+/// `ctx[+0x6C6]`, walked down 4 per frame - a party acting actor draws the
+/// afterimage while it is `>= 0x281` and this ribbon once it falls below
+/// `0x201` (nothing in between); a monster acting actor draws the ribbon at
+/// every counter value. The ribbon projects at a **constant** half-size with
+/// no Y push ([`project_ribbon_corners`]), consuming neither of the
+/// terminator's context words.
 ///
 /// Build the full chain of ribbon segments from the four projected corners of
 /// the bottom billboard, the move's trail-texture id, and an injected random

@@ -525,3 +525,89 @@ fn empty_effect_script_clips_step_nothing() {
     world.tick_battle_animations();
     assert!(world.drain_battle_effect_spawns().is_empty());
 }
+
+// --- arts slow-motion + after-image ghosts ----------------------------------
+
+/// The SpecialStarter (`0x1A`) commit fires the retail freeze arm
+/// (`FUN_8004AD80` `0x8004B728..0x8004B750`): every slot frozen, the acting
+/// actor at quarter speed - and its dash frames are ghost-eligible (the
+/// dynamic art slot `0x11` gate of `FUN_80049348`).
+#[test]
+fn special_starter_commit_freezes_the_battle_and_ghosts_the_dash() {
+    use vm::battle_anim_rate::{RATE_FROZEN, RATE_QUARTER};
+    let mut world = pose_test_world();
+    world.actors[1].active = true;
+    let mut bank: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    bank[0xA] = Some(pose_test_clip(0x1A, 60, 0));
+    world.set_actor_battle_art_bank(0, std::sync::Arc::new(bank));
+    world.actors[0].battle.queued_anim = 0x1A;
+    world.commit_staged_battle_anim(0);
+    assert_eq!(world.actors[0].battle.anim_rate.get(), RATE_QUARTER);
+    assert_eq!(world.actors[1].battle.anim_rate.get(), RATE_FROZEN);
+    // The commit materialised the starter at dynamic slot B (0x11).
+    assert_eq!(
+        world.actors[0].battle.current_anim,
+        vm::anim_vm::DYNAMIC_ART_SLOT_B
+    );
+    for _ in 0..10 {
+        world.tick_battle_animations();
+    }
+    let ghosts = world.battle_ghost_draws();
+    assert_eq!(ghosts.len(), 2, "two ghosts per retail walk");
+    // Quarter speed: step = 8/2 = 4, ghosts trail 4 and 8 frames.
+    // Colour: Vahn's red base, the second ghost one decay dimmer.
+    assert_eq!(ghosts[0].color, [0x60, 0x30, 0x30]);
+    assert_eq!(ghosts[1].color, [0x50, 0x20, 0x20]);
+}
+
+/// An art action constant (`>= 0x1B`) drops the whole battle to half speed
+/// (`0x8004BB78..0x8004BBA8`, `ctx[+0x243]` clear), and the frozen actor's
+/// pose stops advancing while a normal-rate actor's keeps moving.
+#[test]
+fn art_constant_commit_slows_everyone_and_rate_zero_freezes_the_pose() {
+    use vm::battle_anim_rate::{AnimRate, RATE_HALF};
+    let mut world = pose_test_world();
+    world.actors[1].active = true;
+    let mut bank: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    bank[0xB] = Some(pose_test_clip(0x1B, 60, 0));
+    world.set_actor_battle_art_bank(0, std::sync::Arc::new(bank));
+    world.actors[0].battle.queued_anim = 0x1B;
+    world.commit_staged_battle_anim(0);
+    assert_eq!(world.actors[0].battle.anim_rate.get(), RATE_HALF);
+    assert_eq!(world.actors[1].battle.anim_rate.get(), RATE_HALF);
+    // A frozen actor's clip cursor holds exactly.
+    world.actors[0].battle.anim_rate = AnimRate(0);
+    let before = world.actors[0]
+        .battle_animation
+        .as_ref()
+        .unwrap()
+        .current_frame();
+    for _ in 0..5 {
+        world.tick_battle_animations();
+    }
+    let after = world.actors[0]
+        .battle_animation
+        .as_ref()
+        .unwrap()
+        .current_frame();
+    assert_eq!(before, after, "rate 0 froze the clip");
+}
+
+/// Basic-attack swings (`0x0C..=0x0F`) fire no rate arm: the battle stays
+/// at normal speed and no frame is ghost-eligible.
+#[test]
+fn direction_swing_commit_keeps_normal_speed_and_no_ghosts() {
+    use vm::battle_anim_rate::RATE_NORMAL;
+    let mut world = pose_test_world();
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 22];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    clips[0x0C] = Some(pose_test_clip(0x0C, 60, 0));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.actors[0].battle.queued_anim = 0x0C;
+    world.commit_staged_battle_anim(0);
+    assert_eq!(world.actors[0].battle.anim_rate.get(), RATE_NORMAL);
+    for _ in 0..10 {
+        world.tick_battle_animations();
+    }
+    assert!(world.battle_ghost_draws().is_empty());
+}

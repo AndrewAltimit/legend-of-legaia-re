@@ -874,6 +874,11 @@ impl PlayWindowApp {
             // pose_frame, regenerate and re-upload the posed mesh.
             // posed_overrides[i] replaces meshes[i] when present.
             let (posed_overrides, player_color_posed) = self.build_posed_actor_overrides(r);
+            // Arts after-image ghosts: the actor's mesh at rate-scheduled
+            // historical poses, flat-coloured additive (retail FUN_80049348;
+            // kernel `engine-core::battle_afterimage`). Empty outside a
+            // battle / outside a SpecialStarter dash.
+            let battle_ghost_uploads = self.build_battle_ghost_uploads(r);
             legaia_engine_render::profile::mark("pose:actor");
             // Placed props posed at their live clip frame: the ones resting on
             // frame 0 keep the baked rest mesh, the ones mid-swing get rebuilt.
@@ -1678,6 +1683,19 @@ impl PlayWindowApp {
                             mesh,
                             mvp: actor_cam * model,
                             cue,
+                        });
+                    }
+                }
+                // Arts after-image ghosts trail the live bodies: additive
+                // flat-colour copies at the rate-scheduled historical poses
+                // (retail FUN_80049348 draws them 0x50 OT buckets behind
+                // the body; here the opaque body's depth occludes the
+                // additive pass the same way).
+                if in_battle {
+                    for (mesh, model) in &battle_ghost_uploads {
+                        color_draws.push(ColorSceneDraw {
+                            mesh,
+                            mvp: actor_cam * *model,
                         });
                     }
                 }

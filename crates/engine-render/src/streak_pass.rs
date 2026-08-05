@@ -42,13 +42,14 @@
 //!
 //! ## Which sibling this drives
 //!
-//! The retail move-FX draw dispatcher reaches two emitters - `0x801E0CA0`
-//! calls the single-quad afterimage, `0x801E0CD0` calls the chained ribbon
-//! (`FUN_801E1D98`, ported as [`crate::afterimage::build_streak_ribbon`]).
-//! Which one a given move takes is not decoded, and only the afterimage
-//! consumes the two context words the terminator writes - the ribbon projects
-//! at constant half-size and no Y push. So this pass drives the afterimage;
-//! the ribbon stays available for the dispatcher.
+//! Both. The retail move-FX draw dispatcher reaches two emitters -
+//! `0x801E0CA0` calls the single-quad afterimage, `0x801E0CD0` the chained
+//! ribbon (`FUN_801E1D98`, [`crate::afterimage::build_streak_ribbon`]) - and
+//! the selector is decoded: the streak counter `ctx[+0x6C6]` (walked down 4
+//! per frame by the phase driver, `MoveFxStreak::tick_counter` engine-side)
+//! schedules the handoff. [`streak_quads_scheduled`] is the ported
+//! dispatcher: party afterimage at `counter >= 0x281`, ribbon below
+//! `0x201`, monster ribbon always.
 
 use crate::afterimage::{AfterimageQuad, SCREEN_Y_OFFSET, build_afterimage_quad};
 use glam::{Mat4, Vec3, Vec4};
@@ -118,7 +119,32 @@ pub fn project_streak_corners_mvp(
     half_w: f32,
     half_h: f32,
 ) -> Option<[(i16, i16); 4]> {
-    let p = Vec3::new(centre[0], centre[1] + f32::from(SCREEN_Y_OFFSET), centre[2]);
+    project_corners_mvp(mvp, centre, half_w, half_h, f32::from(SCREEN_Y_OFFSET))
+}
+
+/// The ribbon caller's projection (`FUN_801E1D98` via `0x801E0CD4`): the
+/// same camera-facing fan at the **constant** half sizes
+/// ([`crate::afterimage::RIBBON_PROJECTION_HALF_WIDTH`] /
+/// [`crate::afterimage::RIBBON_PROJECTION_HALF_HEIGHT`]) and **no** `+0x120`
+/// Y push - the ribbon anchors on the launch point itself.
+pub fn project_ribbon_corners_mvp(mvp: &Mat4, centre: [f32; 3]) -> Option<[(i16, i16); 4]> {
+    project_corners_mvp(
+        mvp,
+        centre,
+        f32::from(crate::afterimage::RIBBON_PROJECTION_HALF_WIDTH),
+        f32::from(crate::afterimage::RIBBON_PROJECTION_HALF_HEIGHT),
+        0.0,
+    )
+}
+
+fn project_corners_mvp(
+    mvp: &Mat4,
+    centre: [f32; 3],
+    half_w: f32,
+    half_h: f32,
+    y_push: f32,
+) -> Option<[(i16, i16); 4]> {
+    let p = Vec3::new(centre[0], centre[1] + y_push, centre[2]);
     let clip = *mvp * Vec4::new(p.x, p.y, p.z, 1.0);
     if clip.w <= 1e-4 {
         return None;
@@ -184,6 +210,46 @@ pub fn streak_quads(src: &StreakSource, mvp: &Mat4, frame: u32) -> Vec<Afterimag
         src.trail_id,
         frame_rng(frame),
     )]
+}
+
+/// The single-quad afterimage draws while the streak counter `ctx[+0x6C6]`
+/// is at least this (`slti 0x281` at `0x801E0C8C`) - party actors only.
+pub const AFTERIMAGE_COUNTER_MIN: u16 = 0x281;
+/// The chained ribbon takes over once the counter falls below this
+/// (`slti 0x201` at `0x801E0CBC`); a monster actor draws the ribbon at any
+/// counter (the `0x801E0C7C` branch).
+pub const RIBBON_COUNTER_MAX: u16 = 0x201;
+
+/// Emit this frame's streak per the retail emitter schedule - the decoded
+/// move-FX draw dispatcher (`FUN_801E09F8` phase 1, `0x801E0C64..0x801E0CE8`):
+///
+/// * a **party** acting actor draws the single-billboard afterimage while
+///   `counter >= 0x281` (its half-width is `counter - 0x200`, shrinking 4
+///   per frame), nothing through `0x280..0x201`, and the chained ribbon
+///   once `counter < 0x201`;
+/// * a **monster** acting actor draws the ribbon at every counter value.
+///
+/// The ribbon is `FUN_801E1D98` ported as
+/// [`crate::afterimage::build_streak_ribbon`], projected at its constant
+/// half sizes with no Y push.
+pub fn streak_quads_scheduled(
+    src: &StreakSource,
+    mvp: &Mat4,
+    frame: u32,
+    counter: u16,
+    party: bool,
+) -> Vec<AfterimageQuad> {
+    if party && counter >= AFTERIMAGE_COUNTER_MIN {
+        return streak_quads(src, mvp, frame);
+    }
+    if party && counter >= RIBBON_COUNTER_MAX {
+        // The retail dead band between the two emitters: nothing draws.
+        return Vec::new();
+    }
+    let Some(corners) = project_ribbon_corners_mvp(mvp, src.launch) else {
+        return Vec::new();
+    };
+    crate::afterimage::build_streak_ribbon(corners, src.trail_id, frame_rng(frame))
 }
 
 #[cfg(test)]

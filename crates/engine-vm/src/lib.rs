@@ -107,6 +107,7 @@ pub mod battle_cursor_pose;
 pub mod battle_damage_wrappers;
 pub mod battle_formulas;
 pub mod battle_gauge;
+pub mod battle_anim_rate;
 pub mod battle_gauge_rearm;
 pub mod battle_ground_grid;
 pub mod battle_helpers;

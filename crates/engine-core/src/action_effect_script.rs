@@ -539,6 +539,21 @@ impl MoveFxStreak {
         self.phase != 0 && self.launch.is_some()
     }
 
+    /// The per-frame counter walk: retail's phase-1 arm decrements
+    /// `ctx[+0x6C6]` by `DAT_1F800393 << 2` per game frame and floors it at
+    /// zero (`FUN_801E09F8`, `0x801E0C1C..0x801E0C40`) - per 1-vsync engine
+    /// tick, 4. The word is what schedules the trail's two emitters: the
+    /// single-quad afterimage draws while it is `>= 0x281`, the chained
+    /// ribbon once it falls below `0x201` (`0x801E0C84..0x801E0CD4`), and
+    /// its `- 0x200` is the afterimage's shrinking half-width. Call once
+    /// per battle frame; no-op while unarmed.
+    // REF: FUN_801E09F8 (the move-FX phase driver's counter walk)
+    pub fn tick_counter(&mut self) {
+        if self.phase != 0 {
+            self.counter_word = self.counter_word.saturating_sub(4);
+        }
+    }
+
     /// Drop the block (the move finished / the actor's clip changed).
     pub fn clear(&mut self) {
         *self = Self::default();

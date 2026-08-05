@@ -563,7 +563,7 @@ impl PlayWindowApp {
         &self,
         r: &legaia_engine_render::Renderer,
     ) -> Vec<legaia_engine_render::afterimage::AfterimageQuad> {
-        use legaia_engine_render::streak_pass::{StreakSource, streak_quads};
+        use legaia_engine_render::streak_pass::{StreakSource, streak_quads_scheduled};
         let world = &self.session.host.world;
         let trail = world.active_move_fx_trail_texpage();
         if trail.is_none() {
@@ -575,14 +575,87 @@ impl PlayWindowApp {
         };
         let (w, h) = r.surface_size();
         let mvp = self.battle_camera_mvp(w as f32 / h.max(1) as f32);
-        let quads = streak_quads(&src, &mvp, self.tick_no as u32);
+        // The retail emitter schedule keys on the counter word and on the
+        // acting side: party = afterimage shrinking toward the ribbon,
+        // monster = ribbon throughout (`FUN_801E09F8`).
+        let party = world.battle_ctx.active_actor < 3;
+        let quads = streak_quads_scheduled(
+            &src,
+            &mvp,
+            self.tick_no as u32,
+            block.counter_word,
+            party,
+        );
         log::debug!(
-            "move-FX streak: launch {:?} half-width {} -> {} quad(s)",
+            "move-FX streak: launch {:?} counter {:#x} half-width {} -> {} quad(s)",
             block.launch,
+            block.counter_word,
             block.half_width(),
             quads.len()
         );
         quads
+    }
+
+    /// Build this frame's arts after-image ghost meshes - the render half of
+    /// the retail walk `FUN_80049348` (`legaia_engine_core::battle_afterimage`
+    /// holds the schedule/gate/colour kernel; `World::battle_ghost_draws`
+    /// binds it to the live pose history). Each ghost is the actor's full
+    /// mesh at a historical pose, drawn **flat-coloured and additive** - the
+    /// retail draw wrapper `FUN_80043390` decodes the ghost colour word's
+    /// mode byte `0x85` into the GP0 ABE bit + ABR mode 1 (B + F) with the
+    /// GTE far colour as the flat RGB - so it uploads on the colour-mesh
+    /// pipeline with every prim's blend word forced semi-transparent
+    /// additive.
+    // REF: FUN_80049348 - the retail ghost walk this pass draws for.
+    pub(super) fn build_battle_ghost_uploads(
+        &self,
+        r: &legaia_engine_render::Renderer,
+    ) -> Vec<(UploadedColorMesh, Mat4)> {
+        use legaia_engine_render::psx_blend::pack_blend_word;
+        let world = &self.session.host.world;
+        let mut out = Vec::new();
+        if world.mode != SceneMode::Battle {
+            return out;
+        }
+        for g in world.battle_ghost_draws() {
+            let i = g.actor_slot as usize;
+            let Some(actor) = world.actors.get(i) else {
+                continue;
+            };
+            let Some(tmd_idx) = actor.tmd_binding else {
+                continue;
+            };
+            let Some((tmd, raw)) = self.scene_tmd_data.get(tmd_idx) else {
+                continue;
+            };
+            let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &g.pose.bone_outputs);
+            if vmesh.indices.is_empty() {
+                continue;
+            }
+            let colors = vec![g.color; vmesh.positions.len()];
+            let blend = vec![pack_blend_word(true, 1); vmesh.positions.len()];
+            match r.upload_color_mesh_blended(&vmesh.positions, &colors, &vmesh.indices, &blend) {
+                Ok(m) => {
+                    // Same placement law as the live battle body
+                    // (`actor_model`'s battle arm), at the ghost's own
+                    // historical position.
+                    let rot = if actor.battle_monster_id.is_some() {
+                        Mat4::from_rotation_y(std::f32::consts::PI)
+                    } else {
+                        Mat4::IDENTITY
+                    };
+                    let model = Mat4::from_translation(Vec3::new(
+                        g.pos[0] as f32,
+                        g.pos[1] as f32,
+                        g.pos[2] as f32,
+                    )) * rot
+                        * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                    out.push((m, model));
+                }
+                Err(e) => log::warn!("ghost mesh upload: {e:#}"),
+            }
+        }
+        out
     }
 
     pub(super) fn build_screen_fx_meshes(

@@ -2305,6 +2305,35 @@ void main() {
             }
             : null,
         });
+        /* Arts after-image ghosts: the engine's ghost plan (rate-scheduled
+         * pose-history depths + per-character colour with the per-ghost
+         * decay) drawn as flat-coloured additive copies behind the body -
+         * the saturated cue (nearZ -1, maxIr0 1) paints the whole mesh the
+         * ghost RGB, and the mesh's forced ABE|ABR1 prims ride the blend
+         * pass. Depth-tested against the opaque body, so the live mesh
+         * occludes its own trail exactly like retail's deeper OT bucket. */
+        if (a.ghostMeshIds && a.ghostMeshIds.length && a.objectIds.length
+            && typeof rt.play_battle_actor_ghosts === 'function') {
+          const gh = rt.play_battle_actor_ghosts(i);
+          const count = Math.min(gh.length / 6, a.ghostMeshIds.length);
+          for (let g = 0; g < count; g++) {
+            const pose = rt.play_battle_actor_ghost_pose(i, g);
+            if (!pose.length) continue;
+            poseInto(a.out, a.base, a.objectIds, pose, pose.length / 6, 0);
+            this.renderer.updateSceneMeshPositions(a.ghostMeshIds[g], a.out);
+            const j = g * 6;
+            draws.push({
+              meshId: a.ghostMeshIds[g],
+              x: gh[j] * S, y: gh[j + 1] * S, z: gh[j + 2] * S,
+              rotY: tf[o + 3] > 0.5 ? Math.PI : 0,
+              scale: S,
+              cue: {
+                far: [gh[j + 3], gh[j + 4], gh[j + 5]],
+                nearZ: -1, farZ: 0, maxIr0: 1,
+              },
+            });
+          }
+        }
       }
       this._battleFxDraws(rt, b, draws);
 
@@ -2450,7 +2479,30 @@ void main() {
           meshId, base,
           objectIds: rt.play_battle_actor_object_ids(i),
           out: new Float32Array(base.length),
+          ghostMeshIds: [],
         };
+        /* Arts after-image ghosts (retail FUN_80049348, plan from the shared
+         * `World::battle_ghost_draws`): two extra copies of the actor mesh on
+         * the flat-colour path (flatRgba flag 0), every prim forced
+         * semi-transparent additive (TSB = ABE bit | ABR mode 1), posed per
+         * frame from the engine's pose-history ring and coloured per draw by
+         * the cue override. Guarded so a cached WASM without the export just
+         * skips the layer. */
+        if (rec.objectIds.length
+            && typeof rt.play_battle_actor_ghosts === 'function') {
+          const gcb = rt.play_battle_actor_cba_tsb(i);
+          const ghostCt = new Uint16Array(gcb.length);
+          for (let k = 0; k + 1 < gcb.length; k += 2) {
+            ghostCt[k] = gcb[k];
+            ghostCt[k + 1] = 0x8020;   /* ABE | ABR 1 (B + F additive) */
+          }
+          const ghostFlat = new Uint8Array((base.length / 3) * 4);
+          for (let g = 0; g < 2; g++) {
+            const gid = up(BATTLE_MESH_BASE + 32 + i * 2 + g, base,
+              rt.play_battle_actor_uvs(i), ghostCt, idx, ghostFlat);
+            if (gid) rec.ghostMeshIds.push(gid);
+          }
+        }
         /* Pose to the rest/idle frame immediately: an unposed multi-part
          * character is a heap of limbs at the origin. (Empty objectIds =
          * the engine uploaded a statically-posed fallback mesh.) */

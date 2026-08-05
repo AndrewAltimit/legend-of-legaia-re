@@ -15,10 +15,15 @@
 // FUN_801E93C8 - gauge re-arm at art start
 // ---------------------------------------------------------------------------
 
-/// The neutral per-slot arm width `FUN_801E93C8` seeds into every actor's
-/// `+0x21D`. The gauge builder later overwrites it with the real per-command
-/// `+0x74` cost, which is why a slot briefly reads this width.
-pub const ARM_WIDTH_SEED: u8 = 8;
+/// The value `FUN_801E93C8` seeds into every actor's `+0x21D`. That byte is
+/// the per-actor **animation-rate scalar** (`8` = normal speed - see
+/// [`crate::battle_anim_rate`]), so this function is the **arts slow-motion
+/// restore**: once the acting actor's materialised art clip has ended, every
+/// slot's clock returns to normal. (An earlier reading here called `+0x21D`
+/// an arts-gauge "arm width"; the consumers - the anim tick `FUN_80047430`,
+/// the after-image walk `FUN_80049348` and the strike-drift scale - settle
+/// it as the anim rate.)
+pub const ARM_WIDTH_SEED: u8 = crate::battle_anim_rate::RATE_NORMAL;
 
 /// The number of actor slots the re-arm walks (`0..7`).
 pub const GAUGE_SLOTS: usize = 7;
