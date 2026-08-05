@@ -274,6 +274,19 @@ impl World {
         if labels.is_installed() {
             self.menu_context_labels = labels;
         }
+        // The window-widget bytecode programs the window-script VM
+        // (`legaia_engine_vm::run`, retail `FUN_801D6628`) interprets -
+        // resident data in this same image (`legaia_asset::widget_script`).
+        // The window-descriptor table seeds the choreography's home
+        // positions (the per-instruction `x`/`y` pair the VM reads off the
+        // record).
+        if let Ok(table) = legaia_asset::menu_windows::parse(overlay) {
+            self.menu_widgets.set_defaults_from_table(&table);
+        }
+        if let Some(scripts) = crate::menu_widget::MenuWidgetScripts::resolve_from_overlay(overlay)
+        {
+            self.menu_widget_scripts = Some(scripts);
+        }
     }
 
     /// Rebuild every party member's ability bitfield from their equipped

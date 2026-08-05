@@ -140,6 +140,17 @@ pub struct MenuRuntime {
     /// Pending operation flagged by the host hooks; consumed inside
     /// [`MenuRuntime::tick`].
     pending: Option<PendingOp>,
+    /// Last `ctx.state` the window-widget choreography reacted to. The
+    /// shop states drive the disc-resolved widget scripts
+    /// ([`crate::menu_widget`]) through
+    /// [`World::run_shop_widget_open`] /
+    /// [`World::run_shop_widget_sell_away`]; this cell edge-detects the
+    /// state changes (retail's `FUN_801DAFD4` runs the scripts on the
+    /// same transitions).
+    ///
+    /// [`World::run_shop_widget_open`]: World::run_shop_widget_open
+    /// [`World::run_shop_widget_sell_away`]: World::run_shop_widget_sell_away
+    widget_state_seen: u8,
 }
 
 #[derive(Debug, Clone)]
@@ -166,6 +177,7 @@ impl MenuRuntime {
             point_card_toast: None,
             spell_level_notice: None,
             pending: None,
+            widget_state_seen: 0,
         }
     }
 
@@ -316,7 +328,38 @@ impl MenuRuntime {
     /// the press. The recipient picker owns its own copy of that beat
     /// ([`BuyRecipientSession`]'s `ToastWait`), so while a picker is live it
     /// still drives - the toast is only what the host paints.
+    /// Edge-detect `ctx.state` for the window-widget choreography and run
+    /// the disc-resolved widget script the retail picker dispatcher
+    /// (`FUN_801DAFD4`) runs on the same transition: the open script
+    /// (`DAT_801E4E38`) on entering the `ShopMenu` picker, the slide-away
+    /// script (`DAT_801E4E54`) on entering `ShopSell`. Menu teardown drops
+    /// the window list. No-op (beyond the edge tracking) on a world
+    /// without resolved overlay scripts.
+    fn sync_widget_choreo(&mut self, world: &mut World) {
+        let state = self.ctx.state;
+        if state == self.widget_state_seen {
+            return;
+        }
+        self.widget_state_seen = state;
+        match MenuState::from_byte(state) {
+            Some(MenuState::ShopMenu) => {
+                world.run_shop_widget_open();
+            }
+            Some(MenuState::ShopSell) => {
+                world.run_shop_widget_sell_away();
+            }
+            Some(MenuState::Closed) | Some(MenuState::Deactivate) => {
+                world.menu_widgets.reset();
+            }
+            _ => {}
+        }
+    }
+
     pub fn tick(&mut self, world: &mut World, input: MenuInput) -> MenuTickEvent {
+        // The host-side open calls (`open_shop_menu` & siblings) write
+        // `ctx.state` directly, so the entry edge lands here on the first
+        // tick; the post-`step` call below catches in-menu transitions.
+        self.sync_widget_choreo(world);
         if self.recipient_session.is_some() {
             self.tick_recipient(world, input);
             return MenuTickEvent::Stepped;
@@ -356,6 +399,9 @@ impl MenuRuntime {
         if let Some(cursor) = self.stay_cursor.take() {
             self.ctx.cursor = cursor;
         }
+        // In-menu state transitions (picker → Sell, teardown) drive the
+        // window-widget scripts.
+        self.sync_widget_choreo(world);
 
         // After the host hooks fire, consume any pending op.
         let pending = self.pending.take();
