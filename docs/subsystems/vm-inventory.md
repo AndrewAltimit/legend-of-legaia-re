@@ -98,8 +98,14 @@ These ports are faithful and tested, and nothing outside `crates/engine-vm`
 calls them. Inert is a reachability statement, not a correctness one.
 
 - **Actor / sprite VM** (`legaia_engine_vm::run`) - the first VM ported, and
-  the `Host`-trait shape every later VM port follows. Only its `Position` type
-  is imported elsewhere; the interpreter itself has no caller.
+  the `Host`-trait shape every later VM port follows. The interpreter has
+  exactly one caller, and it is worth naming rather than rounding to zero:
+  `World::run_actor_bytecode` is reached only from `FieldDemoHandler`, which
+  synthesizes its own bytecode and is constructed nowhere outside a
+  `#[cfg(test)]` module. So the port reads *live* to a static call-graph pass
+  while no host installs the handler - which is why it does not surface in the
+  disclosed-inert audit either. Per-address triage:
+  [`reach-triage.md`](../tooling/reach-triage.md#the-actor-vm-has-no-host-caller).
 - **Move-VM `0x2F` extension** (`move_vm_overlay_ext`) - its `step` / `walk`
   walker has no caller. The module is not wholly inert, though: its
   `canonical_size` width table is the disassembly-sourced mirror that

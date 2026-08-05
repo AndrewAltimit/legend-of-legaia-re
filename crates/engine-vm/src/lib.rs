@@ -64,6 +64,25 @@
 //! that trait belong to the engine layer.
 //!
 //! Tests use hand-authored synthetic bytecode (no Sony bytes).
+//!
+//! ## Wiring state: no host runs this interpreter
+//!
+//! [`run`] is reachable in the static call graph and unreachable in play, and
+//! the difference is worth stating precisely because the graph is what the
+//! reachability audits read. `engine-core`'s `World::run_actor_bytecode` is the
+//! only production wrapper; its only caller is `FieldDemoHandler::run` in
+//! `engine-core`'s `mode.rs`, and that handler synthesizes its own bytecode
+//! rather than reading disc bytes and is constructed nowhere outside the
+//! `#[cfg(test)]` module beside it. `ModeHandler` has no registry, so no host
+//! installs it. The seven addresses tagged above are therefore executed by no
+//! pad-driven ladder and by neither browser page nor the native window.
+//!
+//! What is missing is an **input**, not a call site: nothing resolves a scene's
+//! actor-VM programs out of the disc into a byte slice, so a call added today
+//! could only feed operands the port invented. The prerequisite is the
+//! per-scene program lookup - which carrier holds the programs, and what
+//! selects one on scene entry. See
+//! [`docs/tooling/reach-triage.md`](../../../docs/tooling/reach-triage.md).
 
 #![forbid(unsafe_code)]
 
