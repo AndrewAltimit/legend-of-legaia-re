@@ -58,6 +58,9 @@ mod transform;
 mod mem;
 pub use mem::*;
 
+mod trig;
+pub use trig::*;
+
 pub mod raster;
 
 #[cfg(test)]

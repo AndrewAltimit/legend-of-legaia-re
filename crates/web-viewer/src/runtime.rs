@@ -92,6 +92,17 @@ pub struct LegaiaRuntime {
     /// CLUT fx) changed texels; drained by [`Self::field_vram_take_dirty`]
     /// so the page re-uploads the VRAM texture only on real changes.
     pub(crate) field_vram_dirty: bool,
+    /// The field-to-battle transition's per-frame emitter - the same
+    /// `legaia_engine_ui::battle_intro::BattleIntro` the native window arms.
+    /// `Some` only while the encounter session sits in its `Transition`
+    /// phase; owns the captured-field VRAM clone the style bodies sample.
+    pub(crate) battle_intro: Option<legaia_engine_ui::battle_intro::BattleIntro>,
+    /// This frame's transition primitives, already ordered into drawable
+    /// geometry by the shared `screen_prim` builder. Built once per
+    /// [`crate::play_battle`] intro tick (the emitter mutates working sets,
+    /// so the per-frame accessors must not re-tick) with the primitive count
+    /// alongside for the page's early-out.
+    pub(crate) battle_intro_geom: Option<(u32, legaia_engine_ui::screen_prim::OverlayGeometry)>,
     /// SCUS item-name table, parsed once at `load_disc` - the labels the field
     /// menu's Item screen shows. `None` on a PROT.DAT-only load (no executable).
     pub(crate) item_names: Option<legaia_asset::item_names::ItemNameTable>,
@@ -282,6 +293,8 @@ impl LegaiaRuntime {
             locomotion_anm: None,
             field_vram_anim: None,
             field_vram_dirty: false,
+            battle_intro: None,
+            battle_intro_geom: None,
             item_names: None,
             menu_font: None,
             menu_assets: None,
@@ -669,6 +682,11 @@ impl LegaiaRuntime {
         // edge, battle-event fold, HUD row refresh, popup aging
         // ([`crate::play_battle`]). Cheap no-op outside battle.
         self.tick_battle_presentation();
+        // The field-to-battle intro emitter: armed while the encounter
+        // session sits in `Transition`, dropped when it leaves; caches this
+        // frame's screen-prim geometry for the page's pass. Cheap no-op
+        // outside a transition.
+        self.tick_battle_intro();
         // Party wipe: raise the game-over panel on the `World::game_over`
         // edge, the same probe the native window's redraw loop runs.
         self.poll_game_over();

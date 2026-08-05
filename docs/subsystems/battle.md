@@ -3691,11 +3691,12 @@ arming), and the drain into the actual entry runs in every relevant mode:
 tick (`--no-live-loop` gates the roll, never an armed fight), and the
 `WorldMap` tick (which drains into `World::enter_world_map_battle`).
 
-The **visual** half is live end to end. The five style kernels are ported in
-`engine-vm` and drawn by `engine-render::battle_intro`, the per-frame
-working-set owner the native play window arms for every encounter (the browser
-hosts have no screen-space primitive path - see
-[`host-drift.md`](../tooling/host-drift.md)):
+The **visual** half is live end to end, on both hosts. The five style kernels
+are ported in `engine-vm` and drawn by `engine-ui::battle_intro` (re-exported
+at its old `engine-render::battle_intro` path), the per-frame working-set
+owner the native play window **and** the browser play page each arm for every
+encounter - the hosts differ only in how the captured field frame is read back
+(see [`host-drift.md`](../tooling/host-drift.md#screen-space-psx-primitives-across-the-two-hosts)):
 
 | Style | Retail tick | Simulation port | Packet builder port |
 |---|---|---|---|
@@ -3707,10 +3708,12 @@ hosts have no screen-space primitive path - see
 
 The chain: `BattleIntro` holds the style's working set between frames and
 synchronises its clock from the live transition entity; the one-shot field
-frame capture (`Renderer::capture_rgba` → `vram_capture`) lands the drawn
-field in the texture pages each style's packets name; and the emitted
-`ScreenPrim`s composite over the scene through
-`RenderTarget::SceneWithScreenPrims`.
+frame capture lands the drawn field in the texture pages each style's packets
+name (`Renderer::capture_rgba` → `land_capture_rgba` on the native window,
+`gl.readPixels` → `play_intro_land_capture` on the page); and the emitted
+`ScreenPrim`s composite over the scene - through
+`RenderTarget::SceneWithScreenPrims` natively, through the page's
+screen-prim pass in the browser.
 
 ### The curtain is a render-to-texture, and only its row pass is on screen
 

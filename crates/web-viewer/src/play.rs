@@ -251,7 +251,7 @@ pub fn build_field_render(
 
 impl LegaiaRuntime {
     /// The host's scene resources (built by `enter_field_scene`).
-    fn res(&self) -> Option<&SceneResources> {
+    pub(crate) fn res(&self) -> Option<&SceneResources> {
         self.scene_host.as_ref()?.resources.as_ref()
     }
 
@@ -334,7 +334,16 @@ impl LegaiaRuntime {
 
     /// Field VRAM (1 MB) - the image every mesh below samples. The engine's own
     /// scene VRAM, not a viewer-side rebuild.
+    ///
+    /// While a field-to-battle transition holds a landed capture, this is the
+    /// emitter's **cloned** page instead - the scene VRAM with the captured
+    /// field frame (and, for the curtain, its per-frame intermediate) blitted
+    /// into the texture-page rects the style bodies sample. The pristine page
+    /// comes back the moment the transition drops, via the same dirty flag.
     pub fn field_vram_bytes(&self) -> Vec<u8> {
+        if let Some(page) = self.battle_intro.as_ref().and_then(|i| i.captured_vram()) {
+            return page.as_bytes().to_vec();
+        }
         self.res()
             .map(|r| r.vram.as_bytes().to_vec())
             .unwrap_or_default()

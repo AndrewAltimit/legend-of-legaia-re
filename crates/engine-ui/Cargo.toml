@@ -12,6 +12,7 @@ path = "src/lib.rs"
 bytemuck = { version = "1", features = ["derive"] }
 glam.workspace = true
 legaia-asset = { path = "../asset" }
+legaia-engine-vm = { path = "../engine-vm" }
 legaia-font = { path = "../font" }
 legaia-tim = { path = "../tim" }
 serde.workspace = true

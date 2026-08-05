@@ -42,7 +42,7 @@ use legaia_engine_core::battle_hud::{
     encounter_banner_enabled, encounter_banner_label, sync_battle_hud_rows,
 };
 use legaia_engine_core::world::SceneMode;
-use legaia_engine_ui::screen_prim::{ScreenPrim, fade_prim};
+use legaia_engine_ui::battle_intro::{BattleIntro, IntroQuadTable};
 use legaia_engine_ui::{self as ui, HudPopupView, HudSlotMeta, HudSlotView, SpriteDraw, TextDraw};
 use wasm_bindgen::prelude::*;
 
@@ -1516,49 +1516,43 @@ mod live_hud_tests {
 // ---------------------------------------------------------------------------
 
 impl LegaiaRuntime {
-    /// This frame's screen-space PSX primitives, in the OT buckets retail
-    /// links them at. Empty whenever no field-to-battle transition is running,
-    /// which is what keeps the page's pass a two-line early-out.
+    /// Arm, advance or drop the field-to-battle intro emitter so it tracks
+    /// the encounter session's `Transition` phase, and cache this frame's
+    /// ordered geometry for the page's screen-prim pass.
     ///
-    /// **What is here, and what is not.** The simulation half of the
-    /// transition is shared and already live on this host:
-    /// `World::tick_encounter` runs `tick_transition` every frame the
-    /// encounter session sits in its `Transition` phase, so the clock, the
-    /// BGM swap and the battle that opens are the native window's. The *style
-    /// body* - the confetti, the shattering tiles, the curtain strips, the
-    /// swirl fan - is emitted by `legaia_engine_render::battle_intro`, which
-    /// this crate cannot link (wgpu), and every one of those styles textures
-    /// its geometry with a **captured field frame** that nothing on this page
-    /// reads back. So what the browser draws is the layer that needs neither:
-    /// the full-screen fade, resolved by the same shared
-    /// [`legaia_engine_vm::battle_intro_styles::intro_fade`] ramp and built by
-    /// the same shared [`legaia_engine_ui::screen_prim::fade_prim`] packet the
-    /// native window emits.
+    /// The browser twin of the native window's `take_battle_intro_frame`.
+    /// The *simulation* half was always shared - `World::tick_encounter` runs
+    /// `tick_transition` on both hosts, so the clock, the BGM swap and the
+    /// battle that opens never differed - and the *emitter* is shared now
+    /// too ([`legaia_engine_ui::battle_intro`]): all five style bodies (the
+    /// confetti, the shattering tiles, the curtain strips, the swirl fan)
+    /// plus the backdrop and the fade come out of the same `BattleIntro` the
+    /// native window ticks. What stays per-host is the readback that lands
+    /// the captured field frame the styles sample: the native window
+    /// re-renders offscreen, this page hands its own drawn frame to
+    /// [`Self::play_intro_land_capture`] via `gl.readPixels`.
     ///
-    /// The native emitter also pushes a `backdrop_prim` - an opaque black
-    /// display-rect quad standing in for "retail's field renderer is not in
-    /// the ordering table". That one is deliberately **not** emitted here: it
-    /// is only correct underneath a style body that reconstructs the frame
-    /// from the capture, and on its own it would black the field out for the
-    /// whole 132-frame window. Drawing the fade over the still-rendering field
-    /// is the honest subset.
-    ///
-    /// See `docs/tooling/host-drift.md` for the capability ledger.
-    pub(crate) fn battle_intro_screen_prims(&self) -> Vec<ScreenPrim> {
+    /// Called once per simulation tick - the emitter advances working sets,
+    /// so the per-frame accessors below must read a cache rather than
+    /// re-tick.
+    pub(crate) fn tick_battle_intro(&mut self) {
         use legaia_engine_core::encounter::EncounterPhase;
-        use legaia_engine_vm::battle_intro_styles::{
-            IntroStyleInputs, intro_fade, select_intro_style,
-        };
 
         let Some(host) = self.scene_host.as_ref() else {
-            return Vec::new();
+            self.drop_battle_intro();
+            return;
         };
         let phase = host.world.encounter.as_ref().map(|s| s.phase());
         let Some(EncounterPhase::Transition { roll, .. }) = phase else {
-            return Vec::new();
+            self.drop_battle_intro();
+            return;
         };
         let Some(entity) = host.world.battle_intro else {
-            return Vec::new();
+            // The transition is armed but its entity has not ticked yet:
+            // keep the emitter (the native window does the same), just show
+            // nothing this frame.
+            self.battle_intro_geom = None;
+            return;
         };
         let total = host
             .world
@@ -1566,17 +1560,60 @@ impl LegaiaRuntime {
             .as_ref()
             .map(|s| i32::from(s.transition_frames))
             .unwrap_or(0);
-        // The three selector inputs, resolved exactly as the native window's
-        // `arm_battle_intro` resolves them: the formation's **first monster
-        // id** (not the row index - reading the row is what made every
-        // id-keyed override unreachable), the row's own per-battle flags byte
-        // (`DAT_8007BD60` bit `0x80`, the only bit the selector reads), and
-        // the scene's PROT base (`DAT_80084540`).
-        let def = host.world.formation_table.formation(roll.formation_id);
+        if self.battle_intro.is_none() {
+            self.battle_intro = Some(self.arm_battle_intro(roll.formation_id, total));
+        }
+        let mut intro = self.battle_intro.take().expect("armed above");
+        // Retail's per-frame step is the display-frame delta; the page's
+        // simulation tick is one display frame, same as the native window.
+        let frame = intro.tick(entity.elapsed, 1);
+        // The curtain's CPU two-pass composition (and nothing else, for the
+        // other styles) changes the captured page per frame; the page
+        // re-uploads through the same dirty flag the field CLUT effects use.
+        if intro.refresh_captured_page().is_some() {
+            self.field_vram_dirty = true;
+        }
+        self.battle_intro = Some(intro);
+        self.battle_intro_geom = (!frame.prims.is_empty()).then(|| {
+            (
+                frame.prims.len() as u32,
+                legaia_engine_ui::screen_prim::build_geometry(
+                    &frame.prims,
+                    legaia_engine_ui::screen_prim::PSX_DISPLAY_W as u32,
+                    legaia_engine_ui::screen_prim::PSX_DISPLAY_H as u32,
+                ),
+            )
+        });
+    }
+
+    /// Tear the emitter down when the transition ends (battle handoff, or a
+    /// cancelled session). The captured VRAM clone drops with it, so
+    /// [`Self::field_vram_bytes`] snaps back to the pristine scene page - the
+    /// dirty flag makes the page re-upload it (the battle branch uploads its
+    /// own VRAM on entry either way).
+    fn drop_battle_intro(&mut self) {
+        if self.battle_intro.take().is_some() {
+            self.field_vram_dirty = true;
+        }
+        self.battle_intro_geom = None;
+    }
+
+    /// Build the emitter for the battle about to open - the mirror of the
+    /// native window's `arm_battle_intro`, resolving the same three selector
+    /// inputs: the formation's **first monster id** (not the row index -
+    /// reading the row is what made every id-keyed override unreachable), the
+    /// row's own per-battle flags byte (`DAT_8007BD60` bit `0x80`, the only
+    /// bit the selector reads), and the scene's PROT base (`DAT_80084540`).
+    fn arm_battle_intro(&self, formation_id: u16, total: i32) -> BattleIntro {
+        use legaia_engine_vm::battle_intro_particles::IntroEnv;
+        use legaia_engine_vm::battle_intro_styles::{IntroStyleInputs, select_intro_style};
+
+        let host = self.scene_host.as_ref().expect("caller checked");
+        let def = host.world.formation_table.formation(formation_id);
         let slot0 = def
             .and_then(|d| d.slots.first())
             .map(|s| s.monster_id as u8)
-            .unwrap_or(roll.formation_id as u8);
+            .unwrap_or(formation_id as u8);
         let battle_flags = def.map(|d| d.per_battle_flags()).unwrap_or(0);
         let scene_index = host.scene.as_ref().map(|s| s.start).unwrap_or(0);
         let choice = select_intro_style(&IntroStyleInputs {
@@ -1584,47 +1621,98 @@ impl LegaiaRuntime {
             formation_slot0: slot0,
             scene_index,
         });
-        // `None` until the ramp starts - retail branches straight to the
-        // epilogue rather than emitting a level-zero quad.
-        let Some(f) = intro_fade(
+        // The curtain's descriptor table + the tile seeder's corner table,
+        // both decoded off the PROT 0979 intro overlay at its load base; the
+        // disc-free fallbacks are the same ones the native window uses.
+        let overlay = self.intro_overlay_loaded();
+        let table = overlay
+            .as_ref()
+            .and_then(|(img, base)| IntroQuadTable::parse_overlay(img, *base))
+            .unwrap_or_else(IntroQuadTable::neutral);
+        let corners = overlay
+            .as_ref()
+            .and_then(|(img, base)| {
+                legaia_engine_ui::battle_intro::parse_tile_corner_table(img, *base)
+            })
+            .unwrap_or([0, 1, 0x11, 0x12]);
+        // The shade page the shatter's side faces sample (field-character
+        // texture pack entry 0), parsed from the disc so the capture can
+        // land it in the transition's cloned VRAM page.
+        let shade = host
+            .index
+            .entry_bytes(legaia_asset::field_char_textures::PROT_ENTRY_INDEX)
+            .ok()
+            .and_then(|b| legaia_asset::field_char_textures::parse(&b).ok());
+        let seed = host.world.rng_state;
+        let mut env = IntroEnv::new(seed);
+        let mut trig = IntroEnv::new(seed);
+        BattleIntro::new(
             choice.style,
             choice.sub_style,
-            i32::from(entity.elapsed),
             total,
-        ) else {
-            return Vec::new();
-        };
-        vec![fade_prim(f.rgb, f.abr, u32::from(f.layer))]
+            table,
+            &mut env,
+            &mut trig,
+            corners,
+        )
+        .with_shade_pack(shade)
+        // `gl.readPixels` hands rows bottom-up; the shared blit flips them.
+        .with_flipped_capture()
     }
 
-    /// This frame's primitives already ordered and turned into a drawable
-    /// vertex/index/run triple by the **shared** builder.
-    ///
-    /// The page never sees the primitive list, only its output: the
-    /// ordering-table walk (farthest bucket first, LIFO within a bucket) is
-    /// baked into the index buffer before the data crosses the WASM boundary,
-    /// so there is no second place for a host to order these and no way for
-    /// the two hosts to disagree about it.
-    fn screen_prim_geometry(&self) -> legaia_engine_ui::screen_prim::OverlayGeometry {
-        let prims = self.battle_intro_screen_prims();
-        if prims.is_empty() {
-            return Default::default();
-        }
-        legaia_engine_ui::screen_prim::build_geometry(
-            &prims,
-            legaia_engine_ui::screen_prim::PSX_DISPLAY_W as u32,
-            legaia_engine_ui::screen_prim::PSX_DISPLAY_H as u32,
-        )
+    /// The PROT 0979 intro overlay relocated to its load base, for the two
+    /// in-overlay data tables the arm reads.
+    fn intro_overlay_loaded(&self) -> Option<(Vec<u8>, u32)> {
+        const INTRO_OVERLAY_PROT: u32 = 979;
+        let host = self.scene_host.as_ref()?;
+        let raw = host.index.entry_bytes_extended(INTRO_OVERLAY_PROT).ok()?;
+        let rec = legaia_asset::static_overlay::overlay_map().by_prot_index(INTRO_OVERLAY_PROT)?;
+        let as_loaded = legaia_asset::static_overlay::as_loaded(&raw, rec).ok()?;
+        Some((as_loaded, rec.base_va))
     }
 }
 
 #[wasm_bindgen]
 impl LegaiaRuntime {
+    /// Whether the armed transition still needs its one-shot field-frame
+    /// capture. The page answers by reading back its own drawn frame
+    /// (`gl.readPixels` after the field 3D pass, before the screen-prim
+    /// pass) and handing it to [`Self::play_intro_land_capture`].
+    pub fn play_intro_wants_capture(&self) -> bool {
+        self.battle_intro
+            .as_ref()
+            .map(|i| i.needs_capture())
+            .unwrap_or(false)
+    }
+
+    /// Land the field-frame capture: blit the RGBA readback (bottom-up rows,
+    /// WebGL order) into the texture-page rects the armed style samples,
+    /// inside a clone of the scene VRAM. From this call on
+    /// [`Self::field_vram_bytes`] returns the captured page - the page
+    /// should re-upload it immediately so the first styled frame samples the
+    /// field, not stale texels.
+    pub fn play_intro_land_capture(&mut self, rgba: &[u8], width: u32, height: u32) {
+        let Some(mut intro) = self.battle_intro.take() else {
+            return;
+        };
+        if let Some(r) = self.res() {
+            intro.land_capture_rgba(rgba, width, height, &r.vram);
+        }
+        // Run the landing frame's compose immediately (the curtain's
+        // intermediate; a no-op for the other styles): this frame's strips
+        // were staged by the tick that ran before the capture existed, and
+        // they sample the intermediate the moment the page re-uploads.
+        let _ = intro.refresh_captured_page();
+        self.battle_intro = Some(intro);
+    }
+
     /// How many screen-space PSX primitives this frame carries. `0` is the
-    /// page's early-out: the three accessors below each rebuild the geometry,
-    /// which is cheap for a handful of quads and pointless for none.
+    /// page's early-out (every frame outside a transition).
     pub fn play_screen_prim_count(&self) -> u32 {
-        self.battle_intro_screen_prims().len() as u32
+        self.battle_intro_geom
+            .as_ref()
+            .map(|(n, _)| *n)
+            .unwrap_or(0)
     }
 
     /// The screen-prim vertex stream as raw bytes, in the shared
@@ -1632,14 +1720,26 @@ impl LegaiaRuntime {
     /// `uv: vec2<f32>` at 8, `cba_tsb: vec2<u32>` at 16, `color: vec4<f32>` at
     /// 24, `flags: u32` at 40 (bit 0 = textured). The same bytes the native
     /// renderer maps into its wgpu vertex buffer.
+    ///
+    /// The page never sees the primitive list, only its output: the
+    /// ordering-table walk (farthest bucket first, LIFO within a bucket) is
+    /// baked into the index buffer by the **shared** builder before the data
+    /// crosses the WASM boundary, so there is no second place for a host to
+    /// order these and no way for the two hosts to disagree about it.
     pub fn play_screen_prim_vertex_bytes(&self) -> Vec<u8> {
-        self.screen_prim_geometry().vertex_bytes()
+        self.battle_intro_geom
+            .as_ref()
+            .map(|(_, g)| g.vertex_bytes())
+            .unwrap_or_default()
     }
 
     /// The screen-prim triangle index buffer, already in ordering-table draw
     /// order.
     pub fn play_screen_prim_indices(&self) -> Vec<u32> {
-        self.screen_prim_geometry().indices
+        self.battle_intro_geom
+            .as_ref()
+            .map(|(_, g)| g.indices.clone())
+            .unwrap_or_default()
     }
 
     /// The screen-prim run table, flattened to
@@ -1648,7 +1748,10 @@ impl LegaiaRuntime {
     /// `1 + abr_mode` = semi-transparent - so `0` stays reserved for "no
     /// blending" and an ABR-0 (`0.5B + 0.5F`) run cannot be read as one.
     pub fn play_screen_prim_runs(&self) -> Vec<u32> {
-        self.screen_prim_geometry().run_words()
+        self.battle_intro_geom
+            .as_ref()
+            .map(|(_, g)| g.run_words())
+            .unwrap_or_default()
     }
 }
 

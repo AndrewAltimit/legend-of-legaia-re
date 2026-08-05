@@ -222,6 +222,17 @@ rows (retail HP/MP colour law), `encounter_banner_draws_for`, and the submenu
 text - into `play_overlay_draws_json`, in surface pixels. Disc-gated oracle:
 `tests/battle_overlay_parity.rs`.
 
+It also arms the **field-to-battle intro emitter** - the same
+`legaia_engine_ui::battle_intro::BattleIntro` the native window ticks, so all
+five retail transition styles (tile shatter, both particle fields, curtain,
+swirl) draw in the browser. `tick_battle_intro` tracks the encounter session's
+`Transition` phase and caches the frame's ordered geometry for the page's
+screen-prim pass (`play_screen_prim_*`); the one per-host step is the field
+frame readback - the page answers `play_intro_wants_capture` with a
+`gl.readPixels` of its own drawn frame into `play_intro_land_capture`, and
+`field_vram_bytes` serves the emitter's captured VRAM clone for the length of
+the window.
+
 `debug_force_battle(row)` is the exported twin of the native
 `--battle <ROW|first>`: it resolves a formation row against the scene's own MAN
 table, turns the live loop on and hands the row to `World::force_encounter`, so

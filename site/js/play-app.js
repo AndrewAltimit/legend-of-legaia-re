@@ -2151,8 +2151,30 @@ void main() {
         return;
       }
 
-      /* Screen-space PSX primitives over the finished 3D frame (the
-       * field-to-battle transition's fade today). Outside the try/catch above
+      /* Field-to-battle transition capture: every intro style textures its
+       * geometry with the field frame the player was just looking at, so on
+       * the frame the emitter arms, read back the frame drawn above
+       * (readPixels hands rows bottom-up; the engine's blit flips them) and
+       * re-upload the VRAM texture immediately - this same frame's strips
+       * sample the capture, not stale texels. One-shot per transition; the
+       * curtain's per-frame intermediate afterwards rides the ordinary
+       * field_vram_take_dirty re-upload. */
+      if (!skipDraw && typeof rt.play_intro_wants_capture === 'function' &&
+          rt.play_intro_wants_capture()) {
+        try {
+          const gl = this.renderer.gl;
+          const cw = gl.drawingBufferWidth, ch = gl.drawingBufferHeight;
+          const buf = new Uint8Array(cw * ch * 4);
+          gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+          rt.play_intro_land_capture(buf, cw, ch);
+          this.renderer.uploadVram(rt.field_vram_bytes());
+        } catch (e) { /* presentation-only; keep playing without the capture */ }
+      }
+
+      /* Screen-space PSX primitives over the finished 3D frame: the
+       * field-to-battle transition's five style bodies + backdrop + fade,
+       * emitted by the shared `legaia_engine_ui::battle_intro` and ordered by
+       * the shared `screen_prim` builder. Outside the try/catch above
        * only in the sense that it has its own: a shader link failure on some
        * driver must not take the whole play loop down with it. */
       if (!skipDraw) this._drawScreenPrims(rt);

@@ -414,7 +414,9 @@ pub fn gte_divide(h: u16, sz3: u16) -> (i64, bool) {
 /// Apply a `gte_divide` quotient to one screen axis: multiply by the
 /// i16-saturated numerator (IR1 for X, IR2 for Y) and drop the 16 fractional
 /// bits the reciprocal carries. Caller adds `OFX`/`OFY` and clamps.
-pub(crate) fn gte_persp_term(numerator_i16: i32, recip: i64) -> i64 {
+/// `pub` (not crate-local): the billboard projector in `engine-render` runs
+/// the same hardware term.
+pub fn gte_persp_term(numerator_i16: i32, recip: i64) -> i64 {
     (numerator_i16 as i64 * recip) >> 16
 }
 

@@ -35,6 +35,11 @@
 //!   corners, CLUT/texpage, ABR mode, ordering-table bucket) plus the shared
 //!   OT sort and vertex builder. The one draw record here that is *not* a
 //!   [`TextDraw`] in disguise.
+//! * [`gte`] / [`vram_capture`] / [`battle_intro`] - the shared wgpu-free
+//!   render kernels: fixed-point GTE arithmetic (incl. the clean-room
+//!   `psx_sin`/`psx_cos` LUT), the RGBA-to-BGR555 frame blit, and the
+//!   field-to-battle transition emitter both hosts arm. Here for the same
+//!   reason as `screen_prim`: this crate is the leaf both hosts link.
 //!
 //! Extracted from `legaia-engine-render`, which re-exports every item here at
 //! its old path so native code + tests compile unchanged. The GPU-resident
@@ -49,9 +54,11 @@ pub use legaia_tim;
 pub mod arts_input;
 pub mod battle_command_ui;
 pub mod battle_hud_chrome;
+pub mod battle_intro;
 pub mod battle_item_ui;
 pub mod battle_name_banner;
 mod battle_tutorial_box;
+pub mod gte;
 pub mod other_game_hud;
 pub mod pause_menu;
 pub mod screen_prim;
@@ -62,6 +69,7 @@ pub mod ui_menu_window_painters;
 mod ui_menu_window_painters_large;
 mod ui_overlay;
 mod ui_title_save;
+pub mod vram_capture;
 
 pub use battle_tutorial_box::*;
 pub use ui_fishing::*;
