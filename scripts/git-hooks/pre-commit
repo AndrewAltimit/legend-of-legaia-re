@@ -225,15 +225,39 @@ fi
 #
 # Ratchets only figures that are properties of the tags, docs and dump corpus.
 # The catalog builds two call graphs and the receiver-gated one exists solely
-# for the stale-`NOT WIRED` test, so nothing read off it is baselined. The
-# default pass is the fast one; the disclosure-gap figure needs --live and is
-# reported as NOT COMPARED rather than silently passed when it is missing.
+# for the stale-`NOT WIRED` test, so nothing read off it is baselined.
+#
+# `live/disclosure_gap` needs the reachability pass, and this hook is the ONLY
+# place it can ever be compared: the catalog's `dumped` column reads the
+# gitignored Ghidra corpus, so the CI step self-skips and has no teeth at all.
+# The pass costs ~20s against ~3s for the default run, so it is spent only when
+# the commit could have moved the figure - the disclosure gap is a property of
+# the Rust call graph and the `NOT WIRED:` tags, both of which live under
+# crates/, so a docs-only commit cannot change it.
+#
+# When it is not spent, `--allow-uncompared` says so at the call site. Without
+# that flag `--check` now FAILS on a baselined figure it did not compute, which
+# is the fix for what happened here: `disclosure_gap` was baselined at 0, the
+# default path never computed it, the run printed one line and exited 0, and it
+# sat at 1 undetected.
 #
 # Reads the gitignored dump corpus for its `dumped` column, so it self-skips
 # without it - the same exemption as the three checks above.
+CRATES_TOUCHED=0
+while IFS= read -r path; do
+    case "$path" in
+        crates/*) CRATES_TOUCHED=1; break ;;
+    esac
+done < <(git diff --cached --name-only --diff-filter=ACMRD)
 if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ci/port-catalog.py" ]]; then
-    printf '[pre-commit] port-catalog ratchet\n'
-    if ! python3 scripts/ci/port-catalog.py --check; then
+    if [[ "$CRATES_TOUCHED" == "1" ]]; then
+        printf '[pre-commit] port-catalog ratchet (full pass, ~20s: crates/ staged)\n'
+        PORT_CATALOG_ARGS=(--check --live)
+    else
+        printf '[pre-commit] port-catalog ratchet (fast pass: no crates/ staged)\n'
+        PORT_CATALOG_ARGS=(--check --allow-uncompared)
+    fi
+    if ! python3 scripts/ci/port-catalog.py "${PORT_CATALOG_ARGS[@]}"; then
         printf '[pre-commit] port catalog regressed -- check the per-row pages (--missing-ports / --live-audit), never the count alone; if intended, --update-baseline and say why (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
         exit 1
     fi

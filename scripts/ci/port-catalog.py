@@ -1390,8 +1390,26 @@ def run_ratchet(rows: list[dict], args) -> int:
     current = snapshot(rows)
 
     if args.update_baseline:
+        # A snapshot only carries what this run computed, so writing it verbatim
+        # DELETES every key the run could not produce. Without `--live` that is
+        # the whole `live` block, and one `--update-baseline` would have erased
+        # a ratchet nobody would then notice was gone - the same silence this
+        # ratchet exists to end.
+        old = json.loads(BASELINE.read_text()) if BASELINE.exists() else {}
+        carried: list[str] = []
+        for section, values in old.items():
+            for key, was in values.items():
+                if key not in current.get(section, {}):
+                    current.setdefault(section, {})[key] = was
+                    carried.append(f"{section}/{key}={was}")
         BASELINE.write_text(json.dumps(current, indent=2, sort_keys=True) + "\n")
         print(f"[port-catalog] baseline updated: {BASELINE}")
+        if carried:
+            print(
+                "[port-catalog] carried forward (not computed this run): "
+                + ", ".join(sorted(carried))
+                + " - re-run with --live to refresh them."
+            )
         return 0
 
     if not BASELINE.exists():
@@ -1423,6 +1441,21 @@ def run_ratchet(rows: list[dict], args) -> int:
             bad.append(f"{section}/{key}: {was} -> {now} ({arrow})")
     for s in skipped:
         print(f"[port-catalog] NOT COMPARED THIS RUN: {s} - re-run with --live")
+    if skipped and not args.allow_uncompared:
+        # A baselined figure the default path never computes is not a ratchet.
+        # `live/disclosure_gap` was baselined at 0 and compared by nothing that
+        # ran automatically, so it drifted to 1 and stayed there until somebody
+        # ran `--live` by hand. Printing a line and exiting 0 is what let that
+        # happen, so the default is now non-zero and the caller that cannot
+        # afford the slow pass has to say so at the call site.
+        print(
+            "[port-catalog] NOT RATCHETED: "
+            f"{len(skipped)} baselined figure(s) went uncompared. Run "
+            "`--check --live` (about 20s). The pre-commit hook spends that only "
+            "when the commit stages crates/, and passes --allow-uncompared "
+            "otherwise - nothing else may."
+        )
+        return 1
     if bad:
         print("[port-catalog] REGRESSION:")
         for b in bad:
@@ -1941,12 +1974,21 @@ def main() -> int:
         action="store_true",
         help="ratchet the worklist + ported counts against "
         "scripts/ci/port-catalog-baseline.json and exit non-zero on a "
-        "regression (add --live to include the disclosure gap)",
+        "regression, or on a baselined figure this run did not compute "
+        "(add --live for the disclosure gap)",
+    )
+    ap.add_argument(
+        "--allow-uncompared",
+        action="store_true",
+        help="with --check: downgrade 'a baselined figure went uncompared' from "
+        "a failure to a printed warning. For the pre-commit hook, which cannot "
+        "afford --live; CI must not pass it",
     )
     ap.add_argument(
         "--update-baseline",
         action="store_true",
-        help="rewrite the ratchet baseline (say why in the commit message)",
+        help="rewrite the ratchet baseline, carrying forward any figure this "
+        "run did not compute (say why in the commit message)",
     )
     args = ap.parse_args()
 
