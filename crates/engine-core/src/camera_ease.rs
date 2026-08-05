@@ -15,14 +15,25 @@
 //! `overlay_cutscene_mapview_801da390.txt` and the standalone `801da390.txt`
 //! (all 99 instructions, identical).
 //!
-//! NOT WIRED (whole module). The engine's field camera
-//! ([`crate::camera`]) eases in its own float-based controller against a typed
-//! camera-zone record, and has no `_DAT_8007BCAC` channel to step - the retail
-//! global is a fixed-point yaw the renderer reads directly. Adding one is a
-//! **fidelity-mode decision**, not missing plumbing: the two easings would
-//! disagree frame by frame, so the retail channel only makes sense alongside a
-//! toggle that picks which one drives the camera. That is why this is disclosed
-//! rather than wired - wiring it silently would change camera feel.
+//! NOT WIRED (whole module). Both of the easing's inputs are missing, and the
+//! **target** is the harder one - a fidelity toggle over the accumulator alone
+//! would still have nothing to ease toward.
+//!
+//! `zone_angle` is the camera-zone record's `+0x4A` (`_DAT_801C6EA4 + 0x4A`).
+//! Its retail writer is the field VM: op `0x4C` outer-nibble-4 sub-9 sets or
+//! ramps that halfword, and on its delta arm writes `_DAT_8007BCAC` in the same
+//! breath - so the two globals this module reads are written by one opcode. The
+//! port dispatches that opcode (`legaia_engine_vm::field::step::menu_ctrl`) but
+//! `World` overrides none of its three host hooks
+//! (`FieldHost::op4c_n4_sub9_default_write` / `_default_ramp` /
+//! `_delta_write_or_ramp` keep their no-op default bodies), so no scene angle is
+//! ever posted and there is no `_DAT_8007BCAC` to step. [`crate::camera`] eases
+//! in its own float-based controller against a typed zone record instead.
+//!
+//! Wiring is therefore two steps, in order: implement those hooks on `World` so
+//! the retail zone angle exists, then decide - as a **fidelity-mode toggle** -
+//! which easing drives the camera, because the two disagree frame by frame and
+//! swapping silently changes camera feel.
 //!
 //! REF: FUN_801D6704 (seeds the global to `0x3C`), FUN_801DBA20 (the zone query
 //! that supplies the target angle)
@@ -130,12 +141,11 @@ pub fn ease_step(input: CameraEaseInput, gap: i16) -> i16 {
 /// from. The move is then clamped to [`ease_step`]'s magnitude in whichever
 /// direction closes the gap, and a gap of exactly zero leaves the value alone.
 ///
-/// NOT WIRED: the engine's field camera ([`crate::camera`]) eases in its own
-/// float-based controller against a typed camera-zone record, and has no
-/// `_DAT_8007BCAC` equivalent to step - the retail global is a fixed-point yaw
-/// the renderer reads directly. Wiring this needs the camera controller to
-/// carry the retail smoothed-yaw channel alongside its own, which is a
-/// fidelity-mode decision rather than a missing plumbing detail.
+/// NOT WIRED: no engine writer posts the camera-zone angle this eases toward
+/// (the field VM's op `0x4C` n4 sub-9 hooks are unimplemented on `World`), so
+/// there is no target, and no `_DAT_8007BCAC` accumulator to hold the result -
+/// [`crate::camera`] eases in floats against its own typed zone record. See the
+/// module note for the two-step order wiring has to take.
 pub fn ease_camera_yaw(input: CameraEaseInput) -> i32 {
     if input.pad & PAD_INPUT_LOCKED != 0 {
         return input.current;

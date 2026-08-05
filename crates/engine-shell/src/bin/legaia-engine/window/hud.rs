@@ -313,6 +313,15 @@ impl PlayWindowApp {
                     stage_origin,
                     stage_scale,
                 ));
+                // The sprite-part layer: `FUN_801d387c`'s emit dispatch over
+                // the run's own part pool (the sequence-clear banner + stars
+                // the rules engine spawns), faded by its `+0x78` prologue.
+                out.extend(minigame_fx::dance_sprite_part_draws(
+                    &g.sprite_part_emits(),
+                    &self.font,
+                    stage_origin,
+                    stage_scale,
+                ));
             }
 
             // Disco King tutorial captions (the how-to run): placeholder

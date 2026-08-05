@@ -686,6 +686,37 @@ window.MgDance = (function () {
       }
     }
 
+    /* The engine's own sprite-part pool. The sequence-clear banner + its two
+     * stars are spawned by the rules engine (FUN_801d40dc -> FUN_801d3fd0),
+     * and both their screen positions and their fade come from the ported
+     * draw kernels: sprite_part_emit (FUN_801d387c) resolves the arm off each
+     * part's actor record and its fade prologue the alpha. The page draws what
+     * the engine emits rather than keeping a second spawn model in JS - the
+     * shadowed arm is the two-emit draw, so the cell goes down twice with the
+     * second copy offset and dimmer.
+     *
+     * The spawn's sprite id IS the widget id: retail spawns 0xB / 0x16 and
+     * those are W.GOOD / W.STAR, so the part draws its own cell with no
+     * page-side table in between. */
+    function drawEngineParts() {
+      let parts;
+      try { parts = JSON.parse(api.dance_actors_json()).parts || []; }
+      catch (e) { return; }
+      for (const p of parts) {
+        const id = p.sprite;
+        if (!widgets[id]) continue;
+        const alpha = Math.max(0, Math.min(1, p.fade / 255));
+        g.save();
+        g.globalAlpha = alpha;
+        wdraw(id, p.x, p.y);
+        if (p.shadow) {
+          g.globalAlpha = alpha * 0.5;
+          wdraw(id, p.x + 1, p.y + 1);
+        }
+        g.restore();
+      }
+    }
+
     /* ---- events from the rules engine ---- */
 
     function onPress(result, st, sym) {
@@ -743,9 +774,9 @@ window.MgDance = (function () {
         poseT[0] = 24;
         if (result === 'sequence') {
           play('cool', 0.5);
-          spawnBanner(W.GOOD, B.rating[0], B.rating[1]);
-          spawnBanner(W.STAR, B.rating[0] - B.good_star_off, B.rating[1]);
-          spawnBanner(W.STAR, B.rating[0] + B.good_star_off, B.rating[1]);
+          /* No JS spawn here: the rules engine spawned the banner + two stars
+           * into its own sprite-part pool on this same judge, and
+           * drawEngineParts() draws them from the ported emit dispatch. */
         } else {
           playSting();
           spawnBanner(W.GOOD, B.rating[0], B.rating[1]);
@@ -891,6 +922,7 @@ window.MgDance = (function () {
       }
 
       drawBanners();
+      drawEngineParts();
       g.restore();
       tickCosmetics(st);
     }

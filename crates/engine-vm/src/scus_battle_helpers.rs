@@ -14,7 +14,8 @@
 //! is the faithful, testable computation the retail routine repeats inline:
 //!
 //! - [`bgr555_to_grey`] - the desaturate step of the stone/petrify CLUT-fade
-//!   builder `FUN_8004ce2c`.
+//!   builder `FUN_8004ce2c`. **Wired**: `engine-core::battle_status_clut`
+//!   calls it per latched party slot; see the note below.
 //! - [`depth_cue_scale_channel`] - the per-channel depth-brightness ramp of the
 //!   actor colour/OTZ setup `FUN_8004a908`.
 //! - [`invert_bgr24`] - the "negative colour" status recolour, also from
@@ -22,6 +23,9 @@
 //!
 //! Every claim below is read out of the instruction stream in the reference
 //! dumps, not the decompiled C.
+//!
+//! REF: FUN_8004695C (the arm whose drain `scale_rgb24` is the maths of)
+//! REF: FUN_80024EE4 (that drain's submit)
 //!
 //! ## Clean-room boundary
 //!
@@ -31,6 +35,10 @@
 //! cores are documented, with provenance, in `docs/subsystems/battle.md`.
 //!
 //! # NOT WIRED
+//!
+//! Three of the four. [`bgr555_to_grey`] is no longer one of them - the note
+//! it used to carry is kept below, rewritten, because *how* it got a consumer
+//! is the pattern the other three still lack.
 //!
 //! "The battle path is expected to grow a consumer" is a forecast, not a
 //! reason, and it is not the one that holds. Each kernel is the arithmetic
@@ -61,18 +69,47 @@
 //!   data arrive as parsed `legaia_asset` types and are handed to the
 //!   renderer as typed clips, never staged word-wise, so no caller holds a
 //!   `&mut [u32]` destination for it to advance.
-//! * [`scale_rgb24`] is gated in retail on the trigger word `gp[0x9D4]` and
-//!   reads its colour from `gp[0x9D0]` and its scale from the scratchpad byte
-//!   `0x1F800393`. None of the three is modelled, and the result goes to
-//!   `FUN_80024EE4`, a primitive submit with no engine channel.
-//! * [`bgr555_to_grey`] desaturates a **captured framebuffer** strip. The
-//!   engine never lands its drawn 3D scene in the software PSX VRAM, so the
-//!   strip has no source - the same prerequisite the battle-intro swirl waits
-//!   on. Read that module's note before re-opening this: the older phrasing
-//!   here ("presents through a swapchain and has no re-readable frame") was
-//!   wrong about the mechanism. `legaia_tim::Vram` *is* a persistent
-//!   re-readable framebuffer and `Renderer::capture_rgba` *does* read a frame
-//!   back; what is missing is the step that puts the scene into VRAM.
+//! * [`scale_rgb24`] is the **drain of the armed wash**, and every part of that
+//!   protocol now has an engine form - which is exactly why wiring it would be
+//!   a fake wire. `FUN_8004695C` arms `gp[0x9D4]` / `gp[0x9D0]`; the two engine
+//!   arm sites are `engine-render::battle_intro`'s `PARTICLE_WASH_RGB` and
+//!   `swirl::LATE_WASH_RGB` (pushed once per frame, which is retail's re-arm),
+//!   and the submit `FUN_80024EE4(otlen - 1, 2, rgb)` is
+//!   `battle_intro::wash_prim`, the same farthest-bucket ABR-`2` full-screen
+//!   quad. What is inert is the **scale**: `0x1F800393` is the adaptive
+//!   frame-skip factor (`docs/subsystems/actor-vm.md`, "Tick cadence"), every
+//!   port host ticks at cadence `1`, and `scale_rgb24(rgb, 1)` is the identity
+//!   on a 24-bit colour. Calling it from `wash_prim` would move the
+//!   reachability graph and change no pixel. It becomes a real wire the day a
+//!   host runs a cadence above `1`.
+//! * [`bgr555_to_grey`] does **not** read a captured framebuffer. That reading
+//!   is withdrawn - `docs/subsystems/battle.md` ("CLUT status recolour") has
+//!   the right one, and this module disagreed with it. The source is the battle
+//!   context's own per-actor **240-entry palette** at `ctx[+0x894]`
+//!   (`0x8004D6F8 lhu v1,0x894(v0)`), the greyed copy is staged at `ctx[+0xE34]`
+//!   and a 1-pixel-tall rect uploads it to VRAM CLUT row `481 + slot`
+//!   (`0x8004D764..0x8004D798`). Those rows are not missing either:
+//!   `legaia_asset::battle_char_palette` decodes the party CLUTs and the loader
+//!   STP-copies them to `481 + slot`.
+//!
+//!   The three things listed here as missing between those ends - a per-actor
+//!   palette copy, the `actor[+0x220..=+0x223]` latch, and a mid-battle CLUT
+//!   re-upload path - now exist: `engine-core::battle_status_clut` holds the
+//!   copy and the latch, `BattleHud::sync_status` arms it, and the native
+//!   window's `tick_battle_status_clut` runs the pass against the stashed
+//!   battle VRAM. The third clause was the one that was closest to already
+//!   being false: `tick_battle_face_stamps` had been mutating battle VRAM
+//!   mid-battle and re-uploading with the resident-generation bookkeeping for
+//!   some time; it just moved texels rather than CLUT rows.
+//!
+//!   Two honest limits on that wire. The **Rot arm** is still out: it tints
+//!   over a per-character index window from `DAT_80078630`, which no crate
+//!   parses. And the pass, though live, does not fire in ordinary play yet -
+//!   the port has no monster-side `enemy_effect` source at all (the only
+//!   production `stage_art_profile` call is the party-caster path
+//!   `World::arm_party_art`), so nothing petrifies a *party* slot, which is
+//!   the only side rows `481..=483` cover. That is an applier gap upstream of
+//!   this kernel, not a property of it.
 //! * [`depth_cue_scale_channel`] and [`invert_bgr24`] belong to the actor
 //!   colour/OTZ setup, whose depth term comes from the GTE transform
 //!   `FUN_8003D344` per actor per frame. `engine-render` computes its own
@@ -230,9 +267,11 @@ pub fn scale_rgb24(packed: u32, scale: u8) -> u32 {
 ///
 /// PORT: FUN_8004ce2c
 ///
-/// The retail routine walks a 240-entry captured framebuffer strip, and for
-/// each pixel computes a single luminance value and writes it into all three
-/// 5-bit channels, producing the grey CLUT the stone-status overlay fades to.
+/// The retail routine walks the acting actor's 240-entry palette copy in the
+/// battle context (`ctx[+0x894]`), and for each entry computes a single
+/// luminance value and writes it into all three 5-bit channels, staging the
+/// grey CLUT at `ctx[+0xE34]` for upload to VRAM row `481 + slot`. It is a
+/// palette, not a framebuffer strip - the pixels on screen are never read.
 /// Straight off the disassembly (`0x8004d700`):
 ///
 /// - `r = pixel & 0x1F`, `g = (pixel >> 5) & 0x1F`, `b = (pixel >> 10) & 0x1F`.

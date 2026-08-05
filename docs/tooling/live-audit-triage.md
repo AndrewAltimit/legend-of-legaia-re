@@ -1162,6 +1162,60 @@ Both ticks now run from `World::step_field_vertical`, and the hop is covered
 end to end (`field_ledge_hop_wired.rs` synthetic, `field_ledge_hop_disc.rs`
 against a real scene's authored geometry).
 
+### Re-reading the rewritten reasons found five more that do not hold
+
+The rewrite above replaced reasons that named an existing symbol. Re-checking
+the replacements against the disassembly found that half of them describe the
+gap at the wrong size - three too large, one at the wrong subsystem entirely.
+
+| Anchor | The reason claimed | What holds instead |
+|---|---|---|
+| `post_touch` (`8003d038`) | the wait-for-touch arm at `0x8003882C` is unported, and the engine's slice of `FUN_80038158` is "ops `0x04` / `0x0D` plus the static MAN decode" | that arm **is** op `0x05`, ported and live; only its four-instruction mailbox head was missing. Now wired - see below |
+| `spawn_arc_with_emitter` (`801d25ec`) | its callers are "the non-player arcs", which the world model has no actor-pool counterpart for | one named caller: field-VM op `0x43` sub-`0`/`1`/`0xA`/`0xB` at `0x801DF5AC`. What is missing is one keyed channel, not a pool |
+| `fade_ramp` (`80020c14` / `80025000`) | wiring needs the retail system-actor pool behind the fade spawn | `FadeRamp` *is* the `+0x7C` block and a world field can hold it; the pool is only what `spawn_fade` needs for concurrent fades |
+| `ease_camera_yaw` (`801da390`) | the engine has no `_DAT_8007BCAC` accumulator, so wiring is a fidelity-mode decision | the **target** is the harder half: nothing writes the zone angle either |
+| `reset_pool` (`8003cda8`) | the host builds a fresh `RampScheduler` per scene | true, and it makes a call site provably unobservable - `new()` and `reset_pool()` leave byte-identical state |
+
+**Op `0x43` sub-`0`/`1`/`0xA`/`0xB` is halt *and* arc.** The port's arm stops at
+the halt-acquire, which is why `FUN_801D25EC` reads as caller-less. Retail runs
+the arc unconditionally on the acquire's success side (`0x801DF410` takes the
+PC-advance path only on failure), building the landing triple from the operand's
+two tile bytes and falling back to the actor's own position when both are zero.
+The port already forwards those coords to `FieldHost::field_halt_acquire_apply`,
+so the hook is live; the gap is that `World::field_ledge_hop` is the *player's*
+single `Option`, and this entry arcs whichever actor the script runs on.
+
+**The camera row's two inputs are both absent, and one is upstream of the
+other.** `zone_angle` is the camera-zone record's `+0x4A`, and its retail writer
+is field-VM op `0x4C` outer-nibble-4 sub-9 - the same opcode that writes
+`_DAT_8007BCAC` on its delta arm. The port dispatches that opcode but `World`
+overrides none of its three host hooks (`op4c_n4_sub9_default_write` /
+`_default_ramp` / `_delta_write_or_ramp` keep their no-op defaults), so an
+accumulator added alone would have nothing to ease toward.
+
+### The touch mailbox is now wired end to end
+
+`FUN_8003D038` posts an actor id into `DAT_80073F1C`; the reader is the head of
+the ambient VM's `0x05` wait arm, which rewrites the wait cursor to
+`duration - DAT_1F800393` when the mailbox names its own actor and its
+`0x801C6470` record byte is not the `0x8C` sentinel, then clears the mailbox.
+The port had the countdown but not the head, so an NPC parked in a wait ignored
+being walked into for the whole authored duration.
+
+`AmbientMotion::pending_touch` carries the mailbox per channel (`None` = the
+`0xFF` empty sentinel; only one actor can ever match a global post, so the
+information is the same), `AmbientMotion::take_touch_wake` is the head, and
+`World::post_ambient_motion_touch` posts from the locomotion step beside
+`check_field_walk_touch`. Covered by `ambient_touch_wake.rs` (disc-free): an
+NPC in the contact box turns, the same NPC out of it does not, and one whose
+arena byte is the sentinel does not.
+
+That also retires the blocker `motion_pause_kick`'s **superseded** reason gave
+in the `WIRE` section above ("the port's field collision path does not post
+touch events"). Its source tag had already moved on to a different and correct
+reason - a requested-move channel field NPCs do not carry - so the row does not
+move; the page's older text is what was stale.
+
 ## The dance / fishing minigame block
 
 The `dance.rs` / `dance_tutorial.rs` / `fishing_actors.rs` / `fishing_chrome.rs`
@@ -1193,14 +1247,22 @@ The remaining rows are genuine gaps with sharp prerequisites, and they group
 into four:
 
 - **No line primitive.** `clip_segment_2d` and `project_segment` clip
-  two-point draws; neither `engine-ui`'s draw list nor `engine-render`'s VRAM
-  pipeline has a line kind.
+  two-point draws; neither `engine-ui`'s draw list nor its PSX screen-space
+  primitive set (`screen_prim`, a textured and a flat **quad**) has a line
+  kind. Read the qualifier: there *is* a screen-space primitive path, live on
+  both hosts, and a line kind alone would still not reach `payline_prims`,
+  whose endpoints are model-space and want a GTE projection pass first.
 - **No minigame effect-part pool.** `step_mark_effect_spawn`,
   `good_banner_spawn`, `splash_burst`, `ripple_spawn`,
-  `dance_hit_sting_voices`.
-- **No dancer / fish actor records.** `dancer_emit`, `dancer_fade_weight`,
-  `dance_clip_driver_gate`, `dance_face_rig`, `roll_wander_target`,
-  `step_facing`, `fish_camera`, `float_actor_tick`.
+  `dance_hit_sting_voices`. Partly closed: the dance's two spawn wrappers feed
+  `engine-core::minigame_actor::MinigameActorPool` through
+  `DanceGame::spawn_sprite_part`, and both hosts draw what it emits.
+- **No dancer / fish actor records.** Closed for the dance -
+  `engine-core::minigame_actor::MinigameActor` is the record and `DanceGame`
+  holds two pools of it (the floor cast, and the sprite parts). Still open for
+  the fishing rows: `roll_wander_target`, `step_facing`, `fish_camera`,
+  `float_actor_tick`. `dance_face_rig` was never blocked on a record - see its
+  own tag.
 - **No retail-coordinate HUD surface.** `hud_draws`, `dance_hud_draws`,
   `dance_score_box_slots`, `dance_hud_widget_quad`, the three digit-glyph
   selectors, `centred_panel`. Both hosts lay their dance and fishing readouts
@@ -1493,6 +1555,41 @@ Baka overlay's rodata (`0x801D7688` and `0x801D7670`, adjacent records). They
 are spawnable; what never happens for the editor is its *band* gate. "No `jal`"
 is not "unreachable" until the literal-word form has been checked too - which
 is the whole point of sweeping five reference forms rather than one.
+
+## The SCUS battle-kernel block: one wire, and where its reach really ends
+
+`scus_battle_helpers` disclosed four arithmetic kernels behind four different
+missing halves. One of the four closed, and it is worth recording as a shape
+rather than as a row, because the clause that gave way was not the one the
+disclosure leaned hardest on.
+
+`bgr555_to_grey` (`8004ce2c`) named three prerequisites: no per-actor palette
+copy, no `actor[+0x220..=+0x223]` status latch, no mid-battle CLUT re-upload
+path. The first two were accurate and are now supplied by
+`engine-core::battle_status_clut` (the copy, the latch) armed from
+`BattleHud::sync_status`, the one per-slot-per-frame call every host already
+makes with the tracker in hand. The third was already close to false when it
+was written: the native window's face-stamp pass had been mutating the stashed
+battle VRAM mid-battle and re-uploading it with the resident-generation
+bookkeeping - it moved texels rather than CLUT rows, which is a different
+*payload* on an existing *path*.
+
+**A disclosure that lists three blockers is three claims, and they can be at
+three different ages.** Re-read each on its own; one being solidly true does
+not carry the others.
+
+The wire's own limits, stated so the next reader does not re-derive them:
+
+- The **Rot** arm of the same pass (status bits `0x08`/`0x10`/`0x20`, latches
+  `+0x221..=+0x223`) is still out. It applies its ramp over a per-character
+  index window read from the 3-pair table at `DAT_80078630`, and no crate in
+  the workspace parses that table.
+- The pass is live but **does not fire in ordinary play**, for a reason that
+  sits upstream of every address on this page: the port has no monster-side
+  `enemy_effect` source. The only production `stage_art_profile` call is the
+  party-caster path `World::arm_party_art`, so status flows party -> monster
+  and never monster -> party, and rows `481..=483` are the party's. Reachable
+  and non-trivial is not the same as exercised; both are worth saying.
 
 ## See also
 

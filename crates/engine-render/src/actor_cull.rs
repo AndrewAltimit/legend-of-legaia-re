@@ -28,6 +28,13 @@
 //! build a capped visible-actor table, because the port has no cull. So the
 //! gap is the consumer described above, not a caller.
 //!
+//! One structural note, so the caller is not looked for on the wrong side of a
+//! crate boundary: that port lives in `legaia-engine-core`, which does not
+//! depend on `legaia-engine-render` (nor the reverse - the two are siblings
+//! over `legaia-engine-vm`). Even given a consumer, `frame_tick` could not
+//! call this; the call would have to come from `engine-shell`, or the pass
+//! would have to move down a crate.
+//!
 //! `801CF754` is a VA-aliased overlay address: other overlays hold unrelated
 //! code at it (`overlay_0897_xxx_dat_801cf754.txt` is a different, zero-arg
 //! function). The body ported here is the two-argument `(int, int*)` variant

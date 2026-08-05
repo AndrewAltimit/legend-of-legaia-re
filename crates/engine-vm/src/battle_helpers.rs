@@ -11,6 +11,12 @@
 //! `see ghidra/scripts/funcs/8003cb54.txt`, `.../800597c8.txt`,
 //! `.../80046870.txt`, `.../801cee80.txt`.
 //!
+//! REF: FUN_8004AD80 (the one dumped caller of `FUN_8003CB54`)
+//! REF: FUN_8003CA78 (its sibling: the marked-up string copy that seeds the
+//! buffer `mes_append_escape` appends to)
+//! REF: FUN_800589D0 (`PutDispEnv` - the caller of `FUN_800597C8`, declined
+//! rather than pending; see below)
+//!
 //! # NOT WIRED
 //!
 //! Each of these leaves is waiting on a different piece of engine state - and
@@ -18,16 +24,23 @@
 //!
 //! | Kernel | Retail caller | Call site | Port of the caller |
 //! |---|---|---|---|
-//! | [`action_queue_append`] | `FUN_8003CB54` is itself the routine | - | queue is typed (`legaia_art::ActionQueue`) |
-//! | [`screen_x_mirror`] | `FUN_800589D0` | `80058A38` | **none - not ported, not documented** |
+//! | [`mes_append_escape`] | `FUN_8004AD80` | `8004B2F8`, `8004B338`, … | no engine message **composer** |
+//! | [`screen_x_mirror`] | `FUN_800589D0` (`PutDispEnv`) | `80058A38` | none, and none is wanted |
 //! | [`advance_gauge`] | `FUN_800402F4` | `800421A0` | ported piecewise, no single-function port |
 //! | [`ease_quad_interp`] | `FUN_80025980` | `80025AA0` | `engine-core::mode` |
 //!
-//! [`screen_x_mirror`] is therefore the one row here that names a concrete
-//! missing thing rather than a representation mismatch: port `FUN_800589D0`
-//! (the display-mode rect pass that reads the orientation globals
-//! `DAT_80078D54` / `DAT_80078D57` behind an unsigned `< 2` gate at
-//! `80058A2C`) and the mirror acquires a caller. Nothing else has to move.
+//! [`screen_x_mirror`]'s row used to read "port `FUN_800589D0` and the mirror
+//! acquires a caller; nothing else has to move", and both halves were wrong.
+//! `FUN_800589D0` is `PutDispEnv` - PsyQ libgpu, carried on the port-catalog
+//! ignore list (`scripts/ci/port-catalog-ignore.toml`) precisely because a
+//! clean-room port replaces the display-environment layer rather than
+//! reproducing it - and it is documented, in
+//! `docs/reference/functions/renderer.md`, which also records this kernel as
+//! its port. So the caller is not pending; it is declined. The real
+//! prerequisite is a mode: `DAT_80078D54` / `DAT_80078D57` select a **mirrored
+//! or half-width PSX display environment**, and the engine programs no display
+//! environment at all - one wgpu surface, one orientation - so there is no
+//! state for the `< 2` gate at `80058A2C` to read.
 //!
 //! `801CEE80` additionally sits in the VA-aliased band: the same address is a
 //! **jump-table slot** in overlay 0897 and ordinary mid-function code in the
@@ -36,11 +49,22 @@
 //! `801CEE80` (`sh a1,0x16(v0)`); see
 //! [`docs/tooling/phantom-print-index.md`](../../../docs/tooling/phantom-print-index.md).
 //!
-//! - `FUN_8003CB54` ([`action_queue_end_offset`] / [`action_queue_append`])
-//!   splices into retail's variable-width `{lead, payload}` byte queue. The
-//!   engine assembles actions as a typed `legaia_art::ActionQueue` of
-//!   `ActionConstant`s, so no caller holds a raw buffer with a `< 0x1f`
-//!   terminator for the walk to find.
+//! - `FUN_8003CB54` ([`mes_string_end_offset`] / [`mes_append_escape`]) is
+//!   **not an action-queue splice**, and the reason built on that reading is
+//!   withdrawn. Its buffer is a **MES-markup text string**: the `< 0x1f` stop
+//!   is the terminator/control range and the `(b & 0xF0) == 0xC0` two-byte
+//!   stride is the escape-token range, both exactly as
+//!   [`docs/formats/mes.md`](../../../docs/formats/mes.md) tabulates them, and
+//!   its sibling `FUN_8003CA78` is the marked-up string copy that seeds the
+//!   buffer this appends to. The one dumped caller settles it:
+//!   `FUN_8004AD80`, the battle staged-animation commit, copies a template
+//!   into a string scratch at `0x800779A8` / `0x800779DC` / `0x80077A08` and
+//!   then appends `{0xC2, id}` - the item-name substitution token. So the
+//!   blocker is not "no raw action buffer": the engine **decodes** these
+//!   escapes (`legaia_mes`, `engine-core::dialog`, `world::prop_interact`) but
+//!   never **composes** a marked-up string, because every engine message is
+//!   assembled as resolved text. Nothing holds a byte buffer mid-compose for
+//!   the append to land in.
 //! - `FUN_800597C8` ([`screen_x_mirror`]) is selected by the orientation
 //!   globals `DAT_80078D54` / `DAT_80078D57`. The engine's renderer has one
 //!   battle view and no mirrored or half-width mode, so the transform has no
@@ -68,43 +92,46 @@
 //!   timer, and the expiry action the countdown fires (an install into
 //!   `_DAT_8007B450` plus a bit-set and a `FUN_80020DE0` call) is not ported,
 //!   so nothing would arm or observe the window.
-//! - `FUN_801CEE80` ([`ease_quad_interp`]) is driven from the actor tween
-//!   triple `+0x28` (target index), `+0x50` (progress) and `+0x9E`
-//!   (duration). None of the three is on the port's battle or field actor, so
-//!   nothing advances a progress counter for the ease to sample.
+//! - `FUN_801CEE80` ([`ease_quad_interp`]) reads the tween quad `+0x18`
+//!   (start), `+0x28` (target, `-1` = disabled), `+0x50` (progress, `lhu`) and
+//!   `+0x9E` (duration), and stores the eased value through the **pointer** at
+//!   `+0x90` into that node's `+0x18`. "None of those offsets is on the port's
+//!   actor" is not the reason and is not true: `move_vm::ActorState` carries
+//!   `+0x18`, `+0x28`, `+0x50` and `+0x9E`, and ext op `0x0D` even increments
+//!   `+0x50`. `+0x90` is the discriminator that settles it - a **word pointer**
+//!   here, an `i16` tween source on `ActorState` - so this is a different actor
+//!   family (the VDF/render-node one whose `+0x90` is its vertex-pool node),
+//!   which the port does not model. Pinning which one, and whether this VA is
+//!   even a function entry, needs a re-dump: the dump's first instruction
+//!   stores through a `v0` nothing in the window sets.
 
-/// Append a two-byte command entry `{tag, arg}` to a variable-width action
-/// queue, re-terminating with a `0` byte.
+/// Byte offset of a MES-markup string's terminator - the write cursor
+/// [`mes_append_escape`] splices at.
 ///
 // PORT: FUN_8003cb54
 ///
-/// The queue is a byte stream of variable-width entries. Scanning from the
-/// front, each byte whose value is `>= 0x1f` is an entry lead byte:
+/// The buffer is dialog bytecode, so the walk is the standard glyph-stride
+/// walk of [`docs/formats/mes.md`](../../../docs/formats/mes.md):
 ///
-/// * lead byte with high nibble `0xC0` (i.e. `(b & 0xF0) == 0xC0`) is a
-///   **two-byte** entry (lead + one payload byte),
-/// * any other lead `>= 0x1f` is a **one-byte** entry.
-///
-/// The first byte `< 0x1f` is the terminator, marking the write position. The
-/// new entry `{tag, arg, 0}` is written there: `tag` overwrites the old
-/// terminator, `arg` follows, and a fresh `0` terminator follows that.
+/// * a byte `>= 0x1f` is a glyph or an escape lead,
+/// * an escape lead (high nibble `0xC0`, i.e. `(b & 0xF0) == 0xC0`) carries one
+///   argument byte and therefore consumes **two** positions,
+/// * any other byte `>= 0x1f` is a single-byte glyph,
+/// * the first byte `< 0x1f` is the terminator / control range and stops it.
 ///
 /// The original walks a raw pointer; here the walk yields the byte offset of
-/// the terminator, which the caller uses to splice the three bytes. Returns
-/// the terminator offset (the write cursor). The caller is responsible for the
-/// buffer having room for three more bytes past that offset.
-///
-/// The scan reads the disassembly's exact loop: the `(b & 0xF0) == 0xC0`
-/// test advances an extra byte *before* the unconditional `+1`, so a `0xCx`
-/// lead consumes two positions and every lead consumes at least one.
-pub fn action_queue_end_offset(queue: &[u8]) -> usize {
+/// the terminator. The scan reads the disassembly's exact loop: the
+/// `(b & 0xF0) == 0xC0` test advances an extra byte *before* the unconditional
+/// `+1`, so an argument byte in the `0x00..=0x1E` range - a `0xC1 0x00`
+/// character-name substitution, say - cannot end the string early.
+pub fn mes_string_end_offset(s: &[u8]) -> usize {
     let mut i = 0usize;
-    while i < queue.len() {
-        let b = queue[i];
+    while i < s.len() {
+        let b = s[i];
         if b < 0x1f {
             break;
         }
-        // Two-byte entry: skip the payload byte first (mirrors the original's
+        // Escape token: skip the argument byte first (mirrors the original's
         // `addiu a3,a3,1; addiu t0,t0,1` inside the 0xC0 branch).
         if (b & 0xf0) == 0xc0 {
             i += 1;
@@ -114,16 +141,19 @@ pub fn action_queue_end_offset(queue: &[u8]) -> usize {
     i
 }
 
-/// Append `{tag, arg, 0}` at the queue terminator, returning the write offset.
+/// Append the two-byte escape token `{tag, arg}` to a MES-markup string and
+/// re-terminate it, returning the write offset.
 ///
 // PORT: FUN_8003cb54
 ///
-/// Convenience wrapper over [`action_queue_end_offset`] that performs the
-/// three-byte splice in place. `buf` must have at least
-/// `action_queue_end_offset(buf) + 3` bytes of capacity already allocated
-/// (the retail buffer is fixed-size); this asserts that in debug builds.
-pub fn action_queue_append(buf: &mut [u8], tag: u8, arg: u8) -> usize {
-    let end = action_queue_end_offset(buf);
+/// `tag` is a `0xC0..=0xCF` escape opcode and `arg` its argument - retail's one
+/// dumped caller (`FUN_8004AD80`, `0x8004B2F8`) appends `{0xC2, item_id}`, the
+/// item-name substitution. `buf` must have at least
+/// `mes_string_end_offset(buf) + 3` bytes of capacity already allocated (the
+/// retail buffer is fixed-size); a short buffer panics here where retail would
+/// write past its end.
+pub fn mes_append_escape(buf: &mut [u8], tag: u8, arg: u8) -> usize {
+    let end = mes_string_end_offset(buf);
     buf[end] = tag;
     buf[end + 1] = arg;
     buf[end + 2] = 0;
@@ -269,42 +299,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn queue_end_of_empty_terminated_buffer_is_zero() {
+    fn mes_end_of_empty_terminated_buffer_is_zero() {
         // First byte < 0x1f is the terminator.
-        assert_eq!(action_queue_end_offset(&[0x00, 0, 0, 0]), 0);
-        assert_eq!(action_queue_end_offset(&[0x1e]), 0);
+        assert_eq!(mes_string_end_offset(&[0x00, 0, 0, 0]), 0);
+        assert_eq!(mes_string_end_offset(&[0x1e]), 0);
     }
 
     #[test]
-    fn queue_skips_one_byte_entries() {
-        // 0x20, 0x30 are one-byte leads (>=0x1f, high nibble not 0xC0), then
-        // 0x00 terminator at offset 2.
-        assert_eq!(action_queue_end_offset(&[0x20, 0x30, 0x00]), 2);
+    fn mes_walk_skips_single_byte_glyphs() {
+        // 0x20, 0x30 are single-byte glyphs (>=0x1f, high nibble not 0xC0),
+        // then 0x00 terminator at offset 2.
+        assert_eq!(mes_string_end_offset(&[0x20, 0x30, 0x00]), 2);
     }
 
     #[test]
-    fn queue_two_byte_entry_consumes_two_positions() {
-        // 0xC5 is a two-byte lead: it + its payload occupy offsets 0,1; the
+    fn mes_escape_token_consumes_two_positions() {
+        // 0xC5 is an escape lead: it + its argument occupy offsets 0,1; the
         // terminator 0x00 is at offset 2.
-        assert_eq!(action_queue_end_offset(&[0xC5, 0x99, 0x00]), 2);
+        assert_eq!(mes_string_end_offset(&[0xC5, 0x99, 0x00]), 2);
     }
 
     #[test]
-    fn queue_mixed_widths() {
-        // 0x25 (1B), 0xC1 payload (2B), 0x40 (1B), terminator.
-        // offsets: 0x25@0 ->1, 0xC1@1 (+payload@2) ->3, 0x40@3 ->4, term@4.
-        let buf = [0x25, 0xC1, 0x77, 0x40, 0x00];
-        assert_eq!(action_queue_end_offset(&buf), 4);
+    fn mes_escape_argument_below_0x1f_does_not_terminate_the_string() {
+        // `0xC1 0x00` is the character-name substitution with argument 0 - the
+        // argument is inside the terminator range and must be strided past,
+        // which is the trap docs/formats/mes.md records for this walk.
+        let buf = [0x25, 0xC1, 0x00, 0x40, 0x00];
+        assert_eq!(mes_string_end_offset(&buf), 4);
     }
 
     #[test]
-    fn queue_append_writes_triple_and_reterminates() {
+    fn mes_append_writes_token_and_reterminates() {
         let mut buf = [0x20u8, 0x00, 0, 0, 0, 0, 0];
-        let at = action_queue_append(&mut buf, 0xC3, 0x05);
+        let at = mes_append_escape(&mut buf, 0xC3, 0x05);
         assert_eq!(at, 1);
         assert_eq!(&buf[..4], &[0x20, 0xC3, 0x05, 0x00]);
-        // A second append sees the 0xC3 as a two-byte entry and lands after it.
-        let at2 = action_queue_append(&mut buf, 0x40, 0x00);
+        // A second append strides the 0xC3 token and lands after its argument.
+        let at2 = mes_append_escape(&mut buf, 0x40, 0x00);
         assert_eq!(at2, 3);
         assert_eq!(&buf[..6], &[0x20, 0xC3, 0x05, 0x40, 0x00, 0x00]);
     }

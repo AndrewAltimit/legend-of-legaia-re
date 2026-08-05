@@ -38,21 +38,32 @@
 //! shout (`window/battle.rs`), so a banner would raise on exactly the retail
 //! event. Two other things are missing:
 //!
-//! * **An id-space bridge.** The cue carries the art's *ActionConstant*;
-//!   [`find_arts_record`] matches the name table's `(row, col)` - a character
-//!   row and a per-character **display index**. Nothing in the corpus maps
-//!   one to the other (`legaia_art::tables::learned_art_action` inverts to
-//!   the *Learned Art Constant* slot, a third index whose own docs warn it is
-//!   not 1:1 with the action range). Without that bridge a caller cannot name
-//!   the record whose `+0xC` string the placement measures - and the marked
-//!   disc string is the whole input: the two lead-byte markers this module
-//!   branches on do not exist in the curated ASCII names.
 //! * **A Y.** `FUN_8004C650` writes only X, into four sub-primitive fields
 //!   the engine does not emit; the banner's row comes from whatever staged
-//!   those primitives, which is not this routine and is not ported.
+//!   those primitives, which is not this routine and is not ported. That is
+//!   the blocker, and it is the whole blocker.
+//! * **A marked disc string.** The placement measures the record's `+0xC`
+//!   string *with its markers* - the two lead bytes this module branches on do
+//!   not exist in the curated ASCII names, and `legaia_art::arts_table`
+//!   decodes the name to a `String` rather than keeping the raw bytes.
 //!
-//! So the honest worklist entry is "bridge ActionConstant -> arts-name-table
-//! index, then port the banner's owning primitive", not "find a trigger".
+//! **The id-space bridge is not missing**, and the clause that said so is
+//! withdrawn. It read "nothing in the corpus maps one to the other" on the
+//! grounds that `legaia_art::tables::learned_art_action` inverts to the
+//! *Learned Art Constant* slot, a third index. There is a second route:
+//! `legaia_art::tables::art_name(character, action)` takes an ActionConstant
+//! straight to the art's name, and `ArtsTable::by_name` takes that name to the
+//! disc record - whose `(character, index)` **is** [`find_arts_record`]'s
+//! `(row, col)`, also reachable directly as `by_character_index`. It is a name
+//! join over curated data rather than index arithmetic, so it inherits that
+//! data's misses: `crates/gamedata/tests/arts_scus_oracle.rs` runs the same
+//! shape of join from the other curated table and skips the names that do not
+//! resolve. A bridge with a hole is still a bridge, and a reader sent hunting
+//! for a mapping that already exists loses more than one told about the hole.
+//!
+//! So the honest worklist entry is "port the banner's owning primitive, and
+//! keep the record's raw marked name", not "find a trigger" and not "build an
+//! id-space bridge".
 
 /// Stride of one arts-name table record (`DAT_80075EC4`).
 pub const ARTS_RECORD_STRIDE: usize = 0x14;

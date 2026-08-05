@@ -7,6 +7,10 @@
 //! PORT: FUN_801D5778
 //! PORT: FUN_801D9AE8
 //!
+//! REF: FUN_801D388C - the only retail caller of the two copy helpers, and
+//! itself a third writer of the same placement table.
+//! REF: FUN_801D5854 - the inline record-41/42 move on that table.
+//!
 //! NOT WIRED, with a concrete prerequisite each:
 //!
 //! * `FUN_801D32BC` is where retail's round reset picks whose turn it is:
@@ -22,10 +26,57 @@
 //!   history pair, *and* the boundary adopting retail's cursor order over the
 //!   initiative one.
 //! * `FUN_801D57E8` / `FUN_801D5778` copy records inside the **screen-element
-//!   placement table** at `0x80076C10` - see
-//!   [the memory map](../../../../docs/reference/memory-map.md). The engine
-//!   builds its battle UI from world state every frame and allocates no such
-//!   table, so both stay unwired.
+//!   placement table** at `0x80076C10` (`docs/reference/memory-map.md`). The
+//!   old reason - "the engine allocates no such table" - is withdrawn: the
+//!   table is disc data and the port parses it, as
+//!   `legaia_asset::screen_elements::ScreenElementTable` (103 records, `0x18`
+//!   stride). That parser's own page even names this pair's subject: `+0x0A` /
+//!   `+0x0C` is "the second seat - the pair `FUN_801D5778` offsets by a screen
+//!   width", the from/to of an element's **slide**.
+//!
+//!   The *replacement* reason ran too - "the engine's chrome derives its rects
+//!   per frame from the read-only disc record (`ScreenElement::pen` /
+//!   `plate_at`)" - and it is wrong in the direction that makes the work
+//!   bigger, not smaller. Nothing derives anything from that record. Grep the
+//!   workspace: `ScreenElementTable::from_scus` has **no production caller at
+//!   all** (its four callers are one negative unit test and three disc-gated
+//!   oracles in `crates/asset/tests/`); `crate::battle_chrome`'s only mention
+//!   of the parser is `pub use legaia_asset::screen_elements`, a bare
+//!   re-export it never calls; and `engine-ui` does not import
+//!   `screen_elements` in any source file. The live draw path is
+//!   `engine-ui::battle_command_ui`, running on literals hand-mirrored out of
+//!   `battle_chrome`, whose own functions have no caller outside
+//!   `#[cfg(test)]` blocks. So the parsed table reaches no pixel today.
+//!
+//!   What that costs the wire, in order:
+//!
+//!   1. `ScreenElementTable` is deliberately immutable - private `Vec`, `get`
+//!      returns by value, no `&mut` surface anywhere. A live seat array has to
+//!      be built, in a crate a drawer can see.
+//!   2. `engine-ui` sits *below* `engine-vm`, so an array owned here is
+//!      unreadable by the builders that draw. Either the array lives lower or
+//!      the draw path moves.
+//!   3. These two helpers are not the only writer. `FUN_801D388C` also
+//!      rewrites the table directly - at `0x801D5138..0x801D5164` it walks from
+//!      record 32 at a `0x18` stride storing `+0x0A -> +0x02` and `0xE8` into
+//!      `+0x04` (the park row, below the 240-line window; the port hardcodes
+//!      the same idea as `battle_chrome::PANEL_PARK_Y`), and `FUN_801D5854`
+//!      moves records 41/42 inline. An array only these two copies wrote would
+//!      be inconsistent with the rest of the frame.
+//!
+//!   The call sites are decoded, so step 3 is bounded rather than open:
+//!   `FUN_801D57E8` is called with `(dst 0x29, src 0x3D)` at `0x801D4414` and
+//!   `(0x29, 0x3E)` at `0x801D4434`; `FUN_801D5778` runs in two identical
+//!   loops (`0x801D50A0`, `0x801D50F8`) over `i` in `0..3*ctx[+0x1F]`, copying
+//!   `src i+0x2B` to `dst i+0x35`. With a three-member party the loop writes
+//!   `0x35..0x3D`, and `0x3D` is exactly the straight copy's source - the two
+//!   helpers are one pipeline staging into record 41, not two unrelated leaves.
+//!
+//!   Landing this well means step 1 first, on its own: route the parsed table
+//!   into the production draw path and prove `plate_for_record` reproduces
+//!   today's literals from real disc records. That is independently valuable -
+//!   it kills a mirrored-literal drift whose only guard is a cross-check test -
+//!   and it is what makes the slide cheap afterwards.
 //!
 //!   This module used to call the array a per-actor animation-pose buffer,
 //!   one of three names the same base carried. The record layout falsifies
@@ -41,9 +92,13 @@
 //!   still the right name for a *different* thing, the actor's animation-pose
 //!   index (`battle_cue_group`, `charm_fix`, `docs/subsystems/battle.md`).
 //!   That collision is why the wrong name stuck here.
-//! * `FUN_801D9AE8` releases a `0x28`-slot tracked-widget pool. The engine's
-//!   battle UI is rebuilt from world state every frame (`engine-ui` draw-list
-//!   builders), so nothing is tracked and nothing needs releasing.
+//! * `FUN_801D9AE8` releases a `0x28`-slot tracked-widget pool. Both of its
+//!   arrays are *described* in the port - `crate::battle_value_readout` carries
+//!   the same `ctx[+0x1074]` pointer table and `ctx[+0x11B4]` `0xC`-stride
+//!   record as address constants - but a described offset is not a pool. No
+//!   engine structure owns widget slots: the battle UI is rebuilt from world
+//!   state every frame by the `engine-ui` draw-list builders, so no widget
+//!   outlives the frame that drew it and nothing has a lifetime to end.
 //!
 //! ## Why one module for four functions
 //!

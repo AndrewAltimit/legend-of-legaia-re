@@ -312,6 +312,13 @@ pub const BOOT_ENABLE_FLAG_ADDRS: [u32; 3] = [0x8007_0520, 0x8007_0580, 0x8007_0
 /// read a seeded table instead of returning literals, which is a refactor of
 /// one source of truth rather than a call insertion - the equality is guarded
 /// by `crates/engine-core/tests/infra_boot_offset_table.rs`.
+///
+/// That test is also what makes a call site here **provably** unobservable
+/// rather than merely uninteresting: it asserts the seeded table and
+/// `spu_base_for_slot` agree word for word, so a caller could not change any
+/// value any consumer reads. A wire whose two paths leave identical state
+/// certifies itself and measures nothing, which is why this row stays inert
+/// by choice.
 pub fn seed_boot_offset_table(table: &mut [u32; 12]) {
     for (i, word) in BOOT_OFFSET_TABLE.iter().enumerate() {
         if i == BOOT_OFFSET_TABLE_UNWRITTEN {

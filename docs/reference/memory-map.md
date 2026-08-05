@@ -160,7 +160,7 @@ patching an instruction. Useful Ghidra anchors.
 | `0x8007BB28` | Caller tag stored at arm time (`gp+0x810`). |
 | `0x8007BB2C` | Auto-release **deadline** in vsyncs (`gp+0x814`). |
 | `0x8007BB34` | Auto-release **elapsed** accumulator (`gp+0x81C`); advanced by `DAT_1F800393`, so the deadline is cadence-invariant. |
-| `0x80076C10` | **Screen-element placement table** - 200 initialised records of `0x18` bytes, running to `0x80077ED0`. Three subsystems index it and each named it after itself; they are one table. [Details ↓](#0x80076c10---one-table-three-names) |
+| `0x80076C10` | **Screen-element placement table** - 103 initialised records of `0x18` bytes, running to `0x800775B8`. Three subsystems index it and each named it after itself; they are one table. [Details ↓](#0x80076c10---one-table-three-names) |
 | `0x801F6950` | u32 - **battle-action overlay PRNG state** (`FUN_801D0290`). Overlay-resident, so it is not the SCUS `rand()` seed and its draws do not perturb that stream. |
 | `0x801D9184` / `0x801D918C` | Two tracked 2-D points in the **fishing** overlay (`i16` at `+0` = x, `+4` = y); `FUN_801D765C` returns their separation in 64-unit sub-cells, `FUN_80019B28` the bearing between them. |
 | `0x801E46B0` | i32 - menu-overlay **selected item id** for the window-34 description box (`FUN_801D4A80`); `<= 0` draws nothing. |

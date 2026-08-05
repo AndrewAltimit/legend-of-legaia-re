@@ -24,14 +24,16 @@ frame = 250
 scene_mode = "Field"
 active_scene = "town01"
 
-# DEFERRED Battle leg (tracked, not yet asserted): the scripted Tetsu
-# tutorial fight. The retail ground-truth for it is catalogued as the
-# BattleMode anchors v0_1_battle_loading_tetsu (D0) / v0_1_battle_start_tetsu
-# (D) / v0_1_battle_command_menu (D+) / v0_1_battle_command_submenu (D++).
-# Reproducing it needs the pre-battle field state (this anchor) carried
-# forward through the field-VM dialogue-accept -> scripted-encounter install
-# -> Field->Battle transition. When that lands, add:
-#   [[expected]]
-#   frame = 250
-#   scene_mode = "Battle"
-#   active_scene = "town01"
+# The Battle leg is NOT deferred any more, and it does not belong in this
+# file. It landed as its own fixture, `v0_1_battle_leg.toml`, which pins the
+# literal Field -> Battle mode-trace for the scripted Tetsu tutorial fight
+# (`v0_1_battle_leg_mode_trace_matches_expected` diffs it; two sibling tests
+# reach Battle by dialogue-accept and by walk-talk-accept). The retail
+# ground-truth is the BattleMode anchor v0_1_battle_loading_tetsu.
+#
+# The split is deliberate rather than historical. This file's leg is the
+# cold-boot-reproducible *Field* anchor and its convergence target is a
+# `game_mode 0x03` retail snapshot; the battle leg needs a NEW GAME seed
+# (`BootSession::begin_new_game`) so the sparring carrier's prompt arms, and
+# its convergence target is a `0x15` snapshot. Adding a Battle row here would
+# assert one scenario's fixture against the other scenario's save.

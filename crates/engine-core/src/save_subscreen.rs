@@ -90,8 +90,18 @@ pub enum SaveSubScreen {
     /// [`crate::card_bu_io::erase_file`]).
     CardSave,
     /// `0x1A` - save-slot confirm.
+    ///
+    /// **Suspect name, deliberately left alone.** `save-screen.md`'s table
+    /// reads `FUN_801DAFD4` as the shop's Buy / Sell / Quit mode select and
+    /// calls the save-confirm reading superseded. That is very likely right
+    /// (`0x1B`..`0x1F` around it are all shop screens), but renaming this
+    /// variant also moves the [`SaveEntryContext::Cancel`] fallback below,
+    /// which deliberately lands here so a cancel compares equal to a screen
+    /// this module has a step machine for. Settle the two together.
     SaveConfirm,
-    /// `0x1E` - inventory spinner ahead of the quantity screen.
+    /// `0x1E` - inventory spinner ahead of the quantity screen. In context
+    /// (`save-screen.md`) this is the shop **sell list**; the staged
+    /// "inventory bytes" are the bag slot the sell-quantity screen consumes.
     QuantitySpinner,
     /// `0x20` - auto-save path.
     AutoSave,

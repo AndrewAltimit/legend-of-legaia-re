@@ -1,0 +1,51 @@
+# Reviewed findings from scripts/ci/check-port-provenance.py.
+#
+# A waiver says "I read this one against the disassembly and it is not a
+# provenance defect". It is not a snooze button: `reason` has to say what was
+# read and what it showed, because the next reader's only alternative is to
+# re-derive it.
+#
+# Keys are the finding keys the checker prints with `--emit-waivers`.
+#
+# What a waiver may NOT say: "probably fine", "pre-existing", or anything that
+# would be equally true of a real defect. Those are unreviewed rows, and an
+# unreviewed row belongs in the report where it can still be seen.
+
+[[waiver]]
+key = "dual-label:801d5de0"
+reason = """
+Reviewed and corrected rather than dismissed. The three dumps of this VA are
+byte-identical across all 151 printed instructions and two of them tag the menu
+overlay, so it is one routine: the casino prize list's row renderer. Both
+remaining defining sites now say so - docs/reference/functions/menus.md's row
+and the correction section in docs/subsystems/world-map.md, which is kept
+deliberately so the falsified world-map reading stays findable. The signal is
+structural and cannot tell agreement from contradiction, so it still fires.
+"""
+
+[[waiver]]
+key = "absent-citation:crates/engine-core/src/muscle_dome.rs:801cf870:801d00b8+801d00e4"
+reason = """
+The corpus cannot answer this one, and the gap is in the dump rather than in the
+tag. overlay_0977_slotA_801cf870.txt reports 437 instructions / 1748 bytes but
+prints across 2088, so its body already has holes, and its printed disassembly
+stops at 0x801D0094 - below the cited 0x801D00B8..0x801D00E4. Its own decompiled
+tail nevertheless carries the repack this port implements, `_DAT_8007bac0 =
+DAT_801d1a90 * 0x10 + DAT_801d1a94 + (_DAT_8007bac0 & 0xffffff00) + 1`, and the
+string `bac0` appears nowhere in the print - so the decompilation covers code the
+disassembly does not, and the routine attribution stands while the byte range
+cannot be checked. No dump of the same image (0977_other_game.BIN) owns
+0x801D00B8; every other owner found is a VA-aliased routine in a different
+overlay. Re-dumping the routine would settle it. See dump-corpus-integrity.md.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/frame_tick.rs:801ef2b0"
+reason = """
+Host-dispatcher module, a category this signal cannot distinguish from a wrong
+tag. frame_tick.rs tags the per-mode entry state machines it dispatches - the
+slot machine, fishing, dance and the Muscle Dome hub, each in its own overlay
+with its own tables - so no two of them corroborate on data and the odd one out
+is arbitrary. FUN_801ef2b0 is the tile-board walk SM (docs/subsystems/
+tile-board.md), which is what it is tagged as.
+"""

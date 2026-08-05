@@ -299,21 +299,23 @@ pub const BIND_RECORD_STRIDE: usize = 4;
 /// `bind_records` is the `DAT_801C6470` table, one [`BIND_RECORD_STRIDE`]
 /// byte record per entry.
 ///
+// The mailbox has both ends. `World::post_ambient_motion_touch` calls this
+// from the locomotion step's contact check, and the consumer is the head of
+// the ambient VM's `0x05` wait arm - `crate::ambient_motion`'s
+// `AmbientMotion::take_touch_wake`, the port of `0x8003882C..0x8003887C`.
+// So an NPC parked in an authored wait breaks out of it when the player
+// walks into its box, which is what the arm is for.
+//
+// The earlier reason here claimed the whole arm was unported and put the
+// engine's slice of `FUN_80038158` at "ops 0x04 / 0x0D plus the static MAN
+// decode". Both halves were wrong: `crate::ambient_motion` runs ops `0x01`,
+// `0x03`, `0x04`, `0x05`, `0x0D`, `0x17`, `0x18`, `0x19` and `0x20`, and op
+// `0x05` *is* that arm - what was missing was only its mailbox head, which
+// is four instructions of gating ahead of the countdown the port already had.
+//
 // PORT: FUN_8003d038
 // REF: FUN_801cfc40 (the collision probe that posts), FUN_80038158
 //      (the wait-for-touch consumer at 0x8003882C)
-// NOT WIRED: the missing piece is the **consumer**, not the caller. The
-// producer side is present - `World::field_prop_dir_probe` is the port of
-// FUN_801cfc40 and already returns which placement a probe touched
-// (`PropDirProbe::touch`), and `World::check_field_walk_touch` is the
-// FUN_801d5b5c post, running from the locomotion step every frame. What
-// nothing in the engine owns is the one-slot mailbox `DAT_80073F1C` this
-// stores into, because its only reader is the wait-for-touch arm of
-// FUN_80038158 (`0x8003882C`) and that arm is decoded but unported: the
-// engine's slice of that VM is the ambient facing channel (ops 0x04 /
-// 0x0D) plus the static MAN decode, so no script can wake on a touch.
-// Wiring means porting that arm first - a call added ahead of it would
-// fill a mailbox with no reader.
 pub fn post_touch(bind_records: &[u8], index: usize) -> Option<u32> {
     let class = *bind_records.get(index.checked_mul(BIND_RECORD_STRIDE)?)?;
     if class == TOUCH_POST_SUPPRESS_CLASS {

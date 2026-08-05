@@ -313,10 +313,12 @@ pub enum MenuCtrlKind {
         depth: u8,
         move_id: u8,
     },
-    /// Outer nibble 5 sub-2 - 3-byte menu-activation poll. Operand byte is the
-    /// `menu_id`; the script halts at PC until the host's
-    /// `op4c_n5_sub2_menu_activation` hook returns true.
-    Nibble5MenuPoll { menu_id: u8 },
+    /// Outer nibble 5 sub-2 - 3-byte **TAKE_ITEM**, the give-side mirror of op
+    /// `0x39` `GIVE_ITEM`. The operand is an **item** id: retail consumes one
+    /// of it from the bag (`FUN_80042310`) and, on the `0x100` not-found
+    /// sentinel, unequips it from whoever wears it (`FUN_800430AC`). The PC
+    /// advances by 3 on both arms - the delta rides the `jal`'s delay slot.
+    Nibble5TakeItem { item_id: u8 },
     /// Outer nibble 5 sub-3 / sub-4 - 2-byte dialog poll.
     Nibble5Dialog { sub: u8 },
     /// Outer nibble 6 sub-0 - 14-byte 6-word emitter call.

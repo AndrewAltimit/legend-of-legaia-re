@@ -1,5 +1,7 @@
 //! The **screen-element placement table** at `SCUS_942.54` VA `0x80076C10` -
-//! 200 records of `0x18` bytes, the seat book for the battle screen's chrome.
+//! [`RECORD_COUNT`] records of `0x18` bytes, the seat book for the battle
+//! screen's chrome. (The "200 records" figure this line used to open with is
+//! the superseded one; [`RECORD_COUNT`] carries both bounds that cut it.)
 //!
 //! Three subsystems index this array and each named it after itself; the record
 //! layout settles what it is

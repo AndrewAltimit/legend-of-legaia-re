@@ -51,13 +51,26 @@
 //! See `docs/reference/functions/renderer.md` and
 //! `ghidra/scripts/funcs/80020c14.txt`, `80025000.txt`, `80020b00.txt`.
 //!
-//! NOT WIRED: the engine's fades are host-driven state
-//! ([`crate::world::World::screen_fade`], a plain `Option<FadeState>`) stepped
-//! once per frame by the world tick, so nothing in the tree yet holds a
-//! [`FadeRamp`]. Wiring it means the same thing wiring
-//! [`crate::fade::spawn_fade`] does - putting the retail system-actor pool
-//! (`actor_free(&DAT_80070674, ..)`) behind the fade spawn, so a spawned fade
-//! becomes a pool entry with a `+0x7C` block instead of a single world field.
+//! NOT WIRED - and **not** for want of the actor pool. That is the reason this
+//! tag used to give ("wiring it means the same thing wiring
+//! [`crate::fade::spawn_fade`] does"), and it names a prerequisite this module
+//! does not have. [`FadeRamp`] *is* the `+0x7C` block; one world field can hold
+//! it exactly as well as a pool entry can, and its per-frame input is a vsync
+//! delta, which [`crate::world::World::frame_step`] already carries live. The
+//! pool is what `spawn_fade` needs in order to have *several* fades at once,
+//! which is a different question.
+//!
+//! What blocks it is that the engine's one live fade already has a model.
+//! [`crate::world::World::screen_fade`] is an `Option<`[`crate::fade::FadeState`]`>`,
+//! staged by the battle-escape teardown and stepped once per frame by the world
+//! tick, which **drops it when `step()` reports the ramp complete**. The retail
+//! ramp has no such report on this template: the escape template's hold word is
+//! `-1`, so [`RampFlags::finished`] never rises and the white-out holds white
+//! until the battle unloads. Substituting one for the other therefore moves the
+//! fade's lifetime out of the world tick and onto the teardown, which is a
+//! change to when the screen clears rather than a call insertion - so the
+//! substitution lands with the battle-teardown owner, not here.
+//!
 //! Until then this module is the retail reference the host model is checked
 //! against, not the thing driving the screen.
 

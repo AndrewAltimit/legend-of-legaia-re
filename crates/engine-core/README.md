@@ -386,7 +386,13 @@ non-summon casts and specials, off the parsed `move_power` table.
 Each is a headless rules engine driven by disc-parsed tables, with the
 presentation left to the host:
 
-- `dance` - Noa's dance rhythm minigame, driven by the parsed step chart.
+- `dance` - Noa's dance rhythm minigame, driven by the parsed step chart. It
+  also owns the two `minigame_actor` pools the overlay's draw kernels read: the
+  floor cast (spawn positions + bound clip ids off the disc's own spawn and
+  kind tables) and the sprite parts a scoring judge spawns.
+- `minigame_actor` - the per-entity record the hub-band overlays spawn through
+  the shared part-spawn API and read every frame, named by retail byte offset.
+  Not the field actor; see the module docs for why they stay apart.
 - `baka_fighter` - the Baka Fighter duel, driven by the parsed roster +
   action tables.
 - `muscle_dome` - the Muscle Dome, in two layers because retail has two state

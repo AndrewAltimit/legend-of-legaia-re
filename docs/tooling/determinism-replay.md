@@ -208,8 +208,66 @@ it found a defect every seated oracle is blind to, and its first two
 diagnoses were both wrong, which is the argument for making a stall
 self-describing rather than a bare failure.
 
-The pad-inversion arithmetic and the baseline parser are covered by disc-free
-unit tests, so the file stays non-vacuous in CI where the ladder skips.
+### Hazards, and the difference between occupying and entering
+
+On top of the walls the planner routes around **hazard tiles**: tiles the grid
+calls walkable and stepping onto ends the leg somewhere else - another scene's
+overworld portal, or the door a dungeon leg arrived through. They are keyed in
+the dispatch frame (`world >> 7`), which is the frame the walk-on dispatch
+compares in.
+
+A hazard is unsafe to **enter**, never unsafe to *occupy*, and conflating the
+two seals scenes that are wide open. Retail's dispatcher fires on a tile
+*change*, so a step that stays inside one tile fires nothing - while a planner
+that tests only the destination tile refuses every step out of a tile it starts
+inside. A dungeon arrival is seated on the door it came in through, i.e. inside
+a hazard, so that planner reports the whole interior unreachable. The fix is to
+compare source and destination tiles, not to shrink the hazard set.
+
+Measured on `keikoku` (`engine-shell/examples/keikoku_reach_probe`, which runs
+this per mouth and needs no ladder), from the `(58, 24)` arrival:
+
+| sub-cells reached | avoid set |
+|---|---|
+| 400,001 | nothing - capped; the grid's `& 0x7F` wrap makes the set endless |
+| 1 | trigger tiles within 12, seat tile included |
+| 1,114 | the same, seat tile dropped (89 tiles: one chamber) |
+| 25,939 | the arrival record's band, and only that |
+
+The four mouths behave identically, which is what rules the arrival seat and
+the mouth choice out as causes. Both middle rows are seals in their own right:
+the self-block, and a radius that cannot tell a door from the corridor onward.
+
+### Scoring a dungeon leg: the door, not the event
+
+Every `keikoku` exit returns to `map01`, so `Transitioned("map01")` cannot tell
+a traverse from a step back out of the entrance - the shape the rung's first
+draft passed on, aiming 47 tiles away, walking two and reporting a clean
+transition. What separates them is on the disc: the scene's `.MAP` gate-1
+triggers joined to their partition-2 records give four scene-change records,
+each returning to its **own** `map01` tile, so the arrival coordinate names the
+door. Leaving by a different record is a condition a backed-out leg cannot
+meet, and `LEGAIA_CPR_RUNG5_BACKOUT=1` re-aims the leg at its own entrance to
+demonstrate that the rung then reads unclear.
+
+Grouping by record also separates three populations a tile radius cannot:
+those four doors, the four single-tile arrival beats, and a 27-tile shared beat
+record across the chambers' inner doorways. A radius filter hazards the
+corridor onward and aims at a beat band.
+
+### A scripted sequence may be waiting for the player
+
+Legs hand the frame to `drain_scripted` while a cutscene or dialogue owns
+input. A neutral pad drains a sequence that runs on its own clock; it does
+**not** drain one that pages, because a narration page waits on a confirm. Held
+neutral, `keikoku`'s record 7 - a story cutscene one-shot-latched on system
+flag `0x2BB` - never advances, and the leg reports an engine hang at the band's
+first tile. The drain pulses Cross (press 2, release 14) rather than holding
+it, because the advance is edge-triggered and a held button pages once.
+
+The pad-inversion arithmetic, the door-identity clause and the baseline parser
+are covered by disc-free unit tests, so the file stays non-vacuous in CI where
+the ladder skips.
 
 ## See also
 

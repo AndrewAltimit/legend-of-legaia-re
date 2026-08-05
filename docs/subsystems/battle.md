@@ -2110,6 +2110,29 @@ byte `*(_DAT_8007BD24)[0]`:
    `legaia_engine_vm::scus_battle_helpers::bgr555_to_grey`, while the packet
    build (`_DAT_1F8003A0` OT, `FUN_800583C8` submit) stays render-track.
 
+   The `0x894` window is exactly `3 * 0x1E0` bytes wide before the staging
+   buffer at `0xE34` begins, so the palette source covers the **three party
+   slots** and no monster: rows `481..=483` are the party's (the monster CLUT
+   rows start at `484`).
+
+   **Port.** `engine-core::battle_status_clut::StatusClutState` holds the
+   engine's equivalents of the three things retail reads here - the per-actor
+   palette copy, the `+0x220` latch and the staged row. The latch is armed
+   from `BattleHud::sync_status` on the Stone edge; the pass runs against the
+   host's battle VRAM, greys the pristine copy through `bgr555_to_grey` and
+   rewrites row `481 + slot`. The copy is snapshotted off that same VRAM row
+   rather than off the disc palette, which is exact rather than approximate:
+   the two forms differ only in bit 15 (the loader's `FUN_80053B9C` STP-set),
+   and the desaturate masks bit 15 off. Keeping the copy is what makes a
+   second fire re-grey the original instead of compounding, exactly as retail
+   does by never writing `ctx[+0x894]`.
+
+   Two parts of the pass stay out of the port. The Rot arm's per-character
+   index window (`DAT_80078630`) has no parser in any crate, so only the
+   Stone arm is ported; and the recolour cannot yet be *triggered* in play,
+   because the port has no monster-side `enemy_effect` source - status flows
+   party -> monster only, and these rows are the party's.
+
 Calls the actor-spawn/move-VM invoker `FUN_80021B04` and helpers
 `FUN_8004FE5C` / `FUN_800583C8` / `FUN_80031D00` / RNG `FUN_80056798`.
 Despite its size and shape it is **not a mode dispatcher**: the master mode

@@ -214,6 +214,13 @@ pub fn interp_clip_vertex(out: &mut [u8], verts: &[u8], cur_off: usize, flags: u
 /// exists only in the retail command stream. The prerequisite is a GPU-packet
 /// emitter (the same one [`interp_clip_vertex`] wants), not a caller.
 ///
+/// Read that as "replaced", not "missing": the *capability* is present and
+/// live on the screen-space path, just carried typed rather than packed -
+/// `legaia_engine_ui::screen_prim::ScreenPrim::gouraud` is an
+/// `Option<[u32; 4]>` of per-corner modulation that `build_geometry` folds
+/// into vertices. So wiring this is a representation change (byte packets
+/// instead of typed prims), not a feature the port lacks.
+///
 /// `colors` is the source, one 4-byte word per vertex (`[R, G, B, code]`, LE);
 /// only the low three bytes are used. `count` is 3 (`POLY_G3`) or 4 (`POLY_G4`);
 /// any other value is a no-op, matching retail. The RGB bytes are written into

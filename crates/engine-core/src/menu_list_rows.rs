@@ -27,18 +27,40 @@
 //! All ports are derived from the SCUS disassembly
 //! (`ghidra/scripts/funcs/<addr>.txt`); provenance notes sit on each item.
 //!
-//! NOT WIRED: nothing in the engine speaks retail's row-entry model. Every
-//! pause-menu screen carries a **typed** row model built straight from
-//! world state - [`crate::pause_screens::PauseItemRow`],
-//! [`crate::spell_menu::SpellRowView`],
-//! [`crate::equip_session::EquipItem`] - and the hosts render those. No
-//! code path produces the class-tagged `u16` entry words
-//! ([`CLASS_BAG`]..[`CLASS_SHOP_ALT`]) that [`row_name_source`] and
-//! [`row_description_source`] decode, and none allocates the `gp+0x148`
-//! live-window list node ([`LiveWindowSet`], [`list_alloc`]) that the
-//! kernel reads them out of. Wiring any of this needs that window/list-node
-//! model to exist first and the screens to be rebuilt on top of it; the
-//! per-content-id builders below then become its content pass.
+//! NOT WIRED: nothing in the engine speaks retail's row-entry model - but
+//! the three families below are blocked by three *different* things, and a
+//! disclosure that names only the first reads as one gap and is three.
+//!
+//! 1. [`list_alloc`] and [`LiveWindowSet`] want the live-window /
+//!    list-node model itself. No code path allocates the `gp+0x148` node
+//!    whose header the allocator seeds, and the engine's menu hosts keep
+//!    per-screen window models rather than one sorted window list.
+//! 2. [`row_name_source`] and [`row_description_source`] decode the
+//!    class-tagged `u16` entry word ([`CLASS_BAG`]..[`CLASS_SHOP_ALT`]),
+//!    and nothing produces one. Every pause-menu screen carries a **typed**
+//!    row built straight from world state -
+//!    [`crate::pause_screens::PauseItemRow`],
+//!    [`crate::spell_menu::SpellRowView`],
+//!    [`crate::equip_session::EquipItem`] - and those rows already carry
+//!    the resolved name and description, so a resolver over them would be
+//!    re-deriving what the caller already holds.
+//! 3. The three `FUN_80030628` builders want an **ordered bag-slot array**
+//!    and a per-row ink bit, and the engine has neither. `World::inventory`
+//!    is a `HashMap<u8, u8>` keyed by item id with no slot space at all, so
+//!    the `slot | ink` payload the builders emit has no index to carry;
+//!    `crate::field_menu_dispatch::build_pause_items_session` sorts the
+//!    held ids and [`crate::pause_screens::PauseItemRow`] has no ink field,
+//!    so retail's three-buffer order (in place, then equipment, then the
+//!    flag-8 tail) and its dim gates have nowhere to land.
+//!
+//! Which window each builder fills is not a guess: the menu-overlay
+//! descriptor table ([`legaia_asset::menu_windows`]) carries the content id
+//! in each record's `+0x0`, and on the retail disc content `2` is window 38
+//! (the shop's **sell** list), content `3` is window 15 and content `0x22`
+//! window 16 (the Items screen's Use / Throw Out lists). All three are
+//! renderer-less containers the kind-4 list kernel draws from the entry
+//! words - which is why the builders and the resolvers close together.
+//!
 //! `crate::pause_screens::list_kernel_navigate` - the *navigation* half of
 //! the same kernel - is the one piece that survived the flat-cursor
 //! translation and is live.

@@ -115,7 +115,13 @@ impl<'a> ShopRow<'a> {
 
 /// Build [`TextDraw`]s for a 2-D shop / confirmation panel.
 ///
-/// Layout traced from `FUN_801d5de0` in `overlay_shop_save.bin`:
+/// Column geometry traced from `FUN_801d5de0`. That routine is the **casino
+/// prize list's** row renderer, not the shop's - the `overlay_shop_save.bin`
+/// dump filename names the image it was read from, not what it does (see
+/// `docs/subsystems/shop.md`, "Row layout: whose list this is"). The stride and
+/// column offsets below are its; the gold footer and the "shop" framing are the
+/// port's, and the retail routine draws no footer at all.
+///
 /// ```text
 /// [title]
 /// > item name              1500G
@@ -144,7 +150,8 @@ pub fn shop_draws_for<'a>(
     gold: Option<i32>,
     pen: (i32, i32),
 ) -> Vec<TextDraw> {
-    // Constants confirmed from overlay_shop_save FUN_801d5de0.
+    // Constants confirmed from FUN_801d5de0 - the casino prize list's row
+    // renderer, read in the menu overlay. `overlay_shop_save` is an image name.
     const LINE_H: i32 = 14;
     const CURSOR_X: i32 = 0;
     const LABEL_X: i32 = 20; // retail 0x14

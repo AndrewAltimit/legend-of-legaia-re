@@ -62,6 +62,16 @@
 //! battle-intro screen-prim emitter, and the field move-VM stager parts
 //! (`build_field_fx_part_draws`, which resolve against the scene TMD pack the
 //! page does not upload while a battle is on screen).
+//!
+//! The first of those is one gap, not three: this host has **no mid-battle
+//! VRAM re-upload channel at all**. The page re-reads
+//! [`LegaiaRuntime::play_battle_vram_bytes`] only when
+//! [`LegaiaRuntime::play_battle_generation`] changes, and that bumps once per
+//! battle entry. So the status CLUT recolour
+//! (`engine-core::battle_status_clut`, `FUN_8004CE2C` pass 4) is native-only
+//! for the same reason the face stamps are - its model is shared and its
+//! latch is armed here too, via `BattleHud::sync_status`; only the drain is
+//! missing. Growing the channel lights up both at once.
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_core::scene::{Scene, SceneHost};

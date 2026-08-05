@@ -491,7 +491,11 @@ pub fn amount_prompt_draws_for(
 /// NOT WIRED: same rect first and adds this count on top. The engine's equip
 /// NOT WIRED: screen (`engine-ui::ui_menu::equipment`) is a slot list with no
 /// NOT WIRED: item-info panel at all, so there is no rect to add a count to
-/// NOT WIRED: yet. Waived in scripts/ci/ui-host-drift-waivers.toml
+/// NOT WIRED: yet. Note the count itself is not what is missing: that screen
+/// NOT WIRED: already draws each candidate's owned count inline on its list
+/// NOT WIRED: row (`EquipCandidateRow::count`, drawn at the row pen + 104), so
+/// NOT WIRED: adopting window 24 *relocates* a count into a panel rather than
+/// NOT WIRED: adding one. Waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn count_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -599,20 +603,68 @@ fn choice_marker_sprites(rows: &[ChoiceRow; 2], flags: ChoiceFlags) -> Vec<Paint
 /// "No is the default" convention.
 ///
 /// PORT: FUN_801D603C
-/// NOT WIRED: what must exist first is the **prize-exchange window set** -
-/// NOT WIRED: the tab (43), the list container (44), the coin counter (45)
-/// NOT WIRED: and this confirm, over the disc prize block at PROT 0899 file
-/// NOT WIRED: `0x15D00`. Its *trigger* is no longer missing: sub-screen
-/// NOT WIRED: `0x20` is selected at exactly one site in the overlay
-/// NOT WIRED: (`0x801dc8cc`, on entry-context kind `7`), and the op-`0x49`
-/// NOT WIRED: arm now records its sub-op, so that kind is reachable. The
-/// NOT WIRED: flags word is not a gap either: it is the shared cursor word
-/// NOT WIRED: `FUN_801D688C` maintains, whose four-way decode is live as
+/// REF: FUN_801d5de0 - window 44's content renderer, the prize list this
+/// confirm sits over. Ported as `engine-core::shop::shop_stock_row_ink`.
+/// REF: FUN_801d688c - the shared picker that maintains the cursor word the
+/// `flags` argument carries. Ported as `engine-core::shop::shop_cursor_mode`.
+/// NOT WIRED: what must exist first is a **host for sub-screen `0x20`**, the
+/// NOT WIRED: casino prize exchange - not "the other three windows" this note
+/// NOT WIRED: used to name, none of which is missing. Read off the disc
+/// NOT WIRED: descriptor table (`legaia_asset::menu_windows`): window 43's
+/// NOT WIRED: renderer is `FUN_801DCFE4` -> [`title_tab_draws_for`] and
+/// NOT WIRED: window 45's is `FUN_801DD028` -> [`counter_panel_draws_for`],
+/// NOT WIRED: both painters in this file and both already called by live
+/// NOT WIRED: hosts for their sibling ids; and window 44 is **not** a
+/// NOT WIRED: renderer-less list container - its descriptor carries
+/// NOT WIRED: `renderer_va = 0x801D5DE0`, whose record base is the prize
+/// NOT WIRED: table `0x801E4518` (`addiu s4,v0,0x4518`; that VA is PROT 0899
+/// NOT WIRED: file `0x15D00`, `legaia_patcher::casino`'s table), whose block
+/// NOT WIRED: selector is the entry-context pointer's second byte
+/// NOT WIRED: (`lw v0,-0x4bb0(s6)` -> `_DAT_8007B450`, then `lbu a0,0x1(v0)`
+/// NOT WIRED: and `a0 * 0x60`) and whose affordability test is the coin bank
+/// NOT WIRED: `0x800845A4` (`lw v0,0x464(s7)`, `s7 = 0x80084140`). Its ink
+/// NOT WIRED: rule is already ported - as `engine-core::shop::
+/// NOT WIRED: shop_stock_row_ink`, which carries `PORT: FUN_801d5de0` but is
+/// NOT WIRED: filed under the shop and reached live by both hosts for the
+/// NOT WIRED: shop's stock list; that attribution wants a second look.
+/// NOT WIRED: What is absent is the screen itself: nothing constructs
+/// NOT WIRED: `engine-core::prize_exchange::PrizeExchangeSession`, and the
+/// NOT WIRED: prize block at PROT 0899 file `0x15D00` has no engine-side
+/// NOT WIRED: reader - the only one is `legaia_patcher::casino`, which
+/// NOT WIRED: `engine-core` takes as a dev-dependency. Its *trigger* is not a
+/// NOT WIRED: gap: sub-screen `0x20` is selected at exactly one site in the
+/// NOT WIRED: overlay (`0x801dc8cc`, on entry-context kind `7`), and the
+/// NOT WIRED: op-`0x49` arm now records its sub-op. Nor is the flags word: it
+/// NOT WIRED: is the shared cursor word `FUN_801D688C` maintains, whose
+/// NOT WIRED: four-way decode is live as
 /// NOT WIRED: `engine-core::shop::shop_cursor_mode` - the same three bits,
-/// NOT WIRED: the same arms as [`ChoiceFlags::marker_variant`]. What is
-/// NOT WIRED: missing is the other three windows: drawing this one alone
-/// NOT WIRED: would be a Yes/No box over nothing. Waived in
+/// NOT WIRED: the same arms as [`ChoiceFlags::marker_variant`]. Waived in
 /// NOT WIRED: scripts/ci/ui-host-drift-waivers.toml
+/// NOT WIRED:
+/// NOT WIRED: The remaining chain, enumerated so the next attempt is
+/// NOT WIRED: mechanical rather than re-derived. Five pieces, four files,
+/// NOT WIRED: three crates, two hosts - which is why it is a screen build
+/// NOT WIRED: and not a gap-fill:
+/// NOT WIRED: (1) a reader for the block - PROT 0899 file `0x15D00`, four
+/// NOT WIRED: `0x60`-byte blocks of `[u16 id][u16 gate][u32 price]`, read
+/// NOT WIRED: through `ProtIndex::entry_bytes_extended(899)` beside the
+/// NOT WIRED: existing `menu_windows::parse` call, since the table sits past
+/// NOT WIRED: the TOC size and needs the *extended* read;
+/// NOT WIRED: (2) a `World` channel - `record_op49_park` already stores the
+/// NOT WIRED: sub-op and `menu_entry_context_kind()` already publishes it to
+/// NOT WIRED: both hosts, so this is a pending-session slot beside
+/// NOT WIRED: `pending_field_shop`, not a new signal;
+/// NOT WIRED: (3) routing - `field_submode_screen::OP49_DEDICATED_SUB_OPS`
+/// NOT WIRED: is `[0, 3, 5]`, so sub-op `7` currently falls through
+/// NOT WIRED: `slot_for_op49_sub_op` to the generic `CLOSE_TICK` and
+/// NOT WIRED: unparks the script - the trigger fires and is discarded;
+/// NOT WIRED: (4) a `MenuRuntime` session slot + open call, the shape
+/// NOT WIRED: `open_shop_menu` already has;
+/// NOT WIRED: (5) the two host drains, mirroring
+/// NOT WIRED: `take_pending_field_shop` in `redraw.rs` and `play_shop.rs`.
+/// NOT WIRED: The session itself (`PrizeExchangeSession`, all four states)
+/// NOT WIRED: and every painter it needs are done; nothing on this list is
+/// NOT WIRED: a kernel.
 pub fn choice_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -1102,13 +1154,32 @@ pub const BOX_EMIT_MAX_Y: i32 = 0xF0;
 /// REF: FUN_8002c69c - the box writer, which inflates its own rect by 8px on
 /// every side. Not ported; the hosts draw their window chrome from the UI
 /// atlas instead.
-/// NOT WIRED: no host emits the block's box fills. What the hosts do draw is
-/// NOT WIRED: the UI-atlas 9-slice window chrome, a different primitive from
-/// NOT WIRED: this colour-fill pair, and they draw it at the already-inflated
-/// NOT WIRED: frame rect - whereas `FUN_8002C69C` inflates its own argument
-/// NOT WIRED: by 8px on every side, so this guard tests the *content* y.
-/// NOT WIRED: Gating that chrome on this rect would clip on the wrong
-/// NOT WIRED: coordinate and claim a guard over a draw it does not own.
+/// NOT WIRED: what must exist first is a **caller that can produce an
+/// NOT WIRED: out-of-range `y`**, and none can. [`BOX_EMIT_MAX_Y`] is `0xF0`,
+/// NOT WIRED: which is the 320x240 stage's own height, so every rect in the
+/// NOT WIRED: disc window table passes; and the one rect retail stamps per
+/// NOT WIRED: open - the options value popup, window 47 - is already flipped
+/// NOT WIRED: up by its own rule when its bottom would pass `0xB0`
+/// NOT WIRED: (`engine-core::options::options_popup_content_rect`). A call
+/// NOT WIRED: site here would add a branch nothing can take.
+/// NOT WIRED:
+/// NOT WIRED: This note used to say the hosts draw "at the already-inflated
+/// NOT WIRED: frame rect" while the guard tests the *content* y, so gating
+/// NOT WIRED: them on it would clip on the wrong coordinate. That is not the
+/// NOT WIRED: blocker: both host paths hold the content rect. `pause_menu`'s
+/// NOT WIRED: `frame_around` takes one and applies the same 8px inflation
+/// NOT WIRED: `FUN_8002C69C` does - it is called with
+/// NOT WIRED: `ITEMS_INFO_EXTRA_BOX_RECT`, which *is* that routine's
+/// NOT WIRED: `(WX, WY + 0x38, 0x90, 0x28)` argument for window 17 - and
+/// NOT WIRED: `window_chrome` derives its rect from the descriptor's content
+/// NOT WIRED: rect through `frame_rect`.
+/// NOT WIRED:
+/// NOT WIRED: What is still genuinely unported is the *pair* the guard gates
+/// NOT WIRED: rather than the guard: `FUN_80034B6C`'s mode selector + packed
+/// NOT WIRED: RGB word has no port, so the engine's boxes are UI-atlas
+/// NOT WIRED: sprites whose colour comes from the atlas instead of from the
+/// NOT WIRED: caller's word. Wiring the guard alone would claim a guard over
+/// NOT WIRED: a fill retail colours and the port does not.
 pub fn guarded_box_rect(x: i32, y: i32, w: i32, h: i32) -> Option<(i32, i32, i32, i32)> {
     (y <= BOX_EMIT_MAX_Y).then_some((x, y, w, h))
 }

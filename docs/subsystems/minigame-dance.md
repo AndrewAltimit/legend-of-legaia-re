@@ -227,21 +227,33 @@ decodes it as `engine-core::field_regions::TileTrigger`.
 
 Its four arguments are `(x0, y0, width, height)` - retail computes the loop bounds as `x1 = a2 + a0` and `y1 = a3 + a1`, so the third and fourth are **extents**, not end coordinates. The `y << 8` in the cell address is the grid's row byte pitch, not a fixed-point conversion.
 
-### The dancer emit dispatch
+### The sprite-part emit dispatch
 
-`FUN_801d387c(dancer, mode, arg)` is the per-dancer sprite / shadow draw. Its prologue derives a fade weight from the dancer's beat field `+0x78`: a value **above** `0x4000` collapses to zero outright rather than saturating, and anything else is `>> 4` and clamped to `0xff`. So a dancer past the window goes invisible in one step instead of fading. Port: `dance::dancer_fade_weight`.
+`FUN_801d387c(part, mode, arg)` is the sprite / shadow draw. Its prologue derives a fade weight from the part's `+0x78` halfword: a value **above** `0x4000` collapses to zero outright rather than saturating, and anything else is `>> 4` and clamped to `0xff`. So a part past the window goes invisible in one step instead of fading. Port: `dance::sprite_part_fade_weight`.
 
-`mode` then selects one of five jump-table arms (`0x801ceef4`), ported as `dance::dancer_emit`:
+It draws the **effect parts**, not the dancer bodies. The spawner `FUN_801d3fd0` stamps `+0x50 = sprite_id` and stores `x << 3` / `y << 3` into `+0x14` / `+0x16`; this dispatch reads those three slots and shifts the pair back down by three - an exact inverse. The dancer bodies `FUN_801d0190` spawns carry a *world* triple in `+0x14`..`+0x18` and never a `+0x50`, so a `>> 3` of a dancer's position lands hundreds of pixels off-screen. The port's function was named `dancer_emit` on the older reading; it is `sprite_part_emit`.
+
+`mode` then selects one of five jump-table arms (`0x801ceef4`), ported as `dance::sprite_part_emit`:
 
 | Mode | Emit |
 |---|---|
-| `0` | No draw: copy the transform template `DAT_801d51a0`'s `+0x90` / `+0x92` / `+0x94` into the dancer and zero its `+0x96` / `+0x98` / `+0x9a` |
-| `1` | No draw: store the caller's third argument into the dancer's `+0x94` |
-| `2` | **Two** emits at the dancer's `+0x14` / `+0x16` rounded toward zero then `>> 3`, with semi-transparency flags `0x400` then `0x800` |
+| `0` | No draw: copy the transform template `DAT_801d51a0`'s `+0x90` / `+0x92` / `+0x94` into the part and zero its `+0x96` / `+0x98` / `+0x9a` |
+| `1` | No draw: store the caller's third argument into the part's `+0x94` |
+| `2` | **Two** emits at the part's `+0x14` / `+0x16` rounded toward zero then `>> 3`, with semi-transparency flags `0x400` then `0x800` |
 | `3` | One emit at the **unshifted** `+0x14` / `+0x16` pair |
 | `4` | One emit with the flag word forced to `1` and the scale word to `0x1000`, after stamping `(+0x50) << 4` into the overlay byte `DAT_801d46e8` |
 
-Modes past `4` draw nothing. The two shifting arms round with retail's `bgez / addiu 7 / sra 3`, so a dancer at `-1` lands on screen `0`, not `-1`.
+Modes past `4` draw nothing. The two shifting arms round with retail's `bgez / addiu 7 / sra 3`, so a part at `-1` lands on screen `0`, not `-1`.
+
+Neither `mode` nor the writer of `+0x78` is pinned: no caller of `FUN_801d387c` exists in the dump corpus, because the address sits as an actor-prototype callback word rather than a `jal` target. The engine picks mode `2` and drives `+0x78` as the part's age, and says so at both sites.
+
+### The dancer actor record
+
+`FUN_801d0190` spawns one actor per floor slot of the mode's spawn table and writes: the record's three words into `+0x14` / `+0x16` / `+0x18`, the slot index into `+0x5A`, the kind descriptor address into `+0x48`, `1` into `+0x56`, and **the kind's idle-clip anim id masked to `0x1FF` into `+0x5C`** with its rate word into `+0x6A`. Kind 0 additionally takes render scale `+0x72 = 0x1400` and the translucency bit `+0x10 |= 0x1000000`.
+
+`+0x5C` is therefore the **bound clip id**, not a spin counter - `FUN_801d1358` rewrites it with each judge-returned move pair (`andi ...,0x1ff` then `sh ...,0x5c(s0)`) and compares it against the descriptor's idle / dance-loop ids to decide whether the award routine may run at all. The groovy-move turn counter lives in the overlay global `DAT_801d564c[i]` and is not an actor field. So `FUN_801d4098`'s first arm means "this actor has a clip bound", and its `+0x10 & 0x1000` arm is the force-drive flag the field motion driver uses for the same purpose.
+
+Engine side: `engine-core::minigame_actor::MinigameActor` is the record, `DanceGame::dancer_actors` the per-slot pool, and `DanceGame::dancer_clip_frames` the gate's per-frame output.
 
 The lookup pair (`FUN_801d3ec0` → `FUN_801d3f54`) is the read side of the step chart in *screen space* - "is there a marker at floor cell (x,y) right now" - complementing the *beat-space* chart read in [Input judging](#input-judging--timing-windows) (`FUN_801d1820`, which indexes the baked chart `DAT_801d509c` by beat). The two are the same step data addressed two ways: by time (judging) and by floor position (rendering).
 
@@ -314,8 +326,8 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
 | `FUN_801d2d98` | Count-in banner animator (`1 2 3 READY... GO!`): slide-in / hold / fade envelope + fires the intro cue `0x200` on frame `0x1e`. Envelope ported as [`dance_countin_banner_envelope`]. `overlay_dance_801d2d98.txt` |
 | `FUN_801d3d78` | On-beat "good step" sting: keys two SPU voices (`0x12` / `0x13`) at tones `2r` / `2r+1`, note `0x3c+r`. Its caller passes `rand() % 3` on the chain-closed tier and a literal `5` on the three groovy-move tiers. `overlay_dance_801d3d78.txt` |
 | `FUN_801d40dc` | Sequence-clear ("Good!") banner + two flanking stars carrying the accuracy weight (`+0x72`). `overlay_dance_801d40dc.txt` |
-| `FUN_801d4098` | Actor clip-driver gate: hands the dancer to the shared clip driver `FUN_800204f8` only when its spin counter `+0x5c > 0` or its flag word `+0x10` has bit `0x1000`. Predicate ported as [`dance_clip_driver_gate`]. `overlay_dance_801d4098.txt` |
-| `FUN_801d387c` | Per-dancer sprite/shadow emit dispatch: fade weight off the dancer's beat field `+0x78`, then a five-arm draw-mode jump table. See [The dancer emit dispatch](#the-dancer-emit-dispatch). `overlay_dance_801d387c.txt` |
+| `FUN_801d4098` | Actor clip-driver gate: runs the shared clip driver `FUN_800204f8` only when the actor's bound clip id `+0x5c > 0` or its flag word `+0x10` has bit `0x1000`. Predicate ported as [`dance_clip_driver_gate`]; see [The dancer actor record](#the-dancer-actor-record). `overlay_dance_801d4098.txt` |
+| `FUN_801d387c` | Sprite-part / shadow emit dispatch: fade weight off the part's `+0x78`, then a five-arm draw-mode jump table. See [The sprite-part emit dispatch](#the-sprite-part-emit-dispatch). `overlay_dance_801d387c.txt` |
 | `FUN_801d414c` | Dance scene-name stager / teardown: stages the `other1` scene name and three field-subsystem globals, one of which is the pad latch. Ported as `dance::dance_scene_stage`; see [Entering and leaving the hall](#entering-and-leaving-the-hall). `overlay_dance_801d414c.txt` |
 
 Parser: [`legaia_asset::dance_chart`](../../crates/asset/src/dance_chart.rs) decodes the baked [step chart](#step--rhythm-state-machine) (3 rows × `0x20` beats) from the disc.

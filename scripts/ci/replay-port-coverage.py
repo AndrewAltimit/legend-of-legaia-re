@@ -8,9 +8,9 @@ principle. That graph is deliberately permissive (see the two-graph split in
 `docs/tooling/port-catalog.md`), so "live" is an upper bound - it says
 reachable, not reached.
 
-This script supplies the missing denominator: what a **pad-driven playthrough
-actually executes**. It runs (or consumes) `cargo llvm-cov` output for a replay
-test and joins the per-function execution counts against the catalog's
+This script supplies the missing denominator: what a **pad-driven run actually
+executes**. It consumes `cargo llvm-cov` output for one or more replay ladders
+and joins the per-function execution counts against the catalog's
 address -> (file, line) anchors, reporting three sets:
 
   inert-entered   an address the static graph calls NOT reachable from any host
@@ -23,19 +23,56 @@ address -> (file, line) anchors, reporting three sets:
                   the source says nothing reaches, so the oracle may be
                   certifying a stub.
 
-  live-unentered  an address the static graph calls live that the run never
-                  entered. Not a defect - this is the prioritisation list, and
-                  it is only meaningful relative to how far the replay gets.
+  live-unentered  an address the static graph calls live that no run entered.
+                  Not a defect - this is the prioritisation list, and it is only
+                  meaningful relative to how far the ladders get.
+
+## The denominator is a union of ladders, not one session
+
+`--json` is **repeatable**, and the difference matters more than it looks. The
+repo drives three pad-only ladders, each its own test binary and each at full
+score: `critical_path_replay` (the world spine), `menu_replay` (the pause menu
+and save UI), `minigame_replay` (the five minigame doors). A join over only the
+first reports the menu and minigame subsystems as never-entered - and those two
+are the largest clusters in the live-unentered list, so a worklist ordered off
+a single-binary run is ordered against a measurement that structurally excluded
+its own top rows.
+
+So the headline number is the **union** across every `--json` given, and the
+per-source table below it reports what each ladder contributed and how much of
+that no other ladder reached. A union across separate sessions is not one
+continuous playthrough and the report says so; what it does measure honestly is
+"code some pad-driven run entered" versus "code no pad-driven run entered".
+
+## The union is the default, and a short join says so
+
+With no `--json`, the script discovers `target/cov-*.json` and joins **all** of
+them, so the bare invocation is the union rather than one binary. It also knows
+the canonical ladder set ([`CANONICAL_LADDERS`]) and names any member whose
+export is missing, in the report and on stdout - because a union over three of
+the four is not a smaller version of the number, it is a different number, and
+the earlier single-binary default understated the denominator by 1.7x without
+saying anything at all.
+
+The cost is why this stays a manual step rather than a pre-commit gate: each
+export is an instrumented release build plus a full disc-gated ladder run, and
+the ladders are minutes each. `--fail-on-disclosed` is the gateable part, and
+it is the part that needs no complete union to be meaningful.
 
 Usage:
-    # consume an existing export
-    scripts/ci/replay-port-coverage.py --json target/replay-cov.json
+    # produce one export per ladder (slow: instrumented release build of the
+    # engine crates). One export each rather than one multi---test run: the
+    # per-ladder table is only possible when the exports are separate, and
+    # that table is what makes dropping a ladder a visible cost.
+    for t in critical_path_replay menu_replay minigame_replay v0_1_playthrough; do
+        cargo llvm-cov --release -p legaia-engine-shell \\
+            --test "$t" --json --output-path "target/cov-$t.json"
+    done
 
-    # produce one first (slow: instrumented build of the engine crates)
-    cargo llvm-cov --release -p legaia-engine-shell \\
-        --test critical_path_replay --json --output-path target/replay-cov.json
+    # then join them - no arguments needed, the union is the default
+    scripts/ci/replay-port-coverage.py
 
-Skips (exit 0) when the coverage JSON is absent, so a disc-free or
+Skips (exit 0) when every coverage JSON is absent, so a disc-free or
 coverage-toolless CI run is a pass, matching the `LEGAIA_DISC_BIN` convention.
 """
 
@@ -52,8 +89,44 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 CATALOG = REPO / "scripts" / "ci" / "port-catalog.py"
-DEFAULT_JSON = REPO / "target" / "replay-cov.json"
+COV_DIR = REPO / "target"
+COV_GLOB = "cov-*.json"
+LEGACY_JSON = COV_DIR / "replay-cov.json"
 DEFAULT_OUT = REPO / "target" / "port-catalog" / "replay-port-entry.md"
+
+# The pad-only ladders that make up the canonical denominator, in the order the
+# usage block exports them. Membership is "drives the engine with `set_pad` and
+# nothing else" - a ladder that seats the player is measuring a different thing
+# (see `critical_path_replay`'s module docs on the spine oracle).
+#
+# This list exists so a *partial* union is visible. Three of the four is not a
+# conservative version of the number; it is a number about three ladders, and
+# without naming the absentee it reads exactly like the full one.
+CANONICAL_LADDERS = [
+    "critical_path_replay",
+    "menu_replay",
+    "minigame_replay",
+    "v0_1_playthrough",
+]
+
+
+def discover_inputs() -> tuple[list[Path], list[str]]:
+    """`(paths, missing_canonical_labels)` for a bare invocation.
+
+    Every `target/cov-*.json` is joined, not just the canonical four, so a
+    ladder added later is picked up without editing this file. The legacy
+    single-file path is honoured only when the glob finds nothing at all.
+    """
+    found = sorted(COV_DIR.glob(COV_GLOB))
+    if not found and LEGACY_JSON.is_file():
+        # The pre-per-ladder path: one merged export whose contents cannot be
+        # attributed to a ladder. Every canonical name is reported unjoined,
+        # which is the honest reading - the per-ladder table cannot be built
+        # from it, so nothing here can say which ladders it covers.
+        return [LEGACY_JSON], list(CANONICAL_LADDERS)
+    labels = {p.stem.removeprefix("cov-") for p in found}
+    missing = [name for name in CANONICAL_LADDERS if name not in labels]
+    return found, missing
 
 
 def load_catalog_module():
@@ -169,7 +242,17 @@ def load_coverage(path: Path) -> dict[str, FileCoverage]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--json", type=Path, default=DEFAULT_JSON)
+    ap.add_argument(
+        "--json",
+        type=Path,
+        action="append",
+        dest="jsons",
+        metavar="PATH",
+        help=(
+            "llvm-cov export for one ladder; repeat to union several. "
+            f"Default: every {COV_GLOB} under target/ (the union)"
+        ),
+    )
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument(
         "--fail-on-disclosed",
@@ -178,13 +261,27 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    if not args.json.is_file():
-        print(f"[skip] {args.json} missing - run cargo llvm-cov first")
-        return 0
-
-    cov = load_coverage(args.json)
-    if not cov:
-        print(f"[skip] {args.json} carries no function regions")
+    if args.jsons:
+        inputs = args.jsons
+        given = {p.stem.removeprefix("cov-") for p in inputs}
+        missing_canonical = [n for n in CANONICAL_LADDERS if n not in given]
+    else:
+        inputs, missing_canonical = discover_inputs()
+    # A missing input is a skip, not a failure - the whole invocation is
+    # optional (see the module docstring). A *present* input with no function
+    # regions is also a skip, because llvm-cov emits that shape for a build
+    # that produced no instrumented objects.
+    sources: list[tuple[str, dict[str, FileCoverage]]] = []
+    for path in inputs:
+        if not path.is_file():
+            print(f"[skip] {path} missing - run cargo llvm-cov first")
+            continue
+        cov = load_coverage(path)
+        if not cov:
+            print(f"[skip] {path} carries no function regions")
+            continue
+        sources.append((path.stem, cov))
+    if not sources:
         return 0
 
     catalog = load_catalog_module()
@@ -196,29 +293,41 @@ def main() -> int:
     disclosed_entered: list[tuple[str, dict]] = []
     live_entered: set[str] = set()
     live_unentered: list[tuple[str, dict]] = []
-    # An address whose every anchor file is absent from this binary's coverage
-    # was never *observable* - it is compiled into a different target (wasm-only
-    # crates, other binaries). Counting it as "never entered" would inflate the
-    # worklist with rows this run could not have exercised either way, and would
-    # make the zero buckets below look better-founded than they are.
+    # An address whose every anchor file is absent from *every* source's
+    # coverage was never observable - it is compiled into a different target
+    # (wasm-only crates, other binaries). Counting it as "never entered" would
+    # inflate the worklist with rows no run could have exercised either way,
+    # and would make the zero buckets below look better-founded than they are.
     unobservable: list[tuple[str, dict]] = []
+    # label -> the live addresses that source entered. Drives the per-source
+    # contribution table: an address several ladders reach is credited to each,
+    # and the `unique` column is what would be lost by dropping that ladder.
+    per_source_live: dict[str, set[str]] = {label: set() for label, _ in sources}
+
+    def ran_in(cov: dict[str, FileCoverage], site: dict) -> bool | None:
+        """`None` when this source cannot observe the site at all."""
+        fc = cov.get(site["file"])
+        if fc is None:
+            return None
+        if site["kind"] == "module":
+            return fc.any_executed()
+        return bool(fc.verdict_at(site["line"]))
 
     for addr, sites in sorted(anchors.items()):
         entered_site = None
         observable = False
-        for site in sites:
-            fc = cov.get(site["file"])
-            if fc is None:
-                continue
-            observable = True
-            if site["kind"] == "module":
-                ran = fc.any_executed()
-            else:
-                v = fc.verdict_at(site["line"])
-                ran = bool(v)
-            if ran:
-                entered_site = site
-                break
+        for label, cov in sources:
+            for site in sites:
+                ran = ran_in(cov, site)
+                if ran is None:
+                    continue
+                observable = True
+                if ran:
+                    if entered_site is None:
+                        entered_site = site
+                    if addr in live:
+                        per_source_live[label].add(addr)
+                    break
         if entered_site is not None:
             if addr in not_live:
                 inert_entered.append((addr, entered_site))
@@ -233,9 +342,12 @@ def main() -> int:
 
     # Non-vacuity: the two zero-valued buckets above are only meaningful if the
     # join actually looked at those addresses. Report the observable share so a
-    # zero produced by a lookup miss cannot be read as a clean result.
+    # zero produced by a lookup miss cannot be read as a clean result. Observed
+    # across the union - an address one ladder's binary cannot see may still be
+    # compiled into another's.
+    all_files = {f for _, cov in sources for f in cov}
     not_live_observable = sum(
-        1 for a in not_live if a in anchors and any(s["file"] in cov for s in anchors[a])
+        1 for a in not_live if a in anchors and any(s["file"] in all_files for s in anchors[a])
     )
 
     lines: list[str] = []
@@ -243,16 +355,16 @@ def main() -> int:
     w("# Replay port-entry report")
     w("")
     w(
-        "Runtime join: which `// PORT:`-tagged addresses a pad-driven replay "
+        "Runtime join: which `// PORT:`-tagged addresses a pad-driven ladder "
         "actually executed, against the static liveness verdict. See the "
         "script header for why the static number alone is an upper bound."
     )
     w("")
     w(f"- ported addresses with anchors: **{len(anchors)}**")
-    w(f"- statically live: **{len(live)}**, of which entered by the run: **{len(live_entered)}**")
+    w(f"- statically live: **{len(live)}**, of which entered by a run: **{len(live_entered)}**")
     w(f"- statically not-live: **{len(not_live)}**, of which entered anyway: **{len(inert_entered)}**")
     w(f"- `NOT WIRED`-disclosed anchors executed: **{len(disclosed_entered)}**")
-    w(f"- not observable in this binary (excluded above): **{len(unobservable)}**")
+    w(f"- not observable in any of these binaries (excluded above): **{len(unobservable)}**")
     w("")
     w(
         f"Non-vacuity: **{not_live_observable} of {len(not_live)}** not-live addresses "
@@ -261,6 +373,39 @@ def main() -> int:
         "than a lookup miss."
     )
     w("")
+
+    # Per-source contribution. `unique` is what dropping that ladder would
+    # cost: a single-ladder join is not a smaller version of this measurement,
+    # it is a different one, and the column says by how much.
+    w("## Per-ladder contribution")
+    w("")
+    w(
+        "Union across the sources below. These are separate sessions, not one "
+        "continuous playthrough - what the union measures is \"some pad-driven "
+        "ladder entered this\" against \"no pad-driven ladder did\". `unique` "
+        "counts live addresses only that source entered."
+    )
+    w("")
+    w("| source | live entered | unique to it |")
+    w("|---|---|---|")
+    for label, _ in sources:
+        mine = per_source_live[label]
+        others: set[str] = set()
+        for other, _ in sources:
+            if other != label:
+                others |= per_source_live[other]
+        w(f"| `{label}` | {len(mine)} | {len(mine - others)} |")
+    w("")
+    if missing_canonical:
+        w(
+            "**Partial union.** No per-ladder export was joined for "
+            + ", ".join(f"`{n}`" for n in missing_canonical)
+            + ". Every number above is about the ladders listed, not about the "
+            "canonical set, and the live-unentered worklist below is "
+            "correspondingly long. Re-export the missing ladder(s) before "
+            "reading a row as work."
+        )
+        w("")
 
     def table(title: str, rows: list[tuple[str, dict]], note: str):
         w(f"## {title}")
@@ -283,7 +428,7 @@ def main() -> int:
     table(
         "Inert ports entered",
         inert_entered,
-        "The static graph reports no host root reaches these, yet the replay "
+        "The static graph reports no host root reaches these, yet a ladder "
         "executed the anchor. Either the graph is wrong or the tag sits on the "
         "wrong symbol - each row is a finding, not a metric.",
     )
@@ -297,14 +442,15 @@ def main() -> int:
     table(
         "Live but never entered",
         live_unentered,
-        "Statically reachable, not reached by this run. Not defects - this is "
-        "the wiring worklist ordered by what a playthrough actually needs, and "
-        "it shrinks as the replay reaches further.",
+        "Statically reachable, reached by none of the ladders above. Not "
+        "defects - this is the wiring worklist ordered by what a playthrough "
+        "actually needs, and it shrinks as the ladders reach further.",
     )
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text("\n".join(lines) + "\n")
 
+    print(f"sources               : {', '.join(label for label, _ in sources)}")
     print(f"ported anchors        : {len(anchors)}")
     print(f"live / entered        : {len(live)} / {len(live_entered)}")
     print(f"not-live / entered    : {len(not_live)} / {len(inert_entered)}")
@@ -312,7 +458,27 @@ def main() -> int:
     print(f"NOT WIRED executed    : {len(disclosed_entered)}")
     print(f"live never entered    : {len(live_unentered)}")
     print(f"not observable        : {len(unobservable)}")
-    print(f"report -> {args.out.relative_to(REPO)}")
+    for label, _ in sources:
+        mine = per_source_live[label]
+        others = set()
+        for other, _ in sources:
+            if other != label:
+                others |= per_source_live[other]
+        print(f"  {label:<28}: {len(mine):>4} live entered, {len(mine - others):>4} unique")
+    if missing_canonical:
+        print(
+            "PARTIAL UNION - no per-ladder export for: "
+            + ", ".join(missing_canonical),
+            file=sys.stderr,
+        )
+    # `relative_to` raises on an --out that is not under the repo (a relative
+    # path resolved against a different cwd, /tmp, ...), which would throw away
+    # the whole report after writing it. Fall back to the path as given.
+    try:
+        shown = args.out.resolve().relative_to(REPO)
+    except ValueError:
+        shown = args.out
+    print(f"report -> {shown}")
 
     if args.fail_on_disclosed and disclosed_entered:
         print(

@@ -155,8 +155,17 @@ pub fn sprite_rect(quad: &ProjectedQuad) -> SpriteRect {
 // (`FUN_801E0088` pass 2) is wired end-to-end through
 // `World::active_effect_sprites`, but its children hang off an effect master,
 // not off a parent actor's `+0x90` back-link. The missing host is an
-// `engine-core` actor kind carrying that back-link, which the arc-hop
-// spawners would fill in - and those are inert for their own reasons.
+// `engine-core` actor kind carrying that back-link.
+//
+// Retail's one filler of that back-link is `FUN_801D25EC`'s chained emitter
+// (`field_ledge_hop_arc::HopEmitter`, template `0x801F22AC`), whose `+0x94`
+// encounter record is exactly what this tick branches on. Note what that does
+// **not** mean: the *player* arc-hop family is live now - `build_hop_arc`,
+// `advance_hop_arc` and `advance_hop_session` all run from
+// `World::step_field_vertical` - but the entry it goes through
+// (`FUN_801D2404`) allocates the arc helper and the phase helper, and **no**
+// emitter. Only `FUN_801D25EC` chains one, and that entry is still inert; so
+// the live hop does not close this row.
 pub fn attached_sprite_tick<P, E>(
     parent: Option<(u32, (i16, i16, i16))>,
     local_offset: (i16, i16, i16),

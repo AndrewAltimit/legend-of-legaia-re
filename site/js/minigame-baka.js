@@ -91,6 +91,9 @@
       this.widgets = JSON.parse(api.baka_hud_json());
       if (!this.widgets.length) return false;
       this.pageCanvases.clear();
+      /* The quad cache is keyed on (widget, x, y, brightness, size, mirror)
+       * only, so a new disc's widget table must drop it. */
+      if (this._quadCache) this._quadCache.clear();
 
       /* Duel facing is DATA, not a hard-coded yaw: which side of the arena
        * each fighter stands on (`side`) and which way it faces (`facing`),
@@ -239,6 +242,9 @@
       this.widgets = JSON.parse(api.baka_hud_json());
       if (!this.widgets.length) return false;
       this.pageCanvases.clear();
+      /* The quad cache is keyed on (widget, x, y, brightness, size, mirror)
+       * only, so a new disc's widget table must drop it. */
+      if (this._quadCache) this._quadCache.clear();
 
       const fighters = [];
       for (let ch = 0; ch < 3; ch++) {
@@ -623,23 +629,57 @@
      * `flipX` mirrors the cell horizontally - both cursor-arrow cells
      * (48/49) are authored pointing LEFT on the sheet; retail mirrors one
      * at draw time to make the < > pair. */
+    /* One HUD widget, resolved by the **ported** POLY_GT4 emitter
+     * (FUN_801d5ed0, engine-core baka_fighter::hud_widget_quad) rather than
+     * by page-side arithmetic. The engine returns the packet's corners, its
+     * inclusive UV span and the brightness-scaled gouraud pair; the page's
+     * job is to blit that cell and apply the modulation.
+     *
+     * The half-extent this replaces was `(cell * scale) / 0x1000 / 2` in
+     * floating point with no `size` term - the retail expression is
+     * `((cell * scale) >> 13) * size >> 12` with both shifts rounding toward
+     * zero, and it spans `x - hw ..= x + hw - 1`, so an odd cell landed half
+     * a pixel off and every widget ignored its own colour row. */
+    _widgetQuad(id, cx, cy, brightness, size, mirror) {
+      const key = `${id}|${cx}|${cy}|${brightness}|${size}|${mirror ? 1 : 0}`;
+      this._quadCache = this._quadCache || new Map();
+      let q = this._quadCache.get(key);
+      if (q === undefined) {
+        try { q = JSON.parse(api.baka_hud_quad_json(id, cx, cy, brightness, size, !!mirror)); }
+        catch (e) { q = null; }
+        if (q && q.page == null) q = null;
+        this._quadCache.set(key, q);
+      }
+      return q;
+    }
+
     _widget(g, id, cx, cy, alpha, flipX) {
-      const w = this.widgets[id];
-      if (!w || w.page == null) return;
-      const img = this._page(w.page, w.palette);
+      const q = this._widgetQuad(id, cx, cy, 0x80, 0x1000, flipX);
+      if (!q) return;
+      const img = this._page(q.page, q.palette);
       if (!img) return;
-      const hw = (w.w * w.scale) / 0x1000 / 2, hh = (w.h * w.scale) / 0x1000 / 2;
+      /* The packet's corners are inclusive, so the drawn extent is one more
+       * than the difference - the same off-by-one the UV span carries. */
+      const dw = q.x1 - q.x0 + 1, dh = q.y1 - q.y0 + 1;
+      const sw = q.u1 - q.u0 + 1, sh = q.v1 - q.v0 + 1;
       g.save();
-      if (w.semi && w.abr === 1) g.globalCompositeOperation = 'lighter';
+      if (q.semi && q.abr === 1) g.globalCompositeOperation = 'lighter';
       g.globalAlpha = alpha === undefined ? 1 : alpha;
-      if (flipX) {
-        g.translate(cx, 0);
+      if (q.mirror) {
+        g.translate(q.x0 + dw, 0);
         g.scale(-1, 1);
-        g.drawImage(img, w.u, w.v, w.w, w.h, -hw, cy - hh, hw * 2, hh * 2);
+        g.drawImage(img, q.u0, q.v0, sw, sh, 0, q.y0, dw, dh);
       } else {
-        g.drawImage(img, w.u, w.v, w.w, w.h, cx - hw, cy - hh, hw * 2, hh * 2);
+        g.drawImage(img, q.u0, q.v0, sw, sh, q.x0, q.y0, dw, dh);
       }
       g.restore();
+      /* NOT APPLIED HERE: the emitter also returns the brightness-scaled
+       * gouraud pair (rgb_top / rgb_bottom, `channel * brightness >> 8`).
+       * PSX modulation is a per-texel `texel * c / 128`, and a 2D canvas
+       * cannot express that in one pass - a `multiply` fillRect would paint
+       * the transparent texels too. The pair is in the JSON for a caller that
+       * wants an offscreen mask pass; this path applies geometry + UVs only,
+       * which is the half that was wrong. */
     }
 
     /* A cell straight off a page (for the pip / digit / icon cells whose

@@ -612,6 +612,73 @@ impl LegaiaMinigames {
         format!(r#"{{"rows":[{rows}]}}"#)
     }
 
+    /// The dance run's **actor records** - the per-frame output of the three
+    /// draw kernels the dance overlay runs over its own actor pools.
+    ///
+    /// ```json
+    /// { "dancers": [ {"slot":0,"x":0,"y":-128,"z":0,"clip":6,"rate":8,
+    ///                 "clip_driver":true,"translucent":false} ],
+    ///   "parts":   [ {"sprite":11,"x":160,"y":144,"fade":32,"shadow":true} ] }
+    /// ```
+    ///
+    /// `dancers` is [`legaia_engine_core::dance::dance_clip_driver_gate`]
+    /// (`FUN_801d4098`) over the pool `FUN_801d0190`'s spawn stores seed:
+    /// `clip` is the actor's `+0x5C` bound anim id and `clip_driver` whether
+    /// the shared clip driver runs for it this frame.
+    ///
+    /// `parts` is [`legaia_engine_core::dance::sprite_part_emit`]
+    /// (`FUN_801d387c`) plus its fade prologue over the sprite parts the run
+    /// spawns on a scoring judge - `x`/`y` are already through the emit's
+    /// `>> 3`, so they are page pixels in the retail 320x240 stage, and
+    /// `shadow` marks the two-emit arm (draw the cell twice, the second copy
+    /// dimmer).
+    pub fn dance_actors_json(&self) -> String {
+        use legaia_engine_core::dance::SpritePartEmit;
+        let Some(g) = self.dance.as_ref() else {
+            return r#"{"dancers":[],"parts":[]}"#.to_string();
+        };
+        let dancers = g
+            .dancer_clip_frames()
+            .iter()
+            .zip(g.dancer_actors().iter())
+            .map(|(f, a)| {
+                format!(
+                    concat!(
+                        r#"{{"slot":{},"x":{},"y":{},"z":{},"clip":{},"rate":{},"#,
+                        r#""clip_driver":{},"translucent":{}}}"#
+                    ),
+                    f.slot,
+                    a.pos[0],
+                    a.pos[1],
+                    a.pos[2],
+                    f.clip_id,
+                    f.clip_rate,
+                    f.clip_driver,
+                    f.translucent,
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let parts =
+            g.sprite_part_emits()
+                .iter()
+                .filter_map(|f| {
+                    let (x, y, shadow) = match f.emit {
+                        SpritePartEmit::Shadowed { x, y, .. } => (x, y, true),
+                        SpritePartEmit::Plain { x, y, .. }
+                        | SpritePartEmit::Marker { x, y, .. } => (x, y, false),
+                        _ => return None,
+                    };
+                    Some(format!(
+                        r#"{{"sprite":{},"x":{x},"y":{y},"fade":{},"shadow":{shadow}}}"#,
+                        f.sprite, f.fade,
+                    ))
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+        format!(r#"{{"dancers":[{dancers}],"parts":[{parts}]}}"#)
+    }
+
     // ---------------------------------------------------------- baka fighter
 
     /// The parsed roster, for the opponent picker. The disc carries no names for

@@ -13,7 +13,9 @@
 use std::path::PathBuf;
 
 use legaia_asset::static_overlay;
-use legaia_engine_core::dance::{DANCE_SCORE_BOX_X, DanceDir, DanceGame, DanceHudDraw, Judge};
+use legaia_engine_core::dance::{
+    DANCE_SCORE_BOX_X, DanceDir, DanceEvent, DanceGame, DanceHudDraw, Judge, SpritePartEmit,
+};
 use legaia_prot::archive::Archive;
 
 fn prot_dat() -> Option<PathBuf> {
@@ -399,4 +401,125 @@ fn the_hud_driver_and_emitter_produce_real_draws_off_the_disc() {
     let narrow = game.number_quads(true, 7, 0, 0);
     assert_eq!(narrow.len(), 1);
     assert_eq!(narrow[0].uv[0].0, 7 * 8 + 0x40, "style-B glyph-U");
+}
+
+/// The **dancer actor pool** off the real overlay: one record per floor slot,
+/// each carrying the spawn table's own world position and the kind
+/// descriptor's own clip id, with the three per-dancer draw kernels
+/// (`FUN_801d387c`'s emit dispatch + its fade prologue, `FUN_801d4098`'s clip
+/// gate) reading those records instead of loose arguments.
+#[test]
+fn real_dance_cast_populates_the_dancer_actor_records() {
+    let Some(overlay) = dance_overlay() else {
+        eprintln!("[skip] dance overlay unavailable (disc-gated)");
+        return;
+    };
+    let mut game = DanceGame::from_overlay(&overlay, false).expect("real chart loads");
+
+    let cast = legaia_asset::dance_cast::parse(&overlay).expect("cast tables decode");
+    assert_eq!(game.dancer_actors().len(), game.dancer_count());
+    assert_eq!(
+        game.dancer_actors().len(),
+        3,
+        "the qualifier floor is three dancers"
+    );
+
+    // Every actor stands where the disc's own spawn record puts it.
+    for (a, s) in game.dancer_actors().iter().zip(cast.qualifier.iter()) {
+        assert_eq!(a.pos, [s.x, s.y, s.z], "actor position = spawn record");
+    }
+    // At least one spawn is off the origin - otherwise the check above is
+    // vacuous against the chart-only default.
+    assert!(
+        game.dancer_actors().iter().any(|a| a.pos != [0, 0, 0]),
+        "the real floor is not all-origin"
+    );
+
+    // `FUN_801d0190` binds the kind descriptor's idle clip into `+0x5C`,
+    // masked to 0x1FF. Every kind's idle id is non-zero (the parser rejects a
+    // table where it is not), so the clip-driver gate's *first* arm - the one
+    // an earlier reading mistook for a groovy-spin counter - fires for every
+    // dancer.
+    for (a, s) in game.dancer_actors().iter().zip(cast.qualifier.iter()) {
+        let idle = cast.kinds[s.kind as usize].idle.anim_id & 0x1FF;
+        assert_eq!(a.field_5c, idle as i16, "+0x5C = the bound idle clip id");
+        assert!(a.field_5c > 0);
+    }
+    let frames = game.dancer_clip_frames();
+    assert_eq!(frames.len(), 3);
+    assert!(
+        frames.iter().all(|f| f.clip_driver),
+        "a dancer with a clip bound is handed to the shared clip driver"
+    );
+
+    // A judged press rebinds the actor's clip to the judge's move pair, which
+    // is the second half of `FUN_801d1358`'s binding.
+    let before = game.dancer_actors()[0].field_5c;
+    // Force a miss: press in the dead zone between beats.
+    while !game.in_dead_zone() {
+        game.advance(1);
+    }
+    let ev = game.press(DanceDir::A);
+    assert!(matches!(ev, DanceEvent::Miss), "{ev:?}");
+    let after = game.dancer_actors()[0].field_5c;
+    let miss = cast.kinds[cast.qualifier[0].kind as usize].moves
+        [legaia_asset::dance_cast::MOVE_MISS_SQUARE]
+        .anim_id
+        & 0x1FF;
+    assert_eq!(after, miss as i16, "the miss reaction clip is now bound");
+    assert_ne!(before, after, "the binding actually moved");
+    assert_eq!(
+        game.dancer_clip_frames()[0].clip_rate,
+        cast.kinds[cast.qualifier[0].kind as usize].moves
+            [legaia_asset::dance_cast::MOVE_MISS_SQUARE]
+            .rate,
+        "+0x6A takes the pair's rate word"
+    );
+
+    // The sprite-part half: a closed chain fires the banner spawns, and the
+    // emit dispatch resolves them at the `<< 3` / `>> 3` round trip.
+    while game.sprite_parts().is_empty() {
+        // Play the chart until the human closes a chain (lane 0 closes on its
+        // first matched note, so this terminates inside a beat or two).
+        if let Some(sym) = game.judged_symbol()
+            && sym != 0
+        {
+            let dir = match sym {
+                1 => DanceDir::A,
+                2 => DanceDir::B,
+                _ => DanceDir::C,
+            };
+            game.press(dir);
+        }
+        game.advance(1);
+        assert!(!game.song_over(), "a chain closes inside the song");
+    }
+    let parts = game.sprite_part_emits();
+    assert_eq!(parts.len(), 3, "banner + two stars");
+    for f in &parts {
+        match f.emit {
+            SpritePartEmit::Shadowed { x, y, flags } => {
+                assert_eq!(y, 0x90, "the banner row");
+                assert!((0x60..=0xE0).contains(&x), "on-screen x, got {x}");
+                assert_eq!(flags, [f.sprite | 0x400, f.sprite | 0x800]);
+            }
+            other => panic!("a part takes the shadowed arm, got {other:?}"),
+        }
+    }
+    // The fade prologue runs off each part's own `+0x78`: full weight while
+    // the banner holds, decaying to nothing, then the part retires.
+    assert!(
+        parts.iter().all(|f| f.fade == 0xFF),
+        "spawned at full weight"
+    );
+    let mut frames = 0u32;
+    while !game.sprite_parts().is_empty() && frames < 600 {
+        game.advance(1);
+        frames += 1;
+    }
+    assert!(
+        game.sprite_parts().is_empty(),
+        "the parts retire when their fade runs out"
+    );
+    assert!(frames > 1, "and not on the very next frame");
 }

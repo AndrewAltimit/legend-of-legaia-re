@@ -18,7 +18,7 @@ The 0x4C dispatcher's **outer high nibble** of `op0` selects 16 sub-dispatchers:
 | 2 | 0x20..0x2F | Party-view-swap |
 | 3 | 0x30..0x3F | Sub-3 cluster (input lock, no-op cluster, player-resync chain, party-state-clear, etc.) |
 | 4 | 0x40..0x4F | Immediate-or-ramp cluster (write or ramp ctx slots / globals) |
-| 5 | 0x50..0x5F | Sound directional / dialog query / NPC movement halt-acquire. Sub-3 (round 18, 2-byte) is `[4C, 0x53]` - dialog-wait poll via `FUN_801D65D8(1)`; halts at PC + 2 always (the original `goto joined_r0x801E28C4` returns halt-style after `param_2 += 2`). Sub-4 (round 18, 2-byte) is `[4C, 0x54]` - dialog-advance poll via `FUN_801D65D8(0)`; halts at PC when dialog still active, else advances PC + 2. Sub-1 (5-byte halt-acquire dialog-position) and sub-2 (2-byte menu activation) remain Pending pending the STATE_RESUME-pair refactor. |
+| 5 | 0x50..0x5F | Five sub-ops off a 5-entry table: model select, NPC move-to-tile, **TAKE_ITEM**, and the two dialog polls. Full body: [nibble-5 sub-op table](#0x4c-nibble-0x500x5f---the-five-sub-op-table). |
 | 6 | 0x60..0x6F | 6-word emitter (`func_0x80058490`) + 16-byte halt-acquire |
 | 7 | 0x70..0x7F | **Collision-grid rectangular wall paint** (handler `0x801e1c64`); writes the per-scene walkability grid at `_DAT_1f8003ec + 0x4000`. Full body: [nibble-7 wall paint](#0x4c-nibble-0x700x7f---collision-grid-rectangular-wall-paint). |
 | 8 | 0x80..0x8F | Large multi-purpose dispatcher (party-slot full heal, conditional jump on `+0x68`, actor model/anim set, actor-search jumps, …). Full body: [nibble-8 multi-purpose dispatcher](#0x4c-nibble-0x800x8f---large-multi-purpose-dispatcher). |
@@ -161,7 +161,7 @@ All 16x16 cells are now either fully ported (`✓`) or fall through to the dispa
 - **`n4 sub-E` / `sub-F`**: no `case` arm in the original inner switch - the `default:` arm prints `"SUB_40_ERROR"` and routes via `switchD_801e00f4::default()`, which for opcode `0x4C` halts at PC. The Rust port returns `StepResult::Halt { final_pc: pc }`.
 - **`n8 sub-3`**: 7-byte rectangular tile fill `[4C, 0x83, col_start, row_start, col_end, row_end, value]`. The original at dispatcher lines 6447-6493 walks the inclusive rectangle `[col_start..=col_end] × [row_start..=row_end]`, calling `FUN_801D5630(col, row, ...)` per tile to resolve a tile-record pointer; on hit it writes `tile[+0x3] = 0; tile[+0x2] = value`. The loop exits on `j 0x801e3624` with `_addiu s8,s8,0x7` in its delay slot (`0x801E212C`) and writes nothing else - an earlier reading of a post-loop `_DAT_8007B630 = col_start` trailer named the bytes of the **next** arm (sub-4 at `0x801E2134`), which that unconditional jump never reaches. The Rust port surfaces the rectangle through [`FieldHost::op4c_n_8_sub_3_rect_tile_fill`] and lets the engine implement its tile pool.
 
-The STATE_RESUME-entangled cluster (`0x4C n5 sub-1`/`sub-2`, `n6 sub-0x61`, `n8 sub-0`) routes through the standard halt-acquire predicate ([`FieldHost::field_halt_acquire_predicate`] with new `which` tags `0x61` and `0x80`). On predicate success the dispatcher performs the ctx mutation (`saved_pc`, `wait_accum=0`, `flags |= 0x400`), calls the case-specific side-effect hook (`op4c_n5_sub1_npc_run`, `op4c_n5_sub2_menu_activation`, `op4c_n6_sub_61_emitter`, `op4c_n8_sub_0_actor_allocator`), and advances PC; on failure it halts at PC. The n5 cluster doesn't route through the predicate (no halt-acquire in the original): sub-1 is a side-effect-only move-table dispatcher, sub-2 polls the host's menu-activation state.
+The STATE_RESUME-entangled cluster (`0x4C n5 sub-1`/`sub-2`, `n6 sub-0x61`, `n8 sub-0`) routes through the standard halt-acquire predicate ([`FieldHost::field_halt_acquire_predicate`] with new `which` tags `0x61` and `0x80`). On predicate success the dispatcher performs the ctx mutation (`saved_pc`, `wait_accum=0`, `flags |= 0x400`), calls the case-specific side-effect hook (`op4c_n5_sub1_npc_run`, `op4c_n5_sub2_take_item`, `op4c_n6_sub_61_emitter`, `op4c_n8_sub_0_actor_allocator`), and advances PC; on failure it halts at PC. The n5 cluster doesn't route through the predicate (no halt-acquire in the original): sub-1 is a side-effect-only move-table dispatcher, and so is sub-2 - both advance unconditionally.
 
 The n6 sub-`0x61` emitter's retail payload is a **one-shot 16×1 VRAM CLUT-cell write** whose coordinates are the script operands: source `(x, y)` at `+5`/`+7` → libgpu `MoveImage` cell copy, or a flat BGR555 fill of all 16 entries when the source y is zero; destination `(x, y)` at `+9`/`+0xB`. It is the one-shot half of the world-map palette cycling (see [`functions.md` § 801E4C58](../reference/functions/script-vms.md#801e4c58) and [`world-map.md`](world-map.md) "Ocean animation").
 
@@ -183,6 +183,50 @@ Two facts about that census are worth keeping, because both were once read wrong
 The census lives in `crates/engine-core/tests/field_actor_spawn_disc_e2e.rs`, with `examples/scan_4c_d8.rs` as the standalone form. Both take sites at decoded instruction boundaries and cross-check against a walker-independent raw byte-pair scan: on this opcode the two agree exactly, carrier by carrier, so neither an operand alias (which would inflate the byte scan) nor a decode desync (which would deflate the walk) is in play.
 
 `SceneHost::tick` runs the materializer every frame with `start_slot = FIELD_SPAWN_START_SLOT` (defined in `engine_core::world`; currently `8`, brackets the party + small scripted-NPC reservation). Engines that drive `SceneHost::tick` (the `legaia-engine` binary's `play` / `play-window`, every engine-core integration test that ticks through a scene) get the queue drained automatically. The asset-viewer's `tick_field_frame` does the same materializer pass between `step_field` and the field-event histogram so the `ActorSpawned` / `ActorSpawnFailed` events surface on the HUD next to the `ActorAllocate` event that produced them. The bare `World::materialize_actor_spawns` is still public for tests and engines that want a custom `start_slot` policy.
+
+### 0x4C nibble-0x50..0x5F - the five sub-op table
+
+Nibble 5 is a small dispatcher and it is worth writing out, because the table
+bounds it: the arm at `0x801E1780` runs `andi v1, s3, 0xf; sltiu v0, v1, 0x5`
+against a **5-entry** jump table at VA `0x801CEF30` (field overlay 0897, file
+`+0x718`). Sub-ops `5..0xF` therefore have no arm at all and halt at PC.
+
+| Sub | Arm | Instruction | What it does |
+|---|---|---|---|
+| 0 | `0x801E17AC` | `[4C, 50, lo, hi]` | Actor model select; `>= 0xF0` sets ctx flag `0x01000000`. |
+| 1 | `0x801E1828` | `[4C, 51, x, z, depth, move_id]` | NPC / player move-to-tile with run dispatch. |
+| 2 | `0x801E1ABC` | `[4C, 52, item_id]` | **TAKE_ITEM** - see below. |
+| 3 | `0x801E1AF8` | `[4C, 53]` | Dialog-wait poll, `FUN_801D65D8(1)`. |
+| 4 | `0x801E1B0C` | `[4C, 54]` | Dialog-advance poll, `FUN_801D65D8(0)`. |
+
+#### Sub-2 is TAKE_ITEM, not a menu poll
+
+The arm is the give-side mirror of op `0x39` `GIVE_ITEM`: same inventory
+active-window setup (`FUN_8004313C`), then the **consume** primitive
+`FUN_80042310(item_id, 1)` instead of the adder `FUN_800421D4`. When the
+consume returns the `0x100` not-found sentinel - the bag does not hold the id -
+the arm falls through to `FUN_800430AC(item_id)`, the party accessory
+unequip-by-id (`legaia_asset` side: [`equipment-table.md`](../formats/equipment-table.md);
+engine side `engine-core::equipment::party_unequip_accessory_by_id`). So a
+script that takes away an item the player is *wearing* still removes it.
+
+Two properties an earlier reading of this arm inverted, both of them the
+decompiler artifacts catalogued in [`ghidra.md`](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims):
+
+- **`0x100` is the miss sentinel**, so the `== 0x100` branch is the fallback,
+  not a success signal. Reading it as "activation finished" turns the unequip
+  into a completion callback.
+- **Both arms advance the PC by 3.** The `addiu s8, s8, 0x3` rides the
+  `jal 0x800430AC` branch-delay slot, and the `bne` that skips that `jal`
+  targets `0x801E00B8`, the shared advancing exit. There is no poll and no
+  halt - which is exactly the `switchD_801e00f4::default()` trap
+  [`script-vm.md`](script-vm.md#intra-function-label-catalogue) warns about.
+
+The instruction is live disc data, not a curiosity:
+`crates/engine-core/examples/scan_4c_n5.rs` decodes **63** sites (34 with a
+clean walker run-up) across 13 scenes - `balden`, `balden2`, `deroa`, `geremi`,
+`korb3`, `nilboa`, `ropeway`, `ropeway2`, `station3`, `town0c`, `vozz` among
+them - so an arm that halts is a permanent field-VM stall on shipped scripts.
 
 ### 0x4C nibble-4 - immediate-or-ramp cluster
 

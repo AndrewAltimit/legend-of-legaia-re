@@ -620,20 +620,58 @@ tag to the whole file). It reports three sets:
 | **disclosed-entered** | an anchor carrying a `NOT WIRED:` disclosure that a **passing** oracle executed. Highest priority: an oracle traversing stub code can certify behaviour nothing implements. |
 | **live-unentered** | statically reachable, never reached. Not a defect - the wiring worklist ordered by what a playthrough actually needs. |
 
-Produce the input with an instrumented run, then join:
+### The denominator is a union of ladders, not one binary
+
+`--json` is repeatable, and joining only one test binary is the trap here. The
+repo drives three pad-only ladders, each its own test target and each at full
+score: `critical_path_replay` (the world spine), `menu_replay` (pause menu +
+save UI), `minigame_replay` (the five minigame doors). Menus and minigames are
+also the two largest clusters in `live-unentered`, so a join over the spine
+alone reports precisely the subsystems the other two ladders walk as
+never-entered - and a worklist ordered off it is ordered against a measurement
+that excluded its own top rows by construction.
+
+Produce one export per ladder, then join them. **The union is the default** -
+a bare invocation globs `target/cov-*.json`, so the short command is the honest
+one and the single-binary join is now the thing you have to ask for:
 
 ```bash
-cargo llvm-cov --release -p legaia-engine-shell \
-    --test critical_path_replay --json --output-path target/replay-cov.json
-scripts/ci/replay-port-coverage.py --json target/replay-cov.json
+for t in critical_path_replay menu_replay minigame_replay v0_1_playthrough; do
+  cargo llvm-cov --release -p legaia-engine-shell \
+      --test "$t" --json --output-path "target/cov-$t.json"
+done
+scripts/ci/replay-port-coverage.py
 ```
+
+Separate exports rather than one multi-`--test` run, because the report's
+per-ladder table then says what each contributed and how much of it no other
+ladder reached - which is what makes "drop a ladder from the join" a visible
+cost rather than a quieter number.
+
+The script also carries the canonical ladder list and **names any member whose
+export is absent**, on stdout and in a `Partial union` note in the report. A
+union over three of the four is not a conservative version of the number, it is
+a number about three ladders, and without the note it reads identically to the
+full one.
+
+### Why this stays a manual step
+
+Each export is an instrumented release build plus a full disc-gated ladder run,
+so a complete union is minutes of work and needs the disc - it cannot be a
+pre-commit gate, and a gate that silently degrades to a partial union would
+reintroduce exactly the understated denominator this section exists to name.
+`--fail-on-disclosed` is the gateable part: it asks whether a passing oracle
+executed disclosed-stub code, which is a defect at any coverage level and needs
+no complete union to mean something.
 
 The join needs no source edits - the `// PORT:` tags already carry the
 address→symbol mapping, and coverage supplies execution counts against the same
 `(file, line)` coordinates.
 
-Two properties to keep in mind when reading the output. **`live-unentered` is
-scoped to how far the replay gets**, so it is a worklist and never a defect
+Three properties to keep in mind when reading the output. The union is over
+**separate sessions**, so it measures "some pad-driven ladder entered this"
+against "none did", not one continuous playthrough. **`live-unentered` is
+scoped to how far those ladders get**, so it is a worklist and never a defect
 count; a rung the ladder cannot clear silently widens it. And
 **`--fail-on-disclosed` is the only gateable set** - the other two move with
 replay coverage, so ratcheting them would punish extending the run.

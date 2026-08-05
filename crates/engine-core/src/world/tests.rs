@@ -255,6 +255,7 @@ mod script_teleport;
 mod shiny;
 mod slide;
 mod summon_final_heal;
+mod take_item;
 mod tile_board;
 mod worldmap;
 
