@@ -189,6 +189,80 @@ impl LegaiaMinigames {
         format!("[{rows}]")
     }
 
+    /// One HUD widget resolved through the **ported POLY_GT4 emitter**
+    /// ([`legaia_engine_core::baka_fighter::hud_widget_quad`], `FUN_801d5ed0`):
+    ///
+    /// ```json
+    /// { "page": 5, "palette": 0, "x0": 104, "y0": 22, "x1": 215, "y1": 37,
+    ///   "u0": 48, "v0": 48, "u1": 159, "v1": 63, "mirror": false,
+    ///   "rgb_top": [160,160,255], "rgb_bottom": [255,255,255],
+    ///   "semi": true, "abr": 1 }
+    /// ```
+    ///
+    /// The corners are the retail arithmetic, not a float approximation: the
+    /// half-extent is `((cell * scale) >> 13) * size >> 12` with both shifts
+    /// rounding toward zero, the span is `x - hw ..= x + hw - 1`, the UVs
+    /// cover the cell **inclusively**, and each colour channel is
+    /// `channel * brightness >> 8`. `mirror` swaps the left/right texture
+    /// columns (retail's one-shot `DAT_801dbe98`).
+    ///
+    /// `brightness` is `0..=0xFF` (`0x80` = unmodulated) and `size` a
+    /// `0x1000`-based scale. `{}` when the widget table or the art pack did
+    /// not decode.
+    pub fn baka_hud_quad_json(
+        &self,
+        id: usize,
+        x: i16,
+        y: i16,
+        brightness: i32,
+        size: i32,
+        mirror: bool,
+    ) -> String {
+        let (Some(widgets), Some(art)) = (self.baka_widgets(), self.baka_art()) else {
+            return "{}".to_string();
+        };
+        let Some(w) = widgets.get(id) else {
+            return "{}".to_string();
+        };
+        let page = art
+            .iter()
+            .position(|t| t.image.fb_x == w.page_x() && t.image.fb_y == w.page_y())
+            .map(|p| p.to_string())
+            .unwrap_or("null".into());
+        let q =
+            legaia_engine_core::baka_fighter::hud_widget_quad(w, x, y, brightness, size, mirror);
+        // The emitter hands back the four packet corners in `v0..v3` order;
+        // the page samples an axis-aligned cell, so it wants the span.
+        let (u0, v0) = q.uv[0];
+        let (u1, v1) = q.uv[3];
+        format!(
+            concat!(
+                r#"{{"page":{},"palette":{},"x0":{},"y0":{},"x1":{},"y1":{},"#,
+                r#""u0":{},"v0":{},"u1":{},"v1":{},"mirror":{},"#,
+                r#""rgb_top":[{},{},{}],"rgb_bottom":[{},{},{}],"semi":{},"abr":{}}}"#
+            ),
+            page,
+            w.palette_index(),
+            q.x0,
+            q.y0,
+            q.x1,
+            q.y1,
+            u0.min(u1),
+            v0.min(v1),
+            u0.max(u1),
+            v0.max(v1),
+            mirror,
+            q.rgb_top[0],
+            q.rgb_top[1],
+            q.rgb_top[2],
+            q.rgb_bottom[0],
+            q.rgb_bottom[1],
+            q.rgb_bottom[2],
+            q.poly_code & 2 != 0,
+            (q.tpage_attr >> 5) & 3,
+        )
+    }
+
     /// One PROT 1203 art page decoded through one of its palettes, RGBA8.
     /// Pages are 256x256 4bpp; the palette index comes from the widget record.
     pub fn baka_page_rgba(&self, page: usize, palette: usize) -> Vec<u8> {

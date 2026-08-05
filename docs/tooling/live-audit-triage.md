@@ -1247,14 +1247,22 @@ The remaining rows are genuine gaps with sharp prerequisites, and they group
 into four:
 
 - **No line primitive.** `clip_segment_2d` and `project_segment` clip
-  two-point draws; neither `engine-ui`'s draw list nor `engine-render`'s VRAM
-  pipeline has a line kind.
+  two-point draws; neither `engine-ui`'s draw list nor its PSX screen-space
+  primitive set (`screen_prim`, a textured and a flat **quad**) has a line
+  kind. Read the qualifier: there *is* a screen-space primitive path, live on
+  both hosts, and a line kind alone would still not reach `payline_prims`,
+  whose endpoints are model-space and want a GTE projection pass first.
 - **No minigame effect-part pool.** `step_mark_effect_spawn`,
   `good_banner_spawn`, `splash_burst`, `ripple_spawn`,
-  `dance_hit_sting_voices`.
-- **No dancer / fish actor records.** `dancer_emit`, `dancer_fade_weight`,
-  `dance_clip_driver_gate`, `dance_face_rig`, `roll_wander_target`,
-  `step_facing`, `fish_camera`, `float_actor_tick`.
+  `dance_hit_sting_voices`. Partly closed: the dance's two spawn wrappers feed
+  `engine-core::minigame_actor::MinigameActorPool` through
+  `DanceGame::spawn_sprite_part`, and both hosts draw what it emits.
+- **No dancer / fish actor records.** Closed for the dance -
+  `engine-core::minigame_actor::MinigameActor` is the record and `DanceGame`
+  holds two pools of it (the floor cast, and the sprite parts). Still open for
+  the fishing rows: `roll_wander_target`, `step_facing`, `fish_camera`,
+  `float_actor_tick`. `dance_face_rig` was never blocked on a record - see its
+  own tag.
 - **No retail-coordinate HUD surface.** `hud_draws`, `dance_hud_draws`,
   `dance_score_box_slots`, `dance_hud_widget_quad`, the three digit-glyph
   selectors, `centred_panel`. Both hosts lay their dance and fishing readouts

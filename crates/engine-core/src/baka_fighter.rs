@@ -1312,22 +1312,35 @@ fn mips_scale(value: i32, factor: i32, shift: u32) -> i32 {
     p >> shift
 }
 
-// NOT WIRED: what has no consumer is the last step - the POLY_GT4 assembly
-// itself. The play window draws each `ChromeDraw` as font text and the browser
-// page composes its own quads in the page's GL layer, so nothing asks for a
-// [`HudWidgetQuad`]. This is the same shape as the dome HUD emitters in
-// `legaia_engine_ui::other_game_hud` and as [`crate::dance::dancer_emit`]: **a
-// Rust-side quad sink is one gap across three minigames, not three gaps**, and
-// the sink is not a wrapper - it needs a texel source resident in engine VRAM
-// on the native side and a quad-shaped request in the page's JavaScript on the
-// browser side, neither of which exists.
+// WIRED ON ONE HOST, and the split is deliberate rather than an oversight.
 //
-// (Everything *upstream* of that step is present, which is why this row reads
-// like ready work and is not. `legaia_asset::baka_opponents::parse_baka_hud` is
-// called by the play window - `window/minigames.rs` stages the 51 records for
-// the duel - and by the browser duel page, which also decodes the PROT 1203 art
-// pack the widgets sample; and the port already hands both hosts retail's whole
-// argument tuple, `BakaChrome` emitting one
+// **Browser**: `LegaiaMinigames::baka_hud_quad_json` calls this emitter, and
+// the duel page's `_widget` draws the quad it returns - the corners, the
+// inclusive UV span and the mirror arm are now this function's, not the page's.
+// That is a behavioural change, not a rename: the page computed its half-extent
+// as `(cell * scale) / 0x1000 / 2` in floating point with **no `size` term**,
+// where retail is `((cell * scale) >> 13) * size >> 12` with both shifts
+// rounding toward zero over a span of `x - hw ..= x + hw - 1`.
+//
+// **Native**: still unwired, and the blocker there is a texel source. The play
+// window draws each `ChromeDraw` as font text because no PROT 1203 art page is
+// resident in engine VRAM; the quad sink itself is not missing
+// (`legaia_engine_ui::screen_prim::ScreenQuad` carries POLY_GT4 corners,
+// per-vertex gouraud, CLUT/texpage, ABR and an OT bucket, and both hosts
+// consume its `build_geometry` output). The earlier reason on this row said the
+// sink was the gap; it is the page.
+//
+// One half of the emitter is surfaced but not applied on either host: the
+// brightness-scaled gouraud pair. PSX modulation is a per-texel
+// `texel * c / 128`, which the duel page's 2D canvas cannot express in one
+// pass, so the page draws geometry + UVs and the colours ride along in the
+// JSON.
+//
+// (Everything upstream was already present:
+// `legaia_asset::baka_opponents::parse_baka_hud` is called by the play window -
+// `window/minigames.rs` stages the 51 records for the duel - and by the browser
+// duel page, which also decodes the PROT 1203 art pack the widgets sample; and
+// `BakaChrome` emits one
 // [`ChromeDraw`](crate::baka_fighter_chrome::ChromeDraw) per call of this
 // emitter with the same `(widget, x, y, brightness, size)`, the play window
 // resolving its `u` column through
@@ -2364,6 +2377,46 @@ mod tests {
         let m = hud_widget_quad(&w, 160, 120, 0x100, 0x1000, true);
         assert_eq!(m.uv, [(39, 16), (8, 16), (39, 31), (8, 31)]);
         assert_eq!((m.x0, m.x1), (q.x0, q.x1));
+    }
+
+    /// The two ways the duel page's widget extent has been computed, side by
+    /// side. The page used to do `(cell * scale) / 0x1000 / 2` in floating
+    /// point and drop the `size` argument entirely; retail is
+    /// `((cell * scale) >> 13) * size >> 12` with both shifts rounding toward
+    /// zero. This pins the two places they part company, so a future host that
+    /// re-rolls the arithmetic fails here rather than drifting a pixel.
+    #[test]
+    fn the_widget_extent_is_integer_and_size_scaled() {
+        let w = legaia_asset::baka_opponents::BakaHudWidget {
+            // An odd product: `w * scale >> 13` truncates where a float
+            // division would not.
+            scale: 0x1800,
+            texpage: 0x19,
+            clut: 0x7AB0,
+            u: 0,
+            v: 0,
+            w: 21,
+            h: 9,
+            rgb_top: [0x80, 0x80, 0x80],
+            semi: 0,
+            rgb_bottom: [0x80, 0x80, 0x80],
+            abr: 0,
+        };
+        // The float route: 21 * 0x1800 / 0x1000 / 2 = 15.75, so a page that
+        // divides gets a 31.5-pixel span. The retail route truncates twice.
+        let q = hud_widget_quad(&w, 100, 50, 0x80, 0x1000, false);
+        assert_eq!((q.x0, q.x1), (100 - 15, 100 + 14), "half-extent truncates");
+        assert_eq!((q.y0, q.y1), (50 - 6, 50 + 5));
+
+        // The `size` term the float route dropped: half size halves the quad.
+        let half = hud_widget_quad(&w, 100, 50, 0x80, 0x800, false);
+        assert_eq!((half.x0, half.x1), (100 - 7, 100 + 6));
+        assert_ne!((half.x0, half.x1), (q.x0, q.x1));
+
+        // The UV span stays the cell regardless of the drawn extent - the
+        // inclusive `u ..= u + w - 1` a host must add one back onto.
+        assert_eq!(half.uv[0], (0, 0));
+        assert_eq!(half.uv[3], (20, 8));
     }
 
     #[test]

@@ -120,6 +120,57 @@ impl MinigameFxPool {
     }
 }
 
+/// Materialise the dance run's **sprite-part** emits as stage draws.
+///
+/// The geometry is the port's: [`legaia_engine_core::dance::sprite_part_emit`]
+/// (`FUN_801d387c`) resolves each live part's arm off its own actor record, and
+/// [`legaia_engine_core::dance::sprite_part_fade_weight`] its alpha. The
+/// shadowed arm is two emits - the `0x400` copy then the `0x800` one - so both
+/// are drawn, the second dimmer, which is what makes the pair read as a sprite
+/// over its own shadow. Without the dance overlay's 4bpp page resident there is
+/// no texel source, so each emit draws as a placeholder glyph keyed on the
+/// part's `+0x50` sprite id (the same degradation `MinigameFxPool` applies).
+pub(super) fn dance_sprite_part_draws(
+    frames: &[legaia_engine_core::dance::SpritePartFrame],
+    font: &Font,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<TextDraw> {
+    use legaia_engine_core::dance::SpritePartEmit;
+    let mut out: Vec<TextDraw> = Vec::new();
+    for f in frames {
+        // The overlay's sprite ids: `0xb` is the "Good!" banner, `0x16` a star.
+        let glyph = match f.sprite {
+            0xb => "GOOD!",
+            0x16 => "*",
+            _ => "+",
+        };
+        let alpha = f.fade as f32 / 255.0;
+        let mut emit_at = |x: i16, y: i16, dim: f32| {
+            let layout = font.layout_ascii(glyph);
+            out.extend(text_draws_for(
+                &layout,
+                (x as i32, y as i32),
+                [1.0, 1.0, 0.8, (alpha * dim).clamp(0.0, 1.0)],
+            ));
+        };
+        match f.emit {
+            SpritePartEmit::Shadowed { x, y, .. } => {
+                emit_at(x, y, 1.0);
+                // The second (`0x800`) copy is the shadow: same cell, offset a
+                // pixel and drawn at half weight.
+                emit_at(x + 1, y + 1, 0.5);
+            }
+            SpritePartEmit::Plain { x, y, .. } | SpritePartEmit::Marker { x, y, .. } => {
+                emit_at(x, y, 1.0)
+            }
+            SpritePartEmit::CopyTemplate | SpritePartEmit::SetTemplateZ | SpritePartEmit::None => {}
+        }
+    }
+    legaia_engine_render::scale_stage_text_draws(&mut out, stage_origin, stage_scale);
+    out
+}
+
 /// Materialise a dance HUD quad list as flat draws against a solid atlas
 /// source. The quads' geometry, gouraud colours and patched glyph `uv` are
 /// live every frame ([`legaia_engine_core::dance::DanceGame::hud_draw_quads`]);

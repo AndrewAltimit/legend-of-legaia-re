@@ -728,12 +728,18 @@ pub struct ClipRect {
 // emits none. Retail's one caller (`0x801D3D00`, inside the per-frame fishing
 // tick `FUN_801D26CC`) clips the two endpoint pairs of a GPU line packet in
 // place and links it into the ordering table, which is exactly the draw kind
-// missing here: the fishing line, the slot machine's paylines and the dance
-// floor's guides are all two-point draws, and neither `engine-ui`'s draw list
-// (text + sprite + solid rect) nor `engine-render`'s VRAM pipeline carries a
-// line primitive to clip *for*. Wiring wants a line draw kind first, not a
-// fishing host. (`project_segment` above is a different case - retail never
-// calls it at all.)
+// missing here: neither `engine-ui`'s draw list (text + sprite + solid rect)
+// nor its PSX screen-space primitive set (`screen_prim::ScreenPrim`, which
+// carries a textured and a flat **quad** and nothing two-point) has one.
+//
+// Two things that reason must not be read as. It is *not* "the engine has no
+// screen-space primitive path at all" - `ScreenPrim` + `build_geometry` is one,
+// live on both hosts. And a line kind alone would not wire the slot machine's
+// paylines, whose endpoints are model-space and need a GTE projection pass
+// first (see `crate::slot_machine::payline_prims`). The fishing line is the
+// one two-point draw whose endpoints are already screen-space - and its lure
+// end is the same missing datum `walk_grid_overhead` waits on.
+// (`project_segment` above is a different case - retail never calls it at all.)
 /// Clip a 2-D segment in place against [`ClipRect`].
 ///
 /// `p` and `q` are the two `(x, y)` endpoints; both are edited. Retail runs

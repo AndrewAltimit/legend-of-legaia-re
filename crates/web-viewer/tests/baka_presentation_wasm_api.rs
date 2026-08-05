@@ -247,3 +247,65 @@ fn ladder_run_cash_out_over_real_prizes() {
         "the pot at risk is what a loss forfeits"
     );
 }
+
+/// The duel page's widget geometry comes from the **ported** POLY_GT4 emitter
+/// (`engine-core::baka_fighter::hud_widget_quad`, `FUN_801d5ed0`) through
+/// `baka_hud_quad_json`, not from page-side arithmetic. Pin the two properties
+/// the page cannot get right on its own: the half-extent truncates twice, and
+/// the `size` argument scales it.
+#[test]
+fn hud_widget_quads_come_from_the_ported_emitter() {
+    let Some(mg) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    // Widget 0 is the PRESS START strip: a 112x16 cell, drawn centred.
+    let q: serde_json::Value =
+        serde_json::from_str(&mg.baka_hud_quad_json(0, 160, 204, 0x80, 0x1000, false)).unwrap();
+    assert!(
+        q["page"].is_u64(),
+        "the widget resolves to an art page: {q}"
+    );
+    let (x0, x1) = (q["x0"].as_i64().unwrap(), q["x1"].as_i64().unwrap());
+    let (y0, y1) = (q["y0"].as_i64().unwrap(), q["y1"].as_i64().unwrap());
+    // The packet span is `centre - hw ..= centre + hw - 1`, so it is odd-width
+    // by construction and centred on the requested point.
+    assert_eq!(x0 + x1 + 1, 2 * 160, "centred on x");
+    assert_eq!(y0 + y1 + 1, 2 * 204, "centred on y");
+    // The UV span is the cell, inclusive.
+    let (u0, u1) = (q["u0"].as_i64().unwrap(), q["u1"].as_i64().unwrap());
+    let (v0, v1) = (q["v0"].as_i64().unwrap(), q["v1"].as_i64().unwrap());
+    assert_eq!(u1 - u0 + 1, 112, "cell width");
+    assert_eq!(v1 - v0 + 1, 16, "cell height");
+
+    // The `size` term the page's old float formula dropped entirely.
+    let half: serde_json::Value =
+        serde_json::from_str(&mg.baka_hud_quad_json(0, 160, 204, 0x80, 0x800, false)).unwrap();
+    let hw_full = x1 - x0 + 1;
+    let hw_half = half["x1"].as_i64().unwrap() - half["x0"].as_i64().unwrap() + 1;
+    assert!(
+        hw_half < hw_full,
+        "half size must shrink the quad: {hw_half} vs {hw_full}"
+    );
+    // The cell it samples does not change with the drawn size.
+    assert_eq!(
+        half["u1"].as_i64().unwrap() - half["u0"].as_i64().unwrap() + 1,
+        112
+    );
+
+    // The mirror latch swaps the texture columns, not the destination rect.
+    let m: serde_json::Value =
+        serde_json::from_str(&mg.baka_hud_quad_json(0, 160, 204, 0x80, 0x1000, true)).unwrap();
+    assert_eq!(m["mirror"], serde_json::Value::Bool(true));
+    assert_eq!((m["x0"].as_i64(), m["x1"].as_i64()), (Some(x0), Some(x1)));
+
+    // Brightness scales the gouraud pair (`channel * brightness >> 8`).
+    let bright: serde_json::Value =
+        serde_json::from_str(&mg.baka_hud_quad_json(0, 160, 204, 0xFF, 0x1000, false)).unwrap();
+    let top_dim = q["rgb_top"].as_array().unwrap()[0].as_i64().unwrap();
+    let top_hi = bright["rgb_top"].as_array().unwrap()[0].as_i64().unwrap();
+    assert!(top_hi >= top_dim, "brightness raises the modulation");
+
+    // An id past the 51-record table is `{}`, not a panic.
+    assert_eq!(mg.baka_hud_quad_json(999, 0, 0, 0x80, 0x1000, false), "{}");
+}

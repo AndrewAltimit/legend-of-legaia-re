@@ -560,15 +560,24 @@ drawers' right-aligned decimal decomposition is ported as
 play window stages the 51 records for the duel, the browser duel page decodes
 them alongside the PROT 1203 art pack the widgets sample.
 
-The engine splits `FUN_801d5ed0` in two, which is worth knowing when reading its
-wiring status: `BakaChrome` emits one `ChromeDraw` per call of the retail
-emitter, carrying the same `(widget, x, y, brightness, size)` tuple, and both
-hosts consume those - but each then draws them its own way (font text natively,
-page-composed quads in the browser), so the `POLY_GT4` assembly
-`engine-core::baka_fighter::hud_widget_quad` performs has no consumer. That is
-the same shape as the dome HUD's emitters in
-[`minigame-muscle-dome.md`](minigame-muscle-dome.md); a Rust-side quad sink is
-one gap across the minigames, not one per minigame.
+The engine splits `FUN_801d5ed0` in two, and the halves reach different hosts.
+`BakaChrome` emits one `ChromeDraw` per call of the retail emitter, carrying
+the same `(widget, x, y, brightness, size)` tuple, and both hosts consume
+those. The `POLY_GT4` assembly on top -
+`engine-core::baka_fighter::hud_widget_quad` - reaches the **browser** duel page
+through `LegaiaMinigames::baka_hud_quad_json`, which is what supplies that
+page's widget corners and its inclusive UV span. The play window still draws
+each `ChromeDraw` as font text, because no PROT 1203 art page is resident in
+engine VRAM; the blocker there is a texel source, not a quad sink
+(`engine-ui::screen_prim::ScreenQuad` carries POLY_GT4 corners, per-vertex
+gouraud, CLUT/texpage, ABR and an ordering-table bucket, and both hosts already
+draw its `build_geometry` output).
+
+The emitter's half-extent is `((cell * scale) >> 13) * size >> 12` with **both**
+shifts rounding toward zero, over the span `x - hw ..= x + hw - 1`. A host that
+spells it as a float division and drops the `size` argument lands half a pixel
+off on an odd cell and ignores per-call scaling entirely - which is what the
+duel page did before the emitter reached it.
 
 The HUD renderer `FUN_801d2afc` draws, per frame (retail 320x240 frame):
 

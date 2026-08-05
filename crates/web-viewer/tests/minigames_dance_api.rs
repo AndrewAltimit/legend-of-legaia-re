@@ -235,3 +235,78 @@ fn dance_presentation_api_decodes() {
     assert_eq!(pcm.len(), 2 * 2 * 44100);
     assert!(pcm.iter().any(|&s| s != 0), "BGM rendered silent");
 }
+
+/// The **actor-record surface** `site/js/minigame-dance.js` draws its
+/// engine-spawned sprite parts from (`drawEngineParts`), plus the dancer
+/// clip-gate rows beside them.
+///
+/// This is the browser half of the wire the engine-core test
+/// `dance_minigame_real::real_dance_cast_populates_the_dancer_actor_records`
+/// covers: the page never sees `DanceGame`, only this JSON, so a schema break
+/// or an empty pool has to fail here.
+#[test]
+fn dance_actor_records_reach_the_page() {
+    let Some(prot) = prot_dat() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN or extracted/PROT.DAT missing");
+        return;
+    };
+    let bytes = std::fs::read(&prot).expect("read PROT.DAT");
+    let mut mg = LegaiaMinigames::new();
+    mg.load_disc(bytes).expect("load_disc");
+
+    // No run: the surface is well-formed and empty, not absent.
+    let idle: serde_json::Value = serde_json::from_str(&mg.dance_actors_json()).unwrap();
+    assert_eq!(idle["dancers"].as_array().unwrap().len(), 0);
+    assert_eq!(idle["parts"].as_array().unwrap().len(), 0);
+
+    assert!(mg.dance_start(false), "the qualifier run arms");
+    let v: serde_json::Value = serde_json::from_str(&mg.dance_actors_json()).unwrap();
+    let dancers = v["dancers"].as_array().unwrap();
+    assert_eq!(dancers.len(), 3, "the qualifier floor is three dancers");
+    for d in dancers {
+        // `FUN_801d0190` binds the kind's idle clip into `+0x5C`, so the gate
+        // `FUN_801d4098` fires for every spawned dancer.
+        assert!(d["clip"].as_i64().unwrap() > 0, "a clip is bound: {d}");
+        assert_eq!(d["clip_driver"], serde_json::Value::Bool(true));
+    }
+    assert!(
+        dancers
+            .iter()
+            .any(|d| d["x"].as_i64() != Some(0) || d["z"].as_i64() != Some(0)),
+        "the floor positions come off the disc's spawn table, not the origin"
+    );
+
+    // Nothing is in the part pool until the human closes a direction chain.
+    assert!(v["parts"].as_array().unwrap().is_empty());
+    let mut spawned = false;
+    for _ in 0..4000 {
+        let st: serde_json::Value = serde_json::from_str(&mg.dance_state_json()).unwrap();
+        if let Some(sym) = st["judged"].as_u64()
+            && sym != 0
+        {
+            mg.dance_press(sym as u8);
+        }
+        mg.dance_tick(1);
+        let v: serde_json::Value = serde_json::from_str(&mg.dance_actors_json()).unwrap();
+        let parts = v["parts"].as_array().unwrap().clone();
+        if parts.is_empty() {
+            continue;
+        }
+        spawned = true;
+        assert_eq!(parts.len(), 3, "the banner and its two stars");
+        for p in &parts {
+            // The emit dispatch has already applied its `>> 3`, so these are
+            // stage pixels: the banner row is 0x90 and the three sprites
+            // straddle screen centre.
+            assert_eq!(p["y"], 0x90);
+            let x = p["x"].as_i64().unwrap();
+            assert!((0x60..=0xE0).contains(&x), "on-screen x, got {x}");
+            assert_eq!(p["shadow"], serde_json::Value::Bool(true));
+            // The sprite id doubles as the widget id the page draws.
+            let s = p["sprite"].as_u64().unwrap();
+            assert!(s == 0xB || s == 0x16, "banner or star, got {s}");
+        }
+        break;
+    }
+    assert!(spawned, "a scoring judge spawns the banner parts");
+}

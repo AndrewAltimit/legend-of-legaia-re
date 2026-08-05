@@ -1094,14 +1094,21 @@ pub struct PaylinePrim {
 /// the rest of the machine's 3D furniture: retail `RTPS`-projects each
 /// endpoint on its own through `FUN_8003d368` and links the packet at
 /// [`payline_ot_depth`] of the **second** endpoint's returned depth.
-// NOT WIRED: the remaining blocker is the sink, not the source. The source
-// half is now covered - `legaia_asset::minigame_slot_scene::parse_paylines`
-// takes the five segments straight off the raw overlay, with no decoded
-// page-3 art plane. What is still missing is a consumer: paylines are
-// GTE-projected 3D line prims, and the native window draws the machine as a
-// text HUD with no projection or ordering-table pass to link them into, while
-// the browser play page draws its cabinet from JS geometry of its own. Wiring
-// it needs a 3D slot-cabinet render pass on either host.
+// REF: FUN_8003d368 (the SCUS RTPS wrapper each endpoint goes through; the
+// projection pass this row waits on is a host that runs it for the cabinet)
+// NOT WIRED: the blocker is a **projection pass**, and it is worth being exact
+// because "no line draw kind exists in the engine" has been said here and is
+// only half right. There is indeed no `ScreenPrim::Line` -
+// `legaia_engine_ui::screen_prim` carries a textured and a flat *quad* and
+// nothing two-point - but adding one would not wire this row, because a
+// payline's two endpoints are **model-space** (`legaia_asset::
+// minigame_slot_scene::SlotScene::paylines`, disc data at `DAT_801d3680`) and
+// retail `RTPS`-projects each on its own through `FUN_8003d368` before linking
+// the packet at [`payline_ot_depth`] of the second endpoint's depth. Neither
+// host runs that projection for the cabinet: the native window draws the
+// machine as a text HUD and the browser play page draws its cabinet from JS
+// geometry of its own. A 3D slot-cabinet pass is the prerequisite; the line
+// primitive is the step after it.
 // PORT: FUN_801d3380 (payline 3D line segments)
 pub fn payline_prims(
     paylines: &[legaia_asset::minigame_slot_scene::PayLine],

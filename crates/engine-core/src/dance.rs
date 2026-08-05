@@ -296,6 +296,19 @@ struct Dancer {
     /// Dancer kind (`DAT_801d540c`): the row both scoring tables are indexed by.
     /// `0` = Noa (the human).
     kind: usize,
+    /// The dancer actor's spawn position, straight out of the mode's spawn
+    /// table (`FUN_801d0190` stores the record's three words into the actor's
+    /// `+0x14` / `+0x16` / `+0x18`). Zero on a chart-only run.
+    home: [i16; 3],
+    /// The actor's bound clip id (`+0x5C`), masked to `0x1FF` exactly as
+    /// `FUN_801d0190` and `FUN_801d1358` write it. `0` = nothing bound.
+    clip: i16,
+    /// The bound clip's cursor step (`+0x6A`), the kind descriptor's rate word.
+    clip_rate: u16,
+    /// The actor flag word (`+0x10`). Only the bits the dance overlay writes
+    /// are modelled: [`crate::minigame_actor::FLAG_TRANSLUCENT`] (the anim
+    /// word's `0x200`) and [`crate::minigame_actor::FLAG_DRIVE_CLIP`].
+    flags: u32,
     /// Score (`DAT_801d53cc`), clamped to [`SCORE_MAX`].
     score: u32,
     /// Groove gauge (`DAT_801d544c`), clamped to `[0, GAUGE_MAX]`. Retail never
@@ -345,6 +358,18 @@ impl Dancer {
         }
     }
 
+    /// Bind a clip into the actor's `+0x5C` / `+0x6A` pair, folding the anim
+    /// word's `0x200` bit into the flag word the way `FUN_801d1358` does.
+    fn bind_clip(&mut self, clip: &legaia_asset::dance_cast::DanceClip) {
+        self.clip = (clip.anim_id & 0x1FF) as i16;
+        self.clip_rate = clip.rate;
+        if clip.translucent {
+            self.flags |= crate::minigame_actor::FLAG_TRANSLUCENT;
+        } else {
+            self.flags &= !crate::minigame_actor::FLAG_TRANSLUCENT;
+        }
+    }
+
     /// The dancer's difficulty lane (`gauge / 1000`), clamped to the chart.
     fn lane(&self, rows: usize) -> u32 {
         (self.gauge / GAUGE_STEP).min(rows.saturating_sub(1) as u32)
@@ -378,6 +403,20 @@ pub struct DanceGame {
     /// The overlay's HUD widget table with each record's `+0x13` ABR byte
     /// alongside it, when the run was started from a real overlay image.
     widgets: Vec<(legaia_asset::dance_art::DanceWidget, u8)>,
+    /// The five kind descriptors, when the run was started from a real overlay
+    /// image. This is what supplies the clip ids the dancer actors bind into
+    /// their `+0x5C`; without it a dancer actor carries no clip and the clip
+    /// driver gate reports `false` for it (which is what retail would do too -
+    /// an actor with nothing bound is not handed to `FUN_800204F8`).
+    kinds: Vec<legaia_asset::dance_cast::DanceKind>,
+    /// The dancer actor pool - one [`crate::minigame_actor::MinigameActor`]
+    /// per floor slot, rebuilt from the dancers every [`DanceGame::advance`].
+    actors: crate::minigame_actor::MinigameActorPool,
+    /// The **sprite-part** pool: what `FUN_801d3fd0` spawns and
+    /// [`sprite_part_emit`] draws. A separate pool from the dancers because it
+    /// is a separate actor family - the dancer is a 3D body the clip driver
+    /// animates, the part is a 2D sprite in the `<< 3` screen space.
+    parts: crate::minigame_actor::MinigameActorPool,
 }
 
 impl DanceGame {
@@ -401,7 +440,7 @@ impl DanceGame {
         kinds: &[usize],
         long_song: bool,
     ) -> Self {
-        Self {
+        let mut game = Self {
             chart,
             tables,
             phase: 0,
@@ -415,7 +454,16 @@ impl DanceGame {
             feedback: 0,
             mode: DanceMode::Qualifier,
             widgets: Vec::new(),
-        }
+            kinds: Vec::new(),
+            actors: crate::minigame_actor::MinigameActorPool::new(),
+            parts: crate::minigame_actor::MinigameActorPool::new(),
+        };
+        // A chart-only run still spawns its floor - the actors just stand at
+        // the origin and bind no clip, because both of those come off the
+        // overlay's spawn + kind tables.
+        let spawns: Vec<(usize, [i16; 3])> = kinds.iter().map(|&k| (k, [0i16; 3])).collect();
+        game.spawn_dancer_actors(&spawns);
+        game
     }
 
     /// Parse the baked step chart + scoring tables + qualifier cast out of the
@@ -443,7 +491,13 @@ impl DanceGame {
     pub fn from_overlay_for_mode(overlay: &[u8], mode: DanceMode, long_song: bool) -> Option<Self> {
         let chart = legaia_asset::dance_chart::parse(overlay)?;
         let tables = legaia_asset::dance_chart::parse_tables(overlay).unwrap_or_default();
-        let kinds: Vec<usize> = legaia_asset::dance_cast::parse(overlay)
+        let cast = legaia_asset::dance_cast::parse(overlay);
+        // The spawn record carries the dancer's kind **and** its floor
+        // position; the position is what `FUN_801d0190` stores into the
+        // spawned actor's `+0x14` / `+0x16` / `+0x18`, so it is kept here
+        // rather than dropped with the rest of the record.
+        let spawns: Vec<(usize, [i16; 3])> = cast
+            .as_ref()
             .map(|c| {
                 let table = match mode {
                     // The how-to demo reads the qualifier table but spawns only
@@ -455,16 +509,110 @@ impl DanceGame {
                 table
                     .iter()
                     .take(mode.cast_size())
-                    .map(|s| s.kind as usize)
+                    .map(|s| (s.kind as usize, [s.x, s.y, s.z]))
                     .collect()
             })
-            .filter(|k: &Vec<usize>| !k.is_empty())
-            .unwrap_or_else(|| QUALIFIER_KINDS[..mode.cast_size().min(DANCER_SLOTS)].to_vec());
+            .filter(|k: &Vec<(usize, [i16; 3])>| !k.is_empty())
+            .unwrap_or_else(|| {
+                QUALIFIER_KINDS[..mode.cast_size().min(DANCER_SLOTS)]
+                    .iter()
+                    .map(|&k| (k, [0i16; 3]))
+                    .collect()
+            });
+        let kinds: Vec<usize> = spawns.iter().map(|&(k, _)| k).collect();
         let long = long_song && mode != DanceMode::HowTo;
         let mut game = Self::with_tables(chart, tables, &kinds, long);
         game.mode = mode;
         game.widgets = dance_widgets_with_abr(overlay);
+        game.kinds = cast.map(|c| c.kinds).unwrap_or_default();
+        game.spawn_dancer_actors(&spawns);
         Some(game)
+    }
+
+    /// Seed the dancer actor pool from the mode's spawn table, mirroring
+    /// `FUN_801d0190`'s per-record stores: position into `+0x14`/`+0x16`/`+0x18`,
+    /// the floor slot into `+0x5A`, the kind descriptor's idle clip (masked to
+    /// `0x1FF`) into `+0x5C` and its rate word into `+0x6A`.
+    // PORT: FUN_801d0190 (the per-dancer actor spawn stores)
+    fn spawn_dancer_actors(&mut self, spawns: &[(usize, [i16; 3])]) {
+        self.actors.clear();
+        for (slot, &(kind, home)) in spawns.iter().enumerate() {
+            if let Some(d) = self.dancers.get_mut(slot) {
+                d.home = home;
+                if let Some(k) = self.kinds.get(kind) {
+                    d.bind_clip(&k.idle);
+                }
+            }
+            let mut a = crate::minigame_actor::MinigameActor::at(home, 0);
+            a.live_mask = slot as u16;
+            self.actors.push(a);
+        }
+        self.parts.clear();
+        self.sync_dancer_actors();
+    }
+
+    /// Spawn one sprite part, the shape `FUN_801d3fd0` builds: the spec's
+    /// already-shifted screen pair into `+0x14`/`+0x16`, the sprite id into
+    /// `+0x50`, the fixed `0x1000` scale.
+    ///
+    /// Both [`step_mark_effect_spawn`] and [`good_banner_spawn`] produce these
+    /// specs, and the run spawns the banner set itself on a scoring judge, so
+    /// the pool fills from gameplay rather than from a host.
+    // PORT: FUN_801d3fd0 (the spawn's actor-field stores)
+    pub fn spawn_sprite_part(&mut self, spec: &crate::baka_fighter::EffectSpawnSpec) -> usize {
+        let mut a = crate::minigame_actor::MinigameActor::at([spec.x, spec.y, 0], PART_DRAW_MODE);
+        a.sprite = spec.sprite_id;
+        a.scale = spec.scale;
+        // A fresh part starts at the top of the fade ramp - see
+        // [`DanceGame::advance`]'s aging pass for why the port drives `+0x78`
+        // downward.
+        a.beat = crate::minigame_actor::BEAT_FADE_CEILING;
+        self.parts.push(a)
+    }
+
+    /// Rebuild each dancer actor's live fields off its dancer's state. Runs
+    /// once per [`DanceGame::advance`], which is what keeps the record a
+    /// production datum rather than a test fixture.
+    fn sync_dancer_actors(&mut self) {
+        for (slot, d) in self.dancers.iter().enumerate() {
+            let Some(a) = self.actors.get_mut(slot) else {
+                continue;
+            };
+            a.pos = d.home;
+            // `+0x26` is the yaw the groovy-move spin drives (retail wraps it
+            // at 0x1000 per turn; `spin_acc` is that same accumulator).
+            a.yaw = (d.spin_acc % SPIN_TURN_UNITS) as i16;
+            a.field_5c = d.clip;
+            a.cursor = d.clip_rate as i16;
+            a.flags = d.flags;
+            // The `0x1000` arm of the clip gate: retail raises it for an actor
+            // whose clip must keep running even with nothing bound, which for
+            // the dance floor is the groovy-move spin.
+            a.set_drives_clip(d.spin_turns > 0);
+        }
+    }
+
+    /// Age the sprite parts one frame and retire the faded ones.
+    ///
+    /// `+0x78` is the slot [`sprite_part_fade_weight`] reads, and its *writer*
+    /// is not in the dump corpus - no caller of `FUN_801d387c` exists there
+    /// either, because the address sits as an actor-prototype callback word.
+    /// The port therefore drives it **down** the prologue's own ramp: a part
+    /// spawns at [`crate::minigame_actor::BEAT_FADE_CEILING`] (weight `0xFF`
+    /// after the prologue's `>> 4` and clamp) and decays to zero, so it fades
+    /// out over its life the way every other banner in the port does. That is
+    /// a port decision, disclosed, not a reading of a store - and it is the
+    /// choice, not the ramp, that is unpinned: the arithmetic on either side of
+    /// `+0x78` is the disassembly's.
+    fn age_sprite_parts(&mut self, frame_delta: u32) {
+        let step = (frame_delta * PART_AGE_STEP).min(u32::from(u16::MAX)) as u16;
+        for p in self.parts.actors_mut() {
+            p.beat = p.beat.saturating_sub(step);
+            if p.beat == 0 {
+                p.flags |= crate::minigame_actor::FLAG_KILLED;
+            }
+        }
+        self.parts.retire_dead();
     }
 
     /// This run's mode (`DAT_801d514c`).
@@ -687,6 +835,62 @@ impl DanceGame {
         self.song_timer >= self.song_len
     }
 
+    // --------------------------------------------------------------- actors
+
+    /// The dancer actor pool - one record per floor slot, live every frame.
+    ///
+    /// This is the port's equivalent of the actors `FUN_801d0190` spawns:
+    /// position, flag word, bound clip id and beat field, in the retail slots
+    /// the dance overlay's draw kernels read.
+    pub fn dancer_actors(&self) -> &[crate::minigame_actor::MinigameActor] {
+        self.actors.actors()
+    }
+
+    /// One frame of per-dancer clip work: [`dance_clip_driver_gate`] applied to
+    /// each floor slot's actor record.
+    ///
+    /// `clip_driver` says whether the shared clip driver runs for that dancer
+    /// this frame - the whole of `FUN_801d4098`.
+    pub fn dancer_clip_frames(&self) -> Vec<DancerClipFrame> {
+        self.actors
+            .actors()
+            .iter()
+            .enumerate()
+            .map(|(slot, a)| DancerClipFrame {
+                slot,
+                clip_id: a.field_5c,
+                clip_rate: a.cursor as u16,
+                clip_driver: dance_clip_driver_gate(a.field_5c, a.flags),
+                translucent: a.flags & crate::minigame_actor::FLAG_TRANSLUCENT != 0,
+            })
+            .collect()
+    }
+
+    /// The live sprite parts.
+    pub fn sprite_parts(&self) -> &[crate::minigame_actor::MinigameActor] {
+        self.parts.actors()
+    }
+
+    /// One frame of sprite-part draw work: [`sprite_part_emit`] and
+    /// [`sprite_part_fade_weight`] applied to every live part.
+    ///
+    /// This is what makes those two kernels live. A host draws the emitted
+    /// quads (the shadowed arm is two of them per part) at
+    /// [`SpritePartEmit`]'s screen pair, modulated by `fade`.
+    pub fn sprite_part_emits(&self) -> Vec<SpritePartFrame> {
+        self.parts
+            .actors()
+            .iter()
+            .enumerate()
+            .map(|(index, a)| SpritePartFrame {
+                index,
+                emit: sprite_part_emit(a.draw_mode, a.pos[0], a.pos[1], a.sprite),
+                fade: sprite_part_fade_weight(a.beat),
+                sprite: a.sprite,
+            })
+            .collect()
+    }
+
     // ---------------------------------------------------------------- state
 
     /// The human's running score.
@@ -883,6 +1087,52 @@ impl DanceGame {
                 }
             }
         }
+
+        // `FUN_801d1358` rebinds a dancer's loop clip once its judge-triggered
+        // reaction / move clip has run out - the port's stand-in for the clip's
+        // own playback is the note latch, which is what the judge arms and
+        // what this frame's decay above clears.
+        for i in 0..self.dancers.len() {
+            if self.dancers[i].latch_timer == 0 {
+                self.bind_loop_clip(i);
+            }
+        }
+        self.sync_dancer_actors();
+        self.age_sprite_parts(frame_delta);
+    }
+
+    /// Bind dancer `i`'s standing clip: the kind descriptor's dance-groove loop
+    /// during a run, its idle before the beat clock has moved.
+    fn bind_loop_clip(&mut self, i: usize) {
+        let Some(kind) = self.dancers.get(i).map(|d| d.kind) else {
+            return;
+        };
+        let Some(k) = self.kinds.get(kind).cloned() else {
+            return;
+        };
+        let clip = if self.song_timer > 0 { k.dance } else { k.idle };
+        if let Some(d) = self.dancers.get_mut(i) {
+            d.bind_clip(&clip);
+        }
+    }
+
+    /// Bind the judge-returned move-pair clip on dancer `i`
+    /// (`FUN_801d1af4` returns the pair index, `FUN_801d1358` applies it).
+    fn bind_move_clip(&mut self, i: usize, pair: usize) {
+        let Some(kind) = self.dancers.get(i).map(|d| d.kind) else {
+            return;
+        };
+        let Some(clip) = self
+            .kinds
+            .get(kind)
+            .and_then(|k| k.moves.get(pair))
+            .copied()
+        else {
+            return;
+        };
+        if let Some(d) = self.dancers.get_mut(i) {
+            d.bind_clip(&clip);
+        }
     }
 
     /// The CPU dancer's synthetic pad symbol for this frame (`FUN_801d1820`):
@@ -937,11 +1187,49 @@ impl DanceGame {
         if self.dancers[i].locked(beat) {
             return DanceEvent::Ignored;
         }
-        if dir.is_triangle() {
+        let lane = self.dancers[i].lane(self.chart.rows.len()) as usize;
+        let ev = if dir.is_triangle() {
             self.spend_triangle(i, beat)
         } else {
             self.judge_direction(i, dir, beat)
+        };
+        // `FUN_801d1af4`'s return value is a **move-pair index** into the
+        // dancer's kind descriptor, which `FUN_801d1358` binds into the
+        // actor's `+0x5C` / `+0x6A`. The mapping is the one
+        // `legaia_asset::dance_cast` documents: pair 0/1 = the Square/Circle
+        // miss reaction, pair `lane*2 + 2 (+1)` = the closed-chain move, pair
+        // `8 + lane` = the on-beat / timing-button step. A plain matched note
+        // that does not close the chain returns nothing and binds nothing.
+        use legaia_asset::dance_cast as dc;
+        let circle = dir.symbol() == 2;
+        match ev {
+            DanceEvent::Miss => {
+                let pair = if circle {
+                    dc::MOVE_MISS_CIRCLE
+                } else {
+                    dc::MOVE_MISS_SQUARE
+                };
+                self.bind_move_clip(i, pair);
+            }
+            DanceEvent::Sequence { weight, .. } => {
+                self.bind_move_clip(i, dc::move_sequence_pair(lane, circle));
+                // The human's closed chain fires the sequence-clear banner,
+                // which is three `FUN_801d3fd0` spawns into the part pool.
+                if i == 0 {
+                    let b = good_banner_spawn(weight.min(0xFFFF) as u16);
+                    self.spawn_sprite_part(&b.banner);
+                    for s in &b.stars {
+                        self.spawn_sprite_part(s);
+                    }
+                }
+            }
+            DanceEvent::Groovy { .. } => {
+                self.bind_move_clip(i, dc::move_beat_pair(lane));
+            }
+            DanceEvent::Hit { .. } | DanceEvent::Ignored | DanceEvent::NoCharge => {}
         }
+        self.sync_dancer_actors();
+        ev
     }
 
     /// The `0x80` / `0x20` branches: judge the press against the chart cell
@@ -1360,22 +1648,30 @@ pub fn dance_countin_banner_envelope(frame: i32) -> CountInBanner {
     }
 }
 
-// NOT WIRED: the two arms are not equally blocked, and it is worth saying which
-// is which. The spin arm's datum exists - the session holds the `+0x5c` turn
-// counter and [`DanceGame::in_groovy_move`] already evaluates `spin > 0` on it -
-// so wiring that half would change nothing. The `+0x10` flag arm has no
-// analogue at all: the port's dancers are rules records with no actor flag
-// word, so passing `0` for `flags` would leave the second arm permanently dead
-// and the predicate degenerate. Both a dancer actor carrying that word and the
-// clip driver the predicate gates have to exist first.
+// REF: FUN_800204f8 (the shared clip driver this gate decides to call; the
+// driver itself is the move-VM consumer ported in `legaia-engine-vm`)
+// Wired: [`DanceGame::dancer_clip_frames`] runs this per floor slot every frame
+// off the dancer actor pool, and the pool is populated by
+// [`DanceGame::from_overlay_for_mode`] from the disc's own spawn + kind tables.
+//
+// CORRECTION to the reason this row previously carried. The old tag read
+// `+0x5C` as "the groovy-move turns left" and concluded the spin arm was
+// already satisfied. It is not that slot. `FUN_801d0190` stores
+// `kind_desc[0x10] & 0x1FF` - the **idle clip's anim id** - into `+0x5C` at
+// spawn, and `FUN_801d1358` rewrites it with each judge-returned move clip
+// (`sh v0,0x5c(s0)` at `801d1544` / `801d1584` / `801d16d4`, each preceded by
+// `andi ...,0x1ff`); the groovy-move turn counter is the overlay global
+// `DAT_801d564c[i]`, decremented at `801d1454` and not an actor field at all.
+// So the first arm is "this actor has a clip bound", and satisfying it meant
+// binding clips - which is what the dancer record now does.
 /// PORT: FUN_801d4098 - the per-dancer actor clip-driver gate. Retail hands the
-/// dancer to the shared clip driver `FUN_800204f8` only when its spin counter
-/// (`+0x5c`, the groovy-move turns left) is positive **or** its flag word
-/// (`+0x10`) carries bit `0x1000`. That predicate is the whole function; the
-/// driver call is the animation host's. `spin` is the signed spin counter,
-/// `flags` the actor flag word.
-pub fn dance_clip_driver_gate(spin: i16, flags: u32) -> bool {
-    spin > 0 || (flags & 0x1000) != 0
+/// dancer to the shared clip driver `FUN_800204f8` only when its bound clip id
+/// (`+0x5C`) is positive **or** its flag word (`+0x10`) carries bit `0x1000`.
+/// That predicate is the whole function; the driver call is the animation
+/// host's. `clip_id` is the signed `+0x5C` halfword, `flags` the actor flag
+/// word.
+pub fn dance_clip_driver_gate(clip_id: i16, flags: u32) -> bool {
+    clip_id > 0 || (flags & crate::minigame_actor::FLAG_DRIVE_CLIP) != 0
 }
 
 // NOT WIRED, AND REDUNDANT RATHER THAN MISSING - read the second paragraph
@@ -1470,28 +1766,82 @@ pub const fn dance_scene_stage() -> DanceSceneStage {
     }
 }
 
-/// Fade weight the dancer sprite emit derives from a dancer's beat field
-/// (`actor + 0x78`), clamped to `0 ..= 0xFF`.
+/// Fade weight the sprite emit derives from the part's `+0x78` halfword,
+/// clamped to `0 ..= 0xFF`.
 ///
 /// Retail reads the field as a **halfword** and compares it against `0x4000`
 /// as a *signed 32-bit* value, so the "above the window" test can never see a
-/// negative: a beat past `0x4000` collapses the weight to zero outright rather
-/// than saturating it.
+/// negative: a value past `0x4000` collapses the weight to zero outright
+/// rather than saturating it.
 // PORT: FUN_801d387c (the fade-weight prologue)
-// NOT WIRED: the port's dancers are rules records with no `+0x78` beat field
-// and no sprite quad to fade - the same pair of gaps [`dancer_emit`] names (a
-// minigame actor record, and a quad sink to draw it into). Not the same row as
-// [`dance_face_rig`], which is blocked on nothing and simply has no work to do.
-pub fn dancer_fade_weight(beat: u16) -> u8 {
+// Wired: [`DanceGame::sprite_part_emits`] applies it to every live sprite
+// part every frame, over the pool [`DanceGame::advance`] ages.
+//
+// What is still not retail-pinned is the *producer* of `+0x78`: no caller of
+// `FUN_801d387c` exists in the dump corpus (its address sits as a callback
+// word, the same shape as the duel's mirrored sprite pass), so nothing shows
+// which quantity the dance overlay parks there. The port drives it as the
+// part's age on the prologue's own
+// [`crate::minigame_actor::BEAT_FADE_CEILING`] ramp - a port decision, stated
+// as one, not a reading of a store.
+pub fn sprite_part_fade_weight(beat: u16) -> u8 {
     if beat as i32 > 0x4000 {
         return 0;
     }
     ((beat as i32) >> 4).min(0xFF) as u8
 }
 
+/// The emit dispatch's draw mode for a spawned sprite part.
+///
+/// **Not pinned to retail.** `FUN_801d387c` takes its mode from its caller and
+/// no caller of that address is in the dump corpus - the address sits as an
+/// actor-prototype callback word, the same shape as the duel's mirrored sprite
+/// pass. Mode `2` is the shadowed arm, the two-emit draw that applies the
+/// `>> 3` inverse of the spawn's `<< 3`; the port uses it and says so rather
+/// than implying a disassembly reading.
+pub const PART_DRAW_MODE: u32 = 2;
+
+/// `+0x78` units a sprite part sheds per frame.
+///
+/// A **port decision**, not a retail constant: nothing in the dump corpus
+/// writes `+0x78` for this actor family, so the engine spawns a part at
+/// [`crate::minigame_actor::BEAT_FADE_CEILING`] and decays it down the fade
+/// prologue's own ramp. At this step a part reaches zero after 64 frames, the
+/// same order as the play window's placeholder part lifetime.
+pub const PART_AGE_STEP: u32 = 0x100;
+
+/// One dancer's resolved per-frame clip work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DancerClipFrame {
+    /// Floor slot (`0` = the human).
+    pub slot: usize,
+    /// The actor's bound clip id (`+0x5C`), for a host that wants to play it.
+    pub clip_id: i16,
+    /// The bound clip's cursor step (`+0x6A`).
+    pub clip_rate: u16,
+    /// What [`dance_clip_driver_gate`] resolved from `+0x5C` / `+0x10`: the
+    /// shared clip driver runs for this actor this frame.
+    pub clip_driver: bool,
+    /// The bound clip asked for a translucent draw (anim word bit `0x200`).
+    pub translucent: bool,
+}
+
+/// One sprite part's resolved per-frame draw work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpritePartFrame {
+    /// Index into [`DanceGame::sprite_parts`].
+    pub index: usize,
+    /// What [`sprite_part_emit`] resolved for the part's draw mode.
+    pub emit: SpritePartEmit,
+    /// What [`sprite_part_fade_weight`] resolved from the part's `+0x78`.
+    pub fade: u8,
+    /// The part's `+0x50` sprite id (the spawn's third argument).
+    pub sprite: u16,
+}
+
 /// Which emit the dancer sprite dispatch performs for a draw mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DancerEmit {
+pub enum SpritePartEmit {
     /// Mode `0` - no emit at all: copy the transform template's `+0x90` trio
     /// into the dancer and zero its `+0x96` / `+0x98` / `+0x9A`.
     CopyTemplate,
@@ -1514,51 +1864,64 @@ pub enum DancerEmit {
     None,
 }
 
-// NOT WIRED: every arm ends in the hub sprite emitter `FUN_801D2F38` or in a
-// write to an overlay-resident transform template, neither of which the engine
-// has - and the two halves of that are separate prerequisites worth keeping
-// apart. (1) **A minigame actor record**: retail's dancer carries `+0x14/+0x16`
-// screen pair, `+0x50` sprite word, `+0x78` beat field and the `+0x90` transform
-// template this dispatch reads and writes; the port's dancers are rules records
-// with none of them. The same record is what [`dance_clip_driver_gate`],
-// [`dancer_fade_weight`] and `baka_fighter_chrome::mirrored_sprite_pass` each
-// wait on, in three different minigames. (2) **A quad sink**: no dance sprite
-// page is resident in engine VRAM (`minigame_fx::dance_quad_draws` already runs
-// per frame with `solid_src: None`) and the browser page composes its quads in
-// JavaScript, so nothing asks a ported emitter for a packet - the same sink
-// `baka_fighter::hud_widget_quad` and `other_game_hud`'s emitters name.
-// [`step_mark_effect_spawn`] needs (1) plus an effect-part pool on top.
-/// PORT: FUN_801d387c - the per-dancer sprite / shadow emit dispatch.
+// Wired: [`DanceGame::sprite_part_emits`] calls this once per live sprite part
+// every frame, over the pool [`DanceGame::spawn_sprite_part`] fills and
+// [`DanceGame::advance`] ages. The prerequisite the old tag named - "a
+// minigame actor record" carrying the `+0x14/+0x16` pair, the `+0x50` sprite
+// word and the `+0x78` field - is
+// [`crate::minigame_actor::MinigameActor`].
+//
+// CORRECTION, and it is what decides where the wire belongs. The old tag (and
+// this function's old name, `dancer_emit`) read this as the **dancer's** draw.
+// It is not: the actor family it reads is the one `FUN_801d3fd0` spawns.
+// That spawner stamps `+0x50 = sprite_id` and stores `x << 3` / `y << 3` into
+// `+0x14` / `+0x16` (`801d401c`..`801d4024`), and this dispatch reads exactly
+// those three slots and shifts the pair back down by three - an exact inverse,
+// on a spawner whose only two callers in the port are
+// [`step_mark_effect_spawn`] and [`good_banner_spawn`]. The dancer bodies
+// `FUN_801d0190` spawns carry a *world* triple in `+0x14`..`+0x18` and no
+// `+0x50` at all, so a `>> 3` of a dancer's position lands hundreds of pixels
+// off-screen.
+//
+// The old tag's second prerequisite, "a quad sink", was **wrong about the
+// engine**: `legaia_engine_ui::screen_prim` has carried a PSX screen-space
+// quad (`ScreenQuad` / `FlatQuad`, per-vertex gouraud, CLUT + texpage, ABR
+// mode, ordering-table bucket) with both hosts consuming its `build_geometry`
+// output since the battle-intro work. What genuinely has no sink is the
+// *texel source*: no dance sprite page is resident in engine VRAM, which is
+// why both hosts still degrade the emitted quads to a placeholder rather than
+// sampling the overlay's page.
+/// PORT: FUN_801d387c - the sprite-part / shadow emit dispatch.
 ///
 /// `mode` selects one of five arms through a jump table; `x` / `y` are the
-/// dancer's `+0x14` / `+0x16` world pair and `sprite` its `+0x50` word. The
-/// two emitting arms round toward zero **before** the `>> 3` (retail's
-/// `bgez / addiu 7 / sra 3`), so a dancer at `-1` maps to screen `0` and not
+/// part's `+0x14` / `+0x16` pair and `sprite` its `+0x50` word. The two
+/// emitting arms round toward zero **before** the `>> 3` (retail's
+/// `bgez / addiu 7 / sra 3`), so a part at `-1` maps to screen `0` and not
 /// `-1`.
-pub fn dancer_emit(mode: u32, x: i16, y: i16, sprite: u16) -> DancerEmit {
+pub fn sprite_part_emit(mode: u32, x: i16, y: i16, sprite: u16) -> SpritePartEmit {
     let scaled = |v: i16| -> i16 {
         let v = v as i32;
         ((if v < 0 { v + 7 } else { v }) >> 3) as i16
     };
     match mode {
-        0 => DancerEmit::CopyTemplate,
-        1 => DancerEmit::SetTemplateZ,
-        2 => DancerEmit::Shadowed {
+        0 => SpritePartEmit::CopyTemplate,
+        1 => SpritePartEmit::SetTemplateZ,
+        2 => SpritePartEmit::Shadowed {
             x: scaled(x),
             y: scaled(y),
             flags: [sprite | 0x400, sprite | 0x800],
         },
-        3 => DancerEmit::Plain {
+        3 => SpritePartEmit::Plain {
             x,
             y,
             flags: sprite,
         },
-        4 => DancerEmit::Marker {
+        4 => SpritePartEmit::Marker {
             x,
             y,
             clut_byte: (sprite << 4) as u8,
         },
-        _ => DancerEmit::None,
+        _ => SpritePartEmit::None,
     }
 }
 
@@ -2363,22 +2726,22 @@ mod tests {
 
     #[test]
     fn fade_weight_collapses_past_the_window_instead_of_saturating() {
-        assert_eq!(dancer_fade_weight(0), 0);
-        assert_eq!(dancer_fade_weight(0x10), 1);
+        assert_eq!(sprite_part_fade_weight(0), 0);
+        assert_eq!(sprite_part_fade_weight(0x10), 1);
         // 0x4000 >> 4 = 0x400, clamped to 0xff.
-        assert_eq!(dancer_fade_weight(0x4000), 0xFF);
+        assert_eq!(sprite_part_fade_weight(0x4000), 0xFF);
         // One past the window is zero, not 0xff.
-        assert_eq!(dancer_fade_weight(0x4001), 0);
-        assert_eq!(dancer_fade_weight(0xFFFF), 0);
+        assert_eq!(sprite_part_fade_weight(0x4001), 0);
+        assert_eq!(sprite_part_fade_weight(0xFFFF), 0);
     }
 
     #[test]
     fn dancer_emit_modes_differ_in_rounding_and_flags() {
-        assert_eq!(dancer_emit(0, 0, 0, 0), DancerEmit::CopyTemplate);
-        assert_eq!(dancer_emit(1, 0, 0, 0), DancerEmit::SetTemplateZ);
+        assert_eq!(sprite_part_emit(0, 0, 0, 0), SpritePartEmit::CopyTemplate);
+        assert_eq!(sprite_part_emit(1, 0, 0, 0), SpritePartEmit::SetTemplateZ);
         assert_eq!(
-            dancer_emit(2, 16, -1, 0x20),
-            DancerEmit::Shadowed {
+            sprite_part_emit(2, 16, -1, 0x20),
+            SpritePartEmit::Shadowed {
                 x: 2,
                 // -1 rounds toward zero before the shift.
                 y: 0,
@@ -2387,22 +2750,22 @@ mod tests {
         );
         // Mode 3 does not scale at all.
         assert_eq!(
-            dancer_emit(3, 16, -1, 0x20),
-            DancerEmit::Plain {
+            sprite_part_emit(3, 16, -1, 0x20),
+            SpritePartEmit::Plain {
                 x: 16,
                 y: -1,
                 flags: 0x20
             }
         );
         assert_eq!(
-            dancer_emit(4, 16, -1, 0x0A),
-            DancerEmit::Marker {
+            sprite_part_emit(4, 16, -1, 0x0A),
+            SpritePartEmit::Marker {
                 x: 16,
                 y: -1,
                 clut_byte: 0xA0
             }
         );
-        assert_eq!(dancer_emit(5, 0, 0, 0), DancerEmit::None);
+        assert_eq!(sprite_part_emit(5, 0, 0, 0), SpritePartEmit::None);
     }
 
     #[test]
@@ -2604,5 +2967,118 @@ mod tests {
                 value: g.score()
             }
         );
+    }
+
+    // ------------------------------------------------- dancer actor records
+
+    #[test]
+    fn a_run_spawns_one_actor_per_floor_slot() {
+        let g = game();
+        assert_eq!(g.dancer_actors().len(), g.dancer_count());
+        // The pool is populated by the constructor, not by a test: every slot
+        // already carries the retail spawn scale.
+        for a in g.dancer_actors() {
+            assert_eq!(a.scale, crate::minigame_actor::SPAWN_SCALE);
+        }
+        assert_eq!(g.dancer_clip_frames().len(), g.dancer_count());
+        // Nothing enters the sprite-part pool until something scores.
+        assert!(g.sprite_parts().is_empty());
+    }
+
+    #[test]
+    fn the_groovy_spin_raises_the_clip_drive_flag() {
+        let mut g = game();
+        // No clip is bound on a chart-only run (the ids are overlay data), so
+        // the gate is false until the flag arm fires.
+        assert!(g.dancer_clip_frames().iter().all(|f| !f.clip_driver));
+        // A triangle throws the human into the groovy move, which is the
+        // `0x1000` arm: `FUN_801d4098` runs the clip driver regardless.
+        let ev = g.press(DanceDir::C);
+        assert!(matches!(ev, DanceEvent::Groovy { .. }), "{ev:?}");
+        assert!(g.in_groovy_move());
+        let f = g.dancer_clip_frames();
+        assert!(f[0].clip_driver, "the spinning dancer must drive its clip");
+        assert_eq!(
+            g.dancer_actors()[0].flags & crate::minigame_actor::FLAG_DRIVE_CLIP,
+            crate::minigame_actor::FLAG_DRIVE_CLIP
+        );
+        // The rivals are not spinning, so their gate stays down.
+        assert!(f[1..].iter().all(|s| !s.clip_driver));
+    }
+
+    // ---------------------------------------------------------- sprite parts
+
+    #[test]
+    fn a_closed_chain_spawns_the_banner_parts_and_they_emit() {
+        let mut g = game();
+        assert!(g.sprite_parts().is_empty());
+        // Lane 0 closes its chain on the first matched note.
+        let ev = g.press(DanceDir::A);
+        assert!(matches!(ev, DanceEvent::Sequence { .. }), "{ev:?}");
+        // The banner + its two stars, spawned by the rules engine itself.
+        assert_eq!(g.sprite_parts().len(), 3);
+        let frames = g.sprite_part_emits();
+        assert_eq!(frames.len(), 3);
+        // The banner sits at screen centre: `0xa0 << 3` spawned, `>> 3` back
+        // out again by the emit dispatch.
+        match frames[0].emit {
+            SpritePartEmit::Shadowed { x, y, flags } => {
+                assert_eq!((x, y), (0xa0, 0x90));
+                assert_eq!(flags, [0xb | 0x400, 0xb | 0x800]);
+            }
+            other => panic!("a part takes the shadowed arm, got {other:?}"),
+        }
+        // A fresh part spawns at the top of the ramp, so the prologue's `>> 4`
+        // + clamp puts it at full weight; `advance` decays it from there. The
+        // clamp is why the hold runs long and the fade is the tail: the weight
+        // only leaves 0xFF once `+0x78` drops below `0xFF << 4`.
+        assert!(frames.iter().all(|f| f.fade == 0xFF), "{frames:?}");
+        let hold = (u32::from(crate::minigame_actor::BEAT_FADE_CEILING) - 0xFF0) / PART_AGE_STEP;
+        g.advance(hold);
+        assert!(g.sprite_part_emits().iter().all(|f| f.fade == 0xFF));
+        g.advance(4);
+        let mid = g.sprite_part_emits();
+        assert!(
+            mid.iter().all(|f| f.fade > 0 && f.fade < 0xFF),
+            "the fade weight must track the part's age, got {mid:?}"
+        );
+    }
+
+    #[test]
+    fn sprite_parts_retire_when_the_fade_runs_out() {
+        let mut g = game();
+        g.press(DanceDir::A);
+        assert_eq!(g.sprite_parts().len(), 3);
+        let frames_to_zero = u32::from(crate::minigame_actor::BEAT_FADE_CEILING) / PART_AGE_STEP;
+        for _ in 0..frames_to_zero {
+            g.advance(1);
+        }
+        assert!(g.sprite_parts().is_empty(), "{:?}", g.sprite_parts());
+    }
+
+    #[test]
+    fn the_fade_prologue_collapses_above_the_ceiling() {
+        // The one arm the port's own driving never reaches, kept covered on
+        // the kernel: retail compares `+0x78` against 0x4000 as a signed 32-bit
+        // value, so a value past it goes to zero outright, not to a saturated
+        // 0xFF.
+        assert_eq!(sprite_part_fade_weight(0x4000), 0xFF);
+        assert_eq!(sprite_part_fade_weight(0x4001), 0);
+        assert_eq!(sprite_part_fade_weight(0xFFFF), 0);
+        assert_eq!(sprite_part_fade_weight(0x100), 0x10);
+        assert_eq!(sprite_part_fade_weight(0), 0);
+    }
+
+    #[test]
+    fn the_emit_dispatch_rounds_a_negative_pair_toward_zero() {
+        let mut g = game();
+        g.press(DanceDir::A);
+        // Park a part on a negative component so the round-toward-zero shift
+        // is exercised through the live record.
+        g.parts.actors_mut()[0].pos = [-1, 0x40, 0];
+        match g.sprite_part_emits()[0].emit {
+            SpritePartEmit::Shadowed { x, y, .. } => assert_eq!((x, y), (0, 8)),
+            other => panic!("a part takes the shadowed arm, got {other:?}"),
+        }
     }
 }
