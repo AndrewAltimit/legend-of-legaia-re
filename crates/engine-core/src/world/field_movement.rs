@@ -1528,7 +1528,12 @@ impl World {
     /// against `DAT_80085758`; a swap reseeds the record's cursor, so the
     /// port resets the VM's PC / cursor on a change rather than resuming the
     /// old variant's offset into new bytecode.
-    // PORT: FUN_80038158 (facing channel drive), FUN_80036D80 (ramp pool)
+    // This is the host driver, not the port: both routines are ported in
+    // `legaia_engine_vm::ambient_motion`, whose module-level `PORT:` line
+    // claims them, and this method only steps that VM and publishes the
+    // result. So the tags here are cross-references - the same form
+    // `world/frame_tick.rs`'s call site already uses for the pair.
+    // REF: FUN_80038158 (facing channel drive), FUN_80036D80 (ramp pool)
     pub fn tick_field_npc_ambient(&mut self) {
         if self.field_npc_ambient.is_empty() {
             return;

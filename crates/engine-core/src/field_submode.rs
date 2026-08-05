@@ -192,8 +192,12 @@ pub struct PanelRow {
     /// `true` when this row carries the selection highlight bar
     /// (`entry == _DAT_8007BB88`).
     pub highlighted: bool,
-    /// Glyph colour - [`PANEL_INK_MARKED`] when `entry == _DAT_8007BB9C`, else
-    /// [`PANEL_INK_NORMAL`].
+    /// Glyph-run **base id**, not a colour: retail adds it to the row's own
+    /// entry index and hands the sum to the glyph-run draw leaf as the code
+    /// (`(x + 0x24, y, entry + base)`), picking [`PANEL_INK_MARKED`] when
+    /// `entry == _DAT_8007BB9C` and [`PANEL_INK_NORMAL`] otherwise
+    /// (`0x801e6a0c..0x801e6a2c`). The field name predates that read; the
+    /// values are the retail ones either way.
     pub ink: i16,
     /// `true` when the row draws its second glyph run (retail skips it for
     /// `entry == 0`).

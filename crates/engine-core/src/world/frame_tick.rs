@@ -1855,8 +1855,15 @@ impl World {
     ///
     /// [`DomeDamageModel`]: crate::muscle_dome::DomeDamageModel
     ///
-    /// PORT: FUN_801d0748 (the shared battle round driver's phase loop: pick /
-    /// commit / resolve), with the presentation left to the host.
+    /// `FUN_801D0748` is the **battle overlay's** round / flow SM (context
+    /// pointer `_DAT_8007BD24`, phase byte `ctx+6`), not a dome-specific
+    /// controller: its 2781 instructions form none of the dome's own tables
+    /// (`0x801F4B8C` and friends appear nowhere in it). It is reached here
+    /// because a dome leg *is* an ordinary battle, so the reuse is the retail
+    /// chain rather than a shape match.
+    ///
+    /// PORT: FUN_801d0748 (that round driver's phase loop: pick / commit /
+    /// resolve), with the presentation left to the host.
     fn tick_muscle_dome(&mut self) {
         use crate::muscle_dome::MusclePhase;
         let Some(phase) = self.muscle_dome.as_ref().map(|s| s.phase()) else {
