@@ -76,15 +76,18 @@
 }
 
 /* Stage: canvas + side rail. */
-.play-stage { display: grid; grid-template-columns: 1fr 260px; gap: 1rem; align-items: start; }
+.play-stage { display: grid; grid-template-columns: 1fr 320px; gap: 1rem; align-items: start; }
 /* Sticky viewport: the canvas column pins under the fixed topbar while the
-   page scrolls to the rail cards and the prose below, so the running game
-   never leaves the screen. The stick happens on the grid ITEM (not the
-   canvas wrap): its grid row is as tall as the taller rail column, and that
-   surplus is the sticky travel. The wrap's width is capped by the viewport
-   height (4:3, minus room for the HUD + button rows) so the pinned column
-   always fits on screen - a wide-but-short window gets a smaller centred
-   canvas instead of one that scrolls off the bottom. */
+   page scrolls to the rail cards and the prose, so the running game never
+   leaves the screen. The stick happens on the grid ITEM (not the canvas
+   wrap): its grid row is as tall as the taller rail column, and that
+   surplus is the sticky travel. A sticky grid item can never leave its own
+   grid row, so once the stage is revealed the page's about-prose is moved
+   INTO the rail column (see `showStage()`) - anything left below the stage
+   is scroll the canvas cannot follow. The wrap's width is capped by the
+   viewport height (4:3, minus room for the HUD + button rows) so the
+   pinned column always fits on screen - a wide-but-short window gets a
+   smaller centred canvas instead of one that scrolls off the bottom. */
 .play-viewport {
   position: sticky;
   top: calc(var(--topbar-h) + 0.5rem);
@@ -533,6 +536,22 @@
   const searchEl  = document.getElementById('play-scene-search');
   const keysEl    = document.getElementById('play-keys');
 
+  /* Reveal the stage grid. On first reveal, move the about-prose into the
+   * rail column: the sticky viewport is a grid item and can never scroll
+   * past its own grid row, so any content left BELOW the stage is page
+   * scroll the pinned canvas cannot follow (it slid partly off-screen at
+   * short window heights, and entirely once the details opened). In the
+   * rail column the prose adds to the row height instead - the canvas
+   * stays pinned for the whole read. Before a disc loads the stage is
+   * hidden and the prose keeps its normal full-width spot. */
+  function showStage() {
+    if (stageEl.style.display === 'grid') return;
+    stageEl.style.display = 'grid';
+    const det  = document.querySelector('details.about-data');
+    const rail = stageEl.querySelector('.play-rail');
+    if (det && rail && det.parentElement !== rail) rail.appendChild(det);
+  }
+
   const hud = {
     scene: document.getElementById('hud-scene'),
     mode:  document.getElementById('hud-mode'),
@@ -634,7 +653,7 @@
        * the stage so the picker is visible and selectable without first
        * booting a scene via New Game. The canvas stays blank until a scene is
        * chosen from the list. */
-      stageEl.style.display = 'grid';
+      showStage();
       searchEl.focus();
     }
   });
@@ -684,7 +703,7 @@
     if (!runtime) return;
     active = label;
     renderList(searchEl.value);
-    stageEl.style.display = 'grid';
+    showStage();
     statusEl.textContent = `Entering ${label}…`;
     try {
       if (!view) {
@@ -794,7 +813,7 @@
     });
     try { runtime.boot_title_start(); } catch (e) { console.warn('boot title', e); then('new_game'); return; }
     if (!runtime.boot_title_is_active()) { then('new_game'); return; }   /* no disc art path */
-    stageEl.style.display = 'grid';
+    showStage();
     statusEl.textContent = 'Press Start (Enter). Up/Down to choose, Z to confirm.';
     const ctx = menuCanvas.getContext('2d');
     /* Blitters, in the engine's own fallback order: the title art carries the
