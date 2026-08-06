@@ -672,6 +672,71 @@ impl LegaiaSummons {
             .map(|p| vec![p.width as u32, p.height as u32])
             .unwrap_or_default()
     }
+
+    /// Bake the current cast's creature mesh **plus every phase clip** into a
+    /// binary glTF (`.glb`) for download: one node per rigid TMD object (the
+    /// engine's `R . v + T` pose model expressed as native TRS keyframe
+    /// channels), textured from the same runtime VRAM the canvas renders
+    /// (every sampled `(cba, tsb-page)` pair baked into one RGBA atlas).
+    ///
+    /// The clip list is the actor record's own `+0x4C` table in table order -
+    /// the same phases the page's chip row plays - each named by its phase
+    /// number + action tag and clocked at its retail rate byte
+    /// (`7.5 * rate`). Animation channel `i` drives TMD object `i`, the
+    /// contract `character_gltf` shares with the page's JS pose loop; the
+    /// summon rig satisfies it natively because the record's per-part
+    /// keyframe table is indexed by TMD object (no expansion step - see the
+    /// disc-gated 1:1 assertion in `tests/summon_view_real.rs`).
+    ///
+    /// Everything is baked client-side off the visitor's own disc; nothing is
+    /// uploaded. Empty until [`Self::set_cast`] (or if the mesh has nothing
+    /// to export).
+    pub fn export_summon_glb(&self) -> Vec<u8> {
+        let Some(c) = &self.current else {
+            return Vec::new();
+        };
+        let fps_for_rate = |rate: u8| {
+            if rate > 0 {
+                7.5 * f32::from(rate)
+            } else {
+                15.0
+            }
+        };
+        let clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = c
+            .cast
+            .clips
+            .iter()
+            .enumerate()
+            .map(|(i, k)| legaia_asset::character_gltf::CharacterClip {
+                name: format!("phase {} (tag 0x{:02X})", i + 1, k.action_id),
+                fps: fps_for_rate(k.rate),
+                anim: k,
+            })
+            .collect();
+        legaia_asset::character_gltf::build_character_glb(
+            &self.export_name(),
+            &c.mesh,
+            &c.object_ids,
+            &c.vram,
+            &clips,
+        )
+        .unwrap_or_default()
+    }
+
+    /// The current cast's display name - the summon's own name where one is
+    /// pinned (`Meta`, `Gimard`, ...), else the actor record's on-disc attack
+    /// string, else the spell id in hex. Names the `.glb` root node and the
+    /// page's download file. Empty until [`Self::set_cast`].
+    pub fn export_name(&self) -> String {
+        let Some(c) = &self.current else {
+            return String::new();
+        };
+        let id = c.cast.spell_id;
+        summon_core::summon_display_name(id)
+            .map(str::to_string)
+            .or_else(|| c.cast.attack_name.clone())
+            .unwrap_or_else(|| format!("cast 0x{id:02X}"))
+    }
 }
 
 #[cfg(test)]

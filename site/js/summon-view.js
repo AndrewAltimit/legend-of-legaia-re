@@ -72,7 +72,8 @@
   const FRAME_SLACK = 1.15;
 
   class SummonViewerApp {
-    /* els: { canvas, status, stage, now, note, clips, fx, gallery, grid } */
+    /* els: { canvas, status, stage, now, note, clips, fx, gallery, grid,
+     *        glbBtn } */
     constructor(els) {
       this.els = els;
       this.api = null;        /* LegaiaSummons */
@@ -184,6 +185,7 @@
       if (!st.ok) {
         this.els.now.textContent = `${hex2(spellId)}: ${st.why || 'did not decode'}`;
         this.els.note.textContent = '';
+        if (this.els.glbBtn) this.els.glbBtn.disabled = true;
         return;
       }
       if (!this.view) {
@@ -225,6 +227,8 @@
       this._renderClips(st);
       this._renderFx(st);
       this.playSequence();
+      /* A decoded cast is on the canvas - the .glb download can act on it. */
+      if (this.els.glbBtn) this.els.glbBtn.disabled = false;
       /* Highlight the active card. */
       document.querySelectorAll('.summon-card-playing')
         .forEach((el) => el.classList.remove('summon-card-playing'));
@@ -376,6 +380,18 @@
       this._follow();
     }
 
+    /* Bake the current cast's summon model + every phase clip (as named glTF
+     * TRS animations) into a .glb, entirely client-side (WASM
+     * `export_summon_glb`). Returns { bytes, filename } or null. */
+    exportGlb() {
+      if (!this.state || !this.state.ok || !this.api || !this.api.export_summon_glb) return null;
+      const bytes = this.api.export_summon_glb();
+      if (!bytes || !bytes.length) return null;
+      const name = (this.api.export_name() || label(Object.assign({ spell_id: this.currentId }, this.state)))
+        .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'cast';
+      return { bytes, filename: `legaia-summon-${name}.glb` };
+    }
+
     _markClip(which) {
       if (!this.els.clips) return;
       this.els.clips.querySelectorAll('.summon-clip-playing')
@@ -408,8 +424,43 @@
       statusLive: ids.statusLive ? $(ids.statusLive) : null,
       gallery: ids.gallery ? $(ids.gallery) : null,
       grid: ids.grid ? $(ids.grid) : null,
+      glbBtn: ids.glb ? $(ids.glb) : null,
     };
     const app = new SummonViewerApp(els);
+    /* .glb download: the current cast's summon model + its phase clips,
+     * baked in WASM and saved via Blob + anchor (nothing is uploaded).
+     * Disabled until a cast is on the canvas (see play()). */
+    if (els.glbBtn) {
+      els.glbBtn.addEventListener('click', async () => {
+        if (!app.state || !app.state.ok) return;
+        const prev = els.glbBtn.textContent;
+        els.glbBtn.disabled = true;
+        els.glbBtn.textContent = 'baking…';
+        /* The bake is synchronous inside WASM - repaint the label first. */
+        await new Promise((r) => setTimeout(r, 30));
+        let msg = null;
+        try {
+          const out = app.exportGlb();
+          if (!out) {
+            msg = 'no model';
+          } else {
+            const url = URL.createObjectURL(
+              new Blob([out.bytes], { type: 'model/gltf-binary' }));
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = out.filename;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+          }
+        } catch (err) {
+          console.warn('summons: glb export failed', err);
+          msg = 'export failed';
+        }
+        els.glbBtn.textContent = msg || prev;
+        els.glbBtn.disabled = false;
+        if (msg) setTimeout(() => { els.glbBtn.textContent = prev; }, 1500);
+      });
+    }
     const fitToggle = ids.fit ? $(ids.fit) : null;
     if (fitToggle) {
       fitToggle.checked = app.fitAll;
