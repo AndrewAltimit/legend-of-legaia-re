@@ -24,15 +24,17 @@
 //! test contrasts a confused monster against an unconfused one in the same
 //! fight - which is what the assertions below do.
 //!
-//! ## What the first execution found
+//! ## What the first execution found (since fixed)
 //!
 //! Checking the *damage* rather than the target byte turned up a defect the
-//! whole confuse mechanic sits on: `World::resolve_attack_target`
-//! (`world/battle/loop_driver.rs`) clamps an armed target to the **opposing**
-//! side, so a confused actor's rewritten byte fails the range test and the
-//! swing falls back to `first_living_opponent_of`. Confusion therefore has no
-//! effect on where damage lands, on either side. Written up on the ignored
-//! repro `the_retarget_lands_the_damage_on_an_ally_not_on_the_party`.
+//! whole confuse mechanic sat on: `World::resolve_attack_target`
+//! (`world/battle/loop_driver.rs`) clamped an armed target to the **opposing**
+//! side, so a confused actor's rewritten byte failed the range test and the
+//! swing fell back to `first_living_opponent_of`. Retail has no such clamp -
+//! `FUN_801EC3E4` fetches the target as `actor_table[+0x1DD]` with no side
+//! test (`overlay_0898` dump, `0x801EC5A8..0x801EC5B4`). The clamp is gone;
+//! `the_retarget_lands_the_damage_on_an_ally_not_on_the_party` pins the
+//! now-correct behaviour.
 //!
 //! Disc-free: synthetic party + the vanilla monster / formation tables.
 
@@ -235,55 +237,32 @@ fn damage_with_only_monsters_acting(seed: u32, confuse_first_monster: bool) -> (
 }
 
 #[test]
-fn a_confused_monster_still_swings_and_the_target_byte_is_the_only_thing_that_moved() {
-    // What is measurable today, and the diagnosis behind the ignored repro
-    // below: the retarget writes the monster band into `+0x1DD`, the swing
-    // still lands, and it lands on the **party**.
+fn an_unconfused_band_never_lands_friendly_fire() {
+    // The control half of the repro below: with nothing confused, monsters
+    // hit the party and never each other. Without this, "the band took
+    // damage" could be true of every fight and measure nothing.
     for seed in SEEDS {
-        // Control: nothing confused. Monsters hit the party, never each other.
         let (band, party) = damage_with_only_monsters_acting(seed, false);
         assert_eq!(band, 0, "seed {seed:#x}: unconfused friendly fire");
         assert!(party > 0, "seed {seed:#x}: no monster swing landed at all");
-
-        // Confused: the swing still lands, and still on the party.
-        let (band, party) = damage_with_only_monsters_acting(seed, true);
-        assert!(
-            party > 0,
-            "seed {seed:#x}: a confused monster stopped attacking entirely - \
-             that would be a different (worse) defect than the one below"
-        );
-        assert_eq!(band, 0, "seed {seed:#x}: see the ignored repro below");
     }
 }
 
-/// DEFECT REPRO (ignored: it fails today, and the fix is outside this lane's
-/// fence). **Confusion currently changes nothing about where damage lands.**
+/// The repro that found the clamp, now pinning the fix: **confusion moves
+/// where the damage lands.**
 ///
-/// `World::resolve_monster_target` (`FUN_801E7320`) does its job - the four
-/// live tests above pin the rewritten `+0x1DD` byte on the caster's own band -
-/// but the strike resolver throws it away.
-/// `World::resolve_attack_target` (`crates/engine-core/src/world/battle/
-/// loop_driver.rs`) clamps the armed target to the *opposing* side:
+/// `World::resolve_monster_target` (`FUN_801E7320`) rewrites the armed
+/// `+0x1DD` byte onto the caster's own band, and `resolve_attack_target`
+/// honors it - retail's `FUN_801EC3E4` fetches the target actor as
+/// `actor_table[+0x1DD]` with no side test (`overlay_0898` dump,
+/// `0x801EC5A8..0x801EC5B4`), so a friendly-fire byte must land friendly-fire
+/// damage. The opposing-side fallback survives only for an unset-dead target.
 ///
-/// ```text
-/// let (lo, hi) = if attacker < pc { (pc, n) } else { (0, pc) };
-/// if (lo..hi).contains(&t) && alive { return Some(t) }
-/// self.first_living_opponent_of(attacker)
-/// ```
-///
-/// A confused monster's target is `>= pc`, which is outside `0..pc`, so every
-/// friendly-fire swing silently falls back to `first_living_opponent_of` - a
-/// party member. The same holds mirrored for a confused party member. So the
-/// whole confuse mechanic is inert at the point it would be felt, and no
-/// assertion on the target byte can see it.
-///
-/// Retail has no such clamp: `FUN_801EC3E4` resolves against the target the
-/// action SM left in `+0x1DD`, and the side range is a port-side safety net.
-/// The fix is to treat the armed target as authoritative when it names a
-/// living actor, and keep the opposing-side fallback only for an unset or
-/// dead one.
+/// Not every seed lands an ally hit (the retarget's re-roll can land on self,
+/// which clears the action category), so the assertion is over the sweep, not
+/// per seed - the control test above holds `band == 0` per seed, which keeps
+/// a single hit here non-vacuous.
 #[test]
-#[ignore = "defect: resolve_attack_target clamps the armed target to the opposing side, discarding the confuse retarget"]
 fn the_retarget_lands_the_damage_on_an_ally_not_on_the_party() {
     let mut confused_hits = 0usize;
     for seed in SEEDS {

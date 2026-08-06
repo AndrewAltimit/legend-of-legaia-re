@@ -964,22 +964,32 @@ impl World {
         }
     }
 
-    /// Resolve the slot a strike from `attacker` should land on. Honors a
-    /// pre-selected [`battle::BattleActor::active_target`] when it points at a
-    /// living actor on the opposing side (so the player's target-picker choice
-    /// and the monster-AI target choice both take effect), otherwise falls back
-    /// to [`Self::first_living_opponent_of`].
+    /// Resolve the slot a strike from `attacker` should land on. The armed
+    /// [`battle::BattleActor::active_target`] is **authoritative** whenever it
+    /// names a living actor - on either band, the attacker's own included.
+    ///
+    /// Retail's melee resolver `FUN_801EC3E4` fetches the target actor as
+    /// `actor_table[+0x1DD]` with no side test at all (`overlay_0898` dump,
+    /// `0x801EC5A8..0x801EC5B4`: `andi v0,s4,0xff; sll v0,v0,2; addu s3,v0,a2;
+    /// lw a3,0(s3)` where `s4` is the `+0x1DD` byte loaded at `0x801EC450`).
+    /// The confuse retarget (`FUN_801E7320`, [`Self::resolve_monster_target`])
+    /// depends on that: it rewrites `+0x1DD` onto the *caster's own* band, and
+    /// an opposing-side clamp here silently discarded the rewrite, making the
+    /// whole confuse mechanic inert at the point it is felt.
+    ///
+    /// The [`Self::first_living_opponent_of`] fallback survives only as the
+    /// port-side safety net for a target that is unset-dead or out of the
+    /// table - every retail arming path writes `+0x1DD` before the SM strikes.
+    ///
+    /// REF: FUN_801EC3E4 (target = `actor_table[+0x1DD]`, no side clamp)
+    /// REF: FUN_801E7320 (the confuse retarget this must not discard)
     fn resolve_attack_target(&self, attacker: u8) -> Option<u8> {
-        let pc = self.party_count.max(1);
-        let n = self.actors.len() as u8;
-        let (lo, hi) = if attacker < pc { (pc, n) } else { (0, pc) };
         if let Some(a) = self.actors.get(attacker as usize) {
             let t = a.battle.active_target;
-            if (lo..hi).contains(&t)
-                && self
-                    .actors
-                    .get(t as usize)
-                    .is_some_and(|x| x.battle.liveness != 0)
+            if self
+                .actors
+                .get(t as usize)
+                .is_some_and(|x| x.battle.liveness != 0)
             {
                 return Some(t);
             }
