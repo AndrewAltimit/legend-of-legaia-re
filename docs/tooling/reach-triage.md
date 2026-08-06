@@ -58,6 +58,27 @@ page would lose the distinction:
 So: re-measure an (a)/(b) row on the default profile before spending a fixture
 on it, and read a (c) row as it stands.
 
+### A `-p`-scoped export reports one crate, however many it ran
+
+`cargo llvm-cov -p <pkg> --test <name> --json` scopes the **report** to that
+package's sources, not only the build. Measured on the native minigame ladder
+over one set of profiles: the scoped export carries 42 files, every one under
+`crates/engine-shell/`, and reporting the same profiles with no `-p` carries
+652 across fifteen crates. The ladder's whole yield is in the second number -
+the dance HUD, the fishing chrome and actors, the Baka number drawers and the
+casino counter are `engine-core`, and the draw builders under them are
+`engine-ui`.
+
+The failure mode is quiet in exactly the wrong direction: a scoped export shows
+the ladder joining the union and changing nothing, which reads identically to a
+ladder that did not work. Export in two steps - `--no-report` to run, then a
+bare `cargo llvm-cov report --json` over the profiles - whenever the code a
+ladder drives lives outside the package the test does.
+
+It also lifts one of the structural exclusions below: `engine-render` is a hard
+wgpu link the browser composition ladder cannot carry, and the native window
+*is* that link, so a spawned `play-window` run reports executed regions there.
+
 ## What a pad-only ladder structurally cannot execute
 
 The *headless* ladders drive `BootSession`, which constructs no renderer, no
@@ -99,18 +120,36 @@ structural impossibility. The browser hosts never had either problem: their
 composition is in `crates/web-viewer/src`, a library, which is the seam the
 composition ladder drives.
 
-The spawn route is already practical for the native window - `play-window`
-takes `--pad-script` and `--screenshot-tick`, which is exactly that shape of
-run. What it cannot do is **enter a minigame**:
-the native host opens the Muscle Dome and the Baka Fighter from
-`WindowEvent::KeyboardInput` (`M` / `B` in
-`window/event_handler/keyboard.rs`), `--pad-script` writes a *pad word* and
-nothing else, and no CLI flag names a minigame. So every native minigame row
-on this page - the dance HUD, the fishing chrome, the baka digit strips,
-`minigame_floor.rs`, the dance tutorial, the casino entry - stays blind to a
-spawned run for a reason that has nothing to do with `bin/`. A `--minigame
-<name>` flag, or a `--pad-script` that also accepts key names, converts the
-whole cluster at once.
+The spawn route is practical for the native window - `play-window` takes
+`--pad-script` and `--screenshot-tick`, which is exactly that shape of run.
+What it could not do was **enter a minigame**, and that had nothing to do with
+`bin/` either: the native host opens every minigame from
+`WindowEvent::KeyboardInput` (`K` dance, `U` dance how-to, `L` fishing, `O`
+casino slots, `M` Muscle Dome, `B` Baka Fighter in
+`window/event_handler/keyboard.rs`), as it does the fishing prize exchange
+(`P`) and the inline-dialogue option picker, while `--pad-script` writes a
+*pad word* and that handler never runs. No pad word names a minigame, so a
+pad-only run could not open one however long it ran.
+
+`--key-script` is that missing channel: `TICK:KEY` pairs delivered through the
+same keyboard arms a player's keys reach, injected from inside the per-tick
+loop. The two scripts compose - keys open the surface, the pad plays it - and
+`w5_native_minigame_ladder` (`crates/engine-shell/tests/`) is the ladder built
+on it. It spawns one `play-window` per minigame and asserts on the **captured
+frame**: each rung requires the PNG to differ from the same tick of the same
+scene with nothing open, because a HUD builder that emits an empty draw list
+passes any "did it run" check.
+
+Two gates beyond the disc, both printed rather than inferred: the rungs need a
+display (`play-window` needs a real wgpu surface even for its offscreen
+readback), and a rung that opened a surface which painted nothing fails on the
+frame comparison rather than on the exit status.
+
+**No file move was needed**, and that is the reusable part. Moving the
+composition layer out of `bin/` into a library module was the obvious fix for
+a *call*-shaped exclusion, and this cluster never had one - it had a missing
+input channel. A wide file move is the riskiest change available; the CLI flag
+was one argument and one loop.
 
 **The browser minigames page is outside the union entirely.** `minigame_replay`
 drives the *engine-shell* minigame path, and `play_compose_ladder` drives the
@@ -325,27 +364,63 @@ installs. Wiring it would be a provable identity, which is worse than the gap.
 Wired, and reached in real play on a host the ladder harness cannot execute.
 The composition ladder converted the rows whose host is the browser *play
 page* (the shop panel kernels, the fishing prize rows, the demo tile board);
-what remains here is reached only on the native window, on the standalone
-browser minigame pages, or on the browser cards page - hosts still outside the
-union.
+`w5_native_minigame_ladder` converted the rows whose host is the native
+window. What remains here is reached only on the standalone browser minigame
+pages or on the browser cards page - hosts still outside the union - or needs
+a game state no ladder puts the world in.
 
 | group | n | addresses | host |
 |---|---|---|---|
-| `dance.rs` (HUD + banner) | 7 | `801d231c` `801d3e28` `801d32f8` `801d2524` `801d2d98` `801d2f38` `801d387c` | native `window/hud.rs`, `window/minigames.rs`, `window/minigame_fx.rs` |
-| `fishing_chrome.rs` | 6 | `801d03b0` `801d78c0` `801d74b0` `801d7a5c` `801d70ec` `801d7c30` | native `window/minigames.rs`, `window/hud.rs` |
-| `fishing_actors.rs` | 4 | `801d2050` `801d765c` `801d2278` `801d4948` | native fishing block |
-| `baka_fighter.rs` (digit strips) | 3 | `801d6a18` `801d6f44` `801d69e4` | native `window/hud.rs` - keyboard-only entry, see below |
 | `save_select.rs` (card directory) | 3 | `801e1208` `801e3af0` `801e3ba0` | browser `web-viewer::cards` |
-| `minigame_floor.rs` | 2 | `801d2a10` `801d6028` | native `window/minigames.rs` |
 | `dance.rs` (sting + clip gate) | 2 | `801d3d78` `801d4098` | browser dance page |
 | `pause_screens.rs` / `save_select.rs` (panel modes) | 2 | `801d6a54` `801e3f74` | both rendering hosts |
-| `fishing.rs` (prize row remainder) | 1 | `801d092c` | the one prize-row kernel the play page's venue read does not fold |
-| `shop.rs` (panel kernel remainder) | 1 | `801d5510` | native menu draw path |
+| `shop.rs` (panel kernel remainder) | 1 | `801d5510` | browser play page only - **not** the native window; see below |
 | `baka_fighter.rs` (widget quad) | 1 | `801d5ed0` | browser `minigames_baka`, deliberately one-host |
-| `dance_tutorial.rs` | 1 | `801d0750` | native tutorial run |
-| `slot_machine.rs` | 1 | `801e6f70` | native casino entry |
-| `dialog.rs` | 1 | `80038050` | native keyboard handler |
-| `cutscene.rs` | 1 | `801cea3c` | native `run` subcommand |
+| `dialog.rs` | 1 | `80038050` | native keyboard handler, behind a live option-picker conversation |
+| `cutscene.rs` | 1 | `801cea3c` | the `play` subcommand's post-FMV hand-off |
+
+`801d5510`'s host column was wrong and is corrected here, because the wrong
+one named a fixture that cannot exist. `shop_buy_quantity_panel` has exactly
+one caller in the workspace - `web-viewer::play_shop::buy_quantity_panel_draws`
+- and the native window's descriptor draw path (`window/shop_windows.rs`
+paints windows 32 / 33 / 34 / 37) has no buy-side block at all. So no native
+ladder can reach it however it drives the shop; what would reach it is the
+composition ladder driven to the buy-quantity phase, and what would close the
+host gap is a native window-35 painter.
+
+The two remaining native rows both need a game state rather than an entry
+point. `80038050` is the inline-dialogue option picker, reachable from the
+keyboard handler (and now scriptable) but only while a conversation with a
+*menu* is open - a scripted walk-and-talk to a specific branching NPC, which
+is a scene-content fixture rather than a harness one. `801cea3c` is the
+post-FMV hand-off in the `play` subcommand's cutscene arm, which fires only
+when the field VM triggers an FMV; a 1200-frame headless run of the prologue
+scene never reaches one, so the fixture needs a scene + story state that does.
+
+### Converted by `w5_native_minigame_ladder`
+
+Everything the native window paints for a minigame. Each was dark for the same
+reason - `--pad-script` cannot open a surface the keyboard handler owns - and
+all of it executes under one ladder now.
+
+| group | n | addresses | what runs it |
+|---|---|---|---|
+| `dance.rs` (HUD + banner) | 7 | `801d231c` `801d3e28` `801d32f8` `801d2524` `801d2d98` `801d2f38` `801d387c` | `40:K`, then judged face-button presses |
+| `fishing_chrome.rs` | 6 | `801d03b0` `801d78c0` `801d74b0` `801d7a5c` `801d70ec` `801d7c30` | `40:L` + a cast; the venue panel needs `P` |
+| `fishing_actors.rs` | 4 | `801d2050` `801d765c` `801d2278` `801d4948` | the same run's wander / line / celebration actors |
+| `minigame_floor.rs` | 2 | `801d2a10` `801d6028` | the fishing venue's floor solve |
+| `baka_fighter.rs` (digit strips) | 3 | `801d6a18` `801d6f44` `801d69e4` | a duel played to a **player win** - a lost match installs no tally and two of the three stay dark |
+| `dance_tutorial.rs` | 1 | `801d0750` | `40:U`, the Disco King how-to |
+| `slot_machine.rs` | 1 | `801e6f70` | `40:O` - the empty coin bank sends the entry through the exchange counter |
+| `fishing.rs` (prize row remainder) | 1 | `801d092c` | a **committed** prize purchase; the panel alone stops one gate short |
+| `bin/.../window/field_render.rs` | 1 | `8001ada4` | any spawned `play-window` frame loop |
+
+Two of these are worth reading as a pattern rather than as rows. `801d6a18` /
+`801d6f44` and `801d092c` were not blocked by the entry at all - the duel HUD
+and the prize panel were both plainly on screen while they stayed dark, because
+the drawers sit behind a *won* match and the cap behind an *afforded* row. A
+rung that reaches the screen is not a rung that reaches the code on it, and a
+screenshot cannot tell the two apart.
 
 ### NO-LADDER, content not driven
 
@@ -686,9 +761,13 @@ and the memory-card round-trip oracle.
 | `bin/legaia-engine/window/field_render.rs` | 1 | (a) | native-bin | `8001ada4` |
 | `xa_clip.rs` | 1 | (a) | arts-swing | `8003d53c` |
 
-The ocean-animation row is the worked example of the `bin/` exclusion above: it
-has a disc-gated oracle of its own (`ocean_anim_real`), and no `#[test]` can
-enter the module it is tagged in.
+The ocean-animation row was the worked example of the `bin/` exclusion above,
+and it is now the worked example of what that exclusion actually bounds. It
+has a disc-gated oracle of its own (`ocean_anim_real`), no `#[test]` can
+*enter* the module it is tagged in - and `w5_native_minigame_ladder` covers it
+several thousand times per run, because `advance_ocean_animation` is on the
+window's per-tick path and a spawned `play-window` writes its own profile.
+"Unreachable by call" and "unreachable by coverage" were never the same claim.
 
 ### prot
 

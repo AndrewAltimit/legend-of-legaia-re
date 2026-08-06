@@ -95,9 +95,21 @@ Usage:
     # nothing here and costs executed code.
     # `--list-ladders` prints `<test> <package>` for every canonical entry, so
     # the recipe cannot drift from the list the report checks against.
+    #
+    # TWO STEPS PER LADDER, and the split is load-bearing. `-p <pkg> --json`
+    # scopes the *report* to that package's own sources, not just the build -
+    # so a one-shot export of `menu_replay` carries 42 files, all under
+    # `crates/engine-shell/`, while everything the ladder drives is in
+    # `engine-core` / `engine-vm` / `engine-ui` and is silently absent. Build
+    # scoped (`-p` picks the ladder), then report UNSCOPED over the profiles.
+    #
+    # `--profraw-only` between ladders keeps the per-ladder table honest: it
+    # drops the profile data so each export is that ladder alone, while leaving
+    # the build artifacts in place so this is not 26 rebuilds.
     scripts/ci/replay-port-coverage.py --list-ladders | while read -r t pkg; do
-        cargo llvm-cov -p "$pkg" --test "$t" \\
-            --json --output-path "target/cov-$t.json"
+        cargo llvm-cov clean --profraw-only
+        cargo llvm-cov -p "$pkg" --test "$t" --no-report
+        cargo llvm-cov report --json --output-path "target/cov-$t.json"
     done
 
     # then join them - no arguments needed, the union is the default
@@ -229,6 +241,51 @@ CANONICAL_LADDERS = [
     ("battle_flee_ladder", "legaia-engine-core"),
     ("battle_full_playthrough", "legaia-engine-core"),
     ("seru_cast_magic_xp_ladder", "legaia-engine-core"),
+    # --- lane L5 ---
+    # The native window's own composition layer, reached by SPAWNING it.
+    #
+    # `w5_native_minigame_ladder` runs `CARGO_BIN_EXE_legaia-engine
+    # play-window` once per minigame and lets the inherited `LLVM_PROFILE_FILE`
+    # merge each child's profile into this export. That is the same route the
+    # `mdec` ladder's fourth rung takes, and it is why "no `#[test]` can call
+    # into a `bin/` target" bounds *calls* and not coverage: the whole
+    # `crates/engine-shell/src/bin/legaia-engine/` tree - the HUD builders, the
+    # minigame side-channel tick, the field render pass - executes here and
+    # nowhere else in the union.
+    #
+    # What made the cluster reachable at all is a CLI channel rather than a
+    # file move: `--pad-script` writes a pad word and the window's keyboard
+    # handler never runs, while every native minigame entry lives in that
+    # handler, so no pad-only run could open one. `--key-script` delivers keys
+    # through the same arms a player's keyboard does, and the two scripts
+    # compose - keys open the surface, the pad plays it.
+    #
+    # Two gates beyond the disc: the rungs need a display (`play-window` needs
+    # a real wgpu surface even for its offscreen capture) and they assert on
+    # the captured FRAME, not on the exit status - a HUD builder that emits an
+    # empty draw list would pass "did it run" and fails here.
+    #
+    # EXPORT THIS ONE IN TWO STEPS. `-p <pkg>` scopes the *report* to that
+    # package's sources, not only the build, and this ladder's whole yield is
+    # in other crates: a one-shot `-p legaia-engine-shell --json` export of it
+    # carries 42 files, all under `crates/engine-shell/`, while the dance HUD,
+    # the fishing chrome, the Baka number drawers and the casino counter are
+    # `engine-core` and the builders under them are `engine-ui`. Reporting
+    # without `-p` over the same profiles carries 652 files across fifteen
+    # crates - including `engine-render`, which this page records as
+    # structurally unreachable because the browser composition ladder cannot
+    # carry a wgpu link. The native window is that link.
+    #
+    #     cargo llvm-cov clean --workspace
+    #     cargo llvm-cov -p legaia-engine-shell \
+    #         --test w5_native_minigame_ladder --no-report -- --test-threads=1
+    #     cargo llvm-cov report --json \
+    #         --output-path target/cov-w5_native_minigame_ladder.json
+    #
+    # The same scoping applies to every `-p`-exported ladder above, so a row
+    # that reads never-entered may be a row whose only driver exported it out
+    # of scope. That is worth re-measuring before spending a fixture.
+    ("w5_native_minigame_ladder", "legaia-engine-shell"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
