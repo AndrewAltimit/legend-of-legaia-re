@@ -8,29 +8,23 @@
 //! scan the visited-map table for the party's current map, then install
 //! `(tile << 7) + 0x40` as the destination.
 //!
-//! ## What the gate really costs, and the defect it hides
+//! ## What the gate really costs, and the defect this file pinned
 //!
-//! The table is built by `World::tick_world_map_panels`, which records a visit
-//! with
+//! The table is built by `World::tick_world_map_panels`. It once recorded a
+//! visit with
 //!
 //! ```text
 //! let map = ctrl.panels.visited.last().map(|v| v.map_id).unwrap_or(0);
 //! ctrl.panels.note_visit(map, tx, tz);
 //! ```
 //!
-//! The map id is read back **out of the table it is writing**. The first call
-//! records id `0`; every later call reads `0` again and updates that one
-//! record in place. So the table is a one-record table for the whole session
-//! no matter how many overworlds the party crosses, and the multi-map scan the
-//! two handlers exist for can never be exercised. `WorldMapController` already
-//! carries the value the write wants (`entry_fade.kingdom_index`, re-derived
-//! from the scene PROT base by `FUN_800196A4`), so this is a wrong argument,
-//! not a missing input.
-//!
-//! `world/worldmap.rs` is outside this lane's fence, so the defect ships here
-//! as `each_kingdom_crossed_gets_its_own_visited_record`: an `#[ignore]`d repro
-//! that asserts the **correct** behaviour and fails when run. It is not a
-//! characterisation test - nothing here certifies the bug as intended.
+//! reading the map id back **out of the table it was writing**: a one-record
+//! table for the whole session no matter how many overworlds the party
+//! crossed. The write now keys on the kingdom the party stands on
+//! (`kingdom_index_for_scene_base(ctrl.scene_base)`, falling back to the
+//! entry fade's derived index and then the active `mapNN` scene label), and
+//! `each_kingdom_crossed_gets_its_own_visited_record` - formerly the
+//! `#[ignore]`d repro - asserts the multi-record behaviour live.
 //!
 //! The same hand-off hard-codes `TravelArt::Riremito`, so `801ee328`'s dwell
 //! constants have no production installer at all. The panel host itself
@@ -134,22 +128,22 @@ fn the_recorder_tracks_the_tile_the_party_is_standing_on() {
     );
 }
 
-/// DEFECT REPRO (ignored: it fails today, and the fix is outside this lane's
-/// fence). `World::tick_world_map_panels` records a visit with
+/// `World::tick_world_map_panels` once recorded a visit with
 ///
 /// ```text
 /// let map = ctrl.panels.visited.last().map(|v| v.map_id).unwrap_or(0);
 /// ctrl.panels.note_visit(map, tx, tz);
 /// ```
 ///
-/// so the map id is read back out of the table being written: the first call
-/// stores `0` and every later one updates that same record. Crossing three
-/// overworlds must leave three records; it leaves one. Fix the argument at
-/// `crates/engine-core/src/world/worldmap.rs` (the `note_visit` call in
-/// `tick_world_map_panels`) - `ctrl.entry_fade.kingdom_index` is the value it
-/// wants - and un-ignore this.
+/// reading the map id back out of the table being written: the first call
+/// stored `0` and every later one updated that same record, so crossing
+/// three kingdoms left one record. The write now keys on the kingdom the
+/// party is standing on (`kingdom_index_for_scene_base(ctrl.scene_base)`,
+/// with the entry fade's derived index and the active `mapNN` scene label
+/// as fallbacks), so each kingdom gets its own record - and `note_visit`'s
+/// own dedupe (asserted by `note_visit_updates_the_stored_tile_in_place`)
+/// keeps a revisit updating in place.
 #[test]
-#[ignore = "defect: tick_world_map_panels feeds note_visit its own output as the map id"]
 fn each_kingdom_crossed_gets_its_own_visited_record() {
     let visited = visited_after_three_kingdoms();
     let mut ids: Vec<u32> = visited.iter().map(|v| v.map_id).collect();

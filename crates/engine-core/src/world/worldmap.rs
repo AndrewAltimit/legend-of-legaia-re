@@ -507,11 +507,21 @@ impl World {
         // The stored tile only advances while no panel actor owns the screen,
         // so opening the screen freezes the return point the travel art warps
         // back to - retail's `0x80084624` / `0x8008462C` pair, written on map
-        // entry rather than every frame.
+        // entry rather than every frame. The record is keyed by the map the
+        // party is standing ON - the kingdom index the entry fade derives
+        // from the scene PROT base (retail's map word `0x80084628`), with the
+        // active kingdom scene label as the fallback when no entry fade has
+        // run - NOT the table's own last entry: reading `visited.last()`
+        // back fed the table its own output, so the table could never grow
+        // past one record however many kingdoms were visited.
         if !ctrl.panels.is_active()
             && let Some((tx, tz)) = player_tile
         {
-            let map = ctrl.panels.visited.last().map(|v| v.map_id).unwrap_or(0);
+            let map = crate::world_map::kingdom_index_for_scene_base(ctrl.scene_base)
+                .or(ctrl.entry_fade.kingdom_index)
+                .or_else(|| kingdom_index_for_scene_label(&self.active_scene_label))
+                .map(u32::from)
+                .unwrap_or(0);
             ctrl.panels.note_visit(map, tx, tz);
         }
 
@@ -575,6 +585,13 @@ impl World {
         if frame.hand_off {
             // Retail's sub-list state 3 hands the actor on through the handler
             // table; the port binds that arm to the Riremito travel art.
+            // (Retail's own state 3 is the `FUN_801D84B4` return-to-title
+            // hand-off - see `801ed590.txt` - and neither travel art has a
+            // pinned production installer in the corpus: `FUN_801EE094` /
+            // `FUN_801EE328` are dev-band actor handlers reached through the
+            // dev handler-id table only, so Rula's installer here would be as
+            // synthetic as this Riremito binding already is. One deliberate
+            // binding, disclosed, rather than two.)
             if let Some(ctrl) = self.world_map_ctrl.as_mut() {
                 log::info!("world-map: sub-list hand-off -> Riremito travel art");
                 ctrl.panels
@@ -772,5 +789,21 @@ impl World {
             formation_id,
             reset_to,
         };
+    }
+}
+
+/// Kingdom index (`0..=2`, the `kingdom_index_for_scene_base` space) for a
+/// kingdom overworld CDNAME label - the fallback key
+/// [`World::tick_world_map_panels`] stamps visited-map records with when the
+/// controller's entry fade has not derived one from a scene PROT base. The
+/// three overworld scenes are `map01` (Drake) / `map02` (Sebucus) / `map03`
+/// (Karisto), in the same order as the kingdom bundle bases
+/// `0x55` / `0xF4` / `0x187`.
+fn kingdom_index_for_scene_label(label: &str) -> Option<u8> {
+    match label {
+        "map01" => Some(0),
+        "map02" => Some(1),
+        "map03" => Some(2),
+        _ => None,
     }
 }
