@@ -21,7 +21,7 @@
 //! `actor[+0x21C]` (which the port models as `BattleActor::render_flag`, but
 //! only ever writes with the cursor/summon values `0`/`2`/`5`/`200`/`0xFF`,
 //! never the tween states), with a per-actor hold counter at `actor[+0xC]`
-//! (unmodelled - distinct from `render_scale`'s snapshot use) and per-state
+//! (unmodelled - distinct from `render_blend`'s snapshot use) and per-state
 //! target triples (`0x80` neutral, `0x20` dimmed, ...). Wiring means porting
 //! that state ladder and driving it from the per-frame battle tick slot
 //! retail uses (`FUN_80046A20` calls it right after `FUN_8004DC68`); the

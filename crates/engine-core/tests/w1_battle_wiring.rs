@@ -151,7 +151,7 @@ fn target_cursor_tint_is_stamped_while_picking_and_cleared_on_confirm() {
             w.actors[slot].battle.render_flag, 0,
             "slot {slot} tint cleared"
         );
-        assert_eq!(w.actors[slot].battle.render_scale, 0);
+        assert_eq!(w.actors[slot].battle.render_blend, 0);
     }
 }
 

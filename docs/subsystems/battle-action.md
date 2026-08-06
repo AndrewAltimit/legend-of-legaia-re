@@ -2172,7 +2172,13 @@ they are documented here rather than lifted whole into `engine-vm`.
 - **`FUN_801DA6B4` - target-select cursor tint.** Over the fixed monster-slot
   window `3..=6`, brightens the acting actor's current target (`+0x1DD`) and
   dims the rest: `+0x21C` render flag (`5` / `200` / `0`), `+0x4` colour word
-  (`0x20080200` / `0x00401004`), `+0xC` scale word (`0x1000` / `0`). `param_1
+  (`0x20080200` / `0x00401004`), `+0xC` tint-blend word (`0x1000` / `0`). The
+  blend word is the q12 intensity `FUN_8004A908` copies into the render
+  packet's `+0x78` whenever it is non-zero - it weights how hard the `+0x4`
+  colour modulates the mesh, and `FUN_80050120` arm 0 drains it by `0x20` per
+  frame back to `0` once the colour word has eased neutral (the item/spirit
+  cue-group expander `FUN_801E22C8` flashes it to `0x2000`). It is not a mesh
+  scale. `param_1
   == 0` stamps the highlight; non-zero clears it. Only the alive slots
   (`+0x14C != 0`) are touched. Self-contained; ported as
   `battle_action::target_cursor_highlight`. See

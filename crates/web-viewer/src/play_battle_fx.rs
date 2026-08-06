@@ -760,8 +760,10 @@ impl LegaiaRuntime {
     /// resolved engine-side so both hosts saturate the same depth-cue ramp:
     /// the pointed-at monster pulses bright (`far = white`, phase from the
     /// world's own frame counter), the rest sit dim (`far = black`,
-    /// `max_ir0 = 0.55`), and a non-neutral q12 `render_scale` becomes a
-    /// uniform model scale about the actor origin.
+    /// `max_ir0 = 0.55`). The `model_scale` channel is retained for layout
+    /// compatibility and is always `1.0`: the actor `+0xC` word is the
+    /// render packet's `+0x78` tint-blend weight (`FUN_8004A908`), not a
+    /// mesh scale - it weights the cue-group flash strength below instead.
     ///
     /// REF: FUN_801DA6B4
     pub fn play_battle_actor_cursor(&self) -> Vec<f32> {
@@ -773,44 +775,50 @@ impl LegaiaRuntime {
         let mut out = Vec::with_capacity(br.actor_slots().len() * 6);
         for actor_idx in br.actor_slots() {
             let b = host.world.actors.get(actor_idx).map(|a| &a.battle);
-            let scale = match b {
-                Some(b) if b.render_scale != 0 && b.render_scale != 0x1000 => {
-                    b.render_scale as f32 / 4096.0
-                }
-                _ => 1.0,
-            };
             // Per-clip impact tint (`FUN_8004CE2C` pass 2 via
             // `engine-vm::battle_impact_fx`): while the +0x21F selector is
             // armed the packed +0x04 word rides the same cue row the
             // cursor uses - the browser twin of the native window's arm.
+            // The same arm renders the item/spirit cue-group flash
+            // (`FUN_801E22C8` stamps colour + a `0x2000` blend the world
+            // tick drains), strength weighted by the live blend so the
+            // flash fades out.
             {
                 use legaia_engine_vm::battle_impact_fx as ifx;
-                if let Some(b) = b
-                    && b.impact_state != 0
-                    && b.render_color != ifx::IMPACT_NEUTRAL_STATE
-                    && b.render_color != 0
-                {
-                    let c = ifx::unpack_actor_state_rgb(b.render_color);
-                    out.extend_from_slice(&[
-                        1.0,
-                        f32::from(c[0]) / 255.0,
-                        f32::from(c[1]) / 255.0,
-                        f32::from(c[2]) / 255.0,
-                        ifx::IMPACT_TINT_CUE_STRENGTH,
-                        scale,
-                    ]);
-                    continue;
+                if let Some(b) = b {
+                    let blend_armed = b.render_flag == 0 && b.render_blend != 0;
+                    if (b.impact_state != 0 || blend_armed)
+                        && b.render_color != ifx::IMPACT_NEUTRAL_STATE
+                        && b.render_color != 0
+                    {
+                        let strength = if b.impact_state != 0 {
+                            ifx::IMPACT_TINT_CUE_STRENGTH
+                        } else {
+                            ifx::IMPACT_TINT_CUE_STRENGTH
+                                * (b.render_blend.min(0x1000) as f32 / 4096.0)
+                        };
+                        let c = ifx::unpack_actor_state_rgb(b.render_color);
+                        out.extend_from_slice(&[
+                            1.0,
+                            f32::from(c[0]) / 255.0,
+                            f32::from(c[1]) / 255.0,
+                            f32::from(c[2]) / 255.0,
+                            strength,
+                            1.0,
+                        ]);
+                        continue;
+                    }
                 }
             }
             match b.map(|b| b.render_flag) {
                 Some(ba::CURSOR_FLAG_SELECTED) => {
                     let pulse = 0.30 + 0.20 * (frame * 0.25).sin();
-                    out.extend_from_slice(&[1.0, 1.0, 1.0, 1.0, pulse, scale]);
+                    out.extend_from_slice(&[1.0, 1.0, 1.0, 1.0, pulse, 1.0]);
                 }
                 Some(ba::CURSOR_FLAG_DIMMED) => {
-                    out.extend_from_slice(&[1.0, 0.0, 0.0, 0.0, 0.55, scale]);
+                    out.extend_from_slice(&[1.0, 0.0, 0.0, 0.0, 0.55, 1.0]);
                 }
-                _ => out.extend_from_slice(&[0.0, 0.0, 0.0, 0.0, 0.0, scale]),
+                _ => out.extend_from_slice(&[0.0, 0.0, 0.0, 0.0, 0.0, 1.0]),
             }
         }
         out

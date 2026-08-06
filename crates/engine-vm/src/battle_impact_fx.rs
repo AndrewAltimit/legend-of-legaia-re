@@ -62,6 +62,13 @@ pub const IMPACT_NEUTRAL_STATE: u32 = 0x2008_0200;
 /// tick).
 pub const IMPACT_EASE_STEP: u32 = 8;
 
+/// Per-frame drain step of the actor `+0xC` tint-blend intensity
+/// (`render_blend`): `FUN_80050120` arm 0 subtracts `dt * 0x20` once the
+/// colour word has eased back to [`IMPACT_NEUTRAL_STATE`], clamping at
+/// `0` (`dt = 1` per engine tick). This is what retires the item/spirit
+/// cue-group flash (`+0x0C = 0x2000`, `FUN_801E22C8`).
+pub const BLEND_DRAIN_STEP: u32 = 0x20;
+
 /// Host-side cue strength for the impact tint: the engine hosts render
 /// the tint as a flat blend toward the unpacked RGB on the saturated
 /// depth-cue seam (the same seam the target cursor and the hit flash

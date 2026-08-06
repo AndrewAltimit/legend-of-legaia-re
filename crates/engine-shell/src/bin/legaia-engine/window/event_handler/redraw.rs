@@ -1620,24 +1620,19 @@ impl PlayWindowApp {
                         // stamps three render words across the monster slots -
                         // `render_flag` 5 on the pointed-at monster / 200 on
                         // the rest, the bright/dim colour words, and the q12
-                        // `render_scale` (0x1000 = neutral, 0 = cursor down).
-                        // Render them here: the scale word composes onto the
-                        // model about the actor origin, and the tint rides the
-                        // per-draw GTE depth-cue seam (a saturated `DrawCue`
-                        // ramp = a flat blend toward the cue colour) - the
-                        // pointed-at monster pulses bright, the others dim.
-                        // The retail tint pass's own per-frame colour-word
-                        // stepping (FUN_8004A908) is not modeled; the pulse
-                        // phase is the host tick.
-                        let mut model = self.actor_model(i);
+                        // `render_blend` (0x1000 = cursor up, 0 = cursor
+                        // down). The blend word is the render packet's
+                        // `+0x78` tint weight (`FUN_8004A908`), NOT a mesh
+                        // scale; the tint rides the per-draw GTE depth-cue
+                        // seam (a saturated `DrawCue` ramp = a flat blend
+                        // toward the cue colour) - the pointed-at monster
+                        // pulses bright, the others dim. The pulse phase is
+                        // the host tick.
+                        let model = self.actor_model(i);
                         let mut cue = None;
                         if in_battle {
                             use legaia_engine_vm::battle_action as ba;
                             let b = &actor.battle;
-                            if b.render_scale != 0 && b.render_scale != 0x1000 {
-                                model *=
-                                    Mat4::from_scale(Vec3::splat(b.render_scale as f32 / 4096.0));
-                            }
                             match b.render_flag {
                                 ba::CURSOR_FLAG_SELECTED => {
                                     let pulse = 0.30 + 0.20 * (self.tick_no as f32 * 0.25).sin();
@@ -1667,15 +1662,26 @@ impl PlayWindowApp {
                             // tick owns the writes + decay): while the
                             // actor's +0x21F selector is armed, the packed
                             // +0x04 colour word rides the same saturated
-                            // DrawCue seam. Overrides the cursor arms (the
-                            // impact target is retail's tint owner) and
-                            // loses to the hit flash below.
+                            // DrawCue seam. The same arm renders the
+                            // item/spirit cue-group flash (`FUN_801E22C8`
+                            // stamps colour + a `0x2000` blend the tick
+                            // drains), weighting the strength by the live
+                            // blend so the flash fades out. Overrides the
+                            // cursor arms (the impact target is retail's
+                            // tint owner) and loses to the hit flash below.
                             {
                                 use legaia_engine_vm::battle_impact_fx as ifx;
-                                if b.impact_state != 0
+                                let blend_armed = b.render_flag == 0 && b.render_blend != 0;
+                                if (b.impact_state != 0 || blend_armed)
                                     && b.render_color != ifx::IMPACT_NEUTRAL_STATE
                                     && b.render_color != 0
                                 {
+                                    let strength = if b.impact_state != 0 {
+                                        ifx::IMPACT_TINT_CUE_STRENGTH
+                                    } else {
+                                        ifx::IMPACT_TINT_CUE_STRENGTH
+                                            * (b.render_blend.min(0x1000) as f32 / 4096.0)
+                                    };
                                     let c = ifx::unpack_actor_state_rgb(b.render_color);
                                     cue = Some(legaia_engine_render::DrawCue {
                                         far: [
@@ -1685,7 +1691,7 @@ impl PlayWindowApp {
                                         ],
                                         near_z: -1.0,
                                         far_z: 0.0,
-                                        max_ir0: ifx::IMPACT_TINT_CUE_STRENGTH,
+                                        max_ir0: strength,
                                     });
                                 }
                             }

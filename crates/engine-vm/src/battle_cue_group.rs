@@ -80,8 +80,12 @@ pub struct CueGroupExpansion {
     /// The actor `+0x04` write, always performed.
     pub actor_state: u32,
     /// `Some(0x2000)` when the `+0x0C` follow-up write runs. It is skipped
-    /// only for the exact state word [`CUE_ACTOR_STATE_SKIP`].
-    pub actor_flags: Option<u32>,
+    /// only for the exact state word [`CUE_ACTOR_STATE_SKIP`]. `+0x0C` is
+    /// the actor's q12 **tint-blend intensity** (the render packet `+0x78`
+    /// blend source, `FUN_8004A908`), so this is an over-saturated flash of
+    /// the `actor_state` colour that `FUN_80050120` arm 0 then drains at
+    /// `0x20` per frame - not a mesh scale.
+    pub actor_blend: Option<u32>,
 }
 
 /// The tables `FUN_801E22C8` reads out of the battle overlay's data band.
@@ -146,7 +150,7 @@ pub fn expand_cue_group(
 ) -> CueGroupExpansion {
     let mut out = CueGroupExpansion {
         actor_state,
-        actor_flags: if actor_state == CUE_ACTOR_STATE_SKIP {
+        actor_blend: if actor_state == CUE_ACTOR_STATE_SKIP {
             None
         } else {
             Some(0x2000)
@@ -550,7 +554,7 @@ mod tests {
         let out = expand_cue_group(CUE_TINT_NEUTRAL, 0x1234, 0, 0, &t);
         assert!(out.spawns.is_empty());
         assert_eq!(out.actor_state, 0x1234);
-        assert_eq!(out.actor_flags, Some(0x2000));
+        assert_eq!(out.actor_blend, Some(0x2000));
     }
 
     #[test]
@@ -561,7 +565,7 @@ mod tests {
             sfx_map: &sfx_map,
         };
         let out = expand_cue_group(CUE_TINT_NEUTRAL, CUE_ACTOR_STATE_SKIP, 0, 0, &t);
-        assert_eq!(out.actor_flags, None);
+        assert_eq!(out.actor_blend, None);
     }
 
     #[test]
@@ -672,12 +676,12 @@ mod tests {
             sfx_map: &sfx,
         };
         let out = expand_cue_group(revive.tint, revive.actor_state, 0, revive.group, &t);
-        assert_eq!(out.actor_flags, None);
+        assert_eq!(out.actor_blend, None);
         // Every other site writes it.
         for class in [0u8, 1, 2, 3, 5, 8] {
             let s = cue_group_for(class, 1).unwrap();
             let out = expand_cue_group(s.tint, s.actor_state, 0, s.group, &t);
-            assert_eq!(out.actor_flags, Some(0x2000), "class {class}");
+            assert_eq!(out.actor_blend, Some(0x2000), "class {class}");
         }
     }
 

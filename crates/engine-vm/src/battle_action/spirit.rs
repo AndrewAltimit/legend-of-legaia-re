@@ -207,8 +207,8 @@ fn place_cue_group<H: BattleActionHost + ?Sized>(host: &mut H, class: u8, tier: 
         };
         if let Some(actor) = host.actor_mut(s) {
             actor.render_color = plan.actor_state;
-            if let Some(flags) = plan.actor_flags {
-                actor.render_scale = flags;
+            if let Some(flags) = plan.actor_blend {
+                actor.render_blend = flags;
             }
         }
         for spawn in plan.spawns {
