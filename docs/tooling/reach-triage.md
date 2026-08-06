@@ -99,10 +99,9 @@ structural impossibility. The browser hosts never had either problem: their
 composition is in `crates/web-viewer/src`, a library, which is the seam the
 composition ladder drives.
 
-By *call*, that is - not by coverage. `LLVM_PROFILE_FILE` is inherited, so a
-test that spawns `CARGO_BIN_EXE_legaia-engine` has its profile merged in, and
-`play-window` already takes `--pad-script` + `--screenshot-tick` for exactly
-that shape of run. What the spawn route cannot do is **enter a minigame**:
+The spawn route is already practical for the native window - `play-window`
+takes `--pad-script` and `--screenshot-tick`, which is exactly that shape of
+run. What it cannot do is **enter a minigame**:
 the native host opens the Muscle Dome and the Baka Fighter from
 `WindowEvent::KeyboardInput` (`M` / `B` in
 `window/event_handler/keyboard.rs`), `--pad-script` writes a *pad word* and
@@ -192,12 +191,17 @@ surfaced the first time a coverage source contained their files:
 `engine-core` carries the largest crate share of the never-entered set. Every
 address in it is accounted for below.
 
-| bucket | addresses |
-|---|---|
-| NO-LADDER | see below |
-| GATED | see below |
-| HOST-DEAD | see below |
-| NOT-PLAYTHROUGH | 5 |
+**Per-bucket totals are deliberately not written here.** They are a count of
+project state, which this repo's writing rules keep out of committed docs, and
+they rot within a single wave: the ladders below move rows between buckets
+faster than a hand-maintained tally can follow, and a stale total reads exactly
+like a fresh one. During one integration this table conflicted in *every*
+branch that touched the page, each with a different number, and no arithmetic
+over the diffs could recover the true one.
+
+The totals belong to the instrument, not the page. `replay-port-coverage.py`
+recomputes them from the coverage exports each run; the per-row verdicts below
+are what this page is for, and they stay valid whatever the totals are.
 
 ### The escape pair reads as a contradiction, and both halves are true
 
