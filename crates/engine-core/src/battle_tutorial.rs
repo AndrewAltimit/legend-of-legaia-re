@@ -590,6 +590,14 @@ impl BattleTutorial {
     ///
     /// Mirrors `FUN_801F6B70`: guard on the box-up latch, guard on the
     /// one-shot latch, dispatch the hook, then run the completion tail.
+    ///
+    /// The module tag names this address too, but a module-scope anchor is
+    /// resolved by the coverage join to "any function in this file ran", which
+    /// cannot tell the dispatcher running from a `BoxStyle` lookup running.
+    /// The tag is repeated here so the runtime-reach verdict for this address
+    /// is about the dispatcher itself.
+    ///
+    /// PORT: FUN_801F6B70
     pub fn tick(&mut self, flow_state: u8) -> TutorialTick {
         // ctx[0x6B2] != 0 -> suppressed entirely.
         if self.box_up {
