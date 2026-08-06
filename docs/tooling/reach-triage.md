@@ -77,10 +77,10 @@ structurally cannot:
 |---|---|---|---|
 | `engine-ui` | 42 | 0 | 22 |
 | `engine-render` | 28 | 0 | 0 - a hard wgpu link `web-viewer` does not carry |
-| `engine-audio` | 20 | 0 | 3 - the page's SFX channel; the mixer output path stays wasm-/device-gated |
+| `engine-audio` | 20 | 0 | 3 - the page's SFX channel; the mixer output path has no producer in the union (see below) |
 | `mdec` | 6 | 0 | 0 - the play page has no STR playback (its FMV arm auto-skips) |
 
-Two more structural exclusions matter as much and are easy to misread as port
+Three more structural exclusions matter as much and are easy to misread as port
 gaps:
 
 **No `#[test]` can *call* into a `bin/` target - but it can still cover one.**
@@ -104,6 +104,26 @@ drives the *engine-shell* minigame path, and `play_compose_ladder` drives the
 *play page* - neither is the standalone minigames page, so a port wired only on
 that page is never-entered by construction. Its own oracles live in
 `crates/web-viewer/tests/`.
+
+**No ladder in the union holds a `BgmDirector`, so the whole BGM route is
+unreachable from it.** This is sharper than "the ladders have no audio device",
+and it is two separate exclusions stacked. `critical_path_replay`,
+`minigame_replay` and `play_compose_ladder` drive `SceneHost` / `LegaiaRuntime`
+directly and never call `SceneHost::route_bgm_events` at all; the `BootSession`
+ladders, which do reach `boot.rs`'s call site, every one construct their session
+with `enable_audio: false`, so `BootSession::bgm` is `None` and the call site is
+skipped. Whether a cpal device could be opened never enters into it. Every
+`0x35` sub-op arm - the SEQ-byte resolve, the pause/resume pair, the volume
+re-apply, the swap-commit - is therefore never-entered by construction, and the
+same is true one layer down: nothing in the union attaches a sequencer, so the
+`engine-audio` mixing path has no producer either. The session ladders
+`crates/engine-core/tests/w1e_scene_bgm_transition_ladder.rs` and
+`crates/engine-audio/tests/w1e_audio_session_ladder.rs` supply that producer -
+the latter through `legaia_engine_audio::TestAudioSink`, the device-free twin of
+the cpal mixing core (see the crate README) - and both export as their own
+ladder JSONs. They are session-shaped rather than pad-driven, which the union
+should keep visible: they measure "code a mixer-attached frame loop executes",
+not "code a player pressing buttons executes".
 
 
 **An anchor is attributed to its first site, and a data anchor has no site.**
@@ -160,7 +180,7 @@ address in it is accounted for below.
 
 | bucket | addresses |
 |---|---|
-| NO-LADDER | 90 |
+| NO-LADDER | 85 |
 | GATED | 9 |
 | HOST-DEAD | 45 |
 | NOT-PLAYTHROUGH | 5 |
@@ -319,14 +339,12 @@ rows below are what it did not reach.)
 | `fishing.rs` (session kernels) | 6 | `801d5298` `801d0474` `801d0f5c` `801d26cc` `801d3db4` `801d746c` | a fishing rung past rung 4: rod select, a full cast, a landed catch |
 | `muscle_dome.rs` | 4 | `801cf074` `801d1184` `801d1510` `801d9bbc` | a dome leg played to its between-leg tally |
 | `baka_fighter*.rs` (tally + intro) | 4 | `801d6710` `801d239c` `801d2a28` `801d59d4` | a duel played through its intro card to the end-of-match tally |
-| `scene/host*.rs` (BGM plumbing) | 4 | `80019898` `800243f0` `800266e0` `80026520` | a scene transition that pauses and resumes BGM |
 | `equip_session.rs` / `menu_arrange.rs` / `menu_item_category.rs` | 4 | `801d9c14` `801cf760` `801d64a8` `801dd0c0` | operating the Equip and Items rows deeper than the menu ladders' browse-and-confirm |
 | `pause_screens.rs` (special Use) | 4 | `801d7e50` `801d8a58` `801d8b90` `801d8d94` | a Use confirm on Door of Light / Door of Wind / Incense |
 | `world/vm_hosts.rs` + `equipment.rs` | 2 | `8003c7ec` `800430ac` | field-VM scripts exercising those op arms |
 | `battle_round.rs` / `other_game_overlay.rs` | 2 | `801db8b4` `801d14b0` | one call deeper into round start and the arena |
 | `text_balloon.rs` | 2 | `8003c764` `801da7f0` | a scene running field-VM `4C E1` |
 | `battle_tutorial.rs` | 2 | `801f6b70` `801f747c` | promoting the existing `training_battle` test to a ladder export |
-| `clut_fx.rs` | 1 | `801e4c58` | a scene carrying the other scripted CLUT-cell arm |
 | `shop.rs` (buy list) | 2 | `801db21c` `801db380` | opening a shop stock list and confirming a row through the *retail* menu-overlay list, not the engine session the play page drives |
 | `world_map.rs` | 2 | `800196a4` `801d8258` | entering a kingdom overworld through its own transition |
 | `cutscene_narration.rs` | 1 | `80037174` | an opening-prologue ladder (`opdeene` / `opstati` / `opurud`) |
@@ -335,7 +353,24 @@ rows below are what it did not reach.)
 | `world/battle/stats.rs` + `battle_formulas/escape.rs` | 1 | `801e791c` | a canonical ladder pressing **Run**. Wired at `world/battle/command_flow.rs`'s `Resolution::RunAway` arm and driven end to end by `battle_flee_ladder`, which is outside `CANONICAL_LADDERS` - promote it, or flee in the composition ladder's fight |
 | `fade.rs` | 1 | `80020b00` | the same flee, one beat later: `FadeState::load` stages the state-`0x66` white-out from `fold_battle_event`'s `BattleEnd { Escaped }` arm, so it needs the escape to *succeed* and reach teardown |
 
-### GATED
+Five rows left this table through the scene-session ladder
+(`crates/engine-core/tests/w1e_scene_bgm_transition_ladder.rs`): the four BGM
+plumbing addresses (`80019898` `800243f0` `800266e0` `80026520`) and the
+scripted CLUT-cell cross-fade arm (`801e4c58`). The BGM four needed a
+`BgmDirector` more than they needed a scene - see the structural exclusion
+above - and driving the sub-ops the scenes' own MANs carry, in the order a
+transition performs them, is what makes the pause/resume pair falsifiable
+rather than four independent hook calls.
+
+Driving them surfaced a wiring gap the reach number cannot show, because the
+gap is on the far side of the trait. `BgmDirector::reattach_volume` has a
+default no-op body, and **neither** rendering host overrides it -
+`AudioBgmDirector` implements `pause` / `resume` / `stop` / `unhalt_pause` and
+not this one, and the browser runtime's director matches. So sub-op 8 computes
+retail's level (`FUN_80019898`'s `(raw << 15) >> 16`) and every host discards
+it. The primitive it would drive already exists
+(`legaia_engine_audio::Sequencer::set_master_vol`), so this is a two-host wire,
+not a port.
 
 Reachable only from a game state the ladders do not seed. The fix is a seeded
 save or a longer spine, not a pad stream.
@@ -508,11 +543,8 @@ that half is disclosed at its tag and waived by the drift gate.
 | `anim_cue.rs` | 1 | (c) | disclosed | `800508dc` |
 | `seq_calc.rs` | 5 | (d) | differential | `80062f98` `8006320c` `8006352c` `80063aa8` `800649b0` |
 | `seq_events.rs` | 5 | (d) | differential | `800638d8` `80063974` `800639a0` `80063cec` `8006418c` |
-| `seq_slots.rs` | 1 | (a) | audio | `8001ff58` |
-| `sequencer.rs` | 2 | (a) | audio | `80066b00` `80067550` |
-| `sfx.rs` | 2 | (a) | audio | `80035b50` `8004fcc8` |
+| `seq_slots.rs` | 1 | (a) | no owner | `8001ff58` |
 | `shout.rs` | 1 | (a) | arts-swing | `8004c140` |
-| `vab_bind.rs` | 3 | (a) | audio | `80066d8c` `80066e50` `80068d94` |
 
 The ten `seq_calc` / `seq_events` addresses are the SsAPI per-frame calc tier.
 `Sequencer` is the engine's clean-room replacement and drives playback on its
@@ -524,9 +556,26 @@ than a wiring gap.
 The footstep cadence and the SFX delay ring left this table through the
 composition ladder - both tick on the browser play page's frame path, which is
 exactly the host asymmetry the footstep module doc records against the native
-window. The remaining (a) rows need a mixer-attached tick: SFX enqueue, VAB
-upload and voice alloc run only when an audio output exists, and the page's
-WebAudio route is wasm-gated out of a native test.
+window.
+
+The seven `sequencer` / `sfx` / `vab_bind` rows left it through the audio
+session ladder. What they needed was a mixer-attached tick - SFX enqueue, VAB
+upload and voice allocation only run when something is pulling frames - and
+`legaia_engine_audio::TestAudioSink` supplies one without a device by driving
+the same mixing core the cpal callback drives. The ladder stages a real bank,
+plays a real track, and matures a real cue through the frame scheduler, each
+asserted on the PCM that came out rather than on the call being made.
+
+`seq_slots.rs`'s `8001ff58` is the one that stays, and the reason is an
+**owner**, not a tick. It is the SEQ resource-slot release keyed on the
+12-byte-stride table at `0x80091508`, and `SeqResourceTable` is instantiated
+nowhere in the workspace: the two hosts holding an open VAB
+(`AudioBgmDirector::bank`; the browser runtime's `bgm_bank` / `sfx_vabs`) model
+no slot table, and there is no `VabBank` close for the release to call. Both
+halves are within reach - `SpuAllocator::free` exists and `VabBank::samples`
+retains each `UploadedVag`'s `(addr, size)`, so a faithful `FUN_80068C80` has
+its primitives - but wiring it is a three-host change, and until an owner
+exists a release call would hand back resources nothing holds.
 
 ### asset
 
