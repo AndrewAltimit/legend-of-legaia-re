@@ -828,6 +828,12 @@ Auxiliary per-frame helpers the controller calls every frame:
 - `FUN_801d3444` - animates the round **time meter**: ramps a 0..0xc counter `DAT_801f4e0a` up by the frame delta while the phase tag `ctx+6 == 'P'` (0x50) and an enable flag is set, drains it otherwise, and maps it to the bar Y `counter * 160 / 12 - 0x92`. Core ramp + mapping ported as `engine-core::muscle_dome::time_meter_step`. (`overlay_muscle_dome_801d3444.txt`.)
 - `FUN_801d9bbc` - advances every **active animated sprite handle** (`ctx+0x1074[]`, up to 0x28 entries) one linear-ease step toward its target screen position over a per-handle frame count (`ctx+0x11B4 + i*0xC` records: total/elapsed frames + target/start positions; arrival snaps and deactivates). Per-handle step ported as `engine-core::muscle_dome::SpriteGlide::step`. (`overlay_muscle_dome_801d9bbc.txt`.)
 
+The glide step has **no producer** in the engine: nothing writes a
+`(start, target, total)` record, so no session reaches it - the same shape as
+`camera_rel_glide`'s declined row. The kernel's contract is pinned by
+`crates/engine-core/tests/w1b_dome_leg_ladder.rs`, and the wire it is waiting
+on is a host that spawns the pennant / chip sprites this table animates.
+
 ## Direction commands + selection
 
 The fighter's four selectable actions are its four **direction commands**, laid out by `FUN_801d388c` case `9` / `0x2c` (the **deal** step):

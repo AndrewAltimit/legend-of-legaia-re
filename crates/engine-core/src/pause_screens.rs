@@ -1019,9 +1019,12 @@ pub enum SpecialUsePhase {
 /// outcome (consume the fixed item id, close the menu with the exit
 /// code, or apply the encounter suppression).
 ///
-/// PORT: FUN_801D8A58 (Door of Light confirm + exit-code 4 handoff)
-/// PORT: FUN_801D8B90 (Door of Wind destination list + exit-code 5 warp)
-/// PORT: FUN_801D8D94 (Incense confirm + class-0x82 apply)
+/// The three `PORT:` tags sit on the **arms** rather than here, and that
+/// placement is load-bearing: a tag on the type resolves, for the runtime
+/// reach join, to the type's first function - `new` - which every route
+/// constructs. All three addresses would then read *entered* the moment any
+/// one route ran, including the one arm no host can reach
+/// ([`Self::pick_destination_input`]).
 pub struct SpecialUseSession {
     pub route: UseRoute,
     /// Destination names for the Door of Wind list (unlocked landmarks,
@@ -1076,49 +1079,78 @@ impl SpecialUseSession {
 
     /// Drive one frame from an edge-triggered PSX pad word.
     pub fn input_pad_edge(&mut self, pressed: u16) {
+        match self.phase {
+            SpecialUsePhase::Confirm => self.confirm_input(pressed),
+            SpecialUsePhase::PickDestination => self.pick_destination_input(pressed),
+            SpecialUsePhase::Done(_) => {}
+        }
+    }
+
+    /// The Yes/No confirm window shared by the two confirm routes. One body,
+    /// because retail's two routines differ only in which window descriptor
+    /// they raise and which outcome the Yes row commits: Door of Light hands
+    /// the field the escape exit code, Incense applies the class-`0x82`
+    /// encounter suppression in place.
+    ///
+    /// PORT: FUN_801D8A58 (Door of Light confirm + exit-code 4 handoff)
+    /// PORT: FUN_801D8D94 (Incense confirm + class-0x82 apply)
+    fn confirm_input(&mut self, pressed: u16) {
         let up = pressed & PadButton::Up.mask() != 0;
         let down = pressed & PadButton::Down.mask() != 0;
         let cross = pressed & PadButton::Cross.mask() != 0;
         let circle = pressed & PadButton::Circle.mask() != 0;
-        match self.phase {
-            SpecialUsePhase::Confirm => {
-                if circle {
-                    self.phase = SpecialUsePhase::Done(SpecialUseOutcome::Cancelled);
-                    return;
+        if circle {
+            self.phase = SpecialUsePhase::Done(SpecialUseOutcome::Cancelled);
+            return;
+        }
+        // FUN_801D688C over 2 rows with wrap.
+        if up || down {
+            self.cursor ^= 1;
+        }
+        if cross {
+            self.phase = if self.cursor == 0 {
+                match self.route {
+                    UseRoute::Incense => {
+                        SpecialUsePhase::Done(SpecialUseOutcome::EncounterSuppress)
+                    }
+                    _ => SpecialUsePhase::Done(SpecialUseOutcome::FieldEscape),
                 }
-                // FUN_801D688C over 2 rows with wrap.
-                if up || down {
-                    self.cursor ^= 1;
-                }
-                if cross {
-                    self.phase = if self.cursor == 0 {
-                        match self.route {
-                            UseRoute::Incense => {
-                                SpecialUsePhase::Done(SpecialUseOutcome::EncounterSuppress)
-                            }
-                            _ => SpecialUsePhase::Done(SpecialUseOutcome::FieldEscape),
-                        }
-                    } else {
-                        // "No" confirms back to the Use list.
-                        SpecialUsePhase::Done(SpecialUseOutcome::Cancelled)
-                    };
-                }
-            }
-            SpecialUsePhase::PickDestination => {
-                if circle {
-                    // Retail restores the saved Use-list scroll
-                    // (`DAT_801EF070/74`) on the way back.
-                    self.phase = SpecialUsePhase::Done(SpecialUseOutcome::Cancelled);
-                    return;
-                }
-                self.cursor = list_kernel_navigate(self.cursor, self.landmarks.len(), pressed);
-                if cross && self.cursor < self.landmarks.len() {
-                    self.phase = SpecialUsePhase::Done(SpecialUseOutcome::Warp {
-                        landmark: self.cursor,
-                    });
-                }
-            }
-            SpecialUsePhase::Done(_) => {}
+            } else {
+                // "No" confirms back to the Use list.
+                SpecialUsePhase::Done(SpecialUseOutcome::Cancelled)
+            };
+        }
+    }
+
+    /// The Door of Wind destination list (window 11, driven by the kind-4 list
+    /// kernel rather than a Yes/No picker).
+    ///
+    /// **No host reaches this.** [`special_confirm_route_for_item`] is the only
+    /// producer of a `SpecialUseSession`, and it filters
+    /// [`UseRoute::DoorOfWind`] out by construction, so nothing constructs a
+    /// session in [`SpecialUsePhase::PickDestination`] and
+    /// [`SpecialUseOutcome::Warp`] is never produced in play. Wiring it needs a
+    /// destination-list screen plus the unlocked-landmark list to populate it,
+    /// not a call here - which is why the gap is stated rather than disclosed
+    /// with a `NOT WIRED` tag the liveness pass would read as a false
+    /// accusation. Pinned end to end by
+    /// `crates/engine-core/tests/w1f1_pause_special_use_ladder.rs`.
+    ///
+    /// PORT: FUN_801D8B90 (Door of Wind destination list + exit-code 5 warp)
+    fn pick_destination_input(&mut self, pressed: u16) {
+        let cross = pressed & PadButton::Cross.mask() != 0;
+        let circle = pressed & PadButton::Circle.mask() != 0;
+        if circle {
+            // Retail restores the saved Use-list scroll
+            // (`DAT_801EF070/74`) on the way back.
+            self.phase = SpecialUsePhase::Done(SpecialUseOutcome::Cancelled);
+            return;
+        }
+        self.cursor = list_kernel_navigate(self.cursor, self.landmarks.len(), pressed);
+        if cross && self.cursor < self.landmarks.len() {
+            self.phase = SpecialUsePhase::Done(SpecialUseOutcome::Warp {
+                landmark: self.cursor,
+            });
         }
     }
 }

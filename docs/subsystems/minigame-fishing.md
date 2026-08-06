@@ -63,6 +63,21 @@ A landed catch is resolved in `FUN_801d5298` (`overlay_fishing_801d5298.txt`). T
 `points = (fish_base_value * (DAT_801d91b8 + 0x9c0)) / 0x32000`,
 where `fish_base_value` is the species record's `+0x04` field (`&DAT_801d81a8 + DAT_801d91cc*0x28`) and `DAT_801d91b8` is the accumulated pull / strength for the fight. The points are added to the persistent counter `_DAT_8008444c` (clamped to `999999`), guarded by a per-catch latch at actor `+0x2a` so a single fish is scored once. If the catch beats the current best (`_DAT_80084458`), the best value and its fish id (`_DAT_8008445c`) are updated.
 
+### The two reel buttons are not a speed choice (port reconstruction)
+
+Retail pins the two divisors but not what loses a fight; the port's
+reconstruction snaps the line when the gauge reaches `0x1000`. Under that rule
+the two reel buttons are a risk choice rather than a speed choice, because they
+divide the same pull differently while recovering line at different rates: reel
+A (Cross) recovers faster *and* divides harder, so it is strictly the safe one.
+
+Measured over the whole parameter space of `PondSession` - both venues, all
+three lures, all three rod stats, reeling held throughout the fight - the reel-A
+path never brought the gauge to its ceiling (peak `2017` of `0x1000`), so on
+that button no catch is ever lost. Reel B does reach it, on the hardest-pulling
+common fish. The snap is therefore reachable, but only on the "reel harder"
+button; ladder `crates/web-viewer/tests/w1f1_fishing_banner_ladder.rs`.
+
 ## Reel-button decode and cadence
 
 The held pad-mask `_DAT_8007b850` reaches the reel logic through a tiny decoder, `FUN_801d7450` (`overlay_fishing_801d7450.txt`): **Cross (`0x40`) takes priority and returns reel A (`1`); Square (`0x80`) without Cross returns reel B (`2`); neither returns idle (`0`)**. The whole body is the three-way branch `if (m & 0x40) return 1; else return (m >> 6) & 2;`, which is why holding both reel buttons resolves to reel A rather than a blend. This is the same reel-A = Cross / reel-B = Square mapping the [tension mechanic](#tension--reeling-mechanic) integrates.

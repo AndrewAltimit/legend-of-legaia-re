@@ -1,5 +1,29 @@
 use super::*;
 
+/// The raw ([`crate::input::PadButton`]) word that reaches the world-map
+/// controller as the retail **packed** word `packed`. `FUN_801E76D4`'s
+/// literals are all packed bits; `WorldMapController::tick` converts, so a
+/// test that wants a named retail chord has to convert too.
+fn raw_pad(packed: u16) -> u16 {
+    packed.swap_bytes()
+}
+
+/// Retail's top-view chord as raw bits: `R1 | R2 | Cross` held, `Cross` the
+/// new press (packed `0x4A` / `0x40`, compared for word equality).
+const TOP_VIEW_CHORD: u16 = 0x4A00;
+/// The two shoulders alone - the frame that has to precede the chord so
+/// Cross is the *only* bit in the newly-pressed word.
+const TOP_VIEW_SHOULDERS: u16 = 0x0A00;
+
+/// Drive the top-view toggle the way a pad does: shoulders down for a frame,
+/// then Cross added on the next.
+fn press_top_view_chord(world: &mut World) {
+    world.set_pad(TOP_VIEW_SHOULDERS);
+    let _ = world.tick();
+    world.set_pad(TOP_VIEW_CHORD);
+    let _ = world.tick();
+}
+
 #[test]
 fn enter_world_map_installs_controller() {
     let mut world = World::default();
@@ -37,9 +61,11 @@ fn world_tick_emits_top_view_screen_dim() {
     );
 
     // Flip into top view with the debug combo, keeping anim bit 0 set.
-    world.set_pad(0x4A);
-    let _ = world.tick();
+    press_top_view_chord(&mut world);
     assert!(world.world_map_ctrl.as_ref().unwrap().is_top_view());
+    // The chord itself carries R1|R2 held, and the anim toggles stand down
+    // while a shoulder is held, so bit 0 survives the toggle frame.
+    world.world_map_ctrl.as_mut().unwrap().anim_flags = 1;
 
     world.set_pad(0);
     let _ = world.tick();
@@ -77,25 +103,31 @@ fn world_tick_drives_world_map_from_pad() {
     world.enter_world_map();
     world.world_map_ctrl.as_mut().unwrap().debug_enabled = true;
 
-    // Frame 1: the toggle combo (0x4A held, edge includes 0x40) flips
+    // Frames 1-2: the toggle chord (packed 0x4A held / 0x40 pressed) flips
     // the view into top-view.
-    world.set_pad(0x4A);
-    let _ = world.tick();
+    press_top_view_chord(&mut world);
     assert!(world.world_map_ctrl.as_ref().unwrap().is_top_view());
 
-    // Frame 2: in top-view, the left-scroll bit (0x1000) moves the
-    // camera. Releasing the toggle bits first so this frame is a clean
-    // scroll, not another toggle.
+    // Next: in top-view, the camera bank needs the L1 modifier held
+    // alongside the direction (packed 0x4 | 0x1000). Releasing the toggle
+    // bits first so this frame is a clean scroll, not another toggle.
     world.set_pad(0);
     let _ = world.tick();
-    world.set_pad(0x1000);
+    world.set_pad(raw_pad(0x0004 | 0x1000));
     let _ = world.tick();
     assert_eq!(world.world_map_ctrl.as_ref().unwrap().camera_x, -8);
 }
 
 #[test]
 fn world_map_tick_is_deterministic_across_identical_pad_streams() {
-    let pad_stream = [0x4Au16, 0x0000, 0x1000, 0x0020, 0x0002];
+    let pad_stream = [
+        TOP_VIEW_SHOULDERS,
+        TOP_VIEW_CHORD,
+        0x0000,
+        raw_pad(0x0004 | 0x1000),
+        raw_pad(0x0004 | 0x0020),
+        raw_pad(0x0004 | 0x0002),
+    ];
     let drive = |stream: &[u16]| {
         let mut world = World::default();
         world.enter_world_map();

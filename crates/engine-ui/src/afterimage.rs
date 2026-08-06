@@ -1,6 +1,10 @@
 //! 2D afterimage / motion-streak primitive builder.
 //!
-//! PORT: FUN_801e1ab0 (battle move-FX afterimage streak draw)
+//! REF: FUN_801e1ab0 (battle move-FX afterimage streak draw) - the packet
+//! assembly itself is [`build_afterimage_quad`], which carries the `PORT` tag.
+//! Keeping the tag at module scope made the reach report resolve it to *the
+//! next function in the file* ([`streak_half_width`], a one-line subtract), so
+//! any caller of that helper read as "the streak emitter ran".
 //!
 //! Wired through [`crate::streak_pass`], which supplies the two projection
 //! inputs and calls [`build_afterimage_quad`] once per move-FX frame; the
@@ -198,6 +202,8 @@ impl AfterimageQuad {
 /// brightness band. Only the low bits documented per draw are consumed, so any
 /// uniform source works; feed the BIOS-`rand` sequence to reproduce a capture
 /// byte-for-byte.
+///
+/// PORT: FUN_801e1ab0
 pub fn build_afterimage_quad(
     corners: [(i16, i16); 4],
     trail_id: u8,

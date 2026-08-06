@@ -516,8 +516,14 @@ buffers it uploads to WebGL and the same per-draw
 the file matches the render; the PSX VRAM+CLUT texture indirection is
 baked out into one RGBA atlas (one 256x256 tile per distinct
 `(cba, tsb-page)` pair the vertices sample, NEAREST-sampled, `MASK`
-alpha for the PSX word-0 cutout rule). The animated ocean backdrop is a
-screen effect, not geometry, and is excluded. The asset-viewer page's
+alpha for the PSX word-0 cutout rule). The per-vertex packet-colour
+stream goes with the buffers - the same `pack_mesh_flat_rgba()` the page
+hands the shader - and lands as `COLOR_0`, so the file carries the
+`texel * colour / 128` shading rather than the raw texels
+([renderer](renderer.md#the-same-shading-in-an-exported-glb)). The
+continent ground is a synthesized heightfield with no packet stream on
+either path, so it exports exactly as the canvas draws it. The animated
+ocean backdrop is a screen effect, not geometry, and is excluded. The asset-viewer page's
 full-map (town) and single-TMD exports ride the same session; the enemy
 table's monster export is the sibling `monster_gltf::export_glb` (it
 additionally carries action animations).

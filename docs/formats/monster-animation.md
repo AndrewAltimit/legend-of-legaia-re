@@ -307,7 +307,11 @@ channels (the `Rz·Ry·Rx` order recomposed as a quaternion), and a root node
 rotates the rig 180° about X to convert the PSX `+Y`-down space to glTF's
 `+Y`-up. The per-prim CLUTs (`cba & 0x3F`) that a single glTF material can't
 index are baked into a vertical palette atlas, with each vertex's `V` remapped
-into its palette band. CLI: `asset monster-archive --id N --glb <out>`; the
+into its palette band. Shading rides a `COLOR_0` attribute (the prim's packet
+word as the `texel * colour / 128` blend factor) over a material marked
+`KHR_materials_unlit` - retail applies no light source, so a lit material
+would invent one; see [the renderer page](../subsystems/renderer.md#the-same-shading-in-an-exported-glb).
+CLI: `asset monster-archive --id N --glb <out>`; the
 enemy-table web page exposes the same export as a download button.
 
 ## See also

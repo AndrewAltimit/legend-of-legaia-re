@@ -53,14 +53,33 @@ fn world_tick_runs_the_submode_dispatcher() {
     );
 }
 
+/// The painter follows the **descriptor the state machine installs**, not a
+/// window the caller pinned. The counter's entry arm installs
+/// `PANEL_COIN_IDLE`, whose record `10` painter (`FUN_801E6F70`) lives outside
+/// this module, so nothing draws until the accept installs
+/// `PANEL_COIN_CONFIRM` - record `11`, the three-line panel.
 #[test]
-fn the_coin_counter_draws_a_panel_from_inside_the_frame_loop() {
+fn the_coin_counter_draws_the_panel_its_own_descriptor_installs() {
     let mut w = field_world();
     w.money = 50_000;
     w.open_coin_counter();
+    assert!(tick_until(&mut w, 16, |w| w.submode_screen.actor.sub == 1));
+    assert_eq!(
+        w.submode_screen.installed_windows,
+        vec![0, 10, 10],
+        "the entry arm installs the coin counter's own idle record"
+    );
+
+    w.submode_screen.counter.set_entered(3);
+    w.input.set_pad(SUBMODE_ACCEPT_MASK as u16);
+    assert!(tick_until(&mut w, 16, |w| w.submode_screen.actor.sub == 2));
+    assert_eq!(
+        w.submode_screen.installed_windows,
+        vec![legaia_engine_vm::baka_hub_actors::window::THREE_LINE]
+    );
     assert!(
-        tick_until(&mut w, 16, |w| !w.submode_screen.draws().is_empty()),
-        "the panel-window painter produced no draws in a live frame loop"
+        !w.submode_screen.draws().is_empty(),
+        "the installed panel's painter produced no draws in a live frame loop"
     );
 }
 
@@ -148,8 +167,23 @@ fn the_three_dedicated_sub_ops_still_own_their_own_paths() {
     for s in [0u8, 3, 5] {
         assert_eq!(slot_for_op49_sub_op(s), None);
     }
-    for s in [1u8, 2, 4, 6, 7, 8, 9, 0xA, 0xB, 0xC, 0xD] {
-        assert_eq!(slot_for_op49_sub_op(s), Some(slot::CLOSE_TICK));
+    // Every other sub-op takes the handler retail's own table names
+    // (`0x801F33A4`); the two rows that name no handler (`1`, `7`, `0xD`)
+    // fall back to the slot a freshly spawned driver carries.
+    for (s, want) in [
+        (1u8, slot::CLOSE_TICK),
+        (2, 0x21),
+        (4, 0x23),
+        (6, slot::COIN_COUNTER),
+        (7, slot::CLOSE_TICK),
+        (8, slot::START_MENU),
+        (9, slot::PROMPT),
+        (0xA, 0x31),
+        (0xB, slot::SUBMENU),
+        (0xC, 0x33),
+        (0xD, slot::CLOSE_TICK),
+    ] {
+        assert_eq!(slot_for_op49_sub_op(s), Some(want), "sub-op {s:#x}");
     }
 }
 

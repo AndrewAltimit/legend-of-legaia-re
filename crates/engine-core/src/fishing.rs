@@ -866,6 +866,16 @@ pub struct FishingMenuTick {
 /// - Confirm (`& 0x44`, SFX `0x20`): jump table over the cursor row ->
 ///   next SM state (see [`FishingMenuTick::next_state`]); rows 2/3 also
 ///   snapshot the points bank, row 4 arms the venue exit.
+///
+/// **No host reaches this, and no ladder can.** Every fishing host enters the
+/// pond directly - the native window's minigame block, the play page's
+/// `play_fishing_start`, the minigames page's `fishing_pond_start` - so the
+/// venue's own five-row hub screen has no owner and this kernel has no
+/// production caller. What is missing is the screen, not a call: a host would
+/// have to own the five rows, route the confirm into the pond / prize / rod
+/// sub-screens the [`FishingMenuTick::next_state`] jump table names, and honour
+/// the row-4 venue exit. Until then no runtime-reach ladder can enter it, which
+/// makes this a host gap rather than a fixture gap.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FishingMenu {
     /// Cursor row (`0x801D912C`).
@@ -976,9 +986,17 @@ pub struct RodLureSelectTick {
 /// (retail): a cursor past `owned_rods + 2` snaps to `0`, a negative cursor snaps
 /// to `owned_rods + 2` - the `3` lure rows plus the owned-rod rows.
 ///
-/// Not wired: the play window has no rod/lure select screen, so this closes the
-/// documented gap noted on [`select_owned_rod`] (the read-only rod re-point) with
-/// the interactive selection half.
+/// **No host reaches this, and no ladder can.** No host owns a rod/lure select
+/// screen: the two engine hosts pick the rod from a dev constant
+/// (`DEV_ROD_STAT` / `WEB_ROD_STAT`) and the minigames page takes rod and lure
+/// as `fishing_pond_start` arguments, so nothing calls this kernel in
+/// production. Two prerequisites, neither of them a call: a screen to own the
+/// rows, and - on the minigames page specifically - a tackle inventory for the
+/// `count_of` probe, which that page does not model at all (its HUD hard-codes
+/// the lure count because lures are not consumed there). Until both exist this
+/// is a host gap rather than a fixture gap, and it closes the read-only gap
+/// noted on [`select_owned_rod`] only in the sense that the selection half is
+/// now ported.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RodLureSelect {
     /// Cursor row (`DAT_801D90DC`); `0..3` = the three lure rows, `3..` = the

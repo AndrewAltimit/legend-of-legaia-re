@@ -34,6 +34,7 @@ pub mod sfx;
 pub mod sfx_ring;
 pub mod shout;
 pub mod spu;
+pub mod test_sink;
 pub mod vab_bind;
 #[cfg(all(target_arch = "wasm32", feature = "audio-webaudio"))]
 mod webaudio;
@@ -67,6 +68,7 @@ pub use spu::adpcm::{AdpcmDecoder, BLOCK_BYTES, SAMPLES_PER_BLOCK};
 pub use spu::adsr::{AdsrConfig, AdsrState, Phase};
 pub use spu::ram::{SpuAllocator, SpuRam, TransferDirection};
 pub use spu::voice::{PITCH_UNITY, SPU_INTERNAL_RATE, Voice};
+pub use test_sink::{SinkMeasure, TestAudioSink};
 pub use vab_bind::{UploadedVag, VabBank};
 #[cfg(all(target_arch = "wasm32", feature = "audio-webaudio"))]
 pub use webaudio::WebAudioOut;
@@ -502,6 +504,52 @@ impl StreamResampler {
             self.fade_step = 1.0 / fade_in_samples as f32;
         }
     }
+
+    /// Install `seq` immediately, key-offing whatever the previous sequencer
+    /// had running and cancelling any in-progress crossfade.
+    fn attach_sequencer(&mut self, seq: Sequencer) {
+        if let Some(mut prev) = self.sequencer.take() {
+            prev.stop(&mut self.spu);
+        }
+        self.pending_seq = None;
+        self.master_fade = 1.0;
+        self.fade_target = 1.0;
+        self.fade_step = 0.0;
+        self.sequencer = Some(seq);
+    }
+
+    /// Drop the active sequencer and key-off its notes.
+    fn detach_sequencer(&mut self) {
+        if let Some(mut seq) = self.sequencer.take() {
+            seq.stop(&mut self.spu);
+        }
+        self.pending_seq = None;
+        self.master_fade = 1.0;
+        self.fade_target = 1.0;
+        self.fade_step = 0.0;
+    }
+
+    /// Cross-fade to `new_seq` over `fade_samples` SPU-rate samples, or attach
+    /// immediately when nothing is playing / `fade_samples == 0`.
+    fn crossfade_to(&mut self, new_seq: Sequencer, fade_samples: u32) {
+        if fade_samples == 0 || self.sequencer.is_none() {
+            self.attach_sequencer(new_seq);
+        } else {
+            self.pending_seq = Some(new_seq);
+            self.fade_target = 0.0;
+            self.fade_step = 1.0 / fade_samples.max(1) as f32;
+        }
+    }
+
+    /// Snapshot of the attached sequencer's progress.
+    fn sequencer_progress(&self) -> Option<SequencerProgress> {
+        self.sequencer.as_ref().map(|seq| SequencerProgress {
+            tick: seq.playhead_ticks(),
+            bpm: seq.bpm(),
+            active_notes: seq.active_notes(),
+            finished: seq.is_finished(),
+        })
+    }
 }
 
 /// Stage a one-shot XA shout into a resampler, honoring the back-to-back
@@ -935,29 +983,13 @@ impl AudioOut {
     /// Replacing an existing sequencer silences any active notes from the
     /// prior one (use [`Self::crossfade_to`] for a smooth transition).
     pub fn attach_sequencer(&self, seq: Sequencer) {
-        let mut s = self.lock();
-        if let Some(mut prev) = s.sequencer.take() {
-            prev.stop(&mut s.spu);
-        }
-        // Cancel any in-progress crossfade.
-        s.pending_seq = None;
-        s.master_fade = 1.0;
-        s.fade_target = 1.0;
-        s.fade_step = 0.0;
-        s.sequencer = Some(seq);
+        self.lock().attach_sequencer(seq);
     }
 
     /// Detach the active sequencer (if any) and key-off whatever it had
     /// running. Cancels any in-progress crossfade.
     pub fn detach_sequencer(&self) {
-        let mut s = self.lock();
-        if let Some(mut seq) = s.sequencer.take() {
-            seq.stop(&mut s.spu);
-        }
-        s.pending_seq = None;
-        s.master_fade = 1.0;
-        s.fade_target = 1.0;
-        s.fade_step = 0.0;
+        self.lock().detach_sequencer();
     }
 
     /// Gate the sequencer tick without detaching it. When `paused` is
@@ -979,23 +1011,7 @@ impl AudioOut {
     /// `fade_samples = 0` attaches immediately (same as
     /// [`Self::attach_sequencer`]).
     pub fn crossfade_to(&self, new_seq: Sequencer, fade_samples: u32) {
-        let mut s = self.lock();
-        if fade_samples == 0 || s.sequencer.is_none() {
-            // No current sequencer or immediate switch requested.
-            if let Some(mut prev) = s.sequencer.take() {
-                prev.stop(&mut s.spu);
-            }
-            s.pending_seq = None;
-            s.master_fade = 1.0;
-            s.fade_target = 1.0;
-            s.fade_step = 0.0;
-            s.sequencer = Some(new_seq);
-        } else {
-            // Queue new_seq and start fading out.
-            s.pending_seq = Some(new_seq);
-            s.fade_target = 0.0;
-            s.fade_step = 1.0 / fade_samples.max(1) as f32;
-        }
+        self.lock().crossfade_to(new_seq, fade_samples);
     }
 
     /// Swap the active sequencer for `new_seq` **immediately**, faithful to
@@ -1018,13 +1034,7 @@ impl AudioOut {
     /// Snapshot of the sequencer's progress, returned `None` if no sequencer
     /// is currently attached. Caller-side polling for UI / progress bars.
     pub fn sequencer_progress(&self) -> Option<SequencerProgress> {
-        let s = self.lock();
-        s.sequencer.as_ref().map(|seq| SequencerProgress {
-            tick: seq.playhead_ticks(),
-            bpm: seq.bpm(),
-            active_notes: seq.active_notes(),
-            finished: seq.is_finished(),
-        })
+        self.lock().sequencer_progress()
     }
 }
 

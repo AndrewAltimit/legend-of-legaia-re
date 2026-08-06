@@ -90,9 +90,34 @@ Usage:
     done
     cargo llvm-cov --release -p legaia-web-viewer --test play_compose_ladder \\
         --json --output-path target/cov-play_compose_ladder.json
+    # NOTE the missing --release on these two; see "a release export loses
+    # executed code" below. The flag is kept above only because the five
+    # exports it produced are what the current numbers were measured from.
+    cargo llvm-cov -p legaia-mdec --test w1a_fmv_ladder \\
+        --json --output-path target/cov-w1a_fmv_ladder.json
+    cargo llvm-cov -p legaia-engine-core --test w1a_narration_ladder \\
+        --json --output-path target/cov-w1a_narration_ladder.json
 
     # then join them - no arguments needed, the union is the default
     scripts/ci/replay-port-coverage.py
+
+## A release export loses executed code, silently
+
+`-C instrument-coverage` counters are emitted per function, but an optimised
+build inlines the small ones away and the out-of-line copy's record is left at
+**zero** - indistinguishable, in this join, from a function no run called. It is
+not a rare shape: on one `w1a_fmv_ladder` run, `advance_slice` (40 calls),
+`slice_word_count` (39) and `mdec_output_control` / `skip_requested` /
+`mdec_control_flags` (1-3 each) all reported `count = 0` under `--release` and
+their real counts under the default profile, from the same ladder over the same
+disc. Two of them are `mdec` rows this report had listed as *live but never
+entered*, which was an artifact of the export rather than a gap in the ladders.
+
+So a `--release` row in the never-entered list is a **hypothesis**, not a
+measurement: re-export that ladder without `--release` before reading it as
+work. The flag survives above only because the five exports it produced are what
+the existing numbers came from; re-taking them is the fix, and it changes the
+headline.
 
 Skips (exit 0) when every coverage JSON is absent, so a disc-free or
 coverage-toolless CI run is a pass, matching the `LEGAIA_DISC_BIN` convention.
@@ -133,6 +158,55 @@ CANONICAL_LADDERS = [
     ("minigame_replay", "legaia-engine-shell"),
     ("v0_1_playthrough", "legaia-engine-shell"),
     ("play_compose_ladder", "legaia-web-viewer"),
+    # --- lane W1-A ---
+    # Two ladders for content no pad-only *engine-shell* ladder can reach.
+    #
+    # `w1a_fmv_ladder` plays every retail `fmv_id` through the retail STR chain
+    # (dispatch slot -> file seek -> `StrPlayer` -> `MdecDecoder` -> pad skip).
+    # No other union member plays a movie at all: the headless ladders have no
+    # cutscene rung and the browser play page's FMV arm auto-skips, so the whole
+    # `mdec` crate reported zero executed regions - a fact about the harness,
+    # not the port. Its fourth rung additionally *spawns* `CARGO_BIN_EXE_mdec`,
+    # which is how the MDEC-hardware half (whose only host is the `mdec
+    # str-plan` subcommand, in a `bin/` target) runs under coverage at all.
+    #
+    # That rung also settles a structural claim this report has been read
+    # against: "a `bin/` target is unreachable from any `#[test]`" is true of
+    # *calls* and false of *coverage*. `LLVM_PROFILE_FILE` is inherited, so a
+    # spawned `CARGO_BIN_EXE_*` writes its own profile and it is merged in -
+    # measured: `mdec::cmd_str_plan` reports 40 executions from a test that
+    # only spawned it. Every `bin/`-resident row on this report's never-entered
+    # list is therefore reachable by a ladder that runs the subcommand.
+    #
+    # `w1a_narration_ladder` drives the two text presenters a pad run reaches
+    # and no ladder did: the opening-prologue subtitle roller and the inline
+    # field-VM conversation path (as opposed to the pre-decoded dialog panel
+    # every other ladder drives).
+    #
+    # Both are disc-gated and skip-pass without `LEGAIA_DISC_BIN`, exactly like
+    # the ladders above; a disc-free export therefore contributes no executed
+    # regions rather than failing, which is the same shape the rest of the union
+    # already has.
+    #
+    # Both are exported WITHOUT `--release`, and that is not a detail: see the
+    # module docstring's "a release export loses executed code". These two
+    # ladders are where that was measured.
+    ("w1a_fmv_ladder", "legaia-mdec"),
+    ("w1a_narration_ladder", "legaia-engine-core"),
+    # --- lane W1-C ---
+    ("w1c_battle_render_ladder", "legaia-web-viewer"),
+    ("w1c_arts_swing_ladder", "legaia-engine-shell"),
+    # --- lane W1-B ---
+    # Three pad-driven ladders that live in `engine-core` because what they
+    # drive is the world tick rather than a host: the op-0x49 submode screens
+    # opened from a field-VM instruction, a Baka duel played through its
+    # cabinet intro to the end-of-match tally, and a Muscle Dome leg played to
+    # its between-leg tally. Each reaches content no engine-shell or
+    # web-viewer ladder does, so leaving them out is a different number rather
+    # than a smaller one.
+    ("w1b_hub_ladder", "legaia-engine-core"),
+    ("w1b_baka_duel_ladder", "legaia-engine-core"),
+    ("w1b_dome_leg_ladder", "legaia-engine-core"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 

@@ -16,10 +16,19 @@
 //! JS pose loop consumes. A root node rotates the rig 180 degrees about X so
 //! the PSX +Y-down space reads upright in glTF's +Y-up convention.
 //!
+//! Shading is retail on **both** primitive kinds, through the one `COLOR_0`
+//! convention in [`crate::gltf_color`]: a textured prim carries its packet
+//! word as the modulation factor `colour / 128` against the atlas, an
+//! untextured one carries it as a fill. Dropping the textured half is not a
+//! subtle loss - it is what turned a summon's flame-tinted sword blade into a
+//! flat white one, because the blade is a near-white texture ramp whose whole
+//! colour is the packet word.
+//!
 //! Consumed by the web viewer's arts page (`LegaiaArts::export_character_glb`,
 //! "download this character with every battle animation") and testable
 //! natively; disc-gated coverage: `crates/web-viewer/tests/arts_view_real.rs`.
 
+use crate::gltf_color::{self, MODULATION_NEUTRAL};
 use crate::monster_archive::MonsterAnimation;
 use crate::monster_gltf::{BinBuilder, TARGET_ARRAY, euler_zyx_quat, pack_glb, rgba_to_png};
 use crate::scene_gltf::{TILE, bake_tile, tile_key};
@@ -43,9 +52,12 @@ struct ObjectGeom {
     object_id: u32,
     positions: Vec<[f32; 3]>,
     uvs: Vec<[f32; 2]>,
-    /// Per-vertex linear RGB for the untextured prims (white on textured
-    /// verts). Only populated on the hybrid path.
-    colors: Vec<[f32; 3]>,
+    /// Per-vertex `COLOR_0`, one entry per position: the packet word as a
+    /// **modulation** factor on textured verts (`colour / 128`, so it may
+    /// exceed 1.0) and as a **fill** on untextured ones (`colour / 255`).
+    /// See [`crate::gltf_color`] - the two halves read different arrays,
+    /// which is the trap this field exists to keep straight.
+    colors: Vec<[f32; 4]>,
     /// Triangles whose prim samples VRAM (material 0).
     indices: Vec<u32>,
     /// Triangles whose prim is flat / gouraud vertex-coloured (material 1).
@@ -149,14 +161,24 @@ pub fn build_character_glb_hybrid(
                 // +0.5 texel centre, matching the shader's point sampling.
                 geom.uvs
                     .push(uv_of(slot, uv[0] as f32 + 0.5, uv[1] as f32 + 0.5));
-                if let Some(s) = shading {
-                    let c = s.colors.get(gv).copied().unwrap_or([255, 255, 255]);
-                    geom.colors.push([
-                        f32::from(c[0]) / 255.0,
-                        f32::from(c[1]) / 255.0,
-                        f32::from(c[2]) / 255.0,
-                    ]);
-                }
+                // The two halves take their colour from different arrays.
+                // `VertexShading::colors` reports white on textured verts by
+                // design, so it is the wrong source there - the modulation
+                // has to come from `VramMesh::colors`. (Same trap as
+                // `web-viewer`'s `packet_color::hybrid`.)
+                geom.colors.push(if textured_vert(gv) {
+                    let m = mesh
+                        .colors
+                        .get(gv)
+                        .copied()
+                        .unwrap_or([MODULATION_NEUTRAL; 3]);
+                    gltf_color::modulation_color(m)
+                } else {
+                    let c = shading
+                        .and_then(|s| s.colors.get(gv).copied())
+                        .unwrap_or([255, 255, 255]);
+                    gltf_color::fill_color(c)
+                });
                 local_of[gv] = li;
             }
             if tri_textured {
@@ -180,13 +202,16 @@ pub fn build_character_glb_hybrid(
     for geom in &objects {
         let pos = b.push_vec3(&geom.positions, Some(TARGET_ARRAY), true);
         let uv = b.push_vec2(&geom.uvs, Some(TARGET_ARRAY));
-        let color =
-            (!geom.colors.is_empty()).then(|| b.push_vec3(&geom.colors, Some(TARGET_ARRAY), false));
+        let color = (!geom.colors.is_empty()).then(|| b.push_vec4(&geom.colors));
         let mut prims: Vec<Value> = Vec::new();
         if !geom.indices.is_empty() {
             let idx = b.push_indices(&geom.indices);
+            let mut attrs = json!({ "POSITION": pos, "TEXCOORD_0": uv });
+            if let Some(color) = color {
+                attrs["COLOR_0"] = json!(color);
+            }
             prims.push(json!({
-                "attributes": { "POSITION": pos, "TEXCOORD_0": uv },
+                "attributes": attrs,
                 "indices": idx, "material": 0, "mode": 4
             }));
         }
@@ -295,6 +320,7 @@ pub fn build_character_glb_hybrid(
             "baseColorTexture": { "index": 0 },
             "metallicFactor": 0.0, "roughnessFactor": 1.0
         },
+        "extensions": { "KHR_materials_unlit": {} },
         "alphaMode": "MASK", "alphaCutoff": 0.5, "doubleSided": true
     })];
     if any_flat {
@@ -305,11 +331,13 @@ pub fn build_character_glb_hybrid(
                 "baseColorFactor": [1.0, 1.0, 1.0, 1.0],
                 "metallicFactor": 0.0, "roughnessFactor": 1.0
             },
+            "extensions": { "KHR_materials_unlit": {} },
             "doubleSided": true
         }));
     }
     let mut root = json!({
         "asset": { "version": "2.0", "generator": "legend-of-legaia-re character exporter" },
+        "extensionsUsed": [gltf_color::UNLIT_EXTENSION],
         "scene": 0,
         "scenes": [{ "nodes": [root_index] }],
         "nodes": nodes,
@@ -456,11 +484,99 @@ mod tests {
         assert_eq!(m1.len(), 1);
         assert_eq!(m1[0]["material"], 1);
         assert!(m1[0]["attributes"]["COLOR_0"].is_number());
-        // The pure-textured path is unchanged: one material, no COLOR_0.
+        // The pure-textured path keeps its single material - but it too now
+        // carries COLOR_0 (the modulation half).
         let glb2 = build_character_glb("Vahn", &mesh, &ids, &vram, &clips).unwrap();
         let json_len2 = u32::from_le_bytes(glb2[12..16].try_into().unwrap()) as usize;
         let root2: Value = serde_json::from_slice(&glb2[20..20 + json_len2]).unwrap();
         assert_eq!(root2["materials"].as_array().unwrap().len(), 1);
+        assert!(root2["meshes"][0]["primitives"][0]["attributes"]["COLOR_0"].is_number());
+    }
+
+    /// The defect this module's COLOR_0 stream exists for: a textured prim's
+    /// packet word must reach the file as `colour / 128`, not as white. A
+    /// near-white texel tinted `(248, 128, 0)` is a summon's flame-gradient
+    /// sword blade; without the stream it exports as the bare pale texel.
+    #[test]
+    fn textured_prims_export_their_packet_colour_as_a_modulation() {
+        let (mut mesh, ids) = two_object_mesh();
+        mesh.colors = vec![
+            [0xF8, 0x80, 0x00], // hot orange, r nearly 2x
+            [0xF8, 0x80, 0x00],
+            [0xF8, 0x80, 0x00],
+            [0x40, 0x00, 0x00], // deep red, heavy darkening
+            [0x40, 0x00, 0x00],
+            [0x40, 0x00, 0x00],
+        ];
+        let vram = Vram::new();
+        let idle = clip(2);
+        let clips = [CharacterClip {
+            name: "idle".into(),
+            fps: 15.0,
+            anim: &idle,
+        }];
+        let glb = build_character_glb("Meta", &mesh, &ids, &vram, &clips).unwrap();
+        let (root, bin) = crate::gltf_color::glb_probe::split(&glb).expect("glb container");
+        assert_eq!(root["extensionsUsed"][0], "KHR_materials_unlit");
+        for (obj, want) in [(0usize, [248.0, 128.0, 0.0]), (1, [64.0, 0.0, 0.0])] {
+            let prim = &root["meshes"][obj]["primitives"][0];
+            assert_eq!(prim["material"], 0, "object {obj} is the textured material");
+            let acc = prim["attributes"]["COLOR_0"].as_u64().unwrap() as usize;
+            for row in
+                crate::gltf_color::glb_probe::floats(&root, bin, acc).expect("COLOR_0 floats")
+            {
+                for (k, w) in want.iter().enumerate() {
+                    assert!(
+                        (row[k] - w / 128.0).abs() < 1e-6,
+                        "object {obj} channel {k}: {row:?} != {want:?} / 128"
+                    );
+                }
+                assert_eq!(row[3], 1.0);
+            }
+        }
+    }
+
+    /// The sibling trap: on the hybrid path the two halves must read
+    /// different arrays. `VertexShading::colors` reports white for textured
+    /// verts by design, so a textured vert taking it would export white.
+    #[test]
+    fn hybrid_textured_verts_take_the_mesh_word_not_the_shading_white() {
+        let (mut mesh, ids) = two_object_mesh();
+        mesh.colors = vec![[0x30, 0x60, 0x90]; 6];
+        let vram = Vram::new();
+        let idle = clip(2);
+        let clips = [CharacterClip {
+            name: "idle".into(),
+            fps: 15.0,
+            anim: &idle,
+        }];
+        let shading = legaia_tmd::mesh::VertexShading {
+            colors: vec![
+                [255, 255, 255],
+                [255, 255, 255],
+                [255, 255, 255],
+                [0x77, 0x88, 0x99],
+                [0x77, 0x88, 0x99],
+                [0x77, 0x88, 0x99],
+            ],
+            textured: vec![1, 1, 1, 0, 0, 0],
+        };
+        let glb =
+            build_character_glb_hybrid("Vahn", &mesh, &ids, &vram, &clips, Some(&shading)).unwrap();
+        let (root, bin) = crate::gltf_color::glb_probe::split(&glb).expect("glb container");
+        // Object 0 (textured): the mesh word / 128.
+        let a0 = root["meshes"][0]["primitives"][0]["attributes"]["COLOR_0"]
+            .as_u64()
+            .unwrap() as usize;
+        let c0 = &crate::gltf_color::glb_probe::floats(&root, bin, a0).expect("COLOR_0 floats")[0];
+        assert!((c0[0] - 0x30 as f32 / 128.0).abs() < 1e-6, "{c0:?}");
+        assert_ne!(c0[0], 1.0, "textured vert must not export white");
+        // Object 1 (untextured): the shading fill / 255.
+        let a1 = root["meshes"][1]["primitives"][0]["attributes"]["COLOR_0"]
+            .as_u64()
+            .unwrap() as usize;
+        let c1 = &crate::gltf_color::glb_probe::floats(&root, bin, a1).expect("COLOR_0 floats")[0];
+        assert!((c1[0] - 0x77 as f32 / 255.0).abs() < 1e-6, "{c1:?}");
     }
 
     #[test]

@@ -1,11 +1,12 @@
 //! Dual-mode stream-file API - the side-band "file handle" layer the battle
 //! streaming machinery uses to pull sector ranges out of `PROT.DAT` mid-play.
 //!
-//! PORT: FUN_800558FC
-//! PORT: FUN_80055A5C
-//! PORT: FUN_800559EC
-//! PORT: FUN_80055AC8
-//! PORT: FUN_8003E964
+//! The five addresses this module ports are tagged on the [`StreamFileHost`]
+//! **methods** that implement them, not here. A `//!` tag anchors liveness to
+//! the whole file, which reported five reachable ports for a type whose every
+//! construction is a test, and which made a truthful wiring disclosure
+//! unwritable - a per-routine disclosure on a file-scoped anchor reads as a
+//! stale tag rather than as a gap. Each method now carries its own.
 //!
 //! ## Retail shape (per the dumps - `ghidra/scripts/funcs/800558fc.txt`,
 //! `80055a5c.txt`, `800559ec.txt`, `80055ac8.txt`, `8003e964.txt`)
@@ -54,10 +55,17 @@
 //!
 //! Retail has exactly **one implicit global cursor** (the MSF cell pair) -
 //! there are no real handles. [`StreamFileHost`] models that: `open_raw` /
-//! `open_extraction` re-aim the single cursor, `seek`/`read` move it, and
-//! `close` is the retail no-op. Sector positions are kept PROT.DAT-relative
-//! (the retail disc-absolute MSF = PROT base MSF + these values; the base
-//! constant cancels out of every seek/read delta).
+//! `open_extraction` re-aim the single cursor, `seek_bytes`/`read` move it,
+//! and `close` is the retail no-op. Sector positions are kept
+//! PROT.DAT-relative (the retail disc-absolute MSF = PROT base MSF + these
+//! values; the base constant cancels out of every seek/read delta).
+//!
+//! The byte seek is `seek_bytes`, not `seek`, and the name is load-bearing
+//! rather than cosmetic: `seek` was the workspace's only in-tree definition of
+//! that name, so the port catalog's call graph linked every `File::seek` in
+//! every crate to this method and reported the retail shim reachable from a
+//! host root. A one-definition name is exactly the case the graph's receiver
+//! gate declines to resolve.
 //!
 //! Consumers (not wired here):
 //! REF: FUN_801F17F8
@@ -100,7 +108,7 @@ pub const fn bytes_to_sectors_floor(bytes: u32) -> u32 {
     bytes >> SECTOR_SHIFT
 }
 
-/// Seek origin for [`StreamFileHost::seek`]. Mirrors the `whence` byte the
+/// Seek origin for [`StreamFileHost::seek_bytes`]. Mirrors the `whence` byte the
 /// retail seek shim forwards to `FUN_8003E964` (`param_3 & 0xFF`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SeekWhence {
@@ -150,7 +158,7 @@ pub struct StreamFileHost {
 
 impl StreamFileHost {
     /// Build a host over a shared PROT index. The cursor starts unopened;
-    /// [`Self::seek`]/[`Self::read`] before an open fail (retail would walk
+    /// [`Self::seek_bytes`]/[`Self::read`] before an open fail (retail would walk
     /// from whatever stale MSF the cells held - surfacing an error is the
     /// clean-room tightening).
     pub fn new(prot: Arc<ProtIndex>) -> Self {
@@ -199,6 +207,18 @@ impl StreamFileHost {
     /// (caller-saved `s0` leaks through `move v0, s0`); no retail consumer
     /// reads it, so surfacing the resolver's value is strictly more useful
     /// and diverges from nothing observable.
+    ///
+    /// PORT: FUN_800558FC
+    ///
+    /// NOT WIRED: the prerequisite is a production owner of a
+    /// [`StreamFileHost`]. The type has exactly one non-test mention in the
+    /// workspace - its own `impl` line - and every construction is a unit test
+    /// or the disc-gated `stream_file_real` oracle. Retail's consumers are the
+    /// battle side-band streaming SM (`FUN_801F17F8`) and the player-pack
+    /// loader (`FUN_80052770`); the port loads both through
+    /// [`crate::scene::ProtIndex`] whole-entry reads, which need no cursor, so
+    /// wiring this means giving the battle streaming path a positional reader
+    /// rather than inserting a call.
     pub fn open_raw(&mut self, raw_idx: RawTocIndex) -> Result<u32> {
         self.park_pending_op();
         let extraction = raw_idx
@@ -232,7 +252,12 @@ impl StreamFileHost {
     /// Seek shim `FUN_80055A5C(fd, byte_off, whence)`: floor the byte
     /// offset to sectors, then apply [`Self::seek_sectors`]. The `fd`
     /// argument does not exist in the port (retail ignores it too).
-    pub fn seek(&mut self, byte_offset: u32, whence: SeekWhence) -> Result<u32> {
+    ///
+    /// PORT: FUN_80055A5C
+    ///
+    /// NOT WIRED: same prerequisite as [`Self::open_raw`] - no production
+    /// owner of a `StreamFileHost` exists.
+    pub fn seek_bytes(&mut self, byte_offset: u32, whence: SeekWhence) -> Result<u32> {
         self.park_pending_op();
         self.seek_sectors(bytes_to_sectors_floor(byte_offset), whence)
     }
@@ -241,6 +266,12 @@ impl StreamFileHost {
     /// restores the cursor to the saved entry base, then (both modes) the
     /// cursor advances by `sector_off` sectors. Returns the new cursor
     /// sector (PROT.DAT-relative).
+    ///
+    /// PORT: FUN_8003E964
+    ///
+    /// NOT WIRED: same prerequisite as [`Self::open_raw`]. Its only
+    /// in-workspace caller is [`Self::seek_bytes`] above, which is inert for the
+    /// same reason.
     pub fn seek_sectors(&mut self, sector_offset: u32, whence: SeekWhence) -> Result<u32> {
         let base = self.opened_base()?;
         if whence == SeekWhence::FromBase {
@@ -266,6 +297,11 @@ impl StreamFileHost {
     /// opened entry - reads past the entry end walk into the neighbouring
     /// PROT.DAT sectors as on retail; only running off the end of
     /// `PROT.DAT` itself errors.
+    ///
+    /// PORT: FUN_800559EC
+    ///
+    /// NOT WIRED: same prerequisite as [`Self::open_raw`] - no production
+    /// owner of a `StreamFileHost` exists.
     pub fn read(&mut self, dst: &mut [u8]) -> Result<usize> {
         self.park_pending_op();
         self.opened_base()?;
@@ -294,6 +330,11 @@ impl StreamFileHost {
     /// no-op beyond the shared preamble - no handle is released and the
     /// cursor cells keep their values (a subsequent seek/read would still
     /// work on retail). The port mirrors that: the cursor stays open.
+    ///
+    /// PORT: FUN_80055AC8
+    ///
+    /// NOT WIRED: same prerequisite as [`Self::open_raw`] - no production
+    /// owner of a `StreamFileHost` exists.
     pub fn close(&mut self) {
         self.park_pending_op();
         // Retail-effective branch: nothing else. The dev branch's
@@ -409,7 +450,7 @@ mod tests {
     #[test]
     fn use_before_open_errors() {
         let mut h = make_host();
-        assert!(h.seek(0x800, SeekWhence::FromBase).is_err());
+        assert!(h.seek_bytes(0x800, SeekWhence::FromBase).is_err());
         let mut buf = [0u8; 0x800];
         assert!(h.read(&mut buf).is_err());
     }
@@ -419,10 +460,10 @@ mod tests {
         let mut h = make_host();
         h.open_raw(2).unwrap();
         // Move somewhere else first.
-        h.seek(0x1000, SeekWhence::FromCurrent).unwrap();
+        h.seek_bytes(0x1000, SeekWhence::FromCurrent).unwrap();
         assert_eq!(h.position_sector(), 3);
         // FromBase = restore saved base, then add.
-        let pos = h.seek(0x800, SeekWhence::FromBase).unwrap();
+        let pos = h.seek_bytes(0x800, SeekWhence::FromBase).unwrap();
         assert_eq!(pos, 2, "base 1 + 1 sector");
     }
 
@@ -431,13 +472,13 @@ mod tests {
         let mut h = make_host();
         h.open_raw(2).unwrap();
         // 0x7FF bytes floors to 0 sectors - the cursor must not move.
-        h.seek(0x7FF, SeekWhence::FromCurrent).unwrap();
+        h.seek_bytes(0x7FF, SeekWhence::FromCurrent).unwrap();
         assert_eq!(h.position_sector(), 1);
         // 0xFFF floors to 1 sector.
-        h.seek(0xFFF, SeekWhence::FromCurrent).unwrap();
+        h.seek_bytes(0xFFF, SeekWhence::FromCurrent).unwrap();
         assert_eq!(h.position_sector(), 2);
         // FromBase with a sub-sector offset = plain rewind to base.
-        h.seek(0x123, SeekWhence::FromBase).unwrap();
+        h.seek_bytes(0x123, SeekWhence::FromBase).unwrap();
         assert_eq!(h.position_sector(), 1);
     }
 
@@ -493,7 +534,7 @@ mod tests {
         // into entry 1's bytes (the extraction over-read window).
         let mut h = make_host();
         h.open_raw(2).unwrap();
-        h.seek(3 * 0x800, SeekWhence::FromBase).unwrap();
+        h.seek_bytes(3 * 0x800, SeekWhence::FromBase).unwrap();
         let mut buf = vec![0u8; 0x1000];
         h.read(&mut buf).unwrap();
         assert!(buf[..0x800].iter().all(|&b| b == 0xAA), "entry 0 tail");
@@ -504,7 +545,7 @@ mod tests {
     fn read_past_prot_dat_end_errors() {
         let mut h = make_host();
         h.open_raw(4).unwrap(); // extraction 2: start 7, 2 sectors
-        h.seek(2 * 0x800, SeekWhence::FromBase).unwrap(); // sector 9 = EOF
+        h.seek_bytes(2 * 0x800, SeekWhence::FromBase).unwrap(); // sector 9 = EOF
         let mut buf = vec![0u8; 0x800];
         assert!(h.read(&mut buf).is_err());
     }
@@ -513,7 +554,7 @@ mod tests {
     fn close_is_a_retail_noop_cursor_survives() {
         let mut h = make_host();
         h.open_raw(2).unwrap();
-        h.seek(0x800, SeekWhence::FromBase).unwrap();
+        h.seek_bytes(0x800, SeekWhence::FromBase).unwrap();
         h.close();
         // Retail keeps the MSF cells; a post-close read still works.
         assert_eq!(h.position_sector(), 2);

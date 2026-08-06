@@ -1,7 +1,13 @@
 //! Battle Tactical-Arts **shout** bank - the per-character CD-XA voice clips
 //! and the cue tables that pick a clip channel per art.
 //!
-//! PORT: FUN_8004C140 - the arts-voice cue selector. When the retail
+//! REF: FUN_8004C140 - the arts-voice cue selector; the port of its channel
+//! pick is [`ArtsShoutBank::pick_channel`], which carries the `PORT` tag. The
+//! tag used to sit here at module scope, where the reach report's anchor
+//! fallback resolved it to *the next function in the file* (`ArtsShoutBank::new`) -
+//! so merely constructing a bank would have read as "the selector ran".
+//!
+//! When the retail
 //! staged-animation materialiser (`FUN_8004AD80`) runs a party art it calls
 //! `FUN_8004C140(char_id, action_constant, flag)`, which picks a channel from
 //! the art's **candidate-channel pool** (avoiding an immediate repeat) and
@@ -93,6 +99,14 @@ impl ArtsShoutBank {
     /// an alternative (the retail selector re-rolls on a repeat; the engine
     /// pick is deterministic - keyed on the action constant - stepping to the
     /// next pool member instead of re-rolling).
+    ///
+    /// The determinism costs reachability, and by more than "not random":
+    /// because the base index is fixed per action, one art only ever fires
+    /// **two** of its pool's channels, ping-ponging between `base` and
+    /// `base + 1`. Vahn's Somersault has a nine-channel pool and reaches two
+    /// of them. Retail re-rolls, so all nine are heard.
+    ///
+    /// PORT: FUN_8004C140
     pub fn pick_channel(&mut self, cslot: u8, action: u8) -> Option<u8> {
         let pool = self.pool(cslot, action)?;
         if pool.is_empty() {

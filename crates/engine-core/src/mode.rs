@@ -877,7 +877,10 @@ pub enum FrameBody {
 
 /// What mode 23 CARD runs in place of the master frame driver.
 ///
-/// PORT: FUN_80017978
+/// REF: FUN_80017978 - ported, but the `PORT:` tag lives on
+/// [`per_frame_stage`], the function that materialises this descriptor. A tag
+/// here anchors liveness to a plain data `struct` with no `impl`, which falls
+/// back to *file* scope and reports the whole of `mode.rs` as the port's reach.
 /// REF: FUN_800179C0, FUN_800188C8, FUN_80020DE0
 ///
 /// The whole body is three calls and a `move v0, zero`
@@ -960,9 +963,10 @@ pub const DEBUG_MODE_ADVANCE_NEXT_OFFSET: u32 = 0x0A;
 
 /// The per-frame handler shape shared by every odd-indexed (per-frame) mode.
 ///
-/// PORT: FUN_80025eec (the default handler - 12 of the 14 per-frame modes)
-/// PORT: FUN_80025f2c (mode 13 MAPDISP)
-/// PORT: FUN_80025f74 (mode 23 CARD)
+/// REF: FUN_80025eec, FUN_80025f2c, FUN_80025f74 - the three handlers this
+/// shape describes. Their `PORT:` tags live on [`per_frame_stage`], which is
+/// what resolves a mode to one of them; a tag here would anchor liveness to a
+/// plain data `struct` with no `impl`, i.e. to the whole file.
 /// REF: FUN_8001698C, FUN_80016444, FUN_80016B6C, FUN_80017978, FUN_801CE850
 ///
 /// All three are the same eight-instruction skeleton, and the differences
@@ -1000,6 +1004,29 @@ pub struct PerFrameStage {
 
 /// Per-frame staging plan for a mode. `None` for the INIT (even-indexed)
 /// modes, which use [`mode_init_stage`] instead.
+///
+/// This is where the four per-frame-handler addresses are anchored, because it
+/// is the only function that turns a mode id into one of them. The shapes they
+/// resolve to are [`PerFrameStage`] and [`CardFrameBody`]; both are plain data
+/// `struct`s with no `impl`, so a tag on either widens the port's liveness
+/// verdict to the whole file instead of naming this routine.
+///
+/// PORT: FUN_80025eec (the default handler - 12 of the 14 per-frame modes)
+/// PORT: FUN_80025f2c (mode 13 MAPDISP)
+/// PORT: FUN_80025f74 (mode 23 CARD)
+/// PORT: FUN_80017978 (mode 23's body, [`CARD_FRAME_BODY`])
+///
+/// NOT WIRED: the prerequisite is a production owner of [`ModeDriver`], the
+/// port of the 28-entry mode table and this function's only caller. No code
+/// outside `mode.rs` names it - the two mentions elsewhere in the workspace
+/// (`world::state`, `engine-shell`'s `mode_trace_oracle`) are doc comments -
+/// because the engine's hosts drive frames from `SceneHost` / `World` directly
+/// and never consult the retail mode table, so there is no seat for a
+/// mode-table driver to occupy yet. `CARD_FRAME_BODY`
+/// is likewise read only in this file's tests. `FUN_80025EEC` in particular is
+/// not dead retail code - a five-form reference scan puts it in twelve slots of
+/// the mode table at `0x8007078C`, every odd-indexed (per-frame) mode - so this
+/// is a port no host reaches rather than a port of something unused.
 pub fn per_frame_stage(mode: GameMode) -> Option<PerFrameStage> {
     let stage = match mode {
         // Mode 13 MAPDISP - the only handler with an overlay hook, and the

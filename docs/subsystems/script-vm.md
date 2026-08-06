@@ -1355,10 +1355,82 @@ Its layout half - average the members' projected screen X, centre, then relax ov
 
 The STATE_RESUME "Done writer (field-overlay `FUN_801F159C`-class)" named above drives a second op-`0x49` sub-screen (sibling to the name-entry screen), reached through actor `+0x50` handler slot `7` in the table `PTR_FUN_801F33B4`:
 
-- **Enter** `FUN_801F1278(actor)`: suspends field input (`FUN_801DE190`, sets `_DAT_8007C364+0x10` bit `0x80000`, clears pad latch `_DAT_1F800394` bit `0x8000`), forces the cursor context `_DAT_801C6EA4+0x3E = 1`, saves the caller's `+0x50` into `+0x40` and installs handler `7`, seeds portrait/member cells `_DAT_801C6EA4+0x36/+0x38/+0x3A` from the roster `DAT_80084594` (count) / `DAT_80084598..A` (member ids), homes the cursor (`+0x46=0xA0`,`+0x48=0x58`), and if a pending pick `_DAT_8007B450` is live remaps `+0x50` through the id table `&DAT_801F33A4`.
+- **Enter** `FUN_801F1278(actor)`: suspends field input (`FUN_801DE190`, sets `_DAT_8007C364+0x10` bit `0x80000`, clears pad latch `_DAT_1F800394` bit `0x8000`), forces the cursor context `_DAT_801C6EA4+0x3E = 1`, saves the caller's `+0x50` into `+0x40` and installs handler `7`, seeds portrait/member cells `_DAT_801C6EA4+0x36/+0x38/+0x3A` from the roster `DAT_80084594` (count) / `DAT_80084598..A` (member ids), homes the cursor (`+0x46=0xA0`,`+0x48=0x58`), and if a pending pick `_DAT_8007B450` is live remaps `+0x50` through the id table `&DAT_801F33A4` (below).
 - **Resume / close** `FUN_801F159C(actor)`: active only while submode state `DAT_801F2734 ∈ {1,4,7}`; re-arms via `FUN_801F1278` when a pad flag is set, dispatches the per-frame handler `PTR_FUN_801F33B4[actor+0x50]`, and on confirm (`_DAT_801C6EA4+0x3E == 0`) sets the actor yield bit (`+0x10 |= 8`), releases the pad latch, and drops the field/tile-board busy flag (`_DAT_8007B450` / `_DAT_8007C364+0x10 &= ~0x80000`).
 
-Both dumps are decompiled-C only (no disassembly), so store order is unverified; they stay documented rather than ported.
+#### Which screen a sub-op opens: the table at `0x801F33A4`
+
+`&DAT_801F33A4` is **the sub-op to handler-slot map** - 14 signed bytes, one
+per op-`0x49` sub-op, `-1` where the sub-op opens no screen. The enter half
+reads it straight off the parked operand pointer, so this is what decides
+which of the 52 `PTR_FUN_801F33B4` state machines a `49 <sub_op>` runs:
+
+```text
+801f1454  lw    a1,-0x4bb0(v0)   ; a1 = _DAT_8007B450, the operand pointer
+801f145c  lbu   v0,0x0(a1)       ; sub_op = *operand
+801f1460  addiu a2,v1,0x33a4     ; a2 = 0x801F33A4
+801f1468  lb    v0,0x0(v0)       ; slot = (i8)table[sub_op]
+801f1470  beq   v0,a0,0x801f14b0 ; -1 -> leave +0x50 at the spawn value
+801f14ac  sh    v0,0x50(s4)      ; else install the handler
+```
+
+The length is the VM's own bound (op `0x49` rejects `sub_op > 0xD`,
+`sltiu v0,v0,0xe` at `0x801E098C`), and the table sits immediately before
+`PTR_FUN_801F33B4`, whose slot `0` is the close tick `FUN_801F2134`.
+
+| sub-op | slot | routine |
+|---|---|---|
+| `0`, `1`, `7`, `0xD` | `-1` | no screen; `+0x50` stays at the spawn value (slot `0`) |
+| `2` | `0x21` | `FUN_801EED58` (the code-lock actor) |
+| `3` | `0x22` | `FUN_801F03F0` - the **name-entry** screen above |
+| `4` | `0x23` | `FUN_801EF014` |
+| `5` | `0x24` | `FUN_801EF2B0` - the **tile-board** walk SM |
+| `6` | `0x25` | `FUN_801F0ADC` - the casino coin counter |
+| `8` | `0x27` | `FUN_801F1138` - the start / confirm menu |
+| `9` | `0x28` | `FUN_801F1FDC` - the prompt |
+| `0xA` | `0x31` | `FUN_801ED590` |
+| `0xB` | `0x32` | `FUN_801F1E48` - the sub-menu |
+| `0xC` | `0x33` | `FUN_801EDF00` |
+
+Rows `3` and `5` cross-validate the read: they name the name-entry screen and
+the tile-board walk, the two sub-ops identified independently elsewhere on
+this page. Port: `legaia_engine_vm::baka_hub_actors::OP49_SUBOP_SLOTS`, with
+the disc pin in `crates/engine-core/tests/w1b_hub_tables_disc.rs`.
+
+#### The panel-window records and the descriptors that install them
+
+A state machine draws by installing a **panel descriptor** through
+`FUN_801E9B3C`. The descriptor is a list of 8-byte entries
+`[i16 op][i16 window][u32]` terminated by a zero op; the walk indexes the
+window-record array by the entry's window halfword and reads the record's
+geometry:
+
+```text
+801e9b70  addiu s4,v0,0x2b98   ; s4 = 0x801F2B98, record 0
+801e9b78  lh    s0,-0x2(s3)    ; the entry's window index
+801e9b80  sll   v0,s0,0x3      ; v0 = s0 * 0x1C
+801e9b8c  addu  v0,v0,s4
+801e9b90  lh    s1,0x8(v0)
+801e9b94  lh    s2,0xa(v0)
+```
+
+So the table is **17 records of `0x1C` bytes based at `0x801F2B98`**, each
+`[u32 0][u32 kind][3 geometry words][u32 0x0C][u32 painter VA]` - the painter
+at `+0x18`. Records `0..=3` are a `0x2A` kind with no painter; `4..=16` carry
+one. A reading based at `0x801F2C0C` with the painter at `+0x14` sees the same
+thirteen painters (the layout is periodic, so a frame shifted one word still
+lands on a painter) but starts four records late, so every index it names is
+four low - and a cross-check taken inside that frame cannot detect it.
+
+Which descriptor a state machine installs is therefore what selects its
+painter, not the caller: the coin counter's confirm installs the record whose
+painter is `FUN_801F1890` (the three-line panel), and the sub-menu's idle and
+confirm both install `FUN_801F1B64` (the single label). Port:
+`legaia_engine_vm::baka_hub_actors::{PANEL_WINDOW_TABLE, window, panel_windows}`.
+
+Both dumps are decompiled-C only (no disassembly) for the dispatcher bodies
+themselves, so store order there is unverified; the two tables above are read
+from disassembly and from the entry's own bytes.
 
 ### The actor-band command loops (`FUN_801F71E0` / `FUN_801F5748`)
 

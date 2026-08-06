@@ -1,13 +1,13 @@
 //! Small `SCUS_942.54`-resident leaf kernels: setters, seeders and one list
 //! initialiser that the overlays call but that have no home of their own.
 //!
-//! Every one of these is a self-entry body ending in `jr ra`, read out of
-//! `extracted/SCUS_942.54` at the file offsets noted per item. Four of the
-//! five have Ghidra dumps that carry **decompiled C only** (`0 instructions`),
-//! which is one of the catalogued decompiler artifacts - the rows below are
-//! therefore read from the executable itself with
-//! `scripts/ghidra-analysis/disasm-overlay-fn.py --base 0x80010000
-//! --header 0x800`.
+//! Every one of these is a self-entry body ending in `jr ra`. Most are read
+//! out of `extracted/SCUS_942.54` at the file offsets noted per item, because
+//! their Ghidra dumps carry **decompiled C only** (`0 instructions`) - one of
+//! the catalogued decompiler artifacts - so those rows come from the
+//! executable itself with `scripts/ghidra-analysis/disasm-overlay-fn.py
+//! --base 0x80010000 --header 0x800`. [`text_line_count`] is the exception:
+//! `ghidra/scripts/funcs/8003cba8.txt` prints all 20 of its instructions.
 //!
 //! PORT: FUN_80035BAC - SFX-cue delay set on the parked slot.
 //! PORT: FUN_800267A8 - timed sound-source arm.
@@ -16,10 +16,10 @@
 //! Those three are live: the SFX-cue delay set and the timed sound arm are the
 //! field VM's own op `0x36` sub-`4` and op `0x35` sub-`5` bodies
 //! (`legaia_engine_core::world::vm_hosts`), and the scene control-block reset
-//! runs from [`crate::scene::SceneHost::load_scene`]. The other three carry
+//! runs from [`crate::scene::SceneHost::load_scene`]. The other four carry
 //! their `PORT` tag and their own per-item wiring disclosure on the item:
-//! [`init_identity_index_list`], [`StagedCharacterSelector::set_pair`] and
-//! [`seed_boot_offset_table`].
+//! [`init_identity_index_list`], [`StagedCharacterSelector::set_pair`],
+//! [`seed_boot_offset_table`] and [`text_line_count`].
 //!
 //! REF: FUN_800267FC - the tick half of the timed sound-source pair, ported
 //! in [`crate::sound_state`].
@@ -412,6 +412,80 @@ impl crate::world::World {
     }
 }
 
+/// The dialog-string **line separator** `FUN_8003CBA8` counts.
+pub const TEXT_LINE_BREAK: u8 = 0x7C;
+
+/// Low bound of the two-byte escape lead the same walk skips over
+/// (`(byte & 0xF0) == 0xC0`, i.e. `0xC0..=0xCF`).
+pub const TEXT_ESCAPE_LEAD_MASK: u8 = 0xF0;
+/// What the masked byte must equal for the escape skip to fire.
+pub const TEXT_ESCAPE_LEAD: u8 = 0xC0;
+
+/// Rendered **line count** of a NUL-terminated dialog string (`FUN_8003CBA8`,
+/// 20 instructions, `see ghidra/scripts/funcs/8003cba8.txt`).
+///
+/// Read off the disassembly, not the C. The whole body is one walk:
+///
+/// ```text
+///   lbu v0,0(a0) ; beq v0,zero,ret ; _li v1,1     ; count = 1, even when empty
+/// loop:
+///   bne v0,0x7c,skip ; _nop ; addiu v1,v1,1       ; count += 1 per '|'
+/// skip:
+///   andi v0,v0,0xf0 ; bne v0,0xc0,adv ; _nop
+///   addiu a0,a0,1                                 ; escape lead: skip one more
+/// adv:
+///   addiu a0,a0,1 ; lbu v0,0(a0) ; bne v0,zero,loop
+/// ```
+///
+/// Two details the shape hides and a caller has to honour:
+///
+/// * the `li v1,0x1` seed sits in the **delay slot** of the empty-string
+///   branch, so it is executed either way - an empty string measures **one**
+///   line, not zero. That is what makes `lines * 14 - 4` a legal box height
+///   for every prompt.
+/// * the `0xC0..=0xCF` bytes are two-byte escape leads and the walk consumes
+///   the follower **without testing it**, so a `0x7C` in a follower position
+///   is not a line break. A decode that maps every byte through measures such
+///   a prompt one line too tall and two glyphs too wide.
+///
+/// Retail's escape skip has no bounds test: a lead byte immediately before the
+/// terminator steps the cursor *past* the NUL and the walk keeps reading. The
+/// port stops at the end of the slice instead - a clean-room tightening, and
+/// the only place this diverges from the retail arithmetic.
+///
+/// PORT: FUN_8003CBA8
+/// REF: FUN_801F747C - the tutorial text-box helper that measures with it.
+/// REF: FUN_80035F04 - the pixel-width half of the same measurement pair.
+///
+/// NOT WIRED: nothing calls this yet, and the prerequisite is a decode change
+/// in another crate rather than a call insertion. Both consumers of the
+/// measurement - `legaia_engine_core::battle_tutorial::TutorialPrompts`, which
+/// folds `0x7C` to `'\n'` while it decodes, and
+/// `legaia_engine_ui::battle_tutorial_box`, which then counts with
+/// `str::lines()` - measure a *decoded* `String`, so neither has the retail
+/// byte string this kernel walks. Wiring it means moving the line count to the
+/// raw prompt bytes at decode time and carrying it beside the text, which also
+/// closes the escape-walk divergence those two files already disclose. Until
+/// then the two agree for every prompt in the PROT 0967 corpus, none of which
+/// carries a `0xC0..=0xCF` byte.
+pub fn text_line_count(s: &[u8]) -> u32 {
+    let mut count = 1u32;
+    let mut i = 0usize;
+    while let Some(&c) = s.get(i) {
+        if c == 0 {
+            break;
+        }
+        if c == TEXT_LINE_BREAK {
+            count += 1;
+        }
+        if c & TEXT_ESCAPE_LEAD_MASK == TEXT_ESCAPE_LEAD {
+            i += 1;
+        }
+        i += 1;
+    }
+    count
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -496,6 +570,49 @@ mod tests {
             [0x8007_B630, 0x8007_B450],
             "-0x49d0 and -0x4bb0 off 0x80080000"
         );
+    }
+
+    #[test]
+    fn an_empty_string_still_measures_one_line() {
+        // `li v1,0x1` is the delay slot of the empty-string branch, so it
+        // runs before the early return.
+        assert_eq!(text_line_count(b""), 1);
+        assert_eq!(text_line_count(b"\0"), 1);
+        assert_eq!(text_line_count(b"HELLO"), 1);
+    }
+
+    #[test]
+    fn each_pipe_adds_a_line() {
+        assert_eq!(text_line_count(b"A|B"), 2);
+        assert_eq!(text_line_count(b"A|B|C"), 3);
+        // A trailing separator counts: retail tests the byte, not what
+        // follows it.
+        assert_eq!(text_line_count(b"A|"), 2);
+        assert_eq!(text_line_count(b"|||"), 4);
+    }
+
+    #[test]
+    fn a_separator_inside_an_escape_pair_is_not_a_break() {
+        // `0xC0..=0xCF` is a two-byte lead; the follower is consumed without
+        // being tested, so this `0x7C` is data.
+        assert_eq!(text_line_count(&[0xC3, 0x7C, b'A']), 1);
+        // The same byte one position later IS a break.
+        assert_eq!(text_line_count(&[0xC3, b'A', 0x7C, b'B']), 2);
+        // Every lead in the band skips, and nothing outside it does.
+        for lead in 0xC0u8..=0xCF {
+            assert_eq!(text_line_count(&[lead, 0x7C]), 1, "lead {lead:#04x}");
+        }
+        for lead in [0xB0u8, 0xBF, 0xD0, 0xDF] {
+            assert_eq!(text_line_count(&[lead, 0x7C]), 2, "non-lead {lead:#04x}");
+        }
+    }
+
+    #[test]
+    fn a_lead_byte_before_the_terminator_stops_at_the_slice_end() {
+        // Retail would step past the NUL here; the port stops instead. The
+        // count is the same either way for a well-formed string.
+        assert_eq!(text_line_count(&[b'A', 0xC5]), 1);
+        assert_eq!(text_line_count(&[b'A', 0xC5, 0x00]), 1);
     }
 
     #[test]

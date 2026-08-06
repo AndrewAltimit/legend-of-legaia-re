@@ -889,6 +889,22 @@ impl BakaChrome {
         }
     }
 
+    /// Drive the intro title card off an **externally owned clock** - the
+    /// cabinet's `DAT_801DBE94`.
+    ///
+    /// The card is not the duel's: its two `jal` sites in PROT 0976
+    /// (`0x801CF784`, `0x801CF840`) are inside the cabinet state machine's
+    /// attract arms, and those are the arms that advance `DAT_801DBE94`. So
+    /// the honest wiring runs the card while the cabinet occupies an attract
+    /// state, with the cabinet's own counter as `t`, rather than arming a
+    /// private timeline at duel start.
+    ///
+    /// Idempotent per frame; a clock past [`INTRO_END`] stops the card, which
+    /// is what [`Self::step`]'s own arm does.
+    pub fn set_intro_clock(&mut self, t: i32) {
+        self.intro_t = (t < INTRO_END).then_some(t);
+    }
+
     /// Start the round banner timeline and spawn its sprite actor at the
     /// screen centre through the shared spawn wrapper.
     pub fn start_round_banner(&mut self, sprite_id: u16) {

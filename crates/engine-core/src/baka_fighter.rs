@@ -336,6 +336,53 @@ pub struct BakaScoreTables {
     pub health_bonus: Vec<i16>,
 }
 
+/// Runtime VA of the combo-bonus table `&DAT_801D70C4`.
+pub const COMBO_BONUS_TABLE_VA: u32 = 0x801D_70C4;
+/// Runtime VA of the health-bonus table `&DAT_801D711C`.
+pub const HEALTH_BONUS_TABLE_VA: u32 = 0x801D_711C;
+/// Load base of the Baka Fighter overlay (PROT 0976).
+pub const BAKA_OVERLAY_BASE_VA: u32 = 0x801C_E818;
+/// Rows in the health-bonus table: the index is `hp / `
+/// [`BAKA_HEALTH_BONUS_DIVISOR`], and `hp` tops out at [`HP_START`], so
+/// `0xC80 / 0x140 = 10` is the last reachable row.
+pub const HEALTH_BONUS_ROWS: usize = 11;
+
+impl BakaScoreTables {
+    /// Read both bonus tables out of a loaded Baka Fighter overlay image.
+    ///
+    /// `overlay_0976` is the entry at [`BAKA_OVERLAY_BASE_VA`]. Returns `None`
+    /// when the image is too short to hold either table, which is what keeps
+    /// the fixed VAs honest on an entry that is not this one.
+    ///
+    /// The lengths are the index spaces their consumers can produce:
+    /// [`BAKA_COMBO_MAX`]` + 1` combo rows and [`HEALTH_BONUS_ROWS`] health
+    /// rows. Reading further would walk into the neighbouring rodata, which is
+    /// how a table with no terminator gets over-read.
+    pub fn from_overlay(overlay_0976: &[u8]) -> Option<Self> {
+        let at = |va: u32| -> Option<usize> {
+            let off = va.checked_sub(BAKA_OVERLAY_BASE_VA)? as usize;
+            (off < overlay_0976.len()).then_some(off)
+        };
+        let combo_at = at(COMBO_BONUS_TABLE_VA)?;
+        let health_at = at(HEALTH_BONUS_TABLE_VA)?;
+        let combo_rows = (BAKA_COMBO_MAX + 1) as usize;
+        let mut combo_bonus = Vec::with_capacity(combo_rows);
+        for i in 0..combo_rows {
+            let b = overlay_0976.get(combo_at + i * 4..combo_at + i * 4 + 4)?;
+            combo_bonus.push(i32::from_le_bytes(b.try_into().ok()?));
+        }
+        let mut health_bonus = Vec::with_capacity(HEALTH_BONUS_ROWS);
+        for i in 0..HEALTH_BONUS_ROWS {
+            let b = overlay_0976.get(health_at + i * 2..health_at + i * 2 + 2)?;
+            health_bonus.push(i16::from_le_bytes(b.try_into().ok()?));
+        }
+        Some(Self {
+            combo_bonus,
+            health_bonus,
+        })
+    }
+}
+
 impl BakaFight {
     /// Start a best-of-3 match: `player_cfg` in slot 0 (pad-driven),
     /// `opponent_cfg` in slot 1 (CPU picker). `special_keyframes` are the two
@@ -459,6 +506,24 @@ impl BakaFight {
         };
         self.cabinet_frame = self.cabinet.tick(&input);
         self.cues.append(&mut self.cabinet_frame.cues);
+        // The intro title card belongs to the cabinet, not to the duel: both
+        // `jal 0x801D59D4` sites in PROT 0976 are attract arms of this same
+        // state machine, and those arms are what advance its clock. Hand the
+        // clock to the chrome while the cabinet is on one of them, so the card
+        // runs for any host that enters at the cabinet's own boot rather than
+        // only for one that armed a private timeline.
+        if self.cabinet.in_attract() {
+            self.chrome.set_intro_clock(self.cabinet.intro_clock());
+        }
+    }
+
+    /// Start the cabinet at its **boot** state instead of mid-duel, so the
+    /// attract sequence - and with it the intro title card - runs before the
+    /// fight. Retail's cabinet always enters here; the port's hosts enter
+    /// through the duel, which is why the card had no production caller.
+    pub fn with_attract(mut self) -> Self {
+        self.cabinet = crate::baka_cabinet::BakaCabinet::new();
+        self
     }
 
     /// The running maximum player hit streak (`DAT_801dbec8`).

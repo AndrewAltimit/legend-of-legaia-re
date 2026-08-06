@@ -147,7 +147,10 @@ impl SoundDetachLatch {
 
 /// The double-buffered DISPENV/DRAWENV pair initialiser (`FUN_80020038`).
 ///
-/// PORT: FUN_80020038
+/// REF: FUN_80020038 - ported, but the `PORT:` tag sits on
+/// [`DrawEnvInit::stores`], which carries the routine's three store *offsets*.
+/// This struct is the values alone, and a tag on a plain data `struct` with no
+/// `impl` anchors liveness to the whole file rather than to the port.
 ///
 /// Six instructions, three stores, all relative to the **pair** base - the
 /// same `0x8007BF30 + 0x74 * index` records the frame-end driver swaps:
@@ -177,6 +180,37 @@ pub struct DrawEnvInit {
     pub dither: bool,
     /// `+0x2C` - DRAWENV `isbg` (clear the frame on `PutDrawEnv`).
     pub clear_background: bool,
+}
+
+impl DrawEnvInit {
+    /// Byte offsets, relative to the **pair** base, the three stores land at.
+    pub const STORE_OFFSETS: [u8; 3] = [0x28, 0x2A, 0x2C];
+
+    /// The routine's body as `(pair offset, stored value)` in issue order -
+    /// `sh 0x1F,0x28(a0)`, `sb 0,0x2a(a0)`, `sb 1,0x2c(a0)`.
+    ///
+    /// The struct above is the three *values*; this is where they go, which is
+    /// the half a host needs to apply them to a real DRAWENV record and the
+    /// half a value-only descriptor drops.
+    ///
+    /// PORT: FUN_80020038
+    ///
+    /// NOT WIRED: the prerequisite is a DRAWENV pair for the stores to land
+    /// in. The engine has no `0x8007BF30 + 0x74 * index` record - `engine-render`
+    /// owns a software PSX VRAM and sets its own draw state, so there is no
+    /// libgpu environment struct to initialise and no frame-end driver
+    /// swapping a pair. [`DRAW_ENV_INIT`] is read at three sites, all inside
+    /// this file's `#[cfg(test)]` block. What the port does carry forward from
+    /// the routine is the *negative* finding on its doc: the `0` here is the
+    /// pre-first-frame dither state and not retail's steady value, which is
+    /// [`DITHER_BOOT_VALUE`].
+    pub const fn stores(self) -> [(u8, u16); 3] {
+        [
+            (Self::STORE_OFFSETS[0], self.tpage),
+            (Self::STORE_OFFSETS[1], self.dither as u16),
+            (Self::STORE_OFFSETS[2], self.clear_background as u16),
+        ]
+    }
 }
 
 /// The literal values `FUN_80020038` stores.
@@ -280,6 +314,15 @@ mod tests {
             ),
             (0x1F, false, true, true),
             "sh 0x1F,0x28 / sb 0,0x2a / sb 1,0x2c; boot sh 1 -> 0x8007BA66"
+        );
+    }
+
+    #[test]
+    fn the_store_list_pairs_each_value_with_its_pair_offset() {
+        assert_eq!(
+            DRAW_ENV_INIT.stores(),
+            [(0x28, 0x1F), (0x2A, 0), (0x2C, 1)],
+            "issue order, and the offsets are pair-relative not DRAWENV-relative"
         );
     }
 }

@@ -658,6 +658,26 @@ Meshes with genuinely no packet colour - the generated walk-ground heightfields
 - keep the neutral constant and draw at the raw texel, which is the honest
 answer for geometry that has no colour word to modulate by.
 
+### The `.glb` export is a fourth surface, and it had the same hole
+
+A downloaded model is a render the project ships without ever drawing, and it
+sat outside every tier: no gate pairs an exporter against a shader. The same
+omission that had the browser sending `[255, 255, 255]` for textured verts had
+the three `.glb` exporters emitting no `COLOR_0` at all, so a model whose
+colour lives entirely in the packet word - a summon's sword blade is a
+near-white texture ramp tinted per vertex - exported as flat white while the
+canvas beside it drew a flame gradient. The word is not a fine-tuning term on
+this data: across the 32 summon casts, the raw texel differs from
+`texel * colour / 128` by **12%** of full scale on the average vertex and by
+up to **90%** on individual ones.
+
+Two lessons the shading tiers already imply and this repeated. Presence is not
+content: a `COLOR_0` accessor full of `1.0` passes any "does the attribute
+exist" check while carrying nothing, so the assertions compare *values* against
+the stream the canvas uploads. And the encoding has to admit the over-bright
+tail - `0xFF / 128` is `1.99`, which a normalized-ubyte attribute cannot hold,
+so the accessors are float. Convention + reasoning: `legaia_asset::gltf_color`.
+
 ### The monster bestiary is a viewer, and says so
 
 `site/_content/monsters.html` carries its **own** WebGL program with a

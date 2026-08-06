@@ -76,6 +76,32 @@ Capture, diff and the retail side are documented in
 | [`seq_calc`](src/seq_calc.rs) | The retail **SsAPI per-frame calc tier** - `SsSeqCalc`'s dispatch (`FUN_80062F98`) plus the tempo slide (`FUN_800649B0`), the ascending / descending volume slides (`FUN_8006320C` / `FUN_8006352C`) and the track-end / loop-repeat handler (`FUN_80063AA8`). Pure kernels over a `SeqChannel`; `tick_budget` is the one place wall-clock tempo becomes an integer tick step. |
 | [`seq_events`](src/seq_events.rs) | The rest of that tier - everything in `SsSeqCalc`'s fan-out that reads a stream byte: the stop / start arms (`FUN_800638D8` / `FUN_8006418C`), the delta-time pump (`FUN_80063974` / `FUN_800639A0`), the SEQ event decoder (`FUN_80063CEC`) and the chained-channel restart (`FUN_80064090`). `run_handler_tail` completes a walk by advancing past what the installed handler consumes; without it a trailing delta is re-read as the next status byte. |
 | [`anim_cue`](src/anim_cue.rs) | `walk_anim_cues` / `AnimCueState` - the per-frame walker over a playing battle action's 8-slot `(frame, cue)` track (`FUN_800508DC`). Resolves the party `0xC8..=0xFF` band into the `>= 0x100` arts-voice namespace, the three per-character shout ids into a two-take XA channel pick, and the CD-busy fallback into a fixed ring cue. Emits `AnimCueEmit` decisions rather than calling anything - `NOT WIRED`, see the module docs. |
+| [`test_sink`](src/test_sink.rs) | `TestAudioSink` - the device-free stand-in for `AudioOut`, so a headless test can drive the BGM/SFX plumbing. See below. |
+
+## Driving the mixer without a device
+
+`AudioOut` is the only handle that carries the BGM half of the mixing core
+(attach / pause / crossfade / swap), and opening one needs a real output
+device - so a headless test could not tick the mixer at all, which is what
+left the SFX enqueue, the VAB upload and the sequencer's voice allocator
+without a test-side host.
+
+[`test_sink::TestAudioSink`](src/test_sink.rs) closes that. It owns the
+**same** `StreamResampler` the cpal callback owns and drives it by pulling
+frames, so every kernel on the output path runs exactly as under a device.
+Two rules keep it honest:
+
+- **No second copy of the mixing math.** Every method delegates to the same
+  private `StreamResampler` method `AudioOut` delegates to, so the sink cannot
+  drift from the device path and start asserting about itself.
+- **Measure at the output.** `render_frames` returns a `SinkMeasure` over the
+  emitted PCM (peak, non-zero frames, level integral), not a count of calls -
+  a wired kernel that runs and produces silence is indistinguishable from an
+  unwired one at the call site, and distinguishable at the samples.
+
+The session ladder over it is `tests/w1e_audio_session_ladder.rs` (disc-gated):
+real BGM staged and played, paused and resumed, and a real SFX cue fired
+through the frame scheduler, each asserted on the PCM that came out.
 
 ## Default input rate
 

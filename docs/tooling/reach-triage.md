@@ -35,6 +35,29 @@ comment lines dropped and `#[cfg(test)]` bodies excluded - "the only caller is a
 unit test" is the finding, and it is not visible to a scan that counts doc
 comments as references.
 
+### A `--release` export cannot tell "never called" from "inlined"
+
+`-C instrument-coverage` emits one counter per function. An optimised build
+inlines the small ones and leaves the out-of-line record at zero, and nothing
+downstream can distinguish that zero from a function no run entered. Measured
+on one ladder over the same disc, default profile against `--release`:
+`advance_slice` 40 executions against 0, `slice_word_count` 39 against 0, three
+more at 1-3 against 0. Two of those five were on the never-entered worklist for
+no other reason.
+
+This lands on the two bucket kinds very differently, and blanket-caveating the
+page would lose the distinction:
+
+- an **(a)** or **(b)** row whose only evidence is "no run entered it" is a
+  hypothesis when it was measured off a `--release` export - the routine may
+  have run and been inlined out of its own record;
+- a **(c)** row is unaffected. Its evidence is the source-side caller scan
+  above, which no compiler profile participates in; the coverage number only
+  ever corroborated it.
+
+So: re-measure an (a)/(b) row on the default profile before spending a fixture
+on it, and read a (c) row as it stands.
+
 ## What a pad-only ladder structurally cannot execute
 
 The *headless* ladders drive `BootSession`, which constructs no renderer, no
@@ -54,25 +77,66 @@ structurally cannot:
 |---|---|---|---|
 | `engine-ui` | 42 | 0 | 22 |
 | `engine-render` | 28 | 0 | 0 - a hard wgpu link `web-viewer` does not carry |
-| `engine-audio` | 20 | 0 | 3 - the page's SFX channel; the mixer output path stays wasm-/device-gated |
+| `engine-audio` | 20 | 0 | 3 - the page's SFX channel; the mixer output path has no producer in the union (see below) |
 | `mdec` | 6 | 0 | 0 - the play page has no STR playback (its FMV arm auto-skips) |
 
-Two more structural exclusions matter as much and are easy to misread as port
+Three more structural exclusions matter as much and are easy to misread as port
 gaps:
 
-**A `bin/` target is unreachable from any `#[test]`.** `cargo llvm-cov --test`
-still builds and instruments the binary, so every file of
-`crates/engine-shell/src/bin/legaia-engine/` appears in the coverage data with
-nothing executed. The native window's entire composition layer lives there, so
-no integration test can drive it. The browser hosts do not have this problem:
-their composition is in `crates/web-viewer/src`, a library - which is exactly
-the seam the composition ladder drives.
+**No `#[test]` can *call* into a `bin/` target - but it can still cover one.**
+The call half is a real exclusion: `crates/engine-shell/src/bin/legaia-engine/`
+holds the native window's whole composition layer and no integration test links
+against it, so nothing there can be invoked directly.
+
+The coverage half of that claim was wrong and is corrected here, because it is
+the half that put rows on this page. `LLVM_PROFILE_FILE` is **inherited by
+child processes**: a test that spawns `CARGO_BIN_EXE_legaia-engine` gets the
+child's own profile written and merged into the same export, measured at 40
+executions of a function whose only driver was such a spawn. So a `bin/`-
+resident address is reachable by a ladder that *runs the subcommand*, and a
+`bin/` row on this page names a fixture that could exist rather than a
+structural impossibility. The browser hosts never had either problem: their
+composition is in `crates/web-viewer/src`, a library, which is the seam the
+composition ladder drives.
+
+The spawn route is already practical for the native window - `play-window`
+takes `--pad-script` and `--screenshot-tick`, which is exactly that shape of
+run. What it cannot do is **enter a minigame**:
+the native host opens the Muscle Dome and the Baka Fighter from
+`WindowEvent::KeyboardInput` (`M` / `B` in
+`window/event_handler/keyboard.rs`), `--pad-script` writes a *pad word* and
+nothing else, and no CLI flag names a minigame. So every native minigame row
+on this page - the dance HUD, the fishing chrome, the baka digit strips,
+`minigame_floor.rs`, the dance tutorial, the casino entry - stays blind to a
+spawned run for a reason that has nothing to do with `bin/`. A `--minigame
+<name>` flag, or a `--pad-script` that also accepts key names, converts the
+whole cluster at once.
 
 **The browser minigames page is outside the union entirely.** `minigame_replay`
 drives the *engine-shell* minigame path, and `play_compose_ladder` drives the
 *play page* - neither is the standalone minigames page, so a port wired only on
 that page is never-entered by construction. Its own oracles live in
 `crates/web-viewer/tests/`.
+
+**No ladder in the union holds a `BgmDirector`, so the whole BGM route is
+unreachable from it.** This is sharper than "the ladders have no audio device",
+and it is two separate exclusions stacked. `critical_path_replay`,
+`minigame_replay` and `play_compose_ladder` drive `SceneHost` / `LegaiaRuntime`
+directly and never call `SceneHost::route_bgm_events` at all; the `BootSession`
+ladders, which do reach `boot.rs`'s call site, every one construct their session
+with `enable_audio: false`, so `BootSession::bgm` is `None` and the call site is
+skipped. Whether a cpal device could be opened never enters into it. Every
+`0x35` sub-op arm - the SEQ-byte resolve, the pause/resume pair, the volume
+re-apply, the swap-commit - is therefore never-entered by construction, and the
+same is true one layer down: nothing in the union attaches a sequencer, so the
+`engine-audio` mixing path has no producer either. The session ladders
+`crates/engine-core/tests/w1e_scene_bgm_transition_ladder.rs` and
+`crates/engine-audio/tests/w1e_audio_session_ladder.rs` supply that producer -
+the latter through `legaia_engine_audio::TestAudioSink`, the device-free twin of
+the cpal mixing core (see the crate README) - and both export as their own
+ladder JSONs. They are session-shaped rather than pad-driven, which the union
+should keep visible: they measure "code a mixer-attached frame loop executes",
+not "code a player pressing buttons executes".
 
 
 **An anchor is attributed to its first site, and a data anchor has no site.**
@@ -84,8 +148,21 @@ liveness pass calls inert, while the address is `live` through the sibling
 `MorphWeightEnvelope::tick` in the same file. Separately, a tag on a plain data
 `struct` with no `impl` falls back to *module* scope for liveness and to *the
 next function in the file* for coverage - two different symbols, neither of them
-the port. Every `mode.rs`, `new_game.rs`, `sound_state.rs` and `scene_bundle.rs`
-row below is that shape.
+the port. The `mode.rs`, `sound_state.rs` and `scene_bundle.rs` rows below were
+that shape until their tags were re-keyed onto implementing functions;
+`new_game.rs` still is.
+
+**Three ways a tag ends up file-scoped, and only one of them looks like it.**
+A `//!` tag is file-scoped by definition and reads that way. A `///` tag on a
+data `struct` with no `impl` falls back, and reads like a type anchor. The
+third is the quiet one: a `//` tag whose *next* item is outside the collector's
+lookahead - it stops at the first line that is neither comment nor attribute,
+and a `pub const` is not an item kind it recognises, so the tag silently
+becomes file-scoped while looking like a function tag.
+`crates/engine-core/src/cutscene_narration.rs` was that case for `80037174`
+(tag at the foot of the module doc, first following line a `pub const`); it now
+sits on `pub struct CutsceneNarration`, which has an `impl`, so the anchor is
+the type the port actually is.
 
 The same fallback also produces **pseudo-entries** - an address the report
 counts as *entered* whose routine never ran, because a module-scope anchor's
@@ -114,25 +191,63 @@ surfaced the first time a coverage source contained their files:
 `engine-core` carries the largest crate share of the never-entered set. Every
 address in it is accounted for below.
 
-| bucket | addresses |
-|---|---|
-| NO-LADDER | 88 |
-| GATED | 7 |
-| HOST-DEAD | 45 |
-| NOT-PLAYTHROUGH | 5 |
+**Per-bucket totals are deliberately not written here.** They are a count of
+project state, which this page keeps out on the same grounds as the rest of
+`docs/`, and they are the fastest-rotting thing on it: every ladder that lands
+moves rows between buckets, and a stale total reads exactly like a fresh one.
 
-Four further addresses sit in the crate's never-entered set without a bucket
-yet (`80020b00` `801e70bc` `801e791c` `801e92dc`) - rows newer than this
-page's last per-row sweep; each needs its own caller-scan verdict before it is
-filed.
+They are also the one part of the page that cannot survive concurrent editing.
+Row verdicts are independent - two people revising different rows produce a
+mergeable diff - but a total is a function of every row at once, so each
+revision writes a different number to the same line and no arithmetic over the
+diffs recovers the true one.
 
-### HOST-DEAD, undisclosed
+The totals belong to the instrument. `replay-port-coverage.py` recomputes them
+from the coverage exports each run; the per-row verdicts below are what this
+page is for, and they stay valid whatever the totals are.
 
-The rows worth acting on. Each is `live` because a module-scope or type-scope
-`PORT:` tag widened the verdict to a whole file, while the symbol the address
-names has no production caller anywhere in the workspace - only unit tests and
-disc-gated oracles. None of them carries a `NOT WIRED:` disclosure, so nothing
-in the existing gate set reports them.
+### The escape pair reads as a contradiction, and both halves are true
+
+`801e791c` is filed NO-LADDER below while the `engine-vm` table further down
+says the flee roll is "ladder-covered
+(`crates/engine-core/tests/battle_flee_ladder.rs`)". Both statements hold, and
+the join between them is the denominator: `CANONICAL_LADDERS` in
+`replay-port-coverage.py` is five named test binaries, and neither
+`battle_flee_ladder` nor `seru_cast_magic_xp_ladder` is one of them. Membership
+is "drives the engine with `set_pad` and nothing else"; both of those build a
+`World` by hand first, which is what puts them outside the union however
+pad-driven the rest of the run is.
+
+So "a pad ladder drives it" and "no run in the denominator entered it" are
+different claims, and a row can satisfy the first while failing the second. For
+such a row the fix is not a new fixture: it is promoting an existing seeded
+oracle into the canonical set, or driving the same content from a ladder that
+is already in it. Rows of that shape name their existing driver.
+
+### HOST-DEAD, and what an anchor's scope was hiding
+
+Every row here now carries a `NOT WIRED:` disclosure naming its own
+prerequisite, and the way they got one is the reusable part.
+
+Each was `live` for a reason that had nothing to do with the routine: its tag
+was file-scoped, by one of the three routes above, and a file-wide verdict
+answers "does anything in this file run", not "does this port run". Two
+consequences, and the second is why the rows sat here:
+
+- the address reads `live`, so `--live-audit`'s *undisclosed inert ports*
+  section cannot see it, however dead it is;
+- a truthful disclosure on it becomes **unwritable**, because the stale-tag
+  test reads the same file-wide verdict and would report the disclosure as a
+  false accusation.
+
+The fix was a per-anchor re-key: each `PORT:` tag moved onto the function that
+implements that address, with the disclosure on the same item. The data
+descriptors the tags used to sit on keep a `REF:` pointing at the new home, so
+the address is still findable from the shape it describes. Where no function
+existed to key onto - `FUN_80020038`, whose port was a values-only `const` -
+the missing half of the routine was written instead: `DrawEnvInit::stores`
+carries the three *pair offsets* the values are stored at, which a value-only
+descriptor drops.
 
 | group | n | addresses | why |
 |---|---|---|---|
@@ -142,8 +257,9 @@ in the existing gate set reports them.
 | `sound_state.rs` | 1 | `80020038` | `DRAW_ENV_INIT` is read at three sites, all inside that file's `#[cfg(test)]` block. |
 | `scene_bundle.rs` | 1 | `80020118` | `field_load_entry_plan` is called at three sites, all in that file's `#[cfg(test)]` block. |
 | `prize_exchange.rs` | 1 | `801dc1cc` | `PrizeExchangeSession` has one production mention - its own `impl` line. |
-| `scene_name_sync.rs` | 1 | `8001d7f8` | `sync_scene_name` is called only from that file's tests. The `fn` anchor was already disclosed; the `//! PORT:` module tag on the same address was not, and it is the module tag that carries the liveness verdict. |
-| `save_select.rs` | 1 | `801e3294` | `card_frame_tick` - the only thing that advances a `CardIoMachine` - carried a full disclosure, but on the function rather than on the type anchor the address is keyed to. |
+| `scene_name_sync.rs` | 1 | `8001d7f8` | `sync_scene_name` is called only from that file's tests. Two anchors share the address - the `fn` and a `//! PORT:` module tag - and it is the module tag that carries the liveness verdict, so both need the disclosure. |
+| `save_select.rs` | 1 | `801e3294` | `card_frame_tick` - the only thing that advances a `CardIoMachine` - is disclosed on the function *and* on the type anchor the address is keyed to; the function alone left the verdict on the type. |
+| `menu_item_category.rs` | 1 | `801dd0c0` | The chain into `category_check` is real and production-only (`play_menu_input` -> `EquipSession::input` -> `best_equipment_now` -> the `weapon_category_score` closure), and the Best-Equipment applier above it is entered. What is missing is *data*: nothing calls `EquipSession::with_weapon_category`, so the table is always empty and the closure short-circuits before the body. Wiring it needs the PROT 0899 category table reachable from `build_equip_session`, the prerequisite the window-descriptor table already has. |
 
 Three of these name routines that are heavily used on the disc, so the gap is a
 port that is not reached rather than a port of dead code. A five-form
@@ -153,13 +269,31 @@ four (two in SCUS, two in the battle-action overlay), and `FUN_80025EEC` in
 twelve slots of the game-mode table at `0x8007078C` - every other entry, which
 is the odd-indexed per-frame modes the port's own tag claims.
 
-`8003dda0`, `801dc1cc`, `8001d7f8` and `801e3294` now carry `NOT WIRED:`
-disclosures naming their specific prerequisite. The other seventeen do not, and
-the reason is mechanical: their anchors are module-scoped and analysed live
-under the receiver-gated graph, so a disclosure on them would appear in
-`--live-audit`'s *tagged `NOT WIRED` but analysed live* section as a false
-accusation. Disclosing them needs either a per-anchor re-key onto the function
-that implements each address, or a module-scope exemption in the stale-tag test.
+One rename fell out of the re-key pass and is worth knowing about, because it
+is a graph property rather than a style choice. `StreamFileHost::seek` was the
+workspace's **only** in-tree definition of that name, and the call graph's
+receiver gate deliberately declines to resolve a one-definition name - so every
+`File::seek` in every crate linked to the retail seek shim and made it
+reachable from a host root in **both** graphs. It is `seek_bytes` now.
+
+Six rows stay permissively `live` after the re-key for the mirror of that
+reason - a name with *many* in-tree definitions, where the permissive graph
+keeps every edge the gate would drop. They are `read` and `close` in
+`stream_file.rs`, and the four handler addresses now keyed to
+`mode::per_frame_stage`, reached through a `.tick(` collision on `ModeDriver`.
+The receiver-gated graph calls all six inert, which is what the stale-tag test
+reads, so their disclosures stand; what is left is an over-count in the
+permissive `ported + live` figure, not a contested verdict.
+
+The reading to resist is that a disclosure retires the row. It does the
+opposite: it moves the address into `--live-audit`'s *disclosed inert ports*
+list, which **is** the declared wiring worklist, and each disclosure names the
+one prerequisite that would let a wire be real rather than synthesised. For
+`cd_dma` and `stream_file` that prerequisite is the same shape twice - a
+production owner of the trait / host type, which means routing the engine's
+loaders through them instead of through `ProtIndex` whole-entry reads. For
+`mode` it is a seat for `ModeDriver`, the port of the 28-entry mode table,
+which the engine's hosts currently bypass entirely.
 
 ### HOST-DEAD, disclosed
 
@@ -200,7 +334,7 @@ union.
 | `dance.rs` (HUD + banner) | 7 | `801d231c` `801d3e28` `801d32f8` `801d2524` `801d2d98` `801d2f38` `801d387c` | native `window/hud.rs`, `window/minigames.rs`, `window/minigame_fx.rs` |
 | `fishing_chrome.rs` | 6 | `801d03b0` `801d78c0` `801d74b0` `801d7a5c` `801d70ec` `801d7c30` | native `window/minigames.rs`, `window/hud.rs` |
 | `fishing_actors.rs` | 4 | `801d2050` `801d765c` `801d2278` `801d4948` | native fishing block |
-| `baka_fighter.rs` (digit strips) | 3 | `801d6a18` `801d6f44` `801d69e4` | native `window/hud.rs` |
+| `baka_fighter.rs` (digit strips) | 3 | `801d6a18` `801d6f44` `801d69e4` | native `window/hud.rs` - keyboard-only entry, see below |
 | `save_select.rs` (card directory) | 3 | `801e1208` `801e3af0` `801e3ba0` | browser `web-viewer::cards` |
 | `minigame_floor.rs` | 2 | `801d2a10` `801d6028` | native `window/minigames.rs` |
 | `dance.rs` (sting + clip gate) | 2 | `801d3d78` `801d4098` | browser dance page |
@@ -225,23 +359,35 @@ rows below are what it did not reach.)
 |---|---|---|---|
 | `screen_fx.rs` | 10 | `801de4c8` `801f8d4c` `801f811c` `801f8004` `801f7a9c` `801f88fc` `801f8e6c` `801f849c` `801f8f28` `801f8a34` | a scene whose script spawns an iris mask, letterbox or image panel - the ending scenes the module doc names |
 | `fishing.rs` (session kernels) | 6 | `801d5298` `801d0474` `801d0f5c` `801d26cc` `801d3db4` `801d746c` | a fishing rung past rung 4: rod select, a full cast, a landed catch |
-| `muscle_dome.rs` | 4 | `801cf074` `801d1184` `801d1510` `801d9bbc` | a dome leg played to its between-leg tally |
-| `baka_fighter*.rs` (tally + intro) | 4 | `801d6710` `801d239c` `801d2a28` `801d59d4` | a duel played through its intro card to the end-of-match tally |
-| `scene/host*.rs` (BGM plumbing) | 4 | `80019898` `800243f0` `800266e0` `80026520` | a scene transition that pauses and resumes BGM |
-| `equip_session.rs` / `menu_arrange.rs` / `menu_item_category.rs` | 4 | `801d9c14` `801cf760` `801d64a8` `801dd0c0` | operating the Equip and Items rows deeper than the menu ladders' browse-and-confirm |
+| `muscle_dome.rs` | 4 | `801cf074` `801d1184` `801d1510` `801d9bbc` | `w1b_dome_leg_ladder` - built; `801d9bbc` has no producer and stays |
+| `baka_fighter*.rs` (tally + intro) | 4 | `801d6710` `801d239c` `801d2a28` `801d59d4` | `w1b_baka_duel_ladder` - built; the door entry still arms neither |
 | `pause_screens.rs` (special Use) | 4 | `801d7e50` `801d8a58` `801d8b90` `801d8d94` | a Use confirm on Door of Light / Door of Wind / Incense |
-| `world/vm_hosts.rs` + `equipment.rs` | 2 | `8003c7ec` `800430ac` | field-VM scripts exercising those op arms |
-| `battle_round.rs` / `other_game_overlay.rs` | 2 | `801db8b4` `801d14b0` | one call deeper into round start and the arena |
-| `text_balloon.rs` | 2 | `8003c764` `801da7f0` | a scene running field-VM `4C E1` |
+| `other_game_overlay.rs` | 1 | `801d14b0` | one call deeper into the arena's tally drain |
 | `battle_tutorial.rs` | 2 | `801f6b70` `801f747c` | promoting the existing `training_battle` test to a ladder export |
-| `clut_fx.rs` | 1 | `801e4c58` | a scene carrying the other scripted CLUT-cell arm |
-| `shop.rs` (buy list) | 2 | `801db21c` `801db380` | opening a shop stock list and confirming a row through the *retail* menu-overlay list, not the engine session the play page drives |
 | `world_map.rs` | 2 | `800196a4` `801d8258` | entering a kingdom overworld through its own transition |
 | `cutscene_narration.rs` | 1 | `80037174` | an opening-prologue ladder (`opdeene` / `opstati` / `opurud`) |
-| `register_ramp.rs` | 1 | `8003c6a4` | a script running field-VM op `0x43` sub-3..6 |
 | `world/narration.rs` | 1 | `8003cf7c` | an inline field-VM conversation rather than the dialog panel |
+| `world/battle/stats.rs` + `battle_formulas/escape.rs` | 1 | `801e791c` | a canonical ladder pressing **Run**. Wired at `world/battle/command_flow.rs`'s `Resolution::RunAway` arm and driven end to end by `battle_flee_ladder`, which is outside `CANONICAL_LADDERS` - promote it, or flee in the composition ladder's fight |
+| `fade.rs` | 1 | `80020b00` | the same flee, one beat later: `FadeState::load` stages the state-`0x66` white-out from `fold_battle_event`'s `BattleEnd { Escaped }` arm, so it needs the escape to *succeed* and reach teardown |
 
-### GATED
+Five rows left this table through the scene-session ladder
+(`crates/engine-core/tests/w1e_scene_bgm_transition_ladder.rs`): the four BGM
+plumbing addresses (`80019898` `800243f0` `800266e0` `80026520`) and the
+scripted CLUT-cell cross-fade arm (`801e4c58`). The BGM four needed a
+`BgmDirector` more than they needed a scene - see the structural exclusion
+above - and driving the sub-ops the scenes' own MANs carry, in the order a
+transition performs them, is what makes the pause/resume pair falsifiable
+rather than four independent hook calls.
+
+Driving them surfaced a wiring gap the reach number cannot show, because the
+gap is on the far side of the trait. `BgmDirector::reattach_volume` has a
+default no-op body, and **neither** rendering host overrides it -
+`AudioBgmDirector` implements `pause` / `resume` / `stop` / `unhalt_pause` and
+not this one, and the browser runtime's director matches. So sub-op 8 computes
+retail's level (`FUN_80019898`'s `(raw << 15) >> 16`) and every host discards
+it. The primitive it would drive already exists
+(`legaia_engine_audio::Sequencer::set_master_vol`), so this is a two-host wire,
+not a port.
 
 Reachable only from a game state the ladders do not seed. The fix is a seeded
 save or a longer spine, not a pad stream.
@@ -253,6 +399,8 @@ save or a longer spine, not a pad stream.
 | `world/vm_hosts.rs` | 1 | `801d2d38` | system flag `0xD`, the three-actor talk lock |
 | `world/battle/monster_ai.rs` | 1 | `801e7320` | a monster whose `field_flags & 0x380` is set |
 | `world/field_movement.rs` | 1 | `801d2404` | a scene with a ledge-hop trigger |
+| `world/battle/capture.rs` + `battle_formulas/victory.rs` | 1 | `801e70bc` | a party member **casting a Seru summon spell**. `accrue_summon_spell_xp` fires only under `is_party_summon_cast` (`world/battle/casting.rs`), and a new-game party knows no Seru magic, so no from-boot pad stream reaches it; `seru_cast_magic_xp_ladder` seeds the spell and is outside `CANONICAL_LADDERS` |
+| `magic_xp.rs` | 1 | `801e92dc` | a battle that **captures a Seru**. `learn_spell_prepend` is the record-side commit of `seru_learning::record_capture`'s accepted learns, so the fight has to seat a monster carrying a `seru_id` and the capture roll has to take - one gate deeper than the summon-cast row above |
 
 Three former rows of this table converted. The `town01` opening naming prompt
 (`801f03f0`) left through the composition ladder, whose opening rung drives
@@ -297,7 +445,7 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | module | n | bucket | reach | addresses |
 |---|---|---|---|---|
 | `actor_alloc.rs` | 3 | (a) | field-actors | `80024c88` `80024d78` `80024dfc` |
-| `baka_hub_actors.rs` | 13 | (a) | baka-hub | `801f0adc` `801f1138` `801f16c0` `801f17d8` `801f1890` `801f1950` `801f1a1c` `801f1ab0` `801f1b64` `801f1d90` `801f1e48` `801f1fdc` `801f20b0` |
+| `baka_hub_actors.rs` | 13 | (a) | `w1b_hub_ladder` - built; see [below](#the-op-0x49-submode-screens) | `801f0adc` `801f1138` `801f16c0` `801f17d8` `801f1890` `801f1950` `801f1a1c` `801f1ab0` `801f1b64` `801f1d90` `801f1e48` `801f1fdc` `801f20b0` |
 | `battle_action/overlay_rng.rs` | 1 | (c) | disclosed | `801d0290` |
 | `battle_action/pool_ops.rs` | 3 | (a) | battle-target | `801d8a88` `801d8d00` `801db124` |
 | `battle_burst.rs` | 1 | (c) | disclosed | `801f30c4` |
@@ -380,11 +528,9 @@ the union.
 | `battle_intro.rs` | 5 | (a) | the intro styles + curtain trail the driven fights did not roll | `801cfda0` `801d0370` `801d1a20` `801d1cfc` `801d1d9c` |
 | `other_game_hud.rs` | 4 | (a) | native / minigames-page muscle-dome HUD | `801d02f0` `801d050c` `801d08ec` `801d15c8` |
 | `ui_fishing.rs` | 5 | (a) | catch / miss / strike event banners a short session does not land | `801d6f10` `801d71d4` `801d7528` `801d75dc` `801d78ec` |
-| `ui_menu/pause_lists.rs` | 1 | (a) | the Items throw-confirm arm | `801d1b20` |
-| `ui_menu/system_menus.rs` | 2 | (a) | the system confirm prompts | `801d1dac` `801d1f10` |
-| `ui_menu/target_panel.rs` | 1 | (a) | the field item-use target panel | `801d0520` |
-| `ui_menu_window_painters.rs` | 5 | (a) | specific retail windows no driven screen opens | `801d56fc` `801d61b0` `801d6360` `801dccb4` `801dcf14` |
-| `ui_menu_window_painters_large.rs` | 3 | (a) | the stat-compare window chain | `801cf5d0` `801d1290` `801d4c28` |
+| `ui_menu/system_menus.rs` | 2 | (a) | the special-use confirm prompts; the bag must hold Door of Light (`0x88`) or Incense (`0x8A`), which no host grants and no pad ladder acquires | `801d1dac` `801d1f10` |
+| `ui_menu/target_panel.rs` | 1 | (a) | the field item-use target panel. The gate is retail's own: `item_has_valid_target` (`FUN_8003043C`) omits a heal while every living ally is at full HP, so a ladder that boots into town has no confirmable Use row. It needs a fight played to its finish first | `801d0520` |
+| `ui_menu_window_painters.rs` | 3 | (a) | the entry-context pair + the spell-level notice | `801d61b0` `801d6360` `801dccb4` |
 | `ui_title_save/save_select.rs` | 1 | (a) | deeper Load beats | `801e3ff0` |
 | `ui_title_save/slot_grid.rs` | 2 | (a) | the block-grid render beat | `801e06c0` `801e0fd0` |
 | `ui_title_save/slot_info.rs` | 1 | (a) | the slot-info caption | `801e3ee0` |
@@ -394,6 +540,18 @@ The casino prize-exchange confirm window (`801d603c`) stays disclosed-inert;
 the report now *misreports* it as an executed disclosure - see the
 pseudo-entry note above for why that row is the anchor fallback and not a
 finding.
+
+Six of the surviving `engine-ui` rows are **not** unported builders and not a
+wiring gap - `crates/engine-ui/tests/pause_menu_compose.rs` executes every one
+of them today. That library oracle composes each pause screen in process with
+a synthetic descriptor table, including the two entry-context windows, both
+special-use confirm variants, the item target panel and the spell-level
+notice; a coverage export of it alone enters `801d0520` `801d1dac` `801d1f10`
+`801d61b0` `801d6360` `801dccb4`. What they lack is a **pad-driven** path, and
+the union is a union of pad ladders, so the export is deliberately not folded
+into it - a library oracle in the denominator would change what the headline
+number means. Each row's own gate is named in the table above; the oracle is
+why "never entered" here is a statement about reach and not about the port.
 
 One near-miss is worth recording because the grep that finds it is wrong. The
 window-25 / window-41 stat-compare chain in `ui_menu_window_painters_large.rs`
@@ -412,11 +570,8 @@ that half is disclosed at its tag and waived by the drift gate.
 | `anim_cue.rs` | 1 | (c) | disclosed | `800508dc` |
 | `seq_calc.rs` | 5 | (d) | differential | `80062f98` `8006320c` `8006352c` `80063aa8` `800649b0` |
 | `seq_events.rs` | 5 | (d) | differential | `800638d8` `80063974` `800639a0` `80063cec` `8006418c` |
-| `seq_slots.rs` | 1 | (a) | audio | `8001ff58` |
-| `sequencer.rs` | 2 | (a) | audio | `80066b00` `80067550` |
-| `sfx.rs` | 2 | (a) | audio | `80035b50` `8004fcc8` |
+| `seq_slots.rs` | 1 | (a) | no owner | `8001ff58` |
 | `shout.rs` | 1 | (a) | arts-swing | `8004c140` |
-| `vab_bind.rs` | 3 | (a) | audio | `80066d8c` `80066e50` `80068d94` |
 
 The ten `seq_calc` / `seq_events` addresses are the SsAPI per-frame calc tier.
 `Sequencer` is the engine's clean-room replacement and drives playback on its
@@ -428,9 +583,26 @@ than a wiring gap.
 The footstep cadence and the SFX delay ring left this table through the
 composition ladder - both tick on the browser play page's frame path, which is
 exactly the host asymmetry the footstep module doc records against the native
-window. The remaining (a) rows need a mixer-attached tick: SFX enqueue, VAB
-upload and voice alloc run only when an audio output exists, and the page's
-WebAudio route is wasm-gated out of a native test.
+window.
+
+The seven `sequencer` / `sfx` / `vab_bind` rows left it through the audio
+session ladder. What they needed was a mixer-attached tick - SFX enqueue, VAB
+upload and voice allocation only run when something is pulling frames - and
+`legaia_engine_audio::TestAudioSink` supplies one without a device by driving
+the same mixing core the cpal callback drives. The ladder stages a real bank,
+plays a real track, and matures a real cue through the frame scheduler, each
+asserted on the PCM that came out rather than on the call being made.
+
+`seq_slots.rs`'s `8001ff58` is the one that stays, and the reason is an
+**owner**, not a tick. It is the SEQ resource-slot release keyed on the
+12-byte-stride table at `0x80091508`, and `SeqResourceTable` is instantiated
+nowhere in the workspace: the two hosts holding an open VAB
+(`AudioBgmDirector::bank`; the browser runtime's `bgm_bank` / `sfx_vabs`) model
+no slot table, and there is no `VabBank` close for the release to call. Both
+halves are within reach - `SpuAllocator::free` exists and `VabBank::samples`
+retains each `UploadedVag`'s `(addr, size)`, so a faithful `FUN_80068C80` has
+its primitives - but wiring it is a three-host change, and until an owner
+exists a release call would hand back resources nothing holds.
 
 ### asset
 
@@ -562,6 +734,27 @@ the menu-widget one above. A rerun of the replay reach report is what moves
 the seven addresses out of the (c) table rows above, which record the
 pre-resolver measurement.
 
+## The op-`0x49` submode screens
+
+The `baka_hub_actors.rs` row above was the page's largest single (a) cluster,
+and its blocker was not a missing ladder: the engine had **no mapping from an
+op-`0x49` sub-op to a handler slot**, so `slot_for_op49_sub_op` answered
+"close tick" for all eleven non-dedicated sub-ops and every screen a script
+asked for closed itself on its first frame. The mapping is retail's own
+14-byte table at `0x801F33A4`
+([`script-vm.md`](../subsystems/script-vm.md#which-screen-a-sub-op-opens-the-table-at-0x801f33a4)),
+now ported; `crates/engine-core/tests/w1b_hub_ladder.rs` drives four of the
+screens from a field-VM instruction, by pad, through `World::tick`.
+
+Six of the thirteen are still not script-reachable, and the reason is
+structural rather than a ladder gap: they are panel painters installed by
+handler slots with **no ported body** (`0x20` `FUN_801EE90C`, `0x21`
+`FUN_801EED58`, `0x31` `FUN_801ED590`, and one of `FUN_801E9B3C`'s own
+descriptor-op handlers), plus `801f1d90`, whose slot `0x13` no immediate in
+the field overlay ever stores to `+0x50`. The ladder paints those through the
+host-pinned window and says so; porting the three handler slots is what would
+make them script-reached.
+
 ## Ladder proposals
 
 Ranked by how many of this page's (a) rows each would move. The counts are for
@@ -581,18 +774,53 @@ remaining proposal would still move:
 |---|---|---|
 | FMV | 17 | any `fmv_id`; export the coverage of the existing `av_decode_oracle` / `w5_fmv_handoff` |
 | Baka Fighter hub | 13 | the PROT 0977 contest hub screen, not the duel the current ladder plays |
-| battle render (residue) | 10 | the intro styles the driven fights did not roll, the party-panel arms, the gauge rearm |
 | audio | 9 | a mixer-attached tick, so SFX enqueue, VAB upload and voice alloc run |
 | world-map panels | 8 | the panel-actor screens: sub-list, fill fade, text box, flag window |
 | world map | 5 | the overworld render pass: horizon, dim, CLUT fade, particle burst |
-| arts swing | 3 | an art that swings: shout bank, XA clip, face stamps |
-| battle target | 4 | the target picker's cycle and sweep-group arms |
 | field actors | 4 | an effect that spawns a child actor through the allocator |
 | field render | 2 | posed field characters: camera mover, pack apply |
 
 The native window's composition still cannot be driven this way until it
 leaves `bin/`; the standalone browser minigames page and the `cards` page
 remain outside the union and keep their harness-blind rows above.
+
+### Battle render, battle target and arts swing are built
+
+Three proposals left this table together, as two files:
+`crates/web-viewer/tests/w1c_battle_render_ladder.rs` (the intro styles and
+the attack-target ring) and `crates/engine-shell/tests/w1c_arts_swing_ladder.rs`
+(the shout bank, the facial animator and the XA-clip census). Each needs its
+own `cargo llvm-cov` export joined into the union, **without `--release`**.
+
+Why the styles needed a ladder at all is worth keeping: the four non-default
+transition styles are not a beat a player reaches, they are a *data* arm.
+`select_intro_style` keys on the formation's first monster id, and the ids
+that select the confetti / curtain / swirl belong to formations no scene the
+composition ladder enters registers - so the driven fights all took the
+default `TileShatter` arm and four ported style bodies never ran once.
+
+Four addresses did **not** move, and each is a different shape:
+
+| address | why it stayed |
+|---|---|
+| `801f44a0` | orphan: nothing in the workspace calls `DamagePopupRing::push` |
+| `801d84c0` `801dbb8c` `801dbc30` | `battle_party_panel.rs` emits no coverage record at all - every item is an unused `const fn`, so the module is not in the binary |
+| `801e1ab0` | content-gated: the streak needs a move-FX scene whose move-power record carries a non-zero trail texture page (`+0x0b`) |
+
+The party-panel row is the sharper finding: `engine-ui` reproduces
+`panel_anchors`' constants as its own `party_panel_stage_x` rather than
+calling the port, and an `engine-shell` test pins the two equal - so the gate
+passes, the numbers agree, and the ported kernel is dead. `DamagePopupRing` is
+the same shape one level down: it models retail's **8-slot wrapping** ring
+while the live HUD keeps an unbounded `Vec<DamagePopup>`, so retail's
+"a ninth popup overwrites the first" is not reproduced.
+
+Four `PORT` tags moved off module scope in the same pass, onto the routines
+they name (`pick_channel`, `build_afterimage_quad`, `LabelState::opened`,
+`cross_out_mark`, `panel_labels`). At module scope each would have resolved,
+under the anchor fallback above, to an unrelated neighbouring function -
+`ArtsShoutBank::new`, `streak_half_width`, `name_field_ptr` - so constructing
+a bank would have read as "the arts-voice selector ran".
 
 ## Gates behind the (b) rows
 

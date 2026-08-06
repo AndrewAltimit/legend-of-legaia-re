@@ -50,3 +50,9 @@ path = "src/bin/note-trace.rs"
 
 [dev-dependencies]
 legaia-prot = { path = "../prot" }
+# Disc-gated session ladder only: the SFX descriptor table (`DAT_8006F198`)
+# and its cue -> VAB-slot routing live in the asset crate, and the ladder
+# drives the same decode the hosts do. `legaia-asset` depends on
+# prot/lzs/tim/tmd/vab/seq and never on engine-audio, so this dev-only edge is
+# acyclic.
+legaia-asset = { path = "../asset" }

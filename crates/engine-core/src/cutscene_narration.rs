@@ -34,8 +34,14 @@
 //! timeline stepper when its PC reaches a narration block), ticked each frame
 //! from [`crate::world::World::tick`], and rendered by the host from
 //! [`Self::visible_lines`].
-// PORT: FUN_80037174
-// REF: FUN_8003BDE0
+//!
+//! The `PORT:` tag for the roller is on [`CutsceneNarration`] itself, not
+//! here. A tag at the end of this block has no item within the anchor
+//! collector's lookahead - the next line that is neither comment nor attribute
+//! is a `pub const`, which is not an item kind it recognises - so it silently
+//! became a *file*-scoped anchor, and a file-scoped anchor's entry verdict is
+//! "any region in this file ran". That is the pseudo-entry shape
+//! [`reach-triage.md`](../../../docs/tooling/reach-triage.md) documents.
 
 /// Frames per 1-pixel scroll step (retail default; ~10.5 px/s measured from
 /// a realtime retail video = 1 px per 6 frames at the 60 Hz tick; see the
@@ -106,6 +112,9 @@ pub struct NarrationLine<'a> {
 
 /// A running narration block: the roller over an ordered list of subtitle
 /// pages.
+///
+/// PORT: FUN_80037174
+/// REF: FUN_8003BDE0
 #[derive(Clone, Debug)]
 pub struct CutsceneNarration {
     /// The subtitle pages, in entry order.

@@ -185,12 +185,19 @@ New battle-overlay (`0898`) functions the S5 trace found live (`game_mode 0x15`)
 | `801D71B8` | **Per-art attack-camera framing** (4.3 KB). Gated on the active actor (`ctx+0x13`) having a live target (`+0x14C != 0`), action category `+0x1DE == 3` (Attack), and `ctx+6 == 0xFF`. Builds a rotation / distance / look-at halfword triple on the stack (`0x400` seeds, look-at = the actor's *negated* position and facing) and dispatches per participant id `1`/`2`/`3` and then per art id `0x1A..=0x2A` through a 17-slot `jr` table, each arm folding its own halfword track from the per-phase data at `0x801F4E10`. One of the hottest attack-chain bodies. Gate + pose seed + dispatch + the `(anim_frame - 0x60) << 4` push ported as `engine-vm::battle_attack_camera`; the arms need the `0x801F4E10` table parsed. |
 | `801E805C` | **Multi-cast value readout + UI teardown** (4.5 KB). Gated on `DAT_8007B64C` + the summon-overlay shared-buffer region `_DAT_801F697X`/`_DAT_8007BD14`. Two halves: it batches `FUN_801D8DE8(id, 0)` then `(id - 4, 0)` teardown pairs off the count at `_DAT_801F6974` (row `_DAT_801F6834 + (count-1)*4`), and it renders each populated slot in `_DAT_801F6988` as a label quad plus the slot's value from `_DAT_801F6980` split into decimal digits by reciprocal divides (`0xD1B71759 >> 45` = `/10000`, `0xCCCCCCCD >> 35` = `/10`), positioned off the HP-bar widget at `ctx[+0x1074 + ctx[+0x11B6 + slot*0xC]*4]`. Kernels ported as `engine-vm::battle_value_readout`. |
 | `801E0080` | **Battle-arena emitter-driven sprite scatter** (2.4 KB, spans `0x801E0080..09F8` - just below `FUN_801E09F8`; the hits `0x801E0080`/`+0x338`/`+0x398`/`+0x518` are all interior). Gated on `DAT_8007BD58 != 0` and `DAT_8007BD71 == -1`. A 32-slot `0x1C`-stride **emitter** pool at `_DAT_8007BD30+0x1010` spawns into a 128-slot `0x20`-stride **particle** pool at `_DAT_8007BD30+0x10`, each record driven by its own byte script (emitter step 14 bytes, particle step 6, delay bytes `<< 3`), then a third pass emits one `0x28`-byte textured quad per live particle with a brightness ramp. Whole update repeats until its cost reaches `DAT_1F800393`. Ported as `engine-vm::battle_scatter` - [details ↓](#801e0080). |
-| `801F0450` | **AI-side Arts command assembler** (3.7 KB, in `0898`'s render tail `0x801F0000..8000`; hits `0x801F0740`/`0x801F0ADC` interior). Two arms on the char-record `& 0x2000` / actor `+0x16E & 0x404` pair: a blind weighted draw from the character's learned-arts list, or a weighted candidate pool over the arts command table [`DAT_801C9360[char][cmd]`](../../subsystems/arts-command-gauge.md) (cmd from `0xC`) drawn against the AP gauge `actor[+0x154]`. It **writes** `actor[+0x1DF..]`, so it is an action producer rather than a display builder - [details ↓](#801f0450). Ported as `engine-vm::battle_arts_auto_combo`. (The tail also hosts already-documented `FUN_801EFE44` camera-bounds `+0x48C` = hit `0x801F02D0`, and `FUN_801F17F8` the side-band streaming SM.) |
+| `801F0450` | **AI-side Arts command assembler** (3.7 KB, in `0898`'s render tail; hits `0x801F0740`/`0x801F0ADC` interior). Two arms on the char-record `& 0x2000` / actor `+0x16E & 0x404` pair: a blind weighted draw from the character's learned-arts list, or a weighted candidate pool over the arts command table [`DAT_801C9360[char][cmd]`](../../subsystems/arts-command-gauge.md) (cmd from `0xC`) drawn against the AP gauge `actor[+0x154]`. It **writes** `actor[+0x1DF..]`, so it is an action producer rather than a display builder - [details ↓](#801f0450). Ported as `engine-vm::battle_arts_auto_combo`. |
 | `801D02C0` | **Procedural battle ground grid** - the flat tiled floor the mode-`0x15` render draws under the combatants. Two GTE passes over a `_DAT_1F8003F8 x _DAT_1F8003FA` cell grid at pitch `0x200`; see [`battle.md`](../../subsystems/battle.md#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) for its place in the backdrop and [details ↓](#801d02c0) for the per-cell emit. CPU-side kernels ported as `engine-vm::battle_ground_grid`. |
 
 ## Battle sparring-tutorial overlay (PROT 0967)
 
 A discrete overlay the [S5 trace](../../tooling/playthrough-coverage.md) surfaced: it drives the **in-battle tutorial prompts** of the scripted Tetsu sparring fight (the how-to-fight tutorial - basic attacks, items, spirit, Hyper-Arts lessons + the practice combo). Extraction **PROT 0967** (a distinct 14 KB overlay), loaded **co-resident at base `0x801F69D8`** (the shared summon/move-FX buffer `*DAT_80010390`), so its `0x801F6xxx..0x801F7xxx` code physically overlaps overlay `0898`'s *rodata* tail - `0898`'s own bytes there are menu label strings, which is why that region disassembled to garbage from the `0898` image.
+
+The line count `FUN_801F747C` sizes its box from is
+`engine-core::scus_leaf_kernels::text_line_count`. Two details of that walk are
+easy to lose: the `1` seed sits in the delay slot of the empty-string branch,
+so an empty prompt still measures one line, and a `0xC0..=0xCF` byte is a
+two-byte escape lead whose follower is consumed untested - a `0x7C` there is
+data, not a line break.
 
 Identity + base are pinned by a live-battle-RAM (`s5_tetsu_battle`) vs static-blob byte fingerprint (`overlay_effect_0967_*.txt`, imported at `0x801F69D8`). Its shifted sibling is PROT **0965** (`0965[0x5FE8:] == 0967[0x0:]`, 911/1024 identical over the first 4 KB at shift `0x5FE8`) — the same render-library re-imaging per game-mode context as `0900↔0901`; 0965 shares the code but at a different base offset. The overlay's tutorial-script strings are Sony text (not reproduced here).
 
@@ -797,6 +804,14 @@ below `DAT_1F800393`. Ported as `engine-vm::battle_scatter`;
 `see ghidra/scripts/funcs/overlay_battle_action_801e0080.txt`.
 
 ### `801F0450`
+
+It lives in overlay `0898`'s render tail, the `0x801F0000..0x801F8000` band -
+a neighbourhood fact, not a property of this routine, which is why the
+directory row above no longer carries those bounds. Two already-documented
+neighbours share the band: `FUN_801EFE44`'s camera-bounds arm at `+0x48C`, and
+`FUN_801F17F8`, the side-band streaming SM. Neither address appears anywhere in
+this routine's own dump, and a row that cites one is offering somebody else's
+bytes as evidence for this one.
 
 **AI-side Arts command assembler** - the counterpart to the player queue-builder
 `FUN_801EED1C`. Two arms, chosen by the character record's `+0xF8 & 0x2000` and

@@ -900,6 +900,21 @@ impl BakaCabinet {
     pub fn state(&self) -> u32 {
         self.state
     }
+
+    /// `DAT_801DBE94` - the attract card's clock, which is the `t` the intro
+    /// title card ([`crate::baka_fighter_chrome::IntroTitle`]) is a function
+    /// of. Only the attract arms advance it.
+    pub fn intro_clock(&self) -> i32 {
+        self.intro_timer
+    }
+
+    /// Is the cabinet on one of the arms that animates the title card?
+    ///
+    /// The two `jal 0x801D59D4` sites in PROT 0976 are both inside this state
+    /// machine, and both attract arms advance [`Self::intro_clock`].
+    pub fn in_attract(&self) -> bool {
+        matches!(self.state, ST_BOOT | ST_ATTRACT | ST_ATTRACT_OUT)
+    }
     /// `DAT_801DBF78` - `0` teardown, `1` paused, `2` active.
     pub fn match_phase(&self) -> i32 {
         self.match_phase

@@ -1252,6 +1252,7 @@ dependencies = [
  "clap",
  "cpal",
  "js-sys",
+ "legaia-asset",
  "legaia-prot",
  "legaia-seq",
  "legaia-vab",

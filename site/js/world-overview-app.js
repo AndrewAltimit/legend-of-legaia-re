@@ -318,10 +318,16 @@
         let mi = meshHandles.get(p.meshId);
         if (mi === undefined) {
           try { viewer.pack_mesh(p.meshId); } catch (e) { continue; }
+          /* Same packet-colour stream ensureMeshUploaded hands the shader -
+           * the export bakes it into COLOR_0, so the file carries the
+           * `texel * colour / 128` shading the canvas draws. Omitting it
+           * exported raw texels. */
           mi = viewer.scene_export_add_mesh(
             'mesh_' + p.meshId,
             viewer.pack_mesh_positions(), viewer.pack_mesh_uvs(),
-            viewer.pack_mesh_cba_tsb(), viewer.pack_mesh_indices(), none);
+            viewer.pack_mesh_cba_tsb(), viewer.pack_mesh_indices(),
+            (typeof viewer.pack_mesh_flat_rgba === 'function')
+              ? viewer.pack_mesh_flat_rgba() : none);
           meshHandles.set(p.meshId, mi);
         }
         const scale = (p.scale != null) ? p.scale : MESH_SCALE;

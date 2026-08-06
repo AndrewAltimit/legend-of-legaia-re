@@ -343,8 +343,11 @@ machine and payout eval, which share slot globals this renderer never touches.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-render/src/battle_intro.rs:801d1a20"
+key = "module-orphan:crates/engine-ui/src/battle_intro.rs:801d1a20"
 reason = """
+Re-keyed from crates/engine-render/src/battle_intro.rs: the swirl emitter moved
+to the wgpu-free engine-ui leaf, so the old key named a path that no longer
+carries the tag and the waiver had gone silent. Re-read rather than carried:
 overlay_field_battle_intro_801d1a20.txt is base-tagged
 [overlay_field_battle_intro base=0x801C0000], 173 instructions. It builds into
 `_DAT_8007B85C + 0x5DC00`, loops 0x20 times emitting 0x30-byte primitives with
@@ -354,9 +357,12 @@ DAT_801D2470 < 0x5A, otherwise through 0x80029888 with `(clock - 0x3C) * 4`.
 `emit_swirl_band` carries all of that. The same VA is also PORT-tagged in
 engine-vm::battle_intro_swirl (`swirl_band_draw`), which is a deliberate split -
 that half resolves the addressing and path choice, this half emits the packet -
-and both disclose it. The "distinctive data" the checker lists for this row
-(0x80080008..0x8008005C) is a register-tracker artifact of the `lui v0,0x5` /
-`ori v0,v0,0xdc00` pair, not addresses the routine forms.
+and both disclose it. The distinctive data the checker now lists for the row
+(0x801D2470 / 0x801D2474 / 0x801D2478) is real: the disassembly loads all three
+(`lw a3,0x2470(v0)` / `lw v0,0x2474(v0)` / `lw a1,0x2478(v0)`), and they are the
+swirl's own scratch globals, which is exactly why the module's three sibling
+intro styles (801cfda0 / 801d0370 / 801d1cfc) do not corroborate it. Orphan by
+construction, not by mis-attribution.
 """
 
 [[waiver]]
@@ -402,6 +408,45 @@ reason = "Handler table slot [0x06]; body reads item-effect record 0x800752C0 + 
 [[waiver]]
 key = "module-orphan:crates/engine-core/src/field_menu.rs:801d6d38"
 reason = "Same routine as the save_subscreen row and the same disassembly; it runs under two entry contexts, which is why two modules model it. Window 0x801E4BD4, FUN_801d688c(&0x801E46D0, 2, 1), next-screen word 0x801E46A4 written 0 unconditionally then overwritten with 1 on the default row."
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/battle/loop_driver.rs:801ec3e4"
+reason = """
+The tag is a SUB-RANGE claim and it names its own range: `PORT: FUN_801EC3E4
+(0x801EEBD8..0x801EEBEC, the cue-submit site)`. overlay_battle_action_801ec3e4.txt
+is 2502 instructions and the cited window is four of them - `801eebe8 jal
+0x8004fe5c` is the ONLY jal to the sound funnel in the whole body, which is what
+makes "the cue-submit site" a well-defined address rather than a gesture, and
+`fire_melee_impact_cue` implements exactly that: cue id 0x10C, attacker slot as
+the category, through `crate::sfx_cue::route_sfx_cue` (itself PORT-tagged
+FUN_8004FE5C). The `+0x1D9 < 0x10` clip gate the tag models is the branch at
+0x801EEB88 in the same window. Orphan because the checker measures a routine
+against its module's siblings by shared data, and a 10 KB melee kernel shares no
+global with the module's other two tags (801e6968 round bookkeeping, 801f45a4
+victory) while sharing its one callee with a DIFFERENT module - sfx_cue.rs -
+which is where the corroboration actually is. The one distinctive address the
+row lists that turns up elsewhere, 0x801F5480 under muscle_dome.rs's
+FUN_801DD864, is a battle-context cell both overlays read; it is not evidence
+about either label.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/scus_leaf_kernels.rs:800265e8"
+reason = """
+800265e8.txt is base-tagged [SCUS_942.54] and prints all 33 instructions, and
+the port matches store for store. `lui v1,0x8007 / addiu v1,v1,0x51c` then
+`li v0,1` and `sh v0` at +0x4 / +0x64 / +0x94 = 0x80070520 / 0x80070580 /
+0x800705B0, which is BOOT_ENABLE_FLAG_ADDRS verbatim. Then `lui v0,0x8009 /
+li v1,0x1010 / sw v1,0x17b0(v0)` seeds 0x800917B0 and `addiu v0,v0,0x17b0`
+re-bases so the eleven remaining `sw`s land at +0x04/0x08/0x0C/0x10/0x14/0x18/
+0x1C/0x20/0x28/0x2C - every slot of the twelve-word table except +0x24, which is
+BOOT_OFFSET_TABLE_UNWRITTEN = 9. The six literals the `lui`/`ori` pairs build
+(0x00010010, 0x00033010, 0x00060010, 0x00065010, 0x0006C810, 0x0006F010) are the
+table's own values. Orphan because this is a boot-time SPU-base seeder parked in
+a module whose other two tags are a sound-cue delay set and a timed sound arm -
+the module is explicitly a home for leaf kernels with no home, so "shares
+nothing with its siblings" is the module's premise rather than a finding.
+"""
 
 [[waiver]]
 key = "doc-citation:docs/reference/functions/audio.md:8001d230:801ce628"
