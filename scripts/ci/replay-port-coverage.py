@@ -84,19 +84,33 @@ Usage:
     # ladders and the web-viewer composition ladder are different crates, and
     # `--test` links each crate's LIBRARY - which is why the web-viewer route
     # can execute composition code the engine-shell `bin/` never exposes.
-    for t in critical_path_replay menu_replay minigame_replay v0_1_playthrough; do
-        cargo llvm-cov --release -p legaia-engine-shell \\
-            --test "$t" --json --output-path "target/cov-$t.json"
+    # Clean first: the reader collapses duplicate spans keyed on the exact
+    # (line_start, line_end), so a stale sibling binary left in `target/` can
+    # shadow a fresh executed record with its own zero.
+    cargo llvm-cov clean --workspace
+
+    # NO `--release` anywhere - see "a release export loses executed code"
+    # below. The whole 12-ladder set takes about ten minutes on the default
+    # profile (`menu_replay` is a 4.7s run), so the optimised build buys
+    # nothing here and costs executed code.
+    # `--list-ladders` prints `<test> <package>` for every canonical entry, so
+    # the recipe cannot drift from the list the report checks against.
+    #
+    # TWO STEPS PER LADDER, and the split is load-bearing. `-p <pkg> --json`
+    # scopes the *report* to that package's own sources, not just the build -
+    # so a one-shot export of `menu_replay` carries 42 files, all under
+    # `crates/engine-shell/`, while everything the ladder drives is in
+    # `engine-core` / `engine-vm` / `engine-ui` and is silently absent. Build
+    # scoped (`-p` picks the ladder), then report UNSCOPED over the profiles.
+    #
+    # `--profraw-only` between ladders keeps the per-ladder table honest: it
+    # drops the profile data so each export is that ladder alone, while leaving
+    # the build artifacts in place so this is not 26 rebuilds.
+    scripts/ci/replay-port-coverage.py --list-ladders | while read -r t pkg; do
+        cargo llvm-cov clean --profraw-only
+        cargo llvm-cov -p "$pkg" --test "$t" --no-report
+        cargo llvm-cov report --json --output-path "target/cov-$t.json"
     done
-    cargo llvm-cov --release -p legaia-web-viewer --test play_compose_ladder \\
-        --json --output-path target/cov-play_compose_ladder.json
-    # NOTE the missing --release on these two; see "a release export loses
-    # executed code" below. The flag is kept above only because the five
-    # exports it produced are what the current numbers were measured from.
-    cargo llvm-cov -p legaia-mdec --test w1a_fmv_ladder \\
-        --json --output-path target/cov-w1a_fmv_ladder.json
-    cargo llvm-cov -p legaia-engine-core --test w1a_narration_ladder \\
-        --json --output-path target/cov-w1a_narration_ladder.json
 
     # then join them - no arguments needed, the union is the default
     scripts/ci/replay-port-coverage.py
@@ -207,6 +221,134 @@ CANONICAL_LADDERS = [
     ("w1b_hub_ladder", "legaia-engine-core"),
     ("w1b_baka_duel_ladder", "legaia-engine-core"),
     ("w1b_dome_leg_ladder", "legaia-engine-core"),
+    # --- lanes W1-D / W1-E / W1-F, plus four older ladders ---
+    # These existed and ran green while being absent from this list, which is
+    # the export *recipe* - so nobody exported them, no `cov-*.json` was ever
+    # written for them, and every row they reach kept reading *live but never
+    # entered*. A ladder written to convert a row cannot convert it until it is
+    # named here. When a lane adds a ladder, it belongs in this list in the same
+    # commit.
+    ("w1d_world_map_render_ladder", "legaia-engine-core"),
+    ("w1d_dev_menu_equip_ladder", "legaia-web-viewer"),
+    ("w1e_audio_session_ladder", "legaia-engine-audio"),
+    ("w1e_scene_bgm_transition_ladder", "legaia-engine-core"),
+    ("w1f1_battle_tutorial_ladder", "legaia-engine-core"),
+    ("w1f1_fishing_pond_ladder", "legaia-engine-core"),
+    ("w1f1_fishing_banner_ladder", "legaia-web-viewer"),
+    ("w1f1_pause_special_use_ladder", "legaia-engine-core"),
+    ("w1f2_menu_depth_ladder", "legaia-web-viewer"),
+    ("battle_depth_replay", "legaia-engine-shell"),
+    ("battle_flee_ladder", "legaia-engine-core"),
+    ("battle_full_playthrough", "legaia-engine-core"),
+    ("seru_cast_magic_xp_ladder", "legaia-engine-core"),
+    # --- lane L5 ---
+    # The native window's own composition layer, reached by SPAWNING it.
+    #
+    # `w5_native_minigame_ladder` runs `CARGO_BIN_EXE_legaia-engine
+    # play-window` once per minigame and lets the inherited `LLVM_PROFILE_FILE`
+    # merge each child's profile into this export. That is the same route the
+    # `mdec` ladder's fourth rung takes, and it is why "no `#[test]` can call
+    # into a `bin/` target" bounds *calls* and not coverage: the whole
+    # `crates/engine-shell/src/bin/legaia-engine/` tree - the HUD builders, the
+    # minigame side-channel tick, the field render pass - executes here and
+    # nowhere else in the union.
+    #
+    # What made the cluster reachable at all is a CLI channel rather than a
+    # file move: `--pad-script` writes a pad word and the window's keyboard
+    # handler never runs, while every native minigame entry lives in that
+    # handler, so no pad-only run could open one. `--key-script` delivers keys
+    # through the same arms a player's keyboard does, and the two scripts
+    # compose - keys open the surface, the pad plays it.
+    #
+    # Two gates beyond the disc: the rungs need a display (`play-window` needs
+    # a real wgpu surface even for its offscreen capture) and they assert on
+    # the captured FRAME, not on the exit status - a HUD builder that emits an
+    # empty draw list would pass "did it run" and fails here.
+    #
+    # EXPORT THIS ONE IN TWO STEPS. `-p <pkg>` scopes the *report* to that
+    # package's sources, not only the build, and this ladder's whole yield is
+    # in other crates: a one-shot `-p legaia-engine-shell --json` export of it
+    # carries 42 files, all under `crates/engine-shell/`, while the dance HUD,
+    # the fishing chrome, the Baka number drawers and the casino counter are
+    # `engine-core` and the builders under them are `engine-ui`. Reporting
+    # without `-p` over the same profiles carries 652 files across fifteen
+    # crates - including `engine-render`, which this page records as
+    # structurally unreachable because the browser composition ladder cannot
+    # carry a wgpu link. The native window is that link.
+    #
+    #     cargo llvm-cov clean --workspace
+    #     cargo llvm-cov -p legaia-engine-shell \
+    #         --test w5_native_minigame_ladder --no-report -- --test-threads=1
+    #     cargo llvm-cov report --json \
+    #         --output-path target/cov-w5_native_minigame_ladder.json
+    #
+    # The same scoping applies to every `-p`-exported ladder above, so a row
+    # that reads never-entered may be a row whose only driver exported it out
+    # of scope. That is worth re-measuring before spending a fixture.
+    ("w5_native_minigame_ladder", "legaia-engine-shell"),
+    # --- lane L4 ---
+    # Three ladders for content the union is blind to *by construction* rather
+    # than by depth.
+    #
+    # `w1l4_page_compose_ladder` drives the browser surfaces `play_compose_ladder`
+    # opens but cannot populate. Its Load rung already reaches the card rack -
+    # with no card inserted, so `card_block_snapshots` takes its `None` early
+    # return and the retail directory walk behind it never runs. This one inserts
+    # real card images, prices their free blocks, commits a save through the
+    # filename classifier, and walks the info panel's three modes. It also drives
+    # the two standalone minigame pages and the Items target panel, whose
+    # preview word needs a bag the page has no affordance to fill (it arrives on
+    # a resumed save, as a player's would).
+    #
+    # `w1l4_slot_bonus_marquee_ladder` plays the casino machine into a **bonus
+    # round** and composes the dot-matrix marquee off that round's own live
+    # state. The schedule is solved rather than rolled for: the machine is
+    # deterministic and `SlotMachine` is `Clone`, so each candidate stop frame is
+    # probed on a copy and the RNG is untouched by the search.
+    #
+    # `w1l4_slot_bonus_marquee` is the disc-data half of the same gate, and the
+    # one that can spawn `CARGO_BIN_EXE_asset` - `asset slot-scene` is the only
+    # non-test caller the marquee kernels have, and a spawned bin inherits
+    # `LLVM_PROFILE_FILE` (the same mechanism `w1a_fmv_ladder` uses for `mdec`).
+    #
+    # All three are disc-gated and skip-pass without `LEGAIA_DISC_BIN`, and all
+    # three are exported WITHOUT `--release` - see the module docstring's "a
+    # release export loses executed code".
+    ("w1l4_page_compose_ladder", "legaia-web-viewer"),
+    ("w1l4_slot_bonus_marquee_ladder", "legaia-web-viewer"),
+    ("w1l4_slot_bonus_marquee", "legaia-asset"),
+    # --- lane L1 ---
+    # The browser play page driven into a battle with retail's own one-shot
+    # arm flag raised, so the tutorial box the page composes actually exists.
+    ("battle_tutorial_page", "legaia-web-viewer"),
+    # --- lane L2 ---
+    # The pause menu's three data-driven kernels, driven to their OUTPUT (bag
+    # count, picked weapon id, destination rows) rather than to their call.
+    ("l2_menu_data_wiring", "legaia-engine-core"),
+    ("l2_menu_data_wiring_disc", "legaia-engine-core"),
+    # --- lane L3 ---
+    # Five fixtures for the GATED-(b) rows: content behind a story flag, a
+    # scene, or a battle state no pad stream reaches from a cold boot.
+    #
+    # These are **gate-seeded**, not pad-only, and the distinction has to stay
+    # visible in this list or the denominator quietly changes meaning. Each one
+    # writes exactly the one piece of state the gate is (a system flag, a
+    # status effect, a visited-map record) and then drives the ordinary engine
+    # path - `World::tick`, `World::step_field`, the scene loader - from there.
+    # Three take their bytecode from the disc corpus rather than inventing it,
+    # so they skip-pass without `LEGAIA_DISC_BIN` like the rest of the union.
+    #
+    # `field_ledge_hop_disc` is not new: it already drove the ledge-hop rows
+    # (`801d2404` / `801d2298`) off a real `town01` ledge and was simply never
+    # in the union, which is why those rows read as never-entered.
+    #
+    # Export them WITHOUT `--release` (see "a release export loses executed
+    # code" above) - several of the kernels here are small enough to inline.
+    ("l3_scripted_scene_program_gate", "legaia-engine-core"),
+    ("l3_gated_field_arms_disc", "legaia-engine-core"),
+    ("l3_confused_monster_target_gate", "legaia-engine-core"),
+    ("l3_travel_art_visited_gate", "legaia-engine-core"),
+    ("field_ledge_hop_disc", "legaia-engine-core"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
@@ -372,7 +514,18 @@ def main() -> int:
         action="store_true",
         help="exit non-zero if a NOT WIRED anchor was executed by the run",
     )
+    ap.add_argument(
+        "--list-ladders",
+        action="store_true",
+        help="print `<test> <package>` per canonical ladder and exit (the "
+        "export recipe reads this, so it cannot drift from the list)",
+    )
     args = ap.parse_args()
+
+    if args.list_ladders:
+        for name, pkg in CANONICAL_LADDERS:
+            print(name, pkg)
+        return 0
 
     if args.jsons:
         inputs = args.jsons

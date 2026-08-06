@@ -58,6 +58,27 @@ page would lose the distinction:
 So: re-measure an (a)/(b) row on the default profile before spending a fixture
 on it, and read a (c) row as it stands.
 
+### A `-p`-scoped export reports one crate, however many it ran
+
+`cargo llvm-cov -p <pkg> --test <name> --json` scopes the **report** to that
+package's sources, not only the build. Measured on the native minigame ladder
+over one set of profiles: the scoped export carries 42 files, every one under
+`crates/engine-shell/`, and reporting the same profiles with no `-p` carries
+652 across fifteen crates. The ladder's whole yield is in the second number -
+the dance HUD, the fishing chrome and actors, the Baka number drawers and the
+casino counter are `engine-core`, and the draw builders under them are
+`engine-ui`.
+
+The failure mode is quiet in exactly the wrong direction: a scoped export shows
+the ladder joining the union and changing nothing, which reads identically to a
+ladder that did not work. Export in two steps - `--no-report` to run, then a
+bare `cargo llvm-cov report --json` over the profiles - whenever the code a
+ladder drives lives outside the package the test does.
+
+It also lifts one of the structural exclusions below: `engine-render` is a hard
+wgpu link the browser composition ladder cannot carry, and the native window
+*is* that link, so a spawned `play-window` run reports executed regions there.
+
 ## What a pad-only ladder structurally cannot execute
 
 The *headless* ladders drive `BootSession`, which constructs no renderer, no
@@ -99,18 +120,36 @@ structural impossibility. The browser hosts never had either problem: their
 composition is in `crates/web-viewer/src`, a library, which is the seam the
 composition ladder drives.
 
-The spawn route is already practical for the native window - `play-window`
-takes `--pad-script` and `--screenshot-tick`, which is exactly that shape of
-run. What it cannot do is **enter a minigame**:
-the native host opens the Muscle Dome and the Baka Fighter from
-`WindowEvent::KeyboardInput` (`M` / `B` in
-`window/event_handler/keyboard.rs`), `--pad-script` writes a *pad word* and
-nothing else, and no CLI flag names a minigame. So every native minigame row
-on this page - the dance HUD, the fishing chrome, the baka digit strips,
-`minigame_floor.rs`, the dance tutorial, the casino entry - stays blind to a
-spawned run for a reason that has nothing to do with `bin/`. A `--minigame
-<name>` flag, or a `--pad-script` that also accepts key names, converts the
-whole cluster at once.
+The spawn route is practical for the native window - `play-window` takes
+`--pad-script` and `--screenshot-tick`, which is exactly that shape of run.
+What it could not do was **enter a minigame**, and that had nothing to do with
+`bin/` either: the native host opens every minigame from
+`WindowEvent::KeyboardInput` (`K` dance, `U` dance how-to, `L` fishing, `O`
+casino slots, `M` Muscle Dome, `B` Baka Fighter in
+`window/event_handler/keyboard.rs`), as it does the fishing prize exchange
+(`P`) and the inline-dialogue option picker, while `--pad-script` writes a
+*pad word* and that handler never runs. No pad word names a minigame, so a
+pad-only run could not open one however long it ran.
+
+`--key-script` is that missing channel: `TICK:KEY` pairs delivered through the
+same keyboard arms a player's keys reach, injected from inside the per-tick
+loop. The two scripts compose - keys open the surface, the pad plays it - and
+`w5_native_minigame_ladder` (`crates/engine-shell/tests/`) is the ladder built
+on it. It spawns one `play-window` per minigame and asserts on the **captured
+frame**: each rung requires the PNG to differ from the same tick of the same
+scene with nothing open, because a HUD builder that emits an empty draw list
+passes any "did it run" check.
+
+Two gates beyond the disc, both printed rather than inferred: the rungs need a
+display (`play-window` needs a real wgpu surface even for its offscreen
+readback), and a rung that opened a surface which painted nothing fails on the
+frame comparison rather than on the exit status.
+
+**No file move was needed**, and that is the reusable part. Moving the
+composition layer out of `bin/` into a library module was the obvious fix for
+a *call*-shaped exclusion, and this cluster never had one - it had a missing
+input channel. A wide file move is the riskiest change available; the CLI flag
+was one argument and one loop.
 
 **The browser minigames page is outside the union entirely.** `minigame_replay`
 drives the *engine-shell* minigame path, and `play_compose_ladder` drives the
@@ -259,7 +298,6 @@ descriptor drops.
 | `prize_exchange.rs` | 1 | `801dc1cc` | `PrizeExchangeSession` has one production mention - its own `impl` line. |
 | `scene_name_sync.rs` | 1 | `8001d7f8` | `sync_scene_name` is called only from that file's tests. Two anchors share the address - the `fn` and a `//! PORT:` module tag - and it is the module tag that carries the liveness verdict, so both need the disclosure. |
 | `save_select.rs` | 1 | `801e3294` | `card_frame_tick` - the only thing that advances a `CardIoMachine` - is disclosed on the function *and* on the type anchor the address is keyed to; the function alone left the verdict on the type. |
-| `menu_item_category.rs` | 1 | `801dd0c0` | The chain into `category_check` is real and production-only (`play_menu_input` -> `EquipSession::input` -> `best_equipment_now` -> the `weapon_category_score` closure), and the Best-Equipment applier above it is entered. What is missing is *data*: nothing calls `EquipSession::with_weapon_category`, so the table is always empty and the closure short-circuits before the body. Wiring it needs the PROT 0899 category table reachable from `build_equip_session`, the prerequisite the window-descriptor table already has. |
 
 Three of these name routines that are heavily used on the disc, so the gap is a
 port that is not reached rather than a port of dead code. A five-form
@@ -325,27 +363,63 @@ installs. Wiring it would be a provable identity, which is worse than the gap.
 Wired, and reached in real play on a host the ladder harness cannot execute.
 The composition ladder converted the rows whose host is the browser *play
 page* (the shop panel kernels, the fishing prize rows, the demo tile board);
-what remains here is reached only on the native window, on the standalone
-browser minigame pages, or on the browser cards page - hosts still outside the
-union.
+`w5_native_minigame_ladder` converted the rows whose host is the native
+window. What remains here is reached only on the standalone browser minigame
+pages or on the browser cards page - hosts still outside the union - or needs
+a game state no ladder puts the world in.
 
 | group | n | addresses | host |
 |---|---|---|---|
-| `dance.rs` (HUD + banner) | 7 | `801d231c` `801d3e28` `801d32f8` `801d2524` `801d2d98` `801d2f38` `801d387c` | native `window/hud.rs`, `window/minigames.rs`, `window/minigame_fx.rs` |
-| `fishing_chrome.rs` | 6 | `801d03b0` `801d78c0` `801d74b0` `801d7a5c` `801d70ec` `801d7c30` | native `window/minigames.rs`, `window/hud.rs` |
-| `fishing_actors.rs` | 4 | `801d2050` `801d765c` `801d2278` `801d4948` | native fishing block |
-| `baka_fighter.rs` (digit strips) | 3 | `801d6a18` `801d6f44` `801d69e4` | native `window/hud.rs` - keyboard-only entry, see below |
 | `save_select.rs` (card directory) | 3 | `801e1208` `801e3af0` `801e3ba0` | browser `web-viewer::cards` |
-| `minigame_floor.rs` | 2 | `801d2a10` `801d6028` | native `window/minigames.rs` |
 | `dance.rs` (sting + clip gate) | 2 | `801d3d78` `801d4098` | browser dance page |
 | `pause_screens.rs` / `save_select.rs` (panel modes) | 2 | `801d6a54` `801e3f74` | both rendering hosts |
-| `fishing.rs` (prize row remainder) | 1 | `801d092c` | the one prize-row kernel the play page's venue read does not fold |
-| `shop.rs` (panel kernel remainder) | 1 | `801d5510` | native menu draw path |
+| `shop.rs` (panel kernel remainder) | 1 | `801d5510` | browser play page only - **not** the native window; see below |
 | `baka_fighter.rs` (widget quad) | 1 | `801d5ed0` | browser `minigames_baka`, deliberately one-host |
-| `dance_tutorial.rs` | 1 | `801d0750` | native tutorial run |
-| `slot_machine.rs` | 1 | `801e6f70` | native casino entry |
-| `dialog.rs` | 1 | `80038050` | native keyboard handler |
-| `cutscene.rs` | 1 | `801cea3c` | native `run` subcommand |
+| `dialog.rs` | 1 | `80038050` | native keyboard handler, behind a live option-picker conversation |
+| `cutscene.rs` | 1 | `801cea3c` | the `play` subcommand's post-FMV hand-off |
+
+`801d5510`'s host column was wrong and is corrected here, because the wrong
+one named a fixture that cannot exist. `shop_buy_quantity_panel` has exactly
+one caller in the workspace - `web-viewer::play_shop::buy_quantity_panel_draws`
+- and the native window's descriptor draw path (`window/shop_windows.rs`
+paints windows 32 / 33 / 34 / 37) has no buy-side block at all. So no native
+ladder can reach it however it drives the shop; what would reach it is the
+composition ladder driven to the buy-quantity phase, and what would close the
+host gap is a native window-35 painter.
+
+The two remaining native rows both need a game state rather than an entry
+point. `80038050` is the inline-dialogue option picker, reachable from the
+keyboard handler (and now scriptable) but only while a conversation with a
+*menu* is open - a scripted walk-and-talk to a specific branching NPC, which
+is a scene-content fixture rather than a harness one. `801cea3c` is the
+post-FMV hand-off in the `play` subcommand's cutscene arm, which fires only
+when the field VM triggers an FMV; a 1200-frame headless run of the prologue
+scene never reaches one, so the fixture needs a scene + story state that does.
+
+### Converted by `w5_native_minigame_ladder`
+
+Everything the native window paints for a minigame. Each was dark for the same
+reason - `--pad-script` cannot open a surface the keyboard handler owns - and
+all of it executes under one ladder now.
+
+| group | n | addresses | what runs it |
+|---|---|---|---|
+| `dance.rs` (HUD + banner) | 7 | `801d231c` `801d3e28` `801d32f8` `801d2524` `801d2d98` `801d2f38` `801d387c` | `40:K`, then judged face-button presses |
+| `fishing_chrome.rs` | 6 | `801d03b0` `801d78c0` `801d74b0` `801d7a5c` `801d70ec` `801d7c30` | `40:L` + a cast; the venue panel needs `P` |
+| `fishing_actors.rs` | 4 | `801d2050` `801d765c` `801d2278` `801d4948` | the same run's wander / line / celebration actors |
+| `minigame_floor.rs` | 2 | `801d2a10` `801d6028` | the fishing venue's floor solve |
+| `baka_fighter.rs` (digit strips) | 3 | `801d6a18` `801d6f44` `801d69e4` | a duel played to a **player win** - a lost match installs no tally and two of the three stay dark |
+| `dance_tutorial.rs` | 1 | `801d0750` | `40:U`, the Disco King how-to |
+| `slot_machine.rs` | 1 | `801e6f70` | `40:O` - the empty coin bank sends the entry through the exchange counter |
+| `fishing.rs` (prize row remainder) | 1 | `801d092c` | a **committed** prize purchase; the panel alone stops one gate short |
+| `bin/.../window/field_render.rs` | 1 | `8001ada4` | any spawned `play-window` frame loop |
+
+Two of these are worth reading as a pattern rather than as rows. `801d6a18` /
+`801d6f44` and `801d092c` were not blocked by the entry at all - the duel HUD
+and the prize panel were both plainly on screen while they stayed dark, because
+the drawers sit behind a *won* match and the cap behind an *afforded* row. A
+rung that reaches the screen is not a rung that reaches the code on it, and a
+screenshot cannot tell the two apart.
 
 ### NO-LADDER, content not driven
 
@@ -394,15 +468,61 @@ save or a longer spine, not a pad stream.
 
 | group | n | addresses | gate |
 |---|---|---|---|
-| `field_actor_program.rs` | 2 | `801d4a60` `801d5a24` | the `MAN_LOAD_RESUME` story flags that arm the four voice-over programs |
 | `world/battle/casting.rs` | 2 | `801dd4b0` `801dd6b4` | a capture-class boss cast. The gate now has a seeded oracle - `world/tests/battle_capture_class_disc.rs` folds Guilty Cross / Neo Star Slash off the real spell + move-power tables and pins the folded damage to each wrapper's own roll - but no pad ladder seeds a boss encounter, so the rows stay |
-| `world/vm_hosts.rs` | 1 | `801d2d38` | system flag `0xD`, the three-actor talk lock |
-| `world/battle/monster_ai.rs` | 1 | `801e7320` | a monster whose `field_flags & 0x380` is set |
-| `world/field_movement.rs` | 1 | `801d2404` | a scene with a ledge-hop trigger |
 | `world/battle/capture.rs` + `battle_formulas/victory.rs` | 1 | `801e70bc` | a party member **casting a Seru summon spell**. `accrue_summon_spell_xp` fires only under `is_party_summon_cast` (`world/battle/casting.rs`), and a new-game party knows no Seru magic, so no from-boot pad stream reaches it; `seru_cast_magic_xp_ladder` seeds the spell and is outside `CANONICAL_LADDERS` |
 | `magic_xp.rs` | 1 | `801e92dc` | a battle that **captures a Seru**. `learn_spell_prepend` is the record-side commit of `seru_learning::record_capture`'s accepted learns, so the fight has to seat a monster carrying a `seru_id` and the capture roll has to take - one gate deeper than the summon-cast row above |
 
-Three former rows of this table converted. The `town01` opening naming prompt
+#### Four rows converted by seeding the gate
+
+Each of these was reachable in retail and unreachable from a cold-boot pad
+stream, and each is now driven by a fixture that writes exactly the one piece
+of state the gate *is* and then runs the ordinary engine path. All four are in
+`CANONICAL_LADDERS`.
+
+- `field_actor_program.rs` (`801d4a60` `801d5a24`) - the `MAN_LOAD_RESUME`
+  flags. `l3_scripted_scene_program_gate` sets system flag `0x17` / `0x0C` and
+  loads a scene, which is what the flag means in retail (an opener ran and its
+  closer did not), then steps the program the loader seats.
+- `world/vm_hosts.rs` (`801d2d38`) - the three-actor talk. Its one shipped
+  carrier is a `43 02` in `nilboa`; `l3_gated_field_arms_disc` finds it by
+  disassembling the scene corpus and executes that record.
+- `world/battle/monster_ai.rs` (`801e7320`) - the confuse-class target
+  resolver. `l3_confused_monster_target_gate` lands Confuse on a monster and
+  drives the fight, contrasting against an unconfused monster in the same
+  battle so "it targeted the party band" cannot pass vacuously.
+- `world/field_movement.rs` (`801d2404`) - the ledge hop. No fixture was
+  needed: `field_ledge_hop_disc` already walked the player into a real
+  `town01` ledge and verified the whole arc, and the row survived only because
+  that test was not in the union.
+
+Driving them surfaced three things the addresses alone do not show.
+
+The step function's `NOT WIRED:` disclosure overstates its own blocker: of the
+three BGM-gated states it names, `0x02` belongs to program 0 - an *opener*,
+which the loader never spawns - and `0x19` gates on the CD-XA counter the same
+disclosure says is not a blocker. Program 3 reads no BGM field at all.
+
+`FUN_801D27E0`, retail's talk **controller**, is unported, and it is what ends
+a three-actor talk (`0x801D2AE4..0x801D2B20` restores the party count and the
+leader byte; the lock `0xD` drops with it). So in the port `43 02` is a
+one-way door: the story party stays collapsed to its leader for the session.
+
+**Confusion changes nothing about where damage lands**, on either side, and no
+assertion on the target byte could see it. The resolver rewrites `+0x1DD` onto
+the caster's own band correctly - and then
+`World::resolve_attack_target` (`world/battle/loop_driver.rs`) clamps an armed
+target to the *opposing* side, so the rewritten value fails the range test and
+the swing falls back to `first_living_opponent_of`. Retail has no such clamp
+(`FUN_801EC3E4` resolves against whatever the action SM left in `+0x1DD`); the
+side range is a port-side safety net that should apply only to an unset or
+dead target.
+
+Each of the last two ships an `#[ignore]`d repro asserting the correct
+behaviour - `a_three_actor_talk_eventually_gives_the_party_back` and
+`the_retarget_lands_the_damage_on_an_ally_not_on_the_party`. Neither
+certifies the defect; both fail when run.
+
+Three older rows of this table converted. The `town01` opening naming prompt
 (`801f03f0`) left through the composition ladder, whose opening rung drives
 the prompt to its commit instead of booting past it. `battle_status_clut.rs`
 (`8004ce2c`) was gated on "a Stone landed on an actor", and no gameplay path
@@ -464,13 +584,10 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | `code_lock_actor.rs` | 1 | (c) | disclosed | `801eed58` |
 | `dev_equip_commit.rs` | 1 | (a) | dev-menu | `801e5a08` |
 | `effect_vm/pool.rs` | 1 | (a) | field-actors | `801de914` |
-| `escape_timer.rs` | 1 | (b) | timed-flags scene | `801d2ebc` |
-| `field_ledge_hop_arc.rs` | 1 | (b) | ledge-hop | `801d2298` |
 | `field_party_cursor.rs` | 1 | (c) | disclosed | `801f1278` |
 | `lib.rs` | 7 | (c) | **actor VM** (pseudo-entered - see the attribution note above) | `800319a8` `800326ac` `80035334` `800357fc` `80035978` `80035a4c` `801d6628` |
 | `scus_battle_helpers.rs` | 2 | (c) | disclosed | `80046978` `80055854` |
 | `scus_core_helpers.rs` | 5 | (c) | disclosed | `8001fa68` `800203ec` `80020424` `80020454` `800204a4` |
-| `travel_art_actor.rs` | 2 | (b) | quick-travel | `801ee094` `801ee328` |
 | `world_map.rs` | 1 | (a) | world-map | `801e3e00` |
 | `world_map_clut_fade.rs` | 1 | (a) | world-map | `801e4d8c` |
 | `world_map_dim.rs` | 1 | (a) | world-map | `801e75dc` |
@@ -500,13 +617,38 @@ VAs with no engine channel), and `801dba90` is a retail-dead entry point whose
 instruction-identical twin (`FUN_801D8DE8` case `0x59`) is the wired one -
 none of that is a "spirit-cast" gate.
 
-`escape_timer.rs` is kept but its gate was misnamed: `FUN_801D2EBC` is the
-field-VM `4C D3` scripted countdown (chitei2's collapsing-dungeon clock), not
-the battle flee. Fleeing a battle runs the action SM's run band and the
-`FUN_801E791C` roll, both ladder-covered
-(`crates/engine-core/tests/battle_flee_ladder.rs`); what no ladder reaches is
-a *scene* whose script arms the timed-flags countdown. The world-tick join is
-oracle-covered (`escape_timer_world`, `w2_timed_flag_scheduler_chain`).
+Three (b) rows converted by seeding their gate, all now in
+`CANONICAL_LADDERS`:
+
+- `escape_timer.rs` (`801d2ebc`). Its gate was misnamed once and the name has
+  already misled: `FUN_801D2EBC` is the field-VM `4C D3` scripted countdown,
+  not the battle flee (that is the action SM's run band plus the
+  `FUN_801E791C` roll, both covered by `battle_flee_ladder`). What no ladder
+  reached was a *scene* whose script arms it. `l3_gated_field_arms_disc`
+  disassembles the corpus for `4C D3` and drives every carrier it finds
+  through `World::tick`: nine sites across `taiku`, `map03` and `chitei2`,
+  five of them writing a zero duration (retail's own "leave it disarmed"
+  case). The armed ones carry durations `2400`, `21600` and `35999`, so the
+  fixture drives short carriers to expiry and long ones far enough to pin the
+  readout and the ink band.
+- `field_ledge_hop_arc.rs` (`801d2298`), with its `engine-core` sibling
+  `801d2404`. No fixture was needed - `field_ledge_hop_disc` already drove a
+  real `town01` ledge end to end and was simply outside the union.
+- `travel_art_actor.rs` (`801ee094` `801ee328`). Both `PORT:` tags sit on one
+  function, and `w1d_world_map_render_ladder` was already reaching it through
+  the sub-list picker's row-1 hand-off. `l3_travel_art_visited_gate` covers
+  what that ladder cannot: the scan **miss** arm (retail's `"UNFIND MAP
+  NUMBER"` park), a multi-record visited table, and both handlers' dwell
+  pairs. Two findings came with it. The Rula binding does not exist - the
+  hand-off in `world/worldmap.rs` hard-codes `TravelArt::Riremito`, so
+  `801ee328`'s constants have no production installer, only the panel host's
+  `install`. And the visited table can never hold more than one record:
+  `tick_world_map_panels` passes `visited.last().map_id` as the map id, so it
+  reads its own output and every kingdom the party crosses updates record `0`
+  in place. `WorldMapController::entry_fade.kingdom_index` is the value that
+  write wants. Repro:
+  `each_kingdom_crossed_gets_its_own_visited_record`, `#[ignore]`d because it
+  asserts the correct behaviour and fails today.
 
 The world-map cluster splits three ways and the split is worth keeping: the
 `dev-menu` rows sit behind a host hotkey a pad ladder cannot press, the
@@ -686,9 +828,13 @@ and the memory-card round-trip oracle.
 | `bin/legaia-engine/window/field_render.rs` | 1 | (a) | native-bin | `8001ada4` |
 | `xa_clip.rs` | 1 | (a) | arts-swing | `8003d53c` |
 
-The ocean-animation row is the worked example of the `bin/` exclusion above: it
-has a disc-gated oracle of its own (`ocean_anim_real`), and no `#[test]` can
-enter the module it is tagged in.
+The ocean-animation row was the worked example of the `bin/` exclusion above,
+and it is now the worked example of what that exclusion actually bounds. It
+has a disc-gated oracle of its own (`ocean_anim_real`), no `#[test]` can
+*enter* the module it is tagged in - and `w5_native_minigame_ladder` covers it
+several thousand times per run, because `advance_ocean_animation` is on the
+window's per-tick path and a spawned `play-window` writes its own profile.
+"Unreachable by call" and "unreachable by coverage" were never the same claim.
 
 ### prot
 
@@ -827,11 +973,19 @@ a bank would have read as "the arts-voice selector ran".
 | gate | rows | what has to happen |
 |---|---|---|
 | slot-bonus | 5 | the casino slot machine's bonus round and its marquee |
-| quick-travel | 2 | a world-map quick-travel with at least one visited destination |
-| timed-flags scene | 1 | a scene whose script arms the `4C D3` countdown (chitei2) |
-| ledge-hop | 1 | a field ledge with a hop arc |
+| capture-class cast | 2 | a boss encounter seated with a capture-class caster |
+| summon cast / Seru capture | 2 | a party member who knows Seru magic, and a fight that lands a capture roll |
 
 The former spirit-cast (5 rows) and summon-cast (3 rows) gates opened with
 the item-band wiring and the summon-spawn ladder; the "battle-escape" gate
-was a misnomer for the timed-flags scene countdown - see the engine-vm
-section's conversion notes.
+was a misnomer for the timed-flags scene countdown.
+
+Four more gates closed the same way, and the pattern is worth naming: **a
+gate closes by seeding the one piece of state it is, not by waiting for a pad
+stream to earn it.** The `MAN_LOAD_RESUME` flags, the talk lock, the
+confuse-class bitfield, the `4C D3` scene, the ledge and the visited-map
+record are all one write each, and every one of them is a write the engine
+already makes somewhere. What a fixture must not do is invent the *content* -
+three of the six take their bytecode from the disc corpus through the field-VM
+disassembler, because a hand-built script proves the interpreter runs and not
+that any shipped scene reaches the arm.

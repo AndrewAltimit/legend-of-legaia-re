@@ -53,6 +53,26 @@ impl PlayWindowApp {
         let run_ticks = if self.cutscene.is_some() { 0 } else { ticks };
         for _ in 0..run_ticks {
             self.tick_no += 1;
+            // Scripted keyboard harness (`--key-script`): deliver this tick's
+            // keys through the real keyboard arms, press then release, before
+            // the pad injection below. Order matters both ways round: the key
+            // arms run first so a minigame entry is open for the rest of the
+            // tick, and the pad write lands after so a key that also binds to
+            // a pad button cannot leave a bit latched into `set_pad`.
+            let scripted_keys = self
+                .screenshot
+                .as_ref()
+                .map(|sc| {
+                    sc.key_script
+                        .get(&self.tick_no)
+                        .cloned()
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default();
+            for code in scripted_keys {
+                self.handle_key(code, ElementState::Pressed);
+                self.handle_key(code, ElementState::Released);
+            }
             // Screenshot harness: inject the scripted one-tick pad edge for
             // this tick (overriding keyboard). Ticks with no script entry get
             // a neutral pad so the previous press releases (edge resets).

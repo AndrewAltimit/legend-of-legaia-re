@@ -29,6 +29,10 @@ navigation logic depends on the GPU backend.
 - `battle_tutorial_box` - the sparring-tutorial prompt window: text rows at the
   emitter's measured rect plus that rect's window skin. Stage-space, so both
   hosts run it through their stage transform.
+- `text_balloon_box` - the `4C E1` **text balloon**: the line measurement the
+  engine's record needs (retail measures at spawn, the atlas is host-side),
+  plus the line and its fixed-width window skin. Geometry arrives from
+  `engine-core`, as for `battle_tutorial_box`.
 - `arts_input` - the **arts command-input** screen: the four direction chips
   and their D-pad glyph, the pennant input bar and its cost-weighted seat
   law, the AP plate, and the Triangle arts-list window. Retail runs one such

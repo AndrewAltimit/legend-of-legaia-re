@@ -98,6 +98,34 @@ impl SceneHost {
         self.monster_archive_cache.clone()
     }
 
+    /// Install the sparring-tutorial prompt corpus onto the world from PROT
+    /// entry 0967 (the battle-stage slot-B overlay), once per host.
+    ///
+    /// This is text only - it installs no arming. Whether the tutorial runs is
+    /// decided by the disc, at battle entry, from the system-flag arm
+    /// ([`crate::battle_tutorial::TUTORIAL_ARM_FLAG`]). Loading it here rather
+    /// than in a host is what keeps the two hosts on one model: neither has to
+    /// know the tutorial exists, and a host that forgot to read the corpus
+    /// used to be a host that could never show a prompt.
+    ///
+    /// A read/parse failure leaves an empty corpus, which arms normally and
+    /// resolves no box text, so a partial disc still plays the fight.
+    fn ensure_battle_tutorial_script(&mut self) {
+        if self.battle_tutorial_loaded {
+            return;
+        }
+        self.battle_tutorial_loaded = true;
+        let script = crate::battle_tutorial::BattleTutorialScript::from_prot(&self.index);
+        if script.is_empty() {
+            eprintln!(
+                "[scene] sparring-tutorial prompts (PROT {}) unreadable - the fight runs \
+                 without its boxes",
+                crate::battle_tutorial::OVERLAY_967_PROT_INDEX
+            );
+        }
+        self.world.set_battle_tutorial_script(script);
+    }
+
     /// Install the battle-action move-power table onto the world from PROT
     /// entry 0898 (the battle-action overlay), once per host. The monster
     /// special-attack damage path reads it to roll faithful per-move damage;
@@ -199,6 +227,11 @@ impl SceneHost {
     /// scripts or the record index is out of range.
     pub fn enter_field_scene(&mut self, name: &str, record_index: usize) -> Result<()> {
         self.load_scene(name)?;
+        // Sparring-tutorial prompt corpus (PROT 0967). Unconditional and
+        // scene-independent: the tutorial's trigger is a disc flag any scene's
+        // script could raise, so the text has to be resident before the first
+        // battle rather than gated on a scene name.
+        self.ensure_battle_tutorial_script();
         // Free-roam picker staging: every scene entered while staging is on
         // re-arms the entry window the BGM pause-drop measures against (a
         // door walked through in free roam runs the next scene's entry

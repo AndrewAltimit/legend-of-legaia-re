@@ -617,9 +617,16 @@ class RustSource:
         Returns `(kind, name, item_line)` where kind is one of `fn` / `struct` /
         `enum` / `union` / `trait` / `impl`, or `None` if the next code line is
         not an item header (a `let`, a `use`, a match arm - a loose tag).
+
+        The forward walk is unbounded because it already stops at the first line
+        that is neither a comment nor an attribute, so only an unbroken run of
+        comment lines can extend it. Bounding that run demotes the anchor to
+        module scope, and the runs that grow longest are exactly the thorough
+        `NOT WIRED:` disclosures - so a bound makes a careful disclosure report
+        itself as wired, via whatever sibling in the module a ladder did run.
         """
         lines = self.raw.splitlines()
-        for offset in range(line, min(line + 60, len(lines))):
+        for offset in range(line, len(lines)):
             raw_line = lines[offset]
             if COMMENT_OR_ATTR_RE.match(raw_line):
                 continue

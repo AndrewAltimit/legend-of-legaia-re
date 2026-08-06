@@ -101,34 +101,33 @@ fn equip_confirm_preview_matches_the_picked_row() {
 }
 
 /// The Items screen's Use-list confirm routes through the ported
-/// effect-class dispatch (`FUN_801D7E50`): the Door of Light / Incense
-/// classes open their own confirm window, the Door of Wind class does not
-/// (it is a destination list), and an ordinary item stays on the target
+/// effect-class dispatch (`FUN_801D7E50`): each of the three special
+/// classes opens its own screen, and an ordinary item stays on the target
 /// flow.
 #[test]
 fn use_list_confirm_routes_through_the_effect_class_dispatch() {
     use legaia_engine_core::pause_screens::{
         DOOR_OF_LIGHT_ITEM_ID, DOOR_OF_WIND_ITEM_ID, INCENSE_ITEM_ID, UseRoute,
-        special_confirm_route_for_item, use_route_for_effect,
+        special_use_route_for_item, use_route_for_effect,
     };
 
     assert_eq!(
-        special_confirm_route_for_item(DOOR_OF_LIGHT_ITEM_ID),
+        special_use_route_for_item(DOOR_OF_LIGHT_ITEM_ID),
         Some(UseRoute::DoorOfLight)
     );
     assert_eq!(
-        special_confirm_route_for_item(INCENSE_ITEM_ID),
+        special_use_route_for_item(INCENSE_ITEM_ID),
         Some(UseRoute::Incense)
     );
-    // Door of Wind has a route but not a confirm window.
-    assert_eq!(special_confirm_route_for_item(DOOR_OF_WIND_ITEM_ID), None);
+    // Door of Wind routes too - to the destination list rather than a
+    // Yes/No window. Dropping it here is what made submenu 0xC unreachable.
     assert_eq!(
-        use_route_for_effect(0x81, 0),
-        UseRoute::DoorOfWind,
-        "the dispatch still knows the class even though the wrapper filters it"
+        special_use_route_for_item(DOOR_OF_WIND_ITEM_ID),
+        Some(UseRoute::DoorOfWind)
     );
+    assert_eq!(use_route_for_effect(0x81, 0), UseRoute::DoorOfWind);
     // An ordinary bag id has no special class at all.
-    assert_eq!(special_confirm_route_for_item(0x01), None);
+    assert_eq!(special_use_route_for_item(0x01), None);
 }
 
 /// Retail's `TestEvent` consumes the event it tests, so the session's

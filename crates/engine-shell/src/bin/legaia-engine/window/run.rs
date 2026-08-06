@@ -488,11 +488,6 @@ pub(super) fn cmd_play_window_with_record(
     // a player-driven battle is requested but the boot save carries no items /
     // saved chains, seed a couple so the Item / Arts submenus are exercisable
     // by hand. No-ops when the save already has inventory / chains.
-    // Sparring tutorial: prime the in-battle "how to fight" prompt machine
-    // (stage overlay 967) for the next battle. Retail arms it off the battle's
-    // stage id, which only the Tetsu fight in `town01` carries; the engine has
-    // no per-formation stage id yet, so the scene stands in. `LEGAIA_BATTLE_TUTORIAL`
-    // forces / suppresses it (`1` / `0`) for hand-testing in any scene.
     // Battle chip / banner labels off the user's own disc: the `Ambushed!` and
     // `surprised the enemy` lines, `Spirit`, `Escape` and the per-character
     // Ra-Seru magic-command name. Empty on a partial extraction, in which case
@@ -504,58 +499,86 @@ pub(super) fn cmd_play_window_with_record(
         session.host.world.battle_ui_strings = strings;
         log::info!("play-window: battle UI labels read off the disc ({n} string(s))");
     }
+    // Sparring tutorial: nothing to gate here.
+    //
+    // The prompt corpus (stage overlay 967) is installed by scene entry for
+    // every host, and the arming is the disc's own one-shot system-flag test
+    // consumed in `World::enter_battle` - the port of the entity SM's
+    // battle-entry tail (`FUN_801DA51C`, `0x801DA698..0x801DA6B0`). The flag
+    // is raised by town01's Tetsu record executing `50 19` two ops before its
+    // battle-entry op, so the tutorial fires in the fight retail fires it in
+    // and in no other, with no host cooperation at all.
+    //
+    // What used to be here - a `--player-battle` flag AND `scene == "town01"`
+    // AND an env var - was a development shim standing in for that condition,
+    // and it was one-host: nothing equivalent existed on the browser page, so
+    // the page drew tutorial boxes it could never be given.
+    //
+    // `LEGAIA_BATTLE_TUTORIAL` survives as a pure debug affordance, and each
+    // arm is a one-shot poke at the same flag rather than a mode:
+    //   `=0`     drop an arm the boot scene's script already raised,
+    //   `=1`     raise it, so the next battle in any scene is the tutorial,
+    //   `=now`   raise it AND drop straight into a fight.
+    // `=0` cannot stop a *later* script SET - suppressing that would mean
+    // adding a knob retail has no equivalent of.
     if player_battle {
-        let forced = std::env::var("LEGAIA_BATTLE_TUTORIAL").ok();
-        let want = match forced.as_deref() {
-            Some("0") => false,
-            Some(_) => true,
-            None => scene == "town01",
-        };
-        if want {
-            let script = legaia_engine_core::battle_tutorial::BattleTutorialScript::from_prot(
-                &session.host.index,
-            );
-            let n = script.len();
-            session.host.world.prime_battle_tutorial(script);
-            log::info!(
-                "play-window: sparring tutorial primed for the next battle ({n} prompt(s) off the disc)"
-            );
-            // `LEGAIA_BATTLE_TUTORIAL=now` drops straight into the sparring
-            // fight instead of waiting for a step-driven encounter, so the
-            // prompt boxes are reachable in one run. Debug affordance only -
-            // retail reaches this fight through the town01 story script.
-            if forced.as_deref() == Some("now") {
-                let world = &mut session.host.world;
-                let pc = world.party_count.clamp(1, 3);
-                world.enter_battle(pc, 1);
-                // Seed only the combatant slots - the field scene's other
-                // actors keep whatever the scene gave them.
-                for a in world.actors.iter_mut().take(pc as usize + 1) {
-                    if a.battle.max_hp == 0 {
-                        a.battle.max_hp = 100;
-                        a.battle.hp = 100;
-                    }
-                }
-                // Tag the monster seat with an id. `enter_battle` only seats
-                // actors; the id is what a step-driven encounter would have
-                // written from its resolved formation, and the whole battle
-                // RENDER path keys on it - `battle_monster_slots()` is empty
-                // without it, so `enter_battle_render` returns before it
-                // builds the stage backdrop or the ground grid. Without this
-                // the forced fight showed the field scene behind its HUD.
-                // `LEGAIA_BATTLE_TUTORIAL_MONSTER` picks the id.
-                let mid: u16 = std::env::var("LEGAIA_BATTLE_TUTORIAL_MONSTER")
-                    .ok()
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(1);
-                if let Some(a) = world.actors.get_mut(pc as usize) {
-                    a.battle_monster_id = Some(mid);
-                }
-                log::info!(
-                    "play-window: LEGAIA_BATTLE_TUTORIAL=now entered the sparring fight \
-                     (monster id {mid})"
-                );
+        match std::env::var("LEGAIA_BATTLE_TUTORIAL").ok().as_deref() {
+            Some("0") => {
+                // Drop the arm the field script may already have raised.
+                session
+                    .host
+                    .world
+                    .system_flag_clear(legaia_engine_core::battle_tutorial::TUTORIAL_ARM_FLAG);
+                log::info!("play-window: LEGAIA_BATTLE_TUTORIAL=0 suppressed the sparring arm");
             }
+            Some(forced) => {
+                session
+                    .host
+                    .world
+                    .system_flag_set(legaia_engine_core::battle_tutorial::TUTORIAL_ARM_FLAG);
+                let n = session.host.world.battle_tutorial_script.len();
+                log::info!(
+                    "play-window: LEGAIA_BATTLE_TUTORIAL forced the sparring arm for the next \
+                     battle ({n} prompt(s) off the disc)"
+                );
+                // `=now` drops straight into the sparring fight instead of
+                // waiting for a step-driven encounter, so the prompt boxes are
+                // reachable in one run. Retail reaches this fight through the
+                // town01 story script.
+                if forced == "now" {
+                    let world = &mut session.host.world;
+                    let pc = world.party_count.clamp(1, 3);
+                    world.enter_battle(pc, 1);
+                    // Seed only the combatant slots - the field scene's other
+                    // actors keep whatever the scene gave them.
+                    for a in world.actors.iter_mut().take(pc as usize + 1) {
+                        if a.battle.max_hp == 0 {
+                            a.battle.max_hp = 100;
+                            a.battle.hp = 100;
+                        }
+                    }
+                    // Tag the monster seat with an id. `enter_battle` only seats
+                    // actors; the id is what a step-driven encounter would have
+                    // written from its resolved formation, and the whole battle
+                    // RENDER path keys on it - `battle_monster_slots()` is empty
+                    // without it, so `enter_battle_render` returns before it
+                    // builds the stage backdrop or the ground grid. Without this
+                    // the forced fight showed the field scene behind its HUD.
+                    // `LEGAIA_BATTLE_TUTORIAL_MONSTER` picks the id.
+                    let mid: u16 = std::env::var("LEGAIA_BATTLE_TUTORIAL_MONSTER")
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(1);
+                    if let Some(a) = world.actors.get_mut(pc as usize) {
+                        a.battle_monster_id = Some(mid);
+                    }
+                    log::info!(
+                        "play-window: LEGAIA_BATTLE_TUTORIAL=now entered the sparring fight \
+                         (monster id {mid})"
+                    );
+                }
+            }
+            None => {}
         }
     }
 

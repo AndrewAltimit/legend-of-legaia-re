@@ -653,23 +653,27 @@ pub trait FieldHost {
         let _ = ctx;
     }
 
-    /// Op 0x43 sub-3/4/5/6 (sound register ramp).
+    /// Op 0x43 sub-3/4/5/6 (camera-register zone ramp).
     ///
-    /// 10-byte instruction `[43, sub_op, b1, b2, b3, b4, lo1, hi1, lo2, hi2]`.
-    /// Each sub-op picks a different 32-bit register slot:
+    /// 10-byte instruction
+    /// `[43, sub_op, x_lo, z_lo, x_hi, z_hi, s_lo, s_hi, e_lo, e_hi]`. Each
+    /// sub-op picks one of the four field **camera-configuration** registers:
     /// - sub-3 → `DAT_8007B618`
-    /// - sub-4 → `DAT_8007B614`
-    /// - sub-5 → `DAT_8007B60C`
+    /// - sub-4 → `DAT_8007B614` (eye-back depth)
+    /// - sub-5 → `DAT_8007B60C` (pitch)
     /// - sub-6 → `DAT_8007B610`
     ///
-    /// The original calls `func_0x8003C6A4(slot, 4, b1, b2, b3, b4, u16_a, u16_b)`
-    /// to schedule a 4-byte ramp from current value to (b1, b2, b3, b4) over
-    /// `u16_a` ticks with `u16_b` curve param.
+    /// The original calls
+    /// `func_0x8003C6A4(dest, 4, x_lo, z_lo, x_hi, z_hi, start, end)`
+    /// (`0x801DF6D4..0x801DF6EC`), spawning an actor whose `+0x0C` handler is
+    /// `FUN_80037018`: while the player stands inside the tile rectangle, the
+    /// register lerps from `start` to `end` on his **Z** position. Both
+    /// halfwords come through `FUN_8003CE9C` and are sign-extended.
     ///
-    /// The VM passes the sub-op verbatim so hosts pick the slot themselves.
-    /// PC += 10.
-    fn op43_sound_register_ramp(&mut self, sub_op: u8, bytes: [u8; 4], ticks: u16, curve: u16) {
-        let _ = (sub_op, bytes, ticks, curve);
+    /// The VM passes the sub-op verbatim so hosts pick the register
+    /// themselves. PC += 10.
+    fn op43_camera_register_ramp(&mut self, sub_op: u8, zone: [u8; 4], start: i16, end: i16) {
+        let _ = (sub_op, zone, start, end);
     }
 
     /// Op 0x43 sub-9 (explicit position, optional collision tween).

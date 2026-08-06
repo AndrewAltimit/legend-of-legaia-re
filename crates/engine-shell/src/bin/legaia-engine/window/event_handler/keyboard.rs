@@ -19,6 +19,20 @@ impl PlayWindowApp {
             evl.exit();
             return;
         }
+        self.handle_key(code, state);
+    }
+
+    /// Every key arm except the `Escape` quit, which is the only one that
+    /// needs the event loop.
+    ///
+    /// Split out so the `--key-script` harness can deliver the same events a
+    /// player's keyboard does without an `ActiveEventLoop` in hand: the
+    /// scripted injection runs inside the per-tick loop, where no winit event
+    /// is being dispatched. Everything reachable only from the keyboard - the
+    /// minigame entries, the fishing prize exchange, the dialogue option
+    /// picker - is therefore scriptable, which `--pad-script` alone cannot do
+    /// (it writes the pad word and this function never runs).
+    pub(super) fn handle_key(&mut self, code: KeyCode, state: ElementState) {
         // Dev affordance: spawn a debug effect marker at the player so
         // the effect-pool render bridge can be exercised by hand
         // before the runtime effect catalog is wired into battle-enter.
@@ -390,6 +404,21 @@ impl PlayWindowApp {
                     if world.fishing_exchange.is_some() {
                         world.close_fishing_exchange();
                     } else if let Some(venues) = &self.fishing_prize_venues {
+                        // Bank the LIVE session's points before opening the
+                        // counter. Retail credits its point pool
+                        // (`_DAT_8008444C`) as each catch lands, so the
+                        // counter spends what this session just earned; the
+                        // port credits `World::fishing_points` only inside
+                        // `exit_fishing`, and the counter is reachable only
+                        // while fishing is still active - so without this it
+                        // always reads the PREVIOUS session's total (0 on a
+                        // fresh world) and no row is ever affordable however
+                        // much the player caught. `fishing_exchange_buy`
+                        // pushes the spent total back into the session
+                        // record, so the round trip stays consistent.
+                        if let Some(points) = world.fishing.as_ref().map(|s| s.record().points) {
+                            world.fishing_points = points;
+                        }
                         world.open_fishing_exchange(venues[0].clone());
                     } else {
                         log::info!("fishing: no exchange tables decoded (disc-free run?)");

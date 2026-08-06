@@ -44,6 +44,21 @@ pub(crate) struct ScreenshotConfig {
     pub sweep: Option<ScreenshotSweep>,
     /// tick -> pad button mask pressed for exactly that tick.
     pub pad_script: std::collections::HashMap<u64, u16>,
+    /// tick -> window **keys** pressed (and released again) on exactly that
+    /// tick, in the listed order ([`Self::key_script`], `--key-script`).
+    ///
+    /// This is a different channel from [`Self::pad_script`], not a superset
+    /// of it, and the split is structural rather than stylistic. `pad_script`
+    /// writes the pad word directly and the keyboard handler never sees it;
+    /// several of the window's surfaces are reachable *only* from the
+    /// keyboard handler - every minigame entry (`K`/`U`/`L`/`O`/`M`/`B`), the
+    /// fishing prize exchange (`P` + arrows + Enter) and the inline-dialogue
+    /// option picker - so a pad-only script cannot open any of them. A
+    /// key-script entry is delivered as a press followed immediately by a
+    /// release, so a key that also maps to a pad button leaves no bit latched
+    /// and the engine tick never sees an edge from it: drive pad input with
+    /// `--pad-script`, dev/entry keys with this.
+    pub key_script: std::collections::HashMap<u64, Vec<KeyCode>>,
 }
 
 /// Periodic capture sweep for `play-window`: one PNG (`tick_%05d.png`) into
@@ -56,9 +71,14 @@ pub(crate) struct ScreenshotSweep {
 }
 
 impl ScreenshotConfig {
-    /// Parse the CLI flags into a config. `None` when neither `--screenshot`
-    /// nor `--screenshot-every` is present. Errors on an unparseable
-    /// `--pad-script` entry or a half-specified sweep.
+    /// Parse the CLI flags into a config. `None` when none of `--screenshot`,
+    /// `--screenshot-every` and `--key-script` is present. Errors on an
+    /// unparseable `--pad-script` / `--key-script` entry or a half-specified
+    /// sweep.
+    ///
+    /// `--key-script` alone is enough to build a config: it is the scripted
+    /// half of a capture run and dropping it silently when no PNG was asked
+    /// for would make a scripted run look like it simply did nothing.
     pub(crate) fn from_args(
         path: Option<std::path::PathBuf>,
         capture_tick: u64,
@@ -66,6 +86,7 @@ impl ScreenshotConfig {
         dir: Option<std::path::PathBuf>,
         last_tick: Option<u64>,
         pad_script: Option<&str>,
+        key_script: Option<&str>,
     ) -> Result<Option<Self>> {
         let sweep = match (every, dir) {
             (Some(every), Some(dir)) => {
@@ -79,7 +100,7 @@ impl ScreenshotConfig {
             (None, None) => None,
             _ => anyhow::bail!("--screenshot-every and --screenshot-dir must be set together"),
         };
-        if path.is_none() && sweep.is_none() {
+        if path.is_none() && sweep.is_none() && key_script.is_none() {
             return Ok(None);
         }
         let mut script = std::collections::HashMap::new();
@@ -117,13 +138,86 @@ impl ScreenshotConfig {
                 }
             }
         }
+        let mut keys: std::collections::HashMap<u64, Vec<KeyCode>> =
+            std::collections::HashMap::new();
+        if let Some(spec) = key_script {
+            for entry in spec.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                let (tick, key) = entry
+                    .split_once(':')
+                    .with_context(|| format!("key-script entry '{entry}' is not TICK:KEY"))?;
+                let code = key_from_name(key.trim())
+                    .with_context(|| format!("key-script key '{key}' is not a window key name"))?;
+                let t: u64 = tick
+                    .trim()
+                    .parse()
+                    .with_context(|| format!("key-script tick '{tick}' is not a number"))?;
+                keys.entry(t).or_default().push(code);
+            }
+        }
         Ok(Some(Self {
             path,
             capture_tick,
             sweep,
             pad_script: script,
+            key_script: keys,
         }))
     }
+}
+
+/// Window key name -> winit `KeyCode`, the inverse of [`keycode_to_name`] over
+/// the whole physical-key surface `play-window` listens on (not just the
+/// pad-bindable subset that function covers).
+///
+/// Names are case-insensitive. Every dev / entry key the window's keyboard
+/// handler tests for is a plain letter, so the letter rows are what make
+/// `--key-script` able to open a minigame at all.
+fn key_from_name(name: &str) -> Option<KeyCode> {
+    Some(match name.trim().to_ascii_uppercase().as_str() {
+        "UP" => KeyCode::ArrowUp,
+        "DOWN" => KeyCode::ArrowDown,
+        "LEFT" => KeyCode::ArrowLeft,
+        "RIGHT" => KeyCode::ArrowRight,
+        "ENTER" | "RETURN" => KeyCode::Enter,
+        "SPACE" => KeyCode::Space,
+        "RSHIFT" => KeyCode::ShiftRight,
+        "A" => KeyCode::KeyA,
+        "B" => KeyCode::KeyB,
+        "C" => KeyCode::KeyC,
+        "D" => KeyCode::KeyD,
+        "E" => KeyCode::KeyE,
+        "F" => KeyCode::KeyF,
+        "G" => KeyCode::KeyG,
+        "H" => KeyCode::KeyH,
+        "I" => KeyCode::KeyI,
+        "J" => KeyCode::KeyJ,
+        "K" => KeyCode::KeyK,
+        "L" => KeyCode::KeyL,
+        "M" => KeyCode::KeyM,
+        "N" => KeyCode::KeyN,
+        "O" => KeyCode::KeyO,
+        "P" => KeyCode::KeyP,
+        "Q" => KeyCode::KeyQ,
+        "R" => KeyCode::KeyR,
+        "S" => KeyCode::KeyS,
+        "T" => KeyCode::KeyT,
+        "U" => KeyCode::KeyU,
+        "V" => KeyCode::KeyV,
+        "W" => KeyCode::KeyW,
+        "X" => KeyCode::KeyX,
+        "Y" => KeyCode::KeyY,
+        "Z" => KeyCode::KeyZ,
+        "0" => KeyCode::Digit0,
+        "1" => KeyCode::Digit1,
+        "2" => KeyCode::Digit2,
+        "3" => KeyCode::Digit3,
+        "4" => KeyCode::Digit4,
+        "5" => KeyCode::Digit5,
+        "6" => KeyCode::Digit6,
+        "7" => KeyCode::Digit7,
+        "8" => KeyCode::Digit8,
+        "9" => KeyCode::Digit9,
+        _ => return None,
+    })
 }
 
 /// Write a [`CaptureImage`] (RGBA8, row-major) to a PNG file. Used by the
@@ -1261,6 +1355,74 @@ fn keycode_to_name(code: KeyCode) -> &'static str {
         KeyCode::Digit1 => "1",
         KeyCode::Digit2 => "2",
         _ => "",
+    }
+}
+
+#[cfg(test)]
+mod key_script_tests {
+    use super::{ScreenshotConfig, key_from_name};
+    use winit::keyboard::KeyCode;
+
+    /// Every key the window's own handler tests for has to be nameable, or
+    /// `--key-script` silently cannot reach that arm.
+    ///
+    /// The minigame entries are the reason this exists: they are the only way
+    /// into the dance / fishing / casino / dome / duel surfaces, `--pad-script`
+    /// cannot open any of them, and a missing name here fails as "the script
+    /// parsed but nothing happened" rather than as an error.
+    #[test]
+    fn every_minigame_entry_key_is_nameable() {
+        for (name, want) in [
+            ("K", KeyCode::KeyK),
+            ("U", KeyCode::KeyU),
+            ("L", KeyCode::KeyL),
+            ("P", KeyCode::KeyP),
+            ("O", KeyCode::KeyO),
+            ("M", KeyCode::KeyM),
+            ("B", KeyCode::KeyB),
+            ("Down", KeyCode::ArrowDown),
+            ("Enter", KeyCode::Enter),
+        ] {
+            assert_eq!(key_from_name(name), Some(want), "key name '{name}'");
+            assert_eq!(
+                key_from_name(&name.to_lowercase()),
+                Some(want),
+                "key names are case-insensitive"
+            );
+        }
+        assert_eq!(key_from_name("NotAKey"), None);
+    }
+
+    /// `--key-script` alone builds a config. Returning `None` unless a PNG was
+    /// also asked for would drop the whole script, and a scripted run that
+    /// dropped its script looks exactly like one that had nothing to do.
+    #[test]
+    fn a_key_script_alone_is_enough_to_build_a_config() {
+        let cfg = ScreenshotConfig::from_args(None, 0, None, None, None, None, Some("40:L,40:P"))
+            .expect("parses")
+            .expect("a key script alone builds a config");
+        assert_eq!(
+            cfg.key_script.get(&40).map(Vec::as_slice),
+            Some([KeyCode::KeyL, KeyCode::KeyP].as_slice()),
+            "same-tick keys keep their listed order"
+        );
+        assert!(
+            ScreenshotConfig::from_args(None, 0, None, None, None, None, None)
+                .expect("parses")
+                .is_none(),
+            "no capture and no script is still no config"
+        );
+    }
+
+    /// An unparseable entry is an error, not a silently empty script.
+    #[test]
+    fn a_bad_key_script_entry_errors() {
+        for bad in ["40", "40:NotAKey", "x:L"] {
+            assert!(
+                ScreenshotConfig::from_args(None, 0, None, None, None, None, Some(bad)).is_err(),
+                "'{bad}' must not parse"
+            );
+        }
     }
 }
 

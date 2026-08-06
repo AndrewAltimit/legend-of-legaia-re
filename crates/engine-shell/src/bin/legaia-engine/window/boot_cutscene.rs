@@ -310,7 +310,7 @@ impl PlayWindowApp {
                 use legaia_engine_core::field_menu::{FieldMenuInput, FieldMenuOutcome};
                 use legaia_engine_core::field_menu_dispatch::{
                     FieldMenuSubsession, apply_arts_outcome, apply_equip_outcome,
-                    apply_inventory_outcome, apply_spell_outcome,
+                    apply_pause_items_outcome, apply_spell_outcome,
                 };
                 // The menu session is hosted by the BootSession (so headless
                 // drivers share it); if it vanished out from under the UI
@@ -349,7 +349,7 @@ impl PlayWindowApp {
                         let finished = sub.take().expect("sub was Some");
                         match finished {
                             FieldMenuSubsession::Items(s) => {
-                                apply_inventory_outcome(&s.inner, &mut self.session.host.world);
+                                let _ = apply_pause_items_outcome(&s, &mut self.session.host.world);
                             }
                             FieldMenuSubsession::Equip { session, char_slot } => {
                                 let _ = apply_equip_outcome(

@@ -559,8 +559,17 @@ impl PlayWindowApp {
                     .name
                     .clone()
                     .unwrap_or_else(|| format!("item {:#04x}", r.item_id));
+                // "sold" means the one-time bit is LATCHED, not "you cannot
+                // afford it right now". `avail` folds three independent
+                // refusals together (price, owned cap, latch), so reading it
+                // as the latch printed "sold" beside every unaffordable
+                // one-time prize on a fresh save - the row a player has never
+                // seen reads as the row they already bought. Ask the latch on
+                // its own by re-testing with the two other gates open.
+                let sold = r.is_one_time()
+                    && !ex.is_available(i, i32::MAX, 0, world.fishing_prizes_purchased);
                 let tag = if r.is_one_time() {
-                    if avail { "one-time" } else { "sold" }
+                    if sold { "sold" } else { "one-time" }
                 } else {
                     "each"
                 };

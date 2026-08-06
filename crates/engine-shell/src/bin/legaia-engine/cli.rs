@@ -908,6 +908,21 @@ pub(crate) enum Cmd {
         /// Right/...). Replaces `xdotool` for menu navigation.
         #[arg(long)]
         pad_script: Option<String>,
+        /// Scripted **keyboard** input: `TICK:KEY` pairs, comma-separated,
+        /// e.g. `--key-script "40:L,120:P,140:Down,160:Enter"`. Each entry
+        /// presses KEY and releases it on that same world tick, in the order
+        /// listed. KEY is a physical key name (letters `A`-`Z`, `Up`/`Down`/
+        /// `Left`/`Right`, `Enter`, `Space`, digits).
+        ///
+        /// This reaches what `--pad-script` cannot: `--pad-script` writes the
+        /// pad word and the keyboard handler never runs, but every minigame
+        /// entry (`K` dance, `U` dance how-to, `L` fishing, `O` casino slots,
+        /// `M` Muscle Dome, `B` Baka Fighter), the fishing prize exchange
+        /// (`P`) and the inline-dialogue option picker live in that handler.
+        /// Use `--pad-script` for pad buttons and this for everything else -
+        /// a key that also binds to a pad button leaves no bit held here.
+        #[arg(long)]
+        key_script: Option<String>,
         /// Seed the New Game starting party (Vahn from the SCUS template) at
         /// boot so the pause menu's Status / party screens show real content -
         /// name / LV / HP·MP / stat grid / XP - instead of an empty roster.

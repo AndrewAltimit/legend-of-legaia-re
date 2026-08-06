@@ -26,16 +26,59 @@ use crate::battle_flow::{ActiveTutorialBox, BattleFlowState, TUTORIAL_BOX_AUTO_F
 use crate::battle_tutorial::{BattleTutorial, BattleTutorialScript, TutorialLesson};
 
 impl World {
-    /// Stage the sparring tutorial: keep `script` and arm the machine at the
-    /// next [`World::enter_battle`].
+    /// Install the disc-read prompt corpus. Text only - this does **not** arm
+    /// anything, because in retail nothing about having the strings decides
+    /// whether the tutorial runs.
     ///
-    /// This is the engine's stand-in for retail's stage-overlay dispatch. There
-    /// the battle scene loader reads the stage id at `_DAT_8007B64A` and pages
-    /// overlay 967 into slot B when it is
-    /// [`crate::battle_tutorial::TUTORIAL_STAGE_ID`] - the one battle in the
-    /// catalogued library that does (see
-    /// [`crate::overlay_loader::battle_stage_overlay_entry`]). The engine has
-    /// no per-formation stage id yet, so the host decides and primes here.
+    /// Hosts call this once the PROT index is open (the engine does it at
+    /// scene entry via `SceneHost::ensure_battle_tutorial_script`), and the
+    /// arming then comes from the disc's own condition - see
+    /// [`Self::take_battle_tutorial_arm`]. A world with no script still arms
+    /// normally; it just resolves no box text and so shows nothing.
+    pub fn set_battle_tutorial_script(&mut self, script: BattleTutorialScript) {
+        self.battle_tutorial_script = script;
+    }
+
+    /// Retail's own sparring-tutorial condition, consumed at battle entry.
+    ///
+    /// Tests [`crate::battle_tutorial::TUTORIAL_ARM_FLAG`] in the system-flag
+    /// bank and, when it is set, clears it and reports the armed stage. The
+    /// clear is what makes the tutorial fire for exactly one battle - the same
+    /// `TEST` / `CLEAR` pair the entity SM's battle-entry tail runs before it
+    /// writes the stage-id byte `_DAT_8007B64A`.
+    ///
+    /// The flag itself is set by the field VM executing town01's Tetsu record
+    /// (`50 19`, two ops before its `3E FF` battle-entry op), so this needs no
+    /// host cooperation: any host that runs the field VM and enters battles
+    /// gets the tutorial in the same fight retail does, and no other.
+    ///
+    /// The tail's arithmetic itself lives in
+    /// [`crate::battle_tutorial::stage_id_at_battle_entry`], which carries the
+    /// `PORT` anchor; this is its live consumption site.
+    ///
+    /// REF: FUN_801DA51C (`0x801DA698..0x801DA6B0`)
+    pub fn take_battle_tutorial_arm(&mut self) -> bool {
+        use crate::battle_tutorial::{
+            TUTORIAL_ARM_FLAG, TUTORIAL_STAGE_ID, stage_id_at_battle_entry,
+        };
+        let armed = self.system_flag_test(TUTORIAL_ARM_FLAG);
+        // Retail writes the stage id unconditionally (0 in the delay slot) and
+        // only overwrites it on the set arm; going through the same resolver
+        // keeps the "which stage overlay" question in one place.
+        if stage_id_at_battle_entry(armed) != TUTORIAL_STAGE_ID {
+            return false;
+        }
+        self.system_flag_clear(TUTORIAL_ARM_FLAG);
+        true
+    }
+
+    /// Force the sparring tutorial onto the next [`World::enter_battle`],
+    /// regardless of the disc condition, and install `script`.
+    ///
+    /// This is a **debug affordance**, not the port of anything: it exists so
+    /// a host can reach the prompt machine in one run without playing to the
+    /// Tetsu spar. The faithful path is [`Self::take_battle_tutorial_arm`],
+    /// which needs nothing from the host.
     pub fn prime_battle_tutorial(&mut self, script: BattleTutorialScript) {
         self.battle_tutorial_script = script;
         self.battle_tutorial_pending = true;

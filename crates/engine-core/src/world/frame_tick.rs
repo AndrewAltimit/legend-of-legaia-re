@@ -18,6 +18,100 @@ impl World {
         self.play_time_seconds = self.play_time_seconds.saturating_add(delta_seconds);
     }
 
+    /// Commit a host font measurement of the live `4C E1` balloon's line, so
+    /// the record carries the centred `x` retail computes at spawn
+    /// (`X = (0x140 - width) >> 1`).
+    ///
+    /// Retail measures inside `FUN_8003C764` because its font metrics are in
+    /// the same address space; the engine's atlas is host-side, so the
+    /// measurement arrives from the draw layer instead
+    /// (`legaia_engine_ui::text_balloon_text_width`). Idempotent - the width
+    /// is committed once per balloon and a later call is ignored, which is
+    /// what keeps a host that measures every frame from re-centring a
+    /// balloon mid-life.
+    ///
+    /// Returns the pen to draw at, or `None` when no balloon is live.
+    ///
+    /// REF: FUN_8003C764 (`0x8003C7C0..0x8003C7DC`, the measure + centre)
+    pub fn commit_text_balloon_width(&mut self, text_width_px: i16) -> Option<(i32, i32)> {
+        let balloon = self.text_balloon.as_mut()?;
+        if balloon.x.is_none() {
+            balloon.center_with_width(text_width_px);
+        }
+        balloon.pen()
+    }
+
+    /// The live `4C E1` balloon's raw page bytes while it is past its startup
+    /// tick and still running - i.e. exactly the frames retail's handler
+    /// reaches `FUN_80036888`. `None` otherwise.
+    ///
+    /// The startup band (`timer < 1`) draws nothing in retail, so a host that
+    /// keys on `text_balloon.is_some()` shows the balloon one frame early.
+    pub fn text_balloon_drawing(&self) -> Option<&[u8]> {
+        let b = self.text_balloon.as_ref()?;
+        (!b.killed && b.timer >= 1 && b.timer < b.total).then_some(b.text.as_slice())
+    }
+
+    /// Run every live camera-register zone ramp (field-VM op `0x43`
+    /// sub-3..6) for one frame - the port of `FUN_80037018`'s per-actor tick,
+    /// driven off the player's world position.
+    ///
+    /// Retail runs one of these actors per spawned ramp off the effect-actor
+    /// list; the engine holds the records on [`World::register_ramps`] and
+    /// steps them here. What a tick writes lands in
+    /// [`World::camera_registers`], the four field camera-configuration
+    /// registers `0x8007B60C`/`B610`/`B614`/`B618`.
+    ///
+    /// Two retail gates come first, both inside
+    /// [`legaia_engine_vm::ambient_motion::zone_ramp_tick`]: the
+    /// player-engaged flag (`_DAT_8007C364[+0x10] & 0x80000`, host-substituted
+    /// by "a dialog engagement is live", the same substitution the `4C E1`
+    /// balloon uses) and the scratch system lock (`_DAT_1F800394 & 0x400`,
+    /// which has no engine counterpart and is passed clear).
+    ///
+    /// Nothing counts down in a zone ramp, so a record never completes - it
+    /// tracks the player and runs backwards when he walks back. Retail clears
+    /// them on the MAN loader's retire sweep, which is
+    /// [`World::reset_for_scene_entry`] here. Two arms do drop a record:
+    /// an out-of-range destination width (retail sets the actor's own
+    /// `+0x10 |= 8` yield bit instead of writing) and a degenerate `z_lo ==
+    /// z_hi` window (retail divides by the zero span and executes the MIPS
+    /// `break 0x1C00` trap - the port drops the record rather than reproducing
+    /// a CPU exception; no on-disc ramp is authored that way).
+    ///
+    /// REF: FUN_80037018
+    pub fn tick_register_ramps(&mut self) {
+        if self.register_ramps.is_empty() {
+            return;
+        }
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        let Some(actor) = self.actors.get(slot as usize) else {
+            return;
+        };
+        let (px, pz) = (actor.move_state.world_x, actor.move_state.world_z);
+        let engaged = self.dialogue_owns_input();
+        let mut writes: Vec<(crate::register_ramp::RampSlot, i32)> = Vec::new();
+        let mut retire: Vec<usize> = Vec::new();
+        for (i, ramp) in self.register_ramps.iter().enumerate() {
+            match ramp.tick(px, pz, engaged) {
+                legaia_engine_vm::ambient_motion::ZoneRampTick::Write { value, .. } => {
+                    writes.push((ramp.slot, value));
+                }
+                legaia_engine_vm::ambient_motion::ZoneRampTick::Retire
+                | legaia_engine_vm::ambient_motion::ZoneRampTick::DivideByZero => retire.push(i),
+                legaia_engine_vm::ambient_motion::ZoneRampTick::Idle => {}
+            }
+        }
+        for (slot, value) in writes {
+            self.camera_registers.set(slot, value);
+        }
+        for i in retire.into_iter().rev() {
+            self.register_ramps.remove(i);
+        }
+    }
+
     /// Arm the timed sound-source auto-release for `deadline` vsyncs
     /// (`gp+0x814`). [`Self::tick`] counts it down by the frame step.
     ///
@@ -556,6 +650,11 @@ impl World {
                 self.text_balloon = None;
             }
         }
+        // Run every live camera-register zone ramp (op `0x43` sub-3..6). Same
+        // position in the frame as the balloon above and for the same reason:
+        // both are `+0x0C` handlers on retail's one effect-actor list, and
+        // this is the one tick path all three hosts reach.
+        self.tick_register_ramps();
         // A minigame the player can enter must be one the player can leave.
         self.poll_minigame_escape();
         match self.mode {

@@ -117,21 +117,21 @@ pub fn parse_category_table(overlay: &[u8]) -> Result<Vec<CategoryEntry>> {
 /// - no match (or an empty table) scores `0`.
 // PORT: FUN_801DD0C0 (menu overlay; a0 = char_index, a1 = item_id, a2 = group)
 //
-// Wired, but inert at runtime, and the distinction matters - so this is
-// deliberately undisclosed, since a disclosure would be false. The call chain is real
-// and production-only: `LegaiaRuntime::play_menu_input` ->
+// Live on both hosts, and with real data. The chain is
+// `play_menu_input` / the native window's menu tick ->
 // `FieldMenuSubsession::tick_pad_edge` -> `EquipSession::input` ->
 // `EquipSession::best_equipment_now` -> the `weapon_category_score` closure ->
-// here, and its retail caller is the same Best-Equipment chooser
-// (`FUN_801CF88C`, ported as `crate::equip_session::best_equipment_candidates`).
+// here; its retail caller is the same Best-Equipment chooser (`FUN_801CF88C`,
+// ported as `crate::equip_session::best_equipment_candidates`).
 //
-// What is missing is *data*, not plumbing. No host calls
-// `EquipSession::with_weapon_category`, so `self.weapon_category` is always
-// empty and the closure's `if table.is_empty() { 0 }` arm short-circuits before
-// reaching this body. Supplying it needs the menu-overlay image kept where
-// `field_menu_dispatch::build_equip_session` can reach it - the same
-// prerequisite the window-descriptor table already has on the host side. The
-// parse is exercised by the disc-gated `menu_item_category_disc` test.
+// The table itself comes off the disc: `World::install_menu_overlay_tables`
+// runs [`parse_category_table`] over the PROT 0899 image both hosts already
+// hand it, and `field_menu_dispatch::build_equip_session` installs it plus the
+// party slot being edited. A build without the overlay leaves the table empty
+// and every score `0` - the routine's own empty-table arm, which is why the
+// regression that pins this
+// (`crates/engine-core/tests/l2_menu_data_wiring.rs`) scores the *picked
+// weapon* against that arm as its baseline rather than asserting the check ran.
 pub fn category_check(table: &[CategoryEntry], char_index: u32, item_id: u8, group: u32) -> u32 {
     let shift = char_index.wrapping_add(group.wrapping_mul(4)) & 0x1F;
     for entry in table {

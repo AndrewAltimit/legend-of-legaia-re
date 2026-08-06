@@ -23,7 +23,7 @@ use legaia_engine_audio::{AudioOut, Spu, SpuAllocator, VabBank};
 use legaia_engine_core::camera::Camera;
 use legaia_engine_core::field_menu::{FieldMenuGate, FieldMenuInput, FieldMenuSession};
 use legaia_engine_core::field_menu_dispatch::{
-    FieldMenuSubsession, apply_arts_outcome, apply_equip_outcome, apply_inventory_outcome,
+    FieldMenuSubsession, apply_arts_outcome, apply_equip_outcome, apply_pause_items_outcome,
     apply_spell_outcome, try_open_arts_editor,
 };
 use legaia_engine_core::input::PadButton;
@@ -870,6 +870,11 @@ impl BootSession {
             self.field_menu_sub = None;
             self.save_flow.reset();
             self.host.world.mode = self.field_menu_resume;
+            // A kind-`0x0D` entry context is a *standing* op-`0x49` park: the
+            // script halts on the instruction and keeps the menu gated until
+            // the player answers, and closing the menu under that gate is the
+            // answer. Twin of `play_menu_close` on the browser host.
+            self.host.world.release_menu_entry_context_park();
         }
     }
 
@@ -1003,7 +1008,7 @@ impl BootSession {
         let finished = self.field_menu_sub.take().expect("sub was Some");
         match finished {
             FieldMenuSubsession::Items(s) => {
-                apply_inventory_outcome(&s.inner, &mut self.host.world);
+                let _ = apply_pause_items_outcome(&s, &mut self.host.world);
             }
             FieldMenuSubsession::Equip { session, char_slot } => {
                 let _ = apply_equip_outcome(&session, char_slot, &mut self.host.world);

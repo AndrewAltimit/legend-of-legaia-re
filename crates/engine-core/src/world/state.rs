@@ -1136,11 +1136,18 @@ pub struct World {
     /// Renderers composite these 2D overlays above the scene.
     pub screen_fx_frame: crate::screen_fx::ScreenFxFrame,
 
-    /// Live 4-byte register-ramp records spawned by the field-VM op `0x43`
-    /// sub-3..6 (retail `FUN_8003C6A4` actors on the effect list). The
-    /// engine holds the parameterization; the per-frame interpolator handler
-    /// is untraced, so nothing ticks these yet. See [`crate::register_ramp`].
+    /// Live camera-register zone-ramp records spawned by the field-VM op
+    /// `0x43` sub-3..6 (retail `FUN_8003C6A4` actors on the effect list).
+    /// [`World::tick_register_ramps`] runs each one's `FUN_80037018` handler
+    /// against the player's position every field frame. See
+    /// [`crate::register_ramp`].
     pub register_ramps: Vec<crate::register_ramp::RegisterRamp>,
+
+    /// The four field camera-configuration registers
+    /// (`0x8007B60C`/`B610`/`B614`/`B618`) the ramps above write. Seeded to
+    /// [`crate::camera::CAMERA_ZONE_DEFAULTS`] on scene entry; consumed by
+    /// [`crate::camera::Camera::tick`].
+    pub camera_registers: crate::register_ramp::CameraRegisterFile,
 
     /// Noa dance (rhythm) minigame state. `Some` while `mode ==
     /// SceneMode::Dance`; the beat clock + hit judge run each tick. See
@@ -1532,6 +1539,36 @@ pub struct World {
     /// retail `FUN_801D6628`) interprets. `None` on a load without the
     /// overlay; the shop then opens without window choreography.
     pub menu_widget_scripts: Option<crate::menu_widget::MenuWidgetScripts>,
+
+    /// The menu overlay's weapon **category / favour** table (PROT 0899 VA
+    /// `0x801E4B88`, [`crate::menu_item_category::parse_category_table`]) -
+    /// the data `FUN_801DD0C0` walks and the Best-Equipment chooser scores
+    /// its weapon candidates against. Empty on a load without the overlay,
+    /// which is exactly the retail routine's empty-table arm (score 0 for
+    /// every weapon, so the pick falls back to raw ATK).
+    /// Installed by [`World::install_menu_overlay_tables`].
+    pub menu_item_category: Vec<crate::menu_item_category::CategoryEntry>,
+
+    /// The quick-travel landmark tables out of `SCUS_942.54`
+    /// (`DAT_80073A98` placement records + `DAT_80073B18` names,
+    /// [`legaia_asset::worldmap_menu`]). Installed by
+    /// [`World::install_menu_text`]; `None` on a PROT.DAT-only load, and
+    /// the pause menu's Door of Wind list is then empty rather than
+    /// invented. Also the world-map landmark menu's source.
+    pub worldmap_menu: Option<legaia_asset::worldmap_menu::WorldmapMenu>,
+
+    /// Destination staged by a committed **Door of Wind** pause-menu use -
+    /// retail's `0x80084624` / `0x80084628` / `0x8008462C` triple written
+    /// by `FUN_801D8B90` phase 3 right before it hands the outer menu SM
+    /// exit code [`crate::pause_screens::MENU_EXIT_CODE_WORLD_MAP_WARP`].
+    /// `None` until a warp commits; a host drains it to enter the world map
+    /// at that landmark.
+    pub pending_menu_warp: Option<crate::pause_screens::StagedWarp>,
+
+    /// Set by a committed **Door of Light** pause-menu use - retail's
+    /// `_DAT_8007B43C = 4` dungeon-escape handoff (`FUN_801D8A58`). `None`
+    /// until an escape commits.
+    pub pending_menu_escape: bool,
 
     /// The window list those programs drive
     /// ([`crate::menu_widget::MenuWidgetState`], the `vm::Host` impl).
@@ -2709,6 +2746,7 @@ impl World {
             screen_fx: Default::default(),
             screen_fx_frame: Default::default(),
             register_ramps: Vec::new(),
+            camera_registers: Default::default(),
             dance: None,
             dance_return_mode: SceneMode::Field,
             dance_last_judge: None,
@@ -2817,6 +2855,10 @@ impl World {
             menu_arrange_rank: None,
             menu_context_labels: Default::default(),
             menu_widget_scripts: None,
+            menu_item_category: Vec::new(),
+            worldmap_menu: None,
+            pending_menu_warp: None,
+            pending_menu_escape: false,
             menu_widgets: Default::default(),
             party_ability_mask: [0; crate::accessory_passives::ABILITY_WORDS],
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
@@ -3048,6 +3090,12 @@ impl World {
         self.cutscene_narration = None;
         self.cutscene_card = None;
         self.text_balloon = None;
+        // Camera-register zone ramps are scene content: retail's MAN loader
+        // retire sweep (`FUN_8003AEB0` at `0x8003B414`) is keyed on the ramp
+        // actor's own handler VA, and the zone-miss defaults are reinstalled
+        // by `FUN_801DBE9C`. Both happen on scene entry.
+        self.register_ramps.clear();
+        self.camera_registers = Default::default();
         self.prologue_naming_pending = false;
         self.prologue_naming_armed = false;
         self.entering_town01_opening = false;

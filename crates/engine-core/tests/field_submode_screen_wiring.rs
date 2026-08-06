@@ -167,9 +167,18 @@ fn the_three_dedicated_sub_ops_still_own_their_own_paths() {
     for s in [0u8, 3, 5] {
         assert_eq!(slot_for_op49_sub_op(s), None);
     }
+    // Sub-`0xD` opens nothing either, for a different reason: its row in
+    // retail's table is `-1` AND nothing else opens a screen for it, so the
+    // park has to stand as a menu-entry context. Opening the close tick for
+    // it - what this list used to assert - retires within a few frames and
+    // takes the context with it, which is why the kind-0xD notice panel and
+    // ready check were unreachable.
+    // See `field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS`.
+    assert_eq!(slot_for_op49_sub_op(0x0D), None);
     // Every other sub-op takes the handler retail's own table names
-    // (`0x801F33A4`); the two rows that name no handler (`1`, `7`, `0xD`)
-    // fall back to the slot a freshly spawned driver carries.
+    // (`0x801F33A4`); the two remaining rows that name no handler (`1`, `7`)
+    // fall back to the slot a freshly spawned driver carries, because retail
+    // routes each into a driver that does hand back.
     for (s, want) in [
         (1u8, slot::CLOSE_TICK),
         (2, 0x21),
@@ -181,7 +190,6 @@ fn the_three_dedicated_sub_ops_still_own_their_own_paths() {
         (0xA, 0x31),
         (0xB, slot::SUBMENU),
         (0xC, 0x33),
-        (0xD, slot::CLOSE_TICK),
     ] {
         assert_eq!(slot_for_op49_sub_op(s), Some(want), "sub-op {s:#x}");
     }

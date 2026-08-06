@@ -1264,12 +1264,18 @@ impl World {
         // Effect pool is reused across scenes - reset to a fresh instance
         // (per-battle the head/free-list rebuilds from scratch).
         self.effect_pool = vm::effect_vm::Pool::new();
-        // Sparring fight: arm the tutorial prompt machine, the engine's stand-in
-        // for retail paging stage overlay 967 in at battle load.
+        // Sparring fight: resolve the battle-stage id exactly as retail's
+        // battle-entry tail does - default 0, and raise it to the tutorial
+        // stage only when the disc's one-shot arm flag is set, consuming the
+        // flag. `battle_tutorial_pending` is the separate debug force
+        // (`World::prime_battle_tutorial`); both are evaluated so a forced
+        // fight still consumes an armed flag rather than leaving it to fire
+        // again on the next battle.
         self.battle_tutorial = None;
         self.battle_tutorial_boxes.clear();
         self.battle_flow = crate::battle_flow::BattleFlowState::Idle;
-        if self.battle_tutorial_pending {
+        let armed_by_disc = self.take_battle_tutorial_arm();
+        if self.battle_tutorial_pending || armed_by_disc {
             self.arm_battle_tutorial();
         }
     }

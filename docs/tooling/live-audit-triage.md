@@ -319,7 +319,7 @@ blocker is a table is the same error this page records for the panel painters.
 | `801d712c` | `select_owned_rod` | `crates/engine-core/src/fishing.rs:705` | FALSE INERT |
 | `801d8258` | `arm` | `crates/engine-core/src/world_map.rs:78` | DISCLOSE |
 | `801da9f8` | `OptionsPhase` | `crates/engine-core/src/options.rs:406` | FALSE INERT |
-| `801dd0c0` | `category_check` | `crates/engine-core/src/menu_item_category.rs:118` | DISCLOSE |
+| `801dd0c0` | `category_check` | `crates/engine-core/src/menu_item_category.rs` | WIRED |
 | `801e1208` | `classify_card_directory` | `crates/engine-core/src/save_select.rs` | WIRE |
 | `801e295c` | `advance_battle_mode` | `crates/engine-core/src/world/battle/monster_ai.rs:414` | WIRE |
 | `801e3af0` | `card_directory_scan` | `crates/engine-core/src/save_select.rs:398` | DISCLOSE |
