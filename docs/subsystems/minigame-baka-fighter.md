@@ -352,6 +352,17 @@ landing on its **final sub-keyframe** (`DAT_801dc054[winner] ==
 record[+0x1c] - 1`) additionally credits the winner a round win outright.
 The debug string is `atk %d def %d dm %d`.
 
+The special's HP delta is **zero by construction**. Its action record's
+`+0x18` power is 0 for all 17 fighters, so the kernel's raw total for a
+type-4 win on a fresh combo is the bare combo term `(0-1)*0x40 = -0x40` -
+but the HP write is `hp > 0`-gated (`0x801d3e58..0x801d3e68`: `blez` skips
+the `subu`), and the special only ever runs as the auto-finisher against a
+foe whose HP is already 0 (see the input section below), so the negative
+never lands. The special's whole payoff is the exchange / round win. The
+engine port's chargeable special (a host pacing enhancement that can win an
+exchange against a live foe) pins the same invariant: a special-won exchange
+applies exactly 0 damage (`legaia_engine_core::baka_fighter::apply_damage`).
+
 `FUN_801d6660` is the **critical / lucky-hit roll**: `rand()%100 <`
 record-`+0x34` (a per-action critical-chance byte), only while HP is in a mid
 band (`< 0x280`).
