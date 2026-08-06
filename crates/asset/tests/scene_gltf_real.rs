@@ -100,6 +100,9 @@ fn drake_kingdom_bundle_bakes_a_wellformed_glb() {
     // one rotated + scaled - exactly the shape the site's export path feeds.
     let mut meshes = Vec::new();
     let mut instances = Vec::new();
+    // Every packet word fed in, in mesh order - the export's COLOR_0 must
+    // come back as exactly this set divided by 128.
+    let mut want_words: Vec<[u32; 3]> = Vec::new();
     for slot in 0..nslots.min(6) {
         let start = read_u32(&pack, 4 + slot * 4).unwrap() as usize * 4;
         let end = if slot + 1 < nslots {
@@ -118,13 +121,21 @@ fn drake_kingdom_bundle_bakes_a_wellformed_glb() {
             continue;
         }
         let mi = meshes.len();
+        // The packet-colour side channel the site's pages upload to the
+        // shader (`[r, g, b, 255]` = textured, modulate); handing it to the
+        // exporter is what keeps the file's shading equal to the canvas's.
+        let mut flat_rgba = Vec::with_capacity(m.colors.len() * 4);
+        for c in &m.colors {
+            flat_rgba.extend_from_slice(&[c[0], c[1], c[2], 255]);
+            want_words.push([c[0].into(), c[1].into(), c[2].into()]);
+        }
         meshes.push(SceneMesh {
             name: format!("mesh_{slot}"),
             positions: m.positions.iter().flatten().copied().collect(),
             uvs: m.uvs.iter().flatten().copied().collect(),
             cba_tsb: m.cba_tsb.iter().flatten().copied().collect(),
             indices: m.indices.clone(),
-            flat_rgba: Vec::new(),
+            flat_rgba,
         });
         instances.push(SceneInstance {
             mesh: mi,
@@ -167,4 +178,33 @@ fn drake_kingdom_bundle_bakes_a_wellformed_glb() {
         png_len > 4_000,
         "atlas PNG is non-trivial ({png_len} bytes)"
     );
+
+    // The shading survives the bake: every vertex's packet word comes back as
+    // COLOR_0 = word / 128, not as white. Non-vacuous - a kingdom's landmark
+    // prims are not a uniform neutral run.
+    let neutral = [u32::from(legaia_asset::gltf_color::MODULATION_NEUTRAL); 3];
+    assert!(
+        want_words.iter().any(|w| *w != neutral),
+        "the kingdom's prims carry non-neutral packet words"
+    );
+    let (root, bin) = legaia_asset::gltf_color::glb_probe::split(&glb).expect("glb container");
+    assert_eq!(root["extensionsUsed"][0], "KHR_materials_unlit");
+    let mut got: Vec<[u32; 3]> = Vec::new();
+    for m in root["meshes"].as_array().unwrap() {
+        let acc = m["primitives"][0]["attributes"]["COLOR_0"]
+            .as_u64()
+            .expect("every scene primitive carries COLOR_0") as usize;
+        for row in
+            legaia_asset::gltf_color::glb_probe::floats(&root, bin, acc).expect("COLOR_0 floats")
+        {
+            got.push([
+                (row[0] * 128.0).round() as u32,
+                (row[1] * 128.0).round() as u32,
+                (row[2] * 128.0).round() as u32,
+            ]);
+        }
+    }
+    got.sort_unstable();
+    want_words.sort_unstable();
+    assert_eq!(got, want_words, "every exported colour is its word / 128");
 }

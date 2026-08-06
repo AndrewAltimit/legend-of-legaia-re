@@ -11,10 +11,12 @@
 //!   rendered once from VRAM into a 256x256 RGBA **tile**, and the tiles are
 //!   packed into one square-ish atlas (one PNG, one material);
 //! - each vertex's texel UV is remapped into its tile's cell of the atlas;
-//! - "hybrid" meshes (the field env packs) carry untextured flat/gouraud
-//!   vertices tagged in a `flat_rgba` side channel - those vertices keep
-//!   their colour via `COLOR_0` and point their UV at a dedicated all-white
-//!   tile, so one material still covers the whole scene;
+//! - every vertex of a mesh that supplies the `flat_rgba` side channel keeps
+//!   its packet colour through `COLOR_0`, on **both** halves: an untextured
+//!   flat/gouraud vertex as a fill (pointed at a dedicated all-white tile, so
+//!   one material still covers the whole scene) and a textured one as the
+//!   `texel * colour / 128` modulation the page's shader applies. The two use
+//!   different divisors - see [`crate::gltf_color`];
 //! - instances become glTF nodes sharing mesh data, with the exact
 //!   translation / Y-rotation / uniform scale the on-screen renderer applies.
 //!
@@ -30,6 +32,7 @@
 //! as fully transparent (alpha 0) and the material uses `MASK` alpha, so
 //! cutout foliage / grates export as cutouts.
 
+use crate::gltf_color;
 use crate::monster_gltf::{BinBuilder, TARGET_ARRAY, pack_glb, rgba_to_png};
 use legaia_tim::Vram;
 use serde_json::{Value, json};
@@ -41,9 +44,14 @@ pub(crate) const TILE: usize = 256;
 
 /// One reusable mesh: the exact vertex streams the WebGL scene path renders
 /// (`positions` f32 xyz in PSX space, `uvs` u8 page-local texel pairs,
-/// `cba_tsb` u16 `[cba, tsb]` pairs, triangle-list `indices`). `flat_rgba`
-/// is empty for pure-textured meshes, else 4 bytes `[r, g, b, flag]` per
-/// vertex with flag `0` = untextured (use the colour) and `255` = textured.
+/// `cba_tsb` u16 `[cba, tsb]` pairs, triangle-list `indices`).
+///
+/// `flat_rgba` is empty when the caller has no packet-colour stream, else 4
+/// bytes `[r, g, b, flag]` per vertex - the exact `a_flat_rgba` attribute the
+/// site's shader reads, flag `0` = untextured (the colour is the prim's fill)
+/// and `255` = textured (the colour modulates the texel). Passing it is what
+/// keeps the exported shading equal to the page's; leaving it empty exports
+/// the raw texels.
 pub struct SceneMesh {
     pub name: String,
     pub positions: Vec<f32>,
@@ -217,7 +225,9 @@ pub fn build_scene_glb(
         let nverts = m.positions.len() / 3;
         let mut positions: Vec<[f32; 3]> = Vec::with_capacity(nverts);
         let mut uvs: Vec<[f32; 2]> = Vec::with_capacity(nverts);
-        let has_flat = m.flat_rgba.len() >= nverts * 4;
+        // "Has a packet-colour stream" - not "has untextured prims". Both
+        // halves ride it; only the divisor differs.
+        let has_colors = m.flat_rgba.len() >= nverts * 4;
         let mut colors: Vec<[f32; 4]> = Vec::new();
         for vi in 0..nverts {
             positions.push([
@@ -225,7 +235,7 @@ pub fn build_scene_glb(
                 -m.positions[vi * 3 + 1], // bake the renderer's Y flip
                 m.positions[vi * 3 + 2],
             ]);
-            let flat = has_flat && m.flat_rgba[vi * 4 + 3] < 128;
+            let flat = has_colors && m.flat_rgba[vi * 4 + 3] < 128;
             if flat {
                 let slot = white_tile.expect("flat vertex implies white tile");
                 uvs.push(uv_of(slot, TILE as f32 * 0.5, TILE as f32 * 0.5));
@@ -240,17 +250,20 @@ pub fn build_scene_glb(
                 let v = m.uvs.get(vi * 2 + 1).copied().unwrap_or(0) as f32 + 0.5;
                 uvs.push(uv_of(slot, u, v));
             }
-            if has_flat {
-                if flat {
-                    colors.push([
-                        m.flat_rgba[vi * 4] as f32 / 255.0,
-                        m.flat_rgba[vi * 4 + 1] as f32 / 255.0,
-                        m.flat_rgba[vi * 4 + 2] as f32 / 255.0,
-                        1.0,
-                    ]);
+            if has_colors {
+                let w = [
+                    m.flat_rgba[vi * 4],
+                    m.flat_rgba[vi * 4 + 1],
+                    m.flat_rgba[vi * 4 + 2],
+                ];
+                // An untextured vert's word is a fill (/255); a textured
+                // vert's is the texture-blend factor (/128). Pushing white
+                // for the textured half is what dropped the shading.
+                colors.push(if flat {
+                    gltf_color::fill_color(w)
                 } else {
-                    colors.push([1.0, 1.0, 1.0, 1.0]);
-                }
+                    gltf_color::modulation_color(w)
+                });
             }
         }
         // Clamp indices defensively (a bad index would make the file invalid).
@@ -264,7 +277,7 @@ pub fn build_scene_glb(
         let uv_acc = b.push_vec2(&uvs, Some(TARGET_ARRAY));
         let idx_acc = b.push_indices(&indices);
         let mut attrs = json!({ "POSITION": pos_acc, "TEXCOORD_0": uv_acc });
-        if has_flat {
+        if has_colors {
             let col_acc = b.push_vec4(&colors);
             attrs["COLOR_0"] = json!(col_acc);
         }
@@ -303,6 +316,7 @@ pub fn build_scene_glb(
 
     let root_json = json!({
         "asset": { "version": "2.0", "generator": "legend-of-legaia-re scene exporter" },
+        "extensionsUsed": [gltf_color::UNLIT_EXTENSION],
         "scene": 0,
         "scenes": [{ "nodes": [root] }],
         "nodes": nodes,
@@ -312,6 +326,7 @@ pub fn build_scene_glb(
                 "baseColorTexture": { "index": 0 },
                 "metallicFactor": 0.0, "roughnessFactor": 1.0
             },
+            "extensions": { "KHR_materials_unlit": {} },
             "alphaMode": "MASK", "alphaCutoff": 0.5, "doubleSided": true
         }],
         "images": [{ "bufferView": png_view, "mimeType": "image/png" }],
@@ -411,12 +426,21 @@ mod tests {
         assert_eq!(px, [255, 255, 255, 255], "texel decodes via the CLUT");
     }
 
+    /// A hybrid mesh's two halves take **different divisors**: vertices 0/1
+    /// are textured (their word modulates the texel, `/128`) and vertex 2 is
+    /// untextured (its word is the fill, `/255`). Exporting white for the
+    /// textured half - which is what this used to do - drops the shading the
+    /// page draws.
     #[test]
-    fn hybrid_flat_vertices_get_color0_and_white_tile() {
+    fn both_halves_of_the_packet_stream_reach_color0() {
         let vram = Vram::new();
         let mut m = quad_mesh(0, 0x0005);
-        // Vertex 2 untextured, carrying red.
-        m.flat_rgba = vec![255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0];
+        // v0/v1 textured with a hot orange word; v2 untextured, red fill.
+        m.flat_rgba = vec![
+            0xF8, 0x80, 0x00, 255, // textured, ~2x red
+            0x40, 0x40, 0x40, 255, // textured, heavy darkening
+            255, 0, 0, 0, // untextured fill
+        ];
         let instances = [SceneInstance {
             mesh: 0,
             translation: [0.0; 3],
@@ -424,9 +448,38 @@ mod tests {
             scale: 1.0,
         }];
         let glb = build_scene_glb("hybrid", &[m], &instances, &vram).unwrap();
-        let json_len = u32::from_le_bytes(glb[12..16].try_into().unwrap()) as usize;
-        let root: Value = serde_json::from_slice(&glb[20..20 + json_len]).unwrap();
+        let (root, bin) = crate::gltf_color::glb_probe::split(&glb).expect("glb container");
+        assert_eq!(root["extensionsUsed"][0], "KHR_materials_unlit");
         let attrs = &root["meshes"][0]["primitives"][0]["attributes"];
-        assert!(attrs["COLOR_0"].is_number(), "hybrid mesh needs COLOR_0");
+        let acc = attrs["COLOR_0"]
+            .as_u64()
+            .expect("hybrid mesh needs COLOR_0") as usize;
+        let c = crate::gltf_color::glb_probe::floats(&root, bin, acc).expect("COLOR_0 floats");
+        assert!((c[0][0] - 248.0 / 128.0).abs() < 1e-6, "{:?}", c[0]);
+        assert!(c[0][0] > 1.0, "the over-bright tail survives the encoding");
+        assert!((c[1][0] - 64.0 / 128.0).abs() < 1e-6, "{:?}", c[1]);
+        assert_ne!(c[0][0], 1.0, "textured vert must not export white");
+        // The untextured fill keeps the /255 divisor.
+        assert!((c[2][0] - 1.0).abs() < 1e-6, "{:?}", c[2]);
+        assert_eq!(c[2][1], 0.0);
+    }
+
+    /// A caller with no colour stream still exports - nothing to modulate by,
+    /// so no COLOR_0 at all (the neutral read).
+    #[test]
+    fn a_mesh_without_a_packet_stream_omits_color0() {
+        let vram = Vram::new();
+        let instances = [SceneInstance {
+            mesh: 0,
+            translation: [0.0; 3],
+            rot_y: 0.0,
+            scale: 1.0,
+        }];
+        let glb = build_scene_glb("plain", &[quad_mesh(0, 0x0005)], &instances, &vram).unwrap();
+        let (root, _) = crate::gltf_color::glb_probe::split(&glb).expect("glb container");
+        assert!(
+            root["meshes"][0]["primitives"][0]["attributes"]["COLOR_0"].is_null(),
+            "no stream, no attribute"
+        );
     }
 }

@@ -139,6 +139,14 @@ monster's whole LZS-decoded block to a file and `--write-block` re-packs an
 edited block into its slot in place (`decode_block` / `encode_slot`); the
 disc-image equivalent is `legaia-patcher monster-block`.
 
+All three `.glb` exporters share one vertex-colour convention, defined once in
+`gltf_color`: a textured prim's packet word rides `COLOR_0` as the
+`texel * colour / 128` blend factor, an untextured prim's as a `/255` fill, and
+materials declare `KHR_materials_unlit` because retail applies no light source.
+The floats exceed 1.0 for words above `0x80` - deliberately; the module doc has
+the reasoning, and `gltf_color::glb_probe` reads an exported `.glb` back so the
+claims are asserted on the bytes.
+
 `scene_gltf::build_scene_glb` is the sibling exporter for assembled
 VRAM-textured scenes (kingdom continents, full town maps, single scene
 TMDs): instanced meshes carrying page-local UVs + per-vertex `(cba, tsb)`

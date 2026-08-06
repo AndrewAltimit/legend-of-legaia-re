@@ -54,6 +54,7 @@ pub mod field_pack;
 pub mod fishing_exchange;
 pub mod fishing_species;
 pub mod fmv_dispatch;
+pub mod gltf_color;
 pub mod init_pak;
 pub mod inn_costs;
 pub mod interior_page;

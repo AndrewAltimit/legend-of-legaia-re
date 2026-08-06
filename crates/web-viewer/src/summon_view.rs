@@ -688,6 +688,13 @@ impl LegaiaSummons {
     /// keyframe table is indexed by TMD object (no expansion step - see the
     /// disc-gated 1:1 assertion in `tests/summon_view_real.rs`).
     ///
+    /// The shading goes with it: each vertex's packet word rides a `COLOR_0`
+    /// attribute as the `texel * colour / 128` modulation, the same stream
+    /// [`Self::mesh_flat_rgba`] hands the canvas. It is not decoration on
+    /// these meshes - a summon's sword blade is a near-white texture ramp
+    /// whose whole colour is the word, so an export without it is a white
+    /// blade. See `legaia_asset::gltf_color`.
+    ///
     /// Everything is baked client-side off the visitor's own disc; nothing is
     /// uploaded. Empty until [`Self::set_cast`] (or if the mesh has nothing
     /// to export).

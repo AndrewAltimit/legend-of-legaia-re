@@ -612,8 +612,10 @@ demuxed off the disc, each art mapped to a real member of its
 animation bank into one `.glb` (`legaia_asset::character_gltf`): one node
 per rigid TMD object, each decoded bank record a named glTF TRS animation
 ("battle idle" first; art names where the record carries one, else the
-`anim_id` in hex), textured from the same VRAM via a baked tile atlas. The
-page's download button hands it out client-side - nothing is uploaded.
+`anim_id` in hex), textured from the same VRAM via a baked tile atlas and
+shaded by the same per-vertex packet colour the canvas modulates with
+(`COLOR_0`; see `legaia_asset::gltf_color`). The page's download button
+hands it out client-side - nothing is uploaded.
 
 The page's tinted after-image trail (the retail arts ghosting; per-character
 tint) is a JS-side re-draw (`MeshView.setTrail` -> the renderer's
@@ -764,8 +766,11 @@ triples it builds model matrices from; the bake
 (`legaia_asset::scene_gltf::build_scene_glb`) renders every distinct
 `(cba, tsb-page)` pair the vertices sample into a 256x256 tile of one RGBA
 atlas (the PSX VRAM+CLUT indirection has no glTF equivalent), remaps UVs,
-and keeps hybrid meshes' untextured vertices via `COLOR_0` + a white atlas
-tile. Consumers: the world-overview page (assembled continent), the
+and carries the `flat_rgba` packet stream into `COLOR_0` - untextured
+vertices as a fill over a white atlas tile, textured ones as the
+`texel * colour / 128` modulation the page's shader applies, so a caller
+that passes the stream gets the shading it draws (pass an empty array only
+when there is genuinely no packet colour). Consumers: the world-overview page (assembled continent), the
 game-world page's town navigator and the viewer page's full-map mode (both
 via `FieldSceneView.exportGlb`), the viewer's single-TMD inspector, and the
 characters + NPC pages (via `MeshView.exportGlb`, which bakes the **posed**

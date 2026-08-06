@@ -139,6 +139,37 @@ colour and `IR0` are set with `Renderer::set_depth_cue` (default `IR0 = 0`); the
 prologue's per-render-node pull is staged separately as a view-depth `IR0` ramp
 (`Renderer::set_depth_cue_ramp` - see [the grade section](#full-scene-colour-grade)).
 
+### The same shading in an exported `.glb`
+
+An export is a fourth surface the packet colour has to survive, and the trap
+there is the one that keeps recurring: a renderer with no colour stream draws
+white, and white is `texel * 255/128`, so the loss reads as "too bright", not
+as "unlit". The three exporters (`legaia_asset::monster_gltf` /
+`scene_gltf` / `character_gltf`) carry it as a **`COLOR_0` vertex attribute**
+under the one convention in `legaia_asset::gltf_color`:
+
+| prim | attribute | over |
+|---|---|---|
+| textured | `colour / 128` | `baseColorTexture` (the atlas) |
+| untextured | `colour / 255` | a white base (the fill) |
+
+Two consequences worth stating outright. The divisor differs between the
+halves, so reading one array for both is a real defect in both directions -
+halving a textured model or doubling an untextured one. And a faithful
+modulation factor **exceeds 1.0** (`0xFF / 128 = 1.99`), which the normalized
+integer `COLOR_0` encodings cannot express, so the accessors are float; the
+PSX clamps the *product* at 255, exactly where an LDR renderer clamps its own
+output, so an unclamped float is equal-or-closer to the canvas than a
+pre-clamped one in every viewer. Materials additionally declare
+`KHR_materials_unlit` (in `extensionsUsed`, never `extensionsRequired`, so
+non-supporting viewers fall back to the same material's PBR fields): retail
+issues no light op, so handing the model to a viewer's lights would
+re-introduce precisely the synthetic Lambert this project keeps deleting.
+
+Verified on the exported bytes rather than at the call site -
+`crates/web-viewer/tests/glb_packet_colour_real.rs` re-reads a summon `.glb`
+and compares its `COLOR_0` accessors against the stream the canvas uploads.
+
 ### Per-prim dispatch table (`FUN_80043390`)
 
 `FUN_80043390` is the per-prim *dispatcher* behind the two TMD renderers: it

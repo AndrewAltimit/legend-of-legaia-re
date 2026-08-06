@@ -31,7 +31,16 @@
 //! the page rendered once per distinct palette in use, stacked top to bottom,
 //! and each vertex's `V` is remapped into its palette's band. The result is one
 //! ordinary RGBA PNG + one material, with per-part colours preserved.
+//!
+//! ## Shading
+//!
+//! Retail lights a monster with nothing at all: the texel is blended by the
+//! prim's baked packet colour (`texel * colour / 128`) and that is the whole
+//! model. The export carries that word as a `COLOR_0` attribute and marks the
+//! material unlit - see [`crate::gltf_color`] for the encoding and why the
+//! floats may exceed 1.0.
 
+use crate::gltf_color;
 use crate::monster_archive::{self, CLUT_COUNT, MonsterAnimation, MonsterTexture, TEXTURE_HEIGHT};
 use anyhow::Result;
 use serde_json::{Value, json};
@@ -219,6 +228,9 @@ struct ObjectGeom {
     positions: Vec<[f32; 3]>,
     normals: Vec<[f32; 3]>,
     uvs: Vec<[f32; 2]>,
+    /// Per-vertex `COLOR_0` - the prim's packet word as the texture-blend
+    /// factor `colour / 128` ([`crate::gltf_color::modulation_color`]).
+    colors: Vec<[f32; 4]>,
     indices: Vec<u32>,
 }
 
@@ -250,6 +262,7 @@ fn partition_objects(
             positions: Vec::new(),
             normals: Vec::new(),
             uvs: Vec::new(),
+            colors: Vec::new(),
             indices: Vec::new(),
         });
         for &gv in tri {
@@ -272,6 +285,14 @@ fn partition_objects(
                     v_local
                 };
                 geom.uvs.push([u, v]);
+                // Retail's whole lighting model: the packet word blends the
+                // texel. Dropping it exports the raw texture page.
+                geom.colors.push(gltf_color::modulation_color(
+                    mesh.colors
+                        .get(gv)
+                        .copied()
+                        .unwrap_or([gltf_color::MODULATION_NEUTRAL; 3]),
+                ));
                 local_of[gv] = li;
                 geom.indices.push(li);
             } else {
@@ -329,6 +350,7 @@ fn build_glb(
                 "baseColorTexture": { "index": 0 },
                 "metallicFactor": 0.0, "roughnessFactor": 1.0
             },
+            "extensions": { "KHR_materials_unlit": {} },
             "alphaMode": "MASK", "alphaCutoff": 0.5, "doubleSided": true
         })
     } else {
@@ -337,6 +359,7 @@ fn build_glb(
                 "baseColorFactor": [0.8, 0.8, 0.8, 1.0],
                 "metallicFactor": 0.0, "roughnessFactor": 1.0
             },
+            "extensions": { "KHR_materials_unlit": {} },
             "doubleSided": true
         })
     };
@@ -357,12 +380,14 @@ fn build_glb(
     for geom in &objects {
         let pos = b.push_vec3(&geom.positions, Some(TARGET_ARRAY), true);
         let nrm = b.push_vec3(&geom.normals, Some(TARGET_ARRAY), false);
-        let attrs = if tex.is_some() {
+        let col = b.push_vec4(&geom.colors);
+        let mut attrs = if tex.is_some() {
             let uv = b.push_vec2(&geom.uvs, Some(TARGET_ARRAY));
             json!({ "POSITION": pos, "NORMAL": nrm, "TEXCOORD_0": uv })
         } else {
             json!({ "POSITION": pos, "NORMAL": nrm })
         };
+        attrs["COLOR_0"] = json!(col);
         let idx = b.push_indices(&geom.indices);
         meshes.push(json!({
             "primitives": [{ "attributes": attrs, "indices": idx, "material": 0, "mode": 4 }]
@@ -399,6 +424,7 @@ fn build_glb(
     // --- Assemble the JSON. ---
     let mut root = json!({
         "asset": { "version": "2.0", "generator": "legend-of-legaia-re monster exporter" },
+        "extensionsUsed": [gltf_color::UNLIT_EXTENSION],
         "scene": 0,
         "scenes": [{ "nodes": [root_index] }],
         "nodes": nodes,
@@ -600,5 +626,31 @@ mod tests {
         let json: Value = serde_json::from_slice(&glb[20..20 + json_len]).unwrap();
         assert_eq!(json["asset"]["version"], "2.0");
         assert_eq!(json["meshes"].as_array().unwrap().len(), 1);
+    }
+
+    /// A monster's shading is its packet word blending the texture page, so
+    /// the word has to reach the file: without `COLOR_0` the export is the
+    /// raw atlas.
+    #[test]
+    fn packet_colours_reach_color0_as_a_modulation() {
+        let mesh = legaia_tmd::mesh::VramMesh {
+            positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            uvs: vec![[0, 0], [1, 0], [0, 1]],
+            cba_tsb: vec![[0, 0]; 3],
+            indices: vec![0, 1, 2],
+            normals: vec![[0.0, 0.0, 1.0]; 3],
+            colors: vec![[0x40, 0x80, 0xF8]; 3],
+        };
+        let glb = build_glb("test", &mesh, &[0, 0, 0], None, &[]);
+        let (root, bin) = crate::gltf_color::glb_probe::split(&glb).expect("glb container");
+        assert_eq!(root["extensionsUsed"][0], "KHR_materials_unlit");
+        let acc = root["meshes"][0]["primitives"][0]["attributes"]["COLOR_0"]
+            .as_u64()
+            .expect("COLOR_0 attribute") as usize;
+        let c = crate::gltf_color::glb_probe::floats(&root, bin, acc).expect("COLOR_0 floats");
+        assert_eq!(c.len(), 3);
+        assert!((c[0][0] - 0.5).abs() < 1e-6, "{:?}", c[0]);
+        assert!((c[0][1] - 1.0).abs() < 1e-6, "{:?}", c[0]);
+        assert!((c[0][2] - 248.0 / 128.0).abs() < 1e-6, "{:?}", c[0]);
     }
 }

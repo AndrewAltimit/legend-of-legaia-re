@@ -488,6 +488,59 @@ fn monster_glb_export_is_structurally_valid() {
     );
 }
 
+/// Retail's shading is the prim's packet word blending the texel
+/// (`texel * colour / 128`), so the export has to carry it: without a
+/// `COLOR_0` stream the file is the raw texture page. Checked against the
+/// mesh the exporter read, on the bytes it wrote.
+#[test]
+fn monster_glb_carries_the_packet_colour_words() {
+    use legaia_asset::gltf_color::glb_probe;
+
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let monster = monster_archive::mesh(&entry, 79).unwrap().unwrap();
+    let tmd = legaia_tmd::parse(monster.tmd_bytes()).expect("Tetsu TMD parses");
+    let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, monster.tmd_bytes());
+    let mut want: Vec<[u32; 3]> = mesh
+        .colors
+        .iter()
+        .map(|c| [c[0].into(), c[1].into(), c[2].into()])
+        .collect();
+    // Non-vacuity: this monster's words are not a uniform neutral run, so a
+    // white export would be a real loss.
+    let neutral = [u32::from(legaia_asset::gltf_color::MODULATION_NEUTRAL); 3];
+    assert!(
+        want.iter().any(|w| *w != neutral),
+        "Tetsu's prims carry non-neutral packet words"
+    );
+
+    let glb = legaia_asset::monster_gltf::export_glb(&entry, 79)
+        .expect("glb export")
+        .expect("Tetsu has an exportable mesh");
+    let (root, bin) = glb_probe::split(&glb).expect("exported bytes are a .glb");
+    assert_eq!(root["extensionsUsed"][0], "KHR_materials_unlit");
+    let mut got: Vec<[u32; 3]> = Vec::new();
+    for m in root["meshes"].as_array().unwrap() {
+        for prim in m["primitives"].as_array().unwrap() {
+            let acc = prim["attributes"]["COLOR_0"]
+                .as_u64()
+                .expect("every primitive carries COLOR_0") as usize;
+            for row in glb_probe::floats(&root, bin, acc).expect("COLOR_0 floats") {
+                got.push([
+                    (row[0] * 128.0).round() as u32,
+                    (row[1] * 128.0).round() as u32,
+                    (row[2] * 128.0).round() as u32,
+                ]);
+            }
+        }
+    }
+    want.sort_unstable();
+    got.sort_unstable();
+    assert_eq!(got, want, "every exported colour is its packet word / 128");
+}
+
 /// Spell-entry effect/aux offsets resolve through the per-block effect-offset
 /// table (the `FUN_800542C8` index→table→offset indirection). Pins the decode
 /// against the real archive: the `+0x04`/`+0x08` fields are 1-based indices, not
