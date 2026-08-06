@@ -98,7 +98,24 @@ site in the SCUS loader census, and the only call site that can reach entries
 
 `SCUS_942.54` touches the id byte in three places: two clears, and
 `FUN_80055B6C`'s per-formation override `*_DAT_8007BD0C == 0xB5 → 2` (entry
-968), where `_DAT_8007BD0C` is the formation's monster id.
+968, `0x80055D2C..0x80055D44`), where `_DAT_8007BD0C` is the formation's
+monster id. A **fourth writer lives outside the SCUS census**, in the battle
+band's overlay code (the `0897` program): `FUN_801FD150`'s epilogue arm
+(`0x801FD4D4..0x801FD548`, the `sb v0,-0x49b6(a0)` at `0x801FD514`) writes
+stage id **3** (entry 969) mid-fight when both hold - the same formation cell
+still reads `0xB5`, **and** the first monster seat (`actor_table[3]`) has HP
+`+0x14C == 0`. The arm issues the loader-B page-in itself (`jal 0x8003EC70`
+with `a0 = 0x4A = 3 + 0x47` - same-frame, not deferred to the dispatch
+reader), bumps the battle ctx phase counter `ctx[+0x26]`, forces the
+flow-state byte `ctx[+0x7] = 0xFD`, and zeroes the dead seat's `+0x21C` /
+`+0x225`. So the `0xB5` boss fight walks two stage overlays: 968 from setup
+(phase 1 alive), 969 once phase 1 dies - the guard separating the arms is the
+seat's liveness, not a different id. Engine mirror:
+`engine-core::overlay_loader::battle_init_stage_override` /
+`boss_transition_stage_id`, resolved live by `World::battle_stage_id`
+(`world/battle/stage.rs`); the stage overlays are MIPS code the engine does
+not execute, so the resolver pins the selection, not a 968/969 behaviour
+port.
 
 **Stage id `0` is the norm, not a fallback.** Across the catalogued battle
 save-state library every battle reads `0` - the fight simply draws over the

@@ -155,6 +155,70 @@ pub fn battle_stage_overlay_entry(stage_id: u8) -> Option<u32> {
     Some(stage_id as u32 + BATTLE_STAGE_PARAM_BASE as u32 + OVERLAY_PROT_BASE as u32)
 }
 
+/// Stage id the **battle-init** override selects for a formation, or `None`
+/// when the initializer leaves the byte alone.
+///
+/// `FUN_80055B6C` compares the formation cell's first monster id
+/// (`_DAT_8007BD0C`) against
+/// [`crate::encounter_record::BOSS_TRANSITION_MONSTER_ID`] and writes stage
+/// id `2` (extraction entry 968) on a match - `0x80055D2C..0x80055D44`:
+/// `lbu v1,-0x42f4(v1); li v0,0xb5; bne v1,v0; li v0,0x2;
+/// sb v0,-0x49b6(at)`. No other condition: the override is a property of the
+/// formation alone, applied while the phase-1 monster is still alive.
+///
+/// Tagged `REF`, not `PORT`: this mirrors one arm of the battle-scene
+/// initializer, whose body (pool clears, party-slot composition, arena
+/// allocation, disp/draw setup) is ported piecemeal elsewhere - a `PORT` tag
+/// here would mark the whole routine ported on the strength of five
+/// instructions.
+///
+/// REF: FUN_80055B6C (the `0xB5 -> 2` stage-override arm at `0x80055D2C`)
+pub fn battle_init_stage_override(formation_slot0_monster_id: u8) -> Option<u8> {
+    (formation_slot0_monster_id == crate::encounter_record::BOSS_TRANSITION_MONSTER_ID).then_some(2)
+}
+
+/// Stage id the **mid-battle** boss-transition writer selects, or `None`
+/// while its guard holds off. This is the second `_DAT_8007B64A` writer for
+/// the same monster id, resident in the battle band (the `0897` overlay
+/// program), not in `SCUS_942.54` - which is why the SCUS-only census sees
+/// three sites and misses it.
+///
+/// `FUN_801FD150`'s epilogue arm (`0x801FD4D4..0x801FD548`) runs on every
+/// invocation of that battle-flow handler and fires when **both** hold:
+///
+/// * `actor_table[3]` - the first monster seat - has HP `+0x14C == 0`
+///   (`lw v0,0xc(s0); lhu v0,0x14c(v0); bne v0,zero,skip`), i.e. the
+///   phase-1 monster is dead;
+/// * the formation cell `_DAT_8007BD0C` still reads `0xB5`
+///   (`lbu v1,-0x42f4(v0); li v0,0xb5; bne v1,v0,skip`).
+///
+/// Its body then issues the loader-B call itself (`jal 0x8003EC70` with
+/// `a0 = 0x4A` `= 3 + 0x47`, paging extraction entry 969 immediately rather
+/// than waiting for the dispatch reader), writes stage id `3`
+/// (`sb v0,-0x49b6(a0)` at `0x801FD514`), bumps the battle ctx phase counter
+/// `ctx[+0x26]`, forces the battle flow-state byte `ctx[+0x7] = 0xFD`, and
+/// zeroes the dead seat's `+0x21C` / `+0x225` bytes.
+///
+/// So the guard that separates the two arms is **when in the fight they
+/// run**: the init arm (stage 2, entry 968) is unconditional for the `0xB5`
+/// formation at battle setup; this arm (stage 3, entry 969) is the phase
+/// transition, taken once the seat the init arm found alive has died.
+///
+/// The tag covers the epilogue arm only: the handler's main body (a byte
+/// `0xE7` sweep over character-record slots `+0x75E..` keyed on the active
+/// actor's `+0x1DD` class, toggling record-flag bit `0x80` at `+0x6C0`) is
+/// **not** ported here - see `docs/reference/open-rev-eng-threads.md`.
+///
+/// PORT: FUN_801FD150 (the stage-3 epilogue arm; the `sb` at `0x801FD514`)
+pub fn boss_transition_stage_id(
+    formation_slot0_monster_id: u8,
+    first_monster_seat_liveness: u16,
+) -> Option<u8> {
+    (formation_slot0_monster_id == crate::encounter_record::BOSS_TRANSITION_MONSTER_ID
+        && first_monster_seat_liveness == 0)
+        .then_some(3)
+}
+
 /// Host hooks for the parallel overlay loaders. Composes the existing
 /// [`CdDmaHost`] (for the actual PROT.DAT streaming read) with three
 /// per-loader scratchpad globals the retail mode-table uses.
