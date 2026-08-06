@@ -53,6 +53,35 @@ impl PlayWindowApp {
         }
     }
 
+    /// Commit the `4C E1` text balloon's font measurement while the app is
+    /// still `&mut` - the tick-phase half of the balloon's measure/commit
+    /// round-trip (`World::commit_text_balloon_width`).
+    ///
+    /// Retail measures the line inside the spawner (`FUN_8003C764` via
+    /// `FUN_80035F04`) because its font metrics share its address space; the
+    /// engine's font atlas is host-side, so the record's `x` stays `None`
+    /// until a host measures. Doing it here, in the same mutation phase as
+    /// [`Self::sync_dialog_panel`], is what lets [`Self::build_hud`] and
+    /// [`Self::dialog_chrome_sprite_draws`] stay `&self`: by the time the
+    /// draw passes run, the committed geometry is already on the record
+    /// (`TextBalloon::pen` / `frame_rect`). The commit is idempotent, so the
+    /// cheap `x.is_none()` guard is an optimisation, not a correctness gate.
+    pub(super) fn sync_text_balloon(&mut self) {
+        let world = &mut self.session.host.world;
+        if world
+            .text_balloon
+            .as_ref()
+            .is_none_or(|b| b.x.is_some() || b.killed)
+        {
+            return;
+        }
+        let width = match world.text_balloon.as_ref() {
+            Some(b) => legaia_engine_render::text_balloon_text_width(&self.font, &b.text),
+            None => return,
+        };
+        world.commit_text_balloon_width(width);
+    }
+
     pub(super) fn build_hud(&self, w: u32, h: u32) -> Vec<TextDraw> {
         let Some(atlas) = &self.font_atlas else {
             return Vec::new();
@@ -1465,6 +1494,29 @@ impl PlayWindowApp {
             legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
             out.extend(draws);
         }
+        // The `4C E1` text balloon: the single line at the retail pen -
+        // centred on the full 320-px screen, not on its own frame (retail's
+        // `FUN_80036888(text, 0, 0, x, y)`; a wide line overhangs the frame,
+        // and both halves are retail). `text_balloon_drawing` gates out the
+        // startup band; the pen is `Some` because `sync_text_balloon`
+        // committed the measurement in the tick phase. The chrome frame is
+        // emitted in the sprite layer (`dialog_chrome_sprite_draws`), like
+        // the reading box's.
+        if let Some(text) = self.session.host.world.text_balloon_drawing()
+            && let Some(pen) = self
+                .session
+                .host
+                .world
+                .text_balloon
+                .as_ref()
+                .and_then(|b| b.pen())
+        {
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            let mut draws =
+                legaia_engine_render::text_balloon_text_draws_for(&self.font, text, pen);
+            legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+            out.extend(draws);
+        }
         // Opt-in developer menu: its row list draws over everything else.
         out.extend(self.dev_menu_draws.iter().copied());
         out
@@ -1643,17 +1695,39 @@ impl PlayWindowApp {
         if self.boot_ui.is_active() {
             return Vec::new();
         }
+        let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
+        // The `4C E1` balloon's frame: the fixed `0x58 x 0x90` window
+        // (`FUN_8002C69C(0x58, y, 0x90, 0xB)`), in the same chrome skin as
+        // the reading box. Drawn whether or not a reading box is also up -
+        // retail's balloon is its own actor and outlives any dialog
+        // engagement that spawned it.
+        let mut out: Vec<legaia_engine_render::SpriteDraw> = Vec::new();
+        if self.session.host.world.text_balloon_drawing().is_some()
+            && let Some(rect) = self
+                .session
+                .host
+                .world
+                .text_balloon
+                .as_ref()
+                .map(|b| b.frame_rect())
+        {
+            out.extend(legaia_engine_render::text_balloon_chrome_draws_for(
+                &assets.rects,
+                rect,
+                stage_origin,
+                stage_scale,
+            ));
+        }
         let Some(snap) = self.dialog_snapshot() else {
-            return Vec::new();
+            return out;
         };
         let lay = Self::dialog_stage_layout(&snap);
-        let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
-        let mut out = legaia_engine_render::dialog_window_chrome_draws_for(
+        out.extend(legaia_engine_render::dialog_window_chrome_draws_for(
             &assets.rects,
             lay.main,
             stage_origin,
             stage_scale,
-        );
+        ));
         if let Some(prect) = lay.picker {
             out.extend(legaia_engine_render::dialog_window_chrome_draws_for(
                 &assets.rects,
