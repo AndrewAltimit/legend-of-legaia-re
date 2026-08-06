@@ -298,7 +298,6 @@ descriptor drops.
 | `prize_exchange.rs` | 1 | `801dc1cc` | `PrizeExchangeSession` has one production mention - its own `impl` line. |
 | `scene_name_sync.rs` | 1 | `8001d7f8` | `sync_scene_name` is called only from that file's tests. Two anchors share the address - the `fn` and a `//! PORT:` module tag - and it is the module tag that carries the liveness verdict, so both need the disclosure. |
 | `save_select.rs` | 1 | `801e3294` | `card_frame_tick` - the only thing that advances a `CardIoMachine` - is disclosed on the function *and* on the type anchor the address is keyed to; the function alone left the verdict on the type. |
-| `menu_item_category.rs` | 1 | `801dd0c0` | The chain into `category_check` is real and production-only (`play_menu_input` -> `EquipSession::input` -> `best_equipment_now` -> the `weapon_category_score` closure), and the Best-Equipment applier above it is entered. What is missing is *data*: nothing calls `EquipSession::with_weapon_category`, so the table is always empty and the closure short-circuits before the body. Wiring it needs the PROT 0899 category table reachable from `build_equip_session`, the prerequisite the window-descriptor table already has. |
 
 Three of these name routines that are heavily used on the disc, so the gap is a
 port that is not reached rather than a port of dead code. A five-form

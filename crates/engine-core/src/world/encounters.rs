@@ -253,6 +253,15 @@ impl World {
     /// [`crate::pause_screens::MenuTextTables`].
     pub fn install_menu_text(&mut self, scus: &[u8]) {
         self.menu_text = Some(crate::pause_screens::MenuTextTables::from_scus(scus));
+        // The same image carries the quick-travel landmark tables
+        // (`DAT_80073A98` placements + `DAT_80073B18` names). Installing
+        // them on this one call means both hosts get the pause menu's Door
+        // of Wind destination list from the boot step they already make -
+        // neither can ship the route with an empty list while the other
+        // fills it.
+        if let Ok(menu) = legaia_asset::worldmap_menu::parse_scus(scus) {
+            self.worldmap_menu = Some(menu);
+        }
     }
 
     /// Install the menu-overlay data tables (PROT 0899 as-loaded image):
@@ -263,6 +272,14 @@ impl World {
     pub fn install_menu_overlay_tables(&mut self, overlay: &[u8]) {
         if let Ok(rank) = crate::menu_arrange::parse_arrange_rank_table(overlay) {
             self.menu_arrange_rank = Some(rank);
+        }
+        // The weapon category / favour table `FUN_801DD0C0` walks
+        // (`DAT_801E4B88`). Without it the Best-Equipment chooser scores
+        // every weapon 0 for category and picks on raw ATK alone - which is
+        // retail's empty-table arm, not a fallback the engine invented, but
+        // it is also not what a retail disc produces.
+        if let Ok(table) = crate::menu_item_category::parse_category_table(overlay) {
+            self.menu_item_category = table;
         }
         // The same image carries the two entry-context screens' label
         // strings (`FUN_801D6360` / `FUN_801D61B0` load them straight out of

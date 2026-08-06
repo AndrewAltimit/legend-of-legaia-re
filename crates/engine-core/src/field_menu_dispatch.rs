@@ -247,30 +247,70 @@ pub fn apply_equip_outcome(
 
 /// Apply a finished [`InventoryUseSession`] to the world. Folds the
 /// stored item outcome through the same path
-/// [`crate::world::World::use_item`] uses: HP / MP / status / SP gain.
+/// [`crate::world::World::use_item`] uses: HP / MP / status / SP gain, and
+/// commits the bag decrement every one of those beats owes.
+///
+/// Three consumption channels, and they are not interchangeable:
+///
+/// - [`InventoryUseSession::thrown_items`] - a Throw Out confirm, which
+///   zeroes the **whole** bag-slot pair (`FUN_801D8734` phase 3);
+/// - [`InventoryUseSession::consumed_items`] - a special Use route's
+///   `FUN_80042310(id, 1)`, **one** copy each;
+/// - [`InventoryUseSession::used_item`] - the ordinary use's own commit,
+///   one copy however many targets `used_slots` names (retail decrements
+///   once per use, not once per healed ally).
+///
+/// The first two apply however the session ended; `used_item` is only ever
+/// `Some` alongside [`crate::inventory_use::InventoryUseState::Done`],
+/// which is why the state gate sits on the effect loop rather than on the
+/// whole body - a Door of Light closes the screen with the inner flow still
+/// browsing, and its consumption must survive that.
+// REF: FUN_801D8734 (throw-out delete)
+// REF: FUN_80042310 (the one-copy bag decrement all three routes call)
 pub fn apply_inventory_outcome(session: &InventoryUseSession, world: &mut World) {
     use crate::inventory_use::InventoryUseState;
-    // Throw Out discards apply regardless of how the session ended - the
-    // retail delete zeroes the whole bag-slot pair (id + count) the moment
-    // the player confirms "Yes" (`FUN_801D8734` phase 3).
-    // REF: FUN_801D8734
     for id in &session.thrown_items {
         world.inventory.remove(id);
     }
-    let InventoryUseState::Done(_) = session.state else {
-        return;
-    };
-    // `used_item` + `used_slots` carry the consumed item and every slot the
-    // completed use applied to (one for a single-target item, every healed ally
-    // for an all-party item). Forward each to the world via use_item, which
-    // folds HP / MP / status / SP. (`current_item` is unavailable here - it
-    // returns `None` once the session reaches `Done`.) Stock is decremented
-    // once by the menu commit, not here.
+    for &id in &session.consumed_items {
+        world.consume_item(id);
+    }
     if let Some(id) = session.used_item {
-        for &slot in &session.used_slots {
-            world.use_item(id, slot);
+        world.consume_item(id);
+        if matches!(session.state, InventoryUseState::Done(_)) {
+            // `used_slots` names every slot the completed use applied to
+            // (one for a single-target item, every healed ally for an
+            // all-party one). `current_item` is unavailable here - it
+            // returns `None` once the session reaches `Done`.
+            for &slot in &session.used_slots {
+                world.use_item(id, slot);
+            }
         }
     }
+}
+
+/// Apply a finished pause **Items screen** to the world: the inner use
+/// flow's outcome ([`apply_inventory_outcome`]) plus the special Use
+/// routes' menu-exit handoff, which the inner flow has no field for.
+///
+/// Returns the menu exit code the screen handed the outer menu SM
+/// (retail `_DAT_8007B43C`), so a host that wants the fade can key on it.
+///
+/// Hosts that only call [`apply_inventory_outcome`] still get every bag
+/// decrement - the consumption rides `session.inner`. What this adds is the
+/// escape / warp handoff, which is world state rather than bag state.
+pub fn apply_pause_items_outcome(
+    session: &crate::pause_screens::PauseItemsSession,
+    world: &mut World,
+) -> Option<u32> {
+    apply_inventory_outcome(&session.inner, world);
+    if let Some(warp) = session.staged_warp() {
+        world.pending_menu_warp = Some(warp);
+    }
+    if session.exit_code() == Some(crate::pause_screens::MENU_EXIT_CODE_FIELD_ESCAPE) {
+        world.pending_menu_escape = true;
+    }
+    session.exit_code()
 }
 
 /// Apply a finished [`SpellMenuSession`] cast to the world. For
@@ -790,7 +830,62 @@ pub fn build_pause_items_session(world: &World) -> PauseItemsSession {
             }
         })
         .collect();
-    PauseItemsSession::new(inner, rows).with_arrange_rank(world.menu_arrange_rank.clone())
+    PauseItemsSession::new(inner, rows)
+        .with_arrange_rank(world.menu_arrange_rank.clone())
+        .with_warp_destinations(warp_destinations(world))
+}
+
+/// The visible rows of the quick-travel landmark list - the Door of Wind
+/// destination list, and the same set the world-map landmark menu shows.
+///
+/// A faithful walk of `FUN_80030628` case `0x19`
+/// (`0x80031870..0x800318dc`) over the disc placement table
+/// ([`legaia_asset::worldmap_menu`], installed by
+/// [`World::install_menu_text`]):
+///
+/// - records run to the `name_idx == 0xFF` terminator (the parser already
+///   stops there);
+/// - a record whose `name_idx` repeats the **last accepted** row's is
+///   skipped (`0x800318a8`: the compare is against `s0`, which only
+///   advances on an accept, so a locked landmark does not shadow the next
+///   record that shares its name);
+/// - the survivor is gated on system flag `discovery_flag + 0x20`
+///   (`0x800318b4`, `FUN_8003CE64` = [`World::system_flag_test`]);
+/// - an accepted row is pushed as the string id `0x8000 | record_index`
+///   (`0x800318c0`), which is why [`WarpDestination::record_index`] is the
+///   record ordinal and not the visible one.
+///
+/// Empty when the executable was not reachable at boot - the route then
+/// opens an empty list rather than an invented one.
+///
+/// PORT: FUN_80030628 (case 0x19: the landmark-list build)
+pub fn warp_destinations(world: &World) -> Vec<crate::pause_screens::WarpDestination> {
+    let Some(menu) = world.worldmap_menu.as_ref() else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut last_accepted: Option<u8> = None;
+    for p in &menu.placements {
+        if last_accepted == Some(p.name_idx) {
+            continue;
+        }
+        if !world.system_flag_test(u16::from(p.discovery_flag) + 0x20) {
+            continue;
+        }
+        last_accepted = Some(p.name_idx);
+        out.push(crate::pause_screens::WarpDestination {
+            record_index: p.index,
+            name: menu
+                .names
+                .get(p.name_idx as usize)
+                .cloned()
+                .unwrap_or_default(),
+            scene_id: p.scene_id,
+            menu_x: p.menu_x,
+            menu_y: p.menu_y,
+        });
+    }
+    out
 }
 
 fn build_equip_session(world: &World, char_slot: u8, equipment: &EquipmentTable) -> EquipSession {
@@ -800,13 +895,22 @@ fn build_equip_session(world: &World, char_slot: u8, equipment: &EquipmentTable)
         .get(char_slot as usize)
         .map(stat_record_from_character)
         .unwrap_or_default();
-    EquipSession::new(
+    let session = EquipSession::new(
         record,
         world.inventory.clone(),
         equipment.clone(),
         StatusModifiers::default(),
         Vec::new(),
-    )
+    );
+    // The Best-Equipment chooser's weapon arm scores each candidate through
+    // `FUN_801DD0C0` against the menu overlay's category table. Without the
+    // table installed the check returns 0 for every weapon and the pick
+    // collapses onto raw ATK - which is the routine's own empty-table arm,
+    // but not what a retail disc produces. `World::install_menu_overlay_tables`
+    // fills it, so both hosts get it from the boot call they already make.
+    session
+        .with_active_party_slot(char_slot)
+        .with_weapon_category(world.menu_item_category.clone())
 }
 
 fn stat_record_from_character(c: &legaia_save::CharacterRecord) -> StatRecord {

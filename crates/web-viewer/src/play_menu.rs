@@ -77,7 +77,7 @@ use legaia_engine_core::field_menu::{
 };
 use legaia_engine_core::field_menu_dispatch::{
     self, ArtsEditorPhaseTag, FieldMenuSubsession, apply_arts_outcome, apply_equip_outcome,
-    apply_inventory_outcome, apply_spell_outcome, status_snapshots,
+    apply_pause_items_outcome, apply_spell_outcome, status_snapshots,
 };
 use legaia_engine_core::input::PadButton;
 use legaia_engine_core::inventory_use::{InventoryUseSession, InventoryUseState};
@@ -716,8 +716,14 @@ impl LegaiaRuntime {
                                     FieldMenuSubsession::Equip { session, char_slot } => {
                                         apply_equip_outcome(&session, char_slot, world);
                                     }
+                                    // The full Items applier, not the inner
+                                    // flow's: it also carries the special
+                                    // Use routes' menu-exit handoff (Door of
+                                    // Light's escape, Door of Wind's staged
+                                    // world-map warp). The bag decrements
+                                    // ride `s.inner` either way.
                                     FieldMenuSubsession::Items(s) => {
-                                        apply_inventory_outcome(&s.inner, world)
+                                        let _ = apply_pause_items_outcome(&s, world);
                                     }
                                     FieldMenuSubsession::Spells(s) => {
                                         // A leveled menu cast returns the

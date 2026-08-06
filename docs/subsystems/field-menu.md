@@ -703,10 +703,17 @@ row 0 is Best Equipment and runs the candidate scan plus the applier, and
 row `n` opens slot `n - 1`. The candidate list leads with the Remove row on
 an occupied slot, matching the class-`0x4000` payload-`0` entry above; both
 halves gate on the same "slot is occupied" test, so the session and the
-draw builder cannot disagree about whether row 0 is Remove. What the
-engine still does not supply is the weapon-category favour table
-(`FUN_801DD0C0`), so Best Equipment ranks weapons on raw ATK until a host
-parses it onto the session.
+draw builder cannot disagree about whether row 0 is Remove.
+
+The weapon-category favour table (`DAT_801E4B88`, the data `FUN_801DD0C0`
+walks) is parsed out of the same PROT 0899 image the window-descriptor
+table comes from, by `World::install_menu_overlay_tables`, and
+`field_menu_dispatch::build_equip_session` hands it to the session along
+with the party slot being edited. The slot is not cosmetic: it is the
+check's `char_index`, so a session left on the default `0` would rank
+every character's weapons as Vahn's. Without the overlay the table stays
+empty and the check scores `0` for every weapon - which is the retail
+routine's own empty-table arm, and Best Equipment then ranks on raw ATK.
 
 ### Manual equip applier (`FUN_801D71F0`)
 
@@ -1299,17 +1306,34 @@ menu exit - the flow stays on the Items screen.
 
 Engine port of the three special routes:
 `engine-core::pause_screens::SpecialUseSession` (+ the fixed consume
-ids `0x88/0x89/0x8A` and exit codes 4/5 as named constants). The two
-**confirm** routes are reachable from the Items screen: a Use-list
-confirm on `0x88` / `0x8A` opens `PauseItemsFocus::SpecialConfirm`
-(`special_confirm_route_for_item`), whose window both hosts draw with
+ids `0x88/0x89/0x8A` and exit codes 4/5 as named constants). All three
+are reachable from the Items screen: a Use-list confirm routes through
+`special_use_route_for_item` into `PauseItemsFocus::SpecialRoute`, and
+the [`SpecialUsePhase`] the route opens in decides the screen. The two
+Yes/No routes open in `Confirm`, whose window both hosts draw with
 `engine-ui::confirm_prompt_draws` at the id-10 / id-12 descriptor rect
 (`ITEMS_USE_CONFIRM_1LINE_RECT` / `ITEMS_USE_CONFIRM_2LINE_RECT`).
-Door of Wind is deliberately not in that map - submenu `0xC` opens the
-destination list, not a prompt - and its host route is still open.
 Retail's own prompt strings live in the menu overlay's data segment and
 are not recovered, so the port stages the item name and its own question
 in the retail line slots; the window geometry is exact.
+
+Door of Wind opens in `PickDestination` instead. Its rows come from the
+same walk the world-map landmark menu runs (`FUN_80030628` case `0x19`)
+over the disc placement table, ported as
+`field_menu_dispatch::warp_destinations`: skip a record whose `name_idx`
+repeats the last **accepted** row's, gate the survivor on system flag
+`record[1] + 0x20`, keep the record ordinal as the row's identity (retail
+pushes it as the string id `0x8000 | index`, which `FUN_8002FF8C`
+resolves back through the name table). `items_screen_model` projects the
+rows through the shared list channel, which is how both hosts draw window
+11 with the list renderer they already call - at the cost of the row
+count column showing `0`, since retail's destination rows have no count.
+
+What a committed pick does not yet do is **enter** the world map at the
+landmark: the port writes the destination triple to
+`World::pending_menu_warp` and the escape flag to
+`World::pending_menu_escape`, and nothing drains either. The bag
+decrement, the exit code and the staged triple are all committed.
 
 **Throw Out list `FUN_801D8734`** (submenu 7): phase 0 re-points the
 live list window from descriptor 15 to descriptor 16 (live-window

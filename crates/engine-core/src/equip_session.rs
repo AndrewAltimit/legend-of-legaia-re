@@ -212,6 +212,21 @@ impl EquipSession {
         self
     }
 
+    /// Set which party slot (`0` Vahn, `1` Noa, `2` Gala) this session is
+    /// editing, without also supplying the disc restriction table
+    /// ([`Self::new_with_restrictions`] sets both at once).
+    ///
+    /// The slot is not cosmetic: it is the `char_index` argument of the
+    /// weapon-category check and the bit the Best-Equipment candidate mask
+    /// is tested against, so a session left on the default `0` ranks every
+    /// character's weapons as if they were Vahn's. That is harmless only
+    /// while the category table is empty - which is exactly the state the
+    /// table's arrival ends.
+    pub fn with_active_party_slot(mut self, slot: u8) -> Self {
+        self.active_party_slot = slot;
+        self
+    }
+
     /// Construct a session that gates the item list on the disc-pinned equip
     /// restrictions for `active_party_slot` (`0` Vahn, `1` Noa, `2` Gala).
     /// Each candidate item must be equippable by that character (the `+6`

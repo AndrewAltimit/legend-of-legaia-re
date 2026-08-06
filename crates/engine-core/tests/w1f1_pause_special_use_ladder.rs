@@ -16,23 +16,29 @@
 //! confirm-window *draw* side (`801d1dac` / `801d1f10` in
 //! `engine-ui/src/ui_menu/system_menus.rs`); this file is the reusable copy.
 //!
-//! ## What this ladder cannot reach, and why
+//! ## Door of Wind, and what is still owed on it
 //!
-//! **Door of Wind (`0x89`, `FUN_801D8B90`) is unreachable in production.**
-//! `special_confirm_route_for_item` returns `None` for it by construction - it
-//! is a destination *list*, not a confirm window - and it is the only producer
-//! of a `SpecialUseSession`. So `SpecialUsePhase::PickDestination` and
-//! `SpecialUseOutcome::Warp` have no pad path on any host, and the last test
-//! below pins that as a property rather than papering over it with a
-//! hand-built session.
+//! Door of Wind (`0x89`, `FUN_801D8B90`) **is** reachable now:
+//! `special_use_route_for_item` routes all three classes, the session opens in
+//! `SpecialUsePhase::PickDestination`, and the landmark rows come off the disc
+//! placement table filtered by the live discovery flags
+//! (`field_menu_dispatch::warp_destinations`). A pick consumes one `0x89` and
+//! hands the menu exit code 5 with the destination triple staged.
+//!
+//! What it does not do is *enter* the world map at that landmark: the port has
+//! no drain for `World::pending_menu_warp`. The last test pins the reachable
+//! half and the staged-but-undrained half separately, so neither reads as the
+//! other.
 
-use legaia_engine_core::field_menu_dispatch::build_pause_items_session;
+use legaia_engine_core::field_menu_dispatch::{
+    apply_pause_items_outcome, build_pause_items_session,
+};
 use legaia_engine_core::input::PadButton;
 use legaia_engine_core::items::ItemCatalog;
 use legaia_engine_core::pause_screens::{
     DOOR_OF_LIGHT_ITEM_ID, DOOR_OF_WIND_ITEM_ID, INCENSE_ITEM_ID, MENU_EXIT_CODE_FIELD_ESCAPE,
     MENU_EXIT_CODE_WORLD_MAP_WARP, PauseItemsFocus, PauseItemsSession, SpecialUseOutcome,
-    SpecialUsePhase, UseRoute, items_screen_model, special_confirm_route_for_item,
+    SpecialUsePhase, UseRoute, items_screen_model, special_use_route_for_item,
     use_route_for_effect,
 };
 use legaia_engine_core::world::World;
@@ -107,7 +113,7 @@ fn a_use_confirm_on_door_of_light_closes_the_menu_with_the_escape_exit_code() {
     // target panel - the phase-2 dispatch keys on the effect class before any
     // target is picked.
     press(&mut s, PadButton::Cross);
-    assert_eq!(s.focus, PauseItemsFocus::SpecialConfirm);
+    assert_eq!(s.focus, PauseItemsFocus::SpecialRoute);
     let sp = s.special_use().expect("a special route is live");
     assert_eq!(sp.route, UseRoute::DoorOfLight);
     assert_eq!(
@@ -147,7 +153,7 @@ fn a_use_confirm_on_incense_applies_in_place_and_returns_to_the_use_list() {
     open_use_list_on(&mut s, INCENSE_ITEM_ID);
 
     press(&mut s, PadButton::Cross);
-    assert_eq!(s.focus, PauseItemsFocus::SpecialConfirm);
+    assert_eq!(s.focus, PauseItemsFocus::SpecialRoute);
     assert_eq!(s.special_use().map(|sp| sp.route), Some(UseRoute::Incense));
 
     press(&mut s, PadButton::Cross);
@@ -219,43 +225,125 @@ fn an_ordinary_item_never_opens_a_special_route() {
         s.special_use().is_none(),
         "an ordinary item opened a special route"
     );
-    assert_ne!(s.focus, PauseItemsFocus::SpecialConfirm);
+    assert_ne!(s.focus, PauseItemsFocus::SpecialRoute);
 }
 
-/// The precise negative. Door of Wind's route exists, its phase machine is
-/// ported, and **no pad on any host can reach it**: the only producer of a
-/// `SpecialUseSession` filters the list route out, so `PickDestination` and
-/// `Warp` are structurally unreachable in production.
+/// Door of Wind, end to end off a real `World`: the route opens the
+/// destination list, the rows are the flag-gated placement records, a pick
+/// consumes one `0x89` and stages the world-map warp.
+///
+/// The undrained half is pinned separately below, so "staged" is never read
+/// as "the player is on the world map".
 #[test]
-fn door_of_wind_has_no_pad_path_on_any_host() {
-    // The class dispatch does name it - that half is live and correct.
+fn door_of_wind_opens_the_destination_list_and_stages_the_warp() {
+    // The class dispatch names it, and so does the route wrapper - the
+    // filter that used to drop it here is what made the whole submenu dead.
     assert_eq!(use_route_for_effect(0x81, 0), UseRoute::DoorOfWind);
-    // But the confirm-route filter drops it, and that filter is the only
-    // thing that builds a session.
-    assert_eq!(special_confirm_route_for_item(DOOR_OF_WIND_ITEM_ID), None);
     assert_eq!(
-        special_confirm_route_for_item(DOOR_OF_LIGHT_ITEM_ID),
-        Some(UseRoute::DoorOfLight)
-    );
-    assert_eq!(
-        special_confirm_route_for_item(INCENSE_ITEM_ID),
-        Some(UseRoute::Incense)
+        special_use_route_for_item(DOOR_OF_WIND_ITEM_ID),
+        Some(UseRoute::DoorOfWind)
     );
 
-    // Driven end to end: holding a Door of Wind and confirming it opens no
-    // special window at all.
-    let world = world_holding(&[DOOR_OF_WIND_ITEM_ID]);
+    let mut world = world_holding(&[DOOR_OF_WIND_ITEM_ID]);
+    // Two landmarks the walk will accept, one it will not: the placement
+    // table is disc data, so the flags are what the ladder controls.
+    world.worldmap_menu = Some(legaia_asset::worldmap_menu::WorldmapMenu {
+        names: vec!["Rim Elm".into(), "Drake Castle".into(), "Sol".into()],
+        placements: vec![
+            placement(0, 0, 0x10, 0x0055),
+            placement(1, 1, 0x11, 0x0162),
+            placement(2, 2, 0x12, 0x0201),
+        ],
+    });
+    // Discovery flags live at `record[1] + 0x20` (FUN_8003CE64).
+    world.system_flag_set(0x10 + 0x20);
+    world.system_flag_set(0x12 + 0x20);
+
     let mut s = build_pause_items_session(&world);
+    assert_eq!(
+        s.warp_destinations()
+            .iter()
+            .map(|d| d.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Rim Elm", "Sol"],
+        "an undiscovered landmark must not appear in the list"
+    );
+
     open_use_list_on(&mut s, DOOR_OF_WIND_ITEM_ID);
     press(&mut s, PadButton::Cross);
-    assert!(
-        s.special_use().is_none(),
-        "Door of Wind must not open a confirm window - it is a destination \
-         list, and no host builds one"
-    );
-    assert_ne!(s.focus, PauseItemsFocus::SpecialConfirm);
+    assert_eq!(s.focus, PauseItemsFocus::SpecialRoute);
+    let sp = s.special_use().expect("the destination list is live");
+    assert_eq!(sp.route, UseRoute::DoorOfWind);
+    assert_eq!(sp.phase, SpecialUsePhase::PickDestination);
 
-    // The exit code the unreachable arm would hand over is still distinct
-    // from the reachable one, so the two are not silently the same route.
+    // The host-facing model is the readout: the list window now shows the
+    // landmarks, with no Yes/No prompt and no info window.
+    let m = items_screen_model(&s);
+    assert_eq!(
+        m.page_rows
+            .iter()
+            .map(|(n, _)| n.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Rim Elm", "Sol"]
+    );
+    assert!(m.special_confirm.is_none());
+    assert!(m.info.is_none());
+
+    // Pick the second row.
+    press(&mut s, PadButton::Down);
+    press(&mut s, PadButton::Cross);
+    assert!(s.is_done(), "a committed warp closes the whole menu");
+    assert_eq!(
+        s.special_use().map(|sp| sp.phase.clone()),
+        Some(SpecialUsePhase::Done(SpecialUseOutcome::Warp {
+            landmark: 1
+        }))
+    );
+    assert_eq!(s.exit_code(), Some(MENU_EXIT_CODE_WORLD_MAP_WARP));
     assert_ne!(MENU_EXIT_CODE_WORLD_MAP_WARP, MENU_EXIT_CODE_FIELD_ESCAPE);
+
+    // The bag is the measurable output: exactly one Door of Wind leaves it.
+    apply_pause_items_outcome(&s, &mut world);
+    assert_eq!(world.inventory.get(&DOOR_OF_WIND_ITEM_ID), None);
+    assert_eq!(
+        world.pending_menu_warp,
+        Some(legaia_engine_core::pause_screens::StagedWarp {
+            scene_id: 0x0201,
+            menu_x: 0x40,
+            menu_y: 0x50,
+        })
+    );
+}
+
+/// The residual, stated as a test so it cannot rot into a silent claim:
+/// nothing in the engine drains `World::pending_menu_warp`, so a committed
+/// Door of Wind stages its destination and the player stays put.
+#[test]
+fn the_staged_warp_has_no_drain_yet() {
+    let mut world = world_holding(&[]);
+    world.pending_menu_warp = Some(legaia_engine_core::pause_screens::StagedWarp {
+        scene_id: 0x0055,
+        menu_x: 1,
+        menu_y: 2,
+    });
+    // A scene transition is the channel a warp would have to use, and the
+    // menu warp does not feed it.
+    assert_eq!(world.pending_scene_transition, None);
+    assert!(world.pending_menu_warp.is_some());
+}
+
+fn placement(
+    index: u32,
+    name_idx: u8,
+    discovery_flag: u8,
+    scene_id: u16,
+) -> legaia_asset::worldmap_menu::PlacementRecord {
+    legaia_asset::worldmap_menu::PlacementRecord {
+        index,
+        name_idx,
+        discovery_flag,
+        scene_id,
+        menu_x: 0x40,
+        menu_y: 0x50,
+    }
 }

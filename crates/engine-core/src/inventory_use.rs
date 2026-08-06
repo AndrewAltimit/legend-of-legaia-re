@@ -270,6 +270,19 @@ pub struct InventoryUseSession {
     /// [`crate::field_menu_dispatch::apply_inventory_outcome`] regardless of
     /// whether a use also completed.
     pub thrown_items: Vec<u8>,
+    /// Item ids a **special Use route** committed one copy of - the fixed
+    /// ids `FUN_801D8A58` / `FUN_801D8B90` / `FUN_801D8D94` each hand
+    /// `FUN_80042310(id, 1)` on their confirm beat (Door of Light `0x88`,
+    /// Door of Wind `0x89`, Incense `0x8A`).
+    ///
+    /// Separate from [`Self::used_item`] because those routes never enter
+    /// this session's own use flow (they bypass the catalog and the target
+    /// panel entirely), and separate from [`Self::thrown_items`] because a
+    /// throw-out zeroes the whole stack while these take exactly one copy.
+    /// A list, not an `Option`, because the Incense route returns to the Use
+    /// list and can commit again before the screen closes.
+    /// Drained by [`crate::field_menu_dispatch::apply_inventory_outcome`].
+    pub consumed_items: Vec<u8>,
 }
 
 impl InventoryUseSession {
@@ -298,6 +311,7 @@ impl InventoryUseSession {
             used_slots: Vec::new(),
             used_item: None,
             thrown_items: Vec::new(),
+            consumed_items: Vec::new(),
         }
     }
 

@@ -135,13 +135,15 @@ pub enum PauseItemsFocus {
     /// The Yes / No throw-out confirm window (descriptor id 9, renderer
     /// `FUN_801D1B20`; `FUN_801D8734` phase 3).
     ThrowOutConfirm,
-    /// One of the special Use routes' own Yes / No confirm windows -
-    /// submenu `0xB` (Door of Light, window 10, renderer `FUN_801D1DAC`)
-    /// or submenu `0xD` (Incense, window 12, renderer `FUN_801D1F10`).
-    /// Distinct from [`Self::ThrowOutConfirm`]: a different window, a
-    /// different renderer, and the cursor seeds to **Yes** rather than
-    /// No. The live state is [`PauseItemsSession::special_use`].
-    SpecialConfirm,
+    /// One of the three special Use routes has the screen - submenu `0xB`
+    /// (Door of Light, Yes/No window 10, renderer `FUN_801D1DAC`), `0xC`
+    /// (Door of Wind, destination list window 11) or `0xD` (Incense,
+    /// Yes/No window 12, renderer `FUN_801D1F10`). Distinct from
+    /// [`Self::ThrowOutConfirm`]: different windows, different renderers,
+    /// and the two Yes/No routes seed the cursor to **Yes** rather than No.
+    /// The live state is [`PauseItemsSession::special_use`], whose
+    /// [`SpecialUsePhase`] says which of the two screen shapes is open.
+    SpecialRoute,
 }
 
 /// The retail Items screen session: the command-window/list focus model
@@ -169,6 +171,27 @@ pub struct PauseItemsSession {
     /// The live special Use route, while one is open. Boxed to keep the
     /// session (and the `FieldMenuSubsession` enum carrying it) small.
     special_use: Option<Box<SpecialUseSession>>,
+    /// Guards the one-shot commit of the live route's terminal outcome.
+    /// The route's session stays readable after it finishes (hosts and
+    /// tests read its outcome), so without this a host that ticks the
+    /// screen again before noticing [`Self::is_done`] would consume a
+    /// second copy of the item.
+    special_committed: bool,
+    /// The Door of Wind destination rows, resolved at session build from
+    /// the disc placement table + the live discovery flags
+    /// ([`crate::field_menu_dispatch::warp_destinations`]). Empty when the
+    /// executable was not reachable at boot - the route then opens an
+    /// empty list rather than an invented one.
+    warp_destinations: Vec<WarpDestination>,
+    /// Destination a committed Door of Wind pick staged, in retail's
+    /// `0x80084624`/`28`/`2C` shape. Drained by
+    /// [`crate::field_menu_dispatch::apply_pause_items_outcome`] onto
+    /// [`crate::world::World::pending_menu_warp`].
+    staged_warp: Option<StagedWarp>,
+    /// Menu exit code the finished screen hands the outer menu SM
+    /// (`_DAT_8007B43C`): [`MENU_EXIT_CODE_FIELD_ESCAPE`] or
+    /// [`MENU_EXIT_CODE_WORLD_MAP_WARP`]. `None` on every ordinary close.
+    exit_code: Option<u32>,
     /// Arrange sort ranks (id -> rank). `None` falls back to the id-order
     /// identity ([`crate::menu_arrange::ArrangeRankTable::id_order`]).
     /// Boxed to keep the session (and the `FieldMenuSubsession` enum
@@ -190,10 +213,38 @@ impl PauseItemsSession {
             command_cursor: 0,
             confirm_cursor: 1,
             special_use: None,
+            special_committed: false,
+            warp_destinations: Vec::new(),
+            staged_warp: None,
+            exit_code: None,
             arrange_rank: None,
             cursor: 0,
             closed: false,
         }
+    }
+
+    /// Attach the Door of Wind destination rows (the visible placement
+    /// records; see [`WarpDestination`]).
+    pub fn with_warp_destinations(mut self, destinations: Vec<WarpDestination>) -> Self {
+        self.warp_destinations = destinations;
+        self
+    }
+
+    /// The Door of Wind destination rows this screen would offer.
+    pub fn warp_destinations(&self) -> &[WarpDestination] {
+        &self.warp_destinations
+    }
+
+    /// The menu exit code a finished special route handed the outer menu SM
+    /// (`_DAT_8007B43C`), if any. `4` = the dungeon escape, `5` = the
+    /// world-map warp.
+    pub fn exit_code(&self) -> Option<u32> {
+        self.exit_code
+    }
+
+    /// The destination a committed Door of Wind pick staged.
+    pub fn staged_warp(&self) -> Option<StagedWarp> {
+        self.staged_warp
     }
 
     /// Attach the disc-parsed Arrange rank table
@@ -334,11 +385,22 @@ impl PauseItemsSession {
                     if let Some(route) = self
                         .rows
                         .get(self.cursor)
-                        .and_then(|r| special_confirm_route_for_item(r.id))
+                        .and_then(|r| special_use_route_for_item(r.id))
                     {
-                        self.special_use =
-                            Some(Box::new(SpecialUseSession::new(route, Vec::new())));
-                        self.focus = PauseItemsFocus::SpecialConfirm;
+                        // Only the Door of Wind route reads the landmark
+                        // list; the two Yes/No routes open with an empty
+                        // one, exactly as `SpecialUseSession::new` expects.
+                        let landmarks = if route == UseRoute::DoorOfWind {
+                            self.warp_destinations
+                                .iter()
+                                .map(|d| d.name.clone())
+                                .collect()
+                        } else {
+                            Vec::new()
+                        };
+                        self.special_use = Some(Box::new(SpecialUseSession::new(route, landmarks)));
+                        self.special_committed = false;
+                        self.focus = PauseItemsFocus::SpecialRoute;
                         return;
                     }
                     // Map the hand row into the inner flow's filtered
@@ -389,24 +451,49 @@ impl PauseItemsSession {
                     }
                 }
             }
-            PauseItemsFocus::SpecialConfirm => {
+            PauseItemsFocus::SpecialRoute => {
                 let Some(sp) = self.special_use.as_mut() else {
                     self.focus = PauseItemsFocus::List;
                     return;
                 };
                 sp.input_pad_edge(pressed);
-                if let SpecialUsePhase::Done(outcome) = &sp.phase {
-                    match outcome {
-                        // Door of Light hands the field the escape exit
-                        // code and closes the whole menu; Incense applies
-                        // in place and drops back to the Use list, and a
-                        // cancel does the same without consuming.
-                        SpecialUseOutcome::FieldEscape | SpecialUseOutcome::Warp { .. } => {
-                            self.closed = true;
-                        }
-                        SpecialUseOutcome::EncounterSuppress | SpecialUseOutcome::Cancelled => {
-                            self.focus = PauseItemsFocus::List;
-                        }
+                let SpecialUsePhase::Done(outcome) = sp.phase.clone() else {
+                    return;
+                };
+                if self.special_committed {
+                    return;
+                }
+                self.special_committed = true;
+                // Every committing route hands `FUN_80042310(id, 1)` before
+                // it leaves - the one-copy bag decrement. `consumed_items`
+                // is what carries it to the world applier.
+                if let Some(id) = sp.consumed_item_id() {
+                    self.inner.consumed_items.push(id);
+                }
+                match outcome {
+                    // Door of Light hands the field the escape exit code
+                    // and closes the whole menu; Door of Wind stages its
+                    // destination and closes with the warp code; Incense
+                    // applies in place and drops back to the Use list, and
+                    // a cancel does the same without consuming.
+                    SpecialUseOutcome::FieldEscape => {
+                        self.exit_code = Some(MENU_EXIT_CODE_FIELD_ESCAPE);
+                        self.closed = true;
+                    }
+                    SpecialUseOutcome::Warp { landmark } => {
+                        // `landmark` is the visible row; the placement
+                        // record behind it carries the staged triple.
+                        self.staged_warp =
+                            self.warp_destinations.get(landmark).map(|d| StagedWarp {
+                                scene_id: d.scene_id,
+                                menu_x: d.menu_x,
+                                menu_y: d.menu_y,
+                            });
+                        self.exit_code = Some(MENU_EXIT_CODE_WORLD_MAP_WARP);
+                        self.closed = true;
+                    }
+                    SpecialUseOutcome::EncounterSuppress | SpecialUseOutcome::Cancelled => {
+                        self.focus = PauseItemsFocus::List;
                     }
                 }
             }
@@ -641,8 +728,55 @@ pub struct ItemsInfoModel {
     pub is_point_card: bool,
 }
 
+/// The Items screen's model while the Door of Wind destination list
+/// (retail submenu `0xC`, window 11) has the screen.
+///
+/// The rows are the unlocked landmarks and the hand is the list kernel's,
+/// so the page maths is the shared one. Two deliberate residuals, both
+/// stated rather than papered over:
+///
+/// - the row **count column draws `0`**, because the shared list row model
+///   carries a `count` and the port has no window-11 renderer of its own
+///   to drop it; retail's destination rows have no count column;
+/// - the info window stays closed (`info: None`), which is retail - the
+///   staged-id gate `DAT_801E46B0` is not restaged by this submenu.
+fn destination_list_model(s: &PauseItemsSession, sp: &SpecialUseSession) -> ItemsScreenModel {
+    let n = sp.landmarks.len();
+    let cursor = sp.cursor.min(n.saturating_sub(1));
+    let start = (cursor / LIST_PAGE_ROWS) * LIST_PAGE_ROWS;
+    ItemsScreenModel {
+        page_rows: sp
+            .landmarks
+            .iter()
+            .skip(start)
+            .take(LIST_PAGE_ROWS)
+            .map(|name| (name.clone(), 0))
+            .collect(),
+        page: (start / LIST_PAGE_ROWS) as u16 + 1,
+        pages: n.div_ceil(LIST_PAGE_ROWS).max(1) as u16,
+        focus_list: true,
+        command_cursor: s.command_cursor,
+        list_cursor_on_page: (cursor - start) as u8,
+        bag_empty: false,
+        info: None,
+        target_select: false,
+        throw_confirm: None,
+        special_confirm: None,
+    }
+}
+
 /// Assemble the Items screen view model from a live session.
 pub fn items_screen_model(s: &PauseItemsSession) -> ItemsScreenModel {
+    // The Door of Wind destination list is a list window like the Use list
+    // (retail window 11, driven by the same kind-4 kernel), so it projects
+    // through the same rows / page / cursor channel rather than needing a
+    // second one - which is what lets both hosts draw it with the list
+    // renderer they already call.
+    if let Some(sp) = s.special_use()
+        && sp.phase == SpecialUsePhase::PickDestination
+    {
+        return destination_list_model(s, sp);
+    }
     let cursor = s.list_cursor();
     let page0 = cursor / LIST_PAGE_ROWS;
     let start = page0 * LIST_PAGE_ROWS;
@@ -913,25 +1047,68 @@ fn special_use_effect_class(item_id: u8) -> Option<u8> {
     }
 }
 
-/// Which of the special Use routes - if any - a bag id opens a **Yes/No
-/// confirm window** for. Only two of the three do: Door of Light raises
-/// window 10 (`FUN_801D1DAC`) and Incense raises window 12
-/// (`FUN_801D1F10`). Door of Wind opens the destination *list* (window
-/// 11, renderer-less and kernel-driven) instead, so it is not a confirm
-/// and drops out here.
+/// Which of the three special Use routes - if any - a bag id opens.
+///
+/// All three route out of the ordinary target-panel flow at the same place
+/// (`FUN_801D7E50` phase 2), and they differ only in the screen they raise:
+/// Door of Light raises the Yes/No window 10 (`FUN_801D1DAC`), Incense the
+/// Yes/No window 12 (`FUN_801D1F10`), and Door of Wind the destination
+/// **list** window 11, driven by the kind-4 list kernel rather than a
+/// picker. [`SpecialUseSession::new`] is what turns the route into the
+/// right opening phase, so all three belong here.
 ///
 /// The route itself comes from [`use_route_for_effect`] - the ported
 /// dispatch is the decision point, and this wrapper only supplies the
-/// class byte and filters the list route out of the confirm set.
-pub fn special_confirm_route_for_item(item_id: u8) -> Option<UseRoute> {
+/// class byte.
+pub fn special_use_route_for_item(item_id: u8) -> Option<UseRoute> {
     // The all-party flag byte is irrelevant on this path: the three class
     // bytes below are all matched before `use_route_for_effect` looks at
     // it, which is why 0 is a faithful stand-in for the record's `+2`.
     match use_route_for_effect(special_use_effect_class(item_id)?, 0) {
-        route @ (UseRoute::DoorOfLight | UseRoute::Incense) => Some(route),
-        // Door of Wind is a destination list, not a confirm window.
+        route @ (UseRoute::DoorOfLight | UseRoute::DoorOfWind | UseRoute::Incense) => Some(route),
+        // The two generic apply routes are not special-route screens.
         _ => None,
     }
+}
+
+/// One row of the Door of Wind destination list - a **visible** placement
+/// record from the quick-travel table (`DAT_80073A98`, 6-byte stride;
+/// parser [`legaia_asset::worldmap_menu`]).
+///
+/// The visible set is built by the same walk the world-map landmark menu
+/// runs (`FUN_80030628` case `0x19`, `0x80031870..0x800318dc`): each record
+/// is skipped when its `name_idx` repeats the last **accepted** row's, then
+/// gated on the system flag at `record[1] + 0x20` (`FUN_8003CE64`); an
+/// accepted row is pushed as the string id `0x8000 | record_index`, which
+/// `FUN_8002FF8C` resolves back through `names[placement[index].name_idx]`.
+/// [`Self::record_index`] is that record ordinal - retail's
+/// `_DAT_8007BB88`, which `FUN_801D8B90` phase 3 scales by 6 straight back
+/// into the same table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WarpDestination {
+    /// Ordinal of the placement record in `DAT_80073A98` (**not** the
+    /// visible row ordinal - locked landmarks leave gaps).
+    pub record_index: u32,
+    /// Landmark name from `DAT_80073B18`.
+    pub name: String,
+    /// Destination scene id, record `+2`. Retail stages it into the
+    /// world-state word `0x80084628`.
+    pub scene_id: u16,
+    /// World-map marker x, record `+4` -> `0x80084624`.
+    pub menu_x: u8,
+    /// World-map marker y, record `+5` -> `0x8008462C`.
+    pub menu_y: u8,
+}
+
+/// The destination a committed Door of Wind use staged, in the shape
+/// `FUN_801D8B90` phase 3 writes it (`0x80084624` / `0x80084628` /
+/// `0x8008462C`) before handing the outer menu SM exit code
+/// [`MENU_EXIT_CODE_WORLD_MAP_WARP`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StagedWarp {
+    pub scene_id: u16,
+    pub menu_x: u8,
+    pub menu_y: u8,
 }
 
 /// Which submenu a confirmed Use-list pick routes to - the
@@ -1023,8 +1200,7 @@ pub enum SpecialUsePhase {
 /// placement is load-bearing: a tag on the type resolves, for the runtime
 /// reach join, to the type's first function - `new` - which every route
 /// constructs. All three addresses would then read *entered* the moment any
-/// one route ran, including the one arm no host can reach
-/// ([`Self::pick_destination_input`]).
+/// one route ran, rather than each answering for its own arm.
 pub struct SpecialUseSession {
     pub route: UseRoute,
     /// Destination names for the Door of Wind list (unlocked landmarks,
@@ -1123,18 +1299,20 @@ impl SpecialUseSession {
     }
 
     /// The Door of Wind destination list (window 11, driven by the kind-4 list
-    /// kernel rather than a Yes/No picker).
+    /// kernel rather than a Yes/No picker) - retail submenu `0xC`, phases
+    /// 2..3 of `FUN_801D8B90`.
     ///
-    /// **No host reaches this.** [`special_confirm_route_for_item`] is the only
-    /// producer of a `SpecialUseSession`, and it filters
-    /// [`UseRoute::DoorOfWind`] out by construction, so nothing constructs a
-    /// session in [`SpecialUsePhase::PickDestination`] and
-    /// [`SpecialUseOutcome::Warp`] is never produced in play. Wiring it needs a
-    /// destination-list screen plus the unlocked-landmark list to populate it,
-    /// not a call here - which is why the gap is stated rather than disclosed
-    /// with a `NOT WIRED` tag the liveness pass would read as a false
-    /// accusation. Pinned end to end by
-    /// `crates/engine-core/tests/w1f1_pause_special_use_ladder.rs`.
+    /// Reached from the Use list: [`special_use_route_for_item`] routes bag id
+    /// `0x89` here, [`crate::field_menu_dispatch::build_pause_items_session`]
+    /// fills the rows from the disc placement table, and
+    /// [`items_screen_model`] projects them through the shared list channel so
+    /// both hosts draw the screen with the list renderer they already call.
+    ///
+    /// What a pick does **not** yet do is enter the world map at the picked
+    /// landmark: retail's phase 4 writes `_DAT_8007B43C = 5` and the outer
+    /// menu SM acts on it, while the port stages the destination on
+    /// [`crate::world::World::pending_menu_warp`] and no host drains it. The
+    /// bag decrement, the exit code and the staged triple are all committed.
     ///
     /// PORT: FUN_801D8B90 (Door of Wind destination list + exit-code 5 warp)
     fn pick_destination_input(&mut self, pressed: u16) {
@@ -2212,23 +2390,41 @@ mod tests {
         assert_eq!(target_panel_mode(0, 6, 0), 0); // wrong kind byte
     }
 
-    /// Only the two *confirm* routes map here. Door of Wind is a special
-    /// route too, but submenu 0xC opens the destination **list** (window
-    /// 11, kernel-driven), not a Yes/No window - so it must not resolve
-    /// to a confirm or the Items screen would raise a prompt retail
-    /// never shows.
+    /// **All three** special routes map here. The earlier reading dropped
+    /// Door of Wind because its screen is a destination *list* rather than
+    /// a Yes/No window - but `FUN_801D7E50`'s phase-2 dispatch
+    /// (`801d7f80..801d7fd8`) branches all three effect classes out of the
+    /// target-panel flow at the same place, and it is
+    /// [`SpecialUseSession::new`] that picks the screen shape. Filtering
+    /// `0x81` out here is what made submenu `0xC` unreachable: with no
+    /// route, a Door of Wind confirm fell through to the ordinary use flow,
+    /// where the item is not even in the catalog, and the press did nothing
+    /// at all.
     #[test]
-    fn only_the_two_confirm_routes_map_to_a_confirm_window() {
+    fn all_three_special_routes_map_to_a_route() {
         assert_eq!(
-            special_confirm_route_for_item(DOOR_OF_LIGHT_ITEM_ID),
+            special_use_route_for_item(DOOR_OF_LIGHT_ITEM_ID),
             Some(UseRoute::DoorOfLight)
         );
         assert_eq!(
-            special_confirm_route_for_item(INCENSE_ITEM_ID),
+            special_use_route_for_item(INCENSE_ITEM_ID),
             Some(UseRoute::Incense)
         );
-        assert_eq!(special_confirm_route_for_item(DOOR_OF_WIND_ITEM_ID), None);
-        assert_eq!(special_confirm_route_for_item(0x01), None);
+        assert_eq!(
+            special_use_route_for_item(DOOR_OF_WIND_ITEM_ID),
+            Some(UseRoute::DoorOfWind)
+        );
+        assert_eq!(special_use_route_for_item(0x01), None);
+        // The screen shape still splits two ways: only the Yes/No routes
+        // open in `Confirm`.
+        for (id, phase) in [
+            (DOOR_OF_LIGHT_ITEM_ID, SpecialUsePhase::Confirm),
+            (INCENSE_ITEM_ID, SpecialUsePhase::Confirm),
+            (DOOR_OF_WIND_ITEM_ID, SpecialUsePhase::PickDestination),
+        ] {
+            let route = special_use_route_for_item(id).expect("route");
+            assert_eq!(SpecialUseSession::new(route, vec![]).phase, phase);
+        }
     }
 
     /// Confirming a Door of Light in the Use list opens the route's own
@@ -2240,7 +2436,7 @@ mod tests {
         s.input_pad_edge(edge(PadButton::Cross)); // Use -> list
         assert_eq!(s.focus, PauseItemsFocus::List);
         s.input_pad_edge(edge(PadButton::Cross)); // confirm the row
-        assert_eq!(s.focus, PauseItemsFocus::SpecialConfirm);
+        assert_eq!(s.focus, PauseItemsFocus::SpecialRoute);
         assert!(!s.target_select(), "the target panel must not open");
         let sp = s.special_use().expect("route session");
         assert_eq!(sp.route, UseRoute::DoorOfLight);
@@ -2290,15 +2486,80 @@ mod tests {
         assert_eq!(s.special_use().and_then(|sp| sp.consumed_item_id()), None);
     }
 
-    /// A Door of **Wind** confirm must fall through to the ordinary use
-    /// flow rather than opening a confirm window it has none of.
+    /// A Door of **Wind** confirm opens the destination list, not a Yes/No
+    /// window - and the Items screen model projects the landmarks through
+    /// the shared list channel with no confirm prompt attached.
     #[test]
-    fn door_of_wind_does_not_open_a_confirm_window() {
-        let mut s = items_session(&[(DOOR_OF_WIND_ITEM_ID, 1)]);
+    fn door_of_wind_opens_the_destination_list_not_a_confirm() {
+        let towns = vec![
+            crate::pause_screens::WarpDestination {
+                record_index: 0,
+                name: "Rim Elm".into(),
+                scene_id: 0x0055,
+                menu_x: 0x60,
+                menu_y: 0x19,
+            },
+            crate::pause_screens::WarpDestination {
+                record_index: 4,
+                name: "Drake Castle".into(),
+                scene_id: 0x0162,
+                menu_x: 0x36,
+                menu_y: 0x3E,
+            },
+        ];
+        let mut s = items_session(&[(DOOR_OF_WIND_ITEM_ID, 1)]).with_warp_destinations(towns);
         s.input_pad_edge(edge(PadButton::Cross));
         s.input_pad_edge(edge(PadButton::Cross));
-        assert_ne!(s.focus, PauseItemsFocus::SpecialConfirm);
-        assert!(s.special_use().is_none());
+        assert_eq!(s.focus, PauseItemsFocus::SpecialRoute);
+        let sp = s.special_use().expect("route session");
+        assert_eq!(sp.route, UseRoute::DoorOfWind);
+        assert_eq!(sp.phase, SpecialUsePhase::PickDestination);
+        assert_eq!(sp.landmarks, vec!["Rim Elm", "Drake Castle"]);
+        let m = items_screen_model(&s);
+        assert!(
+            m.special_confirm.is_none(),
+            "no Yes/No prompt on this route"
+        );
+        assert!(m.info.is_none(), "the info window stays closed");
+        assert_eq!(
+            m.page_rows
+                .iter()
+                .map(|(n, _)| n.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Rim Elm", "Drake Castle"]
+        );
+        assert_eq!(m.list_cursor_on_page, 0);
+        assert_eq!((m.page, m.pages), (1, 1));
+
+        // Picking the second row stages that record's triple and hands the
+        // menu the world-map warp exit code, consuming exactly one 0x89.
+        s.input_pad_edge(edge(PadButton::Down));
+        s.input_pad_edge(edge(PadButton::Cross));
+        assert!(s.is_done());
+        assert_eq!(s.exit_code(), Some(MENU_EXIT_CODE_WORLD_MAP_WARP));
+        assert_eq!(
+            s.staged_warp(),
+            Some(crate::pause_screens::StagedWarp {
+                scene_id: 0x0162,
+                menu_x: 0x36,
+                menu_y: 0x3E,
+            })
+        );
+        assert_eq!(s.inner.consumed_items, vec![DOOR_OF_WIND_ITEM_ID]);
+    }
+
+    /// The one-shot commit guard: a host that keeps ticking a finished
+    /// screen before it notices `is_done` must not consume a second copy.
+    #[test]
+    fn a_committed_special_route_consumes_exactly_once() {
+        let mut s = items_session(&[(DOOR_OF_LIGHT_ITEM_ID, 3)]);
+        s.input_pad_edge(edge(PadButton::Cross));
+        s.input_pad_edge(edge(PadButton::Cross));
+        s.input_pad_edge(edge(PadButton::Cross)); // Yes
+        for _ in 0..5 {
+            s.input_pad_edge(edge(PadButton::Cross));
+        }
+        assert_eq!(s.inner.consumed_items, vec![DOOR_OF_LIGHT_ITEM_ID]);
     }
 
     /// Door of Light (FUN_801D8A58): Yes/No confirm seeded on Yes;

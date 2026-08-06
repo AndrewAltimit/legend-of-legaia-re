@@ -1533,6 +1533,36 @@ pub struct World {
     /// overlay; the shop then opens without window choreography.
     pub menu_widget_scripts: Option<crate::menu_widget::MenuWidgetScripts>,
 
+    /// The menu overlay's weapon **category / favour** table (PROT 0899 VA
+    /// `0x801E4B88`, [`crate::menu_item_category::parse_category_table`]) -
+    /// the data `FUN_801DD0C0` walks and the Best-Equipment chooser scores
+    /// its weapon candidates against. Empty on a load without the overlay,
+    /// which is exactly the retail routine's empty-table arm (score 0 for
+    /// every weapon, so the pick falls back to raw ATK).
+    /// Installed by [`World::install_menu_overlay_tables`].
+    pub menu_item_category: Vec<crate::menu_item_category::CategoryEntry>,
+
+    /// The quick-travel landmark tables out of `SCUS_942.54`
+    /// (`DAT_80073A98` placement records + `DAT_80073B18` names,
+    /// [`legaia_asset::worldmap_menu`]). Installed by
+    /// [`World::install_menu_text`]; `None` on a PROT.DAT-only load, and
+    /// the pause menu's Door of Wind list is then empty rather than
+    /// invented. Also the world-map landmark menu's source.
+    pub worldmap_menu: Option<legaia_asset::worldmap_menu::WorldmapMenu>,
+
+    /// Destination staged by a committed **Door of Wind** pause-menu use -
+    /// retail's `0x80084624` / `0x80084628` / `0x8008462C` triple written
+    /// by `FUN_801D8B90` phase 3 right before it hands the outer menu SM
+    /// exit code [`crate::pause_screens::MENU_EXIT_CODE_WORLD_MAP_WARP`].
+    /// `None` until a warp commits; a host drains it to enter the world map
+    /// at that landmark.
+    pub pending_menu_warp: Option<crate::pause_screens::StagedWarp>,
+
+    /// Set by a committed **Door of Light** pause-menu use - retail's
+    /// `_DAT_8007B43C = 4` dungeon-escape handoff (`FUN_801D8A58`). `None`
+    /// until an escape commits.
+    pub pending_menu_escape: bool,
+
     /// The window list those programs drive
     /// ([`crate::menu_widget::MenuWidgetState`], the `vm::Host` impl).
     /// Run against it via [`World::run_shop_widget_open`] /
@@ -2817,6 +2847,10 @@ impl World {
             menu_arrange_rank: None,
             menu_context_labels: Default::default(),
             menu_widget_scripts: None,
+            menu_item_category: Vec::new(),
+            worldmap_menu: None,
+            pending_menu_warp: None,
+            pending_menu_escape: false,
             menu_widgets: Default::default(),
             party_ability_mask: [0; crate::accessory_passives::ABILITY_WORDS],
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
