@@ -317,6 +317,10 @@ CANONICAL_LADDERS = [
     ("w1l4_page_compose_ladder", "legaia-web-viewer"),
     ("w1l4_slot_bonus_marquee_ladder", "legaia-web-viewer"),
     ("w1l4_slot_bonus_marquee", "legaia-asset"),
+    # --- lane L1 ---
+    # The browser play page driven into a battle with retail's own one-shot
+    # arm flag raised, so the tutorial box the page composes actually exists.
+    ("battle_tutorial_page", "legaia-web-viewer"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
