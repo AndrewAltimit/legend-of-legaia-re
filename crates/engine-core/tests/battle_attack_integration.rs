@@ -150,9 +150,19 @@ fn battle_complete_propagates_through_world() {
     }
     assert!(completed, "the SM must report BattleComplete through tick");
     assert!(world.game_over, "a party wipe raises game over");
+    // The wipe teardown defers the field restore so hosts hold the frozen
+    // battle frame (`game_over_hold`); the world intentionally stays in
+    // Battle mode until the game-over session resolves the hold.
+    assert!(world.game_over_hold, "wipe defers the field restore");
+    assert_eq!(
+        world.mode,
+        SceneMode::Battle,
+        "the hold keeps the battle frame up"
+    );
+    world.resolve_game_over_hold();
     assert_ne!(
         world.mode,
         SceneMode::Battle,
-        "battle mode is left on resolve"
+        "battle mode is left once the hold resolves"
     );
 }
