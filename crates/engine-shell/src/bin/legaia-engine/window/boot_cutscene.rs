@@ -349,8 +349,7 @@ impl PlayWindowApp {
                         let finished = sub.take().expect("sub was Some");
                         match finished {
                             FieldMenuSubsession::Items(s) => {
-                                let _ =
-                                    apply_pause_items_outcome(&s, &mut self.session.host.world);
+                                let _ = apply_pause_items_outcome(&s, &mut self.session.host.world);
                             }
                             FieldMenuSubsession::Equip { session, char_slot } => {
                                 let _ = apply_equip_outcome(
