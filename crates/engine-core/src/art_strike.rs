@@ -72,8 +72,12 @@ impl ScheduledCue {
         self.kind == 0x1A
     }
 
-    /// `true` if the cue is a hit-effect (visible flash / damage popup) -
-    /// kind `0x4C`.
+    /// `true` for the spreadsheet's `0x4C` "hit effect" kind. Retail gives
+    /// that code neither sound (the effect-script SFX arm is gated
+    /// `code < 0x32`) nor an authored visual (its prototype-table word is
+    /// zero on disc), so nothing routes it - the strike's real visuals ride
+    /// the committed clip's effect script
+    /// ([`crate::action_effect_script`]). See [`legaia_art::HitCue`].
     pub fn is_hit_effect(&self) -> bool {
         self.kind == 0x4C
     }

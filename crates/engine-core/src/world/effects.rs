@@ -761,9 +761,21 @@ impl World {
     /// analogue of the effect-script walk's `FUN_80050ED4` arm
     /// (`FUN_801DEA50`, `0x801df168..0x801df194`: `a2 = 0x801F6324[id*4]`).
     /// The per-effect SFX byte the same arm queues (`0x801F6418[id]`,
-    /// `0x801df0ec..0x801df134`) is parsed
-    /// ([`legaia_asset::move_power::EffectAuxTables::effect_sfx`]) but not
-    /// fired here - its `FUN_80058490` ring lane has no engine model yet.
+    /// `0x801df0ec..0x801df134`) is **not** fired here but at the queue's
+    /// drain: `World::drain_battle_effect_spawns` pushes it into
+    /// [`World::battle_sfx_cues`] under the retail gate (plain code below
+    /// `0x32`, non-zero map byte), so callers routing an effect-script spawn
+    /// through this get the sound without a second fire, while the cue-group
+    /// expander's host (`spawn_cue`), which fires its own ungated SFX byte
+    /// per `FUN_801E22C8`, does not double it.
+    ///
+    /// Still unmodelled from the same arm: the spawn-scale specials (code
+    /// `4` spawns at base scale `0xC00`, code `6` at `0x2000`, all scales
+    /// modulated by the actor's mesh-header `+0x72` word - this signature
+    /// has no scale channel and the scene seats parts at unit scale), the
+    /// code `0` -> `9` substitution when the active actor's `+0x1D9` reads
+    /// `0x11`, and the codes-`4..=6` twin extra spawns (prototypes
+    /// `0x801F5E28` / `0x801F5E6C`).
     ///
     /// No-op (returns `false`) without an installed move-power catalog /
     /// overlay (disc-free battles), for an id outside the prototype table,

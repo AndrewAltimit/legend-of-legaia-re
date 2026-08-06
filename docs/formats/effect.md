@@ -338,9 +338,13 @@ with a coloured flash) runs the **identical bit-7 split** over a *different*
 effect list: a 5-byte-stride table at `0x801F6470`, indexed by its list-id
 argument. Per byte:
 
-- **bit 7 clear** → the same 3D path - gate `0x801F6418[id] != 0`, prototype
-  `0x801F6324[id]` staged via `FUN_80050ED4` at scale `0x1000`, plus a
-  `0x1DC`-tagged flash primitive emitted through `FUN_80058490`.
+- **bit 7 clear** → the same 3D path - prototype `0x801F6324[id]` staged via
+  `FUN_80050ED4` at scale `0x1000` unconditionally, and (only when
+  `0x801F6418[id] != 0`, with **no** `< 0x32` bound here, unlike
+  `FUN_801DEA50`'s arm) a `[sfx, 0x1DC, 0x10, 1]` packet submitted through
+  `FUN_80058490` - the sound-driver command lane (it copies the packet into
+  the `DAT_80078DFC` mailbox and invokes the driver callback), not a GPU
+  primitive.
 - **bit 7 set** → `FUN_801DFDF0(id & 0x7F)` into this 2D pool.
 
 So the "trace call sites of `FUN_801DFDF0`" thread has two confirmed producers -

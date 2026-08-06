@@ -72,10 +72,22 @@ impl EffectCue {
 
 /// One Hit Effect Cue: a single 32-bit word.
 ///
-/// Layout per the researcher: high half = animation-frame timing, low half
-/// = effect/sound constant. Common low-half values:
+/// Layout per the researcher's spreadsheet: high half = animation-frame
+/// timing, low half = effect/sound constant. Common low-half values:
 /// - `0x1A` - sound effect trigger
-/// - `0x4C` - hit effect (visible flash / damage popup)
+/// - `0x4C` - hit effect
+///
+/// This is a **spreadsheet-shaped model, not a retail structure**. The
+/// runtime cue carrier is the committed anim entry's 8-byte effect-script
+/// records (`[frame u8][code u8][xyz i16;3]` at entry `+0x14`), walked per
+/// frame by `FUN_801DEA50` - and in that dispatch a plain code `0x1A` fires
+/// the `0x801F6418` SFX byte while `0x4C` fires nothing: the SFX arm is
+/// gated `code < 0x32` and the `0x801F6324` prototype word a `0x4C` read
+/// would reach (`0x801F6454`, past the 61-entry table) is zero on disc.
+/// [`crate::parse::parse_record`] never fills [`ArtRecord::hit_cues`], so
+/// live records carry none; the type survives for host-installed /
+/// synthetic records. See
+/// `docs/subsystems/battle-action.md` § the per-action effect script.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct HitCue {
     pub timing_frames: u16,
@@ -94,6 +106,9 @@ impl HitCue {
         self.kind == 0x1A
     }
 
+    /// `true` for the spreadsheet's `0x4C` "hit effect" constant. In the
+    /// retail cue dispatch that code is silent **and** visual-less (see the
+    /// type docs), so consumers have nothing faithful to route it to.
     pub fn is_hit_effect(&self) -> bool {
         self.kind == 0x4C
     }

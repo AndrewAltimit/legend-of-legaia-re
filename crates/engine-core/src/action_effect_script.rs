@@ -81,10 +81,35 @@
 //! `World::move_fx_streak`), and the render layer projects the streak
 //! billboard from it (`legaia_engine_render::afterimage`, drawn by the native
 //! window's screen-FX pass). What is still **not** modelled is the stepper's
-//! function-head sibling: retail's `0x801DEA50..0x801DEBEC` prologue
-//! integrates the in-flight homing projectile (`ctx[+0x1028]`) each call, so
-//! the per-target homing *motion* the four `+0x1144` slots normally drive is
-//! absent - the engine reads the block only as the streak's projection input.
+//! function-head sibling, retail's `0x801DEA50..0x801DEBEC` prologue - whose
+//! semantics are now pinned from the disassembly even though the port carries
+//! no seat for them:
+//!
+//! * `ctx[+0x1028]` is a **single tracked part handle**, installed by the
+//!   table arm for codes `0xA` / `0x2D` / `0x2E` (`0x801df1b8..0x801df1e8`),
+//!   which also stash the record's *raw, unrotated* XYZ at
+//!   `ctx[+0x1184/+0x1186/+0x1188]`.
+//! * The prologue is **not** target-seeking integration. Each call it first
+//!   drops the handle when the part's `+0x10` flags carry bit `3`
+//!   (`0x801dea88..0x801deaac` - the part retired), then, only while the
+//!   stepped actor is the context's active actor (`ctx[+0x13]`,
+//!   `0x801deabc`), it **re-seats** the part at the actor: position
+//!   `+0x14/+0x16/+0x18` = actor `+0x34..+0x3B`, `y -= ctx[+0x1186]`, and
+//!   x/z offset by the stashed legs rotated through the sin/cos LUTs at the
+//!   **current** facing `+ 0x800` (`0x801deae0..0x801debe4`). So the
+//!   spawned effect *follows the acting actor* frame by frame (a dash drags
+//!   its projectile along); the per-target `+0x1144` quads feed the separate
+//!   `+0x0E`-list spawns, not this handle.
+//! * The engine's table-form spawns are seated once at spawn position and
+//!   never re-seated: `BattleEffectSpawn` carries no raw-offset channel and
+//!   the spawned `SummonScene` is not identified back to its record, so the
+//!   follow-the-actor motion has no carrier yet. The streak block reads
+//!   `+0x1144` only as a projection input.
+//!
+//! A second unported prologue lane: `ctx[+0x263]` non-zero consumes the whole
+//! call - it clears the flag and bumps the actor's `+0x1F5` **and** `+0x1F6`
+//! cursors without spawning (`0x801dec08..0x801dec48`), an external
+//! "skip one record" strobe.
 //!
 //! REF: FUN_80050ED4, FUN_801DFDF0 - the two effect-spawn entry points.
 //! REF: FUN_80047430 - the sole retail caller, the battle anim-node tick.
@@ -123,6 +148,19 @@ pub const HOMING_SLOT_COUNT: usize = 4;
 /// Record `+0x01` bit that selects the **direct** spawn form (`FUN_801DFDF0`)
 /// over the table form.
 pub const EFFECT_DIRECT_BIT: u8 = 0x80;
+
+/// Exclusive upper bound of the table-form codes that consult the per-effect
+/// SFX map (`0x801F6418`): the table arm's sound gate is `sltiu v0,v1,0x32`
+/// (`0x801df0d8`), so only plain codes `0x00..=0x31` can fire the `0x1DC`
+/// sound packet, and a code at or above this (e.g. the spreadsheet's `0x4C`
+/// "hit effect" constant) is silent by construction. Contrast the cue-group
+/// expander `FUN_801E22C8`, whose SFX arm has **no** such bound - the two
+/// arms gate differently. Consumed by
+/// `World::drain_battle_effect_spawns`, the engine seat of the arm.
+///
+/// PORT: FUN_801DEA50 (`0x801df0d4..0x801df134`, the SFX gate + packet build)
+/// REF: FUN_80058490 (the sound-driver command submit the packet reaches)
+pub const TABLE_SFX_GATE: u8 = 0x32;
 
 /// PSX angle units in a full revolution.
 const ANGLE_MASK: i32 = 0xFFF;
