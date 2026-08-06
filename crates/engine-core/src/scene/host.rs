@@ -143,6 +143,9 @@ pub struct SceneHost {
     /// Tracks whether the move-power table install was attempted, so the disc
     /// read (PROT 0898) only happens once per host even when it fails.
     move_power_loaded: bool,
+    /// Tracks whether the sparring-tutorial prompt corpus install was
+    /// attempted, so the disc read (PROT 0967) only happens once per host.
+    battle_tutorial_loaded: bool,
     /// What the last **mode-24 minigame door-warp** drain did, if one has run.
     ///
     /// Deliberately a host field rather than a [`SceneTickEvent`] variant: the

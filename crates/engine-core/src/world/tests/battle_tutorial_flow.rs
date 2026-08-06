@@ -72,6 +72,93 @@ fn priming_arms_the_machine_at_battle_entry() {
     assert!(plain.battle_tutorial.is_none());
 }
 
+/// Retail's own condition - the one-shot system-flag arm the entity SM's
+/// battle-entry tail tests and clears (`FUN_801DA51C`,
+/// `0x801DA698..0x801DA6B0`) - drives the machine with no host priming at all.
+///
+/// This is the shared model both hosts sit on: the native window and the
+/// browser play page each reach it through `World::enter_battle` and neither
+/// needs to know the tutorial exists.
+#[test]
+fn the_disc_arm_flag_runs_the_tutorial_for_exactly_one_battle() {
+    use crate::battle_tutorial::TUTORIAL_ARM_FLAG;
+
+    let mut world = World::new();
+    world.set_battle_tutorial_script(synthetic_script());
+
+    // Baseline: the corpus alone arms nothing. Having the text is not the
+    // condition, which is the confusion the old host gate encoded.
+    world.enter_battle(3, 2);
+    assert!(
+        world.battle_tutorial.is_none(),
+        "an unarmed battle must not run the tutorial"
+    );
+
+    // The field VM raising the flag is the whole trigger (town01's Tetsu
+    // record does it with `50 19`, two ops before its battle-entry op).
+    world.system_flag_set(TUTORIAL_ARM_FLAG);
+    world.enter_battle(3, 2);
+    assert!(
+        world.battle_tutorial.is_some(),
+        "the disc arm must run the tutorial in the very next battle"
+    );
+    assert_eq!(
+        world.battle_tutorial_lesson(),
+        Some(TutorialLesson::Attacks)
+    );
+    assert!(
+        !world.system_flag_test(TUTORIAL_ARM_FLAG),
+        "battle entry must CONSUME the arm (retail clears it in the same breath)"
+    );
+
+    // ...and only that battle. A second fight is an ordinary one.
+    world.enter_battle(3, 2);
+    assert!(
+        world.battle_tutorial.is_none(),
+        "the arm is one-shot; the fight after the spar is ordinary"
+    );
+}
+
+/// A forced (debug) tutorial still consumes a raised arm, so it cannot leave
+/// the flag behind to fire a second time on the next fight.
+#[test]
+fn a_forced_tutorial_consumes_the_disc_arm_too() {
+    use crate::battle_tutorial::TUTORIAL_ARM_FLAG;
+
+    let mut world = World::new();
+    world.prime_battle_tutorial(synthetic_script());
+    world.system_flag_set(TUTORIAL_ARM_FLAG);
+    world.enter_battle(3, 2);
+    assert!(world.battle_tutorial.is_some());
+    assert!(!world.system_flag_test(TUTORIAL_ARM_FLAG), "arm consumed");
+    world.enter_battle(3, 2);
+    assert!(
+        world.battle_tutorial.is_none(),
+        "neither the force nor the arm may survive into the next battle"
+    );
+}
+
+/// The stage-id resolver is the retail arithmetic, not a boolean rename: the
+/// unarmed value is the "no stage overlay" id `0`, and the armed one is the
+/// id `overlay_loader::battle_stage_overlay_entry` maps to PROT 0967.
+#[test]
+fn the_stage_id_resolver_matches_the_overlay_dispatch() {
+    use crate::battle_tutorial::{TUTORIAL_STAGE_ID, stage_id_at_battle_entry};
+
+    assert_eq!(stage_id_at_battle_entry(false), 0);
+    assert_eq!(stage_id_at_battle_entry(true), TUTORIAL_STAGE_ID);
+    assert_eq!(
+        crate::overlay_loader::battle_stage_overlay_entry(stage_id_at_battle_entry(false)),
+        None,
+        "stage id 0 pages no overlay"
+    );
+    assert_eq!(
+        crate::overlay_loader::battle_stage_overlay_entry(stage_id_at_battle_entry(true)),
+        Some(crate::battle_tutorial::OVERLAY_967_PROT_INDEX),
+        "the armed stage id must resolve to the prompt overlay's PROT entry"
+    );
+}
+
 #[test]
 fn opening_a_turn_raises_the_turn_prompt_and_queues_the_lesson_intro() {
     let mut world = tutorial_battle_world();

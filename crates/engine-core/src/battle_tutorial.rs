@@ -2,7 +2,8 @@
 //! boxes of the scripted Tetsu tutorial fight in the prologue.
 //!
 //! PORT: FUN_801F6B70, FUN_801F747C
-//! REF: FUN_801F7628, FUN_8003CBA8, FUN_80035F04
+//! REF: FUN_801F7628, FUN_8003CBA8, FUN_80035F04, FUN_801DA51C, FUN_8003CE64,
+//! REF: FUN_8003CE34
 //!
 //! Ported from the **battle-stage slot-B overlay, extraction PROT 967**
 //! (`base_va = 0x801F69D8`, label `battle_tutorial` in
@@ -74,6 +75,54 @@ pub const OVERLAY_967_PROT_INDEX: u32 = 967;
 /// Battle-stage id that pages overlay 967 in (`ctx` byte `_DAT_8007B64A`).
 /// Every other catalogued battle reads `0` (no stage overlay).
 pub const TUTORIAL_STAGE_ID: u8 = 1;
+
+/// System-flag index (the `DAT_80085758` bank) whose set state raises the
+/// battle-stage id to [`TUTORIAL_STAGE_ID`] at battle entry.
+///
+/// This is retail's **entire** condition for the sparring tutorial, and it is
+/// a one-shot. The field/world entity SM's battle-entry tail defaults the
+/// stage id to `0`, tests this flag, and only on a set flag writes
+/// [`TUTORIAL_STAGE_ID`] - clearing the flag in the same breath, so exactly
+/// the next battle gets the overlay:
+///
+/// ```text
+/// 801da698  jal 0x8003ce64            ; TEST(a0 = 0x19)
+/// 801da69c  _sb zero,-0x49b6(s0)      ; delay slot: stage id = 0
+/// 801da6a0  beq v0,zero,0x801da6b4    ; flag clear -> no stage overlay
+/// 801da6a4  _li v0,0x1
+/// 801da6a8  sb v0,-0x49b6(s0)         ; stage id = TUTORIAL_STAGE_ID
+/// 801da6ac  jal 0x8003ce34            ; CLEAR(0x19) - fire once
+/// 801da6b0  _li a0,0x19
+/// ```
+///
+/// (`-0x49b6` off a `lui 0x8008` base is `_DAT_8007B64A`, the stage-id byte
+/// [`crate::overlay_loader::battle_stage_overlay_entry`] maps.)
+///
+/// The setter is disc data, not code: a disc-wide field-VM flag census finds
+/// exactly **one** site writing this flag, in town01's own Tetsu sparring
+/// record - the bytes `50 19` (op `0x5x` SET) sitting two ops before that
+/// record's `3E FF` battle-entry op, directly after Tetsu's "Come at me!"
+/// line and before his post-fight one.
+///
+/// So no scene name, command-line flag or environment variable is part of the
+/// condition. A host that gates the tutorial on any of those is describing
+/// its own development shim, not retail.
+///
+/// REF: FUN_801DA51C, FUN_8003CE64, FUN_8003CE34
+pub const TUTORIAL_ARM_FLAG: u16 = 0x19;
+
+/// Battle-stage id installed at battle entry, given whether
+/// [`TUTORIAL_ARM_FLAG`] was set when the entry ran.
+///
+/// `0` = no stage overlay, which is every ordinary fight;
+/// [`TUTORIAL_STAGE_ID`] pages overlay 967 into loader slot B and so turns the
+/// prompt machine on. The caller clears the flag when this returns
+/// [`TUTORIAL_STAGE_ID`] - the arm is consumed, not sticky.
+///
+/// PORT: FUN_801DA51C (battle-entry stage-id tail, `0x801DA698..0x801DA6B0`)
+pub fn stage_id_at_battle_entry(arm_flag_set: bool) -> u8 {
+    if arm_flag_set { TUTORIAL_STAGE_ID } else { 0 }
+}
 
 /// A tutorial message, identified by the **VA of its string** inside overlay
 /// 967. The engine resolves it to text through [`BattleTutorialScript`].

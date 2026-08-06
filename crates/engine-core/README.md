@@ -254,10 +254,13 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   open. It is the key the sparring-tutorial hook table indexes.
 - `battle_tutorial` - the Tetsu sparring fight's in-battle prompt machine
   (stage overlay 967), a `(flow state × lesson)` cross-product with a
-  wrong-lesson rewind. `World::prime_battle_tutorial` arms it for the next
-  battle; a queued box parks the whole battle tick. Prompt **text is read
-  off the user's disc** (`BattleTutorialScript::from_prot`) - only the
-  string addresses are committed. See
+  wrong-lesson rewind. A queued box parks the whole battle tick. Prompt
+  **text is read off the user's disc** (`BattleTutorialScript::from_prot`,
+  installed for every host by scene entry) - only the string addresses are
+  committed. It arms from the disc, not from a host: `TUTORIAL_ARM_FLAG`
+  (`0x19`) is the one-shot system-flag arm `World::enter_battle` tests and
+  consumes, raised by town01's Tetsu record two ops before its battle-entry
+  op. `World::prime_battle_tutorial` is a debug force, not the port. See
   `docs/subsystems/battle.md#the-sparring-tutorial-prompt-machine-overlay-967`.
 - `battle_hud` - renderer-agnostic UI model. Holds per-slot HP / MP /
   AP / status icons, a queue of `DamagePopup`s with fade timers, and a

@@ -1148,6 +1148,66 @@ impl LegaiaRuntime {
 
 #[wasm_bindgen]
 impl LegaiaRuntime {
+    /// The live sparring-tutorial model behind the prompt boxes the overlay
+    /// composes, as JSON.
+    ///
+    /// `{"armed": false, "prompts": <n>, "flag_armed": <bool>}` outside the
+    /// tutorial fight, where `prompts` is how many prompt strings the disc
+    /// supplied and `flag_armed` whether the disc's one-shot arm
+    /// (`battle_tutorial::TUTORIAL_ARM_FLAG`) is currently raised. While
+    /// armed it gains `"lesson": <0..=5>`, `"queued": <n>` and
+    /// `"box": {"text", "style", "waits", "rect": [x, y, w, h]}` (`null`
+    /// between prompts).
+    ///
+    /// The boxes themselves ride `play_overlay_draws_json`; this is the state
+    /// the page can read to know a prompt owns the pad (a waiting box parks
+    /// the whole battle loop, so a host that shows a "press X" affordance
+    /// needs to know). It is also the surface on which "the page never primes
+    /// the tutorial" is a *measurable* claim rather than a count of text rows
+    /// that happen to be zero.
+    pub fn play_battle_tutorial_json(&self) -> String {
+        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+            return r#"{"armed":false,"prompts":0,"flag_armed":false}"#.to_string();
+        };
+        let prompts = world.battle_tutorial_script.len();
+        let flag_armed =
+            world.system_flag_test(legaia_engine_core::battle_tutorial::TUTORIAL_ARM_FLAG);
+        let Some(lesson) = world.battle_tutorial_lesson() else {
+            return serde_json::json!({
+                "armed": false,
+                "prompts": prompts,
+                "flag_armed": flag_armed,
+            })
+            .to_string();
+        };
+        // Same font the compose measures with, so the reported rect is the
+        // rect the page draws - the disc's own proportional font when it
+        // decoded, the placeholder metrics otherwise.
+        let font = self
+            .menu_font
+            .clone()
+            .unwrap_or_else(legaia_font::Font::placeholder);
+        let tbox = world.battle_tutorial_box().map(|b| {
+            let width = ui::battle_tutorial_text_width(&font, &b.text);
+            let rect = b.rect(width);
+            serde_json::json!({
+                "text": b.text,
+                "style": b.style,
+                "waits": b.waits_for_input,
+                "rect": rect.map(|(x, y, w, h)| vec![x, y, w, h]),
+            })
+        });
+        serde_json::json!({
+            "armed": true,
+            "prompts": prompts,
+            "flag_armed": flag_armed,
+            "lesson": lesson.raw(),
+            "box": tbox,
+            "queued": world.battle_tutorial_boxes.len(),
+        })
+        .to_string()
+    }
+
     /// Enable / disable the live battle loop for subsequently-entered scenes
     /// (and the currently-running one). On by default - the play page rolls
     /// the disc's own step-driven encounters like retail. Off = the old
@@ -1891,6 +1951,30 @@ impl LegaiaRuntime {
         self.scene_host
             .as_ref()
             .is_some_and(|h| h.world.mode == SceneMode::Battle)
+    }
+
+    /// Raise a system-flag-bank bit on the live world, the way a field-VM
+    /// `0x5x` SET op does.
+    ///
+    /// The oracles use it to put a disc-side precondition in place without
+    /// replaying the script that would - e.g. flag
+    /// `legaia_engine_core::battle_tutorial::TUTORIAL_ARM_FLAG`, which town01's
+    /// Tetsu record sets two ops before its battle-entry op. Deliberately a
+    /// raw flag poke rather than a "start the tutorial" hook: a test that can
+    /// only ask for the outcome cannot tell a wired condition from a shim.
+    pub fn debug_system_flag_set(&mut self, idx: u16) -> bool {
+        let Some(host) = self.scene_host.as_mut() else {
+            return false;
+        };
+        host.world.system_flag_set(idx);
+        true
+    }
+
+    /// Read a system-flag-bank bit off the live world (`false` with no scene).
+    pub fn debug_system_flag_test(&self, idx: u16) -> bool {
+        self.scene_host
+            .as_ref()
+            .is_some_and(|h| h.world.system_flag_test(idx))
     }
 }
 

@@ -112,6 +112,41 @@ the resident scene bundle (below). Engine mirror:
 [`engine-core::overlay_loader::battle_stage_overlay_entry`](../../crates/engine-core/src/overlay_loader.rs);
 oracle `crates/engine-shell/tests/battle_stage_live.rs`.
 
+#### Who writes stage id `1` - the one-shot arm flag `0x19`
+
+None of the three SCUS sites above ever writes `1`, so the loader census alone
+cannot say what turns the tutorial on. The writer lives in the field/world
+**entity SM** `FUN_801DA51C`, in the tail that commits an installed encounter
+record to a fight - right after it clears `entity[+0x94]` and bumps the
+battle counter `entity[+0x8A]`:
+
+```
+801da698  jal 0x8003ce64            ; TEST(a0 = 0x19)   - system-flag bank
+801da69c  _sb zero,-0x49b6(s0)      ; delay slot: stage id = 0
+801da6a0  beq v0,zero,0x801da6b4    ; flag clear -> no stage overlay
+801da6a4  _li v0,0x1
+801da6a8  sb v0,-0x49b6(s0)         ; stage id = 1  -> extraction 967
+801da6ac  jal 0x8003ce34            ; CLEAR(0x19)   - fire once
+801da6b0  _li a0,0x19
+```
+
+So the id is not a property of the formation, the scene or the monster: it is a
+**one-shot system-flag arm** (`0x19` in the `DAT_80085758` bank), consumed by
+the first battle entered after it is raised. The `sb zero` sits in the `jal`
+delay slot, so the default `0` is written on both paths.
+
+The setter is disc data. A disc-wide field-VM flag census finds exactly one
+site writing flag `0x19`: town01's own Tetsu sparring record, where the bytes
+`50 19` (op `0x5x` SET) sit two ops before that record's `3E FF` battle-entry
+op, between Tetsu's `"Come at me!"` line and his post-fight one. No other scene
+sets it and no script tests it - the entity SM is the only reader.
+
+Engine port: [`battle_tutorial::TUTORIAL_ARM_FLAG`](../../crates/engine-core/src/battle_tutorial.rs)
+plus `stage_id_at_battle_entry`, consumed by `World::enter_battle` through
+`World::take_battle_tutorial_arm`. Because the arm is disc-side, no host
+decides anything: the native window and the browser play page each get the
+tutorial in the fight retail gives it and in no other.
+
 ### The sparring-tutorial prompt machine (overlay 967)
 
 What overlay 967 *does* is emit the in-battle "how to fight" boxes of the Tetsu
@@ -443,10 +478,16 @@ command phase). Three points differ from retail and are deliberate:
 A queued box parks the whole battle tick (`World::live_battle_tick` returns
 early), which is the port of retail returning before it reads the flow state
 while `FUN_801D9BBC` reports a box up (`ctx[+0x6B2]`). A hook that takes the
-rewind exit discards the action and reopens the command menu. Hosts arm the
-machine with `World::prime_battle_tutorial`, the stand-in for retail's stage-id
-dispatch; `legaia-engine play-window` primes it in `town01`
-(`LEGAIA_BATTLE_TUTORIAL=1`/`0` forces it either way for hand-testing).
+rewind exit discards the action and reopens the command menu.
+
+**No host arms it.** `World::enter_battle` consumes the disc's own one-shot
+system-flag arm (above), so the native window and the browser play page both
+show the boxes in the fight retail shows them in, with no scene name, flag or
+environment variable in the condition. `World::prime_battle_tutorial` is a
+debug force, and `LEGAIA_BATTLE_TUTORIAL` (`0` suppress / `1` force / `now`
+force and enter a fight) is `play-window`'s hand-testing knob on top of it -
+neither is the port. Browser oracle:
+`crates/web-viewer/tests/battle_tutorial_page.rs`.
 
 The `asset-viewer battle-scene` subcommand drives the engine-side composite end-to-end: loads the same battle bundle TMDs, builds an `engine-core::World` in `SceneMode::Battle`, spawns 3 party + 5 monster actor slots, and ticks the [battle-action state machine](battle-action.md) per frame. HUD shows the current `ActionState` (decoded into the named variant), queued action, per-slot liveness, transition counts, and any `BattleEndCause` the SM emits. Triangle cycles `queued_action`; Cross re-seeds at `ActionState::Begin`.
 
