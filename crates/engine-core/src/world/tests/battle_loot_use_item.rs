@@ -671,3 +671,102 @@ fn item_catalog_setter_replaces() {
     world.set_item_catalog(full_test_catalog());
     assert!(!world.item_catalog.is_empty());
 }
+
+// --- lane B3: field-menu heals land on the roster record --------------------
+
+/// A three-member roster with `hp/hp_max` and `mp/mp_max` seeded, projected
+/// onto the party actors via `load_party`.
+fn rostered_world() -> World {
+    let mut party = legaia_save::Party::zeroed(3);
+    for member in &mut party.members {
+        let mut hms = member.hp_mp_sp();
+        hms.hp_cur = 50;
+        hms.hp_max = 100;
+        hms.mp_cur = 5;
+        hms.mp_max = 30;
+        member.set_hp_mp_sp(hms);
+    }
+    let mut world = World::new();
+    world.load_party(party);
+    world.set_item_catalog(full_test_catalog());
+    world
+}
+
+/// Out of battle the roster record at `0x80084708 + n*0x414` is the
+/// persistent truth (the field menu re-reads it), so a field heal must land
+/// there - not only on the `BattleActor` projection.
+#[test]
+fn field_heal_lands_on_the_roster_record() {
+    let mut world = rostered_world();
+    assert_ne!(world.mode, SceneMode::Battle);
+    let outcome = world.use_item(0x01, 1); // Heal { amount: 100 }
+    assert!(matches!(
+        outcome,
+        crate::items::ItemOutcome::HealedHp { .. }
+    ));
+    let hms = world.roster.members[1].hp_mp_sp();
+    assert!(
+        hms.hp_cur > 50,
+        "the roster record holds the heal (got {})",
+        hms.hp_cur
+    );
+    assert!(hms.hp_cur <= hms.hp_max);
+    // The live mirror agrees with the record.
+    assert_eq!(world.actors[1].battle.hp, hms.hp_cur);
+}
+
+/// A field revive writes the roster record and revives the mirror.
+#[test]
+fn field_revive_lands_on_the_roster_record() {
+    let mut world = rostered_world();
+    let mut hms = world.roster.members[2].hp_mp_sp();
+    hms.hp_cur = 0;
+    world.roster.members[2].set_hp_mp_sp(hms);
+    world.actors[2].battle.hp = 0;
+    world.actors[2].battle.liveness = 0;
+
+    let outcome = world.use_item(0x0C, 2); // Revive { factor: 128 }
+    assert!(matches!(outcome, crate::items::ItemOutcome::Revived { .. }));
+    let hms = world.roster.members[2].hp_mp_sp();
+    assert!(hms.hp_cur > 0, "roster record revived");
+    assert_eq!(world.actors[2].battle.hp, hms.hp_cur);
+    assert_eq!(
+        world.actors[2].battle.liveness, 1,
+        "mirror liveness restored"
+    );
+}
+
+/// In battle the actor mirror stays the record the item handler writes
+/// (retail's projection semantics); the roster is untouched until teardown.
+#[test]
+fn battle_heal_writes_the_mirror_not_the_roster() {
+    let mut world = rostered_world();
+    world.mode = SceneMode::Battle;
+    world.actors[0].battle.hp = 20;
+    let outcome = world.use_item(0x01, 0);
+    assert!(matches!(
+        outcome,
+        crate::items::ItemOutcome::HealedHp { .. }
+    ));
+    assert!(world.actors[0].battle.hp > 20, "mirror healed");
+    assert_eq!(
+        world.roster.members[0].hp_mp_sp().hp_cur,
+        50,
+        "roster untouched mid-battle"
+    );
+}
+
+/// The reverse direction: at teardown the battle mirror's HP/MP flow back
+/// into the roster (`persist_battle_party_hp` inside `finish_battle`), so
+/// the two-record model closes both ways.
+#[test]
+fn battle_hp_flows_back_to_the_roster_at_teardown() {
+    let mut world = rostered_world();
+    world.mode = SceneMode::Battle;
+    world.actors[0].battle.hp = 37;
+    world.actors[0].battle.mp = 2;
+    world.finish_battle();
+    let hms = world.roster.members[0].hp_mp_sp();
+    assert_eq!(hms.hp_cur, 37, "battle HP persisted to the roster");
+    assert_eq!(hms.mp_cur, 2, "battle MP persisted to the roster");
+}
