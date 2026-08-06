@@ -703,6 +703,72 @@ fn three_actor_talk_rearm_restores_saved_positions() {
     assert!(world.system_flag_test(0xD), "lock stays up");
 }
 
+/// The talk end: retail's controller (`FUN_801D27E0`) polls the talk lock
+/// every frame and despawns when the script clears it; the engine's poll
+/// ([`World::tick_three_actor_talk`]) additionally restores the party
+/// count + leader from the arm-time snapshot, so the collapse is not a
+/// one-way door.
+#[test]
+fn three_actor_talk_end_restores_party_and_drops_lock() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.party_actor_slots = vec![Some(1), Some(0), Some(2)];
+    world.party_leader_slot = Some(1);
+
+    let op = talk_op([5, 6, 7], 1, 10);
+    let mut ctx = FieldCtx::default();
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        let _ = vm::field::step(&mut host, &mut ctx, &op, 0);
+    }
+    assert_eq!(
+        world.party_actor_slots,
+        vec![Some(1)],
+        "the arm collapsed the party"
+    );
+    assert!(world.system_flag_test(0xD));
+
+    // A frame with the lock still up changes nothing.
+    let _ = world.tick();
+    assert_eq!(world.party_actor_slots, vec![Some(1)]);
+    assert!(world.three_actor_talk.is_some());
+
+    // The script ends the talk by clearing the lock (retail: the generic
+    // field-VM flag-clear op); the controller's next poll despawns.
+    world.system_flag_clear(0xD);
+    let _ = world.tick();
+    assert_eq!(
+        world.party_actor_slots,
+        vec![Some(1), Some(0), Some(2)],
+        "party count restored from the pre-collapse snapshot"
+    );
+    assert_eq!(world.party_leader_slot, Some(1), "leader restored");
+    assert!(!world.system_flag_test(0xD), "lock stays down");
+    assert!(world.three_actor_talk.is_none(), "controller despawned");
+}
+
+/// A re-arm mid-talk must not clobber the pre-collapse snapshot: the
+/// restore still yields the original party.
+#[test]
+fn three_actor_talk_rearm_preserves_the_party_snapshot() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.party_actor_slots = vec![Some(0), Some(2)];
+    world.party_leader_slot = Some(0);
+
+    let op = talk_op([5, 6, 7], 1, 10);
+    let mut ctx = FieldCtx::default();
+    for _ in 0..2 {
+        // First arm, then a re-arm while the lock is up.
+        let mut host = FieldHostImpl { world: &mut world };
+        let _ = vm::field::step(&mut host, &mut ctx, &op, 0);
+    }
+    world.system_flag_clear(0xD);
+    let _ = world.tick();
+    assert_eq!(world.party_actor_slots, vec![Some(0), Some(2)]);
+    assert_eq!(world.party_leader_slot, Some(0));
+}
+
 #[test]
 fn three_actor_talk_first_arm_without_leader_defaults_to_slot_zero() {
     let mut world = World::new();

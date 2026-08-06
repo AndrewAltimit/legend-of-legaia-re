@@ -1308,11 +1308,14 @@ impl SpecialUseSession {
     /// [`items_screen_model`] projects them through the shared list channel so
     /// both hosts draw the screen with the list renderer they already call.
     ///
-    /// What a pick does **not** yet do is enter the world map at the picked
-    /// landmark: retail's phase 4 writes `_DAT_8007B43C = 5` and the outer
-    /// menu SM acts on it, while the port stages the destination on
-    /// [`crate::world::World::pending_menu_warp`] and no host drains it. The
-    /// bag decrement, the exit code and the staged triple are all committed.
+    /// A pick warps: retail's phase 4 writes `_DAT_8007B43C = 5` and the
+    /// outer menu SM acts on it; the port stages the destination on
+    /// [`crate::world::World::pending_menu_warp`] and the world tick's
+    /// menu-warp drain (`World::drain_staged_menu_warp`) resolves the staged
+    /// scene word - a raw CDNAME TOC index - into the named scene
+    /// transition the scene host consumes, seating the party at the
+    /// record's tile. The bag decrement, the exit code and the staged
+    /// triple are all committed by this screen.
     ///
     /// PORT: FUN_801D8B90 (Door of Wind destination list + exit-code 5 warp)
     fn pick_destination_input(&mut self, pressed: u16) {

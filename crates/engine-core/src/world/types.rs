@@ -986,6 +986,21 @@ pub struct ThreeActorTalk {
     /// writes the 3-record table at `0x800845E4`; a re-arm while the talk
     /// flag is up restores from it (`FUN_801D2D38`'s else-branch loop).
     pub saved: [Option<((i16, i16), i16)>; 3],
+    /// Story-party actor slots as they stood BEFORE the first arm collapsed
+    /// the list to its leader (`FUN_801D2D38`'s `count = 1, ids =
+    /// [leader, 0, 0, 0]` stores). Only the first [`Self::saved_party_len`]
+    /// entries are meaningful. Retail rebuilds the party through the scene
+    /// script's own party ops after the talk; the engine restores this
+    /// snapshot when the talk lock (system flag `0xD`) drops
+    /// ([`World::end_three_actor_talk`]) so the collapse is never a one-way
+    /// door, and any script party ops that follow still apply on top.
+    /// Carried unchanged across re-arms (the re-arm branch never
+    /// re-collapses).
+    pub saved_party: [Option<u8>; 4],
+    /// Number of live entries in [`Self::saved_party`].
+    pub saved_party_len: u8,
+    /// [`World::party_leader_slot`] before the collapse.
+    pub saved_leader: Option<u8>,
 }
 
 /// Pending dialog request for the field-VM op 0x3F handler. The engine

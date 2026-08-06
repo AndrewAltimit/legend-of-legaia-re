@@ -827,8 +827,20 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 .unwrap_or(id)
         }
         let w = &mut *self.world;
-        let saved = if !w.system_flag_test(0xD) {
-            // First arm: collapse the story party to its leader.
+        let (saved, saved_party, saved_party_len, saved_leader) = if !w.system_flag_test(0xD) {
+            // First arm: snapshot the pre-collapse story party (the
+            // engine-side record `World::end_three_actor_talk` restores when
+            // the talk lock drops - retail's post-talk membership comes from
+            // the script's own party ops), then collapse it to its leader.
+            let mut saved_party = [None; 4];
+            let saved_party_len = w.party_actor_slots.len().min(4) as u8;
+            for (dst, src) in saved_party
+                .iter_mut()
+                .zip(w.party_actor_slots.iter().copied())
+            {
+                *dst = src;
+            }
+            let saved_leader = w.party_leader_slot;
             let leader = w
                 .party_leader_slot
                 .or_else(|| w.party_actor_slots.first().copied().flatten())
@@ -841,28 +853,33 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             w.system_flag_set(0x10 + u16::from(leader));
             // Capture the participants' live positions for the paired
             // restore (retail: controller SM state 0).
-            actor_ids.map(|id| {
+            let saved = actor_ids.map(|id| {
                 let slot = resolve(w, id);
                 w.field_npc_positions
                     .get(&slot)
                     .map(|&pos| (pos, w.field_npc_headings.get(&slot).copied().unwrap_or(0)))
-            })
+            });
+            (saved, saved_party, saved_party_len, saved_leader)
         } else {
             // Re-arm during an active talk: restore saved positions onto
-            // this instruction's participants, positionally.
-            let saved = w
-                .three_actor_talk
-                .as_ref()
-                .map(|t| t.saved)
-                .unwrap_or_default();
+            // this instruction's participants, positionally. The party
+            // snapshot carries over unchanged - retail's else branch never
+            // re-collapses (`FUN_801D2D38` `801d2dd4` skips the count/ids
+            // stores when the flag is up).
+            let prior = w.three_actor_talk.as_ref().copied().unwrap_or_default();
             for (i, &id) in actor_ids.iter().enumerate() {
-                if let Some((pos, heading)) = saved[i] {
+                if let Some((pos, heading)) = prior.saved[i] {
                     let slot = resolve(w, id);
                     w.field_npc_positions.insert(slot, pos);
                     w.field_npc_headings.insert(slot, heading);
                 }
             }
-            saved
+            (
+                prior.saved,
+                prior.saved_party,
+                prior.saved_party_len,
+                prior.saved_leader,
+            )
         };
         w.system_flag_set(0xD);
         w.three_actor_talk = Some(ThreeActorTalk {
@@ -870,6 +887,9 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             script_id: arg_word,
             duration: arg_byte,
             saved,
+            saved_party,
+            saved_party_len,
+            saved_leader,
         });
     }
 

@@ -102,6 +102,27 @@ cheapest place to look for a claim that is still wrong.
   what a **cutscene** changes music with, so a scene-corpus BGM sweep (which
   only runs prescripts, and those emit sub-op 1) could not see the difference.
   Falsification: [`re-do-not-re-walk.md`](re-do-not-re-walk.md#op-0x35-sub-op-9-was-never-a-queue).
+- **`FUN_801D27E0` was handed off as "the talk controller that restores party
+  count/leader and drops lock 0xD". The disassembly says otherwise.** The
+  function is the three-actor talk's **leader-cycle** SM (six states off
+  `+0x54`): state 0 polls system flag `0xD` and the per-participant flags
+  `base+0..2`, and a switch trigger fades out, hands control to the next
+  un-talked participant (rewriting `0x80084597/98` + flags `0x10..0x12`,
+  parking the old leader's record at `0x3F80`), and fades back in. It never
+  writes the party count `0x80084594` and never clears flag `0xD` - when the
+  *script* clears the flag, state 5 merely despawns the controller
+  (`s4+0x10 &= ~8`). Retail's post-talk party membership comes from the scene
+  script's own party ops (the field VM's `0x454`-offset writers). The engine's
+  restore (`World::end_three_actor_talk`) therefore keys on the flag-drop
+  trigger and restores an arm-time snapshot, disclosed as such.
+- **The quick-travel placement `scene_id` "unresolvable id space" is resolved.**
+  The u16 at record `+2` of `DAT_80073A98` is the destination scene's **raw
+  CDNAME TOC index** - disc values `0x55`/`0xF4`/`0x187` are the `map01/02/03`
+  kingdom bases and `0x162`/`0x215` are `son`/`korout` - and the staged copy at
+  `0x80084628` is the same word the world-map arrival kernel `FUN_801EE328`
+  matches (record `+0xC` of the visited-map table) before seating the party at
+  `(tile << 7) + 0x40`. Resolver: `World::scene_toc_names` (the parsed CDNAME
+  map), drain `World::drain_staged_menu_warp`.
 - **"Retail shots rarely roll the camera" was false, and so was the row that
   replaced it.** Retail authors a non-zero op-`0x45` slot-2 roll in eight
   scenes. The renderer's dropped `RotMatrixZ` factor was a real divergence,

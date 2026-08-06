@@ -112,6 +112,137 @@ impl World {
         }
     }
 
+    /// Per-frame poll of the three-actor-talk controller: end the talk when
+    /// the talk lock has dropped.
+    ///
+    /// PORT: FUN_801D27E0 (talk-controller SM, state 0 -> state 5): the
+    /// controller's state-0 monitor tests system flag `0xD` every frame
+    /// (`jal 0x8003ce64, a0=0xD` at `801d28c8`) and, when the scene script
+    /// has cleared it, routes to state 5 - the fade-out + self-despawn arm
+    /// (`801d2d04` clears the actor's own active bit). The engine's
+    /// controller is the [`crate::world::ThreeActorTalk`] session, so
+    /// "despawn" is [`Self::end_three_actor_talk`].
+    ///
+    /// The controller's mid-talk leader-cycle states (1..=4: fade out, copy
+    /// the leader's position onto the next un-talked participant, fade in -
+    /// the `switch character` feature of the split-party talk segments) are
+    /// NOT ported yet; the port's talk session has no per-frame switch
+    /// input path.
+    pub(crate) fn tick_three_actor_talk(&mut self) {
+        if self.three_actor_talk.is_some() && !self.system_flag_test(0xD) {
+            self.end_three_actor_talk();
+        }
+    }
+
+    /// End the active three-actor talk: drop the session, clear the talk
+    /// lock (system flag `0xD`, idempotent when the script already cleared
+    /// it - that clear is what [`Self::tick_three_actor_talk`] fires on),
+    /// and restore the story party count + leader from the pre-collapse
+    /// snapshot the op-`0x43` arm captured.
+    ///
+    /// Retail rebuilds the post-talk party through the scene script's own
+    /// party ops (the field VM's `0x80084594/98` writers); the controller
+    /// itself only despawns (`FUN_801D27E0` state 5). The engine restores
+    /// the arm-time snapshot at the same trigger so the collapse is never a
+    /// one-way door when a script ends the talk without explicit re-adds -
+    /// script party ops that do follow still apply on top (`party_add`
+    /// dedupes members already present, `party_remove` prunes), so a script
+    /// that rebuilds the same trio converges to the identical end state.
+    ///
+    /// No-op without an active session.
+    // REF: FUN_801D27E0 (state-5 despawn), FUN_801D2D38 (the collapse this undoes)
+    pub fn end_three_actor_talk(&mut self) {
+        let Some(talk) = self.three_actor_talk.take() else {
+            return;
+        };
+        self.system_flag_clear(0xD);
+        if talk.saved_party_len > 0 {
+            self.party_actor_slots = talk.saved_party[..talk.saved_party_len as usize].to_vec();
+            self.party_leader_slot = talk
+                .saved_leader
+                .or_else(|| self.party_actor_slots.first().copied().flatten());
+        }
+    }
+
+    /// Drain a menu-staged transition into the named scene transition the
+    /// scene host consumes ([`Self::pending_named_scene_transition`]).
+    ///
+    /// **Door of Wind** ([`Self::pending_menu_warp`]): the staged triple is
+    /// retail's `0x80084628` scene word + `0x80084624`/`0x8008462C` tile
+    /// pair (`FUN_801D8B90` phase 3, from quick-travel placement record
+    /// bytes `+2/+4/+5`). The scene word is the destination scene's raw
+    /// CDNAME TOC index ([`Self::scene_toc_names`]); the tile pair seats
+    /// the party at `(tile << 7) + 0x40`, the same conversion the world-map
+    /// arrival kernel applies (`FUN_801EE328`: `0x80073EF4/EF8` stores).
+    /// The named-transition drain performs exactly that seat
+    /// (`seat_player_at_tile`), entering the kingdom overworld for the
+    /// three `mapNN` bases and the field scene for the `son` / `korout`
+    /// records. An unresolvable scene word logs retail's
+    /// `UNFIND MAP NUMBER %d` diagnostic (the `FUN_801EE328` phase-`0x63`
+    /// park) and drops the warp.
+    ///
+    /// **Door of Light** ([`Self::pending_menu_escape`]): retail hands the
+    /// outer menu SM exit code 4 (`FUN_801D8A58`) - the dungeon-escape
+    /// handoff, whose overlay-side consumer is not yet pinned. The engine
+    /// routes it onto the last visited-map record (the return point the
+    /// travel arts warp to): back to that kingdom overworld at the stored
+    /// tile. With no visited record yet (the party has never stood on a
+    /// kingdom map) the escape is dropped with a diagnostic.
+    ///
+    /// REF: FUN_801D8B90 (stage), FUN_801D8A58 (escape exit code),
+    /// FUN_801EE328 (arrival tile math + UNFIND diagnostic)
+    pub fn drain_staged_menu_warp(&mut self) {
+        if let Some(warp) = self.pending_menu_warp.take() {
+            match self.scene_toc_names.get(&u32::from(warp.scene_id)) {
+                Some(name) => {
+                    self.pending_named_scene_transition =
+                        Some((name.clone(), warp.menu_x, warp.menu_y, 0));
+                }
+                None => {
+                    // Retail's miss arm prints and parks (phase 0x63).
+                    log::warn!("menu warp: UNFIND MAP NUMBER {}", warp.scene_id);
+                }
+            }
+        }
+        if self.pending_menu_escape {
+            self.pending_menu_escape = false;
+            let visited = self
+                .world_map_ctrl
+                .as_ref()
+                .and_then(|c| c.panels.visited.last().copied());
+            match visited {
+                Some(v) => {
+                    let name = match v.map_id {
+                        0 => "map01",
+                        1 => "map02",
+                        2 => "map03",
+                        _ => {
+                            log::warn!("menu escape: UNFIND MAP NUMBER {}", v.map_id);
+                            return;
+                        }
+                    };
+                    self.pending_named_scene_transition = Some((
+                        name.to_string(),
+                        v.tile_x.clamp(0, 0xFF) as u8,
+                        v.tile_z.clamp(0, 0xFF) as u8,
+                        0,
+                    ));
+                }
+                None => {
+                    log::warn!("menu escape: no visited world-map record to return to");
+                }
+            }
+        }
+    }
+
+    /// Install the CDNAME `#define` map (raw TOC index → block name) the
+    /// menu-warp drain resolves a quick-travel `scene_id` against. The
+    /// scene host wires this once at construction from the same parsed
+    /// `CDNAME.TXT` its own scene loads use.
+    pub fn install_scene_toc_names(&mut self, map: legaia_prot::cdname::IndexMap) {
+        self.scene_toc_names = map;
+    }
+
     /// Arm the timed sound-source auto-release for `deadline` vsyncs
     /// (`gp+0x814`). [`Self::tick`] counts it down by the frame step.
     ///
@@ -655,6 +786,15 @@ impl World {
         // both are `+0x0C` handlers on retail's one effect-actor list, and
         // this is the one tick path all three hosts reach.
         self.tick_register_ramps();
+        // The three-actor-talk controller's per-frame flag poll: when the
+        // scene script drops the talk lock (system flag 0xD), the controller
+        // despawns and the story party un-collapses. Same all-hosts tick
+        // position as the ramps above.
+        self.tick_three_actor_talk();
+        // Menu-staged transitions (Door of Wind warp / Door of Light
+        // escape): convert the staged record into the named scene
+        // transition the scene host already drains.
+        self.drain_staged_menu_warp();
         // A minigame the player can enter must be one the player can leave.
         self.poll_minigame_escape();
         match self.mode {

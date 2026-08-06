@@ -1561,14 +1561,28 @@ pub struct World {
     /// retail's `0x80084624` / `0x80084628` / `0x8008462C` triple written
     /// by `FUN_801D8B90` phase 3 right before it hands the outer menu SM
     /// exit code [`crate::pause_screens::MENU_EXIT_CODE_WORLD_MAP_WARP`].
-    /// `None` until a warp commits; a host drains it to enter the world map
-    /// at that landmark.
+    /// `None` until a warp commits; the world tick's
+    /// [`World::drain_staged_menu_warp`] resolves it through
+    /// [`World::scene_toc_names`] into the named scene transition the scene
+    /// host consumes.
     pub pending_menu_warp: Option<crate::pause_screens::StagedWarp>,
 
     /// Set by a committed **Door of Light** pause-menu use - retail's
     /// `_DAT_8007B43C = 4` dungeon-escape handoff (`FUN_801D8A58`). `None`
     /// until an escape commits.
     pub pending_menu_escape: bool,
+
+    /// CDNAME `#define` map (raw in-RAM PROT TOC index → block name),
+    /// installed once by the scene host from the disc's `CDNAME.TXT`
+    /// ([`World::install_scene_toc_names`]). This is the id space a
+    /// quick-travel placement record's `scene_id` lives in - the on-disc
+    /// values (`0x55` map01 / `0xF4` map02 / `0x187` map03 / `0x162` son /
+    /// `0x215` korout) are the destination scenes' own `#define` numbers,
+    /// the same words the world-map arrival kernel matches `0x80084628`
+    /// against (`FUN_801EE328`). Empty on a PROT.DAT-only load; the menu
+    /// warp drain then reports retail's `UNFIND MAP NUMBER` diagnostic
+    /// instead of warping.
+    pub scene_toc_names: legaia_prot::cdname::IndexMap,
 
     /// The window list those programs drive
     /// ([`crate::menu_widget::MenuWidgetState`], the `vm::Host` impl).
@@ -2859,6 +2873,7 @@ impl World {
             worldmap_menu: None,
             pending_menu_warp: None,
             pending_menu_escape: false,
+            scene_toc_names: legaia_prot::cdname::IndexMap::new(),
             menu_widgets: Default::default(),
             party_ability_mask: [0; crate::accessory_passives::ABILITY_WORDS],
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
