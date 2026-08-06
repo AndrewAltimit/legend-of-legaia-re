@@ -8,11 +8,12 @@
 //! * init override (`FUN_80055B6C`, `0x80055D2C..0x80055D44`): formation cell
 //!   `_DAT_8007BD0C == 0xB5` → stage `2` (extraction entry 968), written at
 //!   battle setup while the phase-1 monster is alive;
-//! * mid-battle transition (`FUN_801FD150` epilogue,
-//!   `0x801FD4D4..0x801FD548`, the `sb` at `0x801FD514`): the same formation
-//!   id **and** the first monster seat's `+0x14C == 0` → stage `3` (entry
-//!   969), plus the loader-B call (`jal 0x8003EC70`, `a0 = 0x4A = 3 + 0x47`)
-//!   issued in the arm itself.
+//! * mid-battle transition (the tail arm of the Final Heal sweep
+//!   `FUN_801E6968`, `0x801E6CE4..0x801E6D64`, the `sb` at `0x801E6D2C`):
+//!   the same formation id **and** the first monster seat's `+0x14C == 0` →
+//!   stage `3` (entry 969, Cort's form-transition module), plus the loader-B
+//!   call (`jal 0x8003EC70` at `0x801E6D14`, `a0 = 0x4A = 3 + 0x47`) issued
+//!   in the arm itself.
 //!
 //! The guard separating the arms is the seat's liveness: arm 2 is a property
 //! of the formation alone, arm 3 is the phase transition taken once that seat

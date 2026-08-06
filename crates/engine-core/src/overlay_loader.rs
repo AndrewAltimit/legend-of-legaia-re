@@ -179,37 +179,46 @@ pub fn battle_init_stage_override(formation_slot0_monster_id: u8) -> Option<u8> 
 
 /// Stage id the **mid-battle** boss-transition writer selects, or `None`
 /// while its guard holds off. This is the second `_DAT_8007B64A` writer for
-/// the same monster id, resident in the battle band (the `0897` overlay
-/// program), not in `SCUS_942.54` - which is why the SCUS-only census sees
-/// three sites and misses it.
+/// the same monster id, resident in the battle overlay (PROT 0898), not in
+/// `SCUS_942.54` - which is why the SCUS-only census sees three sites and
+/// misses it.
 ///
-/// `FUN_801FD150`'s epilogue arm (`0x801FD4D4..0x801FD548`) runs on every
-/// invocation of that battle-flow handler and fires when **both** hold:
+/// The writer is the **tail arm of the Lost Grail "Final Heal" sweep**
+/// `FUN_801E6968` (whose revive body is ported as
+/// `World::apply_final_heal_revives`), run by cleanup state `0x50` of the
+/// battle SM `FUN_801E295C`. The arm (`0x801E6CE4..0x801E6D64`,
+/// `overlay_battle_action_801e6968.txt`) fires when **both** hold:
 ///
 /// * `actor_table[3]` - the first monster seat - has HP `+0x14C == 0`
-///   (`lw v0,0xc(s0); lhu v0,0x14c(v0); bne v0,zero,skip`), i.e. the
-///   phase-1 monster is dead;
+///   (`lw v0,0xc(s0); lhu v0,0x14c(v0); bne v0,zero,skip` at
+///   `0x801E6CEC..0x801E6D00`), i.e. the phase-1 form is dead;
 /// * the formation cell `_DAT_8007BD0C` still reads `0xB5`
-///   (`lbu v1,-0x42f4(v0); li v0,0xb5; bne v1,v0,skip`).
+///   (`lbu v1,-0x42f4(v0); li v0,0xb5; bne v1,v0,skip` at `0x801E6D04..`).
 ///
-/// Its body then issues the loader-B call itself (`jal 0x8003EC70` with
-/// `a0 = 0x4A` `= 3 + 0x47`, paging extraction entry 969 immediately rather
-/// than waiting for the dispatch reader), writes stage id `3`
-/// (`sb v0,-0x49b6(a0)` at `0x801FD514`), bumps the battle ctx phase counter
-/// `ctx[+0x26]`, forces the battle flow-state byte `ctx[+0x7] = 0xFD`, and
+/// It then issues the loader-B call itself (`jal 0x8003EC70` at
+/// `0x801E6D14` with `a0 = 0x4A` `= 3 + 0x47`, paging extraction entry 969
+/// immediately rather than waiting for the dispatch reader), writes stage id
+/// `3` (`sb v0,-0x49b6(a0)` at `0x801E6D2C`), bumps the battle ctx phase
+/// counter `ctx[+0x26]`, forces the flow-state byte `ctx[+0x7] = 0xFD`, and
 /// zeroes the dead seat's `+0x21C` / `+0x225` bytes.
 ///
-/// So the guard that separates the two arms is **when in the fight they
-/// run**: the init arm (stage 2, entry 968) is unconditional for the `0xB5`
-/// formation at battle setup; this arm (stage 3, entry 969) is the phase
-/// transition, taken once the seat the init arm found alive has died.
+/// Monster id `0xB5` is **Cort** (archive id 181; the spell-id collision
+/// with Lapis Wave is settled in `docs/reference/re-settled-threads.md`), so
+/// the evolved-Cort fight walks two stage overlays: 968 from setup (the init
+/// override above, phase 1 alive), then 969 - Cort's form-transition module,
+/// an entry that doubles as the STR-path table - once the form dies. The
+/// guard separating the two arms is the seat's liveness, nothing else.
 ///
-/// The tag covers the epilogue arm only: the handler's main body (a byte
-/// `0xE7` sweep over character-record slots `+0x75E..` keyed on the active
-/// actor's `+0x1DD` class, toggling record-flag bit `0x80` at `+0x6C0`) is
-/// **not** ported here - see `docs/reference/open-rev-eng-threads.md`.
+/// A print-integrity note: this arm was first sighted at `0x801FD514` in a
+/// base-tag-less `overlay_0897`-program dump. That coordinate is a phantom
+/// printing (`+0x167E8` high); the store's byte pattern
+/// (`24020003 a082b64a`) occurs in **no** PROT entry but 0898, at file
+/// `0x18510` = VA `0x801E6D28` under the tagged base `0x801CE818` - and only
+/// at the real base do the arm's `j 0x801E6***` exits land inside their own
+/// function.
 ///
-/// PORT: FUN_801FD150 (the stage-3 epilogue arm; the `sb` at `0x801FD514`)
+/// PORT: FUN_801E6968 (the boss-transition tail arm `0x801E6CE4..0x801E6D64`
+/// only; the revive body is `World::apply_final_heal_revives`)
 pub fn boss_transition_stage_id(
     formation_slot0_monster_id: u8,
     first_monster_seat_liveness: u16,

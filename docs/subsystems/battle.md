@@ -100,17 +100,25 @@ site in the SCUS loader census, and the only call site that can reach entries
 `FUN_80055B6C`'s per-formation override `*_DAT_8007BD0C == 0xB5 → 2` (entry
 968, `0x80055D2C..0x80055D44`), where `_DAT_8007BD0C` is the formation's
 monster id. A **fourth writer lives outside the SCUS census**, in the battle
-band's overlay code (the `0897` program): `FUN_801FD150`'s epilogue arm
-(`0x801FD4D4..0x801FD548`, the `sb v0,-0x49b6(a0)` at `0x801FD514`) writes
-stage id **3** (entry 969) mid-fight when both hold - the same formation cell
-still reads `0xB5`, **and** the first monster seat (`actor_table[3]`) has HP
-`+0x14C == 0`. The arm issues the loader-B page-in itself (`jal 0x8003EC70`
-with `a0 = 0x4A = 3 + 0x47` - same-frame, not deferred to the dispatch
-reader), bumps the battle ctx phase counter `ctx[+0x26]`, forces the
-flow-state byte `ctx[+0x7] = 0xFD`, and zeroes the dead seat's `+0x21C` /
-`+0x225`. So the `0xB5` boss fight walks two stage overlays: 968 from setup
-(phase 1 alive), 969 once phase 1 dies - the guard separating the arms is the
-seat's liveness, not a different id. Engine mirror:
+overlay itself: the tail arm of the Lost Grail Final Heal sweep
+`FUN_801E6968` (`0x801E6CE4..0x801E6D64`, the `sb v0,-0x49b6(a0)` at
+`0x801E6D2C`; `overlay_battle_action_801e6968.txt`), run by cleanup state
+`0x50` of the battle SM `FUN_801E295C`. It writes stage id **3** (entry 969)
+mid-fight when both hold - the formation cell still reads `0xB5` (**Cort**,
+archive id 181; see
+[`re-settled-threads.md`](../reference/re-settled-threads.md) for the 0968 /
+0969 identifications and the Lapis-Wave id-space collision), **and** the
+first monster seat (`actor_table[3]`) has HP `+0x14C == 0`. The arm issues
+the loader-B page-in itself (`jal 0x8003EC70` at `0x801E6D14` with
+`a0 = 0x4A = 3 + 0x47` - same-frame, not deferred to the dispatch reader),
+bumps the battle ctx phase counter `ctx[+0x26]`, forces the flow-state byte
+`ctx[+0x7] = 0xFD`, and zeroes the dead seat's `+0x21C` / `+0x225`. So the
+Cort fight walks two stage overlays: 968 from setup (phase 1 alive), 969
+once the form dies - the guard separating the arms is the seat's liveness,
+not a different id. (A print-integrity footnote: this arm was long carried
+at the phantom coordinate `0x801FD514` from a base-tag-less `overlay_0897`
+dump, `+0x167E8` high; the store's byte pattern occurs in no PROT entry but
+0898, at file `0x18510`.) Engine mirror:
 `engine-core::overlay_loader::battle_init_stage_override` /
 `boss_transition_stage_id`, resolved live by `World::battle_stage_id`
 (`world/battle/stage.rs`); the stage overlays are MIPS code the engine does

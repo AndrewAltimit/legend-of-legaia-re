@@ -332,31 +332,6 @@ process-matching helpers in
 | Thread | Status | What would close it |
 |---|---|---|
 | The battle-**intro** enemy-name banner - which placement record raises it | mostly resolved (chrome, seat and frame law captured on the same surface mid-fight; only the record identity is owed) | [details ↓](#the-battle-intro-enemy-name-banner) |
-| `FUN_801FD150`'s record-sweep body - what the `0xE7` scan does | open | [details ↓](#fun_801fd150s-record-sweep-body) |
-
-### FUN_801FD150's record-sweep body
-
-*Status:* open - the epilogue is settled, the body is not.
-
-The handler's epilogue arm is pinned and ported (the second battle stage-id
-writer: `0xB5` formation + dead first monster seat → stage 3 / entry 969,
-`engine-core::overlay_loader::boss_transition_stage_id`; see
-[`battle.md`](../subsystems/battle.md#stage-overlay-dispatch-the-0x47-loader-band)).
-The **main
-body** is not understood: keyed on the active actor's `+0x1DD` class
-(`< 3` walks that party slot's record, `== 8` sweeps every party slot), it
-scans character-record byte slots `+0x75E..+0x765` for the value `0xE7`,
-zeroes a found slot and clears record-flag bit `0x80` at `+0x6C0` - or, when
-no `0xE7` slot remains, *sets* bit `0x80`. It also rolls `FUN_800402F4`
-selector 4 first (an RNG gate) and requires the actor's `+0x14C` liveness to
-be zero. The shape reads as "consume a reserved item/charge from a downed
-member's record and drop a status flag" (0xE7 would be an item id), but
-nothing here is confirmed: neither the slot band's identity inside the
-`0x414` record nor bit `0x80`'s meaning is pinned, and no caller of
-`FUN_801FD150` is found by a `jal` sweep of the dump corpus (dispatch is
-presumably a state table). Closing it means naming the `+0x75E` band and the
-`+0x6C0` bit from the record schema or a live watchpoint.
-Dump: `ghidra/scripts/funcs/overlay_0897_xxx_dat_801fd150.txt`.
 
 ### The battle-intro enemy-name banner
 

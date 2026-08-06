@@ -4,9 +4,9 @@
 //! Retail treats the byte as last-writer-wins across four writers: the
 //! entity SM's battle-entry tail (`0` default / `1` tutorial,
 //! `FUN_801DA51C`), the battle initializer's per-formation override (`2`,
-//! `FUN_80055B6C`), and the mid-battle boss-transition arm (`3`,
-//! `FUN_801FD150`'s epilogue - overlay-band code the SCUS-only census
-//! misses). The engine keeps no mutable byte; [`World::battle_stage_id`]
+//! `FUN_80055B6C`), and the mid-battle boss-transition arm (`3`, the tail of
+//! the Final Heal sweep `FUN_801E6968` - battle-overlay code the SCUS-only
+//! census misses). The engine keeps no mutable byte; [`World::battle_stage_id`]
 //! derives the same value from live battle state, which reproduces the
 //! last-writer order because each later writer's guard implies the earlier
 //! one's.
@@ -39,7 +39,7 @@ impl World {
     /// * `3` - the `0xB5` formation's first monster seat is dead: the
     ///   mid-battle transition arm has fired
     ///   ([`crate::overlay_loader::boss_transition_stage_id`],
-    ///   `FUN_801FD150` `0x801FD4D4..0x801FD548`). Retail reads the seat's
+    ///   `FUN_801E6968` tail `0x801E6CE4..0x801E6D64`). Retail reads the seat's
     ///   `+0x14C`, mirrored here as
     ///   [`legaia_engine_vm::battle_action::BattleActor::liveness`].
     /// * `2` - the `0xB5` formation, phase 1 still alive: the battle-init
@@ -49,7 +49,7 @@ impl World {
     ///   consumed by [`World::take_battle_tutorial_arm`]).
     /// * `0` - every other fight: no stage overlay.
     ///
-    /// REF: FUN_801FD150, FUN_80055B6C, FUN_801DA51C
+    /// REF: FUN_801E6968, FUN_80055B6C, FUN_801DA51C
     pub fn battle_stage_id(&self) -> u8 {
         if let Some(id) = self.formation_slot0_monster_id() {
             let first_seat = self.party_count.max(1) as usize;
