@@ -1783,7 +1783,11 @@ pub struct World {
     pub battle_intro: Option<vm::battle_intro_transition::TransitionEntity>,
     /// Effects the last [`World::tick_encounter`] battle-intro tick asked for,
     /// in retail order. Hosts drain this to drive the loads the kernel cannot
-    /// perform itself (mesh assembly, the battle bundle read).
+    /// perform itself (mesh assembly, the battle bundle read). The world
+    /// consumes two of them before publishing: `LoadBattleBgm` (the BGM swap)
+    /// and `SetAudioCue` (the battle-start sound, pushed onto
+    /// [`World::battle_sfx_cues`]) - see `World::tick_battle_intro` in
+    /// `world/encounters.rs`.
     pub battle_intro_effects: Vec<vm::battle_intro_transition::TransitionEffect>,
     /// The one-shot sound-detach latch (`gp+0x804`). Idempotent: the mode-INIT
     /// chain can call it repeatedly and only the first has any effect.

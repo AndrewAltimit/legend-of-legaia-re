@@ -177,6 +177,7 @@ patching an instruction. Useful Ghidra anchors.
 | `0x8007BD24` | u32 | Battle context pointer (`_DAT_8007BD24`). `0x800EB654` while a battle is resident, `0` in the field. Base of the battle-actor / AI ctx block (`+0x13` = active slot, `+0x276` = tutorial byte gating arts-voice XA cues, `+0x28A` = battle-mode counter; the pending-SFX write counter lives at `+0x9`). |
 | `0x8007B6D8` | u16[4] | Pending-SFX cue ring (counter = battle ctx `+0x9`, wraps past 3). Written by the cue router `FUN_8004FE5C` (and directly by minigame overlays), drained by `FUN_80016B6C` against the SFX descriptor table. Engine mirror `legaia_engine_core::sfx_cue`. |
 | `0x8007B724` | u32 | Last-played SFX id - the cue router's dedupe compare. |
+| `0x80070536` | i16 | Bound voice id of the field-BGM sound source (`0x8007052C + 0xA`; the id `FUN_80026478` resumes). Runtime-written at track attach (`0` in the static image); read by `FUN_800267A8` and the battle-intro phase 0 (`FUN_801CF5BC`) as the `SsSeqSetVol` slot argument. |
 | `0x800788B8` | u16[N] | Per-arts-voice XA clip duration table (index = cue id − `0x100`); `FUN_8004FE5C` converts to sectors as `(raw*60 + 99)/100`. |
 | `0x8007326C` | u32 | TMD per-mode descriptor table (8-byte stride × 6 entries). |
 | `0x8007A940` | SsAPI per-note pitch / per-voice volume exponential lookup table (read by `FUN_80066E50` / `FUN_80067550`). |

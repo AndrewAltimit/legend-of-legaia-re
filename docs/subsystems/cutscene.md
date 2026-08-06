@@ -1342,9 +1342,25 @@ content `0x4000`; the static footprint over-reads into the dance overlay 0980 pa
 ### Transition tick + battle handoff - `FUN_801CF5BC`
 
 The per-frame driver. A **phase counter** at `actor+0x22` sequences the battle handoff:
-phase 1 runs battle-mesh assembly (`FUN_80052770`), phase 2 loads the battle BGM
+phase 0 fires the battle-start sound and the BGM level re-apply (below), phase 1 runs
+battle-mesh assembly (`FUN_80052770`), phase 2 loads the battle BGM
 (`func_0x800567A8("battle bgm %d", id)`) and the battle-scene bundle
-(`func_0x8001FC00(0x36F + id, ...)`). A parallel spin/camera timer `actor+0x1a` counts
+(`func_0x8001FC00(0x36F + id, ...)`).
+
+Phase 0 makes two distinct audio moves. First it stores the battle-start cue id as a
+halfword **directly into `_DAT_8007B6D8`** - slot 0 of the 4-slot pending SFX ring the
+battle funnel `FUN_8004FE5C` appends into - bypassing the funnel, so the value is already
+in resolved ring-id space (= the static SFX descriptor index for sub-`0x64` ids, and both
+are populated category-0 descriptors): `0x1F` plain, `0x4D` when the per-battle flags byte
+`DAT_8007BD60` has bit `0x80` up (the `battle_id == -1` pre-arm; the plain store sits in
+the branch delay slot, so the flagged value **overwrites** it - no ring-counter bump) or
+when a scripted battle id `> 0` is already set. Second, for a non-negative battle id only,
+it calls `FUN_80062004(DAT_80070536, _DAT_8007B910 << 15 >> 16, 100)` -
+`SsSeqSetVol(voice, ch 0, vol, ramp)` via `FUN_80061EDC` - re-applying the live audio
+level (halved into libsnd's `0..0x7F`) to the field-BGM voice over a 100-tick ramp.
+`DAT_80070536` is not a cue id: it is `0x8007052C + 0xA`, byte `+0xA` of the field-BGM
+sound-source actor - the bound voice id `FUN_80026478` keys on - runtime-written when the
+field track attaches (the static SCUS image holds `0`). A parallel spin/camera timer `actor+0x1a` counts
 display frames (`+= DAT_1F800393`) against the total intro duration `DAT_801D2458`: near
 the end it raises the ready bits `actor+0x2a |= 1` / `2`, and at completion
 (`actor+0x2a == 3`) it writes the game-mode handoff **`_DAT_8007B83C = 0x14`** (enter
@@ -1356,7 +1372,13 @@ Engine side, this state machine is the encounter session's `Transition` phase: t
 (`legaia_engine_vm::battle_intro_transition::tick_transition`) is driven once per frame by
 `legaia_engine_core::World::tick_encounter` for as long as the session sits in that phase,
 and its phase-2 `LoadBattleBgm` effect is what starts the battle track - during the spin,
-which is where retail starts it, not at battle entry. The remaining effects (mesh
+which is where retail starts it, not at battle entry. The phase-0 `SetAudioCue` effect is
+the battle-start sound: the engine's carrier for the pending SFX ring is
+`World::battle_sfx_cues`, the queue both hosts (native play-window and browser play page)
+drain into their SFX scheduler every frame, so the last cue of the tick - retail's slot-0
+overwrite - is pushed there and plays on the spin's first frame. The `ReapplyBgmLevel`
+effect is a disclosed no-op in the engine: the BGM director already plays at its
+configured level and the world models no live field-mode duck. The remaining effects (mesh
 assembly, the bundle read, the load waits) are surfaced on `World::battle_intro_effects`
 for a host that owns those reads.
 

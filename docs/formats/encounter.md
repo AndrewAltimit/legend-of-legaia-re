@@ -197,7 +197,7 @@ face:
 | Consumer | Effect when the bit is set |
 |---|---|
 | Battle-intro style selector (`FUN_801CE8CC`) | Selects `SpinUpParticles` instead of the `TileShatter` default (or `TileShatter` sub-style 1 for slot-0 ids `0x13..=0x15`). |
-| Intro transition phase 0 (`FUN_801CF5BC`) | Emits the second audio cue on top of the plain one. |
+| Intro transition phase 0 (`FUN_801CF5BC`) | Overwrites the plain battle-start cue `0x1F` with `0x4D` in SFX-ring slot 0 (see [`cutscene.md`](../subsystems/cutscene.md#transition-tick--battle-handoff---fun_801cf5bc)). |
 | Enemy stat-boost profile (`FUN_80054CB0` via `ctx[+0x287]`) | Picks the boost profile; see [`legaia_asset::monster_archive`](../../crates/asset/src/monster_archive.rs). |
 
 The engine carries the bit as a property of the *formation row* rather than as

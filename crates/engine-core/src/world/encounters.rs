@@ -1001,14 +1001,20 @@ impl World {
     /// [`World::enter_battle_from_formation`]. The entity is armed on the frame
     /// the session enters `Transition` and dropped when it leaves.
     ///
-    /// Only one of the kernel's effects has an engine-side consumer today: the
-    /// phase-2 `LoadBattleBgm`, which is the point retail starts the battle
-    /// track - *during* the spin, not after it. Routing it here is what moves
-    /// the swap off [`World::enter_battle_from_formation`]; the swap is
-    /// idempotent, so the later call is a no-op once this one has run. The
-    /// remaining effects (mesh assembly, the bundle read, the load waits) are
-    /// recorded in [`World::battle_intro_effects`] for a host that owns those
-    /// reads.
+    /// Two of the kernel's effects have engine-side consumers. The phase-2
+    /// `LoadBattleBgm` is the point retail starts the battle track - *during*
+    /// the spin, not after it. Routing it here is what moves the swap off
+    /// [`World::enter_battle_from_formation`]; the swap is idempotent, so the
+    /// later call is a no-op once this one has run. The phase-0 `SetAudioCue`
+    /// is the battle-start sound: retail stores the cue id (`0x1F` plain,
+    /// `0x4D` for a flagged/boss row) straight into slot 0 of the pending SFX
+    /// ring `_DAT_8007B6D8`, and the engine's carrier for that ring is
+    /// [`World::battle_sfx_cues`] - the queue both hosts drain into their SFX
+    /// scheduler every frame - so the cue is pushed there. Because retail's
+    /// store is a slot-0 **overwrite** (no ring-counter bump), only the last
+    /// `SetAudioCue` of the tick is pushed. The remaining effects (mesh
+    /// assembly, the bundle read, the load waits) are recorded in
+    /// [`World::battle_intro_effects`] for a host that owns those reads.
     ///
     /// The kernel's own load-wait response is reported idle: the engine has
     /// already resolved the formation by the time the session reaches
@@ -1042,14 +1048,28 @@ impl World {
         // own countdown is the same clock read the other way round.
         entity.elapsed = total.saturating_sub(frames_remaining) as i16;
         let globals = TransitionGlobals {
-            battle_id: i32::from(roll.formation_id),
+            // `_DAT_8007B880`. On the spin's first frame of an
+            // encounter-rolled battle retail still holds the `-1` "no id yet"
+            // sentinel - the id is written when the formation resolve lands,
+            // between phases 0 and 2 - which is why phase 0 selects the cue
+            // from the flags byte rather than from the id, and why the
+            // engine (which resolves the roll synchronously) re-creates the
+            // phase-0 view by passing the sentinel on that tick. From phase 1
+            // on, the resolved id feeds the BGM / bundle loads as retail's
+            // filled-in global does.
+            battle_id: if entity.phase == 0 {
+                -1
+            } else {
+                i32::from(roll.formation_id)
+            },
             total_duration: i32::from(total),
             // `DAT_8007BD60`. Bit `0x80` is the only bit this kernel reads,
             // and it is a property of the rolled formation row: the entity
             // SM's confirm state raises it when the row's `record[+0]` is
             // non-zero (`FUN_801DA51C` at `0x801DA5F8..0x801DA61C`). The
             // scripted / boss rows are exactly those rows, and the raised bit
-            // gives the transition its second audio cue.
+            // makes the flagged battle-start cue (`0x4D`) overwrite the plain
+            // one (`0x1F`) in ring slot 0.
             battle_flags: self
                 .formation_table
                 .formation(roll.formation_id)
@@ -1060,14 +1080,52 @@ impl World {
             // battle meshes synchronously at battle entry, so the answer is
             // always "done" and the phase passes on its first tick.
             assembly_state: 0x80,
+            // `DAT_80070536` - the field-BGM sound-source actor's bound voice
+            // id (`0x8007052C + 0xA`), runtime-written when the field track
+            // attaches. The engine's BGM director owns a single sequencer
+            // slot, so its id is 0. Structurally unread on this path: the
+            // `ReapplyBgmLevel` effect only fires for a non-negative battle
+            // id, and the phase-0 tick passes the sentinel (above).
+            bgm_voice_id: 0,
+            // `_DAT_8007B910` - the live audio level. The engine models no
+            // field-mode duck, so the level sits at retail's cold-reset value
+            // (`0xD7`; `docs/subsystems/battle-action.md` § audio duck).
+            audio_level: crate::new_game::GAME_STATE_COLD_RESET.screen_brightness,
             ..Default::default()
         };
         let tick = tick_transition(&mut entity, &globals, &TransitionResponses::default());
         self.battle_intro = Some(entity);
+        let mut battle_start_cue = None;
         for effect in &tick.effects {
-            if matches!(effect, TransitionEffect::LoadBattleBgm { .. }) {
-                self.swap_to_battle_bgm();
+            match effect {
+                TransitionEffect::LoadBattleBgm { .. } => self.swap_to_battle_bgm(),
+                // Retail's slot-0 overwrite: the last cue written this tick
+                // is the one the ring drainer plays.
+                TransitionEffect::SetAudioCue { cue } => battle_start_cue = Some(*cue),
+                // `SsSeqSetVol(field_bgm_voice, level, 100)` - re-applies the
+                // live audio level to the field track as the spin starts.
+                // The engine's BGM director already plays at its configured
+                // level and the world models no live duck in field mode, so
+                // there is nothing to re-apply - a no-op here, disclosed
+                // rather than faked. (Unreachable on this path anyway: the
+                // phase-0 sentinel skips it, as retail's `blez` arm does.)
+                TransitionEffect::ReapplyBgmLevel { .. } => {}
+                _ => {}
             }
+        }
+        if let Some(cue) = battle_start_cue {
+            // The battle-start sound (`0x1F` plain / `0x4D` flagged). `kind`
+            // is the resolved ring id, which for sub-`0x64` cues is the
+            // static SFX descriptor index both hosts' schedulers key their
+            // banks by; slot fields are HUD context only - no actor is
+            // attacking during the spin.
+            self.battle_sfx_cues
+                .push(crate::battle_events::BattleSfxCue {
+                    kind: cue,
+                    timing_frames: 0,
+                    actor_slot: 0,
+                    target_slot: 0,
+                });
         }
         self.battle_intro_effects = tick.effects;
     }

@@ -46,6 +46,8 @@
 //! The handoff tail's four calls, and the routine that fills the formation
 //! cell it reads, are named where they are used and cited once here:
 //!
+//! REF: FUN_80062004 - the libsnd volume shim (`SsSeqSetVol(slot, ch 0, vol,
+//! ramp)` via `FUN_80061EDC`), phase 0's second audio call.
 //! REF: FUN_80026740 - actor sound-source pan-reset + voice-stop.
 //! REF: FUN_800266E0 - actor sound-source teardown.
 //! REF: FUN_8001E54C - the asset / SEQ installer.
@@ -102,11 +104,17 @@ pub struct TransitionGlobals {
     /// `DAT_801D2458` - the total intro duration the spin counter is measured
     /// against.
     pub total_duration: i32,
-    /// `DAT_80070536` (i16) - first argument of the phase-0 audio call.
-    pub audio_cue_id: i16,
-    /// `_DAT_8007B910` - the word the phase-0 audio call narrows to its second
-    /// argument with retail's own `<< 15` then arithmetic `>> 16`.
-    pub audio_cue_arg_src: i32,
+    /// `DAT_80070536` (i16) - the field-BGM sequencer voice id. The address
+    /// is `0x8007052C + 0xA`: byte `+0xA` of the field-BGM sound-source actor
+    /// (the same actor [`TransitionEffect::StopFieldBgmVoice`] targets), which
+    /// is the bound voice id `FUN_80026478` keys its resume on. Runtime-written
+    /// when the field track attaches; the static SCUS image holds `0`.
+    pub bgm_voice_id: i16,
+    /// `_DAT_8007B910` - the **live audio level** (`0..255`, cold reset
+    /// `0xD7`; see `docs/subsystems/battle-action.md` § "The `_DAT_8007B910`
+    /// ramps are an audio duck"). Phase 0 narrows it to libsnd's `0..0x7F`
+    /// with retail's own `<< 15` then arithmetic `>> 16` (i.e. a halve).
+    pub audio_level: i32,
     /// `DAT_8007BAAC` - the bundle handle phase 2 loads into and the
     /// completion arm installs the battle sequence from. Read in the
     /// post-switch block, not in the phase switch.
@@ -117,12 +125,26 @@ pub struct TransitionGlobals {
     pub formation_slot0: u8,
 }
 
-/// The `+0x1F` byte value phase 0 writes into `_DAT_8007B6D8` when it takes
-/// the plain arm, and `0x4D` when it takes the flagged arm. Both are stored
-/// as halfwords.
+/// The battle-start cue id phase 0 writes into `_DAT_8007B6D8` when it takes
+/// the plain arm (`0x1F`), and `0x4D` when it takes the flagged arm. Both are
+/// stored as halfwords.
+///
+/// `_DAT_8007B6D8` is **slot 0 of the 4-slot pending SFX ring** the battle
+/// funnel `FUN_8004FE5C` appends into (`engine-core::sfx_cue`), so the value
+/// is already in the drainer's resolved ring-id space - which for ids below
+/// `0x64` is the static SFX descriptor table index itself
+/// (`docs/formats/sfx-table.md`; both `0x1F` and `0x4D` are populated
+/// category-0 descriptors). The store bypasses the funnel and bumps no
+/// counter, so a second store in the same tick **overwrites** slot 0 - the
+/// last cue written is the one that plays.
 pub const AUDIO_CUE_PLAIN: u16 = 0x1F;
 /// See [`AUDIO_CUE_PLAIN`].
 pub const AUDIO_CUE_FLAGGED: u16 = 0x4D;
+
+/// Third argument of the phase-0 `SsSeqSetVol` call: the volume ramp length,
+/// `li a2, 0x64` at `0x801CF658` (loaded in the branch delay slot, so it is
+/// in place for both the default-battle and positive-id arms).
+pub const BGM_LEVEL_RAMP_TICKS: i32 = 100;
 
 /// Base scene-bundle id phase 2 loads: `battle_id + 0x36F`, or `0x36F`/`0x370`
 /// when `battle_id == 0` depending on [`TransitionGlobals::alt_default_bundle`].
@@ -136,15 +158,22 @@ pub const BATTLE_BUNDLE_FLAGS: u32 = 0x0003_2000;
 /// direct calls; the port surfaces them so a host can order them exactly.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransitionEffect {
-    /// Phase 0: a halfword store into `_DAT_8007B6D8`. Retail issues this
-    /// **up to twice** in one tick - once in the `battle_id == -1` pre-arm and
-    /// once in the arm the reloaded id selects - so the effect list preserves
-    /// both writes in order rather than collapsing them.
+    /// Phase 0: a halfword store into `_DAT_8007B6D8` - slot 0 of the pending
+    /// SFX ring, in resolved ring-id space (see [`AUDIO_CUE_PLAIN`]). Retail
+    /// issues this **up to twice** in one tick - once in the `battle_id == -1`
+    /// pre-arm and once in the arm the reloaded id selects - so the effect
+    /// list preserves both writes in order rather than collapsing them; a
+    /// consumer honouring the slot-0 overwrite plays only the **last** one.
     SetAudioCue { cue: u16 },
-    /// Phase 0: `FUN_80062004(DAT_80070536, arg, 100)`, where `arg` is
-    /// `DAT_8007B910` narrowed by retail's own `<< 15` then arithmetic
-    /// `>> 16`. A negative battle id never reaches this call.
-    PlayAudioCue { id: i16, arg: i16 },
+    /// Phase 0: `FUN_80062004(DAT_80070536, level, 100)` -
+    /// `SsSeqSetVol(voice, channel 0, vol, ramp)` via `FUN_80061EDC`
+    /// (`docs/reference/re-settled-threads.md` § "`_DAT_8007B910` is the live
+    /// audio level"). Not a cue play: it re-applies the live audio level
+    /// (halved into libsnd's `0..0x7F`, retail's `<< 15` then arithmetic
+    /// `>> 16`) to the field-BGM voice over a [`BGM_LEVEL_RAMP_TICKS`]-tick
+    /// ramp, undoing any active duck as the spin starts. A negative battle id
+    /// never reaches this call.
+    ReapplyBgmLevel { voice_id: i16, level: i16 },
     /// Phase 1: `FUN_80052770()` - the battle-mesh assembly step.
     AssembleBattleMeshes,
     /// Phase 2: `FUN_800567A8("battle_bgm_%d", battle_id)`.
@@ -251,7 +280,7 @@ fn shr_toward_zero_10(x: i32) -> i32 {
 ///
 /// | phase | body |
 /// |---|---|
-/// | `0` | Arms the audio cue and fires it, then advances. A negative battle id skips the cue and advances anyway. |
+/// | `0` | Writes the battle-start cue into SFX-ring slot 0 and, for a non-negative id, re-applies the live audio level to the field-BGM voice; then advances. A negative battle id other than the `-1` sentinel skips both and advances anyway. |
 /// | `1` | Runs the mesh assembly every frame; falls into the phase-3 body once `assembly_state == 0x80`, otherwise holds. |
 /// | `2` | Loads the battle BGM, then the battle scene bundle (skipped for a negative battle id), then advances. |
 /// | `3`, `6` | Holds while the load-wait reports busy; advances when it reports idle. |
@@ -320,9 +349,9 @@ pub fn tick_transition(
                         AUDIO_CUE_FLAGGED
                     };
                     out.effects.push(TransitionEffect::SetAudioCue { cue });
-                    out.effects.push(TransitionEffect::PlayAudioCue {
-                        id: g.audio_cue_id,
-                        arg: (g.audio_cue_arg_src.wrapping_shl(15) >> 16) as i16,
+                    out.effects.push(TransitionEffect::ReapplyBgmLevel {
+                        voice_id: g.bgm_voice_id,
+                        level: (g.audio_level.wrapping_shl(15) >> 16) as i16,
                     });
                 }
                 // Every arm - including the `blez` negative-id one - advances.
@@ -694,8 +723,8 @@ mod tests {
     fn phase_zero_fires_the_cue_and_advances() {
         let mut e = TransitionEntity::default();
         let g = TransitionGlobals {
-            audio_cue_id: 0x12,
-            audio_cue_arg_src: 4,
+            bgm_voice_id: 0x12,
+            audio_level: 4,
             ..globals()
         };
         let tick = tick_transition(&mut e, &g, &TransitionResponses::default());
@@ -706,10 +735,11 @@ mod tests {
                 TransitionEffect::SetAudioCue {
                     cue: AUDIO_CUE_FLAGGED
                 },
-                TransitionEffect::PlayAudioCue {
-                    id: 0x12,
-                    // 4 << 15 == 0x20000; >> 16 == 2.
-                    arg: 2
+                TransitionEffect::ReapplyBgmLevel {
+                    voice_id: 0x12,
+                    // 4 << 15 == 0x20000; >> 16 == 2 - the retail halve into
+                    // libsnd's 0..0x7F volume range.
+                    level: 2
                 }
             ]
         );
