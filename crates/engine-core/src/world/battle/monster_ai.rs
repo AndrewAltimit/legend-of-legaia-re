@@ -120,12 +120,15 @@ impl World {
                         self.apply_enemy_agl_status(slot, def.id, &targets);
                         self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
                         // NOT cycled here: take_monster_turn is itself called
-                        // from `cycle_battle_turn`'s re-arm, so the caller's
-                        // own next tick claims the turn (a monster's stale
-                        // category is `2`, whose phantom re-seed carries no
-                        // strike reconciliation - but the queue is still
-                        // cleared below to keep the SM off it).
-                        self.clear_action_stream(slot);
+                        // from `cycle_battle_turn`'s re-arm. But the SM's
+                        // 0x5A self-advance WILL re-seed this actor's staged
+                        // action on the next tick, and a category-2 re-seed
+                        // runs the magic band's `MagicCastBegin` - a second
+                        // MP debit. Neutralise the category (0 seeds the
+                        // inert TacticalArts arm); the staged spell id in
+                        // `params[0]` is left in place - it is the observable
+                        // the AI-pick oracles read, and the cat-0 arm never
+                        // consumes it.
                         if let Some(a) = self.actors.get_mut(slot as usize) {
                             a.battle.action_category = 0;
                         }

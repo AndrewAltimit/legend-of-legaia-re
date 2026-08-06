@@ -104,8 +104,10 @@ struct DrawStream {
 }
 impl DrawStream {
     fn new() -> Self {
-        let mut w = World::default();
-        w.rng_state = RNG_SEED;
+        let w = World {
+            rng_state: RNG_SEED,
+            ..World::default()
+        };
         Self { w }
     }
     fn draw(&mut self) -> u16 {
@@ -168,7 +170,7 @@ fn a_bypass_class_cast_rolls_the_resist_bypass_wrapper() {
         attacker_slot: 3,
         defender_slot: 0,
         attacker_element: 7,
-        defender_resist: 0,
+        defender_resist: Default::default(),
         defender_guarding: false,
         enemy_defender_halve: false,
         bypass_party_resist: SPELL_BYPASSES_PARTY_RESIST,
@@ -268,7 +270,7 @@ fn a_respecting_capture_cast_rolls_the_physical_wrapper() {
         attacker_slot: 3,
         defender_slot: 0,
         attacker_element: 7,
-        defender_resist: 0,
+        defender_resist: Default::default(),
         defender_guarding: false,
         enemy_defender_halve: false,
         bypass_party_resist: PHYSICAL_BYPASSES_PARTY_RESIST,

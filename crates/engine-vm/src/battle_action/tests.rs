@@ -1233,10 +1233,16 @@ fn run_begin_successful_escape_floors_downed_party_at_1() {
     ctx.action_state = ActionState::RunBegin.as_byte();
     ctx.multi_cast_gate = 1; // run roll succeeded
     host.actors[0].liveness = 0;
+    host.actors[0].hp = 0;
     host.actors[2].liveness = 0;
     host.actors[4].liveness = 0; // monster stays down
     step(&mut host, &mut ctx);
     assert_eq!(host.actors[0].liveness, 1);
+    // Retail's store is ONE halfword (+0x14C = 1), which the port models as
+    // both `liveness` and `hp` - a floor that writes only the flag is undone
+    // by any driver that re-derives liveness from HP (the live loop's
+    // dead-marking pass does, every tick).
+    assert_eq!(host.actors[0].hp, 1, "the +0x14C floor covers live HP too");
     assert_eq!(host.actors[2].liveness, 1);
     assert_eq!(host.actors[4].liveness, 0, "monsters are not revived");
     assert_eq!(ctx.multi_cast_gate, 1, "outcome gate left for RunWait");
