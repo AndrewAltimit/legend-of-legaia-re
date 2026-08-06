@@ -1,8 +1,5 @@
 //! CD-DMA streaming reader host-trait abstractions.
 //!
-//! PORT: FUN_8003DE7C, FUN_8003E800, FUN_8003E8A8, FUN_8003EB98, FUN_8003F128
-//! PORT: FUN_8005EA84
-//!
 //! SCUS-resident helpers around the CD streaming reader. They
 //! sit one layer above the libcd primitives at `0x8005Dxxx` and one
 //! layer below the per-format loaders ([`scene_resources`],
@@ -49,6 +46,14 @@
 //! | [`prot_one_shot_load`]     | FUN_8003EB98  | 3-arg wrapper: `size_lookup` + `async_lba_load`. Returns LBA count. |
 //! | [`kick_libcd_read`]        | FUN_8003F128  | Issue the libcd async request. Called from `async_lba_load`.        |
 //! | [`read_wait_poll`]         | FUN_8003DE7C  | Per-frame read-wait poll. Drives the dual-mode state machine.       |
+//!
+//! Each of those five `PORT:` tags lives on the method, not in this block, and
+//! carries its own wiring disclosure. A `//!` tag makes the whole **file** the
+//! liveness anchor, and a file-wide verdict says nothing about the routine: it
+//! reported five reachable ports for a trait whose only implementor is
+//! constructed in tests, and it made the truthful disclosure unwritable,
+//! because a disclosure on a file-scoped anchor reads as a stale tag rather
+//! than as a gap.
 //!
 //! ## Clean-room boundary
 //!
@@ -204,7 +209,21 @@ pub trait CdDmaHost {
     /// ```
     ///
     /// Default implementation forwards to the two trait methods, so
-    /// hosts that override the primitives get this for free.
+    /// hosts that override the primitives get this for free - which is why
+    /// this default body, and not an `impl` method, is the port of the
+    /// retail wrapper.
+    ///
+    /// PORT: FUN_8003EB98
+    ///
+    /// NOT WIRED: the prerequisite is a production implementor of
+    /// [`CdDmaHost`]. [`ProtCdDmaHost`] is the only one in the workspace and
+    /// every construction of it is a `#[cfg(test)]` body or the disc-gated
+    /// `cd_dma_real_prot` oracle; no crate outside `engine-core` names
+    /// `cd_dma` at all. The engine's own asset path reaches `PROT.DAT`
+    /// through [`crate::scene::ProtIndex`] directly, so nothing between a
+    /// host root and this trait exists to call it. Wiring means routing the
+    /// scene / battle / overlay loaders through the trait instead of the
+    /// index, which is a re-hosting decision rather than a call insertion.
     fn prot_one_shot_load(&mut self, prot_idx: ProtIndex, dst: DestAddr, flags: LoadFlags) -> u32 {
         let count = self.prot_index_size_lookup(prot_idx, flags.issue());
         self.async_lba_load(dst, count, flags);
@@ -511,6 +530,12 @@ impl CdDmaHost for ProtCdDmaHost {
     /// sector count via the retail `toc[idx+3] - toc[idx+2]` formula.
     /// Out-of-range indices return zero (matches retail's `subu` wrap
     /// on a TOC overread, which would yield garbage rather than panic).
+    ///
+    /// PORT: FUN_8003E8A8
+    ///
+    /// NOT WIRED: same prerequisite as every method in this block - see
+    /// [`CdDmaHost::prot_one_shot_load`]. `ProtCdDmaHost` is constructed only
+    /// under `#[cfg(test)]` and in the disc-gated `cd_dma_real_prot` oracle.
     fn prot_index_size_lookup(&mut self, prot_idx: ProtIndex, set_msf: bool) -> u32 {
         let count = self.prot.entry_lba_count_retail(prot_idx).unwrap_or(0);
         let start_lba = self.prot.entry_start_lba_retail(prot_idx).unwrap_or(0);
@@ -528,6 +553,13 @@ impl CdDmaHost for ProtCdDmaHost {
     /// the kick and [`LoadFlags::BLOCK`] is satisfied without a real
     /// poll loop (the synchronous copy in `Self::perform_synchronous_read`
     /// already left the state machine in `PollState::Ready`).
+    ///
+    /// PORT: FUN_8003E800
+    ///
+    /// NOT WIRED: same prerequisite as every method in this block - see
+    /// [`CdDmaHost::prot_one_shot_load`]. The retail routine is reached from
+    /// the whole loader surface on the disc; the port's own loaders do not go
+    /// through the trait.
     fn async_lba_load(&mut self, dst: DestAddr, count: u32, flags: LoadFlags) {
         if self.read_in_progress {
             // Drain any stale read first - retail's FUN_8003e800 calls
@@ -554,6 +586,12 @@ impl CdDmaHost for ProtCdDmaHost {
     /// snaps directly from `Idle`/`Busy` into `Ready` once the copy is
     /// done. Errors from the underlying [`crate::scene::ProtIndex`] read
     /// surface as `error = true` and `state = Idle`.
+    ///
+    /// PORT: FUN_8003F128
+    ///
+    /// NOT WIRED: same prerequisite as every method in this block - see
+    /// [`CdDmaHost::prot_one_shot_load`]. Its only in-workspace caller is
+    /// [`Self::async_lba_load`] above, which is inert for the same reason.
     fn kick_libcd_read(&mut self) {
         self.read_in_progress = true;
         self.state = PollState::Busy;
@@ -580,6 +618,14 @@ impl CdDmaHost for ProtCdDmaHost {
     /// return is reserved for the dev-arm state machine gated on
     /// `_DAT_8007BA70` / `_DAT_8007B8C2`, neither of which exist in
     /// the offline replacement.
+    ///
+    /// PORT: FUN_8003DE7C
+    ///
+    /// NOT WIRED: same prerequisite as every method in this block - see
+    /// [`CdDmaHost::prot_one_shot_load`]. This is the widest-reaching of the
+    /// five on the disc - the reference sweep puts `FUN_8003DE7C` at 127 `jal`
+    /// sites across `SCUS_942.54` and eleven overlay images - so the gap is a
+    /// real port that no host reaches, not a port of dead code.
     fn read_wait_poll(&mut self, gated: bool) -> ReadWaitOutcome {
         if !gated {
             self.read_in_progress = false;

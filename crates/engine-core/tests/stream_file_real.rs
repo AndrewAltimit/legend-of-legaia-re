@@ -75,7 +75,7 @@ fn stream_file_reads_match_the_extraction_path() {
         );
 
         // Streaming-SM shape: seek slot*0x10800 from base, read one slot.
-        host.seek((slot * SLOT_BYTES) as u32, SeekWhence::FromBase)
+        host.seek_bytes((slot * SLOT_BYTES) as u32, SeekWhence::FromBase)
             .expect("seek to slot");
         let mut buf = vec![0u8; SLOT_BYTES];
         let n = host.read(&mut buf).expect("read slot");
@@ -112,7 +112,8 @@ fn stream_file_reads_match_the_extraction_path() {
 
     // Relative seek (the loader's `li a2, 0x1` whence): skip one sector
     // forward and verify against the extraction bytes at the shifted offset.
-    host.seek(0x800, SeekWhence::FromCurrent).expect("seek cur");
+    host.seek_bytes(0x800, SeekWhence::FromCurrent)
+        .expect("seek cur");
     let mut next = vec![0u8; 0x800];
     host.read(&mut next).expect("read after relative seek");
     assert_eq!(

@@ -35,6 +35,29 @@ comment lines dropped and `#[cfg(test)]` bodies excluded - "the only caller is a
 unit test" is the finding, and it is not visible to a scan that counts doc
 comments as references.
 
+### A `--release` export cannot tell "never called" from "inlined"
+
+`-C instrument-coverage` emits one counter per function. An optimised build
+inlines the small ones and leaves the out-of-line record at zero, and nothing
+downstream can distinguish that zero from a function no run entered. Measured
+on one ladder over the same disc, default profile against `--release`:
+`advance_slice` 40 executions against 0, `slice_word_count` 39 against 0, three
+more at 1-3 against 0. Two of those five were on the never-entered worklist for
+no other reason.
+
+This lands on the two bucket kinds very differently, and blanket-caveating the
+page would lose the distinction:
+
+- an **(a)** or **(b)** row whose only evidence is "no run entered it" is a
+  hypothesis when it was measured off a `--release` export - the routine may
+  have run and been inlined out of its own record;
+- a **(c)** row is unaffected. Its evidence is the source-side caller scan
+  above, which no compiler profile participates in; the coverage number only
+  ever corroborated it.
+
+So: re-measure an (a)/(b) row on the default profile before spending a fixture
+on it, and read a (c) row as it stands.
+
 ## What a pad-only ladder structurally cannot execute
 
 The *headless* ladders drive `BootSession`, which constructs no renderer, no
@@ -60,13 +83,21 @@ structurally cannot:
 Two more structural exclusions matter as much and are easy to misread as port
 gaps:
 
-**A `bin/` target is unreachable from any `#[test]`.** `cargo llvm-cov --test`
-still builds and instruments the binary, so every file of
-`crates/engine-shell/src/bin/legaia-engine/` appears in the coverage data with
-nothing executed. The native window's entire composition layer lives there, so
-no integration test can drive it. The browser hosts do not have this problem:
-their composition is in `crates/web-viewer/src`, a library - which is exactly
-the seam the composition ladder drives.
+**No `#[test]` can *call* into a `bin/` target - but it can still cover one.**
+The call half is a real exclusion: `crates/engine-shell/src/bin/legaia-engine/`
+holds the native window's whole composition layer and no integration test links
+against it, so nothing there can be invoked directly.
+
+The coverage half of that claim was wrong and is corrected here, because it is
+the half that put rows on this page. `LLVM_PROFILE_FILE` is **inherited by
+child processes**: a test that spawns `CARGO_BIN_EXE_legaia-engine` gets the
+child's own profile written and merged into the same export, measured at 40
+executions of a function whose only driver was such a spawn. So a `bin/`-
+resident address is reachable by a ladder that *runs the subcommand*, and a
+`bin/` row on this page names a fixture that could exist rather than a
+structural impossibility. The browser hosts never had either problem: their
+composition is in `crates/web-viewer/src`, a library, which is the seam the
+composition ladder drives.
 
 **The browser minigames page is outside the union entirely.** `minigame_replay`
 drives the *engine-shell* minigame path, and `play_compose_ladder` drives the
@@ -84,8 +115,21 @@ liveness pass calls inert, while the address is `live` through the sibling
 `MorphWeightEnvelope::tick` in the same file. Separately, a tag on a plain data
 `struct` with no `impl` falls back to *module* scope for liveness and to *the
 next function in the file* for coverage - two different symbols, neither of them
-the port. Every `mode.rs`, `new_game.rs`, `sound_state.rs` and `scene_bundle.rs`
-row below is that shape.
+the port. The `mode.rs`, `sound_state.rs` and `scene_bundle.rs` rows below were
+that shape until their tags were re-keyed onto implementing functions;
+`new_game.rs` still is.
+
+**Three ways a tag ends up file-scoped, and only one of them looks like it.**
+A `//!` tag is file-scoped by definition and reads that way. A `///` tag on a
+data `struct` with no `impl` falls back, and reads like a type anchor. The
+third is the quiet one: a `//` tag whose *next* item is outside the collector's
+lookahead - it stops at the first line that is neither comment nor attribute,
+and a `pub const` is not an item kind it recognises, so the tag silently
+becomes file-scoped while looking like a function tag.
+`crates/engine-core/src/cutscene_narration.rs` was that case for `80037174`
+(tag at the foot of the module doc, first following line a `pub const`); it now
+sits on `pub struct CutsceneNarration`, which has an `impl`, so the anchor is
+the type the port actually is.
 
 The same fallback also produces **pseudo-entries** - an address the report
 counts as *entered* whose routine never ran, because a module-scope anchor's
@@ -116,23 +160,53 @@ address in it is accounted for below.
 
 | bucket | addresses |
 |---|---|
-| NO-LADDER | 88 |
-| GATED | 7 |
+| NO-LADDER | 90 |
+| GATED | 9 |
 | HOST-DEAD | 45 |
 | NOT-PLAYTHROUGH | 5 |
 
-Four further addresses sit in the crate's never-entered set without a bucket
-yet (`80020b00` `801e70bc` `801e791c` `801e92dc`) - rows newer than this
-page's last per-row sweep; each needs its own caller-scan verdict before it is
-filed.
+### The escape pair reads as a contradiction, and both halves are true
 
-### HOST-DEAD, undisclosed
+`801e791c` is filed NO-LADDER below while the `engine-vm` table further down
+says the flee roll is "ladder-covered
+(`crates/engine-core/tests/battle_flee_ladder.rs`)". Both statements hold, and
+the join between them is the denominator: `CANONICAL_LADDERS` in
+`replay-port-coverage.py` is five named test binaries, and neither
+`battle_flee_ladder` nor `seru_cast_magic_xp_ladder` is one of them. Membership
+is "drives the engine with `set_pad` and nothing else"; both of those build a
+`World` by hand first, which is what puts them outside the union however
+pad-driven the rest of the run is.
 
-The rows worth acting on. Each is `live` because a module-scope or type-scope
-`PORT:` tag widened the verdict to a whole file, while the symbol the address
-names has no production caller anywhere in the workspace - only unit tests and
-disc-gated oracles. None of them carries a `NOT WIRED:` disclosure, so nothing
-in the existing gate set reports them.
+So "a pad ladder drives it" and "no run in the denominator entered it" are
+different claims, and a row can satisfy the first while failing the second. For
+such a row the fix is not a new fixture: it is promoting an existing seeded
+oracle into the canonical set, or driving the same content from a ladder that
+is already in it. Rows of that shape name their existing driver.
+
+### HOST-DEAD, and what an anchor's scope was hiding
+
+Every row here now carries a `NOT WIRED:` disclosure naming its own
+prerequisite, and the way they got one is the reusable part.
+
+Each was `live` for a reason that had nothing to do with the routine: its tag
+was file-scoped, by one of the three routes above, and a file-wide verdict
+answers "does anything in this file run", not "does this port run". Two
+consequences, and the second is why the rows sat here:
+
+- the address reads `live`, so `--live-audit`'s *undisclosed inert ports*
+  section cannot see it, however dead it is;
+- a truthful disclosure on it becomes **unwritable**, because the stale-tag
+  test reads the same file-wide verdict and would report the disclosure as a
+  false accusation.
+
+The fix was a per-anchor re-key: each `PORT:` tag moved onto the function that
+implements that address, with the disclosure on the same item. The data
+descriptors the tags used to sit on keep a `REF:` pointing at the new home, so
+the address is still findable from the shape it describes. Where no function
+existed to key onto - `FUN_80020038`, whose port was a values-only `const` -
+the missing half of the routine was written instead: `DrawEnvInit::stores`
+carries the three *pair offsets* the values are stored at, which a value-only
+descriptor drops.
 
 | group | n | addresses | why |
 |---|---|---|---|
@@ -142,8 +216,8 @@ in the existing gate set reports them.
 | `sound_state.rs` | 1 | `80020038` | `DRAW_ENV_INIT` is read at three sites, all inside that file's `#[cfg(test)]` block. |
 | `scene_bundle.rs` | 1 | `80020118` | `field_load_entry_plan` is called at three sites, all in that file's `#[cfg(test)]` block. |
 | `prize_exchange.rs` | 1 | `801dc1cc` | `PrizeExchangeSession` has one production mention - its own `impl` line. |
-| `scene_name_sync.rs` | 1 | `8001d7f8` | `sync_scene_name` is called only from that file's tests. The `fn` anchor was already disclosed; the `//! PORT:` module tag on the same address was not, and it is the module tag that carries the liveness verdict. |
-| `save_select.rs` | 1 | `801e3294` | `card_frame_tick` - the only thing that advances a `CardIoMachine` - carried a full disclosure, but on the function rather than on the type anchor the address is keyed to. |
+| `scene_name_sync.rs` | 1 | `8001d7f8` | `sync_scene_name` is called only from that file's tests. Two anchors share the address - the `fn` and a `//! PORT:` module tag - and it is the module tag that carries the liveness verdict, so both need the disclosure. |
+| `save_select.rs` | 1 | `801e3294` | `card_frame_tick` - the only thing that advances a `CardIoMachine` - is disclosed on the function *and* on the type anchor the address is keyed to; the function alone left the verdict on the type. |
 
 Three of these name routines that are heavily used on the disc, so the gap is a
 port that is not reached rather than a port of dead code. A five-form
@@ -153,13 +227,31 @@ four (two in SCUS, two in the battle-action overlay), and `FUN_80025EEC` in
 twelve slots of the game-mode table at `0x8007078C` - every other entry, which
 is the odd-indexed per-frame modes the port's own tag claims.
 
-`8003dda0`, `801dc1cc`, `8001d7f8` and `801e3294` now carry `NOT WIRED:`
-disclosures naming their specific prerequisite. The other seventeen do not, and
-the reason is mechanical: their anchors are module-scoped and analysed live
-under the receiver-gated graph, so a disclosure on them would appear in
-`--live-audit`'s *tagged `NOT WIRED` but analysed live* section as a false
-accusation. Disclosing them needs either a per-anchor re-key onto the function
-that implements each address, or a module-scope exemption in the stale-tag test.
+One rename fell out of the re-key pass and is worth knowing about, because it
+is a graph property rather than a style choice. `StreamFileHost::seek` was the
+workspace's **only** in-tree definition of that name, and the call graph's
+receiver gate deliberately declines to resolve a one-definition name - so every
+`File::seek` in every crate linked to the retail seek shim and made it
+reachable from a host root in **both** graphs. It is `seek_bytes` now.
+
+Six rows stay permissively `live` after the re-key for the mirror of that
+reason - a name with *many* in-tree definitions, where the permissive graph
+keeps every edge the gate would drop. They are `read` and `close` in
+`stream_file.rs`, and the four handler addresses now keyed to
+`mode::per_frame_stage`, reached through a `.tick(` collision on `ModeDriver`.
+The receiver-gated graph calls all six inert, which is what the stale-tag test
+reads, so their disclosures stand; what is left is an over-count in the
+permissive `ported + live` figure, not a contested verdict.
+
+The reading to resist is that a disclosure retires the row. It does the
+opposite: it moves the address into `--live-audit`'s *disclosed inert ports*
+list, which **is** the declared wiring worklist, and each disclosure names the
+one prerequisite that would let a wire be real rather than synthesised. For
+`cd_dma` and `stream_file` that prerequisite is the same shape twice - a
+production owner of the trait / host type, which means routing the engine's
+loaders through them instead of through `ProtIndex` whole-entry reads. For
+`mode` it is a seat for `ModeDriver`, the port of the 28-entry mode table,
+which the engine's hosts currently bypass entirely.
 
 ### HOST-DEAD, disclosed
 
@@ -240,6 +332,8 @@ rows below are what it did not reach.)
 | `cutscene_narration.rs` | 1 | `80037174` | an opening-prologue ladder (`opdeene` / `opstati` / `opurud`) |
 | `register_ramp.rs` | 1 | `8003c6a4` | a script running field-VM op `0x43` sub-3..6 |
 | `world/narration.rs` | 1 | `8003cf7c` | an inline field-VM conversation rather than the dialog panel |
+| `world/battle/stats.rs` + `battle_formulas/escape.rs` | 1 | `801e791c` | a canonical ladder pressing **Run**. Wired at `world/battle/command_flow.rs`'s `Resolution::RunAway` arm and driven end to end by `battle_flee_ladder`, which is outside `CANONICAL_LADDERS` - promote it, or flee in the composition ladder's fight |
+| `fade.rs` | 1 | `80020b00` | the same flee, one beat later: `FadeState::load` stages the state-`0x66` white-out from `fold_battle_event`'s `BattleEnd { Escaped }` arm, so it needs the escape to *succeed* and reach teardown |
 
 ### GATED
 
@@ -253,6 +347,8 @@ save or a longer spine, not a pad stream.
 | `world/vm_hosts.rs` | 1 | `801d2d38` | system flag `0xD`, the three-actor talk lock |
 | `world/battle/monster_ai.rs` | 1 | `801e7320` | a monster whose `field_flags & 0x380` is set |
 | `world/field_movement.rs` | 1 | `801d2404` | a scene with a ledge-hop trigger |
+| `world/battle/capture.rs` + `battle_formulas/victory.rs` | 1 | `801e70bc` | a party member **casting a Seru summon spell**. `accrue_summon_spell_xp` fires only under `is_party_summon_cast` (`world/battle/casting.rs`), and a new-game party knows no Seru magic, so no from-boot pad stream reaches it; `seru_cast_magic_xp_ladder` seeds the spell and is outside `CANONICAL_LADDERS` |
+| `magic_xp.rs` | 1 | `801e92dc` | a battle that **captures a Seru**. `learn_spell_prepend` is the record-side commit of `seru_learning::record_capture`'s accepted learns, so the fight has to seat a monster carrying a `seru_id` and the capture roll has to take - one gate deeper than the summon-cast row above |
 
 Three former rows of this table converted. The `town01` opening naming prompt
 (`801f03f0`) left through the composition ladder, whose opening rung drives

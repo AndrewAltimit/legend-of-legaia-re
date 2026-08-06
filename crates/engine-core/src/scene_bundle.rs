@@ -641,7 +641,11 @@ pub fn find_vdf_buffer(scene: &Scene) -> Option<Vec<u8>> {
 /// The field-load **entry step** (`FUN_80020118`) - what runs before the
 /// per-scene `.MAP` / bundle walk when a field scene starts loading.
 ///
-/// PORT: FUN_80020118
+/// REF: FUN_80020118 - ported, but the `PORT:` tag sits on
+/// [`field_load_entry_plan`], the function that builds this. A tag here
+/// anchors liveness to a plain data `struct` with no `impl`, which falls back
+/// to *file* scope and reports the whole of `scene_bundle.rs` as the port's
+/// reach.
 ///
 /// `(scene_name, field_record)` in retail:
 ///
@@ -678,6 +682,17 @@ pub struct FieldLoadEntryPlan {
 
 /// Build the retail field-load entry plan. `staged_index` mirrors
 /// `DAT_8007B768` read as a signed halfword (`lh` at `0x80020188`).
+///
+/// PORT: FUN_80020118
+///
+/// NOT WIRED: the prerequisite is a staging buffer this engine does not have.
+/// Retail's entry step exists to decide whether to *request* the DATA_FIELD
+/// streaming bundle into `_DAT_8007B85C` before the `.MAP` walk; the port
+/// resolves a scene through [`crate::scene::Scene`] resources, which own their
+/// own bytes, so no caller ever needs the "is a stage needed" answer. The
+/// three call sites in the workspace are all in this file's `#[cfg(test)]`
+/// block. Wiring means giving the scene loader a staged-bundle mode, not
+/// inserting a call.
 pub fn field_load_entry_plan(field_record: i16, staged_index: i16) -> FieldLoadEntryPlan {
     FieldLoadEntryPlan {
         data_field_chunk: field_record + 3,
