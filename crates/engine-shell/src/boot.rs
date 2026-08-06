@@ -870,6 +870,11 @@ impl BootSession {
             self.field_menu_sub = None;
             self.save_flow.reset();
             self.host.world.mode = self.field_menu_resume;
+            // A kind-`0x0D` entry context is a *standing* op-`0x49` park: the
+            // script halts on the instruction and keeps the menu gated until
+            // the player answers, and closing the menu under that gate is the
+            // answer. Twin of `play_menu_close` on the browser host.
+            self.host.world.release_menu_entry_context_park();
         }
     }
 
