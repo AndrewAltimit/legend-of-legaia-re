@@ -321,6 +321,11 @@ CANONICAL_LADDERS = [
     # The browser play page driven into a battle with retail's own one-shot
     # arm flag raised, so the tutorial box the page composes actually exists.
     ("battle_tutorial_page", "legaia-web-viewer"),
+    # --- lane L2 ---
+    # The pause menu's three data-driven kernels, driven to their OUTPUT (bag
+    # count, picked weapon id, destination rows) rather than to their call.
+    ("l2_menu_data_wiring", "legaia-engine-core"),
+    ("l2_menu_data_wiring_disc", "legaia-engine-core"),
     # --- lane L3 ---
     # Five fixtures for the GATED-(b) rows: content behind a story flag, a
     # scene, or a battle state no pad stream reaches from a cold boot.

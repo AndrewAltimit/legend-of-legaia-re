@@ -23,7 +23,7 @@ use legaia_engine_audio::{AudioOut, Spu, SpuAllocator, VabBank};
 use legaia_engine_core::camera::Camera;
 use legaia_engine_core::field_menu::{FieldMenuGate, FieldMenuInput, FieldMenuSession};
 use legaia_engine_core::field_menu_dispatch::{
-    FieldMenuSubsession, apply_arts_outcome, apply_equip_outcome, apply_inventory_outcome,
+    FieldMenuSubsession, apply_arts_outcome, apply_equip_outcome, apply_pause_items_outcome,
     apply_spell_outcome, try_open_arts_editor,
 };
 use legaia_engine_core::input::PadButton;
@@ -1003,7 +1003,7 @@ impl BootSession {
         let finished = self.field_menu_sub.take().expect("sub was Some");
         match finished {
             FieldMenuSubsession::Items(s) => {
-                apply_inventory_outcome(&s.inner, &mut self.host.world);
+                let _ = apply_pause_items_outcome(&s, &mut self.host.world);
             }
             FieldMenuSubsession::Equip { session, char_slot } => {
                 let _ = apply_equip_outcome(&session, char_slot, &mut self.host.world);
