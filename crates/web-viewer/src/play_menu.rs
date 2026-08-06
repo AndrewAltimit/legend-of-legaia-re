@@ -525,6 +525,13 @@ impl LegaiaRuntime {
         };
         if let Some(host) = self.scene_host.as_mut() {
             host.world.mode = menu.resume_mode;
+            // A kind-`0x0D` entry context is a *standing* op-`0x49` park: the
+            // script halts on the instruction and keeps the menu gated
+            // (notice panel, Load blocked, cancel becomes the ready check)
+            // until the player answers. Closing the menu under that gate is
+            // the answer, so release the park and let the script run on.
+            // See `World::release_menu_entry_context_park`.
+            host.world.release_menu_entry_context_park();
         }
     }
 

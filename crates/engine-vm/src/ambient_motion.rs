@@ -503,13 +503,17 @@ pub enum ZoneRampTick {
     DivideByZero,
 }
 
-// NOT WIRED: the port has no spawner for this actor. Its records are built by
-// scene content - something has to write the actor's `+0x80..+0xCA` fields and
-// the `+0x94` destination pointer - and the engine's scene loader installs no
-// actor carrying handler VA `0x80037018`; `engine-core::actor_handler` knows
-// the VA only as the target of the MAN loader's retire sweep. Reaching it
-// needs the spawn side first, and a destination model for a raw pointer.
 /// PORT: FUN_80037018 - the **player-zone ramp actor** tick.
+///
+/// The spawner is `FUN_8003C6A4`, reached from the field VM's op `0x43`
+/// sub-3..6: it allocates from the pool descriptor at `&DAT_80074304`, whose
+/// `+8` word is this routine's VA, and fills in exactly the `+0x80..+0xCA`
+/// fields read below. The port's spawn side is
+/// `legaia_engine_core::register_ramp::spawn_register_ramp`, and the
+/// destination pointer is modelled as one of four named camera-configuration
+/// registers rather than a raw address. `engine-core::actor_handler` also
+/// knows this VA as the target of the MAN loader's retire sweep, which is
+/// what clears the records at scene entry.
 ///
 /// Not a slot of the [`RampScheduler`] pool, despite the family resemblance:
 /// its fields live at `+0x80..+0xCA` of a full actor record (the pool's slots

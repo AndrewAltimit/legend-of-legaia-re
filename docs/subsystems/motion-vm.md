@@ -651,6 +651,16 @@ the scene MAN loader's second inlined retire sweep (`FUN_8003AEB0` at
 [`script-vm.md`](script-vm.md). Ported as
 `legaia_engine_vm::ambient_motion::zone_ramp_tick`.
 
+Its **spawner** is `FUN_8003C6A4`, i.e. field-VM op `0x43` sub-3..6
+([`script-vm.md`](script-vm.md#0x43-sub-36---the-camera-register-zone-ramp)):
+the descriptor at `&DAT_80074304` carries this VA in its `+8` word, and the
+op fills in exactly the `+0x80..+0xCA` fields read above. So the
+"destination pointer" is never arbitrary - it is one of four named field
+camera-configuration registers, and the routine is the mechanism behind a
+camera parameter that tracks the player across an authored zone. The engine's
+spawn side is `legaia_engine_core::register_ramp`; `World::tick_register_ramps`
+runs this tick per frame and `Camera::tick_globals` consumes the result.
+
 #### Clean-room port
 
 [`legaia_engine_vm::ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs)

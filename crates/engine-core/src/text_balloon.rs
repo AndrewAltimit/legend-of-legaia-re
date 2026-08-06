@@ -65,9 +65,12 @@ pub struct TextBalloon {
     /// Raw page bytes (the dialog-markup-encoded line the field-VM operand
     /// stream carried; retail stores the pointer at `+0x90`).
     pub text: Vec<u8>,
-    /// Screen X (`+0x14`). `None` until a width measurement arrives
-    /// ([`Self::center_with_width`]) - retail measures at spawn, but the
-    /// engine's font atlas lives host-side.
+    /// Screen X (`+0x14`). `None` until a width measurement arrives -
+    /// retail measures at spawn, but the engine's font atlas lives host-side,
+    /// so the measurement comes back from the draw layer
+    /// ([`crate::world::World::commit_text_balloon_width`], fed by
+    /// `legaia_engine_ui::text_balloon_text_width`) on the first frame the
+    /// balloon is drawable.
     pub x: Option<i16>,
     /// Screen Y (`+0x16`), always [`BALLOON_Y`].
     pub y: i16,
@@ -125,6 +128,30 @@ impl TextBalloon {
     /// Apply the retail centering (`X = (0x140 - width) >> 1`).
     pub fn center_with_width(&mut self, text_width_px: i16) {
         self.x = Some(balloon_center_x(text_width_px));
+    }
+
+    /// The window rect `FUN_8002C69C(0x58, y, 0x90, 0xB)` emits, in 320x240
+    /// stage pixels. Fixed width and height - only `y` moves, and it does not
+    /// today (the handler passes the balloon's own constant `y`).
+    ///
+    /// Deliberately **not** derived from the text width: retail frames the
+    /// balloon at a fixed `0x58 .. 0xE8` and centres the *line* on the whole
+    /// screen, so a long line overhangs its frame. Both halves are retail.
+    pub fn frame_rect(&self) -> (i32, i32, i32, i32) {
+        (
+            i32::from(BALLOON_FRAME_X),
+            i32::from(self.y),
+            i32::from(BALLOON_FRAME_ARG2),
+            i32::from(BALLOON_FRAME_ARG3),
+        )
+    }
+
+    /// The pen `FUN_80036888(text, 0, 0, x, y)` prints at, in stage pixels.
+    /// `None` until a host has committed a measurement
+    /// ([`Self::center_with_width`] /
+    /// [`crate::world::World::commit_text_balloon_width`]).
+    pub fn pen(&self) -> Option<(i32, i32)> {
+        self.x.map(|x| (i32::from(x), i32::from(self.y)))
     }
 
     /// PORT: FUN_801DA7F0

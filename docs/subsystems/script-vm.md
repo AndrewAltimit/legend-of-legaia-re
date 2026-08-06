@@ -573,7 +573,7 @@ If halt was *not* acquired: falls through to a generic skip-and-return path.
 | Sub | Encoding | Effect |
 |---|---|---|
 | 2 | `[43, 2, a1, a2, a3, lo, hi, b6]` (8 bytes) | 3-actor talk via `FUN_801D2D38`. |
-| 3..6 | 10 bytes (`[43, sub, b1..b4, lo_ticks, hi_ticks, lo_curve, hi_curve]`) | Sound register ramp on slot `_DAT_8007B610` (sub-6) / `B614` (sub-4) / `B60C` (sub-5) / `B618` (sub-3). |
+| 3..6 | 10 bytes (`[43, sub, x_lo, z_lo, x_hi, z_hi, start:i16, end:i16]`) | **Camera-register zone ramp** into `_DAT_8007B610` (sub-6) / `B614` (sub-4) / `B60C` (sub-5) / `B618` (sub-3) - see below. |
 | 7 | 17 bytes | Face / body rotation setup. Writes a 12-byte struct at `&DAT_80087E68 + face_id * 12`, schedules a `func_0x8003C5F0` ramp. |
 | 8 | 2 bytes | Face / rotation reset: clears `+0x6D` and `+0x7A`. |
 | 9 | 10 bytes (`[43, 9, x, y, z, ticks]`) | Explicit position with optional collision tween via `FUN_801DE698`. When `ticks == 0`, immediate writes (skipping `0xFFFF` sentinel). |
@@ -581,6 +581,40 @@ If halt was *not* acquired: falls through to a generic skip-and-return path.
 | 0xD / 0xF | 6 bytes | Allocate actor via `FUN_801DE7BC` with mode (3 for 0xD, 0 for 0xF). |
 | 0xE | 2 bytes | Mark currently-iterating actor with flag bit 0x8 (`*(int *)(actor + 0x10) \|= 0x8`). |
 | 0x16+ | - | No `case` arm in the original `case 0x43` inner switch; falls through with `iVar45 = param_2` (the dispatcher-default initialiser at line 4511 of the dump) - halts at PC. |
+
+#### 0x43 sub-3..6 - the camera-register zone ramp
+
+The arm at `0x801DF628` (one copy per sub-op) calls
+`FUN_8003C6A4(dest, 4, x_lo, z_lo, x_hi, z_hi, start, end)`, which allocates
+an actor from the descriptor pool at `&DAT_80074304`. That descriptor's `+8`
+word is `0x80037018`, so the actor's per-frame `+0x0C` handler is the
+**player-zone ramp** ([motion-vm.md](motion-vm.md#fun_80037018-is-not-a-slot-of-this-pool)):
+while the player stands inside the tile rectangle, `dest` lerps from `start`
+to `end` on his **Z**. X is a gate only. The four byte operands are tile
+coordinates (`tile * 0x80 + 0x40` in world units); both halfwords come through
+`FUN_8003CE9C` and are sign-extended, so a ramp may run downward.
+
+All four destinations are **field camera-configuration registers**, read by
+the field-overlay camera composer (`0x801DABA4` in PROT 0897) into the same
+camera descriptor whose ten fields are the retail camera globals:
+
+| register | sub-op | store site | camera role | zone-miss default |
+|---|---|---|---|---|
+| `_DAT_8007B60C` | 5 | `0x801DAF28` | pitch (`_DAT_8007B790`) | `0x1B8` |
+| `_DAT_8007B610` | 6 | `0x801DAF4C` | yaw (`_DAT_8007B792`) | `0` |
+| `_DAT_8007B614` | 4 | `0x801DAF3C` | eye-space Z (eye-back depth); sign picks the orbit side | `0x4000` |
+| `_DAT_8007B618` | 3 | `0x801DAFEC` | GTE `H` (`_DAT_8007B6F4`) | `0x300` |
+
+The pitch default is the same `0x1B8` `FUN_80025C24` seeds at field entry,
+which is what identifies the register. Every decoded on-disc site is sub-3,
+i.e. a **projection ramp** - the field of view opens or closes as the player
+crosses the zone. Ports: `engine-core::register_ramp` (spawn + record) +
+`World::tick_register_ramps` (the handler) + `Camera::tick_globals` (the
+consumer).
+
+The earlier reading - "sound register ramp" writing four target values over a
+`ticks` duration with a `curve` - is falsified; see
+[re-do-not-re-walk.md](../reference/re-do-not-re-walk.md).
 
 #### 0x43 sub-0x10..0x15 - screen-widget family + VRAM blit
 

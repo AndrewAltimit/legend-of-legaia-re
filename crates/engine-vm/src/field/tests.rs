@@ -81,7 +81,7 @@ struct TestHost {
     actor_alloc_modes: Vec<(u8, u8, [u8; 4])>,
     mark_flag_8_calls: Vec<u16>,
     // 0x43 sub-3/4/5/6.
-    sound_ramp_calls: Vec<(u8, [u8; 4], u16, u16)>,
+    camera_ramp_calls: Vec<(u8, [u8; 4], i16, i16)>,
     // 0x43 sub-9 / sub-0x10 / sub-0x11 / sub-0x15.
     sub9_tweens: Vec<(u16, u16, u16, u16)>,
     // High-byte default-route opcodes 0x5x/0x6x/0x7x.
@@ -406,8 +406,8 @@ impl FieldHost for TestHost {
     fn op43_mark_actor_flag_8(&mut self, ctx: &mut FieldCtx) {
         self.mark_flag_8_calls.push(ctx.script_id);
     }
-    fn op43_sound_register_ramp(&mut self, sub_op: u8, bytes: [u8; 4], ticks: u16, curve: u16) {
-        self.sound_ramp_calls.push((sub_op, bytes, ticks, curve));
+    fn op43_camera_register_ramp(&mut self, sub_op: u8, zone: [u8; 4], start: i16, end: i16) {
+        self.camera_ramp_calls.push((sub_op, zone, start, end));
     }
     fn op43_sub9_tween(&mut self, _ctx: &mut FieldCtx, x: u16, y: u16, z: u16, ticks: u16) {
         self.sub9_tweens.push((x, y, z, ticks));

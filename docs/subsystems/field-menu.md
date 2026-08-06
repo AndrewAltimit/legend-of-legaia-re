@@ -1790,6 +1790,22 @@ destination - and each host resolves the window id off the disc table through
 the VAs the two renderers load (`pause_screens::ContextLockedLabels`),
 installed by the `install_menu_overlay_tables` call both hosts already make.
 
+What makes the trigger *reachable* is that a kind-`0x0D` park stands. The
+submode dispatcher indexes a signed 14-byte table at `0x801F33A4` with the
+parked operand's first byte, and row `0x0D` is `-1`: the routine returns
+(`0x801F1468..0x801F1470`) before it writes the driver actor's state or clears
+`_DAT_8007B450`. Nothing opens a screen, so the script stays halted on the
+instruction and the context keeps answering `0x0D` until the player's own
+Start enters the menu it gates. The port models that with
+`field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS`; opening a screen for the
+row instead - which the engine used to do, falling back to the close tick -
+retires within a few frames and takes the context with it, which is why these
+two screens had no live trigger. What clears a standing `-1` park in retail is
+outside the dispatcher and not decoded; the port releases it from the
+menu-close path (`World::release_menu_entry_context_park`), the one exit the
+gate structurally has, since under it the root picker's cancel opens the ready
+check rather than closing.
+
 The painters for windows 24 and 46 stay unreached by a **screen** rather than
 by a mechanism; each one's remaining blocker is recorded per builder in
 `scripts/ci/ui-host-drift-waivers.toml`.

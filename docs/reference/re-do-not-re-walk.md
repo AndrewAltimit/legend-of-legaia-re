@@ -542,7 +542,41 @@ that the samples can tell the two readings apart.
 | Move-VM loop op `0x19` "retires past itself (size 2), loops back to the saved PC" | falsified (both halves inverted by the C rendering) | Wrong against the raw arm (`80023070.txt` `0x800235DC` + the `0x80024150` epilogue): retail **loops while the decremented count has not underflowed**, retires on underflow with size **1**, and the loop-back lands at **saved + 2** (the epilogue adds `a2 = 2` after the PC store) - re-running the `0x18` itself would re-seed the counter forever. jou's 15-instance cycler fan-out is the disc witness. Sibling correction: ext `0x1E` returns size **4**, hidden behind a `func_0x801d4a3c()` label-call return ([move-vm-overlay-ext.md](../subsystems/move-vm-overlay-ext.md#self-modifying-bytecode-ops-0x04--0x1b--0x1e)). |
 | Field-VM op `4C` nE sub-3 "syncs the resolved actor's position to the active camera" | falsified (copy direction inverted) | Plausible because the handler tail (`0x801E3178..0x801E31AC`) really does refresh the camera-scroll globals - but that tail is a player-ctx-only side path. The op body (`0x801E3108`) copies the operand-resolved actor's `+0x14/16/18` position and `+0x26` facing **into the executing ctx** - it is the seat primitive of every mid-visit crowd swap (dolk2 `P2[11]`'s eight `CC <crowd> E3 <day>` pairs). Reading the tail as the op's purpose inverted the semantics. See [script-vm.md](../subsystems/script-vm.md#mid-visit-npc-re-arrangement-beats-dolk2-market-swap--garmel-boss-staging). |
 | Extraction-0874 §2 F-variant pixels are written by a pause-menu-path uploader (and then: are a parked wrap-scroll phase) | falsified twice | Plausible: 6/6 pause captures held the variant; then the 3 words equal row 273's content, reading as a +2-row scroll park. But the whole pause walk issues **zero** image transfers (DMA2 chain-walk + GP0 PIO hook) and plain field saves carry the variant - session-history correlation; and the strip is not shift-invariant while the wrap-scroll installer ops never fire across the s2→s3 flip window - the row-273 equality is frame-content coincidence. The real writer is the town01 opening record's one-shot `4C 60` face-frame stamp (settled - [details](re-settled-threads.md#field--locomotion)). |
+| Field-VM op `0x43` sub-3..6 is a **sound** register ramp: four target values, a `ticks` duration and a `curve` | falsified on all four counts (it is a camera-register *zone* ramp) | [details below](#op-0x43-sub-36-as-a-timed-sound-register-ramp) |
 | Prologue gold grade = per-node `+0x74`/`+0x78` depth-cue crush | falsified (grade is a palette-space collapse; the nodes carry no `IR0`) | Plausible because `FUN_8002735C` really does load per-node DPCS far colour + `IR0`, and the motion/move VMs carry op `0x0C` writers of those fields - but the opening never uses them: a live recomp capture reads node `+0x78` (`IR0`) = **0 on every node at every beat**, and the `opdeene` MAN motion section has no op `0x0C`. The real mechanism is a load-time CLUT/TMD palette collapse `L=max(r,g,b) -> (L, max(L-1,0), L>>1)` ([cutscene.md](../subsystems/cutscene.md#full-scene-sepia-grade-the-gold-prologue-look)); the far-field crush is that law seen through dark authored gouraud. |
+
+### Op-0x43 sub-3..6 as a timed sound-register ramp
+
+*Status:* falsified on all four counts - it is a **camera**-register ramp, the
+byte operands are a tile rectangle, and the two halfwords are the ramp's
+endpoints rather than a duration and a shape.
+
+*The reading:* `FUN_8003C6A4` scales four byte operands `* 0x80 + 0x40` and
+stores two trailing halfwords, which reads as "four targets plus timing"; the
+destinations are unnamed `0x8007Bxxx` globals, and the op sits in a
+sub-dispatcher whose neighbours include sound work.
+
+*What settles it:* the tick. The descriptor at `&DAT_80074304` carries handler
+`0x80037018` in its `+8` word, which `FUN_80020DE0` copies to the new actor's
+`+0x0C`. That routine reads `+0x88`/`+0xC8` and `+0x8A`/`+0xCA` as an **AABB
+over the player's position**, `+0x80`/`+0x84` as two endpoints, and `+0x8C` as
+the destination *store width* (`1` = `sb`, `2` = `sh`, `3`/`4` = `sw`).
+Nothing counts down - the register lerps on the player's Z as he crosses the
+zone, and runs backwards when he walks back.
+
+All four destinations are field camera-configuration registers, each read by
+the field-overlay camera composer into the camera descriptor whose ten fields
+are the retail camera globals: `B60C` pitch, `B610` yaw, `B614` eye-space Z,
+`B618` GTE `H`. The `0x1B8` default of `_DAT_8007B60C` is the same pitch
+`FUN_80025C24` seeds at field entry, which is what identifies the register.
+
+*Why it survived:* the two halves were decoded years apart and each disclosed
+the other as missing - the spawn port said "the per-frame interpolator is
+untraced", the tick port said "the port has no spawner for this actor". Two
+`NOT WIRED` notes pointing at each other read as two separate gaps.
+
+Details: [script-vm.md](../subsystems/script-vm.md#0x43-sub-36---the-camera-register-zone-ramp),
+[motion-vm.md](../subsystems/motion-vm.md#fun_80037018-is-not-a-slot-of-this-pool).
 
 ### The reachable band's record force-walks the player through the wall
 
@@ -733,6 +767,7 @@ image at its mapped base, and only from there.
 
 | Thread | Verdict | Why |
 |---|---|---|
+| Retail's op-`0x49` arm spawns a driver actor that **opens the pause menu itself** for the kind-`0x0D` entry context | falsified (row `0x0D` of the dispatch table is `-1`; nothing opens) | The reading explained why the port could not reach `ContextNotice` / `ContextReady` and pointed at a pending-request channel as the fix. But the submode dispatcher indexes a **signed** 14-byte table at `0x801F33A4` with the parked operand's first byte and returns on `-1` (`0x801F1468..0x801F1470`) *before* it writes the driver's state or clears `_DAT_8007B450`. So a `0x0D` park simply stands, and the player's own Start is what enters the menu it gates. The port's own close-tick fallback for that row was the defect: it retired within a few frames and took the context with it. |
 | Actor VM = "the title screen's sprite-walk interpreter", with an ANM-trigger opcode | falsified (it is the menu overlay's window-widget script interpreter) | Two readings fell together. `FUN_801D6628` is resident in PROT 0899 (the menu overlay), and its base materialisation `lui 0x801e / addiu 0x4738` indexes the **window descriptor table** - instruction byte 1 is a window id, not a sprite-actor slot. And no arm of the 13-way dispatch hands off an ANM id (`see ghidra/scripts/funcs/overlay_menu_801d6628.txt`); "trigger animation" was a guess from the sprite-VM framing. Programs are overlay-resident data ([window-script.md](../formats/window-script.md)), so "find the per-scene carrier" was never answerable. |
 
 ## Measurement readings

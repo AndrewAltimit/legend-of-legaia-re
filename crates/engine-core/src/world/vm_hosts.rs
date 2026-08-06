@@ -780,12 +780,14 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.screen_fx.panel_move(words);
     }
 
-    // Op-0x43 sub-3..6 register-ramp spawn (retail `FUN_8003C6A4` actor on
-    // the effect list). The record's parameterization is the ported kernel;
-    // the world holds the spawned records ([`World::register_ramps`]).
+    // Op-0x43 sub-3..6 camera-register zone-ramp spawn (retail
+    // `FUN_8003C6A4` actor on the effect list). The record's
+    // parameterization is the ported kernel; the world holds the spawned
+    // records ([`World::register_ramps`]) and ticks each one's
+    // `FUN_80037018` handler per frame ([`World::tick_register_ramps`]).
     // REF: FUN_8003C6A4 (kernel PORT lives in crate::register_ramp)
-    fn op43_sound_register_ramp(&mut self, sub_op: u8, bytes: [u8; 4], ticks: u16, curve: u16) {
-        if let Some(ramp) = crate::register_ramp::spawn_register_ramp(sub_op, bytes, ticks, curve) {
+    fn op43_camera_register_ramp(&mut self, sub_op: u8, zone: [u8; 4], start: i16, end: i16) {
+        if let Some(ramp) = crate::register_ramp::spawn_register_ramp(sub_op, zone, start, end) {
             self.world.register_ramps.push(ramp);
         }
     }

@@ -66,6 +66,7 @@ pub mod other_game_hud;
 pub mod pause_menu;
 pub mod screen_prim;
 pub mod streak_pass;
+mod text_balloon_box;
 mod ui_fishing;
 mod ui_menu;
 pub mod ui_menu_window_dispatch;
@@ -76,6 +77,7 @@ mod ui_title_save;
 pub mod vram_capture;
 
 pub use battle_tutorial_box::*;
+pub use text_balloon_box::*;
 pub use ui_fishing::*;
 pub use ui_menu::*;
 pub use ui_menu_window_dispatch::*;

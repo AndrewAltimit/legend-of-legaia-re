@@ -70,21 +70,21 @@ pub(super) fn decode_actor_ctrl(
         }
         3..=6 => {
             need(9)?;
-            let bytes = [
+            let zone = [
                 bytecode[operand + 1],
                 bytecode[operand + 2],
                 bytecode[operand + 3],
                 bytecode[operand + 4],
             ];
-            let ticks = u16::from_le_bytes([bytecode[operand + 5], bytecode[operand + 6]]);
-            let curve = u16::from_le_bytes([bytecode[operand + 7], bytecode[operand + 8]]);
+            let start = i16::from_le_bytes([bytecode[operand + 5], bytecode[operand + 6]]);
+            let end = i16::from_le_bytes([bytecode[operand + 7], bytecode[operand + 8]]);
             mk(
                 header_size + 9,
-                ActorCtrlKind::SoundRegisterRamp {
+                ActorCtrlKind::CameraRegisterRamp {
                     sub_op,
-                    bytes,
-                    ticks,
-                    curve,
+                    zone,
+                    start,
+                    end,
                 },
             )
         }

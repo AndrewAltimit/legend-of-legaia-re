@@ -14,7 +14,7 @@
 //! | text balloon spawn + tick | `4C E1 <b1> <text…>` | `text_balloon::TextBalloon::spawn` / `::tick` (`FUN_8003C764` / `FUN_801DA7F0`) |
 //! | scripted game over | `4C EA` | `world::vm_hosts::op4c_n_e_sub_a_call_c7ec` (`FUN_8003C7EC`) |
 //! | take item | `4C 52 <id>` | `op4c_n5_sub2_take_item` (`FUN_800430AC`) + `equipment::party_unequip_accessory_by_id` |
-//! | sound register ramp | `43 <3..=6> …` (10 bytes) | `register_ramp` (`FUN_8003C6A4`) |
+//! | camera-register zone ramp | `43 <3..=6> …` (10 bytes) | `register_ramp` (`FUN_8003C6A4`) |
 //!
 //! ## Two facts about the take-item arm this test is built around
 //!
@@ -336,7 +336,7 @@ fn w1f2_field_vm_op_arms_run_on_real_scene_bytecode() {
             matches!(
                 i.info,
                 InsnInfo::ActorCtrl {
-                    kind: ActorCtrlKind::SoundRegisterRamp { .. },
+                    kind: ActorCtrlKind::CameraRegisterRamp { .. },
                     ..
                 }
             )
@@ -345,7 +345,7 @@ fn w1f2_field_vm_op_arms_run_on_real_scene_bytecode() {
     );
     assert!(
         !ramps.is_empty(),
-        "no scene carries a decoded `43` sub-3..6 sound-register ramp"
+        "no scene carries a decoded `43` sub-3..6 camera-register ramp"
     );
     for site in &ramps {
         let mut world = world_at(site);
@@ -364,11 +364,11 @@ fn w1f2_field_vm_op_arms_run_on_real_scene_bytecode() {
         // from defaults would pass a bare "is_empty() == false" check.
         let InsnInfo::ActorCtrl {
             kind:
-                ActorCtrlKind::SoundRegisterRamp {
+                ActorCtrlKind::CameraRegisterRamp {
                     sub_op,
-                    bytes,
-                    ticks,
-                    curve,
+                    zone,
+                    start,
+                    end,
                 },
             ..
         } = site.insn.info
@@ -376,22 +376,18 @@ fn w1f2_field_vm_op_arms_run_on_real_scene_bytecode() {
             unreachable!("filtered above")
         };
         assert_eq!(
-            ramp.ticks, ticks,
-            "{}: ramp duration did not come from the instruction",
+            (ramp.start, ramp.end),
+            (i32::from(start), i32::from(end)),
+            "{}: ramp endpoints did not come from the instruction",
             site.scene
         );
+        // The four tile corners are scaled into world units, so a ramp built
+        // from defaults (or from the wrong operand slice) fails here even
+        // when the endpoints happen to match.
         assert_eq!(
-            ramp.curve, curve,
-            "{}: ramp curve is not the operand's",
-            site.scene
-        );
-        // The four byte targets are scaled into 9.7 fixed point, so a ramp
-        // built from defaults (or from the wrong operand slice) fails here
-        // even when the duration happens to match.
-        assert_eq!(
-            ramp.targets_fp,
-            bytes.map(|b| i16::from(b) * 0x80 + 0x40),
-            "{}: ramp targets are not this instruction's operand bytes",
+            [ramp.x_lo, ramp.z_lo, ramp.x_hi, ramp.z_hi],
+            zone.map(legaia_engine_core::register_ramp::tile_to_world),
+            "{}: ramp zone corners are not this instruction's operand bytes",
             site.scene
         );
         assert_eq!(

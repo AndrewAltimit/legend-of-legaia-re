@@ -367,17 +367,17 @@ fn op_49_done_state_sub_6_8_9_c_d_advance_5() {
 }
 
 #[test]
-fn op_43_sub_3_4_5_6_sound_ramps() {
+fn op_43_sub_3_4_5_6_camera_zone_ramps() {
     for sub_op in [3u8, 4, 5, 6] {
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
-        // [43, sub_op, b1=1, b2=2, b3=3, b4=4, ticks=0x0064, curve=0x0010]
-        let bc = [0x43, sub_op, 1, 2, 3, 4, 0x64, 0x00, 0x10, 0x00];
+        // [43, sub_op, x_lo=1, z_lo=2, x_hi=3, z_hi=4, start=0x0064, end=0xFFF0]
+        let bc = [0x43, sub_op, 1, 2, 3, 4, 0x64, 0x00, 0xF0, 0xFF];
         let r = step(&mut host, &mut ctx, &bc, 0);
         assert_eq!(r, StepResult::Advance { next_pc: 10 });
         assert_eq!(
-            host.sound_ramp_calls,
-            vec![(sub_op, [1, 2, 3, 4], 100u16, 16u16)]
+            host.camera_ramp_calls,
+            vec![(sub_op, [1, 2, 3, 4], 100i16, -16i16)]
         );
     }
 }

@@ -784,6 +784,39 @@ pub const COIN_PANEL_WINDOW: usize = hub::window::TWO_OPTION;
 /// through its own host paths, so it keeps them out of the dispatcher.
 pub const OP49_DEDICATED_SUB_OPS: [u8; 3] = [0, 3, 5];
 
+/// Op-`0x49` sub-ops whose park is a **standing menu-entry context**, not a
+/// request for a screen: the table row is `-1` *and* nothing else opens a
+/// screen for them either, so the park has to survive.
+///
+/// Only sub-`0x0D` is in this set. The dispatcher's `-1` arm returns before
+/// it touches the driver actor's `+0x50` state or `+0x54` timer and before
+/// anything clears `_DAT_8007B450`:
+///
+/// ```text
+/// 801f1454  lw    a1,-0x4bb0(v0)      ; the parked operand pointer
+/// 801f145c  lbu   v0,0x0(a1)          ; its first byte = the sub-op
+/// 801f1460  addiu a2,v1,0x33a4
+/// 801f1468  lb    v0,0x0(v0)          ; OP49_SUBOP_SLOTS[sub_op], SIGNED
+/// 801f1470  beq   v0,a0,0x801f14b0    ; == -1 -> return, park intact
+/// ```
+///
+/// (`0x801F1454..0x801F14AC` in PROT 0897, base `0x801CE818`.) So the script
+/// stays halted on the instruction and
+/// [`World::menu_entry_context_kind`](crate::world::World::menu_entry_context_kind)
+/// keeps answering `0x0D` - which is the whole point of the sub-op: it is the
+/// context `FUN_801DC6B4` reads to open the pause menu on the notice panel,
+/// block its Load row and turn its cancel into the ready check. A screen that
+/// retires takes the context with it, and the player who opens the menu two
+/// seconds later gets the plain picker.
+///
+/// The other three `-1` rows (`0`, `1`, `7`) are **not** here: retail routes
+/// each into a driver that does hand back (`0` the inline gold shop, `1` the
+/// card save flow, `7` the casino prize exchange), and the engine reaches
+/// those by other paths, so their close-tick fallback below stays as the
+/// engine's unpark. That fallback is a port affordance the retail table does
+/// not have.
+pub const OP49_PARK_PRESERVING_SUB_OPS: [u8; 1] = [0x0D];
+
 /// The handler slot an op-`0x49` sub-op opens.
 ///
 /// This is retail's own selection: the 14-byte table
@@ -793,7 +826,7 @@ pub const OP49_DEDICATED_SUB_OPS: [u8; 3] = [0, 3, 5];
 /// sub-op, so every screen but the three dedicated ones closed itself
 /// immediately instead of running - the script unparked, but nothing drew.
 pub fn slot_for_op49_sub_op(sub_op: u8) -> Option<u16> {
-    if OP49_DEDICATED_SUB_OPS.contains(&sub_op) {
+    if OP49_DEDICATED_SUB_OPS.contains(&sub_op) || OP49_PARK_PRESERVING_SUB_OPS.contains(&sub_op) {
         return None;
     }
     // A sub-op the table gives no handler for still needs the park cleared,

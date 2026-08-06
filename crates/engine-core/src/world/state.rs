@@ -1136,11 +1136,18 @@ pub struct World {
     /// Renderers composite these 2D overlays above the scene.
     pub screen_fx_frame: crate::screen_fx::ScreenFxFrame,
 
-    /// Live 4-byte register-ramp records spawned by the field-VM op `0x43`
-    /// sub-3..6 (retail `FUN_8003C6A4` actors on the effect list). The
-    /// engine holds the parameterization; the per-frame interpolator handler
-    /// is untraced, so nothing ticks these yet. See [`crate::register_ramp`].
+    /// Live camera-register zone-ramp records spawned by the field-VM op
+    /// `0x43` sub-3..6 (retail `FUN_8003C6A4` actors on the effect list).
+    /// [`World::tick_register_ramps`] runs each one's `FUN_80037018` handler
+    /// against the player's position every field frame. See
+    /// [`crate::register_ramp`].
     pub register_ramps: Vec<crate::register_ramp::RegisterRamp>,
+
+    /// The four field camera-configuration registers
+    /// (`0x8007B60C`/`B610`/`B614`/`B618`) the ramps above write. Seeded to
+    /// [`crate::camera::CAMERA_ZONE_DEFAULTS`] on scene entry; consumed by
+    /// [`crate::camera::Camera::tick`].
+    pub camera_registers: crate::register_ramp::CameraRegisterFile,
 
     /// Noa dance (rhythm) minigame state. `Some` while `mode ==
     /// SceneMode::Dance`; the beat clock + hit judge run each tick. See
@@ -2739,6 +2746,7 @@ impl World {
             screen_fx: Default::default(),
             screen_fx_frame: Default::default(),
             register_ramps: Vec::new(),
+            camera_registers: Default::default(),
             dance: None,
             dance_return_mode: SceneMode::Field,
             dance_last_judge: None,
@@ -3082,6 +3090,12 @@ impl World {
         self.cutscene_narration = None;
         self.cutscene_card = None;
         self.text_balloon = None;
+        // Camera-register zone ramps are scene content: retail's MAN loader
+        // retire sweep (`FUN_8003AEB0` at `0x8003B414`) is keyed on the ramp
+        // actor's own handler VA, and the zone-miss defaults are reinstalled
+        // by `FUN_801DBE9C`. Both happen on scene entry.
+        self.register_ramps.clear();
+        self.camera_registers = Default::default();
         self.prologue_naming_pending = false;
         self.prologue_naming_armed = false;
         self.entering_town01_opening = false;

@@ -556,26 +556,29 @@ impl FieldMenuSession {
     ///
     /// PORT: FUN_801DC6B4 (`0x801dc8d0..0x801dc8e4`)
     ///
-    /// ## What is still short of retail, stated plainly
+    /// ## How a real script's `0x0D` park reaches this call
     ///
-    /// The *decode* is complete and both hosts run it, but the window in
-    /// which a real field script's `0x0D` park is visible to this call is
-    /// narrower than retail's. Retail's op-`0x49` arm spawns a driver actor
-    /// that **opens the menu itself**, and the park stays armed until that
-    /// screen hands back. The port has no path from a parked field script to
-    /// opening the pause menu, because the session is host state
-    /// (`BootSession::field_menu` / the page's `PlayMenu`) and not world
-    /// state: `World::open_field_submode_screen` runs the close tick
-    /// instead, which retires within a few frames and lets
-    /// `FieldHost::op49_clear` drop the park. So the kind byte is produced,
-    /// carried and acted on - but a player only sees these two screens if
-    /// the menu opens while the park is still armed.
+    /// It does not need a pending-request channel, and the earlier reading
+    /// that retail's op-`0x49` arm "spawns a driver actor that opens the menu
+    /// itself" is wrong for this sub-op. The dispatcher indexes a **signed**
+    /// 14-byte table at `0x801F33A4` with the parked operand's first byte, and
+    /// row `0x0D` is `-1`: it returns before it writes the driver's state or
+    /// clears `_DAT_8007B450`. Nothing opens; the park simply stands, and the
+    /// player's own Start is what enters the menu it gates.
     ///
-    /// Closing that is the same shape the inline gold shop already uses:
-    /// a pending-request channel the hosts drain
-    /// ([`crate::world::World::take_pending_field_shop`]) plus a
-    /// host-called finish that flips the op to Done. It wants a
-    /// `take_pending_field_menu` twin on both hosts, not a change here.
+    /// The port used to open the close-tick screen for that row, which retires
+    /// within a few frames and lets `FieldHost::op49_clear` drop the park - so
+    /// the kind byte was produced and carried, but had usually evaporated by
+    /// the time anyone pressed Start.
+    /// [`crate::field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS`] is that
+    /// fix: sub-`0x0D` opens no screen, so the park survives exactly as long
+    /// as retail's does.
+    ///
+    /// What is still an inference is the *release*: retail's clearer for a
+    /// standing `-1` park is outside the dispatcher and is not decoded, so
+    /// [`crate::world::World::release_menu_entry_context_park`] picks the one
+    /// exit this gate structurally has - the ready check's Yes - and hosts
+    /// call it from their menu-close path.
     pub fn open_entry_screen(&mut self) {
         if self.gate.entry_context_kind == Some(crate::pause_screens::ROOT_MENU_CONTEXT_LOCKED) {
             self.phase = FieldMenuPhase::Notice;

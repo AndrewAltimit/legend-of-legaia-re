@@ -661,7 +661,7 @@ fn field_vm_op43_ramp_subops_spawn_register_ramps() {
     world.mode = SceneMode::Field;
     let mut ctx = FieldCtx::default();
 
-    // Sub-3: [43][03][b1..b4][ticks u16][curve u16] - 10-byte instruction.
+    // Sub-3: [43][03][x_lo][z_lo][x_hi][z_hi][start i16][end i16] - 10 bytes.
     let op = [0x43u8, 0x03, 10, 20, 30, 40, 0x1E, 0x00, 0x02, 0x00];
     {
         let mut host = FieldHostImpl { world: &mut world };
@@ -673,19 +673,19 @@ fn field_vm_op43_ramp_subops_spawn_register_ramps() {
     assert_eq!(world.register_ramps.len(), 1);
     let r = &world.register_ramps[0];
     assert_eq!(r.slot, RampSlot::Dat8007B618, "sub-3 targets DAT_8007B618");
-    // Targets land in the retail 9.7 fixed-point form (v * 0x80 + 0x40).
+    // The four tile corners land in world units (tile * 0x80 + 0x40).
     assert_eq!(
-        r.targets_fp,
-        [
+        (r.x_lo, r.z_lo, r.x_hi, r.z_hi),
+        (
             10 * 0x80 + 0x40,
             20 * 0x80 + 0x40,
             30 * 0x80 + 0x40,
             40 * 0x80 + 0x40
-        ]
+        )
     );
-    assert_eq!((r.ticks, r.curve), (0x1E, 2));
+    assert_eq!((r.start, r.end), (0x1E, 2));
 
-    // Sub-6 picks the DAT_8007B610 block.
+    // Sub-6 picks the DAT_8007B610 register.
     let op6 = [0x43u8, 0x06, 1, 2, 3, 4, 0x05, 0x00, 0x00, 0x00];
     {
         let mut host = FieldHostImpl { world: &mut world };

@@ -521,6 +521,31 @@ impl Camera {
             self.globals.0[6] = -(a.move_state.world_x as i32);
             self.globals.0[8] = -(a.move_state.world_z as i32);
         }
+
+        // Camera-register zone ramps (field-VM op `0x43` sub-3..6) own four
+        // of these ten axes while the player stands in an authored zone. The
+        // field-overlay camera composer reads all four straight into the same
+        // camera descriptor these globals mirror - see
+        // [`crate::register_ramp::RampSlot::camera_axis`] for the per-register
+        // store sites.
+        //
+        // Gated on a register having actually been written: with no ramp in
+        // the scene the file still holds `CAMERA_ZONE_DEFAULTS`, whose
+        // `0x4000` eye-back is *not* the `16420` this camera resets to, so an
+        // ungated feed would re-frame every ramp-free scene. A scripted glide
+        // still wins - it is the shot the script staged.
+        // REF: FUN_801DABA4 (the field-overlay camera composer)
+        if !gliding && world.camera_registers.written() {
+            for slot in crate::register_ramp::RampSlot::ALL {
+                let axis = slot.camera_axis();
+                let v = world.camera_registers.get(slot);
+                // Retail's eye-back store is a halfword whose sign the
+                // composer folds into the yaw (it picks which side of the
+                // player the orbit sits on), so the depth axis takes the
+                // magnitude; the port's follow camera has no side flip.
+                self.globals.0[axis] = if axis == 5 { v.abs() } else { v };
+            }
+        }
     }
 
     /// Reset the retail camera globals to their field-entry values and drop

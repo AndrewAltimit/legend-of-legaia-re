@@ -104,9 +104,9 @@ pub(super) fn op_43<H: FieldHost>(
             let Some(&c_hi) = bytecode.get(operand + 8) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            let ticks = u16::from_le_bytes([t_lo, t_hi]);
-            let curve = u16::from_le_bytes([c_lo, c_hi]);
-            host.op43_sound_register_ramp(sub_op, [b1, b2, b3, b4], ticks, curve);
+            let start = i16::from_le_bytes([t_lo, t_hi]);
+            let end = i16::from_le_bytes([c_lo, c_hi]);
+            host.op43_camera_register_ramp(sub_op, [b1, b2, b3, b4], start, end);
             StepResult::Advance {
                 next_pc: pc + header_size + 9,
             }
