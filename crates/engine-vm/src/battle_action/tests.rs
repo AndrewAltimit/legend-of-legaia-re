@@ -2318,12 +2318,12 @@ fn target_cursor_brightens_pointed_at_and_dims_rest() {
 
     assert_eq!(host.actors[4].render_flag, CURSOR_FLAG_SELECTED);
     assert_eq!(host.actors[4].render_color, CURSOR_COLOR_BRIGHT);
-    assert_eq!(host.actors[4].render_scale, CURSOR_SCALE_ON);
+    assert_eq!(host.actors[4].render_blend, CURSOR_BLEND_ON);
 
     for slot in [3usize, 5, 6] {
         assert_eq!(host.actors[slot].render_flag, CURSOR_FLAG_DIMMED);
         assert_eq!(host.actors[slot].render_color, CURSOR_COLOR_DIM);
-        assert_eq!(host.actors[slot].render_scale, CURSOR_SCALE_ON);
+        assert_eq!(host.actors[slot].render_blend, CURSOR_BLEND_ON);
     }
 }
 
@@ -2333,7 +2333,7 @@ fn target_cursor_window_is_slots_three_through_six() {
     target_cursor_highlight(&mut host, &ctx, true);
     for slot in [0usize, 1, 2, 7] {
         assert_eq!(host.actors[slot].render_flag, 0);
-        assert_eq!(host.actors[slot].render_scale, 0);
+        assert_eq!(host.actors[slot].render_blend, 0);
     }
 }
 
@@ -2344,7 +2344,7 @@ fn target_cursor_skips_dead_slots() {
     host.actors[5].render_flag = 42;
     target_cursor_highlight(&mut host, &ctx, true);
     assert_eq!(host.actors[5].render_flag, 42);
-    assert_eq!(host.actors[5].render_scale, 0);
+    assert_eq!(host.actors[5].render_blend, 0);
 }
 
 #[test]
@@ -2354,7 +2354,7 @@ fn target_cursor_disable_clears_tint() {
     target_cursor_highlight(&mut host, &ctx, false);
     for slot in 3usize..=6 {
         assert_eq!(host.actors[slot].render_flag, 0);
-        assert_eq!(host.actors[slot].render_scale, 0);
+        assert_eq!(host.actors[slot].render_blend, 0);
         assert_eq!(host.actors[slot].render_color, CURSOR_COLOR_BRIGHT);
     }
 }

@@ -138,7 +138,7 @@ The layout is **schema-then-walk**: each record begins with a fixed prefix (comm
 | Art Power (×4) | Each byte is a damage multiplier - see [Power encoding](#power-encoding) below. **Pinned to record `+0x24`** (a fixed offset, 1-4 active bytes), not the art-specific variable position this table originally implied. |
 | Damage Timing (×4) | One byte per Art Power byte; the animation frame at which that hit fires. |
 | Special Effect Cues (×2) | Each cue occupies 2 words: half-word effect_id, then 3 half-words XYZ. Active iff any field is non-zero. |
-| Hit Effect Cues (×4) | Each cue is a 32-bit word: high half = timing in frames, low half = constant (`0x1A` = sound effect, `0x4C` = hit effect, …). |
+| Hit Effect Cues (×4) | Each cue is a 32-bit word: high half = timing in frames, low half = constant (`0x1A` = sound effect, `0x4C` = hit effect, …). Spreadsheet shape - the runtime carrier is the 8-byte hit run below, and in that dispatch `0x4C` fires neither sound nor an authored visual (see [Runtime cue playout](#runtime-cue-playout)). |
 | Identifier | Byte. Some values trigger special animations (`0x67` in Heaven's Drop = Thunderbolt). |
 | Anim Speed | Byte. Lower = slower playback, higher = faster. |
 | Effect on Enemy | Byte status ailment: `1` = Toxic, `2` = Numb, `3` = Venom, `4` = Sleep, `5` = Confuse, `6` = Curse, `7` = Stone, `8` = Faint (see `legaia_engine_vm::status_effects`). |
@@ -255,6 +255,18 @@ overlay tables; `FUN_801e22c8` uses the third:
 A cue code's high bit (`0x80`) is not an index into these tables - it is the
 "spawn a digit" flag, and the low 7 bits select the glyph, matching the
 [Miracle Art directional MSB masking](#action-constants) convention (`& 0x7F`).
+
+Two bounds the readers apply differently. `FUN_801dea50`'s SFX read is gated
+`code < 0x32` (`sltiu` at `0x801df0d8`) while `FUN_801e22c8` consults the map
+for any plain code; and neither bounds the `0x801F6324` read against the
+table's 61 entries, so a plain code past `0x3C` reads into the SFX map as a
+"pointer" - the spreadsheet's `0x4C` "hit effect" constant lands on the zero
+word at `0x801F6454`, staging a part from a NULL record. So `0x4C` names no
+sound and no authored effect; the visible hit presentation comes from the
+in-range cue codes, the digit spawns, and the impact freeze/tint. Per-code
+specials of the `FUN_801dea50` dispatch (scale variants, the code-`0` → `9`
+substitution, the homing handle, the `0x81..=0x83` shockwave) are tabulated
+in [`battle-action.md` § the per-action effect script](../subsystems/battle-action.md#the-per-action-effect-script-fun_801dea50).
 
 ### Target-group encoding
 

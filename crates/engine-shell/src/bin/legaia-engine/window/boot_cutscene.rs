@@ -1,6 +1,9 @@
 //! Extracted from `window.rs` (mechanical split; behavior-preserving).
 
 use super::*;
+// `AudioBgmDirector::stop` is a `BgmDirector` trait item; the title/boot
+// hand-offs below stop the score through it.
+use legaia_engine_core::scene::BgmDirector as _;
 
 impl PlayWindowApp {
     /// Drive [`legaia_engine_core::save_screen::SaveScreenFlow`] for whichever
@@ -75,6 +78,19 @@ impl PlayWindowApp {
         }
     }
 
+    /// Score the title screen: start the global-pool title theme
+    /// ([`legaia_engine_core::music_labels::TITLE_THEME_BGM_ID`]). Called on
+    /// every entry to [`BootUiState::Title`]; the director suppresses a
+    /// same-id restart, so re-entering from the save-select / options
+    /// panels never drops the playhead. A `false` return (no disc bank,
+    /// audio off) simply leaves the title silent.
+    fn start_title_bgm(&mut self) {
+        let id = legaia_engine_core::music_labels::TITLE_THEME_BGM_ID;
+        if !self.session.start_global_bgm(id) {
+            log::debug!("title: theme bgm {id} unavailable; title stays silent");
+        }
+    }
+
     /// Tick the boot-UI state machine (when active) using the latest
     /// pad bitmask. Returns `true` if the boot UI is still active and
     /// the scene tick should be skipped this frame.
@@ -118,6 +134,7 @@ impl PlayWindowApp {
                             legaia_engine_core::title::TitleSession::without_save_data(),
                         )
                     };
+                    self.start_title_bgm();
                 }
                 true
             }
@@ -160,6 +177,12 @@ impl PlayWindowApp {
                             // interactive `town01`. See docs/subsystems/boot.md
                             // "New Game boot chain".
                             self.session.begin_new_game();
+                            // The title theme hands the score to the field:
+                            // stop it so the prologue's own BGM (or its
+                            // scripted silence) owns the audio from frame 1.
+                            if let Some(bgm) = self.session.bgm.as_mut() {
+                                bgm.stop();
+                            }
                             let cutscene = legaia_asset::new_game::OPENING_CUTSCENE_SCENE;
                             match self
                                 .session
@@ -234,14 +257,23 @@ impl PlayWindowApp {
                     let commit = save_flow.commit(session);
                     match outcome {
                         SelectOutcome::Cancelled => {
-                            // Back to title.
+                            // Back to title (the theme is already up; the
+                            // director suppresses the same-id restart).
                             self.boot_ui =
                                 BootUiState::Title(legaia_engine_core::title::TitleSession::new());
+                            self.start_title_bgm();
                         }
                         _ => {
                             if let Some(c) = commit {
                                 self.apply_save_commit(c);
                             }
+                            // Hand the score from the title theme to the
+                            // loaded scene: stop, then re-play the world's
+                            // own op-0x35 track when it is a global-pool id.
+                            if let Some(bgm) = self.session.bgm.as_mut() {
+                                bgm.stop();
+                            }
+                            self.session.restore_field_bgm();
                             self.boot_ui = BootUiState::Inactive;
                         }
                     }
@@ -270,6 +302,7 @@ impl PlayWindowApp {
                     // pick New Game / Continue (matches retail flow).
                     self.boot_ui =
                         BootUiState::Title(legaia_engine_core::title::TitleSession::new());
+                    self.start_title_bgm();
                 }
                 true
             }
@@ -441,8 +474,22 @@ impl PlayWindowApp {
                 // menu-overlay stream retail spends that window on.
                 session.tick();
                 if let Some(GameOverOutcome::ReturnToTitle) = session.outcome() {
+                    // The hold froze the world mid-battle (`finish_battle`
+                    // deferred the field restore so the final battle frame
+                    // stayed up). Complete the deferred restore before the
+                    // title takes the screen, so Continue / New Game starts
+                    // from a field-shaped world.
+                    self.session.host.world.resolve_game_over_hold();
+                    // The wipe left the battle track running; the title
+                    // overlay owns the screen now, so swap the score with
+                    // it. Stop first so a failed title-theme start leaves
+                    // silence rather than the stale battle BGM.
+                    if let Some(bgm) = self.session.bgm.as_mut() {
+                        bgm.stop();
+                    }
                     self.boot_ui =
                         BootUiState::Title(legaia_engine_core::title::TitleSession::new());
+                    self.start_title_bgm();
                 }
                 true
             }

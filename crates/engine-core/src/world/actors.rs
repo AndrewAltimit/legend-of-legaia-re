@@ -472,19 +472,30 @@ impl World {
         if self.mode != SceneMode::Battle {
             return;
         }
-        // Decay pass.
+        // Decay pass. Retail arm 0 runs on render flag `0` only: ease the
+        // colour word toward neutral, then drain the `+0x0C` blend
+        // intensity by `0x20`/frame, then retire the selector. The ease
+        // stays gated on "something armed it" (the impact selector or a
+        // live cue-group blend) so unrelated colour writers are never
+        // fought (retail separates the same writers through the `+0x21C`
+        // dispatch).
         for a in self.actors.iter_mut() {
             if !a.active {
                 continue;
             }
             let b = &mut a.battle;
-            if b.impact_state != 0 && b.render_flag == 0 {
-                if b.render_color != ifx::IMPACT_NEUTRAL_STATE {
-                    b.render_color =
-                        ifx::ease_actor_state(b.render_color, [0x80; 3], ifx::IMPACT_EASE_STEP);
-                } else {
-                    b.impact_state = 0;
-                }
+            if b.render_flag != 0 {
+                continue;
+            }
+            if b.render_color != ifx::IMPACT_NEUTRAL_STATE
+                && (b.impact_state != 0 || b.render_blend != 0)
+            {
+                b.render_color =
+                    ifx::ease_actor_state(b.render_color, [0x80; 3], ifx::IMPACT_EASE_STEP);
+            } else if b.render_blend != 0 {
+                b.render_blend = b.render_blend.saturating_sub(ifx::BLEND_DRAIN_STEP);
+            } else if b.impact_state != 0 {
+                b.impact_state = 0;
             }
         }
         // The per-clip arms: acting party actor's committed record key +

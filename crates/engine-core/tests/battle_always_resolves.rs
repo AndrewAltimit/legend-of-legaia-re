@@ -174,16 +174,22 @@ fn a_party_wipe_raises_game_over_and_leaves_the_party_down() {
     }
     for _ in 0..20_000 {
         w.tick();
-        if w.mode != SceneMode::Battle {
+        if w.game_over {
             break;
         }
     }
+    assert!(w.game_over, "a party wipe raises game over");
+    // The wipe fold defers the field restore (`World::game_over_hold`) so
+    // hosts hold the frozen battle frame; the deferred restore is what a
+    // host runs when its hand-off session resolves.
+    assert!(w.game_over_hold, "the field restore is deferred");
+    assert_eq!(w.mode, SceneMode::Battle, "the hold parks the battle scene");
+    w.resolve_game_over_hold();
     assert_ne!(
         w.mode,
         SceneMode::Battle,
-        "the wipe must resolve the battle"
+        "the resolve completes the battle exit"
     );
-    assert!(w.game_over, "a party wipe raises game over");
     assert_eq!(
         w.roster.members[0].hp_mp_sp().hp_cur,
         0,

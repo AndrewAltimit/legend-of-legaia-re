@@ -75,16 +75,20 @@ fn a_party_wipe_hands_the_frame_to_the_title() {
     }
     for _ in 0..20_000 {
         w.tick();
-        if w.mode != SceneMode::Battle {
+        if w.game_over {
             break;
         }
     }
-    assert_ne!(
+    assert!(w.game_over, "a party wipe raises game over");
+    // The wipe fold parks the scene: the field restore is deferred so hosts
+    // hold the frozen battle frame through the hand-off (retail freezes the
+    // wipe frame while mode 22 CARD INIT streams the menu overlay).
+    assert!(w.game_over_hold, "the field restore is deferred");
+    assert_eq!(
         w.mode,
         SceneMode::Battle,
-        "the wipe must resolve the battle"
+        "the hold keeps the battle scene up for the frozen frame"
     );
-    assert!(w.game_over, "a party wipe raises game over");
 
     // What a host does with the flag: consume it, start the hand-off, tick.
     w.game_over = false;
@@ -105,6 +109,14 @@ fn a_party_wipe_hands_the_frame_to_the_title() {
         "the wipe hand-off resolves to the title screen"
     );
     assert!(!w.game_over, "the flag is consumed, not left latched");
+    // The host completes the deferred restore before the title takes over.
+    w.resolve_game_over_hold();
+    assert!(!w.game_over_hold);
+    assert_ne!(
+        w.mode,
+        SceneMode::Battle,
+        "the resolve leaves battle mode behind"
+    );
 }
 
 /// The hold is real: nothing resolves before it drains, so a host cannot skip

@@ -1783,7 +1783,11 @@ pub struct World {
     pub battle_intro: Option<vm::battle_intro_transition::TransitionEntity>,
     /// Effects the last [`World::tick_encounter`] battle-intro tick asked for,
     /// in retail order. Hosts drain this to drive the loads the kernel cannot
-    /// perform itself (mesh assembly, the battle bundle read).
+    /// perform itself (mesh assembly, the battle bundle read). The world
+    /// consumes two of them before publishing: `LoadBattleBgm` (the BGM swap)
+    /// and `SetAudioCue` (the battle-start sound, pushed onto
+    /// [`World::battle_sfx_cues`]) - see `World::tick_battle_intro` in
+    /// `world/encounters.rs`.
     pub battle_intro_effects: Vec<vm::battle_intro_transition::TransitionEffect>,
     /// The one-shot sound-detach latch (`gp+0x804`). Idempotent: the mode-INIT
     /// chain can call it repeatedly and only the first has any effect.
@@ -2142,6 +2146,14 @@ pub struct World {
     /// `BootUiState::GameOver`, the browser's game-over overlay) and clear it
     /// when the player picks an outcome.
     pub game_over: bool,
+
+    /// Set by [`World::finish_battle`]'s party-wipe arm: the field restore
+    /// (actor table, scene mode, step tracking) is deferred so hosts hold the
+    /// final battle frame through the game-over hand-off, mirroring retail's
+    /// frozen frame while mode 22 CARD INIT streams the menu overlay. Cleared
+    /// by [`World::resolve_game_over_hold`], which performs the deferred
+    /// restore - hosts call it when their `GameOverSession` resolves.
+    pub game_over_hold: bool,
 
     /// Field state captured at the `Field -> Battle` transition so the live
     /// loop can restore it on victory. The retail engine re-enters the field
@@ -2835,6 +2847,7 @@ impl World {
             scene_encounter_hint_frames: 0,
             battle_spoils_frames: 0,
             game_over: false,
+            game_over_hold: false,
             field_return: None,
             field_last_tile: None,
             world_map_entities: Vec::new(),
@@ -3028,6 +3041,7 @@ impl World {
         }
         self.battle_end = None;
         self.game_over = false;
+        self.game_over_hold = false;
         self.play_time_seconds = 0;
         self.cutscene_timeline = None;
         self.helper_contexts.clear();

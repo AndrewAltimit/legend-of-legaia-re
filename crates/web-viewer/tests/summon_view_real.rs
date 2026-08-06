@@ -235,6 +235,116 @@ fn the_seven_named_summons_resolve_to_bespoke_meshes() {
     assert_eq!(seen, 7, "non-vacuity: all seven summons were checked");
 }
 
+/// The `.glb` download: every cast exports a valid binary glTF whose
+/// animations are the cast's own phase clips, channelled **1:1 onto the TMD
+/// objects**. `character_gltf`'s contract is "animation channel `i` drives
+/// TMD object `i`"; the arts page satisfies it by *expanding* clips per
+/// assembled object, the summon path claims it holds natively because the
+/// actor record's `+0x4C` per-part table is indexed by TMD object. This test
+/// asserts that claim instead of assuming it: for every clip of every cast,
+/// every animated part index resolves to a real `object_<i>` node, and each
+/// animation binds exactly `2 * part_count` channels (translation + rotation
+/// per part - none dropped, none dangling).
+#[test]
+fn glb_export_bakes_every_phase_clip_channelled_one_to_one_onto_objects() {
+    let Some(mut s) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let cat = catalog(&s);
+    let casts = cat["casts"].as_array().unwrap();
+    assert_eq!(casts.len(), 32, "non-vacuity: full cast span");
+
+    // Nothing loaded -> nothing exported (the page's disabled-button state).
+    assert!(s.export_summon_glb().is_empty(), "no cast: empty export");
+    assert!(s.export_name().is_empty(), "no cast: empty name");
+
+    for c in casts {
+        let id = c["spell_id"].as_u64().unwrap() as u32;
+        let clips = c["clips"].as_array().unwrap().clone();
+        let st: serde_json::Value = serde_json::from_str(&s.set_cast(id)).unwrap();
+        assert_eq!(st["ok"], true, "{id:#04x}: set_cast");
+        let label = format!("{:#04x} {}", id, s.export_name());
+        let object_count = st["object_count"].as_u64().unwrap();
+
+        // A valid .glb: magic, version 2, declared length == byte length.
+        let glb = s.export_summon_glb();
+        assert!(
+            glb.len() > 1000,
+            "{label}: .glb non-trivial ({})",
+            glb.len()
+        );
+        assert_eq!(&glb[0..4], b"glTF", "{label}: magic");
+        assert_eq!(u32::from_le_bytes(glb[4..8].try_into().unwrap()), 2);
+        let total = u32::from_le_bytes(glb[8..12].try_into().unwrap()) as usize;
+        assert_eq!(total, glb.len(), "{label}: declared length");
+        let json_len = u32::from_le_bytes(glb[12..16].try_into().unwrap()) as usize;
+        let root: serde_json::Value =
+            serde_json::from_slice(&glb[20..20 + json_len]).expect("JSON chunk parses");
+
+        // Every TMD object surfaced as a node (+1 for the reorient root).
+        let nodes = root["nodes"].as_array().unwrap();
+        let node_names: std::collections::BTreeSet<&str> =
+            nodes.iter().filter_map(|n| n["name"].as_str()).collect();
+        assert_eq!(
+            nodes.len() as u64,
+            object_count + 1,
+            "{label}: one node per TMD object plus the root"
+        );
+
+        // Animation count == the catalog's clip count, in table order.
+        let anims = root["animations"].as_array().unwrap();
+        assert_eq!(
+            anims.len(),
+            clips.len(),
+            "{label}: one glTF animation per phase clip"
+        );
+        for (i, (a, k)) in anims.iter().zip(&clips).enumerate() {
+            let part_count = k["parts"].as_u64().unwrap();
+            let tag = k["tag"].as_u64().unwrap();
+            assert_eq!(
+                a["name"].as_str().unwrap(),
+                format!("phase {} (tag 0x{tag:02X})", i + 1),
+                "{label}: clip {i} keeps its phase identity"
+            );
+            // The 1:1 contract, asserted not assumed: every animated part
+            // index is a real object node...
+            for p in 0..part_count {
+                assert!(
+                    node_names.contains(format!("object_{p}").as_str()),
+                    "{label}: clip {i} part {p} has no TMD object to drive \
+                     (rig width {part_count}, {object_count} objects)"
+                );
+            }
+            // ...and the animation binds exactly translation + rotation for
+            // each of them - no channel was dropped for a missing node.
+            assert_eq!(
+                a["channels"].as_array().unwrap().len() as u64,
+                2 * part_count,
+                "{label}: clip {i} channel count is 2 x rig width"
+            );
+            // Timeline runs at the retail rate byte: frames / (7.5 * rate).
+            let rate = k["rate"].as_u64().unwrap();
+            let frames = k["frames"].as_u64().unwrap();
+            if rate > 0 && frames > 1 {
+                let in_acc = a["samplers"][0]["input"].as_u64().unwrap() as usize;
+                let max_t = root["accessors"][in_acc]["max"][0].as_f64().unwrap();
+                let want = (frames - 1) as f64 / (7.5 * rate as f64);
+                assert!(
+                    (max_t - want).abs() < 1e-3,
+                    "{label}: clip {i} duration {max_t} != {want}"
+                );
+            }
+        }
+
+        // The bake carries a texture atlas (the summon's VRAM pool).
+        assert!(
+            root["images"].as_array().is_some_and(|i| !i.is_empty()),
+            "{label}: atlas image present"
+        );
+    }
+}
+
 #[test]
 fn casts_expose_their_fx_texture_pages() {
     let Some(mut s) = loaded() else {

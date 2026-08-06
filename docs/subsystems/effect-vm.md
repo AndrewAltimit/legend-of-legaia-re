@@ -268,6 +268,8 @@ Effect IDs are anonymous; no string table maps id → "fireball / thunder / heal
 
 Two producers of the 2D-pool spawn wrapper `FUN_801DFDF0` are confirmed: the move-power `+0x12`/`+0x16` effect-id lists dispatched by `FUN_801e09f8`, and the per-move effect-list spawner `FUN_801e22c8` (called by the battle effect driver `FUN_800402f4`), which walks a 5-byte-stride list at `0x801F6470` through the same bit-7 multiplex. See [`effect.md` § the bit-7 multiplex](../formats/effect.md#how-a-move-reaches-this-2d-pool---the-bit-7-multiplex).
 
+Both are ported and live: the list dispatch as `engine-core`'s move-FX spawn path (`World::spawn_move_fx`), the cue-group expander as `engine-vm::battle_cue_group::expand_cue_group` (+ `cue_group_for`, the `FUN_800402f4` site selection), reached from the action SM's item/spirit applier band with each expanded cue routed into `World::try_spawn_effect` / `World::spawn_action_table_effect` and its SFX byte into `World::battle_sfx_cues`.
+
 ## See also
 
 **Reference** -

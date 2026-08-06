@@ -448,10 +448,16 @@ pub struct BattleActor {
     /// renderer. The target-select cursor writes `0x20080200` (bright) or
     /// `0x00401004` (dimmed); the summon fade clears it to `0`.
     pub render_color: u32,
-    /// `+0xC` - per-actor mesh brightness/scale word (`0x1000` = the neutral
-    /// q12 unit). The target-select cursor sets it to `0x1000` when the cursor
-    /// is up and `0` when it retires.
-    pub render_scale: u32,
+    /// `+0xC` - per-actor **tint-blend intensity** (q12). The battle tint
+    /// pass copies it verbatim into the actor's render packet `+0x78` blend
+    /// word whenever it is non-zero (`FUN_8004A908`), so it weights how hard
+    /// the `render_color` word modulates the mesh; it is **not** a mesh
+    /// scale. Writers: the target-select cursor sets `0x1000` while the
+    /// cursor is up and `0` when it retires; the item/spirit cue-group
+    /// expander flashes it to `0x2000` (`FUN_801E22C8`); the status
+    /// inflictors reset it to `0x1000`. `FUN_80050120` arm 0 drains it by
+    /// `0x20` per frame back to `0` once the colour word has eased neutral.
+    pub render_blend: u32,
     /// `+0x46` - facing angle (i12 in `0xFFF` range; written from bearing
     /// checks).
     pub facing_angle: u16,

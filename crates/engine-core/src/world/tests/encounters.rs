@@ -613,6 +613,61 @@ fn the_battle_intro_sm_runs_through_the_transition_phase() {
 }
 
 #[test]
+fn the_battle_intro_phase_zero_enqueues_the_battle_start_cue() {
+    use crate::encounter::EncounterRoll;
+    use legaia_engine_vm::battle_intro_transition::{AUDIO_CUE_FLAGGED, AUDIO_CUE_PLAIN};
+
+    // Plain row: retail's phase-0 pre-arm writes ring cue 0x1F, once, on the
+    // first transition frame - the queue both hosts drain every tick.
+    let mut world = World::new();
+    let mut session = crate::encounter::EncounterSession::new(
+        crate::encounter::EncounterTracker::new(crate::encounter::EncounterTable::default()),
+    );
+    session.trigger_with(EncounterRoll {
+        formation_id: 3,
+        row_index: 0,
+        roll_q8: 0,
+    });
+    world.set_encounter_session(Some(session));
+    world.tick_encounter();
+    let cues = world.drain_battle_sfx_cues();
+    assert_eq!(cues.len(), 1, "one battle-start cue: {cues:?}");
+    assert_eq!(cues[0].kind, AUDIO_CUE_PLAIN);
+    assert_eq!(cues[0].timing_frames, 0, "fires on the spin's first frame");
+    world.tick_encounter();
+    world.tick_encounter();
+    assert!(
+        world.drain_battle_sfx_cues().is_empty(),
+        "phase 0 runs once per transition - no further cue during the spin"
+    );
+
+    // Flagged row (record[+0] non-zero raises bit 0x80 in the per-battle
+    // flags): the flagged store overwrites the plain one in ring slot 0, so
+    // exactly one cue - 0x4D - reaches the queue.
+    let mut world = World::new();
+    world
+        .formation_table
+        .insert(crate::monster_catalog::FormationDef::new(9, Vec::new()).with_header_flags(1));
+    let mut session = crate::encounter::EncounterSession::new(
+        crate::encounter::EncounterTracker::new(crate::encounter::EncounterTable::default()),
+    );
+    session.trigger_with(EncounterRoll {
+        formation_id: 9,
+        row_index: 0,
+        roll_q8: 0,
+    });
+    world.set_encounter_session(Some(session));
+    world.tick_encounter();
+    let cues = world.drain_battle_sfx_cues();
+    assert_eq!(
+        cues.len(),
+        1,
+        "slot-0 overwrite: one cue, not two: {cues:?}"
+    );
+    assert_eq!(cues[0].kind, AUDIO_CUE_FLAGGED);
+}
+
+#[test]
 fn the_bgm_op_sub_5_arms_the_timed_sound_release() {
     // Field-VM op `0x35` sub-`5` is `FUN_800267A8(0, operand)` - a deadline in
     // vsyncs, not a volume set.

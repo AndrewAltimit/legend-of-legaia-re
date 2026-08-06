@@ -1272,6 +1272,10 @@ impl LegaiaRuntime {
         self.game_over = None;
         if let Some(h) = self.scene_host.as_mut() {
             h.world.game_over = false;
+            // The wipe teardown defers the actor-table restore + mode flip so
+            // the hold shows the frozen battle frame; complete it here or the
+            // world stays parked in Battle mode with the field return pending.
+            h.world.resolve_game_over_hold();
         }
         "quit".to_string()
     }

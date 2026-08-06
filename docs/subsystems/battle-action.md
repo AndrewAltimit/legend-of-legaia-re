@@ -2172,7 +2172,13 @@ they are documented here rather than lifted whole into `engine-vm`.
 - **`FUN_801DA6B4` - target-select cursor tint.** Over the fixed monster-slot
   window `3..=6`, brightens the acting actor's current target (`+0x1DD`) and
   dims the rest: `+0x21C` render flag (`5` / `200` / `0`), `+0x4` colour word
-  (`0x20080200` / `0x00401004`), `+0xC` scale word (`0x1000` / `0`). `param_1
+  (`0x20080200` / `0x00401004`), `+0xC` tint-blend word (`0x1000` / `0`). The
+  blend word is the q12 intensity `FUN_8004A908` copies into the render
+  packet's `+0x78` whenever it is non-zero - it weights how hard the `+0x4`
+  colour modulates the mesh, and `FUN_80050120` arm 0 drains it by `0x20` per
+  frame back to `0` once the colour word has eased neutral (the item/spirit
+  cue-group expander `FUN_801E22C8` flashes it to `0x2000`). It is not a mesh
+  scale. `param_1
   == 0` stamps the highlight; non-zero clears it. Only the alive slots
   (`+0x14C != 0`) are touched. Self-contained; ported as
   `battle_action::target_cursor_highlight`. See
@@ -2530,17 +2536,56 @@ battle overlay's 2D spawn `FUN_801DFDF0` with the actor's facing; otherwise
 `0x801F6324[effect]` names a move-VM part prototype spawned through the
 effect-actor pool allocator `FUN_80050ED4`, with an SFX cue from
 `0x801F6418[effect]` queued alongside
-([`move-power.md`](../formats/move-power.md) documents both tables).
+([`move-power.md`](../formats/move-power.md) documents both tables). The two
+arms carry per-code behaviour worth pinning:
+
+- **Table arm** (bit `0x80` clear, `0x801defa0..0x801df234`). The SFX read is
+  gated `code < 0x32` (`sltiu` at `0x801df0d8`) - a code at or above `0x32`
+  is silent whatever the map holds - and a non-zero map byte builds the
+  `[sfx, 0x1DC, 0x10, 1]` packet submitted through `FUN_80058490` (the
+  sound-driver command lane). The prototype read `0x801F6324 + code*4` is
+  **unbounded**: a code past the table's 61 entries reads into the SFX map -
+  for the spreadsheet's `0x4C` "hit effect" constant the word at
+  `0x801F6454` is zero, so `FUN_80050ED4` stages a part from a NULL record
+  and no authored visual exists for it. Code `0` substitutes `9` when the
+  active actor's `+0x1D9` reads `0x11`; code `0x7F` terminates. Spawn scale
+  is `0x1000` except code `4` (`0xC00`) and code `6` (`0x2000`), all
+  modulated by the actor's mesh-header `+0x72` scale. Codes `0xA` / `0x2D` /
+  `0x2E` additionally store the spawned part at `ctx[+0x1028]` and the
+  record's raw XYZ at `ctx[+0x1184..+0x1188]` (the follow-the-actor handle
+  below); codes `4..=6` spawn two extra parts from the fixed prototypes
+  `0x801F5E28` / `0x801F5E6C`.
+- **Direct arm** (bit `0x80` set, `0x801ded54..0x801def54`). Codes `0x93` /
+  `0x84` re-aim the Y through `FUN_801DF570` first; `0xFF` terminates;
+  codes `0x81..=0x83` follow the digit spawn with a secondary part from
+  prototype `0x801F5EB0` seated at the actor's `+0x3C..+0x43` position plus
+  a screen-shake global write when the `+0x45C8` context word is clear.
+
+The walker's prologue (`0x801DEA50..0x801DEBEC`) services the
+`ctx[+0x1028]` handle those table codes installed: it drops the handle when
+the part's `+0x10` flags carry bit `3`, and - only for the context's active
+actor - re-seats the part at the actor's position with the stashed raw legs
+rotated by the *current* facing `+ 0x800` (Y minus `ctx[+0x1186]`). It is a
+follow-the-actor re-seat, not target-seeking motion; the per-target homing
+state lives in the `+0x1144` quads the terminator seeds and the move-power
+`+0x0E` list consumes. A separate prologue lane: `ctx[+0x263]` non-zero
+consumes the whole call, clearing the flag and bumping the actor's `+0x1F5`
+and `+0x1F6` cursors without spawning.
 
 Engine port: kernel `engine-core::action_effect_script` (stepper, rotation,
 terminator maths, `RetailRotationLut`), driven per battle frame by
 `World::tick_battle_animations`; spawn requests drain via
 `World::drain_battle_effect_spawns` and route into the effect pool (direct
-form) / `World::spawn_action_table_effect` (table form). Not yet modeled:
-the terminator's `ctx[+0x1014]` install + per-target homing block (computed,
-unconsumed), the `0x801F6418` SFX lane, the mesh-header scale
-(`actor[+0x22C][+0x72]` - the engine substitutes the q12 unit), and the
-walker prologue's in-flight homing-projectile integration (`ctx[+0x1028]`).
+form) / `World::spawn_action_table_effect` (table form), and the drain fires
+the table arm's `0x801F6418` SFX byte into `World::battle_sfx_cues` under
+the retail `< 0x32` gate. Not yet modeled: the mesh-header scale + the
+per-code scale specials (the engine substitutes the q12 unit and the scene
+spawner has no scale channel), the code-`0` substitution, the extra-spawn
+and screen-shake specials above, and the prologue's follow-the-actor
+re-seat (`BattleEffectSpawn` carries no raw-offset channel and a staged
+scene is not identified back to its record). The terminator's
+`ctx[+0x1014]` / `+0x1144` block **is** consumed - by the afterimage streak
+(`engine-core::action_effect_script::MoveFxStreak`).
 
 ## Action validator (`FUN_8003FB10`)
 

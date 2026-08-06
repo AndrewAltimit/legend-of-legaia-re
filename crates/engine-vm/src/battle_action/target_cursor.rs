@@ -21,7 +21,7 @@
 //! |---|---|---|---|
 //! | `+0x21C` render flag | `5` | `200` | `0` |
 //! | `+0x4` colour word | `0x20080200` | `0x00401004` | `0x20080200` |
-//! | `+0xC` scale word | `0x1000` | `0x1000` | `0` |
+//! | `+0xC` tint-blend word | `0x1000` | `0x1000` | `0` |
 //!
 //! Note the off path and the pointed-at path share the same `+0x4` write
 //! (`0x20080200`) - retail falls through to it - while the dimmed path takes a
@@ -38,10 +38,10 @@
 //! `engine_core::world::battle::command_flow::apply_target_cursor_tint`, which
 //! runs the same three-word law (the constants below) over the engine's own
 //! monster window, and the renderer reads `render_flag` / `render_color` /
-//! `render_scale` off the actor.
+//! `render_blend` off the actor.
 //!
 //! This module stays as the retail-numbering reference: it is what pins the
-//! slot window, the flag/colour/scale words and the shared-store fall-through
+//! slot window, the flag/colour/blend words and the shared-store fall-through
 //! against the disassembly. Wiring it means parameterising the window so one
 //! kernel can serve both seatings.
 
@@ -61,8 +61,10 @@ pub const CURSOR_FLAG_DIMMED: u8 = 200;
 pub const CURSOR_COLOR_BRIGHT: u32 = 0x2008_0200;
 /// Colour word for a dimmed actor.
 pub const CURSOR_COLOR_DIM: u32 = 0x0040_1004;
-/// Neutral q12 scale word applied while the cursor is up.
-pub const CURSOR_SCALE_ON: u32 = 0x1000;
+/// Full q12 tint-blend weight applied while the cursor is up (the actor
+/// `+0xC` word `FUN_8004A908` copies into the render packet's `+0x78`
+/// blend - not a mesh scale).
+pub const CURSOR_BLEND_ON: u32 = 0x1000;
 
 /// Stamp (or clear) the target-select cursor tint across the monster slots.
 ///
@@ -91,14 +93,14 @@ pub fn target_cursor_highlight<H: BattleActionHost + ?Sized>(
         };
         if !enable {
             actor.render_flag = 0;
-            actor.render_scale = 0;
+            actor.render_blend = 0;
             actor.render_color = CURSOR_COLOR_BRIGHT;
         } else if selected {
-            actor.render_scale = CURSOR_SCALE_ON;
+            actor.render_blend = CURSOR_BLEND_ON;
             actor.render_flag = CURSOR_FLAG_SELECTED;
             actor.render_color = CURSOR_COLOR_BRIGHT;
         } else {
-            actor.render_scale = CURSOR_SCALE_ON;
+            actor.render_blend = CURSOR_BLEND_ON;
             actor.render_flag = CURSOR_FLAG_DIMMED;
             actor.render_color = CURSOR_COLOR_DIM;
         }

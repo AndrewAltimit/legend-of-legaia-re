@@ -70,11 +70,38 @@ impl World {
     ///
     /// On [`BattleEndCause::MonsterWipe`] applies loot (XP / gold / drops /
     /// level-ups) via [`Self::apply_battle_loot`] against the captured
-    /// formation; on [`BattleEndCause::PartyWipe`] raises [`Self::game_over`]
-    /// (v0.1 has no defeat screen). Either way the field actor snapshot is
-    /// restored, the encounter session drops into its grace window, and the
-    /// scene mode flips back to [`SceneMode::Field`].
+    /// formation. On [`BattleEndCause::PartyWipe`] the retail gate in MAIN
+    /// INIT's back-from-battle arm (`FUN_8003AEB0` `0x8003B598..0x8003B5F0`)
+    /// forks on story-flag index 0, the scripted-loss latch (`0x80085758`
+    /// bit `0x80` = system flag 0 in the port's MSB-first bank):
+    ///
+    /// - latch **set** (a scripted-loss battle, e.g. the Rim Elm ambush):
+    ///   the wipe returns to the field like any battle end and MAIN INIT
+    ///   consumes the latch (`andi 0x7f` at `0x8003B608`) - the story
+    ///   continues, no game over.
+    /// - latch **clear**: the hand-off stores `game_mode = 0x16` (CARD
+    ///   INIT) + `_DAT_8007BB00 = 1` and pauses the BGM
+    ///   (`jal 0x800266E0(0x8007052C)` at `0x8003B5EC` - the same primitive
+    ///   as BGM sub-op 2). The port raises [`Self::game_over`], queues the
+    ///   pause instead of the field-BGM restore, and **defers** the field
+    ///   restore ([`Self::game_over_hold`]) so hosts hold the frozen battle
+    ///   frame until [`Self::resolve_game_over_hold`].
+    ///
+    /// Both wipe arms clear story-flag index 1 (`andi 0xbf` at
+    /// `0x8003B5A0`), the survived-last-battle bit the same block sets on
+    /// the surviving exits. Non-wipe endings restore the field actor
+    /// snapshot, drop the encounter session into its grace window, and flip
+    /// the scene mode back to [`SceneMode::Field`], unchanged.
+    // REF: FUN_8003AEB0 (the back-from-battle game-over gate this folds)
     pub(in crate::world) fn finish_battle(&mut self) {
+        if self.game_over_hold {
+            // The wipe hold parks the scene in Battle mode, so a host that
+            // keeps ticking the world re-runs the action SM's wipe scan and
+            // re-raises `battle_end` every tick. The fold already happened;
+            // consume the repeat and keep the hold frozen.
+            self.battle_end = None;
+            return;
+        }
         if self.battle_end == Some(BattleEndCause::MonsterWipe)
             && let Some(formation) = self.active_formation.clone()
         {
@@ -88,8 +115,22 @@ impl World {
             // ever told the player about them.
             self.battle_spoils_frames = Self::SPOILS_BANNER_FRAMES;
         }
+        // `true` only on the wipe-to-title arm; a wipe under the
+        // scripted-loss latch takes the ordinary field return below.
+        let mut wipe_to_title = false;
         if self.battle_end == Some(BattleEndCause::PartyWipe) {
-            self.game_over = true;
+            // Clear the survived-last-battle flag (story-flag index 1) on
+            // either wipe arm - retail `0x8003B5A0` `andi 0xbf`.
+            self.system_flag_clear(1);
+            if self.system_flag_test(0) {
+                // Scripted loss: consume the latch and fall through to the
+                // ordinary field return (retail skips the hand-off at
+                // `0x8003B5BC` and clears bit 0x80 at `0x8003B608`).
+                self.system_flag_clear(0);
+            } else {
+                self.game_over = true;
+                wipe_to_title = true;
+            }
         }
         self.active_formation = None;
         self.battle_end = None;
@@ -102,9 +143,25 @@ impl World {
         self.battle_escaped = false;
         self.battle_no_escape = false;
         self.battle_guarding = [false; 3];
-        // Restore the field track stashed at encounter start (cross-fades
-        // back from the battle music). No-op if no swap was active.
-        self.restore_field_bgm();
+        if wipe_to_title {
+            // Retail's wipe hand-off never resumes the field track: the arm
+            // pauses the sequencer (`jal 0x800266E0(0x8007052C)` at
+            // `0x8003B5EC`, the primitive BGM sub-op 2 wraps - the same call
+            // the scripted `4C EA` trigger routes) and the CARD / title flow
+            // owns audio from there. Drop the swap bookkeeping so nothing
+            // later cross-fades back to the field track.
+            self.battle_bgm_active = false;
+            self.field_bgm_resume = None;
+            self.pending_field_events
+                .push(crate::field_events::FieldEvent::Bgm {
+                    text_id: 0,
+                    sub_op: 2,
+                });
+        } else {
+            // Restore the field track stashed at encounter start (cross-fades
+            // back from the battle music). No-op if no swap was active.
+            self.restore_field_bgm();
+        }
         // Revert any lingering buff deltas so the per-slot scalars return to
         // base, then drop the trackers + captured-id log (a new battle re-inits
         // these).
@@ -147,6 +204,16 @@ impl World {
         // `save_party` - scoped precisely because the actor slots past the
         // party band are monsters while a battle is up.
         self.persist_battle_party_hp();
+        if wipe_to_title {
+            // Defer the field restore: the scene stays in Battle mode with
+            // the battle actor table live, so hosts hold the final battle
+            // frame through the game-over hand-off (retail freezes the wipe
+            // frame while mode 22 CARD INIT streams the menu overlay off the
+            // disc). `resolve_game_over_hold` performs the restore when the
+            // host's `GameOverSession` resolves.
+            self.game_over_hold = true;
+            return;
+        }
         // Restore the field actor table captured at the transition, then push
         // the just-persisted HP / MP back onto the restored party actors so the
         // field-side mirrors agree with the records (the clone carries the
@@ -165,6 +232,29 @@ impl World {
         self.battle_return_mode = SceneMode::Field;
         // Reset step tracking so the post-battle position doesn't count as a
         // step on the next field tick.
+        self.field_last_tile = None;
+    }
+
+    /// Complete the field restore [`Self::finish_battle`]'s party-wipe arm
+    /// deferred ([`Self::game_over_hold`]): restore the field actor snapshot,
+    /// flip the scene mode back to the battle's entry mode, and reset step
+    /// tracking. Hosts call this when their `GameOverSession` resolves
+    /// (before handing the screen to the title session) so a subsequent
+    /// Continue / New Game starts from a consistent field-shaped world.
+    /// No-op when no hold is pending.
+    pub fn resolve_game_over_hold(&mut self) {
+        if !self.game_over_hold {
+            return;
+        }
+        self.game_over_hold = false;
+        if let Some(ret) = self.field_return.take() {
+            self.actors = ret.actors;
+            self.player_actor_slot = ret.player_actor_slot;
+            self.party_count = ret.party_count;
+            self.resync_party_actors_from_roster();
+        }
+        self.mode = self.battle_return_mode;
+        self.battle_return_mode = SceneMode::Field;
         self.field_last_tile = None;
     }
 

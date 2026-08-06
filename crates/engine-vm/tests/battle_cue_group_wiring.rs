@@ -236,7 +236,7 @@ fn the_revive_site_leaves_the_actor_scale_word_alone() {
     host.actors[1].action_category = ActionCategory::Item.as_byte();
     host.actors[1].params[0] = 0x30;
     host.actors[1].active_target = 0;
-    host.actors[0].render_scale = 0xDEAD;
+    host.actors[0].render_blend = 0xDEAD;
 
     let log = run_band(&mut host, 1);
     assert!(log.iter().any(|r| matches!(
@@ -251,7 +251,7 @@ fn the_revive_site_leaves_the_actor_scale_word_alone() {
         }
     )));
     assert_eq!(
-        host.actors[0].render_scale, 0xDEAD,
+        host.actors[0].render_blend, 0xDEAD,
         "the revive arm's `a1` is the skip word, so `+0x0C` is not written"
     );
     assert_eq!(host.actors[0].render_color, 0x2008_0200);
@@ -262,9 +262,9 @@ fn the_revive_site_leaves_the_actor_scale_word_alone() {
     host.actors[1].action_category = ActionCategory::Item.as_byte();
     host.actors[1].params[0] = 0x21;
     host.actors[1].active_target = 0;
-    host.actors[0].render_scale = 0xDEAD;
+    host.actors[0].render_blend = 0xDEAD;
     run_band(&mut host, 1);
-    assert_eq!(host.actors[0].render_scale, 0x2000);
+    assert_eq!(host.actors[0].render_blend, 0x2000);
 }
 
 /// The class-1 arm's `jal` is inside a per-slot loop, and the side it walks is

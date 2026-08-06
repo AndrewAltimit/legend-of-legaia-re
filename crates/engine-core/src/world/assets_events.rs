@@ -212,8 +212,39 @@ impl World {
     /// ([`World::try_spawn_effect`]) and the table form into the
     /// `0x801F6324` scene-graph spawner
     /// ([`World::spawn_action_table_effect`]); nothing here mutates gameplay
-    /// state. Returns them in walk order.
+    /// state beyond the SFX queue below. Returns them in walk order.
+    ///
+    /// Draining also fires each table-form spawn's **per-effect SFX byte**
+    /// into [`World::battle_sfx_cues`] (the queue both hosts already play
+    /// through their SFX scheduler), mirroring retail's table arm: only a
+    /// plain code below
+    /// [`crate::action_effect_script::TABLE_SFX_GATE`] consults the
+    /// `0x801F6418` map, and only a non-zero byte submits the `0x1DC` sound
+    /// packet. The map comes off the installed move-power catalog's aux
+    /// tables (the same PROT 0898 parse the table spawner reads its
+    /// prototypes from), so a disc-free battle degrades to silent spawns
+    /// exactly as it degrades to no spawns.
+    ///
+    /// PORT: FUN_801DEA50 (`0x801df0d4..0x801df134`, the SFX arm)
+    /// REF: FUN_80058490 (the sound-driver submit the retail packet reaches)
     pub fn drain_battle_effect_spawns(&mut self) -> Vec<crate::battle_events::BattleEffectSpawn> {
+        if let Some(aux) = self.move_power.as_ref().and_then(|cat| cat.aux_tables()) {
+            let cues: Vec<crate::battle_events::BattleSfxCue> = self
+                .battle_effect_spawns
+                .iter()
+                .filter(|s| !s.direct && s.effect < crate::action_effect_script::TABLE_SFX_GATE)
+                .filter_map(|s| {
+                    let sfx = aux.effect_sfx(s.effect).filter(|&b| b != 0)?;
+                    Some(crate::battle_events::BattleSfxCue {
+                        kind: u16::from(sfx),
+                        timing_frames: 0,
+                        actor_slot: s.actor_slot,
+                        target_slot: s.actor_slot,
+                    })
+                })
+                .collect();
+            self.battle_sfx_cues.extend(cues);
+        }
         std::mem::take(&mut self.battle_effect_spawns)
     }
 
@@ -242,9 +273,24 @@ impl World {
                 outcome,
                 ..
             } => {
-                // Surface the strike's sound cues for the host's SFX bank (these
-                // were previously dropped). Hit-effect-only cues (kind 0x4C)
-                // carry no sound, so only the `is_sound` cues are queued.
+                // Surface the strike's sound cues for the host's SFX bank.
+                // Hit-effect-only cues (kind 0x4C) are dropped deliberately,
+                // and the retail dispatch says why: the only cue consumer is
+                // the effect-script walk (FUN_801DEA50), whose table arm
+                // gives a plain code >= 0x32 no sound (the `sltiu 0x32` gate
+                // at 0x801df0d4) and whose prototype word for 0x4C - read at
+                // 0x801F6454, past the 61-entry table - is zero on disc, a
+                // NULL part record. So a 0x4C cue names no authored visual
+                // either; the real per-strike visuals ride the committed
+                // clip's effect script, already walked per frame by
+                // `World::tick_battle_animations` and routed into both spawn
+                // paths. Note `hit_cue` itself has no live producer today:
+                // the art-record parser never fills `hit_cues`
+                // (`legaia_art::parse::parse_record` stops before the
+                // spreadsheet's cue words), so this loop only fires for
+                // host-installed records.
+                // REF: FUN_801DEA50 (the cue dispatch; see
+                // crates/engine-core/src/action_effect_script.rs)
                 for cue in &outcome.cues {
                     if cue.is_sound() {
                         self.battle_sfx_cues.push(BattleSfxCue {
