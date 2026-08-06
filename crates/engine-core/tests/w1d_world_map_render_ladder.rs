@@ -826,7 +826,7 @@ fn w1d_dev_menu_equip_commit_swaps_bag_and_slot() {
 #[test]
 fn w1d_submode_frame_loop_reaches_the_equipment_sub_panel() {
     use legaia_engine_core::actor_handler::ActorHandler;
-    use legaia_engine_vm::baka_hub_actors::{HubDraw, HubPainter, slot};
+    use legaia_engine_vm::baka_hub_actors::{HubDraw, HubPainter, slot, window};
 
     let mut w = World::new();
     w.man_load_actor_reset();
@@ -835,7 +835,11 @@ fn w1d_submode_frame_loop_reaches_the_equipment_sub_panel() {
             .is_some(),
         "every MAN load spawns the op-0x49 submode driver"
     );
-    const ENTRY_LIST_WINDOW: usize = 3;
+    // Name the record rather than its index: the panel-window table is read at
+    // `0x801F2B98 + i*0x1C`, and an earlier frame four records low made every
+    // literal index here wrong while still landing on a painter, because the
+    // layout is periodic.
+    const ENTRY_LIST_WINDOW: usize = window::ENTRY_LIST;
     assert_eq!(
         HubPainter::for_window(ENTRY_LIST_WINDOW),
         Some(HubPainter::EntryList)
