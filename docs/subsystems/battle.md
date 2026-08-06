@@ -1365,6 +1365,29 @@ counts-as-defeated (`+0x16E & 4`, e.g. Stone). With no survivor it sets
 the battle-end signal `DAT_8007BD71 = 0xFE` and the wipe cause
 `_DAT_8007BD2C = 5`; the mirror-image monster scan sets cause `0`.
 
+### An unseeded party reads as a dead one
+
+The port carries that scan faithfully, and it inherits a hazard retail does
+not have: retail cannot enter a battle without a seated party, the port can.
+`BattleActor::liveness` (the `+0x14C` mirror) **defaults to `0`, and `0` means
+dead**. It is raised only by the roster projection in `load_party` /
+`set_active_party`, which reads `hp_cur > 0` off a `CharacterRecord`. A world
+built straight from `SceneHost::open_extracted` has never run that projection,
+while `World::party_count` already defaults to `3` - so the party-side scan
+finds three actors, all reading dead.
+
+The party arm is tested **before** the monster arm, so such a battle reports a
+**party wipe on its first end-of-action**, at full nominal HP, before anything
+is struck - and a deliberate *monster* wipe is reported as a party wipe too.
+Since the port defers the field restore behind the game-over hold (below), the
+scene then parks in `SceneMode::Battle` and never returns to the field.
+
+The failure is silent in the direction that matters: a harness that never seats
+a party sees "battle ended" and walks on, so a run can score whole legs after
+its party is gone. Any fixture that enters a battle must seat one the way
+`BootSession::begin_new_game` does; a bare `open_extracted` host is not a
+playable party.
+
 The battle-exit mode selector is `FUN_80046A20` (SCUS, `0x80046A20`).
 Its three `game_mode` stores pick between `0` (debug-battle id set),
 `0x18` / mode 24 OTHER (arena / Muscle Dome, `_DAT_8007BAC0 & 0x100`)
