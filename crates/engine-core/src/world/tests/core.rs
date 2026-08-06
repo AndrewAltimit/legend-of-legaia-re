@@ -122,14 +122,25 @@ fn battle_party_wipe_signals_end_via_world() {
     // `tick` drives the battle to resolution unconditionally (see
     // `frame_tick.rs`'s Battle arm), so the raised cause is consumed by
     // `finish_battle` in the same tick: `battle_end` clears, `game_over`
-    // latches, and the world leaves battle mode. Read the *effect* of the
+    // latches, and the wipe hold parks the world in Battle mode so hosts
+    // freeze on the final battle frame (retail holds the wipe frame while
+    // mode 22 CARD INIT streams the menu overlay). Read the *effect* of the
     // wipe, not the transient cause byte.
     assert_eq!(world.battle_end, None, "the cause is consumed on resolve");
     assert!(world.game_over, "a party wipe raises game over");
+    assert!(world.game_over_hold, "the field restore is deferred");
+    assert_eq!(
+        world.mode,
+        SceneMode::Battle,
+        "the hold keeps the battle scene up for the frozen frame"
+    );
+    // The host's GameOverSession resolves -> the deferred restore runs.
+    world.resolve_game_over_hold();
+    assert!(!world.game_over_hold);
     assert_eq!(
         world.mode,
         SceneMode::Field,
-        "battle mode is left on resolve"
+        "battle mode is left once the hold resolves"
     );
 }
 

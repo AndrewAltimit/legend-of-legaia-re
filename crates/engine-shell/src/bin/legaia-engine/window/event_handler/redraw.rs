@@ -1094,12 +1094,17 @@ impl PlayWindowApp {
             //
             // Suppress 3D draws while the boot UI is active so the
             // last-loaded scene (e.g. a town) doesn't show through
-            // behind publisher logos / title / save-select.
+            // behind publisher logos / title / save-select. The one
+            // exception is the party-wipe hand-off: retail holds the
+            // final battle frame while mode 22 CARD INIT streams the
+            // menu overlay, so the GameOver hold keeps drawing the
+            // (frozen, untick'd) battle scene underneath.
+            let game_over_hold = matches!(self.boot_ui, BootUiState::GameOver(_));
             let mut draws: Vec<SceneDraw<'_>> = Vec::new();
             // Untextured (F*/G*) field props, drawn on the colour
             // pipeline alongside the textured `draws`.
             let mut color_draws: Vec<ColorSceneDraw<'_>> = Vec::new();
-            if self.boot_ui.is_active() {
+            if self.boot_ui.is_active() && !game_over_hold {
                 // Boot UI is fullscreen - suppress 3D draws.
             } else if in_world_map {
                 // World-map continent = two layers, both in the shared
@@ -1872,7 +1877,7 @@ impl PlayWindowApp {
             // stage-dome battle clear to a sky blue so the gaps the
             // front-half dome leaves open read as sky (like retail)
             // rather than the bare grey clear.
-            let scene_clear = if self.boot_ui.is_active() {
+            let scene_clear = if self.boot_ui.is_active() && !game_over_hold {
                 Some([0.0, 0.0, 0.0, 1.0])
             } else if self.session.host.world.mode == SceneMode::Battle
                 && self.battle_stage_mesh.is_some()

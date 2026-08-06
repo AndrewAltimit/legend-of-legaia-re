@@ -244,6 +244,7 @@ mod field_interaction;
 mod field_npc_motion;
 mod field_records;
 mod flash_limiter;
+mod game_over_hold;
 mod inline_dialogue;
 mod live_battle;
 mod locomotion;

@@ -441,6 +441,12 @@ impl PlayWindowApp {
                 // menu-overlay stream retail spends that window on.
                 session.tick();
                 if let Some(GameOverOutcome::ReturnToTitle) = session.outcome() {
+                    // The hold froze the world mid-battle (`finish_battle`
+                    // deferred the field restore so the final battle frame
+                    // stayed up). Complete the deferred restore before the
+                    // title takes the screen, so Continue / New Game starts
+                    // from a field-shaped world.
+                    self.session.host.world.resolve_game_over_hold();
                     self.boot_ui =
                         BootUiState::Title(legaia_engine_core::title::TitleSession::new());
                 }

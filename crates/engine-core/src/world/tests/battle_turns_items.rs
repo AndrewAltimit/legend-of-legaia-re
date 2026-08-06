@@ -36,9 +36,10 @@ fn monsters_take_turns_and_can_wipe_the_party() {
         if world.actors[0].battle.hp < start_party_hp {
             party_took_damage = true;
         }
-        // finish_battle flips back to Field (and raises game_over on a
-        // party wipe).
-        if world.mode == SceneMode::Field {
+        // finish_battle raises game_over on a party wipe and parks the
+        // scene in Battle mode (the frozen-frame hold; the field restore
+        // runs when the host resolves the hold).
+        if world.game_over {
             ended = true;
             break;
         }
@@ -48,7 +49,10 @@ fn monsters_take_turns_and_can_wipe_the_party() {
         "the monster must take turns and damage the party"
     );
     assert!(ended, "the battle must resolve (party wiped)");
-    assert!(world.game_over, "a party wipe raises game_over");
+    assert!(world.game_over_hold, "the wipe defers the field restore");
+    assert_eq!(world.mode, SceneMode::Battle, "the hold parks the scene");
+    world.resolve_game_over_hold();
+    assert_eq!(world.mode, SceneMode::Field, "the resolve returns to field");
 }
 
 #[test]

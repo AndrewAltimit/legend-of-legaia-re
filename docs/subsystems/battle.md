@@ -1411,6 +1411,22 @@ draws nothing, reads no button, and resolves to its single outcome
 `ReturnToTitle`. Both hosts route it into the same title session their
 boot path uses.
 
+The MAIN INIT gate itself folds into `World::finish_battle`
+(`engine-core::world::battle::teardown`). Its party-wipe arm mirrors the
+`FUN_8003AEB0` block leg for leg: it reads the scripted-loss latch
+(story-flag index 0 = system flag 0) and, when set, consumes it
+(`andi 0x7f`, `0x8003B608`) and returns to the field like any battle end -
+a real wipe inside a scripted-loss battle is not a game over. With the
+latch clear it clears the survived-flag bit (`andi 0xbf`, `0x8003B5A0`),
+raises `World::game_over`, and queues the BGM **pause**
+(`jal 0x800266E0(0x8007052C)` at `0x8003B5EC`, the primitive BGM sub-op 2
+wraps) in place of the field-BGM cross-fade - the CARD / title flow owns
+audio from the wipe store on. The field restore (actor table, scene mode)
+is deferred behind `World::game_over_hold`, so the scene stays parked on
+the final battle frame through the hold - retail's frozen wipe frame while
+mode 22 streams - and `World::resolve_game_over_hold` completes the
+restore when the host's session resolves into the title.
+
 The three-row Continue / Retry / Quit panel that stood here while the
 destination was unpinned is **deleted**, builder and all. It was a real
 improvement over its own predecessor - a `World::game_over` flag nothing
