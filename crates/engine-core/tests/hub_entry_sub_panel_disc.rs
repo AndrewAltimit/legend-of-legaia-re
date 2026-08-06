@@ -21,8 +21,10 @@ use legaia_engine_vm::world_map_overlay::{
 };
 use std::path::PathBuf;
 
-/// Panel-window record the entry list paints.
-const ENTRY_LIST_WINDOW: usize = 3;
+/// Panel-window record the entry list paints. Taken from `baka_hub_actors`
+/// rather than spelled here: the record table's base was off by four records,
+/// and a literal at every call site is what hid it.
+const ENTRY_LIST_WINDOW: usize = legaia_engine_vm::baka_hub_actors::window::ENTRY_LIST;
 
 /// Chaos Breaker: Vahn-only (`+6` mask `1`), weapon slot (`+7 & 0x60 = 0x40`).
 const ID_CHAOS_BREAKER: u8 = 0x27;

@@ -736,6 +736,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // so the dispatcher runs it and, when it hands back, unparks this op.
         if let Some(slot) = crate::field_submode_screen::slot_for_op49_sub_op(sub_op) {
             self.world.open_field_submode_screen(slot, None);
+            // Retail parks the operand *pointer*, and the screens read past
+            // the sub-op byte through it (the start menu counts `+1..=3`), so
+            // the payload has to travel with the arm.
+            self.world.set_submode_board_entries(instr);
         }
     }
     fn op49_invoke_setup(&mut self) {

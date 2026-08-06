@@ -12,8 +12,10 @@ use legaia_engine_core::world::World;
 use legaia_engine_vm::baka_hub_actors::{HubDraw, HubPainter, slot};
 use legaia_engine_vm::world_map_overlay::EquipPanelDraw;
 
-/// Panel-window record the entry list paints.
-const ENTRY_LIST_WINDOW: usize = 3;
+/// Panel-window record the entry list paints. Taken from `baka_hub_actors`
+/// rather than spelled here: the record table's base was off by four records,
+/// and a literal at every call site is what hid it.
+const ENTRY_LIST_WINDOW: usize = legaia_engine_vm::baka_hub_actors::window::ENTRY_LIST;
 
 fn field_world() -> World {
     let mut w = World::new();
@@ -48,7 +50,7 @@ fn sub_panel(w: &World) -> Vec<EquipPanelDraw> {
 }
 
 #[test]
-fn the_window_record_three_painter_is_the_entry_list() {
+fn the_entry_list_window_record_selects_the_entry_list_painter() {
     assert_eq!(
         HubPainter::for_window(ENTRY_LIST_WINDOW),
         Some(HubPainter::EntryList)

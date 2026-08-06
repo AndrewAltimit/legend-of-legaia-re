@@ -94,9 +94,20 @@ pub struct SubmodeScreen {
     pub cursor: HubGrid,
     /// The coin counter's digit cells, cursors and hold timer.
     pub counter: CoinCounter,
-    /// Panel-window record index whose painter runs this frame, if the state
-    /// machine has installed a descriptor that names one.
+    /// Panel-window record index a **host** pins for this screen, independent
+    /// of what the state machine installs. `None` is the retail shape - the
+    /// descriptor is what names the window (see [`Self::installed_windows`]).
     pub window: Option<usize>,
+    /// The panel-window records the last installed descriptor names, which is
+    /// how retail decides which painter draws: a state machine calls
+    /// `FUN_801E9B3C` with a descriptor, and the descriptor's entries carry
+    /// the window indices ([`legaia_engine_vm::baka_hub_actors::panel_windows`]).
+    ///
+    /// The engine previously took the window from the *caller* at open time
+    /// and never read the installs at all, so the coin counter drew the
+    /// two-option panel where retail draws the three-line one, and the
+    /// sub-menu drew nothing.
+    pub installed_windows: Vec<usize>,
     /// A screen is up: the op-`0x49` park is Armed.
     pub open: bool,
     /// The dispatcher retired the actor - retail's `_DAT_8007B450 = 1`, which
@@ -107,6 +118,32 @@ pub struct SubmodeScreen {
     /// `FUN_801E9DC8`'s return for the confirm panel, supplied by the host
     /// that owns the two-option picker. `0` while nothing is picking.
     pub picker_result: i32,
+    /// Pad edges seen since the dispatcher last ran.
+    ///
+    /// The actor pool advances on the **game-tick** clock - every second vsync
+    /// under the field cadence floor of `2` - while the engine's hosts publish
+    /// a pad word every vsync, so an edge that lands on a skipped tick is
+    /// gone by the time the dispatcher looks. The parity is stable, so this is
+    /// not a flake: with the pad set once per `World::tick`, *every* press
+    /// released on the next tick fell in the gap, and no directional input
+    /// ever reached a submode screen. A digit could not be entered on the pad
+    /// at all.
+    ///
+    /// Retail does not have the gap because it samples the pad **once per game
+    /// tick** (the master driver `FUN_80016444` runs one pass per
+    /// `DAT_1F800393` vsyncs and the pad pump is inside it), so its edge word
+    /// `_DAT_8007B874` is produced at exactly the rate the pool consumes it.
+    /// The latch restores that relationship from the other side: it unions the
+    /// per-vsync edges and hands the union to the pass that runs.
+    pub pad_edge_latch: u32,
+    /// The three bytes at `_DAT_8007B450 + 1..=3` - the op-`0x49` operand's
+    /// payload, which is what the start menu counts to size its panel.
+    ///
+    /// Retail parks the operand *pointer* and the start menu dereferences it
+    /// (`lw a0,-0x4bb0(v0)` then `lbu v0,0x1(a0)` .. `0x3(a0)` at
+    /// `0x801F1168..0x801F11A4`); the port has no pointer, so the arm edge
+    /// copies the three bytes off the instruction itself.
+    pub board_entries: [u8; 3],
     /// The field-VM context that armed this park - see [`Op49ParkOwner`].
     /// Only that context's op-`0x49` reads [`Self::open`] / [`Self::done`].
     pub owner: Op49ParkOwner,
@@ -235,6 +272,8 @@ impl World {
         };
         s.counter = CoinCounter::default();
         s.window = window;
+        s.installed_windows.clear();
+        s.pad_edge_latch = 0;
         s.open = true;
         s.done = false;
         s.picker_result = 0;
@@ -244,10 +283,12 @@ impl World {
     /// Open the casino **coin counter** - buy coins with party gold at
     /// [`legaia_engine_vm::baka_hub_actors::GOLD_PER_COIN`] each.
     ///
-    /// Handler slot `0x25`; the two-option confirm panel draws through the
-    /// panel-window record whose painter is `FUN_801F1950`.
+    /// Handler slot `0x25`. No window is pinned: the counter's own arms
+    /// install `PANEL_COIN_IDLE` and `PANEL_COIN_CONFIRM`, and those
+    /// descriptors name the records that draw it - record `10` for the idle
+    /// screen and the **three-line** panel `FUN_801F1890` for the confirm.
     pub fn open_coin_counter(&mut self) {
-        self.open_field_submode_screen(slot::COIN_COUNTER, Some(COIN_PANEL_WINDOW));
+        self.open_field_submode_screen(slot::COIN_COUNTER, None);
     }
 
     /// Which field-VM context is stepping right now - the owner an op-`0x49`
@@ -283,6 +324,21 @@ impl World {
     pub fn record_op49_park(&mut self, sub_op: u8) {
         self.submode_screen.owner = self.op49_park_owner();
         self.submode_screen.park_sub_op = Some(sub_op);
+    }
+
+    /// Record the op-`0x49` operand's payload bytes for the screen this arm
+    /// opens - retail's `_DAT_8007B450 + 1..=3`, read through the parked
+    /// pointer by [`legaia_engine_vm::baka_hub_actors::start_menu`].
+    ///
+    /// `instr` is the instruction from its opcode byte, so `instr[1]` is the
+    /// sub-op (the byte the park points at) and `instr[2..=4]` are the three
+    /// the menu counts.
+    pub fn set_submode_board_entries(&mut self, instr: &[u8]) {
+        let mut out = [0u8; 3];
+        for (i, slot) in out.iter_mut().enumerate() {
+            *slot = instr.get(2 + i).copied().unwrap_or(0);
+        }
+        self.submode_screen.board_entries = out;
     }
 
     /// Clear the park on resume - retail's `sw zero,-0x4bb0(s0)` at
@@ -324,8 +380,12 @@ impl World {
             return false;
         }
         let env = self.submode_env(frame_delta);
+        // The latch is one-shot: a pass that ran has consumed every edge that
+        // reached it, exactly as retail's per-game-tick pad sample is.
+        self.submode_screen.pad_edge_latch = 0;
         let mut screen = std::mem::take(&mut self.submode_screen);
         let window = screen.window;
+        let mut installed = std::mem::take(&mut screen.installed_windows);
         let SubmodeScreen {
             actor,
             cursor,
@@ -335,13 +395,36 @@ impl World {
 
         let frame = hub::hub_dispatch(actor, &env, cursor, |a, g| {
             let mut f = run_slot(a, &env, g, counter);
-            if let Some(p) = window.and_then(HubPainter::for_window) {
-                let painted = p.paint(a, &env, g);
-                f.draws.extend(painted.draws);
-                f.actions.extend(painted.actions);
+            // An install replaces whatever panel was up, and takes effect on
+            // the frame that issued it: retail's window walk runs after the
+            // handler in the same frame.
+            if let Some(desc) = f.actions.iter().rev().find_map(|act| match act {
+                HubAction::InstallPanel(va) => Some(*va),
+                _ => None,
+            }) {
+                installed = hub::panel_windows(desc).to_vec();
+            }
+            // The host-pinned window (if any) draws alongside the installed
+            // one; retail has no such override, so it is additive rather than
+            // a replacement.
+            // A descriptor may name the same record twice (the coin idle
+            // program does); the window system installs it once.
+            let mut to_paint: Vec<usize> = Vec::new();
+            for idx in installed.iter().copied().chain(window) {
+                if !to_paint.contains(&idx) {
+                    to_paint.push(idx);
+                }
+            }
+            for idx in to_paint {
+                if let Some(p) = HubPainter::for_window(idx) {
+                    let painted = p.paint(a, &env, g);
+                    f.draws.extend(painted.draws);
+                    f.actions.extend(painted.actions);
+                }
             }
             f
         });
+        screen.installed_windows = installed;
 
         let retired = screen.actor.flags & ACTOR_RETIRE != 0;
         screen.frame = frame;
@@ -498,10 +581,28 @@ impl World {
     }
 
     /// Project the world's own state onto the globals the family reads.
+    /// Union this vsync's pad edges into the submode latch.
+    ///
+    /// Called once per `World::tick`, which is once per vsync; the dispatcher
+    /// that reads it runs once per game tick. See
+    /// [`SubmodeScreen::pad_edge_latch`] for why the two rates have to be
+    /// bridged rather than sampled independently.
+    pub fn latch_submode_pad_edge(&mut self) {
+        // Only while a screen is up: a latch that accumulated across a whole
+        // scene would hand the next screen a press from minutes ago.
+        if !self.submode_screen.open {
+            self.submode_screen.pad_edge_latch = 0;
+            return;
+        }
+        let pad = self.input.pad() as u32;
+        let prev = self.input.pad_prev() as u32;
+        self.submode_screen.pad_edge_latch |= pad & !prev;
+    }
+
     fn submode_env(&self, frame_delta: u8) -> HubEnv {
         let pad = self.input.pad() as u32;
         let prev = self.input.pad_prev() as u32;
-        let edge = pad & !prev;
+        let edge = (pad & !prev) | self.submode_screen.pad_edge_latch;
         HubEnv {
             // `DAT_801F2734` is the submode context's state word, which
             // `open_submode` seeds and `World::submode_context` mirrors.
@@ -521,6 +622,7 @@ impl World {
             // RAM pointer, so it carries the "a screen is armed" truth value
             // the dispatcher's release arm actually branches on.
             board_flag: i32::from(self.submode_screen.open),
+            board_entries: self.submode_screen.board_entries,
             // `DAT_80084594` / `DAT_80084598..` are the present-party roster;
             // the engine's mirror of retail's `0x8007BD10` list is
             // `World::active_party`.
@@ -663,28 +765,41 @@ pub const SUBMODE_ACCEPT_MASK: u32 = crate::dev_menu::PACK_CROSS as u32;
 /// Back-out edge (Circle), standing in for `_DAT_800846D4`.
 pub const SUBMODE_BACK_MASK: u32 = crate::dev_menu::PACK_CIRCLE as u32;
 
-/// Panel-window record whose painter draws the coin counter's Yes/No panel
+/// Panel-window record whose painter draws the Yes/No panel
 /// (`FUN_801F1950`).
-pub const COIN_PANEL_WINDOW: usize = 1;
+///
+/// Not the coin counter's: that screen installs
+/// [`legaia_engine_vm::baka_hub_actors::PANEL_COIN_CONFIRM`], which names the
+/// three-line record. Kept because a host that wants the Yes/No panel by
+/// itself has no descriptor to install.
+pub const COIN_PANEL_WINDOW: usize = hub::window::TWO_OPTION;
 
 /// Op-`0x49` sub-ops the world handles through a dedicated path rather than
 /// through a submode screen: `0` inline gold shop, `3` name entry, `5` tile
 /// board.
+///
+/// The retail table agrees about all three: sub-`0` selects no handler at all
+/// (`-1`), sub-`3` selects `FUN_801F03F0` (name entry) and sub-`5` selects
+/// `FUN_801EF2B0` (the tile-board walk). The engine reaches the latter two
+/// through its own host paths, so it keeps them out of the dispatcher.
 pub const OP49_DEDICATED_SUB_OPS: [u8; 3] = [0, 3, 5];
 
 /// The handler slot an op-`0x49` sub-op opens.
 ///
-/// Only slot `0` is grounded: it is what the spawn descriptor leaves in
-/// `+0x50`, so a sub-op whose screen the engine cannot yet name runs the close
-/// tick and unparks the script. Which of the 52 slots each remaining sub-op
-/// selects is decided by the operand payload retail reads through
-/// `_DAT_8007B450`, which the engine does not carry, so this returns the
-/// default rather than guessing a mapping.
+/// This is retail's own selection: the 14-byte table
+/// [`legaia_engine_vm::baka_hub_actors::OP49_SUBOP_SLOTS`] at `0x801F33A4`,
+/// which the submode enter half indexes with the parked operand's first byte.
+/// The engine previously had no mapping and opened the close tick for every
+/// sub-op, so every screen but the three dedicated ones closed itself
+/// immediately instead of running - the script unparked, but nothing drew.
 pub fn slot_for_op49_sub_op(sub_op: u8) -> Option<u16> {
     if OP49_DEDICATED_SUB_OPS.contains(&sub_op) {
         return None;
     }
-    Some(slot::CLOSE_TICK)
+    // A sub-op the table gives no handler for still needs the park cleared,
+    // and slot `0` is what a freshly spawned driver carries - retail's own
+    // fallback for a `-1` row, which leaves `+0x50` at the spawn value.
+    Some(hub::slot_for_sub_op(sub_op).unwrap_or(slot::CLOSE_TICK))
 }
 
 #[cfg(test)]
@@ -768,10 +883,22 @@ mod tests {
         let mut w = world_with_driver();
         w.money = 100_000;
         w.open_coin_counter();
+        // The entry arm installs the counter's idle panel, whose record has
+        // no painter here; the confirm installs the three-line one, which
+        // does. So the draw appears when the descriptor names it, not when
+        // the screen opens.
         w.tick_submode_screen(1);
+        assert_eq!(w.submode_screen.installed_windows, vec![0, 10, 10]);
+        w.submode_screen.counter.set_entered(2);
+        w.input.set_pad(SUBMODE_ACCEPT_MASK as u16);
+        w.tick_submode_screen(1);
+        assert_eq!(
+            w.submode_screen.installed_windows,
+            vec![hub::window::THREE_LINE]
+        );
         assert!(
             !w.submode_screen.draws().is_empty(),
-            "the panel-window painter runs alongside the state machine"
+            "the installed panel's painter runs alongside the state machine"
         );
     }
 
@@ -780,6 +907,10 @@ mod tests {
         for s in OP49_DEDICATED_SUB_OPS {
             assert_eq!(slot_for_op49_sub_op(s), None);
         }
-        assert_eq!(slot_for_op49_sub_op(9), Some(slot::CLOSE_TICK));
+        // Everything else takes the handler retail's `0x801F33A4` table names.
+        assert_eq!(slot_for_op49_sub_op(9), Some(slot::PROMPT));
+        assert_eq!(slot_for_op49_sub_op(6), Some(slot::COIN_COUNTER));
+        // A `-1` row leaves `+0x50` at the spawn value, which is slot `0`.
+        assert_eq!(slot_for_op49_sub_op(7), Some(slot::CLOSE_TICK));
     }
 }

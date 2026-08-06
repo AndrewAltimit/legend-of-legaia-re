@@ -99,6 +99,20 @@ structural impossibility. The browser hosts never had either problem: their
 composition is in `crates/web-viewer/src`, a library, which is the seam the
 composition ladder drives.
 
+By *call*, that is - not by coverage. `LLVM_PROFILE_FILE` is inherited, so a
+test that spawns `CARGO_BIN_EXE_legaia-engine` has its profile merged in, and
+`play-window` already takes `--pad-script` + `--screenshot-tick` for exactly
+that shape of run. What the spawn route cannot do is **enter a minigame**:
+the native host opens the Muscle Dome and the Baka Fighter from
+`WindowEvent::KeyboardInput` (`M` / `B` in
+`window/event_handler/keyboard.rs`), `--pad-script` writes a *pad word* and
+nothing else, and no CLI flag names a minigame. So every native minigame row
+on this page - the dance HUD, the fishing chrome, the baka digit strips,
+`minigame_floor.rs`, the dance tutorial, the casino entry - stays blind to a
+spawned run for a reason that has nothing to do with `bin/`. A `--minigame
+<name>` flag, or a `--pad-script` that also accepts key names, converts the
+whole cluster at once.
+
 **The browser minigames page is outside the union entirely.** `minigame_replay`
 drives the *engine-shell* minigame path, and `play_compose_ladder` drives the
 *play page* - neither is the standalone minigames page, so a port wired only on
@@ -312,7 +326,7 @@ union.
 | `dance.rs` (HUD + banner) | 7 | `801d231c` `801d3e28` `801d32f8` `801d2524` `801d2d98` `801d2f38` `801d387c` | native `window/hud.rs`, `window/minigames.rs`, `window/minigame_fx.rs` |
 | `fishing_chrome.rs` | 6 | `801d03b0` `801d78c0` `801d74b0` `801d7a5c` `801d70ec` `801d7c30` | native `window/minigames.rs`, `window/hud.rs` |
 | `fishing_actors.rs` | 4 | `801d2050` `801d765c` `801d2278` `801d4948` | native fishing block |
-| `baka_fighter.rs` (digit strips) | 3 | `801d6a18` `801d6f44` `801d69e4` | native `window/hud.rs` |
+| `baka_fighter.rs` (digit strips) | 3 | `801d6a18` `801d6f44` `801d69e4` | native `window/hud.rs` - keyboard-only entry, see below |
 | `save_select.rs` (card directory) | 3 | `801e1208` `801e3af0` `801e3ba0` | browser `web-viewer::cards` |
 | `minigame_floor.rs` | 2 | `801d2a10` `801d6028` | native `window/minigames.rs` |
 | `dance.rs` (sting + clip gate) | 2 | `801d3d78` `801d4098` | browser dance page |
@@ -337,8 +351,8 @@ rows below are what it did not reach.)
 |---|---|---|---|
 | `screen_fx.rs` | 10 | `801de4c8` `801f8d4c` `801f811c` `801f8004` `801f7a9c` `801f88fc` `801f8e6c` `801f849c` `801f8f28` `801f8a34` | a scene whose script spawns an iris mask, letterbox or image panel - the ending scenes the module doc names |
 | `fishing.rs` (session kernels) | 6 | `801d5298` `801d0474` `801d0f5c` `801d26cc` `801d3db4` `801d746c` | a fishing rung past rung 4: rod select, a full cast, a landed catch |
-| `muscle_dome.rs` | 4 | `801cf074` `801d1184` `801d1510` `801d9bbc` | a dome leg played to its between-leg tally |
-| `baka_fighter*.rs` (tally + intro) | 4 | `801d6710` `801d239c` `801d2a28` `801d59d4` | a duel played through its intro card to the end-of-match tally |
+| `muscle_dome.rs` | 4 | `801cf074` `801d1184` `801d1510` `801d9bbc` | `w1b_dome_leg_ladder` - built; `801d9bbc` has no producer and stays |
+| `baka_fighter*.rs` (tally + intro) | 4 | `801d6710` `801d239c` `801d2a28` `801d59d4` | `w1b_baka_duel_ladder` - built; the door entry still arms neither |
 | `equip_session.rs` / `menu_arrange.rs` / `menu_item_category.rs` | 4 | `801d9c14` `801cf760` `801d64a8` `801dd0c0` | operating the Equip and Items rows deeper than the menu ladders' browse-and-confirm |
 | `pause_screens.rs` (special Use) | 4 | `801d7e50` `801d8a58` `801d8b90` `801d8d94` | a Use confirm on Door of Light / Door of Wind / Incense |
 | `world/vm_hosts.rs` + `equipment.rs` | 2 | `8003c7ec` `800430ac` | field-VM scripts exercising those op arms |
@@ -428,7 +442,7 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | module | n | bucket | reach | addresses |
 |---|---|---|---|---|
 | `actor_alloc.rs` | 3 | (a) | field-actors | `80024c88` `80024d78` `80024dfc` |
-| `baka_hub_actors.rs` | 13 | (a) | baka-hub | `801f0adc` `801f1138` `801f16c0` `801f17d8` `801f1890` `801f1950` `801f1a1c` `801f1ab0` `801f1b64` `801f1d90` `801f1e48` `801f1fdc` `801f20b0` |
+| `baka_hub_actors.rs` | 13 | (a) | `w1b_hub_ladder` - built; see [below](#the-op-0x49-submode-screens) | `801f0adc` `801f1138` `801f16c0` `801f17d8` `801f1890` `801f1950` `801f1a1c` `801f1ab0` `801f1b64` `801f1d90` `801f1e48` `801f1fdc` `801f20b0` |
 | `battle_action/overlay_rng.rs` | 1 | (c) | disclosed | `801d0290` |
 | `battle_action/pool_ops.rs` | 3 | (a) | battle-target | `801d8a88` `801d8d00` `801db124` |
 | `battle_burst.rs` | 1 | (c) | disclosed | `801f30c4` |
@@ -706,6 +720,27 @@ file. That edge is a demo, disclosed at both ends; the production route is
 the menu-widget one above. A rerun of the replay reach report is what moves
 the seven addresses out of the (c) table rows above, which record the
 pre-resolver measurement.
+
+## The op-`0x49` submode screens
+
+The `baka_hub_actors.rs` row above was the page's largest single (a) cluster,
+and its blocker was not a missing ladder: the engine had **no mapping from an
+op-`0x49` sub-op to a handler slot**, so `slot_for_op49_sub_op` answered
+"close tick" for all eleven non-dedicated sub-ops and every screen a script
+asked for closed itself on its first frame. The mapping is retail's own
+14-byte table at `0x801F33A4`
+([`script-vm.md`](../subsystems/script-vm.md#which-screen-a-sub-op-opens-the-table-at-0x801f33a4)),
+now ported; `crates/engine-core/tests/w1b_hub_ladder.rs` drives four of the
+screens from a field-VM instruction, by pad, through `World::tick`.
+
+Six of the thirteen are still not script-reachable, and the reason is
+structural rather than a ladder gap: they are panel painters installed by
+handler slots with **no ported body** (`0x20` `FUN_801EE90C`, `0x21`
+`FUN_801EED58`, `0x31` `FUN_801ED590`, and one of `FUN_801E9B3C`'s own
+descriptor-op handlers), plus `801f1d90`, whose slot `0x13` no immediate in
+the field overlay ever stores to `+0x50`. The ladder paints those through the
+host-pinned window and says so; porting the three handler slots is what would
+make them script-reached.
 
 ## Ladder proposals
 

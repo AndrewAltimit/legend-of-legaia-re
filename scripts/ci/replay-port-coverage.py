@@ -196,6 +196,17 @@ CANONICAL_LADDERS = [
     # --- lane W1-C ---
     ("w1c_battle_render_ladder", "legaia-web-viewer"),
     ("w1c_arts_swing_ladder", "legaia-engine-shell"),
+    # --- lane W1-B ---
+    # Three pad-driven ladders that live in `engine-core` because what they
+    # drive is the world tick rather than a host: the op-0x49 submode screens
+    # opened from a field-VM instruction, a Baka duel played through its
+    # cabinet intro to the end-of-match tally, and a Muscle Dome leg played to
+    # its between-leg tally. Each reaches content no engine-shell or
+    # web-viewer ladder does, so leaving them out is a different number rather
+    # than a smaller one.
+    ("w1b_hub_ladder", "legaia-engine-core"),
+    ("w1b_baka_duel_ladder", "legaia-engine-core"),
+    ("w1b_dome_leg_ladder", "legaia-engine-core"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 

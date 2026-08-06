@@ -723,6 +723,16 @@ NB the Ghidra dump at this address is **truncated** - it reports 80 bytes /
 holds 680 bytes / 170 instructions. Disassemble PROT 0976 at `0x801CE818`
 rather than trusting the dump's extent.
 
+The card belongs to the **cabinet**, not to the duel. Its only two `jal`
+sites in PROT 0976 (`0x801CF784`, `0x801CF840`) are both inside the cabinet
+state machine's attract arms, and those arms are the only ones that advance
+the counter it is a function of (`DAT_801DBE94`). So a host that enters
+straight into `ST_DUEL` never sees it, and a duel that plays it would be
+showing the attract screen over a fight. The port follows that: the chrome
+takes the clock from `BakaCabinet::intro_clock` while
+`BakaCabinet::in_attract` holds, and `BakaFight::with_attract` is what starts
+a session at the cabinet's own boot state.
+
 **Round banner (`FUN_801d5c7c`).** Two mirrored halves converging on
 `x = 0x90`: offset `0xB4 - 6t` while `t < 30`, `0` through the hold, then
 `6 * (t - 90)` on the way out. The level ramps `0x80 + (t - 30) * 127 / 30`
@@ -976,7 +986,12 @@ end-of-match tally's three score rows (the coin row is the gold prize; see
 combo-step bonus - `DAT_801d70c4[combo]`, the combo clamped to `0x13` - into
 row `DAT_801dbed8`, and an HP-keyed clear bonus into row `DAT_801dbedc`
 (`50000` at full HP `0xc80`, else `DAT_801d711c[hp / 0x140]`). Both bonus
-tables are overlay rodata (Sony bytes, not committed) with no parser.
+tables are overlay rodata (Sony bytes, not committed), read out of a loaded
+PROT 0976 image by `BakaScoreTables::from_overlay` rather than baked into the
+port. Their index spaces are the ones their consumers can produce: 20 `i32`
+combo rows (the clamp is `0x13`) and 11 `i16` health rows
+(`0xc80 / 0x140 = 10` is the last reachable). Reading further walks into the
+neighbouring rodata - neither table has a terminator.
 
 The combo input is **not** the per-exchange counter: it is the running
 maximum `DAT_801dbec8`, which the HUD renderer latches once per frame

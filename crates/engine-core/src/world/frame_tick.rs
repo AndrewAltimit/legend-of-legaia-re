@@ -265,6 +265,12 @@ impl World {
     //                     host renderer's, dev prints not ported)
     pub fn tick(&mut self) -> Option<StepOutcome> {
         self.frame += 1;
+        // Bridge the vsync-rate pad to the game-tick-rate actor pool for the
+        // op-0x49 submode screens: the hosts publish a pad word every tick and
+        // the dispatcher runs every `frame_step` ticks, so without this the
+        // half of the edges that land on a skipped pass are lost outright.
+        // See `SubmodeScreen::pad_edge_latch`.
+        self.latch_submode_pad_edge();
         // Age the post-battle spoils panel (armed by `finish_battle`) and the
         // no-encounters-here hint (armed by `arm_live_loop`).
         self.battle_spoils_frames = self.battle_spoils_frames.saturating_sub(1);
