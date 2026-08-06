@@ -1299,9 +1299,9 @@ fn exit_records(host: &SceneHost) -> Vec<ExitRecord> {
 /// grid ([`World::field_dir_blocked`]), placed-prop boxes and live NPC boxes
 /// (both inside [`World::field_actor_dir_blocked`]), and the caller's portal
 /// hazard set. A residual measured with all four live cannot say which one is
-/// the seal, and `handoff/lane6.md` reports its table as "walls only" when
-/// `plan_path` in fact consults every one of them - so the ablation is run
-/// rather than reasoned about.
+/// the seal, and a table that reports "walls only" is wrong: `plan_path` in
+/// fact consults every one of them - so the ablation is run rather than
+/// reasoned about.
 ///
 /// Each row clears exactly one input and re-floods to every `keikoku` mouth.
 /// A row whose residual collapses names the seal.
@@ -1596,7 +1596,7 @@ fn ablate_rung4_inputs(host: &mut SceneHost, hazards: &HashSet<(i32, i32)>) {
 /// flat from 32 down to 2 and never contains a `keikoku` mouth - so the seal
 /// is not the lattice. What the portal listing then shows is that the
 /// component *does* contain `suimon`, which is the scene that crosses to the
-/// component the `keikoku` mouths are on. See `handoff/rung4-probe.md` and
+/// component the `keikoku` mouths are on. See
 /// [`docs/subsystems/world-map.md`].
 ///
 /// Walls only: props / NPCs are already falsified by the ablation, and the

@@ -23,7 +23,7 @@
 # lands in is selected by story flag `0x27B`, which the port was discarding
 # because both arms of map01 P2[18]'s `0x3F` name the same scene. The probe
 # geometry, the grid decode and the planner lattice are all exonerated against
-# retail - see `handoff/rung4-probe.md` and `docs/subsystems/world-map.md`.
+# retail - see `docs/subsystems/world-map.md`.
 
 # Rung 5 clears. The run walks 65 tiles of Ravine from the (58, 24) arrival to
 # partition-2 record 0's band at (40, 71) and comes out on map01 at (52, 94) -
