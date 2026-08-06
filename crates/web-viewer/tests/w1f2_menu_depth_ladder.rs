@@ -16,12 +16,28 @@
 //! | 1 | equipment shop -> buy list -> **recipient picker** | `FUN_801DB21C` buy-list confirm dispatch, `FUN_801DB380` recipient sub-screen, and the three windows it paints: 36 (`FUN_801D56FC`), 41 (`FUN_801D4C28`), the compare chain (`FUN_801D1290`) and its seeder (`FUN_801CF5D0`) |
 //! | 2 | shop vendor plate | window 33 (`FUN_801DCF14`) - needs a scene shop with a resolvable vendor name |
 //! | 3 | Equip screen driven to a **candidate list + commit** | `FUN_801D9C14` trial-equip preview, `FUN_801CF760` Best Equipment applier |
-//! | 4 | Items screen driven past the command window | the throw-confirm / target-panel arms (`FUN_801D1B20`, `FUN_801D0520`) |
+//! | 4 | Items screen driven past the command window | the throw-out discard confirm (`FUN_801D1B20`) and the Arrange sort (`FUN_801D64A8`) |
 //!
 //! Every rung composes through the page's own read surface
 //! (`play_overlay_draws_json` / `play_menu_draws_json`), so a builder that
 //! runs and emits nothing fails the rung instead of passing as "entered" -
 //! the distinction the reach report alone cannot make.
+//!
+//! ## Two defects this ladder found on the field item-use path
+//!
+//! Neither is fixed here (both live outside this lane's files) and both are
+//! why the Items rung is not scored on the bag:
+//!
+//! 1. **A field item use is never consumed.**
+//!    `field_menu_dispatch::apply_inventory_outcome` applies the effect and
+//!    never decrements the stack; nothing outside the *battle* command flow
+//!    calls `World::consume_item`. Measured: a completed pause-menu use of a
+//!    Healing Leaf leaves the bag count unchanged.
+//! 2. **A field heal lands on the wrong record.** `World::use_item` writes
+//!    `actors[slot].battle.hp`, the battle mirror, while the field menu (and
+//!    every field readout) shows the roster `CharacterRecord`. Measured: the
+//!    same completed use returns `HealedHp { amount: 150 }` and leaves the
+//!    roster HP exactly where it was.
 //!
 //! Coverage export (what wires this into the reach report):
 //!
@@ -177,30 +193,62 @@ fn money(rt: &mut LegaiaRuntime) -> i64 {
         .unwrap_or(-1)
 }
 
-/// Window 33 - the vendor plate. It draws only when the shop session
-/// resolves a non-empty vendor name against the scene's shop table, so this
-/// rung is about a *scene* shop rather than the synthetic one.
+/// Scenes whose MAN carries exactly **one** named merchant record. The
+/// vendor plate resolves its label by matching the open session's stock
+/// against `World::scene_shops`, and falls back to the sole shop when the
+/// scene has exactly one - so a one-shop scene is what lets a debug-opened
+/// stock list still carry a real vendor name. Measured off the disc: every
+/// other shop-bearing scene ships two or more records.
+const ONE_SHOP_SCENES: [&str; 3] = ["town0b", "town0c", "town0d"];
+
+/// Window 33 - the vendor plate (`FUN_801DCF14`). It draws **only** when the
+/// shop session resolves a non-empty vendor name, which the synthetic shop in
+/// `town01` never does: that scene ships no merchant record, so the name
+/// lookup misses and the window is skipped entirely. This rung therefore
+/// changes scene first, and asserts the plate by the draw delta between a
+/// scene that can name its vendor and one that cannot.
 fn rung2_vendor_plate(rt: &mut LegaiaRuntime) -> Result<(), String> {
-    for _ in 0..8 {
-        if !rt.play_shop_is_open() {
-            break;
-        }
-        rt.play_shop_input(PadButton::Circle.mask());
-    }
+    close_shop(rt);
+
+    // Baseline: the same stock list in a scene with no merchant record.
+    rt.enter_field("town01")
+        .map_err(|_| "enter town01 failed".to_string())?;
     if !rt.debug_open_test_shop() {
-        return Err("test shop did not open".into());
+        return Err("test shop did not open in town01".into());
     }
-    let draws = json(&rt.play_overlay_draws_json(W, H));
-    if text_count(&draws) == 0 {
-        return Err("shop overlay drew no text at all".into());
+    let unnamed = overlay_quads(rt);
+    if unnamed == 0 {
+        return Err("shop overlay drew no glyph quads at all".into());
     }
-    for _ in 0..8 {
+    close_shop(rt);
+
+    for scene in ONE_SHOP_SCENES {
+        if rt.enter_field(scene).is_err() {
+            continue;
+        }
+        if !rt.debug_open_test_shop() {
+            close_shop(rt);
+            continue;
+        }
+        let named = overlay_quads(rt);
+        close_shop(rt);
+        if named > unnamed {
+            return Ok(());
+        }
+    }
+    Err(format!(
+        "no one-shop scene added a vendor-plate draw over the {unnamed}-quad \
+         baseline - window 33 painted nothing"
+    ))
+}
+
+fn close_shop(rt: &mut LegaiaRuntime) {
+    for _ in 0..12 {
         if !rt.play_shop_is_open() {
-            break;
+            return;
         }
         rt.play_shop_input(PadButton::Circle.mask());
     }
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -268,51 +316,105 @@ fn rung3_equip_depth(rt: &mut LegaiaRuntime) -> Result<(), String> {
 // Rung 4 - the Items screen, driven past the command window
 // ---------------------------------------------------------------------------
 
-/// Items: the command window's row 1 is **Throw Out**, whose list confirm
-/// raises the throw-confirm modal (`FUN_801D1B20`); row 0 is Use, whose
-/// confirm on a targeted item raises the field target panel
-/// (`FUN_801D0520`). Both sit one confirm past where the composition ladder
-/// stops.
+/// Items, all three command rows driven past the point the composition
+/// ladder stops.
+///
+/// | row | reaches |
+/// |---|---|
+/// | 0 Use | the item list, then the **field target panel** (`FUN_801D0520`) once a usable row is confirmed |
+/// | 1 Throw Out | the throw-out list, then the **discard confirm** (`FUN_801D1B20`) |
+/// | 2 Arrange | the bag sort kernel `arrange_bag_slots` (`FUN_801D64A8`) |
+///
+/// ## The Use row needs a hurt party, and that is retail's rule
+///
+/// The starting bag's only usable item is a Healing Leaf, and retail's
+/// menu-usability gate (`FUN_8003043C`, ported as `item_has_valid_target`)
+/// omits a heal entirely while every living ally is at full HP. A pad ladder
+/// that boots into town and opens Items therefore has **no** confirmable row
+/// and its Use confirm is a legitimate buzz - which is why the target panel
+/// stayed unentered under a ladder that opened the Items screen, and why this
+/// rung drives the two rows that need no such state. What the Use arm needs
+/// is a party that has taken damage, i.e. a fight played to its finish; the
+/// browser battle is command-driven and does not resolve under a pad-tap
+/// stream, so that stays a reach-triage row rather than a rung here.
+///
+/// ## Why the throw-out is scored after the unwind
+///
+/// The bag only moves once the sub-session finishes: retail applies the Items
+/// screen's outcome when the hand leaves the command window, and the port
+/// keeps that ordering (`apply_inventory_outcome` runs on `is_done`).
+/// Measuring before the unwind reads every discard as a no-op.
 fn rung4_items_depth(rt: &mut LegaiaRuntime) -> Result<(), String> {
-    // Use first, so a throw-out does not eat the only bag row.
-    for command_row in [0u32, 1] {
-        if !rt.play_menu_open_row("Items") {
-            return Err("Items row did not open its sub-screen".into());
-        }
-        for _ in 0..command_row {
-            rt.play_menu_input(PadButton::Down.mask());
-            let _ = rt.play_menu_draws_json(W, H);
-        }
-        rt.play_menu_input(PadButton::Cross.mask());
-        let _ = rt.play_menu_draws_json(W, H);
-        // Walk a couple of bag rows, then confirm one.
-        for edge in [PadButton::Down.mask(), PadButton::Up.mask()] {
-            rt.play_menu_input(edge);
-            let _ = rt.play_menu_draws_json(W, H);
-        }
-        rt.play_menu_input(PadButton::Cross.mask());
-        let after = json(&rt.play_menu_draws_json(W, H));
-        if text_count(&after) == 0 {
-            return Err(format!(
-                "Items command row {command_row} confirm drew an empty screen"
-            ));
-        }
-        // Answer whatever modal came up (cursor seeds on No / the first
-        // target), then unwind.
-        rt.play_menu_input(PadButton::Up.mask());
-        let _ = rt.play_menu_draws_json(W, H);
-        rt.play_menu_input(PadButton::Cross.mask());
-        let _ = rt.play_menu_draws_json(W, H);
-        for _ in 0..6 {
-            if !rt.play_menu_is_open() {
-                break;
-            }
-            rt.play_menu_input(PadButton::Circle.mask());
-            let _ = rt.play_menu_draws_json(W, H);
-        }
-        rt.play_menu_close();
+    // --- Row 1: Throw Out, to its discard confirm. ---
+    let before = bag_total(rt);
+    if !rt.play_menu_open_row("Items") {
+        return Err("Items did not re-open for Throw Out".into());
     }
+    rt.play_menu_input(PadButton::Down.mask());
+    rt.play_menu_input(PadButton::Cross.mask());
+    let _ = rt.play_menu_draws_json(W, H);
+    rt.play_menu_input(PadButton::Cross.mask());
+    let confirm = json(&rt.play_menu_draws_json(W, H));
+    if text_count(&confirm) == 0 {
+        return Err("throw-out confirm drew nothing".into());
+    }
+    // The confirm seeds on No (retail); Up moves the hand to Yes.
+    rt.play_menu_input(PadButton::Up.mask());
+    rt.play_menu_input(PadButton::Cross.mask());
+    let _ = rt.play_menu_draws_json(W, H);
+    unwind_menu(rt);
+    let after = bag_total(rt);
+    if after >= before {
+        return Err(format!(
+            "the throw-out confirm's Yes discarded nothing ({before} -> {after})"
+        ));
+    }
+
+    // --- Row 2: Arrange. ---
+    //
+    // The sort has no state the page exposes directly, so it is scored on
+    // the property a sort has and a shuffle does not: applying it twice must
+    // leave the drawn list identical to applying it once.
+    if !rt.play_menu_open_row("Items") {
+        return Err("Items did not re-open for Arrange".into());
+    }
+    rt.play_menu_input(PadButton::Down.mask());
+    rt.play_menu_input(PadButton::Down.mask());
+    rt.play_menu_input(PadButton::Cross.mask());
+    let once = rt.play_menu_draws_json(W, H);
+    if text_count(&json(&once)) == 0 {
+        return Err("the Items list drew nothing after Arrange".into());
+    }
+    rt.play_menu_input(PadButton::Cross.mask());
+    let twice = rt.play_menu_draws_json(W, H);
+    if once != twice {
+        return Err(
+            "Arrange is not idempotent - a second sort re-ordered the drawn \
+             list, so the kernel is not sorting by a stable rank"
+                .into(),
+        );
+    }
+    unwind_menu(rt);
     Ok(())
+}
+
+/// Total item count across the bag, off the page's own menu model.
+fn bag_total(rt: &mut LegaiaRuntime) -> i64 {
+    json(&rt.field_menu_model_json())["items"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|i| i["count"].as_i64()).sum::<i64>())
+        .unwrap_or(0)
+}
+
+fn unwind_menu(rt: &mut LegaiaRuntime) {
+    for _ in 0..8 {
+        if !rt.play_menu_is_open() {
+            break;
+        }
+        rt.play_menu_input(PadButton::Circle.mask());
+        let _ = rt.play_menu_draws_json(W, H);
+    }
+    rt.play_menu_close();
 }
 
 // ---------------------------------------------------------------------------
