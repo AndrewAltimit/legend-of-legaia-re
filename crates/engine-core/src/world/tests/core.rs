@@ -108,8 +108,11 @@ fn next_rng_is_deterministic() {
 fn battle_party_wipe_signals_end_via_world() {
     let mut world = World::new();
     world.mode = SceneMode::Battle;
-    // Kill all party.
+    // Kill all party. `max_hp > 0` marks each slot SEATED (a wipe means "a
+    // seated party with nobody standing", not "no party" - the wipe scan
+    // ignores hollow slots; see `BattleActionHost::slot_seated`).
     for i in 0..3 {
+        world.actors[i].battle.max_hp = 1;
         world.actors[i].battle.liveness = 0;
     }
     // Mark monsters alive.
@@ -151,6 +154,8 @@ fn battle_party_wipe_raises_party_wipe_cause_on_the_step() {
     let mut world = World::new();
     world.mode = SceneMode::Battle;
     for i in 0..3 {
+        // Seated (max_hp > 0) but dead - see the sibling test above.
+        world.actors[i].battle.max_hp = 1;
         world.actors[i].battle.liveness = 0;
     }
     for i in 3..8 {

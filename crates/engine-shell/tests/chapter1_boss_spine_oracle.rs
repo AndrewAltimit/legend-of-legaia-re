@@ -91,7 +91,18 @@ fn open_host() -> Option<SceneHost> {
         return None;
     }
     let extracted = extracted_dir()?;
-    Some(SceneHost::open_extracted(&extracted).expect("open SceneHost"))
+    let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    // Seed the retail New Game roster (Vahn, the SCUS `0x80078C4C` template)
+    // so battle entry projects a SEATED party. Without a roster the party
+    // slots are hollow (`max_hp == 0`, no record) - the port-only unseeded
+    // state whose battles cannot be won or lost meaningfully (the wipe scan
+    // refuses to read hollow slots as a dead party; see
+    // `BattleActionHost::slot_seated`).
+    let scus = std::fs::read(extracted.join("SCUS_942.54")).expect("read SCUS_942.54");
+    let party =
+        legaia_asset::new_game::StartingParty::from_scus(&scus).expect("SCUS new-game template");
+    host.world.seed_starting_party(&party);
+    Some(host)
 }
 
 /// Drive `town01` free-roam onto the Drake overworld (`map01`, WorldMap) via the
@@ -405,14 +416,42 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
     // record P2[50] through the C1-gated dispatch - its own `51 42` script
     // bytes SET the gate flag (and `62 89` clears the marker).
     let party = host.world.party_count as usize;
+    // Auto-resolve the remaining battle frames: with a live (seeded) party
+    // the player-driven command menu would otherwise open on Vahn's turn and
+    // hold the Done band's menu floor forever - the subject is the flag
+    // chain, not the command UI.
+    host.world.battle_player_driven = false;
     for a in host.world.actors.iter_mut().skip(party) {
         if a.battle_monster_id.is_some() {
+            let delta = i32::from(a.battle.hp);
             a.battle.hp = 0;
             a.battle.liveness = 0;
+            // Seed the HP-bar ramp for the poked kill; a bare `hp` write
+            // leaves `hp != hp_display` pending, which the SM's `0x51`
+            // bar-drain gate treats as absorbing.
+            a.battle
+                .assign_hp_bar(delta.clamp(0, i32::from(i16::MAX)) as i16);
         }
     }
     let mut ticks = 0u32;
     while host.world.mode == SceneMode::Battle && ticks < 2000 {
+        // Force the victory outcome: the Caruban's battle-entry action was
+        // staged before the harness zeroed it, and that staged strike still
+        // retires against the party during the teardown ticks. Keep the
+        // seeded party standing (bar force-synced - see the organic sibling)
+        // so the forced win cannot be converted into a party wipe by a
+        // monster the test already declared dead.
+        for slot in 0..host.world.party_count as usize {
+            let a = &mut host.world.actors[slot].battle;
+            if a.max_hp > 0 {
+                a.hp = a.max_hp;
+                a.liveness = 1;
+                if a.hp_display.is_some() {
+                    a.hp_display = Some(a.max_hp);
+                }
+                a.hp_bar_pending = 0;
+            }
+        }
         let _ = host.tick().expect("tick");
         ticks += 1;
     }

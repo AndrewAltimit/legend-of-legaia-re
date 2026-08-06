@@ -457,6 +457,30 @@ pub trait BattleActionHost {
         3
     }
 
+    /// Is party slot `slot` **seated** - does it hold a combatant the battle
+    /// load actually placed there?
+    ///
+    /// Retail has no such query because the state it distinguishes cannot
+    /// exist there: the wipe scan (`0x801E6510..0x801E664C`) walks the actor
+    /// pointer table `0x801C9370` for exactly the seated-count byte
+    /// (`*(0x8007BD24) + 0`), with no per-slot null check - seatedness is
+    /// established once at battle load, from the present-party list, and a
+    /// retail battle always seats at least one living member. (The
+    /// disassembly's `beq v0,zero,0x801e6574` at `0x801E6524` even shows a
+    /// count of zero would fall straight into the wipe compare - retail is
+    /// saved by the count never being zero, not by a guard.)
+    ///
+    /// The port *can* represent the impossible state: a host may enter battle
+    /// with party slots stamped but no roster projected onto them, and those
+    /// hollow actors read as "dead party" to a scan that only asks
+    /// `liveness != 0`. This hook is how the scan asks the host the question
+    /// retail answers structurally. The default is `true` - a host that does
+    /// not track seating keeps the historical "every party slot counts"
+    /// behaviour.
+    fn slot_seated(&self, _slot: u8) -> bool {
+        true
+    }
+
     /// Iteration helper - total slot count (default `8`).
     fn slot_count(&self) -> u8 {
         ACTOR_SLOTS as u8

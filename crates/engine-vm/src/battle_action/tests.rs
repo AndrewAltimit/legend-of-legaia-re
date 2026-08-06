@@ -48,6 +48,9 @@ struct RecHost {
     /// Per-slot equipment ATK bonus bytes returned by
     /// `equip_attack_bonuses`.
     equip_atk: std::collections::HashMap<u8, [u8; 5]>,
+    /// Party slots reported as NOT seated by `slot_seated` (empty = every
+    /// slot seated, the trait default).
+    unseated: std::collections::HashSet<u8>,
 }
 
 impl RecHost {
@@ -72,6 +75,9 @@ impl RecHost {
 impl BattleActionHost for RecHost {
     fn actor(&self, slot: u8) -> Option<&BattleActor> {
         self.actors.get(slot as usize)
+    }
+    fn slot_seated(&self, slot: u8) -> bool {
+        !self.unseated.contains(&slot)
     }
     fn actor_mut(&mut self, slot: u8) -> Option<&mut BattleActor> {
         self.actors.get_mut(slot as usize)
@@ -1037,6 +1043,53 @@ fn end_of_action_party_wipe_signals_battle_end() {
         host.take()
             .contains(&Event::BattleEnd(BattleEndCause::PartyWipe))
     );
+}
+
+/// "No party seated" is not "party dead". A battle whose party slots were
+/// never seated (`slot_seated == false`, the port-only state retail cannot
+/// represent - see `BattleActionHost::slot_seated`) must NOT resolve as a
+/// party wipe when those hollow slots read dead; the round continues.
+#[test]
+fn end_of_action_unseated_party_is_not_reported_as_a_party_wipe() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    ctx.action_state = ActionState::EndOfAction.as_byte();
+    for i in 0..3u8 {
+        host.actors[i as usize].liveness = 0;
+        host.unseated.insert(i);
+    }
+    let out = step(&mut host, &mut ctx);
+    assert_ne!(
+        out,
+        StepOutcome::BattleComplete,
+        "an unseeded battle must not end on the party-wipe arm"
+    );
+    assert!(
+        !host
+            .take()
+            .contains(&Event::BattleEnd(BattleEndCause::PartyWipe)),
+        "no PartyWipe may be signalled for a party that was never seated"
+    );
+}
+
+/// The unseeded state must still be able to TERMINATE: with no seated party
+/// and the monsters down, the monster-wipe arm still fires, so a host that
+/// reaches this port-only state tears down to victory rather than spinning.
+#[test]
+fn end_of_action_unseated_party_still_resolves_a_monster_wipe() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    ctx.action_state = ActionState::EndOfAction.as_byte();
+    for i in 0..3u8 {
+        host.actors[i as usize].liveness = 0;
+        host.unseated.insert(i);
+    }
+    for i in 3..ACTOR_SLOTS {
+        host.actors[i].liveness = 0;
+    }
+    let out = step(&mut host, &mut ctx);
+    assert_eq!(out, StepOutcome::BattleComplete);
+    let events = host.take();
+    assert!(events.contains(&Event::BattleEnd(BattleEndCause::MonsterWipe)));
+    assert!(!events.contains(&Event::BattleEnd(BattleEndCause::PartyWipe)));
 }
 
 #[test]

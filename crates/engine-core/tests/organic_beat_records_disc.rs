@@ -56,6 +56,19 @@ fn gated() -> Option<PathBuf> {
     Some(extracted)
 }
 
+/// Seed the retail New Game roster (Vahn, from the `SCUS_942.54` template at
+/// `0x80078C4C`) so battle entry projects a SEATED party onto the actor
+/// table. Without a roster the party slots are hollow (`max_hp == 0`, no
+/// record), which is the port-only unseeded state the wipe scan refuses to
+/// read as a dead party - and, before that refusal existed, the state that
+/// made every battle in this file resolve as an instant PartyWipe.
+fn seed_new_game_party(world: &mut legaia_engine_core::world::World, extracted: &std::path::Path) {
+    let scus = std::fs::read(extracted.join("SCUS_942.54")).expect("read SCUS_942.54");
+    let party =
+        legaia_asset::new_game::StartingParty::from_scus(&scus).expect("SCUS new-game template");
+    world.seed_starting_party(&party);
+}
+
 /// The Caruban first-visit gate flag (`map01` dolk->dolk2 entrance selector) -
 /// also the stager record's own park gate (its head `SysFlag.Test`).
 const CARUBAN_GATE_FLAG: u16 = 0x142;
@@ -174,6 +187,7 @@ fn rikuroa_man_carries_the_caruban_stager_placement_and_formation_row() {
 fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
     let Some(extracted) = gated() else { return };
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    seed_new_game_party(&mut host.world, &extracted);
     host.world.live_gameplay_loop = true;
     host.enter_field_scene("rikuroa", 0).expect("enter rikuroa");
 
@@ -301,10 +315,21 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
 
     // Phase 4 - win: wipe the monsters and let the live loop tear the battle
     // down; the post-battle entry-script re-run + P2[50] land the gate flag.
+    // Auto-resolve the remaining battle frames: with a live (seeded) party
+    // the player-driven command menu would otherwise open on Vahn's turn and
+    // hold the Done band's `0x51` menu floor forever - this test is about the
+    // flag chain, not the command UI.
+    host.world.battle_player_driven = false;
     for a in host.world.actors.iter_mut().skip(party) {
         if a.battle_monster_id.is_some() {
+            let delta = i32::from(a.battle.hp);
             a.battle.hp = 0;
             a.battle.liveness = 0;
+            // Seed the HP-bar ramp for the poked kill: a bare `hp` write
+            // leaves `hp != hp_display` with a zero accumulator, and the SM's
+            // `0x51` bar-drain gate parks the battle on that pair forever.
+            a.battle
+                .assign_hp_bar(delta.clamp(0, i32::from(i16::MAX)) as i16);
         }
     }
     let mut ticks = 0u32;
@@ -313,6 +338,27 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
         legaia_engine_core::world::SceneMode::Battle
     ) && ticks < 2000
     {
+        // This phase forces the VICTORY outcome - the subject is the flag
+        // chain, not the fight's balance. The Caruban's battle-entry action
+        // was staged before the harness zeroed it, and that staged strike
+        // still retires against the party during the teardown ticks; keep
+        // the seeded party standing so the forced win cannot be converted
+        // into a party wipe by a monster the test already declared dead.
+        for slot in 0..host.world.party_count as usize {
+            let a = &mut host.world.actors[slot].battle;
+            if a.max_hp > 0 {
+                // Force-sync the displayed bar with the restore (the retail
+                // ticker's own re-sync shape): a live-HP write that leaves
+                // `hp != hp_display` pending is absorbing, and the SM's
+                // `0x51` bar-drain gate would park the battle on it forever.
+                a.hp = a.max_hp;
+                a.liveness = 1;
+                if a.hp_display.is_some() {
+                    a.hp_display = Some(a.max_hp);
+                }
+                a.hp_bar_pending = 0;
+            }
+        }
         host.tick().expect("tick");
         ticks += 1;
     }

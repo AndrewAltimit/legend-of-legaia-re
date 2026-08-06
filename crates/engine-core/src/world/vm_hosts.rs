@@ -2021,6 +2021,32 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn party_count(&self) -> u8 {
         self.world.party_count
     }
+    /// Retail's wipe scan iterates the seated-count byte's worth of actor
+    /// pointers (`*(0x8007BD24)+0` over `0x801C9370`, `0x801E6510..`), and
+    /// that count is derived from the present-party list at battle load - a
+    /// slot inside it always holds a projected character. The port's
+    /// equivalent of "this party slot holds a combatant" is therefore: the
+    /// roster projects a record onto the ordinal
+    /// ([`World::party_roster_slot`], the mirror of retail's present-party
+    /// list at `0x8007BD10`), or the battle mirrors carry a real combatant
+    /// (`max_hp > 0`, the synthetic-battle path that stats slots directly).
+    /// A stamped-but-hollow slot (no record, `max_hp == 0`) is the port-only
+    /// unseeded state the wipe scan must not read as a dead party.
+    fn slot_seated(&self, slot: u8) -> bool {
+        if slot >= self.world.party_count {
+            return true;
+        }
+        self.world
+            .roster
+            .members
+            .get(self.world.party_roster_slot(slot as usize))
+            .is_some()
+            || self
+                .world
+                .actors
+                .get(slot as usize)
+                .is_some_and(|a| a.battle.max_hp > 0)
+    }
     fn pose(&mut self, actor_id: u8, pose: Pose) {
         self.world
             .pending_battle_events

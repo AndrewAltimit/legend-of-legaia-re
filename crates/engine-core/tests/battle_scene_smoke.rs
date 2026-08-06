@@ -50,8 +50,11 @@ fn battle_world_ticks_many_frames_without_unknown_state() {
 #[test]
 fn battle_complete_fires_on_party_wipe() {
     let mut world = build_world(3);
-    // Kill the party.
+    // Kill the party. `max_hp > 0` marks each slot SEATED - the wipe scan
+    // distinguishes a dead party from hollow never-seated slots (see
+    // `BattleActionHost::slot_seated`).
     for i in 0..3 {
+        world.actors[i].battle.max_hp = 1;
         world.actors[i].battle.liveness = 0;
     }
     // Force the SM to the EndOfAction state (which routes through the
@@ -65,6 +68,7 @@ fn battle_complete_fires_on_party_wipe() {
 
     let mut world = build_world(3);
     for i in 0..3 {
+        world.actors[i].battle.max_hp = 1;
         world.actors[i].battle.liveness = 0;
     }
     world.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
