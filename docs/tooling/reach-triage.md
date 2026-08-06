@@ -192,16 +192,19 @@ surfaced the first time a coverage source contained their files:
 address in it is accounted for below.
 
 **Per-bucket totals are deliberately not written here.** They are a count of
-project state, which this repo's writing rules keep out of committed docs, and
-they rot within a single wave: the ladders below move rows between buckets
-faster than a hand-maintained tally can follow, and a stale total reads exactly
-like a fresh one. During one integration this table conflicted in *every*
-branch that touched the page, each with a different number, and no arithmetic
-over the diffs could recover the true one.
+project state, which this page keeps out on the same grounds as the rest of
+`docs/`, and they are the fastest-rotting thing on it: every ladder that lands
+moves rows between buckets, and a stale total reads exactly like a fresh one.
 
-The totals belong to the instrument, not the page. `replay-port-coverage.py`
-recomputes them from the coverage exports each run; the per-row verdicts below
-are what this page is for, and they stay valid whatever the totals are.
+They are also the one part of the page that cannot survive concurrent editing.
+Row verdicts are independent - two people revising different rows produce a
+mergeable diff - but a total is a function of every row at once, so each
+revision writes a different number to the same line and no arithmetic over the
+diffs recovers the true one.
+
+The totals belong to the instrument. `replay-port-coverage.py` recomputes them
+from the coverage exports each run; the per-row verdicts below are what this
+page is for, and they stay valid whatever the totals are.
 
 ### The escape pair reads as a contradiction, and both halves are true
 
