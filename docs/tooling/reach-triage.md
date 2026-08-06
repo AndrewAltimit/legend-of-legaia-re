@@ -194,9 +194,9 @@ address in it is accounted for below.
 
 | bucket | addresses |
 |---|---|
-| NO-LADDER | 85 |
-| GATED | 9 |
-| HOST-DEAD | 45 |
+| NO-LADDER | see below |
+| GATED | see below |
+| HOST-DEAD | see below |
 | NOT-PLAYTHROUGH | 5 |
 
 ### The escape pair reads as a contradiction, and both halves are true
@@ -252,6 +252,7 @@ descriptor drops.
 | `prize_exchange.rs` | 1 | `801dc1cc` | `PrizeExchangeSession` has one production mention - its own `impl` line. |
 | `scene_name_sync.rs` | 1 | `8001d7f8` | `sync_scene_name` is called only from that file's tests. Two anchors share the address - the `fn` and a `//! PORT:` module tag - and it is the module tag that carries the liveness verdict, so both need the disclosure. |
 | `save_select.rs` | 1 | `801e3294` | `card_frame_tick` - the only thing that advances a `CardIoMachine` - is disclosed on the function *and* on the type anchor the address is keyed to; the function alone left the verdict on the type. |
+| `menu_item_category.rs` | 1 | `801dd0c0` | The chain into `category_check` is real and production-only (`play_menu_input` -> `EquipSession::input` -> `best_equipment_now` -> the `weapon_category_score` closure), and the Best-Equipment applier above it is entered. What is missing is *data*: nothing calls `EquipSession::with_weapon_category`, so the table is always empty and the closure short-circuits before the body. Wiring it needs the PROT 0899 category table reachable from `build_equip_session`, the prerequisite the window-descriptor table already has. |
 
 Three of these name routines that are heavily used on the disc, so the gap is a
 port that is not reached rather than a port of dead code. A five-form
@@ -353,16 +354,11 @@ rows below are what it did not reach.)
 | `fishing.rs` (session kernels) | 6 | `801d5298` `801d0474` `801d0f5c` `801d26cc` `801d3db4` `801d746c` | a fishing rung past rung 4: rod select, a full cast, a landed catch |
 | `muscle_dome.rs` | 4 | `801cf074` `801d1184` `801d1510` `801d9bbc` | `w1b_dome_leg_ladder` - built; `801d9bbc` has no producer and stays |
 | `baka_fighter*.rs` (tally + intro) | 4 | `801d6710` `801d239c` `801d2a28` `801d59d4` | `w1b_baka_duel_ladder` - built; the door entry still arms neither |
-| `equip_session.rs` / `menu_arrange.rs` / `menu_item_category.rs` | 4 | `801d9c14` `801cf760` `801d64a8` `801dd0c0` | operating the Equip and Items rows deeper than the menu ladders' browse-and-confirm |
 | `pause_screens.rs` (special Use) | 4 | `801d7e50` `801d8a58` `801d8b90` `801d8d94` | a Use confirm on Door of Light / Door of Wind / Incense |
-| `world/vm_hosts.rs` + `equipment.rs` | 2 | `8003c7ec` `800430ac` | field-VM scripts exercising those op arms |
-| `battle_round.rs` / `other_game_overlay.rs` | 2 | `801db8b4` `801d14b0` | one call deeper into round start and the arena |
-| `text_balloon.rs` | 2 | `8003c764` `801da7f0` | a scene running field-VM `4C E1` |
+| `other_game_overlay.rs` | 1 | `801d14b0` | one call deeper into the arena's tally drain |
 | `battle_tutorial.rs` | 2 | `801f6b70` `801f747c` | promoting the existing `training_battle` test to a ladder export |
-| `shop.rs` (buy list) | 2 | `801db21c` `801db380` | opening a shop stock list and confirming a row through the *retail* menu-overlay list, not the engine session the play page drives |
 | `world_map.rs` | 2 | `800196a4` `801d8258` | entering a kingdom overworld through its own transition |
 | `cutscene_narration.rs` | 1 | `80037174` | an opening-prologue ladder (`opdeene` / `opstati` / `opurud`) |
-| `register_ramp.rs` | 1 | `8003c6a4` | a script running field-VM op `0x43` sub-3..6 |
 | `world/narration.rs` | 1 | `8003cf7c` | an inline field-VM conversation rather than the dialog panel |
 | `world/battle/stats.rs` + `battle_formulas/escape.rs` | 1 | `801e791c` | a canonical ladder pressing **Run**. Wired at `world/battle/command_flow.rs`'s `Resolution::RunAway` arm and driven end to end by `battle_flee_ladder`, which is outside `CANONICAL_LADDERS` - promote it, or flee in the composition ladder's fight |
 | `fade.rs` | 1 | `80020b00` | the same flee, one beat later: `FadeState::load` stages the state-`0x66` white-out from `fold_battle_event`'s `BattleEnd { Escaped }` arm, so it needs the escape to *succeed* and reach teardown |
@@ -525,11 +521,9 @@ the union.
 | `battle_intro.rs` | 5 | (a) | the intro styles + curtain trail the driven fights did not roll | `801cfda0` `801d0370` `801d1a20` `801d1cfc` `801d1d9c` |
 | `other_game_hud.rs` | 4 | (a) | native / minigames-page muscle-dome HUD | `801d02f0` `801d050c` `801d08ec` `801d15c8` |
 | `ui_fishing.rs` | 5 | (a) | catch / miss / strike event banners a short session does not land | `801d6f10` `801d71d4` `801d7528` `801d75dc` `801d78ec` |
-| `ui_menu/pause_lists.rs` | 1 | (a) | the Items throw-confirm arm | `801d1b20` |
-| `ui_menu/system_menus.rs` | 2 | (a) | the system confirm prompts | `801d1dac` `801d1f10` |
-| `ui_menu/target_panel.rs` | 1 | (a) | the field item-use target panel | `801d0520` |
-| `ui_menu_window_painters.rs` | 5 | (a) | specific retail windows no driven screen opens | `801d56fc` `801d61b0` `801d6360` `801dccb4` `801dcf14` |
-| `ui_menu_window_painters_large.rs` | 3 | (a) | the stat-compare window chain | `801cf5d0` `801d1290` `801d4c28` |
+| `ui_menu/system_menus.rs` | 2 | (a) | the special-use confirm prompts; the bag must hold Door of Light (`0x88`) or Incense (`0x8A`), which no host grants and no pad ladder acquires | `801d1dac` `801d1f10` |
+| `ui_menu/target_panel.rs` | 1 | (a) | the field item-use target panel. The gate is retail's own: `item_has_valid_target` (`FUN_8003043C`) omits a heal while every living ally is at full HP, so a ladder that boots into town has no confirmable Use row. It needs a fight played to its finish first | `801d0520` |
+| `ui_menu_window_painters.rs` | 3 | (a) | the entry-context pair + the spell-level notice | `801d61b0` `801d6360` `801dccb4` |
 | `ui_title_save/save_select.rs` | 1 | (a) | deeper Load beats | `801e3ff0` |
 | `ui_title_save/slot_grid.rs` | 2 | (a) | the block-grid render beat | `801e06c0` `801e0fd0` |
 | `ui_title_save/slot_info.rs` | 1 | (a) | the slot-info caption | `801e3ee0` |
@@ -539,6 +533,18 @@ The casino prize-exchange confirm window (`801d603c`) stays disclosed-inert;
 the report now *misreports* it as an executed disclosure - see the
 pseudo-entry note above for why that row is the anchor fallback and not a
 finding.
+
+Six of the surviving `engine-ui` rows are **not** unported builders and not a
+wiring gap - `crates/engine-ui/tests/pause_menu_compose.rs` executes every one
+of them today. That library oracle composes each pause screen in process with
+a synthetic descriptor table, including the two entry-context windows, both
+special-use confirm variants, the item target panel and the spell-level
+notice; a coverage export of it alone enters `801d0520` `801d1dac` `801d1f10`
+`801d61b0` `801d6360` `801dccb4`. What they lack is a **pad-driven** path, and
+the union is a union of pad ladders, so the export is deliberately not folded
+into it - a library oracle in the denominator would change what the headline
+number means. Each row's own gate is named in the table above; the oracle is
+why "never entered" here is a statement about reach and not about the port.
 
 One near-miss is worth recording because the grep that finds it is wrong. The
 window-25 / window-41 stat-compare chain in `ui_menu_window_painters_large.rs`
