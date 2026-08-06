@@ -40,10 +40,24 @@
 //! 32x32 grid: both compose the same system-UI window skin, and the
 //! 9-slice is what every other faithful menu panel already goes through.
 //!
-//! During target select the same two windows stay up; the list column
-//! swaps to the target roster (retail's state `0x64` runs its own party
-//! panel there - not yet packet-pinned, so the swap is the port's stand-in
-//! and is disclosed as such).
+//! During target select (retail state `0x64`) the item windows CLOSE and
+//! the surface becomes the **target strip** - packet-pinned from the
+//! `battle_item_target` / `battle_item_target_cursor1` captures
+//! (`scripts/pcsx-redux/autorun_battle_item_target_capture.lua`, same
+//! scenario): one full-width status bar at the screen's foot showing the
+//! pointed-at member's name + HP + MP ([`TARGET_STRIP_WINDOW`] and the
+//! `TARGET_*` pens below), the breadcrumb trail's third tab swapping from
+//! `Item` to the **selected item's name**, and no list/description window
+//! or hand cursor at all. The party roster never appears as a column -
+//! retail's `0x64` cursor is the strip itself stepping across the party
+//! band (LEFT/RIGHT), with the 3-member HUD parked offscreen (the capture
+//! shows its digit rows at y `234..264`).
+//!
+//! Two retail pieces of the same state are NOT this module's and stay
+//! disclosed: the floating name tag beside the targeted actor (a
+//! world-anchored plate - needs the target's projected position, which the
+//! item-menu surface does not carry) and the camera refocus onto the
+//! target. Both are visible in the captures.
 
 use crate::{SaveMenuAtlasRects, SpriteDraw, TextDraw, text_draws_for};
 
@@ -80,13 +94,18 @@ pub const CRUMB_GAP: i32 = 6;
 /// than pinned to the retail plate widths).
 pub const CRUMB_MIN_INTERIOR_W: i32 = 24;
 
-/// Per-tab breadcrumb layout for the `Begin | <actor> | Item` trail:
+/// Per-tab breadcrumb layout for the `Begin | <actor> | <third>` trail
+/// (`Item` while browsing, the selected item's name during target select):
 /// `(label pen, interior width)` per tab, advancing left-to-right from
 /// [`CRUMB_SEAT0`] with each tab sized to its own label.
-pub fn crumb_layout(font: &legaia_font::Font, actor_name: &str) -> [((i32, i32), i32); 3] {
+pub fn crumb_layout(
+    font: &legaia_font::Font,
+    actor_name: &str,
+    third: &str,
+) -> [((i32, i32), i32); 3] {
     let mut x = CRUMB_SEAT0.0;
     let mut out = [((0, 0), 0); 3];
-    for (i, label) in ["Begin", actor_name, "Item"].into_iter().enumerate() {
+    for (i, label) in ["Begin", actor_name, third].into_iter().enumerate() {
         let interior = (font.layout_ascii(label).advance_x as i32).max(CRUMB_MIN_INTERIOR_W);
         out[i] = ((x, CRUMB_SEAT0.1), interior);
         // Advance past this tab's interior + right cap, the gap, and the
@@ -106,8 +125,36 @@ pub const ROW_IDLE: [f32; 4] = [0.82, 0.85, 0.92, 1.0];
 pub const ROW_DIMMED: [f32; 4] = [0.5, 0.5, 0.55, 1.0];
 /// The `PAGE` label's green (retail draws it in the teal header ink).
 pub const PAGE_LABEL_INK: [f32; 4] = [0.45, 0.95, 0.75, 1.0];
-/// Ink of a dead target's row in the target column.
+/// Ink of a dead target's name in the target strip.
 pub const ROW_DEAD: [f32; 4] = [1.0, 0.55, 0.55, 1.0];
+
+// ------------------------------------------------- target strip (state 0x64)
+
+/// Target-strip window stage rect - packet-pinned (left cap at x 8, body
+/// tiles to the right cap at 304, one 20-px row at y 188).
+pub const TARGET_STRIP_WINDOW: (i32, i32, i32, i32) = (8, 188, 304, 20);
+/// Target name pen - packet-pinned (glyph run starts at (16, 192)).
+pub const TARGET_NAME_SEAT: (i32, i32) = (16, 192);
+/// `HP` label pen - packet-pinned (widget `#0x07` at (80, 194)).
+pub const TARGET_HP_LABEL_SEAT: (i32, i32) = (80, 194);
+/// Right edge the current-HP numerals end at - packet-pinned (the 8-px
+/// digit run `102..134`; single capture, so right-alignment of shorter
+/// values follows the HUD's numeral convention).
+pub const TARGET_HP_CUR_RIGHT: i32 = 134;
+/// Max-HP numeral pen (digits start at 146; the `/` sits in the
+/// `134..146` gap) - packet-pinned.
+pub const TARGET_HP_MAX_SEAT: (i32, i32) = (146, 192);
+/// `MP` label pen - packet-pinned (widget `#0x08` at (192, 194)).
+pub const TARGET_MP_LABEL_SEAT: (i32, i32) = (192, 194);
+/// Right edge the current-MP numerals end at (digit run `214..238`).
+pub const TARGET_MP_CUR_RIGHT: i32 = 238;
+/// Max-MP numeral pen (digits start at 250) - packet-pinned.
+pub const TARGET_MP_MAX_SEAT: (i32, i32) = (250, 192);
+/// Numeral row baseline y (the 8x12 digit sprites sit at y 192).
+pub const TARGET_VALUE_Y: i32 = 192;
+/// The HP/MP label ink (retail draws the gold HUD label widgets; the
+/// port's text stand-in keeps their gold).
+pub const TARGET_LABEL_INK: [f32; 4] = [1.0, 0.85, 0.35, 1.0];
 
 // ------------------------------------------------------------------- views
 
@@ -120,12 +167,14 @@ pub struct BattleItemRowView<'a> {
     pub admissible: bool,
 }
 
-/// One target row of the target-select column.
-#[derive(Debug, Clone, Copy)]
+/// One target row of the target-select panel.
+#[derive(Debug, Clone, Copy, Default)]
 pub struct BattleItemTargetView<'a> {
     pub name: &'a str,
     pub hp: u16,
     pub hp_max: u16,
+    pub mp: u16,
+    pub mp_max: u16,
     pub alive: bool,
 }
 
@@ -145,6 +194,18 @@ pub struct BattleItemMenuFrame<'a> {
 }
 
 impl BattleItemMenuFrame<'_> {
+    /// The third breadcrumb's label: `Item` while browsing, the selected
+    /// item's name during target select (the retail state-0x64 trail reads
+    /// `Begin | <actor> | <item name>` - packet capture).
+    pub fn third_crumb(&self) -> &str {
+        if self.targets.is_some()
+            && let Some(row) = self.cursor.and_then(|c| self.rows.get(c))
+        {
+            return row.name;
+        }
+        "Item"
+    }
+
     /// The page the cursor sits on (0-based).
     pub fn page(&self) -> usize {
         self.cursor.unwrap_or(0) / ROWS_PER_PAGE
@@ -188,21 +249,34 @@ pub fn battle_item_window_sprites(
 ) -> Vec<SpriteDraw> {
     let scale = stage_scale.max(1) as i32;
     let mut out = Vec::with_capacity(64);
-    out.extend(crate::menu_window_chrome_draws_for(
-        rects,
-        LIST_WINDOW,
-        stage_origin,
-        stage_scale,
-    ));
-    out.extend(crate::menu_window_chrome_draws_for(
-        rects,
-        DESC_WINDOW,
-        stage_origin,
-        stage_scale,
-    ));
+    if frame.targets.is_some() {
+        // State 0x64: the item windows close; the surface is the target
+        // strip at the screen's foot (packet-pinned).
+        out.extend(crate::menu_window_chrome_draws_for(
+            rects,
+            TARGET_STRIP_WINDOW,
+            stage_origin,
+            stage_scale,
+        ));
+    } else {
+        out.extend(crate::menu_window_chrome_draws_for(
+            rects,
+            LIST_WINDOW,
+            stage_origin,
+            stage_scale,
+        ));
+        out.extend(crate::menu_window_chrome_draws_for(
+            rects,
+            DESC_WINDOW,
+            stage_origin,
+            stage_scale,
+        ));
+    }
     // Breadcrumb trail: three gold tab plates - the same 3-slice the pause
-    // menu's title tab banner uses.
-    for (pen, interior) in crumb_layout(font, frame.actor_name) {
+    // menu's title tab banner uses. The third tab reads `Item` while
+    // browsing and the selected item's name during target select (the
+    // capture shows `Begin | Vahn | Healing Leaf`).
+    for (pen, interior) in crumb_layout(font, frame.actor_name, frame.third_crumb()) {
         out.extend(crate::tab_banner_draws(
             rects,
             pen,
@@ -211,12 +285,11 @@ pub fn battle_item_window_sprites(
             stage_scale,
         ));
     }
-    // Hand cursor on the highlighted row of whichever column is live.
-    let hand_row = match frame.targets {
-        Some((_, t)) => Some(t),
-        None => frame.cursor.map(|c| c % ROWS_PER_PAGE),
-    };
-    if let Some(row) = hand_row {
+    // Hand cursor on the highlighted item row (browsing only - state 0x64
+    // has no hand, the strip itself is the cursor).
+    if frame.targets.is_none()
+        && let Some(row) = frame.cursor.map(|c| c % ROWS_PER_PAGE)
+    {
         let (_, _, w, h) = rects.cursor;
         out.push(scaled(
             (HAND_SEAT.0, HAND_SEAT.1 + row as i32 * ROW_PITCH, w, h),
@@ -261,9 +334,10 @@ pub fn battle_item_window_text(
     let mut out = Vec::new();
     let white = [1.0, 1.0, 1.0, 1.0];
 
-    for (label, (pen, _)) in ["Begin", frame.actor_name, "Item"]
+    let third = frame.third_crumb();
+    for (label, (pen, _)) in ["Begin", frame.actor_name, third]
         .into_iter()
-        .zip(crumb_layout(font, frame.actor_name))
+        .zip(crumb_layout(font, frame.actor_name, third))
     {
         emit(&mut out, font, label, pen, white, stage_origin, scale);
     }
@@ -325,38 +399,91 @@ pub fn battle_item_window_text(
             }
         }
         Some((targets, cursor)) => {
-            // Target column in the list window - the port's stand-in for
-            // retail's state-0x64 target panel (not yet packet-pinned).
-            for (i, t) in targets.iter().take(ROWS_PER_PAGE).enumerate() {
-                let y = ROW_TEXT_SEAT.1 + i as i32 * ROW_PITCH;
-                let ink = if !t.alive {
-                    ROW_DEAD
-                } else if i == cursor {
-                    ROW_SELECTED
-                } else {
-                    ROW_IDLE
-                };
+            // State-0x64 target strip: the pointed-at member's name + HP +
+            // MP at the packet-pinned pens. Only the cursor's target draws
+            // (the strip IS the cursor - stepping it re-inks the one row).
+            let Some(t) = targets.get(cursor).or_else(|| targets.first()) else {
+                return out;
+            };
+            let ink = if t.alive { ROW_SELECTED } else { ROW_DEAD };
+            emit(
+                &mut out,
+                font,
+                t.name,
+                TARGET_NAME_SEAT,
+                ink,
+                stage_origin,
+                scale,
+            );
+            emit(
+                &mut out,
+                font,
+                "HP",
+                TARGET_HP_LABEL_SEAT,
+                TARGET_LABEL_INK,
+                stage_origin,
+                scale,
+            );
+            emit(
+                &mut out,
+                font,
+                "MP",
+                TARGET_MP_LABEL_SEAT,
+                TARGET_LABEL_INK,
+                stage_origin,
+                scale,
+            );
+            let num = |out: &mut Vec<TextDraw>, v: u16, right_x: i32| {
+                let sv = format!("{v}");
+                let w = font.layout_ascii(&sv).advance_x as i32;
                 emit(
-                    &mut out,
+                    out,
                     font,
-                    t.name,
-                    (ROW_TEXT_SEAT.0, y),
+                    &sv,
+                    (right_x - w, TARGET_VALUE_Y),
                     ink,
                     stage_origin,
                     scale,
                 );
-                let hp = format!("{}/{}", t.hp, t.hp_max);
-                let hw = font.layout_ascii(&hp).advance_x as i32;
-                emit(
-                    &mut out,
-                    font,
-                    &hp,
-                    (COUNT_RIGHT_X - hw, y),
-                    ink,
-                    stage_origin,
-                    scale,
-                );
-            }
+            };
+            num(&mut out, t.hp, TARGET_HP_CUR_RIGHT);
+            emit(
+                &mut out,
+                font,
+                "/",
+                (TARGET_HP_CUR_RIGHT + 2, TARGET_VALUE_Y),
+                ink,
+                stage_origin,
+                scale,
+            );
+            emit(
+                &mut out,
+                font,
+                &format!("{}", t.hp_max),
+                TARGET_HP_MAX_SEAT,
+                ink,
+                stage_origin,
+                scale,
+            );
+            num(&mut out, t.mp, TARGET_MP_CUR_RIGHT);
+            emit(
+                &mut out,
+                font,
+                "/",
+                (TARGET_MP_CUR_RIGHT + 2, TARGET_VALUE_Y),
+                ink,
+                stage_origin,
+                scale,
+            );
+            emit(
+                &mut out,
+                font,
+                &format!("{}", t.mp_max),
+                TARGET_MP_MAX_SEAT,
+                ink,
+                stage_origin,
+                scale,
+            );
         }
     }
 
@@ -541,10 +668,12 @@ mod tests {
         assert!(draws.iter().any(|d| d.dst.1 == CRUMB_SEAT0.1));
     }
 
-    /// Target select swaps the list column to the roster and moves the
-    /// hand to the target cursor; the windows stay up.
+    /// Target select is the packet-pinned state-0x64 surface: the item
+    /// windows close, the target strip opens at the screen's foot showing
+    /// only the pointed-at member, and the third breadcrumb becomes the
+    /// selected item's name.
     #[test]
-    fn target_select_swaps_the_column_and_keeps_the_windows() {
+    fn target_select_is_the_pinned_target_strip() {
         let r = rects();
         let font = legaia_font::Font::placeholder();
         let all = rows(2);
@@ -553,35 +682,62 @@ mod tests {
                 name: "Vahn",
                 hp: 100,
                 hp_max: 120,
+                mp: 30,
+                mp_max: 40,
                 alive: true,
             },
             BattleItemTargetView {
                 name: "Noa",
-                hp: 0,
+                hp: 80,
                 hp_max: 90,
-                alive: false,
+                mp: 55,
+                mp_max: 60,
+                alive: true,
             },
         ];
         let mut f = frame(&all, 1);
         f.targets = Some((&targets, 1));
         let sprites =
             battle_item_window_sprites(&legaia_font::Font::placeholder(), &r, &f, (0, 0), 1);
-        // Windows still framed; hand on target row 1, not item row 1's page seat.
-        let hand = sprites.last().unwrap();
-        assert_eq!((hand.dst.0, hand.dst.1), (167, 59));
+        // The strip window frames at the pinned rect; the list window and
+        // the hand cursor are gone.
+        assert!(
+            sprites
+                .iter()
+                .any(|s| (s.dst.0, s.dst.1) == (TARGET_STRIP_WINDOW.0, TARGET_STRIP_WINDOW.1)),
+            "target strip chrome at the pinned seat"
+        );
+        assert!(
+            !sprites
+                .iter()
+                .any(|s| (s.dst.0, s.dst.1) == (LIST_WINDOW.0, LIST_WINDOW.1)),
+            "item-list window closed during target select"
+        );
         let draws = battle_item_window_text(&font, &f, (0, 0), 1);
-        // Roster names drawn in place of item rows; no PAGE header.
-        let n = |s: &str| font.layout_ascii(s).glyphs.len();
-        assert!(n("Vahn") > 0);
-        let has_y = |y: i32| draws.iter().any(|d| d.dst.1 == y);
-        assert!(has_y(ROW_TEXT_SEAT.1));
-        assert!(has_y(ROW_TEXT_SEAT.1 + ROW_PITCH));
+        // Only the cursor's target draws, on the strip's pinned pens.
+        let has = |y: i32| draws.iter().any(|d| d.dst.1 == y);
+        assert!(has(TARGET_NAME_SEAT.1), "name on the strip baseline");
+        assert!(has(TARGET_HP_LABEL_SEAT.1), "HP/MP labels on their pens");
+        assert!(
+            !has(ROW_TEXT_SEAT.1),
+            "no roster column in the list window band"
+        );
+        // Current values right-align to the pinned column edges.
+        let hp_pen = TARGET_HP_CUR_RIGHT - font.layout_ascii("80").advance_x as i32;
+        assert!(
+            draws
+                .iter()
+                .any(|d| d.dst.0 == hp_pen && d.dst.1 == TARGET_VALUE_Y),
+            "current HP right-aligned to x={TARGET_HP_CUR_RIGHT}"
+        );
         assert!(
             !draws
                 .iter()
                 .any(|d| d.dst.1 == PAGE_SEAT.1 && d.dst.0 >= PAGE_SEAT.0),
             "no PAGE header during target select"
         );
+        // The third breadcrumb is the held item's name, not `Item`.
+        assert_eq!(f.third_crumb(), all[1].name);
     }
 
     /// The stage transform multiplies every prim like the sibling chrome

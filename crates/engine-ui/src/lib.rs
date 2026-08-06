@@ -51,17 +51,21 @@
 pub use legaia_font;
 pub use legaia_tim;
 
+pub mod afterimage;
 pub mod arts_input;
 pub mod battle_command_ui;
 pub mod battle_hud_chrome;
 pub mod battle_intro;
 pub mod battle_item_ui;
 pub mod battle_name_banner;
+pub mod battle_trail;
 mod battle_tutorial_box;
+pub mod billboard;
 pub mod gte;
 pub mod other_game_hud;
 pub mod pause_menu;
 pub mod screen_prim;
+pub mod streak_pass;
 mod ui_fishing;
 mod ui_menu;
 pub mod ui_menu_window_dispatch;

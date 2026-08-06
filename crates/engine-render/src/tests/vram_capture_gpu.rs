@@ -45,6 +45,7 @@ fn a_drawn_frame_lands_in_vram_as_the_colour_that_was_drawn() {
         &[ScreenPrim::Flat(FlatQuad {
             xy: full_quad(),
             color: [byte, byte, byte, 255],
+            gouraud: None,
             semi_transparent: false,
             abr_mode: 0,
             ot_index: 10,
@@ -99,6 +100,7 @@ fn the_captured_page_reads_back_through_the_15bpp_texture_path() {
         &[ScreenPrim::Flat(FlatQuad {
             xy: full_quad(),
             color: [255, 0, 0, 255],
+            gouraud: None,
             semi_transparent: false,
             abr_mode: 0,
             ot_index: 10,

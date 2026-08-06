@@ -3,11 +3,12 @@
 //! PORT: FUN_801D6628, FUN_800319A8, FUN_800326AC, FUN_80035334, FUN_800357FC
 //! PORT: FUN_800358C0, FUN_80035978, FUN_80035A4C
 //!
-//! `FUN_801D6628` lives in the title-screen / field overlay loaded into the
-//! `0x801C0000+` window at runtime (see `docs/tooling/overlay-capture.md`). It is
-//! the first script VM identified in retail Legaia. It is small (612 bytes,
-//! 13 opcodes, 68 callers) and well-bounded - the smallest target we have for
-//! a runtime-faithful port.
+//! `FUN_801D6628` is the **menu overlay's window-widget script interpreter**
+//! (PROT 0899, slot-A base `0x801CE818`; dispatch jump table at
+//! `0x801CED70`, `see ghidra/scripts/funcs/overlay_menu_801d6628.txt`). It
+//! was the first script VM identified in retail Legaia. It is small
+//! (612 bytes, 13 opcodes, 68 callers) and well-bounded - the smallest
+//! target we have for a runtime-faithful port.
 //!
 //! ## Bytecode layout
 //!
@@ -15,7 +16,8 @@
 //!
 //! ```text
 //!   byte 0:  opcode
-//!   byte 1:  operand_b - typically an actor id
+//!   byte 1:  operand_b - a window id (index into the menu window
+//!            descriptor table at 0x801E4738, `legaia_asset::menu_windows`)
 //!   bytes 2-3: operand_w - little-endian u16, typically a packed (x, y)
 //! ```
 //!
@@ -65,24 +67,22 @@
 //!
 //! Tests use hand-authored synthetic bytecode (no Sony bytes).
 //!
-//! ## Wiring state: no host runs this interpreter
+//! ## Wiring state: the shop choreography runs disc programs
 //!
-//! [`run`] is reachable in the static call graph and unreachable in play, and
-//! the difference is worth stating precisely because the graph is what the
-//! reachability audits read. `engine-core`'s `World::run_actor_bytecode` is the
-//! only production wrapper; its only caller is `FieldDemoHandler::run` in
-//! `engine-core`'s `mode.rs`, and that handler synthesizes its own bytecode
-//! rather than reading disc bytes and is constructed nowhere outside the
-//! `#[cfg(test)]` module beside it. `ModeHandler` has no registry, so no host
-//! installs it. The seven addresses tagged above are therefore executed by no
-//! pad-driven ladder and by neither browser page nor the native window.
+//! The bytecode source is resolved: the programs are **data resident in the
+//! menu overlay itself** (`legaia_asset::widget_script` - parse +
+//! `jal`-site scan of the PROT 0899 image). The production route is
+//! `engine-core`: `World::install_menu_overlay_tables` (called by both
+//! hosts with the real overlay bytes) resolves the programs, and
+//! `MenuRuntime::tick` feeds them into [`run`] over the
+//! `menu_widget::MenuWidgetState` host on the shop picker's entry / Sell
+//! transition edges - the transitions retail's `FUN_801DAFD4` drives.
 //!
-//! What is missing is an **input**, not a call site: nothing resolves a scene's
-//! actor-VM programs out of the disc into a byte slice, so a call added today
-//! could only feed operands the port invented. The prerequisite is the
-//! per-scene program lookup - which carrier holds the programs, and what
-//! selects one on scene entry. See
-//! [`docs/tooling/reach-triage.md`](../../../docs/tooling/reach-triage.md).
+//! `World::run_actor_bytecode` (the field-actor host over `world.actors`)
+//! remains demo-only: its one caller is the `FieldDemoHandler` example in
+//! `engine-core`'s `mode.rs`, which synthesizes its bytecode and is
+//! constructed only under `#[cfg(test)]`. See
+//! [`docs/subsystems/actor-vm.md`](../../../docs/subsystems/actor-vm.md#where-the-programs-live).
 
 #![forbid(unsafe_code)]
 
@@ -112,6 +112,7 @@ pub mod battle_gauge_rearm;
 pub mod battle_ground_grid;
 pub mod battle_helpers;
 pub mod battle_hp_bar;
+pub mod battle_impact_fx;
 pub mod battle_intro_particles;
 pub mod battle_intro_styles;
 pub mod battle_intro_swirl;
@@ -122,6 +123,7 @@ pub mod battle_scatter;
 pub mod battle_separation;
 pub mod battle_stream_slot;
 pub mod battle_target_group;
+pub mod battle_trail;
 pub mod battle_value_readout;
 pub mod camera_mover;
 pub mod camera_rel_actor;

@@ -1,0 +1,77 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; window widget scripts</div>
+  <h1>Window widget scripts <span class="tag tag-done">Confirmed</span></h1>
+  <p class="lede">When the shop opens, five UI windows slide onto the screen in one coordinated motion - the
+  vendor's name plate, the Buy/Sell picker, the gold box and two panels. That entrance is data: a tiny
+  bytecode program interpreted by the menu overlay's window-script VM, <code>FUN_801D6628</code> (Ghidra's
+  name for the traced routine at that RAM address; an <em>overlay</em> is a chunk of code the game loads
+  into RAM on demand - the menu overlay, archive entry PROT <code>0899</code>, hosts the pause menu, shop
+  and save UI). The programs themselves are resident in the same overlay image, a small program table in
+  its data segment - not in a scene file or an asset bundle. This page is the byte-level spec; the
+  interpreter is the <a href="../subsystems/actor-vm.html">actor / sprite VM</a>.</p>
+</header>
+
+<section class="doc-section" id="confidence">
+  <h2>Confidence</h2>
+  <p><strong>Confirmed.</strong> The instruction shape and dispatch come from the interpreter's disassembly
+  (fixed 4-byte stride, zero-opcode terminator, <code>sltiu</code> range check over the 13-entry jump table
+  at <code>0x801CED70</code>); the program contents are byte-verified on the disc image, and the shop pair
+  is additionally pinned by the randomizer's seru-trading vendor, which reuses exactly these scripts.
+  Parser + scanner: <code>legaia_asset::widget_script</code>; disc pins in
+  <code>crates/asset/tests/widget_script_real.rs</code>.</p>
+</section>
+
+<section class="doc-section" id="layout">
+  <h2>Instruction encoding</h2>
+  <p>Each instruction is exactly 4 bytes; a zero opcode byte ends the program:</p>
+<pre><code>+0x00  u8   opcode      ; 0x01..=0x0D dispatch via the jump table at 0x801CED70;
+                        ; 0x00 terminates
++0x01  u8   window_id   ; index into the 52-record window descriptor table at
+                        ; 0x801E4738 - the VM computes 0x801E4738 + id*0x10 and
+                        ; reads the record's x/y as the default coordinates
++0x02  u16  operand     ; little-endian; packed position for opcodes 0x02/0x09
+                        ; (x = (w &gt;&gt; 7) &amp; 0x1FE, y = w &amp; 0xFF), style byte for
+                        ; 0x03, zero elsewhere on disc</code></pre>
+  <p>Opcodes observed in disc programs: <code>0x01</code> (open at home), <code>0x02</code> (open at packed
+  position), <code>0x04</code> (close), <code>0x05</code> (global tick), <code>0x06</code> (motion-flag
+  clear), <code>0x0A</code> (close / re-open / slide-back composite).</p>
+</section>
+
+<section class="doc-section" id="where">
+  <h2>Where the programs live</h2>
+  <p>The referenced programs cluster in one data region of the menu overlay image (file
+  <code>0x16260..0x16740</code>, VA <code>0x801E4A78..0x801E4F58</code>). Each caller materialises a program
+  pointer with a <code>lui</code>/<code>addiu</code> instruction pair (or forwards one through a saved
+  register) and calls <code>FUN_801D6628(&amp;program)</code>. The parser's scanner recovers the programs
+  structurally: decode every <code>jal FUN_801D6628</code> word in the image, resolve each call site's
+  argument materialisation, and keep the targets that parse as terminated programs with in-range opcodes
+  and window ids. Because the table is overlay data at fixed addresses, the programs are resident whenever
+  the menu overlay is - every scene, per boot, no per-scene lookup.</p>
+</section>
+
+<section class="doc-section" id="pinned">
+  <h2>Pinned programs</h2>
+  <table>
+    <thead><tr><th>VA</th><th>Program</th><th>Caller</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x801E4E38</code></td><td><code>[05][01 21][01 2A][01 20][01 28][01 22][00]</code> - open vendor plate, picker, gold box + two panels</td><td>shop picker open, <code>FUN_801DAFD4</code></td></tr>
+      <tr><td><code>0x801E4E54</code></td><td><code>[04 28][04 2A][04 22][00]</code> - close the picker windows, keep gold + vendor plate</td><td>shop Sell transition, <code>FUN_801DAFD4</code></td></tr>
+      <tr><td><code>0x801E4A78</code></td><td><code>[05][00]</code> - global tick only</td><td>menu-open staging</td></tr>
+      <tr><td><code>0x801E4D50</code> / <code>0x801E4D78</code></td><td><code>[01 07][00]</code> - open window 7</td><td>spell level-up notice</td></tr>
+      <tr><td><code>0x801E4EA8</code> / <code>0x801E4EDC</code></td><td><code>[01 1F][00]</code> - open window 31</td><td>Point Card toast</td></tr>
+    </tbody>
+  </table>
+  <p>The clean-room engine resolves the same programs out of the user's disc at boot and runs them through
+  the ported interpreter on the same shop transitions
+  (<code>legaia_engine_core::menu_widget</code>).</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/actor-vm.html">Actor / sprite VM</a>
+    <a href="../subsystems/field-menu.html">Field menu (window table)</a>
+    <a href="../subsystems/shop.html">Shop flow</a>
+  </div>
+</section>

@@ -199,6 +199,7 @@ pub fn art_animation(
         &stream,
         record.anim_id,
         record.rate,
+        record.attach_key,
         0,
         record.effect_script.clone(),
     )
@@ -233,6 +234,7 @@ pub fn expand_animation_for_objects(
         .collect();
     crate::monster_archive::MonsterAnimation {
         action_id: anim.action_id,
+        attach_key: anim.attach_key,
         rate: anim.rate,
         part_count: anm_bones.len(),
         frame_count: anim.frame_count,

@@ -170,6 +170,12 @@ impl World {
         // Commit any anim ids the SM staged this frame (idempotent - the
         // step_battle pre-step commit already handled last frame's stages).
         self.commit_staged_battle_anims();
+        // Per-clip impact freeze/tint arms + the tint's neutral decay
+        // (`FUN_8004CE2C` pass 2 / `FUN_80050120` arm 0) - before the
+        // cursor advance so an in-window freeze stops THIS frame's step,
+        // like retail's tick order (the maintenance sweep runs off the
+        // XA-template tick ahead of the anim node advance).
+        self.tick_battle_impact_fx();
         for i in 0..self.actors.len() {
             // Hit-reaction chaining first (the FUN_8004AD80 record-type-4 arm):
             // a finished knockdown re-stages the get-up entry while the actor
@@ -260,6 +266,7 @@ impl World {
                 // tag alone, is what maps retail's "id 0 = idle" here.
                 let non_idle =
                     actor.battle_staged_anim.is_some() || actor.battle_reaction.is_some();
+                let clip_key = player.attach_key();
                 let ghost_eligible = if actor.battle_monster_id.is_none() {
                     actor.battle.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B
                 } else {
@@ -273,6 +280,7 @@ impl World {
                         i32::from(actor.move_state.world_z),
                     ],
                     ghost_eligible,
+                    clip_key,
                 });
                 actor
                     .battle_pose_history
@@ -439,6 +447,150 @@ impl World {
                     pos: f.pos,
                     pose: f.pose.clone(),
                     color: p.color,
+                });
+            }
+        }
+        out
+    }
+
+    /// Per-frame **impact freeze + tint** maintenance - the engine seat of
+    /// `FUN_8004CE2C` pass 2 (kernel `legaia_engine_vm::battle_impact_fx`)
+    /// plus the tint's neutral decay (`FUN_80050120` arm 0 via the
+    /// `FUN_80050F30` ease).
+    ///
+    /// Decay runs first so an in-window arm's rewrite owns the frame, the
+    /// retail steady state. The engine folds retail's `+0x0C` intensity
+    /// drain (an unmodeled brightness channel) into the selector clear,
+    /// and gates the ease on its own selector so the target-cursor /
+    /// cue-group colour writers are never fought (retail separates the
+    /// same writers through the `+0x21C` dispatch).
+    // PORT: FUN_8004CE2C (pass 2 - per-clip impact arms; pass 4 is
+    // `crate::battle_status_clut`)
+    // REF: FUN_80050120 (arm 0 - the decay driver this folds)
+    fn tick_battle_impact_fx(&mut self) {
+        use vm::battle_impact_fx as ifx;
+        if self.mode != SceneMode::Battle {
+            return;
+        }
+        // Decay pass.
+        for a in self.actors.iter_mut() {
+            if !a.active {
+                continue;
+            }
+            let b = &mut a.battle;
+            if b.impact_state != 0 && b.render_flag == 0 {
+                if b.render_color != ifx::IMPACT_NEUTRAL_STATE {
+                    b.render_color =
+                        ifx::ease_actor_state(b.render_color, [0x80; 3], ifx::IMPACT_EASE_STEP);
+                } else {
+                    b.impact_state = 0;
+                }
+            }
+        }
+        // The per-clip arms: acting party actor's committed record key +
+        // cursor window select the write onto its target.
+        let acting = self.battle_ctx.active_actor as usize;
+        let Some(actor) = self.actors.get(acting) else {
+            return;
+        };
+        if actor.battle_monster_id.is_some() {
+            // Party arms only (the monster arm - tag 0x3B - is decoded in
+            // `8004ce2c.txt` but not ported).
+            return;
+        }
+        let Some(player) = &actor.battle_animation else {
+            return;
+        };
+        let key = player.attach_key();
+        let cursor = player.cursor_sixteenths();
+        let char_id = self.party_roster_slot(acting) as u8 + 1;
+        let target = actor.battle.active_target as usize;
+        if let Some(sel) = ifx::clip_impact_acting_selector(char_id, key)
+            && let Some(a) = self.actors.get_mut(acting)
+        {
+            a.battle.impact_state = sel;
+        }
+        let Some(w) = ifx::clip_impact(char_id, key, cursor) else {
+            return;
+        };
+        let tint = self
+            .move_power
+            .as_ref()
+            .and_then(|t| t.impact_table())
+            .map(|t| t[usize::from(w.impact_selector - 1)]);
+        let Some(t) = self.actors.get_mut(target) else {
+            return;
+        };
+        if w.freeze_target {
+            t.battle.anim_rate = vm::battle_anim_rate::AnimRate(vm::battle_anim_rate::RATE_FROZEN);
+        }
+        if let Some(word) = tint {
+            t.battle.render_color = word;
+        }
+        // The selector arms even without disc data (the freeze is
+        // data-free; the tint word just has nothing to carry).
+        t.battle.impact_state = w.impact_selector;
+    }
+
+    /// Plan this frame's weapon-trail sweeps - the engine seat of the
+    /// retail trigger `FUN_8005112C` + sweep driver `FUN_80048310`
+    /// (kernels in `legaia_engine_vm::battle_trail`; geometry emission in
+    /// `legaia_engine_ui::battle_trail`).
+    ///
+    /// For each party battle actor whose committed clip's `+0x77`
+    /// identity byte matches its character's trigger row, sample the pose
+    /// ring at even depths (one sweep step per two frames - the retail
+    /// `2 * rate` cursor rewind under the per-frame `rate` advance),
+    /// stopping at the clip boundary (ring `clip_key` mismatch), the
+    /// 16-step budget, or a pose without the trigger's control points.
+    /// A sweep below two steps draws nothing (`FUN_80048310`'s
+    /// `slti 0x2` gate).
+    // PORT: FUN_8005112C (trigger; table in `engine-vm::battle_trail`)
+    // REF: FUN_80048310 (sweep capture - the ring sampling here replaces
+    // the rewound re-decode; see `engine-vm::battle_trail` module docs)
+    pub fn battle_weapon_trail_draws(&self) -> Vec<BattleWeaponTrailDraw> {
+        use vm::battle_trail as wt;
+        let mut out = Vec::new();
+        for (i, actor) in self.actors.iter().enumerate() {
+            // Party-only: retail's trigger gates on seat < 3; the engine
+            // keys party-ness on identity, not slot (monsters may sit
+            // anywhere - the slot-gate trap).
+            if actor.battle_monster_id.is_some() {
+                continue;
+            }
+            let Some(player) = &actor.battle_animation else {
+                continue;
+            };
+            let key = player.attach_key();
+            // Retail char id space: `DAT_8007BD10[seat]` = roster ordinal
+            // + 1 (1 = Vahn, 2 = Noa, 3 = Gala).
+            let char_id = self.party_roster_slot(i) as u8 + 1;
+            let Some(trig) = wt::trail_trigger(char_id, key) else {
+                continue;
+            };
+            let hist = &actor.battle_pose_history;
+            let mut steps = Vec::new();
+            'sweep: for k in 0..wt::MAX_SWEEP_STEPS {
+                let Some(f) = hist.get(k * wt::SWEEP_FRAMES_PER_STEP) else {
+                    break;
+                };
+                if f.clip_key != key {
+                    break;
+                }
+                let mut pts = [[0i16; 3]; wt::TRAIL_POINTS];
+                for (p, pt) in pts.iter_mut().enumerate() {
+                    match f.pose.bone_outputs.get(trig.base_part + p) {
+                        Some((t, _rot)) => *pt = *t,
+                        None => break 'sweep,
+                    }
+                }
+                steps.push(pts);
+            }
+            if steps.len() >= 2 {
+                out.push(BattleWeaponTrailDraw {
+                    actor_slot: i as u8,
+                    steps,
+                    rgb: trig.rgb,
                 });
             }
         }

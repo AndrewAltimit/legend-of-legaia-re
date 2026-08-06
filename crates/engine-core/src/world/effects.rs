@@ -177,6 +177,43 @@ impl World {
         vm::run(&mut host, bytecode)
     }
 
+    /// Run a window-widget program against the menu window list
+    /// ([`crate::menu_widget::MenuWidgetState`]) - the production route
+    /// into the window-script VM (`legaia_engine_vm::run`, retail
+    /// `FUN_801D6628`). `bytecode` is disc bytes resolved by
+    /// [`World::install_menu_overlay_tables`].
+    pub fn run_menu_widget_bytes(&mut self, bytecode: &[u8]) -> Result<usize, vm::VmError> {
+        vm::run(&mut self.menu_widgets, bytecode)
+    }
+
+    /// Retail `FUN_801DAFD4`'s shop-picker open: interpret the resolved
+    /// open script (`DAT_801E4E38`) over the window list. Returns `false`
+    /// (and leaves the list untouched) when no overlay scripts installed.
+    pub fn run_shop_widget_open(&mut self) -> bool {
+        let Some(bytes) = self
+            .menu_widget_scripts
+            .as_ref()
+            .map(|s| s.shop_open.clone())
+        else {
+            return false;
+        };
+        self.run_menu_widget_bytes(&bytes).is_ok()
+    }
+
+    /// Retail `FUN_801DAFD4`'s Sell transition: interpret the resolved
+    /// slide-away script (`DAT_801E4E54`), closing the picker windows
+    /// while the gold + vendor plates stay.
+    pub fn run_shop_widget_sell_away(&mut self) -> bool {
+        let Some(bytes) = self
+            .menu_widget_scripts
+            .as_ref()
+            .map(|s| s.shop_sell_away.clone())
+        else {
+            return false;
+        };
+        self.run_menu_widget_bytes(&bytes).is_ok()
+    }
+
     /// Step the move VM once for the actor at `slot`, using `bytecode` as
     /// the move buffer. Returns the [`vm::move_vm::StepResult`].
     ///

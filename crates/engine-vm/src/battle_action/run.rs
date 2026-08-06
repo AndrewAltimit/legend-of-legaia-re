@@ -24,7 +24,18 @@ pub(super) fn run_begin<H: BattleActionHost + ?Sized>(
             if let Some(actor) = host.actor_mut(slot)
                 && actor.liveness == 0
             {
+                // Retail's store is `+0x14C = 1` - ONE halfword, which this
+                // port models as both `liveness` (the flag-shaped reads) and
+                // `hp` (the arithmetic reads). Flooring only the flag is
+                // reverted by any driver that re-derives liveness from HP
+                // (the live loop's dead-marking pass does, every tick), so
+                // the member left the battle dead - the shape the published
+                // "escape revives at 1 HP" behaviour contradicts.
                 actor.liveness = 1;
+                if actor.hp == 0 {
+                    actor.hp = 1;
+                    actor.hp_display = Some(1);
+                }
             }
         }
     }

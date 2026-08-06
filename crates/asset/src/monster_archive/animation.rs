@@ -54,6 +54,15 @@ pub struct MonsterAnimation {
     /// (`FUN_80047430`), i.e. `rate / 8` keyframes per 60 Hz tick with the
     /// normal `actor[+0x21D] == 4`. Retail data uses `1` or `2`.
     pub rate: u8,
+    /// Attach-key / clip-identity byte (entry `+0x77`, the byte before the
+    /// rate). Two retail consumers read it off the committed record:
+    /// the equipment attach-object scan (`FUN_80052FA0` matches it against
+    /// attach-record `+0x07` - see
+    /// [`crate::battle_char_assembly::ArtAnimRecord::attach_key`]) and the
+    /// per-character weapon-trail trigger (`FUN_8005112C` compares
+    /// `record[+0x77]` against a per-character constant to fire the swept
+    /// `POLY_G4` trail). `0` when the source stream carries no entry header.
+    pub attach_key: u8,
     /// Number of animated objects per frame (one per TMD object).
     pub part_count: usize,
     /// Number of keyframes.
@@ -104,6 +113,9 @@ pub(crate) fn effect_script_head(block: &[u8], entry_off: usize) -> Vec<u8> {
 /// Offset of the playback-rate byte inside a per-action entry (shared with
 /// the player battle files' record[0] entries).
 pub(crate) const ANIM_RATE_OFFSET: usize = 0x78;
+/// Offset of the attach-key / clip-identity byte inside a per-action entry
+/// (see [`MonsterAnimation::attach_key`]).
+pub(crate) const ATTACH_KEY_OFFSET: usize = 0x77;
 /// Bytes per part record in the packed stream (six 12-bit fields).
 const ANIM_PART_STRIDE: usize = 9;
 
@@ -144,10 +156,15 @@ fn parse_animation(block: &[u8], action_id: u8, entry_off: usize) -> Option<Mons
         .get(entry_off + ANIM_RATE_OFFSET)
         .copied()
         .unwrap_or(0);
+    let attach_key = block
+        .get(entry_off + ATTACH_KEY_OFFSET)
+        .copied()
+        .unwrap_or(0);
     parse_animation_stream(
         block,
         action_id,
         rate,
+        attach_key,
         entry_off + ANIM_STREAM_OFFSET,
         effect_script_head(block, entry_off),
     )
@@ -162,6 +179,7 @@ pub(crate) fn parse_animation_stream(
     block: &[u8],
     action_id: u8,
     rate: u8,
+    attach_key: u8,
     s: usize,
     effect_script: Vec<u8>,
 ) -> Option<MonsterAnimation> {
@@ -187,6 +205,7 @@ pub(crate) fn parse_animation_stream(
     Some(MonsterAnimation {
         action_id,
         rate,
+        attach_key,
         part_count,
         frame_count,
         frames,

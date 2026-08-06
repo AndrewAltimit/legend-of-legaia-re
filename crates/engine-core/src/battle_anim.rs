@@ -48,6 +48,12 @@ pub struct MonsterAnimPlayer {
     /// the facial animator looks up the playing entry's face tracks by it -
     /// can identify the clip without holding the `MonsterAnimation`.
     action_id: u8,
+    /// The clip's attach-key / clip-identity byte (entry `+0x77`,
+    /// [`MonsterAnimation::attach_key`]) - what retail's per-clip effect
+    /// triggers compare against the committed record (`FUN_8005112C`
+    /// weapon trail, `FUN_8004CE2C` impact freeze/tint arms). `0` when the
+    /// source stream carried no entry header.
+    attach_key: u8,
     /// 8.8 fixed-point frame cursor (integer part = keyframe index).
     phase: u32,
     /// Phase units added per [`tick`](Self::tick). Seeded from the clip's
@@ -96,6 +102,7 @@ impl MonsterAnimPlayer {
             frame_count: anim.frame_count as u32,
             part_count: anim.part_count,
             action_id: anim.action_id,
+            attach_key: anim.attach_key,
             phase: 0,
             step: step_for_rate(anim.rate),
             looping: true,
@@ -127,6 +134,23 @@ impl MonsterAnimPlayer {
     /// The playing clip's `action_id` (see the field docs).
     pub fn action_id(&self) -> u8 {
         self.action_id
+    }
+
+    /// The playing clip's attach-key / identity byte (entry `+0x77`; see
+    /// the field docs). `0` = no entry header.
+    pub fn attach_key(&self) -> u8 {
+        self.attach_key
+    }
+
+    /// The cursor in retail's own 12.4 fixed-point unit (sixteenths of a
+    /// keyframe) - the scale of the anim node's `+0x68` word. The per-clip
+    /// impact arms (`FUN_8004CE2C`) window their effects in this unit
+    /// (e.g. `0x40..=0x80` = keyframes 4..8), so consumers comparing
+    /// against those disassembly constants read this rather than
+    /// [`Self::current_frame`]. This player's phase is 8.8, so the
+    /// conversion is a `>> 4`.
+    pub fn cursor_sixteenths(&self) -> u16 {
+        (self.phase >> 4) as u16
     }
 
     /// Integer keyframe index of the cursor - the value retail's render-node
@@ -236,6 +260,7 @@ mod tests {
         MonsterAnimation {
             action_id: 0,
             rate: 2,
+            attach_key: 0,
             effect_script: Vec::new(),
             part_count: 1,
             frame_count: 2,
@@ -265,6 +290,7 @@ mod tests {
         let a = MonsterAnimation {
             action_id: 0,
             rate: 2,
+            attach_key: 0,
             effect_script: Vec::new(),
             part_count: 0,
             frame_count: 0,
@@ -306,6 +332,7 @@ mod tests {
         let anim = MonsterAnimation {
             action_id: 0,
             rate: 2,
+            attach_key: 0,
             effect_script: Vec::new(),
             part_count: 1,
             frame_count: 2,
@@ -346,6 +373,7 @@ mod one_shot_tests {
         MonsterAnimation {
             action_id: 8,
             rate: 2,
+            attach_key: 0,
             effect_script: Vec::new(),
             part_count: 1,
             frame_count: frames,

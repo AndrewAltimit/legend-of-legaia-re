@@ -448,6 +448,13 @@ presentation left to the host:
   [`docs/subsystems/field-menu.md`](../../docs/subsystems/field-menu.md#items-screen).
 - `menu_arrange` - the Items screen's Arrange rank table (menu-overlay
   `0x801E4A88`) + the retail bag-sort kernel (`FUN_801D64A8`).
+- `menu_widget` - the window-widget choreography: `MenuWidgetScripts`
+  resolves the window-script VM's programs out of the menu-overlay image
+  (`legaia_asset::widget_script`), and `MenuWidgetState` is the
+  `legaia_engine_vm::Host` window-list model the shop open / Sell
+  slide-away programs run against (`MenuRuntime::tick` drives the edges,
+  mirroring `FUN_801DAFD4`). See
+  [`docs/formats/window-script.md`](../../docs/formats/window-script.md).
 - `mode_entry_init` - the one-time **mode-entry initialisers**: the field /
   town scene init (`FUN_801D6704` - step order, BGM slot resolve, primitive
   buffer sizing, and the cold/warp player seat `SceneHost::enter_field_scene`

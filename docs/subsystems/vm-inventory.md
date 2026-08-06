@@ -28,7 +28,7 @@ disassembly (`sltiu` immediate before the `jr`), not off the port.
 
 | Subsystem | Driver | Op / state space | RE status | Ported | Live caller |
 |---|---|---|---|---|---|
-| [Actor / sprite VM](actor-vm.md) | `FUN_801D6628` | 13 opcodes, JT `0x801CED70` | resolved | yes - `legaia_engine_vm` root | **inert** |
+| [Actor / sprite VM](actor-vm.md) | `FUN_801D6628` | 13 opcodes, JT `0x801CED70` | resolved | yes - `legaia_engine_vm` root | yes - shop widget choreography (`engine-core::menu_widget`) |
 | [Move VM](move-vm.md) | `FUN_80023070` | 71 opcodes `0x00..0x46`, JT `0x80010778` | resolved | yes - `move_vm` | yes |
 | [Move-VM `0x2F` extension](move-vm-overlay-ext.md) | `FUN_801D362C` | 61 sub-opcodes `0x00..0x3C`, JT `0x801CE868` | resolved | yes - `move_vm_overlay_ext` | **inert** |
 | [Motion VM - pursue / patrol](motion-vm.md) | `FUN_8003774C` | 22-slot JT `0x80010EE0`, index `(op & 0x7F) - 0x37` | resolved | yes - `motion_vm` | yes |
@@ -97,15 +97,17 @@ used: read the fixed VA out of each candidate overlay's disc image.
 These ports are faithful and tested, and nothing outside `crates/engine-vm`
 calls them. Inert is a reachability statement, not a correctness one.
 
-- **Actor / sprite VM** (`legaia_engine_vm::run`) - the first VM ported, and
-  the `Host`-trait shape every later VM port follows. The interpreter has
-  exactly one caller, and it is worth naming rather than rounding to zero:
-  `World::run_actor_bytecode` is reached only from `FieldDemoHandler`, which
-  synthesizes its own bytecode and is constructed nowhere outside a
-  `#[cfg(test)]` module. So the port reads *live* to a static call-graph pass
-  while no host installs the handler - which is why it does not surface in the
-  disclosed-inert audit either. Per-address triage:
-  [`reach-triage.md`](../tooling/reach-triage.md#the-actor-vm-has-no-host-caller).
+- **Actor / sprite VM** (`legaia_engine_vm::run`) - **no longer inert.** The
+  missing prerequisite was a bytecode source, and it is resolved: the
+  programs are data resident in the menu overlay
+  ([`window-script.md`](../formats/window-script.md), parser
+  `legaia_asset::widget_script`), and `MenuRuntime::tick` runs the shop
+  open / Sell slide-away programs through the interpreter over
+  `engine-core::menu_widget::MenuWidgetState` on the same transitions
+  retail's `FUN_801DAFD4` drives. The `World::run_actor_bytecode` /
+  `FieldDemoHandler` edge remains the demo-only field-actor host, still
+  constructed nowhere outside a `#[cfg(test)]` module. History + triage:
+  [`reach-triage.md`](../tooling/reach-triage.md#the-actor-vm-a-resolved-bytecode-source).
 - **Move-VM `0x2F` extension** (`move_vm_overlay_ext`) - its `step` / `walk`
   walker has no caller. The module is not wholly inert, though: its
   `canonical_size` width table is the disassembly-sourced mirror that

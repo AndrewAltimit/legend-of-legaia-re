@@ -98,10 +98,15 @@ fn parse_action_entry(
     let rate = block
         .get(off + crate::monster_archive::ANIM_RATE_OFFSET)
         .copied()?;
+    let attach_key = block
+        .get(off + crate::monster_archive::ATTACH_KEY_OFFSET)
+        .copied()
+        .unwrap_or(0);
     crate::monster_archive::parse_animation_stream(
         block,
         action_id,
         rate,
+        attach_key,
         off + PLAYER_ANIM_STREAM_OFFSET,
         crate::monster_archive::effect_script_head(block, off),
     )

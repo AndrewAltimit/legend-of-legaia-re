@@ -1526,6 +1526,19 @@ pub struct World {
     /// drawing invented text.
     pub menu_context_labels: crate::pause_screens::ContextLockedLabels,
 
+    /// Window-widget bytecode programs resolved from the menu-overlay
+    /// image (PROT 0899) by [`World::install_menu_overlay_tables`] -
+    /// the disc source the window-script VM (`legaia_engine_vm::run`,
+    /// retail `FUN_801D6628`) interprets. `None` on a load without the
+    /// overlay; the shop then opens without window choreography.
+    pub menu_widget_scripts: Option<crate::menu_widget::MenuWidgetScripts>,
+
+    /// The window list those programs drive
+    /// ([`crate::menu_widget::MenuWidgetState`], the `vm::Host` impl).
+    /// Run against it via [`World::run_shop_widget_open`] /
+    /// [`World::run_shop_widget_sell_away`].
+    pub menu_widgets: crate::menu_widget::MenuWidgetState,
+
     /// Party-global 4×u32 ability mask - the engine mirror of retail
     /// `DAT_80074358..0x80074368` (every member's `+0xF4` bitfield OR'd
     /// together each rebuild). Bit-tested via [`World::party_has_ability`]
@@ -2791,6 +2804,8 @@ impl World {
             menu_text: None,
             menu_arrange_rank: None,
             menu_context_labels: Default::default(),
+            menu_widget_scripts: None,
+            menu_widgets: Default::default(),
             party_ability_mask: [0; crate::accessory_passives::ABILITY_WORDS],
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
             active_scene_label: String::new(),

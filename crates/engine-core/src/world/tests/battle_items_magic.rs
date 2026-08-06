@@ -39,16 +39,63 @@ fn battle_item_bomb_damages_enemy_and_cursor_lands_on_the_monster() {
     assert_eq!(world.actors[1].battle.hp, 300, "500 -> 300 after Bomb");
     assert_eq!(world.inventory.get(&0x13).copied(), None, "Bomb consumed");
     assert!(world.battle_item_menu.is_none(), "menu closed after use");
+    // The use arms the action SM's Item band (retail category 1 through
+    // `FUN_801E295C`'s item arm) rather than parking at EndOfAction - the
+    // band is what fires the cast cue + cue group; the live loop's cycle
+    // reaches EndOfAction when it completes (battle_item_cast_band.rs).
     assert_eq!(
         world.battle_ctx.action_state,
-        ActionState::EndOfAction.as_byte(),
-        "turn parked at EndOfAction"
+        ActionState::Begin.as_byte(),
+        "the item use arms the SM's Item band"
     );
+    let active = world.battle_ctx.active_actor as usize;
+    assert_eq!(
+        world.actors[active].battle.action_category,
+        legaia_engine_vm::battle_action::ActionCategory::Item.as_byte()
+    );
+    assert_eq!(world.actors[active].battle.params[0], 0x13);
     let fx = world.drain_battle_hit_fx();
     assert_eq!(fx.len(), 1);
     assert!(!fx[0].is_heal, "damage-coloured popup");
     assert_eq!(fx[0].amount, 200);
     assert_eq!(fx[0].target_slot, 1);
+}
+
+/// The target panel the hosts draw lists ONLY the selected item's side -
+/// retail's rule is structural, not a confirm-time buzz: state `0x64`'s
+/// cursor walk wraps inside the seated party band `[0, ctx[+0x00])`
+/// (`FUN_801D0748` `0x801D2BE8`/`0x801D2C78`), so a heal item's panel is
+/// the party roster and an enemy row is unrepresentable; the (test-only)
+/// offensive items take the monster-ring side (`0x5B`).
+#[test]
+fn heal_item_target_panel_lists_party_rows_only() {
+    use crate::input::PadButton;
+
+    let mut world = offensive_item_world(500, 7);
+    world.actors[0].battle.hp = 120; // hurt, so the heal is admissible
+    world.inventory.insert(0x01, 1); // Heal (ally-side).
+    world.battle_item_menu = Some(world.build_battle_item_session());
+    // The session roster still carries both sides (the offensive items
+    // need the enemy rows) - the model is where the side rule lands.
+    assert_eq!(world.battle_item_menu.as_ref().unwrap().targets.len(), 2);
+    world.set_pad(0);
+    world.set_pad(PadButton::Cross.mask());
+    world.tick_battle_item_menu(); // confirm the heal -> target select
+    let m = world.battle_item_menu_model().expect("menu model");
+    let (rows, cursor) = m.targets.expect("target select armed");
+    assert_eq!(rows.len(), 1, "party rows only - no enemy in a heal panel");
+    assert_eq!(cursor, 0);
+    // The mirror side: the Bomb's panel lists only the enemy.
+    let mut world = offensive_item_world(500, 7);
+    world.inventory.insert(0x13, 1);
+    world.battle_item_menu = Some(world.build_battle_item_session());
+    world.set_pad(0);
+    world.set_pad(PadButton::Cross.mask());
+    world.tick_battle_item_menu();
+    let m = world.battle_item_menu_model().expect("menu model");
+    let (rows, cursor) = m.targets.expect("target select armed");
+    assert_eq!(rows.len(), 1, "enemy rows only in an offensive panel");
+    assert_eq!(cursor, 0, "session cursor remapped onto the filtered list");
 }
 
 #[test]

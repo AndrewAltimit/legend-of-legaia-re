@@ -423,6 +423,15 @@ pub struct BattleActor {
     /// slot to `8` once the art clip has ended
     /// ([`crate::battle_gauge_rearm::rearm_gauge`]).
     pub anim_rate: AnimRate,
+    /// `+0x21F` - the 1-based **impact-effect selector**: which entry of
+    /// the 5-entry impact-config table (`0x801F53D4`) currently owns this
+    /// actor's tint word [`Self::render_color`]. Written by the move-power
+    /// impact arm (`FUN_801E09F8` stores the record's `+0x0A` selector) and
+    /// by the per-clip impact arms (`FUN_8004CE2C` -
+    /// [`crate::battle_impact_fx`]); cleared by the presentation tick
+    /// `FUN_80050120` once the tint has decayed to neutral. `0` = no
+    /// impact tint armed.
+    pub impact_state: u8,
     /// `+0x224` - action recoil magnitude - written by `DoneCleanup`.
     pub action_recoil: u8,
     /// `+0x225` - capture state byte - `2` while captured.

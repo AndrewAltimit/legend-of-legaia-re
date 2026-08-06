@@ -312,7 +312,6 @@ fn arts_editor_chain_round_trips_through_save_into_the_battle_menu() {
 #[test]
 fn battle_arts_synthetic_chain_runs_through_art_power_path_and_cycles_turn() {
     use crate::input::PadButton;
-    use legaia_engine_vm::battle_action::ActionState;
 
     let mut world = World {
         party_count: 1,
@@ -359,10 +358,13 @@ fn battle_arts_synthetic_chain_runs_through_art_power_path_and_cycles_turn() {
     // Three synthetic ×12 hits: (40*12/16 - 10) = 20 each => 60 total.
     let per_hit = legaia_engine_vm::battle_formulas::art_strike_damage_default(40, 10, 12);
     assert_eq!(world.actors[1].battle.hp, 500 - per_hit * 3);
-    assert_eq!(
-        world.battle_ctx.action_state,
-        ActionState::EndOfAction.as_byte(),
-        "turn parked at EndOfAction so the loop cycles"
+    // The arts fallback claims the cycle in the same tick
+    // (`World::cycle_battle_turn`) instead of parking at EndOfAction - the
+    // park was re-seeded with stale action bytes by the SM's 0x5A
+    // self-advance next tick (the free-bonus-attack defect).
+    assert_ne!(
+        world.battle_ctx.active_actor, 0,
+        "the art consumed the turn and the cycle moved on"
     );
     let fx = world.drain_battle_hit_fx();
     assert_eq!(fx.len(), 1, "one summed popup for the combo");

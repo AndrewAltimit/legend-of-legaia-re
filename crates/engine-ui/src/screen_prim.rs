@@ -139,6 +139,15 @@ pub struct FlatQuad {
     pub xy: [(i16, i16); 4],
     /// RGBA colour, 0..=255 per channel.
     pub color: [u8; 4],
+    /// Per-vertex RGBA colours in the same `v0..v3` order as [`Self::xy`] -
+    /// i.e. an untextured `POLY_G4` rather than a `POLY_F4`. Overrides
+    /// [`Self::color`] when set.
+    ///
+    /// The weapon-trail bands need this: retail's `FUN_800485BC` emits
+    /// `0x3B`-command gouraud quads whose leading and trailing edges carry
+    /// different colours, and edge colours differing is what makes a band a
+    /// gradient. Everything flat leaves it `None`.
+    pub gouraud: Option<[[u8; 4]; 4]>,
     pub semi_transparent: bool,
     /// ABR blend mode 0..=3 (only consulted when `semi_transparent`).
     pub abr_mode: u8,
@@ -222,6 +231,7 @@ pub fn display_rect_flat_quad(
     ScreenPrim::Flat(FlatQuad {
         xy: [(0, 0), (w, 0), (0, h), (w, h)],
         color,
+        gouraud: None,
         semi_transparent,
         abr_mode,
         ot_index,
@@ -445,22 +455,30 @@ pub fn build_geometry(prims: &[ScreenPrim], surf_w: u32, surf_h: u32) -> Overlay
                 sw,
                 sh,
             ),
-            ScreenPrim::Flat(q) => push_quad(
-                &mut verts,
-                &mut idx,
-                q.xy,
-                [(0, 0); 4],
-                [0, 0],
-                [[
-                    q.color[0] as f32 / 255.0,
-                    q.color[1] as f32 / 255.0,
-                    q.color[2] as f32 / 255.0,
-                    q.color[3] as f32 / 255.0,
-                ]; 4],
-                0,
-                sw,
-                sh,
-            ),
+            ScreenPrim::Flat(q) => {
+                let corner = |c: [u8; 4]| {
+                    [
+                        c[0] as f32 / 255.0,
+                        c[1] as f32 / 255.0,
+                        c[2] as f32 / 255.0,
+                        c[3] as f32 / 255.0,
+                    ]
+                };
+                push_quad(
+                    &mut verts,
+                    &mut idx,
+                    q.xy,
+                    [(0, 0); 4],
+                    [0, 0],
+                    match q.gouraud {
+                        Some(g) => std::array::from_fn(|i| corner(g[i])),
+                        None => [corner(q.color); 4],
+                    },
+                    0,
+                    sw,
+                    sh,
+                )
+            }
         }
         let added = idx.len() as u32 - run_start;
         match runs.last_mut() {
@@ -530,6 +548,7 @@ mod tests {
         prims.push(ScreenPrim::Flat(FlatQuad {
             xy: [(0, 0), (320, 0), (0, 16), (320, 16)],
             color: [0, 0, 0, 255],
+            gouraud: None,
             semi_transparent: false,
             abr_mode: 0,
             ot_index: 1, // nearest -> drawn last
@@ -565,6 +584,7 @@ mod tests {
         let a = ScreenPrim::Flat(FlatQuad {
             xy: [(0, 0), (8, 0), (0, 8), (8, 8)],
             color: [255, 0, 0, 128],
+            gouraud: None,
             semi_transparent: true,
             abr_mode: 1,
             ot_index: 50,
@@ -572,6 +592,7 @@ mod tests {
         let b = ScreenPrim::Flat(FlatQuad {
             xy: [(0, 0), (8, 0), (0, 8), (8, 8)],
             color: [0, 255, 0, 128],
+            gouraud: None,
             semi_transparent: true,
             abr_mode: 2,
             ot_index: 40,
@@ -624,6 +645,7 @@ mod tests {
         let full = ScreenPrim::Flat(FlatQuad {
             xy: [(0, 0), (320, 0), (0, 240), (320, 240)],
             color: [255, 255, 255, 255],
+            gouraud: None,
             semi_transparent: false,
             abr_mode: 0,
             ot_index: 1,
@@ -671,6 +693,7 @@ mod tests {
                 ScreenPrim::Flat(FlatQuad {
                     xy: [(0, 0); 4],
                     color: [1, 2, 3, 4],
+                    gouraud: None,
                     semi_transparent: false,
                     abr_mode: 0,
                     ot_index: 5,

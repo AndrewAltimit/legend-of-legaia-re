@@ -591,6 +591,80 @@ impl PlayWindowApp {
         quads
     }
 
+    /// This frame's weapon-trail bands, as screen-space gouraud quads on
+    /// the retail 320x240 stage - the projection seat of the swept
+    /// `POLY_G4` trail. The trigger + sweep come from
+    /// `World::battle_weapon_trail_draws` (retail `FUN_8005112C` /
+    /// `FUN_80048310`); the band packets from
+    /// `legaia_engine_ui::battle_trail::weapon_trail_prims`
+    /// (`FUN_800485BC`). Placement is the live body's model law (party
+    /// battle arm: translation + the Y-flip), so the bands land exactly on
+    /// the weapon as drawn.
+    // REF: FUN_800485BC (packet + band order live in
+    // `legaia_engine_ui::battle_trail`; this is the per-host projection)
+    pub(super) fn weapon_trail_screen_prims(
+        &self,
+        r: &legaia_engine_render::Renderer,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        use legaia_engine_render::battle_trail as bt;
+        use legaia_engine_vm::battle_trail::TRAIL_POINTS;
+        let world = &self.session.host.world;
+        if world.mode != SceneMode::Battle {
+            return Vec::new();
+        }
+        let draws = world.battle_weapon_trail_draws();
+        if draws.is_empty() {
+            return Vec::new();
+        }
+        let (w, h) = r.surface_size();
+        let mvp = self.battle_camera_mvp(w as f32 / h.max(1) as f32);
+        let mut out = Vec::new();
+        for d in draws {
+            let Some(actor) = world.actors.get(d.actor_slot as usize) else {
+                continue;
+            };
+            let pos = [
+                f32::from(actor.move_state.world_x),
+                f32::from(actor.move_state.world_y),
+                f32::from(actor.move_state.world_z),
+            ];
+            let mut steps = Vec::with_capacity(d.steps.len());
+            'draw: for s in &d.steps {
+                let mut pts = [(0i16, 0i16); TRAIL_POINTS];
+                for (i, t) in s.iter().enumerate() {
+                    // The live body's battle model: translation *
+                    // scale(1, -1, 1) about the actor origin (the party
+                    // arm of `actor_model`; retail anchors every sweep
+                    // step at the CURRENT slot base - `FUN_800485BC`
+                    // reads `ctx[+0x34]/[+0x38]` fresh per band).
+                    let p = [
+                        pos[0] + f32::from(t[0]),
+                        pos[1] - f32::from(t[1]),
+                        pos[2] + f32::from(t[2]),
+                    ];
+                    match bt::project_stage_point(&mvp, p) {
+                        Some(xy) => pts[i] = xy,
+                        // Truncate the sweep at the near plane rather
+                        // than smearing a wrapped vertex.
+                        None => break 'draw,
+                    }
+                }
+                steps.push(pts);
+            }
+            let prims = bt::weapon_trail_prims(&steps, d.rgb, bt::WEAPON_TRAIL_OT);
+            if !prims.is_empty() {
+                log::debug!(
+                    "weapon trail: actor {} {} step(s) -> {} band quad(s)",
+                    d.actor_slot,
+                    steps.len(),
+                    prims.len()
+                );
+            }
+            out.extend(prims);
+        }
+        out
+    }
+
     /// Build this frame's arts after-image ghost meshes - the render half of
     /// the retail walk `FUN_80049348` (`legaia_engine_core::battle_afterimage`
     /// holds the schedule/gate/colour kernel; `World::battle_ghost_draws`

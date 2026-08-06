@@ -466,7 +466,11 @@ The self-relative word at record[0] `+0x58` locates the bank:
        +0x04/+0x08 u32        ; attach pointers - 0 on disc, written at
                               ; runtime by FUN_80052FA0's attach-key scan
        +0x77 u8  attach_key   ; matched against equipment attach records
-                              ; (record-relative +0x9B)
+                              ; (record-relative +0x9B); doubles as the
+                              ; runtime clip-identity byte per-clip effect
+                              ; triggers compare off the committed record
+                              ; (FUN_8005112C weapon trail, FUN_8004CE2C
+                              ; impact freeze/tint arms)
        +0x78 u8  rate         ; playback rate (FUN_80047430 cursor)
        +0x84 u8  rate_alt     ; secondary anim-rate field (-> actor +0x21B);
                               ; 0xFF marks the eight base-archive records

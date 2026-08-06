@@ -8,6 +8,7 @@ fn pose_test_clip(action_id: u8, frames: usize, tx: i16) -> MonsterAnimation {
     MonsterAnimation {
         action_id,
         rate: 2,
+        attach_key: 0,
         effect_script: Vec::new(),
         part_count: 1,
         frame_count: frames,
@@ -610,4 +611,243 @@ fn direction_swing_commit_keeps_normal_speed_and_no_ghosts() {
         world.tick_battle_animations();
     }
     assert!(world.battle_ghost_draws().is_empty());
+}
+
+// --- weapon-trail sweep (FUN_8005112C / FUN_80048310) -----------------------
+
+/// A clip with enough parts to carry Vahn's weapon-bone chain
+/// (`base_part 0x0C..0x0F`) and the given `+0x77` identity byte. Part `p`'s
+/// translation at frame `f` is `(p, f, 0)` so the sweep's ring samples are
+/// distinguishable per point and per step.
+fn trail_test_clip(attach_key: u8, frames: usize) -> MonsterAnimation {
+    use legaia_asset::monster_archive::PartPose;
+    let parts = 16usize;
+    MonsterAnimation {
+        action_id: 0xC,
+        rate: 2,
+        attach_key,
+        part_count: parts,
+        frame_count: frames,
+        frames: (0..frames)
+            .map(|f| {
+                (0..parts)
+                    .map(|p| PartPose {
+                        tx: p as i16,
+                        ty: f as i16,
+                        tz: 0,
+                        ..Default::default()
+                    })
+                    .collect()
+            })
+            .collect(),
+        effect_script: Vec::new(),
+    }
+}
+
+/// The trigger fires only on the matching (character, `+0x77`) pair, the
+/// sweep samples the pose ring at two-frame stride, and it needs at least
+/// two steps before anything draws - the retail `slti 0x2` gate of
+/// `FUN_80048310`.
+#[test]
+fn weapon_trail_sweeps_the_ring_on_the_trigger_clip() {
+    let mut world = World::new();
+    world.enter_battle(1, 0);
+    // Slot 0 = battle ordinal 0 = roster slot 0 = Vahn (retail char id 1);
+    // trigger clip id 0x29.
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    clips[0] = Some(trail_test_clip(0, 8));
+    clips[0xC] = Some(trail_test_clip(0x29, 30));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.actors[0].battle.queued_anim = 0xC;
+    world.commit_staged_battle_anim(0);
+    // One ticked frame: only one ring entry wears the trigger key - below
+    // the two-step floor, nothing draws.
+    world.tick_battle_animations();
+    assert!(world.battle_weapon_trail_draws().is_empty());
+    for _ in 0..6 {
+        world.tick_battle_animations();
+    }
+    let draws = world.battle_weapon_trail_draws();
+    assert_eq!(draws.len(), 1, "one trailing actor");
+    let d = &draws[0];
+    assert_eq!(d.actor_slot, 0);
+    assert_eq!(d.rgb, [0x80, 0x20, 0x40], "Vahn's trigger tint");
+    // 7 ring entries at stride 2 -> 4 sweep steps.
+    assert_eq!(d.steps.len(), 4);
+    // Control points are the pose translations of parts 0x0C..0x0F.
+    for (k, step) in d.steps.iter().enumerate() {
+        for (i, pt) in step.iter().enumerate() {
+            assert_eq!(pt[0], (0x0C + i) as i16, "step {k} point {i} x");
+        }
+    }
+    // Step 0 is the newest ring entry; deeper steps carry older frames
+    // (smaller ty written per frame).
+    assert!(d.steps[0][0][1] >= d.steps[3][0][1]);
+}
+
+/// No trail off the trigger: a different clip id on the same seat, or a
+/// monster actor playing a trigger-keyed clip, draw nothing.
+#[test]
+fn weapon_trail_stays_dark_off_the_trigger() {
+    let mut world = World::new();
+    world.enter_battle(1, 0);
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    clips[0] = Some(trail_test_clip(0, 8));
+    // Noa's 0x1E id on Vahn's seat: no trigger row matches.
+    clips[0xC] = Some(trail_test_clip(0x1E, 30));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.actors[0].battle.queued_anim = 0xC;
+    world.commit_staged_battle_anim(0);
+    for _ in 0..8 {
+        world.tick_battle_animations();
+    }
+    assert!(world.battle_weapon_trail_draws().is_empty());
+    // A monster playing a 0x29-keyed clip: party-only trigger.
+    world.actors[1].active = true;
+    world.actors[1].battle_monster_id = Some(5);
+    let mut mclips: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    mclips[0] = Some(trail_test_clip(0, 8));
+    mclips[2] = Some(trail_test_clip(0x29, 30));
+    world.set_actor_battle_action_clips(1, std::sync::Arc::new(mclips));
+    world.actors[1].battle.queued_anim = 2;
+    world.commit_staged_battle_anim(1);
+    for _ in 0..8 {
+        world.tick_battle_animations();
+    }
+    assert!(world.battle_weapon_trail_draws().is_empty());
+}
+
+/// The sweep stops at the clip boundary: ring entries recorded under a
+/// different (or no) clip key never join the trail, so a fresh swing's
+/// trail grows from its own frames only.
+#[test]
+fn weapon_trail_sweep_stops_at_the_clip_boundary() {
+    let mut world = World::new();
+    world.enter_battle(1, 0);
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    clips[0] = Some(trail_test_clip(0, 8));
+    clips[0xC] = Some(trail_test_clip(0x29, 30));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    // Several idle frames first: the ring holds key-0 entries.
+    world.apply_battle_pose(0, vm::battle_action::Pose::Idle as u8);
+    for _ in 0..6 {
+        world.tick_battle_animations();
+    }
+    assert!(world.battle_weapon_trail_draws().is_empty());
+    // Now the swing: after 5 ticked frames the sweep sees ring depths
+    // 0/2/4 with the swing key - 3 steps, not the 16-step budget the idle
+    // frames would fill.
+    world.actors[0].battle.queued_anim = 0xC;
+    world.commit_staged_battle_anim(0);
+    for _ in 0..5 {
+        world.tick_battle_animations();
+    }
+    let draws = world.battle_weapon_trail_draws();
+    assert_eq!(draws.len(), 1);
+    assert_eq!(draws[0].steps.len(), 3);
+}
+
+// --- per-clip impact freeze + tint (FUN_8004CE2C pass 2) --------------------
+
+/// Gala's clip-tag-0x18 window freezes the TARGET's pose and arms the
+/// impact selector; the tint word itself needs the disc's impact table and
+/// stays untouched here (disc-free run).
+#[test]
+fn gala_clip_key_0x18_freezes_the_target_in_window() {
+    use vm::battle_anim_rate::{RATE_FROZEN, RATE_NORMAL};
+    let mut world = World::new();
+    world.enter_battle(1, 0);
+    // Seat Gala (roster slot 2 -> retail char id 3) at battle ordinal 0.
+    world.set_active_party(vec![2]);
+    world.battle_ctx.active_actor = 0;
+    world.actors[0].battle.active_target = 1;
+    // Target: a monster with a ticking idle loop.
+    world.actors[1].active = true;
+    world.actors[1].battle_monster_id = Some(5);
+    let mut mclips: Vec<Option<MonsterAnimation>> = vec![None; 4];
+    mclips[0] = Some(pose_test_clip(0, 8, 0));
+    world.set_actor_battle_action_clips(1, std::sync::Arc::new(mclips));
+    world.apply_battle_pose(1, vm::battle_action::Pose::Idle as u8);
+    // Acting clip: identity byte 0x18 (rate 2 -> the staged advance is 8
+    // sixteenths per tick, so the 0x40..=0x80 window opens around tick 8).
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    clips[0] = Some(trail_test_clip(0, 8));
+    clips[0xC] = Some(trail_test_clip(0x18, 30));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.actors[0].battle.queued_anim = 0xC;
+    world.commit_staged_battle_anim(0);
+    // Before the window: no freeze.
+    for _ in 0..4 {
+        world.tick_battle_animations();
+    }
+    assert_eq!(world.actors[1].battle.anim_rate.get(), RATE_NORMAL);
+    // The acting selector is stamped on the tag match alone (0x8004D1B4).
+    assert_eq!(world.actors[0].battle.impact_state, 2);
+    // Into the window: the target's rate drops to the freeze.
+    for _ in 0..6 {
+        world.tick_battle_animations();
+    }
+    assert_eq!(
+        world.actors[1].battle.anim_rate.get(),
+        RATE_FROZEN,
+        "target pose frozen inside the 0x40..=0x80 cursor window"
+    );
+    assert_eq!(world.actors[1].battle.impact_state, 2);
+    // The world-side character gate: a Vahn seat playing the same clip
+    // never freezes (Vahn's 0x18 arm is tint-only, and its window sits
+    // elsewhere) - the target keeps its normal rate.
+    let mut world2 = World::new();
+    world2.enter_battle(1, 0);
+    world2.set_active_party(vec![0]); // Vahn
+    world2.battle_ctx.active_actor = 0;
+    world2.actors[0].battle.active_target = 1;
+    world2.actors[1].active = true;
+    let mut clips2: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    clips2[0] = Some(trail_test_clip(0, 8));
+    clips2[0xC] = Some(trail_test_clip(0x18, 30));
+    world2.set_actor_battle_action_clips(0, std::sync::Arc::new(clips2));
+    world2.actors[0].battle.queued_anim = 0xC;
+    world2.commit_staged_battle_anim(0);
+    for _ in 0..10 {
+        world2.tick_battle_animations();
+    }
+    assert_eq!(world2.actors[1].battle.anim_rate.get(), RATE_NORMAL);
+}
+
+/// The armed tint eases back to the neutral word and the selector clears -
+/// the FUN_80050120 arm-0 decay over the FUN_80050F30 per-lane ease.
+#[test]
+fn impact_tint_decays_to_neutral_and_clears() {
+    use vm::battle_impact_fx as ifx;
+    let mut world = World::new();
+    world.enter_battle(1, 0);
+    world.actors[0].battle.impact_state = 2;
+    // Two ease steps above neutral on the R lane.
+    world.actors[0].battle.render_color = ifx::IMPACT_NEUTRAL_STATE + 0x10;
+    world.tick_battle_animations();
+    assert_eq!(
+        world.actors[0].battle.render_color,
+        ifx::IMPACT_NEUTRAL_STATE + 0x8
+    );
+    world.tick_battle_animations();
+    assert_eq!(
+        world.actors[0].battle.render_color,
+        ifx::IMPACT_NEUTRAL_STATE
+    );
+    assert_eq!(
+        world.actors[0].battle.impact_state, 2,
+        "clears a frame later"
+    );
+    world.tick_battle_animations();
+    assert_eq!(world.actors[0].battle.impact_state, 0);
+    // A render-flag override (the target cursor) suspends the ease -
+    // retail's +0x21C dispatch skips arm 0.
+    world.actors[0].battle.impact_state = 1;
+    world.actors[0].battle.render_color = ifx::IMPACT_NEUTRAL_STATE + 0x20;
+    world.actors[0].battle.render_flag = 5;
+    world.tick_battle_animations();
+    assert_eq!(
+        world.actors[0].battle.render_color,
+        ifx::IMPACT_NEUTRAL_STATE + 0x20
+    );
 }

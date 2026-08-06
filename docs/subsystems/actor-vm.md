@@ -1,12 +1,18 @@
 # Actor / sprite VM
 
-The simplest of Legaia's five runtime VMs: a small fixed-width bytecode VM driving
-the title screen's animated sprite cluster. It is a sprite-walk loop and nothing
-more - there is no cross-context targeting and no subroutine call, so an actor's
-bytecode only ever runs against itself.
+The simplest of Legaia's five runtime VMs: a small fixed-width bytecode VM -
+and what it drives is the **menu overlay's UI windows**. `FUN_801D6628` is
+the window-widget script interpreter: each instruction names a window by its
+descriptor-table id and opens, closes, snaps or slides it. There is no
+cross-context targeting and no subroutine call.
 
-It lives in the title-screen overlay at **`FUN_801D6628`**, with a **13-opcode**
-dispatch table at `0x801CED70`. Port:
+It lives in the **menu overlay** (PROT 0899, slot-A base `0x801CE818`) at
+**`FUN_801D6628`**, with a **13-opcode** dispatch table at `0x801CED70`
+(`see ghidra/scripts/funcs/overlay_menu_801d6628.txt`; an earlier
+title-screen-overlay attribution predates the menu-overlay base recovery -
+the save-UI / shop capture inventories resolve the same image, and the
+interpreter's own base materialisation `lui 0x801e / addiu 0x4738` at
+`0x801D6658` lands on the menu window descriptor table). Port:
 [`legaia_engine_vm`](../../crates/engine-vm/src/lib.rs) (this was the first VM
 ported, and its `Host`-trait shape is the pattern the other VM ports follow).
 
@@ -22,30 +28,54 @@ For how this VM relates to the other four, see
 
 ## Overview
 
-The VM walks an actor list of fixed-size structs; each actor has a small amount of per-instance state and a bytecode cursor that advances over time. Opcodes are 1 byte (no operand-byte prefix), and the operand structure is per-opcode - typically zero or one byte.
+The VM is a one-shot command-list interpreter: `FUN_801D6628(&program)`
+walks fixed 4-byte instructions `[opcode u8][window u8][operand u16 LE]`
+until a zero opcode byte, then returns the terminator pointer. Per
+instruction it computes `0x801E4738 + window * 0x10` - the menu **window
+descriptor table** ([field-menu.md](field-menu.md), parser
+`legaia_asset::menu_windows`) - and reads the record's `x`/`y` halfwords as
+the instruction's default coordinates. Side-effects go to the live window
+list (the `0x5C`-stride linked list at `gp+0x148`, descriptor id at `+0x8`)
+through the SCUS window helpers: lookup `FUN_80035334`, create
+`FUN_800326AC`, position write `FUN_800357FC`, slide `FUN_800358C0`, close
+`FUN_80035978`, global tick `FUN_80035A4C`, and `FUN_800319A8`. All motion
+is target-based - the VM installs slide targets; the per-frame window
+walker animates them.
 
 ## Opcodes
 
-The 13 opcodes cover the basics every sprite-animation system needs:
+The 13 jump-table slots (`0x801CED70`) decode to: open-at-home, open-at
+packed position, style-byte write, close, global tick, motion-word clear,
+slide-to, and a close/re-open/slide-back composite; slots `0x07` and
+`0x0B..=0x0D` fall through as no-ops. Full opcode table + Rust port:
+`crates/engine-vm/src/lib.rs`.
 
-- Spawn / despawn actors.
-- Set / clear a per-actor flag bit (mirrors the lower script-VM banks).
-- Position writes (immediate and packed).
-- Motion: linear interpolation between two endpoints.
-- Trigger an animation (an ANM container indexed by id).
-- Wait / yield.
-- Conditional skip on a flag.
-- Terminator.
+## Where the programs live
 
-Full opcode table + Rust port: `crates/engine-vm/src/lib.rs`.
+The interpreted programs are **data resident in the menu overlay itself** -
+a program table in PROT 0899's data segment (file `0x16260..0x16740`, VA
+`0x801E4A78..0x801E4F58`), byte-level spec in
+[`window-script.md`](../formats/window-script.md). Each caller materialises
+a program pointer (`lui`/`addiu`, or a saved register) and calls the VM;
+`legaia_asset::widget_script::scan` recovers the programs structurally from
+the `jal` sites. Because the table is overlay data at fixed VAs, program
+resolution is per-boot, not per-scene.
+
+The engine wiring mirrors the retail chain end to end:
+`World::install_menu_overlay_tables` (both hosts call it with the real
+PROT 0899 bytes) resolves the programs
+(`engine-core::menu_widget::MenuWidgetScripts`) and seeds the window home
+positions from the descriptor table; `MenuRuntime::tick` runs the shop
+open script (`DAT_801E4E38`) on the picker entry edge and the slide-away
+script (`DAT_801E4E54`) on the Sell transition - the transitions retail's
+picker dispatcher `FUN_801DAFD4` drives ([shop.md](shop.md)) - through
+`legaia_engine_vm::run` over the `MenuWidgetState` window-list host.
+Disc-gated pins: `crates/asset/tests/widget_script_real.rs`,
+`crates/engine-core/tests/menu_widget_scripts_real.rs`.
 
 ## Why it's separate from the field VM
 
-The actor VM is a fixed-width 13-opcode dispatcher tailored to the title screen's sprite-walk loop. The field VM (`FUN_801DE840`) is a 43-opcode variable-length dispatcher with cross-context targeting, halt-acquire semantics, sub-dispatcher families, and far richer ctx state. They serve different layers of the engine - actors at the rendering primitive level, scripts at the gameplay-event level - and were almost certainly written by different people on the dev team.
-
-## Connection to ANM
-
-Opcode "trigger animation" hands off an ANM container ID to the animation runner. The container is parsed by `crates/anm`; per-record playback is driven by the per-actor anim tick described below.
+The actor VM is a fixed-width 13-opcode dispatcher tailored to window choreography. The field VM (`FUN_801DE840`) is a 43-opcode variable-length dispatcher with cross-context targeting, halt-acquire semantics, sub-dispatcher families, and far richer ctx state. They serve different layers of the engine - UI widgets at the presentation level, scripts at the gameplay-event level - and were almost certainly written by different people on the dev team.
 
 ## Per-actor anim tick - `FUN_80021DF4`
 

@@ -779,6 +779,29 @@ impl LegaiaRuntime {
                 }
                 _ => 1.0,
             };
+            // Per-clip impact tint (`FUN_8004CE2C` pass 2 via
+            // `engine-vm::battle_impact_fx`): while the +0x21F selector is
+            // armed the packed +0x04 word rides the same cue row the
+            // cursor uses - the browser twin of the native window's arm.
+            {
+                use legaia_engine_vm::battle_impact_fx as ifx;
+                if let Some(b) = b
+                    && b.impact_state != 0
+                    && b.render_color != ifx::IMPACT_NEUTRAL_STATE
+                    && b.render_color != 0
+                {
+                    let c = ifx::unpack_actor_state_rgb(b.render_color);
+                    out.extend_from_slice(&[
+                        1.0,
+                        f32::from(c[0]) / 255.0,
+                        f32::from(c[1]) / 255.0,
+                        f32::from(c[2]) / 255.0,
+                        ifx::IMPACT_TINT_CUE_STRENGTH,
+                        scale,
+                    ]);
+                    continue;
+                }
+            }
             match b.map(|b| b.render_flag) {
                 Some(ba::CURSOR_FLAG_SELECTED) => {
                     let pulse = 0.30 + 0.20 * (frame * 0.25).sin();

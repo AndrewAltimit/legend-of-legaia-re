@@ -547,6 +547,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("formats/man-relocation.html", "MAN relocation",               "formats/man-relocation",     "formats/man-relocation.html"),
     ("formats/str-fmv-table.html", "STR FMV table",                 "formats/str-fmv-table",      "formats/str-fmv-table.html"),
     ("formats/save-record.html",   "Per-character save record",     "formats/save-record",        "formats/save-record.html"),
+    ("formats/window-script.html", "Window widget scripts",         "formats/window-script",      "formats/window-script.html"),
     # Battle / stat tables (static SCUS_942.54 data)
     ("formats/spell-table.html",   "Spell table",                   "formats/spell-table",        "formats/spell-table.html"),
     ("formats/item-table.html",    "Item-name table",               "formats/item-table",         "formats/item-table.html"),

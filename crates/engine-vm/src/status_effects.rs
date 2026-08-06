@@ -542,6 +542,47 @@ impl StatusEffectTracker {
     }
 }
 
+/// The AGL-vs-AGL infliction roll of the effect applier's **Stone** and
+/// **Curse** arms - `FUN_800402F4` jump-table (at `0x80014FA0`) entries `9`
+/// (`0x80041C70`, `ori 0x4` = Stone) and `10` (`0x80041E64`, `ori 0x1000` =
+/// Curse). Both arms share one shape, single-target (`target < 3`, party
+/// seats only) and all-party (`target == 8`, one draw per member) alike:
+///
+/// ```text
+/// 80041c90  jal 0x80056798            ; rand()
+/// 80041cc4  addu v1, attacker+0x168, target+0x168
+/// 80041cd4  div v0,v1 ; mfhi v1       ; roll = rand % (atk_agl + tgt_agl)
+/// 80041ce0  slt a0, target_agl, v1    ; lands when tgt_agl < roll
+/// 80041cf4  ori v0,v0,0x4             ; (Stone arm) +0x16E |= 4
+/// ```
+///
+/// `+0x168` is the AGL-derived working stat (the engine's `battle_accuracy`
+/// sidecar). So a slow attacker rarely petrifies a fast target, and the roll
+/// self-scales: the modulus widens with both stats while the pass line stays
+/// at the target's own AGL. The group arm additionally zeroes the landed
+/// target's queued action category (`sb zero,0x1de`) and refunds a reserved
+/// battle item (`FUN_800421D4(id, 1)` when `+0x1DE == 1` with a live
+/// initiative key) - drivers model the action-drop via their block gates; the
+/// item refund is not yet modelled.
+///
+/// Retail's callers are the streamed capture-class boss modules (Glare /
+/// Stone Circle / Curse / Curse All) - the class byte `9`/`10` is a literal
+/// in module code, not a spell-record field, which is why no spell-table scan
+/// finds it.
+///
+/// Returns `true` when the status lands. A zero AGL sum returns `false`
+/// (retail's `div` would trap; the operand shape cannot occur in a live
+/// battle).
+///
+/// PORT: FUN_800402F4 (class-9 / class-10 arms, `0x80041C70..0x80041FB0`)
+pub fn agl_status_inflict_roll(attacker_agl: u16, target_agl: u16, rand: u32) -> bool {
+    let sum = u32::from(attacker_agl) + u32::from(target_agl);
+    if sum == 0 {
+        return false;
+    }
+    u32::from(target_agl) < rand % sum
+}
+
 /// Tick-damage formula for Toxic - the exact strong-DoT arm of the retail
 /// per-round status ticker: `damage = max_hp >> 4`, clamped to
 /// `current_hp - 1` when it would kill, then capped at `0x100` (256). Toxic

@@ -21,7 +21,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 - [Stat aggregator (`FUN_80042558`)](#stat-aggregator-fun_80042558)
 - [Battle archive (`FUN_80052FA0` / `FUN_800542C8`)](#battle-archive-fun_80052fa0--fun_800542c8)
 - [Character record layout](#character-record-layout) - [why the pair order is `(max, cur)`](#why-the-pair-order-is-max-cur)
-- [Battle main dispatcher (`FUN_801D0748`)](#battle-main-dispatcher-fun_801d0748) · [hottest utility (`FUN_801D8DE8`)](#hottest-battle-utility-fun_801d8de8) · [weapon trail builder](#weapon--effect-trail-builder-fun_80048310--fun_800485bc) · [move-FX streak ribbon](#move-fx-streak-ribbon-fun_801e1d98)
+- [Battle main dispatcher (`FUN_801D0748`)](#battle-main-dispatcher-fun_801d0748) · [hottest utility (`FUN_801D8DE8`)](#hottest-battle-utility-fun_801d8de8) · [weapon trail builder](#weapon-trail-builder-fun_8005112c--fun_80048310--fun_800485bc) · [move-FX streak ribbon](#move-fx-streak-ribbon-fun_801e1d98)
 - [Per-frame actor maintenance (`FUN_8004CE2C`)](#per-frame-actor-maintenance-fun_8004ce2c)
 - [Additional SCUS battle-band helpers](#additional-scus-battle-band-helpers)
 
@@ -2056,15 +2056,50 @@ and [`functions/battle.md`](../reference/functions/battle.md). The tiny 3- and
 4-instruction bodies at this VA in the fishing / dance / slot-machine /
 debug-menu / Baka Fighter images are a different overlay's occupant.
 
-## Weapon / effect trail builder (`FUN_80048310` + `FUN_800485BC`)
+## Weapon trail builder (`FUN_8005112C` + `FUN_80048310` + `FUN_800485BC`)
 
-Visual-only helpers that build the swept geometry behind a moving battle actor (sword trails, dash plumes, particle ribbons). `FUN_80048310` iterates the 16-slot per-actor frame buffer at `actor[+0x68]`, copies vertex triplets from the per-actor pose pool at `gp[0xa0c] + 0x6f4` (stride `0xC`), and calls `FUN_800485BC` twice - once for the outline, once for the base - blending two endpoint colours over N steps via a `0..N` gradient loop.
+The swept `POLY_G4` streak an ordinary arts swing leaves behind a party
+character's blade (distinct from the mesh after-image ghosts, which only the
+Super / Miracle starter dash gets).
 
-`FUN_800485BC` is a 275-instruction quad-strip emitter. It looks up the actor pose from `*(int*)(0x801C9370 + actor[+0x5A]*4) + 0x34/+0x38` (re-confirms the battle actor pointer table), reads sin/cos LUTs at `_DAT_8007B81C` / `_DAT_8007B7F8` keyed on `actor[+0x26] & 0xFFF` (a 12-bit angle **mask**, not a multiply - the LUTs are 4096-entry, `s16` 1.12 fixed point), runs each vertex through `FUN_800195A8` for GTE projection, and drops `0x3B808080` packets into the OT.
+**Trigger** (`FUN_8005112C`, called per party seat from the per-actor battle
+draw tick `FUN_800480D8`): fires only while the committed action record's
+`+0x77` clip-identity byte matches a per-character constant - Vahn `0x29`
+(base object `0x0C`, tint `0x802040`), Noa `0x1E` (base `0x04`, `0x80FFC0`)
+and `0x2A` (base `0x0A`, `0x208040`), Gala `0x64` (base `0x06`, `0x204080`) -
+always with **3 control points** (the weapon bone chain `base..base+3`).
 
-That code word is a **`POLY_G4`** - four-point gouraud, semi-transparent, *untextured*: the texture bit `0x04` is clear, and `0x808080` is a neutral placeholder colour the fill immediately overwrites. Vertex products carry a `+0xFFF` bias when negative before the `>> 12`, emulating round-toward-zero, and the OT slot is the average of the four corner depths with the same fixup.
+**Sweep** (`FUN_80048310`): saves the anim cursor `actor[+0x68]`, and up to 16
+times re-decodes the pose at the current cursor (`FUN_8004998C`), copies the
+control points' decoded object positions out of the pose pool
+(`gp[0xa0c] + 0x6f4`, stride `0xC`) into a 16-step scratch, and rewinds the
+cursor by `2 * record[+0x78]` - two display frames per step - stopping at the
+clip start. With at least two captured steps it emits gouraud bands: segment 0
+white -> `0x808080`, segment 1 `0x7F7F7F` -> black, then every segment `k` of
+`n` with the trigger tint faded linearly (`rgb * (n-k)/n -> rgb * (n-k-1)/n`,
+truncating division) - all semi-transparent, stacking additively.
 
-These are pure rendering helpers - no gameplay state changes. Engine reimpl can defer them until visuals matter.
+**Band emitter** (`FUN_800485BC`, 275 instructions): per band, yaw-rotates the
+two steps' local control points by `actor[+0x26]` against the sin/cos LUTs
+(`_DAT_8007B81C` / `_DAT_8007B7F8`, a 12-bit angle **mask** into 4096-entry
+`s16` 1.12 tables), adds the battle slot's world base
+(`*(int*)(0x801C9370 + actor[+0x5A]*4) + 0x34/+0x38`), projects each vertex
+through `FUN_800195A8`, and drops `0x3B808080` packets into the OT - a
+**`POLY_G4`**: four-point gouraud, semi-transparent, *untextured*
+(`0x808080` is a placeholder the per-vertex fill overwrites; vertices
+`v0/v2` = the leading step's pair carrying the band's lead colour, `v1/v3`
+trailing). Vertex products carry a `+0xFFF` bias when negative before the
+`>> 12` (round-toward-zero), and the OT slot is the average of the four corner
+depths with the same fixup.
+
+**Port**: trigger table + sweep/band schedule `engine-vm::battle_trail`; the
+projected band packets `engine-ui::battle_trail` (a gouraud `FlatQuad` through
+the shared screen-prim pass, ABR 1); `World::battle_weapon_trail_draws`
+samples the sweep off the pose-history ring (step `k` = the pose `2k` frames
+ago, the retail rewind under a constant rate) bounded by the ring's per-frame
+clip key. Both hosts project with their own battle camera and composite the
+bands over the scene - the OT interleave with scene depth is the same
+disclosed simplification as the move-FX streak.
 
 ### Move-FX streak ribbon (`FUN_801E1D98`)
 
@@ -2102,12 +2137,19 @@ byte `*(_DAT_8007BD24)[0]`:
    in the `0x80084140`-region record and clears matching condition bits in the
    actor's status halfword at `+0x16E` (masks `0x0001`/`0x0003`/`0x0078`/
    `0x1000`/`0x0004`/`0x0400`), i.e. "expire conditional status effects".
-2. **Action reaction.** Resolves the active actor's current action id via
-   `actor+0x22C → +0x4C → +0x77` (the shared spell/move id space of
-   [`move-power.md`](../formats/move-power.md)) and per action band seeds
-   animation timers and effect pointers from the overlay globals
-   `_DAT_801F53D4` / `_DAT_801F53D8` into `actor+0x4`, `+0x21B..+0x21F`;
-   the `action == 24` low-speed arm calls overlay `FUN_801E1D98`.
+2. **Per-clip impact arms.** Resolves the acting actor's committed record's
+   `+0x77` clip-identity byte (the `attach_key` slot of
+   [`battle-data-pack.md`](../formats/battle-data-pack.md)) and its anim
+   cursor, dispatches on the roster character id, and on hand-picked
+   (clip, cursor-window) pairs writes the impact-config words
+   `_DAT_801F53D4` / `_DAT_801F53D8` into the **target's** `+0x04` tint and
+   `+0x21F` selector. Gala's clip-`0x18` arm additionally **freezes the
+   target's pose** (`+0x21D = 0`, cursor window `0x40..=0x80`; restored by
+   `FUN_801E93C8`); Vahn's clip-`0x18` arm is tint-only (`0x90..=0xA0`). The
+   overlay ribbon `FUN_801E1D98` is called by the clip-`0x67` arm, not the
+   `0x18` one. Port: `engine-vm::battle_impact_fx` +
+   `World::tick_battle_impact_fx`; the tint decays through the
+   `FUN_80050F30` per-lane ease (`FUN_80050120` arm 0).
 3. **Per-encounter boss hooks.** Gated on `DAT_8007BD0C` - the **monster /
    formation id**, not a sequence sub-phase byte, and `0x8A`/`0xA7`/`0xAA`/`0xB4`
    (138/167/170/180) are **boss ids**, not phase bands. Each arm applies
@@ -3464,12 +3506,17 @@ The submenu hand-offs:
 
 - **Item** opens a battle-context `inventory_use::InventoryUseSession` on
 `World::battle_item_menu` (built by `World::build_battle_item_session` from the
-live inventory, with one ally row per party slot **plus one enemy row per live
-monster slot**, the enemy rows tagged `TargetRow::is_enemy`). The session routes
-by item: heals / cures / revives validate against ally rows, offensive items
-(Bomb / capture / escape) against enemy rows, and on entering target-select the
-cursor auto-positions on the first valid-side target
-(`target_valid_for_effect`). On a completed use the item applies via
+live inventory, with one ally row per party slot plus one enemy row per live
+monster slot, the enemy rows tagged `TargetRow::is_enemy` - the roster carries
+both sides for the engine's synthetic offensive items). The **side rule is
+structural**, as in retail: state `0x64`'s cursor walk wraps strictly inside
+the seated party band `[0, ctx[+0x00])` (`0x801D2BE8`/`0x801D2C78`) and the
+enemy-side classes go to the monster-ring states `0x5B`/`0x5D` instead, so the
+target panel lists **only the selected item's side**
+(`inventory_use::target_on_effect_side`; the cursor steps within it and the
+projection filters the rows both hosts draw). On entering target-select the
+cursor auto-positions on the first benefiting target. On a completed use the
+item applies via
 `World::use_item`, one copy is removed (`World::consume_item`), and a popup is
 surfaced - heal-coloured for heals/revives, damage-coloured for offensive items.
 `World::use_item` folds the offensive outcomes too: `DamageDealt` subtracts
@@ -3988,16 +4035,31 @@ Content pens (row text, header, description line, breadcrumb seats) are
 screenshot-read off the same captures - the glyph packets ride a different
 draw pass than the window tiles.
 
-**Port.** `engine-ui::battle_item_ui` carries the pins and composes the two
+State `0x64` (the item window's own target confirm) is packet-pinned the same
+way (`battle_item_target` / `battle_item_target_cursor1` captures,
+`scripts/pcsx-redux/autorun_battle_item_target_capture.lua`, one RIGHT press
+apart): the item windows **close**, the third breadcrumb becomes the selected
+item's name (`Begin | Vahn | Healing Leaf`), and the surface is a single
+full-width **target strip** at the screen's foot - window skin caps at x `8`
+and `304`, one 20-px row at y `188`; target name glyphs from `(16, 192)`; the
+gold `HP` label widget (`#0x07`) at `(80, 194)` with current-HP numerals
+ending at x `134` and max-HP from `146`; the `MP` widget (`#0x08`) at
+`(192, 194)` with numerals at `214..238` / `250..`. The regular 3-member HUD
+parks offscreen (its digit rows sit at y `234..264` in the capture), a name
+tag floats beside the targeted actor, and the camera re-frames on the target;
+RIGHT steps the target across the party band and the whole strip follows.
+
+**Port.** `engine-ui::battle_item_ui` carries the pins and composes the
 windows through the shared 9-slice menu-window chrome + tab-banner 3-slice +
 save-select hand cell; the projection (dedup row list with the cursor mapped
-into it, disc description, breadcrumb name, target roster) is
+into it, disc description, breadcrumb name, same-side target rows) is
 `engine-core::World::battle_item_menu_model` /
-`InventoryUseSession::menu_view`, consumed by both play hosts. Known
-divergences, disclosed in the module doc: breadcrumb tabs are sized per label
-(the engine font is wider than retail's tab glyphs), and target select swaps
-the list column to the roster - retail's state-`0x64` target panel is not yet
-packet-pinned.
+`InventoryUseSession::menu_view`, consumed by both play hosts. Target select
+draws the pinned strip for the pointed-at member. Known divergences, disclosed
+in the module doc: breadcrumb tabs are sized per label (the engine font is
+wider than retail's tab glyphs), the HP/MP labels are text stand-ins for the
+gold HUD label widgets, and the floating world-anchored name tag + the
+target-camera re-frame are not drawn.
 
 ## See also
 

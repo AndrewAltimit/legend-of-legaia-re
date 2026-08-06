@@ -702,6 +702,7 @@ pub fn emit_spinup_ring(phase: i32, prims: &mut Vec<ScreenPrim>) -> bool {
         prims.push(ScreenPrim::Flat(FlatQuad {
             xy: std::array::from_fn(|i| (pc[i].xy.x as i16, pc[i].xy.y as i16)),
             color: [level, level, level, 0xFF],
+            gouraud: None,
             semi_transparent: true,
             abr_mode: 0,
             ot_index: otz as u32,
