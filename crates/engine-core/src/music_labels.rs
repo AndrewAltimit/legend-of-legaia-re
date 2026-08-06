@@ -48,6 +48,12 @@ pub const MUSIC_BANK_SPLIT_INDEX: u32 = 68;
 /// Number of curated sound-test rows - indices `0..=80`.
 pub const MUSIC_TRACK_COUNT: u32 = 81;
 
+/// Global-pool BGM id of the title-screen theme: sound-test index `65`
+/// (`M65`, extraction entry `1053`), reached as `2000 + 65`. What the title
+/// screen scores itself with - hosts start it on every entry to the title
+/// (cold boot and the post-wipe return).
+pub const TITLE_THEME_BGM_ID: u16 = 2065;
+
 /// The extraction-space PROT entry that holds a sound-test index's
 /// `[VAB][SEQ]` pair, honoring the 2-entry gap at index 68. `None` past the
 /// last row. This is the inverse of [`sound_test_index_for_prot_entry`] and

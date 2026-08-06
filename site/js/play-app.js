@@ -1839,8 +1839,15 @@ void main() {
             /* Continue opened the retail save-select on the card rack (the
              * shared pause-menu Load row); the menu loop below drives it from
              * the next frame. Quit hands back to the page, which re-runs the
-             * boot title. */
-            if (picked === 'quit' && this.opts.onQuit) this.opts.onQuit();
+             * boot title. Swap the score with the screen: the battle BGM
+             * must not outlive the battle, and the title card plays the
+             * title theme (the native window's post-wipe hand-off twin). */
+            if (picked === 'quit') {
+              if (typeof rt.play_title_bgm === 'function') {
+                try { rt.play_title_bgm(); } catch (e) {}
+              }
+              if (this.opts.onQuit) this.opts.onQuit();
+            }
             break;
           }
           /* VR first-person owns the azimuth (the gaze) and merges its stick

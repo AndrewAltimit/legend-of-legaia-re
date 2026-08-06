@@ -908,6 +908,37 @@ impl LegaiaRuntime {
         }
     }
 
+    /// Swap the score to the title theme - the browser twin of the native
+    /// post-wipe `BootUiState::Title` hand-off: stop the running track,
+    /// then start [`legaia_engine_core::music_labels::TITLE_THEME_BGM_ID`]
+    /// as an owned-VAB global track. The page calls this when the
+    /// party-wipe hold resolves to the title card, so the battle BGM never
+    /// outlives the battle. `false` when audio is down or the disc entry
+    /// doesn't resolve - the stop still ran, leaving silence rather than
+    /// the stale track.
+    #[cfg(target_arch = "wasm32")]
+    pub fn play_title_bgm(&mut self) -> bool {
+        use legaia_engine_core::scene::BgmDirector;
+        let id = legaia_engine_core::music_labels::TITLE_THEME_BGM_ID;
+        let Some(out) = self.audio_out.as_ref() else {
+            return false;
+        };
+        let mut director = WebBgmDirector {
+            out,
+            bank: &mut self.bgm_bank,
+            last_started: &mut self.bgm_last_started,
+        };
+        director.stop();
+        let Some(host) = self.scene_host.as_ref() else {
+            return false;
+        };
+        let Ok(Some(entry)) = host.music_bank_entry_bytes(id) else {
+            return false;
+        };
+        director.start_owned_vab(id, &entry);
+        self.bgm_last_started == Some(id)
+    }
+
     /// Set the BGM output gain in page-slider units: `1.0` is the page
     /// default ([`BGM_DEFAULT_GAIN`]) and maps to [`BGM_SLIDER_UNIT_GAIN`]
     /// of the native cpal path's unity level; the slider spans 0x (mute) to
