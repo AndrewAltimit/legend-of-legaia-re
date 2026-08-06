@@ -193,6 +193,9 @@ CANONICAL_LADDERS = [
     # ladders are where that was measured.
     ("w1a_fmv_ladder", "legaia-mdec"),
     ("w1a_narration_ladder", "legaia-engine-core"),
+    # --- lane W1-C ---
+    ("w1c_battle_render_ladder", "legaia-web-viewer"),
+    ("w1c_arts_swing_ladder", "legaia-engine-shell"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 

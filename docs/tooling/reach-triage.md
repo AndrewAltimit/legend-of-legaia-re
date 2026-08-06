@@ -726,18 +726,53 @@ remaining proposal would still move:
 |---|---|---|
 | FMV | 17 | any `fmv_id`; export the coverage of the existing `av_decode_oracle` / `w5_fmv_handoff` |
 | Baka Fighter hub | 13 | the PROT 0977 contest hub screen, not the duel the current ladder plays |
-| battle render (residue) | 10 | the intro styles the driven fights did not roll, the party-panel arms, the gauge rearm |
 | audio | 9 | a mixer-attached tick, so SFX enqueue, VAB upload and voice alloc run |
 | world-map panels | 8 | the panel-actor screens: sub-list, fill fade, text box, flag window |
 | world map | 5 | the overworld render pass: horizon, dim, CLUT fade, particle burst |
-| arts swing | 3 | an art that swings: shout bank, XA clip, face stamps |
-| battle target | 4 | the target picker's cycle and sweep-group arms |
 | field actors | 4 | an effect that spawns a child actor through the allocator |
 | field render | 2 | posed field characters: camera mover, pack apply |
 
 The native window's composition still cannot be driven this way until it
 leaves `bin/`; the standalone browser minigames page and the `cards` page
 remain outside the union and keep their harness-blind rows above.
+
+### Battle render, battle target and arts swing are built
+
+Three proposals left this table together, as two files:
+`crates/web-viewer/tests/w1c_battle_render_ladder.rs` (the intro styles and
+the attack-target ring) and `crates/engine-shell/tests/w1c_arts_swing_ladder.rs`
+(the shout bank, the facial animator and the XA-clip census). Each needs its
+own `cargo llvm-cov` export joined into the union, **without `--release`**.
+
+Why the styles needed a ladder at all is worth keeping: the four non-default
+transition styles are not a beat a player reaches, they are a *data* arm.
+`select_intro_style` keys on the formation's first monster id, and the ids
+that select the confetti / curtain / swirl belong to formations no scene the
+composition ladder enters registers - so the driven fights all took the
+default `TileShatter` arm and four ported style bodies never ran once.
+
+Four addresses did **not** move, and each is a different shape:
+
+| address | why it stayed |
+|---|---|
+| `801f44a0` | orphan: nothing in the workspace calls `DamagePopupRing::push` |
+| `801d84c0` `801dbb8c` `801dbc30` | `battle_party_panel.rs` emits no coverage record at all - every item is an unused `const fn`, so the module is not in the binary |
+| `801e1ab0` | content-gated: the streak needs a move-FX scene whose move-power record carries a non-zero trail texture page (`+0x0b`) |
+
+The party-panel row is the sharper finding: `engine-ui` reproduces
+`panel_anchors`' constants as its own `party_panel_stage_x` rather than
+calling the port, and an `engine-shell` test pins the two equal - so the gate
+passes, the numbers agree, and the ported kernel is dead. `DamagePopupRing` is
+the same shape one level down: it models retail's **8-slot wrapping** ring
+while the live HUD keeps an unbounded `Vec<DamagePopup>`, so retail's
+"a ninth popup overwrites the first" is not reproduced.
+
+Four `PORT` tags moved off module scope in the same pass, onto the routines
+they name (`pick_channel`, `build_afterimage_quad`, `LabelState::opened`,
+`cross_out_mark`, `panel_labels`). At module scope each would have resolved,
+under the anchor fallback above, to an unrelated neighbouring function -
+`ArtsShoutBank::new`, `streak_half_width`, `name_field_ptr` - so constructing
+a bank would have read as "the arts-voice selector ran".
 
 ## Gates behind the (b) rows
 

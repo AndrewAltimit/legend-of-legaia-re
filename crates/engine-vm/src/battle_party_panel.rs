@@ -1,8 +1,14 @@
 //! The battle party-name panels: open, cross-out mark, and teardown.
 //!
-//! PORT: FUN_801DBB8C (label-actor open)
-//! PORT: FUN_801DBC30 (cross-out mark blit)
-//! PORT: FUN_801D84C0 (panel build + teardown)
+//! REF: FUN_801DBB8C (label-actor open) -> [`LabelState::opened`]
+//! REF: FUN_801DBC30 (cross-out mark blit) -> [`cross_out_mark`]
+//! REF: FUN_801D84C0 (panel build + teardown) -> [`panel_labels`]
+//!
+//! Each `PORT` tag sits on the routine it names rather than here. At module
+//! scope the reach report's anchor fallback resolves all three to *the next
+//! function in the file* - [`name_field_ptr`], a pointer-arithmetic
+//! one-liner - so one call to that helper would have read as all three
+//! battle-overlay leaves having run.
 //!
 //! Three battle-overlay leaves that share one piece of state - the eight-byte
 //! block at `0x801F4E08` - and turn out to be a matched set: `FUN_801DBB8C`
@@ -144,6 +150,15 @@ pub struct LabelState {
 
 impl LabelState {
     /// The block as `FUN_801DBB8C` leaves it, given the register call's result.
+    ///
+    /// NOT WIRED: there is no object to open. `FUN_801DBB8C` registers a
+    /// **retained-mode** SCUS text actor and stashes its handle; `engine-ui`
+    /// rebuilds every battle `TextDraw` from the live model each frame, so
+    /// nothing holds a handle and nothing tears one down. See the module's
+    /// "No engine analogue" note - this is a documented record of the retail
+    /// lifecycle, not a port waiting on a caller.
+    ///
+    /// PORT: FUN_801DBB8C
     pub const fn opened(handle: u32) -> Self {
         Self {
             kind: 0,
@@ -232,6 +247,13 @@ pub const fn strip_draws(ctx_6ce: i16) -> bool {
 /// names for the mark retail lays over a forbidden command chip, confirmed by
 /// decoding those texels out of a battle VRAM dump. The battle name plates
 /// come off a different sheet entirely; see [`crate::battle_chrome`].
+///
+/// NOT WIRED: no caller. The one surface that wants this mark - the muscle
+/// dome's forbidden-command chip - is drawn by `engine-ui` as a rect built
+/// from its own constants, so the quad this returns (with its `etim` CLUT and
+/// texture page) reaches no draw list on any host.
+///
+/// PORT: FUN_801DBC30
 pub fn cross_out_mark(x: i16, y: i16) -> StripQuad {
     let x0 = x.wrapping_sub(8);
     let x1 = x.wrapping_add(0x37);
@@ -326,8 +348,6 @@ pub const MEASURE_ORDER: [usize; 4] = [0xA9, 0x159, 0x189, 0x129];
 
 /// What one of the four label buffers holds after the build.
 ///
-/// PORT: FUN_801D84C0 (the two build arms)
-///
 /// The solo arm fills every buffer from the **first** party slot's name
 /// record; the roster arm gives the first buffer that slot's name and sources
 /// the other three from fixed strings, measuring each with `FUN_8003CBF8` and
@@ -350,6 +370,16 @@ pub enum PanelLabel {
 /// `slots` is the party's participant ids in panel order (`DAT_8007BD10..`);
 /// an absent slot is `0`, which is exactly the discriminator
 /// [`build_arm`] keys on. Returns the buffers in [`LABEL_BUFFERS`] order.
+///
+/// NOT WIRED: no caller. `engine-ui`'s battle HUD does not model four label
+/// buffers at all - it draws the party names straight from the live roster and
+/// mirrors [`panel_anchors`]' X seats as its own `party_panel_stage_x`
+/// constants (an `engine-shell` test pins the two equal, which is why the
+/// duplication passes every gate). Wiring this means giving `engine-ui` the
+/// buffer model, and the roster arm's three caption strings are
+/// overlay-resident text that is not lifted yet.
+///
+/// PORT: FUN_801D84C0 (the two build arms)
 pub const fn panel_labels(slots: [u8; 3]) -> [PanelLabel; 4] {
     let first = slots[0];
     match build_arm(slots[1]) {
