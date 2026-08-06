@@ -57,10 +57,14 @@
 //! Split by what each piece needs, because the three leaves do not share a
 //! blocker after all.
 //!
-//! **Wired.** The per-party-size X anchors ([`panel_anchors`]) are live:
-//! `engine-ui` mirrors them as `party_panel_stage_x` (the two are pinned
-//! equal by an `engine-shell` test). A packet walk of retail's own display
-//! list confirms them and says what they anchor - they are the panel's
+//! **Wired.** The per-party-size X anchors ([`panel_anchors`]) are on the
+//! production path: `engine-ui`'s `party_panel_stage_x` reads them directly
+//! for the roster panels' name pens, and both battle-HUD hosts (the native
+//! `play-window` and the browser play page) build their draw lists through
+//! that one builder (`battle_hud_draws_for`). No mirrored literals remain;
+//! an `engine-shell` test asserts the production function returns this
+//! kernel's values. A packet walk of retail's own display list confirms
+//! the anchors and says what they anchor - they are the panel's
 //! **name pen**, five pixels inside a 102x48 panel plate, not the plate's
 //! own edge ([`crate::battle_chrome::panel_seats`]). [`panel_labels`]
 //! resolves which of the four buffers takes a name and which takes a
@@ -372,12 +376,11 @@ pub enum PanelLabel {
 /// [`build_arm`] keys on. Returns the buffers in [`LABEL_BUFFERS`] order.
 ///
 /// NOT WIRED: no caller. `engine-ui`'s battle HUD does not model four label
-/// buffers at all - it draws the party names straight from the live roster and
-/// mirrors [`panel_anchors`]' X seats as its own `party_panel_stage_x`
-/// constants (an `engine-shell` test pins the two equal, which is why the
-/// duplication passes every gate). Wiring this means giving `engine-ui` the
-/// buffer model, and the roster arm's three caption strings are
-/// overlay-resident text that is not lifted yet.
+/// buffers at all - it draws the party names straight from the live roster,
+/// seated at the [`panel_anchors`] name pens (its `party_panel_stage_x`
+/// calls this module's kernel directly). Wiring this means giving
+/// `engine-ui` the buffer model, and the roster arm's three caption strings
+/// are overlay-resident text that is not lifted yet.
 ///
 /// PORT: FUN_801D84C0 (the two build arms)
 pub const fn panel_labels(slots: [u8; 3]) -> [PanelLabel; 4] {

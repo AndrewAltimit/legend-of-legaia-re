@@ -2909,49 +2909,41 @@ mod battle_hud_wiring_tests {
         );
     }
 
-    /// The engine-ui anchor mirror is a literal copy of the canonical
-    /// `engine-vm` port of retail's `FUN_801D84C0` table (engine-ui sits below
-    /// engine-vm in the crate graph, so it cannot import them).
-    ///
-    /// The anchors are the roster panels' **name pens**, `+5` inside the
-    /// panel background `battle_chrome::panel_seats` gives - which is what
-    /// ties the overlay table to the packet run.
+    /// The production path: `engine-ui`'s `party_panel_stage_x` (re-exported
+    /// by `engine-render`, called by `battle_hud_draws_for`'s roster loop)
+    /// reads the canonical `engine-vm` port of retail's `FUN_801D84C0`
+    /// anchor table - `panel_anchors` - rather than mirroring it as
+    /// literals. Assert the production function returns the kernel's values
+    /// for every party size retail writes an anchor for, and that the seats
+    /// the table leaves unwritten fall back to the packet-pinned panel seat
+    /// plus the +5 name inset.
     #[test]
-    fn panel_anchor_mirror_matches_the_engine_vm_port() {
+    fn panel_stage_x_production_path_returns_the_kernel_anchors() {
         use legaia_engine_vm::battle_party_panel::panel_anchors;
-        assert_eq!(panel_anchors(1), Some((0x72, None)));
-        assert_eq!(panel_anchors(2), Some((0x3F, Some(0xA5))));
-        assert_eq!(panel_anchors(3), Some((0x0C, Some(0x72))));
-        // The inferred third anchor continues the pinned 0x66 stride.
-        assert_eq!(0x72 - 0x0C, 0x66);
-        assert_eq!(0xA5 - 0x3F, 0x66);
-        for (count, ordinal, want) in [
-            (1usize, 0usize, 0x72),
-            (2, 0, 0x3F),
-            (2, 1, 0xA5),
-            (3, 0, 0x0C),
-            (3, 1, 0x72),
-            (3, 2, 0xD8),
-        ] {
+        for size in 1usize..=3 {
+            let (primary, secondary) =
+                panel_anchors(size as u8).expect("party sizes 1..=3 take a build arm");
             assert_eq!(
-                legaia_engine_render::party_panel_stage_x(count, ordinal),
-                want,
-                "engine-ui mirror drifted at ({count}, {ordinal})"
+                legaia_engine_render::party_panel_stage_x(size, 0),
+                i32::from(primary),
+                "primary anchor for a party of {size}"
             );
-        }
-        // Every anchor is a panel seat plus the pinned +5 name inset.
-        for size in 1u8..=3 {
-            for (i, seat) in legaia_engine_vm::battle_chrome::panel_seats(size)
-                .iter()
-                .enumerate()
-            {
+            if let Some(sec) = secondary {
                 assert_eq!(
-                    *seat as i32 + legaia_engine_vm::battle_chrome::PANEL_TEXT_INSET as i32,
-                    legaia_engine_render::party_panel_stage_x(size as usize, i),
-                    "anchor {i} of a party of {size} is not its panel seat + 5"
+                    legaia_engine_render::party_panel_stage_x(size, 1),
+                    i32::from(sec),
+                    "secondary anchor for a party of {size}"
                 );
             }
         }
+        // The seat retail writes no anchor for (a full party's third
+        // panel): its packet-pinned seat plus the +5 name inset.
+        assert_eq!(
+            legaia_engine_render::party_panel_stage_x(3, 2),
+            i32::from(legaia_engine_vm::battle_chrome::panel_seats(3)[2])
+                + i32::from(legaia_engine_vm::battle_chrome::PANEL_TEXT_INSET),
+            "unwritten third seat is not seat + inset"
+        );
     }
 
     /// The end-to-end wiring: a live `World` battle state must reach the
