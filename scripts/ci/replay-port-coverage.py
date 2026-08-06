@@ -286,6 +286,37 @@ CANONICAL_LADDERS = [
     # that reads never-entered may be a row whose only driver exported it out
     # of scope. That is worth re-measuring before spending a fixture.
     ("w5_native_minigame_ladder", "legaia-engine-shell"),
+    # --- lane L4 ---
+    # Three ladders for content the union is blind to *by construction* rather
+    # than by depth.
+    #
+    # `w1l4_page_compose_ladder` drives the browser surfaces `play_compose_ladder`
+    # opens but cannot populate. Its Load rung already reaches the card rack -
+    # with no card inserted, so `card_block_snapshots` takes its `None` early
+    # return and the retail directory walk behind it never runs. This one inserts
+    # real card images, prices their free blocks, commits a save through the
+    # filename classifier, and walks the info panel's three modes. It also drives
+    # the two standalone minigame pages and the Items target panel, whose
+    # preview word needs a bag the page has no affordance to fill (it arrives on
+    # a resumed save, as a player's would).
+    #
+    # `w1l4_slot_bonus_marquee_ladder` plays the casino machine into a **bonus
+    # round** and composes the dot-matrix marquee off that round's own live
+    # state. The schedule is solved rather than rolled for: the machine is
+    # deterministic and `SlotMachine` is `Clone`, so each candidate stop frame is
+    # probed on a copy and the RNG is untouched by the search.
+    #
+    # `w1l4_slot_bonus_marquee` is the disc-data half of the same gate, and the
+    # one that can spawn `CARGO_BIN_EXE_asset` - `asset slot-scene` is the only
+    # non-test caller the marquee kernels have, and a spawned bin inherits
+    # `LLVM_PROFILE_FILE` (the same mechanism `w1a_fmv_ladder` uses for `mdec`).
+    #
+    # All three are disc-gated and skip-pass without `LEGAIA_DISC_BIN`, and all
+    # three are exported WITHOUT `--release` - see the module docstring's "a
+    # release export loses executed code".
+    ("w1l4_page_compose_ladder", "legaia-web-viewer"),
+    ("w1l4_slot_bonus_marquee_ladder", "legaia-web-viewer"),
+    ("w1l4_slot_bonus_marquee", "legaia-asset"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 

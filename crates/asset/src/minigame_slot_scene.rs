@@ -424,6 +424,16 @@ pub const PAYOUT_SLIDE_ROWS: i32 = 0x0D;
 /// up (states 1-2) - the tally strip's other face, counting the rounds still owed.
 pub const ROUND_PIP_COLS: [usize; 3] = [0x00, 0x20, 0x40];
 
+/// Feature mode (`DAT_801d3cac`) of the **bonus round**: the reels carry the
+/// numerals, every spin pays a product, and the tally strip is what the dot
+/// matrix says. The engine-side twin is
+/// `legaia_engine_core::slot_machine::FEATURE_MODE_BONUS`.
+pub const FEATURE_MODE_BONUS_ROUND: u8 = 6;
+/// The feature modes whose reel states put the tally / round-pip strip on the
+/// marquee at all (`FUN_801cfff0`'s `4..=6` gate). Outside them the same matrix
+/// scrolls the attract legend instead.
+pub const MARQUEE_TALLY_MODES: core::ops::RangeInclusive<u8> = 4..=FEATURE_MODE_BONUS_ROUND;
+
 // ---------------------------------------------------------------------------
 // Projection
 // ---------------------------------------------------------------------------
@@ -843,7 +853,7 @@ pub fn compose_marquee_frame(frame: &MarqueeFrame) -> Vec<MarqueePlacement> {
         });
         return out;
     }
-    if !(4..=6).contains(&frame.feature_mode) {
+    if !MARQUEE_TALLY_MODES.contains(&frame.feature_mode) {
         return out;
     }
     match frame.reel_state {
