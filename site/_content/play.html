@@ -77,7 +77,30 @@
 
 /* Stage: canvas + side rail. */
 .play-stage { display: grid; grid-template-columns: 1fr 260px; gap: 1rem; align-items: start; }
-@media (max-width: 980px) { .play-stage { grid-template-columns: 1fr; } }
+/* Sticky viewport: the canvas column pins under the fixed topbar while the
+   page scrolls to the rail cards and the prose below, so the running game
+   never leaves the screen. The stick happens on the grid ITEM (not the
+   canvas wrap): its grid row is as tall as the taller rail column, and that
+   surplus is the sticky travel. The wrap's width is capped by the viewport
+   height (4:3, minus room for the HUD + button rows) so the pinned column
+   always fits on screen - a wide-but-short window gets a smaller centred
+   canvas instead of one that scrolls off the bottom. */
+.play-viewport {
+  position: sticky;
+  top: calc(var(--topbar-h) + 0.5rem);
+  max-height: calc(100vh - var(--topbar-h) - 1rem);
+}
+.play-viewport .play-canvas-wrap {
+  max-width: max(320px, calc((100vh - var(--topbar-h) - 9rem) * 4 / 3));
+  margin-inline: auto;
+}
+/* Single column: pinning the canvas would hold it on top of the rail cards
+   below it, so the sticky behaviour is desktop-only. */
+@media (max-width: 980px) {
+  .play-stage { grid-template-columns: 1fr; }
+  .play-viewport { position: static; max-height: none; }
+  .play-viewport .play-canvas-wrap { max-width: none; margin-inline: 0; }
+}
 
 .play-canvas-wrap { position: relative; }
 /* Fullscreen keeps the wrap itself at 4:3 and centres it, so the overlay
@@ -88,6 +111,7 @@
   inset: 0; margin: auto;
   width: min(100vw, calc(100vh * 4 / 3));
   height: min(100vh, calc(100vw * 3 / 4));
+  max-width: none; /* the sticky-column width cap must not shrink fullscreen */
 }
 .play-canvas-wrap:fullscreen::backdrop { background: #05070c; }
 .play-canvas {
@@ -271,7 +295,7 @@
     </div>
 
     <div class="play-stage" id="play-stage" style="display: none;">
-      <div>
+      <div class="play-viewport">
         <div class="play-canvas-wrap">
           <canvas id="play-canvas" class="play-canvas" width="960" height="720" tabindex="0"></canvas>
           <canvas id="play-menu-canvas" class="play-menu-overlay" width="960" height="720"></canvas>
