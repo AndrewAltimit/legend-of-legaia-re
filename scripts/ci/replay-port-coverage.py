@@ -84,19 +84,21 @@ Usage:
     # ladders and the web-viewer composition ladder are different crates, and
     # `--test` links each crate's LIBRARY - which is why the web-viewer route
     # can execute composition code the engine-shell `bin/` never exposes.
-    for t in critical_path_replay menu_replay minigame_replay v0_1_playthrough; do
-        cargo llvm-cov --release -p legaia-engine-shell \\
-            --test "$t" --json --output-path "target/cov-$t.json"
+    # Clean first: the reader collapses duplicate spans keyed on the exact
+    # (line_start, line_end), so a stale sibling binary left in `target/` can
+    # shadow a fresh executed record with its own zero.
+    cargo llvm-cov clean --workspace
+
+    # NO `--release` anywhere - see "a release export loses executed code"
+    # below. The whole 12-ladder set takes about ten minutes on the default
+    # profile (`menu_replay` is a 4.7s run), so the optimised build buys
+    # nothing here and costs executed code.
+    # `--list-ladders` prints `<test> <package>` for every canonical entry, so
+    # the recipe cannot drift from the list the report checks against.
+    scripts/ci/replay-port-coverage.py --list-ladders | while read -r t pkg; do
+        cargo llvm-cov -p "$pkg" --test "$t" \\
+            --json --output-path "target/cov-$t.json"
     done
-    cargo llvm-cov --release -p legaia-web-viewer --test play_compose_ladder \\
-        --json --output-path target/cov-play_compose_ladder.json
-    # NOTE the missing --release on these two; see "a release export loses
-    # executed code" below. The flag is kept above only because the five
-    # exports it produced are what the current numbers were measured from.
-    cargo llvm-cov -p legaia-mdec --test w1a_fmv_ladder \\
-        --json --output-path target/cov-w1a_fmv_ladder.json
-    cargo llvm-cov -p legaia-engine-core --test w1a_narration_ladder \\
-        --json --output-path target/cov-w1a_narration_ladder.json
 
     # then join them - no arguments needed, the union is the default
     scripts/ci/replay-port-coverage.py
@@ -207,6 +209,26 @@ CANONICAL_LADDERS = [
     ("w1b_hub_ladder", "legaia-engine-core"),
     ("w1b_baka_duel_ladder", "legaia-engine-core"),
     ("w1b_dome_leg_ladder", "legaia-engine-core"),
+    # --- lanes W1-D / W1-E / W1-F, plus four older ladders ---
+    # These existed and ran green while being absent from this list, which is
+    # the export *recipe* - so nobody exported them, no `cov-*.json` was ever
+    # written for them, and every row they reach kept reading *live but never
+    # entered*. A ladder written to convert a row cannot convert it until it is
+    # named here. When a lane adds a ladder, it belongs in this list in the same
+    # commit.
+    ("w1d_world_map_render_ladder", "legaia-engine-core"),
+    ("w1d_dev_menu_equip_ladder", "legaia-web-viewer"),
+    ("w1e_audio_session_ladder", "legaia-engine-audio"),
+    ("w1e_scene_bgm_transition_ladder", "legaia-engine-core"),
+    ("w1f1_battle_tutorial_ladder", "legaia-engine-core"),
+    ("w1f1_fishing_pond_ladder", "legaia-engine-core"),
+    ("w1f1_fishing_banner_ladder", "legaia-web-viewer"),
+    ("w1f1_pause_special_use_ladder", "legaia-engine-core"),
+    ("w1f2_menu_depth_ladder", "legaia-web-viewer"),
+    ("battle_depth_replay", "legaia-engine-shell"),
+    ("battle_flee_ladder", "legaia-engine-core"),
+    ("battle_full_playthrough", "legaia-engine-core"),
+    ("seru_cast_magic_xp_ladder", "legaia-engine-core"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
@@ -372,7 +394,18 @@ def main() -> int:
         action="store_true",
         help="exit non-zero if a NOT WIRED anchor was executed by the run",
     )
+    ap.add_argument(
+        "--list-ladders",
+        action="store_true",
+        help="print `<test> <package>` per canonical ladder and exit (the "
+        "export recipe reads this, so it cannot drift from the list)",
+    )
     args = ap.parse_args()
+
+    if args.list_ladders:
+        for name, pkg in CANONICAL_LADDERS:
+            print(name, pkg)
+        return 0
 
     if args.jsons:
         inputs = args.jsons
