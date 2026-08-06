@@ -445,8 +445,7 @@ impl BakaFight {
             // tally's face-button flag is *not* a substitute: `0xF0` and
             // `0x110` overlap on Triangle, so feeding it across would open the
             // pause menu whenever the player fast-forwards the tally. Left at
-            // zero until the world hands the real edge over - see
-            // `handoff/lane-5.md`.
+            // zero until the world hands the real edge over.
             pad_edge: 0,
             pad_edge_alt: 0,
             pad_held: 0,

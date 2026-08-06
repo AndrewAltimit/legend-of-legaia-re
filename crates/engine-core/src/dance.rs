@@ -2037,8 +2037,7 @@ fn mips_scale(value: i32, factor: i32, shift: u32) -> i32 {
 /// scheduling is host-side; the port returns the quad.
 ///
 /// `abr` is the record's `+0x13` byte. [`legaia_asset::dance_art::DanceWidget`]
-/// does not decode it yet, so the caller supplies it - see
-/// `handoff/lane-5.md`.
+/// does not decode it yet, so the caller supplies it.
 pub fn dance_hud_widget_quad(
     widget: &legaia_asset::dance_art::DanceWidget,
     abr: u8,
