@@ -420,6 +420,9 @@ pub const OPTIONS_DISPLAY_ROWS: [OptionsRowDef; 10] = [
 /// PORT: FUN_801dd330 (see
 /// `ghidra/scripts/funcs/overlay_menu_801dd330.txt` - 11 instructions,
 /// nothing but the call)
+/// NOT WIRED: the engine's options screen runs [`OptionsPhase`] directly;
+/// no host consumes the sub-screen `0x17` wrapper tuple (this span and the
+/// two constants below) yet.
 pub const OPTIONS_SUBSCREEN_ROW_SPAN: (u8, u8) = (0, 9);
 /// The wrapper's `init` argument (`li a2, 0x30`).
 pub const OPTIONS_SUBSCREEN_INIT: u32 = 0x30;

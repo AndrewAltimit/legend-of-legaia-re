@@ -15,8 +15,8 @@
 //! [`AmbientEmitter::step`] and [`save_screen_spawn`] - rather than on this
 //! module. A module-level tag makes the whole file the reachability anchor, and
 //! the file's other items *are* reachable, which reports a wired port that is
-//! not one. A tag on a `const` degrades the same way, which is why
-//! `FUN_801D841C`'s three constants are wrapped in a function instead.
+//! not one. [`save_screen_spawn`]'s own doc opens a `WIRED:` line, which is
+//! what opts that one item out of the module disclosure below.
 //!
 //! NOT WIRED: there is no element-actor dispatch to hang these off.
 //! `crate::cutscene` is the FMV dispatch-table lookup and nothing else; the
@@ -271,7 +271,7 @@ pub struct SaveScreenSpawn {
 /// PORT: FUN_801D841C
 /// REF: FUN_801ED308 - the panel fade/flash actor, the only caller.
 ///
-/// Wired: the sole `jal` to `0x801D841C` in the corpus is `0x801ED3DC`, inside
+/// WIRED: the sole `jal` to `0x801D841C` in the corpus is `0x801ED3DC`, inside
 /// `FUN_801ED308`, the world-map panel brightness fade/flash actor. That
 /// function is ported and live as
 /// `legaia_engine_vm::world_map_panel_actors::fade_flash_tick`, its phase-1

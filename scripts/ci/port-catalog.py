@@ -300,10 +300,25 @@ NOT_WIRED_RE = re.compile(r"NOT\s+WIRED")
 # that merely mentions the marker still does not count as a blanket
 # disclosure.
 MODULE_NOT_WIRED_RE = re.compile(r"^\s*//!\s*[#*\s]*NOT\s+WIRED", re.MULTILINE)
+# Per-item wired marker: `WIRED:` opening a doc line. The precise counterpart
+# of `MODULE_NOT_WIRED_RE` on the other side of the ledger - an item whose own
+# doc block carries it opts out of a `//! NOT WIRED` module blanket. Anchoring
+# right after the comment leader (plus the same `#` / `*` markdown allowance)
+# is what keeps `NOT WIRED:` lines from matching: their `NOT ` sits where this
+# pattern requires `WIRED` to start. Deliberately caps-only, like the
+# disclosure marker, so prose ("wired: see below") does not count.
+WIRED_ITEM_RE = re.compile(r"^\s*//[/!]?\s*[#*\s]*WIRED\s*:", re.MULTILINE)
 NEXT_ITEM_RE = re.compile(
     r"^\s*(?:pub\s*(?:\([^)]*\)\s*)?)?"
     r"(?:default\s+|const\s+|async\s+|unsafe\s+|extern\s+\"[^\"]*\"\s+)*"
     r"(fn|struct|enum|union|trait|impl)\b\s*(?:<[^>]*>\s*)?([A-Za-z_]\w*)?"
+)
+# Value / alias / macro items a doc block can document. Tried only after
+# `NEXT_ITEM_RE` fails, so `const fn` (matched above via the modifier run)
+# never lands here and the bare `type` keyword can only mean an alias.
+NEXT_DATA_ITEM_RE = re.compile(
+    r"^\s*(?:pub\s*(?:\([^)]*\)\s*)?)?"
+    r"(const|static|type|macro_rules!)\s+(?:mut\s+)?([A-Za-z_]\w*)"
 )
 COMMENT_OR_ATTR_RE = re.compile(r"^\s*(?://|#\[|#!\[|\]|\s*$)")
 
@@ -615,8 +630,10 @@ class RustSource:
         """The item a `///` / `//` tag on `line` (1-based) attaches to.
 
         Returns `(kind, name, item_line)` where kind is one of `fn` / `struct` /
-        `enum` / `union` / `trait` / `impl`, or `None` if the next code line is
-        not an item header (a `let`, a `use`, a match arm - a loose tag).
+        `enum` / `union` / `trait` / `impl` for the brace-bodied items, or
+        `const` / `static` / `type` / `macro_rules!` for the value / alias /
+        macro items, or `None` if the next code line is not an item header at
+        all (a `let`, a `use`, a match arm - a loose tag).
 
         The forward walk is unbounded because it already stops at the first line
         that is neither a comment nor an attribute, so only an unbroken run of
@@ -624,6 +641,10 @@ class RustSource:
         module scope, and the runs that grow longest are exactly the thorough
         `NOT WIRED:` disclosures - so a bound makes a careful disclosure report
         itself as wired, via whatever sibling in the module a ladder did run.
+        The data-item arm exists for the same structural reason: a doc block
+        documents the first item after it regardless of what kind of item that
+        is, so a tag above a `const` must not fall through to module scope
+        either - module scope belongs to `//!` blocks only.
         """
         lines = self.raw.splitlines()
         for offset in range(line, len(lines)):
@@ -632,6 +653,9 @@ class RustSource:
                 continue
             m = NEXT_ITEM_RE.match(raw_line)
             if not m:
+                dm = NEXT_DATA_ITEM_RE.match(raw_line)
+                if dm:
+                    return (dm.group(1), dm.group(2), offset + 1)
                 return None
             kind, name = m.group(1), m.group(2)
             if kind == "impl":
@@ -937,11 +961,27 @@ def collect_port_anchors(
     2. `///` / `//` tag above a `struct` / `enum` / `impl` - the anchor is the
        **type**: live if any non-test method in that type's `impl` blocks is
        reachable.
-    3. A tag written inside a function body - the anchor is the enclosing
+    3. `///` / `//` tag above a `const` / `static` / `type` alias /
+       `macro_rules!` - the anchor is that **item**: live if any reachable
+       non-test `fn` references it by name. Before this arm existed those tags
+       fell through to module scope, which both accused careful `NOT WIRED:`
+       disclosures of running (the module's siblings ran) and hid item-level
+       wiring behind a file-level verdict.
+    4. A tag written inside a function body - the anchor is the enclosing
        function.
-    4. `//! PORT:` - a module-level claim, so the anchor is the **file**: live
-       if any non-test `fn` in the file is reachable. This is the coarsest
-       anchor and the main source of over-reporting.
+    5. `//! PORT:` - a module-level claim, so the anchor is the **file**: live
+       if any non-test `fn` in the file is reachable. Module scope belongs to
+       `//!` blocks (and to the loose-tag remainder of case 4); it is not a
+       fall-through for `///` doc blocks, which always document the first item
+       after them regardless of block length.
+
+    Disclosure (`not_wired_tag`), per anchor: the tag's own comment block
+    saying `NOT WIRED` discloses it; failing that, a `//! NOT WIRED` opening
+    the module doc discloses every anchor in the file - **except** an anchor
+    whose own doc block opens a line with `WIRED:` (`WIRED_ITEM_RE`), which
+    opts that one item out of the module blanket. An own-block `NOT WIRED`
+    always wins over an own-block `WIRED:` - same-granularity disclosure beats
+    same-granularity claim.
     """
     anchors: dict[str, list[dict]] = defaultdict(list)
     for path, src in srcs.items():
@@ -970,6 +1010,14 @@ def collect_port_anchors(
                         kind, symbol, fn_uid = "fn", fn.name, fn.uid
                 elif item and item[0] in ("struct", "enum", "union", "impl", "trait"):
                     kind, symbol, ty = "type", item[1], item[1]
+                elif item and item[0] in ("const", "static", "type", "macro_rules!"):
+                    kind, symbol = "item", item[1]
+                    # An associated const's cross-file spelling is
+                    # `Type::NAME`; a free item's is `module::NAME`. Both
+                    # qualifiers feed the strict item-scope matcher.
+                    ty = _innermost_impl(
+                        src.impl_spans, src.pos_of_line(item[2])
+                    )
                 else:
                     enc = src.enclosing_fn(src.pos_of_line(lineno))
                     if enc is not None and enc.is_test:
@@ -983,10 +1031,13 @@ def collect_port_anchors(
             )
             # A `//! NOT WIRED` opening the module doc covers every port site in
             # the file - `mdec::st_ring` declares the whole module inert once
-            # and then tags seven addresses inside function bodies.
-            disclosed = bool(NOT_WIRED_RE.search(block)) or bool(
-                MODULE_NOT_WIRED_RE.search(_module_doc_block(src))
-            )
+            # and then tags seven addresses inside function bodies. A per-item
+            # `WIRED:` in the tag's own block opts that item out of the blanket;
+            # a per-item `NOT WIRED` still discloses regardless of either.
+            own_not_wired = bool(NOT_WIRED_RE.search(block))
+            own_wired = (not is_module_tag) and bool(WIRED_ITEM_RE.search(block))
+            module_blanket = bool(MODULE_NOT_WIRED_RE.search(_module_doc_block(src)))
+            disclosed = own_not_wired or (module_blanket and not own_wired)
             for addr in addrs:
                 anchors[addr].append(
                     {
@@ -1057,11 +1108,75 @@ def compute_live(
                 out[(f.path, f.impl_type)] = True
         return out
 
+    # An `item` anchor (a tag above a `const` / `static` / `type` alias /
+    # `macro_rules!`) has no body to reach, so its verdict is *use*: live iff
+    # some reachable non-test `fn` body references the item. Comments and
+    # strings are already blanked in `stripped`, so a doc mention does not
+    # count. The two graphs get the two biases they need (see
+    # `build_rust_graph`): the permissive verdict matches the bare name
+    # tree-wide - two same-named consts share it, over-approximating toward
+    # "used" so the not-live list stays a hard floor. The strict verdict, read
+    # only by the stale-`NOT WIRED` test, demands an *attributable* reference:
+    # the referencing `fn` sits in the item's own file, or spells the item
+    # qualified by its defining module's stem or its `impl` type
+    # (`battle_helpers::GAUGE_STEP`, `CameraState::FIELD_RESET`). An
+    # unqualified use behind a `use` import is under-counted there, which errs
+    # toward "not live" - a missed stale tag, never a false accusation.
+    item_keys: dict[tuple[Path, str], str | None] = {}
+    for entries in anchors.values():
+        for e in entries:
+            if e["kind"] == "item":
+                item_keys[(e["path"], e["symbol"])] = e["type_name"]
+    item_name_pats = {
+        n: re.compile(rf"\b{re.escape(n)}\b") for _, n in item_keys
+    }
+    item_qual_pats = {
+        (p, n): re.compile(
+            r"\b(?:"
+            + "|".join(
+                re.escape(q) for q in {p.stem, ty} if q and q not in ("lib", "mod")
+            )
+            + rf")\s*::\s*{re.escape(n)}\b"
+        )
+        if {p.stem, ty} - {None, "lib", "mod"}
+        else None
+        for (p, n), ty in item_keys.items()
+    }
+
+    def item_scope(
+        reached: set[int], strict: bool
+    ) -> dict[tuple[Path, str], bool]:
+        out = {k: False for k in item_keys}
+        remaining = set(item_keys)
+        for f in fns:
+            if not remaining:
+                break
+            if f.is_test or f.uid not in reached:
+                continue
+            body = srcs[f.path].stripped[f.body_start : f.body_end]
+            for key in list(remaining):
+                p, n = key
+                if strict:
+                    qual = item_qual_pats[key]
+                    hit = (f.path == p and item_name_pats[n].search(body)) or (
+                        qual is not None and qual.search(body)
+                    )
+                else:
+                    hit = item_name_pats[n].search(body)
+                if hit:
+                    out[key] = True
+                    remaining.discard(key)
+        return out
+
     module_live = module_scope(reach)
     type_live = type_scope(reach)
+    item_live = item_scope(reach, strict=False)
     strict_on = reach_strict is not None
     module_live_s = module_scope(reach_strict) if strict_on else module_live
     type_live_s = type_scope(reach_strict) if strict_on else type_live
+    item_live_s = (
+        item_scope(reach_strict, strict=True) if strict_on else item_live
+    )
     # Which types the file gives an `impl` block to at all. A tag on a plain
     # data struct - no `impl`, its behaviour in free functions or in an `impl`
     # of some *other* type in the same file - has no method for the rule above
@@ -1071,7 +1186,7 @@ def compute_live(
     for p, s in srcs.items():
         for _a, _b, ty, _tr in s.impl_spans:
             typed_in_file[p].add(ty)
-    def verdict(e: dict, reached: set[int], mods, types) -> bool:
+    def verdict(e: dict, reached: set[int], mods, types, items) -> bool:
         if e["kind"] == "fn":
             return e["fn_uid"] in reached
         if e["kind"] == "type":
@@ -1079,14 +1194,16 @@ def compute_live(
             if not hit and e["type_name"] not in typed_in_file[e["path"]]:
                 hit = mods.get(e["path"], False)
             return hit
+        if e["kind"] == "item":
+            return items.get((e["path"], e["symbol"]), False)
         return mods.get(e["path"], False)
 
     out: dict[str, dict] = {}
     for addr, entries in anchors.items():
         for e in entries:
-            e["live"] = verdict(e, reach, module_live, type_live)
+            e["live"] = verdict(e, reach, module_live, type_live, item_live)
             e["live_strict"] = (
-                verdict(e, reach_strict, module_live_s, type_live_s)
+                verdict(e, reach_strict, module_live_s, type_live_s, item_live_s)
                 if strict_on
                 else e["live"]
             )
@@ -1887,6 +2004,195 @@ def filter_rows(rows: list[dict], args: argparse.Namespace) -> list[dict]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# Self-test (--selftest)
+#
+# Unit-level control for the two per-anchor resolutions that have produced
+# false audit rows: tag-to-item anchoring (a `///` doc block documents the
+# first item after it, however long the block - module scope is only for `//!`
+# blocks) and disclosure precedence (own `NOT WIRED` > own `WIRED:` > module
+# blanket). Runs on a synthetic in-memory corpus, no repo state touched.
+# ---------------------------------------------------------------------------
+
+_SELFTEST_FILES = {
+    "main.rs": """\
+fn main() {
+    let v = wired_fn();
+    let _ = v + USED_CONST + wired_item() + TWIN_CONST;
+    let _ = crate::blanket::QUAL_CONST;
+}
+""",
+    # A `///` block long enough that any lookahead bound would demote it, with
+    # the tag mid-block; then the two const cases; then a wired fn.
+    "tags.rs": "/// Long disclosure block.\n"
+    + "/// PORT: FUN_8001aa10\n"
+    + "/// NOT WIRED: a very thorough disclosure follows.\n"
+    + "/// NOT WIRED: filler.\n" * 60
+    + """\
+pub fn long_doc_fn() -> u32 {
+    7
+}
+
+/// PORT: FUN_8001aa20
+pub const USED_CONST: u32 = 1;
+
+// PORT: FUN_8001aa30
+pub const UNUSED_CONST: u32 = 2;
+
+/// PORT: FUN_8001aa40
+pub fn wired_fn() -> u32 {
+    USED_CONST
+}
+
+pub const TWIN_CONST: u32 = 8;
+""",
+    # The colliding twin: same const name in another file, itself unused.
+    "twin.rs": """\
+/// PORT: FUN_8001cc10
+pub const TWIN_CONST: u32 = 9;
+""",
+    "blanket.rs": """\
+//! Mostly-inert module.
+//!
+//! PORT: FUN_8001bb10
+//!
+//! NOT WIRED: every port site in this file is inert unless it says otherwise.
+
+/// PORT: FUN_8001bb20
+/// WIRED: called from `main` - opted out of the module blanket.
+pub fn wired_item() -> u32 {
+    3
+}
+
+/// PORT: FUN_8001bb30
+pub fn plain_item() -> u32 {
+    4
+}
+
+/// PORT: FUN_8001bb40
+/// WIRED: claims wired, but the line below still discloses.
+/// NOT WIRED: the same-granularity disclosure wins.
+pub fn both_markers() -> u32 {
+    5
+}
+
+/// PORT: FUN_8001bb50
+/// WIRED: referenced module-qualified from `main`.
+pub const QUAL_CONST: u32 = 6;
+""",
+}
+
+
+def run_selftest() -> int:
+    src_dir = CRATES_DIR / "__selftest__" / "src"
+    srcs = {
+        src_dir / name: RustSource(src_dir / name, "__selftest__", text)
+        for name, text in _SELFTEST_FILES.items()
+    }
+    # Graph first: `build_rust_graph` assigns the fn uids the anchors capture,
+    # same order `main()` uses. Strict sibling too, so the item-scope split
+    # (permissive name match vs attributable reference) is exercised.
+    fns, edges = build_rust_graph(srcs)
+    roots = collect_roots(srcs)
+    reach = reachable_fns(fns, edges, roots)
+    _, edges_s = build_rust_graph(srcs, strict=True)
+    reach_strict = reachable_fns(fns, edges_s, roots)
+    anchors = collect_port_anchors(srcs)
+    compute_live(anchors, srcs, fns, reach, reach_strict)
+
+    def one(addr: str) -> dict:
+        entries = anchors.get(addr, [])
+        assert len(entries) == 1, f"{addr}: expected 1 anchor, got {len(entries)}"
+        return entries[0]
+
+    failures = 0
+
+    def check(name: str, cond: bool, detail: str = "") -> None:
+        nonlocal failures
+        if cond:
+            print(f"  ok    {name}")
+        else:
+            print(f"  FAIL  {name}{': ' + detail if detail else ''}")
+            failures += 1
+
+    a = one("8001aa10")
+    check(
+        "long ///-doc tag anchors to the fn it documents",
+        a["kind"] == "fn" and a["symbol"] == "long_doc_fn",
+        f"got {a['kind']}/{a['symbol']}",
+    )
+    check("long ///-doc NOT WIRED discloses", a["not_wired_tag"])
+
+    a = one("8001bb10")
+    check(
+        "//! module-doc tag anchors to the module",
+        a["kind"] == "module",
+        f"got {a['kind']}/{a['symbol']}",
+    )
+    check("//! NOT WIRED module blanket discloses its own tag", a["not_wired_tag"])
+
+    a = one("8001aa20")
+    check(
+        "tag above a used const anchors to the item, live",
+        a["kind"] == "item" and a["symbol"] == "USED_CONST" and a["live"],
+        f"got {a['kind']}/{a['symbol']} live={a.get('live')}",
+    )
+    a = one("8001aa30")
+    check(
+        "tag above an unreferenced const anchors to the item, not live",
+        a["kind"] == "item" and a["symbol"] == "UNUSED_CONST" and not a["live"],
+        f"got {a['kind']}/{a['symbol']} live={a.get('live')}",
+    )
+    a = one("8001aa40")
+    check(
+        "tag above a pub fn anchors to that fn, live via main",
+        a["kind"] == "fn" and a["symbol"] == "wired_fn" and a["live"],
+        f"got {a['kind']}/{a['symbol']} live={a.get('live')}",
+    )
+
+    a = one("8001bb20")
+    check(
+        "own-block WIRED: overrides the module blanket",
+        not a["not_wired_tag"] and a["live"],
+        f"not_wired_tag={a['not_wired_tag']} live={a.get('live')}",
+    )
+    a = one("8001bb30")
+    check("sibling without WIRED: stays blanket-disclosed", a["not_wired_tag"])
+    a = one("8001bb40")
+    check("own-block NOT WIRED beats own-block WIRED:", a["not_wired_tag"])
+
+    a = one("8001cc10")
+    check(
+        "colliding const name: permissive live, strict not live",
+        a["kind"] == "item" and a["live"] and not a["live_strict"],
+        f"got {a['kind']} live={a.get('live')} strict={a.get('live_strict')}",
+    )
+    a = one("8001bb50")
+    check(
+        "module-qualified const use is strict-live and un-blanketed",
+        a["kind"] == "item"
+        and a["live"]
+        and a["live_strict"]
+        and not a["not_wired_tag"],
+        f"got {a['kind']} live={a.get('live')} strict={a.get('live_strict')} "
+        f"not_wired={a['not_wired_tag']}",
+    )
+
+    check(
+        "WIRED_ITEM_RE does not match a NOT WIRED line",
+        not WIRED_ITEM_RE.search("/// NOT WIRED: still a disclosure"),
+    )
+
+    if failures:
+        print(
+            f"\nself-test: {failures} case(s) failed - the resolver is not "
+            "trustworthy, so its audit rows mean nothing"
+        )
+        return 2
+    print("\nself-test: all cases pass")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument(
@@ -1997,7 +2303,17 @@ def main() -> int:
         help="rewrite the ratchet baseline, carrying forward any figure this "
         "run did not compute (say why in the commit message)",
     )
+    ap.add_argument(
+        "--selftest",
+        action="store_true",
+        help="run the anchor-resolution / disclosure-precedence control suite "
+        "on a synthetic corpus and exit (0 = pass, 2 = resolver broken)",
+    )
     args = ap.parse_args()
+
+    if args.selftest:
+        print("port-catalog anchor-resolver self-test")
+        return run_selftest()
 
     if args.list_features:
         features = load_features()
