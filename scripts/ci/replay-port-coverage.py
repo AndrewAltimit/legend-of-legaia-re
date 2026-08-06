@@ -321,6 +321,29 @@ CANONICAL_LADDERS = [
     # The browser play page driven into a battle with retail's own one-shot
     # arm flag raised, so the tutorial box the page composes actually exists.
     ("battle_tutorial_page", "legaia-web-viewer"),
+    # --- lane L3 ---
+    # Five fixtures for the GATED-(b) rows: content behind a story flag, a
+    # scene, or a battle state no pad stream reaches from a cold boot.
+    #
+    # These are **gate-seeded**, not pad-only, and the distinction has to stay
+    # visible in this list or the denominator quietly changes meaning. Each one
+    # writes exactly the one piece of state the gate is (a system flag, a
+    # status effect, a visited-map record) and then drives the ordinary engine
+    # path - `World::tick`, `World::step_field`, the scene loader - from there.
+    # Three take their bytecode from the disc corpus rather than inventing it,
+    # so they skip-pass without `LEGAIA_DISC_BIN` like the rest of the union.
+    #
+    # `field_ledge_hop_disc` is not new: it already drove the ledge-hop rows
+    # (`801d2404` / `801d2298`) off a real `town01` ledge and was simply never
+    # in the union, which is why those rows read as never-entered.
+    #
+    # Export them WITHOUT `--release` (see "a release export loses executed
+    # code" above) - several of the kernels here are small enough to inline.
+    ("l3_scripted_scene_program_gate", "legaia-engine-core"),
+    ("l3_gated_field_arms_disc", "legaia-engine-core"),
+    ("l3_confused_monster_target_gate", "legaia-engine-core"),
+    ("l3_travel_art_visited_gate", "legaia-engine-core"),
+    ("field_ledge_hop_disc", "legaia-engine-core"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 

@@ -469,15 +469,61 @@ save or a longer spine, not a pad stream.
 
 | group | n | addresses | gate |
 |---|---|---|---|
-| `field_actor_program.rs` | 2 | `801d4a60` `801d5a24` | the `MAN_LOAD_RESUME` story flags that arm the four voice-over programs |
 | `world/battle/casting.rs` | 2 | `801dd4b0` `801dd6b4` | a capture-class boss cast. The gate now has a seeded oracle - `world/tests/battle_capture_class_disc.rs` folds Guilty Cross / Neo Star Slash off the real spell + move-power tables and pins the folded damage to each wrapper's own roll - but no pad ladder seeds a boss encounter, so the rows stay |
-| `world/vm_hosts.rs` | 1 | `801d2d38` | system flag `0xD`, the three-actor talk lock |
-| `world/battle/monster_ai.rs` | 1 | `801e7320` | a monster whose `field_flags & 0x380` is set |
-| `world/field_movement.rs` | 1 | `801d2404` | a scene with a ledge-hop trigger |
 | `world/battle/capture.rs` + `battle_formulas/victory.rs` | 1 | `801e70bc` | a party member **casting a Seru summon spell**. `accrue_summon_spell_xp` fires only under `is_party_summon_cast` (`world/battle/casting.rs`), and a new-game party knows no Seru magic, so no from-boot pad stream reaches it; `seru_cast_magic_xp_ladder` seeds the spell and is outside `CANONICAL_LADDERS` |
 | `magic_xp.rs` | 1 | `801e92dc` | a battle that **captures a Seru**. `learn_spell_prepend` is the record-side commit of `seru_learning::record_capture`'s accepted learns, so the fight has to seat a monster carrying a `seru_id` and the capture roll has to take - one gate deeper than the summon-cast row above |
 
-Three former rows of this table converted. The `town01` opening naming prompt
+#### Four rows converted by seeding the gate
+
+Each of these was reachable in retail and unreachable from a cold-boot pad
+stream, and each is now driven by a fixture that writes exactly the one piece
+of state the gate *is* and then runs the ordinary engine path. All four are in
+`CANONICAL_LADDERS`.
+
+- `field_actor_program.rs` (`801d4a60` `801d5a24`) - the `MAN_LOAD_RESUME`
+  flags. `l3_scripted_scene_program_gate` sets system flag `0x17` / `0x0C` and
+  loads a scene, which is what the flag means in retail (an opener ran and its
+  closer did not), then steps the program the loader seats.
+- `world/vm_hosts.rs` (`801d2d38`) - the three-actor talk. Its one shipped
+  carrier is a `43 02` in `nilboa`; `l3_gated_field_arms_disc` finds it by
+  disassembling the scene corpus and executes that record.
+- `world/battle/monster_ai.rs` (`801e7320`) - the confuse-class target
+  resolver. `l3_confused_monster_target_gate` lands Confuse on a monster and
+  drives the fight, contrasting against an unconfused monster in the same
+  battle so "it targeted the party band" cannot pass vacuously.
+- `world/field_movement.rs` (`801d2404`) - the ledge hop. No fixture was
+  needed: `field_ledge_hop_disc` already walked the player into a real
+  `town01` ledge and verified the whole arc, and the row survived only because
+  that test was not in the union.
+
+Driving them surfaced three things the addresses alone do not show.
+
+The step function's `NOT WIRED:` disclosure overstates its own blocker: of the
+three BGM-gated states it names, `0x02` belongs to program 0 - an *opener*,
+which the loader never spawns - and `0x19` gates on the CD-XA counter the same
+disclosure says is not a blocker. Program 3 reads no BGM field at all.
+
+`FUN_801D27E0`, retail's talk **controller**, is unported, and it is what ends
+a three-actor talk (`0x801D2AE4..0x801D2B20` restores the party count and the
+leader byte; the lock `0xD` drops with it). So in the port `43 02` is a
+one-way door: the story party stays collapsed to its leader for the session.
+
+**Confusion changes nothing about where damage lands**, on either side, and no
+assertion on the target byte could see it. The resolver rewrites `+0x1DD` onto
+the caster's own band correctly - and then
+`World::resolve_attack_target` (`world/battle/loop_driver.rs`) clamps an armed
+target to the *opposing* side, so the rewritten value fails the range test and
+the swing falls back to `first_living_opponent_of`. Retail has no such clamp
+(`FUN_801EC3E4` resolves against whatever the action SM left in `+0x1DD`); the
+side range is a port-side safety net that should apply only to an unset or
+dead target.
+
+Each of the last two ships an `#[ignore]`d repro asserting the correct
+behaviour - `a_three_actor_talk_eventually_gives_the_party_back` and
+`the_retarget_lands_the_damage_on_an_ally_not_on_the_party`. Neither
+certifies the defect; both fail when run.
+
+Three older rows of this table converted. The `town01` opening naming prompt
 (`801f03f0`) left through the composition ladder, whose opening rung drives
 the prompt to its commit instead of booting past it. `battle_status_clut.rs`
 (`8004ce2c`) was gated on "a Stone landed on an actor", and no gameplay path
@@ -539,13 +585,10 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | `code_lock_actor.rs` | 1 | (c) | disclosed | `801eed58` |
 | `dev_equip_commit.rs` | 1 | (a) | dev-menu | `801e5a08` |
 | `effect_vm/pool.rs` | 1 | (a) | field-actors | `801de914` |
-| `escape_timer.rs` | 1 | (b) | timed-flags scene | `801d2ebc` |
-| `field_ledge_hop_arc.rs` | 1 | (b) | ledge-hop | `801d2298` |
 | `field_party_cursor.rs` | 1 | (c) | disclosed | `801f1278` |
 | `lib.rs` | 7 | (c) | **actor VM** (pseudo-entered - see the attribution note above) | `800319a8` `800326ac` `80035334` `800357fc` `80035978` `80035a4c` `801d6628` |
 | `scus_battle_helpers.rs` | 2 | (c) | disclosed | `80046978` `80055854` |
 | `scus_core_helpers.rs` | 5 | (c) | disclosed | `8001fa68` `800203ec` `80020424` `80020454` `800204a4` |
-| `travel_art_actor.rs` | 2 | (b) | quick-travel | `801ee094` `801ee328` |
 | `world_map.rs` | 1 | (a) | world-map | `801e3e00` |
 | `world_map_clut_fade.rs` | 1 | (a) | world-map | `801e4d8c` |
 | `world_map_dim.rs` | 1 | (a) | world-map | `801e75dc` |
@@ -575,13 +618,38 @@ VAs with no engine channel), and `801dba90` is a retail-dead entry point whose
 instruction-identical twin (`FUN_801D8DE8` case `0x59`) is the wired one -
 none of that is a "spirit-cast" gate.
 
-`escape_timer.rs` is kept but its gate was misnamed: `FUN_801D2EBC` is the
-field-VM `4C D3` scripted countdown (chitei2's collapsing-dungeon clock), not
-the battle flee. Fleeing a battle runs the action SM's run band and the
-`FUN_801E791C` roll, both ladder-covered
-(`crates/engine-core/tests/battle_flee_ladder.rs`); what no ladder reaches is
-a *scene* whose script arms the timed-flags countdown. The world-tick join is
-oracle-covered (`escape_timer_world`, `w2_timed_flag_scheduler_chain`).
+Three (b) rows converted by seeding their gate, all now in
+`CANONICAL_LADDERS`:
+
+- `escape_timer.rs` (`801d2ebc`). Its gate was misnamed once and the name has
+  already misled: `FUN_801D2EBC` is the field-VM `4C D3` scripted countdown,
+  not the battle flee (that is the action SM's run band plus the
+  `FUN_801E791C` roll, both covered by `battle_flee_ladder`). What no ladder
+  reached was a *scene* whose script arms it. `l3_gated_field_arms_disc`
+  disassembles the corpus for `4C D3` and drives every carrier it finds
+  through `World::tick`: nine sites across `taiku`, `map03` and `chitei2`,
+  five of them writing a zero duration (retail's own "leave it disarmed"
+  case). The armed ones carry durations `2400`, `21600` and `35999`, so the
+  fixture drives short carriers to expiry and long ones far enough to pin the
+  readout and the ink band.
+- `field_ledge_hop_arc.rs` (`801d2298`), with its `engine-core` sibling
+  `801d2404`. No fixture was needed - `field_ledge_hop_disc` already drove a
+  real `town01` ledge end to end and was simply outside the union.
+- `travel_art_actor.rs` (`801ee094` `801ee328`). Both `PORT:` tags sit on one
+  function, and `w1d_world_map_render_ladder` was already reaching it through
+  the sub-list picker's row-1 hand-off. `l3_travel_art_visited_gate` covers
+  what that ladder cannot: the scan **miss** arm (retail's `"UNFIND MAP
+  NUMBER"` park), a multi-record visited table, and both handlers' dwell
+  pairs. Two findings came with it. The Rula binding does not exist - the
+  hand-off in `world/worldmap.rs` hard-codes `TravelArt::Riremito`, so
+  `801ee328`'s constants have no production installer, only the panel host's
+  `install`. And the visited table can never hold more than one record:
+  `tick_world_map_panels` passes `visited.last().map_id` as the map id, so it
+  reads its own output and every kingdom the party crosses updates record `0`
+  in place. `WorldMapController::entry_fade.kingdom_index` is the value that
+  write wants. Repro:
+  `each_kingdom_crossed_gets_its_own_visited_record`, `#[ignore]`d because it
+  asserts the correct behaviour and fails today.
 
 The world-map cluster splits three ways and the split is worth keeping: the
 `dev-menu` rows sit behind a host hotkey a pad ladder cannot press, the
@@ -906,11 +974,19 @@ a bank would have read as "the arts-voice selector ran".
 | gate | rows | what has to happen |
 |---|---|---|
 | slot-bonus | 5 | the casino slot machine's bonus round and its marquee |
-| quick-travel | 2 | a world-map quick-travel with at least one visited destination |
-| timed-flags scene | 1 | a scene whose script arms the `4C D3` countdown (chitei2) |
-| ledge-hop | 1 | a field ledge with a hop arc |
+| capture-class cast | 2 | a boss encounter seated with a capture-class caster |
+| summon cast / Seru capture | 2 | a party member who knows Seru magic, and a fight that lands a capture roll |
 
 The former spirit-cast (5 rows) and summon-cast (3 rows) gates opened with
 the item-band wiring and the summon-spawn ladder; the "battle-escape" gate
-was a misnomer for the timed-flags scene countdown - see the engine-vm
-section's conversion notes.
+was a misnomer for the timed-flags scene countdown.
+
+Four more gates closed the same way, and the pattern is worth naming: **a
+gate closes by seeding the one piece of state it is, not by waiting for a pad
+stream to earn it.** The `MAN_LOAD_RESUME` flags, the talk lock, the
+confuse-class bitfield, the `4C D3` scene, the ledge and the visited-map
+record are all one write each, and every one of them is a write the engine
+already makes somewhere. What a fixture must not do is invent the *content* -
+three of the six take their bytecode from the disc corpus through the field-VM
+disassembler, because a hand-built script proves the interpreter runs and not
+that any shipped scene reaches the arm.
