@@ -34,7 +34,7 @@
 //!
 //! | # | milestone | what it proves |
 //! |---|---|---|
-//! | 1 | `town01` free-roam, input released | cold boot hands control to the player |
+//! | 1 | `town01` loads into free-roam Field, entry script running | the scene boots to a controllable player and its system script executes |
 //! | 2 | pad-walk to the south gate -> `map01` | field locomotion + collision + walk-on trigger |
 //! | 3 | pad-walk `map01` across the continent | overworld remap + collision + the encounter round trip |
 //! | 4 | pad-walk on to the Ravine, via `suimon` | multi-scene overworld route + portal engage |
@@ -42,11 +42,14 @@
 //!
 //! Rung 5 exists because rungs 2-4 all end the instant a door fires, so none
 //! of them walks a dungeon *interior*. That is its own surface: the exits are
-//! `.MAP` walk-on bands rather than overworld entity portals, the encounters
-//! come from the scene's own table rather than the overworld region set, and
-//! the corridors are the narrowest geometry the leading-edge probe meets.
-//! Under a four-rung ladder "the Ravine loads" and "the Ravine can be walked"
-//! scored the same.
+//! `.MAP` walk-on bands rather than overworld entity portals and the corridors
+//! are the narrowest geometry the leading-edge probe meets. Under a four-rung
+//! ladder "the Ravine loads" and "the Ravine can be walked" scored the same.
+//!
+//! What it does **not** cover is the dungeon's own encounter table, and that
+//! is a finding rather than a design choice - `keikoku` decodes to a single
+//! rate-0 whole-map region and rolls nothing however the loop is armed. The
+//! `LEGAIA_CPR_FIGHT=1` run prints the region set at the rung's start.
 //!
 //! It is scored on **which door the player came out of**, not on the bare
 //! transition. `keikoku` carries four scene-change records and all four return
@@ -111,9 +114,12 @@
 //! *world*: in
 //! [`SceneMode::Battle`] the player actor's `move_state` is the battle arena
 //! transform, so [`player_world`] stops meaning an overworld position at all.
-//! [`drain_battle`] sits both out, and reading its doc comment first will save
+//! [`drain_battle`] takes the frame off the walk and hands it to
+//! [`FightPolicy`], which *plays* the encounter through the battle command UI
+//! rather than sitting it out; reading both doc comments first will save
 //! re-deriving why an unguarded run reports a coordinate off the corner of a
-//! map the player is standing in the middle of.
+//! map the player is standing in the middle of, and why a neutral pad is a
+//! fighting model rather than the absence of one.
 //!
 //! ## Ratchet
 //!
@@ -304,6 +310,37 @@ const MIST_WALL_FLAG: u16 = 0x482;
 /// make, for the same reason - this ladder scores locomotion, collision and
 /// the pad remap, not story progression. See [`SUIMON_SOUTH_EXIT`].
 const WATER_GATE_FLAG: u16 = 0x27B;
+
+/// The healing item the ladder's fighter carries: `0x77`, **Healing Leaf**.
+///
+/// Retail's item table gives `0x77` a single-target HP restore
+/// (`docs/formats/item-effect-table.md`; the literal amount is overlay-resident
+/// and the engine's `ItemCatalog::vanilla` carries the disc description's own
+/// figure of 200, which is a full heal on a level-1 record).
+const BAG_HEAL_ITEM: u8 = 0x77;
+
+/// How many Healing Leaves the ladder leaves Rim Elm with, and what they cost.
+///
+/// This is the one part of the fighting model that is *not* produced by a pad
+/// press, so it is grounded rather than picked: a New Game grants exactly 500
+/// gold (`NEW_GAME_STARTING_GOLD`, the literal in retail's data-init
+/// `FUN_80034A6C`), and Rim Elm's Variety Shop sells the Healing Leaf at 100
+/// (`legaia_gamedata`'s curated shop table, the `resolve_rim_elm_shop`
+/// fixture). Five leaves is therefore the whole starting purse spent on
+/// healing before stepping out of the gate - the most a player *could* carry
+/// out of Rim Elm, not an amount invented to make the leg survivable.
+///
+/// The gold is deducted, so this is a purchase and not a gift; a run that
+/// later reaches a shop has the same money a player would.
+///
+/// Why it is seeded rather than bought by pad: the shop is a field-VM
+/// dialogue on a Rim Elm NPC (`docs/subsystems/shop.md`), so buying it would
+/// add an interact-and-menu leg to a ladder that scores locomotion. It stands
+/// in for the town's beats exactly as [`GATE_OPEN_FLAGS`] stands in for its
+/// story flags, and it is called out in the report for the same reason.
+const BAG_HEAL_COUNT: u8 = 5;
+/// Rim Elm Variety Shop price of one [`BAG_HEAL_ITEM`].
+const BAG_HEAL_PRICE: i32 = 100;
 
 /// Frames a leg may spend before it is called a timeout.
 const LEG_FRAME_BUDGET: u32 = 6_000;
@@ -907,60 +944,311 @@ enum Fight {
     Wiped,
 }
 
-/// Sit out a random encounter with a neutral pad and report how it ended.
+/// The ladder's fighter, expressed as *the pad mask it presses this frame*.
 ///
-/// **This is not an optional nicety, it is the difference between a leg that
-/// measures locomotion and a leg that measures nothing.** `map01` has a live
-/// region-keyed encounter table (`World::set_world_map_regions`), so a
-/// pad-driven crossing enters [`SceneMode::Battle`] every few hundred ticks.
-/// While that mode is up the player actor's `move_state` is the **battle
-/// arena** transform, not an overworld position, so a follower that keeps
-/// sampling [`player_world`] reads a coordinate from a different space
-/// entirely - `(0, -825)` on the first `map01` encounter, which is off the
-/// north-west corner of a map the player is standing in the middle of. Every
-/// downstream number then lies in the same direction at once: the distance
-/// check sees no progress and trips the stall detector, and the stall site
-/// reports a tile the player was never on with all four walls set (an
-/// out-of-grid probe reads as solid). Read as locomotion it looks exactly like
-/// an inverted movement axis; it is a mode confusion.
+/// There is no engine call anywhere in this type. Every decision it makes -
+/// pick Begin, pick Attack, pick Auto, confirm the target, open the bag, walk
+/// to the Healing Leaf row, confirm it on the leader - comes out as a d-pad or
+/// face-button mask that [`drain_battle`] hands to `World::set_pad`, which is
+/// the same call the walking legs make. That is deliberate: the whole claim
+/// this ladder makes is "a person pressing buttons gets this far", and an
+/// engine API called mid-battle would quietly weaken it to "a person pressing
+/// buttons, plus a robot with debug access, gets this far".
 ///
-/// A neutral pad is deliberate: the engine's battle resolves under its own
-/// action state machine, and pressing into it would make the leg's outcome a
-/// function of the battle UI rather than of the walk. Battle ticks are charged
-/// to [`BATTLE_FRAME_BUDGET`], never to the leg's frame or stall budget -
-/// fighting is not stalling.
-fn drain_battle(host: &mut SceneHost, resume: SceneMode) -> Fight {
-    for _ in 0..BATTLE_FRAME_BUDGET {
-        host.world.set_pad(0);
-        if host.tick().is_err() {
-            return Fight::Stuck;
-        }
-        if host.world.game_over_hold || host.world.game_over {
-            return Fight::Wiped;
-        }
-        if host.world.mode == resume {
-            return Fight::Survived;
-        }
-        if host.world.mode != SceneMode::Battle {
-            return Fight::Diverted(host.world.mode);
+/// ## What it plays
+///
+/// The command ring is retail's four-arm diamond, selected by **direction**,
+/// committing on the press (`FUN_801D0748` state `0x28`; see
+/// `crate::battle_input`). So:
+///
+/// | phase | press | chip |
+/// |---|---|---|
+/// | `RoundPrompt` (`0x1E`) | Left | `Begin` |
+/// | `Menu` (`0x28`) | Left / Up | `Attack` / `Item` |
+/// | `AttackMode` (`0x78`) | Left | `Auto` |
+/// | `Targeting` | Cross | the cursor's enemy |
+///
+/// `Item` is taken only when the acting party is hurt past
+/// [`Self::heal_below_pct`] **and** the bag still holds the heal id - a policy
+/// that opens an empty bag has to back out again, which costs a turn and reads
+/// as a hang if the back-out is ever missed.
+///
+/// A queued battle message box (the formation banner, a tutorial page) parks
+/// the whole battle tick ahead of the command session
+/// (`World::tick_battle_tutorial_boxes`), so a box gets Cross and nothing
+/// else - pressing a ring direction into a box is how a run stalls with the
+/// menu apparently open and no input arriving.
+struct FightPolicy {
+    /// `false` restores the pre-existing neutral-pad model: no presses at all,
+    /// and the live loop auto-commits `arm_party_physical` for every party
+    /// turn. Kept as the ladder's own **contrast control** - it is the only
+    /// way to show that a change in the score came from the fighter rather
+    /// than from the route. Set by `LEGAIA_CPR_NEUTRAL_FIGHT=1`.
+    driven: bool,
+    /// `false` leaves Rim Elm with an **empty bag** while still driving the
+    /// command ring by pad. The ladder's second contrast control, and the one
+    /// that answers the question the wipe was hiding: `Attack -> Auto` seeds
+    /// the same two-swing queue `arm_party_physical` does
+    /// (`seed_basic_attack_queue`, retail `FUN_801EED1C`'s no-input arm), so
+    /// command selection alone changes *nothing* about the damage traded -
+    /// with this off, a driven run and a neutral run should die in the same
+    /// place. Set by `LEGAIA_CPR_NO_BAG=1`.
+    bag: bool,
+    /// HP percentage at or below which the fighter reaches for the bag
+    /// instead of swinging.
+    heal_below_pct: u32,
+    /// Item id the fighter heals with ([`BAG_HEAL_ITEM`]).
+    heal_item: u8,
+}
+
+impl Default for FightPolicy {
+    fn default() -> Self {
+        Self {
+            driven: std::env::var_os("LEGAIA_CPR_NEUTRAL_FIGHT").is_none(),
+            bag: std::env::var_os("LEGAIA_CPR_NO_BAG").is_none(),
+            heal_below_pct: 50,
+            heal_item: BAG_HEAL_ITEM,
         }
     }
-    Fight::Stuck
+}
+
+impl FightPolicy {
+    /// The pad mask for this frame. `0` means "press nothing", which is what
+    /// the neutral model does for the whole battle.
+    fn pad_for(&self, host: &SceneHost) -> u16 {
+        use legaia_engine_core::battle_input::CommandPhase;
+        use legaia_engine_core::inventory_use::InventoryUseState;
+
+        if !self.driven {
+            return 0;
+        }
+        let w = &host.world;
+        // A message box owns the frame ahead of everything else.
+        if !w.battle_tutorial_boxes.is_empty() {
+            return PadButton::Cross.mask();
+        }
+        if let Some(menu) = w.battle_item_menu.as_ref() {
+            return match menu.state {
+                InventoryUseState::Browsing { .. } => {
+                    if menu.filtered_items.is_empty() {
+                        // Nothing usable in here - back out and swing instead.
+                        PadButton::Circle.mask()
+                    } else if menu.current_item().map(|e| e.id) == Some(self.heal_item) {
+                        PadButton::Cross.mask()
+                    } else {
+                        // Walk the list to the heal row, one press at a time.
+                        PadButton::Down.mask()
+                    }
+                }
+                // The target strip opens on the party leader, which is who
+                // the heal is for in a solo party.
+                InventoryUseState::TargetSelect { .. } => PadButton::Cross.mask(),
+                _ => 0,
+            };
+        }
+        if let Some(session) = w.battle_command.as_ref() {
+            return match &session.phase {
+                CommandPhase::RoundPrompt { .. } => PadButton::Left.mask(), // Begin
+                CommandPhase::Menu { .. } => {
+                    if self.wants_heal(host) {
+                        PadButton::Up.mask() // Item
+                    } else {
+                        PadButton::Left.mask() // Attack
+                    }
+                }
+                CommandPhase::AttackMode { .. } => PadButton::Left.mask(), // Auto
+                CommandPhase::Targeting { .. } => PadButton::Cross.mask(),
+                _ => 0,
+            };
+        }
+        0
+    }
+
+    /// Is any living party member hurt past the threshold, with a heal left
+    /// in the bag to spend on them?
+    fn wants_heal(&self, host: &SceneHost) -> bool {
+        let w = &host.world;
+        if w.inventory.get(&self.heal_item).copied().unwrap_or(0) == 0 {
+            return false;
+        }
+        (0..w.party_count.clamp(1, 3) as usize).any(|i| {
+            let a = &w.actors[i].battle;
+            a.max_hp > 0
+                && a.hp > 0
+                && u32::from(a.hp) * 100 <= u32::from(a.max_hp) * self.heal_below_pct
+        })
+    }
+}
+
+/// Fight an encounter **through the battle command UI**, the way a player
+/// does, and report how it ended.
+///
+/// **Sitting the encounter out is not an optional nicety, it is the difference
+/// between a leg that measures locomotion and a leg that measures nothing.**
+/// `map01` has a live region-keyed encounter table
+/// (`World::set_world_map_regions`), so a pad-driven crossing enters
+/// [`SceneMode::Battle`] every few hundred ticks. While that mode is up the
+/// player actor's `move_state` is the **battle arena** transform, not an
+/// overworld position, so a follower that keeps sampling [`player_world`]
+/// reads a coordinate from a different space entirely - `(0, -825)` on the
+/// first `map01` encounter, which is off the north-west corner of a map the
+/// player is standing in the middle of. Every downstream number then lies in
+/// the same direction at once: the distance check sees no progress and trips
+/// the stall detector, and the stall site reports a tile the player was never
+/// on with all four walls set (an out-of-grid probe reads as solid). Read as
+/// locomotion it looks exactly like an inverted movement axis; it is a mode
+/// confusion.
+///
+/// ## Why the pad presses, and why they are still pad presses
+///
+/// The first version of this held the pad neutral for the whole battle. That
+/// is not "no fighting model", it is a specific one: with
+/// [`World::battle_player_driven`] off the live loop auto-commits
+/// `arm_party_physical` for every party turn - a two-swing basic attack at the
+/// first living monster, retail's own AI-party queue
+/// (`FUN_801EED1C`'s `(&DAT_8007BD10)[slot] == 4` arm) - and nothing else. No
+/// command choice, no items, no Spirit, no Run. A leg that dies under it
+/// cannot distinguish "the port cannot walk this route" from "the ladder's
+/// fighter is incompetent", which is exactly what the wipe on the
+/// `map01 -> suimon` leg had been reporting.
+///
+/// So the fighter drives [`World::battle_command`] - the same
+/// [`crate::battle_input::BattleCommandSession`] the windowed host binds its
+/// keyboard to - with **pad presses only** ([`FightPolicy::pad_for`]). No
+/// engine API is called to pick a command, choose a target or use an item;
+/// every one of those is a `set_pad` + `tick` pair, edge-triggered exactly as
+/// a human press is. That keeps the rung's claim intact: what the ladder
+/// scores is still reachable by a person holding a controller.
+///
+/// Battle ticks are charged to [`BATTLE_FRAME_BUDGET`], never to the leg's
+/// frame or stall budget - fighting is not stalling.
+fn drain_battle(host: &mut SceneHost, resume: SceneMode, policy: &FightPolicy) -> Fight {
+    let report = std::env::var_os("LEGAIA_CPR_FIGHT").is_some();
+    let opened = fight_snapshot(host);
+    let mut ticks = 0u32;
+    let mut pad_prev = 0u16;
+    let mut outcome = Fight::Stuck;
+    for _ in 0..BATTLE_FRAME_BUDGET {
+        // A press is an *edge*: the session reads `just_pressed`, so a held
+        // mask pages exactly once and then does nothing. Alternate every
+        // frame between the wanted mask and neutral rather than holding it,
+        // which is the same duty cycle `drain_scripted` uses on Cross.
+        let want = policy.pad_for(host);
+        let pad = if pad_prev == 0 { want } else { 0 };
+        pad_prev = pad;
+        host.world.set_pad(pad);
+        if host.tick().is_err() {
+            outcome = Fight::Stuck;
+            break;
+        }
+        ticks += 1;
+        if host.world.game_over_hold || host.world.game_over {
+            outcome = Fight::Wiped;
+            break;
+        }
+        if host.world.mode == resume {
+            outcome = Fight::Survived;
+            break;
+        }
+        if host.world.mode != SceneMode::Battle {
+            outcome = Fight::Diverted(host.world.mode);
+            break;
+        }
+    }
+    if report {
+        let closed = fight_snapshot(host);
+        eprintln!(
+            "[fight] {opened} -> {closed} in {ticks} ticks: {}",
+            match &outcome {
+                Fight::Survived => "survived".to_string(),
+                Fight::Wiped => "WIPED".to_string(),
+                Fight::Stuck => "stuck".to_string(),
+                Fight::Diverted(m) => format!("diverted to {m:?}"),
+            }
+        );
+    }
+    outcome
+}
+
+/// One line of battle state: the formation, the party's HP, the leader's
+/// level, and the bag. Printed at the open and close of every encounter under
+/// `LEGAIA_CPR_FIGHT=1`.
+///
+/// Deliberately reads the *live* mirrors rather than the roster record: the
+/// battle actor's `hp`/`max_hp` is what the wipe scan and the damage fold both
+/// consult, and a report keyed on the record would be a frame behind them.
+fn fight_snapshot(host: &SceneHost) -> String {
+    let w = &host.world;
+    let party: Vec<String> = (0..w.party_count.clamp(1, 3) as usize)
+        .map(|i| {
+            let a = &w.actors[i].battle;
+            format!("{}/{}", a.hp, a.max_hp)
+        })
+        .collect();
+    let monsters: Vec<String> = (w.party_count.clamp(1, 3) as usize..w.actors.len())
+        .filter(|&i| w.actors[i].battle.max_hp > 0)
+        .map(|i| {
+            let a = &w.actors[i].battle;
+            format!("{}/{}", a.hp, a.max_hp)
+        })
+        .collect();
+    let formation = w
+        .active_formation
+        .as_ref()
+        .map(|f| {
+            let ids: Vec<String> = f.slots.iter().map(|s| s.monster_id.to_string()).collect();
+            format!("F{}[{}]", f.formation_id, ids.join(","))
+        })
+        .unwrap_or_else(|| "F-".to_string());
+    let lvl = w.roster.members.first().map_or(0, |r| r.level());
+    let bag: usize = w.inventory.values().map(|&n| n as usize).sum();
+    format!(
+        "{formation} party[{}] mob[{}] Lv{lvl} bag{bag}",
+        party.join(" "),
+        monsters.join(" ")
+    )
 }
 
 /// Tick with a neutral pad until the world hands control back, so a leg does
 /// not spend its budget shoving against a cutscene lock.
 fn wait_for_input(host: &mut SceneHost) -> bool {
-    for _ in 0..INPUT_RELEASE_BUDGET {
+    held_frames_before_input(host).is_some()
+}
+
+/// [`wait_for_input`] with the answer nobody was reading: **how many frames
+/// anything actually held input**, or `None` if it never let go.
+///
+/// `Some(0)` is not "control was released promptly", it is "no scripted
+/// sequence ever ran". The two are indistinguishable to a caller that only
+/// asks whether input is free now, and rung 1 asked exactly that - so a scene
+/// whose opening choreography does not play at all scored the rung labelled
+/// "cold boot hands control to the player". `town01` under
+/// `SceneHost::enter_field_scene(name, 0)` returns `Some(0)`: no timeline
+/// frame, no dialogue frame, not during the wait and not across a further
+/// 1200 idle ticks. So rung 1 is evidence that the scene loads into a
+/// controllable Field state, and is **not** evidence that the opening plays.
+/// The count is printed in the rung's own row so the distinction is visible
+/// rather than inferred.
+///
+/// **Zero is the right answer here**, and that is now settled rather than
+/// suspected. Rim Elm's opening is not a property of loading `town01`; it is
+/// partition-2 record 3, whose header gate is "system flag `0x225` is clear",
+/// and the engine installs it only on the New Game hand-off
+/// (`World::entering_town01_opening` / `opening_chain_active`). This ladder
+/// walks a *route*, so it enters Rim Elm the way a returning player does, and
+/// a returning player gets no opening - retail's own scene-entry script
+/// (`town01` P1[0]) likewise reads `0x225` and skips its first-visit arms once
+/// it is set. The opening's own ladder is the browser `play_compose` rung 2,
+/// which enters through the hand-off and asserts the timeline played.
+fn held_frames_before_input(host: &mut SceneHost) -> Option<u32> {
+    for f in 0..INPUT_RELEASE_BUDGET {
         if !host.world.cutscene_timeline_active() && !host.world.dialogue_owns_input() {
-            return true;
+            return Some(f);
         }
         host.world.set_pad(0);
-        if host.tick().is_err() {
-            return false;
-        }
+        host.tick().ok()?;
     }
-    false
+    None
 }
 
 /// What a leg did, independently of whether it ended where it was aimed.
@@ -984,6 +1272,7 @@ fn walk_to(
     goal: (i16, i16),
     avoid: &HashSet<(i32, i32)>,
     stats: &mut LegStats,
+    fight: &FightPolicy,
 ) -> Leg {
     if !wait_for_input(host) {
         return Leg::InputLocked {
@@ -1020,7 +1309,7 @@ fn walk_to(
         // sampling anything - and charge none of it to the leg.
         if host.world.mode == SceneMode::Battle {
             stats.fought += 1;
-            match drain_battle(host, walking_mode) {
+            match drain_battle(host, walking_mode, fight) {
                 Fight::Survived => {
                     // Fighting is not stalling: the walk resumes from where it
                     // was interrupted, so give it a fresh stall window.
@@ -1744,6 +2033,37 @@ struct Rung {
 /// failure - later rungs depend on earlier ones having landed.
 fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     let mut rungs = Vec::new();
+    let fight = FightPolicy::default();
+
+    // The fighting model. Without this the live loop auto-commits a two-swing
+    // basic attack for every party turn and nothing else - see
+    // [`drain_battle`] - so the ladder's fighter could not choose a command,
+    // could not use an item, and could not run. `SceneHost::open_extracted`
+    // is the bare scene host, not `BootSession`, so the catalogs the play
+    // hosts install (`BootSession::enter_field_live`) have to be installed
+    // here too: **an empty item catalog makes every bag row inadmissible**,
+    // which is a silent way for a healing policy to do nothing at all.
+    if fight.driven {
+        host.world.battle_player_driven = true;
+        // Arm the **field** side of the loop as well, which is what both play
+        // hosts do (`BootSession::enter_field_live`) and what makes a dungeon
+        // roll its own encounters. It is inert on this route today - see the
+        // `keikoku encounter model` line below - and arming it anyway means
+        // the day the region decode is fixed, rung 5 starts fighting in the
+        // Ravine instead of quietly continuing not to. Set directly rather
+        // than through `arm_live_loop`, whose `encounter.is_none()` arm would
+        // install the *fabricated* vanilla formation table over the scene's
+        // own.
+        host.world.live_gameplay_loop = true;
+        host.world
+            .set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
+        // Leave Rim Elm with the purse spent on healing. See [`BAG_HEAL_COUNT`]
+        // for why five, and why this is the model's one non-pad input.
+        if fight.bag {
+            host.world.inventory.insert(BAG_HEAL_ITEM, BAG_HEAL_COUNT);
+            host.world.money -= BAG_HEAL_PRICE * i32::from(BAG_HEAL_COUNT);
+        }
+    }
 
     // Run the collision model **both shipped hosts run**. `play-window`
     // (`window/run.rs`) and the browser play page (`web-viewer/runtime.rs`)
@@ -1782,20 +2102,59 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     // --- 1. Cold boot into Rim Elm free-roam with control released. -------
     host.enter_field_scene("town01", 0).expect("enter town01");
     let field = host.world.mode == SceneMode::Field;
-    let released = field && wait_for_input(host);
+    let held = if field {
+        held_frames_before_input(host)
+    } else {
+        None
+    };
+    let released = held.is_some();
+    // The rung's one *positive* fact about the load. "Input is free" is a
+    // statement about what is NOT happening, and a scene that loaded nothing
+    // at all satisfies it perfectly - which is how this rung came to be read
+    // as "the opening played" when the opening had not. So also require that
+    // the scene-entry system script (`P1[0]`, retail ctx `0xFB`) is resident
+    // and executed: it is what raises the scene's story flags, cues its BGM,
+    // arms the arrival fade, and drives the per-frame camera-zone tests, and
+    // if it silently stopped running every one of those would go with it
+    // while every rung below still passed.
+    //
+    // A few neutral frames, because the entry script is stepped by the frame
+    // tick and `held_frames_before_input` returns without ticking at all when
+    // nothing holds input.
+    let entry_pc0 = host.world.field_pc;
+    let mut entry_script_ran = false;
+    for _ in 0..4 {
+        host.world.set_pad(0);
+        let _ = host.tick();
+        entry_script_ran |=
+            !host.world.field_bytecode.is_empty() && host.world.field_pc != entry_pc0;
+    }
     rungs.push(Rung {
-        label: "town01 free-roam, input released",
-        detail: if released {
+        label: "town01 loads into free-roam Field, entry script running",
+        detail: if let Some(held) = held {
             let (x, z) = player_world(host);
-            format!("player at tile {:?}", tile_of(x, z))
+            format!(
+                "player at tile {:?}; entry script pc {entry_pc0} -> {}; the opening \
+                 held input for {held} frame(s){}",
+                tile_of(x, z),
+                host.world.field_pc,
+                if held == 0 {
+                    " - i.e. no opening choreography ran. That is correct for this \
+                     door: Rim Elm's opening is partition-2 record 3, gated on system \
+                     flag 0x225 and installed only on the New Game hand-off, and this \
+                     ladder enters as a returning player does"
+                } else {
+                    ""
+                }
+            )
         } else if field {
             "control never released (cutscene timeline or dialogue held input)".into()
         } else {
             format!("scene mode is {:?}, expected Field", host.world.mode)
         },
-        cleared: released,
+        cleared: released && entry_script_ran,
     });
-    if !released {
+    if !(released && entry_script_ran) {
         return rungs;
     }
 
@@ -1806,7 +2165,13 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     );
     // No hazards in a town: a field scene's exits are walk-on trigger bands,
     // not entity portals, and the only one on the route is the goal.
-    let leg = walk_to(host, goal, &HashSet::new(), &mut LegStats::default());
+    let leg = walk_to(
+        host,
+        goal,
+        &HashSet::new(),
+        &mut LegStats::default(),
+        &fight,
+    );
     let cleared = matches!(&leg, Leg::Transitioned(n) if n == "map01");
     rungs.push(Rung {
         label: "pad-walk town01 south gate -> map01",
@@ -1838,7 +2203,7 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     let a_hazards = portal_hazards(host, "suimon");
     let a_goal = portal_tile(host, "suimon", &a_hazards);
     let mut stats = LegStats::default();
-    let leg_a = a_goal.map(|goal| walk_to(host, goal, &a_hazards, &mut stats));
+    let leg_a = a_goal.map(|goal| walk_to(host, goal, &a_hazards, &mut stats, &fight));
 
     // --- 3. …and the crossing itself, which is leg A. ---------------------
     let crossed = stats.fought > 0 && stats.reach >= OVERWORLD_CROSSING_TILES;
@@ -1875,6 +2240,7 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
             SUIMON_SOUTH_EXIT,
             &suimon_north_doors(),
             &mut LegStats::default(),
+            &fight,
         );
         if std::env::var_os("LEGAIA_CPR_DEBUG").is_some() {
             let (x, z) = player_world(host);
@@ -1889,7 +2255,7 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     if arrived {
         let c_hazards = portal_hazards(host, "keikoku");
         let leg_c = portal_tile(host, "keikoku", &c_hazards)
-            .map(|goal| walk_to(host, goal, &c_hazards, &mut LegStats::default()));
+            .map(|goal| walk_to(host, goal, &c_hazards, &mut LegStats::default(), &fight));
         trail.push(format!("map01 -> keikoku: {}", fmt_leg(leg_c.as_ref())));
         arrived = matches!(&leg_c, Some(Leg::Transitioned(n)) if n == "keikoku");
     }
@@ -1922,6 +2288,44 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
         let (x, z) = player_world(host);
         tile_of(x, z)
     };
+    // Why rung 5 fights nothing, printed where a reader will meet the claim.
+    //
+    // The rung's own header says its encounters "come from the scene's own
+    // table rather than the overworld region set". They do not - not because
+    // the loop is unarmed (it is, above) but because `keikoku`'s MAN encounter
+    // section decodes to exactly ONE region: the whole map (`x 0..128`,
+    // `z 0..128`) at `rate 0` with a one-row formation range. `any_rollable`
+    // therefore answers `false` and no step ever rolls, while the same MAN
+    // registers 37 formation rows that nothing can reach. A 128x128 AABB with
+    // a zero rate does not read like authored dungeon data; the suspect is
+    // `man_section::region_records` finding a header or terminator row rather
+    // than the region array. Until that is settled, rung 5 measures dungeon
+    // *locomotion* and its exit bands, and nothing about its encounters.
+    if std::env::var_os("LEGAIA_CPR_FIGHT").is_some() {
+        eprintln!(
+            "[fight] keikoku encounter model: live_loop {} rollable {} region_tracker {} \
+             session {} formations {:?}",
+            host.world.live_gameplay_loop,
+            host.world.scene_encounters_rollable,
+            host.world.field_region_tracker.is_some(),
+            host.world.encounter.is_some(),
+            host.world.registered_formation_ids(),
+        );
+        if let Some(t) = host.world.field_region_tracker.as_ref() {
+            for r in &t.table().regions {
+                eprintln!(
+                    "[fight]   region x{}..{} z{}..{} rate {} formations {}..+{}",
+                    r.tile_x_min,
+                    r.tile_x_max,
+                    r.tile_z_min,
+                    r.tile_z_max,
+                    r.rate_increment,
+                    r.formation_base,
+                    r.formation_count
+                );
+            }
+        }
+    }
     let records = exit_records(host);
     // The door the player came in through is the record whose band the arrival
     // is standing on the approach to. On `keikoku` that is unambiguous by a
@@ -1995,7 +2399,7 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     let mut stats5 = LegStats::default();
     let leg_d = candidates
         .first()
-        .map(|&(_, goal, _)| walk_to(host, goal, &hazards5, &mut stats5));
+        .map(|&(_, goal, _)| walk_to(host, goal, &hazards5, &mut stats5, &fight));
     // Where the transition put the player names **which door** it was, because
     // every `keikoku` record returns to `map01` at its own tile. That is the
     // check a step back through the entrance cannot pass, and it comes off the

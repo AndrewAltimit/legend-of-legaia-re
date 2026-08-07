@@ -12,8 +12,10 @@ pub struct BattleSpoilsBanner {
     pub gold: u32,
     /// `"<name> drop"` lines - one per item the loot roll surfaced.
     pub drops: Vec<String>,
-    /// `"<name> is now level N"` lines - one per character that crossed a
-    /// threshold in this battle's XP grant.
+    /// `"<name>'s level increased!"` lines - one per character that crossed
+    /// a threshold in this battle's XP grant. The wording is retail's own,
+    /// off the `noa_levelup_banner` framebuffer; the new level is not on
+    /// that line (the status screen carries it).
     pub level_ups: Vec<String>,
 }
 
@@ -56,7 +58,7 @@ impl World {
                     .map(|m| m.name())
                     .filter(|n| !n.trim().is_empty())
                     .unwrap_or_else(|| format!("Member {}", slot + 1));
-                format!("{name} is now level {}", lu.new_level)
+                format!("{name}\'s level increased!")
             })
             .collect();
         Some(BattleSpoilsBanner {

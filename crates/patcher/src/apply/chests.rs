@@ -18,25 +18,63 @@ pub struct ChestSite {
     pub item: u8,
 }
 
+/// Every MAN carrier in one PROT entry that holds chest give sites.
+///
+/// A scene's MAN arrives either as the `scene_asset_table` bundle descriptor or
+/// as a raw type-3 `DATA_FIELD` streaming chunk. The v12-family dungeons use the
+/// latter, and `rikuroa` has no bundle MAN at all, so a bundle-only sweep finds
+/// no chest anywhere inside Mt. Rikuroa. Walking both is what puts those
+/// dungeons' loot in the shuffle.
+fn chest_carriers(entry: &[u8], idx: usize, named: Option<&[bool; 256]>) -> Vec<SceneChests> {
+    let mut out = Vec::new();
+    if let Some(sc) = SceneChests::locate(entry, idx) {
+        out.push(sc);
+    }
+    out.extend(SceneChests::locate_streaming_mans(entry, idx));
+    if let Some(mask) = named {
+        for sc in &mut out {
+            sc.retain_sites_with(|id| mask[id as usize]);
+        }
+        out.retain(|sc| !sc.sites.is_empty());
+    }
+    out
+}
+
+/// Build the `256`-entry "id names a real item" mask from the disc's SCUS item
+/// table. `None` when SCUS or its table is absent, in which case the sweep falls
+/// back to structural-only validation (the pre-existing behaviour).
+///
+/// Not the shop pass's *sellable* mask: a chest legitimately grants unsellable
+/// quest items, so the predicate here is "has a name", not "has a price".
+fn named_item_mask(patcher: &DiscPatcher) -> Option<[bool; 256]> {
+    let scus = patcher.read_named_file("SCUS_942.54")?;
+    let names = legaia_asset::item_names::ItemNameTable::from_scus(&scus)?;
+    let mut mask = [false; 256];
+    for (id, slot) in mask.iter_mut().enumerate() {
+        *slot = names.name(id as u8).is_some_and(|n| !n.is_empty());
+    }
+    Some(mask)
+}
+
 /// Read every treasure-chest give-item site on the disc (the randomizable
 /// population), in PROT-entry order. Mirrors [`current_drops`] for chests:
 /// purely read-only, decodes each scene MAN once via [`SceneChests::locate`].
 pub fn current_chests(patcher: &DiscPatcher) -> Result<Vec<ChestSite>> {
     let mut out = Vec::new();
+    let named = named_item_mask(patcher);
     for idx in 0..patcher.entry_count() {
         let entry = patcher
             .read_entry(idx)
             .with_context(|| format!("read PROT entry {idx}"))?;
-        let Some(sc) = SceneChests::locate(&entry, idx) else {
-            continue;
-        };
-        let items = sc.current_items();
-        for (k, &off) in sc.sites.iter().enumerate() {
-            out.push(ChestSite {
-                entry_idx: idx,
-                man_offset: off,
-                item: items[k],
-            });
+        for sc in chest_carriers(&entry, idx, named.as_ref()) {
+            let items = sc.current_items();
+            for (k, &off) in sc.sites.iter().enumerate() {
+                out.push(ChestSite {
+                    entry_idx: idx,
+                    man_offset: off,
+                    item: items[k],
+                });
+            }
         }
     }
     Ok(out)
@@ -79,13 +117,12 @@ pub fn randomize_chests(
     // Pass 1: collect every scene's chest sites + current items (decoded MAN
     // held for pass 2 so we don't decode twice).
     let mut scenes: Vec<SceneChests> = Vec::new();
+    let named = named_item_mask(patcher);
     for idx in 0..patcher.entry_count() {
         let entry = patcher
             .read_entry(idx)
             .with_context(|| format!("read PROT entry {idx}"))?;
-        if let Some(sc) = SceneChests::locate(&entry, idx) {
-            scenes.push(sc);
-        }
+        scenes.extend(chest_carriers(&entry, idx, named.as_ref()));
     }
 
     let mut report = ChestApplyReport {

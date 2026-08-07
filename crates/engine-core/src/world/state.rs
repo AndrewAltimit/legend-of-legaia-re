@@ -584,6 +584,18 @@ pub struct World {
     /// outside a cutscene.
     pub cutscene_return_mode: Option<SceneMode>,
 
+    /// The `fmv_id` whose playback just ended, parked here by
+    /// [`World::finish_cutscene`] for exactly one drain by
+    /// [`crate::scene::SceneHost::apply_pending_fmv_handoff`].
+    ///
+    /// Retail's post-play control transfer is not a world-only decision - the
+    /// [`FmvHandoff::Field`](crate::cutscene::FmvHandoff::Field) arm loads a
+    /// *different scene*, which needs the host's asset index. So the world
+    /// records "an FMV finished, and which one" and the scene host performs
+    /// the transfer. Draining it is a `take`: the transfer runs once however
+    /// many hosts poll.
+    pub finished_fmv: Option<i16>,
+
     /// Field-VM side-effects emitted this frame. Engines drain after
     /// [`World::tick`] to dispatch BGM, dialog, money, party, camera, etc.
     /// Mirror of the `FieldHost` callbacks - see [`FieldEvent`] for the
@@ -2701,6 +2713,7 @@ impl World {
             scripted_formation_pending: false,
             active_fmv: None,
             cutscene_return_mode: None,
+            finished_fmv: None,
             pending_field_events: Vec::new(),
             pending_actor_spawns: Vec::new(),
             pending_battle_events: Vec::new(),

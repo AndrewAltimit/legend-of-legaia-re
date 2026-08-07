@@ -36,7 +36,13 @@ impl PlayWindowApp {
         // Dev affordance: spawn a debug effect marker at the player so
         // the effect-pool render bridge can be exercised by hand
         // before the runtime effect catalog is wired into battle-enter.
-        if matches!(code, KeyCode::KeyE)
+        //
+        // On `F5`, not on `E`, and the rest of this family (`F`/`G`/`H`/`J`)
+        // stays on letters: `E` is bound to R1 in the engine's default pad
+        // table, and an arm here returns before the pad lookup, so a window
+        // arm sitting on a bound key silently deletes that button from the
+        // keyboard. See `keycode_to_name`.
+        if matches!(code, KeyCode::F5)
             && state == ElementState::Pressed
             && !self.boot_ui.is_active()
         {
@@ -566,18 +572,23 @@ impl PlayWindowApp {
             }
             return;
         }
-        // `V`: master audio mute toggle. Flips the engine-only `muted`
+        // `F2`: master audio mute toggle. Flips the engine-only `muted`
         // options knob, pushes it into the mixer's master gate (output
         // silenced; sequencer + SPU keep ticking so unmute stays in sync),
         // and persists it to the options config file. The HUD status line
         // reflects the state ("audio muted").
-        if matches!(code, KeyCode::KeyV) && state == ElementState::Pressed {
+        //
+        // It used to be `V`, which is **Square** in the engine's default pad
+        // table - so the native window had no Square at all, and the dance
+        // minigame's third judged button, the fishing reel B and the
+        // three-actor talk's leader switch were all unpressable.
+        if matches!(code, KeyCode::F2) && state == ElementState::Pressed {
             self.options_state.muted = !self.options_state.muted;
             self.persist_and_apply_options();
             log::info!(
                 "audio: {}",
                 if self.options_state.muted {
-                    "muted (V to unmute)"
+                    "muted (F2 to unmute)"
                 } else {
                     "unmuted"
                 }
@@ -626,13 +637,21 @@ impl PlayWindowApp {
             );
             return;
         }
-        // `D`: toggle the camera-occlusion fade enhancement (the
+        // `F4`: toggle the camera-occlusion fade enhancement (the
         // `--no-occlusion-fade` flag's runtime twin). Default ON: field
         // walls / roofs / props between the camera and the player dissolve
         // to a screen-door dither around the character so it stays
         // visible. Pure renderer state - no world/sim effect, replays
         // unaffected. OFF is the retail behaviour (authored framing only).
-        if matches!(code, KeyCode::KeyD) && state == ElementState::Pressed {
+        //
+        // Not `D`, and for a sharper reason than `F2`-not-`V`: `D` is a
+        // **pad-bindable key name** (`KEY_NAME_DOM_CODES` carries it, and the
+        // browser layout spends it on Right), so a player who binds
+        // `D = Right` on the desktop build could not walk right - this arm
+        // consumes the event and returns before the pad mapping runs. `F4`
+        // has no entry in the shell's binding parser, so nothing can ever be
+        // bound to it.
+        if matches!(code, KeyCode::F4) && state == ElementState::Pressed {
             self.occlusion_fade = !self.occlusion_fade;
             if let Some(r) = self.win.renderer.as_ref() {
                 r.set_occlusion_fade(self.occlusion_fade);
@@ -647,11 +666,26 @@ impl PlayWindowApp {
             );
             return;
         }
-        // `C`: toggle the field camera between the retail follow view
+        // `F1`: toggle the shell's diagnostic text rows (scene / frame /
+        // mesh count, the camera + audio status line, the world-map camera
+        // readout, the no-encounter hint). Off by default - retail draws no
+        // text there, and the seat is the party readout's
+        // (`field_party_hud_draws`). `LEGAIA_DIAG_HUD` starts them on, the
+        // same variable the battle diagnostics read.
+        if matches!(code, KeyCode::F1) && state == ElementState::Pressed {
+            self.diag_rows = !self.diag_rows;
+            log::info!(
+                "hud: diagnostic rows {}",
+                if self.diag_rows { "ON" } else { "off" }
+            );
+            return;
+        }
+        // `F3`: toggle the field camera between the retail follow view
         // (savestate-pinned pitch/yaw/H, player-anchored - the
         // faithful framing) and the wide debug orbit vantage (better
-        // for eyeballing scene completeness).
-        if matches!(code, KeyCode::KeyC)
+        // for eyeballing scene completeness). Moved off `C` for the same
+        // reason `F2` is not `V`: `C` is Triangle.
+        if matches!(code, KeyCode::F3)
             && state == ElementState::Pressed
             && !self.boot_ui.is_active()
         {

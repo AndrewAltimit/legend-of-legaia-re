@@ -373,17 +373,31 @@ impl LevelUpTracker {
     }
 
     /// Apply a `LevelUpResult` to a `CharacterRecord` - increases `hp_max` /
-    /// `mp_max`, restores `hp_cur` / `mp_cur` to the new maximums (Legaia
-    /// restores HP/MP on level-up), adds the six battle-stat gains to both the
-    /// record-side window (`+0x11C..+0x12D`) and the live window
-    /// (`+0x110..+0x11B`) - matching `FUN_801E9504`'s write-then-mirror - and
-    /// writes the new level back to the record's `+0x100` byte.
+    /// `mp_max`, adds the six battle-stat gains to both the record-side window
+    /// (`+0x11C..+0x12D`) and the live window (`+0x110..+0x11B`) - matching
+    /// `FUN_801E9504`'s write-then-mirror - and writes the new level back to
+    /// the record's `+0x100` byte.
+    ///
+    /// **Current HP / MP are deliberately untouched.** A level-up is not a
+    /// heal. `FUN_801E9504` stores to exactly eleven addresses, and every one
+    /// of them is a *maximum* or a stat: the record-side window `+0x6E4`
+    /// (`hp_max`, capped `0x270F`), `+0x6E6` (`mp_max`, capped `0x3E7`),
+    /// `+0x6EA..+0x6F4` (AGL capped `0x118`, the other five capped `0x3E7`) -
+    /// which is `+0x11C..+0x12C` at the record's `0x5C8` base delta - plus the
+    /// displayed-level byte `+0x6F8` (= `+0x130`) and its actor-table mirror.
+    /// The live window's `hp_cur` (`+0x106`) and `mp_cur` (`+0x10A`) appear
+    /// nowhere in it, and its only `jal` is `0x80056798` (the BIOS rand), so
+    /// there is no helper doing it either. Verified identically in both dumps
+    /// of the routine (`overlay_battle_action_801e9504.txt`,
+    /// `overlay_magic_level_up_801e9504.txt`).
+    ///
+    /// This mattered: the free full heal was load-bearing in the pad-driven
+    /// `critical_path_replay` crossing, where a mid-route level-up returned a
+    /// solo Vahn to full HP for nothing.
     pub fn apply_to_record(result: &LevelUpResult, record: &mut CharacterRecord) {
         let mut hms = record.hp_mp_sp();
         hms.hp_max = hms.hp_max.saturating_add(result.hp_gained);
         hms.mp_max = hms.mp_max.saturating_add(result.mp_gained);
-        hms.hp_cur = hms.hp_max;
-        hms.mp_cur = hms.mp_max;
         record.set_hp_mp_sp(hms);
 
         // Six battle stats: AGL / ATK / UDF / LDF / SPD / INT. Retail grows the

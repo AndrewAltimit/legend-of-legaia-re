@@ -1692,6 +1692,7 @@ mod tests {
                 mask: 0b010, // second party member only
                 category: Disc::Weapon,
                 is_ra_seru: false,
+                passive_index: None,
             },
         )]));
         runtime.open_shop(ShopSession::new(ShopInventory::new(
@@ -1756,6 +1757,7 @@ mod tests {
                 mask: 0b111,
                 category: Disc::Body,
                 is_ra_seru: false,
+                passive_index: None,
             },
         )]));
         runtime.open_shop(ShopSession::new(ShopInventory::new(
@@ -1795,6 +1797,7 @@ mod tests {
                 mask: 0b111,
                 category: Disc::Weapon,
                 is_ra_seru: false,
+                passive_index: None,
             },
         )]));
         runtime.open_shop(ShopSession::new(ShopInventory::new(

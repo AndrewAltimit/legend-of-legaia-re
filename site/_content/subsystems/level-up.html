@@ -82,11 +82,15 @@
     <li>Engine calls <code>World::apply_battle_xp(xp_reward)</code>.</li>
     <li><code>apply_battle_xp</code> enumerates surviving party members (slots whose <code>BattleActor::hp &gt; 0</code>) and divides <code>xp_reward</code> equally among them (integer divide, remainder dropped). Dead members receive zero XP.</li>
     <li>For each surviving slot, calls <code>LevelUpTracker::grant_xp(char_id, share)</code>; <code>grant_xp</code> accumulates XP and checks the retail threshold table. Multi-level jumps collapse into one <code>LevelUpResult</code> with summed HP/MP gains.</li>
-    <li><code>LevelUpTracker::apply_to_record(result, record)</code> grows the record-side stat window, mirrors it to live, restores <code>hp_cur</code> / <code>mp_cur</code> to the new maxima, and writes <code>result.new_level</code> to the record's <code>+0x100</code> byte via <code>CharacterRecord::set_level</code>.</li>
+    <li><code>LevelUpTracker::apply_to_record(result, record)</code> grows the record-side stat window, mirrors it to live, and writes <code>result.new_level</code> to the record's <code>+0x100</code> byte via <code>CharacterRecord::set_level</code>. Current HP / MP are deliberately untouched &mdash; see below.</li>
     <li><code>BattleEvent::LevelUp { char_id, new_level, hp_gained, mp_gained }</code> is pushed to <code>World::battle_events</code>.</li>
     <li><code>World::current_level_up_banner</code> is set for the last character who levelled up.</li>
   </ol>
   <p><strong>Hydration on load.</strong> <code>World::load_full</code> syncs <code>LevelUpTracker::level[]</code> from each loaded character record's <code>+0x100</code> byte. Without this, a reloaded party would keep the tracker's default <code>1</code> per slot even when the saved records hold the party at level 30; the next XP grant would then roll the party back to level 1 + N.</p>
+
+  <h3>A level-up is not a heal</h3>
+  <p><code>FUN_801E9504</code> stores to exactly eleven addresses, and every one is a maximum, a stat, or a level: the record window's <code>hp_max</code> / <code>mp_max</code> (<code>+0x6E4</code> / <code>+0x6E6</code>, capped <code>0x270F</code> / <code>0x3E7</code>), the six battle stats at <code>+0x6EA..+0x6F4</code>, the displayed-level byte <code>+0x6F8</code> (= <code>+0x130</code>) with its actor-table mirror, and two globals. Current HP (<code>+0x106</code>) and current MP (<code>+0x10A</code>) appear nowhere in it, and the routine's only <code>jal</code> is the BIOS <code>rand</code>, so no helper writes them either.</p>
+  <p>The captures agree, and they are the decisive half, because those cells <em>are</em> written near a level-up &mdash; by the battle-end resync, not by a grant. The single-level <code>noa_levelup_*</code> triplet reads Noa at <code>164/182</code> HP and <code>16/16</code> MP going into the fight and <code>164/221</code> HP / <code>16/21</code> MP once the L2&rarr;L3 level-up has settled: both maxima move, both currents stand still. Crossing a threshold mid-dungeon raises the ceiling and leaves you exactly as hurt as you were.</p>
 </section>
 
 <section class="doc-section" id="banner">
@@ -106,7 +110,7 @@
       <tbody>
         <tr><td>Record write</td><td>pre &rarr; mid&#x2081;</td><td><code>+0x11C..+0x12D</code> (record stats), <code>+0x004</code> (XP), <code>+0x130</code> (displayed level +1)</td></tr>
         <tr><td>Live copy</td><td>mid&#x2081; &rarr; mid&#x2082;</td><td><code>+0x104..+0x11B</code> (HP_max, MP_max, six u16 live stats)</td></tr>
-        <tr><td>Settle</td><td>mid&#x2082; &rarr; post</td><td><code>+0x106 / +0x10A / +0x10E</code> (live HP_cur / MP_cur / AP_cur settle - the level-up refill)</td></tr>
+        <tr><td>Settle</td><td>mid&#x2082; &rarr; post</td><td><code>+0x106 / +0x10A / +0x10E</code> (live HP_cur / MP_cur / AP_cur settle - the battle-end resync, <em>not</em> a refill)</td></tr>
       </tbody>
     </table>
     <p>Gala's runs in two phases (live copy + settle collapsed). Per-character record bases (Vahn <code>0x80084708</code>, Noa <code>0x80084B1C</code>, Gala <code>0x80084F30</code>, slot 3 <code>0x80085344</code>, stride <code>0x414</code>) are documented in <code>engine_core::capture_observations::char_level_up</code>; disc-gated tests in <code>crates/mednafen/tests/real_saves.rs</code> exercise both triplets. NB the multi-level captures are unreliable for <em>per-level</em> growth rates (their stated HP deltas are impossible under the validated ~38/level rate); the single-level Noa L2&rarr;L3 pair is the arithmetic oracle. Slot indices rotate with the corpus (<code>scripts/scenarios.toml</code>).</p>

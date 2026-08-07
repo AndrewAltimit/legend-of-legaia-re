@@ -560,13 +560,6 @@ impl RetailInventory {
     /// survives rather than being dropped), and duplicate ids are merged rather
     /// than left as two stacks.
     // PORT: FUN_800423E0
-    // NOT WIRED: the two hosts this model has are read-only. `save-tool items`
-    // reports the window and dry-runs the consumes, and the unit tests assert
-    // the merge-then-pull order; neither has a reason to rewrite a real save's
-    // slot order, and doing so from a CLI would be a card edit disguised as an
-    // inspection. It gets a caller when something is *meant* to write a card
-    // back - a save editor, or a randomizer feature that seeds a starting bag
-    // into an existing block rather than into the new-game template.
     pub fn normalize(&mut self) {
         let window = self.slots.len();
         let mut survivors: Vec<(u8, u8)> = Vec::with_capacity(window);
@@ -596,12 +589,6 @@ impl RetailInventory {
     /// slot, else surface the full-bag OOB id-store primitive as
     /// [`AddOutcome::OobIdWrite`] **without** writing anything.
     // PORT: FUN_800421D4
-    // NOT WIRED: same read-only hosts as [`normalize`](Self::normalize), and
-    // one reason more. Its distinguishing return is
-    // [`AddOutcome::OobIdWrite`] - the full-bag out-of-bounds id store - which
-    // is a *finding about retail*, not an operation a tool should perform. The
-    // engine grants items through `legaia_engine_core`'s bounded list, so the
-    // primitive has no engine-side caller either.
     pub fn add(&mut self, id: u8, qty: u8) -> AddOutcome {
         // (1) MERGE pass: existing stack of the same id.
         if let Some(i) = self.find_slot(id) {
@@ -648,6 +635,60 @@ impl RetailInventory {
         cell.1 = cell.1.saturating_add(delta).min(STACK_CAP);
         Some(cell.1)
     }
+}
+
+/// What a [`compose_window`] pass could not fit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RefusedGrant {
+    /// The item id that had nowhere to go.
+    pub id: u8,
+    /// How many of it were being placed.
+    pub qty: u8,
+}
+
+/// Lay an engine-side `(id, qty)` list into a retail item window through
+/// retail's **own** add path, then normalize it.
+///
+/// The engine keeps its bag as a map and hands out a compact list; a retail
+/// save block holds a fixed slot array with rules the map does not have. This
+/// is the bridge, and it exists because writing the list into the array
+/// positionally produces blocks retail cannot represent:
+///
+/// - **the 99 cap.** The engine's battle-drop and steal grants are
+///   `saturating_add(1)` against a `u8` with no cap of their own, so a long
+///   session can bank more than [`STACK_CAP`] of an item. Retail's accessors
+///   clamp there and its UI draws two digits. [`RetailInventory::add`]'s merge
+///   pass applies the clamp.
+/// - **one stack per id.** Two entries with the same id are a shape retail's
+///   add path never produces and its `find_count` under-reports.
+///   [`RetailInventory::normalize`] folds them.
+/// - **the full bag.** Grants past the window's capacity are returned as
+///   [`RefusedGrant`]s rather than silently dropped - that is retail's
+///   full-bag arm surfaced as data instead of performed (it would store the id
+///   one slot past the window).
+///
+/// Returns the composed window and everything that did not fit, in input
+/// order.
+pub fn compose_window(
+    base: u32,
+    window_slots: usize,
+    grants: &[(u8, u8)],
+) -> (RetailInventory, Vec<RefusedGrant>) {
+    let mut inv = RetailInventory::new(base, window_slots);
+    let mut refused = Vec::new();
+    for &(id, qty) in grants {
+        if id == 0 {
+            // Id 0 is the empty-slot sentinel, not an item: retail's own
+            // occupancy test is `id != 0`. Placing one would write a slot
+            // every accessor reads as free.
+            continue;
+        }
+        if let AddOutcome::OobIdWrite { .. } = inv.add(id, qty) {
+            refused.push(RefusedGrant { id, qty });
+        }
+    }
+    inv.normalize();
+    (inv, refused)
 }
 
 #[cfg(test)]

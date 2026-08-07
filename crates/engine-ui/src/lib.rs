@@ -61,6 +61,7 @@ pub mod battle_name_banner;
 pub mod battle_trail;
 mod battle_tutorial_box;
 pub mod billboard;
+pub mod field_party_hud;
 pub mod gte;
 pub mod other_game_hud;
 pub mod pause_menu;

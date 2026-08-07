@@ -433,18 +433,61 @@ arms. Random encounters use a separate path:
 **Roll function.** `FUN_801D9E1C` (in the world_map overlay; also paged
 in by dance / fishing / slot-machine / cutscene_mapview / dialog_typing /
 debug_menu overlays - same code each time) runs once per movement
-update. It walks the per-scene **region table** at
-`*(_DAT_801C6EA4 + 0x28) + 1` and matches the player's `(x, y)` against
-each region's AABB at `pbVar9[0..3]`. The matching region descriptor
-supplies:
+update. It first runs the [condition walk](#the-condition-array-story-flag-gated-region-groups)
+to pick which slice of the per-scene **region table** at
+`*(_DAT_801C6EA4 + 0x28) + 1` is live, then matches the player's
+`(x, y)` against each region's AABB at `pbVar9[0..3]` **within that
+slice only**. The matching region descriptor supplies:
 
 - `pbVar9[4]`: per-step rate increment.
 - `pbVar9[6]`, `pbVar9[7]`: base + count of the formation slice the
   region rolls into.
 
+### The condition array: story-flag-gated region groups
+
+The region array is not one flat list. The **condition array** partitions
+it into consecutive groups, one per story state, and exactly one group is
+live at a time. Each 4-byte condition record is
+`[u16 flag_id][s16 region_count]`.
+
+The walk (`0x801d9f30..0x801d9fd8`) holds a region cursor that starts at
+region 0 and steps through the conditions in order:
+
+- `flag_id == 0xFFFF` - stop; this group is the unconditional default.
+- `FUN_8003CE64(flag_id)` non-zero (the story flag is **set**) - stop;
+  this group wins.
+- otherwise - advance the cursor by `region_count` regions and continue.
+
+If the walk reaches the end of the condition list without stopping, the
+function **returns without rolling** (`0x801d9fc8`) - that is a
+"no encounter this step" exit, not a fallback to the whole array. The
+same test makes a zero-length condition array mean "never rolls"; no
+retail scene has one.
+
+The group's own `region_count` (re-read from the selected condition at
+`+2`) bounds the AABB search, so regions outside it are invisible in that
+story state.
+
+Two corpus-wide invariants hold across every retail scene bundle whose
+MAN decodes: the group lengths **tile the region array exactly**
+(`sum(region_count) == region_count byte`), and the condition list ends
+with exactly one `0xFFFF` record and contains no other. Runtime states
+agree with the disc bytes: reading `_DAT_801C6EA4`'s three pointers out
+of a mid-playthrough main-RAM image reproduces the carve
+(`ctrl[+0x24] - ctrl[+0x20] == 1 + formation_count * formation_stride`,
+and likewise for `+0x28`), and walking the live conditions against the
+`0x80085758` flag bank selects the group this page's model predicts -
+in Drake Castle, the `0x0142`-gated leading group is skipped and the
+14-region unconditional tail is live. A group commonly
+ends with a whole-map `rate 0` catch-all (the "outside every named
+region, roll nothing" row), and a *gated* group is frequently nothing but
+such a row - which is how a scene is made silent in one story state and
+noisy in another. Reading the array flat therefore lands on group 0 and
+stops on its placeholder row, which is what makes most scenes look
+encounter-free.
+
 The rate is then scaled by the user-config setting at `_DAT_8007B5F8`
-(`0` off, `1` low, `2` normal → `<< 2`, `3` high → `>> 2`; the world-map
-debug menu `ENCOUNT` row cycles this byte) and by four sequential
+and by four sequential
 accessory / status modifiers whose magnitudes are statically pinned in
 the same dump (`overlay_world_map_801d9e1c.txt`, `0x801da1b8..0x801da200`):
 
@@ -454,6 +497,25 @@ the same dump (`overlay_world_map_801d9e1c.txt`, `0x801da1b8..0x801da200`):
 | `FUN_800431D0(0x3C)` | Low Encounter passive (Good Luck Bell / Evil Talisman) | rate `>> 1` |
 | `FUN_8003CE64(0x1D)` | system flag `0x1D` (the `_DAT_80085758` bank) | rate `<< 1` |
 | `FUN_8003CE64(0x1E)` | system flag `0x1E` | rate `>> 1` |
+
+#### The `_DAT_8007B5F8` setting byte
+
+The scale arm (`0x801da198..0x801da1b4`) compares the byte against `2` and
+against `3` and does nothing otherwise, so the four values are:
+
+| Value | Effect |
+|---|---|
+| `0` | No roll at all. `FUN_801DA51C`'s state-0 arm tests the byte at `0x801da5a8` and skips the call to `FUN_801D9E1C`, so this is off rather than "rate 0". |
+| `1` | Rate increment used **as-is**. Retail save states carry this value. |
+| `2` | Rate increment `<< 2` - four times as many encounters. |
+| `3` | Rate increment `>> 2` - a quarter as many. |
+
+The only writer in the static corpus is the world-map debug menu's `ENCOUNT`
+row (`FUN_801EA9B0` case 4), which cycles the byte `0 → 1 → 2 → 3 → 0`; the
+boot value is set from outside that corpus, and the runtime captures are what
+pin it. The engine mirrors the numbering in
+`region_encounter::EncounterRateSetting`, whose `Default` is the `1`
+pass-through.
 
 The scaled rate is subtracted from the step counter at `_DAT_8007B5FC`.
 Engine port: `region_encounter::EncounterRateModifiers` (applied on both
@@ -484,8 +546,14 @@ The roll above is ported clean-room as
 tile-AABB + rate increment + formation slice (built from the MAN via
 `region_encounter_table_from_man`, the position-routed companion to the
 aggregated [`encounter_man::encounter_table_from_man`](../../crates/engine-core/src/encounter_man.rs)).
+The table also carries the condition partition as `RegionEncounterTable::groups`
+and a selected slice; `RegionEncounterTracker::select_group(flag_test)` re-runs
+the condition walk and both roll sites call it once per step from the live
+system-flag bank, so a flag set mid-scene swaps the region set (and with it the
+rates, formation ranges and battle backdrop) on the next step.
 `RegionEncounterTracker::on_step(world_x, world_z, rng)` reduces the position to
-a 128-unit tile (`coord >> 7`), selects the first region whose AABB contains it,
+a 128-unit tile (`coord >> 7`), selects the first region **of the active group**
+whose AABB contains it,
 subtracts the setting-scaled rate increment from the step counter, and on a
 `<= 0` counter rolls a formation uniformly from `[base, base + count)` with the
 one-step anti-repeat and the `0x3ce + rng%0x1e7 - rng%0x1e7` counter reset. The
@@ -525,8 +593,8 @@ allocated by `FUN_8003A024` and populated per-scene by `FUN_8003A110`
 | Offset | Field |
 |---|---|
 | `+0x20` | Formation table base. Records of stride `+0x5d`; record at index `i` lives at `base + 1 + i * stride` (the `+1` skips a leading count byte). |
-| `+0x24` | Condition table base. Records of stride `+0x5e`. |
-| `+0x28` | Region table base. Records of stride `+0x5f` (AABB + rate + formation range). |
+| `+0x24` | Condition table base. Records of stride `+0x5e`; each is `[story flag id][region count]` and gates one slice of the region table. |
+| `+0x28` | Region table base. Records of stride `+0x5f` (AABB + rate + formation range), grouped by the condition table. |
 | `+0x5d` | Formation record stride. |
 | `+0x5e` | Condition record stride. |
 | `+0x5f` | Region record stride. |
@@ -625,6 +693,8 @@ followed by three count-prefixed record arrays:
                    record_i[+3]     = monster_count
                    record_i[+4..]   = monster_ids
 +next          u8 condition_count + condition_count × condition_stride bytes
+                   cond_i[+0..+2]   = story flag id (0xFFFF = unconditional)
+                   cond_i[+2..+4]   = s16 count of regions this condition owns
 +next          u8 region_count + region_count × region_stride bytes
                    region_j[+0..+3] = (x_min, y_min, x_max, y_max)
                    region_j[+4]     = rate increment
@@ -632,6 +702,10 @@ followed by three count-prefixed record arrays:
                    region_j[+7]     = formation-range count
                    region_j[+8..]   = battle-bg variant flags + extras
 ```
+
+The regions are grouped, not flat: consecutive slices of the region array
+belong to the conditions in order. See
+[the condition array](#the-condition-array-story-flag-gated-region-groups).
 
 For `0086_map01` (Drake's kingdom field-scene bundle), the MAN
 descriptor sits at file offset `0x3B238` (LZS in 6537 → out 11274
@@ -649,6 +723,11 @@ section_5 @ 0x2866 (terminator)
 encounter: formation_stride=8, condition_stride=4, region_stride=12;
 37 formations, 4 conditions, 64 regions.
 ```
+
+The four conditions own 16 regions each - four story-state variants of the
+same overworld region layout, differing only in per-region rate and battle
+backdrop byte, each ending with its own whole-map `rate 0` catch-all. The
+`0xFFFF` variant is last, so a cleared flag bank uses regions `48..64`.
 
 Formation 3 = `[00 00 00 02 04 04 00 00]` matches `mc2`'s in-RAM
 formation cell `04 04 00 00` byte-for-byte. The

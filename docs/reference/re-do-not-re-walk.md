@@ -30,6 +30,7 @@ below.
 |---|---|---|
 | Move-VM op `0x2F` extension dispatcher - per-overlay copies? | falsified (one copy, field overlay 0897 only) | The **capture-derived** `_801d362c` dumps are identical to each other (0897 observed under world-map / dialog / cutscene scenario labels); the `0897` **static** dump is a strict *subset* of them, not a byte-identical twin (Ghidra could not follow the JT flow). Substance is unchanged: every other mapped slot-A overlay + the title overlay carries unrelated bytes at the fixed call VA and no JT at `0x801CE868`, so op `0x2F` is executable only while 0897 is resident and battle-side move records cannot use it. See [move-vm-overlay-ext.md](../subsystems/move-vm-overlay-ext.md#overlay-residency---one-copy-in-the-field-overlay-only). |
 | "`FUN_801F3894` spirit/magic damage roll" (state-`0x3D` chain caller) | falsified (VA-aliased dump) | The `overlay_0897_801f3894` dump is `FUN_801DD0AC` byte-for-byte under a double VA shift, so the already-ported damage kernel surfaces at a fake entry VA. The real state-`0x3D` callee `FUN_801F3990` is a cast **audio-cue dispatcher**; spirit damage is state `0x3E`'s inline formula. **Corollary, widened: `801Exxxx` dumps are suspect too, not just the `0x801F` band** - `801f0348` and `801e23ec` are settled casualties, the latter's aliased reading having dropped all three initiative modifier terms; `0x801F1ED4`/`0x801F45A4` unverified. See [battle-formulas.md](../subsystems/battle-formulas.md#initiative-key-seeding-fun_801da780). |
+| A level-up **refills** the live HP / MP pools (the captures' "settle" phase at `+0x106` / `+0x10A`) | falsified (the settle write is the battle-end resync; both currents stand still) | [details ↓](#a-level-up-is-not-a-heal) |
 | Navmesh / per-scene navigation data | falsified | `0x80108EA4..0x80109550` is per-scene GPU primitive scratch, not a 24-byte stride navmesh. Pointer hunts find zero RAM cells pointing into the window. Real per-scene region / collision / event-trigger data lives in the field-file preamble (a count + `u16` offset table + records - **not** the field-pack schema slots, which are a global-constant template; see [field-pack](../formats/field-pack.md)); the collision grid is the `+0x4000` MAP region; the encounter-record path lives at `actor[+0x94]`. |
 | Op-`0x4E` sub-ops 4..8 "absolute jump" / "rand -> next PC" readings | falsified (all sub-ops 0..9 are the 7-byte compare-and-skip) | [details ↓](#op-0x4e-sub-op-family---every-sub-op-09-is-a-compare) |
 | `801d58f0` / `801d63b0` as single shared port blockers | falsified (VA-aliasing artifact) | The two addresses host different code in different overlays (byte-verified: 80/228/124/308/1 B and 208/1036 B across 0897/baka/cutscene/debug-menu/fishing/slot/dance) - the port-catalog's bare-VA keying aggregated their refs into phantom top blockers. Tracked per-overlay via `overlay_<label>_<addr>` identities; catalog ignore category `va_aliased_overlay_local`. |
@@ -47,6 +48,33 @@ below.
 | "The port's `0x51` Done-band residency is unbounded" | falsified (bounded at `ctx[+0x6D8] = 0x3C`, as retail) | The 60-70 frames a sample shows is **one** action's countdown plus the HP-bar settle freeze; a multi-action sample sums several of them. Counting frames in a band without splitting them by action reads a per-action budget as a park. [details](../subsystems/battle-action.md#three-readings-the-port-already-satisfied) |
 | "The sparring tutorial reopens the command session, so the cursor cannot move" | falsified (the cursor walks `0..5`; a *waiting* prompt box parks the tick) | The session is reopened only on a rejected resolution. What pins the cursor on screen is retail's own `ctx[+0x6B2]` box guard, which the port reproduces. [details](../subsystems/battle-action.md#three-readings-the-port-already-satisfied) |
 | An action returns its combatants to their authored formation seats | falsified (retail leaves them on the ground the action ended on) | Two library states of one solo fight read the authored formation 1600 apart; two later ones read the same pair ~300 apart and both far off it, with every actor's `+0x3C`/`+0x40` pair within ~110 units of its live `+0x34`/`+0x38`. The port's walk-home leg is gone; the seat is committed from the live pair at `DoneCleanup`. [details](../subsystems/battle-action.md#where-an-action-leaves-its-combatants) |
+
+### A level-up is not a heal
+
+The reading came from a *multi-level* capture triplet whose third frame writes
+the live current-pool cells right after a level-up, and it was written into
+`capture_observations::char_level_up` as "the level-up refill". The port
+encoded it in `LevelUpTracker::apply_to_record`, which made every level-up a
+free full heal.
+
+Two independent checks falsify it.
+
+- **Disassembly.** `FUN_801E9504` stores to exactly eleven addresses: the
+  record window's `hp_max` / `mp_max`, its six battle stats, the displayed-level
+  byte and its actor-table mirror, and two globals. No live-window cell is
+  among them, and the routine's only `jal` is the BIOS `rand` - so nothing it
+  calls writes one either. Identical in both dumps of the routine.
+- **Capture.** The **single-level** `noa_levelup_*` triplet - the corpus's own
+  arithmetic oracle - reads Noa at `164/182` HP and `16/16` MP going into the
+  fight and `164/221` / `16/21` once the L2 → L3 level-up has settled in the
+  field. Both maxima move by the growth amount; neither current moves at all.
+
+So the `+0x106` / `+0x10A` write the multi-level captures see is the
+battle-end resync of the live pools, not a grant.
+
+**Generalises to:** a write that lands *near* an event is not a write *by* it.
+A frame-window capture cannot separate the two on its own - only the store set
+of the routine can.
 
 ### The flash ramp is the Arts announcement banner
 

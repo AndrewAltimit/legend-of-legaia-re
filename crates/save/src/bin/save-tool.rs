@@ -296,7 +296,11 @@ fn items(
     use legaia_save::retail_inventory::{ITEM_WINDOW_BASE, ItemWindow, RetailInventory};
 
     let sc = read_sc_block(path, save_index)?;
-    let raw = legaia_save::card::read_retail_inventory(&sc)
+    // The accessor window (`SC+0x1818..+0x1A18`), not the 72-slot general
+    // consumable page: the family this command runs walks up to
+    // `ITEM_SLOTS_TOTAL` slots, and rooting it at the page made the printed
+    // selector width a claim about bytes that had not been read.
+    let raw = legaia_save::card::read_retail_item_window(&sc)
         .context("SC block too small to hold the inventory window")?;
 
     // The selector's inputs. Only the member count has a pinned SC offset.
@@ -326,7 +330,15 @@ fn items(
         }
     }
 
-    let slots: Vec<(u8, u8)> = raw.chunks_exact(2).map(|c| (c[0], c[1])).collect();
+    // Walk exactly the selected window - that is what retail's accessors do.
+    // With no window installed, fall back to the whole array so the dump is
+    // still a dump rather than nothing.
+    let walk = window.map(|w| w.len()).unwrap_or(raw.len() / 2);
+    let slots: Vec<(u8, u8)> = raw
+        .chunks_exact(2)
+        .take(walk)
+        .map(|c| (c[0], c[1]))
+        .collect();
     let mut inv = RetailInventory::from_slots(ITEM_WINDOW_BASE, slots);
     print_window(&inv);
 

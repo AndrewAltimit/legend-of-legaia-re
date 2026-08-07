@@ -11,7 +11,7 @@ use super::super::*;
 pub(in crate::window) type CutsceneCam = ([f32; 3], f32, f32, f32, f32, [f32; 3]);
 
 impl PlayWindowApp {
-    pub(super) fn compute_scene_camera(
+    pub(in crate::window) fn compute_scene_camera(
         &self,
         aspect: f32,
         in_world_map: bool,

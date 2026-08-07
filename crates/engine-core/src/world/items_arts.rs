@@ -857,10 +857,16 @@ impl World {
                 .members
                 .get(char_id as usize)
                 .map(|r| r.hp_mp_sp());
+            // Only the **maximum** moves. The live HP / MP on the battle
+            // actor are the authoritative post-fight values - the record's
+            // `hp_cur` is the pre-fight snapshot until `persist_battle_party_hp`
+            // runs at the end of `finish_battle`, so copying it back here
+            // would undo the whole fight's damage. It did exactly that while
+            // `apply_to_record` also restored `cur` to `max`: the pair read as
+            // "levelling up heals you", which retail's `FUN_801E9504` does not
+            // do (see [`LevelUpTracker::apply_to_record`]).
             if let (Some(actor), Some(hms)) = (self.actors.get_mut(member as usize), new_hms) {
                 actor.battle.max_hp = hms.hp_max;
-                actor.battle.hp = hms.hp_cur;
-                actor.battle.mp = hms.mp_cur;
             }
             self.pending_battle_events.push(BattleEvent::LevelUp {
                 char_id,

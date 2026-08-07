@@ -257,8 +257,16 @@ fn custom_xp_table() {
     assert_eq!(r.new_level, 2);
 }
 
+/// A level-up raises the maxima and grows the stats. It is **not** a heal:
+/// `FUN_801E9504` stores only to the record-side stat window
+/// (`+0x11C..+0x12C`) and the displayed-level byte `+0x130`, never to the
+/// live window's `hp_cur` (`+0x106`) / `mp_cur` (`+0x10A)`.
+///
+/// This test used to assert the opposite (`hp_cur == hp_max` after the
+/// apply). It was asserting the defect: the free full heal made a mid-route
+/// level-up a recovery item in the pad-driven `critical_path_replay` crossing.
 #[test]
-fn apply_to_record_bumps_max_and_restores_cur() {
+fn apply_to_record_bumps_max_and_leaves_current_alone() {
     let mut rec = CharacterRecord::zeroed();
     let mut hms = rec.hp_mp_sp();
     hms.hp_max = 100;
@@ -300,9 +308,9 @@ fn apply_to_record_bumps_max_and_restores_cur() {
     let updated = rec.hp_mp_sp();
     assert_eq!(updated.hp_max, 110);
     assert_eq!(updated.mp_max, 55);
-    // HP/MP restored to new max
-    assert_eq!(updated.hp_cur, 110);
-    assert_eq!(updated.mp_cur, 55);
+    // Current HP / MP are untouched - a level-up is not a heal.
+    assert_eq!(updated.hp_cur, 40);
+    assert_eq!(updated.mp_cur, 10);
 
     // The six battle stats grew in both the live and record-side windows.
     let ls = rec.live_stats();

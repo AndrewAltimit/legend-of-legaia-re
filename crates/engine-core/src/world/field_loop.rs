@@ -470,6 +470,97 @@ impl World {
         Some(res)
     }
 
+    /// One retail **frame slice** of the loaded field-VM script: keep
+    /// executing opcodes until the context parks, exactly as retail's
+    /// per-context runner does.
+    ///
+    /// [`Self::step_field`] is a single *instruction*. Retail never runs a
+    /// context one instruction per frame - `FUN_8003CF7C` (and the identical
+    /// loop `FUN_8003AB2C` runs when it installs the ctx-`0xFB` system script
+    /// at scene load) calls the VM in a loop and leaves it only when one of
+    /// three things happens:
+    ///
+    /// 1. the instruction it just executed was the `0x21` NOP - the authored
+    ///    end-of-frame marker (`beq s0,s4` against `li s4,0x21`);
+    /// 2. the returned PC equals the PC it went in with - a wait / halt
+    ///    parking the context on its own instruction (`beq s2,v0`);
+    /// 3. the byte at the new PC has `op & 0x7F < 0x20` - the text-segment /
+    ///    terminator band, i.e. the script has walked into a dialogue payload
+    ///    (`andi v0,s0,0x7f; sltiu v0,v0,0x20`).
+    ///
+    /// The same guard is applied before the first instruction, so a slice
+    /// never *starts* inside text either.
+    ///
+    /// The per-actor channel runner ([`Self::step_field_channels`]) has always
+    /// paced itself this way (retail `FUN_80039B7C`'s own `0x21` break); the
+    /// system script did not, and one op per tick is a ~20x slowdown on a
+    /// scene's per-frame system loop. Concretely, `town01` `P1[0]` starts BGM
+    /// 2016 at `+0x000C` and stops it 32 instructions later at `+0x0061` on a
+    /// first visit: retail does both inside the load frame and nothing is
+    /// heard, while one-op-per-tick plays half a second of it. The same loop
+    /// carries the player-position bbox tests that pick the scene's camera
+    /// parameters (`4C 13`), so those tracked the player at 3 Hz instead of
+    /// per frame.
+    ///
+    /// Returns the last [`FieldStepResult`] the slice produced, or `None` when
+    /// there is no bytecode / the PC already sits in the text band.
+    ///
+    /// PORT: FUN_8003CF7C
+    /// REF: FUN_8003AB2C (the same loop, run once at scene-script install)
+    pub fn step_field_frame_slice(&mut self) -> Option<FieldStepResult> {
+        if self.field_bytecode.is_empty() {
+            return None;
+        }
+        // Retail's pre-loop guard: a context whose PC sits on a text /
+        // terminator byte executes nothing at all this frame.
+        if self.field_bytecode.get(self.field_pc)? & 0x7F < 0x20 {
+            return None;
+        }
+        let mode = self.mode;
+        let mut last = None;
+        for _ in 0..FIELD_FRAME_SLICE_BUDGET {
+            let pc = self.field_pc;
+            let Some(&opcode_byte) = self.field_bytecode.get(pc) else {
+                break;
+            };
+            last = self.step_field();
+            if last.is_none() {
+                break;
+            }
+            // Retail has no fourth condition here because a scene change tears
+            // the context down; the engine queues the request and drains it
+            // after the tick, so the loop has to stop itself or the ops after a
+            // `0x3F` run against the scene that is already going away. Same for
+            // a mode flip (a scripted battle) - the frame belongs to the new
+            // mode from that instruction on.
+            //
+            // No entry script exercises this today: a disassembly of `P1[0]` in
+            // all 124 CDNAME scenes finds zero `SceneChange` ops, and scene
+            // changes live in the partition-2 timeline records and the
+            // partition-1 interaction records that other steppers drive. It is
+            // here because the cost of being wrong is executing a dead scene's
+            // bytecode, and this is the only driver that runs a whole slice.
+            if self.mode != mode
+                || self.pending_named_scene_transition.is_some()
+                || self.pending_scene_transition.is_some()
+            {
+                break;
+            }
+            let next = self.field_pc;
+            // (1) the `0x21` NOP is the authored frame boundary; (2) a PC that
+            // did not move is a park (wait, halt, unimplemented op); (3) the
+            // next byte being a text segment ends the slice.
+            if opcode_byte == 0x21 || next == pc {
+                break;
+            }
+            match self.field_bytecode.get(next) {
+                Some(&b) if b & 0x7F >= 0x20 => {}
+                _ => break,
+            }
+        }
+        last
+    }
+
     /// Run the just-loaded scene-entry system script (ctx `0xFB`) up to its
     /// first yield / wait / halt, bounded.
     ///

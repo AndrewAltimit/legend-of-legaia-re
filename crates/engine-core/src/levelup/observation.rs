@@ -51,9 +51,11 @@ pub struct LevelUpObservation {
     pub mp_gained: u16,
     /// Spirit/AP gain across the same range, observed at char-record
     /// `+0x10E` - the live AP pair's *current* cell under the `(max, cur)`
-    /// order (`legaia_save::HpMpSp`); a level-up refills it to the raised
-    /// max. Engines that mirror the retail "Spirit gain on level-up"
-    /// behavior fold this into their gauge cap.
+    /// order (`legaia_save::HpMpSp`). Whatever writes it, it is **not**
+    /// `FUN_801E9504`, which stores to no live-window address at all; and
+    /// the level-up is not a pool refill either (see the phase table below).
+    /// Engines that mirror the retail "Spirit gain on level-up" behavior
+    /// fold this into their gauge cap.
     pub sp_gained: u16,
     /// Per-stat byte deltas observed at char-record `+0x11C..+0x12D` (18
     /// bytes = 9 u16 LE values). Each u16 entry is the total delta across
@@ -133,6 +135,14 @@ impl LevelUpObservation {
 /// | Live copy | mid → post | live stat window `+0x104..+0x11B` (HP_max, MP_max, six u16 stats) |
 /// | Settle | post → next | live HP_cur / MP_cur / AP_cur settle at `+0x106 / +0x10A / +0x10E` |
 ///
+/// **The settle phase is not a refill.** The single-level `noa_levelup_*`
+/// triplet - the corpus's arithmetic oracle - reads Noa at `164/182` going
+/// into the fight and `164/221` after the L2 -> L3 level-up has settled, with
+/// MP `16/16` -> `16/21`: both maxima move, both currents stand still. That
+/// matches `FUN_801E9504`, whose entire store set is maxima, stats and the
+/// level byte. The `+0x106` write these multi-level captures see across the
+/// settle frame is the battle-end live-window resync, not a grant.
+///
 /// The Noa and Gala observations exposed below capture the *settled*
 /// pre→settled diff (multi-frame collapse) so consumers see the total
 /// delta the level-up event grants. The phase split is documented in
@@ -185,9 +195,9 @@ pub mod observations {
     /// `102 → 336` reward across the early-game thresholds (L2 → L6).
     ///
     /// Settled deltas:
-    /// - HP_max: `0x96 → 0xB6` (+32) at `+0x11C` (record); the live pair
-    ///   follows (`+0x104` max in the live-copy phase, the `+0x106` current
-    ///   refilling to it at settle)
+    /// - HP_max: `0x96 → 0xB6` (+32) at `+0x11C` (record); the live pair's
+    ///   max at `+0x104` follows in the live-copy phase (the `+0x106`
+    ///   current is the battle's own HP, not a refill - see the phase table)
     /// - MP_max: `0x0A → 0x10` (+6) at `+0x10A` (live) and `+0x11E` (record)
     /// - AP: `0x38 → 0x60` (+40) at `+0x10E` (the live AP pair's current
     ///   cell; live-only - the record at `+0x120` is a 100-cap constant,

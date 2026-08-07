@@ -115,3 +115,70 @@ fn every_field_handoff_scene_enters() {
     }
     assert_eq!(checked, 7, "all seven scene-returning movies were checked");
 }
+
+/// The hand-off is a **one-shot edge**, not a per-frame condition.
+///
+/// All three hosts (`play`, `play-window`, the browser play page) now call
+/// `SceneHost::apply_pending_fmv_handoff`, and the windowed host calls it at
+/// two points in one frame. If the transfer were keyed on anything but a
+/// drained edge, the second caller would re-enter the hand-off scene - which
+/// on a scene whose entry script has side effects is a duplicated cutscene,
+/// not a wasted load. So the assertion is the *contrast*: the first call
+/// transfers, every later call reports nothing.
+#[test]
+fn the_handoff_transfers_once_however_many_hosts_poll() {
+    use legaia_engine_core::scene::FmvHandoffOutcome;
+    use legaia_engine_core::world::SceneMode;
+
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+
+    // `town01` is the retail trigger scene for `fmv_id 1`, whose hand-off
+    // lands in `town0b` - the pairing the dispatch table encodes.
+    let cfg = BootConfig {
+        scene: "town01".to_string(),
+        enable_audio: false,
+    };
+    let mut session = BootSession::open(&extracted, &cfg).expect("boot town01");
+    session.host.enter_field_scene("town01", 0).expect("enter");
+    assert_eq!(
+        session.host.scene.as_ref().map(|s| s.name.as_str()),
+        Some("town01")
+    );
+
+    // Stand in for playback: the world is in the cutscene mode with fmv 1
+    // live, exactly as the field VM's `0x4C 0xE2` op leaves it.
+    session.host.world.mode = SceneMode::Cutscene;
+    session.host.world.active_fmv = Some(1);
+    session.host.world.cutscene_return_mode = Some(SceneMode::Field);
+    session.host.world.finish_cutscene();
+
+    match session.host.apply_pending_fmv_handoff() {
+        Some(FmvHandoffOutcome::Entered { fmv_id, scene, .. }) => {
+            assert_eq!(fmv_id, 1);
+            assert_eq!(scene, "town0b");
+        }
+        other => panic!("first poll did not transfer: {other:?}"),
+    }
+    assert_eq!(
+        session.host.scene.as_ref().map(|s| s.name.as_str()),
+        Some("town0b"),
+        "the hand-off scene is the one that is loaded"
+    );
+    assert_eq!(
+        session.host.apply_pending_fmv_handoff(),
+        None,
+        "a second poll must not re-enter the hand-off scene"
+    );
+    assert_eq!(
+        session.host.apply_pending_fmv_handoff(),
+        None,
+        "nor any later one"
+    );
+}

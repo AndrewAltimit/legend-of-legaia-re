@@ -1473,7 +1473,7 @@ to a screen-door dither so the player always reads through. The renderer
 default is **off, and off is retail** - the disabled path is pixel-identical
 and the parity oracles never see it; `legaia-engine play-window` turns it on
 by default as a clearly-better play experience (`--no-occlusion-fade`, or the
-`D` key, restores authored-framing-only).
+`F4` key, restores authored-framing-only).
 
 The fade has two halves: a per-frame **visibility gate** deciding WHETHER to
 fade at all, and a per-fragment rule deciding WHICH pixels dissolve.

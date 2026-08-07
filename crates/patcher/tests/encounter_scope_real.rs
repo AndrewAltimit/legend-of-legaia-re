@@ -30,28 +30,55 @@ fn load_disc() -> Option<Vec<u8>> {
     p.is_file().then(|| std::fs::read(&p).ok()).flatten()
 }
 
-/// Every PROT entry index that carries a decodable encounter section.
+/// Every PROT entry index that carries a decodable encounter section, over
+/// **both** MAN carriers.
+///
+/// A bundle-only sweep here would make every pool and multiset below a claim
+/// about a subset of the scenes the randomizer actually rewrites: the
+/// v12-family dungeons carry their MAN as a streaming chunk, so ids donated
+/// into or out of them would read as ids appearing from nowhere / vanishing.
 fn scene_indices(patcher: &DiscPatcher) -> Vec<usize> {
     (0..patcher.entry_count())
         .filter(|&i| {
-            patcher
-                .read_entry(i)
-                .ok()
-                .and_then(|e| SceneEncounters::locate(&e, i))
-                .is_some()
+            patcher.read_entry(i).ok().is_some_and(|e| {
+                SceneEncounters::locate(&e, i).is_some()
+                    || !SceneEncounters::locate_streaming_mans(&e, i).is_empty()
+            })
         })
         .collect()
 }
 
+/// Every MAN carrier in one PROT entry: the bundle MAN first (when present),
+/// then each streaming-chunk MAN, in the same order both before and after a
+/// patch so the two can be zipped.
+fn carriers(patcher: &DiscPatcher, idx: usize) -> Vec<SceneEncounters> {
+    let Ok(entry) = patcher.read_entry(idx) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    if let Some(s) = SceneEncounters::locate(&entry, idx) {
+        out.push(s);
+    }
+    out.extend(SceneEncounters::locate_streaming_mans(&entry, idx));
+    out
+}
+
 /// The monster ids currently in a scene's **random** formations (boss/scripted
-/// rows excluded), read live off `patcher`.
+/// rows excluded), read live off `patcher`, across both MAN carriers of the
+/// entry. Both carriers of one entry share a kingdom, so the entry index stays
+/// the right key for the scoped pools.
 fn scene_random_ids(patcher: &DiscPatcher, idx: usize) -> Vec<u8> {
-    patcher
-        .read_entry(idx)
-        .ok()
-        .and_then(|e| SceneEncounters::locate(&e, idx))
-        .map(|s| s.random_slot_ids())
-        .unwrap_or_default()
+    let Ok(entry) = patcher.read_entry(idx) else {
+        return Vec::new();
+    };
+    let mut ids = Vec::new();
+    if let Some(s) = SceneEncounters::locate(&entry, idx) {
+        ids.extend(s.random_slot_ids());
+    }
+    for s in SceneEncounters::locate_streaming_mans(&entry, idx) {
+        ids.extend(s.random_slot_ids());
+    }
+    ids
 }
 
 /// Build the per-kingdom original random-encounter pools (the union of every
@@ -285,26 +312,27 @@ fn world_shuffle_preserves_global_multiset_and_bosses() {
     // Scripted/boss formations are byte-identical (never shuffled).
     let mut scripted_checked = 0usize;
     for &idx in &indices {
-        let o = base
-            .read_entry(idx)
-            .ok()
-            .and_then(|e| SceneEncounters::locate(&e, idx))
-            .unwrap();
-        let a = patcher
-            .read_entry(idx)
-            .ok()
-            .and_then(|e| SceneEncounters::locate(&e, idx))
-            .unwrap();
-        for i in 0..o.formation_count() {
-            if o.is_random_formation(i) {
-                continue;
+        // Carrier-by-carrier: an entry can hold a bundle MAN, one or more
+        // streaming-chunk MANs, or only the latter - `locate` alone would
+        // panic on a v12-family dungeon.
+        let (before_carriers, after_carriers) = (carriers(&base, idx), carriers(&patcher, idx));
+        assert_eq!(
+            before_carriers.len(),
+            after_carriers.len(),
+            "scene {idx} gained or lost a MAN carrier"
+        );
+        for (o, a) in before_carriers.iter().zip(&after_carriers) {
+            for i in 0..o.formation_count() {
+                if o.is_random_formation(i) {
+                    continue;
+                }
+                assert_eq!(
+                    o.formation_ids(i),
+                    a.formation_ids(i),
+                    "scene {idx} scripted formation {i} changed"
+                );
+                scripted_checked += 1;
             }
-            assert_eq!(
-                o.formation_ids(i),
-                a.formation_ids(i),
-                "scene {idx} scripted formation {i} changed"
-            );
-            scripted_checked += 1;
         }
     }
     assert!(

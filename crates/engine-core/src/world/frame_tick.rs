@@ -118,13 +118,10 @@ impl World {
     /// controller's state-0 arm gate (`FUN_801D27E0` `801d2998..801d29a8`).
     /// No-op outside a talk (the latch is dropped by the poll).
     ///
-    /// HOST WAIVER: no host binds a key to this yet - the switch cycle runs
-    /// under the world tick every host already drives, but the *request*
-    /// needs a binding in the native window's keyboard handler
-    /// (`engine-shell` `window/event_handler/keyboard.rs`) and the browser
-    /// play page's pad route (`web-viewer` runtime) to be player-reachable.
-    /// Both hosts sit outside the lane that wired the cycle; until bound,
-    /// scripts and tests are the only callers.
+    /// A **second** request route, not the production one. The player's route
+    /// is the pad edge retail itself reads, sampled inside
+    /// [`Self::tick_three_actor_talk`]; this latch exists for a caller with no
+    /// pad word to press - a scripted timeline, a replay fixture, a test.
     // REF: FUN_801D27E0 (state-0 arm gate, request-byte route)
     pub fn request_talk_leader_switch(&mut self) {
         self.talk_switch_requested = true;
@@ -145,11 +142,22 @@ impl World {
     ///   polls the talk lock (system flag `0xD`, `jal 0x8003ce64 a0=0xD` at
     ///   `801d28c8`; clear routes to state 5 = despawn), then runs the
     ///   switch arm gate over the presence flags `script_id + 0..=2`. The
-    ///   request source is the host latch
-    ///   [`Self::request_talk_leader_switch`] (retail `_DAT_8007B874 &
-    ///   0x80`); the retail suppressor pair `_DAT_8007B6B4` /
-    ///   `_DAT_8007B6B0` is host-substituted by "a dialogue owns the pad",
-    ///   so a switch never arms under an open text box.
+    ///   request source is the **pad**, read here: retail's
+    ///   `801d2998..801d29a8` is `lw _DAT_8007B874; andi 0x80`, the
+    ///   newly-pressed word AND packed bit `0x80` - Square, the same bit the
+    ///   fishing reel decoder pins. Reading it inside the world is what makes
+    ///   the switch reachable everywhere at once: every host drives
+    ///   [`Self::set_pad`], so none of them needs a binding of its own and
+    ///   there is no second key table to drift from the engine's. The retail
+    ///   suppressor pair `_DAT_8007B6B4` / `_DAT_8007B6B0` is
+    ///   host-substituted by "a dialogue owns the pad", so a switch never
+    ///   arms under an open text box.
+    ///
+    ///   The port also latches its field **run** modifier off Square
+    ///   ([`Self::field_run_button_held`]), so inside an armed talk one press
+    ///   does both. That is the run modifier intruding, not the swap: the
+    ///   swap bit is disassembly-pinned and the run mask word `0x800846DC`
+    ///   is explicitly not.
     /// - **1** - hold [`LEADER_SWAP_FADE_FRAMES`] behind the fade-to-white
     ///   ([`Self::screen_fade`] carries the retail template: kind 2, `0x20`
     ///   frames, black -> white, `801d29c8..801d2a00`).
@@ -184,7 +192,12 @@ impl World {
             return;
         };
         let request = if talk.swap.phase == 0 {
-            core::mem::take(&mut self.talk_switch_requested)
+            // Retail's own source (`_DAT_8007B874 & 0x80` = Square, newly
+            // pressed) plus the scripted latch. `take` runs first and
+            // unconditionally, so a latch set outside phase 0 is not left to
+            // fire into a later swap.
+            let latched = core::mem::take(&mut self.talk_switch_requested);
+            latched || self.input.just_pressed(input::PadButton::Square)
         } else {
             false
         };
@@ -704,6 +717,47 @@ impl World {
     //                     host renderer's, dev prints not ported)
     pub fn tick(&mut self) -> Option<StepOutcome> {
         self.frame += 1;
+        // Does retail run the master frame driver on a frame in this mode?
+        //
+        // Every per-frame mode handler except one calls `FUN_80016444`, and
+        // that call is what advances the actor pool at all - the five
+        // `FUN_8002519C` tick passes over `_DAT_8007C34C..0x36C`. The exception
+        // is mode 23 CARD, the mode the in-field pause menu runs under
+        // (`_DAT_8007B83C = 0x17` in every menu-open capture): its handler
+        // `FUN_80025F74` calls `FUN_80017978` instead, and that body is 18
+        // instructions with three `jal`s, none of them `0x80016444`
+        // (`0x80017978..0x800179BC`). So while the menu owns the frame retail
+        // advances **no** actor, effect, move VM or animation; the CARD actor's
+        // own `+0x0C` handler is the entire frame.
+        //
+        // Resolved through the ported mode table rather than spelled out as a
+        // `SceneMode::Menu` literal here, so the rule and its provenance cannot
+        // drift apart: [`crate::mode::runs_master_frame_driver`] reads it off
+        // the same `per_frame_stage` rows the mode-table oracles use.
+        //
+        // What still runs under the menu is retail's too, and is *outside* the
+        // master driver: the CARD handler's frame-begin pass `FUN_8001698C`
+        // (which is where the timed sound-source auto-release `FUN_800267FC`
+        // lives) and its frame-end pass `FUN_80016B6C` (the cadence resolver
+        // and the SFX cue ring) both run unconditionally - `FUN_80017978`
+        // returns `move v0,zero`, so the handler's abort branch never fires.
+        //
+        // **Which consumers this gate actually moves**, stated plainly because
+        // it is easy to over-claim. Neither shipped host reaches it with the
+        // pause menu open: the native window `continue`s past `session.tick()`
+        // while its boot-UI owns the frame, and the browser page's sim loop is
+        // gated `if (advance && !menuOpen && ...)`. Both therefore freeze
+        // *more* than retail does - they stop the frame-begin / frame-end
+        // passes too, which retail keeps running under CARD. This gate is what
+        // makes the correct split available: a host can now tick the world
+        // under the menu and get retail's behaviour instead of choosing between
+        // "everything runs" and "nothing runs". Today it is exercised by the
+        // headless `World::tick` consumers (the replay / determinism / mode
+        // trace drivers, and any future owner of `ModeDriver`).
+        // REF: FUN_80025f74, FUN_80017978, FUN_80016444
+        let runs_master_driver = crate::mode::GameMode::for_scene_mode(self.mode)
+            .map(crate::mode::runs_master_frame_driver)
+            .unwrap_or(true);
         // Bridge the vsync-rate pad to the game-tick-rate actor pool for the
         // op-0x49 submode screens: the hosts publish a pad word every tick and
         // the dispatcher runs every `frame_step` ticks, so without this the
@@ -858,10 +912,12 @@ impl World {
         // is one sweep per sim tick; the gate names the clock the walker's
         // wait counters are denominated in rather than thinning them.
         // REF: FUN_801E0088
-        if self.field_frame_step == 1 {
+        if self.field_frame_step == 1 && runs_master_driver {
             self.tick_effects();
         }
-        self.tick_move_vms();
+        if runs_master_driver {
+            self.tick_move_vms();
+        }
         // Actor pool on the retail **game-tick** clock. Retail resolves one
         // `DAT_1F800393` per frame (`FUN_80016B6C`) and runs the per-actor
         // dispatcher once per game tick, so with the field floor of 2
@@ -880,11 +936,11 @@ impl World {
         // intermediate poses over the same wall-clock span.
         //
         // REF: FUN_80016B6C (cadence resolver), FUN_801D6704 (field floor)
-        if self.field_frame_step == 1 {
+        if self.field_frame_step == 1 && runs_master_driver {
             self.actor_vsync_accum += 1;
         }
         let cadence = self.frame_step.max(1);
-        let actor_tick_fired = self.actor_vsync_accum >= cadence;
+        let actor_tick_fired = self.actor_vsync_accum >= cadence && runs_master_driver;
         if actor_tick_fired {
             self.actor_vsync_accum = 0;
             self.tick_actor_physics();
@@ -988,7 +1044,7 @@ impl World {
         // live"; the cadence is the 60 fps sub-clock step, matching the
         // narration roller above.
         let balloon_engaged = self.dialogue_owns_input();
-        if let Some(balloon) = self.text_balloon.as_mut() {
+        if runs_master_driver && let Some(balloon) = self.text_balloon.as_mut() {
             let engaged = balloon_engaged;
             let cadence = self.field_frame_step as i16;
             if balloon.tick(engaged, cadence) == crate::text_balloon::BalloonTick::Killed {
@@ -998,13 +1054,20 @@ impl World {
         // Run every live camera-register zone ramp (op `0x43` sub-3..6). Same
         // position in the frame as the balloon above and for the same reason:
         // both are `+0x0C` handlers on retail's one effect-actor list, and
-        // this is the one tick path all three hosts reach.
-        self.tick_register_ramps();
+        // this is the one tick path all three hosts reach. Which is also why
+        // both sit behind `runs_master_driver`: an actor-list handler is
+        // reached only through `FUN_8002519C`, and the CARD-mode frame does not
+        // walk the lists at all.
+        if runs_master_driver {
+            self.tick_register_ramps();
+        }
         // The three-actor-talk controller's per-frame flag poll: when the
         // scene script drops the talk lock (system flag 0xD), the controller
         // despawns and the story party un-collapses. Same all-hosts tick
         // position as the ramps above.
-        self.tick_three_actor_talk();
+        if runs_master_driver {
+            self.tick_three_actor_talk();
+        }
         // Menu-staged transitions (Door of Wind warp / Door of Light
         // escape): convert the staged record into the named scene
         // transition the scene host already drains.
@@ -1111,7 +1174,11 @@ impl World {
                 // retail-frame paced already; a `field_frame_step` gate would
                 // be a tautology here, not a correction.
                 self.step_field_channels();
-                self.step_field();
+                // The scene system script (ctx `0xFB`) gets a whole retail
+                // frame slice, not one instruction: see
+                // [`Self::step_field_frame_slice`] for the three stop
+                // conditions and what one-op-per-tick cost.
+                self.step_field_frame_slice();
                 // Field-NPC walk legs (autonomous patrol routes + scripted
                 // interaction-prologue runs) - one motion-VM step per RETAIL
                 // frame, writing back into `field_npc_positions` so collision /
@@ -1213,7 +1280,7 @@ impl World {
                 if self.active_fmv.is_none() {
                     self.step_spawned_record_contexts();
                     self.step_field_channels();
-                    self.step_field();
+                    self.step_field_frame_slice();
                     self.tick_screen_fx();
                 }
                 None

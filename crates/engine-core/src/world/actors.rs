@@ -1345,20 +1345,34 @@ impl World {
     /// already past the FMV op, so the next field tick continues the script.
     /// A no-op when no cutscene is active.
     ///
-    /// TODO(return scenes): retail's master dispatch (`FUN_801CEA3C`) does
-    /// NOT return to the trigger scene for mid-game FMVs - it copies a
-    /// CDNAME label from the seven-entry list at `0x801CE8AC` into the
-    /// next-scene name global `0x80084548` (+ spawn/door word `0x80084540`),
-    /// e.g. `town01` triggers fmv 1 and lands in `town0b`. The per-id map is
-    /// [`crate::cutscene::fmv_post_play_return_scene`]; wiring the actual
-    /// scene transition here is pending (hosts currently drive transitions
-    /// themselves after playback).
+    /// Retail's master dispatch (`FUN_801CEA3C`) does NOT return to the
+    /// trigger scene for mid-game FMVs - it copies a CDNAME label from the
+    /// seven-entry list at `0x801CE8AC` into the next-scene name global
+    /// `0x80084548` (+ spawn/door word `0x80084540`), e.g. `town01` triggers
+    /// fmv 1 and lands in `town0b`. That transfer needs the host's asset
+    /// index, so this parks the finished id in [`World::finished_fmv`] and
+    /// [`crate::scene::SceneHost::apply_pending_fmv_handoff`] performs it -
+    /// one drain, whichever host polls.
     // REF: FUN_801CEA3C
     pub fn finish_cutscene(&mut self) {
         if self.mode == SceneMode::Cutscene {
             self.mode = self.cutscene_return_mode.take().unwrap_or(SceneMode::Field);
+            self.finished_fmv = self.active_fmv;
             self.active_fmv = None;
         }
+    }
+
+    /// Drain the id parked by [`World::finish_cutscene`]. `None` when no FMV
+    /// has finished since the last drain.
+    ///
+    /// The world half of the post-play hand-off: a host with no scene loader
+    /// (a headless world test, the `sim-trace` emitter) can consume the edge
+    /// without one, and the scene host's
+    /// [`apply_pending_fmv_handoff`](crate::scene::SceneHost::apply_pending_fmv_handoff)
+    /// is the only production caller. `take` semantics are what stop two
+    /// hosts - or one host polling twice - from transferring control twice.
+    pub fn take_finished_fmv(&mut self) -> Option<i16> {
+        self.finished_fmv.take()
     }
 
     /// Build the per-frame sprite list for the renderer. One

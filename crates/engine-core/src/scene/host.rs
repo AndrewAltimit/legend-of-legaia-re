@@ -224,4 +224,5 @@ mod sustained_sfx;
 
 pub use effects::*;
 pub use minigame_warp::MinigameWarpOutcome;
+pub use scene_entry::FmvHandoffOutcome;
 pub use sustained_sfx::{SPU_VOICE_COUNT, SUSTAINED_BASE_VOICE, SustainedSfx};

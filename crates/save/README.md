@@ -107,9 +107,19 @@ word at `_DAT_1F800394`.
 
 The [`retail_inventory`](src/retail_inventory.rs) module is a separate,
 memory-safe RE model of the retail fixed-window item-inventory accessors
-(find / consume / compact / add), faithfully reproducing the full-bag
+(find / consume / normalize / add), faithfully reproducing the full-bag
 out-of-bounds add primitive (`FUN_800421D4`) as data without performing
 any unsafe write.
+
+It is also the **composer for the card write**. The engine keeps its bag as
+a map and hands out a compact list, while a retail block holds a fixed slot
+array with rules the map does not have, so `write_retail_inventory` lays the
+list in through `compose_window` - retail's own add + normalize - rather
+than positionally. Copying positionally is how a block retail cannot
+represent reaches a real memory card: the engine's battle-drop and steal
+grants are uncapped `saturating_add`s, so a long session can bank more than
+the 99 retail clamps at, and nothing else folds two stacks of one id or
+drops an `id == 0` phantom.
 
 ## `save-tool` CLI
 

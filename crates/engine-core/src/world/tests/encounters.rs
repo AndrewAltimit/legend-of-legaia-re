@@ -241,6 +241,72 @@ fn seed_party_battle_stats_scales_ap_base_with_level() {
 }
 
 #[test]
+fn seed_party_battle_stats_seeds_the_mp_ceiling_from_the_record() {
+    use legaia_save::character::{HpMpSp, LiveStats};
+
+    // `character_max_mp` is the only max-MP the world carries: the battle
+    // actor holds current MP and no ceiling, so the battle party bar's MP
+    // field, the item screen's target rows and the in-battle MP-restore clamp
+    // all read this vector. Seeding it here is what keeps every entry into a
+    // fight (New Game, a loaded save, either host's play loop) from fighting
+    // with a zero ceiling - no MP on the bar and an MP potion that heals 0.
+    let mut world = World::new();
+    let mut party = legaia_save::Party::zeroed(2);
+    for slot in 0..2 {
+        party.members[slot].set_live_stats(LiveStats {
+            agl: 10,
+            atk: 20,
+            udf: 8,
+            ldf: 8,
+            spd: 5,
+            int: 4,
+        });
+    }
+    party.members[0].set_hp_mp_sp(HpMpSp {
+        hp_cur: 180,
+        hp_max: 180,
+        mp_cur: 20,
+        mp_max: 20,
+        ..Default::default()
+    });
+    party.members[1].set_hp_mp_sp(HpMpSp {
+        hp_cur: 90,
+        hp_max: 90,
+        mp_cur: 7,
+        mp_max: 35,
+        ..Default::default()
+    });
+    world.load_party(party);
+
+    world.seed_party_battle_stats();
+    assert_eq!(world.character_max_mp.first().copied(), Some(20));
+    assert_eq!(world.character_max_mp.get(1).copied(), Some(35));
+}
+
+#[test]
+fn seed_party_battle_stats_leaves_a_synthetic_mp_ceiling_alone() {
+    // A record with no MP ceiling must not clobber one a synthetic battle set
+    // directly - the same contract the zeroed-roster guard keeps for attack.
+    use legaia_save::character::LiveStats;
+
+    let mut world = World::new();
+    let mut party = legaia_save::Party::zeroed(1);
+    party.members[0].set_live_stats(LiveStats {
+        agl: 10,
+        atk: 20,
+        udf: 8,
+        ldf: 8,
+        spd: 5,
+        int: 4,
+    });
+    world.load_party(party);
+    world.set_character_max_mp(0, 99);
+
+    world.seed_party_battle_stats();
+    assert_eq!(world.character_max_mp.first().copied(), Some(99));
+}
+
+#[test]
 fn drain_pending_scripted_encounter_only_when_queued() {
     let mut world = World::new();
     world.set_formation_table(

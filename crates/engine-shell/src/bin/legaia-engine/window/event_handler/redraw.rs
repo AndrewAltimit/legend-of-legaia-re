@@ -48,6 +48,14 @@ impl PlayWindowApp {
                 out.set_sequencer_paused(false);
             }
             self.session.host.world.finish_cutscene();
+            // Retail does NOT resume the trigger scene after a mid-game FMV -
+            // the master dispatch writes a next-scene CDNAME label
+            // (`town01` -> fmv 1 -> `town0b`). The shared kernel performs the
+            // transfer; without it the window put the player back where the
+            // movie started.
+            if let Some(outcome) = self.session.host.apply_pending_fmv_handoff() {
+                log::info!("cutscene: {outcome}");
+            }
             self.cutscene = None;
         }
         let run_ticks = if self.cutscene.is_some() { 0 } else { ticks };
@@ -69,19 +77,31 @@ impl PlayWindowApp {
                         .unwrap_or_default()
                 })
                 .unwrap_or_default();
+            // A scripted key that also *binds* to a pad button has to survive
+            // the neutral-pad write below, or `--key-script` can only ever
+            // arm window toggles: `handle_key` sets the bit and the release
+            // on the very next line clears it again, and the write then
+            // stamps the whole word to zero. Collect those bits and re-apply
+            // them as this tick's pad word - one tick held, one tick clear,
+            // which is exactly the edge `--pad-script` delivers.
+            let mut scripted_key_pad = 0u16;
             for code in scripted_keys {
+                if let Some(button) = self.mapping.pad_button_for_key(keycode_to_name(code)) {
+                    scripted_key_pad |= button.mask();
+                }
                 self.handle_key(code, ElementState::Pressed);
                 self.handle_key(code, ElementState::Released);
             }
             // Screenshot harness: inject the scripted one-tick pad edge for
             // this tick (overriding keyboard). Ticks with no script entry get
             // a neutral pad so the previous press releases (edge resets).
-            let scripted_pad = self
-                .screenshot
-                .as_ref()
-                .map(|sc| sc.pad_script.get(&self.tick_no).copied().unwrap_or(0));
-            if let Some(pad) = scripted_pad {
-                self.pad = pad;
+            if self.screenshot.is_some() {
+                let scripted_pad = self
+                    .screenshot
+                    .as_ref()
+                    .and_then(|sc| sc.pad_script.get(&self.tick_no).copied())
+                    .unwrap_or(0);
+                self.pad = scripted_pad | scripted_key_pad;
             }
             // Party wipe: the world raises `game_over` when a battle
             // resolves to `BattleEndCause::PartyWipe`. Consume the flag and
@@ -453,6 +473,9 @@ impl PlayWindowApp {
             // is still mutable; the `&self` draw passes read the committed
             // pen/rect off the record.
             self.sync_text_balloon();
+            // Advance the field party-status HUD's idle countdown
+            // (`FUN_801D0D38`). Its decision is read back in the draw pass.
+            self.tick_field_party_hud();
         }
         legaia_engine_render::profile::mark("tick");
         // A tick this frame may have flipped the world into
@@ -461,6 +484,15 @@ impl PlayWindowApp {
         // trigger as a no-op (mirrors the headless `play` loop).
         if self.cutscene.is_none() {
             self.try_start_windowed_cutscene();
+            // Its two skip arms (cut slot, undecodable STR) call
+            // `finish_cutscene` themselves, and retail transfers control
+            // whether or not the movie played - so the hand-off has to drain
+            // here too. Safe beside the drain at the top of this handler:
+            // both go through `World::take_finished_fmv`, so whichever runs
+            // first is the only one that transfers.
+            if let Some(outcome) = self.session.host.apply_pending_fmv_handoff() {
+                log::info!("cutscene: {outcome}");
+            }
         }
         // While a cutscene plays, the window shows the video and the
         // scene render is skipped entirely.
@@ -1789,7 +1821,14 @@ impl PlayWindowApp {
                     }
                 }
             }
+            // Retail's field party-status readout - name / LV / HP / MP per
+            // present member over a translucent plate, top-left of every
+            // walkable frame. Two halves: the plate + label / numeral cells
+            // sample the system-UI atlas and ride the sprite slot below, the
+            // names ride the glyph layer here.
+            let field_hud_draws = self.field_party_hud_draws(w, h);
             let mut hud = self.build_hud(w, h);
+            hud.extend(field_hud_draws.text.iter().copied());
             // Post-battle spoils panel. The XP / gold / drops a victory
             // credits used to land with no on-screen acknowledgement at all
             // (`World::last_battle_rewards` had no reader outside its own
@@ -1821,7 +1860,19 @@ impl PlayWindowApp {
             // frame are mutually-exclusive boot states, so both
             // share this one vec (the field-menu frame draws
             // behind its text, which is emitted in the text layer).
-            let mut save_chrome_draw_vec = self.save_select_chrome_sprite_draws(w, h);
+            // The field party HUD leads this vec so its translucent plate
+            // lands under its own label / numeral cells - within one overlay
+            // the draw order is the vec order. It is suppressed whenever any
+            // other surface that samples this atlas is up, so there is no
+            // contention with the chrome appended after it.
+            let mut save_chrome_draw_vec = field_hud_draws.sprites;
+            save_chrome_draw_vec.extend(self.save_select_chrome_sprite_draws(w, h));
+            // The post-battle report's two framed windows (level-up above,
+            // spoils below). Same atlas, and mutually exclusive with the
+            // boot/menu chrome.
+            if !self.boot_ui.is_active() {
+                save_chrome_draw_vec.extend(self.battle_spoils_chrome_sprite_draws(w, h));
+            }
             save_chrome_draw_vec.extend(self.field_menu_chrome_sprite_draws(w, h));
             // Dialog-window chrome (gradient fill + gold frame + hand
             // cursors) shares the system-UI atlas slot; a dialog box

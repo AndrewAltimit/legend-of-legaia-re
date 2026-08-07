@@ -305,9 +305,12 @@ pub mod str_fmv_overlay;
 ///    been written. (Each live pair is `(max, cur)` -
 ///    `legaia_save::HpMpSp`.)
 /// 3. **Settle**. The live HP_cur / MP_cur / AP_cur settle at
-///    `+0x106 / +0x10A / +0x10E` (the level-up refill). After this
-///    frame the live maxima agree with the record copies of
-///    HP_max / MP_max.
+///    `+0x106 / +0x10A / +0x10E`. After this frame the live maxima
+///    agree with the record copies of HP_max / MP_max. This is the
+///    battle-end resync of the live pools, **not** a level-up refill:
+///    the single-level `noa_levelup_*` triplet shows Noa settling at
+///    `164/221` HP and `16/21` MP after an L2 -> L3 level-up - both
+///    currents exactly where the fight left them.
 ///
 /// Gala's level-up sequence runs in two phases (record → live+settle in
 /// one frame); the Gala capture lacks a dedicated "record-only" frame,

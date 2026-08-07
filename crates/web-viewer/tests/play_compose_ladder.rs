@@ -26,7 +26,7 @@
 //! | # | rung | what it proves |
 //! |---|---|---|
 //! | 1 | boot title to its main menu | the title card / glyph-fallback rows draw |
-//! | 2 | the town01 **opening**: naming prompt commits, timeline ends | name-entry + cutscene text overlays render with live state |
+//! | 2 | the town01 **opening**: it plays, naming commits, timeline ends | name-entry + cutscene text overlays render with live state |
 //! | 3 | town01 field walk, composed per tick | the field 3D upload + per-frame surface; the pad moves the player |
 //! | 4 | pause menu: all seven rows, five sub-screens driven | the menu draw path renders every screen it routes to |
 //! | 5 | field shop + equipment shop overlays | `play_overlay_draws_json` composites the shop session |
@@ -402,13 +402,32 @@ fn rung1_title(rt: &mut LegaiaRuntime) -> Result<(), String> {
     Ok(())
 }
 
+/// The town01 opening.
+///
+/// **Every wait in here is bounded below as well as above**, and that is the
+/// point rather than belt-and-braces. Its sibling rung on the native ladder
+/// (`critical_path_replay` rung 1) used to read "town01 free-roam, input
+/// released" and cleared *because the opening never played*: nothing held
+/// input, so "input is free now" was trivially true. A wait of the shape
+/// `while <thing is happening> { tick }` clears instantly when the thing never
+/// started, and reads afterwards exactly like the thing having finished.
+///
+/// So this rung records the positive facts: a timeline **was** live during the
+/// pre-naming wait, that wait **took** frames, the name entry opened and drew,
+/// a timeline was **still** live when the name committed, and only then does
+/// the finish-wait mean anything. Take any of those away and the rung fails
+/// instead of quietly scoring an opening that did not happen.
 fn rung2_opening_name_entry(rt: &mut LegaiaRuntime, tally: &mut Tally) -> Result<(), String> {
     rt.debug_enter_town01_opening()
         .map_err(|e| format!("enter town01 opening: {e}"))?;
     // The establishing timeline runs long before its pinned op-0x49; compose
     // a subset of the wait so the cutscene surfaces render under it.
     let mut ticks = 0u32;
+    let mut timeline_frames = 0u32;
     while !rt.name_entry_is_active() && ticks < 8000 {
+        if rt.debug_timeline_active() {
+            timeline_frames += 1;
+        }
         if ticks.is_multiple_of(8) {
             step(rt, tally);
         } else {
@@ -419,6 +438,15 @@ fn rung2_opening_name_entry(rt: &mut LegaiaRuntime, tally: &mut Tally) -> Result
     if !rt.name_entry_is_active() {
         return Err(format!(
             "opening timeline never opened name entry ({ticks} ticks)"
+        ));
+    }
+    // The opening must have *played*, not merely have been arrived at: a
+    // cutscene timeline owned the scene for a positive number of frames
+    // before the naming beat.
+    if timeline_frames == 0 {
+        return Err(format!(
+            "name entry opened but no cutscene timeline was ever live \
+             ({ticks} ticks) - the opening did not play"
         ));
     }
     let draws = json(&rt.name_entry_draws_json(W, H));
@@ -440,6 +468,16 @@ fn rung2_opening_name_entry(rt: &mut LegaiaRuntime, tally: &mut Tally) -> Result
     if rt.party_display_name(0).is_empty() {
         return Err("committed name did not land in the party record".into());
     }
+    // The naming beat is mid-timeline: the record resumes at its op-0x49 and
+    // plays out. Assert that before waiting for it to end, or the wait below
+    // is satisfied by a timeline that was already gone.
+    if !rt.debug_timeline_active() {
+        return Err(
+            "the opening timeline was already gone when the name committed - \
+             the 'timeline finishes' wait below would be vacuous"
+                .into(),
+        );
+    }
     // Let the timeline finish so the field hands the pad back.
     let mut ticks = 0u32;
     while rt.debug_timeline_active() && ticks < 12000 {
@@ -453,6 +491,10 @@ fn rung2_opening_name_entry(rt: &mut LegaiaRuntime, tally: &mut Tally) -> Result
     if rt.debug_timeline_active() {
         return Err("opening timeline never finished after the naming beat".into());
     }
+    eprintln!(
+        "[rung 2] opening held the scene for {timeline_frames} frame(s) before \
+         the naming beat and {ticks} after it"
+    );
     Ok(())
 }
 

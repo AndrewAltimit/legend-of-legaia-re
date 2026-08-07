@@ -722,10 +722,21 @@ impl PlayWindowApp {
                         status: atlas_data.band_status_badges(),
                         element: atlas_data.band_element_badges(),
                     };
+                    // A fully-opaque texel inside this bake, so the field
+                    // party HUD can lay its translucent plate down in the
+                    // sprite half - under the labels and numerals that
+                    // sample the same atlas, which the text half could not
+                    // do (it always composites on top).
+                    let solid = legaia_engine_render::atlas_opaque_texel(
+                        &atlas_data.rgba,
+                        atlas_data.width,
+                        atlas_data.height,
+                    );
                     self.save_menu = Some(SaveMenuAssets {
                         rects,
                         atlas,
                         badges,
+                        solid,
                     });
                 }
                 Err(e) => log::warn!("save-menu atlas upload skipped: {e:#}"),

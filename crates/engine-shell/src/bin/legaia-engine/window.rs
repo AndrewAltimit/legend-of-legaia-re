@@ -202,6 +202,12 @@ fn key_from_name(name: &str) -> Option<KeyCode> {
         "T" => KeyCode::KeyT,
         "U" => KeyCode::KeyU,
         "V" => KeyCode::KeyV,
+        // Window-toggle band. F-keys can never collide with a pad binding,
+        // which is why the three arms that used to sit on `E` / `V` / `C`
+        // live here (see `keycode_to_name`).
+        "F2" => KeyCode::F2,
+        "F3" => KeyCode::F3,
+        "F5" => KeyCode::F5,
         "W" => KeyCode::KeyW,
         "X" => KeyCode::KeyX,
         "Y" => KeyCode::KeyY,
@@ -404,6 +410,11 @@ struct SaveMenuAssets {
     /// word tags and the eight element badges, `None` per cell this bake
     /// could not reach a palette for.
     badges: legaia_engine_render::battle_hud_chrome::BattleBadgeRects,
+    /// A fully-opaque 1x1 texel inside this bake
+    /// ([`legaia_engine_render::atlas_opaque_texel`]) - the surface the field
+    /// party HUD's translucent plate is drawn on, so the plate can sit in the
+    /// sprite half beneath the readout it backs.
+    solid: Option<(u32, u32, u32, u32)>,
 }
 
 /// Muscle Dome hub-screen assets: the two hub page TIMs (extraction 1220,
@@ -929,7 +940,7 @@ struct PlayWindowApp {
     /// screen-door dither in a circle around the character, so the
     /// character is always at least partly visible. Default `true`
     /// (clearly the better play experience); disable with
-    /// `--no-occlusion-fade`, or toggle at runtime with the `D` key.
+    /// `--no-occlusion-fade`, or toggle at runtime with the `F4` key.
     /// Mirrored into the renderer via
     /// [`legaia_engine_render::Renderer::set_occlusion_fade`]; the
     /// per-frame focus is staged by the redraw pass in field free-roam
@@ -963,6 +974,18 @@ struct PlayWindowApp {
     /// Latest cursor X (window pixels), fed by `CursorMoved` so a drag that
     /// starts before any motion has an anchor.
     cursor_x: f64,
+    /// Field party-status HUD driver (`FUN_801D0D38`): the idle countdown and
+    /// the cached player position the kernel decides from. Retail keeps them
+    /// in overlay globals; every host owning a screen keeps its own copy.
+    field_party_hud: legaia_engine_core::world_map_panel_host::FieldPartyHud,
+    /// Scene name the HUD driver was last armed for, so a scene change takes
+    /// retail's rearm arm instead of comparing against the previous scene's
+    /// player coordinates.
+    field_party_hud_scene: Option<String>,
+    /// Whether the shell's own diagnostic rows draw. Off by default (retail
+    /// draws no such text); `F1` toggles, and `LEGAIA_DIAG_HUD` starts it on
+    /// so the existing diagnostic env var reaches this surface too.
+    diag_rows: bool,
     /// Phase J3 pad-capture state. `Some` when the user invoked the
     /// `record` subcommand; the keyboard handler appends transitions
     /// to `events` and the close handler flushes a `j-replay-v1` file
@@ -1337,6 +1360,24 @@ const OCEAN_ANIM_VSYNCS_PER_FRAME: u32 = 8;
 /// Map a winit `KeyCode` to the user-friendly key name used in
 /// [`legaia_engine_core::input::Mapping`]. Returns `""` for keys outside
 /// the default set.
+/// Physical key -> the key **name** the engine's binding table is keyed by
+/// ([`legaia_engine_core::input::Mapping`]).
+///
+/// This function is a filter, and it was silently narrower than the table it
+/// feeds: `C`, `V`, `D` and `E` are bound (Triangle, Square, Right, R1) and
+/// none of them was listed, so `pad_button_for_key` got `""` and the native
+/// window could not press **Triangle or Square at all**. Nothing surfaced
+/// that - a key that resolves to no button is indistinguishable from a key
+/// the player did not press - and it takes two of the four face buttons off
+/// the keyboard, which is most of the dance minigame's input and the
+/// three-actor talk's leader switch.
+///
+/// Every name here must appear in `Mapping::web_default`, and every key that
+/// table binds must appear here. Two of the four repaired rows are still
+/// shadowed *upstream*, by a window key arm in `event_handler/keyboard.rs`
+/// that returns before the pad lookup: `C` (camera vantage) and `D`
+/// (occlusion fade, named in the user guide). Moving those two arms onto
+/// non-pad keys is what finishes the set.
 fn keycode_to_name(code: KeyCode) -> &'static str {
     match code {
         KeyCode::ArrowUp => "Up",
@@ -1345,10 +1386,14 @@ fn keycode_to_name(code: KeyCode) -> &'static str {
         KeyCode::ArrowRight => "Right",
         KeyCode::KeyZ => "Z",
         KeyCode::KeyX => "X",
+        KeyCode::KeyC => "C",
+        KeyCode::KeyV => "V",
         KeyCode::KeyA => "A",
         KeyCode::KeyS => "S",
+        KeyCode::KeyD => "D",
         KeyCode::KeyQ => "Q",
         KeyCode::KeyW => "W",
+        KeyCode::KeyE => "E",
         KeyCode::Enter => "Enter",
         KeyCode::Space => "Space",
         KeyCode::ShiftRight => "RShift",
@@ -1391,6 +1436,37 @@ mod key_script_tests {
             );
         }
         assert_eq!(key_from_name("NotAKey"), None);
+    }
+
+    /// Every key the engine's default pad table binds must survive
+    /// `keycode_to_name`, or the native window cannot press that button.
+    ///
+    /// The filter was narrower than the table and nothing said so: a key that
+    /// resolves to no button looks exactly like a key nobody pressed, so
+    /// **Triangle and Square were unreachable from the keyboard** while every
+    /// gate stayed green. The assertion runs in the direction that catches
+    /// that - from the table to the filter, not the reverse - so adding a
+    /// binding without a name fails here rather than in a player's hands.
+    #[test]
+    fn every_bound_key_survives_the_window_name_filter() {
+        use legaia_engine_core::input::Mapping;
+        let mapping = Mapping::web_default();
+        let mut checked = 0;
+        let mut names: Vec<&String> = mapping.bindings.keys().collect();
+        names.sort();
+        for name in names {
+            let Some(code) = super::key_from_name(name) else {
+                panic!("bound key '{name}' has no KeyCode - `--key-script` cannot reach it");
+            };
+            assert_eq!(
+                super::keycode_to_name(code),
+                name.as_str(),
+                "bound key '{name}' does not survive keycode_to_name - the native window \
+                 resolves it to no pad button"
+            );
+            checked += 1;
+        }
+        assert!(checked >= 16, "the default table binds at least 16 keys");
     }
 
     /// `--key-script` alone builds a config. Returning `None` unless a PNG was

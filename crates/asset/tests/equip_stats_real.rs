@@ -98,3 +98,33 @@ fn decodes_the_equip_stat_table_or_skips() {
     assert!(!table.is_equipment(0x77));
     assert!(table.bonus(0x77).is_none());
 }
+
+/// The `+5` passive-index byte is the **no-passive sentinel on every retail
+/// row**, which is what makes the equipment arm of the shop item-detail
+/// renderer's passive chain (`FUN_801D5AE8`, `0x801D5C90..0x801D5CA0`) inert on
+/// an unmodified disc: it always resolves `>= 0x40` and the renderer skips the
+/// passive name/description lines.
+///
+/// Worth pinning rather than assuming. A reader who sees the chain and not the
+/// data will look for missing equipment passives that are not missing, and a
+/// randomizer that starts writing this column has to know it is moving a value
+/// retail never varies.
+#[test]
+fn every_equipment_row_carries_the_no_passive_sentinel_or_skips() {
+    use legaia_asset::equip_stats::PASSIVE_NONE;
+    let Some(path) = scus_path() else {
+        eprintln!("extracted/SCUS_942.54 not present - skipping");
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read SCUS");
+    let table = EquipStatTable::from_scus(&bytes).expect("parse equip-stat table");
+    assert!(table.record_count() > 100, "bonus row count");
+    for (row, b) in table.rows().iter().enumerate() {
+        assert_eq!(
+            b.passive_index(),
+            PASSIVE_NONE,
+            "bonus row {row} carries a passive index"
+        );
+        assert!(!b.has_passive(), "bonus row {row}");
+    }
+}

@@ -128,6 +128,22 @@ const RENDERER_SELL_DETAIL: u32 = 0x801D_5AE8;
 /// menu-overlay rodata literal (`0x801CEC38`); both hosts stage the same
 /// engine-authored line so the translation layer owns the text.
 const SELL_QUANTITY_HEADING: &str = "How many?";
+/// Window 35's three engine-authored lines, paired with the native window's
+/// constants of the same names. Retail's own strings are menu-overlay rodata
+/// literals; staging them here keeps the translation layer owning the text.
+const BUY_QUANTITY_PROMPT: &str = "How many will you buy?";
+/// The label after the two-digit held count.
+const BUY_QUANTITY_HELD_TAIL: &str = "held";
+/// What window 35 prints instead when the bag scan returns retail's `0x100`
+/// "not held" sentinel.
+const BUY_QUANTITY_NONE_HELD: &str = "None held";
+/// Window 39's two engine-authored labels, paired with the native window's
+/// constants of the same names. Retail's own strings are menu-overlay rodata
+/// literals; staging them here keeps the translation layer owning the text.
+const SELL_DETAIL_PRICE_LABEL: &str = "Price";
+/// What window 39 prints in place of the price row when the item's `+2` buy
+/// price is zero - retail's quest-item / unsellable arm.
+const SELL_DETAIL_CANNOT_SELL: &str = "Cannot sell";
 /// Title of the seru-trade offer list. Engine-authored (the feature is the
 /// patcher's, so retail has no string for it); matches the native window's.
 const TRADE_LIST_TITLE: &str = "SHOP - TRADE SERU";
@@ -679,18 +695,23 @@ impl LegaiaRuntime {
                     panel.have_count_pen,
                     ui::MENU_TEXT_WHITE,
                 );
-                text(&mut out, "held", panel.have_tail_pen, ui::MENU_TEXT_WHITE);
+                text(
+                    &mut out,
+                    BUY_QUANTITY_HELD_TAIL,
+                    panel.have_tail_pen,
+                    ui::MENU_TEXT_WHITE,
+                );
             }
             None => text(
                 &mut out,
-                "None held",
+                BUY_QUANTITY_NONE_HELD,
                 panel.have_tail_pen,
                 ui::MENU_TEXT_WHITE,
             ),
         }
         text(
             &mut out,
-            "How many will you buy?",
+            BUY_QUANTITY_PROMPT,
             panel.prompt_pen,
             ui::MENU_TEXT_WHITE,
         );
@@ -758,8 +779,8 @@ impl LegaiaRuntime {
                     self.equip_stats
                         .as_ref()
                         .and_then(|t| t.rows().get(sub as usize))
-                        .map(|b| b.raw[5])
-                        .unwrap_or(0x40)
+                        .map(|b| b.passive_index())
+                        .unwrap_or(legaia_asset::equip_stats::PASSIVE_NONE)
                 },
                 |sub| {
                     world
@@ -801,7 +822,12 @@ impl LegaiaRuntime {
         }
         match panel.sell {
             Some(row) => {
-                text(&mut out, "Price", row.label_pen, ui::MENU_TEXT_TEAL);
+                text(
+                    &mut out,
+                    SELL_DETAIL_PRICE_LABEL,
+                    row.label_pen,
+                    ui::MENU_TEXT_TEAL,
+                );
                 out.extend(self.painter_glyph_stand_in(
                     font,
                     "G",
@@ -816,7 +842,7 @@ impl LegaiaRuntime {
             }
             None => text(
                 &mut out,
-                "Cannot sell",
+                SELL_DETAIL_CANNOT_SELL,
                 panel.cannot_sell_pen,
                 ui::MENU_TEXT_ORANGE,
             ),
@@ -1222,20 +1248,33 @@ impl LegaiaRuntime {
         // coordinates), so it joins the stage-scaled group below and gets the
         // window skin the emitter's measured rect implies.
         let tutorial = self.battle_tutorial_stage_draws(font, chrome.is_some());
+        // Retail's field party-status readout (name / LV / HP / MP per present
+        // member over a translucent plate). Already in surface pixels, like
+        // `battle`, and empty whenever anything else owns the screen
+        // ([`crate::play_field_hud`]).
+        let (field_hud_sprites, field_hud_texts) = self.field_party_hud_draws(surface_w, surface_h);
         if shop.is_none()
             && windows.is_empty()
             && banners.is_empty()
             && battle.is_empty()
             && tutorial.is_empty()
+            && field_hud_sprites.is_empty()
+            && field_hud_texts.is_empty()
         {
             return CLOSED.to_string();
         }
 
-        let mut sprites: Vec<SpriteDraw> = Vec::new();
+        // The field HUD leads the sprite array so its plate lands under its
+        // own label / numeral cells: within one array the draw order is the
+        // vec order, and the two never coexist with the chrome below.
+        let mut sprites: Vec<SpriteDraw> = field_hud_sprites;
         // Battle HUD chrome (party-strip + plaque lozenges and the gold HP /
         // green MP label cells) samples the same system-UI atlas as the shop
         // frame, so it rides the same sprite array. Empty outside battle.
         sprites.extend(self.battle_chrome_sprite_draws(assets, surface_w, surface_h));
+        // The post-battle report's two framed windows (level-up above,
+        // spoils below) - same atlas, drawn outside battle mode.
+        sprites.extend(self.battle_spoils_chrome_sprite_draws(assets, surface_w, surface_h));
         let mut texts: Vec<TextDraw> = Vec::new();
         if let Some(draws) = shop {
             // Frame the panel in the same gold 9-slice the pause menu uses,
@@ -1278,6 +1317,8 @@ impl LegaiaRuntime {
         // column offsets span wider than the 320-px menu stage, exactly as
         // drawn by the native window (surface-space HUD).
         texts.extend(battle);
+        // The field HUD's names, likewise already in surface pixels.
+        texts.extend(field_hud_texts);
 
         serde_json::json!({
             "open": true,

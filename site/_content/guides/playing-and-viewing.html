@@ -12,7 +12,7 @@
 <section class="doc-section" id="play-window">
   <h2>1 &middot; Boot the engine</h2>
 <pre><code>./legaia-engine play-window --disc "/path/to/Legend of Legaia (USA).bin"</code></pre>
-  <p>This boots the scene <code>town01</code> (Rim Elm) straight off the disc: field rendering, BGM, NPC scripts, dialog. Keyboard defaults: arrows = D-pad, <kbd>Z</kbd> = Cross, <kbd>Esc</kbd> = quit. In-window extras: left-mouse drag orbits the camera, <kbd>T</kbd> cycles the camera-distance preset, <kbd>R</kbd> toggles precise free-angle movement (an opt-in enhancement - retail-style movement is the default), <kbd>V</kbd> mutes audio. <code>--boot-ui</code> starts at the title screen &rarr; save-select flow instead of jumping into the scene.</p>
+  <p>This boots the scene <code>town01</code> (Rim Elm) straight off the disc: field rendering, BGM, NPC scripts, dialog. Keyboard defaults: arrows = D-pad, <kbd>Z</kbd> = Cross, <kbd>X</kbd> = Circle, <kbd>C</kbd> = Triangle, <kbd>V</kbd> = Square, <kbd>Esc</kbd> = quit. In-window extras: left-mouse drag orbits the camera, <kbd>T</kbd> cycles the camera-distance preset, <kbd>R</kbd> toggles precise free-angle movement (an opt-in enhancement - retail-style movement is the default), <kbd>F2</kbd> mutes audio, <kbd>F3</kbd> swaps the field camera for the wide debug orbit. Window toggles live on the F-keys because a window key arm runs <em>before</em> the pad lookup - one parked on a bound letter deletes that button from the keyboard, which is how the native window went without Triangle and Square. <code>--boot-ui</code> starts at the title screen &rarr; save-select flow instead of jumping into the scene.</p>
 </section>
 
 <section class="doc-section" id="scenes">

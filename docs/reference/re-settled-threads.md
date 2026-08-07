@@ -1349,7 +1349,59 @@ This relies on the **runtime actor frame == MAN placement frame** finding: `FUN_
 | Mid-visit NPC re-arrangement beats (dolk2 market crowd; garmel pre-Zeto staging) | resolved | `disassembly` + `capture` | dolk2: the swap is `P2[11]`, spawned by the `.MAP` fallback walk-on-trigger rows (C1=[`0x27C`], C2=[`0x142`]) - eight `CC <crowd> E3 <day>` seats (op `4C` nE sub-3, `0x801E3108`) put P1[53..60] on the day cohort's tiles and `A3` parks the day cohort at `(127,127)`. garmel: the Zeto stager `P2[12]` materializes P1[3]/P1[4] beside the player (n3 sub-7 player-coord copy `0x801E0FB0`); post-battle re-entries run `P1[0]`'s flag-consume arms. See [script-vm.md](../subsystems/script-vm.md#mid-visit-npc-re-arrangement-beats-dolk2-market-swap--garmel-boss-staging); pinned by `engine-core/tests/man_midvisit_rearrangement_disc.rs`. |
 | Region story-flag gate families (record-header C1/C2 gates) | resolved as structure (play-order residual on the open page) | `capture` | [details ↓](#region-story-flag-gate-families) |
 | Extraction-0874 §2 (`player.lzs`) F-variant pixels | resolved - installing event named | `capture` + `disassembly` | [details ↓](#extraction-0874-2-playerlzs-f-variant-pixels---a-one-shot-opening-face-frame-stamp-not-a-menu-writer) |
+| Which chapter-1 scenes the engine can load, script, walk and leave | resolved as a per-scene verdict; one open exit mechanism named | `disassembly` + `capture` | The chapter-1 closure is 27 scenes with one kingdom boundary (`jiji` → `map02`), and all 27 load, enter and settle. Five stop at the exit rung, and not only in the decoder: no walk-on tile and no executed record leaves the Uru Mais chain or `jouine`, so in the port they are one-way. How retail leaves them is open. [details ↓](#chapter-1-scene-frontier) |
 | Who latches the clip-end bit for a conversation's cross-context clip pokes | resolved (port residual named) | `disassembly` + `capture` | The **poked actor's own anim tick**, on the poked actor's own `+0x62`. `FUN_8003C83C` short-circuits target `0xF8` to the live player object out of `_DAT_8007C364` before its actor-list walk, so an NPC record's `A2 F8 <clip>` / `AC F8 08` / `AD F8 08` reads and writes the *player's* clip words. [details ↓](#clip-end-latch-for-cross-context-clip-pokes) |
+
+### Chapter-1 scene frontier
+
+*Status:* resolved as a per-scene verdict; one open question named below - how retail leaves the five sealed scenes
+
+The chapter-1 reachable set is the BFS closure of `town01` over each scene's
+own decoded `0x3F` destinations, and it terminates at exactly one kingdom
+boundary: `jiji -> map02`. It is 27 scenes, and it contains the whole Drake
+kingdom past the Ravine - the boss chain, the four-deep Drake Castle interior,
+the Uru Mais rooms. Every one of the 27 loads its assets, parses its MAN,
+enters in `Field` / `WorldMap`, and settles its entry script; all but one can
+be walked by pad alone.
+
+The closure is a *reachability* partition, not a narrative one, and it is a
+closure over `0x3F` only - scenes reached by the sibling `0x3E` door warp
+(which carries a scene-type selector rather than a name) are outside it.
+
+Three door shapes come out of running three decoders over the same MAN - the
+clean per-partition fall-through walk, the recovering destination-table pass,
+and the `.MAP` gate-1 trigger to partition-2 record to `0x3F` join:
+
+| shape | scenes | what has a door |
+|---|---|---|
+| op, table and walk-on trigger | 22 of 27 | all three decoders |
+| destination-table entry only | `uru`, `urudre1`, `urudre2`, `urudre3` | the table pass alone; the clean walk finds no `0x3F` anywhere in those MANs |
+| none | `jouine` | nothing; whatever leaves it is not a named scene change |
+
+Two further probes make the bottom two rows a playability statement rather
+than a decoder note. Stepping onto every gate-1 walk-on tile those five scenes
+carry fires **nothing**, and executing 160 of their own partition-1 and
+partition-2 record bodies through the field VM reaches no scene change either.
+So in the port as it stands, entering the Uru Mais chain or `jouine` is
+one-way, and the four Uru Mais graph edges rest on weaker footing than the
+rest of the closure.
+
+How retail leaves them is **not** established here, and the record probe
+bounds its own claim: a warp behind a story gate, an inventory check or an
+actor-motion wait a headless world never satisfies would not be reached from a
+180-frame run either. The `kor`-family dream-shrine warp pads are the nearest
+known shape and are interact records rather than bands - see the
+[Uru Mais warp-pad picker](#kor-family-op-0x49-flag-window-0x1380x13f---uru-mais-warp-pad-picker)
+thread.
+
+One locomotion residual, and it is a script rather than a defect: on a **first
+visit** `izumi`'s C1-gated spring record relocates the player about thirty
+tiles with the pad released, so a driven probe there cannot beat its own
+released-pad control. A revisit probe walks normally.
+
+Measured by `crates/engine-core/tests/chapter1_frontier_ladder.rs`; nine of
+the closure's scenes are additionally cross-checked against the capture
+library's own main RAM, and all nine enter in-engine.
 
 ### Clip-end latch for cross-context clip pokes
 

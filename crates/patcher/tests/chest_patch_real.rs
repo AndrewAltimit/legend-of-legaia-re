@@ -17,15 +17,24 @@ fn load_disc() -> Option<Vec<u8>> {
     p.is_file().then(|| std::fs::read(&p).ok()).flatten()
 }
 
-/// (scene idx, site offsets, current items) for every scene with chest sites.
+/// (scene idx, site offsets, current items) for every chest **carrier** on the
+/// disc, grouped in the order the apply pass walks them.
+///
+/// Built on [`apply::current_chests`] rather than on the locators directly, so
+/// the snapshot sees exactly the population the randomizer will rewrite: both
+/// MAN carriers (the v12-family dungeons ship theirs in a streaming chunk) and
+/// the same "id names a real item" guard. Re-deriving it here would drift from
+/// the apply pass the moment either rule changes - which is how a bundle-only
+/// snapshot came to count 277 sites against a report that rewrote 351.
 fn snapshot(patcher: &DiscPatcher) -> Vec<(usize, Vec<usize>, Vec<u8>)> {
-    let mut out = Vec::new();
-    for idx in 0..patcher.entry_count() {
-        let Ok(entry) = patcher.read_entry(idx) else {
-            continue;
-        };
-        if let Some(sc) = SceneChests::locate(&entry, idx) {
-            out.push((idx, sc.sites.clone(), sc.current_items()));
+    let mut out: Vec<(usize, Vec<usize>, Vec<u8>)> = Vec::new();
+    for c in apply::current_chests(patcher).expect("enumerate chest sites") {
+        match out.last_mut() {
+            Some((idx, sites, items)) if *idx == c.entry_idx => {
+                sites.push(c.man_offset);
+                items.push(c.item);
+            }
+            _ => out.push((c.entry_idx, vec![c.man_offset], vec![c.item])),
         }
     }
     out

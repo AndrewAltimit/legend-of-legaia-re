@@ -3,17 +3,17 @@
 //!
 //! `World::scene_can_roll_encounters` answers the question a player asks as
 //! "why am I not getting any fights". It has to answer it the way the roll
-//! path does, which means honouring **region shadowing**: encounter-region
-//! lookup stops at the first containing region (`RegionEncounterTable::
-//! region_at_tile`, matching retail's walk), so a region with a real rate and
-//! a real formation range can still be unreachable if an earlier rate-0 row
-//! covers all of its tiles. Rim Elm (`town01`) is exactly that case, and it
-//! is the scene `legaia-engine play-window` boots into - so "the port doesn't
-//! do random encounters" is what a first run looks like.
+//! path does, which means honouring the **story-flag region groups**: a
+//! scene's region array holds several story-state variants and only the one
+//! the condition walk selects is searched. Rim Elm (`town01`) authors three -
+//! two flag-gated ones and an unconditional tail - and with a cleared flag
+//! bank the tail wins, whose every row is `rate 0`. It is also the scene
+//! `legaia-engine play-window` boots into, so "the port doesn't do random
+//! encounters" is what a first run looks like.
 //!
 //! This pins both sides against real MAN data: a field area answers yes, the
-//! opening town answers no, and the no is *shadowing* rather than an absent
-//! table.
+//! opening town answers no, and the no is *the live group being rate-0*
+//! rather than an absent table.
 //!
 //! Skip-passes without disc data.
 
@@ -69,8 +69,9 @@ fn a_field_area_rolls_and_the_opening_town_does_not() {
     let town = boot(&extracted, "town01");
     assert!(
         !town.host.world.scene_encounters_rollable,
-        "town01's rollable regions are all shadowed by earlier rate-0 rows - \
-         this is retail scene data, and the reason a default boot looks quiet"
+        "town01's rate-bearing regions belong to a story state the flag bank \
+         is not in - this is retail scene data, and the reason a default boot \
+         looks quiet"
     );
     assert!(
         town.host.world.show_encounter_hint(),
@@ -78,11 +79,11 @@ fn a_field_area_rolls_and_the_opening_town_does_not() {
     );
 }
 
-/// The `town01` answer is *shadowing*, not an empty table - if it were empty
-/// the test above would pass for the wrong reason and stop guarding the
-/// first-match walk.
+/// The `town01` answer is *group selection*, not an empty table - if it were
+/// empty the test above would pass for the wrong reason and stop guarding the
+/// condition walk.
 #[test]
-fn town01_has_rollable_regions_that_are_shadowed_rather_than_absent() {
+fn town01_has_rollable_regions_in_a_story_state_it_is_not_in() {
     let Some(extracted) = extracted_dir() else {
         eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
@@ -101,12 +102,26 @@ fn town01_has_rollable_regions_that_are_shadowed_rather_than_absent() {
         .count();
     assert!(
         rate_bearing > 0,
-        "town01 has regions that would roll if they were reachable"
+        "town01 has regions that would roll if their story flag were set"
+    );
+    assert!(
+        table.groups.len() > 1,
+        "town01 authors more than one story-state region group"
     );
     assert!(
         !table.any_rollable(),
-        "...but every one of them is shadowed by an earlier row"
+        "...but the group a cleared flag bank selects is entirely rate-0"
     );
+    // And the gated groups really are the ones carrying the rates, so the
+    // answer above flips with story progress rather than being permanent.
+    let mut gated_rollable = table.clone();
+    for g in table.groups.clone() {
+        gated_rollable.select_group(|f| f == g.flag_id);
+        if gated_rollable.any_rollable() {
+            return;
+        }
+    }
+    panic!("at least one of town01's gated groups must be rollable");
 }
 
 /// The browser arms the loop through the same kernel with `LiveLoopOpts`, so

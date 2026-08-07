@@ -29,6 +29,7 @@ pub mod play_battle_render;
 pub mod play_cutscene;
 pub mod play_dev_menu;
 pub mod play_dialog;
+pub mod play_field_hud;
 pub mod play_fishing;
 pub mod play_menu;
 pub mod play_name_entry;

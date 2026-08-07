@@ -218,6 +218,10 @@ pub fn equip_modifier_table_from_disc(
 #[derive(Debug, Clone, Default)]
 pub struct DiscEquipInfo {
     entries: std::collections::HashMap<u8, DiscEquipEntry>,
+    /// `+5` of every stride-8 bonus record, in **row** order. Keyed by the
+    /// item property table's `+1` bonus index, not by item id, because that is
+    /// the index the retail renderer applies - see [`Self::row_passive_index`].
+    row_passives: Vec<u8>,
 }
 
 /// One item's disc-pinned equip restriction.
@@ -229,11 +233,18 @@ pub struct DiscEquipEntry {
     pub category: legaia_asset::equip_stats::EquipSlot,
     /// `+7 & 0x01` Ra-Seru (story upgrade) flag.
     pub is_ra_seru: bool,
+    /// `+5` accessory-passive index, or `None` when the record carries the
+    /// no-passive sentinel (`0x40`). This is the byte the shop's item-detail
+    /// window (39, `FUN_801D5AE8`) resolves to print an equipment item's
+    /// passive name + description lines; without it a host can size the
+    /// window but has nothing to put in its bottom two rows.
+    pub passive_index: Option<u8>,
 }
 
 impl DiscEquipInfo {
     /// Build from the parsed equipment stat-bonus table. Indexes every
-    /// equippable item id (`kind == 1`) that resolves to a bonus record.
+    /// equippable item id (`kind == 1`) that resolves to a bonus record, and
+    /// keeps the `+5` column of every parsed row for [`Self::row_passive_index`].
     pub fn from_disc(table: &legaia_asset::equip_stats::EquipStatTable) -> Self {
         let mut entries = std::collections::HashMap::new();
         for id in 0u8..=u8::MAX {
@@ -244,20 +255,49 @@ impl DiscEquipInfo {
                         mask: b.equip_mask(),
                         category: b.slot(),
                         is_ra_seru: b.is_ra_seru(),
+                        passive_index: b.has_passive().then(|| b.passive_index()),
                     },
                 );
             }
         }
-        Self { entries }
+        let row_passives = table.rows().iter().map(|b| b.passive_index()).collect();
+        Self {
+            entries,
+            row_passives,
+        }
     }
 
     /// Build from explicit `(id, entry)` pairs. Useful for engines that
     /// source restrictions from somewhere other than the static table, and
-    /// for tests.
+    /// for tests. Carries no bonus-row table, so [`Self::row_passive_index`]
+    /// answers the no-passive sentinel for every row.
     pub fn from_entries(entries: impl IntoIterator<Item = (u8, DiscEquipEntry)>) -> Self {
         Self {
             entries: entries.into_iter().collect(),
+            row_passives: Vec::new(),
         }
+    }
+
+    /// The `+5` passive index of bonus **row** `bonus_index`, or the
+    /// no-passive sentinel `0x40` when the row was not parsed.
+    ///
+    /// This is the shape [`crate::shop::item_passive_index`]'s equipment arm
+    /// wants, and the reason it is row-keyed rather than id-keyed is that the
+    /// retail renderer is: `FUN_801D5AE8` loads the item property record's
+    /// `+1` byte and indexes `0x80074F68 + that * 8` directly
+    /// (`0x801D5C90..0x801D5CA0`). Several item ids share a row, so an id-keyed
+    /// view is a different (coarser) map even where it agrees.
+    pub fn row_passive_index(&self, bonus_index: u8) -> u8 {
+        self.row_passives
+            .get(bonus_index as usize)
+            .copied()
+            .unwrap_or(legaia_asset::equip_stats::PASSIVE_NONE)
+    }
+
+    /// The `+5` passive index for an equippable **item id**, or `None` when it
+    /// is not equipment or grants no passive.
+    pub fn passive_index(&self, id: u8) -> Option<u8> {
+        self.entries.get(&id).and_then(|e| e.passive_index)
     }
 
     /// `true` if `id` is a known equippable item.
@@ -979,6 +1019,7 @@ mod tests {
                     mask: 1,
                     category: Disc::Weapon,
                     is_ra_seru: false,
+                    passive_index: None,
                 },
             ),
             (
@@ -987,6 +1028,7 @@ mod tests {
                     mask: 7,
                     category: Disc::Head,
                     is_ra_seru: false,
+                    passive_index: None,
                 },
             ),
         ]);
@@ -1005,6 +1047,55 @@ mod tests {
         assert_eq!(info.category(0xC0), Some(Disc::Head));
         assert_eq!(info.category(0x21), None);
         assert_eq!(info.len(), 2);
+    }
+
+    /// The `+5` column the shop's item-detail window needs. It is **row**-keyed,
+    /// because the retail renderer indexes `0x80074F68 + subtype*8` off the
+    /// item record's `+1` byte and several item ids share a row.
+    #[test]
+    fn the_passive_column_is_row_keyed_and_defaults_to_the_sentinel() {
+        use legaia_asset::equip_stats::{EquipStatTable, PASSIVE_NONE};
+        // A synthetic SCUS: PS-X EXE header, then an item property table and a
+        // bonus table at their retail VAs. No Sony bytes.
+        let t_addr = 0x8007_0000u32;
+        let t_size = 0x0001_0000u32;
+        let mut scus = vec![0u8; 0x800 + t_size as usize];
+        scus[0..8].copy_from_slice(b"PS-X EXE");
+        scus[0x18..0x1C].copy_from_slice(&t_addr.to_le_bytes());
+        scus[0x1C..0x20].copy_from_slice(&t_size.to_le_bytes());
+        let off = |va: u32| (va - t_addr) as usize + 0x800;
+        // Item 0x20 -> bonus row 2, item 0x30 -> bonus row 2 as well (a shared
+        // row, the case an id-keyed view would flatten).
+        for (id, row) in [(0x20u32, 2u8), (0x30, 2), (0x40, 5)] {
+            let base = off(0x8007_4368 + id * 0x0C);
+            scus[base] = 1; // kind = equipment
+            scus[base + 1] = row;
+        }
+        // Row 2 grants passive 0x11; row 5 carries the sentinel.
+        let row = |n: u32| off(0x8007_4F68 + n * 8);
+        scus[row(2) + 5] = 0x11;
+        scus[row(2) + 7] = 0x40; // weapon
+        scus[row(5) + 5] = PASSIVE_NONE;
+        scus[row(5) + 7] = 0x40;
+
+        let table = EquipStatTable::from_scus(&scus).expect("synthetic table parses");
+        let info = DiscEquipInfo::from_disc(&table);
+        // Row-keyed: the renderer's own index space.
+        assert_eq!(info.row_passive_index(2), 0x11);
+        assert_eq!(info.row_passive_index(5), PASSIVE_NONE);
+        // Rows past the parsed set answer the sentinel, not a stale neighbour.
+        assert_eq!(info.row_passive_index(200), PASSIVE_NONE);
+        // Id-keyed view agrees for both ids that share row 2.
+        assert_eq!(info.passive_index(0x20), Some(0x11));
+        assert_eq!(info.passive_index(0x30), Some(0x11));
+        // The sentinel reads as "no passive", not as index 0x40.
+        assert_eq!(info.passive_index(0x40), None);
+        assert_eq!(info.entry(0x40).map(|e| e.passive_index), Some(None));
+        // A non-equipment id has no entry at all.
+        assert_eq!(info.passive_index(0x21), None);
+        // A hand-built info carries no rows, so the row view is all sentinel.
+        let bare = DiscEquipInfo::from_entries([]);
+        assert_eq!(bare.row_passive_index(2), PASSIVE_NONE);
     }
 
     #[test]

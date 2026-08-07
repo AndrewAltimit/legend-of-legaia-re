@@ -121,7 +121,16 @@ inside this function, not a sibling entry point).
 Both `switch`es are ported in `legaia_engine_core::cutscene`: `fmv_post_play_handoff` returns the
 control transfer as an `FmvHandoff` (field scene + spawn word / resume-in-place / card init /
 mode 0), and `fmv_bitstream`, `fmv_is_skippable` and `fmv_clear_rects` carry the three pre-play
-decisions the dispatch makes from the same `fmv_id`. Note the four pre-play `ClearImage` rects
+decisions the dispatch makes from the same `fmv_id`.
+
+**Performing the transfer is one kernel, not one per host.** `World::finish_cutscene` ends
+playback and parks the finished id; `SceneHost::apply_pending_fmv_handoff` reads
+`fmv_post_play_handoff` and enters the named scene, returning an `FmvHandoffOutcome` the host only
+has to format. The source is a drained edge (`World::take_finished_fmv`), which is what lets every
+host - and the windowed host twice in one frame - poll it without transferring control twice.
+Skipping the *movie* is not skipping the *hand-off*: a cut slot, an undecodable STR and the
+browser page's no-MDEC auto-skip all still transfer, because retail's dispatch writes the scene
+globals whether or not the picture played. Note the four pre-play `ClearImage` rects
 bracket the tops and bottoms of **both** decode buffers rather than forming a letterbox - the
 middle pair straddles the seam between the two frame rects and overlaps by four scanlines.
 
@@ -1781,6 +1790,26 @@ kind `2`, `0x20` frames, black-to-white then white-to-black, so the swap happens
 behind a white flash.
 
 Port: `legaia_engine_core::cutscene_script_elements::LeaderSwap`.
+
+**The request is a pad edge, and that is what makes it player-reachable.**
+`801d2998..801d29a8` is `lw _DAT_8007B874; andi 0x80` - the newly-pressed word
+AND packed bit `0x80`, which is Square (the same bit
+[`minigame-fishing.md`](minigame-fishing.md) pins as reel B). The engine reads
+it inside `World::tick_three_actor_talk`, not in a host key handler: every host
+drives `World::set_pad`, so one read reaches all three and no page carries a
+second key table. `World::request_talk_leader_switch` remains beside it for
+callers with no pad word - scripted timelines, replay fixtures, tests.
+
+Why the switch is worth reaching rather than a curiosity: in `nilboa` the
+`43 02` that arms the talk spawns a partition-2 record that branches on the
+leader flags `0x10` / `0x11` / `0x12` and installs *that leader's* destination
+banner and tile walls. The leader is the player's choice of where to go.
+
+One overlap to know about: the port latches its field **run** modifier off
+Square too, so inside an armed talk one press does both. The swap bit is
+disassembly-pinned and the run mask word `0x800846DC` is explicitly not
+([`field-locomotion.md`](field-locomotion.md)), so the run modifier is the
+intruder there.
 
 ### `FUN_801D5E20` rotates a mesh's own colour words
 
