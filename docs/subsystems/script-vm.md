@@ -155,6 +155,23 @@ returned PC back to `ctx[+0x9E]`, and repeat while the opcode byte still has
 advance, or on a byte below the opcode range. So one frame runs *many* ops per
 context, and a script yields for the frame only when an op says so.
 
+The **scene system script** (the per-scene `P1[0]`, context id `0xFB`) is one
+of those contexts, not an exception to them. `FUN_8003AB2C` allocates its
+context at scene load, seats `ctx[+0x90]` on the record's script start and
+`ctx[+0x9E]` on its first opcode, and then runs the same three-condition loop
+inline - so a scene's whole entry prologue executes inside the load frame, and
+its per-frame body (the tail that jumps back over a `0x21`) executes once per
+frame thereafter. The install slice carries one extra gate the per-frame runner
+does not: `0x8003AD18` enters the loop only when that first opcode is `0x24` or
+`0x25`, so a record opening on anything else runs no load-frame slice at all.
+`town01`'s is the readable example: the prologue starts BGM
+2016, clears the two story-flag banks, and 32 instructions later stops the BGM
+again on a first visit, all before anything is drawn; the body that follows is
+a 20-instruction loop of player bbox tests choosing the scene's camera
+parameters. An engine that steps the system script one instruction per frame
+plays half a second of a track retail never lets you hear and tracks the
+camera zones at 3 Hz. Port: `World::step_field_frame_slice`.
+
 Three consequences worth stating plainly, because they retire the intuition
 that long cutscenes need catching up:
 

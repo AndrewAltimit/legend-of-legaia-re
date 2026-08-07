@@ -151,7 +151,10 @@ fn field_op_4c_n8_sub0_walks_records_and_queues_spawns() {
     //   record 1 = [0xC1, 0x42] (escape pair via 0xCx high nibble)
     let bytecode = vec![0x4C, 0x80, 0x02, 0x40, 0x41, 0x00, 0xC1, 0x42, 0x00];
     world.load_field_script(bytecode);
-    let _ = world.tick();
+    // One *instruction*, not one frame: a frame runs a whole retail slice
+    // ([`World::step_field_frame_slice`]) and would carry the PC on into the
+    // record payload, which says nothing about this opcode's own PC delta.
+    let _ = world.step_field();
     // PC should land at byte 3 (the first record's first byte) - the
     // retail VM advances PC by exactly 3 regardless of how many
     // records the host consumes.

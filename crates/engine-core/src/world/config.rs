@@ -567,6 +567,18 @@ pub(crate) const PROLOGUE_TIMELINE_MAX_FRAMES: u32 = 3600;
 /// malformed non-yielding stretch.
 pub(crate) const FIELD_CHANNEL_STEP_BUDGET: u32 = 128;
 
+/// Per-frame field-VM step budget for the **scene system script** (ctx
+/// `0xFB`), the sibling of [`FIELD_CHANNEL_STEP_BUDGET`] for
+/// [`World::step_field_frame_slice`]. Retail's own runner (`FUN_8003CF7C`)
+/// has no cap - it leaves on the `0x21` NOP, a parked PC, or a text byte -
+/// so this only bounds a stream that finds none of the three, which in the
+/// port means a decode that has gone wrong. Overrunning it is not a failure
+/// state: the remaining instructions simply run on the next frame, i.e. the
+/// slice degrades toward the one-instruction-per-tick pacing it replaced.
+/// `town01`'s scene-entry prologue - the longest slice a field scene runs -
+/// is 44 instructions.
+pub(crate) const FIELD_FRAME_SLICE_BUDGET: usize = 256;
+
 /// Bound on the concurrent spawned-record contexts
 /// ([`World::helper_contexts`]) and the pending op-`0x44` spawn queue
 /// ([`World::pending_record_spawns`]). Retail's context table is a small
