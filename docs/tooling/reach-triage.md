@@ -95,6 +95,37 @@ It also lifts one of the structural exclusions below: `engine-render` is a hard
 wgpu link the browser composition ladder cannot carry, and the native window
 *is* that link, so a spawned `play-window` run reports executed regions there.
 
+### A tag between two functions is scored by the next function that has regions
+
+`FileCoverage.verdict_at` resolves a `// PORT:` line to the enclosing function
+span, and failing that to the next span starting at or after the tag. When the
+tag's own symbol is absent from the export's line geometry, "the next span" is
+some later function, and the tag inherits *that* function's verdict.
+
+The `mode_init_bare` tags are the worked example. All three sit in a comment
+block between items, no exported span contains their lines, and the next span
+present starts 70-odd lines further down and executed - so the join reports
+three `NOT WIRED`-disclosed anchors as executed, which is the report's own
+highest-priority category. No caller exists: the only references to
+`mode_init_bare` outside its own definition are `#[cfg(test)]` unit tests in
+the same file, which no ladder builds. Scanning every export for the symbol
+finds it at count 0 in all of them.
+
+Two properties make it hard to spot. The export carries a record per binary
+built into the target dir, so one symbol appears under several crate hashes at
+several line geometries at once, and a stale record's span can sit hundreds of
+lines from the current source. And the fall-through is silent: an anchor whose
+owner genuinely never ran is exactly the anchor whose record carries no live
+regions, so the rows most likely to be mis-scored are the ones the category is
+meant to find.
+
+The joiner already knows each anchor's symbol - it prints it in the row - and
+already has `executed_overlapping` for resolving a symbol's *source* span
+against the export. Routing anchors with a known symbol through that path,
+instead of through the line fall-through, is what closes this. Until then, read
+a "disclosed `NOT WIRED` anchor executed" row as a claim to check rather than a
+finding: confirm a caller exists before treating it as a disclosure defect.
+
 ## What a pad-only ladder structurally cannot execute
 
 The *headless* ladders drive `BootSession`, which constructs no renderer, no
