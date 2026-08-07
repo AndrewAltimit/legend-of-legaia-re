@@ -1,7 +1,5 @@
 //! Actor allocator host-trait abstractions.
 //!
-//! PORT: FUN_80024C88, FUN_80024D78, FUN_80024DFC
-//!
 //! Three small SCUS helpers around the per-actor allocator pipeline.
 //! All three live in `SCUS_942.54` and are siblings of the larger
 //! `FUN_80021B04` (move-VM spawn) and `FUN_801D77F4` (overlay-resident
@@ -62,10 +60,21 @@ impl SpawnPosition {
 /// `None` on allocation failure (the retail `iVar1 == 0` branch).
 pub type ActorHandle = u32;
 
+/// PORT: FUN_80024C88, FUN_80024D78, FUN_80024DFC
+///
 /// Engine-side allocator hooks the runtime needs to construct + tear
 /// down actors. Default implementations are no-ops where retail's
 /// SCUS body is itself a no-op; the spawn / OBJECT-table methods
 /// have no useful default and engines must override them.
+///
+/// The three tags sit on the trait rather than one per method:
+/// `spawn_at_position` (FUN_80024C88) and `rebuild_object_table`
+/// (FUN_80024D78) are bodyless declarations, which the port catalog's
+/// anchor resolver cannot attach a tag to (a tag above a bodyless `fn`
+/// falls back to module scope), and the trait declaration is the port -
+/// the engine layer (`engine-core::actor_alloc_host`) supplies the
+/// bodies. `on_actor_cleanup` (FUN_80024DFC) keeps retail's no-op body
+/// as its default below.
 pub trait ActorAllocatorHost {
     /// Allocate a fresh actor at `position` from the pool keyed by
     /// `(pool_a, pool_b)`. Mirrors `FUN_80024C88(pos_ptr, pool_a,
