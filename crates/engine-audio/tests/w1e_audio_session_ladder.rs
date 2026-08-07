@@ -26,6 +26,14 @@
 
 use std::path::{Path, PathBuf};
 
+use legaia_engine_audio::seq_calc::{
+    SeqCalcState, SeqCall, SeqChannel, SlideDir, flag, seq_calc, tempo_slide_tick, tick_budget,
+    volume_slide_tick,
+};
+use legaia_engine_audio::seq_events::{
+    PumpOutcome, SeqEvent, pump_delta_time, read_delta, start_channel, stop_channel,
+};
+use legaia_engine_audio::seq_slots::{SeqResourceSlot, SeqResourceTable};
 use legaia_engine_audio::spu::ram::{SPU_RAM_BYTES, SpuAllocator};
 use legaia_engine_audio::{
     CueDispatch, PendingCue, SPU_INTERNAL_RATE, Sequencer, SfxBank, SfxScheduler, SinkMeasure, Spu,
@@ -441,4 +449,299 @@ fn a_delayed_sfx_cue_reaches_the_output_on_its_own_frame() {
         "the cue fired on frame {DELAY} but the output stayed silent until \
          frame {audible}"
     );
+}
+
+/// The retail `SsSeqCalc` transport tier walks the **same real SEQ** the
+/// clean-room parser decodes, and the two agree event-for-event up to the
+/// first end-of-track.
+///
+/// This is the differential the transport rung owes: `pump_delta_time` /
+/// `decode_event` / the handler tails consume the stream through the retail
+/// dispatch (`seq_calc` -> `dispatch_channel`), and every event class the walk
+/// yields is counted against `Seq::event_summary` over the identical bytes.
+/// A phantom byte read (the defect the module docs record) or a dropped
+/// operand desynchronises the stream and shows up here as an `Unknown` /
+/// `Overrun` event or a count mismatch - not as a silent pass.
+///
+/// The stop / start arms are then driven through the same dispatch table the
+/// retail frame walks: raising `STOP` / `START` on the record is exactly what
+/// `SsSeqStop` / `SsSeqPlay` do, and the tail dispatch consumes the bit.
+#[test]
+fn the_retail_transport_tier_agrees_with_the_clean_room_parser() {
+    let Some(extracted) = disc_gate() else { return };
+    let mut archive = Archive::open(&extracted.join("PROT.DAT")).expect("open PROT");
+    let Some(entry) = first_bgm_entry(&mut archive, &extracted) else {
+        eprintln!("[skip] no music_01 entry carries both pBAV and pQES");
+        return;
+    };
+
+    // Clean-room reference over the same bytes.
+    let raw = &entry.bytes[entry.seq_off..];
+    let seq = Seq::parse(raw).expect("clean-room parse of the real SEQ");
+    let summary = seq.event_summary();
+
+    // Retail-record seeding, the SEQ-open shape (`FUN_80062410`): resolution
+    // and tempo off the header, the body's leading delta consumed before the
+    // first frame, cursor published as the track start.
+    let (header, header_len) = legaia_seq::parse_header_with_len(raw).expect("SEQ header");
+    let body = &raw[header_len..];
+    let bpm = 60_000_000u32
+        .checked_div(header.tempo_us_per_qn)
+        .unwrap_or(0);
+    let resolution = header.ppqn as i16;
+    let mut ch = SeqChannel {
+        resolution,
+        tempo: bpm,
+        tick_budget: tick_budget(resolution, bpm, 60),
+        sub_frame: -1,
+        flags: flag::PLAY,
+        playing: 1,
+        chain_slot: 0xFF,
+        vol: (0x7F, 0x7F),
+        ..Default::default()
+    };
+    ch.pending_wait = read_delta(&mut ch, body).unwrap_or(0);
+    ch.start = ch.cursor;
+    ch.loop_cursor = ch.cursor;
+
+    let mut state = SeqCalcState {
+        busy: false,
+        slot_mask: 1,
+        slot_count: 1,
+        channel_count: 1,
+    };
+    let mut channels = vec![vec![ch]];
+    let mut events: Vec<SeqEvent> = Vec::new();
+    let mut frames = 0usize;
+    // Bound the walk by wall-time frames, generously: a track's first pass
+    // cannot outlast its own total tick count at >= 1 tenth-tick per frame.
+    let frame_cap = 200_000usize;
+    while !events
+        .iter()
+        .any(|e| matches!(e, SeqEvent::EndOfTrack(_) | SeqEvent::LoopMarker(_)))
+        && frames < frame_cap
+    {
+        seq_calc(&mut state, &mut channels, |call, ch| match call {
+            SeqCall::Pump => {
+                if let PumpOutcome::Ran(evs) | PumpOutcome::Runaway(evs) = pump_delta_time(ch, body)
+                {
+                    events.extend(evs);
+                }
+            }
+            SeqCall::VolUp => {
+                let vol = ch.vol;
+                volume_slide_tick(ch, SlideDir::Up, vol);
+            }
+            SeqCall::VolDown => {
+                let vol = ch.vol;
+                volume_slide_tick(ch, SlideDir::Down, vol);
+            }
+            SeqCall::Tempo => {
+                tempo_slide_tick(ch, 60);
+            }
+            SeqCall::Stop => stop_channel(ch),
+            SeqCall::Start => start_channel(ch),
+            SeqCall::Rewind => {}
+        })
+        .expect("the latch is never held here");
+        frames += 1;
+    }
+
+    let first_pass: Vec<SeqEvent> = events
+        .iter()
+        .copied()
+        .take_while(|e| !matches!(e, SeqEvent::EndOfTrack(_) | SeqEvent::LoopMarker(_)))
+        .collect();
+    let ended = first_pass.len() < events.len();
+    let (mut notes, mut ccs, mut pcs, mut bends, mut metas) = (0u32, 0u32, 0u32, 0u32, 0u32);
+    let mut bad: Vec<SeqEvent> = Vec::new();
+    for e in &first_pass {
+        match e {
+            SeqEvent::Note { .. } => notes += 1,
+            SeqEvent::ControlChange(_) => ccs += 1,
+            SeqEvent::ProgramChange(_) => pcs += 1,
+            SeqEvent::PitchBend => bends += 1,
+            SeqEvent::Meta(_) => metas += 1,
+            SeqEvent::Unknown(_) | SeqEvent::Overrun => bad.push(*e),
+            SeqEvent::EndOfTrack(_) | SeqEvent::LoopMarker(_) => unreachable!(),
+        }
+    }
+    eprintln!(
+        "[w1e-transport] entry={} frames={} notes={} cc={} pc={} bend={} meta={} ended={}",
+        entry.index, frames, notes, ccs, pcs, bends, metas, ended
+    );
+
+    assert!(ended, "no end-of-track within {frame_cap} frames");
+    assert!(
+        bad.is_empty(),
+        "the retail walk desynchronised: {bad:?} - a status class the disc \
+         stream uses that the ported decoder / handler tails mis-consume"
+    );
+    assert_eq!(
+        notes,
+        summary.note_on + summary.note_off,
+        "note events (retail counts a velocity-0 release as a note event)"
+    );
+    assert_eq!(pcs, summary.program_change, "program changes");
+    assert_eq!(ccs, summary.control_change, "control changes");
+    assert_eq!(bends, summary.pitch_bend, "pitch bends");
+    assert_eq!(
+        metas,
+        summary.set_tempo + summary.time_sig + summary.other_meta,
+        "meta events (end-of-track excluded on both sides)"
+    );
+
+    // The transport arms, driven through the same tail dispatch retail walks:
+    // `SsSeqStop` raises the bit, the next `SsSeqCalc` frame consumes it.
+    channels[0][0].flags |= flag::STOP;
+    let trace = seq_calc(&mut state, &mut channels, |call, ch| match call {
+        SeqCall::Pump => {
+            let _ = pump_delta_time(ch, body);
+        }
+        SeqCall::Stop => stop_channel(ch),
+        SeqCall::Start => start_channel(ch),
+        _ => {}
+    })
+    .expect("not latched");
+    assert!(
+        trace.iter().any(|(_, _, c)| *c == SeqCall::Stop),
+        "the STOP bit must reach the stop arm"
+    );
+    assert_eq!(channels[0][0].playing, 0, "stop clears the playing byte");
+    assert_eq!(
+        channels[0][0].flags & flag::STOP,
+        0,
+        "stop consumes its own bit"
+    );
+
+    channels[0][0].flags |= flag::START;
+    let trace = seq_calc(&mut state, &mut channels, |call, ch| match call {
+        SeqCall::Pump => {
+            let _ = pump_delta_time(ch, body);
+        }
+        SeqCall::Stop => stop_channel(ch),
+        SeqCall::Start => start_channel(ch),
+        _ => {}
+    })
+    .expect("not latched");
+    assert!(
+        trace.iter().any(|(_, _, c)| *c == SeqCall::Start),
+        "the START bit must reach the start arm"
+    );
+    assert_eq!(channels[0][0].playing, 1, "start sets the playing byte");
+    assert_eq!(
+        channels[0][0].flags & flag::START,
+        0,
+        "start consumes its own bit"
+    );
+}
+
+/// Session teardown through the SEQ resource-slot table: the release path
+/// (`FUN_8001FF58`) fires the VAB close exactly once with the slot's handle,
+/// and the close is what actually silences the session.
+///
+/// The installer role (stamp the handle, raise the loaded flag - the
+/// `chunk_install` walker's job) is played by the test; the release under
+/// measurement is the untouched production arm, and the assertion is at the
+/// **output**: after the close detaches the sequencer, the sink must decay to
+/// exact silence, and a second release must be a no-op.
+#[test]
+fn releasing_the_seq_resource_slot_tears_the_session_down() {
+    let Some(extracted) = disc_gate() else { return };
+    let mut archive = Archive::open(&extracted.join("PROT.DAT")).expect("open PROT");
+    let Some(entry) = first_bgm_entry(&mut archive, &extracted) else {
+        eprintln!("[skip] no music_01 entry carries both pBAV and pQES");
+        return;
+    };
+
+    let mut sink = TestAudioSink::new(SPU_INTERNAL_RATE);
+    stage_bgm(&mut sink, &entry);
+    let (before, _) = run_frames(&mut sink, 120);
+    if before.is_silent() {
+        eprintln!("[skip] track produced no signal in the first 2 s");
+        return;
+    }
+
+    // The retail table is 12-byte records at 0x80091508; the installer stamps
+    // the handle byte and raises the loaded flag when the VAB/SEQ upload
+    // lands. Slot 2 is arbitrary - the release indexes, it does not search.
+    const SLOT: usize = 2;
+    const HANDLE: i8 = 5;
+    let mut table = SeqResourceTable::new(16);
+    *table.slot_mut(SLOT).unwrap() = SeqResourceSlot {
+        handle: HANDLE,
+        loaded: true,
+    };
+
+    let mut closed: Vec<i8> = Vec::new();
+    let fired = table.release(SLOT, |h| {
+        closed.push(h);
+        // The engine's VAB-close analog: key off and drop the sequencer
+        // (`FUN_80068C80`'s SpuFree half is the allocator's business).
+        sink.detach_sequencer();
+    });
+    assert!(fired, "a loaded slot must close");
+    assert_eq!(
+        closed,
+        vec![HANDLE],
+        "the close gets the slot's handle byte"
+    );
+    assert!(
+        sink.sequencer_progress().is_none(),
+        "the sequencer is gone after the close"
+    );
+    assert!(
+        !table.slot(SLOT).unwrap().loaded,
+        "the loaded flag is cleared"
+    );
+
+    // Output law: the keyed-off voices decay through their ADSR release until
+    // only the reverb floor remains. **Exact digital silence never returns**,
+    // and that is a measured property of the session, not a defect in the
+    // close: the boot enables retail's Studio C reverb, and the reverb
+    // network's multiply is `(a * coef) >> 15` - an arithmetic shift that
+    // truncates toward -infinity, under which a buffer cell holding `-1`
+    // recirculates as `-1` forever (the same sticky low bit the hardware's
+    // own reverb arithmetic has). First execution of this rung measured
+    // exactly that: every voice off, every output sample pinned at |1| LSB.
+    // So the assertion is "decays to the 1-LSB reverb floor", and anything
+    // in a host that gates on `is_silent()` after reverb has run will never
+    // fire - that is what this rung pins.
+    let mut floor_at = None;
+    let mut last = SinkMeasure::default();
+    for f in 0..600usize {
+        last = sink.render_video_frame();
+        if last.peak <= 1 {
+            floor_at = Some(f);
+            break;
+        }
+    }
+    let live: Vec<String> = sink.with_spu(|spu: &mut Spu| {
+        spu.voices
+            .iter()
+            .enumerate()
+            .filter(|(_, v)| !v.is_off())
+            .map(|(i, v)| format!("v{i} adsr={:?}", v.adsr))
+            .collect()
+    });
+    eprintln!(
+        "[w1e-release] floor_at={floor_at:?} last_peak={} live_voices={live:?}",
+        last.peak
+    );
+    assert!(
+        live.is_empty(),
+        "voices still keyed after the close: {live:?}"
+    );
+    assert!(
+        floor_at.is_some(),
+        "10 s after the release the sink still carries signal above the 1-LSB \
+         reverb floor (peak {}) - the close did not key the session's voices \
+         off",
+        last.peak
+    );
+
+    // Idempotence: retail's release re-tests the loaded flag, so a second
+    // call must not fire the close again.
+    let fired_again = table.release(SLOT, |_| panic!("double close"));
+    assert!(!fired_again, "a released slot is a no-op");
 }
