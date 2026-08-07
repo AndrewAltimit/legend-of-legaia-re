@@ -830,6 +830,20 @@ pub fn read_retail_inventory(sc_block: &[u8]) -> Option<&[u8]> {
     sc_block.get(RETAIL_INVENTORY_OFFSET..RETAIL_INVENTORY_OFFSET + RETAIL_INVENTORY_SIZE)
 }
 
+/// Extract the full 256-slot **accessor item window** from a retail SC block.
+///
+/// [`read_retail_inventory`] returns the 72-slot general consumable page.
+/// The retail accessor family (`FUN_8004313C` window select and the
+/// find / consume / add entries, `crate::retail_inventory`) walks a window of
+/// up to [`crate::retail_inventory::ITEM_SLOTS_TOTAL`] slots over the same
+/// base - `SC+0x1818..SC+0x1A18`, exactly the tail of the `0x1A18`-byte live
+/// game-state snapshot the save block carries. This returns that whole span
+/// (`0x200` bytes, `(id, count)` pairs), or `None` if the block is too small.
+pub fn read_retail_item_window(sc_block: &[u8]) -> Option<&[u8]> {
+    let len = crate::retail_inventory::ITEM_SLOTS_TOTAL * 2;
+    sc_block.get(RETAIL_INVENTORY_OFFSET..RETAIL_INVENTORY_OFFSET + len)
+}
+
 /// Write character records into a retail SC save block in place.
 ///
 /// `records` are written sequentially starting at the retail record region

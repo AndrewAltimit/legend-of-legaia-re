@@ -349,6 +349,44 @@ CANONICAL_LADDERS = [
     ("l3_confused_monster_target_gate", "legaia-engine-core"),
     ("l3_travel_art_visited_gate", "legaia-engine-core"),
     ("field_ledge_hop_disc", "legaia-engine-core"),
+    # --- lane W2C ---
+    # Five existing tests that were already the honest drivers for
+    # never-entered rows and were simply absent from this list (the W1-D/E/F
+    # shape: a ladder converts nothing until it is named here), plus two new
+    # ladders.
+    #
+    # `pause_menu_compose` composes every pause screen through the shared
+    # session-path builders on both chrome passes: the Items special-Use
+    # confirm (801d1dac / 801d1f10), its hand quad (801e3ff0), and the three
+    # painter-gated windows 5 / 6 / 7 (801d61b0 / 801d6360 / 801dccb4).
+    # Disc-free.
+    #
+    # `dome_ladder_and_hub_real` builds the Muscle Dome hub screens off the
+    # disc's recovered draw lists - the score tally's label strips are the
+    # corner-anchored emitter (801d08ec). `character_pack_real` applies the
+    # equipment group-swap patch to every active-party slot (8001ebec).
+    # `boot_overlay_disc` resolves the boot-time slot-B overlay choice and,
+    # with this lane's rungs, the effect-data side-band branch and the
+    # sector-count rounding against the real TOC (80025ba0 / 8003e360 /
+    # 8001eef0). `cdname_retail_parse_disc` runs the lossy retail CDNAME
+    # reader over the real file (8001d8fc). All four disc-gated skip-pass.
+    #
+    # `w2c_battle_fx_ladder` walks the move-FX streak counter through the
+    # production dispatcher so the chained ribbon (801e1d98) is reached the
+    # way a host reaches it - by the counter falling below 0x201, not by a
+    # direct call. Disc-free.
+    #
+    # `w2c_card_inventory_ladder` runs the retail item-window accessor family
+    # over a real memory card's SC block (select / find / consume / normalize
+    # / add, 8004313c and friends). Keys on ~/.mednafen/sav like
+    # real_card_roundtrip, not on the disc; skip-passes without a card.
+    ("pause_menu_compose", "legaia-engine-ui"),
+    ("w2c_battle_fx_ladder", "legaia-engine-ui"),
+    ("dome_ladder_and_hub_real", "legaia-web-viewer"),
+    ("character_pack_real", "legaia-asset"),
+    ("boot_overlay_disc", "legaia-asset"),
+    ("cdname_retail_parse_disc", "legaia-prot"),
+    ("w2c_card_inventory_ladder", "legaia-save"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
