@@ -12,15 +12,19 @@
 //! 1. The player's world `(x, z)` is reduced to a **128-unit tile** by an
 //!    arithmetic `>> 7` (`worldX >> 7`, `worldZ >> 7`) - region AABBs are in
 //!    tile units (`0x801d9e94..0x801d9ec0`).
-//! 2. The scene's region table is walked **in order**; the first region whose
+//! 2. The scene's **condition** table is walked to pick which slice of the
+//!    region array is live (`0x801d9f30..0x801d9fd8`). See [`RegionGroup`].
+//!    Only that slice is searched next; the rest of the region array belongs
+//!    to other story states and is invisible.
+//! 3. The selected group is walked **in order**; the first region whose
 //!    AABB contains the tile (`x_min <= tx <= x_max && z_min <= tz <= z_max`)
 //!    is selected (`0x801d9fe8..0x801da050`).
-//! 3. The region's per-step **rate increment** (`region[+4]`) is scaled by the
+//! 4. The region's per-step **rate increment** (`region[+4]`) is scaled by the
 //!    user encounter-rate setting (`_DAT_8007B5F8`; `0x801da198..0x801da1b4`)
 //!    and subtracted from the step counter (`_DAT_8007B5FC`,
 //!    `0x801da20c..0x801da21c`). While the counter stays positive, nothing
 //!    fires.
-//! 4. When the counter drops to `<= 0`, a formation id is rolled uniformly from
+//! 5. When the counter drops to `<= 0`, a formation id is rolled uniformly from
 //!    the region's `[base, base + count)` slice (`base = region[+6]`,
 //!    `count = region[+7]`; `0x801da228..0x801da268`) with a one-step
 //!    anti-repeat (if the pick equals the previous formation, advance one and
@@ -204,11 +208,53 @@ impl EncounterRateModifiers {
     }
 }
 
+/// One story-flag-gated slice of a scene's region array.
+///
+/// A scene's regions are not one list - they are several **variants of the
+/// same scene**, one per story state, laid end to end, and the MAN's
+/// condition array says where each starts. `FUN_801D9E1C` walks the
+/// conditions in order and takes the first whose flag is set (or the
+/// `0xFFFF` unconditional tail); the regions of every other group are
+/// unreachable in that state.
+///
+/// Reading the array flat instead is what makes most scenes look
+/// encounter-free: a group's rows commonly begin with (or consist of) a
+/// whole-map `rate 0` row, and a flat first-match lookup stops there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RegionGroup {
+    /// Story flag gating this group, or [`DEFAULT_GROUP_FLAG`] for the
+    /// unconditional tail every retail scene ends with.
+    pub flag_id: u16,
+    /// Index of the group's first region in [`RegionEncounterTable::regions`].
+    pub start: usize,
+    /// Number of regions in the group.
+    pub len: usize,
+}
+
+/// The condition flag id that means "no flag test - this group always wins"
+/// (`FUN_801D9E1C` `0x801d9f50`).
+pub const DEFAULT_GROUP_FLAG: u16 = legaia_asset::man_section::CONDITION_DEFAULT_FLAG;
+
 /// Per-scene region-keyed encounter table.
+///
+/// `regions` holds every authored region across every story variant;
+/// `groups` says which slice belongs to which story flag, and `active` is
+/// the slice the roll currently searches. Refresh `active` from the live
+/// flag bank with [`Self::select_group`] before each step - retail
+/// re-evaluates the condition walk every step, so a flag set mid-scene
+/// changes the region set immediately.
 #[derive(Clone, Debug, Default)]
 pub struct RegionEncounterTable {
     pub scene_label: String,
     pub regions: Vec<EncounterRegion>,
+    /// The condition partition. Empty for hand-built (synthetic) tables,
+    /// which behave as one implicit group covering every region.
+    pub groups: Vec<RegionGroup>,
+    /// Currently selected `(start, len)` slice of `regions`. `None` means
+    /// the condition walk found no group - retail's "return without
+    /// rolling" exit, which is emphatically not the same as "search
+    /// everything".
+    active: Option<(usize, usize)>,
 }
 
 impl RegionEncounterTable {
@@ -216,7 +262,53 @@ impl RegionEncounterTable {
         Self {
             scene_label: scene_label.into(),
             regions: Vec::new(),
+            groups: Vec::new(),
+            active: None,
         }
+    }
+
+    /// Re-run the condition walk against the live story-flag bank and latch
+    /// the group it selects.
+    ///
+    /// `flag_test(flag_id)` answers the `FUN_8003CE64` question. A table with
+    /// no `groups` (a synthetic one) keeps every region active.
+    // PORT: FUN_801D9E1C (condition walk, 0x801d9f30..0x801d9fd8)
+    pub fn select_group(&mut self, mut flag_test: impl FnMut(u16) -> bool) {
+        if self.groups.is_empty() {
+            self.active = Some((0, self.regions.len()));
+            return;
+        }
+        self.active = self
+            .groups
+            .iter()
+            .find(|g| g.flag_id == DEFAULT_GROUP_FLAG || flag_test(g.flag_id))
+            .map(|g| (g.start, g.len));
+    }
+
+    /// The region slice the roll currently searches (see [`Self::select_group`]).
+    pub fn active_regions(&self) -> &[EncounterRegion] {
+        match self.active {
+            Some((start, len)) => {
+                let end = start.saturating_add(len).min(self.regions.len());
+                let start = start.min(end);
+                &self.regions[start..end]
+            }
+            // A table built by hand (tests, synthetic worlds) never had a
+            // condition walk run over it; treat it as all-active rather than
+            // silently dead.
+            None if self.groups.is_empty() => &self.regions,
+            None => &[],
+        }
+    }
+
+    /// The selected group's descriptor, when the table carries a condition
+    /// partition and the walk matched one.
+    pub fn active_group(&self) -> Option<RegionGroup> {
+        let (start, len) = self.active?;
+        self.groups
+            .iter()
+            .copied()
+            .find(|g| g.start == start && g.len == len)
     }
 
     /// Reduce a world coordinate to its 128-unit tile (`coord >> 7`,
@@ -226,11 +318,11 @@ impl RegionEncounterTable {
         (coord as i32) >> 7
     }
 
-    /// The first region whose AABB contains tile `(tile_x, tile_z)`, or `None`
-    /// when the player stands outside every region (the retail walk that runs
-    /// off the end of the table without a hit).
+    /// The first region **of the active group** whose AABB contains tile
+    /// `(tile_x, tile_z)`, or `None` when the player stands outside every one
+    /// of them (the retail walk that runs off the end without a hit).
     pub fn region_at_tile(&self, tile_x: i32, tile_z: i32) -> Option<&EncounterRegion> {
-        self.regions
+        self.active_regions()
             .iter()
             .find(|r| r.contains_tile(tile_x, tile_z))
     }
@@ -244,23 +336,30 @@ impl RegionEncounterTable {
         self.regions.is_empty()
     }
 
-    /// `true` when at least one region that can actually produce a battle
-    /// (non-zero rate increment **and** a non-empty formation range) owns at
-    /// least one tile it is the *first* match for.
+    /// `true` when at least one region **of the active group** that can
+    /// actually produce a battle (non-zero rate increment **and** a non-empty
+    /// formation range) owns at least one tile it is the *first* match for.
     ///
-    /// The "first match" qualifier is the whole point. [`Self::region_at_tile`]
-    /// stops at the first containing region, exactly like retail's walk, so a
-    /// rollable region whose every tile is already covered by an earlier
-    /// rate-0 row is unreachable - the scan below shadows regions in table
-    /// order the same way the lookup does. Several retail town scenes are
-    /// rollable-on-paper and unrollable in fact for precisely this reason;
-    /// that is scene data, not a bug.
+    /// Two qualifiers, both load-bearing:
     ///
-    /// Cost is one pass over the union of the region AABBs against a 256x256
-    /// claim map, so call it on scene entry (or cache it), not per frame.
+    /// - *Active group*: rollability is a property of the (scene, story
+    ///   state) pair, not of the scene. A town is silent until its "under
+    ///   attack" flag flips the region set; a dungeon can be silent before
+    ///   the story opens it. Call [`Self::select_group`] first.
+    /// - *First match*: [`Self::region_at_tile`] stops at the first containing
+    ///   region, exactly like retail's walk, so a rollable region whose every
+    ///   tile is already covered by an earlier rate-0 row in the same group is
+    ///   unreachable - the scan below shadows regions in group order the same
+    ///   way the lookup does. Groups routinely end with a whole-map rate-0
+    ///   catch-all, which is the "outside every named region, roll nothing"
+    ///   row and correctly shadows nothing before it.
+    ///
+    /// Cost is one pass over the union of the group's region AABBs against a
+    /// 256x256 claim map, so call it on scene entry (or cache it), not per
+    /// frame.
     pub fn any_rollable(&self) -> bool {
         let mut claimed = vec![false; 256 * 256];
-        for r in &self.regions {
+        for r in self.active_regions() {
             let mut owns_a_tile = false;
             for tz in r.tile_z_min..=r.tile_z_max {
                 for tx in r.tile_x_min..=r.tile_x_max {
@@ -286,6 +385,12 @@ impl RegionEncounterTable {
 /// [`crate::encounter_man::encounter_table_from_man`] (which aggregates the
 /// same regions into a single weighted table); this one keeps the geometry so a
 /// position-routed engine can roll against the active region.
+///
+/// Every region variant the scene authors is kept, and the condition array is
+/// carried alongside as [`RegionEncounterTable::groups`]. The table is left
+/// resolved for the **all-flags-clear** state; a host with a live flag bank
+/// should call [`RegionEncounterTable::select_group`] (or
+/// [`RegionEncounterTracker::select_group`]) per step.
 pub fn region_encounter_table_from_man(
     scene_label: &str,
     man_bytes: &[u8],
@@ -310,6 +415,20 @@ pub fn region_encounter_table_from_man(
     if table.regions.is_empty() {
         return None;
     }
+
+    let mut start = 0usize;
+    for cond in man_section::condition_records(body, &es).flatten() {
+        let len = cond.region_count as usize;
+        table.groups.push(RegionGroup {
+            flag_id: cond.flag_id,
+            start,
+            len,
+        });
+        start = start.saturating_add(len);
+    }
+    // Resolve for a cleared flag bank so a host that never refreshes still
+    // gets the unconditional tail rather than group 0.
+    table.select_group(|_| false);
     Some(table)
 }
 
@@ -355,6 +474,16 @@ impl RegionEncounterTracker {
 
     pub fn table(&self) -> &RegionEncounterTable {
         &self.table
+    }
+
+    /// Re-run the scene's condition walk against the live story-flag bank.
+    ///
+    /// Retail evaluates this every step, so hosts refresh it alongside
+    /// [`Self::set_modifiers`]: a flag set mid-scene swaps the region set
+    /// (and therefore the rates, formations and battle backdrop) on the very
+    /// next step.
+    pub fn select_group(&mut self, flag_test: impl FnMut(u16) -> bool) {
+        self.table.select_group(flag_test);
     }
 
     pub fn setting(&self) -> EncounterRateSetting {
@@ -493,6 +622,105 @@ mod tests {
         assert_eq!(t.region_at_tile(5, 5).unwrap().rate_increment, 16);
         // (9,9) is in neither.
         assert!(t.region_at_tile(9, 9).is_none());
+    }
+
+    /// A MAN whose section 0 carries `conditions` over `regions`, in the
+    /// retail layout. `regions` are `(rate, x1, z1)` whole-corner boxes from
+    /// the origin so the caller can tell them apart by rate alone.
+    fn man_with_groups(conditions: &[(u16, u16)], regions: &[(u8, u8, u8)]) -> Vec<u8> {
+        let mut body = vec![8u8, 4, 12, 1];
+        body.extend_from_slice(&[0, 0, 0, 1, 4, 0, 0, 0]); // formation 0
+        body.push(conditions.len() as u8);
+        for (flag, n) in conditions {
+            body.extend_from_slice(&flag.to_le_bytes());
+            body.extend_from_slice(&n.to_le_bytes());
+        }
+        body.push(regions.len() as u8);
+        for &(rate, x1, z1) in regions {
+            body.extend_from_slice(&[0, 0, x1, z1, rate, 0, 0, 1, 0, 0, 0, 0]);
+        }
+
+        let mut buf = vec![0u8; 0x2B];
+        let ln = body.len() as u32;
+        buf.extend_from_slice(&[(ln & 0xFF) as u8, (ln >> 8) as u8, (ln >> 16) as u8]);
+        buf.extend_from_slice(&body);
+        for _ in 0..5 {
+            buf.extend_from_slice(&[0, 0, 0]);
+        }
+        buf
+    }
+
+    #[test]
+    fn man_table_carries_the_condition_partition() {
+        let man = man_with_groups(
+            &[(0x0141, 2), (0xFFFF, 1)],
+            &[(0, 128, 128), (24, 40, 40), (18, 60, 60)],
+        );
+        let t = region_encounter_table_from_man("s", &man).expect("table");
+        assert_eq!(t.regions.len(), 3, "every variant is preserved");
+        assert_eq!(
+            t.groups,
+            vec![
+                RegionGroup {
+                    flag_id: 0x0141,
+                    start: 0,
+                    len: 2
+                },
+                RegionGroup {
+                    flag_id: DEFAULT_GROUP_FLAG,
+                    start: 2,
+                    len: 1
+                },
+            ]
+        );
+        // Built resolved for a cleared flag bank: the default tail, not
+        // group 0 - so the leading whole-map rate-0 row is invisible.
+        assert_eq!(t.active_regions().len(), 1);
+        assert_eq!(t.active_regions()[0].rate_increment, 18);
+        assert!(t.any_rollable());
+    }
+
+    #[test]
+    fn selecting_a_gated_group_swaps_the_live_region_set() {
+        let man = man_with_groups(
+            &[(0x0141, 2), (0xFFFF, 1)],
+            &[(0, 128, 128), (24, 40, 40), (18, 60, 60)],
+        );
+        let mut t = region_encounter_table_from_man("s", &man).expect("table");
+        // Default state: tile (10,10) rolls the trailing group's rate-18 row.
+        assert_eq!(t.region_at_tile(10, 10).unwrap().rate_increment, 18);
+        // Flag 0x0141 set: the gated group wins, and *its* first row is the
+        // whole-map rate-0 one, which shadows the rate-24 row behind it.
+        t.select_group(|f| f == 0x0141);
+        assert_eq!(t.region_at_tile(10, 10).unwrap().rate_increment, 0);
+        assert!(!t.any_rollable(), "the group's rate-0 row shadows the rest");
+        assert_eq!(t.active_group().unwrap().flag_id, 0x0141);
+    }
+
+    #[test]
+    fn a_walk_with_no_match_leaves_no_active_regions() {
+        // No default sentinel: retail returns without rolling rather than
+        // falling back to region 0.
+        let man = man_with_groups(&[(0x0141, 1)], &[(24, 40, 40)]);
+        let mut t = region_encounter_table_from_man("s", &man).expect("table");
+        assert!(t.active_regions().is_empty());
+        assert!(t.region_at_tile(10, 10).is_none());
+        assert!(!t.any_rollable());
+        t.select_group(|f| f == 0x0141);
+        assert_eq!(t.active_regions().len(), 1);
+        assert!(t.any_rollable());
+    }
+
+    #[test]
+    fn a_hand_built_table_keeps_every_region_active() {
+        // Synthetic tables (tests, synthetic worlds) never ran a condition
+        // walk; they must not read as "all groups dead".
+        let mut t = RegionEncounterTable::new("s");
+        t.regions.push(region(0, 0, 8, 8, 16, 0, 2));
+        assert_eq!(t.active_regions().len(), 1);
+        assert!(t.region_at_tile(1, 1).is_some());
+        t.select_group(|_| false);
+        assert_eq!(t.active_regions().len(), 1);
     }
 
     #[test]

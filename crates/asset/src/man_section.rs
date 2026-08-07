@@ -65,7 +65,7 @@
 //!
 //! | Index | Install target                | Role (where known)              |
 //! |-------|-------------------------------|----------------------------------|
-//! | 0     | `_DAT_801C6EA4[+0x20]`         | Encounter / formation tables. The first three bytes after this pointer are the strides FUN_8003A110 uses to carve `+0x20/+0x24/+0x28` into formation / condition / region table bases. See [`docs/formats/encounter.md`](../../../docs/formats/encounter.md). |
+//! | 0     | `_DAT_801C6EA4[+0x20]`         | Encounter / formation tables. The first three bytes after this pointer are the strides FUN_8003A110 uses to carve `+0x20/+0x24/+0x28` into formation / condition / region table bases. The condition table gates the region table into story-flag variants ([`active_region_group`]). See [`docs/formats/encounter.md`](../../../docs/formats/encounter.md). |
 //! | 1     | `_DAT_801C6EA4[+0x00]`         | **Motion-VM script table** - the per-actor `FUN_80038158` bytecode streams `FUN_8003A9D4` installs at actor `+0x80` at scene entry (player = id `0xF8`, world-map entity = `0xFB`, else field-actor `+0x50` match). Decoder: [`crate::man_motion`]. The pointer is advanced past its 3-byte length prefix immediately after walking. |
 //! | 2     | `_DAT_801C6EA0`                | **Scene display name** - the NUL-terminated string the on-entry banner draws (and the save-screen location row). Exactly `strlen + 1` bytes, unpadded. See [`crate::place_names`] and [`docs/formats/place-names.md`](../../../docs/formats/place-names.md). |
 //! | 3     | `_DAT_801C6EA4[+0x04]`         | Zone / camera-region records (18-byte, count-prefixed; queried per tile by `FUN_801DBA20`) - same advance-by-3 treatment. |
@@ -591,6 +591,10 @@ fn u24_le(buf: &[u8], pos: usize) -> u32 {
 // each region record carries a 4-byte AABB + rate + formation range.
 // This parser surfaces the strides and slices so callers can apply the
 // per-row decoders without re-walking the bytes.
+//
+// The region array is NOT one flat list. The condition array partitions it
+// into consecutive story-flag-gated groups, and only one group is live at a
+// time - see `active_region_group` and `docs/formats/encounter.md`.
 
 /// Decoded section-0 interior.
 #[derive(Debug, Clone, Serialize)]
@@ -765,6 +769,53 @@ impl FormationRecord {
     }
 }
 
+/// The condition `flag_id` that marks a record as the **unconditional
+/// default** group: the roll's condition walk stops at it without testing a
+/// story flag (`FUN_801D9E1C` `0x801d9f40..0x801d9f50`). Every retail scene's
+/// condition list ends with exactly one such record and carries no other.
+pub const CONDITION_DEFAULT_FLAG: u16 = 0xFFFF;
+
+/// One condition record: a story-flag id plus the number of consecutive
+/// region records that flag selects.
+///
+/// The condition array is what turns the region array into a set of
+/// **story-state variants** of the same scene. `FUN_801D9E1C` walks the
+/// conditions in order holding a cursor that starts at region 0; a condition
+/// whose flag is clear advances the cursor past its own `region_count`
+/// regions, and the first condition whose flag is *set* (or the
+/// [`CONDITION_DEFAULT_FLAG`] sentinel) stops the walk and owns the region
+/// slice the roll then searches. Regions outside that slice are invisible.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct ConditionRecord {
+    /// Story-flag id tested through `FUN_8003CE64` (the `DAT_80085758`
+    /// bank), or [`CONDITION_DEFAULT_FLAG`] for the unconditional tail.
+    pub flag_id: u16,
+    /// How many consecutive region records this condition owns. Retail
+    /// sign-extends the halfword; a negative value is not present in the
+    /// retail corpus and is reported as `0` here.
+    pub region_count: u16,
+}
+
+impl ConditionRecord {
+    /// Parse one condition record (at least 4 bytes; the retail stride is 4).
+    pub fn parse(record: &[u8]) -> Option<Self> {
+        if record.len() < 4 {
+            return None;
+        }
+        let flag_id = u16::from_le_bytes([record[0], record[1]]);
+        let signed = i16::from_le_bytes([record[2], record[3]]);
+        Some(Self {
+            flag_id,
+            region_count: signed.max(0) as u16,
+        })
+    }
+
+    /// `true` for the unconditional tail record.
+    pub fn is_default(&self) -> bool {
+        self.flag_id == CONDITION_DEFAULT_FLAG
+    }
+}
+
 /// Per-region decoded fields. Mirrors the random-encounter trigger reader
 /// at `FUN_801D9E1C` (see [`docs/formats/encounter.md`](../../../docs/formats/encounter.md)).
 ///
@@ -820,18 +871,84 @@ pub fn formation_records<'a>(
     })
 }
 
-/// Iterator over the region records inside a parsed encounter section.
+/// Iterator over the condition records inside a parsed encounter section.
+pub fn condition_records<'a>(
+    body: &'a [u8],
+    sec: &EncounterSection,
+) -> impl Iterator<Item = Option<ConditionRecord>> + 'a {
+    let stride = sec.condition_stride as usize;
+    let (start, end) = sec.condition_range;
+    let slice = &body[start..end];
+    (0..sec.condition_count as usize).map(move |i| {
+        let p = i * stride;
+        ConditionRecord::parse(&slice[p..p + stride])
+    })
+}
+
+/// Iterator over **every** region record in the section, ignoring the
+/// condition partition.
+///
+/// This is the preservation view - a tool that wants to see all of a scene's
+/// authored region variants at once. A *runtime* consumer wants
+/// [`active_region_group`] first and then [`region_records_in`]: retail only
+/// ever searches one group, and the groups routinely start with a whole-map
+/// `rate 0` row that would shadow every later group's real regions.
 pub fn region_records<'a>(
     body: &'a [u8],
     sec: &EncounterSection,
 ) -> impl Iterator<Item = Option<RegionRecord>> + 'a {
+    region_records_in(body, sec, 0, sec.region_count as usize)
+}
+
+/// Iterator over `count` region records starting at region index `first`.
+/// Out-of-range indices are clamped to the section's region array.
+pub fn region_records_in<'a>(
+    body: &'a [u8],
+    sec: &EncounterSection,
+    first: usize,
+    count: usize,
+) -> impl Iterator<Item = Option<RegionRecord>> + 'a {
     let stride = sec.region_stride as usize;
     let (start, end) = sec.region_range;
     let slice = &body[start..end];
-    (0..sec.region_count as usize).map(move |i| {
+    let total = sec.region_count as usize;
+    let first = first.min(total);
+    let last = first.saturating_add(count).min(total);
+    (first..last).map(move |i| {
         let p = i * stride;
         RegionRecord::parse(&slice[p..p + stride])
     })
+}
+
+/// Resolve the condition walk: which slice of the region array is live for a
+/// given story-flag state.
+///
+/// `flag_test(flag_id)` must answer the `FUN_8003CE64` question - "is story
+/// flag `flag_id` set in the `DAT_80085758` bank?". Returns
+/// `Some((first_region_index, region_count))` for the selected group, or
+/// `None` when the walk falls off the end of the condition list without a
+/// match - which is retail's "no encounter this step" exit
+/// (`FUN_801D9E1C` `0x801d9fc8`), *not* "use everything".
+///
+/// A section with **zero** conditions also yields `None`: retail's
+/// `s1 == condition_count` test is `0 == 0` there, so it returns before ever
+/// touching a region. No retail scene has a zero-length condition array.
+pub fn active_region_group(
+    body: &[u8],
+    sec: &EncounterSection,
+    mut flag_test: impl FnMut(u16) -> bool,
+) -> Option<(usize, usize)> {
+    let mut first = 0usize;
+    for cond in condition_records(body, sec) {
+        // A malformed record can't be walked past; retail would read
+        // garbage, we stop instead of inventing a cursor advance.
+        let cond = cond?;
+        if cond.is_default() || flag_test(cond.flag_id) {
+            return Some((first, cond.region_count as usize));
+        }
+        first = first.saturating_add(cond.region_count as usize);
+    }
+    None
 }
 
 #[cfg(test)]
@@ -1020,6 +1137,103 @@ mod tests {
         let f = formations[0].expect("formation 0 parses");
         assert_eq!(f.monster_count, 2);
         assert_eq!(f.monster_ids, [4, 4, 0, 0]);
+    }
+
+    /// Section-0 body shaped like a retail scene with three flag-gated
+    /// region groups: 1 formation, conditions
+    /// `[0x0141 -> 1][0x0147 -> 2][default -> 1]`, 4 regions.
+    fn gated_encounter_body() -> Vec<u8> {
+        let mut b: Vec<u8> = vec![
+            0x08, 0x04, 0x0C, 0x01, // strides f/c/r + formation_count
+            0x00, 0x00, 0x00, 0x01, 0x04, 0x00, 0x00, 0x00, // formation 0
+            0x03, // condition_count
+            0x41, 0x01, 0x01, 0x00, // cond 0: flag 0x0141, 1 region
+            0x47, 0x01, 0x02, 0x00, // cond 1: flag 0x0147, 2 regions
+            0xFF, 0xFF, 0x01, 0x00, // cond 2: default, 1 region
+            0x04, // region_count
+        ];
+        // region i: aabb 0..128 whole-map, rate = 10*(i+1), formations [i..+1)
+        for i in 0..4u8 {
+            b.extend_from_slice(&[0, 0, 128, 128, 10 * (i + 1), 0, i, 1, 0, 0, 0, 0]);
+        }
+        b
+    }
+
+    #[test]
+    fn condition_records_partition_the_region_array() {
+        let body = gated_encounter_body();
+        let es = parse_encounter_section(&body).expect("parse");
+        assert_eq!(es.condition_count, 3);
+        assert_eq!(es.region_count, 4);
+        assert_eq!(es.total_bytes(), body.len(), "section fully consumed");
+
+        let conds: Vec<_> = condition_records(&body, &es).map(|c| c.unwrap()).collect();
+        assert_eq!(conds[0].flag_id, 0x0141);
+        assert_eq!(conds[0].region_count, 1);
+        assert_eq!(conds[2].flag_id, CONDITION_DEFAULT_FLAG);
+        assert!(conds[2].is_default());
+        // The group counts tile the region array exactly - the invariant that
+        // holds across every retail scene bundle.
+        let summed: usize = conds.iter().map(|c| c.region_count as usize).sum();
+        assert_eq!(summed, es.region_count as usize);
+    }
+
+    #[test]
+    fn active_group_follows_the_story_flag_walk() {
+        let body = gated_encounter_body();
+        let es = parse_encounter_section(&body).expect("parse");
+
+        // No flag set -> the trailing default group, NOT region 0.
+        assert_eq!(active_region_group(&body, &es, |_| false), Some((3, 1)));
+        // First condition's flag set -> its own group wins.
+        assert_eq!(
+            active_region_group(&body, &es, |f| f == 0x0141),
+            Some((0, 1))
+        );
+        // Second condition's flag set (first clear) -> the cursor has skipped
+        // condition 0's single region.
+        assert_eq!(
+            active_region_group(&body, &es, |f| f == 0x0147),
+            Some((1, 2))
+        );
+        // Both set -> the walk stops at the *first* match, in table order.
+        assert_eq!(
+            active_region_group(&body, &es, |f| f == 0x0141 || f == 0x0147),
+            Some((0, 1))
+        );
+    }
+
+    #[test]
+    fn active_group_selects_the_regions_a_roll_can_see() {
+        let body = gated_encounter_body();
+        let es = parse_encounter_section(&body).expect("parse");
+        let (first, count) = active_region_group(&body, &es, |_| false).unwrap();
+        let regions: Vec<_> = region_records_in(&body, &es, first, count)
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].rate_increment, 40, "region 3, not region 0");
+        // The flat view still exposes every authored variant.
+        assert_eq!(region_records(&body, &es).count(), 4);
+    }
+
+    #[test]
+    fn active_group_is_none_when_the_walk_falls_off_the_end() {
+        // A condition list with no default sentinel and no flag set is
+        // retail's "return without rolling" exit.
+        let mut body: Vec<u8> = vec![
+            0x08, 0x04, 0x0C, 0x00, // no formations
+            0x01, // condition_count
+            0x10, 0x00, 0x01, 0x00, // cond 0: flag 0x0010, 1 region
+            0x01, // region_count
+        ];
+        body.extend_from_slice(&[0, 0, 128, 128, 24, 0, 0, 1, 0, 0, 0, 0]);
+        let es = parse_encounter_section(&body).expect("parse");
+        assert_eq!(active_region_group(&body, &es, |_| false), None);
+        assert_eq!(
+            active_region_group(&body, &es, |f| f == 0x0010),
+            Some((0, 1))
+        );
     }
 
     #[test]
