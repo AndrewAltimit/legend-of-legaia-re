@@ -202,6 +202,12 @@ fn key_from_name(name: &str) -> Option<KeyCode> {
         "T" => KeyCode::KeyT,
         "U" => KeyCode::KeyU,
         "V" => KeyCode::KeyV,
+        // Window-toggle band. F-keys can never collide with a pad binding,
+        // which is why the three arms that used to sit on `E` / `V` / `C`
+        // live here (see `keycode_to_name`).
+        "F2" => KeyCode::F2,
+        "F3" => KeyCode::F3,
+        "F5" => KeyCode::F5,
         "W" => KeyCode::KeyW,
         "X" => KeyCode::KeyX,
         "Y" => KeyCode::KeyY,
@@ -1337,6 +1343,24 @@ const OCEAN_ANIM_VSYNCS_PER_FRAME: u32 = 8;
 /// Map a winit `KeyCode` to the user-friendly key name used in
 /// [`legaia_engine_core::input::Mapping`]. Returns `""` for keys outside
 /// the default set.
+/// Physical key -> the key **name** the engine's binding table is keyed by
+/// ([`legaia_engine_core::input::Mapping`]).
+///
+/// This function is a filter, and it was silently narrower than the table it
+/// feeds: `C`, `V`, `D` and `E` are bound (Triangle, Square, Right, R1) and
+/// none of them was listed, so `pad_button_for_key` got `""` and the native
+/// window could not press **Triangle or Square at all**. Nothing surfaced
+/// that - a key that resolves to no button is indistinguishable from a key
+/// the player did not press - and it takes two of the four face buttons off
+/// the keyboard, which is most of the dance minigame's input and the
+/// three-actor talk's leader switch.
+///
+/// Every name here must appear in `Mapping::web_default`, and every key that
+/// table binds must appear here. Two of the four repaired rows are still
+/// shadowed *upstream*, by a window key arm in `event_handler/keyboard.rs`
+/// that returns before the pad lookup: `C` (camera vantage) and `D`
+/// (occlusion fade, named in the user guide). Moving those two arms onto
+/// non-pad keys is what finishes the set.
 fn keycode_to_name(code: KeyCode) -> &'static str {
     match code {
         KeyCode::ArrowUp => "Up",
@@ -1345,10 +1369,14 @@ fn keycode_to_name(code: KeyCode) -> &'static str {
         KeyCode::ArrowRight => "Right",
         KeyCode::KeyZ => "Z",
         KeyCode::KeyX => "X",
+        KeyCode::KeyC => "C",
+        KeyCode::KeyV => "V",
         KeyCode::KeyA => "A",
         KeyCode::KeyS => "S",
+        KeyCode::KeyD => "D",
         KeyCode::KeyQ => "Q",
         KeyCode::KeyW => "W",
+        KeyCode::KeyE => "E",
         KeyCode::Enter => "Enter",
         KeyCode::Space => "Space",
         KeyCode::ShiftRight => "RShift",
@@ -1391,6 +1419,37 @@ mod key_script_tests {
             );
         }
         assert_eq!(key_from_name("NotAKey"), None);
+    }
+
+    /// Every key the engine's default pad table binds must survive
+    /// `keycode_to_name`, or the native window cannot press that button.
+    ///
+    /// The filter was narrower than the table and nothing said so: a key that
+    /// resolves to no button looks exactly like a key nobody pressed, so
+    /// **Triangle and Square were unreachable from the keyboard** while every
+    /// gate stayed green. The assertion runs in the direction that catches
+    /// that - from the table to the filter, not the reverse - so adding a
+    /// binding without a name fails here rather than in a player's hands.
+    #[test]
+    fn every_bound_key_survives_the_window_name_filter() {
+        use legaia_engine_core::input::Mapping;
+        let mapping = Mapping::web_default();
+        let mut checked = 0;
+        let mut names: Vec<&String> = mapping.bindings.keys().collect();
+        names.sort();
+        for name in names {
+            let Some(code) = super::key_from_name(name) else {
+                panic!("bound key '{name}' has no KeyCode - `--key-script` cannot reach it");
+            };
+            assert_eq!(
+                super::keycode_to_name(code),
+                name.as_str(),
+                "bound key '{name}' does not survive keycode_to_name - the native window \
+                 resolves it to no pad button"
+            );
+            checked += 1;
+        }
+        assert!(checked >= 16, "the default table binds at least 16 keys");
     }
 
     /// `--key-script` alone builds a config. Returning `None` unless a PNG was

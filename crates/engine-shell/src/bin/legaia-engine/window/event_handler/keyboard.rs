@@ -36,7 +36,13 @@ impl PlayWindowApp {
         // Dev affordance: spawn a debug effect marker at the player so
         // the effect-pool render bridge can be exercised by hand
         // before the runtime effect catalog is wired into battle-enter.
-        if matches!(code, KeyCode::KeyE)
+        //
+        // On `F5`, not on `E`, and the rest of this family (`F`/`G`/`H`/`J`)
+        // stays on letters: `E` is bound to R1 in the engine's default pad
+        // table, and an arm here returns before the pad lookup, so a window
+        // arm sitting on a bound key silently deletes that button from the
+        // keyboard. See `keycode_to_name`.
+        if matches!(code, KeyCode::F5)
             && state == ElementState::Pressed
             && !self.boot_ui.is_active()
         {
@@ -566,18 +572,23 @@ impl PlayWindowApp {
             }
             return;
         }
-        // `V`: master audio mute toggle. Flips the engine-only `muted`
+        // `F2`: master audio mute toggle. Flips the engine-only `muted`
         // options knob, pushes it into the mixer's master gate (output
         // silenced; sequencer + SPU keep ticking so unmute stays in sync),
         // and persists it to the options config file. The HUD status line
         // reflects the state ("audio muted").
-        if matches!(code, KeyCode::KeyV) && state == ElementState::Pressed {
+        //
+        // It used to be `V`, which is **Square** in the engine's default pad
+        // table - so the native window had no Square at all, and the dance
+        // minigame's third judged button, the fishing reel B and the
+        // three-actor talk's leader switch were all unpressable.
+        if matches!(code, KeyCode::F2) && state == ElementState::Pressed {
             self.options_state.muted = !self.options_state.muted;
             self.persist_and_apply_options();
             log::info!(
                 "audio: {}",
                 if self.options_state.muted {
-                    "muted (V to unmute)"
+                    "muted (F2 to unmute)"
                 } else {
                     "unmuted"
                 }
@@ -647,11 +658,12 @@ impl PlayWindowApp {
             );
             return;
         }
-        // `C`: toggle the field camera between the retail follow view
+        // `F3`: toggle the field camera between the retail follow view
         // (savestate-pinned pitch/yaw/H, player-anchored - the
         // faithful framing) and the wide debug orbit vantage (better
-        // for eyeballing scene completeness).
-        if matches!(code, KeyCode::KeyC)
+        // for eyeballing scene completeness). Moved off `C` for the same
+        // reason `F2` is not `V`: `C` is Triangle.
+        if matches!(code, KeyCode::F3)
             && state == ElementState::Pressed
             && !self.boot_ui.is_active()
         {
