@@ -16,22 +16,29 @@
 //! | 34 (`0x22`) | `FUN_801D4A80` | the hovered item's name / owned count / description |
 //! | 35 (`0x23`) | `FUN_801D5510` | the buy quantity, held count, unit price and running total |
 //! | 37 (`0x25`) | `FUN_801D5944` | the sell quantity, held count and halved gold total |
+//! | 39 (`0x27`) | `FUN_801D5AE8` | the sell list's detail panel - name, description, halved price, passive lines |
 //!
 //! The remaining two are the Buy / Sell / Quit picker (id 42, `FUN_801D4868`,
 //! whose rows + ink are `engine-core::shop::shop_root_command_rows`) and the
 //! renderer-less list container (id 40), whose content is the host's list.
+//!
+//! Windows 34 and 39 are alternatives, not siblings: `FUN_801D5AE8` is the
+//! sell-family renderer and prints the same name/description head at an
+//! overlapping rect, so this host draws 34 for the buy list and 39 for the
+//! sell list, matching the browser page.
 //!
 //! Each window resolves through
 //! [`legaia_engine_render::painter_at`], so an id whose descriptor names a
 //! different renderer is skipped rather than mis-drawn: the id is the lookup
 //! key and the renderer is the authority.
 //!
-//! Window 35 is the exception, and it is an exception about the *port*, not
-//! about the table: `FUN_801D5510` is ported as a pens-returning kernel rather
-//! than a draw-list builder, so no `MenuWindowPainter` variant names it and
-//! `painter_at` cannot resolve it. The same authority rule still holds - the id
-//! is filtered on the descriptor's own `renderer_va`
-//! ([`RENDERER_BUY_QUANTITY`]), which
+//! Windows 35 and 39 are the exceptions, and they are exceptions about the
+//! *port*, not about the table: `FUN_801D5510` and `FUN_801D5AE8` are ported as
+//! pens-returning kernels rather than draw-list builders, so no
+//! `MenuWindowPainter` variant names either and `painter_at` cannot resolve
+//! them. The same authority rule still holds - each id is filtered on the
+//! descriptor's own `renderer_va` ([`RENDERER_BUY_QUANTITY`],
+//! [`RENDERER_SELL_DETAIL`]), which
 //! `crates/engine-shell/tests/menu_window_dispatch_real.rs` pins against the
 //! disc's table.
 //!
@@ -70,6 +77,13 @@ const WIN_BUY_QUANTITY: usize = 35;
 const WIN_SELL_QUANTITY: usize = 37;
 /// Point Card toast (`0x1F`): heading, 8-digit bank, unit label, cursor.
 const WIN_POINT_CARD: usize = 31;
+/// Item detail / sell (`0x27`): name, description, sell price, passive lines.
+const WIN_SELL_DETAIL: usize = 39;
+/// Renderer VA of window 39 (`FUN_801D5AE8`). Its port
+/// (`engine_core::shop::shop_sell_detail_panel`) returns pens like window
+/// 35's, so the id is filtered on the descriptor's own renderer word here
+/// rather than through `painter_at`.
+const RENDERER_SELL_DETAIL: u32 = 0x801D_5AE8;
 /// Renderer VA of window 35 (`FUN_801D5510`). Its port
 /// (`engine_core::shop::shop_buy_quantity_panel`) returns pens rather than a
 /// draw list, so `painter_at` deliberately does not resolve it - the id is
@@ -185,13 +199,19 @@ impl PlayWindowApp {
             out.extend(self.painter_pictogram_stand_in(pic));
         }
 
-        // Window 34 - the hovered item's info panel.
+        // Window 34 - the hovered item's info panel. The sell list draws
+        // window 39 instead: `FUN_801D5AE8` is the sell-family renderer, and
+        // the two windows print the same name/description head at overlapping
+        // rects, so drawing both would double the text.
         let staged = self.shop_staged_item(shop, state, cursor, &bag);
-        if let Some((d, _)) = legaia_engine_render::painter_at(
-            table,
-            WIN_ITEM_INFO,
-            MenuWindowPainter::ItemDescription,
-        ) {
+        let selling_list = matches!(state, Some(MenuState::ShopSell));
+        if !selling_list
+            && let Some((d, _)) = legaia_engine_render::painter_at(
+                table,
+                WIN_ITEM_INFO,
+                MenuWindowPainter::ItemDescription,
+            )
+        {
             let id = staged.unwrap_or(0);
             let name = self.shop_item_name(id);
             let owned = bag
@@ -207,6 +227,9 @@ impl PlayWindowApp {
                 owned,
                 &self.shop_item_description(id),
             ));
+        }
+        if selling_list {
+            out.extend(self.sell_detail_window_draws(table, staged));
         }
 
         // Window 37 - the sell quantity panel, while the sell flow is sizing
@@ -498,6 +521,135 @@ impl PlayWindowApp {
         text.item_desc(id).unwrap_or_default().to_string()
     }
 
+    /// Window 39 - the **item detail / sell panel** (`FUN_801D5AE8`): the
+    /// hovered item's name and description, its halved sell price (or the
+    /// "cannot sell" line), and the accessory-passive name + description
+    /// rows. It replaces window 34 while the sell list has focus.
+    ///
+    /// Line-for-line twin of `web-viewer::play_shop::sell_detail_window_draws`:
+    /// same shared pen kernel
+    /// ([`legaia_engine_core::shop::shop_sell_detail_panel`]), same paired
+    /// label constants, so the two hosts cannot drift on layout or text.
+    /// Without it a native-window seller saw the buy-side info window, with no
+    /// price at all on the screen where the price is the decision.
+    ///
+    /// The passive chain is the renderer's own (`0x801D5C5C..0x801D5CC8`): the
+    /// item record's `+0` class byte picks which table the `+1` subtype
+    /// indexes - equipment records' `+5`, everything else the item-effect
+    /// record's `+3`. The equipment arm reads through
+    /// [`legaia_engine_core::equipment::DiscEquipInfo::row_passive_index`],
+    /// which is row-keyed exactly as the renderer's
+    /// `0x80074F68 + subtype*8` is.
+    fn sell_detail_window_draws(
+        &self,
+        table: &legaia_asset::menu_windows::MenuWindowTable,
+        staged: Option<u8>,
+    ) -> Vec<TextDraw> {
+        let mut out = Vec::new();
+        let Some(d) = table
+            .window(WIN_SELL_DETAIL)
+            .filter(|d| d.renderer_va == RENDERER_SELL_DETAIL)
+        else {
+            return out;
+        };
+        let world = &self.session.host.world;
+        let rect = legaia_engine_render::painter_rect(d);
+        let id = staged.unwrap_or(0);
+        let price = world
+            .item_shop_data
+            .as_ref()
+            .map(|t| t.price(id))
+            .unwrap_or(0);
+        let passive = world.item_effects.as_ref().and_then(|effects| {
+            legaia_engine_core::shop::item_passive_index(
+                effects.kind(id),
+                effects.subtype(id),
+                |sub| {
+                    self.menu_runtime
+                        .equip_info
+                        .as_ref()
+                        .map(|i| i.row_passive_index(sub))
+                        .unwrap_or(legaia_engine_core::shop::PASSIVE_NONE)
+                },
+                |sub| {
+                    effects
+                        .descriptor(sub)
+                        .map(|e| e.marker)
+                        .unwrap_or(legaia_engine_core::shop::PASSIVE_NONE + 1)
+                },
+            )
+        });
+        let panel = legaia_engine_core::shop::shop_sell_detail_panel(
+            (rect.x as i16, rect.y as i16),
+            i32::from(id),
+            price,
+            passive,
+        );
+        if staged.is_none() {
+            // Retail leaves only the shade box when nothing is staged, and
+            // this host draws no colour-fill primitives - same as the browser.
+            return out;
+        }
+        let mut text = |s: &str, pen: (i16, i16), ink: [f32; 4]| {
+            out.extend(legaia_engine_render::text_draws_for(
+                &self.font.layout_ascii(s),
+                (i32::from(pen.0), i32::from(pen.1)),
+                ink,
+            ));
+        };
+        text(
+            &self.shop_item_name(id),
+            panel.name_pen,
+            legaia_engine_render::MENU_TEXT_GOLD,
+        );
+        let desc = self.shop_item_description(id);
+        if !desc.is_empty() {
+            text(&desc, panel.desc_pen, legaia_engine_render::MENU_TEXT_WHITE);
+        }
+        match panel.sell {
+            Some(row) => {
+                text(
+                    SELL_DETAIL_PRICE_LABEL,
+                    row.label_pen,
+                    legaia_engine_render::MENU_TEXT_TEAL,
+                );
+                text(
+                    &row.price.to_string(),
+                    row.value_pen,
+                    legaia_engine_render::MENU_TEXT_WHITE,
+                );
+            }
+            None => text(
+                SELL_DETAIL_CANNOT_SELL,
+                panel.cannot_sell_pen,
+                legaia_engine_render::MENU_TEXT_ORANGE,
+            ),
+        }
+        if let Some((name, line)) = panel
+            .passive
+            .and(world.menu_text.as_ref())
+            .and_then(|t| t.item_passive_lines(id))
+        {
+            text(
+                &name,
+                panel.passive_name_pen,
+                legaia_engine_render::MENU_TEXT_GREEN,
+            );
+            text(
+                &line,
+                panel.passive_desc_pen,
+                legaia_engine_render::MENU_TEXT_WHITE,
+            );
+        }
+        // The currency pictogram beside the price - an ASCII stand-in until
+        // the UI-icon atlas page is uploaded, same as every other pictogram
+        // in this file.
+        if let Some(row) = panel.sell {
+            text("G", row.icon_pen, legaia_engine_render::MENU_TEXT_GOLD);
+        }
+        out
+    }
+
     /// Render a [`legaia_engine_core::shop::BuyQuantityPanel`]'s pens to text
     /// draws - the window-35 content (`FUN_801D5510`), whose port returns
     /// field pens rather than a draw list.
@@ -628,6 +780,14 @@ const BUY_QUANTITY_HELD_TAIL: &str = "held";
 /// What window 35 prints instead when the bag scan returns retail's `0x100`
 /// "not held" sentinel.
 const BUY_QUANTITY_NONE_HELD: &str = "None held";
+
+/// Window 39's two engine-authored labels, paired with the browser page's
+/// constants of the same names. Retail's own strings are menu-overlay rodata
+/// literals; staging them here keeps the translation layer owning the text.
+const SELL_DETAIL_PRICE_LABEL: &str = "Price";
+/// What window 39 prints in place of the price row when the item's `+2` buy
+/// price is zero - retail's quest-item / unsellable arm.
+const SELL_DETAIL_CANNOT_SELL: &str = "Cannot sell";
 
 // Window 31's heading + unit label are `engine-ui`'s
 // `POINT_CARD_HEADING` / `POINT_CARD_UNIT_LABEL` (imported above): both hosts

@@ -137,6 +137,13 @@ const BUY_QUANTITY_HELD_TAIL: &str = "held";
 /// What window 35 prints instead when the bag scan returns retail's `0x100`
 /// "not held" sentinel.
 const BUY_QUANTITY_NONE_HELD: &str = "None held";
+/// Window 39's two engine-authored labels, paired with the native window's
+/// constants of the same names. Retail's own strings are menu-overlay rodata
+/// literals; staging them here keeps the translation layer owning the text.
+const SELL_DETAIL_PRICE_LABEL: &str = "Price";
+/// What window 39 prints in place of the price row when the item's `+2` buy
+/// price is zero - retail's quest-item / unsellable arm.
+const SELL_DETAIL_CANNOT_SELL: &str = "Cannot sell";
 /// Title of the seru-trade offer list. Engine-authored (the feature is the
 /// patcher's, so retail has no string for it); matches the native window's.
 const TRADE_LIST_TITLE: &str = "SHOP - TRADE SERU";
@@ -772,8 +779,8 @@ impl LegaiaRuntime {
                     self.equip_stats
                         .as_ref()
                         .and_then(|t| t.rows().get(sub as usize))
-                        .map(|b| b.raw[5])
-                        .unwrap_or(0x40)
+                        .map(|b| b.passive_index())
+                        .unwrap_or(legaia_asset::equip_stats::PASSIVE_NONE)
                 },
                 |sub| {
                     world
@@ -815,7 +822,12 @@ impl LegaiaRuntime {
         }
         match panel.sell {
             Some(row) => {
-                text(&mut out, "Price", row.label_pen, ui::MENU_TEXT_TEAL);
+                text(
+                    &mut out,
+                    SELL_DETAIL_PRICE_LABEL,
+                    row.label_pen,
+                    ui::MENU_TEXT_TEAL,
+                );
                 out.extend(self.painter_glyph_stand_in(
                     font,
                     "G",
@@ -830,7 +842,7 @@ impl LegaiaRuntime {
             }
             None => text(
                 &mut out,
-                "Cannot sell",
+                SELL_DETAIL_CANNOT_SELL,
                 panel.cannot_sell_pen,
                 ui::MENU_TEXT_ORANGE,
             ),
