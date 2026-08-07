@@ -421,6 +421,25 @@ nothing outside `mode.rs`'s tests, so the "a skipped frame runs no frame-end
 pass" law `per_frame_stage` documents has neither a producer nor a consumer on
 any host.
 
+**One of the laws in that unreached shape is a live gameplay divergence**, and
+it is the reason the family is worth more than its four rows. Mode 23 CARD is
+what every menu-open capture holds, and `per_frame_stage` records that its body
+replaces the master frame driver rather than parameterising it. The
+disassembly is unambiguous: `FUN_80025F74` is frame-begin -> `FUN_80017978` ->
+frame-end, and `FUN_80017978` (`0x80017978..0x800179BC`, eighteen instructions)
+calls the debug chord, the card actor's `+0x0C` handler and the dev HUD - there
+is **no `jal 0x80016444` in it**. So retail runs no actor tick pass, no render
+pass and no display flip while the pause menu is up.
+
+`World::tick` is Menu-gated only at its closing `match`: the effect pool, the
+move VMs, actor physics, the handler-actor pass, actor motions, the banners,
+the narration roller, the text balloon, the register ramps and the scripted
+countdown all run first, whatever `SceneMode` says. The countdown is the one
+with teeth - opening the pause menu does not stop a `4C D3` timer in the port
+and does stop it in retail, in the scenes that arm one with a real duration.
+That is a gate in `World::tick`, not a call site in a host, which is the same
+place the seat is blocked.
+
 ### HOST-DEAD, disclosed
 
 Same verdict, already stated in the source. No further disclosure work; they are
