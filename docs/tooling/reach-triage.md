@@ -649,11 +649,20 @@ falsifies that.) The engine ports the flag-poll → despawn edge as
 `World::tick_three_actor_talk`, and because the op-`0x43` collapse discards
 the party list, it restores the arm-time snapshot the arm captures
 (`ThreeActorTalk::saved_party`) - disclosed as engine bookkeeping, since later
-script party ops converge on the same membership. The `#[ignore]`d repro
-`a_three_actor_talk_eventually_gives_the_party_back` still fails, for the
-corrected reason rather than its own stated one: it parks at the `43 02` site
-and ticks, and the flag-`0xD` clear it waits for belongs to the script it
-never advances.
+script party ops converge on the same membership.
+
+**There is no timer, and the repro that assumed one is gone.** An `#[ignore]`d
+test used to tick 2000 frames waiting for the party back, blaming a missing
+port. Its carrier's own bytes say otherwise: six instructions after `nilboa`'s
+`43 02` the script runs `44 <n>` (SPAWN_RECORD) and then a two-byte
+`nop` / `jmp -2` park loop, and the spawned partition-2 record branches on the
+**leader** flags `0x10` / `0x11` / `0x12`, installs that leader's destination
+banner and tile walls, and parks the same way. Neither clears `0xD`. So the
+instruction arms a persistent hub in which the party leader *is* the player's
+choice - which is also what makes the leader-cycle swap a reachability
+question rather than a curiosity - and the lock drops when the scene sends the
+player on. `a_three_actor_talk_ends_when_the_lock_drops_not_on_a_timer` asserts
+those two halves and runs live.
 
 **Where confused damage lands is now retail's answer on both sides.** The
 resolver rewrites `+0x1DD` onto the caster's own band, and

@@ -299,26 +299,31 @@ fn three_actor_talk_section(sites: &[Site]) {
     assert_eq!(world.party_actor_slots, vec![Some(1)]);
 }
 
-/// DEFECT REPRO (ignored: it fails today, and the fix is a port this lane
-/// does not carry). Retail's talk **controller** `FUN_801D27E0` is what ends a
-/// three-actor talk: at `0x801D2AE4..0x801D2B20` it writes the party count back
-/// to `0x80084594`, restores the leader byte `0x80084597` / id `0x80084598`,
-/// re-runs the `0x10/0x11/0x12` flag choreography, and the lock `0xD` it tested
-/// at `0x801D28C8` drops with it. Nothing in the engine ports that SM, and the
-/// only clearer of the flag bank is `World::begin_new_game`.
+/// What actually ends a `43 02` talk - and what does not.
 ///
-/// So in the port `43 02` is a one-way door: the story party stays collapsed to
-/// its leader for the rest of the session, and every later `43 02` - in any
-/// scene - takes the restore branch and teleports its participants onto the
-/// *previous* talk's saved transforms.
+/// This replaces an `#[ignore]`d repro whose stated reason ("no port of
+/// `FUN_801D27E0`, so the talk lock and the party collapse are permanent")
+/// was falsified twice over. The SM *is* ported
+/// (`World::tick_three_actor_talk`), and retail's controller never clears the
+/// lock in the first place: its state 0 polls flag `0xD` (`0x801D28C8`) and
+/// routes to the state-5 despawn once something else clears it.
 ///
-/// Call site to fix: `crates/engine-core/src/world/vm_hosts.rs`
-/// `op43_three_actor_talk` needs a paired release, driven by a port of
-/// `FUN_801D27E0`'s terminal arm (the instruction's `b6` operand is that SM's
-/// `+0x72` countdown seed).
+/// The repro's premise was the deeper error. It ticked 2000 frames expecting
+/// a *timer* to give the party back, and the shipped carrier's own bytes say
+/// there is none. In `nilboa`, six instructions after the `43 02` the script
+/// runs `44 <n>` - SPAWN_RECORD - and then a two-byte `nop` / `jmp -2` park
+/// loop; the spawned partition-2 record branches on the **leader** flags
+/// `0x10` / `0x11` / `0x12`, installs that leader's destination banner and
+/// tile walls, and parks in a `nop` / `jmp -2` loop of its own. Neither ever
+/// clears `0xD`. So `43 02` there arms a persistent hub - the party leader
+/// *is* the choice - and the lock drops when the scene sends the player on,
+/// not after a countdown.
+///
+/// So the assertions are the two halves that are real: the arming script
+/// parks instead of running on, and the engine's release path gives the
+/// party back the moment the lock drops.
 #[test]
-#[ignore = "defect: no port of FUN_801D27E0, so the talk lock and the party collapse are permanent"]
-fn a_three_actor_talk_eventually_gives_the_party_back() {
+fn a_three_actor_talk_ends_when_the_lock_drops_not_on_a_timer() {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return;
@@ -335,28 +340,65 @@ fn a_three_actor_talk_eventually_gives_the_party_back() {
         &[(&|i: &Insn| three_actor_talk(i).is_some(), 2)],
     )
     .remove(0);
-    let site = sites.first().expect("a `43 02` carrier");
+    let site = sites.first().expect("a `43 02` carrier").clone();
 
-    let mut world = world_at(site);
+    let mut world = world_at(&site);
     world.party_actor_slots = vec![Some(0), Some(1), Some(2)];
     world.party_leader_slot = Some(0);
     world.step_field().expect("step the `43 02` instruction");
     assert_eq!(world.party_actor_slots.len(), 1, "the talk collapses first");
+    assert!(world.system_flag_test(0xD), "and raises the lock");
 
-    // The talk's own duration operand is the controller's countdown seed, so
-    // running well past it must see the party back.
-    for _ in 0..2000 {
+    // ---- no timer: the arming script parks -------------------------------
+    // Run well past the instruction's `b6` operand (95 on this carrier) - the
+    // value the superseded comment called a countdown seed. The PC has to
+    // come to rest, and the lock has to still be up: a script that parks is
+    // not a script that is about to release anything.
+    for _ in 0..600 {
+        world.tick();
+    }
+    let parked_at = world.field_pc;
+    for _ in 0..600 {
         world.tick();
     }
     assert!(
-        !world.system_flag_test(0xD),
-        "the talk lock must drop when the conversation ends"
+        world.field_pc.abs_diff(parked_at) <= 2,
+        "{}: the arming script should be parked in its self-loop, but the PC \
+         moved {:#x} -> {:#x}",
+        site.scene,
+        parked_at,
+        world.field_pc
+    );
+    assert!(
+        world.system_flag_test(0xD),
+        "{}: nothing in the arming record releases the lock",
+        site.scene
+    );
+    assert_eq!(
+        world.party_actor_slots.len(),
+        1,
+        "{}: so the party is still the leader alone",
+        site.scene
+    );
+
+    // ---- the release: the lock drops, the party comes back ---------------
+    // Retail's controller polls flag `0xD` at state 0 and despawns when it
+    // reads clear; the engine folds the one-frame 0 -> 5 delay into the same
+    // tick. Clearing the flag is what the scene's onward script does.
+    world.system_flag_clear(0xD);
+    world.tick();
+    assert!(
+        world.three_actor_talk.is_none(),
+        "{}: the controller retires on the flag drop",
+        site.scene
     );
     assert_eq!(
         world.party_actor_slots.len(),
         3,
-        "and the story party must come back"
+        "{}: and the story party comes back",
+        site.scene
     );
+    assert_eq!(world.party_leader_slot, Some(0), "with its arm-time leader");
 }
 
 // ---------------------------------------------------------------------------
