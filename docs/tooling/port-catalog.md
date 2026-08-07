@@ -192,6 +192,14 @@ a false accusation. The worked collision: `engine-core::dance` and
 `engine-vm::battle_helpers` both define a `GAUGE_STEP`, and only the dance one
 is referenced by live code.
 
+The attributable-reference rule has a second consumer: the reach report
+resolves an item anchor's **executed** verdict through the same patterns
+(`item_reference_patterns` / `item_reference_hit`, defined once in this
+script), so the liveness question and the "did a ladder run it" question can
+never disagree about what counts as a reference to a const. See
+[the runtime denominator](#the-runtime-denominator-replay-port-coveragepy)
+for the bucket that verdict feeds.
+
 #### Per-item `WIRED:` against a module blanket
 
 Disclosure is also resolved per anchor. The tag's own comment block saying
@@ -676,16 +684,20 @@ through a path no player takes.
 
 `scripts/ci/replay-port-coverage.py` supplies the missing denominator. It joins
 `cargo llvm-cov` output for a replay test against the catalog's
-address → `(file, line)` anchors, resolving each anchor to a function the same
-way [`collect_port_anchors`](#anchors) does (a tag inside a body belongs to the
-enclosing function; a tag above an item to the next one; a `//! PORT:` module
-tag to the whole file). It reports three sets:
+address → `(file, line)` anchors, resolving each anchor the same way
+[`collect_port_anchors`](#anchors) does: a tag inside a body belongs to the
+enclosing function, a `//! PORT:` module tag to the whole file, a type anchor
+to the executed methods of the type's own `impl` blocks, and an **item**
+anchor (const / static / type alias - no lines to execute) to its
+attributable references, through the same `item_reference_patterns` /
+`item_reference_hit` the strict liveness verdict uses. It reports four sets:
 
 | set | meaning |
 |---|---|
 | **inert-entered** | the static graph says no host root reaches it; the run executed it anyway. The graph is wrong or the tag is on the wrong symbol - each row is a finding. |
 | **disclosed-entered** | an anchor carrying a `NOT WIRED:` disclosure that a **passing** oracle executed. Highest priority: an oracle traversing stub code can certify behaviour nothing implements. |
 | **live-unentered** | statically reachable, never reached. Not a defect - the wiring worklist ordered by what a playthrough actually needs. |
+| **not observable (const)** | item anchors with no executed attributable reference. Deliberately neither entered nor never-entered: no line of coverage can convert the row, only executing a function that references the item. |
 
 ### The denominator is a union of ladders, not one binary
 
@@ -705,14 +717,21 @@ a bare invocation globs `target/cov-*.json`, so the short command is the honest
 one and the single-binary join is now the thing you have to ask for:
 
 ```bash
-for t in critical_path_replay menu_replay minigame_replay v0_1_playthrough; do
-  cargo llvm-cov --release -p legaia-engine-shell \
-      --test "$t" --json --output-path "target/cov-$t.json"
+scripts/ci/replay-port-coverage.py --list-ladders | while read -r t pkg; do
+    cargo llvm-cov clean --profraw-only
+    cargo llvm-cov -p "$pkg" --test "$t" --no-report
+    cargo llvm-cov report --json --output-path "target/cov-$t.json"
 done
-cargo llvm-cov --release -p legaia-web-viewer --test play_compose_ladder \
-    --json --output-path target/cov-play_compose_ladder.json
 scripts/ci/replay-port-coverage.py
 ```
+
+No `--release` - an optimised build inlines small functions and leaves their
+out-of-line coverage record at zero, indistinguishable from never-called
+(measured; see the script header and
+[`reach-triage.md`](reach-triage.md#a---release-export-cannot-tell-never-called-from-inlined)).
+Two steps per ladder because `-p <pkg> --json` scopes the *report* to that
+package's own sources, silently dropping every crate the ladder actually
+drives.
 
 Separate exports rather than one multi-`--test` run, because the report's
 per-ladder table then says what each contributed and how much of it no other

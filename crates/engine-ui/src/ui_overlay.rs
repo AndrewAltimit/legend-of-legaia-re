@@ -1766,9 +1766,10 @@ pub fn apply_alpha(color: [f32; 4], alpha: f32) -> [f32; 4] {
 /// One laid-out digit of a floating battle value readout.
 ///
 /// Hosts fill these from `engine-vm::battle_value_readout::value_cells`, which
-/// is where the geometry is pinned; this crate sits below `engine-vm` in the
-/// crate graph, so the type is mirrored rather than imported. Fields are
-/// **stage pixels** on the retail 320x240 stage.
+/// is where the geometry is pinned. The type is a mirror of that kernel's
+/// output shape, not an import - a deliberate seam, not a crate-graph
+/// constraint (`engine-ui` depends on `legaia-engine-vm` and could import
+/// it). Fields are **stage pixels** on the retail 320x240 stage.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ValueCellView {
     /// The decimal digit the cell shows.

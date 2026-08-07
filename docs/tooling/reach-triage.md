@@ -5,7 +5,8 @@ the pad-only replay ladders against the port catalog's `// PORT:` anchors and
 reports three sets. Two of them are defect lists and are normally empty. The
 third - *live but never entered* - is neither empty nor a defect list, and it is
 by far the largest: the static live count is several times what a playthrough
-executes.
+executes. (A fourth bucket, *not observable (const)*, holds the item anchors -
+see the note under the buckets below.)
 
 This page is the per-row verdict for that third set, so the question "is this a
 gap in the port, a gap in the ladders, or neither" is answered once per address
@@ -28,6 +29,21 @@ can and cannot execute at all.
   host is a CLI subcommand is *wired* (a CLI subcommand is a host root, per
   [`stale-not-wired-triage.md`](stale-not-wired-triage.md)); "no engine consumer"
   is a different claim and is written as one.
+
+**A const anchor is never a row in these buckets' tables.** A `// PORT:` tag
+above a `const` / `static` / `type` alias anchors to an item with no lines to
+execute, so the report resolves it through attributable references - the
+catalog's strict item rule, one definition shared by both scripts
+(`port-catalog.py: item_reference_patterns` / `item_reference_hit`): the item
+reads *executed* when an executed non-test `fn` names it bare from the item's
+own file or module-/type-qualified from anywhere, and otherwise files under
+**not observable (const)** - deliberately neither "entered" nor "never
+entered", because no line of coverage can ever convert such a row. Type
+anchors (struct / enum / trait) resolve through the executed methods of the
+type's own `impl` blocks, with the same no-`impl`-in-file fallback the
+liveness pass uses. A const row in the report is therefore always a statement
+about its referencing functions, and a disclosed `NOT WIRED` const is accused
+only when executed code really references it.
 
 Liveness is an upper bound, so bucket (c) is never assigned off the static
 verdict. Each (c) row below rests on a strict caller scan of the workspace with
@@ -97,7 +113,7 @@ structurally cannot:
 | crate | files in the coverage data | executed, headless union only | executed, with the composition ladder |
 |---|---|---|---|
 | `engine-ui` | 42 | 0 | 22 |
-| `engine-render` | 28 | 0 | 0 - a hard wgpu link `web-viewer` does not carry |
+| `engine-render` | 28 | 0 | 0 - a hard wgpu link `web-viewer` does not carry; a spawned `play-window` run is that link and does report executed regions (see the scoping note above) |
 | `engine-audio` | 20 | 0 | 3 - the page's SFX channel; the mixer output path has no producer in the union (see below) |
 | `mdec` | 6 | 0 | 0 - the play page has no STR playback (its FMV arm auto-skips) |
 
@@ -185,23 +201,28 @@ multi-anchor address it is simply the first one the source walk found.
 `8002174c` is the worked example: the row names `apply_morph_weights`, which the
 liveness pass calls inert, while the address is `live` through the sibling
 `MorphWeightEnvelope::tick` in the same file. Separately, a tag on a plain data
-`struct` with no `impl` falls back to *module* scope for liveness and to *the
-next function in the file* for coverage - two different symbols, neither of them
-the port. The `mode.rs`, `sound_state.rs` and `scene_bundle.rs` rows below were
-that shape until their tags were re-keyed onto implementing functions;
-`new_game.rs` still is.
+`struct` with no `impl` falls back to *module* scope - a file-wide verdict on
+both the liveness and the coverage side, answering "does anything in this file
+run", not "does this port run". The `mode.rs`, `sound_state.rs` and
+`scene_bundle.rs` rows below were that shape until their tags were re-keyed
+onto implementing functions. A tag above a `const` is not that shape: it
+anchors to the item and resolves through references on both sides (the
+const-anchor note under the buckets above), which is what gives `new_game.rs`'s
+`GAME_STATE_COLD_RESET` a defined verdict.
 
-**Three ways a tag ends up file-scoped, and only one of them looks like it.**
+**Two ways a tag ends up file-scoped, and only one of them looks like it.**
 A `//!` tag is file-scoped by definition and reads that way. A `///` tag on a
-data `struct` with no `impl` falls back, and reads like a type anchor. The
-third is the quiet one: a `//` tag whose *next* item is outside the collector's
-lookahead - it stops at the first line that is neither comment nor attribute,
-and a `pub const` is not an item kind it recognises, so the tag silently
-becomes file-scoped while looking like a function tag.
-`crates/engine-core/src/cutscene_narration.rs` was that case for `80037174`
-(tag at the foot of the module doc, first following line a `pub const`); it now
-sits on `pub struct CutsceneNarration`, which has an `impl`, so the anchor is
-the type the port actually is.
+data `struct` with no `impl` falls back, and reads like a type anchor. A third
+way used to exist and is closed: the collector once stopped its forward walk at
+a lookahead bound and did not recognise `pub const` as an item, so a tag above
+a long doc block or a value item silently became file-scoped while looking
+like a function tag. The walk is unbounded now and a `const` / `static` /
+`type` alias is an anchorable item ([`port-catalog.md`](port-catalog.md)), so
+a tag anchors to whatever it documents.
+`crates/engine-core/src/cutscene_narration.rs` was the worked case for
+`80037174` (tag at the foot of the module doc, first following line a
+`pub const`); it sits on `pub struct CutsceneNarration`, which has an `impl`,
+so the anchor is the type the port actually is.
 
 The same fallback also produces **pseudo-entries** - an address the report
 counts as *entered* whose routine never ran, because a module-scope anchor's
@@ -214,13 +235,17 @@ surfaced the first time a coverage source contained their files:
   [`vm-inventory.md`](../subsystems/vm-inventory.md#ported-but-inert) names.
   The interpreter's coverage record is unexecuted; the HOST-DEAD verdict below
   stands.
-- `801d603c` (the casino prize confirm painter) reports as a **disclosed
-  `NOT WIRED` anchor executed**, which would be a red-flag row - but its
-  anchor resolution fell back to module scope (the tag sits above a
-  60-line disclosure block, past the collector's item lookahead), and
-  `choice_panel_draws_for`'s own record is unexecuted with no production
-  caller in the workspace. The disclosure is correct; the report row is the
-  fallback.
+- `801d603c` (the casino prize confirm painter) once reported as a
+  **disclosed `NOT WIRED` anchor executed** - a red-flag row - because its
+  anchor resolution fell back to module scope: the tag sits above a 60-line
+  disclosure block, which the collector's then-bounded item lookahead never
+  crossed. `choice_panel_draws_for`'s own record is unexecuted with no
+  production caller in the workspace, so the disclosure was correct and the
+  report row was the fallback. The unbounded walk anchors the tag to the
+  function it documents, which dissolves the misreport; the row is kept
+  because the *shape* - a thorough disclosure pushing its own anchor off the
+  item - is exactly what a lookahead bound produces, and it accused the most
+  careful disclosures first.
 
 
 <!-- BEGIN engine-core -->
@@ -502,25 +527,31 @@ three BGM-gated states it names, `0x02` belongs to program 0 - an *opener*,
 which the loader never spawns - and `0x19` gates on the CD-XA counter the same
 disclosure says is not a blocker. Program 3 reads no BGM field at all.
 
-`FUN_801D27E0`, retail's talk **controller**, is unported, and it is what ends
-a three-actor talk (`0x801D2AE4..0x801D2B20` restores the party count and the
-leader byte; the lock `0xD` drops with it). So in the port `43 02` is a
-one-way door: the story party stays collapsed to its leader for the session.
+`FUN_801D27E0`, retail's talk **controller**, is the six-state leader-cycle
+SM: state 0 polls flag `0xD` (`0x801D28C8`) and, once the *script* clears it,
+state 5 despawns (`0x801D2D04`). It never writes the party count back and
+never clears the lock itself - retail's post-talk membership comes from the
+scene script's own party ops. (An earlier reading here had the controller
+restoring count and leader at `0x801D2AE4..0x801D2B20`; the disassembly
+falsifies that.) The engine ports the flag-poll → despawn edge as
+`World::tick_three_actor_talk`, and because the op-`0x43` collapse discards
+the party list, it restores the arm-time snapshot the arm captures
+(`ThreeActorTalk::saved_party`) - disclosed as engine bookkeeping, since later
+script party ops converge on the same membership. The `#[ignore]`d repro
+`a_three_actor_talk_eventually_gives_the_party_back` still fails, for the
+corrected reason rather than its own stated one: it parks at the `43 02` site
+and ticks, and the flag-`0xD` clear it waits for belongs to the script it
+never advances.
 
-**Confusion changes nothing about where damage lands**, on either side, and no
-assertion on the target byte could see it. The resolver rewrites `+0x1DD` onto
-the caster's own band correctly - and then
-`World::resolve_attack_target` (`world/battle/loop_driver.rs`) clamps an armed
-target to the *opposing* side, so the rewritten value fails the range test and
-the swing falls back to `first_living_opponent_of`. Retail has no such clamp
-(`FUN_801EC3E4` resolves against whatever the action SM left in `+0x1DD`); the
-side range is a port-side safety net that should apply only to an unset or
-dead target.
-
-Each of the last two ships an `#[ignore]`d repro asserting the correct
-behaviour - `a_three_actor_talk_eventually_gives_the_party_back` and
-`the_retarget_lands_the_damage_on_an_ally_not_on_the_party`. Neither
-certifies the defect; both fail when run.
+**Where confused damage lands is now retail's answer on both sides.** The
+resolver rewrites `+0x1DD` onto the caster's own band, and
+`World::resolve_attack_target` (`world/battle/loop_driver.rs`) honours an
+armed *living* target wherever it points - the opposing-side clamp the port
+once applied has no retail counterpart (`FUN_801EC3E4` resolves against
+whatever the action SM left in `+0x1DD`), so the side fallback applies only to
+an unset or dead target.
+`the_retarget_lands_the_damage_on_an_ally_not_on_the_party` - formerly an
+`#[ignore]`d repro of the clamp - asserts the ally hit live.
 
 Three older rows of this table converted. The `town01` opening naming prompt
 (`801f03f0`) left through the composition ladder, whose opening rung drives
@@ -542,7 +573,7 @@ cross and the level-up banner.
 | group | n | addresses | why |
 |---|---|---|---|
 | `dev_menu.rs` | 2 | `801dbd04` `801db8f4` | the overlay-0897 developer EVENT FLAG editor |
-| `new_game.rs` | 1 | `8001ffa4` | `GAME_STATE_COLD_RESET` is a `const`, read in production by `scene/host/lifecycle` and `world/frame_tick` - wired, but a `const` has no coverage record, so no instrument can report it either way |
+| `new_game.rs` | 1 | `8001ffa4` | `GAME_STATE_COLD_RESET` is a `const`, read in production by `scene/host/lifecycle` and `world/frame_tick` - wired; the reach report resolves an item anchor through its executed references (the const-anchor note above), so the row reports off those readers' own coverage |
 | `baka_cabinet.rs` | 1 | `801d553c` | the developer action-table dump retail writes as `ot5stat.txt` |
 | `cutscene_script_elements.rs` | 1 | `801d841c` | reached only from the dev world-map panel's fade/flash actor |
 
@@ -571,13 +602,14 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | `battle_burst.rs` | 1 | (c) | disclosed | `801f30c4` |
 | `battle_cast_dispatch.rs` | 3 | (c) | disclosed | `801dba90` `801f1ed4` `801f2160` |
 | `battle_formulas/stat_init.rs` | 1 | (a) | minigames-page | `80053cb8` |
-| `battle_gauge_rearm.rs` | 1 | (a) | battle-render | `801f44a0` |
+| `battle_gauge_rearm.rs` | 1 | (a) | wired - `BattleHud::push_popup` delegates to the ring; any driven fight's popup enters it | `801f44a0` |
 | `battle_helpers.rs` | 1 | (c) | disclosed | `80046870` |
 | `battle_intro_particles.rs` | 2 | (a) | battle-render | `801cfbb4` `801d0164` |
 | `battle_intro_styles.rs` | 1 | (a) | battle-render | `801d11d0` |
 | `battle_intro_swirl.rs` | 2 | (a) | battle-render | `801d1564` `801d1888` |
 | `battle_intro_transition.rs` | 1 | (a) | battle-render | `801cf1b0` |
-| `battle_party_panel.rs` | 3 | (a) | battle-render | `801d84c0` `801dbb8c` `801dbc30` |
+| `battle_party_panel.rs` | 1 | (a) | wired - `party_panel_stage_x` reads `panel_anchors` on every battle-HUD frame | `801d84c0` |
+| `battle_party_panel.rs` | 2 | (c) | disclosed (the label-actor lifecycle + cross-out mark) | `801dbb8c` `801dbc30` |
 | `battle_stream_slot.rs` | 2 | (c) | disclosed | `80055b4c` `801f17f8` |
 | `battle_target_group.rs` | 1 | (a) | battle-target | `801dceac` |
 | `camera_mover.rs` | 1 | (a) | field-render | `801dd310` |
@@ -639,16 +671,20 @@ Three (b) rows converted by seeding their gate, all now in
   the sub-list picker's row-1 hand-off. `l3_travel_art_visited_gate` covers
   what that ladder cannot: the scan **miss** arm (retail's `"UNFIND MAP
   NUMBER"` park), a multi-record visited table, and both handlers' dwell
-  pairs. Two findings came with it. The Rula binding does not exist - the
-  hand-off in `world/worldmap.rs` hard-codes `TravelArt::Riremito`, so
-  `801ee328`'s constants have no production installer, only the panel host's
-  `install`. And the visited table can never hold more than one record:
-  `tick_world_map_panels` passes `visited.last().map_id` as the map id, so it
-  reads its own output and every kingdom the party crosses updates record `0`
-  in place. `WorldMapController::entry_fade.kingdom_index` is the value that
-  write wants. Repro:
-  `each_kingdom_crossed_gets_its_own_visited_record`, `#[ignore]`d because it
-  asserts the correct behaviour and fails today.
+  pairs. Two findings came with it, and both are settled. The Rula binding
+  has no production installer *by retail's own layout*: the sub-list's state
+  3 is the `FUN_801D84B4` return-to-title hand-off (`801ed590.txt`), and both
+  travel arts are dev-band handlers reached only through the dev handler-id
+  table - so the `TravelArt::Riremito` hand-off in `world/worldmap.rs` is the
+  one deliberate synthetic binding, disclosed at the site, and the Rula arm
+  is driven through `PanelActorHost::install`. And the visited table holds
+  one record per kingdom: `tick_world_map_panels` keys each visit on the
+  kingdom the party stands on (`kingdom_index_for_scene_base`, falling back
+  to the entry fade's derived index and the active `mapNN` label) - it once
+  read `visited.last().map_id` back out of the table it was writing, which
+  pinned the whole session to record `0`.
+  `each_kingdom_crossed_gets_its_own_visited_record`, formerly the
+  `#[ignore]`d repro of that defect, asserts the multi-record behaviour live.
 
 The world-map cluster splits three ways and the split is worth keeping: the
 `dev-menu` rows sit behind a host hotkey a pad ladder cannot press, the
@@ -679,9 +715,9 @@ the union.
 | `gte/math.rs` | 1 | (c) | disclosed | `8004629c` |
 
 The casino prize-exchange confirm window (`801d603c`) stays disclosed-inert;
-the report now *misreports* it as an executed disclosure - see the
-pseudo-entry note above for why that row is the anchor fallback and not a
-finding.
+its tag anchors to `choice_panel_draws_for` itself, so the executed-disclosure
+misreport the pseudo-entry note above records is resolved and the row reads
+unexecuted, as the disclosure says.
 
 Six of the surviving `engine-ui` rows are **not** unported builders and not a
 wiring gap - `crates/engine-ui/tests/pause_menu_compose.rs` executes every one
@@ -926,9 +962,11 @@ remaining proposal would still move:
 | field actors | 4 | an effect that spawns a child actor through the allocator |
 | field render | 2 | posed field characters: camera mover, pack apply |
 
-The native window's composition still cannot be driven this way until it
-leaves `bin/`; the standalone browser minigames page and the `cards` page
-remain outside the union and keep their harness-blind rows above.
+The native window's composition is driven by **spawning** it -
+`w5_native_minigame_ladder` runs `play-window` per rung and the child's
+profile merges into the export (the `bin/` exclusion bounds calls, not
+coverage; see above). The standalone browser minigames page and the `cards`
+page remain outside the union and keep their harness-blind rows above.
 
 ### Battle render, battle target and arts swing are built
 
@@ -945,7 +983,9 @@ that select the confetti / curtain / swirl belong to formations no scene the
 composition ladder enters registers - so the driven fights all took the
 default `TileShatter` arm and four ported style bodies never ran once.
 
-Four addresses did **not** move, and each is a different shape:
+Four addresses did **not** move with those ladders. Two named wiring gaps
+rather than reach gaps and are wired since; the other two name their own
+gates:
 
 | address | why it stayed |
 |---|---|

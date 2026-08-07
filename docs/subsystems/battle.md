@@ -1392,26 +1392,30 @@ the battle-end signal `DAT_8007BD71 = 0xFE` and the wipe cause
 
 ### An unseeded party reads as a dead one
 
-The port carries that scan faithfully, and it inherits a hazard retail does
-not have: retail cannot enter a battle without a seated party, the port can.
-`BattleActor::liveness` (the `+0x14C` mirror) **defaults to `0`, and `0` means
-dead**. It is raised only by the roster projection in `load_party` /
-`set_active_party`, which reads `hp_cur > 0` off a `CharacterRecord`. A world
-built straight from `SceneHost::open_extracted` has never run that projection,
-while `World::party_count` already defaults to `3` - so the party-side scan
-finds three actors, all reading dead.
+The port carries that scan faithfully, and it can represent a state retail
+cannot: retail never enters a battle without a seated party - the seated
+count at `*(0x8007BD24)` is established at battle load, and the `beq` at
+`0x801E6524` shows a zero count would fall straight into the wipe compare,
+so retail is saved by the count, not by a guard. The port's
+`BattleActor::liveness` (the `+0x14C` mirror) **defaults to `0`, and `0`
+means dead**; it is raised only by the roster projection in `load_party` /
+`set_active_party`, which reads `hp_cur > 0` off a `CharacterRecord`. A
+world built straight from `SceneHost::open_extracted` has never run that
+projection, so its party slots are hollow (`max_hp == 0`, liveness `0`).
 
-The party arm is tested **before** the monster arm, so such a battle reports a
-**party wipe on its first end-of-action**, at full nominal HP, before anything
-is struck - and a deliberate *monster* wipe is reported as a party wipe too.
-Since the port defers the field restore behind the game-over hold (below), the
-scene then parks in `SceneMode::Battle` and never returns to the field.
+The port therefore asks the question retail's load answers structurally:
+`BattleActionHost::slot_seated` gates the end-of-action `PartyWipe` arm on
+`party_seated > 0` (`engine-core`'s implementation seats a slot when the
+roster projects a record onto it or `max_hp > 0`), so an unseeded battle is
+never a party wipe - while `MonsterWipe` still resolves, so the port-only
+state can terminate. A seated party with nobody standing still wipes.
+Disc-free pin: `engine-core/tests/unseeded_battle_wipe_guard.rs`.
 
-The failure is silent in the direction that matters: a harness that never seats
-a party sees "battle ended" and walks on, so a run can score whole legs after
-its party is gone. Any fixture that enters a battle must seat one the way
-`BootSession::begin_new_game` does; a bare `open_extracted` host is not a
-playable party.
+A harness that never seats a party is still not a playable party: the pad
+ladders seed the retail New Game roster (the `0x80078C4C` template, the way
+`BootSession::begin_new_game` does) before scoring a fight, and a wipe is
+scored **as** a wipe - the game-over hold below means a wiped battle no
+longer leaves `SceneMode::Battle` on its own.
 
 The battle-exit mode selector is `FUN_80046A20` (SCUS, `0x80046A20`).
 Its three `game_mode` stores pick between `0` (debug-battle id set),
@@ -2594,9 +2598,12 @@ the **active-actor bar**: one plate run at `(8, 188)` with a 288-px interior,
 so it spans `x 8..=312`. The bar does not hide the panels by not drawing them;
 retail parks the whole cluster at `y = 230`, under its 228-line display window.
 Seats, sub-palettes and the 3-slice plate law are pinned in
-`engine-vm::battle_chrome`; `engine-ui` mirrors the seats as literals because
-it sits below `engine-vm` in the crate graph, and `engine-shell`'s HUD tests
-pin the two sets equal.
+`engine-vm::battle_chrome`; `engine-ui`'s name-pen anchors read the
+`engine-vm` kernels directly (`battle_party_panel::panel_anchors`, falling
+back to `battle_chrome::panel_seats` plus the pinned text inset for the seats
+retail writes no anchor for), the panel *backgrounds* still carry a local
+seat mirror, and `engine-shell`'s HUD tests hold the drawn output to the
+packet-pinned seats end to end.
 
 A single-surface reading of the same screen - "one full-width lozenge per live
 member" - is what a solo capture shows when that member happens to be acting,

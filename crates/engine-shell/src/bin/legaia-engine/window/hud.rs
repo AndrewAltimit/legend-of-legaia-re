@@ -2511,9 +2511,12 @@ mod battle_hud_wiring_tests {
         );
     }
 
-    /// `engine-ui` mirrors `battle_chrome`'s seats as literals (it sits below
-    /// `engine-vm` in the crate graph). This window is the one crate that can
-    /// see both, so it is where the copy is held honest - a drift here is a
+    /// `engine-ui`'s `party_panel_stage_x` reads the packet-pinned
+    /// `engine-vm` kernels on its production path
+    /// (`battle_party_panel::panel_anchors`, falling back to
+    /// `battle_chrome::panel_seats` + the text inset); only the panel
+    /// *backgrounds* still carry a local seat mirror. This test holds the
+    /// drawn HUD to `battle_chrome`'s seats end to end - a drift here is a
     /// HUD drawn at coordinates nothing pinned.
     #[test]
     fn engine_ui_seats_mirror_the_packet_pinned_battle_chrome() {
