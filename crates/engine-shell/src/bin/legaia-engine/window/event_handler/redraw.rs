@@ -77,19 +77,31 @@ impl PlayWindowApp {
                         .unwrap_or_default()
                 })
                 .unwrap_or_default();
+            // A scripted key that also *binds* to a pad button has to survive
+            // the neutral-pad write below, or `--key-script` can only ever
+            // arm window toggles: `handle_key` sets the bit and the release
+            // on the very next line clears it again, and the write then
+            // stamps the whole word to zero. Collect those bits and re-apply
+            // them as this tick's pad word - one tick held, one tick clear,
+            // which is exactly the edge `--pad-script` delivers.
+            let mut scripted_key_pad = 0u16;
             for code in scripted_keys {
+                if let Some(button) = self.mapping.pad_button_for_key(keycode_to_name(code)) {
+                    scripted_key_pad |= button.mask();
+                }
                 self.handle_key(code, ElementState::Pressed);
                 self.handle_key(code, ElementState::Released);
             }
             // Screenshot harness: inject the scripted one-tick pad edge for
             // this tick (overriding keyboard). Ticks with no script entry get
             // a neutral pad so the previous press releases (edge resets).
-            let scripted_pad = self
-                .screenshot
-                .as_ref()
-                .map(|sc| sc.pad_script.get(&self.tick_no).copied().unwrap_or(0));
-            if let Some(pad) = scripted_pad {
-                self.pad = pad;
+            if self.screenshot.is_some() {
+                let scripted_pad = self
+                    .screenshot
+                    .as_ref()
+                    .and_then(|sc| sc.pad_script.get(&self.tick_no).copied())
+                    .unwrap_or(0);
+                self.pad = scripted_pad | scripted_key_pad;
             }
             // Party wipe: the world raises `game_over` when a battle
             // resolves to `BattleEndCause::PartyWipe`. Consume the flag and
