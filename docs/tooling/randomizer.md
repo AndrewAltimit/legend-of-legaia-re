@@ -462,6 +462,22 @@ stops at the descriptor's decompressed size, so a same-or-shorter re-pack is
 safe). The id pool is **per scene** - only ids the scene already uses - so every
 swapped-in monster is one the scene loads; no missing model, no crash.
 
+**A scene's MAN arrives two ways, and the sweep walks both.** The common carrier
+is the bundle descriptor above. The other is a raw type-3 chunk of a
+`DATA_FIELD` streaming entry, which is how the v12-family dungeons ship theirs -
+`rikuroa`, `rikuroa2`, `dolk2`, `rayman`, `station`, `balden2`, `ropeway2`,
+`taiku`, `taiku2`, `doman`, `nilboa2`, `edbalden`, `eddoman`. Mt. Rikuroa has no
+bundle MAN anywhere in its CDNAME block, so a bundle-only sweep leaves that
+dungeon's enemies exactly as authored however wide the pool is set.
+`SceneEncounters::locate_streaming_mans` is the second locator; a block that
+carries both gets both, because the streaming one is a story-state variant of
+the same scene and leaving it vanilla makes a randomized dungeon revert to
+retail enemies once the flag selecting that variant is set. A chunk payload is
+stored uncompressed, so its rewrite is same-size by construction and needs no
+re-pack; a chunk whose declared size runs past the entry end (the
+`DataFieldTruncated` tail the runtime extends by streaming DMA continuation) is
+skipped rather than clamped.
+
 **Bosses are protected.** A scene's formation array mixes random encounters with
 *scripted* fights the field VM engages by explicit index - boss battles (the Rim
 Elm Tetsu tutorial, Cort, Songi, …) and story encounters. Only the genuinely

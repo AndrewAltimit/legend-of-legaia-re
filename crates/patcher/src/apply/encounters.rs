@@ -2,6 +2,25 @@
 
 use super::*;
 
+/// Every MAN carrier in one PROT entry that carries randomizable encounters.
+///
+/// A scene's encounter table can arrive two ways, and the patcher has to walk
+/// both or it silently skips scenes. The common one is the `scene_asset_table`
+/// bundle's LZS-compressed MAN descriptor. The other is a raw type-3 chunk of a
+/// `DATA_FIELD` streaming entry, which is how the v12-family dungeons ship
+/// theirs - `rikuroa` has **no** bundle MAN at all, so nothing in a bundle-only
+/// sweep ever reaches Mt. Rikuroa's formations. Blocks that carry both get both:
+/// the variant is a story-state of the same scene, and leaving it vanilla makes
+/// a randomized dungeon revert once the story flag that selects it flips.
+fn scene_carriers(entry: &[u8], idx: usize) -> Vec<SceneEncounters> {
+    let mut out = Vec::new();
+    if let Some(bundle) = SceneEncounters::locate(entry, idx) {
+        out.push(bundle);
+    }
+    out.extend(SceneEncounters::locate_streaming_mans(entry, idx));
+    out
+}
+
 /// Outcome of randomizing scene encounters.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct EncounterApplyReport {
@@ -49,25 +68,28 @@ pub fn randomize_encounters(
         let entry = patcher
             .read_entry(idx)
             .with_context(|| format!("read PROT entry {idx}"))?;
-        let Some(mut scene) = SceneEncounters::locate(&entry, idx) else {
-            continue;
-        };
-        let changed = scene.randomize_with_extra(seed, mode, unused_enemies);
-        if changed == 0 {
-            continue;
-        }
-        match scene.repack() {
-            Some(stream) => {
-                patcher
-                    .patch_prot_entry(idx, scene.man_offset as u64, &stream)
-                    .with_context(|| format!("write scene {idx} MAN"))?;
-                report.scenes_changed += 1;
-                report.ids_changed += changed;
-                if !unused_enemies.is_empty() {
-                    report.unused_placed += scene.count_ids_in(unused_enemies);
-                }
+        // Both MAN carriers: the `scene_asset_table` bundle MAN, and any
+        // variant MAN carried as a type-3 streaming chunk. The v12-family
+        // dungeons (Mt. Rikuroa among them) have only the latter, so a
+        // bundle-only sweep leaves them vanilla.
+        for mut scene in scene_carriers(&entry, idx) {
+            let changed = scene.randomize_with_extra(seed, mode, unused_enemies);
+            if changed == 0 {
+                continue;
             }
-            None => report.skipped.push(idx),
+            match scene.repack() {
+                Some(stream) => {
+                    patcher
+                        .patch_prot_entry(idx, scene.man_offset as u64, &stream)
+                        .with_context(|| format!("write scene {idx} MAN"))?;
+                    report.scenes_changed += 1;
+                    report.ids_changed += changed;
+                    if !unused_enemies.is_empty() {
+                        report.unused_placed += scene.count_ids_in(unused_enemies);
+                    }
+                }
+                None => report.skipped.push(idx),
+            }
         }
     }
     Ok(report)
@@ -155,14 +177,13 @@ pub fn randomize_encounters_scoped(
         let entry = patcher
             .read_entry(idx)
             .with_context(|| format!("read PROT entry {idx}"))?;
-        let Some(scene) = SceneEncounters::locate(&entry, idx) else {
-            continue;
-        };
         let group = match kingdom_map {
             Some(km) => km.kingdom_for_extraction_index(idx).seed_tag(),
             None => 0,
         };
-        located.push(Located { idx, group, scene });
+        for scene in scene_carriers(&entry, idx) {
+            located.push(Located { idx, group, scene });
+        }
     }
 
     // Per-group monster pool: the union of every member scene's random-encounter

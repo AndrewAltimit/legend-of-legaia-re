@@ -197,6 +197,13 @@ pub struct SceneEncounters {
     /// Bytes the recompressed MAN must fit within (the original compressed
     /// length; the data after it belongs to the next asset).
     pub compressed_budget: usize,
+    /// `true` when the MAN is stored **uncompressed**, as the payload of a
+    /// type-3 DATA_FIELD streaming chunk rather than as an LZS stream in a
+    /// `scene_asset_table` bundle. The v12-family dungeon scenes carry their
+    /// MAN that way (see [`Self::locate_streaming_mans`]), and a rewrite of one
+    /// is same-size by construction - there is nothing to recompress and no
+    /// budget to overflow.
+    pub raw_in_place: bool,
     /// Decompressed MAN buffer (mutated in place by [`Self::randomize`]).
     pub decoded: Vec<u8>,
     /// Absolute offset of the formation array within `decoded`.
@@ -233,6 +240,57 @@ impl SceneEncounters {
             return None;
         }
         let compressed_budget = crate::man_compressed_budget(&table, man_offset, entry.len());
+        Self::from_man_bytes(decoded, entry_idx, man_offset, compressed_budget, false)
+    }
+
+    /// Locate every **variant** MAN carried as a type-3 `DATA_FIELD` streaming
+    /// chunk in this entry, one [`SceneEncounters`] per chunk that parses.
+    ///
+    /// [`Self::locate`] only sees the `scene_asset_table` family, and thirteen
+    /// retail blocks - the v12-family dungeons `rikuroa` / `rikuroa2` / `dolk2`
+    /// / `rayman` / `station` / `balden2` / `ropeway2` / `taiku` / `taiku2` /
+    /// `doman` / `nilboa2` / `edbalden` / `eddoman` - ship their MAN, or a
+    /// story-state variant of it, in a streaming chunk instead. Mt. Rikuroa has
+    /// no bundle MAN at all, so a bundle-only sweep leaves its encounters
+    /// vanilla however wide the pool. The engine already reads both carriers
+    /// (`engine-core`'s `scene_man_carriers`); this is the patcher's half.
+    ///
+    /// The chunk payload is stored raw, so the rewrite is same-size and needs
+    /// no repack. A chunk whose declared size runs past the entry end - the
+    /// `DataFieldTruncated` tail, which the runtime extends by streaming DMA
+    /// continuation - is skipped rather than clamped: a partial MAN would
+    /// re-pack over bytes that are not ours.
+    pub fn locate_streaming_mans(entry: &[u8], entry_idx: usize) -> Vec<Self> {
+        let Ok(report) = legaia_asset::parse_streaming(entry, 4096) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for chunk in &report.chunks {
+            if chunk.type_byte != MAN_TYPE {
+                continue;
+            }
+            let start = chunk.header_offset + 4;
+            let Some(payload) = entry.get(start..start.saturating_add(chunk.size as usize)) else {
+                continue;
+            };
+            let len = payload.len();
+            if let Some(scene) = Self::from_man_bytes(payload.to_vec(), entry_idx, start, len, true)
+            {
+                out.push(scene);
+            }
+        }
+        out
+    }
+
+    /// Shared tail of both locators: parse the MAN, find its encounter section,
+    /// and build the random-formation mask.
+    fn from_man_bytes(
+        decoded: Vec<u8>,
+        entry_idx: usize,
+        man_offset: usize,
+        compressed_budget: usize,
+        raw_in_place: bool,
+    ) -> Option<Self> {
         let manfile = man_section::parse(&decoded).ok()?;
         let sec_body = manfile.encounter_section_body(&decoded)?;
         let sec: EncounterSection = man_section::parse_encounter_section(sec_body).ok()?;
@@ -258,6 +316,7 @@ impl SceneEncounters {
             entry_idx,
             man_offset,
             compressed_budget,
+            raw_in_place,
             decoded,
             formation_array_off,
             formation_stride: sec.formation_stride as usize,
@@ -602,6 +661,12 @@ impl SceneEncounters {
     /// compressed footprint, or `None` if it would overflow (the rare case our
     /// re-packer is a byte or two looser than the retail packer).
     pub fn repack(&self) -> Option<Vec<u8>> {
+        // A streaming-chunk MAN is stored raw, so the mutated buffer *is* the
+        // stream and it cannot change length - the randomizer only overwrites
+        // formation id bytes in place.
+        if self.raw_in_place {
+            return Some(self.decoded.clone());
+        }
         let stream = legaia_lzs::compress(&self.decoded);
         (stream.len() <= self.compressed_budget).then_some(stream)
     }
@@ -629,6 +694,7 @@ mod tests {
             entry_idx: 7,
             man_offset: 0,
             compressed_budget: 9999,
+            raw_in_place: false,
             decoded,
             formation_array_off: 0,
             formation_stride: 8,
@@ -674,6 +740,7 @@ mod tests {
             entry_idx: 7,
             man_offset: 0,
             compressed_budget: 9999,
+            raw_in_place: false,
             decoded,
             formation_array_off: 0,
             formation_stride: 8,
@@ -775,6 +842,7 @@ mod tests {
             entry_idx: 3,
             man_offset: 0,
             compressed_budget: 9999,
+            raw_in_place: false,
             decoded: decoded.clone(),
             formation_array_off: 0,
             formation_stride: 8,
@@ -811,6 +879,7 @@ mod tests {
             entry_idx: 1,
             man_offset: 0,
             compressed_budget: 9999,
+            raw_in_place: false,
             decoded: decoded.clone(),
             formation_array_off: 0,
             formation_stride: 8,
@@ -861,6 +930,7 @@ mod tests {
             entry_idx,
             man_offset: 0,
             compressed_budget: 9999,
+            raw_in_place: false,
             decoded,
             formation_array_off: 0,
             formation_stride: stride,

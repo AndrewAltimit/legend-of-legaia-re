@@ -134,6 +134,10 @@ fn unused_items_split_named_vs_unnamed() {
 
 /// Count, across every scene, how many formation id slots hold an unused-enemy
 /// id - re-decoding each scene MAN straight off the (possibly patched) image.
+///
+/// Counts **both** MAN carriers. The randomizer places into the v12-family
+/// dungeons' streaming-chunk MANs too, so a bundle-only count reads lower than
+/// the report and the comparison below would fail on a correct patch.
 fn unused_spawns_on_disc(patcher: &DiscPatcher) -> usize {
     let mut n = 0;
     for idx in 0..patcher.entry_count() {
@@ -141,6 +145,9 @@ fn unused_spawns_on_disc(patcher: &DiscPatcher) -> usize {
             continue;
         };
         if let Some(scene) = SceneEncounters::locate(&entry, idx) {
+            n += scene.count_ids_in(UNUSED_ENEMY_IDS);
+        }
+        for scene in SceneEncounters::locate_streaming_mans(&entry, idx) {
             n += scene.count_ids_in(UNUSED_ENEMY_IDS);
         }
     }
