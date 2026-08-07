@@ -20,6 +20,15 @@
 //! [`first_mode_trace_divergence`] compares scene_mode + active_scene
 //! always, and game_mode whenever both sides emit it.
 //!
+//! **The retail side reads two words, not one.** `SceneMode` is a finer
+//! partition than the retail mode word: all five warp minigames run under
+//! `0x19` (`OTHER MODE`) and only the sub-id register `_DAT_8007BA34`
+//! separates them. Deriving the retail `scene_mode` from the mode word alone
+//! made every minigame capture report `"Title"` against a correctly behaving
+//! engine, so the oracle manufactured divergences out of its own fallback arm
+//! rather than observing them - a false report, not a coarse one. See
+//! [`mode_trace_frame_from_ram`].
+//!
 //! JSONL is the wire format - one record per line, matching the
 //! Phase-E3 spec "engine emits JSONL of (frame, game_mode, scene_mode,
 //! active_scene, key_globals)".
@@ -51,9 +60,12 @@ pub struct ModeTraceFrame {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub game_mode_name: Option<String>,
     /// [`SceneMode`](legaia_engine_core::world::SceneMode) variant name:
-    /// `"Title"` / `"Field"` / `"Battle"` / `"Cutscene"` / `"WorldMap"`.
-    /// Both emitters fill this. Retail derives it from `game_mode` via
-    /// [`legaia_engine_core::mode::GameMode::scene_mode`].
+    /// `"Title"` / `"Field"` / `"Battle"` / `"Cutscene"` / `"WorldMap"` /
+    /// `"Menu"` / the five minigames. Both emitters fill this. Retail derives
+    /// it from the `(game_mode, warp sub-id)` pair via
+    /// [`GameMode::scene_mode_with_warp`](legaia_engine_core::mode::GameMode::scene_mode_with_warp),
+    /// because the mode word alone cannot separate the five minigames: they all
+    /// run under `0x19`.
     pub scene_mode: String,
     /// CDNAME label of the currently-loaded scene, e.g. `"town01"`.
     /// Engine reads from `host.scene.as_ref().map(|s| s.name)`. Retail
