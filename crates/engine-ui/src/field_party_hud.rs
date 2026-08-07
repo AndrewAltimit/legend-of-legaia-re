@@ -96,6 +96,18 @@ pub const PLATE_TOP_DY: i32 = -3;
 pub const PLATE_BODY_BOTTOM_DY: i32 = 0x25;
 pub const PLATE_BOTTOM_DY: i32 = 0x28;
 
+/// What a host with no view-projection passes as the dodge test's input.
+///
+/// The kernel picks between its two rows on the player's projected screen
+/// `y`, and its `None` arm is retail's **staged-load-pending** case, which
+/// forces the low row. A host that simply has no projection (the browser play
+/// page keeps its camera outside this crate) is not in that case, and passing
+/// `None` would park its readout at the bottom of every frame while another
+/// host draws it at the top. This is the value that asserts the common answer
+/// - the player is below the dodge line - one step clear of the threshold.
+pub const NO_PROJECTION_STAND_IN: i16 =
+    legaia_engine_vm::world_map_panel_actors::HUD_DODGE_THRESHOLD;
+
 /// The scrim colour: retail's quad is flat **black** and semi-transparent in
 /// PSX blend mode 0, i.e. `0.5*background`. An alpha-blended black rect with
 /// `a = 0.5` is the same operation.

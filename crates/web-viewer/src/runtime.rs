@@ -97,6 +97,15 @@ pub struct LegaiaRuntime {
     /// `Some` only while the encounter session sits in its `Transition`
     /// phase; owns the captured-field VRAM clone the style bodies sample.
     pub(crate) battle_intro: Option<legaia_engine_ui::battle_intro::BattleIntro>,
+    /// Field party-status HUD driver (`FUN_801D0D38`): the idle countdown and
+    /// the cached player position its decision kernel reads. The same state
+    /// the native window holds - retail keeps it in overlay globals, so every
+    /// host that draws a screen owns a copy.
+    pub(crate) field_party_hud: legaia_engine_core::world_map_panel_host::FieldPartyHud,
+    /// Scene the HUD driver was last armed for, so a scene change takes
+    /// retail's rearm arm rather than comparing the new scene's player
+    /// position against the old one's.
+    pub(crate) field_party_hud_scene: Option<String>,
     /// This frame's transition primitives, already ordered into drawable
     /// geometry by the shared `screen_prim` builder. Built once per
     /// [`crate::play_battle`] intro tick (the emitter mutates working sets,
@@ -295,6 +304,8 @@ impl LegaiaRuntime {
             field_vram_dirty: false,
             battle_intro: None,
             battle_intro_geom: None,
+            field_party_hud: Default::default(),
+            field_party_hud_scene: None,
             item_names: None,
             menu_font: None,
             menu_assets: None,
@@ -705,6 +716,9 @@ impl LegaiaRuntime {
         // Party wipe: raise the game-over panel on the `World::game_over`
         // edge, the same probe the native window's redraw loop runs.
         self.poll_game_over();
+        // Field party-status HUD countdown, ticked where the native window
+        // ticks it (`FUN_801D0D38`); the draw pass reads the decision back.
+        self.tick_field_party_hud();
         // Developer menu (the visitor's explicit opt-in): ticked exactly
         // where the native window's redraw loop ticks its own, off the same
         // world pad words. A no-op while the opt-in is off.
