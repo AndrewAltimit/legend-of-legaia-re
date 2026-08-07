@@ -516,6 +516,7 @@ impl World {
         if self.field_bytecode.get(self.field_pc)? & 0x7F < 0x20 {
             return None;
         }
+        let mode = self.mode;
         let mut last = None;
         for _ in 0..FIELD_FRAME_SLICE_BUDGET {
             let pc = self.field_pc;
@@ -524,6 +525,25 @@ impl World {
             };
             last = self.step_field();
             if last.is_none() {
+                break;
+            }
+            // Retail has no fourth condition here because a scene change tears
+            // the context down; the engine queues the request and drains it
+            // after the tick, so the loop has to stop itself or the ops after a
+            // `0x3F` run against the scene that is already going away. Same for
+            // a mode flip (a scripted battle) - the frame belongs to the new
+            // mode from that instruction on.
+            //
+            // No entry script exercises this today: a disassembly of `P1[0]` in
+            // all 124 CDNAME scenes finds zero `SceneChange` ops, and scene
+            // changes live in the partition-2 timeline records and the
+            // partition-1 interaction records that other steppers drive. It is
+            // here because the cost of being wrong is executing a dead scene's
+            // bytecode, and this is the only driver that runs a whole slice.
+            if self.mode != mode
+                || self.pending_named_scene_transition.is_some()
+                || self.pending_scene_transition.is_some()
+            {
                 break;
             }
             let next = self.field_pc;
