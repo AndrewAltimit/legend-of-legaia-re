@@ -32,6 +32,11 @@ fn seated_battle() -> World {
     w.enter_battle(1, 4);
     w.battle_player_driven = true;
     w.mode = SceneMode::Battle;
+    // Roster first: `load_party` projects hp/liveness off the (zeroed)
+    // records, so seeding it AFTER the stat loop left the acting party
+    // member at `hp 0 / liveness 0` - a dead actor, which the action SM's
+    // dispatch gate now (correctly) refuses to run an action for.
+    w.load_party(legaia_save::Party::zeroed(1));
     for i in 0..5 {
         w.actors[i].active = true;
         w.actors[i].battle.max_hp = 400;
@@ -42,7 +47,6 @@ fn seated_battle() -> World {
     for m in 1..5u8 {
         w.set_battle_defense(m, 10);
     }
-    w.load_party(legaia_save::Party::zeroed(1));
     w
 }
 

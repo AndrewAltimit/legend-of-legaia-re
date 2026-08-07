@@ -41,7 +41,14 @@ impl World {
         };
         let moved = i32::from(before) - i32::from(a.battle.hp);
         a.battle.accumulate_hp_bar(moved);
-        if a.battle.hp == 0 {
+        // `hp == 0 -> liveness = 0` holds for **present** actors only - the
+        // same `max_hp > 0` guard the per-tick dead-marking sweep in
+        // [`Self::step_battle_frame`] applies. A seated-but-unrolled slot
+        // (`max_hp == 0`, the hollow party shape the seated-vs-dead fix
+        // documents) taking a zero-damage hit is not a death; retail cannot
+        // even represent the state (battle load always stats a seated slot),
+        // so the two port sites must at least agree with each other.
+        if a.battle.max_hp > 0 && a.battle.hp == 0 {
             a.battle.liveness = 0;
         }
         moved
@@ -1133,5 +1140,51 @@ mod melee_cue_tests {
         w.actors[0].battle.current_anim = 0x11;
         assert!(w.apply_one_basic_strike(BASIC_ATTACK_COMMAND));
         assert!(w.drain_battle_sfx_cues().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod hp_delta_liveness_tests {
+    use super::*;
+
+    /// The two `hp == 0 -> liveness = 0` sites - the per-hit fold in
+    /// [`World::apply_battle_hp_delta`] and the per-tick dead-marking sweep in
+    /// [`World::step_battle_frame`] - must apply the SAME predicate: dead
+    /// means `max_hp > 0 && hp == 0`. A seated-but-unrolled slot
+    /// (`max_hp == 0`) taking a zero-damage hit is not a death on either
+    /// path; a statted slot drained to zero is a death on both.
+    #[test]
+    fn zero_damage_on_an_unrolled_slot_is_not_a_death_on_either_path() {
+        let mut w = World::new();
+        w.enter_battle(1, 1);
+        // Slot 0: seated but never statted (the hollow-party shape).
+        w.actors[0].battle.hp = 0;
+        w.actors[0].battle.max_hp = 0;
+        w.actors[0].battle.liveness = 1;
+        // Slot 1: a real combatant.
+        w.actors[1].battle.hp = 40;
+        w.actors[1].battle.max_hp = 500;
+        w.actors[1].battle.liveness = 1;
+
+        // Path 1: the per-hit fold. A 0-damage hit on the hollow slot lands
+        // on `hp == 0` but must not mark it dead.
+        assert_eq!(w.apply_battle_hp_delta(0, 0), 0);
+        assert_eq!(
+            w.actors[0].battle.liveness, 1,
+            "apply_battle_hp_delta marked an unrolled slot dead"
+        );
+
+        // Path 2: the sweep predicate, same actor state, same verdict.
+        let swept_dead = w.actors[0].battle.max_hp > 0 && w.actors[0].battle.hp == 0;
+        assert!(!swept_dead, "the sweep and the fold must agree");
+
+        // And the real death still resolves on both: drain the statted slot.
+        assert_eq!(w.apply_battle_hp_delta(1, 40), 40);
+        assert_eq!(w.actors[1].battle.hp, 0);
+        assert_eq!(
+            w.actors[1].battle.liveness, 0,
+            "a statted slot at zero HP is dead on the fold path"
+        );
+        assert!(w.actors[1].battle.max_hp > 0 && w.actors[1].battle.hp == 0);
     }
 }

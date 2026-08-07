@@ -347,16 +347,14 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
         for slot in 0..host.world.party_count as usize {
             let a = &mut host.world.actors[slot].battle;
             if a.max_hp > 0 {
-                // Force-sync the displayed bar with the restore (the retail
-                // ticker's own re-sync shape): a live-HP write that leaves
-                // `hp != hp_display` pending is absorbing, and the SM's
-                // `0x51` bar-drain gate would park the battle on it forever.
-                a.hp = a.max_hp;
+                // Route the force-heal through the synced writer: a bare
+                // live-HP write that leaves `hp != hp_display` pending is
+                // absorbing, and the SM's `0x51` bar-drain gate would park
+                // the battle on it forever (`BattleActor::set_hp_synced` is
+                // the retail ticker's write-then-re-sync shape).
+                let max = a.max_hp;
+                a.set_hp_synced(max);
                 a.liveness = 1;
-                if a.hp_display.is_some() {
-                    a.hp_display = Some(a.max_hp);
-                }
-                a.hp_bar_pending = 0;
             }
         }
         host.tick().expect("tick");

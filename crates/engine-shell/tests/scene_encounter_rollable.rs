@@ -252,12 +252,9 @@ fn a_real_scene_rolls_an_encounter_and_the_battle_resolves() {
             for slot in 0..world.party_count as usize {
                 let a = &mut world.actors[slot].battle;
                 if a.max_hp > 0 {
-                    a.hp = a.max_hp;
+                    let max = a.max_hp;
+                    a.set_hp_synced(max);
                     a.liveness = 1;
-                    if a.hp_display.is_some() {
-                        a.hp_display = Some(a.max_hp);
-                    }
-                    a.hp_bar_pending = 0;
                 }
             }
         }

@@ -728,6 +728,63 @@ impl BattleActor {
         self.hp_display = Some(st.display);
         self.hp_bar_pending = st.pending;
     }
+
+    /// Set live HP **and keep the readout pair coherent** - the one safe way
+    /// for a runtime writer outside the damage/heal appliers (a harness
+    /// force-heal, a scripted stat poke, a debug fill) to touch `hp`.
+    ///
+    /// The trap this guards: writing `hp` alone leaves `hp != hp_display`
+    /// with a **zero** accumulator, and the ramp's only guard is
+    /// `+0x10 != 0` (`0x800474E8`) - the pair is then absorbing, and the
+    /// action SM's `0x51` bar-drain gate ([`super::hp_bar_drain_pending`],
+    /// retail `FUN_801E7250`, which compares `+0x14C` vs `+0x172` each tick)
+    /// parks the battle forever on the next party-targeted action. Retail
+    /// cannot reach that state from a bare stat write because every one of
+    /// its `+0x14C` writers either seeds the accumulator in the same routine
+    /// (`FUN_800402F4`'s three seed stores, `FUN_801EC3E4`'s accumulate) or
+    /// force-assigns the display right after the write - the per-round status
+    /// ticker's `lhu v1,0x14c(v0); sh v1,0x172(v0)` at `0x801E7600` /
+    /// `0x801E7698`. This method is that ticker shape: write, then re-sync
+    /// ([`Self::resync_hp_bar`]), so the drain gate sees a settled pair.
+    ///
+    /// Direct `hp` writes remain possible (the field is `pub`, and the
+    /// damage appliers own their seeding) - a host that wants the trap named
+    /// at run time can arm [`Self::debug_assert_hp_bar_coherent`] after its
+    /// own writers.
+    ///
+    /// REF: FUN_801E752C (the re-sync stores this composes with the write)
+    pub fn set_hp_synced(&mut self, hp: u16) {
+        self.hp = hp;
+        self.resync_hp_bar();
+    }
+
+    /// Debug-only tripwire naming the `0x51` absorbing park: a
+    /// `hp != hp_display` pair with a **zero** accumulator can never settle
+    /// (the ramp's `0x800474E8` guard skips a zero accumulator), so a caller
+    /// that produced it wrote `hp` directly without seeding or re-syncing the
+    /// bar - route the write through [`Self::set_hp_synced`] (or the
+    /// damage-path seeds [`Self::accumulate_hp_bar`] /
+    /// [`Self::assign_hp_bar`]) instead.
+    ///
+    /// A *non-zero* accumulator with a differing pair is normal (a drain in
+    /// flight), and a differing pair with a zero accumulator is ALSO
+    /// retail-reachable through the damage-path clamp asymmetry
+    /// (`crate::battle_hp_bar`'s module doc) - which is why this is an
+    /// opt-in, debug-only tripwire a host arms after its **own** writers
+    /// rather than an invariant wired into the SM's gate: on the damage path
+    /// the pair is retail's, but right after a host-level write it can only
+    /// mean the write skipped the sync.
+    pub fn debug_assert_hp_bar_coherent(&self, slot: u8) {
+        debug_assert!(
+            !(self.hp_bar_pending == 0 && self.hp_display.is_some_and(|shown| shown != self.hp)),
+            "battle slot {slot}: hp={} but hp_display={:?} with a ZERO hp_bar_pending - \
+             an absorbing pair the 0x51 bar-drain gate parks on forever. A runtime \
+             writer set `hp` directly; route it through BattleActor::set_hp_synced \
+             (or the damage-path accumulate/assign seeds).",
+            self.hp,
+            self.hp_display,
+        );
+    }
 }
 
 /// Battle context fields read or written by `FUN_801E295C`. The retail layout

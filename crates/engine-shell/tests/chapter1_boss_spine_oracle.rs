@@ -444,12 +444,9 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
         for slot in 0..host.world.party_count as usize {
             let a = &mut host.world.actors[slot].battle;
             if a.max_hp > 0 {
-                a.hp = a.max_hp;
+                let max = a.max_hp;
+                a.set_hp_synced(max);
                 a.liveness = 1;
-                if a.hp_display.is_some() {
-                    a.hp_display = Some(a.max_hp);
-                }
-                a.hp_bar_pending = 0;
             }
         }
         let _ = host.tick().expect("tick");
