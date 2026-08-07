@@ -295,6 +295,15 @@ const EXIT_TICKS: usize = 24;
 /// tried in `.MAP` trigger order and the first success wins.
 const EXIT_SITES_TRIED: usize = 4;
 
+/// Walk-on tiles swept per scene in Part E. `urudre2` carries 186 of them and
+/// they are all the same handful of records; a couple of dozen per scene is a
+/// real sweep without turning the part into a multi-minute run.
+const MAX_TILES_SWEPT: usize = 48;
+
+/// Records executed per partition in Part E2, and the frames each gets.
+const MAX_RECORDS_RUN: usize = 48;
+const RECORD_RUN_TICKS: usize = 180;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mark {
     /// Cleared.
@@ -1148,25 +1157,28 @@ fn part_c_captured_scenes_are_scenes_the_engine_can_enter() {
         return;
     }
 
-    let flags0 = host.world.system_flags.clone();
-    let story0 = host.world.story_flags;
+    // Rung 3 is what this part asserts, so it drives rung 3 rather than the
+    // whole ladder: the claim is "retail was standing here, so the engine has
+    // to be able to enter it", and running the walk control + exit attempts
+    // for nine scenes would cost minutes to test something Part B already
+    // scored.
+    let base = FlagBaseline::snapshot(&host);
     let mut failures: Vec<String> = Vec::new();
     for (scene, labels) in &observed {
-        host.world.system_flags = flags0.clone();
-        host.world.story_flags = story0;
-        let v = score_scene(&mut host, scene);
+        let entered = enter(&mut host, scene, &base);
+        let settled =
+            entered && matches!(settle(&mut host), Settle::Released | Settle::Departed(_));
         eprintln!(
-            "[capture] {scene:<10} score {} <- {} capture(s): {}",
-            v.score,
+            "[capture] {scene:<10} enter={entered} settle={settled} <- {} capture(s): {}",
             labels.len(),
             labels.join(", ")
         );
-        if v.score < 3 {
+        if !entered {
             failures.push(format!(
-                "{scene}: retail was in it ({}) but the engine scored {} - {}",
+                "{scene}: retail was in it ({}) but the engine cannot enter it \
+                 (mode {:?})",
                 labels.join(", "),
-                v.score,
-                v.note
+                host.world.mode
             ));
         }
     }
@@ -1280,6 +1292,234 @@ fn part_d_uru_mais_doors_are_table_entries_not_decoded_ops() {
     eprintln!(
         "[ok] Part D: Uru Mais doors are destination-table entries with no decoded op; \
          jouine has neither"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Part E: are the rung-6 stops actually sealed for a player?
+// ---------------------------------------------------------------------------
+
+/// Rung 6 says the exit-site *join* found nothing to drive. That is a
+/// statement about a decoder, and on its own it does not say whether a player
+/// standing in one of those five scenes could ever leave - which is the
+/// question that matters.
+///
+/// So step onto **every** gate-1 `.MAP` trigger tile each of the five carries,
+/// one fresh visit per tile, and report what fires. This is the same walk-on
+/// dispatch a player's own tile crossing runs; only the choice of tile is
+/// synthetic.
+///
+/// The answer is that **all five are sealed to walk-on**: across every gate-1
+/// tile the five scenes carry, not one fires a transition. So the rung-6
+/// shortfall is not only a decoder gap - in the port as it stands, a player
+/// who walks into the Uru Mais chain or into `jouine` has no walk-on band to
+/// leave by.
+///
+/// The half-sibling below (`part_e2`) executes those scenes' own records
+/// through the field VM to ask whether the exit exists in the bytes at all,
+/// which is what separates "the port cannot leave" from "the port's walk-on
+/// dispatch is not how retail leaves". Nothing here establishes how retail
+/// leaves them; the `kor`-family dream-shrine warp pads are the shape to look
+/// at first, and they are partition-2 *interact* records rather than bands.
+#[test]
+fn part_e_the_rung6_stops_are_sealed_to_walk_on() {
+    let Some(mut host) = open_host() else {
+        return;
+    };
+    let base = FlagBaseline::snapshot(&host);
+
+    /// Every gate-1 trigger tile of `name`, deduplicated.
+    fn walk_on_tiles(host: &SceneHost, name: &str) -> Vec<(u8, u8)> {
+        let Ok(scene) = Scene::load(&host.index, name) else {
+            return Vec::new();
+        };
+        let Ok((primary, fallback)) = scene.field_tile_triggers(&host.index) else {
+            return Vec::new();
+        };
+        let mut seen: BTreeSet<(u8, u8)> = BTreeSet::new();
+        primary
+            .into_iter()
+            .chain(fallback)
+            .filter(|t| t.gate == 1)
+            .filter_map(|t| {
+                seen.insert((t.tile_x, t.tile_z))
+                    .then_some((t.tile_x, t.tile_z))
+            })
+            .take(MAX_TILES_SWEPT)
+            .collect()
+    }
+
+    let mut sealed: Vec<&str> = Vec::new();
+    let mut open: Vec<String> = Vec::new();
+    let mut tried_total = 0usize;
+    for name in ["uru", "urudre1", "urudre2", "urudre3", "jouine"] {
+        let tiles = walk_on_tiles(&host, name);
+        let mut fired: BTreeMap<String, usize> = BTreeMap::new();
+        // Re-enter only when the previous tile changed the scene or left a
+        // record running. A scene load is by far the expensive step here and a
+        // tile that fires nothing leaves the world unchanged but for the
+        // player's position, so one entry covers a whole run of quiet tiles.
+        let mut need_entry = true;
+        for (tx, tz) in &tiles {
+            if need_entry {
+                if !enter(&mut host, name, &base) || !matches!(settle(&mut host), Settle::Released)
+                {
+                    continue;
+                }
+                need_entry = false;
+            }
+            tried_total += 1;
+            step_onto_tile(&mut host, *tx, *tz);
+            for _ in 0..EXIT_TICKS {
+                match host.tick() {
+                    Ok(SceneTickEvent::SceneEntered { name }) => {
+                        *fired.entry(name).or_default() += 1;
+                        need_entry = true;
+                        break;
+                    }
+                    Ok(_) => {}
+                    Err(_) => break,
+                }
+            }
+            // A tile that spawned a record without warping has to drain before
+            // the next tile is a clean test.
+            if !need_entry && !matches!(settle(&mut host), Settle::Released) {
+                need_entry = true;
+            }
+        }
+        if fired.is_empty() {
+            eprintln!(
+                "[sealed] {name:<8} {} walk-on tile(s), none fired",
+                tiles.len()
+            );
+            sealed.push(name);
+        } else {
+            eprintln!(
+                "[open]   {name:<8} {} walk-on tile(s) -> {fired:?}",
+                tiles.len()
+            );
+            open.push(name.to_string());
+        }
+    }
+
+    assert!(
+        tried_total > 100,
+        "the sweep must actually step onto tiles to mean anything; tried {tried_total}"
+    );
+    assert!(
+        open.is_empty(),
+        "a rung-6 stop now leaves through a walk-on band ({open:?}) - re-measure \
+         rung 6, the finding has moved"
+    );
+    assert_eq!(
+        sealed,
+        vec!["uru", "urudre1", "urudre2", "urudre3", "jouine"],
+        "all five rung-6 stops are sealed to walk-on"
+    );
+    eprintln!("[ok] Part E: all five rung-6 stops are sealed to walk-on ({tried_total} tiles)");
+}
+
+/// The sibling question: is the exit in the bytes at all?
+///
+/// Part E says no walk-on band leaves those five scenes. That leaves two very
+/// different worlds - the record that warps exists and is reached some other
+/// way (an interact, a `0x3E`), or there is no warping record. This runs each
+/// scene's **own partition-1 and partition-2 record bodies through the field
+/// VM** and reports how many reach a scene change.
+///
+/// This is an execution probe, not a wiring claim: the record is loaded into
+/// the VM directly rather than reached by an organic touch, exactly the way
+/// `minigame_replay` arms a venue door, and the pad pulses Cross because a
+/// door record is often a conversation. What it can prove is that the bytes
+/// contain a reachable warp; it cannot prove a player gets there.
+///
+/// The answer is **none of them**: across 160 executed records none reaches a
+/// scene change. Together with Part E that puts the five scenes in one place -
+/// no walk-on band leaves them, and no record run from its own start warps
+/// either - so in the port as it stands, entering the Uru Mais chain or
+/// `jouine` is one-way.
+///
+/// What this does NOT establish is how retail leaves them, and the probe's
+/// own reach is the reason to be careful: a warp behind a story gate, an
+/// inventory check, or an actor-motion wait a headless world never satisfies
+/// would not be reached from a 180-frame run either. "No record this probe
+/// executed warped" is the claim; "the bytes contain no warp" is not.
+#[test]
+fn part_e2_do_those_scenes_carry_a_record_that_warps_at_all() {
+    let Some(mut host) = open_host() else {
+        return;
+    };
+    let base = FlagBaseline::snapshot(&host);
+    let mut warping: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
+    let mut ran_total = 0usize;
+
+    for name in ["uru", "urudre1", "urudre2", "urudre3", "jouine"] {
+        let Some((mf, man)) = scene_man(&host.index, name) else {
+            continue;
+        };
+        let mut need_entry = true;
+        for partition in [1usize, 2] {
+            let count = mf.header.partition_counts[partition].max(0) as usize;
+            for record in 0..count.min(MAX_RECORDS_RUN) {
+                let Some((start, pc0, len)) =
+                    legaia_engine_core::man_field_scripts::partition_record_span(
+                        &mf, &man, partition, record,
+                    )
+                else {
+                    continue;
+                };
+                // Re-enter only when the previous record actually warped. A
+                // scene load per record turns this into a ten-minute run, and
+                // between records the state that matters - the flag banks and
+                // any still-live spawned context - is reset directly.
+                if need_entry {
+                    if !enter(&mut host, name, &base) {
+                        continue;
+                    }
+                    need_entry = false;
+                } else {
+                    base.restore(&mut host);
+                    host.world.helper_contexts.clear();
+                }
+                ran_total += 1;
+                host.world
+                    .load_field_script_at(man[start..start + len].to_vec(), pc0);
+                for frame in 0..RECORD_RUN_TICKS {
+                    host.world.set_pad(if frame % 3 == 2 {
+                        PadButton::Cross.mask()
+                    } else {
+                        0
+                    });
+                    match host.tick() {
+                        Ok(SceneTickEvent::SceneEntered { name: to }) => {
+                            warping.entry(name).or_default().insert(to);
+                            need_entry = true;
+                            break;
+                        }
+                        Ok(_) => {}
+                        Err(_) => break,
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "[records] {name:<8} -> {:?}",
+            warping.get(name).cloned().unwrap_or_default()
+        );
+    }
+
+    assert!(
+        ran_total > 40,
+        "the probe must actually execute records; ran {ran_total}"
+    );
+    assert!(
+        warping.is_empty(),
+        "a rung-6 stop now carries a record that warps ({warping:?}) - the exit \
+         mechanism has been found, so re-measure rung 6 and move this finding"
+    );
+    eprintln!(
+        "[ok] Part E2: executed {ran_total} record(s); scenes that warped: {:?}",
+        warping.keys().collect::<Vec<_>>()
     );
 }
 

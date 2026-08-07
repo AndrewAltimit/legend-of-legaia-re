@@ -47,19 +47,23 @@
 #   Uru Mais chain is inside it, and every one of the 27 loads, enters,
 #   settles and can be walked.
 #
-# - `uru` / `urudre1` / `urudre2` / `urudre3` stop at rung 6, and not because
-#   a transition fails. A **clean** per-partition fall-through walk of those
-#   four MANs finds no `0x3F` op anywhere, in any partition; their
-#   destinations are recovered only by the recovering destination-TABLE pass.
-#   So the `.MAP` gate-1 trigger -> partition-2 record -> `0x3F` join that
-#   every other chapter-1 interior's doors use has nothing to join. The Uru
-#   Mais chain's doors are known to this project as table entries rather than
-#   as decoded ops - which also means those four graph edges rest on weaker
-#   footing than the rest of the closure. Pinned by the ladder's Part D.
+# - Five scenes stop at rung 6 - `uru`, `urudre1`, `urudre2`, `urudre3` (the
+#   Uru Mais chain) and `jouine` (the deepest Drake Castle room) - and the
+#   ladder's Parts D/E/E2 narrow that from "the join found nothing" to
+#   something sharper and worse. A clean per-partition fall-through walk of
+#   those five MANs finds no `0x3F` op anywhere, in any partition; stepping
+#   onto every gate-1 walk-on tile they carry fires nothing; and executing 160
+#   of their own partition-1 and partition-2 records through the field VM
+#   reaches no scene change either. The four Uru Mais rooms' destinations are
+#   known to this project ONLY as destination-table entries, and `jouine`'s
+#   not at all.
 #
-# - `jouine` (the deepest Drake Castle room) stops at rung 6 because neither
-#   decoder finds a named scene change: it is left by something that is not a
-#   `0x3F` at all.
+#   So in the port as it stands, entering the Uru Mais chain or `jouine` is
+#   one-way, and those four graph edges rest on weaker footing than the rest
+#   of the closure. How retail leaves them is unidentified. The record probe
+#   bounds its own claim: a warp behind a story gate, an inventory check or an
+#   actor-motion wait a headless world never satisfies would not be reached
+#   from a 180-frame run either.
 #
 # - `izumi` stops at rung 5, and only on a first visit. Its C1-gated
 #   first-visit record relocates the player about thirty tiles with the pad
