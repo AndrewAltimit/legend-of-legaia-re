@@ -6,7 +6,7 @@
 # it may go up in a reviewed edit, and a drop fails the run.
 #
 # Rungs (see the test's module docs for the full table):
-#   1  town01 free-roam, input released
+#   1  town01 loads into free-roam Field
 #   2  pad-walk town01 south gate -> map01
 #   3  pad-walk map01 across the continent (>= 24 tiles, >= 1 encounter fought)
 #   4  pad-walk map01 -> suimon -> map01 -> keikoku (Ravine)
@@ -128,6 +128,25 @@
 # readings fit: the parser emits a spurious leading record, retail's walk does
 # not shadow the way the port models it, or the AABB decode is wrong. All
 # three are `legaia_asset::man_section::region_records`, not this ladder.
+#
+# ---------------------------------------------------------------------------
+# What rung 1 does and does not say
+# ---------------------------------------------------------------------------
+#
+# It used to read "town01 free-roam, input released", which sounds like the
+# cold boot's opening choreography running and handing control over. It is not
+# that. Under `SceneHost::enter_field_scene("town01", 0)` the opening holds
+# input for **zero** frames: no cutscene-timeline frame, no `current_dialog`
+# frame, no `inline_dialogue` frame, neither during the wait nor across a
+# further 1200 idle ticks. Nothing runs, so "control was released" is
+# trivially true - and a rung that only asks whether input is free now cannot
+# tell that apart from an opening that played and finished.
+#
+# The rung's pass condition is unchanged (the scene must load into Field with a
+# controllable player, which it does); what changed is that it now prints the
+# held-frame count, so the vacuity is on the row rather than in a reader's
+# assumption. Whether town01's opening SHOULD play under a record-0 entry is a
+# scene-entry question, not a ladder one.
 #
 # ---------------------------------------------------------------------------
 # Controls

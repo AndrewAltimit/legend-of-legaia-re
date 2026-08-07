@@ -34,7 +34,7 @@
 //!
 //! | # | milestone | what it proves |
 //! |---|---|---|
-//! | 1 | `town01` free-roam, input released | cold boot hands control to the player |
+//! | 1 | `town01` loads into free-roam Field | the scene boots to a controllable player |
 //! | 2 | pad-walk to the south gate -> `map01` | field locomotion + collision + walk-on trigger |
 //! | 3 | pad-walk `map01` across the continent | overworld remap + collision + the encounter round trip |
 //! | 4 | pad-walk on to the Ravine, via `suimon` | multi-scene overworld route + portal engage |
@@ -1212,16 +1212,32 @@ fn fight_snapshot(host: &SceneHost) -> String {
 /// Tick with a neutral pad until the world hands control back, so a leg does
 /// not spend its budget shoving against a cutscene lock.
 fn wait_for_input(host: &mut SceneHost) -> bool {
-    for _ in 0..INPUT_RELEASE_BUDGET {
+    held_frames_before_input(host).is_some()
+}
+
+/// [`wait_for_input`] with the answer nobody was reading: **how many frames
+/// anything actually held input**, or `None` if it never let go.
+///
+/// `Some(0)` is not "control was released promptly", it is "no scripted
+/// sequence ever ran". The two are indistinguishable to a caller that only
+/// asks whether input is free now, and rung 1 asked exactly that - so a scene
+/// whose opening choreography does not play at all scored the rung labelled
+/// "cold boot hands control to the player". `town01` under
+/// `SceneHost::enter_field_scene(name, 0)` returns `Some(0)`: no timeline
+/// frame, no dialogue frame, not during the wait and not across a further
+/// 1200 idle ticks. So rung 1 is evidence that the scene loads into a
+/// controllable Field state, and is **not** evidence that the opening plays.
+/// The count is printed in the rung's own row so the distinction is visible
+/// rather than inferred.
+fn held_frames_before_input(host: &mut SceneHost) -> Option<u32> {
+    for f in 0..INPUT_RELEASE_BUDGET {
         if !host.world.cutscene_timeline_active() && !host.world.dialogue_owns_input() {
-            return true;
+            return Some(f);
         }
         host.world.set_pad(0);
-        if host.tick().is_err() {
-            return false;
-        }
+        host.tick().ok()?;
     }
-    false
+    None
 }
 
 /// What a leg did, independently of whether it ended where it was aimed.
@@ -2075,12 +2091,26 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     // --- 1. Cold boot into Rim Elm free-roam with control released. -------
     host.enter_field_scene("town01", 0).expect("enter town01");
     let field = host.world.mode == SceneMode::Field;
-    let released = field && wait_for_input(host);
+    let held = if field {
+        held_frames_before_input(host)
+    } else {
+        None
+    };
+    let released = held.is_some();
     rungs.push(Rung {
-        label: "town01 free-roam, input released",
-        detail: if released {
+        label: "town01 loads into free-roam Field",
+        detail: if let Some(held) = held {
             let (x, z) = player_world(host);
-            format!("player at tile {:?}", tile_of(x, z))
+            format!(
+                "player at tile {:?}; the opening held input for {held} frame(s){}",
+                tile_of(x, z),
+                if held == 0 {
+                    " - i.e. no opening choreography ran, so this rung says the scene \
+                     loads, NOT that its opening plays"
+                } else {
+                    ""
+                }
+            )
         } else if field {
             "control never released (cutscene timeline or dialogue held input)".into()
         } else {
