@@ -3758,7 +3758,7 @@ The `legaia-engine play-window` host ships the loop **on**, matching the browser
 
 - **Party HP / MP persists.** The battle mutates the `BattleActor` mirrors; `finish_battle` writes them into the roster records (via `World::save_party`) *before* restoring the field actor snapshot, then pushes them back onto the restored party actors (`World::resync_party_actors_from_roster`). Without that step every fight ended at the HP it started with, and losing was indistinguishable from winning.
 - **A wipe raises `World::game_over`**, which both hosts read and route to the **title screen** - retail's destination, pinned to the `game_mode = 0x16` / `_DAT_8007BB00 = 1` store pair (see [§ party wipe](#party-wipe--the-game-over-overlay)). Native pushes `BootUiState::GameOver`, the browser arms the same `GameOverSession`; neither draws anything and neither reads a button, because retail asks the player nothing here.
-- **A victory arms the spoils panel** (`World::battle_spoils_banner`, `World::SPOILS_BANNER_FRAMES`), drawn by the shared `engine-ui` builder `battle_spoils_draws_for` on both hosts. The XP / gold / drops were always applied; nothing showed them.
+- **A victory arms the post-battle report** (`World::battle_spoils_banner`, `World::SPOILS_BANNER_FRAMES`) - retail's two framed windows, described by `engine-ui::battle_spoils_windows` and filled by `battle_spoils_draws_for` on both hosts. Rects and columns are measured off a retail framebuffer; see [level-up](level-up.md#what-the-port-draws-between-the-last-enemy-dying-and-the-field-returning).
 
 ### Scenes that cannot roll
 

@@ -1260,6 +1260,9 @@ impl LegaiaRuntime {
         // green MP label cells) samples the same system-UI atlas as the shop
         // frame, so it rides the same sprite array. Empty outside battle.
         sprites.extend(self.battle_chrome_sprite_draws(assets, surface_w, surface_h));
+        // The post-battle report's two framed windows (level-up above,
+        // spoils below) - same atlas, drawn outside battle mode.
+        sprites.extend(self.battle_spoils_chrome_sprite_draws(assets, surface_w, surface_h));
         let mut texts: Vec<TextDraw> = Vec::new();
         if let Some(draws) = shop {
             // Frame the panel in the same gold 9-slice the pause menu uses,

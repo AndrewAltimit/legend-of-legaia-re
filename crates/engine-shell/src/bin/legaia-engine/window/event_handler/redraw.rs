@@ -1855,6 +1855,12 @@ impl PlayWindowApp {
             // contention with the chrome appended after it.
             let mut save_chrome_draw_vec = field_hud_draws.sprites;
             save_chrome_draw_vec.extend(self.save_select_chrome_sprite_draws(w, h));
+            // The post-battle report's two framed windows (level-up above,
+            // spoils below). Same atlas, and mutually exclusive with the
+            // boot/menu chrome.
+            if !self.boot_ui.is_active() {
+                save_chrome_draw_vec.extend(self.battle_spoils_chrome_sprite_draws(w, h));
+            }
             save_chrome_draw_vec.extend(self.field_menu_chrome_sprite_draws(w, h));
             // Dialog-window chrome (gradient fill + gold frame + hand
             // cursors) shares the system-UI atlas slot; a dialog box

@@ -583,22 +583,31 @@ one battle:
 - The **level-up banner** goes into retail's top-of-screen message widget and
   names the character (`LEVEL UP!  Gala -> LV 2 / HP +43  MP +8`). It used to
   print the roster ordinal (`P3`), which is an index only the codebase knows.
-- The **spoils panel** (`engine-ui::battle_spoils_draws_for`) lists `VICTORY`,
-  the EXP, the gold, each drop and one `<name> is now level N` line per
-  level-up. It is an acknowledged engine presentation, not a traced window -
-  retail's battle-result overlay is not in the dumped corpus.
+- The **post-battle report** (`engine-ui::battle_spoils_windows` +
+  `battle_spoils_draws_for`) is retail's own pair of framed windows: a
+  level-up window above the party carrying one `<name>'s level increased!`
+  line per level-up, and a spoils window below it carrying
+  `<leader>'s team won the battle!` and `Gained N Experience and M G.` with
+  both figures right-aligned inside the sentence, plus a line per drop.
 
-Two things the pair gets wrong, both still open:
+  Retail's **emitter** is still not in the dumped corpus; what is pinned is
+  its output. The two window rects, the text pen and the two numeral columns
+  come from the `noa_levelup_banner` framebuffer at 320x240, measured off the
+  gold frame band - so the geometry is a capture citation, not an engine
+  invention, even though the code that produced it is untraced.
+
+One thing the pair still gets wrong:
 
 - **Only the last level-up's banner is ever seen.** `World::apply_battle_xp`
   writes `current_level_up_banner` inside its per-member loop, so a battle that
   levels three characters overwrites the slot twice in one frame and shows one
-  banner. The banner needs a queue the world drains one at a time; the spoils
-  panel's `is now level` lines are what makes the loss visible rather than
+  banner. The banner needs a queue the world drains one at a time; the report
+  window's per-character lines are what makes the loss visible rather than
   silent.
 - **Both surfaces draw over the FIELD.** The port grants XP after the mode has
-  already flipped back from `Battle`, so the banner and the panel land on the
-  returned field scene. Retail raises its result screen while still in battle.
+  already flipped back from `Battle`, so the banner and the report land on the
+  returned field scene. Retail raises its result screen while still in battle -
+  the windows are at the right rects with the right text, over the wrong scene.
   This is the ordering difference `engine-shell`'s `battle_banner_message`
   already documents at its own call site, seen from the other end.
 

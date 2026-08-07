@@ -38,61 +38,152 @@ pub struct BattleSpoilsView<'a> {
     /// Item names the loot roll surfaced, resolved by the shell against the
     /// item catalog.
     pub drops: &'a [String],
+    /// The party leader, whose name opens the spoils line ("<leader>'s team
+    /// won the battle!").
+    pub leader: &'a str,
 }
 
-/// Row pitch of the post-battle spoils panel.
+/// Row pitch of the post-battle report - the dialog font's own line height,
+/// which is what the two-line spoils window measures at.
 pub const SPOILS_LINE_H: i32 = 14;
 
-/// Build [`TextDraw`]s for the post-battle spoils panel: the XP / gold the
-/// victory credited, then a line per drop and per level-up.
+/// The **level-up** window's stage rect, and the **spoils** window's.
 ///
-/// The panel is an **engine presentation**, not a traced retail window.
-/// Retail's victory report is drawn by the battle-result overlay, which is
-/// not in the dumped corpus; what *is* pinned is the arithmetic behind every
-/// number here (`World::apply_battle_loot` / `apply_battle_xp` and
-/// `docs/subsystems/level-up.md`). Until the retail window is traced this
-/// surfaces the same values in the port's own chrome - the alternative,
-/// which is what shipped before, is applying XP, gold and drops with no
-/// on-screen acknowledgement at all.
+/// The measurement is the gold frame band in the `noa_levelup_banner`
+/// framebuffer at 320x240 native: the level-up window's band lies on rows
+/// `6` and `30`, the spoils window's on `154` and `208`, and both span
+/// columns `10..=310`. Retail draws them over the **live battle scene**, one
+/// above the party and one below.
+///
+/// The constants are those bands **outset by 2**, because
+/// [`crate::menu_window_chrome_draws_for`] seats its corner tiles two pixels
+/// inside the rect it is handed - so a rect equal to the band draws the band
+/// two pixels small on every side.
+pub const SPOILS_LEVELUP_RECT: (i32, i32, i32, i32) = (8, 4, 304, 28);
+pub const SPOILS_REPORT_RECT: (i32, i32, i32, i32) = (8, 152, 304, 58);
+
+/// Text pen inside either window, from its frame origin. The capture puts
+/// the first glyph column at `16` in both windows and the first ink row at
+/// `14` / `162`; the glyph cell's own ink starts two rows down, so the pen
+/// is `(+8, +8)` off the rects above.
+pub const SPOILS_TEXT_INSET: (i32, i32) = (8, 8);
+
+/// Column the experience figure's last digit ends on, and the column the
+/// gold figure's does, both relative to the text pen. Retail right-aligns
+/// both numbers inside the sentence rather than letting it reflow - the
+/// capture's `12` ends at `100` and its `13` at `236`.
+pub const SPOILS_XP_RIGHT: i32 = 84;
+pub const SPOILS_TAIL_X: i32 = 91;
+pub const SPOILS_GOLD_RIGHT: i32 = 220;
+pub const SPOILS_GOLD_TAIL_X: i32 = 228;
+
+/// One window of the post-battle report: its stage rect and the lines in it.
+pub struct SpoilsWindow {
+    pub rect: (i32, i32, i32, i32),
+    pub lines: Vec<String>,
+}
+
+/// The windows retail's post-battle report puts on screen, top first.
+///
+/// Split out of the draw so a host can emit the window **chrome** (the gold
+/// nine-slice over the blue fill, off the system-UI atlas) and the text from
+/// one description. A window with no lines is omitted: a victory with no
+/// level-up draws the spoils window alone, which is what retail's capture of
+/// a level-less win shows.
+///
+/// Heights: the two measured rects hold one and two lines respectively, and
+/// a longer report grows downward at [`SPOILS_LINE_H`]. The **growth** rule
+/// is the port's - one capture cannot pin it - but the two rects are not.
+pub fn battle_spoils_windows(view: &BattleSpoilsView<'_>) -> Vec<SpoilsWindow> {
+    let mut out = Vec::new();
+    if !view.level_ups.is_empty() {
+        let (x, y, w, h) = SPOILS_LEVELUP_RECT;
+        let extra = (view.level_ups.len() as i32 - 1).max(0) * SPOILS_LINE_H;
+        out.push(SpoilsWindow {
+            rect: (x, y, w, h + extra),
+            lines: view.level_ups.to_vec(),
+        });
+    }
+    let mut lines = vec![
+        format!("{}'s team won the battle!", view.leader),
+        // The two figures are placed by column, not by this string - the
+        // builder lays the sentence out in three runs. Kept whole here so a
+        // caller that only wants the text reads a sentence.
+        format!("Gained {} Experience and {} G.", view.xp, view.gold),
+    ];
+    for drop in view.drops {
+        lines.push(format!("Got {drop}"));
+    }
+    let (x, y, w, h) = SPOILS_REPORT_RECT;
+    let extra = (lines.len() as i32 - 2).max(0) * SPOILS_LINE_H;
+    out.push(SpoilsWindow {
+        rect: (x, y, w, h + extra),
+        lines,
+    });
+    out
+}
+
+/// Build the post-battle report's text, in **stage** pixels.
+///
+/// Retail's report is two framed windows over the live battle scene, not a
+/// caption on the field: `<name>'s level increased!` above the party and
+/// `<leader>'s team won the battle!` / `Gained N Experience and M G.` below
+/// it. The frames come from [`battle_spoils_windows`] through the host's
+/// window-chrome emitter; this is the text that goes in them.
+///
+/// The arithmetic behind every number is `World::apply_battle_loot` /
+/// `apply_battle_xp` (see `docs/subsystems/level-up.md`). What is *not*
+/// pinned is retail's own emitter - the battle-result overlay is not in the
+/// dumped corpus - so the window rects and the sentence columns here are
+/// read off a retail framebuffer rather than off its code.
 pub fn battle_spoils_draws_for(
     font: &legaia_font::Font,
     view: &BattleSpoilsView<'_>,
-    pen: (i32, i32),
+    windows: &[SpoilsWindow],
 ) -> Vec<TextDraw> {
-    let gold_ink: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
     let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
-    let green: [f32; 4] = [0.5, 1.0, 0.6, 1.0];
-
     let mut out = Vec::new();
-    let mut y = pen.1;
-    out.extend(text_draws_for(
-        &font.layout_ascii("VICTORY"),
-        (pen.0, y),
-        gold_ink,
-    ));
-    y += SPOILS_LINE_H;
-    out.extend(text_draws_for(
-        &font.layout_ascii(&format!("{} EXP", view.xp)),
-        (pen.0, y),
-        white,
-    ));
-    y += SPOILS_LINE_H;
-    out.extend(text_draws_for(
-        &font.layout_ascii(&format!("{} Gold", view.gold)),
-        (pen.0, y),
-        white,
-    ));
-    for drop in view.drops {
-        y += SPOILS_LINE_H;
-        out.extend(text_draws_for(
-            &font.layout_ascii(&format!("Got {drop}")),
-            (pen.0, y),
-            white,
-        ));
-    }
-    for line in view.level_ups {
-        y += SPOILS_LINE_H;
-        out.extend(text_draws_for(&font.layout_ascii(line), (pen.0, y), green));
+    for (i, win) in windows.iter().enumerate() {
+        let pen = (
+            win.rect.0 + SPOILS_TEXT_INSET.0,
+            win.rect.1 + SPOILS_TEXT_INSET.1,
+        );
+        // The report window's second line is the only one laid out by
+        // column: retail right-aligns both figures inside the sentence.
+        let is_report = i + 1 == windows.len();
+        for (row, line) in win.lines.iter().enumerate() {
+            let y = pen.1 + row as i32 * SPOILS_LINE_H;
+            if is_report && row == 1 {
+                let head = font.layout_ascii("Gained");
+                out.extend(text_draws_for(&head, (pen.0, y), white));
+                let xp = view.xp.to_string();
+                let xp_w = font.layout_ascii(&xp).advance_x as i32;
+                out.extend(text_draws_for(
+                    &font.layout_ascii(&xp),
+                    (pen.0 + SPOILS_XP_RIGHT - xp_w, y),
+                    white,
+                ));
+                out.extend(text_draws_for(
+                    &font.layout_ascii("Experience and"),
+                    (pen.0 + SPOILS_TAIL_X, y),
+                    white,
+                ));
+                let gold = view.gold.to_string();
+                let gold_w = font.layout_ascii(&gold).advance_x as i32;
+                out.extend(text_draws_for(
+                    &font.layout_ascii(&gold),
+                    (pen.0 + SPOILS_GOLD_RIGHT - gold_w, y),
+                    white,
+                ));
+                out.extend(text_draws_for(
+                    &font.layout_ascii("G."),
+                    (pen.0 + SPOILS_GOLD_TAIL_X, y),
+                    white,
+                ));
+                continue;
+            }
+            out.extend(text_draws_for(&font.layout_ascii(line), (pen.0, y), white));
+        }
     }
     out
 }
