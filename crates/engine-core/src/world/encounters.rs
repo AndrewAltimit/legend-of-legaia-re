@@ -969,6 +969,12 @@ impl World {
             // (same borrow-window pattern as `live_world_map_tick`).
             let mut tracker = self.field_region_tracker.take().expect("is_some checked");
             tracker.set_modifiers(self.encounter_rate_modifiers());
+            // Re-run the scene's condition walk against the live story-flag
+            // bank before rolling. Retail does this every step, and it is not
+            // cosmetic: a scene's regions are several story-state variants
+            // laid end to end, so the group choice decides which rates,
+            // formations and backdrop the step can see at all.
+            tracker.select_group(|flag| self.system_flag_test(flag));
             let roll = tracker.on_step(wx, wz, || self.next_rng());
             // Per-step roll diagnostics (trace level; off in normal runs):
             // which tile the step landed on and how far the region counter

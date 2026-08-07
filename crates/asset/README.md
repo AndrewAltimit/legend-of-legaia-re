@@ -527,6 +527,14 @@ per-section offset+length refs, the encounter section, and the world-map
 bulk-terrain flag. CLI `asset man` / `man-scan`. The engine's
 `encounter_table_from_man` builds on it.
 
+The encounter section's region array is **grouped, not flat**: the condition
+array partitions it into consecutive story-flag-gated slices and the retail
+roll searches exactly one of them. `active_region_group` runs that walk for a
+given flag state and `region_records_in` reads the slice; `region_records`
+stays the whole-corpus view. Reading the array flat lands on group 0, which in
+most scenes is a placeholder variant - see
+[`docs/formats/encounter.md`](../../docs/formats/encounter.md#the-condition-array-story-flag-gated-region-groups).
+
 `man_edit` - **variable-length editing of a decompressed MAN.**
 
 - `scene_change_sites` enumerates the field-VM `0x3F` named-scene-change ("door")

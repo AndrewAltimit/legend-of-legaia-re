@@ -674,26 +674,70 @@ pub(crate) fn man_one(
             }
         }
 
-        let r_take = (es.region_count as usize).min(max_regions);
-        println!("  regions [{}/{}]", r_take, es.region_count);
-        for (i, r) in legaia_asset::man_section::region_records(body, &es)
-            .take(r_take)
+        // The region array is partitioned by the condition array into
+        // story-flag-gated groups; only one is live at a time, so print the
+        // regions under the group that owns them rather than as one list.
+        let active = legaia_asset::man_section::active_region_group(body, &es, |_| false);
+        println!(
+            "  conditions [{}] (region groups; '*' = the group a cleared flag bank selects)",
+            es.condition_count
+        );
+        let mut first = 0usize;
+        let mut printed = 0usize;
+        for (i, c) in legaia_asset::man_section::condition_records(body, &es).enumerate() {
+            let Some(c) = c else {
+                println!("    [{i:3}] (malformed)");
+                break;
+            };
+            let mark = if active == Some((first, c.region_count as usize)) {
+                '*'
+            } else {
+                ' '
+            };
+            let gate = if c.is_default() {
+                "default (unconditional)".to_string()
+            } else {
+                format!("story flag 0x{:04X}", c.flag_id)
+            };
+            println!(
+                "   {mark}[{i:3}] {gate} -> regions[{first}..{})",
+                first + c.region_count as usize
+            );
+            for (k, r) in legaia_asset::man_section::region_records_in(
+                body,
+                &es,
+                first,
+                c.region_count.into(),
+            )
             .enumerate()
-        {
-            match r {
-                Some(r) => println!(
-                    "    [{:3}] aabb=({:3},{:3})..({:3},{:3}) rate+={} formations=[{}..+{})",
-                    i,
-                    r.aabb_x_min,
-                    r.aabb_y_min,
-                    r.aabb_x_max,
-                    r.aabb_y_max,
-                    r.rate_increment,
-                    r.formation_range_base,
-                    r.formation_range_count,
-                ),
-                None => println!("    [{:3}] (malformed)", i),
+            {
+                if printed >= max_regions {
+                    break;
+                }
+                printed += 1;
+                let idx = first + k;
+                match r {
+                    Some(r) => println!(
+                        "        [{:3}] aabb=({:3},{:3})..({:3},{:3}) rate+={} formations=[{}..+{})",
+                        idx,
+                        r.aabb_x_min,
+                        r.aabb_y_min,
+                        r.aabb_x_max,
+                        r.aabb_y_max,
+                        r.rate_increment,
+                        r.formation_range_base,
+                        r.formation_range_count,
+                    ),
+                    None => println!("        [{idx:3}] (malformed)"),
+                }
             }
+            first += c.region_count as usize;
+        }
+        if printed < es.region_count as usize {
+            println!(
+                "    ... {} more regions (raise --max-regions)",
+                es.region_count as usize - printed
+            );
         }
     }
     Ok(())

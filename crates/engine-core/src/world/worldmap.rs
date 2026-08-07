@@ -266,6 +266,10 @@ impl World {
         // borrow `self` (same pattern as the entity-SM borrow window).
         if let Some(mut tracker) = self.world_map_region_tracker.take() {
             tracker.set_modifiers(self.encounter_rate_modifiers());
+            // Same per-step condition walk the field path runs: the kingdom
+            // MANs carry four story-state variants of the overworld region
+            // set, and only one is live.
+            tracker.select_group(|flag| self.system_flag_test(flag));
             let roll = tracker.on_step(wx, wz, || self.next_rng());
             self.world_map_region_tracker = Some(tracker);
             if let Some(roll) = roll {

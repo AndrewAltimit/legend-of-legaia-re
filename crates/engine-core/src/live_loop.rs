@@ -116,6 +116,18 @@ impl World {
     /// over the region AABBs, so it is cached rather than re-run per frame by
     /// a HUD.
     pub fn refresh_encounter_rollable(&mut self) {
+        // Resolve each installed region table's story-flag group first: which
+        // regions exist at all is a function of the live flag bank, so a
+        // rollability answer taken against a stale group is an answer about a
+        // different story state.
+        if let Some(mut t) = self.field_region_tracker.take() {
+            t.select_group(|flag| self.system_flag_test(flag));
+            self.field_region_tracker = Some(t);
+        }
+        if let Some(mut t) = self.world_map_region_tracker.take() {
+            t.select_group(|flag| self.system_flag_test(flag));
+            self.world_map_region_tracker = Some(t);
+        }
         self.scene_encounters_rollable = self.scene_can_roll_encounters();
     }
 
@@ -143,18 +155,20 @@ impl World {
     ///
     /// Answers the question in the same order the roll paths consult their
     /// tables: the overworld asks its region tracker, a field scene asks its
-    /// per-region tracker when one is routed (regions shadow in table order -
+    /// per-region tracker when one is routed (only the story-flag group the
+    /// condition walk selected counts, and regions shadow in group order -
     /// see [`crate::region_encounter::RegionEncounterTable::any_rollable`])
     /// and otherwise falls back to the aggregated mean-rate session. Either
     /// field path additionally needs the session installed, because the
     /// session owns the transition / grace bracketing a trigger goes through.
     ///
-    /// Several retail scenes legitimately answer `false` - notably `town01`,
-    /// the scene the binary boots into, whose rollable regions are all
-    /// shadowed by earlier rate-0 rows. That is scene data, and the port
-    /// keeps it; a host surfaces the answer so "I walked for a minute and
-    /// nothing happened" reads as the scene's design rather than as a broken
-    /// engine.
+    /// The answer is per (scene, story state), not per scene. Several retail
+    /// scenes legitimately answer `false` in the state you are in - notably
+    /// `town01`, the scene the binary boots into, whose default group is
+    /// entirely rate 0 (Rim Elm only fights back once its "under attack" flag
+    /// is set). That is scene data, and the port keeps it; a host surfaces the
+    /// answer so "I walked for a minute and nothing happened" reads as the
+    /// scene's design rather than as a broken engine.
     pub fn scene_can_roll_encounters(&self) -> bool {
         if matches!(self.mode, SceneMode::WorldMap) {
             return self

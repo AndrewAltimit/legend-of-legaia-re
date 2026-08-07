@@ -59,11 +59,19 @@ pub fn encounter_table_from_man(scene_label: &str, man_bytes: &[u8]) -> Option<E
         return None;
     }
 
-    // Aggregate per-formation weights from the region table.
+    // Aggregate per-formation weights from the region table - but only over
+    // the story-flag group the condition walk selects, because that is the
+    // only slice a roll can ever see. Averaging every variant's regions
+    // together mixes in rows from story states the player is not in (and the
+    // rate-0 placeholder rows those states use), which drags the mean rate
+    // toward zero. All-flags-clear here: this table is built at scene load
+    // and is the fallback path, not the position-routed one.
+    let (group_first, group_len) =
+        man_section::active_region_group(body, &es, |_| false).unwrap_or((0, 0));
     let mut weights = vec![0u32; es.formation_count as usize];
     let mut rate_sum: u32 = 0;
     let mut rate_n: u32 = 0;
-    for region in man_section::region_records(body, &es).flatten() {
+    for region in man_section::region_records_in(body, &es, group_first, group_len).flatten() {
         let base = region.formation_range_base as usize;
         let count = region.formation_range_count as usize;
         // Skip degenerate / out-of-bounds region ranges silently - the
@@ -204,9 +212,20 @@ mod tests {
     use crate::encounter_record::EncounterRecord;
 
     /// Hand-build a minimal MAN buffer with one section-0 encounter:
-    /// 2 formations, 1 region covering both. Mirrors the on-disc
-    /// header math (records partition + u24[0x28] section-0 offset).
+    /// 2 formations, 1 default-gated region covering both. Mirrors the
+    /// on-disc header math (records partition + u24[0x28] section-0 offset).
+    ///
+    /// The single `0xFFFF` condition is not padding: every retail scene ends
+    /// its condition list with one, and a section with *no* conditions is a
+    /// shape retail's roll exits on before it ever looks at a region.
     fn build_test_man() -> Vec<u8> {
+        build_man_with_conditions(&[(0xFFFF, 1)], &[[0, 0, 40, 40, 32, 0, 0, 2, 0, 0, 0, 0]])
+    }
+
+    /// Build a MAN whose section 0 carries `conditions` (flag id + region
+    /// count) over `regions` (raw 12-byte records), with the same two
+    /// formations `build_test_man` uses.
+    fn build_man_with_conditions(conditions: &[(u16, u16)], regions: &[[u8; 12]]) -> Vec<u8> {
         let mut buf = Vec::new();
         // Header (43 bytes total to RECORDS_BEGIN_OFFSET = 0x2B)
         buf.extend_from_slice(&[0u8; 0x2B]);
@@ -227,12 +246,17 @@ mod tests {
         section_0_body.extend_from_slice(&[0, 0, 0, 1, 4, 0, 0, 0]);
         // Formation 1: count=2, id=4,4
         section_0_body.extend_from_slice(&[0, 0, 0, 2, 4, 4, 0, 0]);
-        // condition_count = 0
-        section_0_body.push(0);
-        // region_count = 1
-        section_0_body.push(1);
-        // Region 0: aabb 0..40 x 0..40, rate 32, range [0..2)
-        section_0_body.extend_from_slice(&[0, 0, 40, 40, 32, 0, 0, 2, 0, 0, 0, 0]);
+        // Condition array: count byte then [flag_id: u16][region_count: u16].
+        section_0_body.push(conditions.len() as u8);
+        for (flag, n) in conditions {
+            section_0_body.extend_from_slice(&flag.to_le_bytes());
+            section_0_body.extend_from_slice(&n.to_le_bytes());
+        }
+        // Region array: count byte then the 12-byte records.
+        section_0_body.push(regions.len() as u8);
+        for r in regions {
+            section_0_body.extend_from_slice(r);
+        }
 
         // Section-0 length prefix + body.
         let s0_len = section_0_body.len() as u32;
@@ -268,6 +292,26 @@ mod tests {
         // Formation ids are row indices (NOT the synthetic-from-ids hash).
         assert_eq!(table.entries[0].formation_id, 0);
         assert_eq!(table.entries[1].formation_id, 1);
+    }
+
+    #[test]
+    fn mean_rate_ignores_regions_behind_a_story_flag() {
+        // The retail shape that made most scenes look encounter-free: a
+        // flag-gated leading group whose row is a whole-map rate-0
+        // placeholder, and the real regions in the trailing default group.
+        // The mean must come from the group a roll can actually see.
+        let man = build_man_with_conditions(
+            &[(0x0141, 1), (0xFFFF, 1)],
+            &[
+                [0, 0, 128, 128, 0, 0, 0, 2, 0, 0, 0, 0],
+                [0, 0, 40, 40, 32, 0, 0, 2, 0, 0, 0, 0],
+            ],
+        );
+        let table = encounter_table_from_man("gated", &man).expect("table built");
+        assert_eq!(
+            table.trigger_rate_q8, 32,
+            "the rate-0 row belongs to a story state the flag bank is not in"
+        );
     }
 
     #[test]

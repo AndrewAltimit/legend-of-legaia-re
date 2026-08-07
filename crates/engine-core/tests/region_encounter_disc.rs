@@ -118,7 +118,9 @@ fn region_table_builds_from_real_scene_man() {
         };
 
         let mut tracker = RegionEncounterTracker::new(table.clone());
-        tracker.set_setting(EncounterRateSetting::Normal);
+        // `High` (the `<< 2` value), not the retail default - this leg only
+        // needs the counter to drain inside the step budget.
+        tracker.set_setting(EncounterRateSetting::High);
         // Drive the counter negative so the next in-region step triggers.
         let mut fired = None;
         let mut seed = 0x1234_5678u32;
