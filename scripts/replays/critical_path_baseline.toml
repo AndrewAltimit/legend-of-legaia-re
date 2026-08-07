@@ -6,7 +6,7 @@
 # it may go up in a reviewed edit, and a drop fails the run.
 #
 # Rungs (see the test's module docs for the full table):
-#   1  town01 loads into free-roam Field
+#   1  town01 loads into free-roam Field, entry script running
 #   2  pad-walk town01 south gate -> map01
 #   3  pad-walk map01 across the continent (>= 24 tiles, >= 1 encounter fought)
 #   4  pad-walk map01 -> suimon -> map01 -> keikoku (Ravine)
@@ -142,11 +142,27 @@
 # trivially true - and a rung that only asks whether input is free now cannot
 # tell that apart from an opening that played and finished.
 #
-# The rung's pass condition is unchanged (the scene must load into Field with a
-# controllable player, which it does); what changed is that it now prints the
-# held-frame count, so the vacuity is on the row rather than in a reader's
-# assumption. Whether town01's opening SHOULD play under a record-0 entry is a
-# scene-entry question, not a ladder one.
+# Zero is the RIGHT number for this door, and that is now settled rather than
+# suspected. Rim Elm's opening is not a property of loading `town01`: it is the
+# scene's partition-2 record 3, whose header gate is "system flag 0x225 is
+# clear", and the engine installs it only on the New Game hand-off
+# (`World::entering_town01_opening` / `opening_chain_active`). Retail's own
+# `town01` P1[0] reads the same 0x225 and skips its first-visit arms once it is
+# set. This ladder walks a route, so it enters Rim Elm the way a returning
+# player does, and a returning player gets no opening. The opening's own ladder
+# is the browser `play_compose` rung 2, which enters through the hand-off and
+# asserts the timeline played for a positive number of frames.
+#
+# What the rung asserts is therefore two facts, not one: the scene loads into
+# Field with a controllable player, AND its scene-entry system script (`P1[0]`,
+# retail ctx 0xFB) is resident and executing. The second was added because
+# "input is free" is a statement about what is NOT happening - a scene that
+# loaded nothing at all satisfies it perfectly, which is how this rung came to
+# be read as evidence the opening played. The system script is what raises the
+# scene's story flags, cues its BGM, arms the arrival fade and drives the
+# per-frame camera-zone tests; if it stopped running, every one of those would
+# go with it while every rung below still passed. The held-frame count and the
+# script's PC are both printed on the row.
 #
 # ---------------------------------------------------------------------------
 # Controls
