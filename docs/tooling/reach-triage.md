@@ -358,6 +358,69 @@ loaders through them instead of through `ProtIndex` whole-entry reads. For
 `mode` it is a seat for `ModeDriver`, the port of the 28-entry mode table,
 which the engine's hosts currently bypass entirely.
 
+### The mode-driver seat, and why `scene_mode` cannot be the bridge
+
+"The hosts bypass the mode table" reads like architectural drift - the port
+reimplements retail's top-level dispatch spine and then runs its own. It is
+worth stating precisely what retail's spine is before proposing a seat,
+because the disassembly settles two of the three questions the framing raises.
+
+Retail's `main` (`FUN_80015E90`, `0x8001615C..0x8001620C`) is a mode-table
+loop and nothing else:
+
+```text
+  mode = gp[0x524];  if (mode < 0) exit
+  loop:
+    handler = *(u32*)(0x8007078C + mode*24 + 0x10);  handler()
+    if (gp[0x524] != gp[0x494]) { <mode-change edge> }
+    if (gp[0x524] >= 0) goto loop
+```
+
+So the mode dispatch is genuinely the outermost level, the per-frame handlers
+([`per_frame_stage`]) are the middle one, and the master frame driver
+`FUN_80016444` is what a handler calls. The port has the middle level's *shape*
+in `per_frame_stage` and the inner level wired to every host as `World::tick`
+(tagged `FUN_80016444`, with the split spelled out at its own site). The outer
+level is what has no seat.
+
+**The seat cannot be taken as the code stands, and the blocker is not the
+hosts.** `ModeDriver::tick`'s first act is `world.mode = current.scene_mode()`,
+and `GameMode::scene_mode` answers `SceneMode::Title` for every mode outside the
+five pairs it names - which includes `OtherInit` / `OtherMode`, the pair retail
+runs **every minigame** under (`other_warp_init_stage`: mode 24 stages the
+overlay by warp sub-id and hands the mode word to `0x19`). The port splits that
+one retail mode into five `SceneMode` variants because its minigames are
+resident rules engines rather than paged overlays, so the map is 28 -> 11 in one
+direction and *not a function* in the other: a host that derived `world.mode`
+from a `GameMode` would drop a running fishing / dance / casino / duel session
+into `Title` on the frame it took the seat. Muscle Dome is a second, unrelated
+case - its retail mode word is `0x14` (`BattleInit`), pinned by the disc-gated
+`dome_leg_ends_on_ko_real`, not `OtherMode` at all.
+
+What a seat therefore needs first is a bridge keyed on `(GameMode, warp sub-id)`
+rather than on `GameMode` alone - the port already models the sub-id
+(`minigame_entry::MinigameSubId`), so this is a missing join, not a missing
+fact. Until it exists, wiring `ModeDriver` into either host's frame loop is not
+a wire but a regression, and the four `mode.rs` rows stay HOST-DEAD for a
+reason that lives in `engine-core`, not in `engine-shell` or `web-viewer`.
+
+**The half worth wanting is the mode-change edge**, and `ModeDriver` does not
+model it either. Retail's `0x800161B8..0x80016200` runs a fixed sequence on
+every transition: the CD read-wait poll `FUN_8003DE7C`, an overlay wait
+`FUN_8003ED04`, the mode-transition routine `FUN_80016230`
+(`engine-render::mode_transition`), `FUN_80058104(0)`, the pad-report
+re-publish `FUN_8001822C` (`engine-core::input::set_pad_reports`), and clears of
+`gp+0x3D8` (the frame-begin-skip flag), `gp+0x538` and `gp+0x55C`. Two ports on
+that edge are themselves disclosed inert, and the engine's scene transitions
+perform none of it. That is a self-contained wiring target with no lossy-map
+prerequisite, and it is the one a host could take without the bridge above.
+
+The frame-begin skip is the third piece and it is inert from the other end:
+`World::frame_begin_skip` is read only by `ModeDriver::tick` and written by
+nothing outside `mode.rs`'s tests, so the "a skipped frame runs no frame-end
+pass" law `per_frame_stage` documents has neither a producer nor a consumer on
+any host.
+
 ### HOST-DEAD, disclosed
 
 Same verdict, already stated in the source. No further disclosure work; they are
@@ -398,19 +461,31 @@ a game state no ladder puts the world in.
 | `save_select.rs` (card directory) | 3 | `801e1208` `801e3af0` `801e3ba0` | browser `web-viewer::cards` |
 | `dance.rs` (sting + clip gate) | 2 | `801d3d78` `801d4098` | browser dance page |
 | `pause_screens.rs` / `save_select.rs` (panel modes) | 2 | `801d6a54` `801e3f74` | both rendering hosts |
-| `shop.rs` (panel kernel remainder) | 1 | `801d5510` | browser play page only - **not** the native window; see below |
+| `shop.rs` (panel kernel remainder) | 1 | `801d5510` | both rendering hosts, at the buy-quantity phase; see below |
 | `baka_fighter.rs` (widget quad) | 1 | `801d5ed0` | browser `minigames_baka`, deliberately one-host |
 | `dialog.rs` | 1 | `80038050` | native keyboard handler, behind a live option-picker conversation |
 | `cutscene.rs` | 1 | `801cea3c` | the `play` subcommand's post-FMV hand-off |
 
-`801d5510`'s host column was wrong and is corrected here, because the wrong
-one named a fixture that cannot exist. `shop_buy_quantity_panel` has exactly
-one caller in the workspace - `web-viewer::play_shop::buy_quantity_panel_draws`
-- and the native window's descriptor draw path (`window/shop_windows.rs`
-paints windows 32 / 33 / 34 / 37) has no buy-side block at all. So no native
-ladder can reach it however it drives the shop; what would reach it is the
-composition ladder driven to the buy-quantity phase, and what would close the
-host gap is a native window-35 painter.
+`801d5510`'s host column has now been wrong twice, and the second correction
+is a wire rather than a re-reading. It first named a fixture that could not
+exist: `shop_buy_quantity_panel` had exactly one caller in the workspace -
+`web-viewer::play_shop::buy_quantity_panel_draws` - while the native window's
+descriptor draw path painted windows 32 / 33 / 34 / 37 and carried no buy-side
+block at all, so no native ladder could reach it however it drove the shop.
+The missing native window-35 painter that column called for is written, so the
+kernel is a both-hosts panel now and the row is a reach gap rather than a host
+gap: what enters it is either host driven to the buy-quantity phase.
+
+The gap was player-visible while it lasted, which is the part worth keeping.
+Window 35 carries the held count, the unit price and the running total, so a
+native-window buyer sized a stack with none of the three numbers the decision
+needs on screen - and every gate was green throughout, because a panel only one
+host draws is invisible to a builder-reachability check when the kernel it
+composes lives in `engine-core` rather than in `engine-ui`. Window 35 is also
+the shop's only pens-returning renderer (no `MenuWindowPainter` variant
+resolves `FUN_801D5510`), so both hosts filter the id on the descriptor's own
+`renderer_va`; that constant is pinned against the disc's table by
+`crates/engine-shell/tests/menu_window_dispatch_real.rs`.
 
 The two remaining native rows both need a game state rather than an entry
 point. `80038050` is the inline-dialogue option picker, reachable from the
@@ -485,8 +560,26 @@ default no-op body, and **neither** rendering host overrides it -
 not this one, and the browser runtime's director matches. So sub-op 8 computes
 retail's level (`FUN_80019898`'s `(raw << 15) >> 16`) and every host discards
 it. The primitive it would drive already exists
-(`legaia_engine_audio::Sequencer::set_master_vol`), so this is a two-host wire,
-not a port.
+(`legaia_engine_audio::Sequencer::set_master_vol`).
+
+**That two-host wire is declined with proof**, and the proof is on the half the
+gap reading did not look at: the level. `FUN_80019898`'s source global
+`DAT_8007B6EC` has exactly two writers anywhere on the disc - `FUN_8001DCF8`
+(`0x8001DEC4`) and `FUN_8001FFA4` (`0x80020004`), the two cold-reset leaves that
+clear the `0x80084140` game-state block - and both store `li v0,-0x1`. Nothing
+else writes it, so it holds `-1` for a whole retail session, and
+`bgm_reattach_volume(-1)` is `-1`. Its only other reader, the load-settle stage
+`FUN_800243F0` (`0x80024804`, `sra a0,a0,0x1`), takes the same halving of the
+same constant. So sub-op 8 can never change the volume relative to what the
+track's own load already applied: a host that implemented `reattach_volume`
+would re-apply one compile-time constant, which is unobservable by
+construction. Same shape as `remap_pad_direction` below - wiring it would be a
+provable identity, which is worse than the gap.
+
+What would make the channel real is the missing *writer*: the engine's
+`SceneHost::bgm_volume_raw` likewise has no production writer either, so both
+sides of the level are constants today. Port a writer first, then the hook has
+something to carry.
 
 Reachable only from a game state the ladders do not seed. The fix is a seeded
 save or a longer spine, not a pad stream.

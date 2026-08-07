@@ -14,6 +14,7 @@
 //! | 33 (`0x21`) | `FUN_801DCF14` | the vendor plate - the scene MAN shop record's trailing name |
 //! | 32 (`0x20`) | `FUN_801DCF84` | the purse - `World::money` (retail `_DAT_8008459C`) |
 //! | 34 (`0x22`) | `FUN_801D4A80` | the hovered item's name / owned count / description |
+//! | 35 (`0x23`) | `FUN_801D5510` | the buy quantity, held count, unit price and running total |
 //! | 37 (`0x25`) | `FUN_801D5944` | the sell quantity, held count and halved gold total |
 //!
 //! The remaining two are the Buy / Sell / Quit picker (id 42, `FUN_801D4868`,
@@ -24,6 +25,15 @@
 //! [`legaia_engine_render::painter_at`], so an id whose descriptor names a
 //! different renderer is skipped rather than mis-drawn: the id is the lookup
 //! key and the renderer is the authority.
+//!
+//! Window 35 is the exception, and it is an exception about the *port*, not
+//! about the table: `FUN_801D5510` is ported as a pens-returning kernel rather
+//! than a draw-list builder, so no `MenuWindowPainter` variant names it and
+//! `painter_at` cannot resolve it. The same authority rule still holds - the id
+//! is filtered on the descriptor's own `renderer_va`
+//! ([`RENDERER_BUY_QUANTITY`]), which
+//! `crates/engine-shell/tests/menu_window_dispatch_real.rs` pins against the
+//! disc's table.
 //!
 //! One further sub-screen rides over the parked buy list:
 //! [`PlayWindowApp::recipient_window_draws`] paints the equipment-buy

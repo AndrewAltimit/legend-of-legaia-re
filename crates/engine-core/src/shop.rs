@@ -1012,11 +1012,13 @@ pub struct BuyQuantityPanel {
 ///
 /// This is **window 35** of the menu-overlay descriptor table (rect
 /// `(138, 100, 168, 50)`; the record at PROT 0899 file `0x15F20 + 35*0x10`
-/// carries `renderer_va = 0x801D5510`). The browser play page lays the
-/// pens out during the buy-quantity phase
-/// (`web-viewer::play_shop::buy_quantity_panel_draws`); the native
-/// window's descriptor draw path (`window/shop_windows.rs`, windows
-/// 32 / 33 / 34 / 37) still lacks the buy-side block.
+/// carries `renderer_va = 0x801D5510`). Both rendering hosts lay the pens
+/// out during the buy-quantity phase - the browser page in
+/// `web-viewer::play_shop::buy_quantity_panel_draws`, the native window in
+/// `bin/legaia-engine/window/shop_windows.rs`. It is the shop's only
+/// pens-returning renderer, so neither host can reach it through
+/// `painter_at`; both filter the window id on the descriptor's own
+/// `renderer_va` instead.
 pub fn shop_buy_quantity_panel(
     window: (i16, i16),
     held: Option<u8>,
