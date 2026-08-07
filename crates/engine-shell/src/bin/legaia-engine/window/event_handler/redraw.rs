@@ -48,6 +48,14 @@ impl PlayWindowApp {
                 out.set_sequencer_paused(false);
             }
             self.session.host.world.finish_cutscene();
+            // Retail does NOT resume the trigger scene after a mid-game FMV -
+            // the master dispatch writes a next-scene CDNAME label
+            // (`town01` -> fmv 1 -> `town0b`). The shared kernel performs the
+            // transfer; without it the window put the player back where the
+            // movie started.
+            if let Some(outcome) = self.session.host.apply_pending_fmv_handoff() {
+                log::info!("cutscene: {outcome}");
+            }
             self.cutscene = None;
         }
         let run_ticks = if self.cutscene.is_some() { 0 } else { ticks };
@@ -461,6 +469,15 @@ impl PlayWindowApp {
         // trigger as a no-op (mirrors the headless `play` loop).
         if self.cutscene.is_none() {
             self.try_start_windowed_cutscene();
+            // Its two skip arms (cut slot, undecodable STR) call
+            // `finish_cutscene` themselves, and retail transfers control
+            // whether or not the movie played - so the hand-off has to drain
+            // here too. Safe beside the drain at the top of this handler:
+            // both go through `World::take_finished_fmv`, so whichever runs
+            // first is the only one that transfers.
+            if let Some(outcome) = self.session.host.apply_pending_fmv_handoff() {
+                log::info!("cutscene: {outcome}");
+            }
         }
         // While a cutscene plays, the window shows the video and the
         // scene render is skipped entirely.

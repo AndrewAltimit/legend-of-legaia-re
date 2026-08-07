@@ -121,7 +121,16 @@ inside this function, not a sibling entry point).
 Both `switch`es are ported in `legaia_engine_core::cutscene`: `fmv_post_play_handoff` returns the
 control transfer as an `FmvHandoff` (field scene + spawn word / resume-in-place / card init /
 mode 0), and `fmv_bitstream`, `fmv_is_skippable` and `fmv_clear_rects` carry the three pre-play
-decisions the dispatch makes from the same `fmv_id`. Note the four pre-play `ClearImage` rects
+decisions the dispatch makes from the same `fmv_id`.
+
+**Performing the transfer is one kernel, not one per host.** `World::finish_cutscene` ends
+playback and parks the finished id; `SceneHost::apply_pending_fmv_handoff` reads
+`fmv_post_play_handoff` and enters the named scene, returning an `FmvHandoffOutcome` the host only
+has to format. The source is a drained edge (`World::take_finished_fmv`), which is what lets every
+host - and the windowed host twice in one frame - poll it without transferring control twice.
+Skipping the *movie* is not skipping the *hand-off*: a cut slot, an undecodable STR and the
+browser page's no-MDEC auto-skip all still transfer, because retail's dispatch writes the scene
+globals whether or not the picture played. Note the four pre-play `ClearImage` rects
 bracket the tops and bottoms of **both** decode buffers rather than forming a letterbox - the
 middle pair straddles the seam between the two frame rects and overlaps by four scanlines.
 

@@ -652,8 +652,23 @@ impl LegaiaRuntime {
         // an FMV the field VM triggers (SceneMode::Cutscene + active_fmv)
         // would otherwise park the world forever. Finish it immediately -
         // the 3D cutscene / field resumes, minus the movie.
+        let mut fmv_handoff_scene = String::new();
         if host.world.mode == SceneMode::Cutscene && host.world.active_fmv.is_some() {
             host.world.finish_cutscene();
+            // Skipping the *movie* is not skipping the *hand-off*. Retail's
+            // master dispatch writes a next-scene label after playback
+            // (`town01` -> fmv 1 -> `town0b`), so auto-skipping without this
+            // left the page in the trigger scene - a different place from
+            // where the other two hosts land. Same shared kernel, same
+            // one-shot `World::take_finished_fmv` edge.
+            if let Some(outcome) = host.apply_pending_fmv_handoff() {
+                if let legaia_engine_core::scene::FmvHandoffOutcome::Entered { scene, .. } =
+                    &outcome
+                {
+                    fmv_handoff_scene = (*scene).to_string();
+                }
+                web_sys::console::log_1(&format!("cutscene: {outcome}").into());
+            }
         }
         // Advance the world's play clock off the page's wall clock, the same
         // delta-against-a-high-water-mark the native window runs. The `host`
@@ -700,6 +715,16 @@ impl LegaiaRuntime {
         // dead here (not used past `finish_cutscene`), so this can re-borrow.
         #[cfg(target_arch = "wasm32")]
         self.route_bgm_wasm();
+        // The FMV hand-off loaded a scene without going through the field
+        // VM's transition op, so it produces no `SceneEntered` event - the
+        // page still has to rebuild, or it draws the old scene's meshes over
+        // the new world.
+        if !fmv_handoff_scene.is_empty() {
+            self.rebuild_render_state()?;
+            #[cfg(target_arch = "wasm32")]
+            self.stage_scene_bgm_bank();
+            return Ok(fmv_handoff_scene);
+        }
         if let SceneTickEvent::SceneEntered { name } = event {
             // `town01` keeps its establishing-sweep timeline: the page now
             // draws the name-entry overlay its pinned op-0x49 opens
