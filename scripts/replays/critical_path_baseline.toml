@@ -117,6 +117,18 @@
 # starts fighting in the Ravine on its own. `LEGAIA_CPR_FIGHT=1` prints the
 # region set at the rung's start.
 #
+# It is not one scene. Decoding every scene's region table over the corpus
+# (`region_encounter_table_from_man` across the 99 CDNAME scenes that carry a
+# MAN) gives 26 rollable and 73 not, and 67 of the 99 lead with that same
+# whole-map rate-0 row. Because region lookup stops at the first *containing*
+# region, that row silences everything behind it - and behind it, in 30 of
+# those scenes, sits at least one region with a real rate and a real formation
+# range (`deroa` has 17 regions, `chitei2` 19, `conc2` / `conc3` 10 each). The
+# other 34 decode to that row and nothing else, `keikoku` among them. Three
+# readings fit: the parser emits a spurious leading record, retail's walk does
+# not shadow the way the port models it, or the AABB decode is wrong. All
+# three are `legaia_asset::man_section::region_records`, not this ladder.
+#
 # ---------------------------------------------------------------------------
 # Controls
 # ---------------------------------------------------------------------------
