@@ -54,10 +54,18 @@ const WIN_VENDOR_PLATE: usize = 33;
 const WIN_PURSE: usize = 32;
 /// Item info (`0x22`): name + owned count + description.
 const WIN_ITEM_INFO: usize = 34;
+/// Buy quantity (`0x23`): held count, prompt, qty x unit = total.
+const WIN_BUY_QUANTITY: usize = 35;
 /// Sell quantity (`0x25`): quantity, held count, halved total.
 const WIN_SELL_QUANTITY: usize = 37;
 /// Point Card toast (`0x1F`): heading, 8-digit bank, unit label, cursor.
 const WIN_POINT_CARD: usize = 31;
+/// Renderer VA of window 35 (`FUN_801D5510`). Its port
+/// (`engine_core::shop::shop_buy_quantity_panel`) returns pens rather than a
+/// draw list, so `painter_at` deliberately does not resolve it - the id is
+/// checked against the descriptor's own renderer word here instead, which is
+/// the same authority-over-id rule the `painter_at` windows above use.
+const RENDERER_BUY_QUANTITY: u32 = 0x801D_5510;
 
 impl PlayWindowApp {
     /// The live shop's vendor name.
@@ -230,6 +238,39 @@ impl PlayWindowApp {
             if let Some(cur) = cur {
                 out.extend(self.painter_cursor_stand_in(cur));
             }
+        }
+
+        // Window 35 - the buy-quantity prompt panel, while the buy flow is
+        // sizing a stack. The engine's interactive 1..=9 list stays the
+        // control; this is the retail readout beside it, keyed to the hovered
+        // quantity row. Twin of the browser page's arm in
+        // `web-viewer::play_shop`; without it a native-window buyer sizes a
+        // stack with no held count, no unit price and no running total on
+        // screen.
+        if matches!(state, Some(MenuState::ShopQuantity))
+            && shop.pending_is_buying
+            && let Some(id) = staged
+            && let Some(d) = table
+                .window(WIN_BUY_QUANTITY)
+                .filter(|d| d.renderer_va == RENDERER_BUY_QUANTITY)
+        {
+            let rect = legaia_engine_render::painter_rect(d);
+            // The unit price is the merchant's, not the item record's: a buy
+            // is priced off the stock row the player is standing on.
+            let unit_price = shop
+                .inventory
+                .find(id)
+                .map(|i| u16::try_from(i.price).unwrap_or(u16::MAX))
+                .unwrap_or(0);
+            let held = bag.iter().find(|(i, _)| *i == id).map(|(_, q)| *q);
+            let quantity = (cursor as u8).saturating_add(1);
+            let panel = legaia_engine_core::shop::shop_buy_quantity_panel(
+                (rect.x as i16, rect.y as i16),
+                held,
+                quantity,
+                unit_price,
+            );
+            out.extend(self.buy_quantity_panel_draws(&panel));
         }
 
         // Window 31 - the Point Card toast. Retail's buy commit hands the
@@ -447,6 +488,83 @@ impl PlayWindowApp {
         text.item_desc(id).unwrap_or_default().to_string()
     }
 
+    /// Render a [`legaia_engine_core::shop::BuyQuantityPanel`]'s pens to text
+    /// draws - the window-35 content (`FUN_801D5510`), whose port returns
+    /// field pens rather than a draw list.
+    ///
+    /// Line-for-line twin of `web-viewer::play_shop::buy_quantity_panel_draws`.
+    /// The four strings are the paired constants below; the pens, the digit
+    /// widths and the right-pack are all the shared kernel's, so the two hosts
+    /// cannot drift on layout at all.
+    fn buy_quantity_panel_draws(
+        &self,
+        panel: &legaia_engine_core::shop::BuyQuantityPanel,
+    ) -> Vec<TextDraw> {
+        let mut out = Vec::new();
+        let mut text = |s: &str, pen: (i16, i16), ink: [f32; 4]| {
+            out.extend(legaia_engine_render::text_draws_for(
+                &self.font.layout_ascii(s),
+                (i32::from(pen.0), i32::from(pen.1)),
+                ink,
+            ));
+        };
+        match panel.have {
+            Some(count) => {
+                text(
+                    &format!("{count:2}"),
+                    panel.have_count_pen,
+                    legaia_engine_render::MENU_TEXT_WHITE,
+                );
+                text(
+                    BUY_QUANTITY_HELD_TAIL,
+                    panel.have_tail_pen,
+                    legaia_engine_render::MENU_TEXT_WHITE,
+                );
+            }
+            None => text(
+                BUY_QUANTITY_NONE_HELD,
+                panel.have_tail_pen,
+                legaia_engine_render::MENU_TEXT_WHITE,
+            ),
+        }
+        text(
+            BUY_QUANTITY_PROMPT,
+            panel.prompt_pen,
+            legaia_engine_render::MENU_TEXT_WHITE,
+        );
+        let (qty, qty_pen) = panel.quantity;
+        text(
+            &format!("{qty:2}"),
+            qty_pen,
+            legaia_engine_render::MENU_TEXT_WHITE,
+        );
+        let (unit, unit_pen) = panel.unit;
+        text(
+            &format!("x{unit}"),
+            unit_pen,
+            legaia_engine_render::MENU_TEXT_WHITE,
+        );
+        let (total, digits, total_pen) = panel.total;
+        // Right-pack the running total into its digit field, retail's
+        // price-magnitude width law (`shop_total_digit_field`).
+        let s = total.to_string();
+        let cells = i32::from(digits).max(s.len() as i32);
+        text(
+            &s,
+            (
+                total_pen.0 + ((cells - s.len() as i32) * 8) as i16,
+                total_pen.1,
+            ),
+            legaia_engine_render::MENU_TEXT_GOLD,
+        );
+        out.extend(legaia_engine_render::text_draws_for(
+            &self.font.layout_ascii(">"),
+            (i32::from(panel.cursor_pen.0), i32::from(panel.cursor_pen.1)),
+            legaia_engine_render::MENU_TEXT_GOLD,
+        ));
+        out
+    }
+
     /// ASCII stand-in for a painter's pictogram request until the UI-icon
     /// atlas page carrying the currency glyphs is uploaded.
     fn painter_pictogram_stand_in(
@@ -490,6 +608,16 @@ impl PlayWindowApp {
 /// engine-authored line in the same slot so the translation layer owns the
 /// text.
 const SELL_QUANTITY_HEADING: &str = "How many?";
+
+/// Window 35's three engine-authored lines, paired with the browser page's
+/// constants of the same names. Retail's own strings are menu-overlay rodata
+/// literals; staging them here keeps the translation layer owning the text.
+const BUY_QUANTITY_PROMPT: &str = "How many will you buy?";
+/// The label after the two-digit held count.
+const BUY_QUANTITY_HELD_TAIL: &str = "held";
+/// What window 35 prints instead when the bag scan returns retail's `0x100`
+/// "not held" sentinel.
+const BUY_QUANTITY_NONE_HELD: &str = "None held";
 
 // Window 31's heading + unit label are `engine-ui`'s
 // `POINT_CARD_HEADING` / `POINT_CARD_UNIT_LABEL` (imported above): both hosts

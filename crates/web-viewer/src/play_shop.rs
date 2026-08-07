@@ -128,6 +128,15 @@ const RENDERER_SELL_DETAIL: u32 = 0x801D_5AE8;
 /// menu-overlay rodata literal (`0x801CEC38`); both hosts stage the same
 /// engine-authored line so the translation layer owns the text.
 const SELL_QUANTITY_HEADING: &str = "How many?";
+/// Window 35's three engine-authored lines, paired with the native window's
+/// constants of the same names. Retail's own strings are menu-overlay rodata
+/// literals; staging them here keeps the translation layer owning the text.
+const BUY_QUANTITY_PROMPT: &str = "How many will you buy?";
+/// The label after the two-digit held count.
+const BUY_QUANTITY_HELD_TAIL: &str = "held";
+/// What window 35 prints instead when the bag scan returns retail's `0x100`
+/// "not held" sentinel.
+const BUY_QUANTITY_NONE_HELD: &str = "None held";
 /// Title of the seru-trade offer list. Engine-authored (the feature is the
 /// patcher's, so retail has no string for it); matches the native window's.
 const TRADE_LIST_TITLE: &str = "SHOP - TRADE SERU";
@@ -679,18 +688,23 @@ impl LegaiaRuntime {
                     panel.have_count_pen,
                     ui::MENU_TEXT_WHITE,
                 );
-                text(&mut out, "held", panel.have_tail_pen, ui::MENU_TEXT_WHITE);
+                text(
+                    &mut out,
+                    BUY_QUANTITY_HELD_TAIL,
+                    panel.have_tail_pen,
+                    ui::MENU_TEXT_WHITE,
+                );
             }
             None => text(
                 &mut out,
-                "None held",
+                BUY_QUANTITY_NONE_HELD,
                 panel.have_tail_pen,
                 ui::MENU_TEXT_WHITE,
             ),
         }
         text(
             &mut out,
-            "How many will you buy?",
+            BUY_QUANTITY_PROMPT,
             panel.prompt_pen,
             ui::MENU_TEXT_WHITE,
         );
