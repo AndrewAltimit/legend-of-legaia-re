@@ -940,6 +940,17 @@ pub enum ModeInitBare {
 // and mode 16 jumps at a VA that is an entry point in no image. Mode 20 is
 // the row a wiring pass could reach, and the port enters battle through
 // `SceneMode::Battle` rather than through the mode table.
+//
+// The `(mode, warp sub-id)` bridge ([`GameMode::scene_mode_with_warp`]) does
+// **not** unblock these. It closes the mode-24 / 25 ambiguity, which is about
+// which SceneMode a running mode maps to; the INIT column's blocker is that
+// nothing drives the mode word at all. The legitimate host is a production
+// owner of [`ModeDriver`] - a host that advances `_DAT_8007B83C`'s port and
+// dispatches the INIT column - which today would mean `engine-shell`'s
+// `BootSession::tick` handing its frame sequencing to the driver instead of
+// calling `SceneHost::tick` directly. Wiring these three rows any other way
+// means inventing a caller, and a caller invented to flip a row is worse than
+// this note.
 // PORT: FUN_8002611c (mode-4 MONSTER TEST INIT)
 // PORT: FUN_8002612c (mode-16 READ INIT)
 // PORT: FUN_800565d8 (mode-20 BATTLE INIT)
