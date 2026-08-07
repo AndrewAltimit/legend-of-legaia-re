@@ -387,6 +387,27 @@ CANONICAL_LADDERS = [
     ("boot_overlay_disc", "legaia-asset"),
     ("cdname_retail_parse_disc", "legaia-prot"),
     ("w2c_card_inventory_ladder", "legaia-save"),
+    # --- lane W2B ---
+    # The two remaining NO-LADDER rows whose blocker was scene content.
+    #
+    # `w2b_dialog_picker_ladder` drives a real multi-choice conversation (the
+    # `koin4` merchant's two-price offer) through the session's field-interact
+    # path into `OwnedDialogPanel::confirm_menu` (`80038050`) - the native
+    # keyboard handler's own contract, previously reached by no ladder because
+    # a menu needs a picker-bearing NPC record, not a harness entry point.
+    #
+    # `w2b_fmv_handoff_ladder` executes each of the eight trigger scenes' own
+    # `4C E2` op through the session field VM (record bytes sliced at the op -
+    # the surrounding story choreography spins on actor-motion waits no
+    # headless world satisfies; see the ladder's module doc) and runs the
+    # post-play hand-off map (`fmv_post_play_handoff`, `801cea3c`) to the
+    # hand-off scene, completing one full Field -> Cutscene -> hand-off-scene
+    # transfer.
+    #
+    # Both are disc-gated and skip-pass without `LEGAIA_DISC_BIN`; export both
+    # WITHOUT `--release` (see "a release export loses executed code" above).
+    ("w2b_dialog_picker_ladder", "legaia-engine-core"),
+    ("w2b_fmv_handoff_ladder", "legaia-engine-core"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
