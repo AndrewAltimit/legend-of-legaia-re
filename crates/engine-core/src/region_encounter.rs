@@ -104,19 +104,29 @@ impl EncounterRegion {
 }
 
 /// User encounter-rate setting (`_DAT_8007B5F8`; the world-map debug `ENCOUNT`
-/// row cycles it). The numeric value is the retail global; [`Self::scale`]
-/// ports the exact per-setting arithmetic.
+/// row cycles it `0 -> 1 -> 2 -> 3 -> 0`). The numeric value is the retail
+/// global; [`Self::scale`] ports the exact per-setting arithmetic.
+///
+/// The variants are named for what each value *does*, which is not the order
+/// a reader expects. `1` is the plain pass-through, and it is the value three
+/// independent retail save states carry - so `1`, not `2`, is the rate a
+/// retail playthrough runs at. `2` quadruples it and `3` quarters it. The
+/// only writer in the static corpus is the debug menu's `ENCOUNT` row, which
+/// cycles the byte; the boot value comes from outside that corpus and the
+/// captures are what pin it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum EncounterRateSetting {
-    /// `0` - encounters off.
+    /// `0` - encounters off. Retail does not merely zero the increment: the
+    /// entity SM's state-0 arm tests this byte and skips the call to the roll
+    /// entirely (`FUN_801DA51C` `0x801da59c..0x801da5b0`).
     Off,
-    /// `1` - rate increment used as-is.
-    Low,
-    /// `2` - rate increment `<< 2` (the shipped default).
+    /// `1` - rate increment used as-is. The retail runtime value.
     #[default]
     Normal,
-    /// `3` - rate increment `>> 2`.
+    /// `2` - rate increment `<< 2` (four times as many encounters).
     High,
+    /// `3` - rate increment `>> 2` (a quarter as many).
+    Low,
 }
 
 impl EncounterRateSetting {
@@ -124,33 +134,35 @@ impl EncounterRateSetting {
     pub fn as_u8(self) -> u8 {
         match self {
             Self::Off => 0,
-            Self::Low => 1,
-            Self::Normal => 2,
-            Self::High => 3,
+            Self::Normal => 1,
+            Self::High => 2,
+            Self::Low => 3,
         }
     }
 
-    /// Build from the retail global value; out-of-range falls back to `Normal`.
+    /// Build from the retail global value; out-of-range falls back to
+    /// [`Self::Normal`].
     pub fn from_u8(v: u8) -> Self {
         match v {
             0 => Self::Off,
-            1 => Self::Low,
-            3 => Self::High,
+            2 => Self::High,
+            3 => Self::Low,
             _ => Self::Normal,
         }
     }
 
     /// Scale a region's per-step rate increment, porting
-    /// `0x801da198..0x801da1b4`: setting `2` shifts left 2 (`× 4`), setting `3`
-    /// shifts right 2 (`÷ 4`), settings `0`/`1` leave it unchanged. `Off`
-    /// zeroes the increment so the counter never advances.
+    /// `0x801da198..0x801da1b4`: the byte is compared against `2` (shift left
+    /// 2) and against `3` (shift right 2), and every other value - `1`
+    /// included - leaves the increment alone. `Off` zeroes it so the counter
+    /// never advances, standing in for retail's skip of the whole roll.
     pub fn scale(self, increment: u8) -> u32 {
         let inc = increment as u32;
         match self {
             Self::Off => 0,
-            Self::Low => inc,
-            Self::Normal => inc << 2,
-            Self::High => inc >> 2,
+            Self::Normal => inc,
+            Self::High => inc << 2,
+            Self::Low => inc >> 2,
         }
     }
 }
@@ -726,17 +738,21 @@ mod tests {
     #[test]
     fn rate_setting_scale_matches_disasm() {
         assert_eq!(EncounterRateSetting::Off.scale(10), 0);
-        assert_eq!(EncounterRateSetting::Low.scale(10), 10);
-        assert_eq!(EncounterRateSetting::Normal.scale(10), 40); // << 2
-        assert_eq!(EncounterRateSetting::High.scale(10), 2); // >> 2
+        assert_eq!(EncounterRateSetting::Normal.scale(10), 10); // as-is
+        assert_eq!(EncounterRateSetting::High.scale(10), 40); // << 2
+        assert_eq!(EncounterRateSetting::Low.scale(10), 2); // >> 2
         assert_eq!(
-            EncounterRateSetting::from_u8(2),
+            EncounterRateSetting::from_u8(1),
             EncounterRateSetting::Normal
         );
+        assert_eq!(EncounterRateSetting::from_u8(2), EncounterRateSetting::High);
         assert_eq!(
             EncounterRateSetting::from_u8(99),
             EncounterRateSetting::Normal
         );
+        // Three independent retail save states carry `1`, so a fresh tracker
+        // must run at the pass-through rate and not the `<< 2` one.
+        assert_eq!(EncounterRateSetting::default().as_u8(), 1);
     }
 
     #[test]
@@ -762,7 +778,7 @@ mod tests {
         // One region covering tile (0,0), big rate so it depletes fast.
         t.regions.push(region(0, 0, 1, 1, 255, 5, 3));
         let mut tracker = RegionEncounterTracker::new(t);
-        tracker.set_setting(EncounterRateSetting::Normal); // 255<<2 = 1020/step
+        tracker.set_setting(EncounterRateSetting::High); // 255<<2 = 1020/step
         // Counter starts at 0x3ce (974); 974 - 1020 <= 0 -> first step triggers.
         let mut seq = [7u32, 100, 50].into_iter().cycle();
         let roll = tracker.on_step(0, 0, || seq.next().unwrap());
@@ -789,7 +805,7 @@ mod tests {
         let mut t = RegionEncounterTable::new("s");
         t.regions.push(region(0, 0, 8, 8, 255, 0, 4));
         let mut tracker = RegionEncounterTracker::new(t);
-        tracker.set_setting(EncounterRateSetting::Normal);
+        tracker.set_setting(EncounterRateSetting::High);
         tracker.suppress();
         for _ in 0..10_000 {
             assert!(tracker.on_step(64, 64, || 0).is_none());
@@ -812,7 +828,7 @@ mod tests {
         // base 10, count 4 -> ids 10..14. Big rate so every step triggers.
         t.regions.push(region(0, 0, 1, 1, 255, 10, 4));
         let mut tracker = RegionEncounterTracker::new(t);
-        tracker.set_setting(EncounterRateSetting::Normal);
+        tracker.set_setting(EncounterRateSetting::High);
         // Force pick == 0 every time -> base 10. The reset draws don't matter
         // for the pick; keep them tiny so the counter stays <= 0 next step.
         // First trigger: 10. Second: pick 0 -> 10 == last -> bump to 11.

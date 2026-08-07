@@ -471,7 +471,14 @@ story state.
 Two corpus-wide invariants hold across every retail scene bundle whose
 MAN decodes: the group lengths **tile the region array exactly**
 (`sum(region_count) == region_count byte`), and the condition list ends
-with exactly one `0xFFFF` record and contains no other. A group commonly
+with exactly one `0xFFFF` record and contains no other. Runtime states
+agree with the disc bytes: reading `_DAT_801C6EA4`'s three pointers out
+of a mid-playthrough main-RAM image reproduces the carve
+(`ctrl[+0x24] - ctrl[+0x20] == 1 + formation_count * formation_stride`,
+and likewise for `+0x28`), and walking the live conditions against the
+`0x80085758` flag bank selects the group this page's model predicts -
+in Drake Castle, the `0x0142`-gated leading group is skipped and the
+14-region unconditional tail is live. A group commonly
 ends with a whole-map `rate 0` catch-all (the "outside every named
 region, roll nothing" row), and a *gated* group is frequently nothing but
 such a row - which is how a scene is made silent in one story state and
@@ -480,8 +487,7 @@ stops on its placeholder row, which is what makes most scenes look
 encounter-free.
 
 The rate is then scaled by the user-config setting at `_DAT_8007B5F8`
-(`0` off, `1` low, `2` normal → `<< 2`, `3` high → `>> 2`; the world-map
-debug menu `ENCOUNT` row cycles this byte) and by four sequential
+and by four sequential
 accessory / status modifiers whose magnitudes are statically pinned in
 the same dump (`overlay_world_map_801d9e1c.txt`, `0x801da1b8..0x801da200`):
 
@@ -491,6 +497,25 @@ the same dump (`overlay_world_map_801d9e1c.txt`, `0x801da1b8..0x801da200`):
 | `FUN_800431D0(0x3C)` | Low Encounter passive (Good Luck Bell / Evil Talisman) | rate `>> 1` |
 | `FUN_8003CE64(0x1D)` | system flag `0x1D` (the `_DAT_80085758` bank) | rate `<< 1` |
 | `FUN_8003CE64(0x1E)` | system flag `0x1E` | rate `>> 1` |
+
+#### The `_DAT_8007B5F8` setting byte
+
+The scale arm (`0x801da198..0x801da1b4`) compares the byte against `2` and
+against `3` and does nothing otherwise, so the four values are:
+
+| Value | Effect |
+|---|---|
+| `0` | No roll at all. `FUN_801DA51C`'s state-0 arm tests the byte at `0x801da5a8` and skips the call to `FUN_801D9E1C`, so this is off rather than "rate 0". |
+| `1` | Rate increment used **as-is**. Retail save states carry this value. |
+| `2` | Rate increment `<< 2` - four times as many encounters. |
+| `3` | Rate increment `>> 2` - a quarter as many. |
+
+The only writer in the static corpus is the world-map debug menu's `ENCOUNT`
+row (`FUN_801EA9B0` case 4), which cycles the byte `0 → 1 → 2 → 3 → 0`; the
+boot value is set from outside that corpus, and the runtime captures are what
+pin it. The engine mirrors the numbering in
+`region_encounter::EncounterRateSetting`, whose `Default` is the `1`
+pass-through.
 
 The scaled rate is subtracted from the step counter at `_DAT_8007B5FC`.
 Engine port: `region_encounter::EncounterRateModifiers` (applied on both
