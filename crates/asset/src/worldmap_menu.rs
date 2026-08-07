@@ -16,7 +16,8 @@
 //!                                 from `DAT_80073B18`); `0xFF` = terminator
 //!   0x01    u8    discovery_flag  bit index (offset +0x20) in the
 //!                                 system-flag bank queried by FUN_8003ce64
-//!   0x02    u16   scene_id        destination scene id (LE)
+//!   0x02    u16   scene_id        destination scene word (LE) - a raw
+//!                                 CDNAME TOC index, not a scene-list id
 //!   0x04    u8    menu_x          x position on the world-map menu screen
 //!   0x05    u8    menu_y          y position on the world-map menu screen
 //!   ```
@@ -62,7 +63,11 @@ pub struct PlacementRecord {
     /// Bit index (offset +0x20) in the fourth flag bank; the in-game menu
     /// only shows this record once the flag is set.
     pub discovery_flag: u8,
-    /// Destination scene id (LE u16) loaded when the player picks this entry.
+    /// Destination scene word (LE u16) loaded when the player picks this
+    /// entry: a **raw CDNAME TOC index** (the `#define` numbering space of
+    /// `CDNAME.TXT`), which the warp drain resolves through the TOC name map
+    /// (engine: `World::drain_staged_menu_warp` via `scene_toc_names`) - not
+    /// an id in any scene-list space.
     pub scene_id: u16,
     /// On-screen X coordinate of the marker in the menu world-map view.
     pub menu_x: u8,
