@@ -444,6 +444,18 @@ impl World {
             // mutable borrow below; `rec` still owns the immutable roster borrow
             // through the stat fold.
             let ap_base = crate::ap_gauge::ap_base_for_level(rec.level());
+            // The MP ceiling the battle surfaces read. `character_max_mp` is
+            // the only max-MP the world carries: the battle actor holds
+            // current MP and no ceiling, so the battle party bar's MP field,
+            // the item screen's target rows and the in-battle MP-restore clamp
+            // all read this vector. Captured off the roster record here for the
+            // same reason the AP base is - this is the one place every host's
+            // party reaches on its way into a fight, and seeding it only from
+            // `play-window`'s `--party` branch left every other entry (New
+            // Game, `--seed-party`, a loaded save, the browser play page) with
+            // a zero ceiling: no MP on the battle bar and an MP potion that
+            // restores nothing.
+            let record_mp_max = rec.hp_mp_sp().mp_max;
             // Aggregator base stats: prefer the record-side base window
             // (`+0x11C..`, [`legaia_save::RecordStats`]) - the window retail's
             // `FUN_80042558` rebuilds the live stats FROM - so the accessory
@@ -534,6 +546,12 @@ impl World {
             // and the live balance is untouched.
             if let Some(g) = self.ap_gauges.get_mut(slot) {
                 g.set_base_ap(ap_base);
+            }
+            // Only when the record carries a real ceiling: a zeroed one would
+            // clobber a value a synthetic battle set directly, the same reason
+            // the `live.atk == 0` guard above skips the whole slot.
+            if record_mp_max > 0 {
+                self.set_character_max_mp(slot as u8, record_mp_max);
             }
         }
     }
