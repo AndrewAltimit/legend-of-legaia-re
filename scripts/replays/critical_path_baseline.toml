@@ -108,26 +108,26 @@
 #   The completing run enters at tile `(58, 24)` through record 1 and leaves
 #   65 tiles later through record 0's band, landing on map01 `(52, 94)`.
 #
-# What rung 5 does NOT cover is the dungeon's own encounter table, and that is
-# a defect rather than a gap in the rung: `keikoku`'s MAN encounter section
-# decodes to exactly ONE region - the whole map, `rate 0`, a one-row formation
-# range - so `any_rollable` answers false and no step ever rolls, while the
-# same MAN registers 37 formation rows nothing can reach. The field side of
-# the live loop is armed anyway, so the day that decode is fixed the rung
-# starts fighting in the Ravine on its own. `LEGAIA_CPR_FIGHT=1` prints the
-# region set at the rung's start.
+# Rung 5 does not cover the dungeon's own encounter table, and that is a gap in
+# the rung rather than a defect: `keikoku` authors ONE region group, one
+# whole-map region, `rate 0`. The Ravine is silent by authorship. A rate-0
+# whole-map row is not dead data - `region[8] & 0x1F` selects the battle
+# backdrop for the scene's scripted fights - so the row does work even though
+# it never rolls. `LEGAIA_CPR_FIGHT=1` prints the region set at the rung's
+# start.
 #
-# It is not one scene. Decoding every scene's region table over the corpus
-# (`region_encounter_table_from_man` across the 99 CDNAME scenes that carry a
-# MAN) gives 26 rollable and 73 not, and 67 of the 99 lead with that same
-# whole-map rate-0 row. Because region lookup stops at the first *containing*
-# region, that row silences everything behind it - and behind it, in 30 of
-# those scenes, sits at least one region with a real rate and a real formation
-# range (`deroa` has 17 regions, `chitei2` 19, `conc2` / `conc3` 10 each). The
-# other 34 decode to that row and nothing else, `keikoku` among them. Three
-# readings fit: the parser emits a spurious leading record, retail's walk does
-# not shadow the way the port models it, or the AABB decode is wrong. All
-# three are `legaia_asset::man_section::region_records`, not this ladder.
+# The region array is not a flat list. `FUN_801D9E1C` partitions it into
+# consecutive story-flag-gated groups and searches exactly one: it skips each
+# group whose gate flag is clear and stops at the first flag that IS set, or at
+# the `0xFFFF` unconditional tail. Falling off the end of the condition list
+# returns "no encounter this step" rather than falling back to the whole array.
+# So which regions a scene offers is a function of the live story-flag bank,
+# and a scene can be legitimately silent on a fresh save and loud later
+# (`cave01` is gated on `0x0142` / `0x015E`) or silent in every reachable state
+# (the opening/ending stages, the Sol Tower sub-rooms, and `keikoku`).
+# `legaia_asset::man_section` carries the group model; `asset man
+# --with-encounter` prints regions under the group that owns them and marks the
+# live one.
 #
 # ---------------------------------------------------------------------------
 # What rung 1 does and does not say
