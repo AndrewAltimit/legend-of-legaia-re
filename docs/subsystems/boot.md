@@ -271,6 +271,12 @@ Ported as `legaia_engine_core::mode::runs_master_frame_driver`, which
 `World::tick` consults to suspend its actor / effect / move-VM passes rather
 than keying on `SceneMode::Menu` directly.
 
+The split is what the port gains there. Both hosts had already reached
+"the world does not move under the menu" by not ticking it at all, which stops
+*more* than retail does - the frame-begin and frame-end passes keep running
+under CARD. With the rule in the engine a host can tick the world under the
+menu and get retail's division instead of choosing between all and nothing.
+
 ##### The mode word does not determine the scene
 
 Modes 24 / 25 `OTHER` host **all five** warp minigames, and the mode word says

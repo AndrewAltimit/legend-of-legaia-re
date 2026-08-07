@@ -741,6 +741,19 @@ impl World {
         // lives) and its frame-end pass `FUN_80016B6C` (the cadence resolver
         // and the SFX cue ring) both run unconditionally - `FUN_80017978`
         // returns `move v0,zero`, so the handler's abort branch never fires.
+        //
+        // **Which consumers this gate actually moves**, stated plainly because
+        // it is easy to over-claim. Neither shipped host reaches it with the
+        // pause menu open: the native window `continue`s past `session.tick()`
+        // while its boot-UI owns the frame, and the browser page's sim loop is
+        // gated `if (advance && !menuOpen && ...)`. Both therefore freeze
+        // *more* than retail does - they stop the frame-begin / frame-end
+        // passes too, which retail keeps running under CARD. This gate is what
+        // makes the correct split available: a host can now tick the world
+        // under the menu and get retail's behaviour instead of choosing between
+        // "everything runs" and "nothing runs". Today it is exercised by the
+        // headless `World::tick` consumers (the replay / determinism / mode
+        // trace drivers, and any future owner of `ModeDriver`).
         // REF: FUN_80025f74, FUN_80017978, FUN_80016444
         let runs_master_driver = crate::mode::GameMode::for_scene_mode(self.mode)
             .map(crate::mode::runs_master_frame_driver)

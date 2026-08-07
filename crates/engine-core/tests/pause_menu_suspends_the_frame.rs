@@ -16,6 +16,15 @@
 //! a timed section does not tick down while you read a menu, and a walking NPC
 //! does not keep walking behind it.
 //!
+//! **Scope, stated so this file is not read as more than it is.** Both shipped
+//! hosts already reached that outcome by a blunter route - neither ticks the
+//! world at all while the menu is up - so these assertions are about the
+//! *engine's* frame, not about a bug a player could see today. They matter
+//! because the engine is where the rule belongs (the hosts freeze more than
+//! retail does, stopping the frame-begin / frame-end passes retail keeps
+//! running), and because every headless `World::tick` consumer - replay,
+//! determinism, the mode-trace drivers - goes through this path.
+//!
 //! Synthetic world, no disc gate, no Sony bytes.
 
 use legaia_engine_core::mode::{GameMode, runs_master_frame_driver};
