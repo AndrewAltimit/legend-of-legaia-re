@@ -90,7 +90,7 @@ physical, the unmapped path).
 
 The **one** mapped named record with no caster (move id `0x2C`, record idx 22) is
 the **unused "Freeze Thunder" enemy spell** - a dummied-out attack
-([TCRF](https://tcrf.net/Talk:Legend_of_Legaia): forcing it via GameShark
+(community testing: forcing it via GameShark
 `30084845 002C` crashes with an "Opcode 14 UNK" / missing-asset error). Its
 move-power record survived (power 37, `sfx 0x4A`) but its on-contact/launch
 effect lists are empty and no production formation casts it - so it shows up as

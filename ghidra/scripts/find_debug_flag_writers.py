@@ -2,12 +2,12 @@
 # @runtime Jython
 #
 # Find writers + readers of the debug-flag RAM band 0x8007B400-0x8007BCFF.
-# Documented occupants (cf. docs/EXTERNAL_RESEARCH.md):
+# Documented occupants (cf. docs/reference/builds.md):
 #   0x8007B450 - debug-dispatch parameter (u16)
 #   0x8007B6F4 - "Small maps" debug mode flag (u16)
 #   0x8007B7C0 - debug-dispatch trigger / gate (u16)
 #   0x8007B8C2 - dev/retail loader-path flag (u16, FUN_800255b8 branches on it)
-#   0x8007B98F - in-game debug menu enable (byte, TCRF/Punk7890 GameShark)
+#   0x8007B98F - in-game debug menu enable (byte, published GameShark code)
 #
 # Two passes:
 #   pass 1: ref-manager direct queries on each documented address

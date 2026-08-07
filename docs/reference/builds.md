@@ -1,6 +1,6 @@
 # Builds + region data
 
-External research from TCRF (`https://tcrf.net/Legend_of_Legaia`), GameHacking.org, and GameFAQs save-state guides - distilled into the technical bits useful for cross-region testing and runtime validation.
+External research from public unused-content wikis, GameHacking.org, and GameFAQs save-state guides - distilled into the technical bits useful for cross-region testing and runtime validation.
 
 ## Region enum
 
@@ -54,7 +54,7 @@ Two distinct flags in the same RAM page:
 | `_DAT_8007B9B0` | `0x8007B9B0` | - | Overlay **print flag**. Separate from the menu enable: the slot-A minigame overlays gate their `printf`-style readouts on it, several of them additionally on held pad bit `0x2`. In the fishing overlay that pair also swaps the bite cadence for a debug value. |
 | `_DAT_8007B98F` | `0x8007B98F` | `0x8007D51F` | In-game debug menu enable. Accessed as the high byte of the word at `0x8007B98C` - the GameShark byte-write `8007B98F 0001` makes the LE word non-zero (`0x01000000`), enabling every debug branch with one check. |
 
-Both have **zero static writers in `SCUS_942.54`**. The writers must live in an unswept overlay or come from external POKE - TCRF GameShark codes prove both flags are runtime-writable.
+Both have **zero static writers in `SCUS_942.54`**. The writers must live in an unswept overlay or come from external POKE - published GameShark codes prove both flags are runtime-writable.
 
 The 0x1B90-byte build shift between JP and NA addresses is consistent with same-data, different-binary-layout. Implies the JP and NA executables have the same RAM-resident layout, just relocated.
 

@@ -13,7 +13,7 @@ strips that wrapper and exposes a clean ISO9660 view.
   2048-byte user payload only; the caller never sees raw 2352-byte sectors.
 - `iso9660` - primary volume descriptor + directory walker. Yields
   `(name, lba, size)` tuples for every file on the disc.
-- `region` - TCRF-derived heuristics for identifying which retail build
+- `region` - product-code heuristics for identifying which retail build
   (USA / JP / EU / debug) you're holding.
 - `write` - the write side: `encode_mode2_form1_sector` recomputes a sector's
   EDC + P/Q ECC (the generic ECMA-130 / Yellow Book math; not game-specific),
@@ -63,5 +63,5 @@ LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test -p legaia-iso
 
 - [`docs/formats/disc.md`](../../docs/formats/disc.md) - Mode2/2352 layout
   and the iso9660 primary volume descriptor.
-- [`docs/reference/builds.md`](../../docs/reference/builds.md) - TCRF
+- [`docs/reference/builds.md`](../../docs/reference/builds.md) - the
   region table.

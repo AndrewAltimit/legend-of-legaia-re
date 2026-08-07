@@ -186,7 +186,7 @@ How the runtime engine works.
 |---|---|
 | [`functions.md`](docs/reference/functions.md) | Notable Ghidra-traced function entry points (the canonical directory) - index page over the per-subsystem tables in `docs/reference/functions/`. |
 | [`memory-map.md`](docs/reference/memory-map.md) | RAM map + key globals. |
-| [`builds.md`](docs/reference/builds.md) | TCRF region data; known builds. |
+| [`builds.md`](docs/reference/builds.md) | Region data; known builds. |
 | [`cheats.md`](docs/reference/cheats.md) | GameShark / Mednafen cheat database parser + classifier; pinned RAM offsets for character record, inventory, battle actor, story flags. |
 | [`gamedata.md`](docs/reference/gamedata.md) | Curated arts/magic/items/weapons/armor/accessories/enemies/shops/casino/fishing tables mined from public walkthroughs. Ground-truth labels for binary records under reverse engineering. |
 | [`music-tracks.md`](docs/reference/music-tracks.md) | Music-track disambiguation: every BGM cue across its four naming spaces (debug sound-test ID + title / in-game context / official OST title / proposed relocalization). Curated reference (Stann0x), structurally joined to the disc - the `music_01` bank (extraction 990..=1071) is the sound-test order, global BGM id `2000+i` = track `i`. Resolver `engine-core::music_labels`. |
