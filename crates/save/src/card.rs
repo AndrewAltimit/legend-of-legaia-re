@@ -904,11 +904,21 @@ pub fn write_retail_story_flags(sc_block: &mut [u8], bits: &[u8]) -> Result<usiz
 
 /// Write the 72-slot inventory into a retail SC save block in place.
 ///
-/// `pairs` is a slice of `(item_id, count)` pairs in destination-slot order.
-/// Up to [`RETAIL_INVENTORY_SLOTS`] pairs are written; any extras are dropped.
-/// Trailing slots past `pairs.len()` are zeroed. Returns the number of slots
-/// written. Returns `Err` if the SC block is too small to hold the inventory
-/// region.
+/// `pairs` is an engine-side `(item_id, count)` list, **not** a pre-laid slot
+/// array: it is composed into the window through retail's own add + normalize
+/// accessors ([`crate::retail_inventory::compose_window`]), so the block that
+/// lands is one retail's item code could itself have produced - stacks clamped
+/// at 99, one stack per id, no `id == 0` phantoms. Copying the list in
+/// positionally instead is how a bag with 137 Healing Leaves, or two stacks of
+/// the same id, would reach a real memory card.
+///
+/// Trailing slots are zeroed. Returns the number of **occupied** slots (which
+/// is below `pairs.len()` when duplicate ids merged). Grants past the window's
+/// capacity are still dropped - unchanged behaviour, and this signature has no
+/// channel to report it; a caller that needs to know calls
+/// [`crate::retail_inventory::compose_window`] directly and reads its
+/// [`RefusedGrant`](crate::retail_inventory::RefusedGrant) list. Returns `Err`
+/// if the SC block is too small to hold the inventory region.
 pub fn write_retail_inventory(sc_block: &mut [u8], pairs: &[(u8, u8)]) -> Result<usize> {
     let end = RETAIL_INVENTORY_OFFSET + RETAIL_INVENTORY_SIZE;
     if sc_block.len() < end {
@@ -918,15 +928,23 @@ pub fn write_retail_inventory(sc_block: &mut [u8], pairs: &[(u8, u8)]) -> Result
             sc_block.len()
         );
     }
+    let (inv, _refused) = crate::retail_inventory::compose_window(
+        crate::retail_inventory::ITEM_WINDOW_BASE,
+        RETAIL_INVENTORY_SLOTS,
+        pairs,
+    );
     let dst = &mut sc_block[RETAIL_INVENTORY_OFFSET..end];
     dst.fill(0);
-    let n = pairs.len().min(RETAIL_INVENTORY_SLOTS);
-    for (i, &(id, count)) in pairs.iter().take(n).enumerate() {
+    let mut occupied = 0usize;
+    for (i, &(id, count)) in inv.slots().iter().enumerate() {
         dst[i * 2] = id;
         dst[i * 2 + 1] = count;
+        if id != 0 {
+            occupied = i + 1;
+        }
     }
     restamp_sc_block_checksum(sc_block);
-    Ok(n)
+    Ok(occupied)
 }
 
 fn bytes_to_ascii(b: &[u8]) -> String {
@@ -1140,8 +1158,9 @@ mod tests {
     #[test]
     fn write_retail_inventory_round_trips() {
         let mut block = fresh_sc_block();
-        let pairs: Vec<(u8, u8)> = (0..RETAIL_INVENTORY_SLOTS as u8)
-            .map(|i| (i, i.wrapping_mul(3)))
+        // Ids start at 1: `0` is the empty-slot sentinel, not an item.
+        let pairs: Vec<(u8, u8)> = (1..=RETAIL_INVENTORY_SLOTS as u8)
+            .map(|i| (i, i.min(crate::retail_inventory::STACK_CAP)))
             .collect();
         let n = write_retail_inventory(&mut block, &pairs).unwrap();
         assert_eq!(n, RETAIL_INVENTORY_SLOTS);
@@ -1150,6 +1169,44 @@ mod tests {
             assert_eq!(raw[i * 2], id);
             assert_eq!(raw[i * 2 + 1], count);
         }
+    }
+
+    /// The block that lands is one retail could have produced, not a
+    /// transcript of the engine's list. Three shapes the old positional copy
+    /// wrote through, all of which retail's own accessors never generate.
+    #[test]
+    fn write_retail_inventory_composes_through_the_retail_accessors() {
+        let mut block = fresh_sc_block();
+        // 137 of one item (over the cap), the same id twice (two stacks), and
+        // an `id == 0` entry (a phantom occupied slot).
+        let n = write_retail_inventory(&mut block, &[(0x10, 137), (0x10, 4), (0, 9), (0x22, 2)])
+            .unwrap();
+        let raw = read_retail_inventory(&block).unwrap();
+        assert_eq!(n, 2, "two live stacks, not four slots");
+        assert_eq!(raw[0], 0x10);
+        assert_eq!(
+            raw[1],
+            crate::retail_inventory::STACK_CAP,
+            "counts clamp at 99"
+        );
+        assert_eq!(raw[2], 0x22, "the duplicate merged, so 0x22 moved up");
+        assert_eq!(raw[3], 2);
+        assert!(
+            raw[4..].iter().all(|&b| b == 0),
+            "the id-0 entry wrote no slot"
+        );
+        // Contrast: the same list laid in positionally is a different block.
+        // Without this the assertions above would also pass on a composer
+        // that happened to be the identity for this input.
+        let mut positional = [0u8; 8];
+        for (i, &(id, count)) in [(0x10u8, 137u8), (0x10, 4), (0, 9), (0x22, 2)]
+            .iter()
+            .enumerate()
+        {
+            positional[i * 2] = id;
+            positional[i * 2 + 1] = count;
+        }
+        assert_ne!(&raw[..8], &positional[..]);
     }
 
     #[test]
