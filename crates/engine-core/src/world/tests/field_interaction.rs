@@ -965,6 +965,72 @@ fn three_actor_talk_switch_suppressed_under_dialogue() {
     );
 }
 
+/// The **player's** request route: a Square press, through `World::set_pad`.
+///
+/// Retail reads the newly-pressed word `_DAT_8007B874` AND packed bit `0x80`
+/// (`801d2998..801d29a8`); packed `0x80` is Square. Reading it in the world
+/// tick rather than in a host key handler is what makes the switch reachable
+/// on every host at once - all three drive `set_pad`.
+///
+/// The assertion is the **edge**, not the level: a held button must arm one
+/// swap, not one per frame, or the fade would restart under the player.
+#[test]
+fn three_actor_talk_switch_arms_from_a_square_pad_edge() {
+    let mut world = talk_world_with_participants();
+
+    // A frame with Square down, no latch touched.
+    world.set_pad(crate::input::PadButton::Square.mask());
+    world.tick_three_actor_talk();
+    assert_eq!(
+        world.three_actor_talk.unwrap().swap.phase,
+        1,
+        "the pad edge armed the fade-out"
+    );
+
+    // Run back to the poll with Square still HELD: the level must not re-arm.
+    for _ in 0..100 {
+        world.set_pad(crate::input::PadButton::Square.mask());
+        world.tick_three_actor_talk();
+        if world.three_actor_talk.is_some_and(|t| t.swap.phase == 0) {
+            break;
+        }
+    }
+    assert_eq!(world.party_leader_slot, Some(1), "one swap happened");
+    world.set_pad(crate::input::PadButton::Square.mask());
+    world.tick_three_actor_talk();
+    assert_eq!(
+        world.three_actor_talk.unwrap().swap.phase,
+        0,
+        "a held button is not a second request"
+    );
+
+    // Releasing and pressing again is a new edge, and swaps again.
+    world.set_pad(0);
+    world.tick_three_actor_talk();
+    world.set_pad(crate::input::PadButton::Square.mask());
+    world.tick_three_actor_talk();
+    assert_eq!(
+        world.three_actor_talk.unwrap().swap.phase,
+        1,
+        "a fresh press is a fresh request"
+    );
+}
+
+/// A pad edge outside a talk arms nothing - the pad is read inside the
+/// controller tick, so Square keeps whatever other meaning it has.
+#[test]
+fn a_square_press_outside_a_talk_does_nothing() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.party_actor_slots = vec![Some(0), Some(1), Some(2)];
+    world.party_leader_slot = Some(0);
+    world.set_pad(crate::input::PadButton::Square.mask());
+    world.tick_three_actor_talk();
+    assert!(world.three_actor_talk.is_none());
+    assert_eq!(world.party_leader_slot, Some(0));
+    assert_eq!(world.party_actor_slots.len(), 3);
+}
+
 // ---- the walk-up talk: engagement, loop, locomotion, facing ----
 
 /// A scene the player can walk in: every collision cell open, every object

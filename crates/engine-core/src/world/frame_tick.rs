@@ -118,13 +118,10 @@ impl World {
     /// controller's state-0 arm gate (`FUN_801D27E0` `801d2998..801d29a8`).
     /// No-op outside a talk (the latch is dropped by the poll).
     ///
-    /// HOST WAIVER: no host binds a key to this yet - the switch cycle runs
-    /// under the world tick every host already drives, but the *request*
-    /// needs a binding in the native window's keyboard handler
-    /// (`engine-shell` `window/event_handler/keyboard.rs`) and the browser
-    /// play page's pad route (`web-viewer` runtime) to be player-reachable.
-    /// Both hosts sit outside the lane that wired the cycle; until bound,
-    /// scripts and tests are the only callers.
+    /// A **second** request route, not the production one. The player's route
+    /// is the pad edge retail itself reads, sampled inside
+    /// [`Self::tick_three_actor_talk`]; this latch exists for a caller with no
+    /// pad word to press - a scripted timeline, a replay fixture, a test.
     // REF: FUN_801D27E0 (state-0 arm gate, request-byte route)
     pub fn request_talk_leader_switch(&mut self) {
         self.talk_switch_requested = true;
@@ -145,11 +142,22 @@ impl World {
     ///   polls the talk lock (system flag `0xD`, `jal 0x8003ce64 a0=0xD` at
     ///   `801d28c8`; clear routes to state 5 = despawn), then runs the
     ///   switch arm gate over the presence flags `script_id + 0..=2`. The
-    ///   request source is the host latch
-    ///   [`Self::request_talk_leader_switch`] (retail `_DAT_8007B874 &
-    ///   0x80`); the retail suppressor pair `_DAT_8007B6B4` /
-    ///   `_DAT_8007B6B0` is host-substituted by "a dialogue owns the pad",
-    ///   so a switch never arms under an open text box.
+    ///   request source is the **pad**, read here: retail's
+    ///   `801d2998..801d29a8` is `lw _DAT_8007B874; andi 0x80`, the
+    ///   newly-pressed word AND packed bit `0x80` - Square, the same bit the
+    ///   fishing reel decoder pins. Reading it inside the world is what makes
+    ///   the switch reachable everywhere at once: every host drives
+    ///   [`Self::set_pad`], so none of them needs a binding of its own and
+    ///   there is no second key table to drift from the engine's. The retail
+    ///   suppressor pair `_DAT_8007B6B4` / `_DAT_8007B6B0` is
+    ///   host-substituted by "a dialogue owns the pad", so a switch never
+    ///   arms under an open text box.
+    ///
+    ///   The port also latches its field **run** modifier off Square
+    ///   ([`Self::field_run_button_held`]), so inside an armed talk one press
+    ///   does both. That is the run modifier intruding, not the swap: the
+    ///   swap bit is disassembly-pinned and the run mask word `0x800846DC`
+    ///   is explicitly not.
     /// - **1** - hold [`LEADER_SWAP_FADE_FRAMES`] behind the fade-to-white
     ///   ([`Self::screen_fade`] carries the retail template: kind 2, `0x20`
     ///   frames, black -> white, `801d29c8..801d2a00`).
@@ -184,7 +192,12 @@ impl World {
             return;
         };
         let request = if talk.swap.phase == 0 {
-            core::mem::take(&mut self.talk_switch_requested)
+            // Retail's own source (`_DAT_8007B874 & 0x80` = Square, newly
+            // pressed) plus the scripted latch. `take` runs first and
+            // unconditionally, so a latch set outside phase 0 is not left to
+            // fire into a later swap.
+            let latched = core::mem::take(&mut self.talk_switch_requested);
+            latched || self.input.just_pressed(input::PadButton::Square)
         } else {
             false
         };
