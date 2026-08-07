@@ -42,11 +42,14 @@
 //!
 //! Rung 5 exists because rungs 2-4 all end the instant a door fires, so none
 //! of them walks a dungeon *interior*. That is its own surface: the exits are
-//! `.MAP` walk-on bands rather than overworld entity portals, the encounters
-//! come from the scene's own table rather than the overworld region set, and
-//! the corridors are the narrowest geometry the leading-edge probe meets.
-//! Under a four-rung ladder "the Ravine loads" and "the Ravine can be walked"
-//! scored the same.
+//! `.MAP` walk-on bands rather than overworld entity portals and the corridors
+//! are the narrowest geometry the leading-edge probe meets. Under a four-rung
+//! ladder "the Ravine loads" and "the Ravine can be walked" scored the same.
+//!
+//! What it does **not** cover is the dungeon's own encounter table, and that
+//! is a finding rather than a design choice - `keikoku` decodes to a single
+//! rate-0 whole-map region and rolls nothing however the loop is armed. The
+//! `LEGAIA_CPR_FIGHT=1` run prints the region set at the rung's start.
 //!
 //! It is scored on **which door the player came out of**, not on the bare
 //! transition. `keikoku` carries four scene-change records and all four return
@@ -111,9 +114,12 @@
 //! *world*: in
 //! [`SceneMode::Battle`] the player actor's `move_state` is the battle arena
 //! transform, so [`player_world`] stops meaning an overworld position at all.
-//! [`drain_battle`] sits both out, and reading its doc comment first will save
+//! [`drain_battle`] takes the frame off the walk and hands it to
+//! [`FightPolicy`], which *plays* the encounter through the battle command UI
+//! rather than sitting it out; reading both doc comments first will save
 //! re-deriving why an unguarded run reports a coordinate off the corner of a
-//! map the player is standing in the middle of.
+//! map the player is standing in the middle of, and why a neutral pad is a
+//! fighting model rather than the absence of one.
 //!
 //! ## Ratchet
 //!
@@ -2012,6 +2018,16 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     // which is a silent way for a healing policy to do nothing at all.
     if fight.driven {
         host.world.battle_player_driven = true;
+        // Arm the **field** side of the loop as well, which is what both play
+        // hosts do (`BootSession::enter_field_live`) and what makes a dungeon
+        // roll its own encounters. It is inert on this route today - see the
+        // `keikoku encounter model` line below - and arming it anyway means
+        // the day the region decode is fixed, rung 5 starts fighting in the
+        // Ravine instead of quietly continuing not to. Set directly rather
+        // than through `arm_live_loop`, whose `encounter.is_none()` arm would
+        // install the *fabricated* vanilla formation table over the scene's
+        // own.
+        host.world.live_gameplay_loop = true;
         host.world
             .set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
         // Leave Rim Elm with the purse spent on healing. See [`BAG_HEAL_COUNT`]
@@ -2206,6 +2222,44 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
         let (x, z) = player_world(host);
         tile_of(x, z)
     };
+    // Why rung 5 fights nothing, printed where a reader will meet the claim.
+    //
+    // The rung's own header says its encounters "come from the scene's own
+    // table rather than the overworld region set". They do not - not because
+    // the loop is unarmed (it is, above) but because `keikoku`'s MAN encounter
+    // section decodes to exactly ONE region: the whole map (`x 0..128`,
+    // `z 0..128`) at `rate 0` with a one-row formation range. `any_rollable`
+    // therefore answers `false` and no step ever rolls, while the same MAN
+    // registers 37 formation rows that nothing can reach. A 128x128 AABB with
+    // a zero rate does not read like authored dungeon data; the suspect is
+    // `man_section::region_records` finding a header or terminator row rather
+    // than the region array. Until that is settled, rung 5 measures dungeon
+    // *locomotion* and its exit bands, and nothing about its encounters.
+    if std::env::var_os("LEGAIA_CPR_FIGHT").is_some() {
+        eprintln!(
+            "[fight] keikoku encounter model: live_loop {} rollable {} region_tracker {} \
+             session {} formations {:?}",
+            host.world.live_gameplay_loop,
+            host.world.scene_encounters_rollable,
+            host.world.field_region_tracker.is_some(),
+            host.world.encounter.is_some(),
+            host.world.registered_formation_ids(),
+        );
+        if let Some(t) = host.world.field_region_tracker.as_ref() {
+            for r in &t.table().regions {
+                eprintln!(
+                    "[fight]   region x{}..{} z{}..{} rate {} formations {}..+{}",
+                    r.tile_x_min,
+                    r.tile_x_max,
+                    r.tile_z_min,
+                    r.tile_z_max,
+                    r.rate_increment,
+                    r.formation_base,
+                    r.formation_count
+                );
+            }
+        }
+    }
     let records = exit_records(host);
     // The door the player came in through is the record whose band the arrival
     // is standing on the approach to. On `keikoku` that is unambiguous by a

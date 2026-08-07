@@ -18,26 +18,74 @@
 #
 # The baseline is measured with a LIVING party. The run seeds the retail New
 # Game roster (Vahn, the SCUS `0x80078C4C` template - `open_host`), fights its
-# random encounters through the auto-resolve loop, and scores a party wipe AS
-# a wipe: `drain_battle` reads the game-over hold (`World::game_over_hold`,
-# the wipe arm that freezes the scene in Battle mode) and the leg reports
-# `PARTY WIPED`. An earlier baseline of 5 predates both halves: the host
-# seeded no roster, every party slot was a hollow actor the first hit "killed",
-# and the pre-hold engine returned the wiped party to the field - which
-# `drain_battle` scored as `Fight::Survived`, so rungs 3-5 were walked with a
-# dead party. That 5 was an instrument artifact, not a pad-walk score.
+# random encounters, and scores a party wipe AS a wipe: `drain_battle` reads
+# the game-over hold (`World::game_over_hold`, the wipe arm that freezes the
+# scene in Battle mode) and the leg reports `PARTY WIPED`. An earlier baseline
+# of 5 predates both halves: the host seeded no roster, every party slot was a
+# hollow actor the first hit "killed", and the pre-hold engine returned the
+# wiped party to the field - which `drain_battle` scored as `Fight::Survived`,
+# so rungs 3-5 were walked with a dead party. That 5 was an instrument
+# artifact, not a pad-walk score. This one is not the same number twice.
 #
-# Rungs 1-3 clear. Rung 3's encounters are real fights now: the leg fights
-# and survives three map01 encounters on the 36-tile crossing.
+# ---------------------------------------------------------------------------
+# What was behind the wipe
+# ---------------------------------------------------------------------------
 #
-# Rung 4 currently ends in an honest party wipe on the map01 -> suimon leg:
-# a solo L1 Vahn under neutral-pad auto-battles has no recovery between
-# fights, and the leg's encounter attrition kills him before the crossing.
-# That is a finding about the ladder's fighting model (no commands, no items,
-# no rest), not about the route - the route knowledge below still stands.
+# A previous baseline of 3 ended in an honest party wipe on the
+# `map01 -> suimon` leg and read that as "a finding about the ladder's fighting
+# model (no commands, no items, no rest)". Two thirds of that diagnosis were
+# wrong, and the run says which third was not.
 #
-# Route notes for rungs 4-5 (verified when the legs were first walked, and
-# still the map's shape):
+# The fighter now drives `World::battle_command` - the same command session the
+# windowed host binds its keyboard to - with pad presses only: Left on the
+# round prompt (`Begin`), Left / Up on the command ring (`Attack` / `Item`),
+# Left on the attack-mode prompt (`Auto`), Cross on the target cursor, and
+# Cross / Down through the bag's item and target rows. Two contrast controls
+# separate what that bought:
+#
+#   LEGAIA_CPR_NEUTRAL_FIGHT=1   neutral pad, engine auto-resolve   -> score 3
+#   LEGAIA_CPR_NO_BAG=1          full command ring, empty bag       -> score 3
+#   (default)                    command ring + 5 Healing Leaves    -> score 5
+#
+# The first two die in the *same fight* with the *same* HP trajectory
+# (180 -> 108 -> 27 -> 0 across three map01 encounters). Command selection
+# changes nothing, because `Attack -> Auto` seeds the same two-swing queue
+# `arm_party_physical` does (`seed_basic_attack_queue`, retail
+# `FUN_801EED1C`'s no-input arm). What was behind the wipe was **no recovery**,
+# full stop - a solo level-1 Vahn has 180 HP and a map01 encounter costs him
+# 70-80 of it.
+#
+# So the bag is the model's one non-pad input, and it is grounded rather than
+# picked: a New Game grants 500 gold (`NEW_GAME_STARTING_GOLD`, the literal in
+# retail's data-init `FUN_80034A6C`) and Rim Elm's Variety Shop sells the
+# Healing Leaf at 100, so five leaves is the entire starting purse spent on
+# healing before stepping out of the gate - the most a player could carry out
+# of Rim Elm. The gold is deducted. Buying them by pad would mean adding an
+# interact-and-shop-menu leg to a ladder that scores locomotion; the seed
+# stands in for the town's beats exactly as `GATE_OPEN_FLAGS` stands in for its
+# story flags. Everything else in a battle is a `set_pad` call.
+#
+# The margin is thin and that is the point: the crossing ends at 14/190 HP
+# with an empty bag, having fought six encounters and levelled once.
+#
+# ---------------------------------------------------------------------------
+# What the run stopped leaning on
+# ---------------------------------------------------------------------------
+#
+# The first pad-driven run cleared all five rungs at 76/190 HP, and part of
+# that margin was not the player's: every level-up restored current HP and MP
+# to the new maximum. Retail's applier `FUN_801E9504` stores to eleven
+# addresses and not one of them is a current-pool cell, and the single-level
+# `noa_levelup_*` capture triplet agrees - Noa settles at 164/221 HP after an
+# L2 -> L3 level-up, exactly where the fight left her. Removing the free heal
+# cost this run 62 HP and changed no rung.
+#
+# ---------------------------------------------------------------------------
+# Route notes for rungs 4-5
+# ---------------------------------------------------------------------------
+#
+# Verified when the legs were first walked, and re-confirmed by the run that
+# now completes them:
 #
 # - map01's wall bits split the kingdom into two walk components (the arrival
 #   `(96, 25)` north, all six `keikoku` mouths south); the crossing is the
@@ -57,10 +105,37 @@
 #   `drain_scripted` pulses Cross rather than holding neutral.
 #   `cargo run -p legaia-engine-shell --example keikoku_reach_probe`
 #   re-measures the four floods per mouth.
+#   The completing run enters at tile `(58, 24)` through record 1 and leaves
+#   65 tiles later through record 0's band, landing on map01 `(52, 94)`.
+#
+# What rung 5 does NOT cover is the dungeon's own encounter table, and that is
+# a defect rather than a gap in the rung: `keikoku`'s MAN encounter section
+# decodes to exactly ONE region - the whole map, `rate 0`, a one-row formation
+# range - so `any_rollable` answers false and no step ever rolls, while the
+# same MAN registers 37 formation rows nothing can reach. The field side of
+# the live loop is armed anyway, so the day that decode is fixed the rung
+# starts fighting in the Ravine on its own. `LEGAIA_CPR_FIGHT=1` prints the
+# region set at the rung's start.
+#
+# ---------------------------------------------------------------------------
+# Controls
+# ---------------------------------------------------------------------------
 #
 # Non-vacuity of the rung-5 door clause: `LEGAIA_CPR_RUNG5_BACKOUT=1` re-aims
 # the leg at the arrival record's own band and hazards nothing; under that
-# flag the rung must read `[--]`. The door clause is exercised on its own by
-# the disc-free `a_door_is_only_different_when_both_ends_are_known`.
+# flag the rung must read `[--]` (it does - score 4). The door clause is
+# exercised on its own by the disc-free
+# `a_door_is_only_different_when_both_ends_are_known`.
+#
+# Non-vacuity of the fighting model: the two flags in the table above must
+# still score 3. If either ever clears rung 4, the route got easier and the
+# wipe diagnosis above needs re-taking.
+#
+# All three control flags therefore make the test FAIL its own ratchet, which
+# is what a control is for - they are run by hand to read the score they
+# print, never as a CI configuration.
+#
+# The run is deterministic: two consecutive default runs produce byte-identical
+# per-encounter HP trajectories and the same rung details.
 
-reached = 3
+reached = 5
