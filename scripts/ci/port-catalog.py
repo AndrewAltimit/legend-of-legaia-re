@@ -1055,6 +1055,54 @@ def collect_port_anchors(
     return anchors
 
 
+def item_reference_patterns(
+    path: Path, name: str, type_name: str | None
+) -> tuple[re.Pattern, re.Pattern | None]:
+    """`(bare, qualified)` patterns for references to a data item.
+
+    `bare` matches the item's unqualified name anywhere; `qualified` matches it
+    spelled through its defining module's stem or its `impl` type
+    (`battle_helpers::GAUGE_STEP`, `CameraState::FIELD_RESET`), or is `None`
+    when the item has no usable qualifier (a `lib.rs` / `mod.rs` free item with
+    no `impl` scope). One definition of the rule, two consumers: `compute_live`
+    below and `scripts/ci/replay-port-coverage.py`, whose executed-verdict for
+    item anchors must agree with this liveness verdict or the two reports argue
+    about the same const.
+    """
+    bare = re.compile(rf"\b{re.escape(name)}\b")
+    quals = {q for q in (path.stem, type_name) if q and q not in ("lib", "mod")}
+    qual = (
+        re.compile(
+            r"\b(?:"
+            + "|".join(sorted(re.escape(q) for q in quals))
+            + rf")\s*::\s*{re.escape(name)}\b"
+        )
+        if quals
+        else None
+    )
+    return bare, qual
+
+
+def item_reference_hit(
+    fn_path: Path,
+    body: str,
+    item_path: Path,
+    bare: re.Pattern,
+    qual: re.Pattern | None,
+) -> bool:
+    """The strict *attributable*-reference test for one `fn` body.
+
+    True when the function sits in the item's own file and names it bare, or
+    spells it qualified from anywhere. An unqualified use behind a `use`
+    import is deliberately under-counted - toward "not live" in the liveness
+    pass and toward "not observable" in the replay join, never toward a false
+    accusation.
+    """
+    if fn_path == item_path and bare.search(body):
+        return True
+    return qual is not None and bool(qual.search(body))
+
+
 def compute_live(
     anchors: dict[str, list[dict]],
     srcs: dict[Path, RustSource],
@@ -1127,19 +1175,8 @@ def compute_live(
         for e in entries:
             if e["kind"] == "item":
                 item_keys[(e["path"], e["symbol"])] = e["type_name"]
-    item_name_pats = {
-        n: re.compile(rf"\b{re.escape(n)}\b") for _, n in item_keys
-    }
-    item_qual_pats = {
-        (p, n): re.compile(
-            r"\b(?:"
-            + "|".join(
-                re.escape(q) for q in {p.stem, ty} if q and q not in ("lib", "mod")
-            )
-            + rf")\s*::\s*{re.escape(n)}\b"
-        )
-        if {p.stem, ty} - {None, "lib", "mod"}
-        else None
+    item_pats = {
+        (p, n): item_reference_patterns(p, n, ty)
         for (p, n), ty in item_keys.items()
     }
 
@@ -1156,13 +1193,11 @@ def compute_live(
             body = srcs[f.path].stripped[f.body_start : f.body_end]
             for key in list(remaining):
                 p, n = key
+                bare, qual = item_pats[key]
                 if strict:
-                    qual = item_qual_pats[key]
-                    hit = (f.path == p and item_name_pats[n].search(body)) or (
-                        qual is not None and qual.search(body)
-                    )
+                    hit = item_reference_hit(f.path, body, p, bare, qual)
                 else:
-                    hit = item_name_pats[n].search(body)
+                    hit = bare.search(body)
                 if hit:
                     out[key] = True
                     remaining.discard(key)

@@ -27,6 +27,26 @@ address -> (file, line) anchors, reporting three sets:
                   Not a defect - this is the prioritisation list, and it is only
                   meaningful relative to how far the ladders get.
 
+## A const anchor has no lines to execute
+
+Line coverage answers "did this code run", and a `// PORT:` tag above a
+`const` / `static` / `type` alias anchors to an item with **no code**. The
+naive resolution - read the verdict of the next function in the file - turns
+the neighbour's coverage into the const's, which both *accused* honestly
+disclosed `NOT WIRED` consts of executing (the sibling ran) and *credited*
+never-referenced consts as entered. So item anchors take their executed
+verdict from attributable REFERENCES instead, mirroring the catalog's strict
+item-liveness rule (`port-catalog.py: item_reference_patterns` /
+`item_reference_hit` - one definition, both consumers): the item is executed
+iff some executed non-test `fn` names it bare from the item's own file or
+qualified (`module::NAME` / `Type::NAME`) from anywhere. If no attributable
+referencing function executed, the verdict is **not observable (const)** - a
+fourth bucket, deliberately neither "entered" nor "never entered", because a
+worklist row that no line of coverage can ever convert is not work in this
+report's sense. Type anchors (struct / enum / trait) resolve the same way the
+catalog does: through the executed methods of the type's own `impl` blocks,
+falling back to the file when the file gives the type no `impl`.
+
 ## The denominator is a union of ladders, not one session
 
 `--json` is **repeatable**, and the difference matters more than it looks. The
@@ -519,6 +539,16 @@ class FileCoverage:
             return self.spans[idx][2]
         return None
 
+    def executed_overlapping(self, lo: int, hi: int) -> bool:
+        """Whether any executed span overlaps the line range `[lo, hi]`.
+
+        The lookup for a *known* function span (an `fn` the catalog parsed from
+        source), where `verdict_at`'s next-function approximation is both
+        unnecessary and wrong - the source span and the llvm-cov span differ by
+        attribute lines, so overlap is the honest join.
+        """
+        return any(ex for a, b, ex in self.spans if a <= hi and lo <= b)
+
 
 def load_coverage(path: Path) -> dict[str, FileCoverage]:
     """Parse an `llvm-cov export` JSON into per-file function coverage."""
@@ -554,6 +584,398 @@ def load_coverage(path: Path) -> dict[str, FileCoverage]:
     return files
 
 
+def join_anchor_coverage(
+    catalog,
+    anchors: dict[str, list[dict]],
+    srcs: dict,
+    sources: list[tuple[str, dict[str, "FileCoverage"]]],
+    live: set[str],
+    not_live: set[str],
+) -> dict:
+    """Join every anchor against the coverage union; return the buckets.
+
+    Split out of `main` so `--selftest` can drive it on a synthetic corpus.
+    `catalog` is the imported `port-catalog.py` module - the item-reference
+    rule comes from there (`item_reference_patterns` / `item_reference_hit`)
+    so this join can never drift from the liveness verdict it is checking.
+    """
+    inert_entered: list[tuple[str, dict]] = []
+    disclosed_entered: list[tuple[str, dict]] = []
+    live_entered: set[str] = set()
+    live_unentered: list[tuple[str, dict]] = []
+    # An address whose every anchor file is absent from *every* source's
+    # coverage was never observable - it is compiled into a different target
+    # (wasm-only crates, other binaries). Counting it as "never entered" would
+    # inflate the worklist with rows no run could have exercised either way,
+    # and would make the zero buckets below look better-founded than they are.
+    unobservable: list[tuple[str, dict]] = []
+    # Item anchors (const / static / type alias) with no executed attributable
+    # reference. See the module docstring: not "entered", not "never entered".
+    not_observable_const: list[tuple[str, dict]] = []
+    per_source_live: dict[str, set[str]] = {label: set() for label, _ in sources}
+
+    all_files = {f for _, cov in sources for f in cov}
+
+    def fn_executed_labels(f) -> set[str] | None:
+        """Labels of sources that executed `f`; `None` if none can see it."""
+        src = srcs[f.path]
+        rel = str(f.path.relative_to(catalog.REPO))
+        lo = f.line
+        hi = src.line_of(max(f.body_end - 1, f.body_start))
+        seen, labels = False, set()
+        for label, cov in sources:
+            fc = cov.get(rel)
+            if fc is None:
+                continue
+            seen = True
+            if fc.executed_overlapping(lo, hi):
+                labels.add(label)
+        return labels if seen else None
+
+    # Pre-resolve every item-kind anchor once, across the union: the verdict
+    # depends on the referencing functions' coverage, not on the anchor's own
+    # file. `(executed_labels, observable)` per (path, symbol).
+    item_keys: dict[tuple, str | None] = {}
+    for sites in anchors.values():
+        for site in sites:
+            if site["kind"] == "item":
+                item_keys[(site["path"], site["symbol"])] = site["type_name"]
+    item_exec: dict[tuple, tuple[set[str], bool]] = {}
+    for (p, n), ty in item_keys.items():
+        bare, qual = catalog.item_reference_patterns(p, n, ty)
+        labels: set[str] = set()
+        observable = str(p.relative_to(catalog.REPO)) in all_files
+        for src in srcs.values():
+            for f in src.fns:
+                if f.is_test:
+                    continue
+                body = src.stripped[f.body_start : f.body_end]
+                if not catalog.item_reference_hit(f.path, body, p, bare, qual):
+                    continue
+                got = fn_executed_labels(f)
+                if got is None:
+                    continue
+                observable = True
+                labels |= got
+        item_exec[(p, n)] = (labels, observable)
+
+    # Per-file impl-block types and per-(file, type) non-test methods, for the
+    # type-kind verdict below (mirrors the catalog's `type_scope` + its
+    # no-`impl`-in-file fallback to module scope).
+    impl_types: dict = {}
+    methods_of: dict[tuple, list] = defaultdict(list)
+    for p, src in srcs.items():
+        impl_types[p] = {ty for _a, _b, ty, *_ in src.impl_spans}
+        for f in src.fns:
+            if not f.is_test and f.impl_type:
+                methods_of[(p, f.impl_type)].append(f)
+
+    def ran_in(cov: dict[str, "FileCoverage"], site: dict) -> bool | None:
+        """`None` when this source cannot observe the site at all."""
+        fc = cov.get(site["file"])
+        if fc is None:
+            return None
+        if site["kind"] == "module":
+            return fc.any_executed()
+        if site["kind"] == "type":
+            src = srcs[site["path"]]
+            for f in methods_of[(site["path"], site["type_name"])]:
+                lo = f.line
+                hi = src.line_of(max(f.body_end - 1, f.body_start))
+                if fc.executed_overlapping(lo, hi):
+                    return True
+            # A type the file never `impl`s (a plain data struct, a trait
+            # whose implementations live elsewhere) has no method here to
+            # observe - fall back to the file, as the liveness pass does.
+            if site["type_name"] not in impl_types[site["path"]]:
+                return fc.any_executed()
+            return False
+        return bool(fc.verdict_at(site["line"]))
+
+    for addr, sites in sorted(anchors.items()):
+        entered_site = None
+        observable = False
+        const_site = None
+        for label, cov in sources:
+            for site in sites:
+                if site["kind"] == "item":
+                    continue
+                ran = ran_in(cov, site)
+                if ran is None:
+                    continue
+                observable = True
+                if ran:
+                    if entered_site is None:
+                        entered_site = site
+                    if addr in live:
+                        per_source_live[label].add(addr)
+                    break
+        if entered_site is None:
+            for site in sites:
+                if site["kind"] != "item":
+                    continue
+                labels, item_obs = item_exec[(site["path"], site["symbol"])]
+                if labels:
+                    entered_site = site
+                    if addr in live:
+                        for label in labels:
+                            per_source_live[label].add(addr)
+                    break
+                if item_obs and const_site is None:
+                    const_site = site
+        if entered_site is not None:
+            if addr in not_live:
+                inert_entered.append((addr, entered_site))
+            if entered_site.get("not_wired_tag"):
+                disclosed_entered.append((addr, entered_site))
+            if addr in live:
+                live_entered.add(addr)
+        elif observable:
+            if addr in live:
+                live_unentered.append((addr, sites[0]))
+        elif const_site is not None:
+            not_observable_const.append((addr, const_site))
+        else:
+            unobservable.append((addr, sites[0]))
+
+    # Non-vacuity: the zero-valued buckets above are only meaningful if the
+    # join actually looked at those addresses. Report the observable share so a
+    # zero produced by a lookup miss cannot be read as a clean result. Observed
+    # across the union - an address one ladder's binary cannot see may still be
+    # compiled into another's. An item anchor counts through its references.
+    def addr_observable(a: str) -> bool:
+        for s in anchors[a]:
+            if s["kind"] == "item":
+                if item_exec[(s["path"], s["symbol"])][1]:
+                    return True
+            elif s["file"] in all_files:
+                return True
+        return False
+
+    not_live_observable = sum(1 for a in not_live if a in anchors and addr_observable(a))
+
+    return {
+        "inert_entered": inert_entered,
+        "disclosed_entered": disclosed_entered,
+        "live_entered": live_entered,
+        "live_unentered": live_unentered,
+        "unobservable": unobservable,
+        "not_observable_const": not_observable_const,
+        "per_source_live": per_source_live,
+        "not_live_observable": not_live_observable,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Self-test (--selftest)
+#
+# Unit-level control for the item-aware executed-verdict, following the
+# catalog's own `--selftest` convention: a synthetic in-memory corpus plus a
+# synthetic llvm-cov export driven through `load_coverage` and
+# `join_anchor_coverage`, no repo state touched. The cases pin exactly the
+# three shapes the naive next-function verdict got wrong: an executed
+# attributable reference reads as executed, an unexecuted (or missing)
+# reference reads as not-observable-const rather than entered OR never-entered,
+# and a `NOT WIRED` const is never accused off a neighbouring function's
+# coverage.
+# ---------------------------------------------------------------------------
+
+_SELFTEST_FILES = {
+    "consts.rs": """\
+/// PORT: FUN_8001d110
+pub const USED_BY_EXEC: u32 = 1;
+
+/// PORT: FUN_8001d120
+/// NOT WIRED: nothing references this yet.
+pub const DISCLOSED_CONST: u32 = 2;
+
+/// PORT: FUN_8001d130
+pub const REF_NOT_RUN: u32 = 3;
+
+/// PORT: FUN_8001d160
+pub const REF_QUAL: u32 = 4;
+
+/// PORT: FUN_8001d170
+pub const BARE_XFILE: u32 = 5;
+
+/// PORT: FUN_8001d180
+/// NOT WIRED: disclosed, yet executed code reads it.
+pub const DISCLOSED_USED: u32 = 6;
+
+/// PORT: FUN_8001d140
+pub fn exec_fn() -> u32 {
+    USED_BY_EXEC + DISCLOSED_USED
+}
+
+/// PORT: FUN_8001d150
+pub fn cold_fn() -> u32 {
+    REF_NOT_RUN
+}
+""",
+    "user.rs": """\
+pub fn qual_user() -> u32 {
+    crate::consts::REF_QUAL + BARE_XFILE
+}
+""",
+    "types.rs": """\
+/// PORT: FUN_8001d190
+pub struct ColdGauge {
+    pub v: u32,
+}
+
+impl ColdGauge {
+    pub fn tick(&mut self) {
+        self.v += 1;
+    }
+}
+
+/// PORT: FUN_8001d1a0
+pub struct HotMeter {
+    pub v: u32,
+}
+
+impl HotMeter {
+    pub fn bump(&mut self) {
+        self.v += 1;
+    }
+}
+""",
+}
+
+# Which synthetic functions the synthetic ladder "executed".
+_SELFTEST_EXECUTED = {"exec_fn", "qual_user", "bump"}
+
+
+def run_selftest() -> int:
+    import tempfile
+
+    print("replay-port-coverage item-verdict self-test")
+    catalog = load_catalog_module()
+    src_dir = catalog.CRATES_DIR / "__selftest__" / "src"
+    srcs = {
+        src_dir / name: catalog.RustSource(src_dir / name, "__selftest__", text)
+        for name, text in _SELFTEST_FILES.items()
+    }
+    anchors = catalog.collect_port_anchors(srcs)
+
+    # Synthetic llvm-cov export: one function record per parsed fn, count 1
+    # for the executed set, 0 otherwise. Line spans come from the parsed
+    # source so the fixture cannot drift from its own line numbers.
+    functions = []
+    for path, src in srcs.items():
+        for f in src.fns:
+            hi = src.line_of(max(f.body_end - 1, f.body_start))
+            functions.append(
+                {
+                    "filenames": [str(path)],
+                    "regions": [
+                        [f.line, 1, hi, 1, 1 if f.name in _SELFTEST_EXECUTED else 0, 0, 0, 0]
+                    ],
+                }
+            )
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as tmp:
+        json.dump({"data": [{"functions": functions}]}, tmp)
+        tmp_path = Path(tmp.name)
+    try:
+        cov = load_coverage(tmp_path)
+    finally:
+        tmp_path.unlink()
+
+    live = {
+        "8001d110",
+        "8001d130",
+        "8001d140",
+        "8001d150",
+        "8001d160",
+        "8001d170",
+        "8001d190",
+        "8001d1a0",
+    }
+    not_live = {"8001d120", "8001d180"}
+    joined = join_anchor_coverage(
+        catalog, anchors, srcs, [("selftest", cov)], live, not_live
+    )
+
+    def addrs(bucket: str) -> set[str]:
+        val = joined[bucket]
+        return set(val) if isinstance(val, set) else {a for a, _ in val}
+
+    failures = 0
+
+    def check(name: str, cond: bool, detail: str = "") -> None:
+        nonlocal failures
+        if cond:
+            print(f"  ok    {name}")
+        else:
+            print(f"  FAIL  {name}{': ' + detail if detail else ''}")
+            failures += 1
+
+    check(
+        "executed fn anchor is entered",
+        "8001d140" in addrs("live_entered"),
+        f"live_entered={addrs('live_entered')}",
+    )
+    check(
+        "const referenced by an executed same-file fn is entered",
+        "8001d110" in addrs("live_entered"),
+    )
+    check(
+        "const referenced module-qualified by an executed cross-file fn is entered",
+        "8001d160" in addrs("live_entered"),
+    )
+    check(
+        "const whose only reference never ran is not-observable-const",
+        "8001d130" in addrs("not_observable_const")
+        and "8001d130" not in addrs("live_unentered")
+        and "8001d130" not in addrs("live_entered"),
+        f"const={addrs('not_observable_const')} unentered={addrs('live_unentered')}",
+    )
+    check(
+        "cross-file bare-name reference does not count (strict rule mirrored)",
+        "8001d170" in addrs("not_observable_const"),
+    )
+    check(
+        "NOT WIRED const with no executed reference is never accused",
+        "8001d120" in addrs("not_observable_const")
+        and "8001d120" not in addrs("disclosed_entered")
+        and "8001d120" not in addrs("inert_entered"),
+        f"disclosed={addrs('disclosed_entered')} inert={addrs('inert_entered')}",
+    )
+    check(
+        "NOT WIRED const an executed fn really references IS accused",
+        "8001d180" in addrs("disclosed_entered")
+        and "8001d180" in addrs("inert_entered"),
+        f"disclosed={addrs('disclosed_entered')}",
+    )
+    check(
+        "unexecuted fn anchor stays on the never-entered worklist",
+        "8001d150" in addrs("live_unentered"),
+    )
+    check(
+        "type anchor with no executed method is never-entered, not const",
+        "8001d190" in addrs("live_unentered")
+        and "8001d190" not in addrs("not_observable_const"),
+    )
+    check(
+        "type anchor with an executed method is entered",
+        "8001d1a0" in addrs("live_entered"),
+    )
+    check(
+        "nothing in this corpus is unobservable",
+        not addrs("unobservable"),
+        f"unobservable={addrs('unobservable')}",
+    )
+
+    if failures:
+        print(
+            f"\nself-test: {failures} case(s) failed - the item-aware verdict "
+            "is not trustworthy, so its report rows mean nothing"
+        )
+        return 2
+    print("\nself-test: all cases pass")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument(
@@ -579,7 +1001,16 @@ def main() -> int:
         help="print `<test> <package>` per canonical ladder and exit (the "
         "export recipe reads this, so it cannot drift from the list)",
     )
+    ap.add_argument(
+        "--selftest",
+        action="store_true",
+        help="run the item-verdict resolver self-test on a synthetic corpus "
+        "and exit (no coverage data or repo state touched)",
+    )
     args = ap.parse_args()
+
+    if args.selftest:
+        return run_selftest()
 
     if args.list_ladders:
         for name, pkg in CANONICAL_LADDERS:
@@ -614,66 +1045,18 @@ def main() -> int:
     anchors = catalog.collect_port_anchors(srcs)
     live, not_live = catalog_address_sets()
 
-    inert_entered: list[tuple[str, dict]] = []
-    disclosed_entered: list[tuple[str, dict]] = []
-    live_entered: set[str] = set()
-    live_unentered: list[tuple[str, dict]] = []
-    # An address whose every anchor file is absent from *every* source's
-    # coverage was never observable - it is compiled into a different target
-    # (wasm-only crates, other binaries). Counting it as "never entered" would
-    # inflate the worklist with rows no run could have exercised either way,
-    # and would make the zero buckets below look better-founded than they are.
-    unobservable: list[tuple[str, dict]] = []
+    joined = join_anchor_coverage(catalog, anchors, srcs, sources, live, not_live)
+    inert_entered = joined["inert_entered"]
+    disclosed_entered = joined["disclosed_entered"]
+    live_entered = joined["live_entered"]
+    live_unentered = joined["live_unentered"]
+    unobservable = joined["unobservable"]
+    not_observable_const = joined["not_observable_const"]
     # label -> the live addresses that source entered. Drives the per-source
     # contribution table: an address several ladders reach is credited to each,
     # and the `unique` column is what would be lost by dropping that ladder.
-    per_source_live: dict[str, set[str]] = {label: set() for label, _ in sources}
-
-    def ran_in(cov: dict[str, FileCoverage], site: dict) -> bool | None:
-        """`None` when this source cannot observe the site at all."""
-        fc = cov.get(site["file"])
-        if fc is None:
-            return None
-        if site["kind"] == "module":
-            return fc.any_executed()
-        return bool(fc.verdict_at(site["line"]))
-
-    for addr, sites in sorted(anchors.items()):
-        entered_site = None
-        observable = False
-        for label, cov in sources:
-            for site in sites:
-                ran = ran_in(cov, site)
-                if ran is None:
-                    continue
-                observable = True
-                if ran:
-                    if entered_site is None:
-                        entered_site = site
-                    if addr in live:
-                        per_source_live[label].add(addr)
-                    break
-        if entered_site is not None:
-            if addr in not_live:
-                inert_entered.append((addr, entered_site))
-            if entered_site.get("not_wired_tag"):
-                disclosed_entered.append((addr, entered_site))
-            if addr in live:
-                live_entered.add(addr)
-        elif not observable:
-            unobservable.append((addr, sites[0]))
-        elif addr in live:
-            live_unentered.append((addr, sites[0]))
-
-    # Non-vacuity: the two zero-valued buckets above are only meaningful if the
-    # join actually looked at those addresses. Report the observable share so a
-    # zero produced by a lookup miss cannot be read as a clean result. Observed
-    # across the union - an address one ladder's binary cannot see may still be
-    # compiled into another's.
-    all_files = {f for _, cov in sources for f in cov}
-    not_live_observable = sum(
-        1 for a in not_live if a in anchors and any(s["file"] in all_files for s in anchors[a])
-    )
+    per_source_live = joined["per_source_live"]
+    not_live_observable = joined["not_live_observable"]
 
     lines: list[str] = []
     w = lines.append
@@ -689,6 +1072,7 @@ def main() -> int:
     w(f"- statically live: **{len(live)}**, of which entered by a run: **{len(live_entered)}**")
     w(f"- statically not-live: **{len(not_live)}**, of which entered anyway: **{len(inert_entered)}**")
     w(f"- `NOT WIRED`-disclosed anchors executed: **{len(disclosed_entered)}**")
+    w(f"- not observable (const anchors, no executed reference): **{len(not_observable_const)}**")
     w(f"- not observable in any of these binaries (excluded above): **{len(unobservable)}**")
     w("")
     w(
@@ -769,7 +1153,18 @@ def main() -> int:
         live_unentered,
         "Statically reachable, reached by none of the ladders above. Not "
         "defects - this is the wiring worklist ordered by what a playthrough "
-        "actually needs, and it shrinks as the ladders reach further.",
+        "actually needs, and it shrinks as the ladders reach further. Item "
+        "anchors (const / static / type alias) never appear here - an item has "
+        "no lines to enter, so its rows live in the bucket below instead.",
+    )
+    table(
+        "Not observable (const anchors)",
+        not_observable_const,
+        "Item anchors whose executed verdict is reference-based (see the "
+        "script header) and where no attributable referencing function "
+        "executed. Not \"never entered\" - there is nothing to enter - and "
+        "not a worklist: converting one of these means executing a function "
+        "that *references* the item, at which point the row moves on its own.",
     )
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -782,6 +1177,7 @@ def main() -> int:
     print(f"  (observable         : {not_live_observable} / {len(not_live)})")
     print(f"NOT WIRED executed    : {len(disclosed_entered)}")
     print(f"live never entered    : {len(live_unentered)}")
+    print(f"not observable (const): {len(not_observable_const)}")
     print(f"not observable        : {len(unobservable)}")
     for label, _ in sources:
         mine = per_source_live[label]
