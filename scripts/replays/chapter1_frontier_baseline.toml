@@ -1,0 +1,72 @@
+# Chapter-1 scene-frontier baseline.
+#
+# What `crates/engine-core/tests/chapter1_frontier_ladder.rs` reached over
+# the whole chapter-1 reachable scene set, rather than along one route. The
+# test asserts `>=` on every number below, so each is a ratchet: it may go up
+# in a reviewed edit, and a drop fails the run.
+#
+# The scene set is not a list. It is the BFS closure of `town01` over each
+# scene's own decoded `0x3F` named-scene-change destinations, stopped at the
+# kingdom boundary - a destination that is another kingdom's overworld
+# (`mapNN` other than `map01`) is recorded and not expanded, because `map02`
+# and `map03` are the chapter-2 / chapter-3 arcs.
+#
+# Rungs, per scene, ordered and cumulative (the score is the count cleared
+# before the first one that was not):
+#   1 assets  Scene::load resolves and a MAN payload comes back
+#   2 man     the MAN parses: partition table + 0x3F destination table
+#   3 enter   SceneHost enters it in Field / WorldMap
+#   4 script  its entry script settles and hands control back
+#   5 walk    pad-only input displaces the player at least one tile
+#   6 exit    an exit record fires and lands in the scene it names
+#
+# Rung 5 is pad-only - nothing is seated. Rung 6 is NOT pad-only and does not
+# claim to be: the player is seated onto the exit's own `.MAP` trigger tile,
+# so the rung scores the transition and its landing, not the locomotion to the
+# door. Walking to a door under pad is `critical_path_baseline.toml`'s number,
+# and it is a different and harder claim.
+#
+# A scene whose entry script leaves on its own (a scripted `0x3F` with no
+# player input) is marked `~` on rungs 5 and 6 and scores 4. That is not an
+# engine failure and the test reports those scenes separately - but the score
+# still does not credit them, because a rung that never ran was never
+# demonstrated.
+#
+# `scenes` is the closure size. It is a ratchet in its own right: a
+# destination-decode regression that drops a scene off the graph would
+# otherwise *raise* the average and read as progress.
+#
+# `full_ladder` counts scenes that cleared all six rungs.
+#
+# Where the frontier stops, and why (each of these is a finding the run
+# prints in full; they are recorded here so the shortfall between
+# `rung_total` and `scenes * 6` is not mistaken for noise):
+#
+# - The closure is 27 scenes and its only kingdom boundary is `jiji ->
+#   map02`. Everything from Rim Elm to the deep Drake Castle rooms and the
+#   Uru Mais chain is inside it, and every one of the 27 loads, enters,
+#   settles and can be walked.
+#
+# - `uru` / `urudre1` / `urudre2` / `urudre3` stop at rung 6. Not because a
+#   transition fails: **no partition-2 record in any of the four carries a
+#   `0x3F` at all**, so the `.MAP` gate-1 trigger -> P2 record -> `0x3F`
+#   join that every other chapter-1 interior's doors use finds nothing to
+#   join. Their destinations are real and decode from partition 1. The Uru
+#   Mais chain is the one chapter-1 interior family whose doors are not P2
+#   door-choreography records, and that is a gap in the *exit-site join*,
+#   not in the scenes.
+#
+# - `jouine` (the deepest Drake Castle room) stops at rung 6 because its MAN
+#   lists no `0x3F` destination whatsoever - it is left by something other
+#   than a scene-change op.
+#
+# - `izumi` stops at rung 5, and only on a first visit. Its C1-gated
+#   first-visit record relocates the player about thirty tiles with the pad
+#   released, so the driven run cannot beat its own control; the revisit
+#   probe walks four tiles normally. This is the first-visit script owning
+#   the player, not a locomotion defect - and it is exactly the case the
+#   control run exists to refuse to credit.
+
+scenes = 27
+rung_total = 155
+full_ladder = 21

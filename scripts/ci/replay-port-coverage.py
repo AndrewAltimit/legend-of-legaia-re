@@ -428,6 +428,25 @@ CANONICAL_LADDERS = [
     # WITHOUT `--release` (see "a release export loses executed code" above).
     ("w2b_dialog_picker_ladder", "legaia-engine-core"),
     ("w2b_fmv_handoff_ladder", "legaia-engine-core"),
+    # --- lane L4 (playable-ch1) ---------------------------------------- <L4>
+    # `chapter1_frontier_ladder` is the only union member denominated in
+    # SCENES rather than in a route: it takes the BFS closure of `town01` over
+    # the disc's own `0x3F` destination tables (27 scenes, bounded at the
+    # `jiji -> map02` kingdom handoff) and drives every member through load ->
+    # enter -> settle -> pad-walk -> exit.
+    #
+    # What that reaches and no route ladder does: the entry script, walk-on
+    # dispatch, collision grid and exit-record path of twenty-two interiors
+    # the pad ladders never visit - the Drake Castle chain (`jouina` ..
+    # `jouine`), the Uru Mais rooms, `garmel`, `bylon`, `izumi`, `town0b`.
+    # `critical_path_replay` walks five scenes well; this one walks
+    # twenty-seven once each, so the two are different numbers rather than
+    # different sizes of the same one.
+    #
+    # Disc-gated and skip-passes without `LEGAIA_DISC_BIN`; export WITHOUT
+    # `--release` (see "a release export loses executed code" above).
+    ("chapter1_frontier_ladder", "legaia-engine-core"),
+    # ------------------------------------------------------------------ </L4>
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
