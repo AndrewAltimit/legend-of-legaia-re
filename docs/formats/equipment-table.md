@@ -162,6 +162,30 @@ accessories are `kind == 2` items whose descriptor `+3` byte indexes the
 64-slot passive-effect space. Pinned by the disc-gated `legaia-gamedata`
 test `equip_slots_vs_disc`.
 
+## The `+5` byte has two readers, and both find the sentinel
+
+Besides the passive aggregator, the menu overlay's item-detail renderer
+`FUN_801D5AE8` (shop window 39, the sell list's panel) reads the byte directly:
+at `0x801D5C90..0x801D5CA0` it takes the item property record's `+0` class byte,
+and on class `1` does `sll v0,a0,0x3; addu v0,v0,v1; lbu a0,0x5(v0)` with
+`v1 = 0x80074F68` - the same stride-8 record the item's `+1` bonus index
+selects - then bounds the result with `slti ...,0x40` at `0x801D5CC4` before
+indexing the passive name / description table at `0x8007625C`. Class `2` takes
+the item-effect record's `+3` instead.
+
+Two things follow. The byte is **row**-keyed, not item-id-keyed: several item
+ids resolve to one bonus row, so a per-id view of this column is a coarser map
+than the renderer's. And because every retail row carries `0x40`, the class-`1`
+arm of that chain never produces a passive on an unmodified disc - every passive
+line window 39 prints comes from the class-`2` arm. A reader who finds the chain
+and not the data will go looking for equipment passives that are not missing.
+The disc-gated `equip_stats_real` pins the column at the sentinel across all
+parsed rows so the premise stays measured rather than assumed.
+
+Parser side: `legaia_asset::equip_stats::EquipBonus::passive_index` /
+`has_passive`, mirrored row-keyed at
+`legaia_engine_core::equipment::DiscEquipInfo::row_passive_index`.
+
 ## See also
 
 - [Item property / name table](item-table.md) - the shared table this indexes through.

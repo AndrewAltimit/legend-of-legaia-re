@@ -312,8 +312,18 @@ The whole body is gated on the staged id word `DAT_801E46B0` being
 **positive**, with one exception: the `0x90 x 0x28` shade box at
 `(WX, WY + 0x45)` draws unconditionally, so an empty panel is not an empty
 rectangle. Ported as `engine-core::shop::{shop_sell_detail_panel,
-item_passive_index}`; the browser play page draws it for the sell list in
-place of the buy-side info window 34 (`web-viewer::play_shop`).
+item_passive_index}`; **both** hosts draw it for the sell list in place of the
+buy-side info window 34 (`web-viewer::play_shop`,
+`legaia-engine`'s `window::shop_windows`). The two windows are alternatives, not
+siblings - their rects overlap and both print the name / description head - so a
+host that drew 34 and 39 together would double that text rather than gain a
+panel.
+
+The equipment arm of that passive chain is **inert on an unmodified disc**:
+every equipment bonus record carries the `0x40` sentinel in `+5`, so every
+passive line this window prints in practice comes from the item-effect arm. See
+[equipment-table.md](../formats/equipment-table.md) for the measurement and for
+why the port's mirror of the column is row-keyed.
 
 `engine-render::shop_draws_for` implements the above layout using these
 confirmed constants. The cost prompt and Yes/No cursor are rendered in

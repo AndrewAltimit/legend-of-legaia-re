@@ -247,6 +247,48 @@ All three are mirrored as `legaia_engine_core::mode::mode_init_bare`, beside
 
 The engine mirrors this: `BootSession` hosts the pause-menu session headlessly (`open_field_menu` / the Start-edge path in `BootSession::tick`), holding the world in `SceneMode::Menu` while the menu is open - `engine_core::mode` maps the CARD pair (`CardInit`/`CardMode`) to that scene mode - and the mode-trace oracle (`mode_trace_e3`) drives menu-open scenarios with a scripted Start press and asserts full menu-mode convergence (scene mode + active scene + the `game_mode` byte, engine `0x17` vs the retail snapshot).
 
+##### Mode 23 runs no frame driver
+
+Mode 23's own handler is not a variation on the shared one, it is a
+substitution. `FUN_80025F74` calls the frame-begin pass `FUN_8001698C`, then
+`FUN_80017978` where the other handlers call the master frame driver
+`FUN_80016444`, then the frame-end pass `FUN_80016B6C`. `FUN_80017978` is
+eighteen instructions (`0x80017978..0x800179BC`) carrying three `jal`s - the
+debug mode-advance chord `FUN_800179C0` (inert on a shipped disc), an indirect
+call through the CARD actor's `+0x0C` tick handler, and the dev readout HUD
+`FUN_800188C8` - and **none of them is `0x80016444`**.
+
+`FUN_80016444` is where the five `FUN_8002519C` actor tick passes live, so the
+consequence is a whole-frame one: while the pause menu owns the frame, retail
+advances no actor, no effect, no move VM and no animation, and runs no render
+pass either. The CARD actor's handler draws the entire frame. It also ends
+`move v0,zero`, so the caller's abort test can never fire and the frame-end pass
+always runs - which is why the timed sound-source release and the cadence
+resolver keep working under the menu while everything in the master driver
+stops.
+
+Ported as `legaia_engine_core::mode::runs_master_frame_driver`, which
+`World::tick` consults to suspend its actor / effect / move-VM passes rather
+than keying on `SceneMode::Menu` directly.
+
+##### The mode word does not determine the scene
+
+Modes 24 / 25 `OTHER` host **all five** warp minigames, and the mode word says
+nothing about which. Retail's discriminator is a second register, the signed
+halfword `_DAT_8007BA34`: the field VM's op-`0x3E` door-warp arm writes
+`sub_id = op0 - 100` there (`sh v1,-0x45cc(v0)` at `0x801E07B8`) in the delay
+slot of the same pair that puts `0x18` into `_DAT_8007B83C`, and `FUN_80025980`
+reads it twice with `lh` to pick the overlay and its init entry. That init's
+last act sets the mode word to `0x19` and **leaves the sub-id standing**, so the
+pair stays readable for every frame the minigame runs.
+
+Two consequences for anything mapping between the retail mode word and a
+higher-level dispatch state. First, the pair is the key, not the word: reading
+`0x19` alone cannot tell fishing from dance. Second, `0x18` is the *init* half,
+which runs for a single frame - keying a live minigame on `0x18` never observes
+one. The engine's `GameMode::scene_mode_with_warp` takes the pair;
+`GameMode::for_scene_mode` is its (deliberately lossy) inverse.
+
 **The dev mode-names mislead.** `MAIN INIT`/`MAIN MODE` (modes 2/3) are the **field/town gameplay** init/run pair (`game_mode 0x03` is the on-field / in-town loop), *not* a standalone options screen - the per-scene initializer `FUN_801D6704` they reach is unmistakably the map loader (debug strings `map_name`, `map_read`, `man_set`, `camera_set`, `fog_set`, `tmds: %d`, `game_mode`, `program_mode`; calls the field asset loader `FUN_8001F7C0` and MAN decoder `FUN_8003AEB0`). `CONFIG INIT` doesn't initialise game config; it initialises the dev debug-menu mode (PROT 0971). The engine-core `GameMode` enum in `crates/engine-core/src/mode.rs` shares these dev names; its docstrings now reflect the field-mode semantics.
 
 #### New Game boot chain (title → field)
