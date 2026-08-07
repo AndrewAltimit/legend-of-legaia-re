@@ -128,6 +128,39 @@ fn the_shop_window_ids_resolve_to_the_painters_the_host_expects() {
     assert!(painter_at(&table, 34, MenuWindowPainter::SellQuantity).is_none());
 }
 
+/// Window 35, the buy-quantity readout, has **no** painter variant: its
+/// content renderer `FUN_801D5510` is ported as a pens-returning kernel
+/// (`engine-core::shop::shop_buy_quantity_panel`), so `painter_at` cannot
+/// resolve it and both hosts guard the id with the descriptor's own
+/// `renderer_va` instead.
+///
+/// That guard is only as good as the constant it compares against, and a
+/// unit test on either host would just restate its own literal. This asserts
+/// the pairing the hosts depend on against the **disc's** table: id 35 exists,
+/// its renderer is that VA, its rect is drawable, and no painter claims it.
+#[test]
+fn window_35_is_the_pens_only_buy_quantity_renderer_both_hosts_guard_on() {
+    let Some(table) = menu_window_table() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN or extracted/PROT.DAT missing");
+        return;
+    };
+    /// The `renderer_va` both hosts filter window 35 by.
+    const RENDERER_BUY_QUANTITY: u32 = 0x801D_5510;
+    let d = table.window(35).expect("window 35 in the disc table");
+    assert_eq!(
+        d.renderer_va, RENDERER_BUY_QUANTITY,
+        "window 35's content renderer moved - both hosts' buy-quantity block \
+         filters on this VA and would silently stop drawing"
+    );
+    let r = legaia_engine_render::painter_rect(d);
+    assert!(r.w > 0 && r.h > 0, "window 35 has a drawable extent");
+    assert!(
+        legaia_engine_render::painter_for(d).is_none(),
+        "window 35 must stay outside the painter dispatch: its port returns \
+         pens, not a draw list, so a painter mapping would draw it twice"
+    );
+}
+
 /// Each painted window's rect is the descriptor's, so a host never needs a
 /// pinned copy: the dispatch hands back the descriptor and the rect comes off
 /// it. Guards against a painter being fed a rect from the wrong record.
