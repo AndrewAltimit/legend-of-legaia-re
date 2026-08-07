@@ -949,17 +949,20 @@ Four addresses did **not** move, and each is a different shape:
 
 | address | why it stayed |
 |---|---|
-| `801f44a0` | orphan: nothing in the workspace calls `DamagePopupRing::push` |
-| `801d84c0` `801dbb8c` `801dbc30` | `battle_party_panel.rs` emits no coverage record at all - every item is an unused `const fn`, so the module is not in the binary |
+| `801f44a0` | resolved: `engine-core`'s `BattleHud::push_popup` delegates every popup push to `DamagePopupRing::push`, so simultaneous popups are ring-bounded on both battle-HUD hosts |
+| `801d84c0` `801dbb8c` `801dbc30` | `panel_anchors` is production-called (`engine-ui`'s `party_panel_stage_x` reads it for the roster name pens); the rest of `battle_party_panel.rs` (`panel_labels`, the label-actor lifecycle, `cross_out_mark`) stays disclosed `NOT WIRED` |
 | `801e1ab0` | content-gated: the streak needs a move-FX scene whose move-power record carries a non-zero trail texture page (`+0x0b`) |
 
-The party-panel row is the sharper finding: `engine-ui` reproduces
-`panel_anchors`' constants as its own `party_panel_stage_x` rather than
-calling the port, and an `engine-shell` test pins the two equal - so the gate
-passes, the numbers agree, and the ported kernel is dead. `DamagePopupRing` is
-the same shape one level down: it models retail's **8-slot wrapping** ring
-while the live HUD keeps an unbounded `Vec<DamagePopup>`, so retail's
-"a ninth popup overwrites the first" is not reproduced.
+The party-panel row was the sharper finding: `engine-ui` reproduced
+`panel_anchors`' constants as its own `party_panel_stage_x` literals, and an
+`engine-shell` test pinned the two equal - the gate passed, the numbers
+agreed, and the ported kernel was dead. `party_panel_stage_x` now reads
+`panel_anchors` directly, and the shell test asserts the production path
+returns the kernel's values. `DamagePopupRing` was the same shape one level
+down: it models retail's **8-slot wrapping** ring while the live HUD kept an
+unbounded `Vec<DamagePopup>`; `BattleHud::push_popup` now delegates every
+push to the ring, so retail's "a ninth simultaneous popup overwrites the
+first" holds in the port.
 
 Four `PORT` tags moved off module scope in the same pass, onto the routines
 they name (`pick_channel`, `build_afterimage_quad`, `LabelState::opened`,
