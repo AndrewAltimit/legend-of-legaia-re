@@ -685,6 +685,15 @@ pub struct World {
     /// lock. See [`ThreeActorTalk`].
     pub three_actor_talk: Option<ThreeActorTalk>,
 
+    /// Host-latched "switch character" request for the active three-actor
+    /// talk - the engine input standing in for retail's pad-derived word
+    /// `_DAT_8007B874` bit `0x80` (the request route of `FUN_801D27E0`'s
+    /// state-0 arm gate). Hosts latch it from their pad handler via
+    /// [`World::request_talk_leader_switch`]; the controller poll
+    /// ([`World::tick_three_actor_talk`]) consumes it on its next state-0
+    /// frame and drops it when no talk is live.
+    pub talk_switch_requested: bool,
+
     /// Last `field_interact` request. Cleared by the engine when handled
     /// (set to `None`).
     pub last_field_interact: Option<(u8, u8)>,
@@ -2705,6 +2714,7 @@ impl World {
             battle_bgm_active: false,
             current_dialog: None,
             three_actor_talk: None,
+            talk_switch_requested: false,
             last_field_interact: None,
             field_npc_dialog: std::collections::HashMap::new(),
             field_npc_dialog_prologue: std::collections::HashMap::new(),

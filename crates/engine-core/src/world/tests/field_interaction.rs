@@ -783,6 +783,188 @@ fn three_actor_talk_first_arm_without_leader_defaults_to_slot_zero() {
     assert!(world.system_flag_test(0x10), "flag 0x10 + leader(0)");
 }
 
+// ---- the mid-talk leader cycle (FUN_801D27E0 states 1..=4) ----
+
+/// A world with a live three-actor talk: player actor in slot 0 at
+/// `(500, 600)` heading `0x200`, participants 5/6/7 seeded as field NPCs,
+/// leader slot 0, presence-flag base `0x10` (the retail alignment where the
+/// instruction's u16 names the same flags the arm sets).
+fn talk_world_with_participants() -> World {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.player_actor_slot = Some(0);
+    world.actors[0].active = true;
+    world.actors[0].move_state.world_x = 500;
+    world.actors[0].move_state.world_z = 600;
+    world.actors[0].move_state.render_26 = 0x200;
+    world.party_actor_slots = vec![Some(0), Some(1), Some(2)];
+    world.party_leader_slot = Some(0);
+    for (slot, pos, heading) in [
+        (5u8, (100i16, 200i16), 0x400i16),
+        (6, (300, 400), 0x600),
+        (7, (700, 800), 0x000),
+    ] {
+        world.field_npc_positions.insert(slot, pos);
+        world.field_npc_headings.insert(slot, heading);
+    }
+    let op = talk_op([5, 6, 7], 0x10, 10);
+    let mut ctx = FieldCtx::default();
+    let mut host = FieldHostImpl { world: &mut world };
+    let _ = vm::field::step(&mut host, &mut ctx, &op, 0);
+    world
+}
+
+/// The switch cycle (`FUN_801D27E0` states 0->1->2->3->4->0): a latched
+/// request arms the fade-out, the swap hands leadership to the next
+/// participant whose presence flag reads clear, the outgoing leader's NPC
+/// takes the player's pose, the player takes the incoming NPC's pose, the
+/// incoming NPC parks at the `0x3F80` sentinel, and the SM returns to the
+/// state-0 poll with the talk still live.
+#[test]
+fn three_actor_talk_switch_cycles_leader_and_returns_to_poll() {
+    let mut world = talk_world_with_participants();
+    assert!(world.system_flag_test(0x10), "arm set the leader's flag");
+
+    world.request_talk_leader_switch();
+    world.tick_three_actor_talk();
+    let talk = world.three_actor_talk.expect("talk stays live");
+    assert_eq!(talk.swap.phase, 1, "request arms the fade-out state");
+    assert!(
+        world.screen_fade.is_some(),
+        "state 0 spawned the fade-to-white"
+    );
+
+    // Run the SM through the fade / swap / fade cycle back to the poll.
+    for _ in 0..100 {
+        world.tick_three_actor_talk();
+        if world.three_actor_talk.is_some_and(|t| t.swap.phase == 0) {
+            break;
+        }
+    }
+    let talk = world.three_actor_talk.expect("talk still live after cycle");
+    assert_eq!(talk.swap.phase, 0, "SM returned to the state-0 poll");
+    assert!(world.system_flag_test(0xD), "talk lock still up");
+
+    // Leadership moved to slot 1 (scan from leader+1; flag 0x11 was clear).
+    assert_eq!(world.party_leader_slot, Some(1));
+    assert_eq!(world.party_actor_slots, vec![Some(1)]);
+    assert!(!world.system_flag_test(0x10));
+    assert!(world.system_flag_test(0x11), "flag 0x10 + new leader set");
+    assert!(!world.system_flag_test(0x12));
+
+    // Outgoing leader's participant (id 5) took the player's pose.
+    assert_eq!(world.field_npc_positions.get(&5), Some(&(500, 600)));
+    assert_eq!(world.field_npc_headings.get(&5), Some(&0x200));
+    // The player took the incoming participant's (id 6) pose + heading.
+    let ms = &world.actors[0].move_state;
+    assert_eq!((ms.world_x, ms.world_z), (300, 400));
+    assert_eq!(ms.render_26, 0x600);
+    // The incoming participant parked at the 0x3F80 sentinel.
+    assert_eq!(world.field_npc_positions.get(&6), Some(&(0x3F80, 0x3F80)));
+}
+
+/// All three presence flags set = nobody left to switch to: the arm gate
+/// returns before the request route is even consulted (`801d2920`).
+#[test]
+fn three_actor_talk_switch_blocked_when_all_participants_flagged() {
+    let mut world = talk_world_with_participants();
+    world.system_flag_set(0x11);
+    world.system_flag_set(0x12);
+    world.request_talk_leader_switch();
+    world.tick_three_actor_talk();
+    let talk = world.three_actor_talk.expect("talk stays live");
+    assert_eq!(talk.swap.phase, 0, "arm gate blocks with all flags set");
+    assert!(world.screen_fade.is_none(), "no fade spawned");
+}
+
+/// Exactly two flags set requires the current leader's own flag among them
+/// (`801d2928..801d2944`): two set with the leader's clear blocks the arm.
+#[test]
+fn three_actor_talk_switch_two_flagged_needs_leader_flag() {
+    let mut world = talk_world_with_participants();
+    // Arm set 0x10 (leader 0). Re-point the two flags at the non-leaders.
+    world.system_flag_clear(0x10);
+    world.system_flag_set(0x11);
+    world.system_flag_set(0x12);
+    world.request_talk_leader_switch();
+    world.tick_three_actor_talk();
+    let talk = world.three_actor_talk.expect("talk stays live");
+    assert_eq!(talk.swap.phase, 0, "two-set gate needs the leader's flag");
+}
+
+/// The state-2 search steps past participants whose presence flag is set:
+/// with slot 1 already flagged, leadership lands on slot 2.
+#[test]
+fn three_actor_talk_switch_skips_flagged_participant() {
+    let mut world = talk_world_with_participants();
+    world.system_flag_set(0x11); // slot 1 already had its turn
+    world.request_talk_leader_switch();
+    for _ in 0..100 {
+        world.tick_three_actor_talk();
+        if world.three_actor_talk.is_some_and(|t| t.swap.phase == 0)
+            && world.party_leader_slot != Some(0)
+        {
+            break;
+        }
+    }
+    assert_eq!(world.party_leader_slot, Some(2), "search skipped slot 1");
+    assert!(world.system_flag_test(0x12), "flag re-pointed at slot 2");
+    // The player stands where participant 7 stood.
+    let ms = &world.actors[0].move_state;
+    assert_eq!((ms.world_x, ms.world_z), (700, 800));
+}
+
+/// Only state 0 polls the talk lock: a lock drop mid-swap (states 1..=4)
+/// leaves the talk live until the SM returns to the poll.
+#[test]
+fn three_actor_talk_lock_drop_mid_swap_waits_for_the_poll() {
+    let mut world = talk_world_with_participants();
+    world.request_talk_leader_switch();
+    world.tick_three_actor_talk();
+    assert_eq!(world.three_actor_talk.unwrap().swap.phase, 1);
+
+    world.system_flag_clear(0xD);
+    world.tick_three_actor_talk();
+    assert!(
+        world.three_actor_talk.is_some(),
+        "states 1..=4 never poll the lock"
+    );
+    // Back at state 0, the next poll despawns and restores the party.
+    for _ in 0..100 {
+        world.tick_three_actor_talk();
+        if world.three_actor_talk.is_none() {
+            break;
+        }
+    }
+    assert!(world.three_actor_talk.is_none(), "poll despawned the talk");
+    assert_eq!(
+        world.party_actor_slots,
+        vec![Some(0), Some(1), Some(2)],
+        "pre-collapse party restored"
+    );
+}
+
+/// The suppressor gate: while a dialogue owns the pad, a latched request
+/// does not arm (engine stand-in for retail's `_DAT_8007B6B4` suppressor).
+#[test]
+fn three_actor_talk_switch_suppressed_under_dialogue() {
+    let mut world = talk_world_with_participants();
+    world.current_dialog = Some(crate::world::DialogRequest {
+        text_id: 0,
+        inline: vec![0x1F, b'x', 0x00],
+        world_x: 0,
+        world_z: 0,
+        depth_id: 0,
+    });
+    world.request_talk_leader_switch();
+    world.tick_three_actor_talk();
+    assert_eq!(
+        world.three_actor_talk.unwrap().swap.phase,
+        0,
+        "no switch arms under an open text box"
+    );
+}
+
 // ---- the walk-up talk: engagement, loop, locomotion, facing ----
 
 /// A scene the player can walk in: every collision cell open, every object

@@ -7,8 +7,10 @@
 //! the ambient particle emitter.
 //!
 //! Two more of the same family sit at the end of the file: the party-leader
-//! swap controller [`LeaderSwap`] (`FUN_801D27E0`) and the geometry colour
-//! grade [`shift_primitive_colours`] (`FUN_801D5E20`).
+//! swap controller [`LeaderSwap`] (`FUN_801D27E0`) - wired, hosted by
+//! `World::tick_three_actor_talk` for the three-actor-talk session, so its
+//! `step` doc opens a `WIRED:` line like [`save_screen_spawn`]'s - and the
+//! geometry colour grade [`shift_primitive_colours`] (`FUN_801D5E20`).
 //!
 //! The four `PORT` tags for the handlers above live on the items that
 //! implement them - [`PositionTween::step`], [`ElementTeardown::step`],
@@ -663,13 +665,15 @@ impl LeaderSwap {
     /// PORT: FUN_801D27E0
     /// REF: FUN_801DE190, FUN_801DE3E0, FUN_801DB8EC, FUN_801DAA50
     ///
-    /// NOT WIRED: `legaia_engine_core::World` has one field leader and no
-    /// per-slot party actor objects to swap between - the field renders the
-    /// leader's mesh from the party record rather than from three resident
-    /// actors, so nothing can service
-    /// [`LeaderSwapEffect::StoreOutgoingPose`] or
-    /// [`LeaderSwapEffect::ClearIncomingPose`]. Wiring it needs those three
-    /// resident actors first, and the `0x800845E4` pose table with them.
+    /// WIRED: `legaia_engine_core::World::tick_three_actor_talk` hosts this
+    /// SM for the active three-actor-talk session (field-VM op `0x43` sub-2
+    /// installs it; the session's `swap` field is the controller). The
+    /// three-actor-talk participants' field-NPC records stand in for
+    /// retail's three resident party actors -
+    /// [`LeaderSwapEffect::StoreOutgoingPose`] /
+    /// [`LeaderSwapEffect::ClearIncomingPose`] read and write
+    /// `World::field_npc_positions`, and the session's saved-pose table is
+    /// the `0x800845E4` mirror.
     pub fn step(
         &mut self,
         world: &LeaderSwapWorld,

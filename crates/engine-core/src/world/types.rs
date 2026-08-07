@@ -1001,6 +1001,15 @@ pub struct ThreeActorTalk {
     pub saved_party_len: u8,
     /// [`World::party_leader_slot`] before the collapse.
     pub saved_leader: Option<u8>,
+    /// The controller SM itself (`FUN_801D27E0` `+0x54` phase + `+0x9E` fade
+    /// counter): state 0 polls the talk lock and arms the mid-talk leader
+    /// switch, states 1..=4 run the fade-out / swap / fade-in cycle, state 5
+    /// despawns. Reset to phase 0 on every op-`0x43` sub-2 (re)arm - each arm
+    /// spawns a fresh controller in retail. Its `flag_base` is
+    /// [`Self::script_id`] (controller `+0x50`), the base the presence flags
+    /// `flag_base + 0..=2` are tested against. Stepped by
+    /// [`World::tick_three_actor_talk`].
+    pub swap: crate::cutscene_script_elements::LeaderSwap,
 }
 
 /// Pending dialog request for the field-VM op 0x3F handler. The engine
