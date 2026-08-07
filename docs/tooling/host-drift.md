@@ -102,6 +102,47 @@ would not find a gap - it would manufacture eighty, because the minigames page
 is a different screen set rather than a second copy of the play page. The real
 cost of that collapse is a *model* question, which tier 3 answers.
 
+### The tier's denominator is `engine-ui`, and a screen can live outside it
+
+Tier 1 enumerates **`engine-ui` draw builders** and asks which hosts name each.
+A screen whose content comes from an `engine-core` or `engine-vm` kernel
+instead is not in the denominator at all, so a panel one host draws and the
+other does not is not a `DRIFT` row, not an `ORPHAN` row, and not a count that
+moved - it is simply absent.
+
+That is not a hypothetical. The shop's two *pens-returning* windows are both in
+this class, because a kernel that hands back pens rather than a draw list has
+no `engine-ui` builder to be enumerated:
+
+* window 35, the buy-quantity readout
+  (`engine-core::shop::shop_buy_quantity_panel`, `FUN_801D5510`) - drawn by
+  the browser page only, so a native-window buyer sized a stack with no held
+  count, no unit price and no running total on screen. Both hosts draw it now.
+* window 39, the sell-list item detail
+  (`engine-core::shop::shop_sell_detail_panel`, `FUN_801D5AE8`) - still
+  browser-only, so a native-window seller picks a row with no name, no
+  description, no price and no accessory-passive lines beside it.
+
+Window 39 has a blocker window 35 did not, and it is worth naming because it is
+the sort a "just call the kernel" reading misses. Its passive lines route
+through `shop::item_passive_index`, whose equipment arm needs the equip record's
+`+5` byte, and the native host holds equipment restrictions as
+`equipment::DiscEquipInfo`, which keeps `+6` / `+7` and **drops `+5`**. So the
+native window cannot resolve the equipment-arm passive index at all today; the
+prerequisite is that byte reaching `DiscEquipEntry` (or the raw
+`EquipStatTable` staying resident), not a call site.
+
+The general shape: **tier 1 is silent about every screen whose content kernel
+is not an `engine-ui` builder.** A cheap sweep that finds them is "public
+content-shaped `fn` in `engine-core` / `engine-vm` named by exactly one host's
+sources" - both shop windows surface on it. Read the hits, though, rather than
+counting them: most one-host kernels are correct, because the minigame pages
+and the native minigame screens are genuinely different screen sets, and one
+more is a *better* implementation on one side (the browser's floating-damage
+readout uses the font fallback while the native window samples the real 24x24
+cells out of VRAM, which is what the builder's own doc asks a VRAM-capable host
+to do).
+
 ## Tier 2 - paired constants: do paired values agree?
 
 `CONSTANT_PAIRS` in the same script. Each row names a constant on each host
