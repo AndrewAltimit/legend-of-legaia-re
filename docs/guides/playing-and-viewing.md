@@ -25,17 +25,18 @@ victory returns you to the field with XP, gold and drops. Keyboard defaults:
 arrows = D-pad, `Z` = Cross, `X` = Circle, `C` = Triangle, `V` = Square,
 `Esc` = quit. In-window extras: left-mouse drag orbits the camera, `T` cycles
 the camera-distance preset, `R` toggles precise free-angle movement (an opt-in
-enhancement - retail-style movement is the default), `D` toggles the
-camera-occlusion fade (on by default: walls between the camera and your
-character dissolve to a dither so you can always see yourself;
-`--no-occlusion-fade` starts with it off), `F2` mutes audio, `F3` swaps the
-field camera for the wide debug orbit.
+enhancement - retail-style movement is the default), `F1` shows the engine's
+diagnostic text rows (off by default), `F2` mutes audio, `F3` swaps the field
+camera for the wide debug orbit, `F4` toggles the camera-occlusion fade (on by
+default: walls between the camera and your character dissolve to a dither so
+you can always see yourself; `--no-occlusion-fade` starts with it off).
 
 Window toggles that would otherwise sit on a bound key live on the F-keys, and
 that is not cosmetic: a window key arm runs **before** the pad lookup, so one
-parked on a bound letter deletes that button from the keyboard entirely. `D`
-is the surviving case - it is the occlusion-fade toggle, so WASD has no right
-step and you walk right with the arrow key.
+parked on a bound letter deletes that button from the keyboard entirely. No
+letter key carries a window toggle - every one that did has moved to an F-key
+that the binding parser does not accept, so no rebinding can collide with
+one.
 `--boot-ui` starts at the title screen → save-select flow instead of jumping
 into the scene.
 

@@ -1953,7 +1953,10 @@ impl PlayWindowApp {
     /// scene data the port keeps faithfully; without a hint it reads as the
     /// engine being broken, which is exactly how it was reported.
     pub(super) fn encounter_hint_draws(&self, _w: u32, surface_h: u32) -> Vec<TextDraw> {
-        if !self.session.host.world.show_encounter_hint() {
+        // A diagnostic row like the shell's others, so it takes the same
+        // toggle: retail prints nothing here, and a permanent caption over
+        // the game is worse than the confusion it was written to prevent.
+        if !self.diag_rows || !self.session.host.world.show_encounter_hint() {
             return Vec::new();
         }
         let dim = [0.7f32, 0.7, 0.7, 1.0];

@@ -1091,6 +1091,9 @@ pub(super) fn cmd_play_window_with_record(
         scene_point_lights: Vec::new(),
         orbit_drag_last_x: None,
         cursor_x: 0.0,
+        field_party_hud: Default::default(),
+        field_party_hud_scene: None,
+        diag_rows: legaia_engine_render::diag_hud_enabled(),
     };
 
     // Retail-shaped equipment buy: this window draws the recipient picker

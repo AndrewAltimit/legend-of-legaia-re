@@ -461,6 +461,9 @@ impl PlayWindowApp {
             // is still mutable; the `&self` draw passes read the committed
             // pen/rect off the record.
             self.sync_text_balloon();
+            // Advance the field party-status HUD's idle countdown
+            // (`FUN_801D0D38`). Its decision is read back in the draw pass.
+            self.tick_field_party_hud();
         }
         legaia_engine_render::profile::mark("tick");
         // A tick this frame may have flipped the world into
@@ -1806,7 +1809,14 @@ impl PlayWindowApp {
                     }
                 }
             }
+            // Retail's field party-status readout - name / LV / HP / MP per
+            // present member over a translucent plate, top-left of every
+            // walkable frame. Two halves: the plate + label / numeral cells
+            // sample the system-UI atlas and ride the sprite slot below, the
+            // names ride the glyph layer here.
+            let field_hud_draws = self.field_party_hud_draws(w, h);
             let mut hud = self.build_hud(w, h);
+            hud.extend(field_hud_draws.text.iter().copied());
             // Post-battle spoils panel. The XP / gold / drops a victory
             // credits used to land with no on-screen acknowledgement at all
             // (`World::last_battle_rewards` had no reader outside its own
@@ -1838,7 +1848,13 @@ impl PlayWindowApp {
             // frame are mutually-exclusive boot states, so both
             // share this one vec (the field-menu frame draws
             // behind its text, which is emitted in the text layer).
-            let mut save_chrome_draw_vec = self.save_select_chrome_sprite_draws(w, h);
+            // The field party HUD leads this vec so its translucent plate
+            // lands under its own label / numeral cells - within one overlay
+            // the draw order is the vec order. It is suppressed whenever any
+            // other surface that samples this atlas is up, so there is no
+            // contention with the chrome appended after it.
+            let mut save_chrome_draw_vec = field_hud_draws.sprites;
+            save_chrome_draw_vec.extend(self.save_select_chrome_sprite_draws(w, h));
             save_chrome_draw_vec.extend(self.field_menu_chrome_sprite_draws(w, h));
             // Dialog-window chrome (gradient fill + gold frame + hand
             // cursors) shares the system-UI atlas slot; a dialog box
