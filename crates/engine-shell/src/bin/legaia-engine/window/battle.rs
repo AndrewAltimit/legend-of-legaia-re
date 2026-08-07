@@ -1934,14 +1934,61 @@ impl PlayWindowApp {
         let Some(banner) = self.session.host.world.battle_spoils_banner() else {
             return Vec::new();
         };
+        let leader = self.battle_spoils_leader();
         let view = legaia_engine_render::BattleSpoilsView {
             xp: banner.xp,
             gold: banner.gold,
             level_ups: &banner.level_ups,
             drops: &banner.drops,
+            leader: &leader,
         };
-        let pen = (surface_w as i32 / 2 - 60, surface_h as i32 / 3);
-        legaia_engine_render::battle_spoils_draws_for(&self.font, &view, pen)
+        let windows = legaia_engine_render::battle_spoils_windows(&view);
+        let (origin, scale) = self.save_select_stage(surface_w, surface_h);
+        let mut draws = legaia_engine_render::battle_spoils_draws_for(&self.font, &view, &windows);
+        legaia_engine_render::scale_stage_text_draws(&mut draws, origin, scale);
+        draws
+    }
+
+    /// The party leader whose name opens the spoils line.
+    fn battle_spoils_leader(&self) -> String {
+        let w = &self.session.host.world;
+        w.roster
+            .members
+            .get(w.party_roster_slot(0))
+            .map(|m| m.name())
+            .filter(|n| !n.trim().is_empty())
+            .unwrap_or_else(|| "Vahn".to_string())
+    }
+
+    /// The post-battle report's window chrome - the gold nine-slice over the
+    /// blue fill, one frame per window the shared builder describes. Rides
+    /// the system-UI atlas slot with the rest of the menu chrome.
+    pub(super) fn battle_spoils_chrome_sprite_draws(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<legaia_engine_render::SpriteDraw> {
+        let Some(banner) = self.session.host.world.battle_spoils_banner() else {
+            return Vec::new();
+        };
+        let Some(rects) = self.save_menu.as_ref().map(|a| &a.rects) else {
+            return Vec::new();
+        };
+        let leader = self.battle_spoils_leader();
+        let view = legaia_engine_render::BattleSpoilsView {
+            xp: banner.xp,
+            gold: banner.gold,
+            level_ups: &banner.level_ups,
+            drops: &banner.drops,
+            leader: &leader,
+        };
+        let (origin, scale) = self.save_select_stage(surface_w, surface_h);
+        legaia_engine_render::battle_spoils_windows(&view)
+            .iter()
+            .flat_map(|w| {
+                legaia_engine_render::menu_window_chrome_draws_for(rects, w.rect, origin, scale)
+            })
+            .collect()
     }
 
     /// One dim HUD line while the live loop is armed on a scene that cannot
@@ -1953,7 +2000,10 @@ impl PlayWindowApp {
     /// scene data the port keeps faithfully; without a hint it reads as the
     /// engine being broken, which is exactly how it was reported.
     pub(super) fn encounter_hint_draws(&self, _w: u32, surface_h: u32) -> Vec<TextDraw> {
-        if !self.session.host.world.show_encounter_hint() {
+        // A diagnostic row like the shell's others, so it takes the same
+        // toggle: retail prints nothing here, and a permanent caption over
+        // the game is worse than the confusion it was written to prevent.
+        if !self.diag_rows || !self.session.host.world.show_encounter_hint() {
             return Vec::new();
         }
         let dim = [0.7f32, 0.7, 0.7, 1.0];

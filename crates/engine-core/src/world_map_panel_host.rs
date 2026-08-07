@@ -1069,6 +1069,148 @@ impl PanelActorHost {
     }
 }
 
+/// One member's row of the field party HUD, as the hosts draw it.
+///
+/// Plain data so it crosses into the renderer-agnostic UI crate (which this
+/// crate never links) without carrying a `World` reference: the native window
+/// and the browser play page both map it onto
+/// `legaia_engine_ui::field_party_hud::FieldHudMember`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FieldHudMemberData {
+    pub name: String,
+    pub level: u8,
+    pub hp: u16,
+    pub hp_max: u16,
+    pub mp: u16,
+    pub mp_max: u16,
+    pub alive: bool,
+}
+
+/// Project the **present party** onto the field HUD's rows.
+///
+/// Retail's draw loop walks the present-party list at `0x80084598` for
+/// `0x80084594` entries and indexes the character records with it; the engine
+/// mirror is [`crate::world::World::party_roster_slot`] over
+/// [`crate::world::World::party_count`]. Every number comes from the *record*,
+/// not from a battle actor: outside a fight the battle mirrors are stale (or
+/// zero for a party that has never fought), and a field readout that only
+/// works after the first battle is worse than none.
+pub fn field_party_hud_members(world: &crate::world::World) -> Vec<FieldHudMemberData> {
+    let count = (world.party_count as usize).min(3);
+    let fallback = crate::field_menu_dispatch::roster_names(world);
+    (0..count)
+        .filter_map(|ordinal| {
+            let slot = world.party_roster_slot(ordinal);
+            let rec = world.roster.members.get(slot)?;
+            let hms = rec.hp_mp_sp();
+            // The record's own `+0x2A7` display name is what retail draws
+            // (it carries the name the player typed for Vahn); the canonical
+            // table stands in for a roster seeded without one.
+            let name = {
+                let n = rec.name();
+                if n.trim().is_empty() {
+                    fallback.get(slot).cloned().unwrap_or_default()
+                } else {
+                    n
+                }
+            };
+            Some(FieldHudMemberData {
+                name,
+                level: rec.magic_rank(),
+                hp: hms.hp_cur,
+                hp_max: hms.hp_max,
+                mp: hms.mp_cur,
+                mp_max: hms.mp_max,
+                alive: hms.hp_cur > 0,
+            })
+        })
+        .collect()
+}
+
+/// Host-side owner of the field party HUD's per-frame state.
+///
+/// The kernel [`field_hud_tick`] is pure - it takes the countdown and the
+/// cached player position and hands them back. Retail keeps them in overlay
+/// globals (`_DAT_801F348C` and the `_DAT_801F3488/348A` pair); this is that
+/// storage, held by whichever host is drawing.
+///
+/// Separate from [`PanelActorHost`] on purpose: the panel host only exists
+/// while the overworld controller does, and the HUD is a **field** surface -
+/// it is up in towns and dungeons too, which is most of the game.
+#[derive(Debug, Clone, Default)]
+pub struct FieldPartyHud {
+    timer: i16,
+    cached: Option<(i16, i16)>,
+    last: Option<HudDecision>,
+}
+
+impl FieldPartyHud {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Last frame's decision, for hosts that tick and draw in separate passes.
+    pub fn decision(&self) -> Option<HudDecision> {
+        self.last
+    }
+
+    /// Drop the cached position so the next tick takes retail's scene-entry
+    /// rearm arm. Hosts call this on a scene change - retail's own rearm
+    /// condition includes "the staged scene load is still pending".
+    pub fn rearm(&mut self) {
+        self.cached = None;
+        self.timer = 0;
+        self.last = None;
+    }
+
+    /// One frame.
+    ///
+    /// `hud_disabled` is retail's `_DAT_8007B868` - the "something else owns
+    /// the screen" gate; hosts raise it for a menu, a dialog box, a cutscene
+    /// or a battle. `view_mode` is `_DAT_800845C4`: `0` is the near field
+    /// camera (0x28-frame idle), `1` the far overworld one (0xA0), and `2`
+    /// suppresses outright. `pad_held` is the **packed** held word, because
+    /// the suppress mask is the packed D-pad - a raw word suppresses nothing.
+    pub fn tick(
+        &mut self,
+        hud_disabled: bool,
+        view_mode: i32,
+        pad_held: u16,
+        player_pos: Option<(i16, i16)>,
+        timer_delta: i16,
+        projected_y: Option<i16>,
+    ) -> HudDecision {
+        let rearm = self.cached.is_none();
+        let stationary = match (self.cached, player_pos) {
+            (Some(a), Some(b)) => a == b,
+            _ => false,
+        };
+        let (timer, decision) = field_hud_tick(HudInput {
+            hud_disabled,
+            view_mode,
+            pad: u32::from(pad_held),
+            scratch_suppress: false,
+            rearm,
+            short_idle: false,
+            timer: self.timer,
+            timer_delta,
+            player_stationary: stationary,
+            projected_y,
+        });
+        self.timer = timer;
+        // A suppressed frame must NOT refresh the cache: retail's suppress
+        // arms return before the position store, so releasing the D-pad after
+        // a walk re-enters through the position compare (which rearms the
+        // countdown) rather than through the stationary arm (which would let
+        // the HUD pop back the instant the stick centred).
+        if !matches!(decision, HudDecision::Suppressed) {
+            self.cached = player_pos;
+        }
+        self.last = Some(decision);
+        decision
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

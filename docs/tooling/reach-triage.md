@@ -149,7 +149,11 @@ pad-only run could not open one however long it ran.
 
 `--key-script` is that missing channel: `TICK:KEY` pairs delivered through the
 same keyboard arms a player's keys reach, injected from inside the per-tick
-loop. The two scripts compose - keys open the surface, the pad plays it - and
+loop. A scripted key that is *also* bound to a pad button becomes this tick's
+pad word as well: the key arm sets the bit, its release on the next line
+clears it, and the harness's neutral-pad write would then stamp the word to
+zero - so a key-only script could arm a window toggle and nothing else. The
+two scripts compose - keys open the surface, the pad plays it - and
 `w5_native_minigame_ladder` (`crates/engine-shell/tests/`) is the ladder built
 on it. It spawns one `play-window` per minigame and asserts on the **captured
 frame**: each rung requires the PNG to differ from the same tick of the same

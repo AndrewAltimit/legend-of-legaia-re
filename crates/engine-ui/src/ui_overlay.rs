@@ -525,6 +525,32 @@ pub fn font_solid_src(font: &legaia_font::Font) -> Option<(u32, u32, u32, u32)> 
     None
 }
 
+/// Locate a fully-**opaque** texel in an arbitrary RGBA8 sprite atlas and
+/// return it as a 1x1 `src` rect.
+///
+/// The sibling of [`font_solid_src`] for the sprite layer. It does not care
+/// what colour the texel is: the overlay shader is
+/// `color.rgb * texel.rgb, color.a * texel.a`, so a draw whose colour is
+/// black yields black at the colour's own alpha whatever the source pixel
+/// was. Only the alpha has to be `0xFF`.
+///
+/// This is what lets a host put a translucent plate **under** sprites drawn
+/// from the same atlas: both halves of the overlay are one draw list, and
+/// within it order is preserved - whereas the text half always composites on
+/// top of every sprite half, so a plate emitted there would darken the very
+/// readout it backs.
+pub fn atlas_opaque_texel(rgba: &[u8], width: u32, height: u32) -> Option<(u32, u32, u32, u32)> {
+    for y in 0..height {
+        for x in 0..width {
+            let off = ((y * width + x) * 4) as usize;
+            if rgba.get(off + 3).copied() == Some(0xFF) {
+                return Some((x, y, 1, 1));
+            }
+        }
+    }
+    None
+}
+
 /// RGBA for a retail gauge / readout tint index.
 ///
 /// The index space is retail's (`FUN_80046A20` / the readout-tint pair

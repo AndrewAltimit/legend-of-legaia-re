@@ -127,6 +127,17 @@ impl PlayMenuAssets {
         self.chrome.as_ref().map(|(_, r)| r)
     }
 
+    /// A fully-opaque texel inside the baked chrome atlas
+    /// ([`legaia_engine_ui::atlas_opaque_texel`]) - the surface the field
+    /// party HUD's translucent plate draws on, so the plate can ride the
+    /// sprite array beneath the readout it backs rather than the text array
+    /// on top of it.
+    pub(crate) fn chrome_solid_texel(&self) -> Option<(u32, u32, u32, u32)> {
+        self.chrome
+            .as_ref()
+            .and_then(|(a, _)| legaia_engine_ui::atlas_opaque_texel(&a.rgba, a.width, a.height))
+    }
+
     /// The battle HUD's nine status-element + eight element badge cells,
     /// projected out of the baked atlas.
     ///

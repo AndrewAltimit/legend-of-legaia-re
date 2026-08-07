@@ -1248,20 +1248,33 @@ impl LegaiaRuntime {
         // coordinates), so it joins the stage-scaled group below and gets the
         // window skin the emitter's measured rect implies.
         let tutorial = self.battle_tutorial_stage_draws(font, chrome.is_some());
+        // Retail's field party-status readout (name / LV / HP / MP per present
+        // member over a translucent plate). Already in surface pixels, like
+        // `battle`, and empty whenever anything else owns the screen
+        // ([`crate::play_field_hud`]).
+        let (field_hud_sprites, field_hud_texts) = self.field_party_hud_draws(surface_w, surface_h);
         if shop.is_none()
             && windows.is_empty()
             && banners.is_empty()
             && battle.is_empty()
             && tutorial.is_empty()
+            && field_hud_sprites.is_empty()
+            && field_hud_texts.is_empty()
         {
             return CLOSED.to_string();
         }
 
-        let mut sprites: Vec<SpriteDraw> = Vec::new();
+        // The field HUD leads the sprite array so its plate lands under its
+        // own label / numeral cells: within one array the draw order is the
+        // vec order, and the two never coexist with the chrome below.
+        let mut sprites: Vec<SpriteDraw> = field_hud_sprites;
         // Battle HUD chrome (party-strip + plaque lozenges and the gold HP /
         // green MP label cells) samples the same system-UI atlas as the shop
         // frame, so it rides the same sprite array. Empty outside battle.
         sprites.extend(self.battle_chrome_sprite_draws(assets, surface_w, surface_h));
+        // The post-battle report's two framed windows (level-up above,
+        // spoils below) - same atlas, drawn outside battle mode.
+        sprites.extend(self.battle_spoils_chrome_sprite_draws(assets, surface_w, surface_h));
         let mut texts: Vec<TextDraw> = Vec::new();
         if let Some(draws) = shop {
             // Frame the panel in the same gold 9-slice the pause menu uses,
@@ -1304,6 +1317,8 @@ impl LegaiaRuntime {
         // column offsets span wider than the 320-px menu stage, exactly as
         // drawn by the native window (surface-space HUD).
         texts.extend(battle);
+        // The field HUD's names, likewise already in surface pixels.
+        texts.extend(field_hud_texts);
 
         serde_json::json!({
             "open": true,

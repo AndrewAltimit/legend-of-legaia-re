@@ -637,13 +637,21 @@ impl PlayWindowApp {
             );
             return;
         }
-        // `D`: toggle the camera-occlusion fade enhancement (the
+        // `F4`: toggle the camera-occlusion fade enhancement (the
         // `--no-occlusion-fade` flag's runtime twin). Default ON: field
         // walls / roofs / props between the camera and the player dissolve
         // to a screen-door dither around the character so it stays
         // visible. Pure renderer state - no world/sim effect, replays
         // unaffected. OFF is the retail behaviour (authored framing only).
-        if matches!(code, KeyCode::KeyD) && state == ElementState::Pressed {
+        //
+        // Not `D`, and for a sharper reason than `F2`-not-`V`: `D` is a
+        // **pad-bindable key name** (`KEY_NAME_DOM_CODES` carries it, and the
+        // browser layout spends it on Right), so a player who binds
+        // `D = Right` on the desktop build could not walk right - this arm
+        // consumes the event and returns before the pad mapping runs. `F4`
+        // has no entry in the shell's binding parser, so nothing can ever be
+        // bound to it.
+        if matches!(code, KeyCode::F4) && state == ElementState::Pressed {
             self.occlusion_fade = !self.occlusion_fade;
             if let Some(r) = self.win.renderer.as_ref() {
                 r.set_occlusion_fade(self.occlusion_fade);
@@ -655,6 +663,20 @@ impl PlayWindowApp {
                 } else {
                     "off (retail authored framing)"
                 }
+            );
+            return;
+        }
+        // `F1`: toggle the shell's diagnostic text rows (scene / frame /
+        // mesh count, the camera + audio status line, the world-map camera
+        // readout, the no-encounter hint). Off by default - retail draws no
+        // text there, and the seat is the party readout's
+        // (`field_party_hud_draws`). `LEGAIA_DIAG_HUD` starts them on, the
+        // same variable the battle diagnostics read.
+        if matches!(code, KeyCode::F1) && state == ElementState::Pressed {
+            self.diag_rows = !self.diag_rows;
+            log::info!(
+                "hud: diagnostic rows {}",
+                if self.diag_rows { "ON" } else { "off" }
             );
             return;
         }

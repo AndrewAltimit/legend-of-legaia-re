@@ -146,6 +146,16 @@ fn with_battle_item_frame<R>(
     f(&frame)
 }
 
+/// The party leader whose name opens the post-battle spoils line.
+fn battle_spoils_leader(w: &legaia_engine_core::world::World) -> String {
+    w.roster
+        .members
+        .get(w.party_roster_slot(0))
+        .map(|m| m.name())
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| "Vahn".to_string())
+}
+
 fn battle_hud_popup_views(hud: &BattleHud) -> Vec<HudPopupView> {
     hud.popup_views()
         .into_iter()
@@ -336,6 +346,39 @@ impl LegaiaRuntime {
     /// hint routed through this list would wipe whatever the frame had
     /// already painted for the first seconds of a town. The page reads
     /// [`Self::scene_rolls_encounters`] and prints its own notice instead.
+    /// The post-battle report's window chrome (gold nine-slice over the blue
+    /// fill), one frame per window the shared builder describes. Rides the
+    /// page's system-UI sprite array with the rest of the menu chrome.
+    pub(crate) fn battle_spoils_chrome_sprite_draws(
+        &self,
+        assets: &crate::play_menu::PlayMenuAssets,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<ui::SpriteDraw> {
+        if self.game_over.is_some() {
+            return Vec::new();
+        }
+        let Some(w) = self.scene_host.as_ref().map(|h| &h.world) else {
+            return Vec::new();
+        };
+        let (Some(banner), Some(rects)) = (w.battle_spoils_banner(), assets.chrome_rects()) else {
+            return Vec::new();
+        };
+        let leader = battle_spoils_leader(w);
+        let view = ui::BattleSpoilsView {
+            xp: banner.xp,
+            gold: banner.gold,
+            level_ups: &banner.level_ups,
+            drops: &banner.drops,
+            leader: &leader,
+        };
+        let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
+        ui::battle_spoils_windows(&view)
+            .iter()
+            .flat_map(|win| ui::menu_window_chrome_draws_for(rects, win.rect, origin, scale))
+            .collect()
+    }
+
     pub(crate) fn post_battle_overlay_draws(
         &self,
         assets: &crate::play_menu::PlayMenuAssets,
@@ -357,14 +400,20 @@ impl LegaiaRuntime {
         }
 
         if let Some(banner) = w.battle_spoils_banner() {
+            let leader = battle_spoils_leader(w);
             let view = ui::BattleSpoilsView {
                 xp: banner.xp,
                 gold: banner.gold,
                 level_ups: &banner.level_ups,
                 drops: &banner.drops,
+                leader: &leader,
             };
-            let pen = (surface_w as i32 / 2 - 60, surface_h as i32 / 3);
-            out.extend(ui::battle_spoils_draws_for(font, &view, pen));
+            let windows = ui::battle_spoils_windows(&view);
+            let (origin, scale) =
+                crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
+            let mut draws = ui::battle_spoils_draws_for(font, &view, &windows);
+            ui::scale_stage_text_draws(&mut draws, origin, scale);
+            out.extend(draws);
         }
 
         out

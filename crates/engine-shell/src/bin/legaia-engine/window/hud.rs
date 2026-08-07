@@ -82,6 +82,141 @@ impl PlayWindowApp {
         world.commit_text_balloon_width(width);
     }
 
+    /// Is the field party HUD allowed to be on screen at all this frame?
+    ///
+    /// The engine's reading of retail's `_DAT_8007B868` suppress global,
+    /// which the field band raises whenever something else owns the frame.
+    /// The port has no single flag for that, so this is the enumeration:
+    /// only free-roam on the field or the overworld shows a readout, and any
+    /// panel, box, movie or fight that takes the screen hides it.
+    fn field_party_hud_suppressed(&self) -> bool {
+        let w = &self.session.host.world;
+        !matches!(w.mode, SceneMode::Field | SceneMode::WorldMap)
+            || self.boot_ui.is_active()
+            || self.menu_runtime.is_open()
+            || self.cutscene.is_some()
+            || w.cutscene_timeline_active()
+            || w.current_dialog.is_some()
+            || w.inline_dialogue.is_some()
+            || w.text_balloon.is_some()
+            || self.active_dialog.is_some()
+    }
+
+    /// Where the player projects on the 240-line stage this frame.
+    ///
+    /// Retail hands the projection the player object's position with `0x80`
+    /// subtracted from Y (`addiu v0,v0,-0x80` at `0x801D0F8C`) - the torso,
+    /// not the feet - and the HUD drops to its low row when the result sits
+    /// above stage `y = 0x30`. `None` is retail's own staged-load path, which
+    /// also forces the low row.
+    fn field_hud_projected_player_y(&self) -> Option<i16> {
+        let (sw, sh) = self.win.surface_size();
+        if sh == 0 {
+            return None;
+        }
+        let world = &self.session.host.world;
+        let slot = world.player_actor_slot.map(usize::from).unwrap_or(0);
+        let p = world
+            .actors
+            .get(slot)
+            .filter(|a| a.active || a.tmd_binding.is_some())?;
+        let aspect = sw as f32 / sh as f32;
+        let in_world_map = world.mode == SceneMode::WorldMap;
+        let cam = self.compute_scene_camera(aspect, in_world_map, None);
+        let v = cam
+            * glam::Vec4::new(
+                p.move_state.world_x as f32,
+                p.move_state.world_y as f32 - 128.0,
+                p.move_state.world_z as f32,
+                1.0,
+            );
+        if v.w <= 0.0 {
+            return None;
+        }
+        // wgpu NDC has +Y up; the stage is 240 lines with +Y down.
+        let stage_y: f32 = (1.0 - v.y / v.w) * 120.0;
+        Some(stage_y.clamp(-4096.0, 4096.0) as i16)
+    }
+
+    /// Advance the field party HUD's countdown one frame.
+    ///
+    /// Runs in the mutation phase beside the other per-frame syncs; the draw
+    /// pass reads the decision back off the driver.
+    pub(super) fn tick_field_party_hud(&mut self) {
+        // A scene change is retail's rearm condition (its own arm includes
+        // "the staged scene load is still pending"), and without it the
+        // stationary compare would run against the previous scene's
+        // coordinates and pop the HUD up mid-transition.
+        let scene = self.session.host.scene.as_ref().map(|s| s.name.clone());
+        if scene != self.field_party_hud_scene {
+            self.field_party_hud_scene = scene;
+            self.field_party_hud.rearm();
+        }
+        let suppressed = self.field_party_hud_suppressed();
+        let projected_y = if suppressed {
+            None
+        } else {
+            self.field_hud_projected_player_y()
+        };
+        let world = &self.session.host.world;
+        // View mode `_DAT_800845C4`: `0` is the near field camera (0x28-frame
+        // idle before the HUD returns), `1` the far overworld one (0xA0).
+        let view_mode = i32::from(world.mode == SceneMode::WorldMap);
+        let player_pos = world
+            .player_actor_slot
+            .map(usize::from)
+            .and_then(|s| world.actors.get(s))
+            .map(|a| (a.move_state.world_x, a.move_state.world_z));
+        // The suppress mask is the PACKED d-pad, so the raw word has to be
+        // converted or nothing ever suppresses.
+        let pad = legaia_engine_core::world_map_panel_host::packed_pad(self.pad);
+        self.field_party_hud
+            .tick(suppressed, view_mode, pad, player_pos, 1, projected_y);
+    }
+
+    /// The field party HUD's two draw halves for this frame, or empty when
+    /// the kernel's decision is anything but `Draw`.
+    pub(super) fn field_party_hud_draws(
+        &self,
+        w: u32,
+        h: u32,
+    ) -> legaia_engine_render::BattleHudDraws {
+        use legaia_engine_render::field_party_hud as fp;
+        let Some(legaia_engine_vm::world_map_panel_actors::HudDecision::Draw { y }) =
+            self.field_party_hud.decision()
+        else {
+            return Default::default();
+        };
+        let rows = legaia_engine_core::world_map_panel_host::field_party_hud_members(
+            &self.session.host.world,
+        );
+        let members: Vec<fp::FieldHudMember<'_>> = rows
+            .iter()
+            .map(|m| fp::FieldHudMember {
+                name: &m.name,
+                level: m.level,
+                hp: m.hp,
+                hp_max: m.hp_max,
+                mp: m.mp,
+                mp_max: m.mp_max,
+                alive: m.alive,
+            })
+            .collect();
+        let (origin, scale) = self.save_select_stage(w, h);
+        fp::field_party_hud_draws_for(
+            &self.font,
+            &fp::FieldPartyHudFrame {
+                members: &members,
+                y: i32::from(y),
+                chrome: self.save_menu.as_ref().map(|a| &a.rects),
+                scrim_src: self.save_menu.as_ref().and_then(|a| a.solid),
+                solid_src: self.battle_hud_solid_src(),
+                origin,
+                scale: scale as i32,
+            },
+        )
+    }
+
     pub(super) fn build_hud(&self, w: u32, h: u32) -> Vec<TextDraw> {
         let Some(atlas) = &self.font_atlas else {
             return Vec::new();
@@ -94,89 +229,97 @@ impl PlayWindowApp {
         }
         let white = [1.0f32, 1.0, 1.0, 1.0];
         let dim = [0.7f32, 0.85, 1.0, 1.0];
-        let scene_name = self
-            .session
-            .host
-            .scene
-            .as_ref()
-            .map(|s| s.name.as_str())
-            .unwrap_or("(none)");
-        let line1 = format!(
-            "scene {}  frame {}  meshes {}",
-            scene_name,
-            self.session.host.world.frame,
-            self.meshes.len()
-        );
-        let layout1 = self.font.layout_ascii(&line1);
-        let mut out = text_draws_for(&layout1, (8, 8), white);
-        let audio_str = if self.session.audio.is_none() {
-            "no audio"
-        } else if self.options_state.muted {
-            "audio MUTED (V)"
-        } else {
-            "audio on (V mutes)"
-        };
-        // Human-readable name for the playing track: global-pool ids join
-        // the music_01 bank / debug sound-test order the curated
-        // `legaia_gamedata` music table is keyed on.
-        let bgm_str = self
-            .session
-            .bgm
-            .as_ref()
-            .and_then(|b| b.last_started)
-            .map(
-                |id| match legaia_engine_core::music_labels::label_for_bgm_id(id) {
-                    Some(label) => format!("  bgm {id}: {label}"),
-                    None => format!("  bgm {id}"),
-                },
-            )
-            .unwrap_or_default();
-        // Dynamic-lighting enhancement state (opt-in, non-retail; `I`
-        // toggles; `Y` toggles the point-light/shadow sub-layer).
-        let light_str = match (self.dynamic_lighting, self.dyn_shadows) {
-            (true, true) => "  light+shadows ON (I/Y)",
-            (true, false) => "  light ON (I) shadows off (Y)",
-            (false, _) => "",
-        };
-        // Camera-distance preset (`T` cycles) + precise-movement toggle
-        // (`R`) - the compass/zoom state, appended to the status line.
-        let cam_str = format!("  cam {} (T)", self.session.camera.distance.label());
-        let precise_str = if self.options_state.precise_movement {
-            "  precise-move ON (R)"
-        } else {
-            ""
-        };
-        // Camera-occlusion fade is default-on; flag the non-default state
-        // (`D` toggles) so a "why is the wall solid again" session sees it.
-        let occl_str = if self.occlusion_fade {
-            ""
-        } else {
-            "  occl-fade off (D)"
-        };
-        let line2 = format!(
-            "t {:.1}s  {}{}{}{}{}{}  arrows=dpad Z=X drag=orbit",
-            self.win.elapsed_secs(),
-            audio_str,
-            bgm_str,
-            light_str,
-            cam_str,
-            precise_str,
-            occl_str
-        );
-        let layout2 = self.font.layout_ascii(&line2);
-        out.extend(text_draws_for(&layout2, (8, 26), dim));
-        if let Some(ctrl) = &self.session.host.world.world_map_ctrl {
-            let mode_str = if ctrl.is_top_view() {
-                "top-view"
-            } else {
-                "walk"
-            };
-            let line3 = format!(
-                "world-map {} | cam ({},{}) az {} zoom {}",
-                mode_str, ctrl.camera_x, ctrl.camera_z, ctrl.azimuth, ctrl.zoom
+        let mut out: Vec<TextDraw> = Vec::new();
+        // The shell's own diagnostic rows. Retail draws nothing here, and
+        // this seat is exactly where its party readout goes
+        // ([`Self::field_party_hud_draws`]), so they are off unless asked
+        // for: `F1` toggles at runtime and `LEGAIA_DIAG_HUD` starts them on.
+        // Everything below this block is game surface and is NOT gated.
+        if self.diag_rows {
+            let scene_name = self
+                .session
+                .host
+                .scene
+                .as_ref()
+                .map(|s| s.name.as_str())
+                .unwrap_or("(none)");
+            let line1 = format!(
+                "scene {}  frame {}  meshes {}",
+                scene_name,
+                self.session.host.world.frame,
+                self.meshes.len()
             );
-            let layout3 = self.font.layout_ascii(&line3);
-            out.extend(text_draws_for(&layout3, (8, 44), white));
+            let layout1 = self.font.layout_ascii(&line1);
+            out.extend(text_draws_for(&layout1, (8, 8), white));
+            let audio_str = if self.session.audio.is_none() {
+                "no audio"
+            } else if self.options_state.muted {
+                "audio MUTED (V)"
+            } else {
+                "audio on (V mutes)"
+            };
+            // Human-readable name for the playing track: global-pool ids join
+            // the music_01 bank / debug sound-test order the curated
+            // `legaia_gamedata` music table is keyed on.
+            let bgm_str = self
+                .session
+                .bgm
+                .as_ref()
+                .and_then(|b| b.last_started)
+                .map(
+                    |id| match legaia_engine_core::music_labels::label_for_bgm_id(id) {
+                        Some(label) => format!("  bgm {id}: {label}"),
+                        None => format!("  bgm {id}"),
+                    },
+                )
+                .unwrap_or_default();
+            // Dynamic-lighting enhancement state (opt-in, non-retail; `I`
+            // toggles; `Y` toggles the point-light/shadow sub-layer).
+            let light_str = match (self.dynamic_lighting, self.dyn_shadows) {
+                (true, true) => "  light+shadows ON (I/Y)",
+                (true, false) => "  light ON (I) shadows off (Y)",
+                (false, _) => "",
+            };
+            // Camera-distance preset (`T` cycles) + precise-movement toggle
+            // (`R`) - the compass/zoom state, appended to the status line.
+            let cam_str = format!("  cam {} (T)", self.session.camera.distance.label());
+            let precise_str = if self.options_state.precise_movement {
+                "  precise-move ON (R)"
+            } else {
+                ""
+            };
+            // Camera-occlusion fade is default-on; flag the non-default state
+            // (`F4` toggles) so a "why is the wall solid again" session sees it.
+            let occl_str = if self.occlusion_fade {
+                ""
+            } else {
+                "  occl-fade off (F4)"
+            };
+            let line2 = format!(
+                "t {:.1}s  {}{}{}{}{}{}  arrows=dpad Z=X drag=orbit",
+                self.win.elapsed_secs(),
+                audio_str,
+                bgm_str,
+                light_str,
+                cam_str,
+                precise_str,
+                occl_str
+            );
+            let layout2 = self.font.layout_ascii(&line2);
+            out.extend(text_draws_for(&layout2, (8, 26), dim));
+            if let Some(ctrl) = &self.session.host.world.world_map_ctrl {
+                let mode_str = if ctrl.is_top_view() {
+                    "top-view"
+                } else {
+                    "walk"
+                };
+                let line3 = format!(
+                    "world-map {} | cam ({},{}) az {} zoom {}",
+                    mode_str, ctrl.camera_x, ctrl.camera_z, ctrl.azimuth, ctrl.zoom
+                );
+                let layout3 = self.font.layout_ascii(&line3);
+                out.extend(text_draws_for(&layout3, (8, 44), white));
+            }
         }
         // Dance minigame HUD: the running score / groove gauge / active lane,
         // the arrow the current beat calls for, and the last press judgement.
