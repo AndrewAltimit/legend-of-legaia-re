@@ -119,7 +119,7 @@ reverted twice.
 | Duplicate free-function name | Rename the copy that has no caller. |
 | Free-function name that is also a common local / field name | Rename it to something the rest of the tree does not spell. |
 | Coarse anchor (module tag, or a tag on a data struct) | Move the anchor to the item that ports the address. |
-| Coarse anchor (tag on a `const`) | Make the `const` a `REF:` and leave the `PORT:` on the function that computes the value. |
+| Tag on a `const` | No longer coarse: the resolver anchors it to the `const` itself, strict-live only on an attributable reference (same file, or `module::NAME` / `Type::NAME` spelling). See [`port-catalog.md`](port-catalog.md#anchors). |
 
 ### Writing the fix: the disclosure token is matched as text
 
@@ -186,10 +186,12 @@ consults the graph whose error mode is safe for it.
 tag names specific addresses and specific items in the file are inert, the live
 verdict should be read off those items, not off any function in the file.
 
-The tool still reads a module tag as the whole file, and a type tag with no
-`impl` block as the whole file too. Closing that inside the tool needs the
-`PORT:` tag to carry item-level information, so the practical fix is to *write*
-it at item level:
+The tool still reads a `//!` module tag as the whole file, and a type tag with
+no `impl` block as the whole file too. A tag in a `///` doc block, by contrast,
+always anchors to the item the block documents - `fn`, type, or `const` /
+`static` / `type` alias - so those no longer degrade to file scope. What
+remains coarse is coarse because the *tag* is written coarse, and the practical
+fix is to write it at item level:
 
 - A `//! PORT:` line moves onto the function that implements the address. Every
   address the module tag listed keeps an anchor, and the anchor is now precise.
@@ -202,10 +204,14 @@ it at item level:
   same edit. Doing only half of this converts a granularity row into a
   disclosure gap, which is the worse of the two.
 
-That third point is why a blanket module disclosure is only safe while *nothing*
-in the file has a caller. The moment one item is wired, the blanket asserts
-something false about it and cannot be narrowed, because per-anchor disclosure
-reads the module doc unconditionally.
+A blanket module disclosure is safe while *nothing* in the file has a caller,
+and it can be narrowed the moment one item acquires one: an anchor whose own
+doc block opens a line with `WIRED:` opts that single item out of the module
+blanket, leaving the blanket true for the rest of the file. The worked example
+is `cutscene_script_elements::save_screen_spawn`, one live spawn under a
+blanket its three sibling element handlers still need. An own-block
+`NOT WIRED` beats an own-block `WIRED:`; the token rules and the control suite
+are in [`port-catalog.md`](port-catalog.md#per-item-wired-against-a-module-blanket).
 
 ## What the stale tags are
 

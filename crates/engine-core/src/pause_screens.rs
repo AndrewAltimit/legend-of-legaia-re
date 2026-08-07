@@ -1308,11 +1308,14 @@ impl SpecialUseSession {
     /// [`items_screen_model`] projects them through the shared list channel so
     /// both hosts draw the screen with the list renderer they already call.
     ///
-    /// What a pick does **not** yet do is enter the world map at the picked
-    /// landmark: retail's phase 4 writes `_DAT_8007B43C = 5` and the outer
-    /// menu SM acts on it, while the port stages the destination on
-    /// [`crate::world::World::pending_menu_warp`] and no host drains it. The
-    /// bag decrement, the exit code and the staged triple are all committed.
+    /// A pick warps: retail's phase 4 writes `_DAT_8007B43C = 5` and the
+    /// outer menu SM acts on it; the port stages the destination on
+    /// [`crate::world::World::pending_menu_warp`] and the world tick's
+    /// menu-warp drain (`World::drain_staged_menu_warp`) resolves the staged
+    /// scene word - a raw CDNAME TOC index - into the named scene
+    /// transition the scene host consumes, seating the party at the
+    /// record's tile. The bag decrement, the exit code and the staged
+    /// triple are all committed by this screen.
     ///
     /// PORT: FUN_801D8B90 (Door of Wind destination list + exit-code 5 warp)
     fn pick_destination_input(&mut self, pressed: u16) {
@@ -1641,13 +1644,12 @@ pub fn root_menu_confirm_route(
 ///
 /// PORT: FUN_801d6b20 (cancel arm `0x801D6CF8..0x801D6D18`)
 ///
-/// NOT WIRED: same missing entry context as [`root_menu_confirm_route`],
-/// and a second missing piece of its own.
-/// [`crate::field_menu::FieldMenuSession`] closes on Circle with
-/// `FieldMenuOutcome::Closed`; it has neither a sub-screen id space for
-/// the `0` / `3` return values to name nor a leave-confirm screen for the
-/// locked-context arm to select, so the prerequisite is a second pause-menu
-/// screen (the Yes/No leave confirm), not just the context byte.
+/// WIRED: [`crate::field_menu::FieldMenuSession`]'s Browsing cancel arm
+/// calls this with the gate's entry-context kind and, on the locked route
+/// (`3`, [`CONTEXT_LOCKED_CANCEL_SUBSCREEN`]), opens its `ReadyConfirm`
+/// phase - the Yes/No leave confirm this note used to name as the missing
+/// prerequisite - instead of closing. The plain route (`0`) closes the
+/// menu, retail's terminal exit screen.
 pub fn root_menu_cancel_route(entry_context_kind: Option<u8>) -> u8 {
     if entry_context_kind == Some(ROOT_MENU_CONTEXT_LOCKED) {
         3
@@ -1681,6 +1683,9 @@ pub fn root_menu_cancel_route(entry_context_kind: Option<u8>) -> u8 {
 /// off the entry-context kind and off nothing else.
 ///
 /// PORT: FUN_801DC6B4 (`0x801dc8d0..0x801dc8e4`)
+/// NOT WIRED: the cancel-side twin below is consumed by the field menu's
+/// root-menu cancel route; nothing in the engine yet routes entry-context
+/// kind `0xd` to this entry-side sub-screen id.
 pub const CONTEXT_LOCKED_ENTRY_SUBSCREEN: u8 = 4;
 
 /// Sub-screen the root picker's **cancel** hands to under the same kind -

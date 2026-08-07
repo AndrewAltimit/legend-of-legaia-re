@@ -41,7 +41,14 @@ impl World {
         };
         let moved = i32::from(before) - i32::from(a.battle.hp);
         a.battle.accumulate_hp_bar(moved);
-        if a.battle.hp == 0 {
+        // `hp == 0 -> liveness = 0` holds for **present** actors only - the
+        // same `max_hp > 0` guard the per-tick dead-marking sweep in
+        // [`Self::step_battle_frame`] applies. A seated-but-unrolled slot
+        // (`max_hp == 0`, the hollow party shape the seated-vs-dead fix
+        // documents) taking a zero-damage hit is not a death; retail cannot
+        // even represent the state (battle load always stats a seated slot),
+        // so the two port sites must at least agree with each other.
+        if a.battle.max_hp > 0 && a.battle.hp == 0 {
             a.battle.liveness = 0;
         }
         moved
@@ -129,8 +136,11 @@ impl World {
     /// the first sweep after death. Item id `0xE7` = "Lost Grail"
     /// (disc-decoded `SCUS_942.54` item table); passive `0x27` mapping per
     /// `docs/formats/accessory-passive-table.md`. The dump's tail (first
-    /// monster slot dead + `DAT_8007BD0C == 0xB5` boss-transition arm) is
-    /// scripted-fight glue and is not modelled here.
+    /// monster slot dead + `DAT_8007BD0C == 0xB5` boss-transition arm,
+    /// `0x801E6CE4..0x801E6D64`) is the second battle stage-id writer - the
+    /// Cort form transition to stage 3 / entry 969 - ported separately as
+    /// [`crate::overlay_loader::boss_transition_stage_id`], resolved live by
+    /// [`World::battle_stage_id`].
     ///
     /// REF: FUN_800402F4 (the revive arm this calls - case 4, tier 1 = full
     /// max HP + status clear)
@@ -964,22 +974,32 @@ impl World {
         }
     }
 
-    /// Resolve the slot a strike from `attacker` should land on. Honors a
-    /// pre-selected [`battle::BattleActor::active_target`] when it points at a
-    /// living actor on the opposing side (so the player's target-picker choice
-    /// and the monster-AI target choice both take effect), otherwise falls back
-    /// to [`Self::first_living_opponent_of`].
+    /// Resolve the slot a strike from `attacker` should land on. The armed
+    /// [`battle::BattleActor::active_target`] is **authoritative** whenever it
+    /// names a living actor - on either band, the attacker's own included.
+    ///
+    /// Retail's melee resolver `FUN_801EC3E4` fetches the target actor as
+    /// `actor_table[+0x1DD]` with no side test at all (`overlay_0898` dump,
+    /// `0x801EC5A8..0x801EC5B4`: `andi v0,s4,0xff; sll v0,v0,2; addu s3,v0,a2;
+    /// lw a3,0(s3)` where `s4` is the `+0x1DD` byte loaded at `0x801EC450`).
+    /// The confuse retarget (`FUN_801E7320`, [`Self::resolve_monster_target`])
+    /// depends on that: it rewrites `+0x1DD` onto the *caster's own* band, and
+    /// an opposing-side clamp here silently discarded the rewrite, making the
+    /// whole confuse mechanic inert at the point it is felt.
+    ///
+    /// The [`Self::first_living_opponent_of`] fallback survives only as the
+    /// port-side safety net for a target that is unset-dead or out of the
+    /// table - every retail arming path writes `+0x1DD` before the SM strikes.
+    ///
+    /// REF: FUN_801EC3E4 (target = `actor_table[+0x1DD]`, no side clamp)
+    /// REF: FUN_801E7320 (the confuse retarget this must not discard)
     fn resolve_attack_target(&self, attacker: u8) -> Option<u8> {
-        let pc = self.party_count.max(1);
-        let n = self.actors.len() as u8;
-        let (lo, hi) = if attacker < pc { (pc, n) } else { (0, pc) };
         if let Some(a) = self.actors.get(attacker as usize) {
             let t = a.battle.active_target;
-            if (lo..hi).contains(&t)
-                && self
-                    .actors
-                    .get(t as usize)
-                    .is_some_and(|x| x.battle.liveness != 0)
+            if self
+                .actors
+                .get(t as usize)
+                .is_some_and(|x| x.battle.liveness != 0)
             {
                 return Some(t);
             }
@@ -1120,5 +1140,51 @@ mod melee_cue_tests {
         w.actors[0].battle.current_anim = 0x11;
         assert!(w.apply_one_basic_strike(BASIC_ATTACK_COMMAND));
         assert!(w.drain_battle_sfx_cues().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod hp_delta_liveness_tests {
+    use super::*;
+
+    /// The two `hp == 0 -> liveness = 0` sites - the per-hit fold in
+    /// [`World::apply_battle_hp_delta`] and the per-tick dead-marking sweep in
+    /// [`World::step_battle_frame`] - must apply the SAME predicate: dead
+    /// means `max_hp > 0 && hp == 0`. A seated-but-unrolled slot
+    /// (`max_hp == 0`) taking a zero-damage hit is not a death on either
+    /// path; a statted slot drained to zero is a death on both.
+    #[test]
+    fn zero_damage_on_an_unrolled_slot_is_not_a_death_on_either_path() {
+        let mut w = World::new();
+        w.enter_battle(1, 1);
+        // Slot 0: seated but never statted (the hollow-party shape).
+        w.actors[0].battle.hp = 0;
+        w.actors[0].battle.max_hp = 0;
+        w.actors[0].battle.liveness = 1;
+        // Slot 1: a real combatant.
+        w.actors[1].battle.hp = 40;
+        w.actors[1].battle.max_hp = 500;
+        w.actors[1].battle.liveness = 1;
+
+        // Path 1: the per-hit fold. A 0-damage hit on the hollow slot lands
+        // on `hp == 0` but must not mark it dead.
+        assert_eq!(w.apply_battle_hp_delta(0, 0), 0);
+        assert_eq!(
+            w.actors[0].battle.liveness, 1,
+            "apply_battle_hp_delta marked an unrolled slot dead"
+        );
+
+        // Path 2: the sweep predicate, same actor state, same verdict.
+        let swept_dead = w.actors[0].battle.max_hp > 0 && w.actors[0].battle.hp == 0;
+        assert!(!swept_dead, "the sweep and the fold must agree");
+
+        // And the real death still resolves on both: drain the statted slot.
+        assert_eq!(w.apply_battle_hp_delta(1, 40), 40);
+        assert_eq!(w.actors[1].battle.hp, 0);
+        assert_eq!(
+            w.actors[1].battle.liveness, 0,
+            "a statted slot at zero HP is dead on the fold path"
+        );
+        assert!(w.actors[1].battle.max_hp > 0 && w.actors[1].battle.hp == 0);
     }
 }

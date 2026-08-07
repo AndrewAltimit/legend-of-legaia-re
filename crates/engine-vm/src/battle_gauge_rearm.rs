@@ -132,6 +132,12 @@ impl DamagePopupRing {
     /// the slot's timer is reset to zero. The cursor then advances modulo 8 and
     /// the push counter increments, wrapping at 256.
     ///
+    /// The live caller is `engine-core`'s `BattleHud::push_popup`: every HUD
+    /// popup push delegates its cursor + counter bookkeeping here and keys
+    /// the display entry to the slot the push lands in, which is what bounds
+    /// simultaneous popups at [`POPUP_RING_SLOTS`] on both battle-HUD hosts
+    /// (the native `play-window` and the browser play page).
+    ///
     /// PORT: FUN_801F44A0
     pub fn push(&mut self, value: i16, param: u8) {
         let i = (self.cursor & 0x7) as usize;

@@ -754,7 +754,7 @@ The TIM-upload helper for these (and for the title overlay's per-frame sprites) 
 
   The single writer is in `main()` itself, at step 5 of the init sequence above: `0x80015F08 sh v0,0x5aa(gp)`, storing the return of `FUN_8003F084` - a two-instruction leaf that returns the constant `1`. Because the store is **gp-relative** (`gp = 0x8007B318`), address sweeps that searched only the absolute `lui 0x8008` / `-0x473e` form missed it and reported the flag as writer-less; that negative result is what produced the older "`== 0` is retail" reading. Nor does BSS zero-init have anything to say here: the PS-X EXE header carries `b_addr = 0, b_size = 0`, so the BIOS clears no BSS for this executable. Live save states confirm the value is `1` in all 60 captured states.
 
-  A `0` therefore only ever arrives by external POKE (the TCRF GameShark codes), and it selects the branch that traps.
+  A `0` therefore only ever arrives by external POKE (the published GameShark codes), and it selects the branch that traps.
 - `_DAT_8007B98F` - the most-significant byte (offset +3, little-endian) of the
   32-bit debug-mode word `_DAT_8007B98C` (NA build offset; JP retail uses
   `0x07D51F`, an `0x1B90` build-shift). The dump-corpus sweep returns zero reads

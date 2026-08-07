@@ -449,6 +449,10 @@ impl PlayWindowApp {
             // typed-out panel (opened from the scene MES, dropped when
             // the world dismisses the box).
             self.sync_dialog_panel();
+            // Commit the `4C E1` balloon's font measurement while `self`
+            // is still mutable; the `&self` draw passes read the committed
+            // pen/rect off the record.
+            self.sync_text_balloon();
         }
         legaia_engine_render::profile::mark("tick");
         // A tick this frame may have flipped the world into

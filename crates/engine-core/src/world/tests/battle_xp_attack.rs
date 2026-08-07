@@ -151,6 +151,10 @@ fn apply_basic_attack_queues_hit_fx_for_damaged_monster() {
     world.actors[1].battle.max_hp = 60;
     world.actors[1].battle.liveness = 1;
     world.battle_ctx.active_actor = 0;
+    // Arm the strike target the way every production path does (retail's
+    // `+0x1DD` is always written before the SM strikes; the resolver honors
+    // it on either band, so a fixture must not lean on the fallback).
+    world.actors[0].battle.active_target = 1;
     // Give the attacker enough ATK to chip the monster (>defense).
     world.battle_attack[0] = 40;
     world.battle_defense[1] = 10;
@@ -251,6 +255,7 @@ fn basic_attack_accrues_defender_spirit_gauge() {
     world.battle_attack[0] = 40;
     world.battle_defense[1] = 10;
     world.battle_ctx.active_actor = 0;
+    world.actors[0].battle.active_target = 1;
 
     // The gauge fills by `damage * 100 / max_hp` (at least 1 per landing hit).
     assert_eq!(world.spirit_gauge(1), 0);
@@ -284,6 +289,7 @@ fn spirit_gauge_clamps_at_full() {
     world.battle_attack[0] = 60;
     world.battle_defense[1] = 10;
     world.battle_ctx.active_actor = 0;
+    world.actors[0].battle.active_target = 1;
 
     // 50 damage on a 100-HP gauge denominator -> pct 50 each hit.
     for _ in 0..4 {

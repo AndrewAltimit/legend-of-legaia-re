@@ -289,6 +289,14 @@ impl BattleSession {
         self.turn = self.turn.saturating_add(1);
         // Wipe detection: party = slots 0..=2; monsters = slots 3..3+count.
         // A petrified actor (Stone) counts as defeated even at full HP.
+        //
+        // The party arm is gated on at least one SEATED slot: with no records
+        // installed the `filter` below is empty, `any` is vacuously false,
+        // and "false" would read as "party dead" - the same empty-set trap as
+        // the action SM's wipe scan (`BattleActionHost::slot_seated`). A
+        // record-less session is the port-only unseeded state; it must never
+        // resolve as a party wipe.
+        let party_seated = (0..3).any(|i| self.slots[i].record.is_some());
         let party_alive = (0..3).filter(|i| self.slots[*i].record.is_some()).any(|i| {
             world.actors.get(i).is_some_and(|a| a.battle.hp > 0)
                 && !world.actor_is_petrified(i as u8)
@@ -297,7 +305,7 @@ impl BattleSession {
             world.actors.get(3 + i).is_some_and(|a| a.battle.hp > 0)
                 && !world.actor_is_petrified((3 + i) as u8)
         });
-        if !party_alive {
+        if party_seated && !party_alive {
             self.handle_battle_end(BattleEndCause::PartyWipe, out);
         } else if !monsters_alive {
             self.handle_battle_end(BattleEndCause::MonsterWipe, out);

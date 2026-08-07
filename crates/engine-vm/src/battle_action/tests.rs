@@ -48,6 +48,9 @@ struct RecHost {
     /// Per-slot equipment ATK bonus bytes returned by
     /// `equip_attack_bonuses`.
     equip_atk: std::collections::HashMap<u8, [u8; 5]>,
+    /// Party slots reported as NOT seated by `slot_seated` (empty = every
+    /// slot seated, the trait default).
+    unseated: std::collections::HashSet<u8>,
 }
 
 impl RecHost {
@@ -72,6 +75,9 @@ impl RecHost {
 impl BattleActionHost for RecHost {
     fn actor(&self, slot: u8) -> Option<&BattleActor> {
         self.actors.get(slot as usize)
+    }
+    fn slot_seated(&self, slot: u8) -> bool {
+        !self.unseated.contains(&slot)
     }
     fn actor_mut(&mut self, slot: u8) -> Option<&mut BattleActor> {
         self.actors.get_mut(slot as usize)
@@ -337,6 +343,97 @@ fn action_seed_attack_routes_to_attack_face_and_emits_ui() {
     assert!(events.contains(&Event::Camera));
     assert!(events.contains(&Event::Pose(1, Pose::Idle)));
     assert!(events.contains(&Event::Ui(7, 0)));
+}
+
+/// The action-dispatch liveness gate: a DEAD acting actor never enters an
+/// action band. Retail holds the invariant upstream (`FUN_801DABA4`'s dead
+/// sweep zeroes the key, bumps `ctx[+0x25]` and can never pick the slot into
+/// `ctx[+0x274]`); the port's hosts can kill an actor between arming and
+/// seed, so the seed itself routes the dead actor where retail's
+/// cleared-action category-0 arm routes - state `0x50` - with no setup hook,
+/// no camera, no attack band.
+#[test]
+fn action_seed_dead_actor_routes_to_done_cleanup_not_the_attack_band() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 5);
+    // Stage the multi-strike shape the defect ran: a monster with a queued
+    // swing stream, killed before its staged action fires.
+    host.actors[5].params[0] = 0x01;
+    host.actors[5].liveness = 0;
+    ctx.action_state = ActionState::ActionSeed.as_byte();
+    let out = step(&mut host, &mut ctx);
+    assert!(matches!(
+        out,
+        StepOutcome::Transition {
+            to,
+            ..
+        } if to == ActionState::DoneCleanup.as_byte()
+    ));
+    // The gate sits ahead of every seed side effect.
+    let events = host.take();
+    assert!(!events.contains(&Event::MonsterSetup(5)));
+    assert!(!events.contains(&Event::Camera));
+    assert!(!events.iter().any(|e| matches!(e, Event::Pose(5, _))));
+}
+
+/// The whole arc: a dead monster's staged attack is consumed as a spent turn
+/// (the SM walks the Done band to `EndOfAction`) and the attack band is never
+/// entered - so no strike can ever land from a corpse.
+#[test]
+fn dead_actor_staged_action_is_spent_without_a_single_attack_state() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 5);
+    host.actors[5].liveness = 0;
+    ctx.action_state = ActionState::Begin.as_byte();
+    let attack_band = [
+        ActionState::AttackFace.as_byte(),
+        ActionState::AttackWindup.as_byte(),
+        ActionState::AttackAdvance.as_byte(),
+        ActionState::AttackCloseRange.as_byte(),
+        ActionState::AttackStrike.as_byte(),
+        ActionState::AttackShortStep.as_byte(),
+        ActionState::AttackChain.as_byte(),
+        ActionState::AttackRecovery.as_byte(),
+        ActionState::AttackReturn.as_byte(),
+    ];
+    for _ in 0..400 {
+        step(&mut host, &mut ctx);
+        assert!(
+            !attack_band.contains(&ctx.action_state),
+            "dead actor reached attack state {:#04x}",
+            ctx.action_state
+        );
+        if ctx.action_state == ActionState::EndOfAction.as_byte() {
+            break;
+        }
+    }
+    assert_eq!(
+        ctx.action_state,
+        ActionState::EndOfAction.as_byte(),
+        "the dead actor's turn is spent through the Done band, not parked"
+    );
+    assert!(
+        !host
+            .take()
+            .iter()
+            .any(|e| matches!(e, Event::ApplyDamage(..) | Event::ApplyArtStrike(_))),
+        "no damage may originate from a dead acting actor"
+    );
+}
+
+/// A LIVING actor with the same staged action still dispatches into the
+/// attack band - the gate reads liveness, not the staging.
+#[test]
+fn action_seed_living_actor_still_reaches_the_attack_band() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 5);
+    host.actors[5].params[0] = 0x01;
+    ctx.action_state = ActionState::ActionSeed.as_byte();
+    let out = step(&mut host, &mut ctx);
+    assert!(matches!(
+        out,
+        StepOutcome::Transition {
+            to,
+            ..
+        } if to == ActionState::AttackFace.as_byte()
+    ));
 }
 
 #[test]
@@ -1039,6 +1136,53 @@ fn end_of_action_party_wipe_signals_battle_end() {
     );
 }
 
+/// "No party seated" is not "party dead". A battle whose party slots were
+/// never seated (`slot_seated == false`, the port-only state retail cannot
+/// represent - see `BattleActionHost::slot_seated`) must NOT resolve as a
+/// party wipe when those hollow slots read dead; the round continues.
+#[test]
+fn end_of_action_unseated_party_is_not_reported_as_a_party_wipe() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    ctx.action_state = ActionState::EndOfAction.as_byte();
+    for i in 0..3u8 {
+        host.actors[i as usize].liveness = 0;
+        host.unseated.insert(i);
+    }
+    let out = step(&mut host, &mut ctx);
+    assert_ne!(
+        out,
+        StepOutcome::BattleComplete,
+        "an unseeded battle must not end on the party-wipe arm"
+    );
+    assert!(
+        !host
+            .take()
+            .contains(&Event::BattleEnd(BattleEndCause::PartyWipe)),
+        "no PartyWipe may be signalled for a party that was never seated"
+    );
+}
+
+/// The unseeded state must still be able to TERMINATE: with no seated party
+/// and the monsters down, the monster-wipe arm still fires, so a host that
+/// reaches this port-only state tears down to victory rather than spinning.
+#[test]
+fn end_of_action_unseated_party_still_resolves_a_monster_wipe() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    ctx.action_state = ActionState::EndOfAction.as_byte();
+    for i in 0..3u8 {
+        host.actors[i as usize].liveness = 0;
+        host.unseated.insert(i);
+    }
+    for i in 3..ACTOR_SLOTS {
+        host.actors[i].liveness = 0;
+    }
+    let out = step(&mut host, &mut ctx);
+    assert_eq!(out, StepOutcome::BattleComplete);
+    let events = host.take();
+    assert!(events.contains(&Event::BattleEnd(BattleEndCause::MonsterWipe)));
+    assert!(!events.contains(&Event::BattleEnd(BattleEndCause::PartyWipe)));
+}
+
 #[test]
 fn end_of_action_monster_wipe_signals_battle_end() {
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
@@ -1433,6 +1577,44 @@ fn state_51_parks_forever_on_a_desynced_bar_with_a_zero_accumulator() {
         out,
         StepOutcome::Transition { to, .. } if to == ActionState::EndOfAction.as_byte()
     ));
+}
+
+/// The kernel-level guard for direct runtime HP writers:
+/// [`BattleActor::set_hp_synced`] is the retail ticker's write-then-re-sync
+/// shape, so a direct write through it can never produce the absorbing
+/// `hp != hp_display` / zero-accumulator pair the test above parks on.
+#[test]
+fn set_hp_synced_direct_write_does_not_park_the_drain_gate() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::DoneFadeDown.as_byte();
+    ctx.frame_timer = 0;
+    host.actors[1].active_target = 0;
+    host.actors[0].hp = 120;
+    host.actors[0].arm_hp_bar();
+
+    // The trap, for contrast: a bare `hp` write desyncs the pair and the
+    // gate holds (the coherence tripwire names exactly this state).
+    host.actors[0].hp = 250;
+    assert!(crate::battle_action::hp_bar_drain_pending(&host, &ctx));
+
+    // The guarded write settles the pair in the same call - the gate is
+    // open on the very next step, no ramp frames needed.
+    host.actors[0].set_hp_synced(250);
+    host.actors[0].debug_assert_hp_bar_coherent(0);
+    assert!(!crate::battle_action::hp_bar_drain_pending(&host, &ctx));
+    assert_eq!(host.actors[0].hp_display, Some(250));
+    assert_eq!(host.actors[0].hp_bar_pending, 0);
+    let out = step(&mut host, &mut ctx);
+    assert!(matches!(
+        out,
+        StepOutcome::Transition { to, .. } if to == ActionState::EndOfAction.as_byte()
+    ));
+
+    // A non-animating host (`hp_display == None`) stays non-animating.
+    host.actors[2].hp_display = None;
+    host.actors[2].set_hp_synced(77);
+    assert_eq!(host.actors[2].hp, 77);
+    assert_eq!(host.actors[2].hp_display, None);
 }
 
 #[test]

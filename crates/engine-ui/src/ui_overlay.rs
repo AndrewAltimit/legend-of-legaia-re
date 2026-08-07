@@ -392,10 +392,11 @@ pub struct HudSlotMeta {
 ///
 /// The ids are `FUN_8002C2E4`'s priority-ladder outputs and the ailment each
 /// one stands for is pinned in
-/// `legaia_engine_vm::status_effects::display_flags`. `engine-ui` sits below
-/// `engine-vm` in the crate graph so the id space is mirrored here as
-/// literals rather than imported; the mapping is one line per row of that
-/// module's table.
+/// `legaia_engine_vm::status_effects::display_flags`. The id space is
+/// mirrored here as literals rather than imported - not for a dependency
+/// reason (this crate depends on `engine-vm`) but because that module
+/// tabulates the ailment *bitmasks*, not this sprite-id band; the mapping is
+/// one line per row of its table.
 ///
 /// The retail **art** for these ids is a sprite sheet the engine does not
 /// resolve, so hosts draw a labelled badge instead - the selection is what is
@@ -676,10 +677,11 @@ pub fn diag_hud_enabled() -> bool {
         .unwrap_or(false)
 }
 
-/// Battle-HUD stage geometry, mirrored from the packet-pinned
-/// `legaia_engine_vm::battle_chrome` because `engine-ui` sits below
-/// `engine-vm` in the crate graph. `engine-shell`'s HUD tests pin the two
-/// sets equal, which is the only thing that keeps the copy honest.
+/// Battle-HUD stage geometry, mirrored as local literals from the
+/// packet-pinned `legaia_engine_vm::battle_chrome`; `engine-shell`'s HUD
+/// tests pin the two sets equal, which is the only thing that keeps a
+/// copy honest. (The roster panels' name-pen anchors are NOT mirrored -
+/// [`party_panel_stage_x`] reads the `engine-vm` kernels directly.)
 ///
 /// Retail's party readout is **two mutually-exclusive surfaces**, not one:
 /// per-member roster panels at rest, and a single full-width bar for the
@@ -781,21 +783,33 @@ fn panel_seats(count: usize) -> &'static [i32] {
 }
 
 /// Stage X of party section `ordinal` (0-based) for `count` live party
-/// members - retail's `FUN_801D84C0` anchor table, which seats the roster
-/// panels' **name pens**, `+5` inside the panel background
-/// ([`panel_seats`]). Mirrored here as literals for the same crate-graph
-/// reason as the rest of this block, and pinned equal to
-/// `legaia_engine_vm::battle_party_panel::panel_anchors` by `engine-shell`'s
-/// HUD tests.
+/// members - the roster panels' **name pens**, `+5` inside the panel
+/// background ([`panel_seats`]).
+///
+/// The anchors come from the ported kernel
+/// `legaia_engine_vm::battle_party_panel::panel_anchors` (retail's
+/// `FUN_801D84C0` per-party-size table) - read directly, not mirrored.
+/// The seats that table leaves unwritten (a solo's trailing ordinals, a
+/// full party's third panel) fall back to the panel seat plus the pinned
+/// name inset, the identity `engine-vm`'s own `battle_chrome` test pins
+/// against the same kernel.
 pub fn party_panel_stage_x(count: usize, ordinal: usize) -> i32 {
-    match (count, ordinal) {
-        (1, _) => 0x72,
-        (2, 0) => 0x3F,
-        (2, _) => 0xA5,
-        (_, 0) => 0x0C,
-        (_, 1) => 0x72,
-        (_, _) => 0xD8,
+    let size = count.clamp(1, 3) as u8;
+    if let Some((primary, secondary)) = legaia_engine_vm::battle_party_panel::panel_anchors(size) {
+        if ordinal == 0 {
+            return i32::from(primary);
+        }
+        if ordinal == 1
+            && let Some(sec) = secondary
+        {
+            return i32::from(sec);
+        }
     }
+    // Seats FUN_801D84C0 writes no anchor for: seat + the +5 name inset.
+    // `panel_seats` is never empty for a clamped size, so the index holds.
+    let seats = legaia_engine_vm::battle_chrome::panel_seats(size);
+    let i = ordinal.min(seats.len() - 1);
+    i32::from(seats[i]) + i32::from(legaia_engine_vm::battle_chrome::PANEL_TEXT_INSET)
 }
 
 /// Build the battle-HUD draw lists ([`BattleHudDraws`]).
@@ -1193,11 +1207,14 @@ pub fn battle_hud_draws_for(
             let (base, hp_tint, mp_tint) = tints(slot);
             panel_plate(&mut text, &mut sprites, (px, py, PANEL_W, PANEL_H));
 
+            // The name pen is retail's per-party-size anchor
+            // (`FUN_801D84C0` via `battle_party_panel::panel_anchors`),
+            // which lands `+5` inside the panel seat ([`PANEL_NAME`]).
             stage_text(
                 &mut text,
                 font,
                 slot.name,
-                px + PANEL_NAME.0,
+                party_panel_stage_x(live_party.len().min(3), ordinal),
                 py + PANEL_NAME.1,
                 base,
             );
@@ -1749,9 +1766,10 @@ pub fn apply_alpha(color: [f32; 4], alpha: f32) -> [f32; 4] {
 /// One laid-out digit of a floating battle value readout.
 ///
 /// Hosts fill these from `engine-vm::battle_value_readout::value_cells`, which
-/// is where the geometry is pinned; this crate sits below `engine-vm` in the
-/// crate graph, so the type is mirrored rather than imported. Fields are
-/// **stage pixels** on the retail 320x240 stage.
+/// is where the geometry is pinned. The type is a mirror of that kernel's
+/// output shape, not an import - a deliberate seam, not a crate-graph
+/// constraint (`engine-ui` depends on `legaia-engine-vm` and could import
+/// it). Fields are **stage pixels** on the retail 320x240 stage.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ValueCellView {
     /// The decimal digit the cell shows.

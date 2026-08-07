@@ -159,6 +159,18 @@ fn a_real_scene_rolls_an_encounter_and_the_battle_resolves() {
     };
     let mut session = boot(&extracted, "map03");
 
+    // Seed the retail New Game roster (Vahn) so battle entry projects a
+    // SEATED party - without a roster the party slots are hollow
+    // (`max_hp == 0`, no record), the port-only unseeded state the wipe scan
+    // refuses to score, and the battle below could never reach a terminal
+    // state. (The fight itself is force-won by the resolve loop - see the
+    // comment at the battle boost below.)
+    let starting = session
+        .starting_party
+        .clone()
+        .expect("SCUS new-game template parses");
+    session.host.world.seed_starting_party(&starting);
+
     // Seat the player at the centre of the first region that is BOTH
     // rate-bearing and unshadowed, so the walk below actually rolls.
     let world = &mut session.host.world;
@@ -193,14 +205,14 @@ fn a_real_scene_rolls_an_encounter_and_the_battle_resolves() {
     // Auto-resolve the battle: this test is about the loop reaching a
     // terminal state, not about the command menu.
     world.battle_player_driven = false;
-    // map03's roster is late-game (four-figure monster HP) and the boot
-    // party is a fresh Vahn, so a faithful strike floors at 1 damage and the
-    // fight would take tens of thousands of turns. Give the party enough
-    // attack to finish in bounded time - the subject here is the loop, not
-    // the balance.
-    for slot in 0..world.party_count {
-        world.set_battle_attack(slot, 30_000);
-    }
+    // map03's roster is late-game (four-figure monster HP and four-figure
+    // swings) and the boot party is a fresh Vahn: faithfully he chips for 1
+    // damage AND dies long before the fight ends - either way no field
+    // return inside the tick budget. The subject here is the loop reaching a
+    // terminal state, not the balance, so the resolve loop below force-holds
+    // the seeded party standing and re-applies an attack boost each battle
+    // tick (a one-shot `set_battle_attack` is overwritten at battle entry by
+    // the roster stat fold, which also caps record stats at retail's 999).
 
     // Retail's counter is `0x3ce +/- rng % 0x1e7` decremented per step by the
     // region's rate increment, so a trigger takes hundreds of steps. Drive
@@ -227,6 +239,25 @@ fn a_real_scene_rolls_an_encounter_and_the_battle_resolves() {
     let mut entered = false;
     let mut resolved = false;
     for _ in 0..100_000 {
+        if world.mode == legaia_engine_core::world::SceneMode::Battle {
+            entered = true;
+            // Force the victory outcome (see the comment above): boosted
+            // attack so the monsters fall in bounded time, and the party
+            // held standing with the displayed bar force-synced (a live-HP
+            // write leaving `hp != hp_display` pending is absorbing - the
+            // SM's `0x51` bar-drain gate parks the battle on it).
+            for slot in 0..world.party_count {
+                world.set_battle_attack(slot, 30_000);
+            }
+            for slot in 0..world.party_count as usize {
+                let a = &mut world.actors[slot].battle;
+                if a.max_hp > 0 {
+                    let max = a.max_hp;
+                    a.set_hp_synced(max);
+                    a.liveness = 1;
+                }
+            }
+        }
         world.tick();
         if world.mode == legaia_engine_core::world::SceneMode::Battle {
             entered = true;

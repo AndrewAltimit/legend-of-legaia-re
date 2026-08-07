@@ -112,6 +112,351 @@ impl World {
         }
     }
 
+    /// Latch a mid-talk "switch character" request for the active
+    /// three-actor talk. Engine input standing in for retail's pad-derived
+    /// word `_DAT_8007B874` bit `0x80` - the request route of the talk
+    /// controller's state-0 arm gate (`FUN_801D27E0` `801d2998..801d29a8`).
+    /// No-op outside a talk (the latch is dropped by the poll).
+    ///
+    /// HOST WAIVER: no host binds a key to this yet - the switch cycle runs
+    /// under the world tick every host already drives, but the *request*
+    /// needs a binding in the native window's keyboard handler
+    /// (`engine-shell` `window/event_handler/keyboard.rs`) and the browser
+    /// play page's pad route (`web-viewer` runtime) to be player-reachable.
+    /// Both hosts sit outside the lane that wired the cycle; until bound,
+    /// scripts and tests are the only callers.
+    // REF: FUN_801D27E0 (state-0 arm gate, request-byte route)
+    pub fn request_talk_leader_switch(&mut self) {
+        self.talk_switch_requested = true;
+    }
+
+    /// Per-frame step of the three-actor-talk controller SM
+    /// (`FUN_801D27E0`, six states at controller `+0x54`).
+    ///
+    /// PORT: FUN_801D27E0
+    ///
+    /// The SM kernel is [`crate::cutscene_script_elements::LeaderSwap`]
+    /// (the byte-level port of the dispatcher, gate, and search); this tick
+    /// is its host. Per state:
+    ///
+    /// - **0** - caches the three participants' poses into the session's
+    ///   saved table (retail rewrites `0x800845E4` every state-0 frame,
+    ///   `801d2838..801d28a0` - the table a mid-talk re-arm restores from),
+    ///   polls the talk lock (system flag `0xD`, `jal 0x8003ce64 a0=0xD` at
+    ///   `801d28c8`; clear routes to state 5 = despawn), then runs the
+    ///   switch arm gate over the presence flags `script_id + 0..=2`. The
+    ///   request source is the host latch
+    ///   [`Self::request_talk_leader_switch`] (retail `_DAT_8007B874 &
+    ///   0x80`); the retail suppressor pair `_DAT_8007B6B4` /
+    ///   `_DAT_8007B6B0` is host-substituted by "a dialogue owns the pad",
+    ///   so a switch never arms under an open text box.
+    /// - **1** - hold [`LEADER_SWAP_FADE_FRAMES`] behind the fade-to-white
+    ///   ([`Self::screen_fade`] carries the retail template: kind 2, `0x20`
+    ///   frames, black -> white, `801d29c8..801d2a00`).
+    /// - **2** - the swap (`801d2a54..801d2c7c`): the outgoing leader's
+    ///   participant NPC takes the player's pose (retail: camera `+0x14..`
+    ///   onto the outgoing actor), the next participant whose presence flag
+    ///   reads clear becomes leader (wrap-scan from `leader+1`), flags
+    ///   `0x10..=0x12` are re-pointed at the new leader, the player takes
+    ///   the incoming participant's pose (+ the negated map origin
+    ///   `_DAT_80089118/20` = [`Self::map_origin_xz`]), the incoming NPC is
+    ///   parked at the `0x3F80` sentinel, and the fade-back-in spawns.
+    /// - **3** - release the fade object (engine: [`Self::screen_fade`]
+    ///   steps itself; nothing to do).
+    /// - **4** - hold the fade-in, then clear the camera-busy latch and
+    ///   return to state 0 (the poll).
+    /// - **5** - despawn = [`Self::end_three_actor_talk`]. The engine folds
+    ///   retail's one-frame 0 -> 5 despawn delay into the same tick.
+    ///
+    /// Not modelled: `FUN_801DE190` (party-display rebuild - the engine
+    /// derives the display from `party_actor_slots`), the grid re-anchor
+    /// pair `FUN_801DE3E0`/`FUN_801DB8EC`/`FUN_801DAA50` (the engine camera
+    /// follows the player actor), and the `FUN_8003BDE0` spawn-condition
+    /// re-check at the new tile.
+    pub(crate) fn tick_three_actor_talk(&mut self) {
+        use crate::cutscene_script_elements::{
+            LEADER_ACTOR_POSE_SENTINEL, LEADER_SWAP_REQUEST_BIT, LeaderSwapEffect, LeaderSwapWorld,
+        };
+        let Some(mut talk) = self.three_actor_talk else {
+            // No live talk: a stale switch request must not outlive the
+            // session that could consume it.
+            self.talk_switch_requested = false;
+            return;
+        };
+        let request = if talk.swap.phase == 0 {
+            core::mem::take(&mut self.talk_switch_requested)
+        } else {
+            false
+        };
+        let leader = self.party_leader_slot.unwrap_or(0).min(2);
+        let swap_world = LeaderSwapWorld {
+            leader,
+            // Host substitution for the retail suppressor pair
+            // `_DAT_8007B6B4` / `_DAT_8007B6B0` (un-pinned globals): no
+            // switch arms while a dialogue owns the pad.
+            suppress_a: i32::from(self.dialogue_owns_input()),
+            suppress_b: 0,
+            // The engine models no second controller that could hold the
+            // camera-busy bit at state 0, and no `_DAT_1F800394` pad-word
+            // mirror: both alternate arm routes read clear, leaving the
+            // request-byte route.
+            camera_flags: 0,
+            pad: 0,
+            request_byte: if request { LEADER_SWAP_REQUEST_BIT } else { 0 },
+        };
+        let step = self.frame_step.max(1);
+        // Same MSB-first bank layout as `Self::system_flag_test` (the SCUS
+        // helper `FUN_8003CE64` the controller calls).
+        let flags = &self.system_flags;
+        let tick = talk.swap.step(&swap_world, step, |idx| {
+            let byte = (idx >> 3) as usize;
+            flags
+                .get(byte)
+                .is_some_and(|b| b & (0x80u8 >> (idx & 7)) != 0)
+        });
+        if talk.swap.phase == 5 {
+            // State-0 poll saw the talk lock down: despawn (retail runs the
+            // state-5 body one frame later; the engine folds it).
+            self.three_actor_talk = Some(talk);
+            self.end_three_actor_talk();
+            return;
+        }
+        let ids = talk.actor_ids;
+        for effect in &tick.effects {
+            match *effect {
+                LeaderSwapEffect::CachePartyPoses => {
+                    // Retail rewrites the 0x800845E4 table from the three
+                    // controller actors every state-0 frame; a participant
+                    // the engine has no live NPC record for keeps its
+                    // arm-time capture.
+                    for (i, &id) in ids.iter().enumerate() {
+                        let slot = self.talk_participant_slot(id);
+                        if let Some(&pos) = self.field_npc_positions.get(&slot) {
+                            let heading = self.field_npc_headings.get(&slot).copied().unwrap_or(0);
+                            talk.saved[i] = Some((pos, heading));
+                        }
+                    }
+                }
+                LeaderSwapEffect::SpawnFadeOut => {
+                    // `801d29c8..801d2a00`: kind 2, 0x20 frames, black ->
+                    // white, no start delay / no hold.
+                    self.screen_fade =
+                        Some(crate::fade::FadeState::load(&crate::fade::FadeTemplate {
+                            kind: 2,
+                            duration: crate::cutscene_script_elements::LEADER_SWAP_FADE_FRAMES
+                                as i16,
+                            start_rgb: [0, 0, 0],
+                            end_rgb: [0xFF, 0xFF, 0xFF],
+                            mode: [0, -1, 0],
+                        }));
+                }
+                LeaderSwapEffect::StoreOutgoingPose { slot } => {
+                    // The outgoing leader's participant actor takes the
+                    // player's pose (retail: camera `+0x14/16/18/26` onto
+                    // the outgoing actor, `801d2a54..801d2ab8`).
+                    if let Some((px, pz)) = self.player_field_position() {
+                        let heading = self
+                            .player_actor_slot
+                            .and_then(|s| self.actors.get(s as usize))
+                            .map(|a| a.move_state.render_26)
+                            .unwrap_or(0);
+                        let npc = self.talk_participant_slot(ids[usize::from(slot.min(2))]);
+                        self.field_npc_positions.insert(npc, (px, pz));
+                        self.field_npc_headings.insert(npc, heading);
+                    }
+                }
+                LeaderSwapEffect::CommitLeader { slot } => {
+                    // `801d2ae8..801d2b1c`: leader byte + collapsed id list
+                    // re-point at the incoming slot; flags 0x10..=0x12
+                    // cleared, `0x10 + slot` set.
+                    self.party_leader_slot = Some(slot);
+                    self.party_actor_slots = vec![Some(slot)];
+                    self.system_flag_clear(0x10);
+                    self.system_flag_clear(0x11);
+                    self.system_flag_clear(0x12);
+                    self.system_flag_set(0x10 + u16::from(slot));
+                }
+                LeaderSwapEffect::RefreshParty => {
+                    // Retail `FUN_801DE190` rebuilds the party display; the
+                    // engine's display derives from `party_actor_slots`.
+                }
+                LeaderSwapEffect::RecentreCamera { slot } => {
+                    // The player takes the incoming participant's pose
+                    // (`801d2b3c..801d2c04`), and the map origin follows
+                    // (`_DAT_80089118/20` = negated pose).
+                    let npc = self.talk_participant_slot(ids[usize::from(slot.min(2))]);
+                    if let Some(&(nx, nz)) = self.field_npc_positions.get(&npc) {
+                        let heading = self.field_npc_headings.get(&npc).copied().unwrap_or(0);
+                        let ny = self.sample_field_floor_height(i32::from(nx), i32::from(nz));
+                        if let Some(a) = self
+                            .player_actor_slot
+                            .and_then(|s| self.actors.get_mut(s as usize))
+                        {
+                            a.move_state.world_x = nx;
+                            a.move_state.world_y = ny as i16;
+                            a.move_state.world_z = nz;
+                            a.move_state.render_26 = heading;
+                        }
+                        self.map_origin_xz = (-i32::from(nx), -i32::from(nz));
+                    }
+                }
+                LeaderSwapEffect::ClearIncomingPose { slot } => {
+                    // `801d2c0c..801d2c20`: the incoming leader's actor is
+                    // parked at the 0x3F80 sentinel (the player object now
+                    // represents them).
+                    let npc = self.talk_participant_slot(ids[usize::from(slot.min(2))]);
+                    self.field_npc_positions.insert(
+                        npc,
+                        (LEADER_ACTOR_POSE_SENTINEL, LEADER_ACTOR_POSE_SENTINEL),
+                    );
+                }
+                LeaderSwapEffect::SpawnFadeIn => {
+                    // `801d2c24..801d2c54`: kind 2, 0x20 frames, white ->
+                    // black.
+                    self.screen_fade =
+                        Some(crate::fade::FadeState::load(&crate::fade::FadeTemplate {
+                            kind: 2,
+                            duration: crate::cutscene_script_elements::LEADER_SWAP_FADE_FRAMES
+                                as i16,
+                            start_rgb: [0xFF, 0xFF, 0xFF],
+                            end_rgb: [0, 0, 0],
+                            mode: [0, 0, 0],
+                        }));
+                }
+                LeaderSwapEffect::ReleaseFadeObject | LeaderSwapEffect::ClearCameraBusy => {
+                    // The engine fade steps + drops itself
+                    // ([`Self::screen_fade`]); no modelled camera flag word
+                    // to clear.
+                }
+                LeaderSwapEffect::RetireController => {
+                    self.three_actor_talk = Some(talk);
+                    self.end_three_actor_talk();
+                    return;
+                }
+            }
+        }
+        self.three_actor_talk = Some(talk);
+    }
+
+    /// Resolve a talk-instruction participant id to the engine's field-NPC
+    /// placement slot - the same actor-list walk the op-`0x43` sub-2 arm
+    /// performs (retail `FUN_8003C83C`); an unmatched id passes through raw.
+    // REF: FUN_8003C83C (id resolve)
+    fn talk_participant_slot(&self, id: u8) -> u8 {
+        crate::field_channels::resolve_target(&self.field_channels, id)
+            .map(|ci| self.field_channels[ci].placement_index as u8)
+            .unwrap_or(id)
+    }
+
+    /// End the active three-actor talk: drop the session, clear the talk
+    /// lock (system flag `0xD`, idempotent when the script already cleared
+    /// it - that clear is what [`Self::tick_three_actor_talk`] fires on),
+    /// and restore the story party count + leader from the pre-collapse
+    /// snapshot the op-`0x43` arm captured.
+    ///
+    /// Retail rebuilds the post-talk party through the scene script's own
+    /// party ops (the field VM's `0x80084594/98` writers); the controller
+    /// itself only despawns (`FUN_801D27E0` state 5). The engine restores
+    /// the arm-time snapshot at the same trigger so the collapse is never a
+    /// one-way door when a script ends the talk without explicit re-adds -
+    /// script party ops that do follow still apply on top (`party_add`
+    /// dedupes members already present, `party_remove` prunes), so a script
+    /// that rebuilds the same trio converges to the identical end state.
+    ///
+    /// No-op without an active session.
+    // REF: FUN_801D27E0 (state-5 despawn), FUN_801D2D38 (the collapse this undoes)
+    pub fn end_three_actor_talk(&mut self) {
+        let Some(talk) = self.three_actor_talk.take() else {
+            return;
+        };
+        self.system_flag_clear(0xD);
+        if talk.saved_party_len > 0 {
+            self.party_actor_slots = talk.saved_party[..talk.saved_party_len as usize].to_vec();
+            self.party_leader_slot = talk
+                .saved_leader
+                .or_else(|| self.party_actor_slots.first().copied().flatten());
+        }
+    }
+
+    /// Drain a menu-staged transition into the named scene transition the
+    /// scene host consumes ([`Self::pending_named_scene_transition`]).
+    ///
+    /// **Door of Wind** ([`Self::pending_menu_warp`]): the staged triple is
+    /// retail's `0x80084628` scene word + `0x80084624`/`0x8008462C` tile
+    /// pair (`FUN_801D8B90` phase 3, from quick-travel placement record
+    /// bytes `+2/+4/+5`). The scene word is the destination scene's raw
+    /// CDNAME TOC index ([`Self::scene_toc_names`]); the tile pair seats
+    /// the party at `(tile << 7) + 0x40`, the same conversion the world-map
+    /// arrival kernel applies (`FUN_801EE328`: `0x80073EF4/EF8` stores).
+    /// The named-transition drain performs exactly that seat
+    /// (`seat_player_at_tile`), entering the kingdom overworld for the
+    /// three `mapNN` bases and the field scene for the `son` / `korout`
+    /// records. An unresolvable scene word logs retail's
+    /// `UNFIND MAP NUMBER %d` diagnostic (the `FUN_801EE328` phase-`0x63`
+    /// park) and drops the warp.
+    ///
+    /// **Door of Light** ([`Self::pending_menu_escape`]): retail hands the
+    /// outer menu SM exit code 4 (`FUN_801D8A58`) - the dungeon-escape
+    /// handoff, whose overlay-side consumer is not yet pinned. The engine
+    /// routes it onto the last visited-map record (the return point the
+    /// travel arts warp to): back to that kingdom overworld at the stored
+    /// tile. With no visited record yet (the party has never stood on a
+    /// kingdom map) the escape is dropped with a diagnostic.
+    ///
+    /// REF: FUN_801D8B90 (stage), FUN_801D8A58 (escape exit code),
+    /// FUN_801EE328 (arrival tile math + UNFIND diagnostic)
+    pub fn drain_staged_menu_warp(&mut self) {
+        if let Some(warp) = self.pending_menu_warp.take() {
+            match self.scene_toc_names.get(&u32::from(warp.scene_id)) {
+                Some(name) => {
+                    self.pending_named_scene_transition =
+                        Some((name.clone(), warp.menu_x, warp.menu_y, 0));
+                }
+                None => {
+                    // Retail's miss arm prints and parks (phase 0x63).
+                    log::warn!("menu warp: UNFIND MAP NUMBER {}", warp.scene_id);
+                }
+            }
+        }
+        if self.pending_menu_escape {
+            self.pending_menu_escape = false;
+            let visited = self
+                .world_map_ctrl
+                .as_ref()
+                .and_then(|c| c.panels.visited.last().copied());
+            match visited {
+                Some(v) => {
+                    let name = match v.map_id {
+                        0 => "map01",
+                        1 => "map02",
+                        2 => "map03",
+                        _ => {
+                            log::warn!("menu escape: UNFIND MAP NUMBER {}", v.map_id);
+                            return;
+                        }
+                    };
+                    self.pending_named_scene_transition = Some((
+                        name.to_string(),
+                        v.tile_x.clamp(0, 0xFF) as u8,
+                        v.tile_z.clamp(0, 0xFF) as u8,
+                        0,
+                    ));
+                }
+                None => {
+                    log::warn!("menu escape: no visited world-map record to return to");
+                }
+            }
+        }
+    }
+
+    /// Install the CDNAME `#define` map (raw TOC index → block name) the
+    /// menu-warp drain resolves a quick-travel `scene_id` against. The
+    /// scene host wires this once at construction from the same parsed
+    /// `CDNAME.TXT` its own scene loads use.
+    pub fn install_scene_toc_names(&mut self, map: legaia_prot::cdname::IndexMap) {
+        self.scene_toc_names = map;
+    }
+
     /// Arm the timed sound-source auto-release for `deadline` vsyncs
     /// (`gp+0x814`). [`Self::tick`] counts it down by the frame step.
     ///
@@ -655,6 +1000,15 @@ impl World {
         // both are `+0x0C` handlers on retail's one effect-actor list, and
         // this is the one tick path all three hosts reach.
         self.tick_register_ramps();
+        // The three-actor-talk controller's per-frame flag poll: when the
+        // scene script drops the talk lock (system flag 0xD), the controller
+        // despawns and the story party un-collapses. Same all-hosts tick
+        // position as the ramps above.
+        self.tick_three_actor_talk();
+        // Menu-staged transitions (Door of Wind warp / Door of Light
+        // escape): convert the staged record into the named scene
+        // transition the scene host already drains.
+        self.drain_staged_menu_warp();
         // A minigame the player can enter must be one the player can leave.
         self.poll_minigame_escape();
         match self.mode {

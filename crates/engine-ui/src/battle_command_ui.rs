@@ -55,10 +55,12 @@
 //! chip under the cursor keeps its full plate tint and a white label
 //! while the rest dim.
 //!
-//! Geometry is mirrored from `battle_chrome` as literals because
-//! `engine-ui` sits below `engine-vm` in the crate graph; `engine-shell`'s
-//! HUD tests pin the two sets equal, which is the only thing that keeps
-//! the copy honest.
+//! Geometry is mirrored from `battle_chrome` as literals. The old
+//! crate-graph excuse for the copy ("`engine-ui` sits below `engine-vm`")
+//! is false - this crate depends on `legaia-engine-vm` and imports it
+//! elsewhere - so the mirror is wiring debt, not a constraint;
+//! `engine-shell`'s HUD tests pin the two sets equal, which is the only
+//! thing that keeps the copy honest until the literals read the kernel.
 
 use crate::{SpriteDraw, TextDraw};
 use legaia_asset::title_pak;

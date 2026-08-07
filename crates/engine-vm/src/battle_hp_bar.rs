@@ -214,12 +214,19 @@ pub fn accumulate_pending(pending: i32, display: u16, delta: i32) -> i32 {
 /// without an external HP write.
 ///
 /// PORT: FUN_800402F4 (the `actor[+0x10] = -delta` seeds)
-/// NOT WIRED: the engine has no port of `FUN_800402F4`'s item / restore
-/// applier as a distinct entry point - item effects and revives land through
-/// `engine-core`'s `World::apply_battle_hp_delta`, which seeds with the
-/// **accumulating** convention. Nothing therefore calls the assigning one.
-/// Wiring it needs the item-effect applier itself ported with its own seed
-/// site, not a new caller for this leaf.
+/// WIRED: through `BattleActor::assign_hp_bar`
+/// (`crate::battle_action::BattleActor`), whose production callers are the
+/// three `engine-core` restore paths that stand in for `FUN_800402F4`'s
+/// item / revive arms: `World::apply_final_heal_revives` (the class-4 Lost
+/// Grail revive, run every battle frame by `step_battle_frame`),
+/// `World::apply_battle_item` (the in-battle item applier the battle menu
+/// commits through), and the spell-fold `Revive` arm in
+/// `world/battle/casting.rs`. This used to carry a disclosure ("nothing
+/// calls the assigning one") from before those three adopted the seed; the
+/// part of it that is still true is narrower and stays stated: the
+/// item-effect applier itself is not ported as a distinct entry point -
+/// the restores land through the paths above, which call this seed at
+/// their own HP writes.
 pub fn assign_pending(delta: i16) -> i32 {
     -i32::from(delta)
 }

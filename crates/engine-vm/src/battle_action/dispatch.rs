@@ -566,6 +566,31 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
     let Some(actor) = host.actor(actor_slot) else {
         return stay(ctx);
     };
+    // A dead acting actor never dispatches into an action band. Retail holds
+    // this invariant one function upstream, structurally: every battle-order
+    // recompute (`FUN_801DABA4`, `overlay_battle_action_801daba4.txt`) sweeps
+    // the actor table and, for each dead slot still holding an unspent
+    // initiative key (`lhu v0,0x14c(v1); bne v0,zero,<skip>` at `0x801DABD8`
+    // + `lhu v0,0x16c(v1); beq v0,zero,<skip>` at `0x801DABE8`), zeroes the
+    // key (`sh zero,0x16c(v1)` at `0x801DABF8`), bumps the round-skip count
+    // `ctx[+0x25]` (`0x801DAC2C..0x801DAC38`), and for a staged Item action
+    // refunds the item and clears the category byte
+    // (`jal 0x800421D4` / `sb zero,0x1de(v0)` at `0x801DAC54..0x801DAC68`).
+    // A dead actor therefore can never be picked into `ctx[+0x274]`, which is
+    // the only writer of the acting slot this state copies (`0x801E2C50`) -
+    // so retail's seed body needs no liveness test of its own. The port's
+    // hosts CAN kill an actor between arming and seed (an external HP write,
+    // a harness force-kill - the wave-measured shape: a monster dead at
+    // battle entry still ran its staged multi-strike), so the invariant is
+    // enforced here at the dispatch point, and it routes exactly where
+    // retail's *cleared-action* category-0 arm routes: state `0x50`
+    // (`li v0,0x50; sb v0,0x7(v1)` at `0x801E2E24..0x801E2E2C`), the Done
+    // band - no attack, no cast, the turn is simply spent.
+    //
+    // REF: FUN_801DABA4 (the dead-slot sweep that is this gate in retail)
+    if actor.liveness == 0 {
+        return transition(ctx, ActionState::DoneCleanup);
+    }
     let category = ActionCategory::from_byte(actor.action_category);
     let field_flags = actor.field_flags;
     let party_count = host.party_count();

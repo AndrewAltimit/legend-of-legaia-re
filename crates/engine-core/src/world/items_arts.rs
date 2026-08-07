@@ -330,6 +330,22 @@ impl World {
             return self.apply_fury_boost_item(target_slot);
         }
         let idx = target_slot as usize;
+        // Which record is authoritative depends on where the use happens
+        // (retail: the 0x414-byte roster record at `0x80084708 + n*0x414` is
+        // the persistent truth; battle actors are projections seeded from it
+        // at battle load and flowed back at teardown via
+        // `persist_battle_party_hp`):
+        //
+        // - In battle, `target_slot` is a party ordinal and the live
+        //   `BattleActor` mirror is the record retail's item handler writes;
+        //   the roster receives the final values at battle end.
+        // - Out of battle, `target_slot` is a ROSTER slot (the field menu's
+        //   target strip enumerates `roster.members`) and retail's menu heal
+        //   writes the roster record directly - healing only the mirror left
+        //   the field menu (which re-reads the roster) showing no change.
+        //   The mapped party actor's mirror, when one is live, is refreshed
+        //   too so field-side consumers of the projection stay consistent.
+        let field_roster = self.mode != SceneMode::Battle && self.roster.members.get(idx).is_some();
         // BattleActor holds `mp` but not `max_mp`; engines that wire the
         // character record into the actor populate it via a sibling field.
         // For the snapshot we use the character_max_mp accessor (defaults
@@ -340,30 +356,54 @@ impl World {
             .statuses(target_slot)
             .iter()
             .fold(0u8, |m, s| m | crate::items::status_bit(s.kind));
-        let snapshot = match self.actors.get(idx) {
-            Some(a) => crate::items::TargetSnapshot {
-                hp: a.battle.hp,
-                hp_max: a.battle.max_hp,
-                mp: a.battle.mp,
-                mp_max: self
-                    .character_max_mp
-                    .get(idx)
-                    .copied()
-                    .unwrap_or(a.battle.mp),
-                is_dead: a.battle.hp == 0 && a.battle.max_hp > 0,
+        let snapshot = if field_roster {
+            let hms = self.roster.members[idx].hp_mp_sp();
+            crate::items::TargetSnapshot {
+                hp: hms.hp_cur,
+                hp_max: hms.hp_max,
+                mp: hms.mp_cur,
+                mp_max: hms.mp_max,
+                is_dead: hms.hp_cur == 0 && hms.hp_max > 0,
                 status_mask,
-            },
-            None => return crate::items::ItemOutcome::NoEffect,
+            }
+        } else {
+            match self.actors.get(idx) {
+                Some(a) => crate::items::TargetSnapshot {
+                    hp: a.battle.hp,
+                    hp_max: a.battle.max_hp,
+                    mp: a.battle.mp,
+                    mp_max: self
+                        .character_max_mp
+                        .get(idx)
+                        .copied()
+                        .unwrap_or(a.battle.mp),
+                    is_dead: a.battle.hp == 0 && a.battle.max_hp > 0,
+                    status_mask,
+                },
+                None => return crate::items::ItemOutcome::NoEffect,
+            }
         };
         let outcome = crate::items::apply_effect(entry.effect, &snapshot);
         match outcome {
             crate::items::ItemOutcome::HealedHp { amount } => {
-                if let Some(a) = self.actors.get_mut(idx) {
+                if field_roster {
+                    let rec = &mut self.roster.members[idx];
+                    let mut hms = rec.hp_mp_sp();
+                    hms.hp_cur = hms.hp_cur.saturating_add(amount).min(hms.hp_max);
+                    rec.set_hp_mp_sp(hms);
+                    self.mirror_roster_hp_mp(idx);
+                } else if let Some(a) = self.actors.get_mut(idx) {
                     a.battle.hp = a.battle.hp.saturating_add(amount).min(a.battle.max_hp);
                 }
             }
             crate::items::ItemOutcome::HealedMp { amount } => {
-                if let Some(a) = self.actors.get_mut(idx) {
+                if field_roster {
+                    let rec = &mut self.roster.members[idx];
+                    let mut hms = rec.hp_mp_sp();
+                    hms.mp_cur = hms.mp_cur.saturating_add(amount).min(hms.mp_max);
+                    rec.set_hp_mp_sp(hms);
+                    self.mirror_roster_hp_mp(idx);
+                } else if let Some(a) = self.actors.get_mut(idx) {
                     let cap = self.character_max_mp.get(idx).copied().unwrap_or(u16::MAX);
                     a.battle.mp = a.battle.mp.saturating_add(amount).min(cap);
                 }
@@ -375,7 +415,13 @@ impl World {
                 self.status_effects.cure_all(target_slot);
             }
             crate::items::ItemOutcome::Revived { hp_after } => {
-                if let Some(a) = self.actors.get_mut(idx) {
+                if field_roster {
+                    let rec = &mut self.roster.members[idx];
+                    let mut hms = rec.hp_mp_sp();
+                    hms.hp_cur = hp_after.min(hms.hp_max);
+                    rec.set_hp_mp_sp(hms);
+                    self.mirror_roster_hp_mp(idx);
+                } else if let Some(a) = self.actors.get_mut(idx) {
                     a.battle.hp = hp_after.min(a.battle.max_hp);
                 }
             }
@@ -414,6 +460,30 @@ impl World {
             _ => {}
         }
         outcome
+    }
+
+    /// Refresh the live `BattleActor` HP/MP mirror of the party member whose
+    /// present-party mapping ([`Self::party_roster_slot`]) points at roster
+    /// slot `rslot`, from that roster record. Field-side sibling of
+    /// [`Self::resync_party_actors_from_roster`] scoped to one record: a
+    /// field-menu item just wrote the persistent record, and any live
+    /// projection of it must not keep the stale value. No-op when no party
+    /// ordinal maps to the slot (e.g. a reserve member).
+    fn mirror_roster_hp_mp(&mut self, rslot: usize) {
+        let Some(rec) = self.roster.members.get(rslot) else {
+            return;
+        };
+        let hms = rec.hp_mp_sp();
+        let n = (self.party_count as usize).min(self.actors.len());
+        for member in 0..n {
+            if self.party_roster_slot(member) == rslot {
+                let a = &mut self.actors[member].battle;
+                a.hp = hms.hp_cur.min(hms.hp_max);
+                a.max_hp = hms.hp_max;
+                a.mp = hms.mp_cur.min(hms.mp_max);
+                a.liveness = if hms.hp_cur > 0 { 1 } else { 0 };
+            }
+        }
     }
 
     /// Apply a one-battle action-gauge extension

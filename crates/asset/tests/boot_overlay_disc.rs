@@ -174,5 +174,88 @@ fn mode_table_overlay_params_resolve_to_real_entries() {
         let choice = bo::slot_b_default_overlay(flag, false, None).unwrap();
         assert!((choice.extraction_index as usize) < archive.entries.len());
         assert!(!read(&mut archive, choice.extraction_index).is_empty());
+
+        // The two skip arms: a suppressed frame loads nothing at all, and a
+        // matching resident word turns the choice into a no-op load.
+        assert!(bo::slot_b_default_overlay(flag, true, None).is_none());
+        let resident = bo::slot_b_default_overlay(flag, false, Some(choice.param)).unwrap();
+        assert!(!resident.needs_load, "the resident overlay is not reloaded");
     }
+}
+
+/// The effect-data side-band branch (`FUN_8003E360`) and the sector-count
+/// rounding (`FUN_8001EEF0` arithmetic tail), both held against the real TOC.
+///
+/// The flag-set branch names a PROT entry; the disc decides whether that
+/// entry exists and is worth a DMA. The rounding is asserted against the
+/// TOC's own two size columns: `size_sectors` is the sector gap to the next
+/// entry, so for every entry the byte length must round up to **at most**
+/// that footprint, and for the entries whose bytes fill their footprint it
+/// must round to exactly it - which a majority of real entries do, so the
+/// equality arm is asserted non-vacuously.
+#[test]
+fn effect_data_branch_and_sector_rounding_hold_against_the_real_toc() {
+    let Some(prot_dat) = extracted_prot_dat() else {
+        eprintln!("[skip] extracted/PROT.DAT missing");
+        return;
+    };
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let mut archive = Archive::open(&prot_dat).expect("open PROT.DAT");
+
+    // Effect-data source: the flag-set branch resolves the pinned PROT entry,
+    // the flag-clear branch is the debug-station host trap and names no entry.
+    let bo::EffectDataSource::ProtEntry(idx) = bo::effect_data_source(true) else {
+        panic!("the flag-set branch must take the PROT-TOC arm");
+    };
+    assert_eq!(idx, bo::EFFECT_DATA_EXTRACTION_INDEX);
+    assert!(
+        (idx as usize) < archive.entries.len(),
+        "effect-data entry {idx} out of range"
+    );
+    assert!(
+        !read(&mut archive, idx).is_empty(),
+        "effect-data entry {idx} is empty"
+    );
+    assert_eq!(
+        bo::effect_data_source(false),
+        bo::EffectDataSource::HostFile
+    );
+
+    // Sector rounding over every real entry size.
+    let mut exact = 0usize;
+    for e in &archive.entries {
+        let sectors = bo::bytes_to_sectors(e.size_bytes as i32);
+        assert!(
+            sectors >= 0 && sectors as u32 <= e.size_sectors,
+            "entry at LBA {}: {} bytes rounds to {sectors} sectors, past its \
+             own {}-sector footprint",
+            e.start_lba,
+            e.size_bytes,
+            e.size_sectors
+        );
+        if sectors as u32 == e.size_sectors {
+            exact += 1;
+        }
+    }
+    assert!(
+        exact * 2 > archive.entries.len(),
+        "only {exact}/{} entries fill their sector footprint - the rounding \
+         (or the TOC read) is off",
+        archive.entries.len()
+    );
+
+    // The negative arm: an error return stays an error instead of becoming
+    // -1 sectors' worth of read. Disc-free arithmetic, kept next to the disc
+    // sweep so the whole routine is pinned in one place.
+    assert_eq!(bo::bytes_to_sectors(-1), 0);
+    assert_eq!(bo::bytes_to_sectors(-0x800), 0);
+    assert_eq!(bo::bytes_to_sectors(0), 0);
+    assert_eq!(bo::bytes_to_sectors(1), 1);
+    assert_eq!(bo::bytes_to_sectors(0x800), 1);
+    assert_eq!(bo::bytes_to_sectors(0x801), 2);
+    // The 101 field .MAP slots' fixed footprint.
+    assert_eq!(bo::bytes_to_sectors(0x12000), 36);
 }

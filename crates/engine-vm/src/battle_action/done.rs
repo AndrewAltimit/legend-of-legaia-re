@@ -365,7 +365,16 @@ pub(super) fn end_of_action<H: BattleActionHost + ?Sized>(
         })
         .count();
 
-    if party_alive == 0 {
+    // "No party seated" is not "party dead". Retail's scan counts the
+    // seated-count byte's worth of table slots and nothing else - a battle
+    // with zero seated party members is unrepresentable there (battle load
+    // always seats the present party; see `BattleActionHost::slot_seated`).
+    // The port can reach that state (a host entering battle with stamped but
+    // roster-less party slots), and reporting it as a wipe turned every
+    // unseeded battle into an instant game over before anything was hit. A
+    // wipe requires at least one seated slot with nobody standing in it.
+    let party_seated = (0..party_count).filter(|&s| host.slot_seated(s)).count();
+    if party_seated > 0 && party_alive == 0 {
         host.battle_end(BattleEndCause::PartyWipe);
         return StepOutcome::BattleComplete;
     }

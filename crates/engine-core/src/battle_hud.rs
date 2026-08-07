@@ -17,9 +17,15 @@
 //!
 //! Damage popups carry a `frames_remaining` counter; [`BattleHud::tick`]
 //! decrements it each frame and drops popups whose counter reaches zero.
-//! Default lifetime is 60 frames (~1 s at PSX 60 Hz).
+//! Default lifetime is 60 frames (~1 s at PSX 60 Hz). Simultaneous popups
+//! are bounded by retail's 8-slot ring (`FUN_801F44A0`, delegated to
+//! `legaia_engine_vm::battle_gauge_rearm::DamagePopupRing` by
+//! [`BattleHud::push_popup`]): a ninth push overwrites the slot the ring
+//! cursor names instead of growing the list.
 
 use crate::ap_gauge::ApGauge;
+use legaia_engine_vm::battle_gauge_rearm::DamagePopupRing;
+pub use legaia_engine_vm::battle_gauge_rearm::POPUP_RING_SLOTS;
 use legaia_engine_vm::status_effects::{StatusEffectTracker, StatusIcon, StatusKind};
 
 /// Per-slot row update payload for [`BattleHud::sync_slot`].
@@ -335,7 +341,21 @@ pub struct BattleHud {
     /// Per-slot panels (8 = 3 party + 5 monsters, mirrors the actor table).
     pub slots: [BattleSlotHud; 8],
     /// Damage / heal / status popups, drained per frame by [`Self::tick`].
+    ///
+    /// Bounded at [`POPUP_RING_SLOTS`]: every push routes through
+    /// [`Self::push_popup`], which delegates the cursor bookkeeping to
+    /// retail's 8-slot ring ([`Self::popup_ring`]) - a ninth simultaneous
+    /// popup overwrites the slot the cursor names rather than growing the
+    /// list. Read freely; push through the `push_*` methods.
     pub popups: Vec<DamagePopup>,
+    /// Retail's damage-popup ring state (`ctx+0x262` write cursor,
+    /// `ctx+0x273` push counter) - the bookkeeping authority for
+    /// [`Self::popups`], advanced only by [`Self::push_popup`].
+    pub popup_ring: DamagePopupRing,
+    /// Ring slot each `popups` entry occupies (parallel to `popups`).
+    /// Private: the pairing is what makes the overwrite land on the same
+    /// *slot* retail's cursor names.
+    popup_ring_slots: Vec<u8>,
     /// Battle event log (ring buffer, oldest first).
     pub log: Vec<LogLine>,
     /// Maximum log lines retained. Older lines fall off the front when a
@@ -361,6 +381,8 @@ impl BattleHud {
         Self {
             slots: Default::default(),
             popups: Vec::new(),
+            popup_ring: DamagePopupRing::default(),
+            popup_ring_slots: Vec::new(),
             log: Vec::new(),
             log_capacity: 6,
             status_clut: Default::default(),
@@ -433,24 +455,53 @@ impl BattleHud {
 
     /// Push a fresh damage popup with the default lifetime.
     pub fn push_damage(&mut self, slot: u8, amount: u16) {
-        self.popups.push(DamagePopup::damage(slot, amount));
+        self.push_popup(DamagePopup::damage(slot, amount));
     }
 
     /// Push a fresh heal popup.
     pub fn push_heal(&mut self, slot: u8, amount: u16) {
-        self.popups.push(DamagePopup::heal(slot, amount));
+        self.push_popup(DamagePopup::heal(slot, amount));
     }
 
     /// Push a status-applied popup (no HP delta).
     pub fn push_status(&mut self, slot: u8, status: StatusKind) {
-        self.popups
-            .push(DamagePopup::damage(slot, 0).with_status(status));
+        self.push_popup(DamagePopup::damage(slot, 0).with_status(status));
     }
 
-    /// Push a pre-built popup. Useful for engines that customise the
-    /// crit / fade fields per source event.
+    /// Push a pre-built popup through retail's popup ring.
+    ///
+    /// Retail has no growable popup list: `FUN_801F44A0` writes the pushed
+    /// value / parameter / timer at the battle context's write cursor
+    /// (`ctx+0x262`) and advances it `(cursor + 1) & 7`, so at most
+    /// [`POPUP_RING_SLOTS`] popups exist at once and a ninth simultaneous
+    /// push **overwrites** the slot the cursor names - the first popup,
+    /// when none has expired. The cursor + push-counter bookkeeping is
+    /// delegated to the ported kernel ([`DamagePopupRing::push`], the
+    /// `PORT: FUN_801F44A0` site), and each display entry is keyed to the
+    /// ring slot its push landed in, so the overwrite target is the *slot*
+    /// the cursor names - retail's cursor is independent of expiry, not a
+    /// front-of-queue rule.
+    ///
+    /// The ring's `value` is the signed HP delta retail pushes (a heal
+    /// stores negative); its `param` byte carries the target slot.
+    ///
+    /// REF: FUN_801F44A0
     pub fn push_popup(&mut self, popup: DamagePopup) {
-        self.popups.push(popup);
+        // `popups` is a public field; if something mutated it out-of-band,
+        // re-pair the slot record defensively. `0xFF` never matches a
+        // cursor (`& 7`), so unpaired entries are simply never overwritten.
+        self.popup_ring_slots.resize(self.popups.len(), 0xFF);
+        let slot = self.popup_ring.cursor & 0x7;
+        let magnitude = popup.amount.min(i16::MAX as u16) as i16;
+        let value = if popup.is_heal { -magnitude } else { magnitude };
+        self.popup_ring.push(value, popup.slot);
+        match self.popup_ring_slots.iter().position(|&s| s == slot) {
+            Some(i) => self.popups[i] = popup,
+            None => {
+                self.popups.push(popup);
+                self.popup_ring_slots.push(slot);
+            }
+        }
     }
 
     /// Append a battle log line. When the log exceeds [`Self::log_capacity`],
@@ -471,6 +522,10 @@ impl BattleHud {
     /// transition so stale popups don't bleed into the next encounter.
     pub fn clear_popups(&mut self) {
         self.popups.clear();
+        self.popup_ring_slots.clear();
+        // The ring lives in the battle context, which retail rebuilds per
+        // encounter - reset the cursor + counter with the display list.
+        self.popup_ring = DamagePopupRing::default();
     }
 
     /// Drop every log line.
@@ -482,7 +537,19 @@ impl BattleHud {
     /// and drops popups that have expired. Returns the number of popups
     /// remaining after the tick.
     pub fn tick(&mut self) -> usize {
-        self.popups.retain(|p| p.frames_remaining > 0);
+        // Keep the ring-slot record paired with the entries that survive.
+        self.popup_ring_slots.resize(self.popups.len(), 0xFF);
+        let slots = &mut self.popup_ring_slots;
+        let mut i = 0;
+        self.popups.retain(|p| {
+            let keep = p.frames_remaining > 0;
+            if keep {
+                i += 1;
+            } else {
+                slots.remove(i);
+            }
+            keep
+        });
         for p in self.popups.iter_mut() {
             p.frames_remaining = p.frames_remaining.saturating_sub(1);
         }
@@ -1014,6 +1081,68 @@ mod tests {
         assert_eq!(h.popups[0].slot, 3);
         assert_eq!(h.popups[0].amount, 250);
         assert_eq!(h.popups[0].frames_remaining, DEFAULT_POPUP_FRAMES);
+    }
+
+    #[test]
+    fn a_ninth_simultaneous_popup_overwrites_the_first_and_len_is_ring_bounded() {
+        let mut h = BattleHud::new();
+        for i in 0..9u16 {
+            h.push_popup(DamagePopup::damage(0, 100 + i));
+        }
+        assert_eq!(
+            h.popups.len(),
+            POPUP_RING_SLOTS,
+            "len never exceeds the 8-slot ring"
+        );
+        assert!(
+            !h.popups.iter().any(|p| p.amount == 100),
+            "the ninth push overwrites the first popup"
+        );
+        assert!(
+            h.popups.iter().any(|p| p.amount == 108),
+            "the ninth popup is present"
+        );
+        assert_eq!(h.popup_ring.pushed, 9, "ctx+0x273 counts every push");
+        assert_eq!(h.popup_ring.cursor, 1, "ctx+0x262 wrapped past slot 0");
+        for i in 0..20u16 {
+            h.push_popup(DamagePopup::damage(1, 500 + i));
+        }
+        assert_eq!(h.popups.len(), POPUP_RING_SLOTS, "still bounded after 29");
+    }
+
+    #[test]
+    fn the_overwrite_target_is_the_cursor_slot_not_the_oldest_live_popup() {
+        // Retail's cursor is independent of expiry: with eight pushed and a
+        // mid-ring slot expired, the ninth push still lands on slot 0 - the
+        // FIRST popup - even though a dead slot exists elsewhere.
+        let mut h = BattleHud::new();
+        for i in 0..8u16 {
+            let life = if i == 4 { 1 } else { 60 };
+            h.push_popup(DamagePopup::damage(0, 100 + i).with_lifetime(life));
+        }
+        h.tick(); // decrements the short-lived fifth popup to zero
+        h.tick(); // drops it - slot 4 is now dead
+        assert_eq!(h.popups.len(), 7);
+        h.push_popup(DamagePopup::damage(0, 999));
+        assert_eq!(h.popups.len(), 7, "slot 0 is replaced, not appended");
+        assert!(
+            !h.popups.iter().any(|p| p.amount == 100),
+            "the first popup (ring slot 0) is the one overwritten"
+        );
+        assert!(h.popups.iter().any(|p| p.amount == 999));
+    }
+
+    #[test]
+    fn clear_popups_resets_the_ring_cursor_with_the_display_list() {
+        let mut h = BattleHud::new();
+        for _ in 0..5 {
+            h.push_damage(0, 10);
+        }
+        h.clear_popups();
+        assert!(h.popups.is_empty());
+        assert_eq!(h.popup_ring, DamagePopupRing::default());
+        h.push_damage(1, 20);
+        assert_eq!(h.popup_ring.cursor, 1, "a fresh encounter starts at slot 0");
     }
 
     #[test]

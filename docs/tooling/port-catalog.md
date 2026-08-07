@@ -156,8 +156,19 @@ A tag is resolved to the symbol it sits on, most precise form first:
 |---|---|---|
 | `///` / `//` above a `fn` | that function | the function is reachable |
 | `///` / `//` above a `struct` / `enum` / `impl` | that type | any method in the type's `impl` blocks is reachable, or - when the file gives that type no `impl` block at all - any non-test `fn` in the file is |
+| `///` / `//` above a `const` / `static` / `type` alias / `macro_rules!` | that item | a reachable non-test `fn` body references the item's name (see below for the strict variant) |
 | `//` inside a function body | the enclosing function | that function is reachable |
 | `//! PORT:` (module doc) | the file, widened to its submodule subtree when the file declares no functions of its own | any non-test function in scope is reachable |
+
+The structural rule behind the table: a `///` doc block resolves to the item
+it documents - the first item after the block, however long the block is.
+Module scope belongs to `//!` blocks (and to the loose `//` tag that sits on
+no item at all); it is not a fall-through for doc blocks. Both halves of that
+rule were once violated, and each produced its own false audit rows: a bounded
+forward walk demoted long `NOT WIRED:` disclosure blocks to module scope
+(reporting careful disclosures as executed via their module's live siblings),
+and a tag above a `const` had no item arm to land on, so item-level data ports
+inherited a file-level verdict in both directions.
 
 Module-level tags are the coarse case and the main source of over-reporting: a
 `//!` block on a crate root claims the whole crate, so one wired function in it
@@ -167,6 +178,45 @@ The type anchor's fallback covers the tag that sits on a plain data struct
 whose behaviour lives in free functions, or in an `impl` of a *different* type
 in the same file. Without it such a tag could never be live however wired the
 port is, because the rule has no method to look at.
+
+The item anchor's verdict is *use*, since a `const` has no body to reach, and
+it is read differently by the two graphs. The permissive verdict matches the
+bare name tree-wide - two same-named consts share it - which over-approximates
+toward "used" and keeps the not-live list a hard floor. The strict verdict,
+read only by the stale-`NOT WIRED:` test, demands an attributable reference:
+the referencing `fn` sits in the item's own file, or spells the item qualified
+by its defining module's stem or `impl` type (`battle_helpers::GAUGE_STEP`,
+`CameraState::FIELD_RESET`). An unqualified use behind a `use` import is
+under-counted there, which errs toward "not live" - a missed stale tag, never
+a false accusation. The worked collision: `engine-core::dance` and
+`engine-vm::battle_helpers` both define a `GAUGE_STEP`, and only the dance one
+is referenced by live code.
+
+The attributable-reference rule has a second consumer: the reach report
+resolves an item anchor's **executed** verdict through the same patterns
+(`item_reference_patterns` / `item_reference_hit`, defined once in this
+script), so the liveness question and the "did a ladder run it" question can
+never disagree about what counts as a reference to a const. See
+[the runtime denominator](#the-runtime-denominator-replay-port-coveragepy)
+for the bucket that verdict feeds.
+
+#### Per-item `WIRED:` against a module blanket
+
+Disclosure is also resolved per anchor. The tag's own comment block saying
+`NOT WIRED` discloses it; failing that, a `//! NOT WIRED` opening the module
+doc discloses every anchor in the file (the `mdec::st_ring` shape: one blanket,
+seven tagged addresses). A mostly-inert module with one wired item needs the
+third rule: an anchor whose own doc block opens a line with `WIRED:` (caps,
+colon, same leading-`#`/`*` allowance as the blanket marker) opts that one item
+out of the module blanket. An own-block `NOT WIRED` still wins over an
+own-block `WIRED:` - same-granularity disclosure beats same-granularity claim.
+The worked example is `engine-core::cutscene_script_elements::save_screen_spawn`
+(`FUN_801D841C`), live under a module blanket that the file's other three
+element handlers still need.
+
+Both resolutions carry a control suite: `port-catalog.py --selftest` runs the
+anchor-kind and disclosure-precedence cases on a synthetic in-memory corpus and
+exits non-zero if the resolver stops distinguishing them.
 
 ### Precision
 
@@ -634,16 +684,20 @@ through a path no player takes.
 
 `scripts/ci/replay-port-coverage.py` supplies the missing denominator. It joins
 `cargo llvm-cov` output for a replay test against the catalog's
-address → `(file, line)` anchors, resolving each anchor to a function the same
-way [`collect_port_anchors`](#anchors) does (a tag inside a body belongs to the
-enclosing function; a tag above an item to the next one; a `//! PORT:` module
-tag to the whole file). It reports three sets:
+address → `(file, line)` anchors, resolving each anchor the same way
+[`collect_port_anchors`](#anchors) does: a tag inside a body belongs to the
+enclosing function, a `//! PORT:` module tag to the whole file, a type anchor
+to the executed methods of the type's own `impl` blocks, and an **item**
+anchor (const / static / type alias - no lines to execute) to its
+attributable references, through the same `item_reference_patterns` /
+`item_reference_hit` the strict liveness verdict uses. It reports four sets:
 
 | set | meaning |
 |---|---|
 | **inert-entered** | the static graph says no host root reaches it; the run executed it anyway. The graph is wrong or the tag is on the wrong symbol - each row is a finding. |
 | **disclosed-entered** | an anchor carrying a `NOT WIRED:` disclosure that a **passing** oracle executed. Highest priority: an oracle traversing stub code can certify behaviour nothing implements. |
 | **live-unentered** | statically reachable, never reached. Not a defect - the wiring worklist ordered by what a playthrough actually needs. |
+| **not observable (const)** | item anchors with no executed attributable reference. Deliberately neither entered nor never-entered: no line of coverage can convert the row, only executing a function that references the item. |
 
 ### The denominator is a union of ladders, not one binary
 
@@ -663,14 +717,21 @@ a bare invocation globs `target/cov-*.json`, so the short command is the honest
 one and the single-binary join is now the thing you have to ask for:
 
 ```bash
-for t in critical_path_replay menu_replay minigame_replay v0_1_playthrough; do
-  cargo llvm-cov --release -p legaia-engine-shell \
-      --test "$t" --json --output-path "target/cov-$t.json"
+scripts/ci/replay-port-coverage.py --list-ladders | while read -r t pkg; do
+    cargo llvm-cov clean --profraw-only
+    cargo llvm-cov -p "$pkg" --test "$t" --no-report
+    cargo llvm-cov report --json --output-path "target/cov-$t.json"
 done
-cargo llvm-cov --release -p legaia-web-viewer --test play_compose_ladder \
-    --json --output-path target/cov-play_compose_ladder.json
 scripts/ci/replay-port-coverage.py
 ```
+
+No `--release` - an optimised build inlines small functions and leaves their
+out-of-line coverage record at zero, indistinguishable from never-called
+(measured; see the script header and
+[`reach-triage.md`](reach-triage.md#a---release-export-cannot-tell-never-called-from-inlined)).
+Two steps per ladder because `-p <pkg> --json` scopes the *report* to that
+package's own sources, silently dropping every crate the ladder actually
+drives.
 
 Separate exports rather than one multi-`--test` run, because the report's
 per-ladder table then says what each contributed and how much of it no other

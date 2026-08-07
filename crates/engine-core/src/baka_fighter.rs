@@ -774,6 +774,21 @@ impl BakaFight {
         if critical {
             dmg = power << 7;
         }
+        // The special carries no HP payload. Its action record's `+0x18` power
+        // is 0 for all 17 fighters (disc corpus), so retail's kernel would
+        // compute `(combo-1)*0x40` = **-0x40** on a fresh combo - but retail
+        // never applies it: type 4 is the auto-finisher, gated on the
+        // opponent's HP already being 0 (`overlay_baka_fighter_801d3f44.txt`),
+        // and the kernel's HP write is `hp > 0`-gated
+        // (`overlay_baka_fighter_801d3b18.txt` `0x801d3e58..0x801d3e68`:
+        // `blez` skips the `subu`). The port's chargeable special (a host
+        // pacing enhancement) reaches this kernel against a live foe, where
+        // the raw arithmetic *healed* the loser by 64; the faithful HP delta
+        // for a special-won exchange is zero - its payoff is the exchange /
+        // round win, never HP.
+        if winner_type == 4 {
+            dmg = 0;
+        }
         if self.f[loser].hp > 0 {
             self.f[loser].hp -= dmg;
         }
@@ -2022,6 +2037,29 @@ mod tests {
         let r = f.last_exchange().expect("resolved");
         assert_eq!(r.winner, 0);
         // Special power is 0: the hit itself is the combo term only.
+        assert_eq!(f.hp(0), HP_START);
+    }
+
+    #[test]
+    fn special_won_exchange_never_moves_hp_and_never_heals() {
+        // The regression at the value, not just the sign. The special's action
+        // record carries power 0 (all 17 fighters on the disc), so the raw
+        // kernel total for a guard-break special on a fresh combo is the bare
+        // combo term `(0-1)*0x40 = -64` - which used to be *applied*, healing
+        // the foe from 3200 to 3264 ("you hit -64"). Retail never reaches
+        // that state: type 4 is the auto-finisher against a foe already at
+        // 0 HP, and the kernel's HP write is `hp > 0`-gated
+        // (`overlay_baka_fighter_801d3b18.txt` `0x801d3e58`). A special-won
+        // exchange therefore lands exactly zero HP change.
+        let mut f = fight();
+        assert!(f.choose(0, BakaAttack::Special));
+        assert!(f.choose(1, BakaAttack::A)); // commits -> guard-break resolve
+        f.tick(1);
+        let r = f.last_exchange().expect("resolved");
+        assert_eq!(r.winner, 0, "the special wins the exchange");
+        assert!(!r.special_round_win, "not fully charged - no round win");
+        assert_eq!(r.damage, 0, "a special-won exchange's HP delta is zero");
+        assert_eq!(f.hp(1), HP_START, "the foe is neither damaged nor healed");
         assert_eq!(f.hp(0), HP_START);
     }
 

@@ -395,7 +395,19 @@ fn open_host() -> Option<SceneHost> {
         return None;
     }
     let extracted = extracted_dir()?;
-    Some(SceneHost::open_extracted(&extracted).expect("open SceneHost"))
+    let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    // A cold boot has a party: seed the retail New Game roster (Vahn, the
+    // SCUS `0x80078C4C` template) exactly as `BootSession::begin_new_game`
+    // does. Without it every party slot is hollow (`max_hp == 0`, no
+    // record) - the port-only unseeded state whose encounters can neither be
+    // fought nor survived, which made rung 3's "one encounter fought and
+    // survived" unmeasurable (and, before the wipe hold existed, silently
+    // scored a total party kill as `Fight::Survived`).
+    let scus = std::fs::read(extracted.join("SCUS_942.54")).expect("read SCUS_942.54");
+    let party =
+        legaia_asset::new_game::StartingParty::from_scus(&scus).expect("SCUS new-game template");
+    host.world.seed_starting_party(&party);
+    Some(host)
 }
 
 fn baseline_path() -> PathBuf {
@@ -758,6 +770,13 @@ enum Leg {
         at: (i16, i16),
         ended_in: Option<SceneMode>,
     },
+    /// A random encounter killed the whole party. This is a leg outcome of
+    /// its own because it must never be conflated with either neighbour: it
+    /// is not `BattleUnresolved` (the battle resolved, against us) and it
+    /// must never score as survival - the pre-hold engine returned a wiped
+    /// party to the field and this ladder walked three rungs with dead
+    /// heroes.
+    PartyWiped { heading_for: (i16, i16) },
 }
 
 /// Rendered into the printed table. Written by hand rather than derived so
@@ -810,6 +829,10 @@ impl std::fmt::Display for Leg {
                 f,
                 "a random encounter near tile {at:?} never returned control \
                  (mode {ended_in:?})"
+            ),
+            Leg::PartyWiped { heading_for } => write!(
+                f,
+                "PARTY WIPED in a random encounter (game-over hold) heading for {heading_for:?}"
             ),
         }
     }
@@ -873,8 +896,15 @@ enum Fight {
     Survived,
     /// Still in [`SceneMode::Battle`] after [`BATTLE_FRAME_BUDGET`] ticks.
     Stuck,
-    /// The battle handed the world to some third mode (a wipe / game over).
+    /// The battle handed the world to some third mode.
     Diverted(SceneMode),
+    /// The party was killed. A wipe no longer leaves Battle mode on its own:
+    /// the game-over hold (`World::game_over_hold`) freezes the scene in
+    /// Battle until a host's GameOverSession resolves it, so it must be read
+    /// off the hold flags, not off a mode change - and it must be scored as
+    /// a wipe, never as `Survived` (the pre-hold engine returned the wiped
+    /// party to the field and the ladder kept walking with dead heroes).
+    Wiped,
 }
 
 /// Sit out a random encounter with a neutral pad and report how it ended.
@@ -904,6 +934,9 @@ fn drain_battle(host: &mut SceneHost, resume: SceneMode) -> Fight {
         host.world.set_pad(0);
         if host.tick().is_err() {
             return Fight::Stuck;
+        }
+        if host.world.game_over_hold || host.world.game_over {
+            return Fight::Wiped;
         }
         if host.world.mode == resume {
             return Fight::Survived;
@@ -1005,6 +1038,9 @@ fn walk_to(
                         at: goal,
                         ended_in: Some(mode),
                     };
+                }
+                Fight::Wiped => {
+                    return Leg::PartyWiped { heading_for: goal };
                 }
             }
         }

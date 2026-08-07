@@ -370,6 +370,29 @@ bound, so a round ended only after as many rounds as there were combatants.
 `ctx[+0x00]` / `ctx[+0x01]` are not modelled on the port's context; the host's
 party count and the slots above it stand in.
 
+### A dead actor never dispatches - and where each side enforces it
+
+The same `FUN_801DABA4` sweep is retail's whole guarantee that a **dead actor
+never runs a staged action**. The dispatcher's own state `0x0C` has no
+liveness test - it copies `ctx[+0x274]` into the acting slot (`0x801E2C50`)
+and dispatches on the category byte - because nothing dead can reach
+`+0x274`: the sweep zeroes a dead slot's unspent key (`0x801DABF8`), accounts
+for it in the round bound (`+0x25`), and for a staged **Item** action refunds
+the item and clears the category byte to `0`
+(`jal 0x800421D4` / `sb zero,0x1de(v0)` at `0x801DAC54..0x801DAC68`) - and a
+category of `0` dispatches straight to the Done band
+(`li v0,0x50` at `0x801E2E24`), not into an attack.
+
+**Port.** The engine's hosts *can* kill an actor between arming and seed - an
+external HP write, a harness force-kill - a window retail's single-threaded
+arm-then-run flow does not have. `action_seed` therefore gates on the acting
+actor's liveness and routes a dead actor to `DoneCleanup` (`0x50`), the exact
+state retail's cleared-action arm seeds; the turn is spent, no strike can
+originate from a corpse, and a *living* actor's dispatch is untouched. Killed
+**mid**-action still finishes the action - that is retail's behaviour too
+(the end-of-action victory fix-up is what handles a dead acting actor after
+the fact).
+
 ## The cast-begin facing store
 
 The tail of the cast-begin arm (`0x801E4334..0x801E43A4`) turns the acting

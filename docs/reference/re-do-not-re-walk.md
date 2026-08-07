@@ -668,6 +668,34 @@ dump header is the cheap first filter - a 47-instruction "function" that restore
 four callee-saved registers is not a function. The corpus-wide picture is in
 [`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md).
 
+### A second stage-id writer "at `0x801FD514` in the 0897 band"
+
+**Falsified:** the coordinate and the novelty, not the writer. The mid-battle
+`_DAT_8007B64A` writer is real, but there is no routine at `0x801FD150` -
+that printing was **already re-keyed** to `FUN_801E6968` (the Lost Grail
+Final Heal sweep; the writer is its tail arm, store at `0x801E6D2C`) in
+[`overlay-va-aliases.md`](overlay-va-aliases.md#0x801fd4c0) and
+[`battle-action.md`](../subsystems/battle-action.md)'s shifted-alias table.
+A lane still re-derived it from the base-tag-less
+`overlay_0897_xxx_dat_801fd150.txt` dump, and reading the body at the
+phantom coordinate turned the *settled* Lost Grail sweep (`0xE7` = the Lost
+Grail item id, the accessory-slot consume) back into an unknown "`0xE7`
+record scan" - a closed thread nearly re-opened under a new name.
+
+The near-miss trap: the phantom dump is internally coherent - clean
+prologue, sane guard logic, real SCUS `jal` targets (base-independent) - so
+everything corroborates the wrong address *except* the overlay-local jumps
+(`j 0x801E6A7C` / `j 0x801E6CE8` point `0x16000` below the "function"; at
+the real base they are intra-function). The byte check settles it in one
+step: the store's word pair `24020003 a082b64a` occurs in **no** PROT entry
+but 0898, at file `0x18510` = `0x801E6D28` under the tagged base.
+
+**Generalises to:** a dump without a base tag proves content, never
+coordinates ([`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md)).
+Before naming a "new" function in an aliased band, grep the reference
+indexes for the **re-keyed** address, not just the printed one - the alias
+tables exist precisely so this lookup is one grep.
+
 ### `0x801D84B4` is inter-function padding
 
 **Falsified:** that the VA is alignment `nop` in every overlay that maps it, and

@@ -7,9 +7,16 @@ use super::*;
 impl SceneHost {
     /// Build a host over an already-opened ProtIndex.
     pub fn new(index: Arc<ProtIndex>) -> Self {
+        let mut world = crate::world::World::default();
+        // The menu-warp drain resolves a quick-travel `scene_id` (a raw
+        // CDNAME TOC index) against this map; installing it here means every
+        // host that builds a SceneHost gets the Door of Wind warp for free.
+        if let Some(map) = index.cdname_map() {
+            world.install_scene_toc_names(map.clone());
+        }
         Self {
             index,
-            world: crate::world::World::default(),
+            world,
             scene: None,
             assets: None,
             resources: None,

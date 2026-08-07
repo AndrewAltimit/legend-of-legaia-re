@@ -288,9 +288,10 @@ pub const CARD_TIM_RAW_INDEX: u32 = 0x37E;
 //
 // It nonetheless carries no inert-port disclosure. The ported fact here is the
 // index itself, and `asset boot-overlay` reads it from `fn main`, printing the entry
-// it resolves to against a real `extracted/PROT` directory. Note the anchor is
-// coarse by construction: a `PORT:` tag on a `const` has no item scope in
-// `port-catalog.py` and falls back to the whole module.
+// it resolves to against a real `extracted/PROT` directory. The tag sits in
+// this doc block deliberately: a doc-block tag anchors to the item it
+// documents (the `const` below), so the catalog scopes it to the constant
+// rather than to the module.
 // PORT: FUN_8002574c (loader constant only)
 pub const CARD_TIM_EXTRACTION_INDEX: u32 = CARD_TIM_RAW_INDEX - RAW_TO_EXTRACTION;
 

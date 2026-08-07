@@ -155,6 +155,79 @@ pub fn battle_stage_overlay_entry(stage_id: u8) -> Option<u32> {
     Some(stage_id as u32 + BATTLE_STAGE_PARAM_BASE as u32 + OVERLAY_PROT_BASE as u32)
 }
 
+/// Stage id the **battle-init** override selects for a formation, or `None`
+/// when the initializer leaves the byte alone.
+///
+/// `FUN_80055B6C` compares the formation cell's first monster id
+/// (`_DAT_8007BD0C`) against
+/// [`crate::encounter_record::BOSS_TRANSITION_MONSTER_ID`] and writes stage
+/// id `2` (extraction entry 968) on a match - `0x80055D2C..0x80055D44`:
+/// `lbu v1,-0x42f4(v1); li v0,0xb5; bne v1,v0; li v0,0x2;
+/// sb v0,-0x49b6(at)`. No other condition: the override is a property of the
+/// formation alone, applied while the phase-1 monster is still alive.
+///
+/// Tagged `REF`, not `PORT`: this mirrors one arm of the battle-scene
+/// initializer, whose body (pool clears, party-slot composition, arena
+/// allocation, disp/draw setup) is ported piecemeal elsewhere - a `PORT` tag
+/// here would mark the whole routine ported on the strength of five
+/// instructions.
+///
+/// REF: FUN_80055B6C (the `0xB5 -> 2` stage-override arm at `0x80055D2C`)
+pub fn battle_init_stage_override(formation_slot0_monster_id: u8) -> Option<u8> {
+    (formation_slot0_monster_id == crate::encounter_record::BOSS_TRANSITION_MONSTER_ID).then_some(2)
+}
+
+/// Stage id the **mid-battle** boss-transition writer selects, or `None`
+/// while its guard holds off. This is the second `_DAT_8007B64A` writer for
+/// the same monster id, resident in the battle overlay (PROT 0898), not in
+/// `SCUS_942.54` - which is why the SCUS-only census sees three sites and
+/// misses it.
+///
+/// The writer is the **tail arm of the Lost Grail "Final Heal" sweep**
+/// `FUN_801E6968` (whose revive body is ported as
+/// `World::apply_final_heal_revives`), run by cleanup state `0x50` of the
+/// battle SM `FUN_801E295C`. The arm (`0x801E6CE4..0x801E6D64`,
+/// `overlay_battle_action_801e6968.txt`) fires when **both** hold:
+///
+/// * `actor_table[3]` - the first monster seat - has HP `+0x14C == 0`
+///   (`lw v0,0xc(s0); lhu v0,0x14c(v0); bne v0,zero,skip` at
+///   `0x801E6CEC..0x801E6D00`), i.e. the phase-1 form is dead;
+/// * the formation cell `_DAT_8007BD0C` still reads `0xB5`
+///   (`lbu v1,-0x42f4(v0); li v0,0xb5; bne v1,v0,skip` at `0x801E6D04..`).
+///
+/// It then issues the loader-B call itself (`jal 0x8003EC70` at
+/// `0x801E6D14` with `a0 = 0x4A` `= 3 + 0x47`, paging extraction entry 969
+/// immediately rather than waiting for the dispatch reader), writes stage id
+/// `3` (`sb v0,-0x49b6(a0)` at `0x801E6D2C`), bumps the battle ctx phase
+/// counter `ctx[+0x26]`, forces the flow-state byte `ctx[+0x7] = 0xFD`, and
+/// zeroes the dead seat's `+0x21C` / `+0x225` bytes.
+///
+/// Monster id `0xB5` is **Cort** (archive id 181; the spell-id collision
+/// with Lapis Wave is settled in `docs/reference/re-settled-threads.md`), so
+/// the evolved-Cort fight walks two stage overlays: 968 from setup (the init
+/// override above, phase 1 alive), then 969 - Cort's form-transition module,
+/// an entry that doubles as the STR-path table - once the form dies. The
+/// guard separating the two arms is the seat's liveness, nothing else.
+///
+/// A print-integrity note: this arm was first sighted at `0x801FD514` in a
+/// base-tag-less `overlay_0897`-program dump. That coordinate is a phantom
+/// printing (`+0x167E8` high); the store's byte pattern
+/// (`24020003 a082b64a`) occurs in **no** PROT entry but 0898, at file
+/// `0x18510` = VA `0x801E6D28` under the tagged base `0x801CE818` - and only
+/// at the real base do the arm's `j 0x801E6***` exits land inside their own
+/// function.
+///
+/// PORT: FUN_801E6968 (the boss-transition tail arm `0x801E6CE4..0x801E6D64`
+/// only; the revive body is `World::apply_final_heal_revives`)
+pub fn boss_transition_stage_id(
+    formation_slot0_monster_id: u8,
+    first_monster_seat_liveness: u16,
+) -> Option<u8> {
+    (formation_slot0_monster_id == crate::encounter_record::BOSS_TRANSITION_MONSTER_ID
+        && first_monster_seat_liveness == 0)
+        .then_some(3)
+}
+
 /// Host hooks for the parallel overlay loaders. Composes the existing
 /// [`CdDmaHost`] (for the actual PROT.DAT streaming read) with three
 /// per-loader scratchpad globals the retail mode-table uses.
