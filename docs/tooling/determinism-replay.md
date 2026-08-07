@@ -269,6 +269,71 @@ The pad-inversion arithmetic, the door-identity clause and the baseline parser
 are covered by disc-free unit tests, so the file stays non-vacuous in CI where
 the ladder skips.
 
+## Scene-frontier ladder: the breadth-denominated sibling
+
+[`crates/engine-core/tests/chapter1_frontier_ladder.rs`](../../crates/engine-core/tests/chapter1_frontier_ladder.rs)
+asks the other question. The critical-path ladder walks one route well and
+reports one number; this one enumerates the whole chapter-1 reachable scene
+set and gives every member a verdict, against a ratcheted baseline in
+[`scripts/replays/chapter1_frontier_baseline.toml`](../../scripts/replays/chapter1_frontier_baseline.toml).
+A route visits five scenes and is silent about the other twenty-two, so
+"the engine cannot get past the Ravine" and "no fixture drives past the
+Ravine" read identically until something scores the scenes one at a time.
+
+The scene set is the BFS closure of `town01` over each scene's own decoded
+`0x3F` destinations, stopped at the **kingdom boundary** - a destination that
+is another kingdom's overworld is recorded and not expanded, since `map02` /
+`map03` have their own spine oracles. The Drake kingdom's only handoff is
+`jiji -> map02`, and the ladder pins that edge. Two limits are structural: the
+closure is a reachability partition rather than a narrative one, and it is a
+closure over `0x3F` only, so scenes reached by the sibling `0x3E` door warp
+(which carries a scene-*type* selector rather than a name) are outside it.
+
+Six rungs per scene, ordered and cumulative: the assets resolve, the MAN
+parses, `SceneHost` enters it, the entry script settles and hands control
+back, pad-only input displaces the player, an exit record fires and lands in
+the scene it names. A scene whose script leaves on its own is marked
+not-applicable on the last two rather than failed. Failures are
+self-describing in the same spirit as the critical-path stalls: a script park
+reports `(pc, opcode)` off the live field VM, a locomotion stall reports the
+tile.
+
+### Two guards that changed what the numbers mean
+
+**"Control released" needs a third clause.** The critical-path ladder's
+predicate is "no cutscene timeline and no dialogue owning input". A
+first-visit record is neither - it is a helper context - so that predicate
+returns while `izumi`'s spring choreography is still moving the player. The
+frontier ladder waits for the spawned records too.
+
+**A locomotion rung needs a released-pad control.** Without one, "the player
+walked" and "a script moved the player" are the same measurement. Each scene's
+driven probe is scored against a released-pad run of the same length from the
+same state, and when the driven run fails to beat its control the scene is
+probed once more as a *revisit* (flag banks left latched), which separates
+"the engine cannot walk here" from "this scene's first-visit script owns the
+player". `izumi` is the case: 30 tiles driven, 30 tiles with the pad released,
+4 tiles on the revisit.
+
+### Where the frontier stops, and what stops it
+
+Every scene in the closure loads, enters and settles. The remaining stops are
+all about **doors**, and Part D separates the shapes by running three decoders
+over the same MAN: a clean per-partition fall-through walk (what a door *op*
+looks like), the recovering destination-table pass (what a door *entry* looks
+like), and the ladder's own `.MAP` gate-1 trigger → partition-2 record →
+`0x3F` join (what a door the player can *walk onto* looks like).
+
+Ordinary interiors have all three. The Uru Mais chain (`uru`, `urudre1`,
+`urudre2`, `urudre3`) has only the middle one: the clean walk finds no `0x3F`
+anywhere in those four MANs, so their destinations are known to this project
+as table entries and not as decoded ops - and those four graph edges therefore
+rest on weaker footing than the rest of the closure. `jouine` has none of the
+three, so whatever leaves it is not a named scene change.
+
+Neither is a statement about the engine. Nothing here says the transition
+machinery would fail if a site were found.
+
 ## See also
 
 - [`docs/subsystems/engine.md`](../subsystems/engine.md) - the clean-room engine the record/replay loop drives.

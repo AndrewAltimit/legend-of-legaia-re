@@ -1182,6 +1182,108 @@ fn part_c_captured_scenes_are_scenes_the_engine_can_enter() {
 }
 
 // ---------------------------------------------------------------------------
+// Part D: named finding - the Uru Mais doors are table-only
+// ---------------------------------------------------------------------------
+
+/// Why the five rung-6 stops stop, in terms of which decoder can see a door
+/// at all.
+///
+/// Three decoders read the same MAN and disagree, and the disagreement is the
+/// finding:
+///
+/// - [`legaia_asset::man_edit::scene_change_sites`] - a **clean** per-partition
+///   fall-through walk from each record's true `pc0`, stopping at the first
+///   desync. This is what a door *op* looks like.
+/// - [`legaia_asset::man_edit::partition1_destinations`] - the **recovering**
+///   walk that also reaches the destination-*table* blob some controllers
+///   append past their last partition-1 record. This is what a door *entry*
+///   looks like.
+/// - The ladder's own exit-site join (`.MAP` gate-1 trigger -> partition-2
+///   record -> `0x3F`), which is what a door the player can *walk onto* looks
+///   like.
+///
+/// Every ordinary chapter-1 interior has all three: `town01`, `keikoku`,
+/// `jouina`, `jouinb` all carry partition-2 `0x3F` ops the clean walk sees.
+///
+/// `uru` / `urudre1` / `urudre2` / `urudre3` have **none** of the first and
+/// none of the third: the clean walk finds no `0x3F` anywhere in the MAN, in
+/// any partition, and their destinations are recovered *only* by the
+/// destination-table pass. So the Uru Mais chain's doors are known to this
+/// project as table entries and not as decoded ops, which is why the ladder
+/// cannot fire one - and it also means those four BFS edges rest on a weaker
+/// footing than the rest of the graph.
+///
+/// `jouine` is a fourth shape: no decoder finds anything, so its exit is not
+/// a named scene change at all.
+///
+/// This is a statement about the decoders and the bytes, not about the
+/// engine: nothing here says the transition machinery would fail if a site
+/// were found.
+#[test]
+fn part_d_uru_mais_doors_are_table_entries_not_decoded_ops() {
+    let Some(host) = open_host() else {
+        return;
+    };
+    /// `(clean-walk sites as (partition, name), destination-table names)`.
+    fn decoders(host: &SceneHost, name: &str) -> (Vec<(usize, String)>, Vec<String>) {
+        let (mf, man) = scene_man(&host.index, name).unwrap_or_else(|| panic!("{name}: no MAN"));
+        let clean = legaia_asset::man_edit::scene_change_sites(&man)
+            .into_iter()
+            .map(|s| (s.partition, s.name))
+            .collect();
+        let table = legaia_asset::man_edit::partition1_destinations(&mf, &man)
+            .into_iter()
+            .map(|d| d.scene_name)
+            .collect();
+        (clean, table)
+    }
+
+    for name in [
+        "uru", "urudre1", "urudre2", "urudre3", "jouine", "town01", "keikoku", "jouina", "jouinb",
+    ] {
+        let (clean, table) = decoders(&host, name);
+        eprintln!("[doors] {name:<8} clean-walk ops {clean:?} | destination table {table:?}");
+    }
+
+    // The Uru Mais family: no clean-walk `0x3F` at all, but the destination
+    // table names the chain.
+    for name in ["uru", "urudre1", "urudre2", "urudre3"] {
+        let (clean, table) = decoders(&host, name);
+        assert!(
+            clean.is_empty(),
+            "{name} now decodes a 0x3F op ({clean:?}) - the exit-site join can reach \
+             it and this finding is stale; re-measure rung 6"
+        );
+        assert!(
+            !table.is_empty(),
+            "{name}'s destinations must still come from the destination-table pass"
+        );
+    }
+
+    // The contrast that makes the above discriminating rather than a property
+    // of the decoder: ordinary interiors DO carry partition-2 ops, and it is
+    // those the join reads.
+    for name in ["town01", "keikoku", "jouina", "jouinb"] {
+        let (clean, _) = decoders(&host, name);
+        assert!(
+            clean.iter().any(|(p, _)| *p == 2),
+            "{name}'s doors are partition-2 records; got {clean:?}"
+        );
+    }
+
+    // `jouine`: neither decoder sees anything.
+    let (clean, table) = decoders(&host, "jouine");
+    assert!(
+        clean.is_empty() && table.is_empty(),
+        "jouine carries no named-scene-change at all; got {clean:?} / {table:?}"
+    );
+    eprintln!(
+        "[ok] Part D: Uru Mais doors are destination-table entries with no decoded op; \
+         jouine has neither"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Disc-free unit checks (these run in a CI with no disc data)
 // ---------------------------------------------------------------------------
 

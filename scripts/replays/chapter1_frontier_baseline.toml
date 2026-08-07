@@ -47,18 +47,19 @@
 #   Uru Mais chain is inside it, and every one of the 27 loads, enters,
 #   settles and can be walked.
 #
-# - `uru` / `urudre1` / `urudre2` / `urudre3` stop at rung 6. Not because a
-#   transition fails: **no partition-2 record in any of the four carries a
-#   `0x3F` at all**, so the `.MAP` gate-1 trigger -> P2 record -> `0x3F`
-#   join that every other chapter-1 interior's doors use finds nothing to
-#   join. Their destinations are real and decode from partition 1. The Uru
-#   Mais chain is the one chapter-1 interior family whose doors are not P2
-#   door-choreography records, and that is a gap in the *exit-site join*,
-#   not in the scenes.
+# - `uru` / `urudre1` / `urudre2` / `urudre3` stop at rung 6, and not because
+#   a transition fails. A **clean** per-partition fall-through walk of those
+#   four MANs finds no `0x3F` op anywhere, in any partition; their
+#   destinations are recovered only by the recovering destination-TABLE pass.
+#   So the `.MAP` gate-1 trigger -> partition-2 record -> `0x3F` join that
+#   every other chapter-1 interior's doors use has nothing to join. The Uru
+#   Mais chain's doors are known to this project as table entries rather than
+#   as decoded ops - which also means those four graph edges rest on weaker
+#   footing than the rest of the closure. Pinned by the ladder's Part D.
 #
-# - `jouine` (the deepest Drake Castle room) stops at rung 6 because its MAN
-#   lists no `0x3F` destination whatsoever - it is left by something other
-#   than a scene-change op.
+# - `jouine` (the deepest Drake Castle room) stops at rung 6 because neither
+#   decoder finds a named scene change: it is left by something that is not a
+#   `0x3F` at all.
 #
 # - `izumi` stops at rung 5, and only on a first visit. Its C1-gated
 #   first-visit record relocates the player about thirty tiles with the pad
