@@ -318,6 +318,13 @@ pub struct CardRequest {
 /// neither is a live master-mode driver a request could be routed through.
 /// The companion flag `_DAT_8007BB00` has no engine counterpart at all; its
 /// consumer is not in the ported set, which is the narrower blocker of the two.
+///
+/// The `(mode, warp sub-id)` bridge ([`crate::mode::GameMode::scene_mode_with_warp`])
+/// is unrelated to both blockers: it decides which `SceneMode` a *running*
+/// mode maps to, and this leaf is a *request* to change the mode. The
+/// legitimate host is the same one `mode_init_bare` names - a production owner
+/// of [`crate::mode::ModeDriver`] - plus a port of `_DAT_8007BB00`'s consumer,
+/// without which the second store here has nowhere to land.
 pub const fn request_card_mode() -> CardRequest {
     CardRequest {
         game_mode: CARD_REQUEST_MODE,

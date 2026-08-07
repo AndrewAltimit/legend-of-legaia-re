@@ -161,6 +161,37 @@ fn window_35_is_the_pens_only_buy_quantity_renderer_both_hosts_guard_on() {
     );
 }
 
+/// The same pairing for window 39, the sell list's detail panel. Its content
+/// renderer `FUN_801D5AE8` is likewise a pens-returning port
+/// (`engine-core::shop::shop_sell_detail_panel`), so both hosts guard the id on
+/// the descriptor's own `renderer_va`.
+///
+/// Window 39 is the sell list's replacement for window 34, not an addition to
+/// it, so the two rects overlap by design - which is why a host that drew both
+/// would double the name/description head rather than gain a panel.
+#[test]
+fn window_39_is_the_pens_only_sell_detail_renderer_both_hosts_guard_on() {
+    let Some(table) = menu_window_table() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN or extracted/PROT.DAT missing");
+        return;
+    };
+    /// The `renderer_va` both hosts filter window 39 by.
+    const RENDERER_SELL_DETAIL: u32 = 0x801D_5AE8;
+    let d = table.window(39).expect("window 39 in the disc table");
+    assert_eq!(
+        d.renderer_va, RENDERER_SELL_DETAIL,
+        "window 39's content renderer moved - both hosts' sell-detail block \
+         filters on this VA and would silently stop drawing"
+    );
+    let r = legaia_engine_render::painter_rect(d);
+    assert!(r.w > 0 && r.h > 0, "window 39 has a drawable extent");
+    assert!(
+        legaia_engine_render::painter_for(d).is_none(),
+        "window 39 must stay outside the painter dispatch: its port returns \
+         pens, not a draw list, so a painter mapping would draw it twice"
+    );
+}
+
 /// Each painted window's rect is the descriptor's, so a host never needs a
 /// pinned copy: the dispatch hands back the descriptor and the rect comes off
 /// it. Guards against a painter being fed a rect from the wrong record.

@@ -92,6 +92,12 @@ const ITEM_COUNT: usize = 256;
 /// `kind` byte value marking an equippable item.
 pub const KIND_EQUIPMENT: u8 = 1;
 
+/// The no-passive sentinel of the `+5` passive-index byte. The accessory
+/// passive index space is 64 slots wide, and `FUN_801D5AE8` bounds it with
+/// `slti ...,0x40` before indexing the name/description table - so any value
+/// at or above this means "this item grants no passive".
+pub const PASSIVE_NONE: u8 = 0x40;
+
 /// Equip slot category, from the record's `+7` byte (masked to `0x60`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EquipSlot {
@@ -148,6 +154,28 @@ impl EquipBonus {
     /// Speed (`SPD`) bonus (`+4`) - set by footwear.
     pub fn spd_up(&self) -> u8 {
         self.raw[4]
+    }
+
+    /// Accessory-passive index (`+5`) - the slot in the 64-wide passive index
+    /// space this item grants, or [`PASSIVE_NONE`] when it grants none.
+    ///
+    /// Read as an unsigned byte by the menu overlay's item-detail renderer:
+    /// `FUN_801D5AE8` takes the item record's `+0` class byte, and on class
+    /// `1` (equipment) does `sll v0,a0,0x3; addu v0,v0,v1; lbu a0,0x5(v0)`
+    /// with `v1 = 0x80074F68` (`0x801D5C90..0x801D5CA0`), i.e. this byte of
+    /// the stride-8 record the item's `+1` bonus index selects. The result
+    /// feeds a `slti ...,0x40` bound at `0x801D5CC4`; only below that does the
+    /// renderer go on to index the passive name/description table at
+    /// `0x8007625C`. Class `2` consumables take the item-effect record's `+3`
+    /// instead - see [`crate::accessory_passive`].
+    pub fn passive_index(&self) -> u8 {
+        self.raw[5]
+    }
+
+    /// `true` if this record's `+5` names a real passive rather than the
+    /// no-passive sentinel.
+    pub fn has_passive(&self) -> bool {
+        self.passive_index() < PASSIVE_NONE
     }
 
     /// Equip character-mask byte (`+6`): bit `1` Vahn/Meta, `2` Noa/Terra,

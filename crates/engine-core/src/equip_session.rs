@@ -1107,6 +1107,7 @@ mod tests {
                     mask: 1,
                     category: Disc::Weapon,
                     is_ra_seru: false,
+                    passive_index: None,
                 },
             ),
             (
@@ -1115,6 +1116,7 @@ mod tests {
                     mask: 7,
                     category: Disc::Weapon,
                     is_ra_seru: false,
+                    passive_index: None,
                 },
             ),
         ]);
@@ -1166,6 +1168,7 @@ mod tests {
                     mask: 7,
                     category: Disc::Weapon,
                     is_ra_seru: false,
+                    passive_index: None,
                 },
             ),
             (
@@ -1174,6 +1177,7 @@ mod tests {
                     mask: 7,
                     category: Disc::Body,
                     is_ra_seru: false,
+                    passive_index: None,
                 },
             ),
         ]);

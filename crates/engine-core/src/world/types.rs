@@ -267,6 +267,22 @@ pub struct WorldMapPlayerMarker {
 
 /// Scene mode the world is running. Drives which top-level VMs tick and
 /// which auxiliary state lives in the world.
+///
+/// **This is a finer partition than the retail mode word.** Five variants
+/// below - `Dance`, `Fishing`, `SlotMachine`, `BakaFighter`, `MuscleDome` -
+/// all correspond to the *same* retail per-frame mode, `0x19` `OTHER MODE`.
+/// Retail tells them apart with a second register, the warp sub-id
+/// `_DAT_8007BA34`, which the field-VM `0x3E` door-warp arm writes and the
+/// mode-24 `OTHER` init reads to pick the overlay. So a retail mode word alone
+/// does **not** determine a `SceneMode`, and anything mapping between the two
+/// spaces has to carry the pair: see
+/// [`GameMode::scene_mode_with_warp`](crate::mode::GameMode::scene_mode_with_warp)
+/// and [`crate::minigame_entry::MinigameSubId`].
+///
+/// Note the off-by-one that reading `0x18` as the live mode invites: `0x18`
+/// (24) is `OTHER`, the *init* half, which runs for a single frame and hands
+/// the word to `0x19` (25). Keying a minigame on `0x18` therefore never sees a
+/// live minigame frame at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SceneMode {
     /// Title / no scene. Only the actor VM and effect pool are live.
@@ -283,33 +299,34 @@ pub enum SceneMode {
     /// Noa dance (rhythm) minigame - the beat clock + hit judge own the frame
     /// ([`crate::dance::DanceGame`]); field / battle dispatch is suspended. The
     /// hosting session preserves the suspended scene state and restores its
-    /// mode on exit, like the pause menu. Retail `game_mode 0x18` (`OTHER MODE`)
-    /// overlay pair for the dance overlay (PROT 0980).
+    /// mode on exit, like the pause menu. Retail runs it under `game_mode 0x19`
+    /// (`OTHER MODE`) with warp sub-id `6` (the dance overlay, PROT 0980).
     Dance,
     /// Fishing minigame - the cast / fight / score loop owns the frame
     /// ([`crate::fishing::FishingSession`]); field / battle dispatch is
-    /// suspended and the interrupted mode restored on exit. Retail
-    /// `game_mode 0x18` (`OTHER MODE`) overlay pair for the fishing overlay
-    /// (PROT 0972).
+    /// suspended and the interrupted mode restored on exit. Retail runs it
+    /// under `game_mode 0x19` (`OTHER MODE`) with warp sub-id `0` (the fishing
+    /// overlay, PROT 0972).
     Fishing,
     /// Casino slot-machine minigame - the reel state machine owns the frame
     /// ([`crate::slot_machine::SlotMachine`]); field / battle dispatch is
-    /// suspended and the interrupted mode restored on exit. Retail
-    /// `game_mode 0x18` (`OTHER MODE`, the mode-24 minigame door-warp) for
-    /// the slot overlay (PROT 0975).
+    /// suspended and the interrupted mode restored on exit. Retail runs it
+    /// under `game_mode 0x19` (`OTHER MODE`) with warp sub-id `3` (the slot
+    /// overlay, PROT 0975).
     SlotMachine,
     /// Baka Fighter duel minigame - the exchange / round / match state
     /// machine owns the frame ([`crate::baka_fighter::BakaFight`]); field /
     /// battle dispatch is suspended and the interrupted mode restored on
-    /// exit. Retail `game_mode 0x18` (`OTHER MODE`, the mode-24 minigame
-    /// door-warp) for the Baka Fighter overlay (PROT 0976).
+    /// exit. Retail runs it under `game_mode 0x19` (`OTHER MODE`) with warp
+    /// sub-id `4` (the Baka Fighter overlay, PROT 0976).
     BakaFighter,
     /// Muscle Dome contest, an ordinary battle fought to a KO - the direction-entry /
     /// commit / resolve loop owns the frame ([`crate::muscle_dome::MuscleDomeSession`]); field
     /// / battle dispatch is suspended and the interrupted mode restored on
     /// exit. Retail: the arena runs *inside* the battle overlay (PROT 0898)
-    /// on the `_DAT_8007bd24` context, entered through the mode-24 sub-id-5
-    /// door (PROT 0977).
+    /// on the `_DAT_8007bd24` context, entered through the `game_mode 0x18`
+    /// (`OTHER`) door at warp sub-id `5` (PROT 0977) and running under
+    /// `game_mode 0x19` (`OTHER MODE`) thereafter.
     MuscleDome,
     /// In-field pause menu - the retail CARD mode pair (`game_mode 0x17`,
     /// `CARD MODE`, which hosts both the memory-card UI and the pause menu;
