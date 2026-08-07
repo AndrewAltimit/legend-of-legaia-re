@@ -170,10 +170,41 @@ impl GameMode {
         })
     }
 
-    /// Map a game mode to the [`SceneMode`] the World should run in. Init
-    /// modes hold their successor's scene mode (init code prepares assets
-    /// for the per-frame mode).
+    /// Map a game mode to the [`SceneMode`] the World should run in, **with
+    /// no warp sub-id in hand**.
+    ///
+    /// This is [`Self::scene_mode_with_warp`] passing `None`, and it therefore
+    /// cannot answer for the `OTHER` pair (24 / 25) - it returns
+    /// [`SceneMode::Title`] there. Callers that hold a mode word taken from a
+    /// live machine (a capture, a trace) hold the sub-id register too and
+    /// should pass it; see [`WARP_SUB_ID_ADDR`].
     pub fn scene_mode(self) -> SceneMode {
+        self.scene_mode_with_warp(None)
+    }
+
+    /// Map the retail `(game_mode, warp sub-id)` **pair** to the [`SceneMode`]
+    /// the World should run in. Init modes hold their successor's scene mode
+    /// (init code prepares assets for the per-frame mode).
+    ///
+    /// The second argument is retail's own discriminator, the signed halfword
+    /// at [`WARP_SUB_ID_ADDR`]; `None` means "not observed". It is load-bearing
+    /// for exactly one mode pair, and that pair is where the port's `SceneMode`
+    /// space is *finer* than the retail mode word: modes 24 / 25 (`OTHER` /
+    /// `OTHER MODE`) host all five warp minigames, and only the sub-id says
+    /// which. Every other mode ignores it.
+    ///
+    /// Two of the seven sub-ids (`1` / `2`) are dev modules the engine does not
+    /// implement, and out-of-range values are a desynced read; all three fall
+    /// back to [`SceneMode::Title`], the same answer the mode word alone gives.
+    pub fn scene_mode_with_warp(self, warp_sub_id: Option<i16>) -> SceneMode {
+        // The OTHER pair first: it is the one arm the mode word cannot decide.
+        if matches!(self, GameMode::OtherInit | GameMode::OtherMode) {
+            return warp_sub_id
+                .and_then(|s| u8::try_from(s).ok())
+                .and_then(crate::minigame_entry::MinigameSubId::from_sub_id)
+                .and_then(|slot| slot.scene_mode())
+                .unwrap_or(SceneMode::Title);
+        }
         match self {
             // game_mode 0x03 is the in-town / on-field gameplay mode. Two
             // independent retail captures confirm this empirically: the
@@ -205,6 +236,71 @@ impl GameMode {
             _ => SceneMode::Title,
         }
     }
+}
+
+impl GameMode {
+    /// The **per-frame** retail mode a [`SceneMode`] runs under - the inverse
+    /// of [`Self::scene_mode_with_warp`], and the map anything translating the
+    /// engine's dispatch state back into `_DAT_8007B83C` space needs.
+    ///
+    /// Deliberately lossy in one direction and only that one: the five warp
+    /// minigames all answer `OtherMode`, because in retail they *are* the same
+    /// mode and only [`WARP_SUB_ID_ADDR`] separates them. Recovering the
+    /// original `SceneMode` therefore needs the sub-id back;
+    /// [`crate::minigame_entry::MinigameSubId::scene_mode`] is the other half.
+    ///
+    /// `None` for [`SceneMode::Title`]. The port uses that variant for "no
+    /// scene loaded" - boot, an unhosted world, the gap between scenes - which
+    /// is a state the retail mode word has no single answer for, not a mode.
+    pub fn for_scene_mode(mode: SceneMode) -> Option<GameMode> {
+        Some(match mode {
+            SceneMode::Field => GameMode::MainMode,
+            SceneMode::WorldMap => GameMode::MapdispMode,
+            SceneMode::Battle => GameMode::BattleMode,
+            SceneMode::Menu => GameMode::CardMode,
+            SceneMode::Cutscene => GameMode::StrMode,
+            SceneMode::Dance
+            | SceneMode::Fishing
+            | SceneMode::SlotMachine
+            | SceneMode::BakaFighter
+            | SceneMode::MuscleDome => GameMode::OtherMode,
+            SceneMode::Title => return None,
+        })
+    }
+}
+
+/// PSX-virtual address of retail's **warp sub-id register** - the second half
+/// of the `(game_mode, sub-id)` pair [`GameMode::scene_mode_with_warp`] needs.
+///
+/// Read off the disassembly at both ends:
+///
+/// - **Writer**, the field VM's op `0x3E` door-warp arm (`FUN_801DE840` case
+///   `0x3e`, `0x801E07B0..0x801E07B8`): `addiu v1,v1,-0x64` computes
+///   `sub_id = op0 - 100`, then `sh v1,-0x45cc(v0)` with `v0 = lui 0x8008`
+///   stores it here, in the delay slot of the same instruction pair that puts
+///   `0x18` into the mode word `_DAT_8007B83C`.
+/// - **Reader**, the mode-24 `OTHER` init (`FUN_80025980`, `0x80025A14` and
+///   `0x80025A50`): `lh a0,-0x45cc(a0)` picks the overlay-load param and
+///   `lh v1,-0x45cc(v1)` indexes the seven-wide entry table at `0x80010AE4`
+///   behind an `sltiu 7` bound. The init's last act is `li v0,0x19; sh v0,
+///   -0x47c4(at)` - it hands the mode word to `OTHER MODE` and **leaves the
+///   sub-id register standing**, which is what makes the pair readable for
+///   every frame the minigame runs, not just the init frame.
+///
+/// Both loads are `lh`, so the register is a signed 16-bit word.
+// REF: FUN_801DE840 case 0x3e (writer), FUN_80025980 (reader)
+pub const WARP_SUB_ID_ADDR: u32 = 0x8007_BA34;
+
+/// Read the warp sub-id register out of a main-RAM image (signed 16-bit LE).
+///
+/// The companion of
+/// [`read_game_mode`](crate::capture_observations::cutscene_trigger_corpus::read_game_mode):
+/// a capture-side consumer needs both words to resolve a [`SceneMode`], and
+/// taking only the mode word is what makes a live minigame frame read as
+/// `Title`.
+pub fn read_warp_sub_id(main_ram: &[u8]) -> Option<i16> {
+    let off = (WARP_SUB_ID_ADDR - 0x8000_0000) as usize;
+    legaia_bytes::i16_le(main_ram, off)
 }
 
 /// The 28-entry retail mode table, transcribed from SCUS `0x8007078C`. Use
@@ -506,6 +602,12 @@ pub struct ModeDriver {
     /// mode's overlay hook (mode 13's `FUN_801CE850`) and to know which
     /// mid-frame driver retail would have run.
     last_stage: Option<PerFrameStage>,
+    /// The warp sub-id register [`WARP_SUB_ID_ADDR`], which the driver has to
+    /// carry beside the mode word: the mode word alone cannot say which of the
+    /// five minigames modes 24 / 25 are running. `None` until a door-warp
+    /// stages one, mirroring the fact that retail's register is only meaningful
+    /// once the `0x3E` arm has written it.
+    warp_sub_id: Option<i16>,
 }
 
 impl ModeDriver {
@@ -521,11 +623,32 @@ impl ModeDriver {
             frames: 0,
             frames_in_mode: 0,
             last_stage: None,
+            warp_sub_id: None,
         }
     }
 
     pub fn current(&self) -> GameMode {
         self.current
+    }
+
+    /// The staged warp sub-id ([`WARP_SUB_ID_ADDR`]).
+    pub fn warp_sub_id(&self) -> Option<i16> {
+        self.warp_sub_id
+    }
+
+    /// Stage a warp sub-id, the way the field VM's `0x3E` arm writes
+    /// `_DAT_8007BA34` before handing the mode word to `0x18`. Retail never
+    /// clears the register, so neither does this - a host that wants it gone
+    /// passes `None` explicitly.
+    pub fn set_warp_sub_id(&mut self, sub_id: Option<i16>) {
+        self.warp_sub_id = sub_id;
+    }
+
+    /// The [`SceneMode`] the driver's current `(mode, sub-id)` pair resolves
+    /// to. This, not [`GameMode::scene_mode`], is what the driver installs into
+    /// the World each frame.
+    pub fn scene_mode(&self) -> SceneMode {
+        self.current.scene_mode_with_warp(self.warp_sub_id)
     }
 
     /// The per-frame staging plan resolved on the last [`Self::tick`].
@@ -556,8 +679,11 @@ impl ModeDriver {
         input: &InputState,
     ) -> HandlerResult {
         // Keep the World's scene-mode in sync each frame. Cheap and
-        // idempotent - the World's tick path keys off it.
-        world.mode = self.current.scene_mode();
+        // idempotent - the World's tick path keys off it. Resolved from the
+        // `(mode, warp sub-id)` PAIR: keying on the mode word alone drops a
+        // live fishing / dance / casino / duel / dome session into
+        // `SceneMode::Title`, because all five share mode `0x19`.
+        world.mode = self.scene_mode();
         let r = host.run(self.current, world, input);
         // Retail's per-frame handlers ([`per_frame_stage`]) early-out when the
         // frame-begin pass `FUN_8001698C` returns non-zero: that frame gets a
@@ -1002,6 +1128,34 @@ pub struct PerFrameStage {
     pub body_can_abort: bool,
 }
 
+/// Does the per-frame handler for `mode` run the **master frame driver**
+/// `FUN_80016444`?
+///
+/// This is [`per_frame_stage`]'s `body` field asked as a question, and it is
+/// the one bit of the mode table that decides whether a frame advances the
+/// actor pool at all. `FUN_80016444` is the five `FUN_8002519C` tick passes,
+/// the five render passes and the display flip; a mode that does not call it
+/// runs *none* of that.
+///
+/// Exactly one shipped mode answers `false`: 23 `CARD`, whose handler
+/// `FUN_80025F74` substitutes `FUN_80017978` for the master driver
+/// ([`CARD_FRAME_BODY`]). `FUN_80017978` is 18 instructions with three `jal`s
+/// and no `0x80016444` among them (`0x80017978..0x800179BC`), so while the
+/// pause menu owns the frame retail advances no actor, no effect and no
+/// animation - only the CARD actor's own `+0x0C` handler.
+///
+/// INIT modes have no per-frame handler and answer `true`: they are not
+/// frames, and treating them as suspended would stop the world during a
+/// single-frame init.
+///
+/// REF: FUN_80016444, FUN_80017978
+pub fn runs_master_frame_driver(mode: GameMode) -> bool {
+    match per_frame_stage(mode) {
+        Some(stage) => matches!(stage.body, FrameBody::Master { .. }),
+        None => true,
+    }
+}
+
 /// Per-frame staging plan for a mode. `None` for the INIT (even-indexed)
 /// modes, which use [`mode_init_stage`] instead.
 ///
@@ -1016,17 +1170,25 @@ pub struct PerFrameStage {
 /// PORT: FUN_80025f74 (mode 23 CARD)
 /// PORT: FUN_80017978 (mode 23's body, [`CARD_FRAME_BODY`])
 ///
-/// NOT WIRED: the prerequisite is a production owner of [`ModeDriver`], the
-/// port of the 28-entry mode table and this function's only caller. No code
-/// outside `mode.rs` names it - the two mentions elsewhere in the workspace
-/// (`world::state`, `engine-shell`'s `mode_trace_oracle`) are doc comments -
-/// because the engine's hosts drive frames from `SceneHost` / `World` directly
-/// and never consult the retail mode table, so there is no seat for a
-/// mode-table driver to occupy yet. `CARD_FRAME_BODY`
-/// is likewise read only in this file's tests. `FUN_80025EEC` in particular is
-/// not dead retail code - a five-form reference scan puts it in twelve slots of
-/// the mode table at `0x8007078C`, every odd-indexed (per-frame) mode - so this
-/// is a port no host reaches rather than a port of something unused.
+/// PARTIALLY WIRED: one field of the resolved stage is load-bearing on every
+/// host. [`runs_master_frame_driver`] asks this function whether the current
+/// mode's handler calls `FUN_80016444`, and
+/// [`World::tick`](crate::world::World::tick) suspends its actor / effect /
+/// move-VM passes when the answer is no. That is how the port encodes "the
+/// pause menu freezes the world" - read off mode 23's `FUN_80017978`
+/// substitution ([`CARD_FRAME_BODY`]) rather than written as a
+/// `SceneMode::Menu` literal, so the rule cannot drift from its provenance.
+/// `FUN_80025F74` and `FUN_80017978` therefore have a live caller on all three
+/// hosts, and `CARD_FRAME_BODY` is no longer read only by this file's tests.
+///
+/// The rest of the shape is still unreached: the `overlay_hook` (mode 13's
+/// `FUN_801CE850`), the master driver's `param`, and the abort branch are
+/// consulted by nothing outside [`ModeDriver`], whose one remaining
+/// prerequisite is a production owner. The engine's hosts drive frames from
+/// `SceneHost` / `World` directly and never advance the retail mode word, so
+/// there is no seat for a mode-table driver yet. `FUN_80025EEC` in particular
+/// is not dead retail code - a five-form reference scan puts it in twelve slots
+/// of the mode table at `0x8007078C`, every odd-indexed (per-frame) mode.
 pub fn per_frame_stage(mode: GameMode) -> Option<PerFrameStage> {
     let stage = match mode {
         // Mode 13 MAPDISP - the only handler with an overlay hook, and the
@@ -1401,6 +1563,128 @@ mod tests {
         assert_eq!(GameMode::CardInit.scene_mode(), SceneMode::Menu);
         assert_eq!(GameMode::CardMode.scene_mode(), SceneMode::Menu);
         assert_eq!(GameMode::CardMode.as_index(), 0x17);
+    }
+
+    /// The OTHER pair is the one place the retail mode word under-determines
+    /// the engine's `SceneMode`, and the sub-id is what closes the gap.
+    #[test]
+    fn the_other_pair_needs_the_warp_sub_id_to_resolve() {
+        use crate::minigame_entry::MinigameSubId;
+        // The live minigame mode is 0x19, not 0x18: 0x18 is the init half that
+        // runs for one frame and hands the word on.
+        assert_eq!(GameMode::OtherInit.as_index(), 0x18);
+        assert_eq!(GameMode::OtherMode.as_index(), 0x19);
+        // Mode word alone: no answer. This is what a host keying on
+        // `scene_mode()` would have installed for a live minigame frame.
+        assert_eq!(GameMode::OtherMode.scene_mode(), SceneMode::Title);
+        // Mode word + sub-id: every playable slot resolves, on BOTH halves of
+        // the pair (init modes hold their successor's scene mode).
+        for slot in MinigameSubId::ALL {
+            let sub = Some(i16::from(slot.sub_id()));
+            let expect = slot.scene_mode().unwrap_or(SceneMode::Title);
+            assert_eq!(
+                GameMode::OtherMode.scene_mode_with_warp(sub),
+                expect,
+                "sub_id {} ({})",
+                slot.sub_id(),
+                slot.label()
+            );
+            assert_eq!(GameMode::OtherInit.scene_mode_with_warp(sub), expect);
+        }
+        // All five playable slots land on five DISTINCT scene modes - the
+        // partition the retail mode word cannot express.
+        let modes: Vec<_> = MinigameSubId::ALL
+            .into_iter()
+            .filter_map(|s| s.scene_mode())
+            .collect();
+        assert_eq!(modes.len(), 5);
+        for (i, a) in modes.iter().enumerate() {
+            assert!(
+                !modes[i + 1..].contains(a),
+                "two warp slots share {a:?} - the sub-id would not separate them"
+            );
+        }
+        // Out of range and the two dev slots fall back to the mode word's own
+        // answer rather than to a neighbouring minigame.
+        assert_eq!(
+            GameMode::OtherMode.scene_mode_with_warp(Some(7)),
+            SceneMode::Title
+        );
+        assert_eq!(
+            GameMode::OtherMode.scene_mode_with_warp(Some(-1)),
+            SceneMode::Title
+        );
+        assert_eq!(
+            GameMode::OtherMode.scene_mode_with_warp(Some(1)),
+            SceneMode::Title
+        );
+    }
+
+    /// Every mode outside the OTHER pair ignores the sub-id: the pair is one
+    /// exception, not a second axis.
+    #[test]
+    fn the_sub_id_only_moves_the_other_pair() {
+        for i in 0..28usize {
+            let m = GameMode::from_index(i).unwrap();
+            if matches!(m, GameMode::OtherInit | GameMode::OtherMode) {
+                continue;
+            }
+            for sub in [None, Some(-1), Some(0), Some(3), Some(6), Some(9)] {
+                assert_eq!(
+                    m.scene_mode_with_warp(sub),
+                    m.scene_mode(),
+                    "mode {i} ({m:?}) moved on sub-id {sub:?}"
+                );
+            }
+        }
+    }
+
+    /// The register is a signed halfword at `0x8007BA34`; the reader has to
+    /// agree with the `lh` the mode-24 init issues.
+    #[test]
+    fn the_warp_sub_id_reader_matches_the_retail_register() {
+        assert_eq!(WARP_SUB_ID_ADDR, 0x8007_BA34);
+        let mut ram = vec![0u8; 0x20_0000];
+        let off = (WARP_SUB_ID_ADDR - 0x8000_0000) as usize;
+        ram[off..off + 2].copy_from_slice(&6i16.to_le_bytes());
+        assert_eq!(read_warp_sub_id(&ram), Some(6));
+        // `lh`, so the top bit sign-extends rather than reading as 0xFFFF.
+        ram[off..off + 2].copy_from_slice(&(-1i16).to_le_bytes());
+        assert_eq!(read_warp_sub_id(&ram), Some(-1));
+        assert_eq!(read_warp_sub_id(&[]), None);
+    }
+
+    /// The driver installs the PAIR into the World, not the mode word alone.
+    #[test]
+    fn the_driver_carries_the_sub_id_into_the_world() {
+        let mut d = ModeDriver::new(GameMode::OtherMode);
+        let mut h = NoopHandler;
+        let mut w = World::default();
+        let input = InputState::new();
+        // With no staged sub-id the driver has nothing to resolve with.
+        d.tick(&mut h, &mut w, &input);
+        assert_eq!(w.mode, SceneMode::Title);
+        // Stage the fishing door (sub-id 0) the way the `0x3E` arm does, with
+        // a session installed - a minigame mode with no session self-heals
+        // back to its return mode inside the world tick, which would mask the
+        // install this test is about.
+        w.enter_fishing(crate::fishing::FishingSession::new(
+            Vec::new(),
+            4,
+            crate::fishing::FishingRecord::default(),
+        ));
+        w.mode = SceneMode::Title;
+        d.set_warp_sub_id(Some(0));
+        assert_eq!(d.warp_sub_id(), Some(0));
+        d.tick(&mut h, &mut w, &input);
+        assert_eq!(w.mode, SceneMode::Fishing);
+        // Retail leaves the register standing across the init -> run handoff
+        // (`FUN_80025980` writes only the mode word on its way out), so the
+        // mode word moving does not lose the discriminator.
+        d.jump_to(GameMode::OtherInit);
+        assert_eq!(d.scene_mode(), SceneMode::Fishing);
+        d.jump_to(GameMode::OtherMode);
+        assert_eq!(d.scene_mode(), SceneMode::Fishing);
     }
 
     #[test]

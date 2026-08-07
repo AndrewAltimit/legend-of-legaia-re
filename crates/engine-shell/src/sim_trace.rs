@@ -117,22 +117,19 @@ pub fn radians_to_units(rad: f32) -> u16 {
 }
 
 /// Map the engine [`SceneMode`] onto the retail game-mode word
-/// (`_DAT_8007B83C` space, per-frame handler modes). `None` for modes the
-/// port hosts without a retail game-mode equivalent.
+/// (`_DAT_8007B83C` space, per-frame handler modes). `None` only for
+/// [`SceneMode::Title`], which the port uses for "no scene loaded" rather than
+/// for a mode.
+///
+/// Delegates to
+/// [`GameMode::for_scene_mode`](legaia_engine_core::mode::GameMode::for_scene_mode)
+/// instead of carrying its own table:
+/// the five minigame variants all answer `0x19` (`OTHER MODE`) because in
+/// retail they *are* one mode, told apart by the warp sub-id register and not
+/// by the mode word. Spelling that out a second time here is how the trace
+/// channel came to report `None` for every minigame frame.
 pub fn scene_mode_to_retail(mode: SceneMode) -> Option<u16> {
-    match mode {
-        SceneMode::Field => Some(3),     // MAIN MODE (field/town per-frame)
-        SceneMode::WorldMap => Some(13), // MAPDISP MODE
-        SceneMode::Battle => Some(21),   // battle per-frame (0x15)
-        SceneMode::Menu => Some(23),     // CARD MODE (0x17)
-        SceneMode::Cutscene => Some(27), // STR per-frame
-        SceneMode::Title
-        | SceneMode::Dance
-        | SceneMode::Fishing
-        | SceneMode::SlotMachine
-        | SceneMode::BakaFighter
-        | SceneMode::MuscleDome => None,
-    }
+    legaia_engine_core::mode::GameMode::for_scene_mode(mode).map(|gm| gm.as_index() as u16)
 }
 
 /// Sample one canonical frame from a live [`BootSession`].
@@ -268,6 +265,19 @@ mod tests {
         assert_eq!(scene_mode_to_retail(SceneMode::Menu), Some(0x17));
         assert_eq!(scene_mode_to_retail(SceneMode::WorldMap), Some(13));
         assert_eq!(scene_mode_to_retail(SceneMode::Title), None);
+        // All five warp minigames are one retail mode - `0x19` OTHER MODE -
+        // and the trace channel has to say so. `None` here read as "the port
+        // hosts this without a retail equivalent", which is false: retail
+        // hosts every one of them, and the mode word is `0x19` throughout.
+        for m in [
+            SceneMode::Fishing,
+            SceneMode::Dance,
+            SceneMode::SlotMachine,
+            SceneMode::BakaFighter,
+            SceneMode::MuscleDome,
+        ] {
+            assert_eq!(scene_mode_to_retail(m), Some(0x19), "{m:?}");
+        }
     }
 
     #[test]

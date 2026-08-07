@@ -305,13 +305,21 @@ fn scene_mode_name(m: legaia_engine_core::world::SceneMode) -> &'static str {
 ///
 /// - `game_mode` from `_DAT_8007B83C`
 ///   ([`capture_observations::cutscene_trigger_corpus::GAME_MODE_ADDR`](legaia_engine_core::capture_observations::cutscene_trigger_corpus::GAME_MODE_ADDR)).
-/// - `scene_mode` derived from `game_mode` via
-///   [`GameMode::scene_mode`](legaia_engine_core::mode::GameMode::scene_mode).
+/// - `scene_mode` derived from the **pair** `(game_mode, warp sub-id)` via
+///   [`GameMode::scene_mode_with_warp`](legaia_engine_core::mode::GameMode::scene_mode_with_warp),
+///   with the sub-id read from
+///   [`WARP_SUB_ID_ADDR`](legaia_engine_core::mode::WARP_SUB_ID_ADDR).
 /// - `active_scene` from the scene-bundle pool slot 0 at `0x80084540`.
+///
+/// **The sub-id is not optional here.** The retail mode word alone cannot tell
+/// a fishing frame from a dance frame from the title screen: all five warp
+/// minigames run under mode `0x19` (`OTHER MODE`), and only `_DAT_8007BA34`
+/// separates them. Deriving the retail side's `scene_mode` from the mode word
+/// on its own made every minigame capture report `"Title"`, so
+/// [`first_mode_trace_divergence`] flagged a divergence against a correctly
+/// behaving engine - the oracle manufactured the failure out of its own `_ =>`
+/// arm rather than observing one.
 pub fn load_runtime_mode_trace_from_save(save: &Path) -> Result<ModeTraceFrame> {
-    use legaia_engine_core::capture_observations::cutscene_trigger_corpus::read_game_mode;
-    use legaia_engine_core::capture_observations::field_pack_intra_transition::read_pool_slot_name;
-    use legaia_engine_core::mode::GameMode;
     use legaia_mednafen::SaveState;
 
     let state = SaveState::from_path(save)
@@ -319,20 +327,32 @@ pub fn load_runtime_mode_trace_from_save(save: &Path) -> Result<ModeTraceFrame> 
     let ram = state
         .main_ram()
         .with_context(|| format!("save state {} has no main RAM entry", save.display()))?;
+    Ok(mode_trace_frame_from_ram(ram))
+}
+
+/// The RAM-reading half of [`load_runtime_mode_trace_from_save`], split out so
+/// the `(game_mode, warp sub-id) -> scene_mode` resolution is testable without
+/// a save state (and therefore without Sony bytes).
+pub fn mode_trace_frame_from_ram(ram: &[u8]) -> ModeTraceFrame {
+    use legaia_engine_core::capture_observations::cutscene_trigger_corpus::read_game_mode;
+    use legaia_engine_core::capture_observations::field_pack_intra_transition::read_pool_slot_name;
+    use legaia_engine_core::mode::{GameMode, read_warp_sub_id};
+
     let game_mode = read_game_mode(ram);
+    let warp_sub_id = read_warp_sub_id(ram);
     let resolved = game_mode.and_then(|b| GameMode::from_index(b as usize));
     let game_mode_name = resolved.map(|gm| game_mode_label(gm).to_string());
     let scene_mode = resolved
-        .map(|gm| scene_mode_name(gm.scene_mode()).to_string())
+        .map(|gm| scene_mode_name(gm.scene_mode_with_warp(warp_sub_id)).to_string())
         .unwrap_or_else(|| "Unknown".to_string());
     let active_scene = read_pool_slot_name(ram, 0);
-    Ok(ModeTraceFrame {
+    ModeTraceFrame {
         frame: 0,
         game_mode,
         game_mode_name,
         scene_mode,
         active_scene,
-    })
+    }
 }
 
 fn game_mode_label(gm: legaia_engine_core::mode::GameMode) -> &'static str {
@@ -611,5 +631,71 @@ mod tests {
     fn empty_engine_trace_returns_none() {
         let retail = frame("Field", Some("town01"));
         assert!(first_mode_trace_divergence(&[], &retail).is_none());
+    }
+
+    /// Synthesise a main-RAM image holding a `(game_mode, warp sub-id)` pair.
+    /// No Sony bytes - a zeroed buffer with two words poked in.
+    fn ram_at(game_mode: u8, warp_sub_id: i16) -> Vec<u8> {
+        use legaia_engine_core::capture_observations::cutscene_trigger_corpus::GAME_MODE_ADDR;
+        use legaia_engine_core::mode::WARP_SUB_ID_ADDR;
+        let mut ram = vec![0u8; 0x20_0000];
+        ram[(GAME_MODE_ADDR - 0x8000_0000) as usize] = game_mode;
+        let off = (WARP_SUB_ID_ADDR - 0x8000_0000) as usize;
+        ram[off..off + 2].copy_from_slice(&warp_sub_id.to_le_bytes());
+        ram
+    }
+
+    /// The defect this pins: a capture taken at retail mode `0x19` used to
+    /// resolve to `"Title"`, because the resolution consulted the mode word
+    /// alone and every warp minigame shares that word. Against a correctly
+    /// behaving engine that produced a divergence report with no divergence in
+    /// it.
+    #[test]
+    fn a_retail_minigame_capture_resolves_to_its_minigame_not_to_title() {
+        for (sub_id, expect) in [
+            (0i16, "Fishing"),
+            (3, "SlotMachine"),
+            (4, "BakaFighter"),
+            (5, "MuscleDome"),
+            (6, "Dance"),
+        ] {
+            let f = mode_trace_frame_from_ram(&ram_at(0x19, sub_id));
+            assert_eq!(f.game_mode, Some(0x19));
+            assert_eq!(f.game_mode_name.as_deref(), Some("OTHER MODE"));
+            assert_eq!(f.scene_mode, expect, "sub_id {sub_id}");
+        }
+        // The mode word still decides on its own everywhere else - the sub-id
+        // register is stale data outside the OTHER pair and must be ignored.
+        let f = mode_trace_frame_from_ram(&ram_at(0x03, 6));
+        assert_eq!(f.scene_mode, "Field");
+        let f = mode_trace_frame_from_ram(&ram_at(0x17, 6));
+        assert_eq!(f.scene_mode, "Menu");
+    }
+
+    /// The oracle goes quiet on a *correct* engine and stays loud on a wrong
+    /// one. A quiet oracle that can no longer fail is worse than a noisy one.
+    #[test]
+    fn the_minigame_oracle_is_quiet_on_agreement_and_loud_on_a_real_divergence() {
+        let retail = mode_trace_frame_from_ram(&ram_at(0x19, 0));
+        assert_eq!(retail.scene_mode, "Fishing");
+
+        // Engine in the same minigame: no divergence. (The engine emits no
+        // game-mode byte for minigames, so only scene_mode + scene compare.)
+        let engine = vec![frame("Fishing", None)];
+        assert!(first_mode_trace_divergence(&engine, &retail).is_none());
+
+        // Engine in a DIFFERENT minigame - same retail mode word, different
+        // sub-id - still diverges. This is the case the mode word alone could
+        // never see, in either direction.
+        let engine = vec![frame("Dance", None)];
+        let d = first_mode_trace_divergence(&engine, &retail).expect("real divergence");
+        assert_eq!(d.kind, DivergenceKind::SceneMode);
+
+        // And the engine sitting in Title against a live minigame still
+        // diverges, which is what the old behaviour made indistinguishable
+        // from agreement.
+        let engine = vec![frame("Title", None)];
+        let d = first_mode_trace_divergence(&engine, &retail).expect("real divergence");
+        assert_eq!(d.kind, DivergenceKind::SceneMode);
     }
 }
