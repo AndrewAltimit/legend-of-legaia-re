@@ -61,6 +61,12 @@ pub struct SceneChests {
     pub man_offset: usize,
     /// Bytes the recompressed MAN must fit within.
     pub compressed_budget: usize,
+    /// `true` when the MAN is stored **uncompressed**, as the payload of a
+    /// type-3 `DATA_FIELD` streaming chunk rather than as an LZS stream in a
+    /// `scene_asset_table` bundle - see [`Self::locate_streaming_mans`]. A chest
+    /// rewrite is a byte swap either way, so a raw carrier is written straight
+    /// back with nothing to recompress.
+    pub raw_in_place: bool,
     /// Decompressed MAN (mutate the chest id bytes in place, then [`Self::repack`]).
     pub decoded: Vec<u8>,
     /// Absolute offsets within `decoded` of each `GIVE_ITEM` operand (id) byte.
@@ -94,6 +100,52 @@ impl SceneChests {
         if decoded.len() != man.size as usize {
             return None;
         }
+        let compressed_budget = crate::man_compressed_budget(&table, man_offset, entry.len());
+        Self::from_man_bytes(decoded, entry_idx, man_offset, compressed_budget, false)
+    }
+
+    /// Locate chest sites in every **variant** MAN carried as a type-3
+    /// `DATA_FIELD` streaming chunk in this entry.
+    ///
+    /// [`Self::locate`] only sees the `scene_asset_table` family. The v12-family
+    /// dungeons ship their MAN - or a story-state variant of it - in a streaming
+    /// chunk instead, and `rikuroa` has no bundle MAN at all, so a bundle-only
+    /// sweep finds no chest anywhere inside Mt. Rikuroa. Same carrier split as
+    /// [`crate::encounter::SceneEncounters::locate_streaming_mans`], which
+    /// documents the thirteen blocks.
+    ///
+    /// The payload is stored raw, so a rewrite is same-size and needs no repack.
+    /// A chunk declaring more bytes than the entry holds (the
+    /// `DataFieldTruncated` tail) is skipped rather than clamped.
+    pub fn locate_streaming_mans(entry: &[u8], entry_idx: usize) -> Vec<Self> {
+        let Ok(report) = legaia_asset::parse_streaming(entry, 4096) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for chunk in &report.chunks {
+            if chunk.type_byte != MAN_TYPE {
+                continue;
+            }
+            let start = chunk.header_offset + 4;
+            let Some(payload) = entry.get(start..start.saturating_add(chunk.size as usize)) else {
+                continue;
+            };
+            let len = payload.len();
+            if let Some(sc) = Self::from_man_bytes(payload.to_vec(), entry_idx, start, len, true) {
+                out.push(sc);
+            }
+        }
+        out
+    }
+
+    /// Shared tail of both locators: scan the MAN for chest give sites.
+    fn from_man_bytes(
+        decoded: Vec<u8>,
+        entry_idx: usize,
+        man_offset: usize,
+        compressed_budget: usize,
+        raw_in_place: bool,
+    ) -> Option<Self> {
         let (sites, display_tokens) = give_sites_and_display_tokens(&decoded);
         if sites.is_empty() {
             return None;
@@ -101,11 +153,35 @@ impl SceneChests {
         Some(Self {
             entry_idx,
             man_offset,
-            compressed_budget: crate::man_compressed_budget(&table, man_offset, entry.len()),
+            compressed_budget,
+            raw_in_place,
             decoded,
             sites,
             display_tokens,
         })
+    }
+
+    /// Drop every chest site whose granted id fails `keep`, keeping `sites` and
+    /// [`Self::display_tokens`] in lockstep.
+    ///
+    /// The give-site walk is structural - it recognises a `GIVE_ITEM` op and
+    /// takes its operand - so on a carrier the bundle sweep never reached it can
+    /// surface an id that names no item. Such a site must not join the shuffle:
+    /// if it is a false positive the rewrite would corrupt script bytes, and if
+    /// it is a genuine grant of an unused slot then donating that id into a real
+    /// chest hands the player an item with no name. Either way the honest move
+    /// is to leave it exactly as authored.
+    pub fn retain_sites_with(&mut self, keep: impl Fn(u8) -> bool) {
+        let mut i = 0;
+        self.display_tokens = std::mem::take(&mut self.display_tokens)
+            .into_iter()
+            .filter(|_| {
+                let k = keep(self.decoded[self.sites[i]]);
+                i += 1;
+                k
+            })
+            .collect();
+        self.sites.retain(|&off| keep(self.decoded[off]));
     }
 
     /// The current item id at each chest site, in `sites` order.
@@ -133,6 +209,11 @@ impl SceneChests {
 
     /// Recompress the (mutated) MAN; `None` if it would overflow the footprint.
     pub fn repack(&self) -> Option<Vec<u8>> {
+        // A streaming-chunk MAN is stored raw; `set_site` only swaps id bytes,
+        // so the buffer is the stream and its length cannot change.
+        if self.raw_in_place {
+            return Some(self.decoded.clone());
+        }
         let stream = legaia_lzs::compress(&self.decoded);
         (stream.len() <= self.compressed_budget).then_some(stream)
     }

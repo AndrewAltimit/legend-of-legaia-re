@@ -1,5 +1,6 @@
 //! Disc-gated: scenes whose MAN is a **streaming chunk** rather than a
-//! `scene_asset_table` bundle descriptor still get their encounters randomized.
+//! `scene_asset_table` bundle descriptor are reached by the MAN-based
+//! randomizer passes - encounters and chests.
 //!
 //! The v12-family dungeons carry their MAN - or a story-state variant of it -
 //! as a raw type-3 chunk of a `DATA_FIELD` streaming entry. `Mt. Rikuroa` has
@@ -7,11 +8,12 @@
 //! [`SceneEncounters::locate`] never sees its formations and the dungeon keeps
 //! vanilla enemies at every pool width. These tests pin both halves: the
 //! structural claim about where the MAN lives, and the behavioural one that a
-//! kingdom shuffle actually rewrites it.
+//! kingdom shuffle actually rewrites it, plus the same pair for chest loot.
 //!
 //! Every test skips and passes without `LEGAIA_DISC_BIN`.
 
 use legaia_patcher::apply::{self, EncounterScope};
+use legaia_patcher::chest::SceneChests;
 use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
 use legaia_patcher::encounter::SceneEncounters;
@@ -190,5 +192,115 @@ fn streaming_man_rewrite_is_same_size_and_still_parses() {
         before,
         sizes(&patcher),
         "a streaming MAN changed offset or length, or stopped parsing"
+    );
+}
+
+/// Chest sites live in the same two carriers, and Mt. Rikuroa's are all in the
+/// streaming one.
+#[test]
+fn rikuroa_chest_sites_are_only_reachable_through_the_streaming_carrier() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let patcher = DiscPatcher::open(original).expect("open");
+    let (lo, hi) = block_range(&patcher, "rikuroa").expect("rikuroa in CDNAME");
+
+    let (mut bundle_sites, mut streaming_sites) = (0usize, 0usize);
+    for idx in lo..hi {
+        let Ok(entry) = patcher.read_entry(idx) else {
+            continue;
+        };
+        if let Some(sc) = SceneChests::locate(&entry, idx) {
+            bundle_sites += sc.sites.len();
+        }
+        for sc in SceneChests::locate_streaming_mans(&entry, idx) {
+            streaming_sites += sc.sites.len();
+        }
+    }
+    assert_eq!(
+        bundle_sites, 0,
+        "rikuroa has bundle chest sites - the bundle-only sweep was not what missed them"
+    );
+    assert!(
+        streaming_sites > 0,
+        "rikuroa has no chest sites in either carrier, so there is nothing to shuffle"
+    );
+}
+
+/// A chest shuffle must reach Mt. Rikuroa's loot, and must not resize the MAN.
+#[test]
+fn chest_shuffle_rewrites_rikuroa_loot_without_resizing() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let chest_items = |p: &DiscPatcher, name: &str| -> Vec<u8> {
+        let Some((lo, hi)) = block_range(p, name) else {
+            return Vec::new();
+        };
+        let mut v = Vec::new();
+        for idx in lo..hi {
+            let Ok(entry) = p.read_entry(idx) else {
+                continue;
+            };
+            if let Some(sc) = SceneChests::locate(&entry, idx) {
+                v.extend(sc.current_items());
+            }
+            for sc in SceneChests::locate_streaming_mans(&entry, idx) {
+                v.extend(sc.current_items());
+            }
+        }
+        v
+    };
+    let sizes = |p: &DiscPatcher| -> Vec<(usize, usize, usize)> {
+        (0..p.entry_count())
+            .filter_map(|i| p.read_entry(i).ok().map(|e| (i, e)))
+            .flat_map(|(i, e)| {
+                SceneChests::locate_streaming_mans(&e, i)
+                    .into_iter()
+                    .map(move |s| (i, s.man_offset, s.decoded.len()))
+            })
+            .collect()
+    };
+
+    let base = DiscPatcher::open(original.clone()).expect("open");
+    let before = chest_items(&base, "rikuroa");
+    let before_sizes = sizes(&base);
+    assert!(
+        !before.is_empty(),
+        "no baseline chest items for rikuroa - the test would pass vacuously"
+    );
+
+    let mut patcher = DiscPatcher::open(original).expect("open");
+    // Shuffle redistributes the chests' own items, so the pool is unused; no
+    // item is pinned static.
+    let report = apply::randomize_chests(
+        &mut patcher,
+        &[],
+        SEED,
+        DropMode::Shuffle,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect("chest shuffle");
+    assert!(
+        report.items_changed > 0,
+        "the chest shuffle rewrote nothing"
+    );
+
+    let after = chest_items(&patcher, "rikuroa");
+    assert_eq!(
+        before.len(),
+        after.len(),
+        "the rewrite changed how many chest sites rikuroa has"
+    );
+    assert_ne!(
+        before, after,
+        "rikuroa's chest loot is unchanged by a shuffle"
+    );
+    assert_eq!(
+        before_sizes,
+        sizes(&patcher),
+        "a streaming MAN changed offset or length under the chest rewrite"
     );
 }
