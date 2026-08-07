@@ -1174,7 +1174,11 @@ impl World {
                 // retail-frame paced already; a `field_frame_step` gate would
                 // be a tautology here, not a correction.
                 self.step_field_channels();
-                self.step_field();
+                // The scene system script (ctx `0xFB`) gets a whole retail
+                // frame slice, not one instruction: see
+                // [`Self::step_field_frame_slice`] for the three stop
+                // conditions and what one-op-per-tick cost.
+                self.step_field_frame_slice();
                 // Field-NPC walk legs (autonomous patrol routes + scripted
                 // interaction-prologue runs) - one motion-VM step per RETAIL
                 // frame, writing back into `field_npc_positions` so collision /
@@ -1276,7 +1280,7 @@ impl World {
                 if self.active_fmv.is_none() {
                     self.step_spawned_record_contexts();
                     self.step_field_channels();
-                    self.step_field();
+                    self.step_field_frame_slice();
                     self.tick_screen_fx();
                 }
                 None

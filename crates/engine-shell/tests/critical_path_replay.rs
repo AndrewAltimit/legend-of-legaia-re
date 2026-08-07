@@ -34,7 +34,7 @@
 //!
 //! | # | milestone | what it proves |
 //! |---|---|---|
-//! | 1 | `town01` loads into free-roam Field | the scene boots to a controllable player |
+//! | 1 | `town01` loads into free-roam Field, entry script running | the scene boots to a controllable player and its system script executes |
 //! | 2 | pad-walk to the south gate -> `map01` | field locomotion + collision + walk-on trigger |
 //! | 3 | pad-walk `map01` across the continent | overworld remap + collision + the encounter round trip |
 //! | 4 | pad-walk on to the Ravine, via `suimon` | multi-scene overworld route + portal engage |
@@ -1229,6 +1229,17 @@ fn wait_for_input(host: &mut SceneHost) -> bool {
 /// controllable Field state, and is **not** evidence that the opening plays.
 /// The count is printed in the rung's own row so the distinction is visible
 /// rather than inferred.
+///
+/// **Zero is the right answer here**, and that is now settled rather than
+/// suspected. Rim Elm's opening is not a property of loading `town01`; it is
+/// partition-2 record 3, whose header gate is "system flag `0x225` is clear",
+/// and the engine installs it only on the New Game hand-off
+/// (`World::entering_town01_opening` / `opening_chain_active`). This ladder
+/// walks a *route*, so it enters Rim Elm the way a returning player does, and
+/// a returning player gets no opening - retail's own scene-entry script
+/// (`town01` P1[0]) likewise reads `0x225` and skips its first-visit arms once
+/// it is set. The opening's own ladder is the browser `play_compose` rung 2,
+/// which enters through the hand-off and asserts the timeline played.
 fn held_frames_before_input(host: &mut SceneHost) -> Option<u32> {
     for f in 0..INPUT_RELEASE_BUDGET {
         if !host.world.cutscene_timeline_active() && !host.world.dialogue_owns_input() {
@@ -2097,16 +2108,41 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
         None
     };
     let released = held.is_some();
+    // The rung's one *positive* fact about the load. "Input is free" is a
+    // statement about what is NOT happening, and a scene that loaded nothing
+    // at all satisfies it perfectly - which is how this rung came to be read
+    // as "the opening played" when the opening had not. So also require that
+    // the scene-entry system script (`P1[0]`, retail ctx `0xFB`) is resident
+    // and executed: it is what raises the scene's story flags, cues its BGM,
+    // arms the arrival fade, and drives the per-frame camera-zone tests, and
+    // if it silently stopped running every one of those would go with it
+    // while every rung below still passed.
+    //
+    // A few neutral frames, because the entry script is stepped by the frame
+    // tick and `held_frames_before_input` returns without ticking at all when
+    // nothing holds input.
+    let entry_pc0 = host.world.field_pc;
+    let mut entry_script_ran = false;
+    for _ in 0..4 {
+        host.world.set_pad(0);
+        let _ = host.tick();
+        entry_script_ran |=
+            !host.world.field_bytecode.is_empty() && host.world.field_pc != entry_pc0;
+    }
     rungs.push(Rung {
-        label: "town01 loads into free-roam Field",
+        label: "town01 loads into free-roam Field, entry script running",
         detail: if let Some(held) = held {
             let (x, z) = player_world(host);
             format!(
-                "player at tile {:?}; the opening held input for {held} frame(s){}",
+                "player at tile {:?}; entry script pc {entry_pc0} -> {}; the opening \
+                 held input for {held} frame(s){}",
                 tile_of(x, z),
+                host.world.field_pc,
                 if held == 0 {
-                    " - i.e. no opening choreography ran, so this rung says the scene \
-                     loads, NOT that its opening plays"
+                    " - i.e. no opening choreography ran. That is correct for this \
+                     door: Rim Elm's opening is partition-2 record 3, gated on system \
+                     flag 0x225 and installed only on the New Game hand-off, and this \
+                     ladder enters as a returning player does"
                 } else {
                     ""
                 }
@@ -2116,9 +2152,9 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
         } else {
             format!("scene mode is {:?}, expected Field", host.world.mode)
         },
-        cleared: released,
+        cleared: released && entry_script_ran,
     });
-    if !released {
+    if !(released && entry_script_ran) {
         return rungs;
     }
 
