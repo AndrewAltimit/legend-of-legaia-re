@@ -236,7 +236,11 @@ impl LegaiaRuntime {
         // label and the Battle<->Field BGM swap - which is why battle music
         // was silent in the browser while it played natively.
         let mut opts = legaia_engine_core::live_loop::LiveLoopOpts::playable();
-        opts.battle_bgm = self.battle_bgm;
+        // `None` keeps the shipped default battle theme; an explicit page-side
+        // override of `0` disables the swap, any other id replaces the track.
+        if let Some(id) = self.battle_bgm {
+            opts.battle_bgm = (id != 0).then_some(id);
+        }
         host.world.arm_live_loop(scene, &opts);
     }
 
@@ -1270,14 +1274,16 @@ impl LegaiaRuntime {
         }
     }
 
-    /// Set the Battle<->Field BGM swap track (`0` clears it), the browser twin
-    /// of the native window's `--battle-bgm <id>`. The id is routed through
-    /// the same director as field op-`0x35` starts, so it must resolve in the
-    /// current scene's asset table.
+    /// Override the Battle<->Field BGM swap track (`0` disables the swap;
+    /// with no override the shipped default battle theme plays), the browser
+    /// twin of the native window's `--battle-bgm <id>`. The id is routed
+    /// through the same director as field op-`0x35` starts: scene-local ids
+    /// resolve through the scene's asset table, `>= 2000` through the global
+    /// `music_01` pool.
     pub fn set_battle_bgm(&mut self, bgm_id: u16) {
-        self.battle_bgm = (bgm_id != 0).then_some(bgm_id);
+        self.battle_bgm = Some(bgm_id);
         if let Some(h) = self.scene_host.as_mut() {
-            h.world.set_battle_bgm(self.battle_bgm);
+            h.world.set_battle_bgm((bgm_id != 0).then_some(bgm_id));
         }
     }
 

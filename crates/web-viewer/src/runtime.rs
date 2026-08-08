@@ -158,12 +158,15 @@ pub struct LegaiaRuntime {
     /// window's `--live-loop` / `--player-battle` flags. [`Self::set_live_battles`]
     /// turns it off for walk-only sessions.
     pub(crate) live_battles: bool,
-    /// Battle<->Field BGM swap track id, the browser twin of the native
-    /// window's `--battle-bgm <id>`. Routed through the same director as
-    /// field op-`0x35` starts, so the id must resolve in the current scene's
-    /// asset table; `None` leaves the field track playing through the fight.
-    /// Before this the browser never called `World::set_battle_bgm` at all,
-    /// so a battle could not swap music no matter what the page wanted.
+    /// Battle<->Field BGM swap track override, the browser twin of the native
+    /// window's `--battle-bgm <id>`. `None` = no page-side override, so the
+    /// shipped default battle theme plays (`LiveLoopOpts::playable`);
+    /// `Some(0)` = swap disabled; any other id replaces the track. Routed
+    /// through the same director as field op-`0x35` starts (scene-local ids
+    /// via the scene's asset table, `>= 2000` via the global `music_01`
+    /// pool). Before this the browser never called `World::set_battle_bgm`
+    /// at all, so a battle could not swap music no matter what the page
+    /// wanted.
     pub(crate) battle_bgm: Option<u16>,
     /// Battle HUD model (per-slot HP / MP / AP rows, damage popups), refreshed
     /// each battle tick by the shared `engine-core` fold and projected into

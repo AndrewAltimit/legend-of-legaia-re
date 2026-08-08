@@ -105,6 +105,14 @@ pub struct MenuRuntime {
     /// `ShopBuy`, exactly as retail parks list mode 1 under sub-screen
     /// `0x1C`).
     pub recipient_session: Option<BuyRecipientSession>,
+    /// The live casino **prize-exchange** session (menu-overlay sub-screen
+    /// `0x20`, field-VM op-`0x49` sub-op 7). While `Some`,
+    /// [`MenuRuntime::tick`] drives it instead of the menu VM - the session
+    /// owns its own browse / Yes-No phases (`FUN_801DC1CC`'s 4-state SM), so
+    /// it never enters the [`MenuState`] graph. Cleared when the browse
+    /// cancel exits; the tick then calls `World::finish_prize_exchange` so
+    /// the suspended field script resumes past the counter op.
+    pub prize_session: Option<crate::prize_exchange::PrizeExchangeSession>,
     /// Cursor to restore after a stay-on-the-list route (a refused buy and
     /// the recipient-picker hand both keep the hand on the confirmed row;
     /// the VM's route reset would drop it to row 0).
@@ -173,6 +181,7 @@ impl MenuRuntime {
             equip_info: None,
             retail_equipment_buy: false,
             recipient_session: None,
+            prize_session: None,
             stay_cursor: None,
             point_card_toast: None,
             spell_level_notice: None,
@@ -291,9 +300,18 @@ impl MenuRuntime {
         open(&mut self.ctx);
     }
 
-    /// `true` while the menu is active (ctx state != Closed).
+    /// `true` while the menu is active (ctx state != Closed), or while a
+    /// prize-exchange session owns the pad (it runs outside the
+    /// [`MenuState`] graph, so `ctx.state` stays `Closed` under it).
     pub fn is_open(&self) -> bool {
-        self.ctx.state != MenuState::Closed.as_byte()
+        self.ctx.state != MenuState::Closed.as_byte() || self.prize_session.is_some()
+    }
+
+    /// Open the casino prize-exchange screen (field-VM op-`0x49` sub-op 7) -
+    /// the counterpart of [`Self::open_shop_menu`] for the session drained
+    /// from `World::take_pending_prize_exchange`.
+    pub fn open_prize_exchange(&mut self, session: crate::prize_exchange::PrizeExchangeSession) {
+        self.prize_session = Some(session);
     }
 
     /// Raw state byte of the underlying [`MenuCtx`].
@@ -360,6 +378,10 @@ impl MenuRuntime {
         // `ctx.state` directly, so the entry edge lands here on the first
         // tick; the post-`step` call below catches in-menu transitions.
         self.sync_widget_choreo(world);
+        if self.prize_session.is_some() {
+            self.tick_prize(world, input);
+            return MenuTickEvent::Stepped;
+        }
         if self.recipient_session.is_some() {
             self.tick_recipient(world, input);
             return MenuTickEvent::Stepped;
@@ -474,6 +496,69 @@ impl MenuRuntime {
             // The picker's own `ToastWait` already consumed the press that
             // dismissed window 31; the paint flag goes with the session.
             self.point_card_toast = None;
+        }
+    }
+
+    /// One frame of the casino prize exchange: drive the session's browse /
+    /// Yes-No SM, apply a Yes commit against the live coin bank / inventory /
+    /// system flags ([`crate::prize_exchange::apply_redeem`] - the retail
+    /// state-3 deltas), and on the browse cancel drop the session + flip the
+    /// suspended op-`0x49` Armed -> Done so the counter script resumes.
+    fn tick_prize(&mut self, world: &mut World, input: MenuInput) {
+        let Some(session) = self.prize_session.as_mut() else {
+            return;
+        };
+        // The list is vertical (Up/Down) but the shared navigator's axis is
+        // decrement/increment; accept both axes, like the recipient picker.
+        let buttons = crate::menu_input::NavButtons::new(
+            input.cross,
+            input.circle || input.triangle,
+            input.up || input.left,
+            input.down || input.right,
+        );
+        let coins = world.casino_coins;
+        let inventory = &world.inventory;
+        let event = session.tick(buttons, coins, |id| {
+            inventory.get(&id).copied().unwrap_or(0)
+        });
+        match event {
+            crate::prize_exchange::PrizeEvent::Redeemed {
+                item_id,
+                price,
+                gate,
+            } => {
+                let flags = &mut world.system_flags;
+                let applied = crate::prize_exchange::apply_redeem(
+                    &mut world.casino_coins,
+                    &mut world.inventory,
+                    &mut |g| {
+                        // `World::system_flag_set`, inlined over the split
+                        // borrow (MSB-first, idx >> 3).
+                        let byte = (g >> 3) as usize;
+                        if byte >= flags.len() {
+                            flags.resize(byte + 1, 0);
+                        }
+                        flags[byte] |= 0x80u8 >> (g & 7);
+                    },
+                    item_id,
+                    price,
+                    gate,
+                );
+                if applied {
+                    let flags = &world.system_flags;
+                    session.rebuild(|g| {
+                        let byte = (g >> 3) as usize;
+                        flags
+                            .get(byte)
+                            .is_some_and(|b| b & (0x80u8 >> (g & 7)) != 0)
+                    });
+                }
+            }
+            crate::prize_exchange::PrizeEvent::Exit => {
+                self.prize_session = None;
+                world.finish_prize_exchange();
+            }
+            _ => {}
         }
     }
 

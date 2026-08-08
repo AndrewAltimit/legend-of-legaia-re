@@ -379,6 +379,37 @@ impl World {
         {
             return false;
         }
+        // The coin counter's Yes/No confirm runs over the shared two-row
+        // picker (`FUN_801E9DC8`): retail's picker maintains the row cursor
+        // (`counter.yes_no`, seeded to 1 = No) and its return is what the
+        // handler reads as `env.picker_result`. The engine drives that
+        // picker here, at the model layer, so every host gets a live
+        // confirm - `picker_result` used to have no production writer at
+        // all, which parked the counter at state 2 forever with the field
+        // script still Armed (a softlock at every koin1/balden coin
+        // cabinet's accept). A host/test that pre-loaded `picker_result`
+        // keeps its value for this pass (the derive only fills an empty
+        // cell); either way the dispatch below consumes it one-shot.
+        if self.submode_screen.actor.state == hub::slot::COIN_COUNTER
+            && self.submode_screen.actor.sub == 2
+            && self.submode_screen.picker_result == 0
+        {
+            let pad = self.input.pad() as u32;
+            let prev = self.input.pad_prev() as u32;
+            let edge = (pad & !prev) | self.submode_screen.pad_edge_latch;
+            let toggle = (crate::dev_menu::PACK_UP
+                | crate::dev_menu::PACK_DOWN
+                | crate::dev_menu::PACK_LEFT
+                | crate::dev_menu::PACK_RIGHT) as u32;
+            if edge & toggle != 0 {
+                self.submode_screen.counter.yes_no ^= 1;
+            }
+            if edge & SUBMODE_ACCEPT_MASK != 0 {
+                self.submode_screen.picker_result = hub::PICK_ACCEPT;
+            } else if edge & SUBMODE_BACK_MASK != 0 {
+                self.submode_screen.picker_result = hub::PICK_CANCEL;
+            }
+        }
         let env = self.submode_env(frame_delta);
         // The latch is one-shot: a pass that ran has consumed every edge that
         // reached it, exactly as retail's per-game-tick pad sample is.
@@ -429,6 +460,9 @@ impl World {
         let retired = screen.actor.flags & ACTOR_RETIRE != 0;
         screen.frame = frame;
         self.submode_screen = screen;
+        // The picker return is one-shot: the pass that ran has consumed it
+        // (retail's `FUN_801E9DC8` returns a fresh value per call).
+        self.submode_screen.picker_result = 0;
         self.apply_submode_actions();
         if retired {
             self.submode_screen.open = false;
@@ -776,13 +810,17 @@ pub const COIN_PANEL_WINDOW: usize = hub::window::TWO_OPTION;
 
 /// Op-`0x49` sub-ops the world handles through a dedicated path rather than
 /// through a submode screen: `0` inline gold shop, `3` name entry, `5` tile
-/// board.
+/// board, `7` casino prize exchange.
 ///
-/// The retail table agrees about all three: sub-`0` selects no handler at all
-/// (`-1`), sub-`3` selects `FUN_801F03F0` (name entry) and sub-`5` selects
-/// `FUN_801EF2B0` (the tile-board walk). The engine reaches the latter two
-/// through its own host paths, so it keeps them out of the dispatcher.
-pub const OP49_DEDICATED_SUB_OPS: [u8; 3] = [0, 3, 5];
+/// The retail table agrees about all four: sub-`0` and sub-`7` select no
+/// handler at all (`-1` - sub-`7` routes through the menu-overlay outer
+/// dispatcher `FUN_801DC6B4` into sub-screen `0x20` instead), sub-`3`
+/// selects `FUN_801F03F0` (name entry) and sub-`5` selects `FUN_801EF2B0`
+/// (the tile-board walk). The engine reaches all of them through its own
+/// host paths ([`World::try_arm_field_shop`] /
+/// [`World::try_arm_prize_exchange`] / name entry / tile board), so it
+/// keeps them out of the dispatcher.
+pub const OP49_DEDICATED_SUB_OPS: [u8; 4] = [0, 3, 5, 7];
 
 /// Op-`0x49` sub-ops whose park is a **standing menu-entry context**, not a
 /// request for a screen: the table row is `-1` *and* nothing else opens a
@@ -809,12 +847,12 @@ pub const OP49_DEDICATED_SUB_OPS: [u8; 3] = [0, 3, 5];
 /// retires takes the context with it, and the player who opens the menu two
 /// seconds later gets the plain picker.
 ///
-/// The other three `-1` rows (`0`, `1`, `7`) are **not** here: retail routes
-/// each into a driver that does hand back (`0` the inline gold shop, `1` the
-/// card save flow, `7` the casino prize exchange), and the engine reaches
-/// those by other paths, so their close-tick fallback below stays as the
-/// engine's unpark. That fallback is a port affordance the retail table does
-/// not have.
+/// The other `-1` rows are **not** here: retail routes each into a driver
+/// that does hand back (`0` the inline gold shop, `1` the card save flow,
+/// `7` the casino prize exchange). Sub-ops `0` and `7` are in
+/// [`OP49_DEDICATED_SUB_OPS`] (their world channels own the park); sub-`1`'s
+/// close-tick fallback below stays as the engine's unpark. That fallback is
+/// a port affordance the retail table does not have.
 pub const OP49_PARK_PRESERVING_SUB_OPS: [u8; 1] = [0x0D];
 
 /// The handler slot an op-`0x49` sub-op opens.
@@ -943,7 +981,9 @@ mod tests {
         // Everything else takes the handler retail's `0x801F33A4` table names.
         assert_eq!(slot_for_op49_sub_op(9), Some(slot::PROMPT));
         assert_eq!(slot_for_op49_sub_op(6), Some(slot::COIN_COUNTER));
-        // A `-1` row leaves `+0x50` at the spawn value, which is slot `0`.
-        assert_eq!(slot_for_op49_sub_op(7), Some(slot::CLOSE_TICK));
+        // A `-1` row with no dedicated path leaves `+0x50` at the spawn
+        // value, which is slot `0`. (Sub-7, once this row, now routes to
+        // the prize exchange through `World::try_arm_prize_exchange`.)
+        assert_eq!(slot_for_op49_sub_op(1), Some(slot::CLOSE_TICK));
     }
 }

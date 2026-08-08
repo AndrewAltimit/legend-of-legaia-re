@@ -867,9 +867,11 @@ pub(crate) enum Cmd {
         damage_finish: bool,
         /// BGM id to cross-fade to when a live-loop encounter starts; the
         /// field track resumes when the battle ends. Routed through the same
-        /// BGM director as field op-`0x35` starts, so the id must resolve in
-        /// the current scene's asset table. Omit to leave music untouched
-        /// across the Battle transition.
+        /// BGM director as field op-`0x35` starts: scene-local ids resolve
+        /// through the current scene's asset table, ids `>= 2000` through
+        /// the global `music_01` pool. Omit for the shipped default (retail's
+        /// standard battle theme, 2026); pass `0` to leave the field track
+        /// playing through the fight.
         #[arg(long)]
         battle_bgm: Option<u16>,
         /// Headless-ish screenshot: render offscreen and write a PNG of the

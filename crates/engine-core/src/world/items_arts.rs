@@ -1119,6 +1119,60 @@ impl World {
         self.field_shop_open = false;
     }
 
+    /// Recognise + stage a casino **prize-exchange** counter (field-VM op
+    /// `0x49` sub-op 7 - koin1's `49 07 00` / balden's `49 07 01`).
+    ///
+    /// `instr` is the opcode byte onward, so the prize **block index** is
+    /// `instr[2]` (the byte after the sub-op; retail reads it through the
+    /// parked operand pointer as `_DAT_8007B450[1]` and scales by `0x60`).
+    /// Builds a [`crate::prize_exchange::PrizeExchangeSession`] over the
+    /// installed [`Self::prize_blocks`] table, raises the retail entry flag
+    /// ([`crate::prize_exchange::PRIZE_EXCHANGE_VISITED_FLAG`]), and arms the
+    /// op-`0x49` gate. No-op when the table isn't installed (disc-free), the
+    /// block index is out of range, or an exchange is already armed.
+    ///
+    /// Returns `true` when a session was staged.
+    pub fn try_arm_prize_exchange(&mut self, instr: &[u8]) -> bool {
+        if self.prize_exchange_armed {
+            return false;
+        }
+        let block_idx = instr.get(2).copied().unwrap_or(0) as usize;
+        let Some(block) = self.prize_blocks.get(block_idx).cloned() else {
+            return false;
+        };
+        // Retail state 0: `FUN_8003CE08(8)` on entry.
+        self.system_flag_set(crate::prize_exchange::PRIZE_EXCHANGE_VISITED_FLAG);
+        let flags = &self.system_flags;
+        let session = crate::prize_exchange::PrizeExchangeSession::new(block, |f| {
+            // The same bit layout as `World::system_flag_test` (idx >> 3,
+            // MSB-first), inlined so the visible-row walk can read the bank
+            // while `self` is mutably borrowed.
+            let byte = (f >> 3) as usize;
+            flags
+                .get(byte)
+                .is_some_and(|b| b & (0x80u8 >> (f & 7)) != 0)
+        });
+        self.pending_prize_exchange = Some(session);
+        self.prize_exchange_armed = true;
+        self.prize_exchange_open = true;
+        true
+    }
+
+    /// Drain the prize-exchange session the field VM just opened (see
+    /// [`Self::try_arm_prize_exchange`]) so the host can drive its UI. The
+    /// op-0x49 gate stays armed until [`Self::finish_prize_exchange`].
+    pub fn take_pending_prize_exchange(
+        &mut self,
+    ) -> Option<crate::prize_exchange::PrizeExchangeSession> {
+        self.pending_prize_exchange.take()
+    }
+
+    /// Mark the open prize exchange closed: the op-0x49 tristate flips
+    /// Armed -> Done so the field VM resumes past the counter op.
+    pub fn finish_prize_exchange(&mut self) {
+        self.prize_exchange_open = false;
+    }
+
     /// Record one use of `art_id` by `char_id` (roster index).
     ///
     /// Delegates to [`TacticalArtsTracker::notify_art_used`]. When the use

@@ -41,13 +41,16 @@ pub struct LiveLoopOpts {
 }
 
 impl LiveLoopOpts {
-    /// The shipped default: the full loop, player-driven, no BGM swap
-    /// configured (a host that knows its scene's battle track sets it).
+    /// The shipped default: the full loop, player-driven, and the
+    /// Battle↔Field BGM swap on retail's standard random-encounter theme
+    /// ([`crate::music_labels::BATTLE_THEME_1_BGM_ID`] - the `battle_id == 0`
+    /// track the intro's bundle load selects). A host that knows a
+    /// scene-specific battle track overrides it; `None` disables the swap.
     pub fn playable() -> Self {
         Self {
             live_loop: true,
             player_battle: true,
-            battle_bgm: None,
+            battle_bgm: Some(crate::music_labels::BATTLE_THEME_1_BGM_ID),
         }
     }
 }

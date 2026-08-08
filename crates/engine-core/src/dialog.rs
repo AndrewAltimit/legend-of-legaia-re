@@ -269,6 +269,19 @@ pub struct OwnedDialogPanel {
     /// the resolved glyphs in place of the escape. Absent entries emit
     /// nothing (the pre-wiring behaviour).
     pub substitutions: Option<PanelSubstitutions>,
+    /// The packed up-to-3-row box the typewriter is walking (retail
+    /// `_DAT_801F2740 = 3`, decoded by [`legaia_mes::pack_box`]). `None` on
+    /// the plain-MES paths ([`Self::new`] / [`Self::from_scene_mes`]), whose
+    /// streams carry explicit page-break controls instead of the field
+    /// pager's `0x1F`-row grouping.
+    current_box: Option<legaia_mes::DialogBox>,
+    /// Row of [`Self::current_box`] the typewriter is on.
+    row_index: usize,
+    /// The current box's last row finished with a continuing post-page
+    /// dispatch (`0x24` next-page / `0x48` new-box / `0x2A` resize / an
+    /// implicit next lead): [`Self::advance_page`] must re-seed on the next
+    /// packed box instead of resuming the byte stream in place.
+    pending_box_advance: bool,
     state: PanelState,
     waiting_for_input: bool,
     done: bool,
@@ -306,6 +319,9 @@ impl OwnedDialogPanel {
             picker_cursor: 0,
             menu_active: false,
             substitutions: None,
+            current_box: None,
+            row_index: 0,
+            pending_box_advance: false,
             state: PanelState::Typing,
             waiting_for_input: false,
             done: false,
@@ -338,13 +354,15 @@ impl OwnedDialogPanel {
     /// it through the standard MES
     /// [`Interpreter`].
     ///
-    /// Only the first segment is typed: the record holds the NPC's whole
-    /// dialogue line pool (see [`decode_inline_segments`]). Retail picks
-    /// which segment to land on via the prologue's story-flag-gated
-    /// `JmpRel`s (not a header), then packs up to `_DAT_801F2740` = 3
-    /// consecutive `0x1F` lines into one box paged by the post-page control
-    /// byte (decoded by [`legaia_mes::pack_box`]; pinned by
-    /// `field_dialog_boxpack_disc`). See the
+    /// Only the first packed box is typed to start: the record holds the
+    /// NPC's whole dialogue line pool (see [`decode_inline_segments`]).
+    /// Retail picks which segment to land on via the prologue's
+    /// story-flag-gated `JmpRel`s (not a header), then packs up to
+    /// `_DAT_801F2740` = 3 consecutive `0x1F` lines into one box paged by
+    /// the post-page control byte (decoded by [`legaia_mes::pack_box`];
+    /// pinned by `field_dialog_boxpack_disc`) - which is exactly what the
+    /// panel does: rows joined in one window, continuing dispatches paged
+    /// through [`Self::advance_page`]. See the
     /// `field_actor_placements_disc::dialog_prefix_decodes_as_field_vm_bytecode`
     /// regression for the prologue-is-field-VM-bytecode proof.
     ///
@@ -353,12 +371,7 @@ impl OwnedDialogPanel {
     pub fn from_inline_dialog(inline: &[u8]) -> Option<Self> {
         let lead = inline.iter().position(|&b| b == 0x1F)?;
         let mut panel = Self::new(Arc::new(inline.to_vec()), lead + 1);
-        // If a multiple-choice menu **immediately follows** this box's prompt
-        // segment, decode it so the host can render the option labels + a
-        // cursor. The picker's open byte must sit exactly where the prompt's
-        // typewriter run ends (a normal NPC whose later story branches contain
-        // a Yes/No picker must NOT pop a menu after its greeting).
-        panel.picker = Self::picker_following_segment(inline, lead + 1);
+        panel.seed_box_at_lead(lead);
         Some(panel)
     }
 
@@ -370,8 +383,48 @@ impl OwnedDialogPanel {
     /// for the first segment - the caller already knows the exact lead.
     pub fn at_segment(bytes: Arc<Vec<u8>>, seg_lead: usize) -> Self {
         let mut panel = Self::new(bytes, seg_lead + 1);
-        panel.picker = Self::picker_following_segment(&panel.bytes, seg_lead + 1);
+        panel.seed_box_at_lead(seg_lead);
         panel
+    }
+
+    /// Seed the typewriter on the packed box whose first `0x1F` lead is at
+    /// `lead`: PC on row 0's glyphs, row cursor reset, and the picker attached
+    /// only when the box's own post-page dispatch is a menu-open byte (the
+    /// faithful "is this box a menu?" test - the picker open byte sits at
+    /// [`legaia_mes::DialogBox::dispatch_at`], directly after the box's *last*
+    /// row, so a 2-row prompt still finds its menu). Falls back to the
+    /// ungrouped single-segment walk when `lead` isn't a `0x1F` byte.
+    fn seed_box_at_lead(&mut self, lead: usize) {
+        self.row_index = 0;
+        self.pending_box_advance = false;
+        match legaia_mes::pack_box(&self.bytes, lead) {
+            Some(bx) => {
+                self.pc = bx.lines[0].start;
+                self.picker = if matches!(bx.dispatch, legaia_mes::Dispatch::Picker(_)) {
+                    legaia_mes::scan_pickers(&self.bytes)
+                        .into_iter()
+                        .find(|p| p.open == bx.dispatch_at)
+                } else {
+                    None
+                };
+                self.current_box = Some(bx);
+            }
+            None => {
+                self.pc = lead + 1;
+                self.picker = Self::picker_following_segment(&self.bytes, lead + 1);
+                self.current_box = None;
+            }
+        }
+    }
+
+    /// PCs of the current box's `0x1F` row leads. Runners that keep a
+    /// visited/wrap map mark these so a conversation tail that jumps back onto
+    /// row 2/3 of an already-shown box still reads as a wrap.
+    pub fn row_leads(&self) -> Vec<usize> {
+        self.current_box
+            .as_ref()
+            .map(|b| b.lines.iter().map(|l| l.start - 1).collect())
+            .unwrap_or_default()
     }
 
     /// End index of the `0x1F` text segment whose glyph run starts at `from`
@@ -425,8 +478,7 @@ impl OwnedDialogPanel {
         self.picker_cursor = 0;
         match next_lead {
             Some(lead) => {
-                self.pc = lead + 1;
-                self.picker = Self::picker_following_segment(&self.bytes, lead + 1);
+                self.seed_box_at_lead(lead);
                 self.state = PanelState::Typing;
             }
             None => {
@@ -505,12 +557,41 @@ impl OwnedDialogPanel {
                 clut: self.current_clut,
             }),
             Some(MesEvent::EndOfMessage(_)) | None => {
-                // A menu box stops at the prompt terminator and waits on the
-                // option list instead of tearing down: the retail inline-script
-                // handler `FUN_80038050` reads the chosen index here and jumps
-                // via the picker's relative-offset table.
+                // A row terminator, not necessarily the box's end: the pager
+                // groups up to `_DAT_801F2740 = 3` consecutive `0x1F` lines
+                // into one window (`FUN_801D84D0`; decoded by `pack_box`).
+                // With rows left, drop the pen to the next row and keep
+                // typing in the same window.
+                if let Some(bx) = self.current_box.clone()
+                    && self.row_index + 1 < bx.lines.len()
+                {
+                    self.row_index += 1;
+                    self.pc = bx.lines[self.row_index].start;
+                    self.page.push(PanelGlyph {
+                        byte: legaia_font::NEWLINE,
+                        clut: self.current_clut,
+                    });
+                    return self.state;
+                }
+                // Last row done: act on the box's post-page dispatch. A menu
+                // box stops at the prompt terminator and waits on the option
+                // list instead of tearing down: the retail inline-script
+                // handler `FUN_80038050` reads the chosen index here and
+                // jumps via the picker's relative-offset table.
                 if self.picker.is_some() && !self.menu_active {
                     self.menu_active = true;
+                    self.waiting_for_input = true;
+                    self.state = PanelState::PageBreak;
+                } else if self
+                    .current_box
+                    .as_ref()
+                    .is_some_and(|bx| bx.dispatch.continues())
+                {
+                    // `0x24` next-page / `0x48` new-box / `0x2A` resize /
+                    // implicit next lead: more dialogue follows in the same
+                    // conversation. Page-break and wait for the dismiss;
+                    // `advance_page` re-seeds on the next packed box.
+                    self.pending_box_advance = true;
                     self.waiting_for_input = true;
                     self.state = PanelState::PageBreak;
                 } else {
@@ -542,11 +623,30 @@ impl OwnedDialogPanel {
     }
 
     /// Resume from a page break. No-op when the panel isn't paused.
+    ///
+    /// At a box page-break (the last row ended on a continuing post-page
+    /// dispatch), re-seeds the typewriter on the next packed box - the
+    /// retail state-4 "rows preserved" continuation, kept in one panel so
+    /// the window never tears down between pages.
     pub fn advance_page(&mut self) {
-        if self.waiting_for_input {
-            self.page.clear();
-            self.waiting_for_input = false;
-            self.state = PanelState::Typing;
+        if !self.waiting_for_input {
+            return;
+        }
+        self.page.clear();
+        self.waiting_for_input = false;
+        self.state = PanelState::Typing;
+        if std::mem::take(&mut self.pending_box_advance) {
+            match self.current_box.as_ref().and_then(|b| b.next_box_pc()) {
+                Some(next) if self.bytes.get(next) == Some(&0x1F) => {
+                    self.seed_box_at_lead(next);
+                }
+                _ => {
+                    // Continuation byte with no following lead (malformed
+                    // stream): end rather than re-type the same box.
+                    self.done = true;
+                    self.state = PanelState::Done;
+                }
+            }
         }
     }
 
@@ -735,6 +835,95 @@ mod tests {
     fn confirm_menu_without_active_menu_is_none() {
         let mut panel = OwnedDialogPanel::from_inline_dialog(&[0x1F, b'H', b'i', 0x00]).unwrap();
         assert_eq!(panel.confirm_menu(), None);
+    }
+
+    /// Three consecutive `0x1F` rows pack into ONE window: the page buffer
+    /// holds all three rows joined by the `0x7C` newline glyph, and only
+    /// after the last row does the panel end. Retail `_DAT_801F2740 = 3`
+    /// (`FUN_801D84D0`); the port used to close the box at every row
+    /// terminator, splitting a 3-row retail box into three 1-row windows.
+    #[test]
+    fn three_rows_type_into_one_window() {
+        let inline = vec![
+            0x1F, b'o', b'n', b'e', 0x00, // row 1
+            0x1F, b't', b'w', b'o', 0x00, // row 2
+            0x1F, b's', b'i', b'x', 0x00, // row 3
+            0x25, // end
+        ];
+        let mut panel = OwnedDialogPanel::from_inline_dialog(&inline).unwrap();
+        // 9 glyphs + 2 newline pushes + 3 terminators = the panel is done
+        // only after all three rows.
+        let mut ticks = 0;
+        while !panel.is_done() && ticks < 64 {
+            panel.tick();
+            ticks += 1;
+        }
+        assert!(panel.is_done(), "conversation ends after the packed box");
+        assert_eq!(
+            panel.page_bytes(),
+            b"one\x7Ctwo\x7Csix".to_vec(),
+            "all three rows land on ONE page, newline-joined"
+        );
+    }
+
+    /// A `0x24` next-page dispatch between two boxes: the panel page-breaks
+    /// (not `Done`) after box one, and `advance_page` types box two in the
+    /// same panel.
+    #[test]
+    fn next_page_dispatch_pages_within_one_panel() {
+        let inline = vec![
+            0x1F, b'a', 0x00, // box 1 row 1
+            0x1F, b'b', 0x00, // box 1 row 2
+            0x1F, b'c', 0x00, // box 1 row 3 (box full)
+            0x24, // next page
+            0x1F, b'd', 0x00, // box 2 row 1
+            0x25, // end
+        ];
+        let mut panel = OwnedDialogPanel::from_inline_dialog(&inline).unwrap();
+        let mut ticks = 0;
+        while !panel.is_waiting_for_input() && ticks < 64 {
+            panel.tick();
+            ticks += 1;
+        }
+        assert!(!panel.is_done(), "page break, not teardown, at the 0x24");
+        assert_eq!(panel.page_bytes(), b"a\x7Cb\x7Cc".to_vec());
+        panel.advance_page();
+        let mut ticks = 0;
+        while !panel.is_done() && ticks < 64 {
+            panel.tick();
+            ticks += 1;
+        }
+        assert!(panel.is_done());
+        assert_eq!(panel.page_bytes(), b"d".to_vec(), "page two typed fresh");
+    }
+
+    /// A 2-row prompt whose picker follows the SECOND row's terminator: the
+    /// menu must attach (the old per-segment test looked only after row 1,
+    /// so a multi-row prompt never found its picker).
+    #[test]
+    fn picker_after_two_row_prompt_attaches() {
+        // [1F 'A' 00][1F 'B' '?' 00] 27 <j0> <j1> 24 [1F Y e s 00][1F N o 00]
+        let mut inline = vec![0x1F, b'A', 0x00, 0x1F, b'B', b'?', 0x00];
+        inline.push(0x27); // open, N=2
+        inline.extend_from_slice(&0x10i16.to_le_bytes());
+        inline.extend_from_slice(&0x20i16.to_le_bytes());
+        inline.push(0x24);
+        inline.extend_from_slice(&[0x1F, b'Y', b'e', b's', 0x00]);
+        inline.extend_from_slice(&[0x1F, b'N', b'o', 0x00]);
+        inline.resize(48, 0x21);
+
+        let mut panel = OwnedDialogPanel::from_inline_dialog(&inline).unwrap();
+        assert!(
+            panel.picker().is_some(),
+            "picker after the box's LAST row attaches"
+        );
+        let mut ticks = 0;
+        while !panel.menu_active() && ticks < 64 {
+            panel.tick();
+            ticks += 1;
+        }
+        assert!(panel.menu_active(), "menu waits after the 2-row prompt");
+        assert_eq!(panel.page_bytes(), b"A\x7CB?".to_vec());
     }
 
     /// Plain dialogue (no picker) still types and goes `Done`.

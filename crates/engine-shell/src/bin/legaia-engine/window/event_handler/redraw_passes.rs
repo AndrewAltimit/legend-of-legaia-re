@@ -370,7 +370,20 @@ impl PlayWindowApp {
                 col = c;
                 idx = i;
             }
-            if let Some(player) = self.session.host.world.world_map_player_marker() {
+            // The wireframe player marker is a diagnostic stand-in: it only
+            // draws while the player's real mesh could NOT be uploaded (the
+            // world-map draw branch renders the party leader's field figure
+            // whenever the upload succeeded - drawing both would stamp a
+            // yellow post through the character).
+            let player_mesh_drawn = self
+                .session
+                .host
+                .world
+                .player_actor_slot
+                .is_some_and(|pslot| self.drained_spawn_slots.contains(&pslot));
+            if !player_mesh_drawn
+                && let Some(player) = self.session.host.world.world_map_player_marker()
+            {
                 let (p, c, i) =
                     world_map_player_line_geometry(&player, self.scene_aabb.0, self.scene_aabb.1);
                 let base = pos.len() as u32;

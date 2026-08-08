@@ -248,9 +248,9 @@ fn world_map_locomotion_blocked_by_full_wall_grid() {
 }
 
 /// With no walls, the overworld player walks freely. At the default walk-mode
-/// camera azimuth (`0`) the camera sits on `+X` looking `-X`, so "screen up"
-/// (away from the camera) walks the player `-X` - the camera-relative remap,
-/// not a raw `+Z`.
+/// camera azimuth (`0`) the walk-view camera is retail's identity frame, so
+/// "screen up" walks the player `+Z` - the retail compass ring with zero
+/// octant offset.
 #[test]
 fn world_map_locomotion_walks_when_clear() {
     let mut world = World::default();
@@ -261,35 +261,35 @@ fn world_map_locomotion_walks_when_clear() {
     world.actors[0].move_state.world_z = 250;
     world.set_pad(input::PadButton::Up.mask());
     let _ = world.tick();
-    // speed 8 -> four 2-unit steps, all clear: at azimuth 0 the camera sits on
-    // +X looking back, so "screen up" walks -X; x: 200 -> 192, z unchanged.
-    assert_eq!(world.actors[0].move_state.world_x, 192);
-    assert_eq!(world.actors[0].move_state.world_z, 250);
+    // speed 8 -> four 2-unit steps, all clear: at azimuth 0 "screen up" walks
+    // +Z (retail identity); z: 250 -> 258, x unchanged.
+    assert_eq!(world.actors[0].move_state.world_x, 200);
+    assert_eq!(world.actors[0].move_state.world_z, 258);
 }
 
 /// The camera-relative remap rotates the held d-pad through the overworld
-/// camera azimuth. Spot-check the cardinal framings against the
-/// `world_map_camera_mvp` geometry (eye at `center + (d·cosθ, _, d·sinθ)`):
-/// at azimuth 0 the camera is on `+X`, so "screen up" walks `-X`; a 3/4-turn
-/// azimuth puts it on `-Z`, so "screen up" walks `+Z`.
+/// camera azimuth. Spot-check the cardinal framings against the **walk-view**
+/// camera - the retail GTE composition locomotion actually renders under -
+/// whose azimuth-0 frame is retail's identity: Up walks `Z+`, Right walks
+/// `X+` (the retail compass ring with zero octant offset).
 #[test]
 fn world_map_camera_relative_bits_rotates_with_azimuth() {
     use crate::world::world_map_camera_relative_bits;
-    // Expectations are the camera-verified screen axes (screen-up -> world
-    // (-cosθ, -sinθ), screen-right -> world (sinθ, -cosθ)); the engine-shell
+    // Expectations are the walk-camera screen axes (screen-up -> world
+    // (-sinθ, cosθ), screen-right -> world (cosθ, sinθ)); the engine-shell
     // projection test confirms these move the right way on screen.
     // No input -> no bits.
     assert_eq!(world_map_camera_relative_bits(0, 0, 0), 0);
-    // Azimuth 0: camera on +X, so Up (screen up) -> X- (0x8000), Right -> Z- (0x4000).
-    assert_eq!(world_map_camera_relative_bits(0, 0, 1), 0x8000);
-    assert_eq!(world_map_camera_relative_bits(0, 1, 0), 0x4000);
-    // Azimuth 1024 (quarter turn): Up -> Z- (0x4000).
-    assert_eq!(world_map_camera_relative_bits(1024, 0, 1), 0x4000);
-    // Azimuth 2048 (half turn): Up -> X+ (0x2000).
-    assert_eq!(world_map_camera_relative_bits(2048, 0, 1), 0x2000);
-    // Azimuth 3072 (3/4 turn): Up -> Z+ (0x1000), Right -> X- (0x8000).
-    assert_eq!(world_map_camera_relative_bits(3072, 0, 1), 0x1000);
-    assert_eq!(world_map_camera_relative_bits(3072, 1, 0), 0x8000);
+    // Azimuth 0: retail identity - Up -> Z+ (0x1000), Right -> X+ (0x2000).
+    assert_eq!(world_map_camera_relative_bits(0, 0, 1), 0x1000);
+    assert_eq!(world_map_camera_relative_bits(0, 1, 0), 0x2000);
+    // Azimuth 1024 (quarter turn): Up -> X- (0x8000).
+    assert_eq!(world_map_camera_relative_bits(1024, 0, 1), 0x8000);
+    // Azimuth 2048 (half turn): Up -> Z- (0x4000).
+    assert_eq!(world_map_camera_relative_bits(2048, 0, 1), 0x4000);
+    // Azimuth 3072 (3/4 turn): Up -> X+ (0x2000), Right -> Z- (0x4000).
+    assert_eq!(world_map_camera_relative_bits(3072, 0, 1), 0x2000);
+    assert_eq!(world_map_camera_relative_bits(3072, 1, 0), 0x4000);
     // A diagonal framing (1/8 turn) maps a single screen press to two world
     // axes (the player walks diagonally).
     let diag = world_map_camera_relative_bits(512, 0, 1);
@@ -517,9 +517,9 @@ fn world_map_walking_onto_minigame_door_auto_engages() {
     world.actors[0].move_state.world_z = 448;
 
     // Hold the d-pad direction that walks +X at the default azimuth (0): the
-    // camera sits on +X, so "screen down" walks +X toward the door (see the
-    // camera-relative remap).
-    world.set_pad(input::PadButton::Down.mask());
+    // walk frame is retail's identity, so "screen right" walks +X toward the
+    // door (see the camera-relative remap).
+    world.set_pad(input::PadButton::Right.mask());
     let mut armed = false;
     for _ in 0..200 {
         let _ = world.tick();
@@ -634,20 +634,20 @@ fn world_map_walking_sets_player_marker_facing() {
     world.install_field_player(0);
     world.set_world_map_encounter(false, 50, 0, 64);
     world.reset_field_collision_grid(); // all-walkable so the step commits
-    world.actors[0].move_state.world_x = 200; // away from the -X boundary
-    let start_x = world.actors[0].move_state.world_x;
-    // At the default azimuth the camera sits on +X, so "screen up" walks -X
-    // (dx=-1, dz=0) -> atan2(-1, 0) = -TAU/4 -> heading 3072.
+    world.actors[0].move_state.world_z = 200; // away from the -Z boundary
+    let start_z = world.actors[0].move_state.world_z;
+    // At the default azimuth the walk frame is retail's identity, so "screen
+    // up" walks +Z (dx=0, dz=1) -> atan2(0, 1) = 0 -> heading 0.
     world.set_pad(input::PadButton::Up.mask());
     let _ = world.tick();
     let m = world
         .world_map_player_marker()
         .expect("player marker present");
-    assert_eq!(m.facing, 3072, "walking -X faces heading 3072");
+    assert_eq!(m.facing, 0, "walking +Z faces heading 0");
     assert!(
-        world.actors[0].move_state.world_x < start_x,
-        "the player advanced -X (start {start_x} -> {})",
-        world.actors[0].move_state.world_x
+        world.actors[0].move_state.world_z > start_z,
+        "the player advanced +Z (start {start_z} -> {})",
+        world.actors[0].move_state.world_z
     );
 }
 

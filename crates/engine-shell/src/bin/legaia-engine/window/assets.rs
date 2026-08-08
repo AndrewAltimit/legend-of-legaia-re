@@ -793,7 +793,13 @@ impl PlayWindowApp {
         // `enter_field_scene`) and override the placeholder binding.
         self.player_color_draw = None;
         world.set_field_player_anim(None);
-        if world.mode == SceneMode::Field
+        // World-map mode binds the same lead mesh: `enter_world_map_scene`
+        // runs `enter_field_scene` first, so the global TMD pool is seeded
+        // identically, and retail draws the party leader's field figure on
+        // the overworld. Gating this to `Field` alone left the overworld
+        // player invisible (the world-map draw branch had nothing bound to
+        // draw).
+        if matches!(world.mode, SceneMode::Field | SceneMode::WorldMap)
             && let Some(pslot) = world.player_actor_slot
         {
             let lead = world.active_party.first().copied().unwrap_or(0) as usize;
@@ -1232,7 +1238,9 @@ impl PlayWindowApp {
         // while the town ground sits at a LUT-elevated tier - it renders
         // buried under (or floating over) the terrain until it first moves.
         // Snap every bound actor that still has the flat default.
-        if world.follow_terrain_height && world.mode == SceneMode::Field {
+        if world.follow_terrain_height
+            && matches!(world.mode, SceneMode::Field | SceneMode::WorldMap)
+        {
             for i in 0..world.actors.len() {
                 if world.actors[i].tmd_binding.is_none() {
                     continue;

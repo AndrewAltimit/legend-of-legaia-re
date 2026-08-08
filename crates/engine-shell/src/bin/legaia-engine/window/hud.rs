@@ -952,10 +952,21 @@ impl PlayWindowApp {
             let ly2 = self.font.layout_ascii(&ml2);
             out.extend(text_draws_for(&ly2, (8, 80), dim));
         }
+        // Casino coin counter (op-0x49 sub-6): the submode screen's digit
+        // entry, drawn off the world's live counter cells whenever the
+        // screen is open on the coin slot. Not a menu-runtime state - the
+        // field VM owns the park.
+        out.extend(self.coin_counter_window_draws());
         // Shop / inn overlay: rendered at the bottom of the screen when the menu
         // runtime is in any shop, inn, or confirmation state.
         if self.menu_runtime.is_open() {
             let label = self.menu_runtime.current_label();
+            // Casino prize exchange: the session runs outside the MenuState
+            // graph, so it is checked before the shop states. Windows
+            // 43/44/45/46 through the shared engine-ui composition.
+            if let Some(session) = &self.menu_runtime.prize_session {
+                out.extend(self.prize_window_draws(session));
+            }
             if let Some(shop) = &self.menu_runtime.shop_session {
                 let state = MenuState::from_byte(self.menu_runtime.ctx_state());
                 let cursor = self.menu_runtime.cursor() as usize;

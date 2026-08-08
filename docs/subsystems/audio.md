@@ -236,7 +236,9 @@ scene-entry window on picker entries only; the new-game chain keeps the
 authored pause. The same staging seeds story-twin scenery flags (e.g.
 `town0c`'s blown gate). Disc pins: `engine-core/tests/free_roam_staging_disc.rs`.
 
-The engine port reuses this same dispatch for the **Battle↔Field music swap**: `World::set_battle_bgm` configures a battle track id, and the live gameplay loop queues an ordinary `FieldEvent::Bgm{sub_op: 1}` start for it on encounter (`swap_to_battle_bgm`) and resumes the stashed field track on battle end (`restore_field_bgm`). Both transitions run through the host's `AudioBgmDirector` `start_inner` path - no separate battle-audio code path. The battle id must resolve in the current scene's BGM table since the live loop doesn't load a distinct battle audio bundle.
+The engine port reuses this same dispatch for the **Battle↔Field music swap**: `World::set_battle_bgm` configures a battle track id, and the live gameplay loop queues an ordinary `FieldEvent::Bgm{sub_op: 1}` start for it on encounter (`swap_to_battle_bgm`) and resumes the stashed field track on battle end (`restore_field_bgm`). Both transitions run through the host's `AudioBgmDirector` `start_inner` path - no separate battle-audio code path.
+
+The battle id resolves like any op-`0x35` id: scene-local (`< 2000`) through the scene's own BGM table, global-pool (`>= 2000`) through the `music_01` bank arm (`music_bank_entry_bytes` → `start_owned_vab`). The shipped default is the global id `2026` (`music_labels::BATTLE_THEME_1_BGM_ID`, retail's `battle_id == 0` bundle `0x36F` = extraction 877 = sound-test #26), installed by `LiveLoopOpts::playable()` so both hosts swap without per-scene configuration.
 
 Retail BGM changes are **hard cuts** (or short `SsSeqSetVol` ramps), so
 `start_inner` swaps tracks the faithful way: when a track is already playing it
@@ -1297,19 +1299,19 @@ Entry points:
 The engine drives BGM through a private `TraceBgmDirector` that routes field-VM op `0x35` events into a headless `Sequencer` in lock-step with `SceneHost::route_bgm_events`. `NoFrameMatched` is treated as tolerable drift (scene prescript may not emit op `0x35` within the trace window, or may target a different track than retail captured); `VoiceStartAddrMismatch` and `MasterVolumeMismatch` are hard failures.
 
 The **Field↔Battle BGM-swap** is *not* yet observable through this
-voice-activity oracle, and not for an oracle reason: the engine's opening
-battle is a `SceneMode::Battle` overlay on the loaded field scene
-(`enter_battle_from_formation` does not load a distinct battle audio bundle),
-and a field scene's per-scene BGM table carries no battle track - `town01`
-resolves *zero* battle ids through `SceneAssets::bgm_seq_entry`, so the
-`swap_to_battle_bgm` start event resolves to no SEQ bytes and no battle voices
-key on. The swap *contract* (track stash → battle start → field restore) is
-modeled and regression-tested at the `World` level
-(`battle_bgm_swaps_on_encounter_and_restores_on_finish`); the *audible* swap
-stays blocked on the engine resolving a battle track from the (currently
-unloaded) battle bundle. So the v0.1 playthrough oracle pins the Field→Battle
-transition on the mode-trace axis (`v0_1_battle_leg_mode_trace_matches_expected`),
-not the audio axis.
+voice-activity oracle. The audible path itself is no longer blocked: the
+default battle track is the global-pool id `2026`
+(`music_labels::BATTLE_THEME_1_BGM_ID`), which resolves through the
+`music_01` bank arm of `route_bgm_events` (`music_bank_entry_bytes` →
+`start_owned_vab`) regardless of the field scene's own BGM table - the same
+path the disc-gated `global_bgm_owned_vab_disc` test pins. What remains
+un-oracled is the trace side: the scenario captures predate the default swap,
+so the v0.1 playthrough oracle pins the Field→Battle transition on the
+mode-trace axis (`v0_1_battle_leg_mode_trace_matches_expected`), not the
+audio axis. The swap *contract* (track stash → battle start → field restore)
+is regression-tested at the `World` level
+(`battle_bgm_swaps_on_encounter_and_restores_on_finish`,
+`playable_default_swaps_to_the_standard_battle_theme`).
 
 ## What's left
 

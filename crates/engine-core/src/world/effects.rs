@@ -446,9 +446,10 @@ impl World {
     }
 
     /// The player's overworld position for the renderer, or `None` when there
-    /// is no active player actor. The world-map draw path shows the player at
-    /// this position (the player's own mesh isn't drawn in
-    /// [`SceneMode::WorldMap`]), oriented by [`WorldMapPlayerMarker::facing`].
+    /// is no active player actor. The world-map draw path renders the party
+    /// leader's field mesh at this position, oriented by
+    /// [`WorldMapPlayerMarker::facing`]; the marker doubles as the diagnostic
+    /// wireframe stand-in when the mesh upload failed.
     pub fn world_map_player_marker(&self) -> Option<WorldMapPlayerMarker> {
         let slot = self.player_actor_slot? as usize;
         let a = self.actors.get(slot)?;

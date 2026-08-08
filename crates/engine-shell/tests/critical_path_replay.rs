@@ -559,15 +559,16 @@ fn pad_for_world_step(azimuth: u16, dwx: i16, dwz: i16) -> u16 {
 /// [`World::step_field_locomotion`] routes the pad through
 /// `decode_field_direction` (world axes, quadrant rotation), while
 /// `World::step_world_map_locomotion` routes it through
-/// `world_map_camera_relative_bits` - screen-up -> world `(-cosθ, -sinθ)`,
-/// screen-right -> world `(sinθ, -cosθ)`. Inverting the field remap on the
-/// overworld sends the player off at an angle, and map01's collision grid
-/// leaves the sea open, so there is nothing to stop them: the leg walks off
-/// the map instead of stalling against a wall.
+/// `world_map_camera_relative_bits` - screen-up -> world `(-sinθ, cosθ)`,
+/// screen-right -> world `(cosθ, sinθ)` (the retail identity at azimuth 0).
+/// Inverting the field remap on the overworld sends the player off at an
+/// angle, and map01's collision grid leaves the sea open, so there is
+/// nothing to stop them: the leg walks off the map instead of stalling
+/// against a wall.
 ///
-/// That 2x2 is a reflection, so it is its own inverse - the screen delta for
-/// a desired world step is the same matrix applied to the step. The `T` band
-/// matches the forward map's 8-direction quantisation.
+/// That 2x2 is a rotation, so its inverse is the transpose - the screen
+/// delta for a desired world step applies the reverse rotation. The `T`
+/// band matches the forward map's 8-direction quantisation.
 fn world_map_pad_for_world_step(azimuth: i32, dwx: i16, dwz: i16) -> u16 {
     let (dx, dz) = (f32::from(dwx), f32::from(dwz));
     let len = (dx * dx + dz * dz).sqrt();
@@ -577,8 +578,8 @@ fn world_map_pad_for_world_step(azimuth: i32, dwx: i16, dwz: i16) -> u16 {
     let theta = (azimuth as f32) / 4096.0 * std::f32::consts::TAU;
     let (sin, cos) = theta.sin_cos();
     let (dx, dz) = (dx / len, dz / len);
-    let sx = dx * sin - dz * cos;
-    let sy = -dx * cos - dz * sin;
+    let sx = dx * cos + dz * sin;
+    let sy = -dx * sin + dz * cos;
     /// sin(22.5°) - the same cardinal band `world_map_camera_relative_bits` uses.
     const T: f32 = 0.382_683_43;
     let mut pad = 0u16;

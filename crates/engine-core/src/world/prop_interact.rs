@@ -190,7 +190,7 @@ impl World {
                         None => id.done = true,
                     }
                     id.panel = None;
-                } else if panel.is_waiting_for_input() || panel.is_done() {
+                } else if panel.is_done() {
                     // Dismissed: resume the record just past the segment -
                     // which for the cupboard is the close pass (`2B 07` set
                     // reverse, ...), so the doors swing shut as the window
@@ -198,6 +198,13 @@ impl World {
                     // returns to SM state 0 and the script continues.
                     id.pc = panel.pc;
                     id.panel = None;
+                } else if panel.is_waiting_for_input() {
+                    // Multi-page box: turn the page in the same window.
+                    panel.advance_page();
+                    if panel.is_done() {
+                        id.pc = panel.pc;
+                        id.panel = None;
+                    }
                 }
             }
             if id.done {

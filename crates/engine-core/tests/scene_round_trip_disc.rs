@@ -212,9 +212,10 @@ fn overworld_walks_back_into_town() {
     for _ in 0..2 {
         host.tick().expect("tick");
     }
-    // Overworld pad is CAMERA-relative (azimuth 0: Right = world Z-), unlike
-    // the field's world-axis pad. This is the axis that walks onto the portal.
-    let entered = walk_until_scene(&mut host, PadButton::Right.mask(), 600);
+    // Overworld pad is CAMERA-relative against the retail walk camera, whose
+    // azimuth-0 frame is the identity (Up = world Z+, so Down = Z-). The
+    // portal sits one tile Z- of the arrival seat.
+    let entered = walk_until_scene(&mut host, PadButton::Down.mask(), 600);
     assert_eq!(
         entered.as_deref(),
         Some("town0c"),

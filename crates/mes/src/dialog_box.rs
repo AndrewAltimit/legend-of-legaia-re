@@ -17,10 +17,19 @@
 //! |---|---|---|
 //! | `0x24` | advance to the next page, same conversation | [`Dispatch::NextPage`] |
 //! | `0x48` | open a fresh box | [`Dispatch::NewBox`] |
-//! | `0x2A` | resize the box | [`Dispatch::Resize`] |
 //! | `0x25` | end the conversation | [`Dispatch::End`] |
 //! | `0x4C 0xFF` | terminate / close | [`Dispatch::Terminate`] |
 //! | `0x27`/`0x28`/`0x29` | open a 2/3/4-option menu | [`Dispatch::Picker`] |
+//! | `0x2A` | open a 2-option menu, box geometry animated first | [`Dispatch::Picker`] |
+//!
+//! `0x2A` was once classified here as a box **resize** that continues the
+//! conversation - a mis-reading the koin1 Prize Counter falsified: its
+//! 3-row prompt ends `2A <j0:i16> <j1:i16>` followed by the `Yes`/`No`
+//! labels, i.e. exactly the [`crate::picker`] wire format (which has always
+//! decoded `0x2A` as the 2-option opener whose pager entry `0x11 -> 0x12`
+//! animates the box geometry before the menu - every inn's Yes/No offer is
+//! a `0x2A` menu). Classifying it as a continue made a runner page past the
+//! jump table and end the conversation instead of arming the menu.
 //!
 //! This is the same dispatch table the picker continuation byte uses
 //! (`FUN_801D84D0`); the box-packing side just reaches it after up to three
@@ -84,8 +93,6 @@ pub enum Dispatch {
     NextPage,
     /// `0x48` - open a fresh box (pager state `9` -> `0xA`, the open animation).
     NewBox,
-    /// `0x2A` - box-geometry resize, then continue.
-    Resize,
     /// `0x25` - box teardown (pager state `0` -> `1`, row buffer cleared).
     /// Named `End` because it ends a packed box run; whether the *conversation*
     /// ends is a caller-side decision, not something this byte carries.
@@ -94,7 +101,10 @@ pub enum Dispatch {
     /// successor handler as [`Dispatch::End`] and is indistinguishable from it
     /// in the pager; kept separate only because the on-disc encoding differs.
     Terminate,
-    /// `0x27`/`0x28`/`0x29` - open a 2/3/4-option menu (the count is carried).
+    /// `0x27`/`0x28`/`0x29` - open a 2/3/4-option menu (the count is
+    /// carried). `0x2A` is the 2-option sibling whose pager entry animates
+    /// the box geometry first (states `0x11` -> `0x12`; see
+    /// [`crate::picker`]).
     Picker(usize),
     /// The box filled to [`LINES_PER_BOX`] and the next byte is another `0x1F`
     /// lead with no explicit control byte between - an implicit new page.
@@ -111,7 +121,7 @@ impl Dispatch {
     pub fn continues(self) -> bool {
         matches!(
             self,
-            Dispatch::NextPage | Dispatch::NewBox | Dispatch::Resize | Dispatch::ImplicitNextPage
+            Dispatch::NextPage | Dispatch::NewBox | Dispatch::ImplicitNextPage
         )
     }
 }
@@ -135,12 +145,12 @@ pub struct DialogBox {
 impl DialogBox {
     /// Where the next box begins, given this box's dispatch - or `None` when the
     /// conversation ends here (`End`/`Terminate`/`Picker`/`EndOfBuffer`/unknown).
-    /// `NextPage`/`Resize` consume their 1-byte control; `Terminate` is 2 bytes
+    /// `NextPage` consumes its 1-byte control; `Terminate` is 2 bytes
     /// but ends the branch; `ImplicitNextPage`/`NewBox`'s next lead is already at
     /// `dispatch_at`.
     pub fn next_box_pc(&self) -> Option<usize> {
         match self.dispatch {
-            Dispatch::NextPage | Dispatch::Resize | Dispatch::NewBox => Some(self.dispatch_at + 1),
+            Dispatch::NextPage | Dispatch::NewBox => Some(self.dispatch_at + 1),
             Dispatch::ImplicitNextPage => Some(self.dispatch_at),
             Dispatch::End
             | Dispatch::Terminate
@@ -179,9 +189,8 @@ fn classify_dispatch(buf: &[u8], idx: usize) -> Dispatch {
         0x1F => Dispatch::ImplicitNextPage, // another lead with no control byte
         0x24 => Dispatch::NextPage,
         0x48 => Dispatch::NewBox,
-        0x2A => Dispatch::Resize,
         0x25 => Dispatch::End,
-        0x27 => Dispatch::Picker(2),
+        0x27 | 0x2A => Dispatch::Picker(2),
         0x28 => Dispatch::Picker(3),
         0x29 => Dispatch::Picker(4),
         0x4C if buf.get(idx + 1).copied() == Some(0xFF) => Dispatch::Terminate,
@@ -200,16 +209,14 @@ fn classify_dispatch(buf: &[u8], idx: usize) -> Dispatch {
 /// per-segment VM stepping; this is the box-packing half it doesn't cover.
 // PORT: FUN_80039B7C
 //
-// The *engine* runtime reaches the same bytes by the other half of this
-// function: `World::step_inline_dialogue` ports the per-segment VM stepping of
-// `FUN_80039B7C` and drives the window one `0x1F` segment at a time off
-// `decode_inline_segments`' ungrouped pool, so it never needs the box
-// *grouping* computed ahead of time. Both halves are ports of the same retail
-// SM, and only the stepping half is on the frame path. A page-at-a-time
-// renderer would change that; until one exists, the grouping's hosts are the
-// disc-gated `field_dialog_boxpack_disc` oracle and the `mes boxes`
-// subcommand, which is the view a MAN dialog editor needs - which lines share
-// a window, and what the pager does when one ends.
+// The *engine* runtime consumes this grouping too: `OwnedDialogPanel` in
+// `engine-core::dialog` seeds each window off `pack_box`, types the box's
+// rows into one page (rows joined by the `0x7C` newline glyph), and pages
+// through continuing dispatches - so a 3-row retail box renders as one
+// 3-row window, not three 1-row windows. The other hosts of the grouping
+// are the disc-gated `field_dialog_boxpack_disc` oracle and the `mes boxes`
+// subcommand, which is the view a MAN dialog editor needs - which lines
+// share a window, and what the pager does when one ends.
 pub fn pack_box(buf: &[u8], pc: usize) -> Option<DialogBox> {
     if buf.get(pc) != Some(&0x1F) {
         return None;
