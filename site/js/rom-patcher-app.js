@@ -1384,12 +1384,18 @@ const PRESET_BASE = {
   startingLevel: 0,
 };
 
-// Both gameplay presets hand the player a generous, fast-travel-ready start:
-// every convenience item + accessory, all warps unlocked, and 5 random
-// consumables on top. The starting LEVEL is not part of the bundle - each
-// preset names its own, because the two want different curves (see below).
+// Both gameplay presets hand the player a generous start: every convenience
+// item + accessory, and 5 random consumables on top. The starting LEVEL is not
+// part of the bundle - each preset names its own, because the two want
+// different curves (see below).
+//
+// `allWarps` is deliberately NOT in the bundle. It presets the visited-towns
+// bitmask, so every Door-of-Wind destination is reachable before the player has
+// been there - that skips the route the shuffled chests / encounters / doors are
+// meant to be discovered along, and it is a route spoiler in itself. It stays a
+// one-click opt-in on the toggle grid; no preset turns it on.
 const STARTING_BUNDLE = {
-  startingItems: 5, allWarps: true,
+  startingItems: 5,
   doorOfWind: true, incense: true,
   speedChain: true, chickenHeart: true, goodLuckBell: true,
 };
