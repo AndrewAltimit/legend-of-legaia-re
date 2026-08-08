@@ -974,7 +974,11 @@ injection:
   makes the fight un-fleeable through `ctx+0x287`, so the outcome is
   strictly win or wipe);
 - the 3-option `0x28` who-enrolls picker grows to the 4-option `0x29` form
-  (the picker arity ceiling), with the new arm appended at the record's end;
+  (the picker arity ceiling), with the new arm appended at the record's end,
+  and the quick-path skip before it is NOPed - retail permanently hides the
+  who-menu once Noa or Gala has refused enrollment (flags `0x559`/`0x558`)
+  and auto-registers Vahn, which would strand the new option on most saves;
+  with the patch the enrollment menu always shows;
 - the solo arms strip the party with the same `0x3D` PARTY_REMOVE idiom the
   retail ravine duels use, and the launch raises retail's **scripted-loss
   latch** (story flag `0`, the Tetsu-spar `50 00` idiom) before the

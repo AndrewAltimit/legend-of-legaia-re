@@ -19,7 +19,12 @@
 //!   boss-intro flag retail's own scripted rows carry).
 //! - **Menu.** The 3-option `0x28` "who will enter" picker grows to a 4-option
 //!   `0x29` one (the picker arity ceiling - see `crates/mes/src/picker.rs`).
-//!   The new option's branch is appended at the record's end.
+//!   The new option's branch is appended at the record's end. The two
+//!   quick-path skip tests before the picker (flags `0x559`/`0x558`: once
+//!   Noa or Gala has refused enrollment, retail skips the who-menu forever
+//!   and auto-registers Vahn) are NOPed so the menu always shows - without
+//!   that, any save that ever picked Noa or Gala could never reach the
+//!   challenge option.
 //! - **Gate.** The branch opens with a `0x70`-family SYSTEM-flag test of
 //!   [`KORU_DEFEATED_FLAG`] (`0x378`) - the exact flag the game latches when
 //!   Koru dies and the world-map ravine entrance flips from `nilboa` to
@@ -240,6 +245,12 @@ pub struct DelilasSites {
     /// refusal jumps here so it costs zero new text). `0` when the patch is
     /// already applied (not needed, and no longer uniquely locatable).
     decline_tail: usize,
+    /// `(pc, size)` of the two quick-path skip tests before the who-picker
+    /// (retail flag `0x559`/`0x558` TESTs: once Noa or Gala has refused
+    /// enrollment, the script skips the who-menu forever and auto-registers
+    /// Vahn). The patch NOPs them out so the menu - and the challenge
+    /// option - always shows. Empty when already applied.
+    skip_tests: Vec<(usize, usize)>,
     /// Every control-flow field in the clerk record (opcode deltas + every
     /// picker's jump entries), record-relative.
     refs: Vec<RefSite>,
@@ -396,9 +407,11 @@ fn walk_record(rec: &[u8], pc0: usize) -> Result<Walk, String> {
 }
 
 /// Normalized opcode-stream signature of a walked record for old-vs-new
-/// verification. Picker opens normalize to one token (the patch legitimately
-/// widens `0x28` to `0x29`); text segments count as one token each.
-fn walk_signature(rec: &[u8], pc0: usize) -> Result<Vec<u8>, String> {
+/// verification, as `(pc, token)` pairs. Picker opens normalize to one token
+/// (the patch legitimately widens `0x28` to `0x29`); text segments count as
+/// one token each; Nop opcodes are skipped (the patch legitimately NOPs the
+/// who-menu skip tests, and Nops carry no behaviour to preserve).
+fn walk_signature(rec: &[u8], pc0: usize) -> Result<Vec<(usize, u8)>, String> {
     const TEXT: u8 = 0xFD;
     const PICKER: u8 = 0xFE;
     let mut sig = Vec::new();
@@ -406,7 +419,7 @@ fn walk_signature(rec: &[u8], pc0: usize) -> Result<Vec<u8>, String> {
     while pos < rec.len() {
         let b = rec[pos];
         if b == 0x1F {
-            sig.push(TEXT);
+            sig.push((pos, TEXT));
             pos = skip_segment(rec, pos)?;
             continue;
         }
@@ -416,13 +429,15 @@ fn walk_signature(rec: &[u8], pc0: usize) -> Result<Vec<u8>, String> {
             && let Some(p) = parse_picker_at(rec, pos)
             && (0..p.n).all(|i| p.jump_target(i).is_some_and(|t| t < rec.len()))
         {
-            sig.push(PICKER);
+            sig.push((pos, PICKER));
             pos = p.end;
             continue;
         }
         match field_disasm::decode(rec, pos) {
             Ok(insn) if insn.size > 0 => {
-                sig.push(insn.opcode);
+                if !matches!(insn.opcode, 0x21 | 0x24 | 0x25 | 0x48) {
+                    sig.push((pos, insn.opcode));
+                }
                 pos += insn.size;
             }
             _ => break,
@@ -543,6 +558,37 @@ impl DelilasSites {
             return Err("common tail outside the walked region".into());
         }
 
+        // The quick-path skip tests: two SYSTEM-flag TESTs of `0x559`/`0x558`
+        // before the who-picker, both jumping to the same auto-register-Vahn
+        // block. Retail latches those flags the first time Noa / Gala refuse
+        // enrollment, after which the who-menu never shows again - which
+        // would strand the challenge option. They are NOPed by the build.
+        let skip_tests: Vec<(usize, usize)> = if already_applied {
+            Vec::new()
+        } else {
+            let mut sites: Vec<(usize, usize, usize)> = Vec::new();
+            for &(pc, op, size) in &walk.insns {
+                if pc < who.open
+                    && (op & 0xF0) == 0x70
+                    && size == 4
+                    && matches!(rec[pc + 1], 0x58 | 0x59)
+                {
+                    let d = u16::from_le_bytes([rec[pc + 2], rec[pc + 3]]) as usize;
+                    sites.push((pc, size, (pc + 2 + d) & 0xFFFF));
+                }
+            }
+            let [(pc_a, sz_a, t_a), (pc_b, sz_b, t_b)] = sites[..] else {
+                return Err(format!(
+                    "expected two who-menu skip tests, found {}",
+                    sites.len()
+                ));
+            };
+            if t_a != t_b {
+                return Err("who-menu skip tests disagree on their target".into());
+            }
+            vec![(pc_a, sz_a), (pc_b, sz_b)]
+        };
+
         // Decline tail: the last option of the difficulty picker (the only
         // 4-option picker on an unpatched disc) - the record's shared
         // "On second thought, forget it." exit.
@@ -583,6 +629,7 @@ impl DelilasSites {
             who_entries: who.entries.clone(),
             common_tail,
             decline_tail,
+            skip_tests,
             refs: walk.refs,
             entry_rec_start,
             entry_rec_pc0,
@@ -599,7 +646,12 @@ impl DelilasSites {
         let man = &self.decoded;
         let rec_len = self.rec_end - self.rec_start;
         let rec = &man[self.rec_start..self.rec_end];
-        let old_sig = walk_signature(rec, self.rec_pc0)?;
+        let skip_pcs: Vec<usize> = self.skip_tests.iter().map(|&(pc, _)| pc).collect();
+        let expected_sig: Vec<u8> = walk_signature(rec, self.rec_pc0)?
+            .into_iter()
+            .filter(|(pc, _)| !skip_pcs.contains(pc))
+            .map(|(_, t)| t)
+            .collect();
 
         // --- Record-internal insertion plan (record-relative offsets). ---
         let entry_ins_at = self.who_open + 1 + 3 * 2; // after the 3 entries
@@ -658,8 +710,19 @@ impl DelilasSites {
         }
         out[open_abs] = (out[open_abs] & 0x80) | 0x29;
 
+        // NOP the who-menu skip tests so the enrollment menu (and with it the
+        // challenge option) always shows; their delta fields die with them.
+        for &(pc, size) in &self.skip_tests {
+            let abs = self.rec_start + pc;
+            out[abs..abs + size].fill(0x21);
+        }
+        let dead_fields: Vec<usize> = self.skip_tests.iter().map(|&(pc, _)| pc + 2).collect();
+
         // Every collected control-flow field: rewrite with post-shift values.
         for r in &self.refs {
+            if dead_fields.contains(&r.field) {
+                continue;
+            }
             let f_new = r.field + shift(r.field);
             let t_new = r.target + shift(r.target);
             let value: u16 = match r.kind {
@@ -730,8 +793,11 @@ impl DelilasSites {
         let n_len = rec_len + pre_branch_shift + branch.len();
         let n_rec = &new_man[n_start..n_start + n_len];
         // The rebuilt clerk record must decode as the original stream.
-        let new_sig = walk_signature(n_rec, self.rec_pc0)?;
-        if new_sig[..old_sig.len().min(new_sig.len())] != old_sig[..] {
+        let new_sig: Vec<u8> = walk_signature(n_rec, self.rec_pc0)?
+            .into_iter()
+            .map(|(_, t)| t)
+            .collect();
+        if new_sig[..expected_sig.len().min(new_sig.len())] != expected_sig[..] {
             return Err("rebuilt record diverges from the original stream".into());
         }
         // The who-picker must re-parse as a 4-option picker: options 0..2

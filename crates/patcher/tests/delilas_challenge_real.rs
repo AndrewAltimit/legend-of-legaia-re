@@ -165,6 +165,17 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
             ] {
                 assert!(branch.windows(4).any(|w| w == strip));
             }
+            // The retail quick-path skip tests (flags 0x559/0x558) before the
+            // who-picker are NOPed - the enrollment menu always shows. The
+            // arms' own copies of those tests (inside the refusal scenes,
+            // after the picker) survive.
+            let before = &rec[..open];
+            for pat in [[0x75, 0x59], [0x75, 0x58]] {
+                assert!(
+                    !before.windows(2).any(|w| w == pat),
+                    "who-menu skip test survived before the picker"
+                );
+            }
         }
     }
     assert!(found_picker, "patched MAN must carry the 4-option picker");
