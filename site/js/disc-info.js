@@ -158,6 +158,116 @@
   }
 
   // ---------------------------------------------------------------------
+  // Streaming SHA-1 / SHA-256 (FIPS 180-4). Self-contained on purpose:
+  // crypto.subtle exists only in secure contexts, and this site is also
+  // browsed over plain http:// on LAN hosts, where it is undefined. The
+  // incremental interface also means a 700 MB image is hashed in slices
+  // with live progress instead of one giant ArrayBuffer.
+  // ---------------------------------------------------------------------
+  var SHA256_K = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  ];
+
+  function makeSha(variant) {
+    var is256 = variant === 'sha256';
+    var h = is256
+      ? [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]
+      : [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0];
+    var buf = new Uint8Array(64);
+    var bufLen = 0;
+    var bytesLo = 0, bytesHi = 0; // total length, split to dodge 2^32 overflow
+    var w = new Int32Array(is256 ? 64 : 80);
+
+    function rotl(x, n) { return (x << n) | (x >>> (32 - n)); }
+    function rotr(x, n) { return (x >>> n) | (x << (32 - n)); }
+
+    function block(b, off) {
+      var i, t;
+      for (i = 0; i < 16; i++) {
+        w[i] = (b[off] << 24) | (b[off + 1] << 16) | (b[off + 2] << 8) | b[off + 3];
+        off += 4;
+      }
+      if (is256) {
+        for (i = 16; i < 64; i++) {
+          var s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+          var s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+          w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+        }
+        var a = h[0], bb = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g = h[6], hh = h[7];
+        for (i = 0; i < 64; i++) {
+          var S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+          var ch = (e & f) ^ (~e & g);
+          var t1 = (hh + S1 + ch + SHA256_K[i] + w[i]) | 0;
+          var S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+          var maj = (a & bb) ^ (a & c) ^ (bb & c);
+          var t2 = (S0 + maj) | 0;
+          hh = g; g = f; f = e; e = (d + t1) | 0; d = c; c = bb; bb = a; a = (t1 + t2) | 0;
+        }
+        h[0] = (h[0] + a) | 0; h[1] = (h[1] + bb) | 0; h[2] = (h[2] + c) | 0; h[3] = (h[3] + d) | 0;
+        h[4] = (h[4] + e) | 0; h[5] = (h[5] + f) | 0; h[6] = (h[6] + g) | 0; h[7] = (h[7] + hh) | 0;
+      } else {
+        for (i = 16; i < 80; i++) w[i] = rotl(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
+        var a1 = h[0], b1 = h[1], c1 = h[2], d1 = h[3], e1 = h[4];
+        for (i = 0; i < 80; i++) {
+          if (i < 20) t = ((b1 & c1) | (~b1 & d1)) + 0x5a827999;
+          else if (i < 40) t = (b1 ^ c1 ^ d1) + 0x6ed9eba1;
+          else if (i < 60) t = ((b1 & c1) | (b1 & d1) | (c1 & d1)) + 0x8f1bbcdc;
+          else t = (b1 ^ c1 ^ d1) + 0xca62c1d6;
+          t = (rotl(a1, 5) + t + e1 + w[i]) | 0;
+          e1 = d1; d1 = c1; c1 = rotl(b1, 30); b1 = a1; a1 = t;
+        }
+        h[0] = (h[0] + a1) | 0; h[1] = (h[1] + b1) | 0; h[2] = (h[2] + c1) | 0;
+        h[3] = (h[3] + d1) | 0; h[4] = (h[4] + e1) | 0;
+      }
+    }
+
+    return {
+      update: function (bytes) {
+        bytesLo += bytes.length;
+        if (bytesLo >= 0x100000000) { bytesHi += Math.floor(bytesLo / 0x100000000); bytesLo %= 0x100000000; }
+        var off = 0;
+        if (bufLen > 0) {
+          var take = Math.min(64 - bufLen, bytes.length);
+          buf.set(bytes.subarray(0, take), bufLen);
+          bufLen += take; off = take;
+          if (bufLen < 64) return;
+          block(buf, 0); bufLen = 0;
+        }
+        while (off + 64 <= bytes.length) { block(bytes, off); off += 64; }
+        if (off < bytes.length) {
+          buf.set(bytes.subarray(off), 0);
+          bufLen = bytes.length - off;
+        }
+      },
+      hex: function () {
+        // Padding: 0x80, zeros to 56 mod 64, then the 64-bit bit length BE.
+        var bitsLo = (bytesLo << 3) >>> 0;
+        var bitsHi = (bytesHi * 8 + Math.floor(bytesLo / 0x20000000)) >>> 0;
+        var pad = new Uint8Array((bufLen < 56 ? 56 : 120) - bufLen + 8);
+        pad[0] = 0x80;
+        var p = pad.length - 8;
+        pad[p] = bitsHi >>> 24; pad[p + 1] = (bitsHi >>> 16) & 0xff;
+        pad[p + 2] = (bitsHi >>> 8) & 0xff; pad[p + 3] = bitsHi & 0xff;
+        pad[p + 4] = bitsLo >>> 24; pad[p + 5] = (bitsLo >>> 16) & 0xff;
+        pad[p + 6] = (bitsLo >>> 8) & 0xff; pad[p + 7] = bitsLo & 0xff;
+        this.update(pad);
+        var out = '';
+        for (var i = 0; i < h.length; i++) {
+          out += ('00000000' + (h[i] >>> 0).toString(16)).slice(-8);
+        }
+        return out;
+      },
+    };
+  }
+
+  // ---------------------------------------------------------------------
   // Identification core. `reader` = { size, name, read(offset, len) ->
   // Promise<Uint8Array> } - the browser wraps a Blob, tests wrap a file.
   // ---------------------------------------------------------------------
@@ -389,6 +499,7 @@
       identify: identify,
       serialFromExeName: serialFromExeName,
       KNOWN_BUILDS: KNOWN_BUILDS,
+      makeSha: makeSha,
     };
     return;
   }
@@ -508,23 +619,41 @@
     btn.title = 'Hashes the whole image locally; redump.org keys dumps by SHA-1';
     btn.addEventListener('click', function () {
       btn.disabled = true;
-      btn.textContent = 'Hashing ' + fmtMB(source.size) + ' ...';
-      Promise.resolve(source.arrayBuffer()).then(function (ab) {
-        return Promise.all([
-          crypto.subtle.digest('SHA-1', ab),
-          crypto.subtle.digest('SHA-256', ab),
-        ]);
-      }).then(function (digs) {
-        dd.textContent = '';
-        ['SHA-1', 'SHA-256'].forEach(function (label, i) {
-          var hex = Array.prototype.map.call(new Uint8Array(digs[i]), function (b) {
-            return (b < 16 ? '0' : '') + b.toString(16);
-          }).join('');
-          var line = el('div', null, label + ' ' + hex);
-          line.style.userSelect = 'all';
-          dd.appendChild(line);
+      // Stream the image in slices through our own SHA cores (no
+      // crypto.subtle - see makeSha) so memory stays flat and the button
+      // can show progress. Each slice yields to the event loop.
+      var blob = source instanceof Blob ? source : source.blob || null;
+      var CHUNK = 8 * 1024 * 1024;
+      var s1 = makeSha('sha1');
+      var s256 = makeSha('sha256');
+      var off = 0;
+
+      function readSlice() {
+        if (blob) return blob.slice(off, off + CHUNK).arrayBuffer();
+        // No Blob handle: single whole-file read, hashed in one pass.
+        return Promise.resolve(source.arrayBuffer());
+      }
+      function step() {
+        if (off >= source.size) {
+          dd.textContent = '';
+          [['SHA-1', s1.hex()], ['SHA-256', s256.hex()]].forEach(function (pair) {
+            var line = el('div', null, pair[0] + ' ' + pair[1]);
+            line.style.userSelect = 'all';
+            dd.appendChild(line);
+          });
+          return;
+        }
+        return readSlice().then(function (ab) {
+          var bytes = new Uint8Array(ab);
+          s1.update(bytes);
+          s256.update(bytes);
+          off += blob ? CHUNK : bytes.length;
+          var pct = Math.min(100, Math.round((off / source.size) * 100));
+          btn.textContent = 'Hashing ' + fmtMB(source.size) + ' ... ' + pct + '%';
+          return step();
         });
-      }).catch(function (e) {
+      }
+      Promise.resolve().then(step).catch(function (e) {
         btn.disabled = false;
         btn.textContent = 'Compute SHA-1 + SHA-256 (failed - retry)';
         console.warn('DiscInfo: hashing failed -', e);
