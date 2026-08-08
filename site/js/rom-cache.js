@@ -250,6 +250,18 @@
       else start();
     }
 
+    /* Optional identity panel (js/disc-info.js). Fires on BOTH mouths -
+     * unlike deliver() it is not gated on autoLoad, because reading the few
+     * sectors the panel needs is cheap even when the page itself waits for a
+     * button press. DiscInfo dedupes by (name, size) internally. */
+    function notifyInfo(src) {
+      if (window.DiscInfo) {
+        try { window.DiscInfo.onDisc(src, input); } catch (e) {
+          console.warn('RomCache: disc-info hook threw -', e);
+        }
+      }
+    }
+
     input.addEventListener('change', function () {
       var f = input.files && input.files[0];
       if (!f) return;
@@ -258,6 +270,7 @@
       }).catch(function (e) {
         console.warn('RomCache: could not cache disc -', e);
       });
+      notifyInfo(f);
       deliver(f);
     });
 
@@ -265,6 +278,7 @@
     get().then(function (rec) {
       if (!rec || !rec.blob) return;
       renderChip(chip, rec, autoLoad);
+      notifyInfo(sourceFromRecord(rec));
       if (autoLoad) deliver(sourceFromRecord(rec));
     }).catch(function (e) {
       console.warn('RomCache: cache read failed -', e);

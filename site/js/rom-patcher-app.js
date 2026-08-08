@@ -1446,6 +1446,10 @@ const PRESETS = {
 
 function init() {
   const fileInput = $('rom-file');
+  // Disc-identity panel (js/disc-info.js, a classic script loaded before this
+  // module): identifies the picked image (serial, region, build, PROT layout)
+  // from a few sliced sectors, without reading the whole file.
+  if (window.DiscInfo) window.DiscInfo.attachInput(fileInput);
   const seedInput = $('rom-seed');
   const startingItemsSel = $('rom-starting-items');
   const startingLevelSel = $('rom-starting-level');

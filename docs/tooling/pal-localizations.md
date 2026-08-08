@@ -23,6 +23,20 @@ byte values only.
 All are `PS-X EXE`; the PAL exes are 2-4 KB larger (extra code), so `pc0` and
 the data segment shift up relative to USA.
 
+### Mastering-metadata quirks
+
+Two oddities in the PAL masters' identification metadata (the site's
+disc-identity panel, `site/js/disc-info.js`, reads both fields):
+
+- **The PAL exes carry the NORTH AMERICA region mark.** The `PS-X EXE`
+  header string at `+0x4C` reads `Sony Computer Entertainment Inc. for
+  North America area` on all three PAL discs. The system-area license text
+  (sectors 0..15) is the authority - it correctly says
+  `Sony Computer Entertainment Euro pe`, and it is what the console
+  validates. Region identification must not trust the exe header string.
+- **France's PVD creation date has a zeroed year** (`0000-04-04`); USA's is
+  well-formed. Parsers should treat a `0000` year as absent, not as data.
+
 ## Structural parity with USA
 
 The PAL discs are **1:1 with USA at the container level**:
