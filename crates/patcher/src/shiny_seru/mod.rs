@@ -277,6 +277,23 @@ mod tests {
             sw(T0, T9, lo(TEXT_COLOR_GLOBAL_VA)),
             "set shiny colour"
         );
+        // The not-shiny beq must land ON the closing `j` (idx 9), not past it.
+        // The off-by-one that targeted idx 10 (the j's delay slot) fell out of
+        // the routine into the SsAPI table at ARENA1_END_VA, whose first word
+        // decodes as a COP1 instruction - freezing the pause-menu Magic list
+        // for every non-shiny spell row.
+        assert_eq!(op(r[4]), 0x04, "idx4 is beq");
+        assert_eq!(
+            4 + 1 + ((r[4] & 0xffff) as i16 as i32),
+            9,
+            "beq targets the closing j"
+        );
+        assert_eq!(op(r[9]), 0x02, "idx9 is the closing j");
+        assert_eq!(
+            (r[9] & 0x03ff_ffff) << 2,
+            (HOOK_MENU_VA + 8) & 0x0fff_ffff,
+            "j returns to hook+8"
+        );
         // No level masking - the byte is clean.
         assert!(!r.iter().any(|&w| w == andi(V0, V0, 0x7F)), "no digit mask");
     }

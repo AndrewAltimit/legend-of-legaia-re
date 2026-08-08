@@ -198,8 +198,22 @@ pub struct BucketOffer {
 }
 
 /// Inclusive level range the vendor's handed-back seru rolls within.
-pub const GIVE_LEVEL_MIN: u8 = 4;
+pub const GIVE_LEVEL_MIN: u8 = 1;
 pub const GIVE_LEVEL_MAX: u8 = 9;
+
+/// The give-level roll is curved toward low levels rather than uniform: the
+/// level range splits into three 3-level bands, and a weighted ticket picks the
+/// band before a uniform roll within it. Low levels (1-3) are the common case,
+/// mid (4-6) is rare, high (7-9) is very rare - a high-level seru from a vendor
+/// should feel like a jackpot, not a coin flip.
+pub const GIVE_LEVEL_BAND_SPAN: u8 = 3;
+/// Total lottery tickets per roll.
+pub const GIVE_LEVEL_TICKETS: usize = 20;
+/// Tickets landing in the mid band (4-6): 5/20 = 25%.
+pub const GIVE_LEVEL_MID_FIRST_TICKET: usize = 14;
+/// Tickets landing in the high band (7-9): 1/20 = 5%. Everything below
+/// [`GIVE_LEVEL_MID_FIRST_TICKET`] (14/20 = 70%) is the low band (1-3).
+pub const GIVE_LEVEL_HIGH_FIRST_TICKET: usize = 19;
 
 /// One concrete, selectable trade line in the UI: a specific owner's instance of
 /// the bucket's wanted seru. Expanded from a [`BucketOffer`] against the live
@@ -334,6 +348,22 @@ pub const BUCKET_TABLE_LEN: usize = BUCKET_COUNT * 3;
 /// On-disc bytes per bucket entry (`[want_id, give_id, give_level]`).
 pub const BUCKET_ENTRY_LEN: usize = 3;
 
+/// One curved give-level roll (see the `GIVE_LEVEL_*` band constants): a
+/// weighted ticket picks the band - low (1-3) 70%, mid (4-6) 25%, high (7-9)
+/// 5% - then a uniform roll lands within it. Two RNG draws, so the schedule
+/// stays deterministic per `(seed, bucket)`.
+fn roll_give_level(rng: &mut Rng) -> u8 {
+    let ticket = rng.below(GIVE_LEVEL_TICKETS);
+    let band_base = if ticket >= GIVE_LEVEL_HIGH_FIRST_TICKET {
+        GIVE_LEVEL_MIN + 2 * GIVE_LEVEL_BAND_SPAN // 7-9
+    } else if ticket >= GIVE_LEVEL_MID_FIRST_TICKET {
+        GIVE_LEVEL_MIN + GIVE_LEVEL_BAND_SPAN // 4-6
+    } else {
+        GIVE_LEVEL_MIN // 1-3
+    };
+    band_base + rng.below(GIVE_LEVEL_BAND_SPAN as usize) as u8
+}
+
 /// Precompute the whole vendor schedule: for each bucket `0..count`, deterministically
 /// pick a `(want_id, give_id)` pair of distinct ids from `pool`. Ownership-independent
 /// - the live party is only consulted at render time (see [`expand_offers`]). The same
@@ -342,31 +372,35 @@ pub const BUCKET_ENTRY_LEN: usize = 3;
 ///   `(0, 0)` (no offer) entries.
 pub fn bucket_offers(seed: u64, count: usize, pool: &[u8]) -> Vec<BucketOffer> {
     (0..count)
-        .map(|bucket| {
-            if pool.len() < 2 {
-                return BucketOffer {
-                    want_id: 0,
-                    give_id: 0,
-                    give_level: 0,
-                };
-            }
-            // One RNG stream per bucket, mixed off the master seed (vendor id folded
-            // in as 0 - a single global trader; distinct vendors can reseed later).
-            let mut rng = Rng(mix(seed, 0, bucket as u32));
-            let want_id = pool[rng.below(pool.len())];
-            // give id distinct from want.
-            let viable: Vec<u8> = pool.iter().copied().filter(|&id| id != want_id).collect();
-            let give_id = viable[rng.below(viable.len())];
-            // give level, fixed per bucket: GIVE_LEVEL_MIN..=GIVE_LEVEL_MAX.
-            let span = (GIVE_LEVEL_MAX - GIVE_LEVEL_MIN + 1) as usize;
-            let give_level = GIVE_LEVEL_MIN + rng.below(span) as u8;
-            BucketOffer {
-                want_id,
-                give_id,
-                give_level,
-            }
-        })
+        .map(|bucket| bucket_offer(seed, bucket as u32, pool))
         .collect()
+}
+
+/// The offer one schedule slot carries - the per-bucket unit of
+/// [`bucket_offers`], usable directly by a runtime that only needs the current
+/// bucket (`bucket` = [`bucket_index`], already wrapped to [`BUCKET_COUNT`]).
+pub fn bucket_offer(seed: u64, bucket: u32, pool: &[u8]) -> BucketOffer {
+    if pool.len() < 2 {
+        return BucketOffer {
+            want_id: 0,
+            give_id: 0,
+            give_level: 0,
+        };
+    }
+    // One RNG stream per bucket, mixed off the master seed (vendor id folded
+    // in as 0 - the disc stores ONE schedule; per-vendor variation comes from
+    // phase-offsetting the index, see [`vendor_bucket_offset`]).
+    let mut rng = Rng(mix(seed, 0, bucket));
+    let want_id = pool[rng.below(pool.len())];
+    // give id distinct from want.
+    let viable: Vec<u8> = pool.iter().copied().filter(|&id| id != want_id).collect();
+    let give_id = viable[rng.below(viable.len())];
+    let give_level = roll_give_level(&mut rng);
+    BucketOffer {
+        want_id,
+        give_id,
+        give_level,
+    }
 }
 
 /// Serialize a bucket schedule to the on-disc byte layout
@@ -401,6 +435,32 @@ pub fn bucket_table_from_bytes(bytes: &[u8]) -> Vec<BucketOffer> {
 /// retail handler's `divu` + `andi`.
 pub fn bucket_index(play_time_seconds: u32) -> usize {
     (time_bucket(play_time_seconds) as usize) % BUCKET_COUNT
+}
+
+/// A vendor's phase offset into the bucket schedule, derived from its shop
+/// record exactly as the retail handler sums the armed op-`0x49` payload
+/// (`[count][item_ids...][name\0]`): the count byte, each stock id, then each
+/// ASCII name byte. Two vendors with different stock or names therefore sit at
+/// different schedule slots at the same play time - each trader carries its own
+/// offer while the disc still stores one 64-entry table. Folded to
+/// [`BUCKET_COUNT`] (the retail handler adds the raw sum and masks; modular
+/// arithmetic makes the two equivalent).
+pub fn vendor_bucket_offset(name: &str, item_ids: &[u8]) -> u8 {
+    let mut s = item_ids.len() as u32;
+    for &id in item_ids {
+        s += id as u32;
+    }
+    for &b in name.as_bytes() {
+        s += b as u32;
+    }
+    (s % BUCKET_COUNT as u32) as u8
+}
+
+/// The schedule slot a vendor shows at a play time: [`bucket_index`] advanced
+/// by the vendor's [`vendor_bucket_offset`], wrapped to [`BUCKET_COUNT`].
+/// Mirrors the retail handler's `bucket + vendor_sum` before its `andi` mask.
+pub fn bucket_index_for(play_time_seconds: u32, vendor_offset: u8) -> usize {
+    (bucket_index(play_time_seconds) + vendor_offset as usize) % BUCKET_COUNT
 }
 
 /// Expand one bucket's `(want, give)` preference against the live party: one
@@ -563,6 +623,28 @@ mod tests {
     }
 
     #[test]
+    fn give_level_curve_favors_low_levels() {
+        // Over many seeds x buckets the banded weights must show: low (1-3)
+        // clearly dominant, mid (4-6) clearly rarer, high (7-9) rarest but
+        // present. 50 seeds x 64 buckets = 3200 rolls (expected ~70/25/5%).
+        let pool = default_pool();
+        let (mut low, mut mid, mut high) = (0u32, 0u32, 0u32);
+        for seed in 0..50u64 {
+            for o in bucket_offers(seed, BUCKET_COUNT, &pool) {
+                match o.give_level {
+                    1..=3 => low += 1,
+                    4..=6 => mid += 1,
+                    7..=9 => high += 1,
+                    other => panic!("give level {other} outside 1..=9"),
+                }
+            }
+        }
+        assert!(low > mid * 2, "low band dominates ({low} vs {mid})");
+        assert!(mid > high * 2, "mid band beats high ({mid} vs {high})");
+        assert!(high > 0, "high band reachable ({high})");
+    }
+
+    #[test]
     fn bucket_table_round_trips() {
         let pool = default_pool();
         let sched = bucket_offers(0x1234_5678, BUCKET_COUNT, &pool);
@@ -678,5 +760,29 @@ mod tests {
             0,
             "wraps after BUCKET_COUNT buckets"
         );
+    }
+
+    #[test]
+    fn vendor_offset_is_stable_distinguishes_shops_and_phases_the_index() {
+        let a = vendor_bucket_offset("Variety Store", &[0x22, 0x34]);
+        assert_eq!(a, vendor_bucket_offset("Variety Store", &[0x22, 0x34]));
+        // The sum is exactly count + ids + name bytes, folded to the schedule.
+        let expect = (2u32 + 0x22 + 0x34 + "Variety Store".bytes().map(u32::from).sum::<u32>())
+            % BUCKET_COUNT as u32;
+        assert_eq!(a as u32, expect);
+        // A different name or stock shifts the offset (mod-64 collisions are
+        // possible in general, not for these fixtures).
+        assert_ne!(a, vendor_bucket_offset("Weapon Shop", &[0x22, 0x34]));
+        assert_ne!(a, vendor_bucket_offset("Variety Store", &[0x22, 0x35]));
+        // The phased index advances with time and wraps like the plain index.
+        assert_eq!(bucket_index_for(0, a), a as usize);
+        assert_eq!(
+            bucket_index_for(SECONDS_PER_RESEED, a),
+            (a as usize + 1) % BUCKET_COUNT
+        );
+        // Two vendors at the same play time land on different slots -> the
+        // offers they show generally differ.
+        let b = vendor_bucket_offset("Weapon Shop", &[0x10]);
+        assert_ne!(bucket_index_for(0, a), bucket_index_for(0, b));
     }
 }

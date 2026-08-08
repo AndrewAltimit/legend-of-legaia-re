@@ -326,7 +326,7 @@ impl MenuRuntime {
 
     /// The seru-trade offer currently being confirmed at `ShopTradeConfirm`
     /// (the one picked in `ShopTrade`), for the host to label the prompt.
-    pub fn pending_trade_offer(&self) -> Option<legaia_asset::seru_trade::TradeOffer> {
+    pub fn pending_trade_offer(&self) -> Option<legaia_asset::seru_trade::OwnerTrade> {
         self.trade_session
             .as_ref()
             .and_then(|t| t.offers.get(self.trade_pending_offer).copied())
@@ -1120,7 +1120,11 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
             // Buy / Sell / Exit are pure routes (handled by the route override).
             MenuState::ShopMenu => {
                 if self.shop_menu_rows().get(slot as usize) == Some(&MenuState::ShopTrade) {
-                    let vendor = self.shop_session.as_ref().map(|s| s.vendor_id).unwrap_or(0);
+                    let vendor = self
+                        .shop_session
+                        .as_ref()
+                        .map(|s| s.vendor_bucket_offset)
+                        .unwrap_or(0);
                     *self.trade_session = self.world.open_seru_trade(vendor);
                 }
             }
@@ -1477,18 +1481,25 @@ mod tests {
     fn shop_menu_trade_row_drives_a_seru_swap() {
         use crate::shop::{ShopInventory, ShopSession};
 
-        // A shop on a disc with seru trading enabled; the lead owns two seru.
+        // A shop on a disc with seru trading enabled; the lead owns the seru
+        // the seed's bucket-0 offer wants (the bucket model trades a type the
+        // party holds) plus an unrelated one.
+        let seed = 0xABCDu64;
+        let bucket0 = legaia_asset::seru_trade::bucket_offer(
+            seed,
+            0,
+            &legaia_asset::seru_trade::default_pool(),
+        );
         let mut world = World::new();
         world.seru_trade_config = Some(legaia_asset::seru_trade::SeruTradeConfig {
             enabled: true,
-            seed: 0xABCD,
+            seed,
             max_offers: 4,
         });
         let mut lead = CharacterRecord::zeroed();
         let mut list = SpellList::default();
-        list.ids[0] = 0x81;
-        list.ids[1] = 0x88;
-        list.count = 2;
+        list.ids[0] = bucket0.want_id;
+        list.count = 1;
         lead.set_spell_list(list);
         world.load_party(Party {
             members: vec![lead],
@@ -1522,11 +1533,19 @@ mod tests {
             "after a trade the menu returns to the offer list"
         );
 
-        // The owner's spell list now holds the received seru, not the given one.
-        let list = world.roster.members[offer.give.owner_slot as usize].spell_list();
+        // The owner's spell list now holds the received seru - at the offered
+        // level - and no longer the given one.
+        let list = world.roster.members[offer.owner_slot as usize].spell_list();
         let ids = &list.ids[..list.count as usize];
-        assert!(ids.contains(&offer.receive_seru_id), "received seru added");
-        assert!(!ids.contains(&offer.give.seru_id), "given seru removed");
+        let pos = ids
+            .iter()
+            .position(|&id| id == offer.received_id)
+            .expect("received seru added");
+        assert_eq!(
+            list.levels[pos], offer.received_level,
+            "received seru arrives at the offered level"
+        );
+        assert!(!ids.contains(&offer.given_id), "given seru removed");
     }
 
     #[test]

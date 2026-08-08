@@ -553,6 +553,17 @@ fn trade_flow_patches_in_shop_submode_and_reorder() {
         seru_overlay::CONFIRM_PROMPT_STR,
         "prompt",
     );
+    at0899(seru_overlay::WANTS_STR_VA, seru_overlay::WANTS_STR, "wants");
+    at0899(
+        seru_overlay::OFFERS_STR_VA,
+        seru_overlay::OFFERS_STR,
+        "offers",
+    );
+    at0899(
+        seru_overlay::NO_TRADE_FOR_STR_VA,
+        seru_overlay::NO_TRADE_FOR_STR,
+        "no-trade fragment",
+    );
 
     // The entry stub `j`s to the 0899-hosted handler and gates on the active flag.
     let entry_words: Vec<u32> = entry

@@ -148,15 +148,20 @@ impl World {
         self.seru_trade_config.is_some_and(|c| c.enabled)
     }
 
-    /// Open a seru-trade session at `vendor_id` for the current party + play
-    /// time. `None` when seru trading isn't enabled. The host renders the
+    /// Open a seru-trade session at a vendor for the current party + play
+    /// time. `vendor_offset` is the trader's phase into the bucket schedule
+    /// (`ShopSession::vendor_bucket_offset`), so each merchant shows its own
+    /// offer. `None` when seru trading isn't enabled. The host renders the
     /// returned [`crate::seru_trade::SeruTradeSession`] and applies a confirmed
     /// trade via [`Self::apply_seru_trade`].
-    pub fn open_seru_trade(&self, vendor_id: u16) -> Option<crate::seru_trade::SeruTradeSession> {
+    pub fn open_seru_trade(
+        &self,
+        vendor_offset: u8,
+    ) -> Option<crate::seru_trade::SeruTradeSession> {
         let config = self.seru_trade_config.filter(|c| c.enabled)?;
         Some(crate::seru_trade::SeruTradeSession::open(
             config,
-            vendor_id,
+            vendor_offset,
             self.play_time_seconds,
             &self.roster.members,
         ))
@@ -168,9 +173,9 @@ impl World {
     /// offer list reflects the new owned set.
     pub fn apply_seru_trade(
         &mut self,
-        offer: &legaia_asset::seru_trade::TradeOffer,
+        trade: &legaia_asset::seru_trade::OwnerTrade,
     ) -> crate::seru_trade::TradeResult {
-        crate::seru_trade::apply_trade(&mut self.roster.members, offer)
+        crate::seru_trade::apply_trade(&mut self.roster.members, trade)
     }
 
     /// Drain the summon-magic level-up events (`(party_slot, spell_id,

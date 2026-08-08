@@ -801,10 +801,12 @@ pub(crate) struct RandomizeArgs {
     /// characters. E.g. `--rename-location "3=Ancient Fire Cave"`.
     #[arg(long, value_name = "TARGET=NAME", value_parser = parse_location_rename)]
     pub(crate) rename_location: Vec<(legaia_patcher::apply::RenameTarget, String)>,
-    /// Let vendors offer to **trade** one of a character's seru for a different
-    /// seru. Embeds an enabled flag + the run's seed in `SCUS_942.54`; the
-    /// clean-room engine renders the trade UI and reseeds each vendor's offers
-    /// every two in-game hours. (Inert on real hardware - retail has no trade UI.)
+    /// Add the in-shop **Seru trading** vendor: every merchant grows a fourth
+    /// Trade row opening a screen that swaps a party member's learned
+    /// Seru-magic for a different one (offer reseeds on a play-time bucket,
+    /// deterministic from the run's seed). Runs on real hardware - the whole
+    /// screen is hand-assembled MIPS hosted in the menu overlay - and the same
+    /// seed is embedded in `SCUS_942.54` for the clean-room engine's trade UI.
     #[arg(long, default_value_t = false)]
     pub(crate) seru_trade: bool,
     /// Maximum trades a single vendor offers at once (only with `--seru-trade`).

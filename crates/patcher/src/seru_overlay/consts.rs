@@ -262,17 +262,35 @@ pub const BOX_X: u16 = 0x28;
 pub const BOX_Y: u16 = 0x40;
 pub const BOX_W: u16 = 0xC8;
 pub const BOX_H_PX: u16 = 0x90;
-/// Text columns (relative to screen, before the slide offset): reward header /
-/// per-owner want name / owner name / level number.
+/// Text columns (relative to screen, before the slide offset): header labels /
+/// header seru names / per-owner want name / owner name / level number.
 pub const COL_HEADER_X: u16 = 0x30;
+pub const COL_HEADER_NAME_X: u16 = 0x70;
 pub const COL_WANT_X: u16 = 0x40;
-pub const COL_OWNER_X: u16 = 0x80;
-pub const COL_LEVEL_X: u16 = 0xB0;
-/// Row baselines: reward header y, first per-owner row y, and per-row y advance.
+/// A seru name renders as an element-icon control code (~18px) plus up to 7
+/// proportional glyphs, so a per-owner want name starting at [`COL_WANT_X`]
+/// can reach ~0x8C - the owner column sits past that, and the level column
+/// past the longest owner name.
+pub const COL_OWNER_X: u16 = 0x90;
+pub const COL_LEVEL_X: u16 = 0xC0;
+/// Row baselines: the two-row offer header ("Wants <want>" then
+/// "Offers <give> <lvl>"), first per-owner row y, and per-row y advance.
 /// Tucked just inside the box top (`BOX_Y + 0xC`).
 pub const ROW_HEADER_Y: u16 = 0x4C;
-pub const ROW_FIRST_Y: u16 = 0x5C;
+pub const ROW_HEADER2_Y: u16 = 0x5C;
+pub const ROW_FIRST_Y: u16 = 0x6C;
 pub const ROW_STEP_Y: u16 = 0x10;
+/// No-trade message layout (drawn at the first two would-be owner rows when no
+/// party member qualifies): `No <want> available` / `to trade for <give>`.
+/// The name columns leave room for the longest seru name in the proportional
+/// dialog font before the following fragment.
+pub const NO_TRADE_NAME1_X: u16 = 0x48;
+pub const NO_TRADE_AVAIL_X: u16 = 0x98;
+pub const NO_TRADE_NAME2_X: u16 = 0x90;
+/// The message sits one blank row below the first owner-line slot, so it reads
+/// as its own block instead of hugging the Wants/Offers header.
+pub const NO_TRADE_Y1: u16 = ROW_FIRST_Y + ROW_STEP_Y;
+pub const NO_TRADE_Y2: u16 = NO_TRADE_Y1 + ROW_STEP_Y;
 /// Persistent slide x-offset cell (SCUS gap, resident). The dispatch stub resets it
 /// to [`SLIDE_START_OFF`] on Trade confirm; the handler steps it toward 0 each frame.
 pub const TRADE_SLIDE_DELTA_VA: u32 = 0x801E_7E24;
@@ -314,6 +332,22 @@ pub const CONFIRM_YES_STR_VA: u32 = 0x801E_7D50;
 pub const CONFIRM_YES_STR: &[u8] = b"@Yes\0";
 pub const CONFIRM_NO_STR_VA: u32 = 0x801E_7D58;
 pub const CONFIRM_NO_STR: &[u8] = b"@No\0";
+/// Offer-header labels: the trade screen always names both sides of the offer -
+/// "Wants <want seru>" over "Offers <give seru> <lvl>" - so the player sees what
+/// the vendor is looking for even when no party member owns it. Hosted in the
+/// run-C tail past the dispatch stub.
+pub const WANTS_STR_VA: u32 = 0x801E_7F70;
+pub const WANTS_STR: &[u8] = b"@Wants\0";
+pub const OFFERS_STR_VA: u32 = 0x801E_7F78;
+pub const OFFERS_STR: &[u8] = b"@Offers\0";
+/// No-trade message fragments, composed with the two seru names as
+/// `No <want> available` / `to trade for <give>` when no owner qualifies.
+pub const NO_TRADE_NO_STR_VA: u32 = 0x801E_7F80;
+pub const NO_TRADE_NO_STR: &[u8] = b"@No\0";
+pub const NO_TRADE_AVAIL_STR_VA: u32 = 0x801E_7F88;
+pub const NO_TRADE_AVAIL_STR: &[u8] = b"@available\0";
+pub const NO_TRADE_FOR_STR_VA: u32 = 0x801E_7F98;
+pub const NO_TRADE_FOR_STR: &[u8] = b"@to trade for\0";
 /// Confirm-prompt layout (inside the box, near its bottom): question row y, choices
 /// row y, and the Yes / No / cursor x columns.
 pub const PROMPT_Y: u16 = 0xB4;
@@ -527,10 +561,12 @@ pub const TRADE_ACTIVE_VA: u32 = 0x801E_7E20;
 
 /// 0899 run-C VAs (all above the handler, below the run-C end; non-overlapping -
 /// asserted by `trade_0899_layout_is_disjoint`). Reached by `j` from the 0899
-/// detours / handler, so no SCUS gap is used.
-pub const ENTRY_STUB_VA: u32 = 0x801E_7B00;
+/// detours / handler, so no SCUS gap is used. The entry + dispatch stubs sit in
+/// the run-C tail past the runtime cells, freeing the window between the handler
+/// and the row-4 stub for the handler body to grow into.
+pub const ENTRY_STUB_VA: u32 = 0x801E_7E50;
 /// Reorder dispatch stub (cursor 2 → Trade sub-mode, 3 → Quit, 0/1 → Buy/Sell).
-pub const TRADE_DISPATCH_STUB_VA: u32 = 0x801E_7B60;
+pub const TRADE_DISPATCH_STUB_VA: u32 = 0x801E_7EB0;
 /// The in-shop trade-screen handler (draws + input + swap; runs in mode 0x17).
 ///
 /// HOSTED IN THE MENU OVERLAY 0899, not the tiny SCUS rodata gap: the gap only had
@@ -566,6 +602,13 @@ pub const BUCKET_TABLE_LEN: usize = legaia_asset::seru_trade::BUCKET_TABLE_LEN;
 /// reads it to pick the current bucket; the engine mirrors it as
 /// `World::play_time_seconds`.
 pub const PLAY_TIME_VA: u32 = 0x8008_4570;
+/// The armed op-0x49 menu state `_DAT_8007B450`: while a shop is open it holds
+/// the operand pointer to the shop record `[sub_op][?][count][ids...][name\0]`
+/// (retail's own vendor-name reader `FUN_801DCF14` uses `record + record[2] + 3`).
+/// The handler sums `count + ids + name` bytes from it as the vendor's phase
+/// offset into the bucket schedule, so each trader shows its own offer -
+/// mirrored by `legaia_asset::seru_trade::vendor_bucket_offset`.
+pub const SHOP_MENU_STATE_VA: u32 = 0x8007_B450;
 /// Reseed period in **play-time ticks** (the unit of `_DAT_80084570`). HW-pinned:
 /// the counter advances ~per-frame (≈60/s), NOT per-second as the memory-map label
 /// suggests - a maxed save read `0x80084570 ≈ 10.4M`, which is ~48 h at 60/s, not
