@@ -1374,25 +1374,35 @@ a whole-turn-half offset it compensates for at the animation-sector lookup
 (`(render_26 + 0x800) & 0xFFF`), so the two are consistent rather than in
 conflict.
 
-**The port's frame is offset from retail's, deliberately.** Retail's yaw-`0`
-walk camera is a GTE `Rx(pitch)` frame looking down `+Z`, so screen-up is `+Z`
-and screen-right is `+X`. The port's `world_map_camera_mvp` instead puts the
-eye at `center + (d·cosθ, …, d·sinθ)`, which at azimuth `0` is on `+X` looking
-back down `−X`. `world_map_camera_relative_bits` carries the compensating
-rotation, so the port's azimuth-`0` Up walks `−X` where retail's walks `+Z`.
-What the player sees is the same in both; the world-axis assignment is not.
-**Do not "fix" one half of that pair alone** - the remap and the camera are
-pinned against each other by `world_map_camera_remap.rs`, and rotating only one
-of them breaks the screen contract that test exists to hold.
+**The port's walk frame is retail's frame.** Retail's yaw-`0` walk camera is
+a GTE `Rx(pitch)` frame looking down `+Z`, so screen-up is `+Z` and
+screen-right is `+X` - and the play window renders walk-mode locomotion
+through exactly that composition (the RAM-pinned walk-view camera below). So
+`world_map_camera_relative_bits` at azimuth `0` is the identity onto the
+world axes, matching the compass ring's rotation-count-`0` row, and non-zero
+azimuths apply a plain rotation (screen-up → world `(−sinθ, cosθ)`,
+screen-right → `(cosθ, sinθ)`, determinant `+1`).
 
-What that pairing cannot see is a **single-axis** sign flip, because remap and
-mover would still agree and the frame would still be self-consistent (it
-becomes a rotation where it was a reflection). Two things close that:
-`world_map_camera_remap.rs` fails on it, because a reflection and a rotation do
-not project the same way; and
+An earlier remap body compensated `world_map_camera_mvp` instead - the
+**top-view debug** camera, which frames azimuth `0` from `+X` with a
+reflected screen frame. Locomotion never runs under that camera
+(`step_world_map_locomotion` early-returns in top view), so the reflection
+only ever applied to the walk view it was wrong for: Up walked screen-left,
+Right walked screen-down. The trap was that every pinning test projected
+through the debug camera, so remap-vs-camera agreement stayed green while
+the camera the player watches disagreed. `world_map_camera_remap.rs` now
+projects through the walk-view composition; if top view ever regains a
+mover it needs its own remap pinned against its own camera.
+
+What a projection pairing cannot see is a **single-axis** sign flip, because
+remap and mover would still agree and the frame would still be
+self-consistent (it becomes a reflection where it was a rotation). Two
+things close that: `world_map_camera_remap.rs` fails on it, because a
+reflection and a rotation do not project the same way; and
 `crates/engine-core/tests/world_map_axis_convention.rs` carries the verdict
 down to the pad→`move_state` leg, pinning the retail bit-to-axis table above,
-the mover-follows-the-remap agreement, and the frame's handedness.
+the mover-follows-the-remap agreement, and the frame's handedness
+(`Up × Right = −1` in world XZ at every azimuth).
 
 ### Walk-view camera (retail model, RAM-pinned)
 

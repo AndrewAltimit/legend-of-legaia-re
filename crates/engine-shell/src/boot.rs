@@ -50,8 +50,12 @@ pub struct FieldLiveOpts {
     /// spell / equipment catalogs are installed unconditionally now - the
     /// field pause-menu reads them regardless of these flags.)
     pub player_battle: bool,
-    /// Optional Battle<->Field BGM swap id (resolved through the scene's BGM
-    /// table by the live loop).
+    /// Battle<->Field BGM swap override. `None` keeps the shipped default
+    /// (retail's standard battle theme, global BGM 2026 - see
+    /// [`legaia_engine_core::live_loop::LiveLoopOpts::playable`]);
+    /// `Some(0)` disables the swap; any other id replaces the track
+    /// (scene-local ids resolve through the scene's BGM table, `>= 2000`
+    /// through the global `music_01` pool).
     pub battle_bgm: Option<u16>,
 }
 
@@ -60,11 +64,13 @@ impl FieldLiveOpts {
     /// ([`legaia_engine_core::live_loop::LiveLoopOpts`]) - the shared shape
     /// both hosts arm the loop through.
     pub fn to_live_loop_opts(&self) -> legaia_engine_core::live_loop::LiveLoopOpts {
-        legaia_engine_core::live_loop::LiveLoopOpts {
-            live_loop: self.live_loop,
-            player_battle: self.player_battle,
-            battle_bgm: self.battle_bgm,
+        let mut opts = legaia_engine_core::live_loop::LiveLoopOpts::playable();
+        opts.live_loop = self.live_loop;
+        opts.player_battle = self.player_battle;
+        if let Some(id) = self.battle_bgm {
+            opts.battle_bgm = (id != 0).then_some(id);
         }
+        opts
     }
 }
 

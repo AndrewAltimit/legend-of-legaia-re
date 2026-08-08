@@ -160,11 +160,11 @@ fn a_screen_closes_itself_and_reports_done() {
 }
 
 #[test]
-fn the_three_dedicated_sub_ops_still_own_their_own_paths() {
-    // Sub-0 (inline gold shop), sub-3 (name entry) and sub-5 (tile board) each
-    // have a host path already; routing them through the submode screen would
-    // arm two parks at once.
-    for s in [0u8, 3, 5] {
+fn the_four_dedicated_sub_ops_still_own_their_own_paths() {
+    // Sub-0 (inline gold shop), sub-3 (name entry), sub-5 (tile board) and
+    // sub-7 (casino prize exchange) each have a host path already; routing
+    // them through the submode screen would arm two parks at once.
+    for s in [0u8, 3, 5, 7] {
         assert_eq!(slot_for_op49_sub_op(s), None);
     }
     // Sub-`0xD` opens nothing either, for a different reason: its row in
@@ -176,15 +176,14 @@ fn the_three_dedicated_sub_ops_still_own_their_own_paths() {
     // See `field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS`.
     assert_eq!(slot_for_op49_sub_op(0x0D), None);
     // Every other sub-op takes the handler retail's own table names
-    // (`0x801F33A4`); the two remaining rows that name no handler (`1`, `7`)
-    // fall back to the slot a freshly spawned driver carries, because retail
-    // routes each into a driver that does hand back.
+    // (`0x801F33A4`); the one remaining row that names no handler (`1`)
+    // falls back to the slot a freshly spawned driver carries, because
+    // retail routes it into a driver that does hand back.
     for (s, want) in [
         (1u8, slot::CLOSE_TICK),
         (2, 0x21),
         (4, 0x23),
         (6, slot::COIN_COUNTER),
-        (7, slot::CLOSE_TICK),
         (8, slot::START_MENU),
         (9, slot::PROMPT),
         (0xA, 0x31),
@@ -281,5 +280,50 @@ fn an_idle_world_pays_nothing_for_the_new_pass() {
     assert!(
         w.find_actor_by_handler(ActorHandler::SubmodeDriver)
             .is_some()
+    );
+}
+
+/// The coin counter's Yes/No confirm is pad-driven end to end: no test (or
+/// host) pre-loads `picker_result` - the accept edge alone commits the buy.
+///
+/// The regression this pins: `picker_result` had no production writer, so
+/// once the player accepted an amount the counter parked at state 2 forever
+/// with the field script still Armed - a softlock at every koin1 / balden
+/// coin cabinet.
+#[test]
+fn the_coin_confirm_is_pad_driven_without_a_picker_feed() {
+    let mut w = field_world();
+    w.money = 5_000;
+    w.casino_coins = 7;
+    w.open_coin_counter();
+    assert!(tick_until(&mut w, 16, |w| w.submode_screen.actor.sub == 1));
+    w.submode_screen.counter.set_entered(12);
+
+    // Accept -> the Yes/No panel (cursor seeded to No).
+    w.input.set_pad(SUBMODE_ACCEPT_MASK as u16);
+    assert!(tick_until(&mut w, 16, |w| w.submode_screen.actor.sub == 2));
+    assert_eq!(w.submode_screen.counter.yes_no, 1, "seeded to No");
+
+    // A direction edge toggles onto Yes; release the pad in between so each
+    // press is a fresh edge.
+    w.input.set_pad(0);
+    w.tick();
+    w.input.set_pad(legaia_engine_core::dev_menu::PACK_UP);
+    assert!(tick_until(&mut w, 16, |w| w.submode_screen.counter.yes_no == 0));
+
+    // Accept on Yes -> commit: coins in, gold out, screen hands back.
+    w.input.set_pad(0);
+    w.tick();
+    w.input.set_pad(SUBMODE_ACCEPT_MASK as u16);
+    assert!(
+        tick_until(&mut w, 32, |w| w.casino_coins != 7),
+        "the pad-driven Yes never committed - the state-2 softlock is back"
+    );
+    assert_eq!(w.casino_coins, 19);
+    assert_eq!(w.money, 5_000 - 12 * GOLD_PER_COIN);
+    w.input.set_pad(0);
+    assert!(
+        tick_until(&mut w, 64, |w| w.submode_screen.is_done()),
+        "the counter never handed back after the commit"
     );
 }

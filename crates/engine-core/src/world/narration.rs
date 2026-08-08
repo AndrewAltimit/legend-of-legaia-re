@@ -754,9 +754,18 @@ impl World {
                         None => tl.done = true,
                     }
                     tl.dialog = None;
-                } else if panel.is_waiting_for_input() || panel.is_done() {
+                } else if panel.is_done() {
                     tl.pc = panel.pc;
                     tl.dialog = None;
+                } else if panel.is_waiting_for_input() {
+                    // Multi-page conversation: turn the page in place (the
+                    // timeline stays parked on the segment until the last
+                    // page is dismissed).
+                    panel.advance_page();
+                    if panel.is_done() {
+                        tl.pc = panel.pc;
+                        tl.dialog = None;
+                    }
                 }
             }
             if tl.dialog.is_some() && !tl.done {
@@ -2280,10 +2289,27 @@ impl World {
                         None => id.done = true,
                     }
                     id.panel = None;
-                } else if panel.is_waiting_for_input() || panel.is_done() {
+                } else if panel.is_done() {
                     // Plain box dismissed: resume the VM just past this segment.
                     id.pc = panel.pc;
                     id.panel = None;
+                } else if panel.is_waiting_for_input() {
+                    // Page break inside a multi-page conversation (`0x24` /
+                    // `0x48` / implicit next lead): turn the page in the same
+                    // panel instead of tearing the window down. Mark the new
+                    // page's row leads in the wrap map so a tail that jumps
+                    // back onto one of them still reads as a wrap.
+                    panel.advance_page();
+                    if panel.is_done() {
+                        id.pc = panel.pc;
+                        id.panel = None;
+                    } else {
+                        for lead in panel.row_leads() {
+                            if lead < id.visited.len() {
+                                id.visited[lead] = true;
+                            }
+                        }
+                    }
                 }
             }
             self.inline_dialogue = Some(id);
@@ -2325,6 +2351,14 @@ impl World {
                         id.pc,
                     );
                     panel.substitutions = host.world.dialog_substitutions(&id.bytecode);
+                    // The panel types the whole packed box (up to 3 rows), so
+                    // every row lead counts as shown for the wrap detector,
+                    // not just the first.
+                    for lead in panel.row_leads() {
+                        if lead < id.visited.len() {
+                            id.visited[lead] = true;
+                        }
+                    }
                     id.panel = Some(panel);
                     break;
                 }

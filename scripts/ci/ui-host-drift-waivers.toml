@@ -233,46 +233,6 @@ so there is no rect to add a count to yet.
 # `take_pending_field_menu` channel plus a host-called finish), not a draw
 # call, and it is a different gap from the one these waivers described.
 
-[[waiver]]
-builder = "choice_panel_draws_for"
-kind = "orphan"
-reason = """
-Window id 46 (`FUN_801D603C`) - the **casino prize counter's Yes/No confirm**.
-Script `0x801E4F2C` (`01 2E`, "open window `0x2E`") is the only command in the
-overlay that opens it, and it runs from sub-screen `0x20` (`FUN_801DC1CC`, the
-prize exchange) where a chosen prize clears the coin and held-cap gates;
-`0x801E4F34` closes it again on No or cancel, and the cursor is seeded to row 1
-- retail's "No is the default". Its heading is `0x801CEAC8` and its two rows
-are the shared Yes / No pair at `0x801CEA84` / `0x801CEA8C`.
-
-Two premises of the previous reason are corrected here rather than repeated.
-
-**The kind byte is no longer the blocker.** Sub-screen `0x20` is written to
-`DAT_801E46A4` at exactly one site in PROT 0899 - `0x801dc8cc`, inside
-`FUN_801DC6B4`'s entry decode, on entry-context kind `7` (a sweep of all 66
-`sw rt,0x46a4(rs)` writers finds no other). Kind `7` is now producible: the
-op-`0x49` arm records its sub-op, and the disc census
-(`crates/engine-core/tests/op49_sub_op_census.rs`) finds sub-op `7` armed by
-real scene scripts. So the trigger exists.
-
-**The browser is not "already close".** `web-viewer/src/minigames_fishing.rs`
-does carry a `prize_exchange(venue)` resolver, and it is a **different
-subsystem**: the fishing point exchange (`legaia_asset::fishing_exchange`,
-spending the pond session's *points* against a per-venue rod table). This
-window belongs to the casino counter, which spends the **coin bank**
-`_DAT_800845A4` against the `0x801E4518` prize table. Neither host has any
-part of that screen.
-
-The blocking capability is the **prize-exchange window set**: the tab (43,
-`RENDERER_TAB_EXCHANGE`), the prize list (44, whose `renderer_va` is
-`0x801D5DE0` - it is not the renderer-less container this waiver once called
-it), the coin counter (45, `RENDERER_COUNTER_COINS`) and this confirm, driven by
-`engine-core::prize_exchange::PrizeExchangeSession` (complete - its state 2 is
-exactly this beat) over the disc prize block at PROT 0899 file `0x15D00`,
-which nothing parses outside `legaia_patcher::casino`. The confirm cannot be
-wired on its own: it is one window of a four-window screen, and a host that
-drew it alone would be a Yes/No box over nothing.
-"""
 
 # `equip_target_list_draws_for` (window 36) and `compare_panel_draws_for`
 # (windows 25 / 41) were waived here as orphans blocked on "the flow that

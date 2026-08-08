@@ -351,6 +351,12 @@ impl PlayWindowApp {
                 }
                 self.menu_runtime.open_shop_menu(shop);
             }
+            // A field-VM casino prize counter (`0x49` sub-7) opened its
+            // exchange this tick: hand the player into the prize list. The
+            // field VM stays suspended until the browse cancel closes it.
+            if let Some(exchange) = self.session.host.world.take_pending_prize_exchange() {
+                self.menu_runtime.open_prize_exchange(exchange);
+            }
             // Production cast-band trigger: a player Seru-magic cast
             // (spell id 0x81..=0x8b) requests a summon spawn. The
             // faithful render is the namesake battle_data creature drawn
@@ -449,6 +455,13 @@ impl PlayWindowApp {
             // and the field VM advances past the merchant op next tick.
             if self.session.host.world.field_shop_open && !self.menu_runtime.is_open() {
                 self.session.host.world.finish_field_shop();
+            }
+            // Safety net for the prize exchange (its own Exit already calls
+            // `finish_prize_exchange` through the runtime tick): if the menu
+            // closed by any other path, unpark the suspended counter script
+            // rather than wedge it.
+            if self.session.host.world.prize_exchange_open && !self.menu_runtime.is_open() {
+                self.session.host.world.finish_prize_exchange();
             }
             self.prev_pad = self.pad;
             // Record-mode: advance the log's frame counter so
@@ -1213,6 +1226,53 @@ impl PlayWindowApp {
                             mvp: cam,
                             cue: None,
                         });
+                    }
+                }
+                // The party leader's field figure at the player's live
+                // transform - retail draws the overworld walker with the
+                // same PROT 0874 mesh as the field. Both world-map cameras
+                // compose FIELD_WORLD_FLIP, so the un-flipped `actor_model`
+                // (translation * heading yaw) is the correct frame, same as
+                // the field branch. Hidden while a cutscene timeline owns
+                // the map (the opening fly-in shows the bare continent) -
+                // the same gate the marker overlay uses.
+                if !self.session.host.world.cutscene_timeline_active() {
+                    let w = &self.session.host.world;
+                    let player = w.player_actor_slot.and_then(|pslot| {
+                        // Only a successfully uploaded player mesh draws: the
+                        // naive pre-bind (actor K -> scene TMD K) would show
+                        // an unrelated scene mesh as "the player".
+                        if !self.drained_spawn_slots.contains(&pslot) {
+                            return None;
+                        }
+                        let slot = pslot as usize;
+                        let tmd_idx = w.actors.get(slot)?.tmd_binding?;
+                        Some((slot, tmd_idx))
+                    });
+                    if let Some((slot, tmd_idx)) = player {
+                        let mesh = posed_overrides
+                            .get(tmd_idx)
+                            .and_then(|o| o.as_ref())
+                            .or_else(|| self.meshes.get(tmd_idx));
+                        if let Some(mesh) = mesh {
+                            draws.push(SceneDraw {
+                                mesh,
+                                mvp: cam * self.actor_model(slot),
+                                cue: None,
+                            });
+                        }
+                        // The untextured colour half (pants / sleeves), same
+                        // pairing as the field branch.
+                        if let Some((cidx, cslot)) = self.player_color_draw
+                            && let Some(cmesh) = player_color_posed
+                                .as_ref()
+                                .or_else(|| self.color_meshes.get(cidx))
+                        {
+                            color_draws.push(ColorSceneDraw {
+                                mesh: cmesh,
+                                mvp: cam * self.actor_model(cslot),
+                            });
+                        }
                     }
                 }
             } else {

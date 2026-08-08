@@ -98,13 +98,21 @@ fn inline_dialogue_prologue_selects_segment_by_story_flag() {
     // falls through to segment A. This is the retail segment-selection mechanism
     // - the prologue's story-flag-gated jump chooses which line the box opens at.
     //
-    //   pc 0: 70 07 06 00   SysFlag.Test flag 7 -> jump to pc (2 + 6) = 8
+    // Segment A ends with a `0x25` teardown dispatch before segment B's lead:
+    // two directly adjacent `0x1F` rows would be ONE 2-row box under the
+    // retail pager grammar (`pack_box`), which is not the alternative-branch
+    // shape this test models - real records separate story branches with
+    // dispatch/jump bytecode.
+    //
+    //   pc 0: 70 07 07 00   SysFlag.Test flag 7 -> jump to pc (2 + 7) = 9
     //   pc 4: 1F 'A' 'A' 00  segment A (fall-through)
-    //   pc 8: 1F 'B' 'B' 00  segment B (selected when flag 7 set)
+    //   pc 8: 25             segment A's teardown dispatch
+    //   pc 9: 1F 'B' 'B' 00  segment B (selected when flag 7 set)
     let body = vec![
-        0x70, 0x07, 0x06, 0x00, // SysFlag.Test flag 7
+        0x70, 0x07, 0x07, 0x00, // SysFlag.Test flag 7
         0x1F, b'A', b'A', 0x00, // segment A @ 4
-        0x1F, b'B', b'B', 0x00, // segment B @ 8
+        0x25, // A's post-box dispatch: teardown
+        0x1F, b'B', b'B', 0x00, // segment B @ 9
     ];
     let entry_pc = 0;
     let first_segment = 4;

@@ -3750,7 +3750,7 @@ The `legaia-engine play-window` host ships the loop **on**, matching the browser
 
 - `--no-live-loop` turns the encounter roll off (field VM + locomotion only - the scene-inspection mode). A battle the engine is already in still resolves.
 - `--no-player-battle` turns off the command menu, auto-attacking each party turn instead. By default battles are player-driven and the HUD renders party/monster HP plus the command menu / target cursor / arts + spell + item submenus (the host installs the vanilla spell + item catalogs and, when the boot save has none, seeds a couple of demo saved chains plus a few demo items - Healing Leaf + Bomb - so the ally-heal and offensive item paths are both exercisable).
-- `--battle-bgm <id>` enables the Battle↔Field music swap: the live loop cross-fades to `<id>` on encounter and resumes the field track on battle end (the id is routed through the same director as field op-`0x35` starts, so it must resolve in the current scene's BGM table - the live loop doesn't load a separate battle audio bundle). The browser twin is `LegaiaRuntime::set_battle_bgm`.
+- `--battle-bgm <id>` overrides the Battle↔Field music swap track: the live loop cross-fades to it on encounter and resumes the field track on battle end. The swap is on by default (retail's standard battle theme, global BGM `2026` = `music_labels::BATTLE_THEME_1_BGM_ID`, installed by `LiveLoopOpts::playable()`); `0` disables it. Ids route through the same director as field op-`0x35` starts - scene-local ids via the scene's BGM table, `>= 2000` via the global `music_01` pool. The browser twin is `LegaiaRuntime::set_battle_bgm`.
 
 ### Battle end, both hosts
 

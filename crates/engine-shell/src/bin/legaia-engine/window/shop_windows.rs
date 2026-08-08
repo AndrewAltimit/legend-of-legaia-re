@@ -492,6 +492,77 @@ impl PlayWindowApp {
 
     /// Item display name, falling back to the id when the disc text tables
     /// are unavailable.
+    /// Paint the casino prize-exchange screen (windows 43 / 44 / 45 / 46)
+    /// while a [`legaia_engine_core::prize_exchange::PrizeExchangeSession`]
+    /// owns the pad - the shared `engine-ui` composition, sprites and
+    /// pictogram rendered through the same ASCII stand-ins the shop windows
+    /// use. Empty without the disc window table.
+    pub(super) fn prize_window_draws(
+        &self,
+        session: &legaia_engine_core::prize_exchange::PrizeExchangeSession,
+    ) -> Vec<TextDraw> {
+        let Some(table) = self.menu_window_table.as_ref() else {
+            return Vec::new();
+        };
+        let world = &self.session.host.world;
+        use legaia_engine_render::ui_prize_exchange as px;
+        let view = px::PrizeExchangeView {
+            rows: session
+                .rows()
+                .map(|r| px::PrizeRow {
+                    name: self.shop_item_name(r.item_id),
+                    price: r.price,
+                    held: *world.inventory.get(&r.item_id).unwrap_or(&0),
+                })
+                .collect(),
+            cursor: session.cursor(),
+            coins: world.casino_coins,
+            confirm_cursor: session.confirming().then(|| session.confirm_cursor()),
+        };
+        let (mut out, sprites, pict) = px::prize_exchange_draws_for(&self.font, table, &view);
+        for s in sprites {
+            out.extend(self.painter_cursor_stand_in(s));
+        }
+        if let Some(p) = pict {
+            out.extend(self.painter_pictogram_stand_in(p));
+        }
+        out
+    }
+
+    /// Paint the casino **coin counter** (op-`0x49` sub-op 6) off the live
+    /// submode screen's cells - the digit-entry UI whose frame previously
+    /// ran headless (the state machine ticked, nothing drew). Empty without
+    /// the disc window table or while the screen is not the coin slot.
+    pub(super) fn coin_counter_window_draws(&self) -> Vec<TextDraw> {
+        let Some(table) = self.menu_window_table.as_ref() else {
+            return Vec::new();
+        };
+        let world = &self.session.host.world;
+        let screen = &world.submode_screen;
+        if !screen.is_open()
+            || screen.actor.state != legaia_engine_vm::baka_hub_actors::slot::COIN_COUNTER
+        {
+            return Vec::new();
+        }
+        use legaia_engine_render::ui_prize_exchange as px;
+        let view = px::CoinCounterView {
+            digits: screen.counter.digits.to_vec(),
+            cursor: screen.counter.cursor,
+            ceiling: screen.counter.ceiling,
+            gold: world.money,
+            coins: world.casino_coins,
+            confirm_cursor: (screen.actor.sub == 2).then_some((screen.counter.yes_no & 1) as u8),
+        };
+        let (mut out, sprites, pict) = px::coin_counter_draws_for(&self.font, table, &view);
+        for s in sprites {
+            out.extend(self.painter_cursor_stand_in(s));
+        }
+        if let Some(p) = pict {
+            out.extend(self.painter_pictogram_stand_in(p));
+        }
+        out
+    }
+
     fn shop_item_name(&self, id: u8) -> String {
         self.session
             .host

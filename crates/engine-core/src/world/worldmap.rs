@@ -226,6 +226,21 @@ impl World {
             speed -= speed >> 2;
         }
         self.advance_with_collision(slot, dir_bits, speed);
+        // Terrain follow (gated, like the field walk): snap the player's Y to
+        // the continent floor at the new tile. The field path snaps inside
+        // `step_field_locomotion`; this path advances directly, so without
+        // the snap the overworld figure holds its entry-plane Y and sinks
+        // under (or floats over) rising terrain. Same `.MAP` floor LUT the
+        // drawn continent heightfield bakes (`FUN_80019278`), so the figure
+        // stands on the rendered surface.
+        if self.follow_terrain_height {
+            let (x, z) = {
+                let ms = &self.actors[slot].move_state;
+                (ms.world_x as i32, ms.world_z as i32)
+            };
+            let y = self.sample_field_floor_height(x, z);
+            self.actors[slot].move_state.world_y = y as i16;
+        }
     }
 
     /// Per-tile overworld step → region-keyed encounter roll (the world-map

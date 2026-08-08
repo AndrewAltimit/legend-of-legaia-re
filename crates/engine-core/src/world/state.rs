@@ -1517,6 +1517,29 @@ pub struct World {
     /// [`Self::finish_field_shop`] so the op-0x49 tristate flips Armed -> Done.
     pub field_shop_open: bool,
 
+    /// The casino prize table (menu overlay PROT 899 file `0x15D00`, four
+    /// `0x60`-byte blocks), installed by
+    /// [`Self::install_menu_overlay_tables`]. Empty without disc data - the
+    /// prize counter then refuses to open rather than selling from an
+    /// invented list.
+    pub prize_blocks: Vec<Vec<crate::prize_exchange::PrizeRecord>>,
+
+    /// A prize-exchange session the field VM just opened (op `0x49` sub-op 7,
+    /// the casino prize counter - see [`Self::try_arm_prize_exchange`]). The
+    /// host drains it with [`Self::take_pending_prize_exchange`] into its
+    /// menu runtime, then calls [`Self::finish_prize_exchange`] when the
+    /// player leaves.
+    pub pending_prize_exchange: Option<crate::prize_exchange::PrizeExchangeSession>,
+
+    /// `true` from the frame an op-`0x49` sub-op-7 arm is recognised until
+    /// the op's resume runs - gates the op-0x49 tristate like
+    /// [`Self::field_shop_armed`] does for the gold shop.
+    pub prize_exchange_armed: bool,
+
+    /// `true` while the opened prize-exchange UI is still up; cleared via
+    /// [`Self::finish_prize_exchange`] so the tristate flips Armed -> Done.
+    pub prize_exchange_open: bool,
+
     /// Per-item battle-stat modifier table (weapon / armor / accessory
     /// bonuses). Empty by default; install via [`World::set_equipment_table`]
     /// so [`World::seed_party_battle_stats`] folds equipped gear onto each
@@ -2885,6 +2908,10 @@ impl World {
             scene_shops: Vec::new(),
             pending_field_shop: None,
             field_shop_armed: false,
+            prize_blocks: Vec::new(),
+            pending_prize_exchange: None,
+            prize_exchange_armed: false,
+            prize_exchange_open: false,
             field_shop_open: false,
             equipment_table: crate::battle_stats::EquipmentTable::new(),
             accessory_passives: Default::default(),

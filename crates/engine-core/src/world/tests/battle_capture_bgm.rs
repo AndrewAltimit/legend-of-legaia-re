@@ -129,6 +129,40 @@ fn battle_bgm_swaps_on_encounter_and_restores_on_finish() {
     );
 }
 
+/// The shipped default carries retail's standard battle theme, so a host
+/// that arms the loop with `LiveLoopOpts::playable()` gets the Battle↔Field
+/// swap without configuring anything. The swap used to default to `None` on
+/// both hosts, which kept the field track playing through every fight.
+#[test]
+fn playable_default_swaps_to_the_standard_battle_theme() {
+    use crate::monster_catalog::{FormationDef, FormationSlot};
+
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.actors[0].battle.hp = 100;
+    world.current_bgm = Some(2007); // a field track from the global pool
+    world.arm_live_loop("town01", &crate::live_loop::LiveLoopOpts::playable());
+    assert_eq!(
+        world.battle_bgm,
+        Some(crate::music_labels::BATTLE_THEME_1_BGM_ID),
+        "playable() installs the retail battle theme by default"
+    );
+
+    let formation = FormationDef::new(7, vec![FormationSlot::new(1)]);
+    world.enter_battle_from_formation(&formation);
+    assert_eq!(
+        world.current_bgm,
+        Some(crate::music_labels::BATTLE_THEME_1_BGM_ID)
+    );
+    assert!(world.battle_bgm_active);
+
+    world.finish_battle();
+    assert_eq!(world.current_bgm, Some(2007), "field track restored");
+    assert!(!world.battle_bgm_active);
+}
+
 #[test]
 fn battle_bgm_unset_leaves_music_untouched() {
     use crate::monster_catalog::{FormationDef, FormationSlot};

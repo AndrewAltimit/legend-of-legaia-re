@@ -3,16 +3,25 @@
 //! pressing "up" walks the character *away from the camera* on screen, and
 //! "right" walks *screen-right*, for any camera azimuth.
 //!
-//! This is the ground-truth check for the remap. The remap lives in
-//! `engine-core` (no renderer dependency, so it can't see the camera matrix);
-//! this test projects the world direction the remap chooses back through the
-//! real `world_map_camera_mvp` and asserts its screen-space motion points the
-//! right way. If the remap's trig ever drifts from the camera geometry, this
-//! fails. Pure math - runs in CI without disc data.
+//! This is the ground-truth check for the remap, and it projects through the
+//! **walk-view** camera - the retail GTE composition the play window renders
+//! overworld locomotion under (`window/event_handler/redraw_passes.rs`) - not
+//! the top-view debug camera `world_map_camera_mvp`. Locomotion early-returns
+//! in top view (`World::step_world_map_locomotion`), so the walk view is the
+//! only frame the remap is ever seen through; a remap verified against the
+//! debug camera can be (and once was) inverted in the frame that matters.
+//!
+//! The composition is rebuilt here from the same savestate-pinned constants
+//! the play window uses (the bin target's camera isn't linkable from an
+//! integration test): `screen = proj(H=368) * T(tr) * Rx(pitch) * Ry(az) *
+//! Yflip * FIELD_WORLD_FLIP * S(6) * T(-player)`, with the sebucus zoom pin
+//! (pitch 360 units, tr (0, 536, 9139)). The two Y negations cancel, which is
+//! the point of the `FIELD_WORLD_FLIP` pairing - the whole thing runs on raw
+//! retail Y-down world coordinates. If the remap's trig ever drifts from this
+//! geometry, this fails. Pure math - runs in CI without disc data.
 
 use glam::{Mat4, Vec3, Vec4};
 use legaia_engine_core::world::world_map_camera_relative_bits;
-use legaia_engine_render::window::world_map_camera_mvp;
 
 /// World-space XZ unit step for a post-remap direction-bit set.
 fn bits_to_world_dir(bits: u16) -> (f32, f32) {
@@ -33,6 +42,41 @@ fn bits_to_world_dir(bits: u16) -> (f32, f32) {
     (x, z)
 }
 
+/// The walk-view camera MVP at `azimuth`, player at the origin. Mirrors the
+/// play window's `psx_camera_mvp(pitch, az, 0, 368, tr, ZERO, aspect) *
+/// FIELD_WORLD_FLIP * Scale(6) * Translate(-player)` with the sebucus pin.
+fn walk_view_mvp(azimuth: i32, aspect: f32) -> Mat4 {
+    let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
+    let pitch = to_rad(360.0);
+    let yaw = to_rad(azimuth as f32);
+    let tr = Vec3::new(0.0, 536.0, 9139.0);
+    let h = 368.0f32;
+
+    let r = Mat4::from_rotation_x(pitch) * Mat4::from_rotation_y(yaw);
+    let t = Mat4::from_translation(tr);
+    // psx_camera_mvp's internal pre-flip and FIELD_WORLD_FLIP - kept as the
+    // explicit pair so the composition reads like the play window's.
+    let f = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+    let field_world_flip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+
+    let (near, far) = (4.0f32, legaia_engine_render::window::SCENE_FAR);
+    let a = far / (far - near);
+    let b = -near * far / (far - near);
+    let aspect_fix = (4.0 / 3.0) / aspect.max(0.01);
+    let proj = Mat4::from_cols(
+        Vec4::new(h / 160.0 * aspect_fix, 0.0, 0.0, 0.0),
+        Vec4::new(0.0, -h / 120.0, 0.0, 0.0),
+        Vec4::new(
+            0.0,
+            legaia_engine_vm::battle_cam_script::GTE_OFY_NDC_BIAS,
+            a,
+            1.0,
+        ),
+        Vec4::new(0.0, 0.0, b, 0.0),
+    );
+    proj * t * r * f * field_world_flip * Mat4::from_scale(Vec3::splat(6.0))
+}
+
 /// Project a world point to normalized device coords (NDC: +x right, +y up).
 fn project(mvp: &Mat4, p: Vec3) -> (f32, f32) {
     let c: Vec4 = *mvp * p.extend(1.0);
@@ -42,22 +86,12 @@ fn project(mvp: &Mat4, p: Vec3) -> (f32, f32) {
 /// Screen-space delta (Δndc) when the player walks one big step in the world
 /// direction the remap chose for screen input `(sx, sy)` at `azimuth`.
 fn screen_delta(azimuth: i32, sx: i32, sy: i32) -> (f32, f32) {
-    // Unit AABB so framing is symmetric; the player sits at the centre.
-    let lo = [-100.0, -10.0, -100.0];
-    let hi = [100.0, 10.0, 100.0];
-    let center = Vec3::new(
-        (lo[0] + hi[0]) * 0.5,
-        (lo[1] + hi[1]) * 0.5,
-        (lo[2] + hi[2]) * 0.5,
-    );
-    // pan 0 frames the AABB centre; the player is at the centre.
-    let mvp = world_map_camera_mvp(lo, hi, azimuth, 0, 0, 0, 16.0 / 9.0);
-
+    let mvp = walk_view_mvp(azimuth, 16.0 / 9.0);
     let bits = world_map_camera_relative_bits(azimuth, sx, sy);
     let (dx, dz) = bits_to_world_dir(bits);
-    let step = 20.0; // a visible nudge well inside the AABB
-    let p0 = project(&mvp, center);
-    let p1 = project(&mvp, center + Vec3::new(dx * step, 0.0, dz * step));
+    let step = 20.0; // a visible nudge in world units
+    let p0 = project(&mvp, Vec3::ZERO);
+    let p1 = project(&mvp, Vec3::new(dx * step, 0.0, dz * step));
     (p1.0 - p0.0, p1.1 - p0.1)
 }
 
@@ -96,4 +130,27 @@ fn screen_right_walks_right_for_every_azimuth() {
             );
         }
     }
+}
+
+/// At azimuth 0 the walk camera is retail's identity frame, so the remap must
+/// be the identity onto the world axes: Up = `Z+`, Right = `X+` - the retail
+/// compass ring (`FUN_800467E8`) with zero octant offset.
+#[test]
+fn azimuth_zero_is_the_retail_identity_mapping() {
+    assert_eq!(world_map_camera_relative_bits(0, 0, 1), 0x1000, "Up -> Z+");
+    assert_eq!(
+        world_map_camera_relative_bits(0, 1, 0),
+        0x2000,
+        "Right -> X+"
+    );
+    assert_eq!(
+        world_map_camera_relative_bits(0, 0, -1),
+        0x4000,
+        "Down -> Z-"
+    );
+    assert_eq!(
+        world_map_camera_relative_bits(0, -1, 0),
+        0x8000,
+        "Left -> X-"
+    );
 }

@@ -655,6 +655,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 Op49State::Done
             };
         }
+        // A sub-7 casino prize exchange (`World::try_arm_prize_exchange`):
+        // same shape as the gold shop - Armed while the exchange UI is up,
+        // Done once the host closes it (`finish_prize_exchange`).
+        if self.world.prize_exchange_armed {
+            return if self.world.prize_exchange_open {
+                Op49State::Armed
+            } else {
+                Op49State::Done
+            };
+        }
         // A sub-5 tile-board install (`World::try_install_tile_board`): Armed
         // while the board mode runs, Done once an event cell exits it, so the
         // script suspends across the whole board segment.
@@ -707,6 +717,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // The shop op's resume ran: drop the arm so a later op-0x49 can open
         // the next merchant. (Name-entry clears via its own pending flags.)
         self.world.field_shop_armed = false;
+        // Same for a finished prize exchange (sub-7).
+        self.world.prize_exchange_armed = false;
         // A finished tile-board segment resumes the same way.
         self.world.tile_board_armed = false;
         // The submode screen's Done is one-shot: consume it so the next
@@ -731,6 +743,12 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // consumer takes over the frame).
         if sub_op == 5 {
             self.world.try_install_tile_board(instr);
+        }
+        // Sub-7 is the casino prize-exchange counter (menu-overlay
+        // sub-screen 0x20); the byte after the sub-op selects the prize
+        // block (koin1 = 0, balden = 1).
+        if sub_op == 7 {
+            self.world.try_arm_prize_exchange(instr);
         }
         // Anything else is a submode sub-screen: open one on the driver actor
         // so the dispatcher runs it and, when it hands back, unparks this op.

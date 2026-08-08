@@ -36,16 +36,19 @@
 //! retail's rotation global clear the overworld d-pad is the identity onto the
 //! world axes: Up walks `+Z`, Right walks `+X`.
 //!
-//! ## The port's frame is offset from that, on purpose
+//! ## The port's frame is retail's frame
 //!
-//! The port's overworld camera (`world_map_camera_mvp`) frames azimuth `0`
-//! with the eye on `+X`, where retail's yaw-`0` GTE camera looks down `+Z`. So
-//! `world_map_camera_relative_bits` carries a compensating rotation and the
-//! port's azimuth-`0` Up walks `-X`, not `+Z`. That is a whole-frame offset,
-//! which leaves what the player sees identical; a **single-axis** sign flip
-//! would not. The third test separates those two: it pins the frame's
-//! handedness - the one property the whole-frame offset preserves and a
-//! single-axis flip inverts - without pinning which axis `Up` happens to pick.
+//! The walk view renders through the retail GTE walk camera (pinned from the
+//! overworld resident savestates), whose azimuth-`0` frame is retail's
+//! identity: world `X+` = screen right, world `Z+` = screen up. So
+//! `world_map_camera_relative_bits` at azimuth `0` is the identity onto the
+//! world axes - Up walks `+Z`, Right walks `+X`, exactly the retail compass
+//! ring with zero octant offset - and non-zero azimuths apply a plain
+//! rotation. (An earlier remap compensated the top-view **debug** camera
+//! `world_map_camera_mvp` instead - a reflected frame locomotion never
+//! renders under, which turned the whole d-pad 90° + mirrored in the walk
+//! view. The third test pins the frame's handedness so a reflection cannot
+//! come back.)
 //!
 //! See `docs/subsystems/world-map.md#overworld-axis-convention`.
 
@@ -164,18 +167,21 @@ fn every_press_walks_the_way_the_remap_chose() {
 /// 3. `Up x Right` is `+1` at every azimuth.
 ///
 /// (3) has to name the value, not merely require it constant. Inverting one
-/// world axis turns this frame from a reflection into a rotation and leaves
+/// world axis turns this frame from a rotation into a reflection and leaves
 /// (1), (2) and "the handedness never changes" all intact - a
-/// self-consistency check cannot see a defect that is self-consistent. `+1` is
-/// not a free choice either: it is what the camera geometry forces, and
-/// `engine-shell`'s `world_map_camera_remap` (which projects the chosen world
-/// direction through the real `world_map_camera_mvp`) fails on both of its
-/// assertions if the sign moves. This test carries that verdict down to the
-/// layer the camera cannot reach.
+/// self-consistency check cannot see a defect that is self-consistent. `-1`
+/// is not a free choice either: it is what the walk-camera geometry forces
+/// (Up = `(-sinθ, cosθ)`, Right = `(cosθ, sinθ)` in world XZ gives
+/// `Up x Right = -1` at every azimuth), and `engine-shell`'s
+/// `world_map_camera_remap` (which projects the chosen world direction
+/// through the walk-view camera composition) fails on both of its assertions
+/// if the sign moves. This test carries that verdict down to the layer the
+/// camera cannot reach. (The old value `+1` pinned the reflected top-view
+/// debug frame - the remap defect itself.)
 #[test]
 fn the_four_presses_form_one_consistent_frame() {
-    /// `Up x Right` for the port's overworld frame. See the doc comment.
-    const CAMERA_HANDEDNESS: i32 = 1;
+    /// `Up x Right` for the port's overworld walk frame. See the doc comment.
+    const CAMERA_HANDEDNESS: i32 = -1;
 
     let mut handedness = None;
     for azimuth in [0i32, 1024, 2048, 3072] {

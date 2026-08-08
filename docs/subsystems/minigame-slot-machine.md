@@ -13,7 +13,7 @@ each column is claimed) is the machine's own dot-matrix marquee reading out the
 same latch the payout multiplies. See
 [The bonus game](#the-bonus-game---the-two-jackpot-symbols).
 
-**This is the slot *gameplay*, not the prize exchange.** Cashing casino coins for items is a separate static table (`DAT_801e4518` / PROT 899, debiting `_DAT_800845A4`'s sibling coin counter) covered by the randomizer's `casino::CasinoExchange`. The slot machine pays out *into* the coin balance; the exchange spends it.
+**This is the slot *gameplay*, not the prize exchange.** Cashing casino coins for items is a separate static table (`DAT_801e4518` / PROT 899 file `0x15D00`, debiting `_DAT_800845A4`'s sibling coin counter): the randomizer edits it (`casino::CasinoExchange`) and the engine runs it live - field-VM op `0x49` sub-op 7 at the koin1/balden prize counters arms `engine-core::prize_exchange::PrizeExchangeSession` (windows 43/44/45/46, `engine-ui::ui_prize_exchange`). The coin-purchase counter is the sibling sub-op 6 (submode handler `0x25`). The slot machine pays out *into* the coin balance; the exchange spends it.
 
 Provenance: the dumps are `ghidra/scripts/funcs/overlay_slot_machine_<addr>.txt`. Confidence is marked per-claim; the reel layout, RNG, bet charge, feature odds, payout lookup, entry seed and coin commit are **Confirmed** from the disassembly. Table *values* (payout bytes, HUD descriptors) decode from the user's disc and are not reproduced here.
 

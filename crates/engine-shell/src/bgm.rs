@@ -349,6 +349,7 @@ impl AudioBgmDirector {
         self.audio.set_sequencer_paused(false);
         self.paused = false;
         self.last_started = Some(bgm_id);
+        log::info!("AudioBgmDirector: BGM {bgm_id} started");
         Ok(())
     }
 }

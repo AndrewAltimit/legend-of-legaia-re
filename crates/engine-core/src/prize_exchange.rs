@@ -43,16 +43,54 @@
 //! [`PrizeExchangeSession::rebuild`] - mirroring how the retail commit
 //! rebuilds the row list in place.
 //!
-//! NOT WIRED: no host opens the screen. [`PrizeExchangeSession`] is
-//! constructed only by this file's tests, and nothing routes to menu-overlay
-//! sub-screen `0x20`: `field_submode_screen::slot_for_op49_sub_op` collapses
-//! every non-dedicated op-`0x49` sub-op to `slot::CLOSE_TICK`, so the casino
-//! counter's script cannot select this sub-screen however it is written. A
-//! per-sub-screen route off the entry-context byte is the prerequisite. See
-//! `docs/tooling/reach-triage.md`.
+//! Wiring: the casino counter scripts are field-VM op `0x49` **sub-op 7**
+//! (`koin1` `P1[5]` = block 0, `balden`/`balden2` `P1[25]` = block 1; the
+//! block index is the byte after the sub-op, retail's `_DAT_8007B450[1]`).
+//! `World::try_arm_prize_exchange` recognises the arm and stages a session
+//! built over [`parse_blocks`]' table (installed from the menu overlay at
+//! boot); the host drains it with `World::take_pending_prize_exchange` into
+//! `MenuRuntime::open_prize_exchange`, whose tick drives this session and
+//! applies [`apply_redeem`] against the live coin bank / inventory / flags.
+//! The op-`0x49` park stays Armed until `World::finish_prize_exchange`
+//! flips it Done, exactly the gold shop's shape.
 
 use crate::menu_input::{CursorNav, NavButtons, menu_cursor_nav};
 use std::collections::HashMap;
+
+/// File offset of the prize table inside the menu overlay's PROT entry
+/// (899): retail VA `0x801E4518`, the base `FUN_801D5DE0` indexes with
+/// `block * 0x60`. Past the entry's TOC size, so the buffer must come from
+/// the *extended* PROT read (the same buffer `menu_windows::parse` uses).
+pub const PRIZE_TABLE_FILE_OFFSET: usize = 0x15D00;
+/// Bytes per prize block (`a0 * 0x60` in the block-select decode).
+pub const PRIZE_BLOCK_BYTES: usize = 0x60;
+/// Blocks the retail table carries (koin1 uses block 0, balden block 1).
+pub const PRIZE_BLOCK_COUNT: usize = 4;
+
+/// Decode the 4-block prize table out of the menu overlay's (extended) PROT
+/// entry bytes. Every 8-byte record is kept, terminators included - the
+/// state-0 walk ([`visible_rows`]) applies the `id <= 0` stop itself, so the
+/// stored block mirrors the retail bytes. `None` when the buffer is too
+/// short (a truncated / non-extended read).
+pub fn parse_blocks(overlay: &[u8]) -> Option<Vec<Vec<PrizeRecord>>> {
+    let end = PRIZE_TABLE_FILE_OFFSET + PRIZE_BLOCK_BYTES * PRIZE_BLOCK_COUNT;
+    let table = overlay.get(PRIZE_TABLE_FILE_OFFSET..end)?;
+    Some(
+        table
+            .chunks_exact(PRIZE_BLOCK_BYTES)
+            .map(|block| {
+                block
+                    .chunks_exact(8)
+                    .map(|r| PrizeRecord {
+                        item_id: u16::from_le_bytes([r[0], r[1]]) as u8,
+                        gate: u16::from_le_bytes([r[2], r[3]]),
+                        price: u32::from_le_bytes([r[4], r[5], r[6], r[7]]),
+                    })
+                    .collect()
+            })
+            .collect(),
+    )
+}
 
 /// One 8-byte prize record of the `0x801E4518` table: `[u16 item_id]
 /// [u16 gate][u32 price]`. Ids share the 256-entry item-id space; a `0` id
@@ -211,6 +249,12 @@ impl PrizeExchangeSession {
     /// `true` once the browse cancel exited the session.
     pub fn is_done(&self) -> bool {
         self.phase == Phase::Done
+    }
+
+    /// `true` while the Yes/No confirm prompt is up (retail state 2) - the
+    /// hosts draw window 46 over the list exactly then.
+    pub fn confirming(&self) -> bool {
+        self.phase == Phase::Confirm
     }
 
     /// Drive one frame. `coins` is the live coin bank and `held` the

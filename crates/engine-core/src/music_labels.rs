@@ -54,6 +54,23 @@ pub const MUSIC_TRACK_COUNT: u32 = 81;
 /// (cold boot and the post-wipe return).
 pub const TITLE_THEME_BGM_ID: u16 = 2065;
 
+/// Global-pool BGM id of the standard random-encounter battle theme:
+/// sound-test index `26` (`M26B1`, OST "Battle theme 1"), reached as
+/// `2000 + 26`.
+///
+/// Retail selects the battle track through the battle-scene bundle index the
+/// intro loads: `FUN_801CF5BC` phase 2 loads bundle `0x36F + battle_id`
+/// (raw CDNAME index, = extraction `877 + battle_id`, the `sound_data2`
+/// battle-bank SEQ copies), and a random encounter holds `battle_id == 0` -
+/// extraction 877 = sound-test #26 = this id. (`DAT_8007b64b` flips the
+/// default to `0x370` = [`BATTLE_THEME_2_BGM_ID`].)
+pub const BATTLE_THEME_1_BGM_ID: u16 = 2026;
+
+/// Global-pool BGM id of the alternate random-encounter battle theme:
+/// sound-test index `27` (`M26B2`, OST "Battle theme 2"), retail bundle
+/// `0x370` = extraction 878. See [`BATTLE_THEME_1_BGM_ID`].
+pub const BATTLE_THEME_2_BGM_ID: u16 = 2027;
+
 /// The extraction-space PROT entry that holds a sound-test index's
 /// `[VAB][SEQ]` pair, honoring the 2-entry gap at index 68. `None` past the
 /// last row. This is the inverse of [`sound_test_index_for_prot_entry`] and

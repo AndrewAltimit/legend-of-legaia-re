@@ -300,6 +300,12 @@ impl World {
         if let Ok(table) = legaia_asset::menu_windows::parse(overlay) {
             self.menu_widgets.set_defaults_from_table(&table);
         }
+        // The casino prize table (file `0x15D00`, four 0x60-byte blocks) -
+        // the record base window 44's renderer (`FUN_801D5DE0`) indexes.
+        // Feeds `World::try_arm_prize_exchange` (op-0x49 sub-7).
+        if let Some(blocks) = crate::prize_exchange::parse_blocks(overlay) {
+            self.prize_blocks = blocks;
+        }
         if let Some(scripts) = crate::menu_widget::MenuWidgetScripts::resolve_from_overlay(overlay)
         {
             self.menu_widget_scripts = Some(scripts);

@@ -451,36 +451,30 @@ pub const FREE_ROAM_ENTRY_PAUSE_WINDOW: u64 = 300;
 ///
 /// Mirrors retail `func_0x800467e8`, which remaps the held pad through the same
 /// camera yaw the renderer frames the overworld with. `azimuth` is PSX angle
-/// units (`4096` = full turn) - the
-/// [`WorldMapController`] azimuth the
-/// renderer's `world_map_camera_mvp` orbits the eye by:
-/// `eye = center + (d·cosθ, -0.7d, d·sinθ)`, `θ = azimuth / 4096 · τ`.
+/// units (`4096` = full turn).
 ///
-/// The world→screen axes are taken **from the real camera matrix, not from a
-/// hand-derived "away from camera" guess**: under the renderer's Y-down
-/// (eye at `-Y`, `+Y` up-vector) convention the on-screen vertical axis is
-/// inverted relative to the eye→centre direction, so the verified mapping is
-/// screen-up → world `(-cosθ, -sinθ)` and screen-right → world `(sinθ, -cosθ)`,
-/// matching the body below, which is the authority. (This line read
-/// `(cosθ, sinθ)` while the body negated; a doc that disagrees with its own
-/// function on a sign is how "the overworld walks the wrong way in Z" gets
-/// re-opened.)
+/// The frame this compensates is the **walk-view camera** - the retail GTE
+/// composition the play window renders overworld locomotion through
+/// (`psx_camera_mvp(pitch, az, ...) * FIELD_WORLD_FLIP * Scale(6) *
+/// Translate(-player)`, see `window/event_handler/redraw_passes.rs`). At
+/// azimuth `0` that camera is retail's identity frame: world `X+` = screen
+/// right, world `Z+` = screen up, so the unrotated d-pad is the identity
+/// (Up walks `Z+`, Right walks `X+`) - exactly retail's compass ring with
+/// zero octant offset (`docs/subsystems/world-map.md#overworld-axis-convention`).
+/// Non-zero azimuths apply the plain rotation (determinant `+1`).
 ///
-/// This frame is **not** retail's, and the difference is the camera's, not the
-/// remap's: retail's yaw-`0` overworld camera looks down `+Z`, so its
-/// unrotated d-pad is the identity (Up walks world `Z+`, Right walks `X+`),
-/// while `world_map_camera_mvp` frames azimuth `0` from `+X`. The compensating
-/// rotation lives here, and rotating it without rotating the camera breaks
-/// what the player sees. See
-/// `docs/subsystems/world-map.md#overworld-axis-convention` for retail's
-/// compass-ring table and the `FUN_801D01B0` step arms.
+/// An earlier body compensated `world_map_camera_mvp` instead - the
+/// **top-view debug** camera, which frames azimuth `0` from `+X` with a
+/// reflected screen frame (determinant `-1`). But locomotion never runs
+/// under that camera ([`crate::world::World::step_world_map_locomotion`]
+/// early-returns in top view), so the reflection only ever applied to the
+/// walk view it was wrong for: Up walked screen-left, Right walked screen-
+/// down - the whole d-pad turned 90° + mirrored. If top view ever regains a
+/// mover, it needs its own remap against its own camera; do not re-point
+/// this one at it.
 ///
-/// The `world_map_camera_relative_*` tests in `crates/engine-shell` project the
-/// chosen world direction back through `world_map_camera_mvp` and assert it
-/// moves the right way on screen for every azimuth, so this stays in lock-step
-/// with the camera; `engine-core`'s `world_map_axis_convention` integration
-/// test carries the same verdict down to the pad→`move_state` leg, which the
-/// projection test cannot see.
+/// `engine-core`'s `world_map_axis_convention` integration test pins the
+/// pad→`move_state` leg of this contract.
 ///
 /// `sx` is the screen-right delta (`+1` = Right pressed), `sy` the
 /// screen-up delta (`+1` = Up pressed). Returns the post-remap convention
@@ -493,13 +487,10 @@ pub fn world_map_camera_relative_bits(azimuth: i32, sx: i32, sy: i32) -> u16 {
     }
     let theta = (azimuth as f32) / 4096.0 * std::f32::consts::TAU;
     let (sin, cos) = theta.sin_cos();
-    // screen-up    -> world (-cosθ, -sinθ)   (verified against world_map_camera_mvp)
-    // screen-right -> world ( sinθ, -cosθ)
-    // The camera looks down on the (Y-up) flipped terrain from positive Y, so
-    // the on-screen vertical axis runs opposite the eye->centre forward dir;
-    // hence the screen-up -> world mapping carries the negative sign.
-    let wx = (sx as f32) * sin - (sy as f32) * cos;
-    let wz = -(sx as f32) * cos - (sy as f32) * sin;
+    // screen-up    -> world ( -sinθ,  cosθ )   at θ=0: Z+ (retail identity)
+    // screen-right -> world (  cosθ,  sinθ )   at θ=0: X+
+    let wx = (sx as f32) * cos - (sy as f32) * sin;
+    let wz = (sx as f32) * sin + (sy as f32) * cos;
     // sin(22.5°): within this band of an axis the press is treated as cardinal;
     // beyond it (a rotated framing) both bits set and the player walks diagonally.
     const T: f32 = 0.382_683_43;

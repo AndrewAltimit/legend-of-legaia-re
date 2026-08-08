@@ -179,6 +179,10 @@ impl LegaiaRuntime {
         if let Some(shop) = host.world.take_pending_field_shop() {
             self.menu.open_shop_menu(shop);
         }
+        // The casino prize counter (op-0x49 sub-7), same drain shape.
+        if let Some(exchange) = host.world.take_pending_prize_exchange() {
+            self.menu.open_prize_exchange(exchange);
+        }
     }
 
     /// Display label for item `id` off the SCUS item table, falling back to
@@ -498,6 +502,79 @@ impl LegaiaRuntime {
         xy: (i32, i32),
     ) -> Vec<TextDraw> {
         ui::text_draws_for(&font.layout_ascii(glyph), xy, ui::MENU_TEXT_GOLD)
+    }
+
+    /// The casino **prize-exchange** windows (43 / 44 / 45 / 46) while a
+    /// session owns the pad, in stage pixels - the shared `engine-ui`
+    /// composition, sprite/pictogram requests rendered through the same
+    /// ASCII stand-ins the shop windows use. Empty without the window table.
+    fn prize_window_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
+        let Some(session) = self.menu.prize_session.as_ref() else {
+            return Vec::new();
+        };
+        let Some(table) = self.menu_assets.as_ref().and_then(|a| a.window_table()) else {
+            return Vec::new();
+        };
+        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+            return Vec::new();
+        };
+        use legaia_engine_ui::ui_prize_exchange as px;
+        let view = px::PrizeExchangeView {
+            rows: session
+                .rows()
+                .map(|r| px::PrizeRow {
+                    name: self.shop_item_label(r.item_id),
+                    price: r.price,
+                    held: *world.inventory.get(&r.item_id).unwrap_or(&0),
+                })
+                .collect(),
+            cursor: session.cursor(),
+            coins: world.casino_coins,
+            confirm_cursor: session.confirming().then(|| session.confirm_cursor()),
+        };
+        let (mut out, sprites, pict) = px::prize_exchange_draws_for(font, table, &view);
+        for s in sprites {
+            out.extend(self.painter_glyph_stand_in(font, ">", (s.x, s.y)));
+        }
+        if let Some(p) = pict {
+            out.extend(self.painter_glyph_stand_in(font, "C", (p.x, p.y)));
+        }
+        out
+    }
+
+    /// The casino **coin counter** (op-0x49 sub-6) off the live submode
+    /// screen's cells, in stage pixels - the digit-entry UI whose frame
+    /// previously ran headless on this host too.
+    fn coin_counter_window_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
+        let Some(table) = self.menu_assets.as_ref().and_then(|a| a.window_table()) else {
+            return Vec::new();
+        };
+        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+            return Vec::new();
+        };
+        let screen = &world.submode_screen;
+        if !screen.is_open()
+            || screen.actor.state != legaia_engine_vm::baka_hub_actors::slot::COIN_COUNTER
+        {
+            return Vec::new();
+        }
+        use legaia_engine_ui::ui_prize_exchange as px;
+        let view = px::CoinCounterView {
+            digits: screen.counter.digits.to_vec(),
+            cursor: screen.counter.cursor,
+            ceiling: screen.counter.ceiling,
+            gold: world.money,
+            coins: world.casino_coins,
+            confirm_cursor: (screen.actor.sub == 2).then_some((screen.counter.yes_no & 1) as u8),
+        };
+        let (mut out, sprites, pict) = px::coin_counter_draws_for(font, table, &view);
+        for s in sprites {
+            out.extend(self.painter_glyph_stand_in(font, ">", (s.x, s.y)));
+        }
+        if let Some(p) = pict {
+            out.extend(self.painter_glyph_stand_in(font, "C", (p.x, p.y)));
+        }
+        out
     }
 
     /// The shop's four **retail descriptor windows** for the current phase, in
@@ -1154,7 +1231,7 @@ impl LegaiaRuntime {
     /// input and routes pad edges to [`Self::play_shop_input`] while this
     /// holds, the same way it defers to the pause menu.
     pub fn play_shop_is_open(&self) -> bool {
-        self.menu.shop_session.is_some()
+        self.menu.shop_session.is_some() || self.menu.prize_session.is_some()
     }
 
     /// Drive the open shop one frame from an edge-triggered PSX pad word
@@ -1166,7 +1243,7 @@ impl LegaiaRuntime {
     /// the merchant op on its next step. Without that call the script would
     /// stay parked forever.
     pub fn play_shop_input(&mut self, edge: u16) {
-        if self.menu.shop_session.is_none() {
+        if self.menu.shop_session.is_none() && self.menu.prize_session.is_none() {
             return;
         }
         let input = menu_input(edge);
@@ -1183,6 +1260,14 @@ impl LegaiaRuntime {
             && host.world.field_shop_open
         {
             host.world.finish_field_shop();
+        }
+        // The prize exchange's own Exit already unparks through the runtime
+        // tick; this is the same safety net the shop keeps.
+        if self.menu.prize_session.is_none()
+            && let Some(host) = self.scene_host.as_mut()
+            && host.world.prize_exchange_open
+        {
+            host.world.finish_prize_exchange();
         }
     }
 
@@ -1232,6 +1317,10 @@ impl LegaiaRuntime {
         if self.menu.recipient_session.is_some() {
             windows.extend(self.recipient_window_draws(font));
         }
+        // Casino prize exchange (windows 43/44/45/46) + the coin counter's
+        // digit entry, both shared engine-ui compositions.
+        windows.extend(self.prize_window_draws(font));
+        windows.extend(self.coin_counter_window_draws(font));
         let banners = self.banner_stage_draws(font);
         // In-battle overlay (HUD rows / encounter banner / command menus),
         // already in surface pixels - appended after the stage-space scale
