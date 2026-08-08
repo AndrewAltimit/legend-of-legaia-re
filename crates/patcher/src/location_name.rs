@@ -297,9 +297,8 @@ impl ManPlaceNames {
     /// `None` when the stream would overflow the footprint - never a silent
     /// write into the neighbouring asset.
     pub fn repack(&self) -> Option<(Vec<u8>, u32)> {
-        let stream = legaia_lzs::compress(&self.decoded);
-        let size = self.decoded.len() as u32;
-        (stream.len() <= self.compressed_budget).then_some((stream, size))
+        let stream = crate::compress_within(&self.decoded, self.compressed_budget)?;
+        Some((stream, self.decoded.len() as u32))
     }
 }
 

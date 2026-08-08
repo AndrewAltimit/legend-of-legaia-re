@@ -1465,7 +1465,20 @@ wipe and one plain-formation wipe on the `map01` overworld):
    end, and MAIN INIT consumes the latch (both captured live - the flag
    byte walks `0x41 -> 0xC1` at battle entry and back to `0x01` on
    return). Flag index 1 (bit `0x40`) is managed by the same block.
-5. Scripts can invoke the same handoff directly: `FUN_8003C7EC` is a
+   The consumption is **unconditional**: both the survived exit and the
+   loss-return exit join at `0x8003B5F4..0x8003B60C`, whose `andi 0x7f`
+   clears flag index 0 on every back-from-battle pass - so the latch can
+   never linger into a later battle, and it cannot be read back as an
+   outcome signal (`ghidra/scripts/funcs/8003aeb0.txt`).
+5. Story-flag index 1 doubles as a script-readable **battle-outcome
+   flag**: the same gate sets it on the survived path (`ori 0x40` at
+   `0x8003B58C`) and clears it on the wipe path (`andi 0xbf` at
+   `0x8003B5A0`), before either path reaches the shared flag-0 clear. A
+   scene script that runs on the post-battle reload can therefore test
+   flag `1` to distinguish a won battle from a wiped one - the mechanism
+   the patcher's Delilas Challenge prize block uses
+   ([randomizer.md](../tooling/randomizer.md#delilas-challenge)).
+6. Scripts can invoke the same handoff directly: `FUN_8003C7EC` is a
    helper twin of the inline gate body (same three stores), and the
    field-VM op `4C EA` (MENU_CTRL nibble-E sub-A, see
    [script-vm-menuctrl.md](script-vm-menuctrl.md#0x4c-nibble-0xe00xef---misc-scene-writes--emitter-helpers))

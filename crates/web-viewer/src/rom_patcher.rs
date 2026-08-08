@@ -166,7 +166,11 @@ pub fn resolve_seed(seed: &str) -> String {
 /// from the resist-ladder-bypassing wrapper to the guard-respecting one, so
 /// elemental jewels / guards / All Guard apply to Xain's Bloody Horns / Terio
 /// Punch, Cort's Guilty Cross, and the Delilas trio's signature moves (a fix,
-/// not a randomization - it is seedless). `approach_softlock_fix` re-stages a
+/// not a randomization - it is seedless). `delilas_challenge` adds a fourth
+/// Muscle Dome enrollment option: fight all three Delilas siblings at once,
+/// solo (1v3, pays 3x Honey) or full-party (3v3, pays 1x Honey), unlocked by
+/// the Koru event; losing returns to the venue with the party restored - no
+/// game over (seedless). `approach_softlock_fix` re-stages a
 /// monster's approach animation when it dies mid-approach (the summon-then-
 /// melee clip death that parks the battle in an infinite range poll - the
 /// "endless camera orbit" softlock), so the monster resumes walking instead
@@ -263,6 +267,7 @@ pub fn patch_rom(
     shiny_seru: bool,
     jewel_fix: bool,
     approach_softlock_fix: bool,
+    delilas_challenge: bool,
     fishing_prices: &str,
     location_renames: &str,
     earth_egg_price: &str,
@@ -510,6 +515,26 @@ pub fn patch_rom(
         });
     } else {
         summary.push_str("approach-softlock-fix: untouched\n");
+    }
+
+    // Delilas Challenge: a fourth Muscle Dome enrollment option - fight Gi,
+    // Che and Lu Delilas all at once, solo (1v3) or full-party (3v3), gated
+    // on the Koru event in Nivora Ravine. Losing returns to the venue (no
+    // game over); a solo win pays 3x Honey, a group win 1x. Pure script +
+    // formation-data edit in the koin1 scene bundle; seedless. A koin1 MAN
+    // another edit has already grown past its zero-slack footprint skips
+    // with a note instead of failing the run.
+    if delilas_challenge {
+        match apply::apply_delilas_challenge(&mut patcher) {
+            Ok(rep) if rep.changed => summary.push_str(
+                "delilas-challenge: Muscle Dome enrollment offers the Delilas Challenge \
+                 (solo 1v3 pays 3x Honey, party 3v3 pays 1x; unlocks after Nivora Ravine)\n",
+            ),
+            Ok(_) => summary.push_str("delilas-challenge: already applied\n"),
+            Err(e) => summary.push_str(&format!("delilas-challenge: skipped ({e:#})\n")),
+        }
+    } else {
+        summary.push_str("delilas-challenge: untouched\n");
     }
 
     // Fishing-exchange price edits: a comma/semicolon/whitespace-separated list

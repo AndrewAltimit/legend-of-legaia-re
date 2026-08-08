@@ -201,6 +201,36 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("shiny_seru = false".to_string());
     }
 
+    // Delilas Challenge: a fourth Muscle Dome enrollment option - fight all
+    // three Delilas siblings at once (solo 1v3 or full-party 3v3), gated on
+    // the Koru event (story flag 0x378), loss returns to the venue, win pays
+    // Honey. Pure script + formation edit in the koin1 scene bundle.
+    if args.delilas_challenge {
+        match apply::apply_delilas_challenge(&mut patcher) {
+            Ok(report) if report.changed => {
+                println!(
+                    "delilas-challenge: Muscle Dome enrollment offers the Delilas Challenge \
+                     (solo 1v3 pays 3x Honey, party 3v3 pays 1x Honey; unlocks after Nivora \
+                     Ravine; {} bytes of new script in PROT {})",
+                    report.grown_bytes, report.entry_idx
+                );
+                manifest.push("delilas_challenge = true".to_string());
+            }
+            Ok(_) => {
+                println!("delilas-challenge: already applied");
+                manifest.push("delilas_challenge = true".to_string());
+            }
+            Err(e) => {
+                // A grown koin1 MAN (e.g. a language pack) can leave no room;
+                // skip rather than abort the whole run.
+                println!("delilas-challenge: skipped ({e:#})");
+                manifest.push("delilas_challenge = skipped".to_string());
+            }
+        }
+    } else {
+        manifest.push("delilas_challenge = false".to_string());
+    }
+
     // Jewel fix: retarget the boss cinematic casts' damage jals from the
     // resist-ladder-bypassing wrapper to the guard-respecting one, so elemental
     // jewels / guards / All Guard apply to Xain's Bloody Horns / Terio Punch

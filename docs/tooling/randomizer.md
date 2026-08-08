@@ -43,6 +43,10 @@ disc-gated, so CI runs without a disc. There is also a
 - **Additions retail has no table for**, added as machine-code hooks: experience
   for running away, charming an enemy onto your side, shiny Seru, and Seru
   trading.
+- **A new fight retail never stages** - the [Delilas Challenge](#delilas-challenge),
+  a fourth Muscle Dome enrollment option that pits one fighter (1v3) or the
+  full party (3v3) against all three Delilas siblings at once, built entirely
+  from the game's own script vocabulary.
 - **Textures** - replace any TIM on the disc with a user-authored PNG
   ([texture replacement](#texture-replacement)).
 
@@ -62,6 +66,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Seru trading](#seru-trading)
   - [Jewel fix](#jewel-fix)
   - [Approach-softlock fix](#approach-softlock-fix)
+  - [Delilas Challenge](#delilas-challenge)
   - [Fishing prize prices](#fishing-prize-prices)
   - [Location names](#location-names)
   - [Earth Egg coin threshold](#earth-egg-coin-threshold)
@@ -198,6 +203,7 @@ legaia-patcher randomize --input DISC.bin --seed pal --shiny-seru               
 legaia-patcher randomize --input DISC.bin --seed swap --seru-trade                        # vendors trade seru-for-seru (clean-room engine UI)
 legaia-patcher randomize --input DISC.bin --seed fair --jewel-fix                         # boss cinematic casts respect elemental guards
 legaia-patcher randomize --input DISC.bin --seed fair --approach-softlock-fix              # dead approach animations re-stage instead of wedging
+legaia-patcher randomize --input DISC.bin --seed fair --delilas-challenge                  # Muscle Dome option: fight all three Delilas at once
 legaia-patcher fishing   --input DISC.bin                                                 # read-only: list fishing-exchange prizes + prices
 legaia-patcher randomize --input DISC.bin --seed fish --fishing-price 0x6F=500            # Buma Water Egg costs 500 fishing points
 legaia-patcher locations --input DISC.bin                                                 # read-only: list the 16 world-map location names
@@ -283,6 +289,7 @@ unless asked for:
 | `--seru-trade` | vendors swap one of a character's seru for another, reseeding every two in-game hours | `--seru-trade-offers N` caps offers per vendor | [Seru trading](#seru-trading) |
 | `--jewel-fix` | the boss cinematic casts (Xain, Cort, the Delilas trio) respect elemental guards like every other special | - | [Jewel fix](#jewel-fix) |
 | `--approach-softlock-fix` | a monster whose approach animation dies mid-walk is re-staged and resumes walking instead of parking the battle forever (the "endless camera orbit") | - | [Approach-softlock fix](#approach-softlock-fix) |
+| `--delilas-challenge` | a fourth Muscle Dome enrollment option: fight Gi, Che and Lu Delilas all at once, solo (1v3) or full party (3v3); unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
 | `--fishing-price ITEM=POINTS` | set the fishing-exchange point cost of a prize (e.g. the Buma Water Egg); the price also gates when the prize appears | repeatable / comma-separated | [Fishing prize prices](#fishing-prize-prices) |
 | `--rename-location INDEX=NAME` | rename a world-map location (save / load / pause + quick-travel menu), e.g. an element cave to match a re-elemented party | repeatable | [Location names](#location-names) |
 | `--earth-egg-price VALUE` | set the casino-coin threshold to obtain the Earth Egg (Sol Tower Prize Counter; retail 100000), gate + debit together | single value | [Earth Egg coin threshold](#earth-egg-coin-threshold) |
@@ -944,6 +951,57 @@ and an already-fixed image is a no-op.
 > (~19 units/vsync), the strike lands and the round completes. The
 > no-Move-clip edge case is vacuous - a roster sweep
 > (`monster_move_tags` example) finds all 186 monsters carry tag `1`.
+
+### Delilas Challenge
+
+`--delilas-challenge` adds a fourth option to the Muscle Dome enrollment
+clerk's "who will be entering" menu (`delilas_challenge` module): the
+**Delilas Challenge** - Gi, Che and Lu Delilas together in one battle, a
+fight that exists nowhere in retail (the Nivora Ravine confrontations are
+three consecutive *solo* duels, and no retail formation seats three distinct
+boss ids). Picking it offers a **solo challenge** (choose Vahn, Noa or Gala;
+1 vs 3) or a **group challenge** (full party; 3 vs 3). The option is gated on
+story flag `0x378` - the flag the Koru death event latches and the world map
+reads to flip the ravine entrance from `nilboa` to `nilboa2` - so until that
+event the clerk brushes the player off. On by default in the web patcher's
+Balanced and Full Chaos presets.
+
+Everything is script + data inside the `koin1` scene bundle - no code
+injection:
+
+- the scene's single never-rolled formation row becomes the trio
+  (`hdr=[01,00,00] count=3 ids=[162,163,164]`; the boss header byte also
+  makes the fight un-fleeable through `ctx+0x287`, so the outcome is
+  strictly win or wipe);
+- the 3-option `0x28` who-enrolls picker grows to the 4-option `0x29` form
+  (the picker arity ceiling), with the new arm appended at the record's end;
+- the solo arms strip the party with the same `0x3D` PARTY_REMOVE idiom the
+  retail ravine duels use, and the launch raises retail's **scripted-loss
+  latch** (story flag `0`, the Tetsu-spar `50 00` idiom) before the
+  `3E FF 00` battle op - so **losing returns to the Sol venue** with the
+  party fully restored instead of the continue screen;
+- a guarded block at the top of the scene-entry script consumes transient
+  marker flags on the post-battle reload, reads retail's battle-outcome
+  flag (story flag `1`, set by MAIN INIT's back-from-battle gate on a
+  survived fight and cleared on a wipe), recomposes the party, and pays the
+  prize: **3x Honey for a solo win, 1x Honey for a group win**. The
+  challenge is repeatable.
+
+The `koin1` MAN is sector-aligned with zero compressed slack, so the grown
+script only fits back into its footprint through the optimal LZS packer -
+which is why every MAN re-pack site in the patcher now falls back to
+`compress_optimal` when greedy misses (`compress_within`). If another edit
+(e.g. a grown language pack) has already consumed the headroom, the feature
+skips with a note instead of failing the run. Seedless; re-application is a
+no-op.
+
+> Verified by the `delilas_challenge_real` disc oracle: the retail image
+> locates as unpatched, the patched MAN re-parses with the 4-option picker
+> targeting the new branch (gate, markers, strips, loss latch, battle op all
+> asserted at decode level), the entry-script block decodes with the outcome
+> test + grants + restores, the edit is byte-deterministic and idempotent,
+> composes with the Earth Egg price edit in either order, and every touched
+> sector stays EDC/ECC-valid inside the koin1 entry footprint.
 
 ### Fishing prize prices
 

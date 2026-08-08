@@ -682,6 +682,15 @@ pub(crate) struct RandomizeArgs {
     /// in verified-dead SCUS space outside all live tables).
     #[arg(long, default_value_t = false)]
     pub(crate) shiny_seru: bool,
+    /// **Delilas Challenge**: a fourth option on the Muscle Dome enrollment
+    /// menu - fight Gi, Che and Lu Delilas all at once, solo (1v3) or with
+    /// the full party (3v3). Unlocks after the Koru event in Nivora Ravine
+    /// (the `nilboa2` story flag). Losing returns to the Sol venue with the
+    /// party restored - no game over; winning pays 3x Honey (solo) or
+    /// 1x Honey (group). Pure script + formation-data edit in the `koin1`
+    /// scene bundle - no code injection.
+    #[arg(long, default_value_t = false)]
+    pub(crate) delilas_challenge: bool,
     /// Per-battle percentage chance a capturable enemy is shiny (only with
     /// `--shiny-seru`).
     #[arg(long, default_value_t = legaia_patcher::shiny_seru::DEFAULT_PCT)]

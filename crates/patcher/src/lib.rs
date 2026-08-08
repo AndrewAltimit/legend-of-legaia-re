@@ -63,6 +63,7 @@ pub mod casino;
 pub mod charm_fix;
 pub mod chest;
 pub mod damage_ap;
+pub mod delilas_challenge;
 pub mod disc;
 pub mod door;
 pub mod drops;
@@ -134,4 +135,23 @@ pub(crate) fn man_compressed_budget(
         .min()
         .unwrap_or(entry_len)
         .saturating_sub(man_data_offset)
+}
+
+/// Recompress a decoded MAN into `budget` bytes: greedy first, then the
+/// optimal packer when greedy misses. `None` if even optimal overflows.
+///
+/// Every MAN re-pack site must use this rather than bare
+/// [`legaia_lzs::compress`]: a growing pass (the Delilas Challenge, a grown
+/// translation) can leave a MAN that only the optimal packer fits back into
+/// its zero-slack footprint, and a later same-size pass (Earth Egg price,
+/// chests, shops, doors) re-packs the whole stream - with greedy alone that
+/// later pass would overflow and skip (or fail) a scene the first pass proved
+/// fits.
+pub(crate) fn compress_within(decoded: &[u8], budget: usize) -> Option<Vec<u8>> {
+    let stream = legaia_lzs::compress(decoded);
+    if stream.len() <= budget {
+        return Some(stream);
+    }
+    let stream = legaia_lzs::compress_optimal(decoded);
+    (stream.len() <= budget).then_some(stream)
 }

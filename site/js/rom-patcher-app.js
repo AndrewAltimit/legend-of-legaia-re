@@ -9,7 +9,7 @@
  * unused_enemies, unused_items, equipment_drops, monster_stats, move_power,
  * element_affinity, spell_cost, equip_bonus, weapon_specialty, starting_level,
  * solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru,
- * jewel_fix, approach_softlock_fix, fishing_prices, location_renames,
+ * jewel_fix, approach_softlock_fix, delilas_challenge, fishing_prices, location_renames,
  * earth_egg_price, arts_powers,
  * arts_ap_grants, arts_ap_costs, spirit_ap, damage_ap, enemy_stat_scale)
  * -> { data, summary, seed, lang }`, `resolve_seed(str)`,
@@ -1374,7 +1374,7 @@ const PRESET_BASE = {
   drops: 'none', encounters: 'none', encounter_scope: 'scene', soloStrong: false, fleeExp: false, chests: 'none',
   shops: 'none', casino: 'none', steals: 'none', arts: 'none', doors: 'none',
   door_coupling: 'coupled', houseDoors: false, equipmentDrops: false, seruTrade: false,
-  enemyAlly: false, shinySeru: false, jewelFix: false, approachFix: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '',
+  enemyAlly: false, shinySeru: false, jewelFix: false, approachFix: false, delilasChallenge: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '',
   startingItems: 0, doorOfWind: false, incense: false,
   speedChain: false, chickenHeart: false, goodLuckBell: false,
   allWarps: false,
@@ -1428,6 +1428,7 @@ const PRESETS = {
     chests: 'shuffle', steals: 'shuffle', arts: 'shuffle',
     equip_bonus: 'shuffle', equipmentDrops: true,
     seruTrade: true, enemyAlly: true, shinySeru: true, jewelFix: true, approachFix: true,
+    delilasChallenge: true,
     ...STARTING_BUNDLE, startingLevel: 5,
   },
   chaos: {
@@ -1440,6 +1441,7 @@ const PRESETS = {
     monster_stats: 'random', move_power: 'random', element_affinity: 'random',
     spell_cost: 'random', equip_bonus: 'random', weaponSpecialty: true,
     equipmentDrops: true, seruTrade: true, enemyAlly: true, shinySeru: true, jewelFix: true, approachFix: true,
+    delilasChallenge: true,
     ...STARTING_BUNDLE, startingLevel: 10,
   },
 };
@@ -1469,6 +1471,7 @@ function init() {
   const shinySeruChk = $('rom-shiny-seru');
   const jewelFixChk = $('rom-jewel-fix');
   const approachFixChk = $('rom-approach-fix');
+  const delilasChallengeChk = $('rom-delilas-challenge');
   const fishingPriceInput = $('rom-fishing-price');
   const renameLocationInput = $('rom-rename-location');
   const earthEggPriceInput = $('rom-earth-egg-price');
@@ -1703,6 +1706,7 @@ function init() {
     shinySeruChk.checked = cfg.shinySeru;
     jewelFixChk.checked = cfg.jewelFix;
     approachFixChk.checked = cfg.approachFix;
+    delilasChallengeChk.checked = cfg.delilasChallenge;
     fishingPriceInput.value = cfg.fishingPrice || '';
     renameLocationInput.value = cfg.renameLocation || '';
     earthEggPriceInput.value = cfg.earthEggPrice || '';
@@ -1851,6 +1855,7 @@ function init() {
     const shinySeru = shinySeruChk.checked;
     const jewelFix = jewelFixChk.checked;
     const approachFix = approachFixChk.checked;
+    const delilasChallenge = delilasChallengeChk.checked;
     // Prices & names = the structured rows serialized to the raw inputs'
     // syntax, merged with anything typed into the raw (advanced) inputs.
     const manual = manualTables.collect();
@@ -1961,7 +1966,7 @@ function init() {
       speedChain === 0 && chickenHeart === 0 && goodLuckBell === 0 && !allWarps &&
       monsterStats === 'none' && movePower === 'none' && elementAffinity === 'none' &&
       spellCost === 'none' && equipBonus === 'none' && !weaponSpecialty &&
-      startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !jewelFix && !approachFix &&
+      startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !jewelFix && !approachFix && !delilasChallenge &&
       !fishingPrice && !renameLocation && !earthEggPrice && !artsPower && !artsApGrant && !artsApCost &&
       !spiritAp && !damageAp && !enemyStatScale
     );
@@ -1994,7 +1999,7 @@ function init() {
       let summaryText = '';
       let langReport = null;
       if (baseActive) {
-        const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale);
+        const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale);
         data = result.data;
         usedSeed = result.seed;
         summaryText = result.summary || '';
