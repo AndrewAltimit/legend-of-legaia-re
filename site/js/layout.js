@@ -623,6 +623,9 @@ function wireDiscChip() {
         if (line) line.innerHTML = '<b>' + meta.name + '</b> is in the drive.' +
           '<span class="sub">Cached in this browser - every page below reads from it. Nothing is uploaded.</span>';
         if (browse) browse.textContent = 'Swap disc';
+        /* Identity card (js/disc-info.js, home page only): what the cached
+           image actually is - serial, region, build, PROT layout. */
+        if (window.DiscInfo) window.DiscInfo.intoCached(slot);
       }
     }
   }
