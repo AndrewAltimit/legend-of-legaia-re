@@ -64,6 +64,7 @@ pub mod charm_fix;
 pub mod chest;
 pub mod damage_ap;
 pub mod delilas_challenge;
+pub mod delilas_dome;
 pub mod disc;
 pub mod door;
 pub mod drops;
