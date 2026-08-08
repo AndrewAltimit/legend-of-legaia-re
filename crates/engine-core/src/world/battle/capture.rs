@@ -168,9 +168,9 @@ impl World {
     /// offer list reflects the new owned set.
     pub fn apply_seru_trade(
         &mut self,
-        offer: &legaia_asset::seru_trade::TradeOffer,
+        trade: &legaia_asset::seru_trade::OwnerTrade,
     ) -> crate::seru_trade::TradeResult {
-        crate::seru_trade::apply_trade(&mut self.roster.members, offer)
+        crate::seru_trade::apply_trade(&mut self.roster.members, trade)
     }
 
     /// Drain the summon-magic level-up events (`(party_slot, spell_id,

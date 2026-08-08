@@ -764,19 +764,39 @@ impl PlayWindowApp {
         };
         match state {
             Some(MenuState::ShopTrade) => {
+                // Mirror the retail trade screen: the title names BOTH sides of
+                // the bucket's standing offer, each line is one qualifying
+                // owner, and an empty list spells out the missing trade.
+                let mut title = "SHOP - TRADE SERU".to_string();
                 let mut labels: Vec<String> = Vec::new();
                 match self.menu_runtime.trade_session.as_ref() {
-                    Some(t) if !t.offers.is_empty() => {
-                        for o in &t.offers {
+                    Some(t) => {
+                        title = format!(
+                            "TRADE - WANTS {} / OFFERS {} LV{}",
+                            name_of(t.offer.want_id),
+                            name_of(t.offer.give_id),
+                            t.offer.give_level,
+                        );
+                        if t.offers.is_empty() {
                             labels.push(format!(
-                                "{} ({}) -> {}",
-                                name_of(o.give.seru_id),
-                                owner_of(o.give.owner_slot),
-                                name_of(o.receive_seru_id),
+                                "No '{}' available to trade for '{}'",
+                                name_of(t.offer.want_id),
+                                name_of(t.offer.give_id),
                             ));
+                        } else {
+                            for o in &t.offers {
+                                labels.push(format!(
+                                    "{} Lv{} ({}) -> {} Lv{}",
+                                    name_of(o.given_id),
+                                    o.given_level,
+                                    owner_of(o.owner_slot),
+                                    name_of(o.received_id),
+                                    o.received_level,
+                                ));
+                            }
                         }
                     }
-                    _ => labels.push("(no trades offered)".to_string()),
+                    None => labels.push("(no trades offered)".to_string()),
                 }
                 let rows: Vec<ShopRow<'_>> = labels
                     .iter()
@@ -784,7 +804,7 @@ impl PlayWindowApp {
                     .collect();
                 out.extend(shop_draws_for(
                     &self.font,
-                    "SHOP - TRADE SERU",
+                    &title,
                     &rows,
                     cursor,
                     None,
@@ -794,9 +814,10 @@ impl PlayWindowApp {
             Some(MenuState::ShopTradeConfirm) => {
                 let title = match self.menu_runtime.pending_trade_offer() {
                     Some(o) => format!(
-                        "Trade {} for {}?",
-                        name_of(o.give.seru_id),
-                        name_of(o.receive_seru_id),
+                        "Trade {} for {} Lv{}?",
+                        name_of(o.given_id),
+                        name_of(o.received_id),
+                        o.received_level,
                     ),
                     None => "Trade?".to_string(),
                 };

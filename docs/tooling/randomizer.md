@@ -825,15 +825,21 @@ and the game always agree.
 
 **What an offer is (`legaia_asset::seru_trade`, the shared kernel).** Each time
 bucket has one `(want, give, give_level)` preference: the vendor wants a seru
-*type* and hands back a different one at a fixed level (`4..=9`, part of the
-trade's value, shown before you trade). The randomizer precomputes the whole
-64-bucket schedule from the seed (`bucket_offers` → `bucket_table_to_bytes`, 3
+*type* and hands back a different one at a fixed level, part of the trade's
+value and shown before you trade. The level roll is **curved toward low levels**
+(`roll_give_level`): a weighted ticket picks a 3-level band - `1..=3` common
+(70%), `4..=6` rare (25%), `7..=9` very rare (5%) - so a high-level seru is a
+jackpot, not a coin flip. The randomizer precomputes the whole 64-bucket
+schedule from the seed (`bucket_offers` → `bucket_table_to_bytes`, 3
 bytes/entry) and embeds it. At runtime the handler indexes it by
 `(play_time / period) & 63`. Against the live party the bucket expands
 (`expand_offers`) to **one selectable line per member who owns the wanted seru** -
 so the same type held by two members lists once each - **excluding** any member
 who already owns the give-back (a pointless trade). The seru id space is the
-player Seru-magic block `0x81..=0x95`.
+player Seru-magic block `0x81..=0x95`. The trade screen always names **both
+sides** of the offer - a `Wants <seru>` / `Offers <seru> <lvl>` header - and
+when no party member qualifies it says `No <want> available / to trade for
+<give>` instead of showing an empty list.
 
 **The retail build (`seru_overlay` + `apply::inject_trade_full`).** This is a
 hand-assembled MIPS feature, not a value edit. Two byte-verified edits to the
@@ -859,9 +865,10 @@ all-zero dead space. The swap rewrites the chosen owner's spell list in place
 trade UI: `World::install_seru_trade_config` reads a 24-byte
 [`SeruTradeConfig`] blob (enabled + seed) that `apply::enable_seru_trades` can
 write, and `World::open_seru_trade` / `apply_seru_trade` render + apply the swap
-through `MenuState::ShopMenu`/`ShopTrade`/`ShopTradeConfirm`. (Engine and retail
-share the offer math; the engine UI's migration to the bucket+`give_level`
-schedule is in progress.)
+through `MenuState::ShopMenu`/`ShopTrade`/`ShopTradeConfirm`. Both hosts run the
+same bucket model as retail (`bucket_offer` + `expand_offers`, received seru at
+the bucket's `give_level`), name both sides of the standing offer in the screen
+title, and render the same no-trade message when nobody qualifies.
 
 > Verified by the patcher `seru_trade_real` disc oracle (every piece lands in 0899,
 > the schedule round-trips to the kernel offers, the SCUS gap is left untouched,

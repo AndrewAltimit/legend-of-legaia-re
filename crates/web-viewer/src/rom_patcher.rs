@@ -468,6 +468,14 @@ pub fn patch_rom(
     if seru_trade {
         apply::inject_trade_full(&mut patcher, seed_n)
             .map_err(|e| err(format!("seru-trade: {e}")))?;
+        // Also embed the engine-facing config blob (same seed), so the patched
+        // disc trades identically when booted in the clean-room engine.
+        apply::enable_seru_trades(
+            &mut patcher,
+            seed_n,
+            legaia_asset::seru_trade::DEFAULT_MAX_OFFERS,
+        )
+        .map_err(|e| err(format!("seru-trade config: {e}")))?;
         summary.push_str("seru-trade: in-shop Seru trading vendor enabled\n");
     } else {
         summary.push_str("seru-trade: untouched\n");

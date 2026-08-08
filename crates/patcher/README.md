@@ -482,12 +482,16 @@ shown up front. The offer is **time-bucketed** (rotates as play continues) and
 fully **deterministic from the seed**.
 
 - **Offer math (`legaia_asset::seru_trade`, shared with the engine).** Each of 64
-  buckets holds one `(want, give, give_level)` preference (`give_level` in
-  `4..=9`). `bucket_offers` derives the schedule from the seed;
-  `bucket_table_to_bytes` serializes it (3 bytes/entry). `expand_offers` maps a
-  bucket against the live party to **one line per member who owns the wanted
-  seru**, *excluding* members who already own the give-back (a pointless trade).
-  Id space is the player Seru-magic block `0x81..=0x95`.
+  buckets holds one `(want, give, give_level)` preference. The level roll is
+  curved toward low levels (`roll_give_level`): band `1..=3` common (70%),
+  `4..=6` rare (25%), `7..=9` very rare (5%). `bucket_offers` derives the
+  schedule from the seed; `bucket_table_to_bytes` serializes it (3 bytes/entry).
+  `expand_offers` maps a bucket against the live party to **one line per member
+  who owns the wanted seru**, *excluding* members who already own the give-back
+  (a pointless trade). Id space is the player Seru-magic block `0x81..=0x95`.
+  The screen always names both sides (`Wants <seru>` / `Offers <seru> <lvl>`
+  header) and, when nobody qualifies, draws `No <want> available / to trade for
+  <give>` instead of an empty list.
 - **Where it lives.** All of it - the picker edits, both stubs, the trade
   handler, the strings, the bucket table, and the runtime cells - is hosted in the
   **menu overlay (PROT 0899)**: two byte-verified edits add the Trade row + route

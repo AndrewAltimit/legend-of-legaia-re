@@ -262,17 +262,27 @@ pub const BOX_X: u16 = 0x28;
 pub const BOX_Y: u16 = 0x40;
 pub const BOX_W: u16 = 0xC8;
 pub const BOX_H_PX: u16 = 0x90;
-/// Text columns (relative to screen, before the slide offset): reward header /
-/// per-owner want name / owner name / level number.
+/// Text columns (relative to screen, before the slide offset): header labels /
+/// header seru names / per-owner want name / owner name / level number.
 pub const COL_HEADER_X: u16 = 0x30;
+pub const COL_HEADER_NAME_X: u16 = 0x70;
 pub const COL_WANT_X: u16 = 0x40;
 pub const COL_OWNER_X: u16 = 0x80;
 pub const COL_LEVEL_X: u16 = 0xB0;
-/// Row baselines: reward header y, first per-owner row y, and per-row y advance.
+/// Row baselines: the two-row offer header ("Wants <want>" then
+/// "Offers <give> <lvl>"), first per-owner row y, and per-row y advance.
 /// Tucked just inside the box top (`BOX_Y + 0xC`).
 pub const ROW_HEADER_Y: u16 = 0x4C;
-pub const ROW_FIRST_Y: u16 = 0x5C;
+pub const ROW_HEADER2_Y: u16 = 0x5C;
+pub const ROW_FIRST_Y: u16 = 0x6C;
 pub const ROW_STEP_Y: u16 = 0x10;
+/// No-trade message layout (drawn at the first two would-be owner rows when no
+/// party member qualifies): `No <want> available` / `to trade for <give>`.
+/// The name columns leave room for the longest seru name in the proportional
+/// dialog font before the following fragment.
+pub const NO_TRADE_NAME1_X: u16 = 0x48;
+pub const NO_TRADE_AVAIL_X: u16 = 0x88;
+pub const NO_TRADE_NAME2_X: u16 = 0x90;
 /// Persistent slide x-offset cell (SCUS gap, resident). The dispatch stub resets it
 /// to [`SLIDE_START_OFF`] on Trade confirm; the handler steps it toward 0 each frame.
 pub const TRADE_SLIDE_DELTA_VA: u32 = 0x801E_7E24;
@@ -314,6 +324,22 @@ pub const CONFIRM_YES_STR_VA: u32 = 0x801E_7D50;
 pub const CONFIRM_YES_STR: &[u8] = b"@Yes\0";
 pub const CONFIRM_NO_STR_VA: u32 = 0x801E_7D58;
 pub const CONFIRM_NO_STR: &[u8] = b"@No\0";
+/// Offer-header labels: the trade screen always names both sides of the offer -
+/// "Wants <want seru>" over "Offers <give seru> <lvl>" - so the player sees what
+/// the vendor is looking for even when no party member owns it. Hosted in the
+/// run-C tail past the dispatch stub.
+pub const WANTS_STR_VA: u32 = 0x801E_7F70;
+pub const WANTS_STR: &[u8] = b"@Wants\0";
+pub const OFFERS_STR_VA: u32 = 0x801E_7F78;
+pub const OFFERS_STR: &[u8] = b"@Offers\0";
+/// No-trade message fragments, composed with the two seru names as
+/// `No <want> available` / `to trade for <give>` when no owner qualifies.
+pub const NO_TRADE_NO_STR_VA: u32 = 0x801E_7F80;
+pub const NO_TRADE_NO_STR: &[u8] = b"@No\0";
+pub const NO_TRADE_AVAIL_STR_VA: u32 = 0x801E_7F88;
+pub const NO_TRADE_AVAIL_STR: &[u8] = b"@available\0";
+pub const NO_TRADE_FOR_STR_VA: u32 = 0x801E_7F98;
+pub const NO_TRADE_FOR_STR: &[u8] = b"@to trade for\0";
 /// Confirm-prompt layout (inside the box, near its bottom): question row y, choices
 /// row y, and the Yes / No / cursor x columns.
 pub const PROMPT_Y: u16 = 0xB4;
@@ -527,10 +553,12 @@ pub const TRADE_ACTIVE_VA: u32 = 0x801E_7E20;
 
 /// 0899 run-C VAs (all above the handler, below the run-C end; non-overlapping -
 /// asserted by `trade_0899_layout_is_disjoint`). Reached by `j` from the 0899
-/// detours / handler, so no SCUS gap is used.
-pub const ENTRY_STUB_VA: u32 = 0x801E_7B00;
+/// detours / handler, so no SCUS gap is used. The entry + dispatch stubs sit in
+/// the run-C tail past the runtime cells, freeing the window between the handler
+/// and the row-4 stub for the handler body to grow into.
+pub const ENTRY_STUB_VA: u32 = 0x801E_7E50;
 /// Reorder dispatch stub (cursor 2 → Trade sub-mode, 3 → Quit, 0/1 → Buy/Sell).
-pub const TRADE_DISPATCH_STUB_VA: u32 = 0x801E_7B60;
+pub const TRADE_DISPATCH_STUB_VA: u32 = 0x801E_7EB0;
 /// The in-shop trade-screen handler (draws + input + swap; runs in mode 0x17).
 ///
 /// HOSTED IN THE MENU OVERLAY 0899, not the tiny SCUS rodata gap: the gap only had

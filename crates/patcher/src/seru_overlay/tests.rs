@@ -321,6 +321,19 @@ fn trade_handler_renders_per_owner_offer() {
         h.contains(&sw(ZERO, AT, lo(TRADE_CONFIRM_VA))),
         "✕/○ in confirm clears the sub-state"
     );
+    // The header names BOTH sides of the offer ("Wants" / "Offers" labels).
+    assert!(
+        h.contains(&addiu(A0, A0, lo(WANTS_STR_VA)))
+            && h.contains(&addiu(A0, A0, lo(OFFERS_STR_VA))),
+        "header labels both offer sides"
+    );
+    // The empty state spells out the missing trade instead of a blank list.
+    assert!(
+        h.contains(&addiu(A0, A0, lo(NO_TRADE_NO_STR_VA)))
+            && h.contains(&addiu(A0, A0, lo(NO_TRADE_AVAIL_STR_VA)))
+            && h.contains(&addiu(A0, A0, lo(NO_TRADE_FOR_STR_VA))),
+        "no-trade message fragments drawn"
+    );
     // The give-filter scans the owner's list for the give-back id (skip if owned).
     assert!(
         h.contains(&lw(T0, AT, lo(TRADE_GIVE_ID_VA))),
@@ -387,6 +400,15 @@ fn trade_0899_layout_is_disjoint() {
         ),
         ("yes", CONFIRM_YES_STR_VA, CONFIRM_YES_STR.len() as u32),
         ("no", CONFIRM_NO_STR_VA, CONFIRM_NO_STR.len() as u32),
+        ("wants", WANTS_STR_VA, WANTS_STR.len() as u32),
+        ("offers", OFFERS_STR_VA, OFFERS_STR.len() as u32),
+        ("nt-no", NO_TRADE_NO_STR_VA, NO_TRADE_NO_STR.len() as u32),
+        (
+            "nt-avail",
+            NO_TRADE_AVAIL_STR_VA,
+            NO_TRADE_AVAIL_STR.len() as u32,
+        ),
+        ("nt-for", NO_TRADE_FOR_STR_VA, NO_TRADE_FOR_STR.len() as u32),
         ("table", BUCKET_TABLE_VA, BUCKET_TABLE_LEN as u32),
         ("cells", TRADE_ACTIVE_VA, 0x24),
     ];

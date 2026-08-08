@@ -16,7 +16,7 @@
 //!
 //! Skips without `LEGAIA_DISC_BIN` (CLAUDE.md convention).
 
-use legaia_asset::seru_trade::{DEFAULT_MAX_OFFERS, SECONDS_PER_RESEED};
+use legaia_asset::seru_trade::{self, DEFAULT_MAX_OFFERS, SECONDS_PER_RESEED};
 use legaia_engine_core::seru_trade::TradeResult;
 use legaia_engine_core::world::World;
 use legaia_patcher::apply;
@@ -40,13 +40,17 @@ fn ch_with_spells(ids: &[u8]) -> CharacterRecord {
     r
 }
 
-/// A party whose members own a spread of player seru (0x81..=0x95).
-fn party() -> Party {
+/// A party built so its lead owns exactly the seru the seed's bucket-0 offer
+/// wants (the bucket model trades a *type* the party holds, so the fixture has
+/// to hold it), plus unrelated seru on the other members.
+fn party_for(seed: u64) -> Party {
+    let offer = seru_trade::bucket_offer(seed, 0, &seru_trade::default_pool());
+    let other = if offer.want_id == 0x90 { 0x91 } else { 0x90 };
     Party {
         members: vec![
-            ch_with_spells(&[0x81, 0x82, 0x83]),
-            ch_with_spells(&[0x90, 0x91]),
-            ch_with_spells(&[0x88]),
+            ch_with_spells(&[offer.want_id]),
+            ch_with_spells(&[other]),
+            ch_with_spells(&[0x05]), // not a tradeable seru
         ],
     }
 }
@@ -58,13 +62,15 @@ fn seru_trade_runtime_swaps_and_reseeds() {
         return;
     };
 
+    let seed = 0xBADC0DEu64;
+
     // --- Baseline: unpatched disc reports trading disabled. ---
     let base = DiscPatcher::open(disc.clone()).expect("open disc");
     let vanilla_scus = base
         .read_named_file("SCUS_942.54")
         .expect("SCUS present on disc");
     let mut w0 = World {
-        roster: party(),
+        roster: party_for(seed),
         ..World::default()
     };
     assert!(
@@ -77,7 +83,6 @@ fn seru_trade_runtime_swaps_and_reseeds() {
     );
 
     // --- Patch the config onto a scratch copy, re-decode off the patched SCUS. ---
-    let seed = 0xBADC0DEu64;
     let mut patcher = DiscPatcher::open(disc).expect("open disc");
     apply::enable_seru_trades(&mut patcher, seed, DEFAULT_MAX_OFFERS).expect("enable seru trade");
     let patched_scus = patcher
@@ -85,7 +90,7 @@ fn seru_trade_runtime_swaps_and_reseeds() {
         .expect("SCUS present after patch");
 
     let mut w = World {
-        roster: party(),
+        roster: party_for(seed),
         play_time_seconds: 0,
         ..World::default()
     };
@@ -95,64 +100,86 @@ fn seru_trade_runtime_swaps_and_reseeds() {
     );
     assert!(w.seru_trade_enabled());
 
-    // Open at a vendor; the party owns seru, so the vendor has trades.
+    // Open at a vendor. The session carries the bucket's standing offer (the
+    // basis of the "No X available to trade for Y" empty message) and, since
+    // the fixture lead owns the wanted seru, one selectable line.
     let vendor_id = 7;
     let session = w.open_seru_trade(vendor_id).expect("trade session opens");
-    assert!(!session.is_empty(), "party owns seru -> offers exist");
-    assert!(session.offers.len() <= DEFAULT_MAX_OFFERS as usize);
+    let expected_offer = seru_trade::bucket_offer(seed, 0, &seru_trade::default_pool());
+    assert_eq!(
+        session.offer, expected_offer,
+        "session offer matches the kernel's bucket-0 offer for the disc seed"
+    );
+    assert!(!session.is_empty(), "lead owns the want -> a line exists");
     for o in &session.offers {
-        assert_ne!(o.receive_seru_id, o.give.seru_id);
-        assert!((0x81..=0x95).contains(&o.receive_seru_id));
+        assert_eq!(o.given_id, expected_offer.want_id);
+        assert_eq!(o.received_id, expected_offer.give_id);
+        assert_ne!(o.received_id, o.given_id);
+        assert!((0x81..=0x95).contains(&o.received_id));
+        assert_eq!(o.received_level, expected_offer.give_level);
+        assert!((1..=9).contains(&o.received_level), "curved level range");
     }
 
     // Determinism: reopening the same vendor/time/party yields the same offers.
     let again = w.open_seru_trade(vendor_id).unwrap();
     assert_eq!(again.offers, session.offers, "offers are deterministic");
 
-    // --- Confirm + apply the first offer; the runtime rewrites the owner. ---
-    let offer = session.offers[0];
-    let owner = offer.give.owner_slot as usize;
+    // --- Confirm + apply the first line; the runtime rewrites the owner. ---
+    let trade = session.offers[0];
+    let owner = trade.owner_slot as usize;
     let before = w.roster.members[owner].spell_list();
     assert!(
-        before.ids[..before.count as usize].contains(&offer.give.seru_id),
+        before.ids[..before.count as usize].contains(&trade.given_id),
         "owner really holds the seru being given"
     );
 
-    let result = w.apply_seru_trade(&offer);
+    let result = w.apply_seru_trade(&trade);
     assert_eq!(
         result,
         TradeResult::Swapped {
-            owner_slot: offer.give.owner_slot,
-            given: offer.give.seru_id,
-            received: offer.receive_seru_id,
+            owner_slot: trade.owner_slot,
+            given: trade.given_id,
+            received: trade.received_id,
         }
     );
 
     let after = w.roster.members[owner].spell_list();
-    assert!(
-        after.ids[..after.count as usize].contains(&offer.receive_seru_id),
-        "owner now holds the received seru"
+    let pos = after.ids[..after.count as usize]
+        .iter()
+        .position(|&id| id == trade.received_id)
+        .expect("owner now holds the received seru");
+    assert_eq!(
+        after.levels[pos], trade.received_level,
+        "received seru arrives at the offered level (retail parity)"
     );
     // The given seru is gone (unless the owner held a second copy, which our
     // fixtures don't).
     assert!(
-        !after.ids[..after.count as usize].contains(&offer.give.seru_id),
+        !after.ids[..after.count as usize].contains(&trade.given_id),
         "the traded-away seru is removed from the owner"
     );
 
-    // --- Reseed: advancing past a two-hour boundary changes the offers. ---
-    let bucket0 = w.open_seru_trade(vendor_id).unwrap().offers;
+    // After the swap the owner holds the give-back, so the line list empties -
+    // but the standing offer stays visible for the empty-state message.
+    let emptied = w.open_seru_trade(vendor_id).unwrap();
+    assert!(emptied.is_empty(), "traded owner no longer qualifies");
+    assert_eq!(
+        emptied.offer, expected_offer,
+        "offer still named while empty"
+    );
+
+    // --- Reseed: advancing past a bucket boundary changes the standing offer. ---
     let mut reseeded = false;
     for bucket in 1..16u32 {
         w.play_time_seconds = bucket * SECONDS_PER_RESEED;
         let later = w.open_seru_trade(vendor_id).unwrap();
-        if later.offers != bucket0 {
+        if later.offer != expected_offer {
             reseeded = true;
             break;
         }
     }
     assert!(
         reseeded,
-        "vendor offers should reseed across a two-in-game-hour boundary"
+        "the vendor's standing offer should reseed across a bucket boundary"
     );
 }

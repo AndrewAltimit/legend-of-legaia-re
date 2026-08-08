@@ -506,18 +506,22 @@ fn field_shop_carries_a_stable_vendor_id_that_drives_trading() {
     assert_eq!(sess.vendor_id, expected);
     assert_ne!(sess.vendor_id, 0, "a real vendor gets a concrete id");
 
-    // With trading enabled and a party that owns seru, opening a trade for that
-    // vendor yields offers (the through-the-shop path the host drives).
+    // With trading enabled and a party that owns the bucket's wanted seru,
+    // opening a trade for that vendor yields a line (the through-the-shop path
+    // the host drives). The bucket model trades a specific type, so the
+    // fixture owns exactly the seed's bucket-0 want.
+    let seed = 0x1234u64;
+    let bucket0 =
+        legaia_asset::seru_trade::bucket_offer(seed, 0, &legaia_asset::seru_trade::default_pool());
     world.seru_trade_config = Some(legaia_asset::seru_trade::SeruTradeConfig {
         enabled: true,
-        seed: 0x1234,
+        seed,
         max_offers: 4,
     });
     let mut lead = legaia_save::CharacterRecord::zeroed();
     let mut list = legaia_save::SpellList::default();
-    list.ids[0] = 0x81;
-    list.ids[1] = 0x88;
-    list.count = 2;
+    list.ids[0] = bucket0.want_id;
+    list.count = 1;
     lead.set_spell_list(list);
     world.roster = legaia_save::Party {
         members: vec![lead],
@@ -528,7 +532,7 @@ fn field_shop_carries_a_stable_vendor_id_that_drives_trading() {
         .expect("trading enabled -> session opens");
     assert!(
         !session.is_empty(),
-        "the party owns seru, so the vendor offers trades"
+        "the party owns the wanted seru, so the vendor lists a trade"
     );
 }
 

@@ -72,8 +72,8 @@ pub fn assemble_trade_dispatch_stub() -> Vec<u32> {
     w[b_trade] = beq(A0, T0, (trade as i32 - (b_trade as i32 + 1)) as i16);
     w[b_quit] = beq(A0, T0, (quit as i32 - (b_quit as i32 + 1)) as i16);
     debug_assert!(
-        TRADE_DISPATCH_STUB_VA + (w.len() as u32) * 4 <= ROW4_STUB_VA,
-        "dispatch stub overruns into the row-4 stub (0899 run-C layout)"
+        TRADE_DISPATCH_STUB_VA + (w.len() as u32) * 4 <= WANTS_STR_VA,
+        "dispatch stub overruns into the header strings (0899 run-C layout)"
     );
     w
 }
@@ -97,6 +97,10 @@ pub fn assemble_trade_entry_stub() -> Vec<u32> {
     w.push(j(TRADE_HANDLER_VA));
     w.push(nop());
     w[b] = bne(V0, ZERO, (trade as i32 - (b as i32 + 1)) as i16);
+    debug_assert!(
+        ENTRY_STUB_VA + (w.len() as u32) * 4 <= TRADE_DISPATCH_STUB_VA,
+        "entry stub overruns into the dispatch stub (0899 run-C layout)"
+    );
     w
 }
 /// In-shop trade-screen handler ([`TRADE_HANDLER_VA`]), invoked (via the entry
@@ -106,11 +110,14 @@ pub fn assemble_trade_entry_stub() -> Vec<u32> {
 /// Renders the **want-a-type / offer-a-partner** offer (see
 /// [`legaia_asset::seru_trade`]): it reads the current `(want, give)` pair from the
 /// precomputed [`BUCKET_TABLE_VA`] indexed by `(play_time / `[`RESEED_PERIOD_FRAMES`]`)
-/// & `[`BUCKET_INDEX_MASK`], draws the give-back seru as a reward header, then scans
+/// & `[`BUCKET_INDEX_MASK`], draws a two-row labelled header - `Wants <want>` over
+/// `Offers <give> <lvl>`, so both sides of the offer are always visible - then scans
 /// the four party records - for each member that owns the wanted seru it draws one
 /// selectable line `want_name  owner_name  LVL n` (so the same wanted type held by
-/// two members lists once per owner, matching `expand_offers`). Finally the native
-/// window box, and on ○ it clears the active flag to return to the picker.
+/// two members lists once per owner, matching `expand_offers`). When no member
+/// qualifies it draws `No <want> available` / `to trade for <give>` in the empty
+/// list area instead of leaving the screen blank. Finally the native window box,
+/// and on ○ it clears the active flag to return to the picker.
 ///
 /// DRAW ORDER MATTERS: text is emitted FIRST, the opaque window box LAST. The native
 /// box (`FUN_8002C69C`) and the renderer's own pass both put a later-submitted prim
@@ -131,6 +138,34 @@ pub fn assemble_trade_handler() -> Vec<u32> {
         w.push(sll(T6, src, 2)); // id*4
         w.push(sll(T7, T6, 1)); // id*8
         w.push(addu(T6, T7, T6)); // id*12
+    };
+    // Draw an embedded static string at (x + slide, y). Clobbers a0-a3/v0 + t-regs.
+    let draw_str = |w: &mut Vec<u32>, str_va: u32, x: u16, y: u16| {
+        w.push(lui(A0, hi(str_va)));
+        w.push(addiu(A0, A0, lo(str_va)));
+        w.push(addiu(V0, ZERO, y));
+        w.push(sw(V0, SP, 0x10));
+        w.push(addiu(A1, ZERO, 0));
+        w.push(addiu(A2, ZERO, 0));
+        w.push(addiu(A3, S7, x));
+        w.push(jal(TEXT_DRAW_FN));
+        w.push(nop());
+    };
+    // Draw the spell name for the id in `src` at (x + slide, y). Clobbers
+    // a0-a3/v0 + t6/t7 (so read `src` from a reg the id_times_12 shifts spare).
+    let draw_name = |w: &mut Vec<u32>, src: u32, x: u16, y: u16| {
+        id_times_12(w, src);
+        w.push(lui(T7, hi(SERU_NAME_PTRS)));
+        w.push(addiu(T7, T7, lo(SERU_NAME_PTRS)));
+        w.push(addu(T7, T7, T6));
+        w.push(lw(A0, T7, 0));
+        w.push(addiu(V0, ZERO, y)); // y (fills the lw load-delay before a0's use)
+        w.push(sw(V0, SP, 0x10));
+        w.push(addiu(A1, ZERO, 0));
+        w.push(addiu(A2, ZERO, 0));
+        w.push(addiu(A3, S7, x));
+        w.push(jal(TEXT_DRAW_FN));
+        w.push(nop());
     };
 
     // Prologue: 0x38 frame. sp+0x10 is the native draw 5th-arg (y) build slot; saves
@@ -191,28 +226,23 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w.push(lui(AT, hi(TRADE_GIVE_ID_VA)));
     w.push(sw(T5, AT, lo(TRADE_GIVE_ID_VA)));
 
-    // --- reward header: the give-back seru name at (x=0x30, y=0x34) ---
-    id_times_12(&mut w, T5);
-    w.push(lui(T7, hi(SERU_NAME_PTRS))); // a0 = *(SERU_NAME_PTRS + give*0xC)
-    w.push(addiu(T7, T7, lo(SERU_NAME_PTRS)));
-    w.push(addu(T7, T7, T6));
-    w.push(lw(A0, T7, 0));
-    w.push(addiu(V0, ZERO, ROW_HEADER_Y)); // y (fills the lw load-delay before a0's use)
-    w.push(sw(V0, SP, 0x10));
-    w.push(addiu(A1, ZERO, 0));
-    w.push(addiu(A2, ZERO, 0));
-    w.push(addiu(A3, S7, COL_HEADER_X)); // x + slide offset
-    w.push(jal(TEXT_DRAW_FN));
-    w.push(nop());
+    // --- offer header, two labelled rows: "Wants <want>" / "Offers <give> <lvl>".
+    // Both sides of the offer are always named, so the player sees what the vendor
+    // is looking for even when nobody in the party owns it. The give name draws
+    // first, while t5 (the give id) is still live - the label draws clobber t-regs.
+    draw_name(&mut w, T5, COL_HEADER_NAME_X, ROW_HEADER2_Y);
     // reward level (the bucket's fixed give-back level, shown so the player sees the
-    // trade's value): FUN_80034b78(s6, 1, COL_LEVEL_X + slide, ROW_HEADER_Y) - aligns
-    // under the per-owner level column.
+    // trade's value): FUN_80034b78(s6, 1, COL_LEVEL_X + slide, ROW_HEADER2_Y) -
+    // aligns under the per-owner level column.
     w.push(addu(A0, ZERO, S6)); // value = give_level
     w.push(addiu(A1, ZERO, 1)); // min_digits
     w.push(addiu(A2, S7, COL_LEVEL_X)); // x + slide offset
-    w.push(addiu(A3, ZERO, ROW_HEADER_Y)); // y
+    w.push(addiu(A3, ZERO, ROW_HEADER2_Y)); // y
     w.push(jal(NUMBER_FN));
     w.push(nop());
+    draw_str(&mut w, OFFERS_STR_VA, COL_HEADER_X, ROW_HEADER2_Y);
+    draw_str(&mut w, WANTS_STR_VA, COL_HEADER_X, ROW_HEADER_Y);
+    draw_name(&mut w, S3, COL_HEADER_NAME_X, ROW_HEADER_Y); // want name (s3 saved)
 
     // --- per-owner lines: for slot in 0..4, for j in 0..count: if ids[j]==want ---
     w.push(addiu(S0, ZERO, 0)); // slot = 0
@@ -328,6 +358,31 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w[done_b] = beq(T0, ZERO, (done as i32 - (done_b as i32 + 1)) as i16);
     w[nextslot_b] = beq(T0, ZERO, (nextslot as i32 - (nextslot_b as i32 + 1)) as i16);
     w[skip_b] = bne(T4, S3, (skip as i32 - (skip_b as i32 + 1)) as i16);
+
+    // --- no-trade message: when no owner qualified (zero lines drawn), spell it
+    // out - "No <want> available" / "to trade for <give>" - instead of leaving
+    // the list area silently blank. N = (s2 - ROW_FIRST_Y) >> 4.
+    w.push(addiu(T0, S2, (0u16).wrapping_sub(ROW_FIRST_Y)));
+    w.push(srl(T0, T0, 4));
+    let msg_b = w.len();
+    w.push(0); // bne t0,zero,.have_lines (patched)
+    w.push(nop());
+    draw_str(&mut w, NO_TRADE_NO_STR_VA, COL_HEADER_X, ROW_FIRST_Y);
+    draw_name(&mut w, S3, NO_TRADE_NAME1_X, ROW_FIRST_Y); // want name (s3 saved)
+    draw_str(&mut w, NO_TRADE_AVAIL_STR_VA, NO_TRADE_AVAIL_X, ROW_FIRST_Y);
+    draw_str(
+        &mut w,
+        NO_TRADE_FOR_STR_VA,
+        COL_HEADER_X,
+        ROW_FIRST_Y + ROW_STEP_Y,
+    );
+    // the give id died with t5 at the header draws - reload it for the name.
+    w.push(lui(AT, hi(TRADE_GIVE_ID_VA)));
+    w.push(lw(T5, AT, lo(TRADE_GIVE_ID_VA)));
+    w.push(nop()); // load-delay before draw_name's shifts read t5
+    draw_name(&mut w, T5, NO_TRADE_NAME2_X, ROW_FIRST_Y + ROW_STEP_Y);
+    let have_lines = w.len();
+    w[msg_b] = bne(T0, ZERO, (have_lines as i32 - (msg_b as i32 + 1)) as i16);
 
     // --- input + cursor: browse the owner lines (NOT the header), or pick Yes/No ---
     // line count N = (s2 - ROW_FIRST_Y) >> 4 (kept in t0); line cursor in t1.
@@ -581,8 +636,8 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w.push(jr(RA)); // return to the menu tick (FUN_801dc6b4)
     w.push(nop());
     debug_assert!(
-        TRADE_HANDLER_VA + (w.len() as u32) * 4 <= ENTRY_STUB_VA,
-        "trade handler overruns into the entry stub (0899 run-C layout)"
+        TRADE_HANDLER_VA + (w.len() as u32) * 4 <= ROW4_STUB_VA,
+        "trade handler overruns into the row-4 stub (0899 run-C layout)"
     );
     w
 }

@@ -428,14 +428,16 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         }
     }
 
-    // Seru trading: embed an enabled flag + the run's seed so the clean-room
-    // engine can offer vendor seru-for-seru swaps (offers reseed every two
-    // in-game hours from this seed). A plain data write; inert on real hardware.
+    // Seru trading, both halves: the retail in-shop vendor (hand-assembled
+    // trade screen + seed-derived bucket schedule, all hosted in menu overlay
+    // 0899 - runs on real hardware) and the SCUS config blob (enabled flag +
+    // the same seed) the clean-room engine reads, so a patched disc trades
+    // identically in an emulator and in the engine.
     if args.seru_trade {
+        apply::inject_trade_full(&mut patcher, seed)?;
         let report = apply::enable_seru_trades(&mut patcher, seed, args.seru_trade_offers)?;
         println!(
-            "seru-trade: vendor seru trading enabled (up to {} offers/vendor, reseeds every 2h)",
-            report.config.max_offers
+            "seru-trade: in-shop Seru trading vendor enabled (offer reseeds on a play-time bucket)"
         );
         manifest.push("seru_trade = true".to_string());
         manifest.push(format!("seru_trade_offers = {}", report.config.max_offers));

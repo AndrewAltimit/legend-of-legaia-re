@@ -390,9 +390,10 @@ impl LegaiaRuntime {
             Some(MenuState::ShopTradeConfirm) => {
                 let title = match self.menu.pending_trade_offer() {
                     Some(o) => format!(
-                        "Trade {} for {}?",
-                        name_of(o.give.seru_id),
-                        name_of(o.receive_seru_id),
+                        "Trade {} for {} Lv{}?",
+                        name_of(o.given_id),
+                        name_of(o.received_id),
+                        o.received_level,
                     ),
                     None => "Trade?".to_string(),
                 };
@@ -400,26 +401,48 @@ impl LegaiaRuntime {
                 ui::shop_draws_for(font, &title, &rows, cursor, None, SHOP_PEN)
             }
             _ => {
+                // Mirror the retail trade screen (and the native host): the
+                // title names BOTH sides of the bucket's standing offer, each
+                // line is one qualifying owner, and an empty list spells out
+                // the missing trade.
+                let mut title = TRADE_LIST_TITLE.to_string();
                 let labels: Vec<String> = match self.menu.trade_session.as_ref() {
-                    Some(t) if !t.offers.is_empty() => t
-                        .offers
-                        .iter()
-                        .map(|o| {
-                            format!(
-                                "{} ({}) -> {}",
-                                name_of(o.give.seru_id),
-                                owner_of(o.give.owner_slot),
-                                name_of(o.receive_seru_id),
-                            )
-                        })
-                        .collect(),
-                    _ => vec![TRADE_EMPTY_ROW.to_string()],
+                    Some(t) => {
+                        title = format!(
+                            "TRADE - WANTS {} / OFFERS {} LV{}",
+                            name_of(t.offer.want_id),
+                            name_of(t.offer.give_id),
+                            t.offer.give_level,
+                        );
+                        if t.offers.is_empty() {
+                            vec![format!(
+                                "No '{}' available to trade for '{}'",
+                                name_of(t.offer.want_id),
+                                name_of(t.offer.give_id),
+                            )]
+                        } else {
+                            t.offers
+                                .iter()
+                                .map(|o| {
+                                    format!(
+                                        "{} Lv{} ({}) -> {} Lv{}",
+                                        name_of(o.given_id),
+                                        o.given_level,
+                                        owner_of(o.owner_slot),
+                                        name_of(o.received_id),
+                                        o.received_level,
+                                    )
+                                })
+                                .collect()
+                        }
+                    }
+                    None => vec![TRADE_EMPTY_ROW.to_string()],
                 };
                 let rows: Vec<ShopRow<'_>> = labels
                     .iter()
                     .map(|l| ShopRow::new(l.as_str(), None))
                     .collect();
-                ui::shop_draws_for(font, TRADE_LIST_TITLE, &rows, cursor, None, SHOP_PEN)
+                ui::shop_draws_for(font, &title, &rows, cursor, None, SHOP_PEN)
             }
         }
     }

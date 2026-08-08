@@ -675,7 +675,7 @@ pub fn inject_trade_full(patcher: &mut DiscPatcher, seed: u64) -> Result<()> {
         st::BUCKET_COUNT,
         &st::default_pool(),
     ));
-    let blobs: [(u32, &[u8], &str); 10] = [
+    let blobs: [(u32, &[u8], &str); 15] = [
         (ov::TRADE_HANDLER_VA, &handler, "trade handler"),
         (ov::ENTRY_STUB_VA, &entry, "entry stub"),
         (ov::TRADE_DISPATCH_STUB_VA, &disp, "dispatch stub"),
@@ -689,6 +689,19 @@ pub fn inject_trade_full(patcher: &mut DiscPatcher, seed: u64) -> Result<()> {
         ),
         (ov::CONFIRM_YES_STR_VA, ov::CONFIRM_YES_STR, "confirm Yes"),
         (ov::CONFIRM_NO_STR_VA, ov::CONFIRM_NO_STR, "confirm No"),
+        (ov::WANTS_STR_VA, ov::WANTS_STR, "Wants header label"),
+        (ov::OFFERS_STR_VA, ov::OFFERS_STR, "Offers header label"),
+        (ov::NO_TRADE_NO_STR_VA, ov::NO_TRADE_NO_STR, "no-trade 'No'"),
+        (
+            ov::NO_TRADE_AVAIL_STR_VA,
+            ov::NO_TRADE_AVAIL_STR,
+            "no-trade 'available'",
+        ),
+        (
+            ov::NO_TRADE_FOR_STR_VA,
+            ov::NO_TRADE_FOR_STR,
+            "no-trade 'to trade for'",
+        ),
         (ov::BUCKET_TABLE_VA, &bucket_table, "bucket schedule"),
     ];
     for (va, bytes, what) in blobs {
