@@ -491,7 +491,11 @@ fully **deterministic from the seed**.
   (a pointless trade). Id space is the player Seru-magic block `0x81..=0x95`.
   The screen always names both sides (`Wants <seru>` / `Offers <seru> <lvl>`
   header) and, when nobody qualifies, draws `No <want> available / to trade for
-  <give>` instead of an empty list.
+  <give>` instead of an empty list. Each trader is **phased into its own slot**:
+  `vendor_bucket_offset` sums the armed shop record's stock count + item ids +
+  name bytes (the op-0x49 operand at `_DAT_8007B450`) mod 64, and the handler
+  adds it before the bucket mask - so different vendors show different offers
+  from the same on-disc schedule, identically in retail and the engine.
 - **Where it lives.** All of it - the picker edits, both stubs, the trade
   handler, the strings, the bucket table, and the runtime cells - is hosted in the
   **menu overlay (PROT 0899)**: two byte-verified edits add the Trade row + route

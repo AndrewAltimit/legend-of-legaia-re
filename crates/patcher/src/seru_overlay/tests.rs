@@ -264,6 +264,20 @@ fn trade_handler_renders_per_owner_offer() {
             h.contains(&addiu(T1, T1, lo(BUCKET_TABLE_VA))),
             "indexes the bucket table"
         );
+        // Per-vendor phase: sums the armed op-0x49 shop record (count at +2,
+        // then ids + name bytes) into the bucket before the mask.
+        assert!(
+            h.contains(&lw(T2, AT, lo(SHOP_MENU_STATE_VA))),
+            "reads the armed shop record pointer"
+        );
+        assert!(
+            h.contains(&lbu(T3, T2, 2)),
+            "reads the record's stock count"
+        );
+        assert!(
+            h.contains(&addu(T0, T0, T4)),
+            "adds the vendor sum into the bucket"
+        );
     }
     assert!(
         h.contains(&lui(T7, hi(SERU_NAME_PTRS))),

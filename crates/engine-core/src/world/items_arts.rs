@@ -1093,12 +1093,15 @@ impl World {
                 price: data.price(id) as u32,
             })
             .collect();
-        // Derive a stable per-vendor id from the shop's identity (name + stock)
-        // so this vendor's seru-trade offers reseed independently of every other.
+        // Derive the vendor's identity + seru-trade schedule phase from the
+        // shop's record (name + stock), so this vendor's trade offers differ
+        // from every other trader's at the same play time.
         let vendor_id = legaia_asset::seru_trade::vendor_id_from_shop(&rec.name, &stock_ids);
+        let vendor_offset = legaia_asset::seru_trade::vendor_bucket_offset(&rec.name, &stock_ids);
         let inv = crate::shop::ShopInventory::new(0, items);
         let mut session = crate::shop::ShopSession::new(inv);
         session.vendor_id = vendor_id;
+        session.vendor_bucket_offset = vendor_offset;
         self.pending_field_shop = Some(session);
         self.field_shop_armed = true;
         self.field_shop_open = true;

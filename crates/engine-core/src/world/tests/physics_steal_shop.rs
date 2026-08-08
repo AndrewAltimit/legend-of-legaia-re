@@ -501,18 +501,24 @@ fn field_shop_carries_a_stable_vendor_id_that_drives_trading() {
     assert!(world.try_arm_field_shop(&shop_op49_script()));
     let sess = world.take_pending_field_shop().expect("shop opened");
 
-    // The id is the stable derivation from the shop's identity ("Shop", stock).
+    // The id + schedule phase are the stable derivations from the shop's
+    // identity ("Shop", stock).
     let expected = legaia_asset::seru_trade::vendor_id_from_shop("Shop", &[0x22, 0x34]);
     assert_eq!(sess.vendor_id, expected);
     assert_ne!(sess.vendor_id, 0, "a real vendor gets a concrete id");
+    let expected_offset = legaia_asset::seru_trade::vendor_bucket_offset("Shop", &[0x22, 0x34]);
+    assert_eq!(sess.vendor_bucket_offset, expected_offset);
 
-    // With trading enabled and a party that owns the bucket's wanted seru,
+    // With trading enabled and a party that owns this vendor's wanted seru,
     // opening a trade for that vendor yields a line (the through-the-shop path
     // the host drives). The bucket model trades a specific type, so the
-    // fixture owns exactly the seed's bucket-0 want.
+    // fixture owns exactly the want of the vendor's phased schedule slot.
     let seed = 0x1234u64;
-    let bucket0 =
-        legaia_asset::seru_trade::bucket_offer(seed, 0, &legaia_asset::seru_trade::default_pool());
+    let bucket0 = legaia_asset::seru_trade::bucket_offer(
+        seed,
+        expected_offset as u32,
+        &legaia_asset::seru_trade::default_pool(),
+    );
     world.seru_trade_config = Some(legaia_asset::seru_trade::SeruTradeConfig {
         enabled: true,
         seed,
@@ -528,7 +534,7 @@ fn field_shop_carries_a_stable_vendor_id_that_drives_trading() {
     };
 
     let session = world
-        .open_seru_trade(sess.vendor_id)
+        .open_seru_trade(sess.vendor_bucket_offset)
         .expect("trading enabled -> session opens");
     assert!(
         !session.is_empty(),

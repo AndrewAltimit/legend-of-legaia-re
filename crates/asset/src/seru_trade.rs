@@ -388,8 +388,8 @@ pub fn bucket_offer(seed: u64, bucket: u32, pool: &[u8]) -> BucketOffer {
         };
     }
     // One RNG stream per bucket, mixed off the master seed (vendor id folded
-    // in as 0 - a single global trader, matching the retail handler's one
-    // on-disc schedule).
+    // in as 0 - the disc stores ONE schedule; per-vendor variation comes from
+    // phase-offsetting the index, see [`vendor_bucket_offset`]).
     let mut rng = Rng(mix(seed, 0, bucket));
     let want_id = pool[rng.below(pool.len())];
     // give id distinct from want.
@@ -435,6 +435,32 @@ pub fn bucket_table_from_bytes(bytes: &[u8]) -> Vec<BucketOffer> {
 /// retail handler's `divu` + `andi`.
 pub fn bucket_index(play_time_seconds: u32) -> usize {
     (time_bucket(play_time_seconds) as usize) % BUCKET_COUNT
+}
+
+/// A vendor's phase offset into the bucket schedule, derived from its shop
+/// record exactly as the retail handler sums the armed op-`0x49` payload
+/// (`[count][item_ids...][name\0]`): the count byte, each stock id, then each
+/// ASCII name byte. Two vendors with different stock or names therefore sit at
+/// different schedule slots at the same play time - each trader carries its own
+/// offer while the disc still stores one 64-entry table. Folded to
+/// [`BUCKET_COUNT`] (the retail handler adds the raw sum and masks; modular
+/// arithmetic makes the two equivalent).
+pub fn vendor_bucket_offset(name: &str, item_ids: &[u8]) -> u8 {
+    let mut s = item_ids.len() as u32;
+    for &id in item_ids {
+        s += id as u32;
+    }
+    for &b in name.as_bytes() {
+        s += b as u32;
+    }
+    (s % BUCKET_COUNT as u32) as u8
+}
+
+/// The schedule slot a vendor shows at a play time: [`bucket_index`] advanced
+/// by the vendor's [`vendor_bucket_offset`], wrapped to [`BUCKET_COUNT`].
+/// Mirrors the retail handler's `bucket + vendor_sum` before its `andi` mask.
+pub fn bucket_index_for(play_time_seconds: u32, vendor_offset: u8) -> usize {
+    (bucket_index(play_time_seconds) + vendor_offset as usize) % BUCKET_COUNT
 }
 
 /// Expand one bucket's `(want, give)` preference against the live party: one
@@ -734,5 +760,29 @@ mod tests {
             0,
             "wraps after BUCKET_COUNT buckets"
         );
+    }
+
+    #[test]
+    fn vendor_offset_is_stable_distinguishes_shops_and_phases_the_index() {
+        let a = vendor_bucket_offset("Variety Store", &[0x22, 0x34]);
+        assert_eq!(a, vendor_bucket_offset("Variety Store", &[0x22, 0x34]));
+        // The sum is exactly count + ids + name bytes, folded to the schedule.
+        let expect = (2u32 + 0x22 + 0x34 + "Variety Store".bytes().map(u32::from).sum::<u32>())
+            % BUCKET_COUNT as u32;
+        assert_eq!(a as u32, expect);
+        // A different name or stock shifts the offset (mod-64 collisions are
+        // possible in general, not for these fixtures).
+        assert_ne!(a, vendor_bucket_offset("Weapon Shop", &[0x22, 0x34]));
+        assert_ne!(a, vendor_bucket_offset("Variety Store", &[0x22, 0x35]));
+        // The phased index advances with time and wraps like the plain index.
+        assert_eq!(bucket_index_for(0, a), a as usize);
+        assert_eq!(
+            bucket_index_for(SECONDS_PER_RESEED, a),
+            (a as usize + 1) % BUCKET_COUNT
+        );
+        // Two vendors at the same play time land on different slots -> the
+        // offers they show generally differ.
+        let b = vendor_bucket_offset("Weapon Shop", &[0x10]);
+        assert_ne!(bucket_index_for(0, a), bucket_index_for(0, b));
     }
 }

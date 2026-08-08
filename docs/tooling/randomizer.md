@@ -832,7 +832,13 @@ value and shown before you trade. The level roll is **curved toward low levels**
 jackpot, not a coin flip. The randomizer precomputes the whole 64-bucket
 schedule from the seed (`bucket_offers` → `bucket_table_to_bytes`, 3
 bytes/entry) and embeds it. At runtime the handler indexes it by
-`(play_time / period) & 63`. Against the live party the bucket expands
+`(play_time / period + vendor_offset) & 63`, where `vendor_offset`
+(`vendor_bucket_offset`) is a per-vendor phase: the sum of the armed shop
+record's stock count + item ids + name bytes (the op-0x49 operand at
+`_DAT_8007B450`, the same record retail's own vendor-name reader walks), folded
+mod 64. Every trader therefore shows **its own** offer at any given play time
+while sharing the one on-disc schedule; the engine mirrors the identical sum
+from its decoded shop record. Against the live party the bucket expands
 (`expand_offers`) to **one selectable line per member who owns the wanted seru** -
 so the same type held by two members lists once each - **excluding** any member
 who already owns the give-back (a pointless trade). The seru id space is the

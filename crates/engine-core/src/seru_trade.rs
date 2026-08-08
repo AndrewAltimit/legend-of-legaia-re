@@ -133,10 +133,12 @@ pub fn apply_trade(party: &mut [CharacterRecord], trade: &OwnerTrade) -> TradeRe
 pub struct SeruTradeSession {
     /// The disc-embedded config (master seed + offer cap).
     pub config: SeruTradeConfig,
-    /// Which vendor this session belongs to. Session identity only: the offer
-    /// stream is the single global bucket schedule (matching the retail
-    /// handler's one on-disc table), not per-vendor.
-    pub vendor_id: u16,
+    /// This vendor's phase offset into the bucket schedule
+    /// ([`legaia_asset::seru_trade::vendor_bucket_offset`], summed from the
+    /// shop's stock + name exactly as the retail handler sums the armed
+    /// op-`0x49` record) - so each trader shows its own offer at any given
+    /// play time while the disc stores one schedule.
+    pub vendor_offset: u8,
     /// The play-time bucket the current offer was generated for.
     pub time_bucket: u32,
     /// The bucket's standing preference: wanted seru, give-back seru, and the
@@ -154,18 +156,18 @@ pub struct SeruTradeSession {
 }
 
 impl SeruTradeSession {
-    /// Open a trade session at `vendor_id` for the current `party` and
-    /// `play_time_seconds`.
+    /// Open a trade session at a vendor (identified by its schedule phase
+    /// `vendor_offset`) for the current `party` and `play_time_seconds`.
     pub fn open(
         config: SeruTradeConfig,
-        vendor_id: u16,
+        vendor_offset: u8,
         play_time_seconds: u32,
         party: &[CharacterRecord],
     ) -> Self {
-        let (offer, offers) = Self::compute(&config, play_time_seconds, party);
+        let (offer, offers) = Self::compute(&config, vendor_offset, play_time_seconds, party);
         Self {
             config,
-            vendor_id,
+            vendor_offset,
             time_bucket: seru_trade::time_bucket(play_time_seconds),
             offer,
             offers,
@@ -175,15 +177,16 @@ impl SeruTradeSession {
         }
     }
 
-    /// The bucket offer + its per-owner expansion for a time + party.
+    /// The vendor's bucket offer + its per-owner expansion for a time + party.
     fn compute(
         config: &SeruTradeConfig,
+        vendor_offset: u8,
         play_time_seconds: u32,
         party: &[CharacterRecord],
     ) -> (BucketOffer, Vec<OwnerTrade>) {
         let offer = seru_trade::bucket_offer(
             config.seed,
-            seru_trade::bucket_index(play_time_seconds) as u32,
+            seru_trade::bucket_index_for(play_time_seconds, vendor_offset) as u32,
             &seru_trade::default_pool(),
         );
         let owned = party_owned_seru(party);
@@ -195,7 +198,8 @@ impl SeruTradeSession {
     /// when the play-time crosses a bucket boundary (the reseed). Closes any
     /// open confirm and clamps the cursor.
     pub fn refresh(&mut self, play_time_seconds: u32, party: &[CharacterRecord]) {
-        let (offer, offers) = Self::compute(&self.config, play_time_seconds, party);
+        let (offer, offers) =
+            Self::compute(&self.config, self.vendor_offset, play_time_seconds, party);
         self.time_bucket = seru_trade::time_bucket(play_time_seconds);
         self.offer = offer;
         self.offers = offers;
@@ -294,9 +298,9 @@ mod tests {
         }
     }
 
-    /// The bucket-0 offer for a seed (what `open(.., play_time = 0, ..)` shows).
-    fn offer_at_bucket0(seed: u64) -> BucketOffer {
-        seru_trade::bucket_offer(seed, 0, &seru_trade::default_pool())
+    /// The offer a vendor at `offset` shows at play-time 0.
+    fn offer_at(seed: u64, offset: u8) -> BucketOffer {
+        seru_trade::bucket_offer(seed, offset as u32, &seru_trade::default_pool())
     }
 
     #[test]
@@ -403,16 +407,30 @@ mod tests {
         let party = vec![ch_with_spells(&[0x05])];
         let s = SeruTradeSession::open(config(0xABCD), 1, 0, &party);
         assert!(s.is_empty(), "no owner of the want -> no lines");
-        let expect = offer_at_bucket0(0xABCD);
-        assert_eq!(s.offer, expect, "bucket offer present regardless");
+        let expect = offer_at(0xABCD, 1);
+        assert_eq!(
+            s.offer, expect,
+            "the vendor's phased offer present regardless"
+        );
         assert_ne!(s.offer.want_id, 0);
         assert_ne!(s.offer.want_id, s.offer.give_id);
     }
 
     #[test]
+    fn vendors_at_different_offsets_show_different_offers() {
+        // Same play time, same seed: two traders with different phase offsets
+        // sit on different schedule slots, so their offers generally differ.
+        let party = vec![ch_with_spells(&[0x05])];
+        let base = SeruTradeSession::open(config(0xFEED), 0, 0, &party).offer;
+        let differs = (1..8u8)
+            .any(|off| SeruTradeSession::open(config(0xFEED), off, 0, &party).offer != base);
+        assert!(differs, "some nearby offset shows a different offer");
+    }
+
+    #[test]
     fn session_lists_owners_of_the_want_and_confirm_applies_at_level() {
         let seed = 0xABCD;
-        let offer = offer_at_bucket0(seed);
+        let offer = offer_at(seed, 1);
         // Two members own the wanted seru; one of them also owns the give-back
         // and must be filtered out.
         let mut party = vec![

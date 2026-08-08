@@ -40,11 +40,15 @@ fn ch_with_spells(ids: &[u8]) -> CharacterRecord {
     r
 }
 
-/// A party built so its lead owns exactly the seru the seed's bucket-0 offer
-/// wants (the bucket model trades a *type* the party holds, so the fixture has
-/// to hold it), plus unrelated seru on the other members.
+/// The vendor phase offset the test opens its trade session at.
+const VENDOR_OFFSET: u8 = 7;
+
+/// A party built so its lead owns exactly the seru the test vendor's phased
+/// schedule slot wants at play-time 0 (the bucket model trades a *type* the
+/// party holds, so the fixture has to hold it), plus unrelated seru on the
+/// other members.
 fn party_for(seed: u64) -> Party {
-    let offer = seru_trade::bucket_offer(seed, 0, &seru_trade::default_pool());
+    let offer = seru_trade::bucket_offer(seed, VENDOR_OFFSET as u32, &seru_trade::default_pool());
     let other = if offer.want_id == 0x90 { 0x91 } else { 0x90 };
     Party {
         members: vec![
@@ -100,15 +104,17 @@ fn seru_trade_runtime_swaps_and_reseeds() {
     );
     assert!(w.seru_trade_enabled());
 
-    // Open at a vendor. The session carries the bucket's standing offer (the
-    // basis of the "No X available to trade for Y" empty message) and, since
-    // the fixture lead owns the wanted seru, one selectable line.
-    let vendor_id = 7;
+    // Open at a vendor (phase offset 7). The session carries that vendor's
+    // standing offer (the basis of the "No X available to trade for Y" empty
+    // message) and, since the fixture lead owns the wanted seru, one
+    // selectable line.
+    let vendor_id = VENDOR_OFFSET;
     let session = w.open_seru_trade(vendor_id).expect("trade session opens");
-    let expected_offer = seru_trade::bucket_offer(seed, 0, &seru_trade::default_pool());
+    let expected_offer =
+        seru_trade::bucket_offer(seed, VENDOR_OFFSET as u32, &seru_trade::default_pool());
     assert_eq!(
         session.offer, expected_offer,
-        "session offer matches the kernel's bucket-0 offer for the disc seed"
+        "session offer matches the kernel's phased slot for the disc seed"
     );
     assert!(!session.is_empty(), "lead owns the want -> a line exists");
     for o in &session.offers {

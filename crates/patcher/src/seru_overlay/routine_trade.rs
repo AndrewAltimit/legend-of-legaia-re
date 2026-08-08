@@ -205,12 +205,49 @@ pub fn assemble_trade_handler() -> Vec<u32> {
         w.push(addiu(T5, ZERO, SERU_DEMO_BASE_ID + 1)); // give
         w.push(addiu(S6, ZERO, 7)); // give_level (mid of 4..=9)
     } else {
-        // bucket = (play_time / RESEED_PERIOD_FRAMES) & (BUCKET_COUNT-1); entry = bucket*3.
+        // bucket = ((play_time / RESEED_PERIOD_FRAMES) + vendor_sum) & (BUCKET_COUNT-1);
+        // entry = bucket*3. vendor_sum phases each trader into its own schedule
+        // slot: the armed op-0x49 shop record (count + stock ids + name bytes),
+        // mirroring the kernel's `vendor_bucket_offset`.
         w.push(lui(AT, hi(PLAY_TIME_VA)));
         w.push(lw(T0, AT, lo(PLAY_TIME_VA)));
         w.push(addiu(T1, ZERO, RESEED_PERIOD_FRAMES)); // (fills the lw load-delay)
         w.push(divu(T0, T1));
-        w.push(mflo(T0)); // t0 = bucket
+        w.push(mflo(T0)); // t0 = raw bucket
+        // t2 = armed shop record; 0 -> no vendor offset (defensive, can't
+        // normally happen while the trade screen is up).
+        w.push(lui(AT, hi(SHOP_MENU_STATE_VA)));
+        w.push(lw(T2, AT, lo(SHOP_MENU_STATE_VA)));
+        w.push(nop()); // load-delay before the beq reads t2
+        let novend_b = w.len();
+        w.push(0); // beq t2,zero,.no_vendor (patched)
+        w.push(nop());
+        w.push(lbu(T3, T2, 2)); // count (record: [sub_op][?][count][ids...][name\0])
+        w.push(addiu(T2, T2, 3)); // -> ids (fills the lbu load-delay)
+        w.push(addu(T4, ZERO, T3)); // sum = count
+        let idloop = w.len();
+        w.push(0); // beq t3,zero,.name (patched)
+        w.push(nop());
+        w.push(lbu(T5, T2, 0)); // ids[i]
+        w.push(addiu(T2, T2, 1)); // (fills the load-delay)
+        w.push(addu(T4, T4, T5)); // sum += id
+        w.push(j(va(idloop)));
+        w.push(addiu(T3, T3, 0xFFFF)); // (delay) t3--
+        let nameloop = w.len();
+        w[idloop] = beq(T3, ZERO, (nameloop as i32 - (idloop as i32 + 1)) as i16);
+        w.push(lbu(T5, T2, 0)); // name byte
+        w.push(addiu(T2, T2, 1)); // (fills the load-delay)
+        let namedone_b = w.len();
+        w.push(0); // beq t5,zero,.apply (patched - NUL terminator ends the name)
+        w.push(nop());
+        w.push(addu(T4, T4, T5)); // sum += name byte
+        w.push(j(va(nameloop)));
+        w.push(nop());
+        let apply = w.len();
+        w[namedone_b] = beq(T5, ZERO, (apply as i32 - (namedone_b as i32 + 1)) as i16);
+        w.push(addu(T0, T0, T4)); // bucket += vendor sum (mask below wraps it)
+        let novend = w.len();
+        w[novend_b] = beq(T2, ZERO, (novend as i32 - (novend_b as i32 + 1)) as i16);
         w.push(andi(T0, T0, BUCKET_INDEX_MASK)); // % BUCKET_COUNT
         w.push(sll(T1, T0, 1)); // bucket*2
         w.push(addu(T0, T1, T0)); // bucket*3 (3-byte entries: want,give,give_level)
@@ -367,20 +404,15 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     let msg_b = w.len();
     w.push(0); // bne t0,zero,.have_lines (patched)
     w.push(nop());
-    draw_str(&mut w, NO_TRADE_NO_STR_VA, COL_HEADER_X, ROW_FIRST_Y);
-    draw_name(&mut w, S3, NO_TRADE_NAME1_X, ROW_FIRST_Y); // want name (s3 saved)
-    draw_str(&mut w, NO_TRADE_AVAIL_STR_VA, NO_TRADE_AVAIL_X, ROW_FIRST_Y);
-    draw_str(
-        &mut w,
-        NO_TRADE_FOR_STR_VA,
-        COL_HEADER_X,
-        ROW_FIRST_Y + ROW_STEP_Y,
-    );
+    draw_str(&mut w, NO_TRADE_NO_STR_VA, COL_HEADER_X, NO_TRADE_Y1);
+    draw_name(&mut w, S3, NO_TRADE_NAME1_X, NO_TRADE_Y1); // want name (s3 saved)
+    draw_str(&mut w, NO_TRADE_AVAIL_STR_VA, NO_TRADE_AVAIL_X, NO_TRADE_Y1);
+    draw_str(&mut w, NO_TRADE_FOR_STR_VA, COL_HEADER_X, NO_TRADE_Y2);
     // the give id died with t5 at the header draws - reload it for the name.
     w.push(lui(AT, hi(TRADE_GIVE_ID_VA)));
     w.push(lw(T5, AT, lo(TRADE_GIVE_ID_VA)));
     w.push(nop()); // load-delay before draw_name's shifts read t5
-    draw_name(&mut w, T5, NO_TRADE_NAME2_X, ROW_FIRST_Y + ROW_STEP_Y);
+    draw_name(&mut w, T5, NO_TRADE_NAME2_X, NO_TRADE_Y2);
     let have_lines = w.len();
     w[msg_b] = bne(T0, ZERO, (have_lines as i32 - (msg_b as i32 + 1)) as i16);
 

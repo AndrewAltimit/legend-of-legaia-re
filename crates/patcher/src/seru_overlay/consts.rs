@@ -267,8 +267,12 @@ pub const BOX_H_PX: u16 = 0x90;
 pub const COL_HEADER_X: u16 = 0x30;
 pub const COL_HEADER_NAME_X: u16 = 0x70;
 pub const COL_WANT_X: u16 = 0x40;
-pub const COL_OWNER_X: u16 = 0x80;
-pub const COL_LEVEL_X: u16 = 0xB0;
+/// A seru name renders as an element-icon control code (~18px) plus up to 7
+/// proportional glyphs, so a per-owner want name starting at [`COL_WANT_X`]
+/// can reach ~0x8C - the owner column sits past that, and the level column
+/// past the longest owner name.
+pub const COL_OWNER_X: u16 = 0x90;
+pub const COL_LEVEL_X: u16 = 0xC0;
 /// Row baselines: the two-row offer header ("Wants <want>" then
 /// "Offers <give> <lvl>"), first per-owner row y, and per-row y advance.
 /// Tucked just inside the box top (`BOX_Y + 0xC`).
@@ -281,8 +285,12 @@ pub const ROW_STEP_Y: u16 = 0x10;
 /// The name columns leave room for the longest seru name in the proportional
 /// dialog font before the following fragment.
 pub const NO_TRADE_NAME1_X: u16 = 0x48;
-pub const NO_TRADE_AVAIL_X: u16 = 0x88;
+pub const NO_TRADE_AVAIL_X: u16 = 0x98;
 pub const NO_TRADE_NAME2_X: u16 = 0x90;
+/// The message sits one blank row below the first owner-line slot, so it reads
+/// as its own block instead of hugging the Wants/Offers header.
+pub const NO_TRADE_Y1: u16 = ROW_FIRST_Y + ROW_STEP_Y;
+pub const NO_TRADE_Y2: u16 = NO_TRADE_Y1 + ROW_STEP_Y;
 /// Persistent slide x-offset cell (SCUS gap, resident). The dispatch stub resets it
 /// to [`SLIDE_START_OFF`] on Trade confirm; the handler steps it toward 0 each frame.
 pub const TRADE_SLIDE_DELTA_VA: u32 = 0x801E_7E24;
@@ -594,6 +602,13 @@ pub const BUCKET_TABLE_LEN: usize = legaia_asset::seru_trade::BUCKET_TABLE_LEN;
 /// reads it to pick the current bucket; the engine mirrors it as
 /// `World::play_time_seconds`.
 pub const PLAY_TIME_VA: u32 = 0x8008_4570;
+/// The armed op-0x49 menu state `_DAT_8007B450`: while a shop is open it holds
+/// the operand pointer to the shop record `[sub_op][?][count][ids...][name\0]`
+/// (retail's own vendor-name reader `FUN_801DCF14` uses `record + record[2] + 3`).
+/// The handler sums `count + ids + name` bytes from it as the vendor's phase
+/// offset into the bucket schedule, so each trader shows its own offer -
+/// mirrored by `legaia_asset::seru_trade::vendor_bucket_offset`.
+pub const SHOP_MENU_STATE_VA: u32 = 0x8007_B450;
 /// Reseed period in **play-time ticks** (the unit of `_DAT_80084570`). HW-pinned:
 /// the counter advances ~per-frame (≈60/s), NOT per-second as the memory-map label
 /// suggests - a maxed save read `0x80084570 ≈ 10.4M`, which is ~48 h at 60/s, not

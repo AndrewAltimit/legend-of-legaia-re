@@ -1120,7 +1120,11 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
             // Buy / Sell / Exit are pure routes (handled by the route override).
             MenuState::ShopMenu => {
                 if self.shop_menu_rows().get(slot as usize) == Some(&MenuState::ShopTrade) {
-                    let vendor = self.shop_session.as_ref().map(|s| s.vendor_id).unwrap_or(0);
+                    let vendor = self
+                        .shop_session
+                        .as_ref()
+                        .map(|s| s.vendor_bucket_offset)
+                        .unwrap_or(0);
                     *self.trade_session = self.world.open_seru_trade(vendor);
                 }
             }

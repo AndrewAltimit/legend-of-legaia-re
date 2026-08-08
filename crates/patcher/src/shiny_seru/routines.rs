@@ -221,7 +221,7 @@ pub(crate) fn assemble_menu_color(disp: [u32; 2], ret: u32) -> Vec<u32> {
         disp[0],                           // 1 lw v1,0x46b0(v1) (doesn't touch v0/t8)
         disp[1],                           // 2 lbu v0,0x729(v0) (clean level digit)
         andi(T8, T8, SHINY_FLAG),          // 3 shiny? (fills v0 load delay)
-        beq(T8, ZERO, (END - 4) as i16),   // 4 not shiny -> skip the colour set
+        beq(T8, ZERO, (END - 5) as i16),   // 4 not shiny -> skip the colour set
         nop(),                             // 5
         lui(T9, hi(TEXT_COLOR_GLOBAL_VA)), // 6
         addiu(T0, ZERO, SHINY_MENU_COLOR), // 7
