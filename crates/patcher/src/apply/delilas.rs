@@ -1,10 +1,22 @@
 //! Delilas Challenge - apply the Muscle Dome enrollment mod to a disc.
+//!
+//! Two coordinated halves ship together (the koin1 warp is meaningless without
+//! the arena course it warps into, and vice-versa):
+//!
+//! - [`inject_delilas_dome`] - the code-injection half: a new 3-round dome
+//!   *course* (Gi -> Che -> Lu) installed into the arena overlay (PROT 0977)
+//!   plus a `SCUS_942.54` routine cave (see [`crate::delilas_dome`]).
+//! - the koin1 half: a fourth "who will enter" enrollment option that warps
+//!   into the arena requesting that course (see [`crate::delilas_challenge`]).
 
 use super::*;
 
 use legaia_asset::scene_asset_table::encode_size_word;
 
-use crate::delilas_challenge::{DelilasRewards, DelilasSites};
+use crate::delilas_challenge::DelilasSites;
+use crate::delilas_dome::{
+    ARENA_BASE_VA, ARENA_OVERLAY_PROT_INDEX, DomeInjection, ROUTINE_VA, SEED_HOOK_VA,
+};
 
 /// Outcome of a Delilas Challenge application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,28 +29,66 @@ pub struct DelilasChallengeReport {
     pub compressed_len: usize,
     /// Footprint the stream had to fit within.
     pub compressed_budget: usize,
+    /// Whether the arena dome course was injected (`false` = already present).
+    pub dome_injected: bool,
     /// Whether the MAN was rewritten (`false` = the challenge was already
     /// present, a successful no-op).
     pub changed: bool,
 }
 
-/// Install the **Delilas Challenge** with the default prizes (3x Honey for a
-/// solo win, 1x for a group win). See [`apply_delilas_challenge_with_rewards`].
-pub fn apply_delilas_challenge(patcher: &mut DiscPatcher) -> Result<DelilasChallengeReport> {
-    apply_delilas_challenge_with_rewards(patcher, DelilasRewards::default())
+/// Inject the **Delilas dome course** (the code-hook half): a new 3-round
+/// Muscle Dome course - Gi -> Che -> Lu, one boss per round - installed into
+/// the arena overlay (PROT 0977) and a `SCUS_942.54` routine cave. See
+/// [`crate::delilas_dome`] for the byte-level design.
+///
+/// Idempotent: if the seed hook is already the injected `j ROUTINE_VA`, the
+/// course is present and this is a no-op returning `false`. Fails (without
+/// touching the disc) if the build isn't the recognized US layout.
+pub fn inject_delilas_dome(patcher: &mut DiscPatcher) -> Result<bool> {
+    let scus = patcher
+        .read_named_file(SCUS_NAME)
+        .context("read SCUS_942.54 for delilas-dome injection")?;
+    let overlay = patcher
+        .read_entry(ARENA_OVERLAY_PROT_INDEX)
+        .context("read arena overlay (0977) for delilas-dome injection")?;
+
+    // Idempotency: once applied, the seed hook is our `j ROUTINE_VA`.
+    let seed_off = (SEED_HOOK_VA - ARENA_BASE_VA) as usize;
+    let cur = overlay
+        .get(seed_off..seed_off + 4)
+        .map(|w| u32::from_le_bytes(w.try_into().unwrap()));
+    if cur == Some(crate::mips::j(ROUTINE_VA)) {
+        return Ok(false);
+    }
+
+    let plan = DomeInjection::plan(&scus, &overlay)?;
+    // SCUS-cave writes (routine + relocated template + roster), then the arena
+    // overlay writes (seed detour + template repoint + course-3 descriptor).
+    for w in &plan.scus {
+        patcher
+            .patch_named_file(SCUS_NAME, w.off as u64, &w.bytes)
+            .with_context(|| format!("write delilas-dome SCUS cave at {:#x}", w.off))?;
+    }
+    for w in &plan.overlay {
+        patcher
+            .patch_prot_entry(ARENA_OVERLAY_PROT_INDEX, w.off as u64, &w.bytes)
+            .with_context(|| format!("write delilas-dome overlay hook at {:#x}", w.off))?;
+    }
+    Ok(true)
 }
 
 /// Install the **Delilas Challenge** on the Muscle Dome enrollment menu: a
-/// fourth "who will enter" option offering a solo (1v3) or full-party (3v3)
-/// fight against all three Delilas siblings at once, gated on the Koru death
-/// event (story flag `0x378` - the `nilboa2` switch). Losing returns to the
-/// venue (no game over); winning grants `rewards`. Pure script + formation
-/// data edit inside the `koin1` scene bundle; see
-/// [`crate::delilas_challenge`] for the byte-level design.
-pub fn apply_delilas_challenge_with_rewards(
-    patcher: &mut DiscPatcher,
-    rewards: DelilasRewards,
-) -> Result<DelilasChallengeReport> {
+/// fourth "who will enter" option that warps into the arena and runs the new
+/// Delilas dome course (Gi -> Che -> Lu), gated on the Koru death event (story
+/// flag `0x378` - the `nilboa2` switch). Losing a dome round returns to the
+/// venue (no game over) by the dome's own design.
+///
+/// Installs both halves: the arena dome course ([`inject_delilas_dome`]) and
+/// the koin1 menu + warp (a script edit inside the `koin1` scene bundle; see
+/// [`crate::delilas_challenge`]). The koin1 MAN is built (and validated)
+/// before either half is written, so an unbuildable edit aborts without
+/// touching the disc.
+pub fn apply_delilas_challenge(patcher: &mut DiscPatcher) -> Result<DelilasChallengeReport> {
     // Resolve the koin1 block through CDNAME (raw #define numbers are raw-TOC
     // indices; extraction = raw - 2) and locate the enrollment script inside
     // it - the same resolution shape `apply_starting_bag` uses for town01.
@@ -68,28 +118,35 @@ pub fn apply_delilas_challenge_with_rewards(
     let entry_idx = sites.entry_idx;
 
     if sites.already_applied {
+        // The menu is already present; ensure the arena course is too (a
+        // re-run over a partially-applied image), then report the no-op.
+        let dome_injected = inject_delilas_dome(patcher)?;
         return Ok(DelilasChallengeReport {
             entry_idx,
             grown_bytes: 0,
             compressed_len: 0,
             compressed_budget: sites.compressed_budget,
+            dome_injected,
             changed: false,
         });
     }
 
+    // Build (and validate) the grown koin1 MAN first, then recompress under the
+    // descriptor boundary (greedy, then the optimal packer - the koin1 MAN is
+    // sector-aligned with zero slack, and only the optimal packer fits the
+    // grown script back in). Nothing is written if either step fails.
     let (new_man, grown) = sites
-        .build(&rewards)
+        .build()
         .map_err(|e| anyhow::anyhow!("delilas-challenge build: {e}"))?;
-
-    // Recompress under the descriptor boundary (greedy, then the optimal
-    // packer - the koin1 MAN is sector-aligned with zero slack, and only the
-    // optimal packer fits the grown script back in).
     let Some(stream) = crate::compress_within(&new_man, sites.compressed_budget) else {
         anyhow::bail!(
             "recompressed koin1 MAN overflows its {}-byte footprint",
             sites.compressed_budget
         );
     };
+
+    // Arena course first (the warp target), then the koin1 menu + warp.
+    let dome_injected = inject_delilas_dome(patcher)?;
 
     patcher
         .patch_prot_entry(
@@ -107,6 +164,7 @@ pub fn apply_delilas_challenge_with_rewards(
         grown_bytes: grown,
         compressed_len: stream.len(),
         compressed_budget: sites.compressed_budget,
+        dome_injected,
         changed: true,
     })
 }

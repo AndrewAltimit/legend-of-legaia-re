@@ -1475,9 +1475,8 @@ wipe and one plain-formation wipe on the `map01` overworld):
    `0x8003B58C`) and clears it on the wipe path (`andi 0xbf` at
    `0x8003B5A0`), before either path reaches the shared flag-0 clear. A
    scene script that runs on the post-battle reload can therefore test
-   flag `1` to distinguish a won battle from a wiped one - the mechanism
-   the patcher's Delilas Challenge prize block uses
-   ([randomizer.md](../tooling/randomizer.md#delilas-challenge)).
+   flag `1` to distinguish a won battle from a wiped one - the general
+   mechanism for scoring a scripted battle from the scene script.
 6. Scripts can invoke the same handoff directly: `FUN_8003C7EC` is a
    helper twin of the inline gate body (same three stores), and the
    field-VM op `4C EA` (MENU_CTRL nibble-E sub-A, see

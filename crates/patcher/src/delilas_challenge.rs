@@ -2,21 +2,36 @@
 //!
 //! The Muscle Dome entry clerk (scene `koin1`, the P1 interaction record that
 //! carries the enter / who-enrolls / difficulty menus) gains a fourth option on
-//! the "who will be entering" picker: **Delilas Challenge**. Picking it offers
-//! a solo (1 vs 3) or full-party (3 vs 3) fight against all three Delilas
-//! siblings at once - Gi, Che and Lu ([`DELILAS_IDS`]) - a battle that never
-//! exists in retail (the ravine duels are three consecutive *solo* fights, and
-//! no retail formation seats three distinct boss ids).
+//! the "who will be entering" picker: **Delilas Challenge**. Picking it warps
+//! into the dome arena and runs a brand-new 3-round contest course - Gi -> Che
+//! -> Lu, one Delilas sibling per round - installed by the companion code
+//! injection [`crate::delilas_dome`].
 //!
-//! ## Mechanism - script + data, no code injection
+//! ## Why the arena, not a scripted battle
 //!
-//! Everything rides on retail's own vocabulary:
+//! An earlier design launched a normal `3E FF` battle straight from `koin1`.
+//! Live testing killed it: `koin1` is a town scene with no random encounters,
+//! so it never installs the battle-effect / summon / player-magic asset
+//! residency, and casting a spell (or opening the magic list) dereferences
+//! unloaded buffers and freezes - which is exactly why the retail Muscle Dome
+//! disables magic. And the battle mesh heap holds only about one large boss's
+//! worth of *distinct* geometry, so three distinct Delilas meshes at once
+//! overflow it. Routing the challenge through the dome's own arena fixes both:
+//! the dome loads one boss per round and disables magic by design. This module
+//! is therefore only the **casino-menu half** - the menu option and the warp;
+//! the course itself is [`crate::delilas_dome`].
 //!
-//! - **Formation.** `koin1`'s encounter section carries exactly one formation
-//!   row (`count=1 ids=[4]`) that no region can roll (`rate+=0` everywhere) and
-//!   no `3E FF` site references. It is rewritten in place - same size - to
-//!   `hdr=[01,00,00] count=3 ids=[162,163,164]` (the `01` header byte is the
-//!   boss-intro flag retail's own scripted rows carry).
+//! ## Mechanism - script + data, plus the companion code hook
+//!
+//! Retail's three difficulty arms (Beginner / Expert / Master) each do the
+//! same thing: set the dome-active flag [`DOME_ACTIVE_FLAG`] (`0x509`), set
+//! **one** of the course-unlock flags [`COURSE_UNLOCK_FLAGS`]
+//! (`0x536`/`0x537`/`0x538`) while clearing the other two, then a short
+//! BGM + wait flourish and the `3E 69` arena warp. The arena init reads those
+//! flags to pick the course. The Delilas branch mirrors that arm exactly, but
+//! requests **course 3** by setting the extra flag [`crate::delilas_dome::COURSE_FLAG`]
+//! (`0x539`) that the [`crate::delilas_dome`] seed hook decodes. So:
+//!
 //! - **Menu.** The 3-option `0x28` "who will enter" picker grows to a 4-option
 //!   `0x29` one (the picker arity ceiling - see `crates/mes/src/picker.rs`).
 //!   The new option's branch is appended at the record's end. The two
@@ -29,25 +44,17 @@
 //!   [`KORU_DEFEATED_FLAG`] (`0x378`) - the exact flag the game latches when
 //!   Koru dies and the world-map ravine entrance flips from `nilboa` to
 //!   `nilboa2` (`map03 P2[15]` sets it, `map03 P2[3]` selects the scene on it).
-//!   Until then the clerk politely refuses.
-//! - **Solo party strip.** The solo arms use the `0x3D` PARTY_REMOVE ops the
-//!   retail ravine duels themselves use to stage a one-member party, latch
-//!   [`MARKER_SOLO`] (the group arm latches [`MARKER_GROUP`]), raise retail's
-//!   scripted-loss latch [`SCRIPTED_LOSS_FLAG`], and launch via `3E FF 00`
-//!   (the Tetsu-sparring idiom). The loss latch means a wipe returns to the
-//!   venue instead of the continue screen; the boss formation header keeps
-//!   the fight un-fleeable (`ctx+0x287`), so the outcome is strictly win or
-//!   wipe.
-//! - **Outcome + prize.** A scripted battle returns through a full scene
-//!   reload, so a guarded block spliced at the top of `koin1`'s scene-entry
-//!   script (P1 record 0) consumes the markers: it recomposes the party,
-//!   scores the fight through retail's own battle-outcome flag
-//!   ([`OUTCOME_SURVIVED_FLAG`], set/cleared by the MAIN INIT gate), grants
-//!   the prize on a win ([`DelilasRewards`], default 3x / 1x Honey), and
-//!   fully restores the party on a loss so nobody walks out of the venue at
-//!   0 HP. The block is a no-op on every ordinary entry, and the markers
-//!   never survive across a save point (set -> battle -> reload consumes
-//!   them), so a save/reload can't strand them.
+//!   Until then the clerk routes to its own decline flow.
+//! - **Warp.** The available arm mirrors a retail difficulty arm: set
+//!   [`DOME_ACTIVE_FLAG`], clear the three [`COURSE_UNLOCK_FLAGS`], set the
+//!   course-3 request flag, then the verbatim BGM ([`ARENA_ENTER_BGM`]) + wait
+//!   ops and the verbatim `3E 69` warp ([`DOME_WARP_OP`]). Losing or winning
+//!   is scored by the dome itself (no game over on a loss - a lost dome round
+//!   returns to the venue), so no marker/outcome bookkeeping lives here.
+//!
+//! The dome fields whichever fighter the arena normally seats (retail's Muscle
+//! Dome enrolls Vahn); routing a *chosen* party member into the arena's fighter
+//! slot is an open RE thread, so this ships as the default-fighter contest.
 //!
 //! ## Why this module carries its own relocation engine
 //!
@@ -80,76 +87,31 @@ use crate::starting_bag::{sysflag_set, sysflag_test};
 /// unlock. The challenge branch tests exactly this flag.
 pub const KORU_DEFEATED_FLAG: u16 = 0x378;
 
-/// Transient SYSTEM flag marking "a **solo** Delilas Challenge is in flight,
-/// the party was stripped to one member". Set immediately before the `3E FF`
-/// battle op, consumed (cleared + party recomposed + outcome scored) by the
-/// guarded block this patch splices into `koin1`'s scene-entry script. Chosen
-/// from the same high band as `starting_bag::DEFAULT_GUARD_BIT` (a region
-/// that reads zero across retail saves) but distinct from it, and absent from
-/// both the field-VM and motion-VM disc-wide flag censuses.
-pub const MARKER_SOLO: u16 = 0xD76;
+/// Retail's dome-contest-active SYSTEM flag (`0x509`). Every difficulty arm
+/// sets it (`55 09`) before the arena warp; the Delilas arm mirrors that.
+pub const DOME_ACTIVE_FLAG: u16 = 0x509;
 
-/// Sibling of [`MARKER_SOLO`] for the full-party (3 vs 3) challenge - same
-/// lifecycle, distinguishes the reward tier on scene re-entry. Also absent
-/// from both disc-wide flag censuses.
-pub const MARKER_GROUP: u16 = 0xD77;
+/// The three course-unlock SYSTEM flags a retail difficulty arm toggles - it
+/// sets one (Beginner `0x536` / Expert `0x537` / Master `0x538`) and clears
+/// the other two, and the arena init reads them to pick the course. The
+/// Delilas arm clears all three and instead sets
+/// [`crate::delilas_dome::COURSE_FLAG`] so the injected seed hook selects the
+/// 4th course.
+pub const COURSE_UNLOCK_FLAGS: [u16; 3] = [0x536, 0x537, 0x538];
 
-/// Story-flag index 0 - retail's own **scripted-loss latch**. Raised by a
-/// scene script right before a battle it is allowed to lose (the Rim Elm
-/// ambush and the Tetsu spar both do exactly this: `50 00` before `3E FF`),
-/// it makes MAIN INIT's back-from-battle game-over gate route a party wipe
-/// back to the field like any other battle end, and MAIN INIT consumes the
-/// latch itself - unconditionally, on both outcomes (`andi 0x7f` at
-/// `0x8003B608`, the join point of the survived and loss-return paths). See
-/// `docs/subsystems/battle.md` (party wipe + the game-over overlay, step 4).
-pub const SCRIPTED_LOSS_FLAG: u16 = 0x000;
+/// The arena-entry BGM op (`0x34`) copied verbatim from a retail difficulty
+/// arm, so the Delilas warp plays the same music cue on entry.
+pub const ARENA_ENTER_BGM: [u8; 7] = [0x34, 0x01, 0xFF, 0xFF, 0xFF, 0x1E, 0x00];
+/// The two `0x4A` wait ops a retail difficulty arm runs before the warp,
+/// copied verbatim (arena transition pacing).
+pub const ARENA_ENTER_WAIT_A: [u8; 3] = [0x4A, 0x1E, 0x00];
+/// See [`ARENA_ENTER_WAIT_A`].
+pub const ARENA_ENTER_WAIT_B: [u8; 3] = [0x4A, 0x08, 0x00];
 
-/// Story-flag index 1 - retail's **battle-outcome flag**, managed by the same
-/// MAIN INIT back-from-battle gate: the survived path sets it (`ori 0x40` at
-/// `0x8003B58C`), the wipe path clears it (`andi 0xbf` at `0x8003B5A0`),
-/// unconditionally on every return from battle (`ghidra/scripts/funcs/`
-/// `8003aeb0.txt`). Because the challenge battle is un-fleeable, testing this
-/// one flag on scene re-entry is an exact won-vs-wiped discriminator.
-pub const OUTCOME_SURVIVED_FLAG: u16 = 0x001;
-
-/// Default prize item: **Honey** (`0x65`, permanent all-stats +4).
-pub const DEFAULT_REWARD_ITEM: u8 = 0x65;
-
-/// Default prize counts: 3x for a solo (1v3) win, 1x for a group (3v3) win.
-pub const DEFAULT_SOLO_REWARD_COUNT: u8 = 3;
-/// See [`DEFAULT_SOLO_REWARD_COUNT`].
-pub const DEFAULT_GROUP_REWARD_COUNT: u8 = 1;
-
-/// Victory prizes, per challenge mode. The defaults hand out Honey
-/// ([`DEFAULT_REWARD_ITEM`]); callers may substitute any item id (e.g. a
-/// custom-item pack's ids) without touching the script machinery.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DelilasRewards {
-    /// Item granted after a solo (1 vs 3) win.
-    pub solo_item: u8,
-    /// How many of `solo_item` a solo win grants.
-    pub solo_count: u8,
-    /// Item granted after a full-party (3 vs 3) win.
-    pub group_item: u8,
-    /// How many of `group_item` a group win grants.
-    pub group_count: u8,
-}
-
-impl Default for DelilasRewards {
-    fn default() -> Self {
-        Self {
-            solo_item: DEFAULT_REWARD_ITEM,
-            solo_count: DEFAULT_SOLO_REWARD_COUNT,
-            group_item: DEFAULT_REWARD_ITEM,
-            group_count: DEFAULT_GROUP_REWARD_COUNT,
-        }
-    }
-}
-
-/// 1-based `battle_data` (PROT 867) archive ids of the three Delilas siblings:
-/// Gi (162), Che (163), Lu (164) - the same ids the retail ravine solo duels
-/// stage one at a time.
-pub const DELILAS_IDS: [u8; 3] = [162, 163, 164];
+/// The Muscle-Dome arena warp op (`3E 69`, the 6-byte warp form of `0x3E`),
+/// copied verbatim from a retail difficulty arm - it enters the dome arena
+/// (game mode 24); the course is selected by the flags set just before it.
+pub const DOME_WARP_OP: [u8; 6] = [0x3E, 0x69, 0x00, 0x00, 0x00, 0x00];
 
 /// The picker option label shown on the grown enrollment menu.
 pub const OPTION_LABEL: &str = "Delilas Challenge";
@@ -225,8 +187,6 @@ pub struct DelilasSites {
     /// `true` when the challenge is already present (idempotent re-run).
     pub already_applied: bool,
 
-    /// Absolute offset of formation row 0's 8-byte record in `decoded`.
-    formation_row: usize,
     /// Absolute start of the clerk record (P1[9] on a retail disc).
     rec_start: usize,
     /// First-opcode offset within the clerk record.
@@ -254,10 +214,6 @@ pub struct DelilasSites {
     /// Every control-flow field in the clerk record (opcode deltas + every
     /// picker's jump entries), record-relative.
     refs: Vec<RefSite>,
-    /// Absolute start of the scene-entry record (P1[0]).
-    entry_rec_start: usize,
-    /// First-opcode offset within the scene-entry record.
-    entry_rec_pc0: usize,
 }
 
 /// A `0x1F`-lead ASCII text segment (`0x00`-terminated).
@@ -477,24 +433,6 @@ impl DelilasSites {
     ) -> Result<Self, String> {
         let mf = man_section::parse(&decoded).map_err(|e| format!("MAN parse: {e}"))?;
 
-        // Formation row 0: the encounter section's first 8-byte record.
-        let enc = mf.sections[0];
-        let enc_bytes = decoded
-            .get(enc.body_offset()..enc.end_offset())
-            .ok_or("encounter section out of bounds")?;
-        let es = man_section::parse_encounter_section(enc_bytes)
-            .map_err(|e| format!("encounter section: {e}"))?;
-        if es.formation_stride != 8 || es.formation_count == 0 {
-            return Err("unexpected formation table shape".into());
-        }
-        let formation_row = enc.body_offset() + 4;
-        let row = &decoded[formation_row..formation_row + 8];
-        let retail_row = row[..4] == [0, 0, 0, 1] && row[4] == 4;
-        let applied_row = row[..4] == [1, 0, 0, 3] && row[4..7] == DELILAS_IDS;
-        if !retail_row && !applied_row {
-            return Err(format!("formation row 0 has unexpected bytes {row:02X?}"));
-        }
-
         // Clerk record: the P1 record whose picker labels are the three
         // character-name substitution tokens.
         let dro = mf.data_region_offset;
@@ -527,10 +465,9 @@ impl DelilasSites {
             return Err("no P1 record carries the who-enrolls picker".into());
         };
         let who = walk.pickers[who_idx].clone();
-        let already_applied = who.n == 4 && applied_row;
-        if (who.n == 4) != applied_row {
-            return Err("inconsistent partial application (picker vs formation)".into());
-        }
+        // The who-picker is 3-wide on a retail disc and 4-wide once the
+        // Delilas option is spliced in - the applied-state signal.
+        let already_applied = who.n == 4;
 
         // Common tail: the shared JmpRel target right after each `0x3E 0x69`
         // Muscle-Dome warp op, taken from the *walked* instruction stream.
@@ -609,11 +546,6 @@ impl DelilasSites {
             t
         };
 
-        // Scene-entry record P1[0].
-        let entry_rec_start = dro + *mf.partitions[1].first().ok_or("empty partition 1")? as usize;
-        let entry_rec_pc0 =
-            p01_pc0(&decoded, entry_rec_start).ok_or("P1[0] header out of bounds")?;
-
         Ok(Self {
             entry_idx,
             man_offset,
@@ -621,7 +553,6 @@ impl DelilasSites {
             compressed_budget,
             decoded,
             already_applied,
-            formation_row,
             rec_start,
             rec_pc0,
             rec_end,
@@ -631,15 +562,12 @@ impl DelilasSites {
             decline_tail,
             skip_tests,
             refs: walk.refs,
-            entry_rec_start,
-            entry_rec_pc0,
         })
     }
 
-    /// Build the patched MAN with the given victory prizes. Returns the new
-    /// decompressed MAN plus the number of inserted bytes. Errors if any
-    /// verification step fails; never writes.
-    pub fn build(&self, rewards: &DelilasRewards) -> Result<(Vec<u8>, usize), String> {
+    /// Build the patched MAN. Returns the new decompressed MAN plus the number
+    /// of inserted bytes. Errors if any verification step fails; never writes.
+    pub fn build(&self) -> Result<(Vec<u8>, usize), String> {
         if self.already_applied {
             return Err("already applied".into());
         }
@@ -685,23 +613,10 @@ impl DelilasSites {
         let branch_start = branch_ins_at + pre_branch_shift;
         let common_tail_new = self.common_tail + shift(self.common_tail);
         let decline_tail_new = self.decline_tail + shift(self.decline_tail);
-        let (branch, bmeta) = build_branch(branch_start, common_tail_new, decline_tail_new)?;
+        let branch = build_branch(branch_start, common_tail_new, decline_tail_new)?;
 
         // --- Same-size rewrites, applied to a copy at OLD offsets. ---
         let mut out = man.clone();
-
-        // Formation row 0 -> the Delilas trio (boss-intro header byte).
-        let fr = self.formation_row;
-        out[fr..fr + 8].copy_from_slice(&[
-            0x01,
-            0x00,
-            0x00,
-            0x03,
-            DELILAS_IDS[0],
-            DELILAS_IDS[1],
-            DELILAS_IDS[2],
-            0x00,
-        ]);
 
         // Who-picker: open byte 0x28 -> 0x29 (preserve a stored 0x80 bit).
         let open_abs = self.rec_start + self.who_open;
@@ -733,13 +648,11 @@ impl DelilasSites {
             out[abs..abs + 2].copy_from_slice(&value.to_le_bytes());
         }
 
-        // --- Splice the four insertions (absolute offsets, ascending). ---
+        // --- Splice the three insertions (absolute offsets, ascending). ---
         // The new 4th jump entry lands AT the seam, so in the new layout its
         // own field offset is exactly `entry_ins_at`.
         let opt3_delta = (branch_start.wrapping_sub(entry_ins_at)) as u16;
-        let p10_block = build_restore_block(rewards);
-        let inserts: [(usize, Vec<u8>); 4] = [
-            (self.entry_rec_start + self.entry_rec_pc0, p10_block),
+        let inserts: [(usize, Vec<u8>); 3] = [
             (
                 self.rec_start + entry_ins_at,
                 opt3_delta.to_le_bytes().to_vec(),
@@ -786,7 +699,8 @@ impl DelilasSites {
         write_u24(&mut new_man, man_section::U24_AT_28_OFFSET, new_u24 as u32)?;
 
         // --- Verification. ---
-        let nmf = man_section::parse(&new_man).map_err(|e| format!("rebuilt MAN: {e}"))?;
+        // The rebuilt MAN must re-parse (partition tables + sections intact).
+        man_section::parse(&new_man).map_err(|e| format!("rebuilt MAN: {e}"))?;
         // Shift for points strictly inside the clerk record (its own start
         // moves only by insertions in earlier records).
         let n_start = self.rec_start + abs_shift(self.rec_start.saturating_sub(1));
@@ -815,50 +729,30 @@ impl DelilasSites {
                 return Err(format!("option {i} target mis-relocated"));
             }
         }
-        // The branch itself must decode: its two pickers parse with the
-        // authored arity and in-branch targets, the gate opens it, and the
-        // battle op is present.
+        // The branch itself must decode: the Koru gate opens it, it requests
+        // course 3, and the arena warp op is present. The branch walks cleanly
+        // to the end of the record (no stranded bytes).
         let b = &n_rec[branch_start..branch_start + branch.len()];
         let gate = sysflag_test(KORU_DEFEATED_FLAG, 0);
         if b[..2] != gate[..2] {
             return Err("branch does not open with the Koru gate".into());
         }
-        if !b.windows(3).any(|w| w == [0x3E, 0xFF, 0x00]) {
-            return Err("branch lost its battle op".into());
+        let course = sysflag_set(crate::delilas_dome::COURSE_FLAG);
+        if !b.windows(2).any(|w| w == course) {
+            return Err("branch does not request the Delilas course".into());
         }
-        for (open_local, n) in [(bmeta.picker_mode, 2), (bmeta.picker_fighter, 3)] {
-            let p = parse_picker_at(n_rec, branch_start + open_local)
-                .ok_or("branch picker does not parse")?;
-            if p.n != n {
-                return Err("branch picker has the wrong arity".into());
-            }
-            for i in 0..p.n {
-                let t = p
-                    .jump_target(i)
-                    .ok_or("branch picker target unresolvable")?;
-                if t < branch_start || t >= branch_start + branch.len() {
-                    return Err("branch picker target escapes the branch".into());
-                }
-            }
+        if !b.windows(DOME_WARP_OP.len()).any(|w| w == DOME_WARP_OP) {
+            return Err("branch lost its arena warp op".into());
         }
-        // Encounter row must decode as the trio.
-        let enc = nmf.sections[0];
-        let es =
-            man_section::parse_encounter_section(&new_man[enc.body_offset()..enc.end_offset()])
-                .map_err(|e| format!("rebuilt encounter section: {e}"))?;
-        if es.formation_stride != 8 {
-            return Err("rebuilt formation stride changed".into());
-        }
-        let nfr = enc.body_offset() + 4;
-        if new_man[nfr..nfr + 7] != [1, 0, 0, 3, DELILAS_IDS[0], DELILAS_IDS[1], DELILAS_IDS[2]] {
-            return Err("rebuilt formation row 0 wrong".into());
-        }
-        // The restore block must decode at the top of P1[0].
-        let n_entry_start =
-            self.entry_rec_start + abs_shift(self.entry_rec_start.saturating_sub(1));
-        let blk_at = n_entry_start + self.entry_rec_pc0;
-        if new_man[blk_at..blk_at + 2] != sysflag_test(MARKER_SOLO, 0)[..2] {
-            return Err("restore block missing from the entry script".into());
+        // Walking the whole rebuilt record must consume every byte (no decode
+        // desync introduced by the splice).
+        let walk = walk_record(n_rec, self.rec_pc0)?;
+        if walk.end != n_rec.len() {
+            return Err(format!(
+                "rebuilt record walk stalled at +0x{:04X} (len 0x{:04X})",
+                walk.end,
+                n_rec.len()
+            ));
         }
         Ok((new_man, grown))
     }
@@ -902,36 +796,32 @@ fn write_u24(buf: &mut [u8], at: usize, v: u32) -> Result<(), String> {
     Ok(())
 }
 
-/// Branch-local offsets of the structures [`DelilasSites::build`] verifies.
-struct BranchMeta {
-    /// Local offset of the solo/group `0x27` open byte.
-    picker_mode: usize,
-    /// Local offset of the fighter `0x28` open byte.
-    picker_fighter: usize,
-}
-
-/// Build the Delilas branch bytecode. `base` is the branch's record-relative
-/// start offset in the NEW layout; `common_tail` is the record-relative offset
-/// (NEW layout) of the shared exit both the refusal and the post-battle path
-/// jump to. All internal jumps are emitted position-correct.
-fn build_branch(
-    base: usize,
-    common_tail: usize,
-    decline_tail: usize,
-) -> Result<(Vec<u8>, BranchMeta), String> {
+/// Build the Delilas branch bytecode: gate on the Koru flag, then request the
+/// injected Delilas dome course and warp into the arena the same way retail's
+/// own difficulty arms do. `base` is the branch's record-relative start in the
+/// NEW layout; `common_tail` is the shared post-warp exit (NEW layout) and
+/// `decline_tail` the locked-gate refusal target (NEW layout). All internal
+/// jumps are emitted position-correct.
+///
+/// ```text
+///       if KORU_DEFEATED -> AVAIL          ; else fall to the decline flow
+///       jmp DECLINE_TAIL
+/// AVAIL: 55 09                              ; SET dome-active (0x509)
+///        65 36 65 37 65 38                  ; CLEAR the course-unlock flags
+///        55 39                              ; SET course-3 request (0x539)
+///        34 01 FF FF FF 1E 00               ; arena-entry BGM (verbatim)
+///        4A 1E 00  4A 08 00                 ; arena transition waits (verbatim)
+///        3E 69 00 00 00 00                  ; arena warp (verbatim)
+///        jmp COMMON_TAIL
+/// ```
+fn build_branch(base: usize, common_tail: usize, decline_tail: usize) -> Result<Vec<u8>, String> {
     #[derive(Clone, Copy, PartialEq)]
     enum Label {
         Avail,
-        Solo,
-        Vahn,
-        Noa,
-        Gala,
-        Group,
-        Launch,
         CommonTail,
         DeclineTail,
     }
-    let mut b: Vec<u8> = Vec::with_capacity(224);
+    let mut b: Vec<u8> = Vec::with_capacity(48);
     let mut fixups: Vec<(usize, Label)> = Vec::new(); // (local field off, dest)
     let mut labels: Vec<(Label, usize)> = Vec::new();
     let jmp = |b: &mut Vec<u8>, fixups: &mut Vec<(usize, Label)>, l: Label| {
@@ -942,73 +832,33 @@ fn build_branch(
 
     // Gate: if the Koru flag is set, jump to AVAIL; else the locked-gate
     // refusal is a bare jump into the record's own decline flow ("We hope
-    // you come again soon!") - zero new text, and the koin1 MAN recompresses
-    // into a zero-slack footprint, so every glyph here costs real bytes.
+    // you come again soon!") - zero new text.
     b.extend_from_slice(&sysflag_test(KORU_DEFEATED_FLAG, 0));
     fixups.push((b.len() - 2, Label::Avail));
     jmp(&mut b, &mut fixups, Label::DeclineTail);
-    // Available: prompt + solo/group picker (immediate-labels form). The
-    // prompt reuses a retail line of this very record verbatim so the LZS
-    // window folds it to a few bytes.
+
+    // AVAIL: mirror a retail difficulty arm, but request course 3 (the
+    // injected Delilas dome course) via the extra flag the delilas_dome seed
+    // hook decodes. Set the dome-active flag, clear the three course-unlock
+    // flags so retail's own seed logic picks nothing, and set the course-3
+    // request flag. Then the verbatim BGM + wait + warp ops.
     labels.push((Label::Avail, b.len()));
-    b.extend(seg("Which do you want to enter?"));
-    let picker_mode = b.len();
-    b.push(0x27);
-    b.extend_from_slice(&[0, 0]);
-    fixups.push((b.len() - 2, Label::Solo));
-    b.extend_from_slice(&[0, 0]);
-    fixups.push((b.len() - 2, Label::Group));
-    // Capitalized to tail-match the "Delilas Challenge" option label a few
-    // hundred bytes earlier in the LZS window.
-    b.extend(seg("Solo Challenge"));
-    b.extend(seg("Group Challenge"));
-    // Solo: fighter picker. Prompt lines reuse this record's retail text
-    // verbatim so the LZS window folds them to a few control bytes.
-    labels.push((Label::Solo, b.len()));
-    b.extend(seg("First, tell me which one of you"));
-    b.extend(seg("will be entering."));
-    let picker_fighter = b.len();
-    b.push(0x28);
-    for l in [Label::Vahn, Label::Noa, Label::Gala] {
-        b.extend_from_slice(&[0, 0]);
-        fixups.push((b.len() - 2, l));
+    b.extend_from_slice(&sysflag_set(DOME_ACTIVE_FLAG));
+    for &flag in &COURSE_UNLOCK_FLAGS {
+        b.extend_from_slice(&sysflag_clear(flag));
     }
-    b.extend_from_slice(&name_label(0));
-    b.extend_from_slice(&name_label(1));
-    b.extend_from_slice(&name_label(2));
-    // Solo arms: strip the party to the chosen fighter (the retail ravine
-    // duels' own PARTY_REMOVE idiom) and latch the solo marker.
-    let solo = sysflag_set(MARKER_SOLO);
-    labels.push((Label::Vahn, b.len()));
-    b.extend_from_slice(&[0x3D, 0x01, 0x3D, 0x02]);
-    b.extend_from_slice(&solo);
-    jmp(&mut b, &mut fixups, Label::Launch);
-    labels.push((Label::Noa, b.len()));
-    b.extend_from_slice(&[0x3D, 0x00, 0x3D, 0x02]);
-    b.extend_from_slice(&solo);
-    jmp(&mut b, &mut fixups, Label::Launch);
-    labels.push((Label::Gala, b.len()));
-    b.extend_from_slice(&[0x3D, 0x00, 0x3D, 0x01]);
-    b.extend_from_slice(&solo);
-    jmp(&mut b, &mut fixups, Label::Launch);
-    // Group arm: full party, latch the group marker, fall into LAUNCH.
-    labels.push((Label::Group, b.len()));
-    b.extend_from_slice(&sysflag_set(MARKER_GROUP));
-    labels.push((Label::Launch, b.len()));
-    // Raise retail's scripted-loss latch so a wipe returns to the venue
-    // instead of the continue screen (the Tetsu-spar `50 00` idiom), fight
-    // formation row 0, then rejoin the record's common tail. No BGM op: the
-    // Tetsu spar launches bare too - battle init cues the battle music
-    // itself (and the zero-slack MAN wants the 4 bytes back).
-    b.extend_from_slice(&sysflag_set(SCRIPTED_LOSS_FLAG));
-    b.extend_from_slice(&[0x3E, 0xFF, 0x00]);
+    b.extend_from_slice(&sysflag_set(crate::delilas_dome::COURSE_FLAG));
+    b.extend_from_slice(&ARENA_ENTER_BGM);
+    b.extend_from_slice(&ARENA_ENTER_WAIT_A);
+    b.extend_from_slice(&ARENA_ENTER_WAIT_B);
+    b.extend_from_slice(&DOME_WARP_OP);
     jmp(&mut b, &mut fixups, Label::CommonTail);
 
     let resolve = |l: Label| -> Result<usize, String> {
         match l {
             Label::CommonTail => return Ok(common_tail),
             Label::DeclineTail => return Ok(decline_tail),
-            _ => {}
+            Label::Avail => {}
         }
         labels
             .iter()
@@ -1022,111 +872,7 @@ fn build_branch(
         let delta = (target.wrapping_sub(field)) as u16;
         b[field_local..field_local + 2].copy_from_slice(&delta.to_le_bytes());
     }
-    Ok((
-        b,
-        BranchMeta {
-            picker_mode,
-            picker_fighter,
-        },
-    ))
-}
-
-/// The guarded outcome block spliced at the top of `koin1`'s scene-entry
-/// script. A scripted battle returns through a full scene reload, so this is
-/// where the challenge is scored. Position-independent: every jump is local
-/// (the outcome flag is global state, not an offset).
-///
-/// ```text
-///       if MARKER_SOLO  -> SOLO
-///       if MARKER_GROUP -> GRP
-///       jmp END
-/// SOLO: clear MARKER_SOLO
-///       3D 00/01/02  3C 00/01/02      ; recompose Vahn / Noa / Gala
-///       if OUTCOME_SURVIVED -> WIN3, else jmp LOSS
-/// WIN3: grant solo surplus            ; falls into WIN1
-/// WIN1: grant group prize; jmp END
-/// GRP:  clear MARKER_GROUP
-///       if OUTCOME_SURVIVED -> WIN1   ; falls into LOSS
-/// LOSS: 4C 82 0/1/2                   ; full restore - nobody leaves the
-///                                     ; venue at 0 HP (no game over)
-/// END:
-/// ```
-///
-/// The split between WIN3 and WIN1 assumes the default same-item rewards
-/// (solo = surplus + shared tail); distinct items emit separate grant runs.
-fn build_restore_block(rewards: &DelilasRewards) -> Vec<u8> {
-    #[derive(Clone, Copy, PartialEq)]
-    enum L {
-        Solo,
-        Win3,
-        Grp,
-        Loss,
-        Win1,
-        End,
-    }
-    let mut b: Vec<u8> = Vec::with_capacity(64);
-    let mut fixups: Vec<(usize, L)> = Vec::new();
-    let mut labels: Vec<(L, usize)> = Vec::new();
-    let jmp = |b: &mut Vec<u8>, fixups: &mut Vec<(usize, L)>, l: L| {
-        b.push(0x26);
-        b.extend_from_slice(&[0, 0]);
-        fixups.push((b.len() - 2, l));
-    };
-    let survived = |b: &mut Vec<u8>, fixups: &mut Vec<(usize, L)>, l: L| {
-        b.extend_from_slice(&sysflag_test(OUTCOME_SURVIVED_FLAG, 0));
-        fixups.push((b.len() - 2, l));
-    };
-
-    b.extend_from_slice(&sysflag_test(MARKER_SOLO, 0));
-    fixups.push((b.len() - 2, L::Solo));
-    b.extend_from_slice(&sysflag_test(MARKER_GROUP, 0));
-    fixups.push((b.len() - 2, L::Grp));
-    jmp(&mut b, &mut fixups, L::End);
-
-    labels.push((L::Solo, b.len()));
-    b.extend_from_slice(&sysflag_clear(MARKER_SOLO));
-    b.extend_from_slice(&[0x3D, 0x00, 0x3D, 0x01, 0x3D, 0x02]);
-    b.extend_from_slice(&[0x3C, 0x00, 0x3C, 0x01, 0x3C, 0x02]);
-    survived(&mut b, &mut fixups, L::Win3);
-    jmp(&mut b, &mut fixups, L::Loss);
-    labels.push((L::Win3, b.len()));
-    let shared_tail =
-        rewards.solo_item == rewards.group_item && rewards.solo_count >= rewards.group_count;
-    if shared_tail {
-        for _ in 0..rewards.solo_count - rewards.group_count {
-            b.extend_from_slice(&[0x39, rewards.solo_item]);
-        }
-        // ...falls into WIN1.
-    } else {
-        for _ in 0..rewards.solo_count {
-            b.extend_from_slice(&[0x39, rewards.solo_item]);
-        }
-        jmp(&mut b, &mut fixups, L::End);
-    }
-    labels.push((L::Win1, b.len()));
-    for _ in 0..rewards.group_count {
-        b.extend_from_slice(&[0x39, rewards.group_item]);
-    }
-    jmp(&mut b, &mut fixups, L::End);
-
-    labels.push((L::Grp, b.len()));
-    b.extend_from_slice(&sysflag_clear(MARKER_GROUP));
-    survived(&mut b, &mut fixups, L::Win1);
-    // ...falls into LOSS, which falls into END.
-    labels.push((L::Loss, b.len()));
-    b.extend_from_slice(&[0x4C, 0x82, 0x00, 0x4C, 0x82, 0x01, 0x4C, 0x82, 0x02]);
-    labels.push((L::End, b.len()));
-
-    for (field, label) in fixups {
-        let target = labels
-            .iter()
-            .find(|(k, _)| *k == label)
-            .map(|(_, off)| *off)
-            .expect("restore-block label");
-        let delta = (target.wrapping_sub(field)) as u16;
-        b[field..field + 2].copy_from_slice(&delta.to_le_bytes());
-    }
-    b
+    Ok(b)
 }
 
 #[cfg(test)]
@@ -1134,106 +880,70 @@ mod tests {
     use super::*;
 
     #[test]
-    fn restore_block_shape() {
-        let rewards = DelilasRewards::default();
-        let b = build_restore_block(&rewards);
-        // Opens with the two marker tests, then the not-fought skip.
-        assert_eq!(&b[..2], &[0x7D, 0x76]);
-        assert_eq!(&b[4..6], &[0x7D, 0x77]);
-        assert_eq!(b[8], 0x26);
-        // Marker clears present for both arms.
-        assert_eq!(b.windows(2).filter(|w| *w == [0x6D, 0x76]).count(), 1);
-        assert_eq!(b.windows(2).filter(|w| *w == [0x6D, 0x77]).count(), 1);
-        // Party recompose.
-        assert!(b.windows(12).any(|w| w
-            == [
-                0x3D, 0x00, 0x3D, 0x01, 0x3D, 0x02, 0x3C, 0x00, 0x3C, 0x01, 0x3C, 0x02
-            ]));
-        // One battle-outcome test per arm (retail's survived flag, index 1).
-        let outcome = sysflag_test(OUTCOME_SURVIVED_FLAG, 0);
-        assert_eq!(
-            b.windows(2).filter(|w| *w == &outcome[..2]).count(),
-            2,
-            "solo + group outcome tests"
-        );
-        // Prize grants: the shared tail emits solo_count give ops in total
-        // (surplus in WIN3 + the group grant in WIN1 the solo path falls
-        // into), which the group path enters at WIN1.
-        let give = [0x39, DEFAULT_REWARD_ITEM];
-        assert_eq!(
-            b.windows(2).filter(|w| *w == give).count(),
-            DEFAULT_SOLO_REWARD_COUNT as usize
-        );
-        // Loss path: three full restores.
-        assert!(
-            b.windows(9)
-                .any(|w| w == [0x4C, 0x82, 0x00, 0x4C, 0x82, 0x01, 0x4C, 0x82, 0x02])
-        );
-        // The whole block decodes as field-VM ops, and every collected jump
-        // stays inside the block (END = one past the block, where the host
-        // record's original first instruction sits).
-        let base = 4;
-        let mut rec = vec![0x21u8; base];
-        rec.extend_from_slice(&b);
-        rec.push(0x21);
-        let w = walk_record(&rec, base).unwrap();
-        assert_eq!(w.end, rec.len());
-        for r in &w.refs {
-            assert!(r.target >= base && r.target <= base + b.len());
-        }
-    }
-
-    #[test]
     fn sysflag_clear_encoding() {
         assert_eq!(sysflag_clear(0xD76), [0x6D, 0x76]);
         assert_eq!(sysflag_clear(0x378), [0x63, 0x78]);
+        // The retail difficulty arms' own flag ops (dome-active + course clear).
+        assert_eq!(sysflag_set(DOME_ACTIVE_FLAG), [0x55, 0x09]);
+        assert_eq!(sysflag_clear(COURSE_UNLOCK_FLAGS[0]), [0x65, 0x36]);
+        assert_eq!(sysflag_set(crate::delilas_dome::COURSE_FLAG), [0x55, 0x39]);
     }
 
     #[test]
-    fn branch_assembles_with_correct_jumps() {
+    fn branch_is_a_gated_arena_warp() {
         let base = 0x0FF4;
         let tail = 0x0FDF;
-        let (b, meta) = build_branch(base, tail, 0x0F5A).unwrap();
-        // Opens with the Koru gate (op 0x73, operand 0x78).
-        assert_eq!(b[0], 0x73);
-        assert_eq!(b[1], 0x78);
-        // Gate target: field at local +2 -> AVAIL, inside the branch, at a
-        // text segment.
+        let decline = 0x0F5A;
+        let b = build_branch(base, tail, decline).unwrap();
+
+        // Opens with the Koru gate (op 0x73, operand 0x78) -> AVAIL.
+        assert_eq!(&b[..2], &[0x73, 0x78]);
         let d = u16::from_le_bytes([b[2], b[3]]) as usize;
         let avail = (base + 2 + d) & 0xFFFF;
         assert!(avail > base && avail < base + b.len());
-        assert_eq!(b[avail - base], 0x1F);
-        // Battle op present exactly once, against formation row 0.
-        let battles = b.windows(3).filter(|w| *w == [0x3E, 0xFF, 0x00]).count();
-        assert_eq!(battles, 1);
-        // Solo marker latch in each of the three solo arms, one group latch,
-        // and one scripted-loss latch before the battle op.
-        let solo = sysflag_set(MARKER_SOLO);
-        assert_eq!(b.windows(2).filter(|w| *w == solo).count(), 3);
-        let group = sysflag_set(MARKER_GROUP);
-        assert_eq!(b.windows(2).filter(|w| *w == group).count(), 1);
-        let loss = sysflag_set(SCRIPTED_LOSS_FLAG);
-        assert_eq!(b.windows(2).filter(|w| *w == loss).count(), 1);
-        let battle_at = b.windows(3).position(|w| w == [0x3E, 0xFF, 0x00]).unwrap();
-        let loss_at = b.windows(2).position(|w| *w == loss).unwrap();
-        assert!(loss_at < battle_at, "loss latch must precede the battle op");
-        // Place the branch at `base` in a synthetic record and walk it: the
-        // walk must consume every byte and see the two pickers.
+        // The gate-fail path is a bare jump to the decline tail.
+        assert_eq!(b[4], 0x26);
+        let dd = u16::from_le_bytes([b[5], b[6]]) as usize;
+        assert_eq!((base + 5 + dd) & 0xFFFF, decline);
+
+        // AVAIL requests the dome course exactly as a retail arm does: set
+        // dome-active, clear the three course-unlock flags, set course 3.
+        let avail_local = avail - base;
+        assert_eq!(
+            &b[avail_local..avail_local + 2],
+            &sysflag_set(DOME_ACTIVE_FLAG)
+        );
+        for (i, &flag) in COURSE_UNLOCK_FLAGS.iter().enumerate() {
+            let at = avail_local + 2 + i * 2;
+            assert_eq!(&b[at..at + 2], &sysflag_clear(flag));
+        }
+        // The course-3 request and the arena warp are both present, warp last.
+        let course = sysflag_set(crate::delilas_dome::COURSE_FLAG);
+        assert_eq!(b.windows(2).filter(|w| *w == course).count(), 1);
+        assert_eq!(
+            b.windows(DOME_WARP_OP.len())
+                .filter(|w| *w == DOME_WARP_OP)
+                .count(),
+            1
+        );
+        assert_eq!(b.windows(7).filter(|w| *w == ARENA_ENTER_BGM).count(), 1);
+        // No scripted battle op survives (this is a warp, not a fight).
+        assert!(!b.windows(3).any(|w| w == [0x3E, 0xFF, 0x00]));
+
+        // Placed at `base` in a synthetic record, the branch walks cleanly to
+        // the end (every byte decoded) and carries no pickers.
         let mut rec = vec![0x21u8; base];
-        rec[base - 1] = 0x00; // gate op follows a terminator in the real record
+        rec[base - 1] = 0x00; // the gate op follows a terminator in the real record
         rec.extend_from_slice(&b);
         let w = walk_record(&rec, base).unwrap();
         assert_eq!(w.end, rec.len(), "branch walk must consume every byte");
-        assert_eq!(w.pickers.len(), 2, "solo/group + fighter pickers");
-        assert_eq!(w.pickers[0].open, base + meta.picker_mode);
-        assert_eq!(w.pickers[0].n, 2);
-        assert_eq!(w.pickers[1].open, base + meta.picker_fighter);
-        assert_eq!(w.pickers[1].n, 3);
-        // Every picker target stays inside the branch.
-        for p in &w.pickers {
-            for e in &p.entries {
-                assert!(e.target >= base && e.target < base + b.len());
-            }
-        }
+        assert!(w.pickers.is_empty(), "the warp branch has no pickers");
+        // The warp op is a 6-byte warp form (not the 2-byte interact form).
+        let warp_at = base + b.windows(6).position(|w| w == DOME_WARP_OP).unwrap();
+        assert!(
+            w.insns
+                .iter()
+                .any(|&(pc, op, sz)| pc == warp_at && op == 0x3E && sz == 6)
+        );
     }
 }

@@ -517,18 +517,19 @@ pub fn patch_rom(
         summary.push_str("approach-softlock-fix: untouched\n");
     }
 
-    // Delilas Challenge: a fourth Muscle Dome enrollment option - fight Gi,
-    // Che and Lu Delilas all at once, solo (1v3) or full-party (3v3), gated
-    // on the Koru event in Nivora Ravine. Losing returns to the venue (no
-    // game over); a solo win pays 3x Honey, a group win 1x. Pure script +
-    // formation-data edit in the koin1 scene bundle; seedless. A koin1 MAN
-    // another edit has already grown past its zero-slack footprint skips
-    // with a note instead of failing the run.
+    // Delilas Challenge: a fourth Muscle Dome enrollment option that runs a
+    // brand-new 3-round dome course - Gi -> Che -> Lu Delilas, one boss per
+    // round, routed through the real arena (magic-off, memory-safe), gated on
+    // the Koru event in Nivora Ravine. Losing a round returns to the venue by
+    // the dome's design. koin1 script edit + a companion arena code injection;
+    // seedless. A koin1 MAN another edit has already grown past its zero-slack
+    // footprint skips with a note instead of failing the run.
     if delilas_challenge {
         match apply::apply_delilas_challenge(&mut patcher) {
             Ok(rep) if rep.changed => summary.push_str(
                 "delilas-challenge: Muscle Dome enrollment offers the Delilas Challenge \
-                 (solo 1v3 pays 3x Honey, party 3v3 pays 1x; unlocks after Nivora Ravine)\n",
+                 (a 3-round dome course, Gi/Che/Lu one boss per round; unlocks after Nivora \
+                 Ravine)\n",
             ),
             Ok(_) => summary.push_str("delilas-challenge: already applied\n"),
             Err(e) => summary.push_str(&format!("delilas-challenge: skipped ({e:#})\n")),

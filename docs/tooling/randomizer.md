@@ -43,10 +43,10 @@ disc-gated, so CI runs without a disc. There is also a
 - **Additions retail has no table for**, added as machine-code hooks: experience
   for running away, charming an enemy onto your side, shiny Seru, and Seru
   trading.
-- **A new fight retail never stages** - the [Delilas Challenge](#delilas-challenge),
-  a fourth Muscle Dome enrollment option that pits one fighter (1v3) or the
-  full party (3v3) against all three Delilas siblings at once, built entirely
-  from the game's own script vocabulary.
+- **A new dome course retail never ships** - the [Delilas Challenge](#delilas-challenge),
+  a fourth Muscle Dome enrollment option that runs a brand-new 3-round arena
+  course fighting Gi -> Che -> Lu Delilas one boss per round (a koin1 script
+  edit plus a small arena code injection).
 - **Textures** - replace any TIM on the disc with a user-authored PNG
   ([texture replacement](#texture-replacement)).
 
@@ -289,7 +289,7 @@ unless asked for:
 | `--seru-trade` | vendors swap one of a character's seru for another, reseeding every two in-game hours | `--seru-trade-offers N` caps offers per vendor | [Seru trading](#seru-trading) |
 | `--jewel-fix` | the boss cinematic casts (Xain, Cort, the Delilas trio) respect elemental guards like every other special | - | [Jewel fix](#jewel-fix) |
 | `--approach-softlock-fix` | a monster whose approach animation dies mid-walk is re-staged and resumes walking instead of parking the battle forever (the "endless camera orbit") | - | [Approach-softlock fix](#approach-softlock-fix) |
-| `--delilas-challenge` | a fourth Muscle Dome enrollment option: fight Gi, Che and Lu Delilas all at once, solo (1v3) or full party (3v3); unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
+| `--delilas-challenge` | a fourth Muscle Dome enrollment option: a new 3-round arena course fighting Gi -> Che -> Lu Delilas one boss per round; unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
 | `--fishing-price ITEM=POINTS` | set the fishing-exchange point cost of a prize (e.g. the Buma Water Egg); the price also gates when the prize appears | repeatable / comma-separated | [Fishing prize prices](#fishing-prize-prices) |
 | `--rename-location INDEX=NAME` | rename a world-map location (save / load / pause + quick-travel menu), e.g. an element cave to match a re-elemented party | repeatable | [Location names](#location-names) |
 | `--earth-egg-price VALUE` | set the casino-coin threshold to obtain the Earth Egg (Sol Tower Prize Counter; retail 100000), gate + debit together | single value | [Earth Egg coin threshold](#earth-egg-coin-threshold) |
@@ -956,56 +956,73 @@ and an already-fixed image is a no-op.
 
 `--delilas-challenge` adds a fourth option to the Muscle Dome enrollment
 clerk's "who will be entering" menu (`delilas_challenge` module): the
-**Delilas Challenge** - Gi, Che and Lu Delilas together in one battle, a
-fight that exists nowhere in retail (the Nivora Ravine confrontations are
-three consecutive *solo* duels, and no retail formation seats three distinct
-boss ids). Picking it offers a **solo challenge** (choose Vahn, Noa or Gala;
-1 vs 3) or a **group challenge** (full party; 3 vs 3). The option is gated on
-story flag `0x378` - the flag the Koru death event latches and the world map
-reads to flip the ravine entrance from `nilboa` to `nilboa2` - so until that
-event the clerk brushes the player off. On by default in the web patcher's
-Balanced and Full Chaos presets.
+**Delilas Challenge** - a brand-new 3-round Muscle Dome *course* fighting Gi,
+then Che, then Lu Delilas, one sibling per round. The trio exists nowhere in
+retail (the Nivora Ravine confrontations are three consecutive *solo* duels),
+and it is delivered as a dome course rather than a single fight for two
+reasons live testing forced: a normal battle staged from the town scene
+`koin1` freezes on any spell (the scene never installs battle-effect / summon
+/ player-magic asset residency - which is exactly why the Muscle Dome
+disables magic), and the battle mesh heap holds only about one large boss's
+worth of *distinct* geometry, so three distinct Delilas meshes at once
+overflow it. Routing through the real arena loads one boss per round and
+disables magic by design. The option is gated on story flag `0x378` - the
+flag the Koru death event latches and the world map reads to flip the ravine
+entrance from `nilboa` to `nilboa2` - so until that event the clerk brushes
+the player off. On by default in the web patcher's Balanced and Full Chaos
+presets.
 
-Everything is script + data inside the `koin1` scene bundle - no code
-injection:
+The feature is two coordinated halves that ship together
+(`apply_delilas_challenge` installs both):
 
-- the scene's single never-rolled formation row becomes the trio
-  (`hdr=[01,00,00] count=3 ids=[162,163,164]`; the boss header byte also
-  makes the fight un-fleeable through `ctx+0x287`, so the outcome is
-  strictly win or wipe);
-- the 3-option `0x28` who-enrolls picker grows to the 4-option `0x29` form
-  (the picker arity ceiling), with the new arm appended at the record's end,
-  and the quick-path skip before it is NOPed - retail permanently hides the
+- **The koin1 menu + warp** (`delilas_challenge` module, script + data). The
+  3-option `0x28` who-enrolls picker grows to the 4-option `0x29` form (the
+  picker arity ceiling), with the new arm appended at the record's end, and
+  the quick-path skip before it is NOPed - retail permanently hides the
   who-menu once Noa or Gala has refused enrollment (flags `0x559`/`0x558`)
-  and auto-registers Vahn, which would strand the new option on most saves;
-  with the patch the enrollment menu always shows;
-- the solo arms strip the party with the same `0x3D` PARTY_REMOVE idiom the
-  retail ravine duels use, and the launch raises retail's **scripted-loss
-  latch** (story flag `0`, the Tetsu-spar `50 00` idiom) before the
-  `3E FF 00` battle op - so **losing returns to the Sol venue** with the
-  party fully restored instead of the continue screen;
-- a guarded block at the top of the scene-entry script consumes transient
-  marker flags on the post-battle reload, reads retail's battle-outcome
-  flag (story flag `1`, set by MAIN INIT's back-from-battle gate on a
-  survived fight and cleared on a wipe), recomposes the party, and pays the
-  prize: **3x Honey for a solo win, 1x Honey for a group win**. The
-  challenge is repeatable.
+  and auto-registers Vahn, which would strand the new option on most saves.
+  The new arm mirrors one of retail's own difficulty arms exactly: gate on
+  `0x378`, set the dome-active flag `0x509`, clear the three course-unlock
+  flags `0x536`/`0x537`/`0x538`, set the course-3 request flag `0x539`, then
+  the verbatim BGM + wait ops and the verbatim `3E 69` arena warp. Losing a
+  round returns to the Sol venue by the dome's own design (no game over).
+- **The arena course** (`delilas_dome` module, a code injection). The arena
+  overlay (PROT 0977) has no course beyond Master, so course 3 is added with
+  five same-size edits: a seed detour at the course-select init
+  (`FUN_801CEA6C` @ `0x801CEBCC`) that decodes flag `0x539` into the packed
+  course/round word as course 3; a `{round_count=3, roster_ptr}` descriptor
+  at the course-3 slot `0x801D1A08 + 3*8`; the hub actor template that
+  occupied that slot relocated into a `SCUS_942.54` routine cave (its one
+  `lui`/`addiu` reference repointed); the Delilas roster (Gi/Che/Lu, reusing
+  the dome's own name strings) in the cave; and the seed routine itself in
+  the cave. All four descriptor readers compute `base + course*8`, so one
+  descriptor write makes course 3 work everywhere.
 
 The `koin1` MAN is sector-aligned with zero compressed slack, so the grown
 script only fits back into its footprint through the optimal LZS packer -
 which is why every MAN re-pack site in the patcher now falls back to
 `compress_optimal` when greedy misses (`compress_within`). If another edit
-(e.g. a grown language pack) has already consumed the headroom, the feature
-skips with a note instead of failing the run. Seedless; re-application is a
-no-op.
+(e.g. a grown language pack) has already consumed the headroom, the koin1
+half skips with a note instead of failing the run. Seedless; re-application
+is a no-op (the arena injection is idempotent on the seed-hook detour). The
+dome fields whichever fighter the arena normally seats; routing a chosen
+party member into the arena's fighter slot is an open RE thread.
 
-> Verified by the `delilas_challenge_real` disc oracle: the retail image
-> locates as unpatched, the patched MAN re-parses with the 4-option picker
-> targeting the new branch (gate, markers, strips, loss latch, battle op all
-> asserted at decode level), the entry-script block decodes with the outcome
-> test + grants + restores, the edit is byte-deterministic and idempotent,
-> composes with the Earth Egg price edit in either order, and every touched
-> sector stays EDC/ECC-valid inside the koin1 entry footprint.
+> Verified by the `delilas_challenge_real` and `delilas_dome_real` disc
+> oracles: the retail image locates as unpatched and every hooked address
+> matches the known US build; the patched koin1 MAN re-parses with the
+> 4-option picker targeting the new branch (gate, dome-active/course-unlock
+> flags, course-3 request, arena warp all asserted at decode level, and no
+> scripted-battle op); the seed hook becomes a `j` into the cave, the
+> course-3 descriptor and roster land, the edit is byte-deterministic and
+> idempotent, composes with the Earth Egg price edit in either order, and
+> every touched sector stays EDC/ECC-valid.
+>
+> **Not yet emulator-verified live** - the hand-assembled MIPS seed routine
+> and the warp path pass every static + disc-round-trip check, but launching
+> a Delilas round in the arena on real hardware/emulator is the remaining
+> proof, and the reward hook (paying a prize for a course-3 clear) is not yet
+> wired.
 
 ### Fishing prize prices
 

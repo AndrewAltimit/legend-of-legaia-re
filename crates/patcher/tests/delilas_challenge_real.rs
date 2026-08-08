@@ -1,11 +1,17 @@
-//! Disc round-trip oracle for the **Delilas Challenge** mod.
+//! Disc round-trip oracle for the **Delilas Challenge** mod (the dome-course
+//! architecture): the koin1 menu + warp half, and that it composes with the
+//! companion arena code injection.
 //!
 //! Requires `LEGAIA_DISC_BIN`; skips (and passes) without it.
 
 use legaia_patcher::apply;
 use legaia_patcher::delilas_challenge::{
-    DEFAULT_REWARD_ITEM, DELILAS_IDS, DelilasSites, KORU_DEFEATED_FLAG, MARKER_GROUP, MARKER_SOLO,
-    OUTCOME_SURVIVED_FLAG, SCRIPTED_LOSS_FLAG,
+    ARENA_ENTER_BGM, COURSE_UNLOCK_FLAGS, DOME_ACTIVE_FLAG, DOME_WARP_OP, DelilasSites,
+    KORU_DEFEATED_FLAG,
+};
+use legaia_patcher::delilas_dome::{
+    ARENA_BASE_VA, ARENA_OVERLAY_PROT_INDEX, COURSE_FLAG, COURSE3_DESC_VA, ROSTER_VA, ROUTINE_VA,
+    SEED_HOOK_VA, descriptor_bytes,
 };
 use legaia_patcher::disc::DiscPatcher;
 
@@ -26,6 +32,14 @@ fn koin1_sites(image: Vec<u8>) -> DelilasSites {
     panic!("no entry carries the Muscle Dome enrollment script");
 }
 
+/// SET / CLEAR / TEST flag-op byte pairs (op high nibble | flag bits 8-11).
+fn set_op(flag: u16) -> [u8; 2] {
+    [0x50 | (flag >> 8) as u8, (flag & 0xFF) as u8]
+}
+fn clear_op(flag: u16) -> [u8; 2] {
+    [0x60 | (flag >> 8) as u8, (flag & 0xFF) as u8]
+}
+
 #[test]
 fn delilas_challenge_round_trips_on_the_real_disc() {
     let Some(disc) = load_disc() else {
@@ -41,6 +55,7 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
     let mut patcher = DiscPatcher::open(disc.clone()).expect("open disc");
     let report = apply::apply_delilas_challenge(&mut patcher).expect("apply");
     assert!(report.changed);
+    assert!(report.dome_injected, "arena course must be injected too");
     assert!(report.grown_bytes > 0);
     assert!(report.compressed_len <= report.compressed_budget);
     let patched = patcher.into_image();
@@ -48,7 +63,39 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
     // Same-size image; every touched sector still EDC/ECC-valid (DiscPatcher
     // re-encodes on write; re-opening validates the sector forms).
     assert_eq!(patched.len(), disc.len(), "image size must not change");
-    let _reopen = DiscPatcher::open(patched.clone()).expect("patched image re-parses");
+    let reopen = DiscPatcher::open(patched.clone()).expect("patched image re-parses");
+
+    // --- The companion arena injection landed. ---
+    let overlay = reopen
+        .read_entry(ARENA_OVERLAY_PROT_INDEX)
+        .expect("read arena overlay");
+    // Seed hook is now `j ROUTINE_VA` (a jump into the SCUS cave).
+    let seed_off = (SEED_HOOK_VA - ARENA_BASE_VA) as usize;
+    let seed = u32::from_le_bytes(overlay[seed_off..seed_off + 4].try_into().unwrap());
+    assert_eq!(seed >> 26, 0x02, "seed hook detours with a `j`");
+    // Course-3 descriptor {round_count=3, roster_ptr} sits at 0x801D1A20.
+    let desc_off = (COURSE3_DESC_VA - ARENA_BASE_VA) as usize;
+    assert_eq!(
+        &overlay[desc_off..desc_off + 8],
+        &descriptor_bytes(),
+        "course-3 descriptor must be installed"
+    );
+    // The SCUS cave now carries the routine + roster (no longer all-zero).
+    let scus = reopen
+        .read_named_file("SCUS_942.54")
+        .expect("read SCUS from patched image");
+    let routine_off = legaia_asset::item_names::file_offset_for_va(&scus, ROUTINE_VA)
+        .expect("resolve routine VA");
+    assert!(
+        scus[routine_off..routine_off + 8].iter().any(|&b| b != 0),
+        "seed routine must be present in the cave"
+    );
+    let roster_off =
+        legaia_asset::item_names::file_offset_for_va(&scus, ROSTER_VA).expect("resolve roster VA");
+    assert!(
+        scus[roster_off..roster_off + 24].iter().any(|&b| b != 0),
+        "Delilas roster must be present in the cave"
+    );
 
     // The patched image locates as applied, and a second apply is a no-op.
     let after = koin1_sites(patched.clone());
@@ -56,6 +103,10 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
     let mut patcher2 = DiscPatcher::open(patched.clone()).expect("re-open");
     let report2 = apply::apply_delilas_challenge(&mut patcher2).expect("re-apply");
     assert!(!report2.changed, "second apply must be a no-op");
+    assert!(
+        !report2.dome_injected,
+        "arena injection must be idempotent on a patched image"
+    );
     let repatched = patcher2.into_image();
     assert_eq!(repatched, patched, "no-op re-apply must not touch bytes");
 
@@ -79,23 +130,12 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
     apply::set_earth_egg_price(&mut ba, 500).expect("earth egg first");
     apply::apply_delilas_challenge(&mut ba).expect("delilas second");
     let ba = ba.into_image();
-    let ab_sites = koin1_sites(ab);
-    assert!(ab_sites.already_applied);
-    let ba_sites = koin1_sites(ba);
-    assert!(ba_sites.already_applied);
+    assert!(koin1_sites(ab).already_applied);
+    assert!(koin1_sites(ba).already_applied);
 
-    // Decode-level assertions on the patched MAN.
+    // --- Decode-level assertions on the patched koin1 MAN. ---
     let man = &after.decoded;
-    // 1. Formation row 0 is the boss-header Delilas trio.
     let mf = legaia_asset::man_section::parse(man).expect("patched MAN parses");
-    let enc = mf.sections[0];
-    let row = &man[enc.body_offset() + 4..enc.body_offset() + 12];
-    assert_eq!(&row[..4], &[1, 0, 0, 3]);
-    assert_eq!(&row[4..7], &DELILAS_IDS);
-    // 2. The clerk record carries a 4-option who-picker whose labels are the
-    //    three name tokens plus the challenge label, and whose branch opens
-    //    with the Koru gate, latches the marker in the solo arms, and fights
-    //    formation row 0.
     let dro = mf.data_region_offset;
     let mut found_picker = false;
     for &off in &mf.partitions[1] {
@@ -134,41 +174,39 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
                 continue;
             }
             found_picker = true;
-            // Option 3 targets the branch; the branch gate tests 0x378.
+            // Option 3 targets the branch; the branch gate tests the Koru flag.
             let t = p.jump_target(3).expect("4th option target");
             assert!(t < rec.len());
             let gate_op = 0x70 | (KORU_DEFEATED_FLAG >> 8) as u8;
             assert_eq!(rec[t], gate_op, "branch must open with the Koru test");
             assert_eq!(rec[t + 1], (KORU_DEFEATED_FLAG & 0xFF) as u8);
             let branch = &rec[t..];
-            // Battle op against formation row 0.
-            assert!(branch.windows(3).any(|w| w == [0x3E, 0xFF, 0x00]));
-            // Solo marker in each of the three solo arms, one group marker,
-            // one scripted-loss latch (the no-game-over idiom).
-            let solo = [0x50 | (MARKER_SOLO >> 8) as u8, (MARKER_SOLO & 0xFF) as u8];
-            assert_eq!(branch.windows(2).filter(|w| *w == solo).count(), 3);
-            let group = [
-                0x50 | (MARKER_GROUP >> 8) as u8,
-                (MARKER_GROUP & 0xFF) as u8,
-            ];
-            assert_eq!(branch.windows(2).filter(|w| *w == group).count(), 1);
-            let loss = [
-                0x50 | (SCRIPTED_LOSS_FLAG >> 8) as u8,
-                (SCRIPTED_LOSS_FLAG & 0xFF) as u8,
-            ];
-            assert_eq!(branch.windows(2).filter(|w| *w == loss).count(), 1);
-            // Party strips for each fighter choice.
-            for strip in [
-                [0x3D, 0x01, 0x3D, 0x02],
-                [0x3D, 0x00, 0x3D, 0x02],
-                [0x3D, 0x00, 0x3D, 0x01],
-            ] {
-                assert!(branch.windows(4).any(|w| w == strip));
+            // A WARP, not a battle: no scripted-battle op survives.
+            assert!(
+                !branch.windows(3).any(|w| w == [0x3E, 0xFF, 0x00]),
+                "warp branch must not launch a scripted battle"
+            );
+            // It mirrors a retail difficulty arm: dome-active set, the three
+            // course-unlock flags cleared, the course-3 request set, and the
+            // verbatim BGM + arena warp present.
+            assert!(branch.windows(2).any(|w| w == set_op(DOME_ACTIVE_FLAG)));
+            for &f in &COURSE_UNLOCK_FLAGS {
+                assert!(
+                    branch.windows(2).any(|w| w == clear_op(f)),
+                    "course-unlock flag {f:#x} not cleared"
+                );
             }
+            assert!(
+                branch.windows(2).any(|w| w == set_op(COURSE_FLAG)),
+                "branch must request the Delilas course (flag {COURSE_FLAG:#x})"
+            );
+            assert!(branch.windows(7).any(|w| w == ARENA_ENTER_BGM));
+            assert!(
+                branch.windows(6).any(|w| w == DOME_WARP_OP),
+                "branch must carry the arena warp op"
+            );
             // The retail quick-path skip tests (flags 0x559/0x558) before the
-            // who-picker are NOPed - the enrollment menu always shows. The
-            // arms' own copies of those tests (inside the refusal scenes,
-            // after the picker) survive.
+            // who-picker are NOPed - the enrollment menu always shows.
             let before = &rec[..open];
             for pat in [[0x75, 0x59], [0x75, 0x58]] {
                 assert!(
@@ -179,56 +217,12 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
         }
     }
     assert!(found_picker, "patched MAN must carry the 4-option picker");
-    // 3. The entry script opens with the guarded outcome block: both marker
-    // tests, the party recompose, six alive-tests, the prize grants, and the
-    // loss-path full restores.
-    let p10 = dro + mf.partitions[1][0] as usize;
-    let locals = man[p10] as usize;
-    let blk = p10 + 1 + locals * 2 + 4;
-    let test_solo = 0x70 | (MARKER_SOLO >> 8) as u8;
-    let test_group = 0x70 | (MARKER_GROUP >> 8) as u8;
-    assert_eq!(
-        &man[blk..blk + 2],
-        &[test_solo, (MARKER_SOLO & 0xFF) as u8],
-        "entry script must open with the solo-marker test"
-    );
-    assert_eq!(
-        &man[blk + 4..blk + 6],
-        &[test_group, (MARKER_GROUP & 0xFF) as u8]
-    );
-    let window = &man[blk..blk + 96];
-    assert!(
-        window.windows(12).any(|w| w
-            == [
-                0x3D, 0x00, 0x3D, 0x01, 0x3D, 0x02, 0x3C, 0x00, 0x3C, 0x01, 0x3C, 0x02
-            ]),
-        "party recompose missing"
-    );
-    let outcome = [
-        0x70 | (OUTCOME_SURVIVED_FLAG >> 8) as u8,
-        (OUTCOME_SURVIVED_FLAG & 0xFF) as u8,
-    ];
-    assert_eq!(
-        window.windows(2).filter(|w| *w == outcome).count(),
-        2,
-        "solo + group battle-outcome tests"
-    );
-    let give = [0x39, DEFAULT_REWARD_ITEM];
-    assert_eq!(
-        window.windows(2).filter(|w| *w == give).count(),
-        3,
-        "solo surplus + shared group Honey grants"
-    );
-    assert!(
-        window
-            .windows(9)
-            .any(|w| w == [0x4C, 0x82, 0x00, 0x4C, 0x82, 0x01, 0x4C, 0x82, 0x02]),
-        "loss-path full restore missing"
-    );
 }
 
 /// Sector-level integrity: every 2352-byte sector of the patched image keeps a
-/// valid Mode 2 sync + EDC/ECC where it was touched.
+/// valid Mode 2 sync + EDC/ECC where it was touched. The dome architecture
+/// spans three regions (koin1 MAN, the arena overlay, the SCUS cave), so the
+/// patch legitimately touches sectors in more than one PROT entry.
 #[test]
 fn delilas_challenge_keeps_touched_sectors_valid() {
     let Some(disc) = load_disc() else {
@@ -254,6 +248,4 @@ fn delilas_challenge_keeps_touched_sectors_valid() {
         }
     }
     assert!(touched > 0, "patch must touch at least one sector");
-    // The whole edit stays inside one PROT entry's footprint (176 sectors).
-    assert!(touched <= 176, "patch leaked outside the koin1 entry");
 }
