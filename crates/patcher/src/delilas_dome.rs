@@ -262,6 +262,28 @@ pub const STREAM2_DELAY_ORIG: u32 = addiu(V0, V1, 0xFFFF);
 /// with the remapped id and feeds the stock multiply.
 pub const STREAM2_RETURN_VA: u32 = 0x8005_4B74;
 
+// --- Magic-gate hook (party battle init `FUN_80053CB8`) ----------------------
+
+/// Magic-gate detour site: the party-slot battle init's load of the
+/// character's Ra-Seru equip byte (`lbu v0,0x760(v0)` at `0x80054250`),
+/// whose zero/non-zero result decides the per-slot magic-command gate
+/// `ctx[slot+0x25F]` (zero -> the command plate draws the dash; see
+/// `docs/subsystems/battle.md`, the Ra-Seru magic plate law). The hook's
+/// delay slot is the load-delay `nop` - harmless. Replaced with
+/// `j MAGIC_ROUTINE_VA`.
+///
+/// The routine forces the gate result to zero while the Delilas course word
+/// is live, so Meta/Ozma/Terra draw as the dash and cannot be selected in
+/// the course's battles - the arena never installs the summon / player-magic
+/// sound+art residency, and a cast there corrupts the audio state (the same
+/// missing-residency class as the koin1 magic freeze; retail's own Muscle
+/// Dome is arts-only for the same reason).
+pub const MAGIC_HOOK_VA: u32 = 0x8005_4250;
+/// The stock instruction at [`MAGIC_HOOK_VA`] (`lbu v0,0x760(v0)`).
+pub const MAGIC_HOOK_ORIG: u32 = lbu(V0, V0, 0x760);
+/// Where the magic-gate detour returns (the `beq v0,zero` gate decision).
+pub const MAGIC_RETURN_VA: u32 = 0x8005_4258;
+
 // --- Reward hook (settlement `FUN_801D0F60`) ---------------------------------
 
 /// Reward detour site: the settlement's payout-table load `lw v0,0(v0)`
@@ -288,17 +310,23 @@ pub const ROUND_GLOBAL_VA: u32 = 0x801D_1A94;
 /// Load VA of the seed routine in the preserved SCUS gap.
 pub const ROUTINE_VA: u32 = 0x8007_AE00;
 /// Load VA of the relocated hub actor template (24 bytes).
-pub const TEMPLATE_VA: u32 = 0x8007_AE38;
-/// Load VA of the cave roster (2 x 8 bytes).
-pub const ROSTER_VA: u32 = 0x8007_AE50;
+pub const TEMPLATE_VA: u32 = 0x8007_AE24;
+/// Load VA of the course roster (2 x 8 bytes) - **in the arena overlay**, not
+/// the SCUS cave: it fills the zeroed 16-byte tail of the freed 24-byte
+/// template slot, right behind the course-3 descriptor at `0x801D1A20`. The
+/// installer reads it only while the arena overlay is resident, and the move
+/// frees 16 cave bytes for the magic-gate routine.
+pub const ROSTER_VA: u32 = 0x801D_1A28;
 /// Load VA of the second-seat routine (4-aligned - it is a `j` target).
-pub const SEAT_ROUTINE_VA: u32 = 0x8007_AE60;
+pub const SEAT_ROUTINE_VA: u32 = 0x8007_AE3C;
 /// Load VA of the reward routine (4-aligned - it is a `j` target).
-pub const REWARD_ROUTINE_VA: u32 = 0x8007_AE84;
+pub const REWARD_ROUTINE_VA: u32 = 0x8007_AE60;
 /// Load VA of the site-A stream-map routine (4-aligned - a `j` target).
-pub const STREAM_ROUTINE_VA: u32 = 0x8007_AEAC;
+pub const STREAM_ROUTINE_VA: u32 = 0x8007_AE88;
 /// Load VA of the site-B stream-map routine (4-aligned - a `j` target).
-pub const STREAM2_ROUTINE_VA: u32 = 0x8007_AED4;
+pub const STREAM2_ROUTINE_VA: u32 = 0x8007_AEB0;
+/// Load VA of the magic-gate routine (4-aligned - a `j` target).
+pub const MAGIC_ROUTINE_VA: u32 = 0x8007_AED8;
 /// One past the last cave byte used; must stay within the gap end.
 pub const CAVE_END_VA: u32 = 0x8007_AEFC;
 /// End of the usable zero window (exclusive): the SsAPI sound I/O register
@@ -309,35 +337,28 @@ pub const GAP_END_VA: u32 = 0x8007_AF00;
 
 /// Assemble the seed routine: if [`COURSE_FLAG`] is set, store
 /// [`COURSE3_SEED_WORD`] into the course word and clear the flag; always
-/// replay the displaced `lw v0,word` and return to [`SEED_RETURN_VA`].
+/// replay the displaced `lw v0,word` (in the return jump's delay slot) and
+/// return to [`SEED_RETURN_VA`].
 ///
 /// `s1` (the `0x80080000` base) is live across the detour and preserved by the
 /// flag helpers (callee-saved); `ra` is saved on `FUN_801CEA6C`'s own frame, so
 /// the `jal`s here are free to clobber it. `v0`/`a0`/`t0` are scratch.
 pub fn assemble_routine() -> Vec<u32> {
-    const SKIP: usize = 11; // index of the replay `lw` (the flag-clear tail target)
-    let flag_clear_skip = (SKIP as i32 - (3 + 1)) as i16;
-
+    const SKIP: usize = 7; // index of the return jump (flag-clear tail target)
     let words = vec![
-        addiu(A0, ZERO, COURSE_FLAG),   // 0:  a0 = 0x539
-        jal(FLAG_TEST_FUNC_VA),         // 1:  v0 = flag_test(0x539)
-        nop(),                          // 2:  (branch delay)
-        beq(V0, ZERO, flag_clear_skip), // 3:  flag clear -> SKIP (replay)
-        nop(),                          // 4:  (branch delay)
-        // flag set: word = 0x431 (course 3, round 0)
-        lui(T0, imm_hi(COURSE3_SEED_WORD)),     // 5: \ t0 = 0x431
-        ori(T0, T0, imm_lo(COURSE3_SEED_WORD)), // 6: /
-        sw(T0, S1, WORD_OFF_FROM_S1),           // 7:  word (s1-0x4540) = 0x431
-        addiu(A0, ZERO, COURSE_FLAG),           // 8:  a0 = 0x539
-        jal(FLAG_CLEAR_FUNC_VA),                // 9:  flag_clear(0x539)  (one-shot)
-        nop(),                                  // 10: (branch delay)
-        // SKIP (idx 11): replay displaced `lw v0,word`, return.
-        SEED_HOOK_ORIG,    // 11: lw v0,-0x4540(s1)
-        j(SEED_RETURN_VA), // 12: back to the decode
-        nop(),             // 13: (branch delay)
+        jal(FLAG_TEST_FUNC_VA),                    // 0: v0 = flag_test(0x539)
+        addiu(A0, ZERO, COURSE_FLAG),              // 1: a0 = 0x539 (jal delay)
+        beq(V0, ZERO, (SKIP - (2 + 1)) as i16),    // 2: flag clear -> SKIP
+        addiu(T0, ZERO, COURSE3_SEED_WORD as u16), // 3: t0 = 0x131 (delay, harmless)
+        sw(T0, S1, WORD_OFF_FROM_S1),              // 4: word (s1-0x4540) = 0x131
+        jal(FLAG_CLEAR_FUNC_VA),                   // 5: flag_clear(0x539) (one-shot)
+        addiu(A0, ZERO, COURSE_FLAG),              // 6: a0 = 0x539 (jal delay)
+        // SKIP (idx 7): return, replaying the displaced `lw` in the delay.
+        j(SEED_RETURN_VA), // 7:
+        SEED_HOOK_ORIG,    // 8: lw v0,-0x4540(s1) (delay)
     ];
-    debug_assert_eq!(words.len(), 14);
-    debug_assert_eq!(words[SKIP], SEED_HOOK_ORIG);
+    debug_assert_eq!(words.len(), 9);
+    debug_assert_eq!(words[SKIP + 1], SEED_HOOK_ORIG);
     words
 }
 
@@ -438,6 +459,29 @@ pub fn assemble_stream2_map_routine() -> Vec<u32> {
     words
 }
 
+/// Assemble the magic-gate routine: replay the displaced Ra-Seru equip-byte
+/// load, then fold "the Delilas course is live" into the result, branchless:
+/// `v0 = (raseru != 0) & !((word - 0x131) < 2)`. The stock `beq v0,zero`
+/// at [`MAGIC_RETURN_VA`] then skips the `ctx[slot+0x25F] = 1` store, and
+/// the magic plate draws the dash exactly as it does for a character with
+/// no Ra-Seru. Only `v0` (the replayed result) and `at` are touched.
+pub fn assemble_magic_gate_routine() -> Vec<u32> {
+    let neg_word = -(COURSE3_SEED_WORD as i32) as u32 as u16;
+    let words = vec![
+        MAGIC_HOOK_ORIG,                      // 0: v0 = Ra-Seru equip byte
+        lui(AT, hi(COURSE_WORD_VA)),          // 1: at = 0x8008
+        lw(AT, AT, lo(COURSE_WORD_VA)),       // 2: at = course word
+        sltu(V0, ZERO, V0),                   // 3: v0 = (raseru != 0) (fills load delay)
+        addiu(AT, AT, neg_word),              // 4: at = word - 0x131
+        sltiu(AT, AT, DELILAS_ROUNDS as u16), // 5: at = in-course?
+        xori(AT, AT, 1),                      // 6: at = !in-course
+        j(MAGIC_RETURN_VA),                   // 7:
+        and(V0, V0, AT),                      // 8: v0 &= !in-course (delay)
+    ];
+    debug_assert_eq!(words.len(), 9);
+    words
+}
+
 /// Assemble the reward routine: replay the payout-table load, but return
 /// [`COURSE3_CLEAR_COINS`] when the settling course is 3. Entered by `j` from
 /// [`REWARD_HOOK_VA`] (whose delay slot, the `slti` Seru gate, has already
@@ -515,11 +559,12 @@ impl DomeInjection {
         let reward = words_to_bytes(assemble_reward_routine());
         let stream = words_to_bytes(assemble_stream_map_routine());
         let stream2 = words_to_bytes(assemble_stream2_map_routine());
+        let magic = words_to_bytes(assemble_magic_gate_routine());
         if TEMPLATE_VA < ROUTINE_VA + routine.len() as u32 {
             bail!("dome seed routine overruns the template slot");
         }
-        if SEAT_ROUTINE_VA < ROSTER_VA + roster_bytes().len() as u32 {
-            bail!("dome roster overruns the seat-routine slot");
+        if SEAT_ROUTINE_VA < TEMPLATE_VA + TEMPLATE_BYTES.len() as u32 {
+            bail!("dome template overruns the seat-routine slot");
         }
         if REWARD_ROUTINE_VA < SEAT_ROUTINE_VA + seat.len() as u32 {
             bail!("dome seat routine overruns the reward-routine slot");
@@ -530,8 +575,11 @@ impl DomeInjection {
         if STREAM2_ROUTINE_VA < STREAM_ROUTINE_VA + stream.len() as u32 {
             bail!("dome site-A stream routine overruns the site-B slot");
         }
-        if CAVE_END_VA < STREAM2_ROUTINE_VA + stream2.len() as u32 {
-            bail!("dome site-B stream routine overruns the cave end");
+        if MAGIC_ROUTINE_VA < STREAM2_ROUTINE_VA + stream2.len() as u32 {
+            bail!("dome site-B stream routine overruns the magic-gate slot");
+        }
+        if CAVE_END_VA < MAGIC_ROUTINE_VA + magic.len() as u32 {
+            bail!("dome magic-gate routine overruns the cave end");
         }
         if CAVE_END_VA > GAP_END_VA {
             bail!("dome cave overruns the preserved gap end {GAP_END_VA:#x}");
@@ -539,11 +587,11 @@ impl DomeInjection {
         let cave: [(u32, Vec<u8>); 7] = [
             (ROUTINE_VA, routine),
             (TEMPLATE_VA, TEMPLATE_BYTES.to_vec()),
-            (ROSTER_VA, roster_bytes()),
             (SEAT_ROUTINE_VA, seat),
             (REWARD_ROUTINE_VA, reward),
             (STREAM_ROUTINE_VA, stream),
             (STREAM2_ROUTINE_VA, stream2),
+            (MAGIC_ROUTINE_VA, magic),
         ];
         let mut scus_writes = Vec::new();
         for (va, bytes) in cave {
@@ -570,6 +618,12 @@ impl DomeInjection {
                 STREAM2_HOOK_ORIG,
                 STREAM2_ROUTINE_VA,
                 "stream hook B",
+            ),
+            (
+                MAGIC_HOOK_VA,
+                MAGIC_HOOK_ORIG,
+                MAGIC_ROUTINE_VA,
+                "magic-gate hook",
             ),
         ] {
             let off = scus_off(scus, hook_va)?;
@@ -615,10 +669,11 @@ impl DomeInjection {
         });
 
         // Course-3 descriptor at 0x801D1A20 (over the now-relocated template
-        // head); zero the 16-byte template tail so no stale course-4 slot.
+        // head); the 16-byte template tail becomes the course roster the
+        // descriptor points at ([`ROSTER_VA`] = 0x801D1A28).
         let desc_off = overlay_off(COURSE3_DESC_VA)?;
         let mut desc = descriptor_bytes().to_vec();
-        desc.extend_from_slice(&[0u8; 16]);
+        desc.extend_from_slice(&roster_bytes());
         // The bytes there are the stock template (non-zero); confirm they match
         // so a re-layout doesn't silently clobber live code.
         expect_bytes(
@@ -712,19 +767,19 @@ mod tests {
     #[test]
     fn seed_routine_shape() {
         let r = assemble_routine();
-        assert_eq!(r.len(), 14);
-        // Opens by loading the flag id and testing it.
-        assert_eq!(r[0], addiu(A0, ZERO, COURSE_FLAG));
-        assert_eq!(r[1], jal(FLAG_TEST_FUNC_VA));
-        // The flag-clear branch target is the replay `lw`.
-        assert_eq!(r[11], SEED_HOOK_ORIG);
-        // beq at idx 3 skips to idx 11 (SKIP): off = 11 - (3+1) = 7.
-        assert_eq!(r[3], beq(V0, ZERO, 7));
-        // Ends by returning to the decode.
-        assert_eq!(r[12], j(SEED_RETURN_VA));
-        // Seeds the course-3 word and clears the flag on the set path.
-        assert_eq!(r[7], sw(T0, S1, WORD_OFF_FROM_S1));
-        assert_eq!(r[9], jal(FLAG_CLEAR_FUNC_VA));
+        assert_eq!(r.len(), 9);
+        // Opens with the flag test, the flag id riding the jal delay.
+        assert_eq!(r[0], jal(FLAG_TEST_FUNC_VA));
+        assert_eq!(r[1], addiu(A0, ZERO, COURSE_FLAG));
+        // beq at idx 2 skips to the return jump at idx 7: off = 7-(2+1) = 4.
+        assert_eq!(r[2], beq(V0, ZERO, 4));
+        // Set path: seed word + one-shot clear.
+        assert_eq!(r[3], addiu(T0, ZERO, 0x131));
+        assert_eq!(r[4], sw(T0, S1, WORD_OFF_FROM_S1));
+        assert_eq!(r[5], jal(FLAG_CLEAR_FUNC_VA));
+        // Return replays the displaced `lw` in the delay slot.
+        assert_eq!(r[7], j(SEED_RETURN_VA));
+        assert_eq!(r[8], SEED_HOOK_ORIG);
     }
 
     #[test]
@@ -803,6 +858,23 @@ mod tests {
     }
 
     #[test]
+    fn magic_gate_routine_shape() {
+        let r = assemble_magic_gate_routine();
+        assert_eq!(r.len(), 9);
+        // Replays the displaced Ra-Seru load first, then folds the course
+        // test in branchlessly and returns to the stock zero test.
+        assert_eq!(r[0], MAGIC_HOOK_ORIG);
+        assert_eq!(r[2], lw(AT, AT, lo(COURSE_WORD_VA)));
+        assert_eq!(r[3], sltu(V0, ZERO, V0));
+        assert_eq!(r[4], addiu(AT, AT, 0xFECF)); // -0x131
+        assert_eq!(r[5], sltiu(AT, AT, 2));
+        assert_eq!(r[6], xori(AT, AT, 1));
+        assert_eq!(r[7], j(MAGIC_RETURN_VA));
+        assert_eq!(r[8], and(V0, V0, AT));
+        assert_eq!(MAGIC_RETURN_VA, MAGIC_HOOK_VA + 8);
+    }
+
+    #[test]
     fn template_repoint_targets_cave() {
         let w = template_ref_words();
         assert_eq!(w[0], lui(A0, hi(TEMPLATE_VA)));
@@ -833,8 +905,7 @@ mod tests {
     #[test]
     fn cave_fits_the_gap() {
         assert!(ROUTINE_VA + assemble_routine().len() as u32 * 4 <= TEMPLATE_VA);
-        assert!(TEMPLATE_VA + TEMPLATE_BYTES.len() as u32 <= ROSTER_VA);
-        assert!(ROSTER_VA + roster_bytes().len() as u32 <= SEAT_ROUTINE_VA);
+        assert!(TEMPLATE_VA + TEMPLATE_BYTES.len() as u32 <= SEAT_ROUTINE_VA);
         assert_eq!(SEAT_ROUTINE_VA % 4, 0, "seat routine is a j target");
         assert!(SEAT_ROUTINE_VA + assemble_seat_routine().len() as u32 * 4 <= REWARD_ROUTINE_VA);
         assert_eq!(REWARD_ROUTINE_VA % 4, 0, "reward routine is a j target");
@@ -847,9 +918,17 @@ mod tests {
                 <= STREAM2_ROUTINE_VA
         );
         assert_eq!(STREAM2_ROUTINE_VA % 4, 0, "stream routine B is a j target");
-        let end = STREAM2_ROUTINE_VA + assemble_stream2_map_routine().len() as u32 * 4;
+        assert!(
+            STREAM2_ROUTINE_VA + assemble_stream2_map_routine().len() as u32 * 4
+                <= MAGIC_ROUTINE_VA
+        );
+        assert_eq!(MAGIC_ROUTINE_VA % 4, 0, "magic routine is a j target");
+        let end = MAGIC_ROUTINE_VA + assemble_magic_gate_routine().len() as u32 * 4;
         assert!(end <= CAVE_END_VA);
         // The cave must stay below the live SsAPI I/O table at GAP_END_VA.
         const { assert!(CAVE_END_VA <= GAP_END_VA) }
+        // The roster lives in the arena overlay's freed template tail, right
+        // behind the 8-byte descriptor.
+        const { assert!(ROSTER_VA == COURSE3_DESC_VA + 8) }
     }
 }

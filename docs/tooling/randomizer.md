@@ -990,10 +990,19 @@ The shipped fix streams **slim clones** without touching the originals:
 - The formation seats the **real ids** 163/164 - the bespoke
   attack-attack-special AI, the names, and every id-keyed table stay
   genuine. Two 10-word cave routines hooked at the loader's two
-  id-to-slot-offset sites (`0x8005451C` in the streamer, `0x80054B74` in
-  the first-enemy pre-streamer) add 27 to the id **for the archive fetch
+  id-to-slot-offset sites (`0x8005451C` in the streamer, and one
+  instruction *before* the first-enemy pre-streamer's conversion at
+  `0x80054B70` - the conversion's own delay slot clobbers the id register,
+  so the hook cannot sit on it) add 27 to the id **for the archive fetch
   only**, and only while the course word reads `0x131` (the Delilas course,
   round 0) - every other battle streams the untouched originals.
+- A third hook (`0x80054250`, the party init's Ra-Seru equip-byte load that
+  decides the per-slot magic gate `ctx[slot+0x25F]`) zeroes the gate while
+  the course word is live, so Meta/Ozma/Terra draw as the dash and cannot
+  be cast in the course's battles. The arena never installs the summon /
+  player-magic sound+art residency - a cast there corrupts the audio state
+  (the koin1 magic-freeze class), which is why the retail dome is arts-only
+  in the first place.
 
 The option is gated on story flag `0x378` - the flag the Koru death event
 latches and the world map reads to flip the ravine entrance from `nilboa`
