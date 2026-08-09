@@ -26,11 +26,22 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         Some(s) => resolve_seed(s),
         None => clock_seed(),
     };
-    // Arts AP-grant and shiny-Seru reuse the same verified-dead SCUS arena bytes,
-    // so they are mutually exclusive - refuse before touching anything.
-    if (!args.arts_ap_grant.is_empty() || !args.arts_ap_cost.is_empty()) && args.shiny_seru {
+    // Arts AP-grant, shiny-Seru, and the Delilas Challenge's dome course all
+    // inject into the same verified-dead SCUS arena bytes (0x8007AE00). Arts
+    // AP-grant conflicts with either of the others as a hard error (it is
+    // manual-only, never in a preset). Shiny-Seru vs the Delilas Challenge is
+    // resolved softly below (the challenge wins) so the presets that carry
+    // both still patch. Refuse the hard conflicts before touching anything.
+    let arts_ap = !args.arts_ap_grant.is_empty() || !args.arts_ap_cost.is_empty();
+    if arts_ap && args.shiny_seru {
         bail!(
             "--arts-ap-grant / --arts-ap-cost and --shiny-seru both inject into the same \
+             verified-dead SCUS regions and are mutually exclusive; enable only one"
+        );
+    }
+    if arts_ap && args.delilas_challenge {
+        bail!(
+            "--arts-ap-grant / --arts-ap-cost and --delilas-challenge both inject into the same \
              verified-dead SCUS regions and are mutually exclusive; enable only one"
         );
     }
@@ -188,7 +199,17 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     // (persistent byte at record+0x1C0, kept off the level byte so the Seru still
     // levels up + displays normally) so its spell deals +35% damage forever.
     // Routines live in verified-dead SCUS arenas outside every live table.
-    if args.shiny_seru {
+    // Shiny-Seru and the Delilas Challenge both need the verified-dead SCUS
+    // arena bytes at 0x8007AE00 (shiny's routine arena; the dome course's seed
+    // routine + template cave), so they cannot coexist. The Delilas Challenge
+    // takes precedence - it is the headline feature the presets carry - and
+    // shiny-Seru yields with a note rather than aborting the run.
+    if args.shiny_seru && args.delilas_challenge {
+        println!(
+            "shiny-seru: skipped (shares SCUS arena bytes with --delilas-challenge, which wins)"
+        );
+        manifest.push("shiny_seru = skipped_delilas_conflict".to_string());
+    } else if args.shiny_seru {
         let report = apply::inject_shiny_seru(&mut patcher, args.shiny_pct)?;
         println!(
             "shiny-seru: {}% chance per battle a capturable enemy is shiny (+35% stats, \

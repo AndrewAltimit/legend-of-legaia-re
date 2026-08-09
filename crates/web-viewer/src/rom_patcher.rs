@@ -297,12 +297,21 @@ pub fn patch_rom(
     let door_mode = parse_mode(doors);
     let house_door_mode = parse_mode(house_doors);
 
-    // Arts AP-grant and shiny-Seru reuse the same verified-dead SCUS arena bytes,
-    // so they are mutually exclusive - refuse the combination before patching.
-    if shiny_seru && !(arts_ap_grants.trim().is_empty() && arts_ap_costs.trim().is_empty()) {
+    // Arts AP-grant, shiny-Seru, and the Delilas Challenge dome course reuse the
+    // same verified-dead SCUS arena bytes (0x8007AE00). Arts AP-grant is a hard
+    // conflict with either (manual-only); shiny-Seru vs the Delilas Challenge is
+    // resolved softly below (the challenge wins). Refuse the hard combos here.
+    let arts_ap = !(arts_ap_grants.trim().is_empty() && arts_ap_costs.trim().is_empty());
+    if arts_ap && shiny_seru {
         return Err(err(
             "the arts AP override and shiny-seru both inject into the same verified-dead SCUS \
              regions and are mutually exclusive; enable only one",
+        ));
+    }
+    if arts_ap && delilas_challenge {
+        return Err(err(
+            "the arts AP override and the Delilas Challenge both inject into the same \
+             verified-dead SCUS regions and are mutually exclusive; enable only one",
         ));
     }
 
@@ -456,7 +465,14 @@ pub fn patch_rom(
 
     // Shiny Seru: a code hook boosts a rare capturable enemy's stats +35%; the
     // capture/damage hooks make its captured Seru deal +35% damage forever.
-    if shiny_seru {
+    // It shares the verified-dead SCUS arena bytes (0x8007AE00) with the
+    // Delilas Challenge's dome-course cave, so the two cannot coexist; the
+    // Delilas Challenge takes precedence and shiny-Seru yields with a note.
+    if shiny_seru && delilas_challenge {
+        summary.push_str(
+            "shiny-seru: skipped (shares SCUS arena bytes with the Delilas Challenge, which wins)\n",
+        );
+    } else if shiny_seru {
         let rep = apply::inject_shiny_seru(&mut patcher, legaia_patcher::shiny_seru::DEFAULT_PCT)
             .map_err(|e| err(format!("shiny-seru: {e}")))?;
         summary.push_str(&format!(

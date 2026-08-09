@@ -1008,6 +1008,18 @@ is a no-op (the arena injection is idempotent on the seed-hook detour). The
 dome fields whichever fighter the arena normally seats; routing a chosen
 party member into the arena's fighter slot is an open RE thread.
 
+**Shares SCUS arena bytes with shiny-Seru and the arts AP override.** The dome
+course's seed routine + template cave lives in the same verified-dead SCUS
+region (`0x8007AE00`) that [shiny Seru](#shiny-seru) and the arts AP override
+use, and that region is full - the surrounding zero-runs are live-table
+padding, not dead space. So the three cannot coexist. The Delilas Challenge
+takes precedence over shiny-Seru (it is the headline feature the presets
+carry): when both are requested, shiny-Seru yields with a note and the
+challenge is installed. The arts AP override, which is manual-only, is a hard
+conflict with either - enabling it alongside the challenge (or shiny-Seru) is
+refused up front. This is why the Balanced/Full Chaos presets, which enable
+both the challenge and shiny-Seru, install the challenge and skip shiny-Seru.
+
 > Verified by the `delilas_challenge_real` and `delilas_dome_real` disc
 > oracles: the retail image locates as unpatched and every hooked address
 > matches the known US build; the patched koin1 MAN re-parses with the
