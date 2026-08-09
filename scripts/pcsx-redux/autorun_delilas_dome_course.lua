@@ -37,6 +37,10 @@ local MALLOC_FAIL  = 0x800178B8
 local EXC_VECTOR   = 0x80000080
 
 local FRAMES   = probe.getenv_num("LEGAIA_FRAMES", 3600)
+-- Optional: force a second enemy seat (formation cell 1) right after the
+-- installer runs (mode 0x14), making any course's round a 1v2. Used to
+-- discriminate "two-enemy dome round" from "slim clones" as the park cause.
+local SECOND = probe.getenv_num("LEGAIA_SECOND_SEAT", 0)
 local FORCE_AT = probe.getenv_num("LEGAIA_FORCE_AT", 120)
 local POKES_RAW = probe.getenv("LEGAIA_POKES", "")
 
@@ -125,6 +129,10 @@ probe.run({
             return
         end
         if mode ~= last_mode then
+            if mode == 0x14 and SECOND ~= 0 then
+                probe.write_u8(FORMATION + 1, SECOND)
+                CSV:row("%d,0x%X,second seat forced = %d", elapsed, mode, SECOND)
+            end
             CSV:row("%d,0x%X,mode-change word=0x%X cells=%02X %02X %02X %02X",
                 elapsed, mode, probe.read_u32(COURSE_WORD) or 0,
                 probe.read_u8(FORMATION) or 0, probe.read_u8(FORMATION + 1) or 0,
