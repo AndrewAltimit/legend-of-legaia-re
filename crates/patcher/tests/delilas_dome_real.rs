@@ -208,7 +208,9 @@ fn clone_slots_are_battle_unreachable_and_slims_build() {
         let slot = patcher.monster_slot(src).expect("read source slot");
         let size = u32::from_le_bytes(slot[..4].try_into().unwrap()) as usize;
         let block = legaia_lzs::decompress(&slot[4..], size).expect("decode block");
-        let slim = legaia_asset::monster_archive::slim_castables(&block).expect("slim");
+        let (protected, extra_drop) = legaia_patcher::delilas_dome::slim_policy(src);
+        let slim = legaia_asset::monster_archive::slim_castables(&block, protected, extra_drop)
+            .expect("slim");
         let encoded = legaia_asset::monster_archive::encode_slot(&slim.bytes).expect("encode");
         assert_eq!(encoded.len(), 0x14000, "clone slot {dst} is slot-sized");
         // The slim heap footprint must be under the original's.

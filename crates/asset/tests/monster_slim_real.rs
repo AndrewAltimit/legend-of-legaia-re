@@ -33,25 +33,61 @@ fn che_and_lu_slim_blocks_keep_everything_the_fight_uses() {
         return;
     };
 
-    // (id, expected dropped castable ids in entry order, minimum heap saving).
-    // One rollable castable survives per block - the fewest-frames one (Che
-    // keeps 0x0F at 35 frames, Lu keeps 0x0D at 23) - because the AI's cast
-    // pick is `rand() % castable_count` and a zero count executes the
-    // div-guard `break` (the BIOS hang the live tests hit). Lu's two
-    // never-rolled `0x0C @ 0xFF` entries are dropped too: the reclaimed
-    // ~8 KB is what keeps the in-battle transient allocs (0x9C effect
-    // instances) from starving at `[163,164]`.
-    let cases: &[(u16, &[u8], usize)] = &[
-        (163, &[0x0D, 0x10, 0x0E], 0x3800),
-        (164, &[0x13, 0x0E, 0x12, 0x0C, 0x0C], 0x3800),
+    // (id, protected choreography indices, extra 0x23 drops, expected
+    // dropped ids in entry order, minimum heap saving). This mirrors the
+    // patcher's Delilas policy (`legaia_patcher::delilas_dome::slim_policy`):
+    // - One rollable castable survives per block (Che entry 6 `0x0F`, Lu
+    //   entry 7 `0x0D`), because the AI's cast pick is
+    //   `rand() % castable_count` and a zero count executes the div-guard
+    //   `break` (the BIOS hang the live tests hit).
+    // - Each sibling's streamed special stages entries by raw index
+    //   (probe-traced: Lu's Plasma Strike `14 -> 12 -> 13`, Che's
+    //   `10 -> 11`), so Lu's 12/13 are protected and Che's 0x23s are never
+    //   droppable anyway; Lu force-drops her unstaged 0x23 at entry 11 to
+    //   pay for the protected pair.
+    // The dropped-index set makes the per-slot alias assertions unambiguous
+    // (Lu drops one 0x23 while keeping another at entry 14).
+    struct Case {
+        id: u16,
+        protected: &'static [usize],
+        extra_drop: &'static [usize],
+        want_dropped: &'static [u8],
+        drop_idx: &'static [usize],
+        min_saved: usize,
+    }
+    let cases = [
+        Case {
+            id: 163,
+            protected: &[],
+            extra_drop: &[],
+            want_dropped: &[0x0D, 0x10, 0x0E],
+            drop_idx: &[7, 8, 9],
+            min_saved: 0x3800,
+        },
+        Case {
+            id: 164,
+            protected: &[12, 13],
+            extra_drop: &[11],
+            want_dropped: &[0x13, 0x0E, 0x12, 0x23],
+            drop_idx: &[8, 9, 10, 11],
+            min_saved: 0x3000,
+        },
     ];
 
     let mut pair_heap = 0usize;
-    for &(id, want_dropped, min_saved) in cases {
+    for &Case {
+        id,
+        protected,
+        extra_drop,
+        want_dropped,
+        drop_idx,
+        min_saved,
+    } in &cases
+    {
         let block = monster_archive::decode_block(&entry, id)
             .unwrap()
             .expect("Delilas slot decodes");
-        let slim = slim_castables(&block).unwrap();
+        let slim = slim_castables(&block, protected, extra_drop).unwrap();
         let dropped_ids: Vec<u8> = slim.dropped.iter().map(|d| d.id).collect();
         assert_eq!(dropped_ids, want_dropped, "id {id} dropped set");
         assert!(
@@ -87,7 +123,7 @@ fn che_and_lu_slim_blocks_keep_everything_the_fight_uses() {
             .zip(slim_rec.spells.iter())
             .enumerate()
         {
-            if want_dropped.contains(&o.id) {
+            if drop_idx.contains(&i) {
                 assert_eq!(s.id, 0x01, "id {id} slot {i} aliases the attack");
             } else {
                 assert_eq!(o.id, s.id, "id {id} slot {i} keeps its entry");
@@ -118,7 +154,7 @@ fn che_and_lu_slim_blocks_keep_everything_the_fight_uses() {
         let slim_anims = monster_archive::animations(&slim_arch, 1).unwrap().unwrap();
         assert_eq!(orig_anims.len(), slim_anims.len(), "id {id} anim count");
         for (i, (o, s)) in orig_anims.iter().zip(slim_anims.iter()).enumerate() {
-            if want_dropped.contains(&o.action_id) {
+            if drop_idx.contains(&i) {
                 assert_eq!(s.action_id, 0x01, "id {id} anim slot {i} aliased");
                 continue;
             }
@@ -140,7 +176,7 @@ fn che_and_lu_slim_blocks_keep_everything_the_fight_uses() {
     // The measured workable distinct-monster budget is ~145 KB
     // (docs/subsystems/battle.md); the slim pair must clear it with margin.
     assert!(
-        pair_heap <= 132 * 1024,
+        pair_heap <= 134 * 1024,
         "slim pair heap cost {pair_heap} bytes exceeds the budget margin"
     );
 }

@@ -220,6 +220,29 @@ pub const CLONE_IDS: [u16; 2] = [190, 191];
 /// The two original ids the stream map redirects (Che, Lu).
 pub const DELILAS_PAIR_IDS: [u16; 2] = [163, 164];
 
+/// Per-sibling slim policy, probe-traced against the shipped course.
+///
+/// Streamed special-move modules stage block entries by **raw index**
+/// (Lu's Plasma Strike, action `0x7B`, stages `14 -> 12 -> 13`; Che's,
+/// action `0x7A`, stages `10 -> 11`), and an aliased stand-in never
+/// satisfies the module's completion wait - the caster loops the approach
+/// run forever. So each sibling's choreography entries are `protected`.
+/// Lu additionally force-drops entry 11 (a `0x23` special her own special
+/// does NOT stage) to pay for the protected pair: the reclaimed bytes keep
+/// the in-battle transient allocs (damage popups, effect instances) from
+/// starving at `[163,164]`. Her rollable keeper stays a REAL castable
+/// (entry 7, `0x0D`): promoting the never-rolled choreography entry 12 to
+/// rollable was tried and wedges her first generic cast (the whole round
+/// order idles forever) - choreography entries are not standalone casts.
+///
+/// Returns `(protected_entry_indices, extra_drop_indices)` for a pair id.
+pub fn slim_policy(src_id: u16) -> (&'static [usize], &'static [usize]) {
+    match src_id {
+        164 => (&[12, 13], &[11]),
+        _ => (&[], &[]),
+    }
+}
+
 /// Stream-map detour site A: the id-to-slot-offset conversion in the monster
 /// streamer `FUN_800542C8` (`addiu v1,a0,-0x1` at `0x8005451C`, feeding
 /// `(id-1)*5 << 14` = `(id-1)*0x14000`). `a0` holds the formation id here

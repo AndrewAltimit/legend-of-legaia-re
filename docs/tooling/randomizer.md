@@ -975,20 +975,26 @@ mechanism is the battle-heap-budget section of
 The shipped fix streams **slim clones** without touching the originals:
 
 - `legaia_asset::monster_archive::slim_castables` rebuilds Che's and Lu's
-  blocks minus their castable spell entries - keeping exactly **one**
-  rollable castable (the fewest-keyframes one): the AI's cast pick is
-  `rand % castable_count` and an empty menu executes the div-guard
-  `break 0x1C00` the BIOS parks on (the [AI-picker
+  blocks minus most castable spell entries, under two probe-traced safety
+  constraints. First, exactly **one** rollable castable survives (Che's
+  entry 6, Lu's entry 7): the AI's cast pick is `rand % castable_count` and
+  an empty menu executes the div-guard `break 0x1C00` the BIOS parks on
+  (the [AI-picker
   section](../subsystems/battle.md#monster-ai-fun_801e9fd4-action-picker--fun_801e7320-target-resolver)
-  has the mechanism). The never-rolled `agl=0xFF` entries are dropped too -
-  the reclaimed bytes keep the in-battle transient pool (damage popups,
-  effect instances) from starving. Mesh, stats, name, reactions, and
-  specials survive byte-identical. The entry count and index space are
-  preserved - kept entries keep their retail indices and a dropped slot
-  aliases the basic-attack entry - because the engine addresses animations
-  by raw entry index (actor `+0x1DA`) and the streamed special modules were
-  authored against the retail layout. The slim pair costs ~132 KB - under
-  budget with ~12 KB of combat headroom.
+  has the mechanism). Second, each sibling's **streamed signature special
+  stages block entries by raw index** (Lu's Plasma Strike, action `0x7B`,
+  stages `14 -> 12 -> 13`; Che's, action `0x7A`, stages `10 -> 11`), and an
+  aliased stand-in never satisfies the module's completion wait - the
+  caster loops its approach run forever - so those entries survive
+  verbatim (`delilas_dome::slim_policy`); Lu instead force-drops her
+  unstaged `0x23` special at entry 11 to pay for them. Choreography entries
+  are not standalone casts: promoting Lu's never-rolled entry 12 to the
+  rollable menu was tried and wedges her first generic cast. Mesh, stats,
+  name, reactions survive byte-identical; the entry count and index space
+  are preserved - kept entries keep their retail indices and a dropped slot
+  aliases the basic-attack entry (safe for every consumer except the
+  index-staging modules above, hence the protection). The slim pair costs
+  ~137 KB - under budget with ~8 KB of combat headroom.
 - The clones are written to archive slots 190/191, two ids no formation,
   encounter, or dome roster on the disc ever references (full-disc sweep;
   also outside the `--unused-enemies` pool). The real 163/164 slots are

@@ -25,16 +25,18 @@
 //! - The bespoke Delilas arm (`case 0xa2..0xa4` in the AI switch) writes only
 //!   the every-3rd-phase signature-special action id; it references no record
 //!   entry.
-//! - Reaction staging (`FUN_80054CB0` caches tags `2,3,4,5,0xB`), the
-//!   approach/victory first-byte searches (`0x20/0x21/0x22`), and the `0x23`
-//!   special entries all survive untouched.
-//! - `agl_cost == 0xFF` castable-class entries are dropped too: the AI's
-//!   roll menu excludes them (that exclusion is the very count that guards
-//!   the `break`), so they are pure heap weight. If a streamed special
-//!   module references one by index it lands on the basic-attack alias - a
-//!   valid animation, a cosmetic downgrade at worst. The reclaimed bytes are
-//!   what keeps the in-battle transient pool (damage popups, effect
-//!   instances - the `0x9C` allocs) from starving at `[163,164]`.
+//! - Reaction staging (`FUN_80054CB0` caches tags `2,3,4,5,0xB`) and the
+//!   approach/victory first-byte searches (`0x20/0x21/0x22`) survive
+//!   untouched. `0x23` special entries survive by default; `extra_drop` can
+//!   name one the sibling's own special provably never stages.
+//! - **Streamed special-move choreography stages raw entry indices** (probe
+//!   trace: Lu's Plasma Strike, action `0x7B`, stages entries `14 -> 12 ->
+//!   13`; Che's, action `0x7A`, stages `10 -> 11`), and an aliased stand-in
+//!   never satisfies the module's completion wait - the caster loops the
+//!   approach run forever. The caller therefore passes the traced indices as
+//!   `protected` and they survive at their retail offsets. Generic actions
+//!   tolerate the alias (Che's attack moves through dropped entries complete
+//!   with the stand-in anim - a cosmetic downgrade, probe-verified).
 //!
 //! ## Relocation rules
 //!
@@ -102,10 +104,28 @@ fn is_rollable(id: u8, agl: u8) -> bool {
     is_castable_class(id) && agl != 0xFF
 }
 
-/// Rebuild `block` without its generic-AI castable entries. Errors (rather
-/// than producing a broken block) on any layout the relocation rules cannot
-/// prove safe.
-pub fn slim_castables(block: &[u8]) -> Result<SlimBlock> {
+/// Rebuild `block` without its generic-AI castable entries, except the
+/// fewest-keyframes rollable one and any entry index in `protected`.
+///
+/// `protected` names entry indices a streamed special-move module stages
+/// directly (probe-traced choreography: the module writes raw entry indices
+/// into actor `+0x1DA`, and an aliased stand-in never satisfies its
+/// completion wait - the caster loops the approach run forever). Protected
+/// entries survive byte-identical at their retail indices.
+///
+/// `extra_drop` names additional non-castable entries to drop - restricted
+/// to `0x23`-tagged specials (reachable only by module index staging, which
+/// the caller asserts is probe-traced not to name them). A `0x23` the
+/// sibling's own special stages must NOT be listed - the run-loop softlock
+/// comes back.
+///
+/// Errors (rather than producing a broken block) on any layout the
+/// relocation rules cannot prove safe.
+pub fn slim_castables(
+    block: &[u8],
+    protected: &[usize],
+    extra_drop: &[usize],
+) -> Result<SlimBlock> {
     let tex_off = u32_at(block, 8)? as usize;
     let name_off = u32_at(block, 0)? as usize;
     let tmd_off = u32_at(block, 4)? as usize;
@@ -205,7 +225,24 @@ pub fn slim_castables(block: &[u8]) -> Result<SlimBlock> {
     // compiler's divide-by-zero guard - a `break 0x1C00` the BIOS parks on
     // forever. So the slim MUST keep at least one AI-rollable castable: we
     // keep the one with the fewest keyframes (the cheapest animation) and
-    // drop the rest.
+    // drop the rest - minus the caller's `protected` choreography indices.
+    if let Some(&bad) = protected.iter().find(|&&i| i >= count) {
+        bail!("protected index {bad} out of range ({count} entries)");
+    }
+    for &i in extra_drop {
+        if i >= count {
+            bail!("extra-drop index {i} out of range ({count} entries)");
+        }
+        if entries[i].id != 0x23 {
+            bail!(
+                "extra-drop index {i} tags {:#04x}, only 0x23 specials may be force-dropped",
+                entries[i].id
+            );
+        }
+        if protected.contains(&i) {
+            bail!("extra-drop index {i} is also protected");
+        }
+    }
     let rollable: Vec<usize> = (0..count)
         .filter(|&i| is_rollable(entries[i].id, entries[i].agl))
         .collect();
@@ -215,7 +252,12 @@ pub fn slim_castables(block: &[u8]) -> Result<SlimBlock> {
         .min_by_key(|&i| entries[i].span)
         .ok_or_else(|| anyhow::anyhow!("block has no AI-rollable castables"))?;
     let kept: Vec<usize> = (0..count)
-        .filter(|&i| !is_castable_class(entries[i].id) || i == keep_castable)
+        .filter(|&i| {
+            if extra_drop.contains(&i) {
+                return false;
+            }
+            !is_castable_class(entries[i].id) || i == keep_castable || protected.contains(&i)
+        })
         .collect();
     let dropped_n = count - kept.len();
     if dropped_n == 0 {
@@ -348,7 +390,7 @@ mod tests {
     #[test]
     fn drops_the_castable_and_relocates() {
         let b = synthetic();
-        let slim = slim_castables(&b).unwrap();
+        let slim = slim_castables(&b, &[], &[]).unwrap();
         // The LONGER castable (0x0F) and the never-rolled 0x0C @0xFF are
         // dropped; the shortest rollable (0x0D) is kept so the AI's
         // `rand() % castable_count` roll never divides by zero.
@@ -409,7 +451,39 @@ mod tests {
             ) as usize;
             b[o] = 0x23;
         }
-        assert!(slim_castables(&b).is_err());
+        assert!(slim_castables(&b, &[], &[]).is_err());
+    }
+
+    #[test]
+    fn protected_entry_survives_verbatim() {
+        let b = synthetic();
+        // Protect the never-rolled 0x0C (index 3): only 0x0F drops.
+        let slim = slim_castables(&b, &[3], &[]).unwrap();
+        assert_eq!(slim.dropped.len(), 1);
+        assert_eq!(slim.dropped[0].id, 0x0F);
+        let o3 = u32::from_le_bytes(
+            slim.bytes[ARRAY_OFF + 12..ARRAY_OFF + 16]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        assert_eq!(slim.bytes[o3], 0x0C, "protected entry kept at its index");
+        assert_eq!(slim.bytes[o3 + ENTRY_AGL_OFF], 0xFF);
+    }
+
+    #[test]
+    fn extra_drop_takes_a_special_but_only_a_special() {
+        let b = synthetic();
+        // Index 4 is the 0x23 special: force-droppable.
+        let slim = slim_castables(&b, &[], &[4]).unwrap();
+        assert!(slim.dropped.iter().any(|d| d.id == 0x23));
+        let o4 = u32::from_le_bytes(
+            slim.bytes[ARRAY_OFF + 16..ARRAY_OFF + 20]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        assert_eq!(slim.bytes[o4], 0x01, "dropped special aliases the attack");
+        // Index 0 is the basic attack: not force-droppable.
+        assert!(slim_castables(&b, &[], &[0]).is_err());
     }
 
     #[test]
@@ -426,6 +500,6 @@ mod tests {
             ) as usize;
             b[o + ENTRY_AGL_OFF] = 0xFF;
         }
-        assert!(slim_castables(&b).is_err());
+        assert!(slim_castables(&b, &[], &[]).is_err());
     }
 }

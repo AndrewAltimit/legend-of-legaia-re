@@ -41,11 +41,12 @@ pub struct DelilasChallengeReport {
 }
 
 /// Build the two slim-clone archive slots for the double-team round: Che
-/// (163) and Lu (164) minus their generic-AI castable spell entries, encoded
-/// as slots for [`CLONE_IDS`] (190/191). The originals are read from - and
-/// never written back to - the user's own disc; see
-/// `legaia_asset::monster_archive::slim_castables` for what is dropped and
-/// why the fight cannot tell.
+/// (163) and Lu (164) minus their generic-AI castable spell entries -
+/// except each sibling's probe-traced special-move choreography entries
+/// (`delilas_dome::slim_policy`) - encoded as slots for [`CLONE_IDS`]
+/// (190/191). The originals are read from - and never written back to -
+/// the user's own disc; see `legaia_asset::monster_archive::slim_castables`
+/// for what is dropped and why the fight cannot tell.
 fn build_clone_slots(patcher: &DiscPatcher) -> Result<[(u16, Vec<u8>); 2]> {
     let mut out: Vec<(u16, Vec<u8>)> = Vec::with_capacity(2);
     for (&src, &dst) in DELILAS_PAIR_IDS.iter().zip(CLONE_IDS.iter()) {
@@ -55,7 +56,8 @@ fn build_clone_slots(patcher: &DiscPatcher) -> Result<[(u16, Vec<u8>); 2]> {
         let size = u32::from_le_bytes(slot[..4].try_into().unwrap()) as usize;
         let block = legaia_lzs::decompress(&slot[4..], size)
             .with_context(|| format!("decode monster block {src}"))?;
-        let slim = monster_archive::slim_castables(&block)
+        let (protected, extra_drop) = crate::delilas_dome::slim_policy(src);
+        let slim = monster_archive::slim_castables(&block, protected, extra_drop)
             .with_context(|| format!("slim monster block {src}"))?;
         let encoded = monster_archive::encode_slot(&slim.bytes)
             .with_context(|| format!("encode slim clone slot {dst}"))?;
