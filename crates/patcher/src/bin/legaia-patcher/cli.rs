@@ -683,12 +683,14 @@ pub(crate) struct RandomizeArgs {
     #[arg(long, default_value_t = false)]
     pub(crate) shiny_seru: bool,
     /// **Delilas Challenge**: a fourth option on the Muscle Dome enrollment
-    /// menu - a brand-new 3-round arena course fighting Gi, then Che, then Lu
-    /// Delilas, one boss per round. Runs in the real dome arena (magic off,
-    /// memory-safe). Unlocks after the Koru event in Nivora Ravine (the
-    /// `nilboa2` story flag). Losing a round returns to the Sol venue by the
-    /// dome's own design - no game over. A `koin1` script edit plus a small
-    /// arena code injection (the new course).
+    /// menu - a brand-new 2-round arena course: Che and Lu Delilas together
+    /// (1v2), then Gi (1v1). Runs in the real dome arena (magic off; the
+    /// double-team fits because a dome round carries one player battle form
+    /// instead of three). A full clear pays 5000 coins. Unlocks after the
+    /// Koru event in Nivora Ravine (the `nilboa2` story flag). Losing a round
+    /// returns to the Sol venue by the dome's own design - no game over. A
+    /// `koin1` script edit plus a small arena code injection (the new course
+    /// + the payout).
     #[arg(long, default_value_t = false)]
     pub(crate) delilas_challenge: bool,
     /// Per-battle percentage chance a capturable enemy is shiny (only with

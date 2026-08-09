@@ -3,9 +3,9 @@
 //! The Muscle Dome entry clerk (scene `koin1`, the P1 interaction record that
 //! carries the enter / who-enrolls / difficulty menus) gains a fourth option on
 //! the "who will be entering" picker: **Delilas Challenge**. Picking it warps
-//! into the dome arena and runs a brand-new 3-round contest course - Gi -> Che
-//! -> Lu, one Delilas sibling per round - installed by the companion code
-//! injection [`crate::delilas_dome`].
+//! into the dome arena and runs a brand-new 2-round contest course - Che & Lu
+//! together (1v2), then Gi (1v1) - installed by the companion code injection
+//! [`crate::delilas_dome`], which also pays 5000 coins for a full clear.
 //!
 //! ## Why the arena, not a scripted battle
 //!
@@ -851,7 +851,7 @@ fn write_u24(buf: &mut [u8], at: usize, v: u32) -> Result<(), String> {
 /// ```text
 ///        if KORU_DEFEATED -> AVAIL          ; else fall to the decline flow
 ///        jmp DECLINE_TAIL
-/// AVAIL: text  "You'll face Gi, Che and Lu, one at a time!"
+/// AVAIL: text  "You'll face Che and Lu, then Gi!"
 ///        0x27 picker: [0] -> WARP, [1] -> CANCEL
 ///        label "Bring them on!"  label "Maybe later."
 /// WARP:  55 09                              ; SET dome-active (0x509)
@@ -896,7 +896,7 @@ fn build_branch(base: usize, common_tail: usize, decline_tail: usize) -> Result<
 
     // AVAIL: confirm picker (immediate-labels form, entries then labels).
     labels.push((Label::Avail, b.len()));
-    b.extend(seg("You'll face Gi, Che and Lu, one at a time!"));
+    b.extend(seg("You'll face Che and Lu, then Gi!"));
     b.push(0x27);
     b.extend_from_slice(&[0, 0]);
     fixups.push((b.len() - 2, Label::Warp));

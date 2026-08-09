@@ -44,9 +44,9 @@ disc-gated, so CI runs without a disc. There is also a
   for running away, charming an enemy onto your side, shiny Seru, and Seru
   trading.
 - **A new dome course retail never ships** - the [Delilas Challenge](#delilas-challenge),
-  a fourth Muscle Dome enrollment option that runs a brand-new 3-round arena
-  course fighting Gi -> Che -> Lu Delilas one boss per round (a koin1 script
-  edit plus a small arena code injection).
+  a fourth Muscle Dome enrollment option that runs a brand-new 2-round arena
+  course - Che & Lu together, then Gi - paying 5000 coins for a clear (a
+  koin1 script edit plus a small arena code injection).
 - **Textures** - replace any TIM on the disc with a user-authored PNG
   ([texture replacement](#texture-replacement)).
 
@@ -289,7 +289,7 @@ unless asked for:
 | `--seru-trade` | vendors swap one of a character's seru for another, reseeding every two in-game hours | `--seru-trade-offers N` caps offers per vendor | [Seru trading](#seru-trading) |
 | `--jewel-fix` | the boss cinematic casts (Xain, Cort, the Delilas trio) respect elemental guards like every other special | - | [Jewel fix](#jewel-fix) |
 | `--approach-softlock-fix` | a monster whose approach animation dies mid-walk is re-staged and resumes walking instead of parking the battle forever (the "endless camera orbit") | - | [Approach-softlock fix](#approach-softlock-fix) |
-| `--delilas-challenge` | a fourth Muscle Dome enrollment option: a new 3-round arena course fighting Gi -> Che -> Lu Delilas one boss per round; unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
+| `--delilas-challenge` | a fourth Muscle Dome enrollment option: a new 2-round arena course (Che & Lu together, then Gi; 5000 coins for a clear); unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
 | `--fishing-price ITEM=POINTS` | set the fishing-exchange point cost of a prize (e.g. the Buma Water Egg); the price also gates when the prize appears | repeatable / comma-separated | [Fishing prize prices](#fishing-prize-prices) |
 | `--rename-location INDEX=NAME` | rename a world-map location (save / load / pause + quick-travel menu), e.g. an element cave to match a re-elemented party | repeatable | [Location names](#location-names) |
 | `--earth-egg-price VALUE` | set the casino-coin threshold to obtain the Earth Egg (Sol Tower Prize Counter; retail 100000), gate + debit together | single value | [Earth Egg coin threshold](#earth-egg-coin-threshold) |
@@ -956,21 +956,23 @@ and an already-fixed image is a no-op.
 
 `--delilas-challenge` adds a fourth option to the Muscle Dome enrollment
 clerk's "who will be entering" menu (`delilas_challenge` module): the
-**Delilas Challenge** - a brand-new 3-round Muscle Dome *course* fighting Gi,
-then Che, then Lu Delilas, one sibling per round. The trio exists nowhere in
-retail (the Nivora Ravine confrontations are three consecutive *solo* duels),
-and it is delivered as a dome course rather than a single fight for two
-reasons live testing forced: a normal battle staged from the town scene
-`koin1` freezes on any spell (the scene never installs battle-effect / summon
-/ player-magic asset residency - which is exactly why the Muscle Dome
-disables magic), and the battle mesh heap holds only about one large boss's
-worth of *distinct* geometry, so three distinct Delilas meshes at once
-overflow it. Routing through the real arena loads one boss per round and
-disables magic by design. The option is gated on story flag `0x378` - the
-flag the Koru death event latches and the world map reads to flip the ravine
-entrance from `nilboa` to `nilboa2` - so until that event the clerk brushes
-the player off. On by default in the web patcher's Balanced and Full Chaos
-presets.
+**Delilas Challenge** - a brand-new 2-round Muscle Dome *course*: **Che and
+Lu Delilas together (1v2), then Gi alone (1v1)**, with **5000 coins** paid
+into the dome winnings counter for a full clear. Neither fight exists in
+retail (the Nivora Ravine confrontations are three consecutive *solo* duels,
+and no retail formation double-teams two Delilas). It is delivered as a dome
+course rather than a single fight for two reasons live testing forced: a
+normal battle staged from the town scene `koin1` freezes on any spell (the
+scene never installs battle-effect / summon / player-magic asset residency -
+which is exactly why the Muscle Dome disables magic), and the battle mesh
+heap cannot hold three distinct Delilas meshes at once. The dome sidesteps
+both - and the 1v2 round is affordable precisely *because* it is a dome
+round: only one player battle form is resident (a normal encounter carries
+three), freeing the headroom the second distinct boss mesh needs. The option
+is gated on story flag `0x378` - the flag the Koru death event latches and
+the world map reads to flip the ravine entrance from `nilboa` to `nilboa2` -
+so until that event the clerk brushes the player off. On by default in the
+web patcher's Balanced and Full Chaos presets.
 
 The feature is two coordinated halves that ship together
 (`apply_delilas_challenge` installs both):
@@ -978,25 +980,42 @@ The feature is two coordinated halves that ship together
 - **The koin1 menu + warp** (`delilas_challenge` module, script + data). The
   3-option `0x28` who-enrolls picker grows to the 4-option `0x29` form (the
   picker arity ceiling), with the new arm appended at the record's end, and
-  the quick-path skip before it is NOPed - retail permanently hides the
-  who-menu once Noa or Gala has refused enrollment (flags `0x559`/`0x558`)
-  and auto-registers Vahn, which would strand the new option on most saves.
-  The new arm mirrors one of retail's own difficulty arms exactly: gate on
-  `0x378`, set the dome-active flag `0x509`, clear the three course-unlock
-  flags `0x536`/`0x537`/`0x538`, set the course-3 request flag `0x539`, then
-  the verbatim BGM + wait ops and the verbatim `3E 69` arena warp. Losing a
+  the quick-path skip before it is retargeted at never-set flags - retail
+  permanently hides the who-menu once Noa or Gala has refused enrollment
+  (flags `0x559`/`0x558`) and auto-registers Vahn, which would strand the
+  new option on most saves. The new arm shows a confirm picker, then mirrors
+  one of retail's own difficulty arms exactly: gate on `0x378`, set the
+  dome-active flag `0x509`, clear the three course-unlock flags
+  `0x536`/`0x537`/`0x538`, set the course-3 request flag `0x539`, then the
+  verbatim BGM + wait ops and the verbatim `3E 69` arena warp. Losing a
   round returns to the Sol venue by the dome's own design (no game over).
 - **The arena course** (`delilas_dome` module, a code injection). The arena
   overlay (PROT 0977) has no course beyond Master, so course 3 is added with
-  five same-size edits: a seed detour at the course-select init
+  seven same-size edits: a seed detour at the course-select init
   (`FUN_801CEA6C` @ `0x801CEBCC`) that decodes flag `0x539` into the packed
-  course/round word as course 3; a `{round_count=3, roster_ptr}` descriptor
+  course/round word as course 3; a `{round_count=2, roster_ptr}` descriptor
   at the course-3 slot `0x801D1A08 + 3*8`; the hub actor template that
   occupied that slot relocated into a `SCUS_942.54` routine cave (its one
-  `lui`/`addiu` reference repointed); the Delilas roster (Gi/Che/Lu, reusing
-  the dome's own name strings) in the cave; and the seed routine itself in
-  the cave. All four descriptor readers compute `base + course*8`, so one
+  `lui`/`addiu` reference repointed); the Delilas roster (Che, Gi - the
+  dome's own name strings) in the cave; the seed routine; a **second-seat
+  detour** in the round installer (`FUN_801D1510` @ `0x801D15A4`) that seats
+  Lu (164) into formation seat 1 (`0x8007BD0D`) on course 3 round 0 - battle
+  setup counts the non-zero seat bytes, so that one store makes the round a
+  genuine 1v2; and a **reward detour** at the settlement's payout-table load
+  (`FUN_801D0F60` @ `0x801D1118`) that returns 5000 for course 3 instead of
+  the out-of-table read (courses 0-2 pay from `0x801D1860 +
+  course*0x40 + (round-1)*4`; course 3 indexed past it into bytes that read
+  0). The payout load sits behind the settlement's cleared latch
+  (`DAT_801D1ADC`, raised only on *course exhausted and survived*), so a
+  loss pays nothing - and retail's halve-the-winnings-on-a-loss behavior is
+  untouched. All four descriptor readers compute `base + course*8`, so one
   descriptor write makes course 3 work everywhere.
+
+One composition quirk: with [enemy ally](#enemy-ally-charm) also enabled (both
+are preset defaults), the Che & Lu round is a *multi-enemy* fight by the same
+seat-1 test the charm feature uses, so its per-battle roll can fire there -
+one sibling can spawn charmed and fight the other. The 1v1 Gi round is
+structurally exempt.
 
 The `koin1` MAN is sector-aligned with zero compressed slack, so the grown
 script only fits back into its footprint through the optimal LZS packer -
@@ -1046,13 +1065,16 @@ not by the static suite:
 > byte-deterministic and idempotent, composes with the Earth Egg price edit
 > in either order, and every touched sector stays EDC/ECC-valid.
 >
-> **Live-verified end to end**: the clerk dialog flows cleanly to the option,
-> the confirm shows, the warp lands in the arena, the course runs Gi -> Che ->
-> Lu one boss per round, a lost leg routes through the dome's own loss scenes
-> back to the venue (no game over), and a full clear settles benignly - the
-> course-indexed payout table simply has no course-3 row, so a clear currently
-> pays **zero coins**. The settlement reward hook (coins + the planned
-> custom-item prizes) is the outstanding follow-up.
+> **Live-verified** (as the one-boss-per-round revision): the clerk dialog
+> flows cleanly to the option, the confirm shows, the warp lands in the
+> arena, the course runs its roster one round at a time, a lost leg routes
+> through the dome's own loss scenes back to the venue (no game over), and
+> settlement is benign. The current revision's two additions - the Che & Lu
+> double-team seat and the 5000-coin payout - pass the static + disc oracles
+> but await their own live pass; the specific thing to watch is round 1
+> loading two distinct boss meshes (a freeze at the round-1 load would mean
+> the one-fighter headroom is still not enough, and the seat hook would then
+> be dropped back to 1v1). The custom-item prize remains a follow-up.
 
 ### Fishing prize prices
 
