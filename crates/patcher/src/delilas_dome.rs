@@ -124,17 +124,26 @@ pub const ARENA_BASE_VA: u32 = 0x801C_E818;
 pub const COURSE_FLAG: u16 = 0x539;
 
 /// Packed course/round word the seed routine writes for course 3, round 0:
-/// `course = ((0x131-1)&0xff)>>4 = 3`, `round = (0x131-1)&0xf = 0`.
+/// `course = ((0x331-1)&0xff)>>4 = 3`, `round = (0x331-1)&0xf = 0`.
 ///
-/// Bit `0x100` is **load-bearing**: it is the dome-contest marker the battle
-/// exit selector `FUN_80046A20` tests (`_DAT_8007BAC0 & 0x100`) to route a
-/// leg's end back to arena mode `0x18` instead of MAIN INIT - every retail
-/// seed carries it (`0x101`/`0x111`/`0x321`). Without it a dome wipe falls
-/// into the ordinary game-over gate (CARD continue screen) and a win exits to
-/// the field instead of the between-leg hub - the exact live-test failure an
-/// earlier `0x431` seed produced. Master's extra `0x200` bit is not copied
-/// (only `0x321` has it; Beginner/Expert prove `0x100` alone suffices).
-pub const COURSE3_SEED_WORD: u32 = 0x0000_0131;
+/// Both high bits are **load-bearing**:
+///
+/// - `0x100` is the dome-contest marker the battle exit selector
+///   `FUN_80046A20` tests (`_DAT_8007BAC0 & 0x100`) to route a leg's end
+///   back to arena mode `0x18` instead of MAIN INIT - every retail seed
+///   carries it (`0x101`/`0x111`/`0x321`). Without it a dome wipe falls
+///   into the ordinary game-over gate and a win exits to the field - the
+///   exact live-test failure an earlier `0x431` seed produced.
+/// - `0x200` is the **Master-tier magic lockout** (only `0x321` carries
+///   it): the battle round driver rejects the Magic command selection when
+///   `_DAT_8007BAC0 & 0x200` is set (`overlay_0898_801d0748`, the
+///   `uVar10 & 0x2000` input arm), and the command-cluster init grays the
+///   plate through the same test. A live test proved a Delilas cast in the
+///   arena corrupts the audio state (the arena never installs the summon /
+///   player-magic sound+art residency - the koin1 magic-freeze class), so
+///   the course copies Master's lockout bit and magic is blocked by
+///   retail's own mechanism, with no injected code.
+pub const COURSE3_SEED_WORD: u32 = 0x0000_0331;
 
 /// Word global holding the packed course/round (`_DAT_8007BAC0`), addressed in
 /// the init as `s1 - 0x4540` with `s1 = 0x80080000`.
@@ -262,28 +271,6 @@ pub const STREAM2_DELAY_ORIG: u32 = addiu(V0, V1, 0xFFFF);
 /// with the remapped id and feeds the stock multiply.
 pub const STREAM2_RETURN_VA: u32 = 0x8005_4B74;
 
-// --- Magic-gate hook (party battle init `FUN_80053CB8`) ----------------------
-
-/// Magic-gate detour site: the party-slot battle init's load of the
-/// character's Ra-Seru equip byte (`lbu v0,0x760(v0)` at `0x80054250`),
-/// whose zero/non-zero result decides the per-slot magic-command gate
-/// `ctx[slot+0x25F]` (zero -> the command plate draws the dash; see
-/// `docs/subsystems/battle.md`, the Ra-Seru magic plate law). The hook's
-/// delay slot is the load-delay `nop` - harmless. Replaced with
-/// `j MAGIC_ROUTINE_VA`.
-///
-/// The routine forces the gate result to zero while the Delilas course word
-/// is live, so Meta/Ozma/Terra draw as the dash and cannot be selected in
-/// the course's battles - the arena never installs the summon / player-magic
-/// sound+art residency, and a cast there corrupts the audio state (the same
-/// missing-residency class as the koin1 magic freeze; retail's own Muscle
-/// Dome is arts-only for the same reason).
-pub const MAGIC_HOOK_VA: u32 = 0x8005_4250;
-/// The stock instruction at [`MAGIC_HOOK_VA`] (`lbu v0,0x760(v0)`).
-pub const MAGIC_HOOK_ORIG: u32 = lbu(V0, V0, 0x760);
-/// Where the magic-gate detour returns (the `beq v0,zero` gate decision).
-pub const MAGIC_RETURN_VA: u32 = 0x8005_4258;
-
 // --- Reward hook (settlement `FUN_801D0F60`) ---------------------------------
 
 /// Reward detour site: the settlement's payout-table load `lw v0,0(v0)`
@@ -325,10 +312,8 @@ pub const REWARD_ROUTINE_VA: u32 = 0x8007_AE60;
 pub const STREAM_ROUTINE_VA: u32 = 0x8007_AE88;
 /// Load VA of the site-B stream-map routine (4-aligned - a `j` target).
 pub const STREAM2_ROUTINE_VA: u32 = 0x8007_AEB0;
-/// Load VA of the magic-gate routine (4-aligned - a `j` target).
-pub const MAGIC_ROUTINE_VA: u32 = 0x8007_AED8;
 /// One past the last cave byte used; must stay within the gap end.
-pub const CAVE_END_VA: u32 = 0x8007_AEFC;
+pub const CAVE_END_VA: u32 = 0x8007_AED8;
 /// End of the usable zero window (exclusive): the SsAPI sound I/O register
 /// table begins exactly at `0x8007AF00` and is read every frame (the
 /// shiny-seru read-watch pinned it - see `shiny_seru::layout`), so the cave
@@ -459,29 +444,6 @@ pub fn assemble_stream2_map_routine() -> Vec<u32> {
     words
 }
 
-/// Assemble the magic-gate routine: replay the displaced Ra-Seru equip-byte
-/// load, then fold "the Delilas course is live" into the result, branchless:
-/// `v0 = (raseru != 0) & !((word - 0x131) < 2)`. The stock `beq v0,zero`
-/// at [`MAGIC_RETURN_VA`] then skips the `ctx[slot+0x25F] = 1` store, and
-/// the magic plate draws the dash exactly as it does for a character with
-/// no Ra-Seru. Only `v0` (the replayed result) and `at` are touched.
-pub fn assemble_magic_gate_routine() -> Vec<u32> {
-    let neg_word = -(COURSE3_SEED_WORD as i32) as u32 as u16;
-    let words = vec![
-        MAGIC_HOOK_ORIG,                      // 0: v0 = Ra-Seru equip byte
-        lui(AT, hi(COURSE_WORD_VA)),          // 1: at = 0x8008
-        lw(AT, AT, lo(COURSE_WORD_VA)),       // 2: at = course word
-        sltu(V0, ZERO, V0),                   // 3: v0 = (raseru != 0) (fills load delay)
-        addiu(AT, AT, neg_word),              // 4: at = word - 0x131
-        sltiu(AT, AT, DELILAS_ROUNDS as u16), // 5: at = in-course?
-        xori(AT, AT, 1),                      // 6: at = !in-course
-        j(MAGIC_RETURN_VA),                   // 7:
-        and(V0, V0, AT),                      // 8: v0 &= !in-course (delay)
-    ];
-    debug_assert_eq!(words.len(), 9);
-    words
-}
-
 /// Assemble the reward routine: replay the payout-table load, but return
 /// [`COURSE3_CLEAR_COINS`] when the settling course is 3. Entered by `j` from
 /// [`REWARD_HOOK_VA`] (whose delay slot, the `slti` Seru gate, has already
@@ -559,7 +521,6 @@ impl DomeInjection {
         let reward = words_to_bytes(assemble_reward_routine());
         let stream = words_to_bytes(assemble_stream_map_routine());
         let stream2 = words_to_bytes(assemble_stream2_map_routine());
-        let magic = words_to_bytes(assemble_magic_gate_routine());
         if TEMPLATE_VA < ROUTINE_VA + routine.len() as u32 {
             bail!("dome seed routine overruns the template slot");
         }
@@ -575,23 +536,19 @@ impl DomeInjection {
         if STREAM2_ROUTINE_VA < STREAM_ROUTINE_VA + stream.len() as u32 {
             bail!("dome site-A stream routine overruns the site-B slot");
         }
-        if MAGIC_ROUTINE_VA < STREAM2_ROUTINE_VA + stream2.len() as u32 {
-            bail!("dome site-B stream routine overruns the magic-gate slot");
-        }
-        if CAVE_END_VA < MAGIC_ROUTINE_VA + magic.len() as u32 {
-            bail!("dome magic-gate routine overruns the cave end");
+        if CAVE_END_VA < STREAM2_ROUTINE_VA + stream2.len() as u32 {
+            bail!("dome site-B stream routine overruns the cave end");
         }
         if CAVE_END_VA > GAP_END_VA {
             bail!("dome cave overruns the preserved gap end {GAP_END_VA:#x}");
         }
-        let cave: [(u32, Vec<u8>); 7] = [
+        let cave: [(u32, Vec<u8>); 6] = [
             (ROUTINE_VA, routine),
             (TEMPLATE_VA, TEMPLATE_BYTES.to_vec()),
             (SEAT_ROUTINE_VA, seat),
             (REWARD_ROUTINE_VA, reward),
             (STREAM_ROUTINE_VA, stream),
             (STREAM2_ROUTINE_VA, stream2),
-            (MAGIC_ROUTINE_VA, magic),
         ];
         let mut scus_writes = Vec::new();
         for (va, bytes) in cave {
@@ -618,12 +575,6 @@ impl DomeInjection {
                 STREAM2_HOOK_ORIG,
                 STREAM2_ROUTINE_VA,
                 "stream hook B",
-            ),
-            (
-                MAGIC_HOOK_VA,
-                MAGIC_HOOK_ORIG,
-                MAGIC_ROUTINE_VA,
-                "magic-gate hook",
             ),
         ] {
             let off = scus_off(scus, hook_va)?;
@@ -774,7 +725,7 @@ mod tests {
         // beq at idx 2 skips to the return jump at idx 7: off = 7-(2+1) = 4.
         assert_eq!(r[2], beq(V0, ZERO, 4));
         // Set path: seed word + one-shot clear.
-        assert_eq!(r[3], addiu(T0, ZERO, 0x131));
+        assert_eq!(r[3], addiu(T0, ZERO, 0x331));
         assert_eq!(r[4], sw(T0, S1, WORD_OFF_FROM_S1));
         assert_eq!(r[5], jal(FLAG_CLEAR_FUNC_VA));
         // Return replays the displaced `lw` in the delay slot.
@@ -814,7 +765,7 @@ mod tests {
         assert_eq!(r.len(), 9);
         // One exact test: course word == 0x131 (course 3, round 0).
         assert_eq!(r[1], lw(T1, T0, lo(COURSE_WORD_VA)));
-        assert_eq!(r[2], addiu(T2, ZERO, 0x131));
+        assert_eq!(r[2], addiu(T2, ZERO, 0x331));
         assert_eq!(r[3], bne(T1, T2, 3)); // idx3 -> DEF(7)
         // Course-3 round-0 arm seats Lu in formation seat 1.
         assert_eq!(r[5], j(SEAT_RETURN_VA));
@@ -831,7 +782,7 @@ mod tests {
         assert_eq!(r.len(), 10);
         assert_eq!(r[1], lw(V0, A1, lo(COURSE_WORD_VA)));
         assert_eq!(r[2], addiu(A1, A0, 0xFF5C)); // -164
-        assert_eq!(r[3], addiu(V0, V0, 0xFECF)); // -0x131
+        assert_eq!(r[3], addiu(V0, V0, 0xFCCF)); // -0x331
         assert_eq!(r[4], or(V0, V0, A1));
         assert_eq!(r[5], bne(V0, ZERO, 2));
         assert_eq!(r[7], addiu(A0, A0, 27));
@@ -855,23 +806,6 @@ mod tests {
             assert!(DELILAS_PAIR_IDS[0] as u32 + CLONE_ID_OFFSET == CLONE_IDS[0] as u32);
             assert!(DELILAS_PAIR_IDS[1] as u32 + CLONE_ID_OFFSET == CLONE_IDS[1] as u32);
         }
-    }
-
-    #[test]
-    fn magic_gate_routine_shape() {
-        let r = assemble_magic_gate_routine();
-        assert_eq!(r.len(), 9);
-        // Replays the displaced Ra-Seru load first, then folds the course
-        // test in branchlessly and returns to the stock zero test.
-        assert_eq!(r[0], MAGIC_HOOK_ORIG);
-        assert_eq!(r[2], lw(AT, AT, lo(COURSE_WORD_VA)));
-        assert_eq!(r[3], sltu(V0, ZERO, V0));
-        assert_eq!(r[4], addiu(AT, AT, 0xFECF)); // -0x131
-        assert_eq!(r[5], sltiu(AT, AT, 2));
-        assert_eq!(r[6], xori(AT, AT, 1));
-        assert_eq!(r[7], j(MAGIC_RETURN_VA));
-        assert_eq!(r[8], and(V0, V0, AT));
-        assert_eq!(MAGIC_RETURN_VA, MAGIC_HOOK_VA + 8);
     }
 
     #[test]
@@ -918,12 +852,7 @@ mod tests {
                 <= STREAM2_ROUTINE_VA
         );
         assert_eq!(STREAM2_ROUTINE_VA % 4, 0, "stream routine B is a j target");
-        assert!(
-            STREAM2_ROUTINE_VA + assemble_stream2_map_routine().len() as u32 * 4
-                <= MAGIC_ROUTINE_VA
-        );
-        assert_eq!(MAGIC_ROUTINE_VA % 4, 0, "magic routine is a j target");
-        let end = MAGIC_ROUTINE_VA + assemble_magic_gate_routine().len() as u32 * 4;
+        let end = STREAM2_ROUTINE_VA + assemble_stream2_map_routine().len() as u32 * 4;
         assert!(end <= CAVE_END_VA);
         // The cave must stay below the live SsAPI I/O table at GAP_END_VA.
         const { assert!(CAVE_END_VA <= GAP_END_VA) }

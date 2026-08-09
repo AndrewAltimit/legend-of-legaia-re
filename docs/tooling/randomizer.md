@@ -996,13 +996,15 @@ The shipped fix streams **slim clones** without touching the originals:
   so the hook cannot sit on it) add 27 to the id **for the archive fetch
   only**, and only while the course word reads `0x131` (the Delilas course,
   round 0) - every other battle streams the untouched originals.
-- A third hook (`0x80054250`, the party init's Ra-Seru equip-byte load that
-  decides the per-slot magic gate `ctx[slot+0x25F]`) zeroes the gate while
-  the course word is live, so Meta/Ozma/Terra draw as the dash and cannot
-  be cast in the course's battles. The arena never installs the summon /
-  player-magic sound+art residency - a cast there corrupts the audio state
-  (the koin1 magic-freeze class), which is why the retail dome is arts-only
-  in the first place.
+- Seru magic is locked out by **retail's own mechanism**: the course seed
+  word carries the Master tier's `0x200` bit (`0x331`), which the battle
+  round driver tests to reject the Magic command selection and the
+  command-cluster init tests to gray the plate (`overlay_0898_801d0748`).
+  Beginner/Expert seeds (`0x101`/`0x111`) lack the bit - only Master
+  (`0x321`) locks magic in retail. The lockout matters because the arena
+  never installs the summon / player-magic sound+art residency: a live test
+  cast Meta in the course and got audio-state corruption (the koin1
+  magic-freeze class).
 
 The option is gated on story flag `0x378` - the flag the Koru death event
 latches and the world map reads to flip the ravine entrance from `nilboa`
