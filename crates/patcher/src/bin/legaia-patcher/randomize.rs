@@ -223,7 +223,7 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     }
 
     // Delilas Challenge: a fourth Muscle Dome enrollment option - fight all
-    // a 2-round Muscle Dome course: Che & Lu together (1v2), then Gi (1v1),
+    // a 3-round Muscle Dome course fighting Gi -> Che -> Lu one 1v1 per round,
     // routed through the real arena (magic-off, memory-safe), gated on the
     // Koru event (story flag 0x378). Losing a round returns to the venue by
     // the dome's design; a full clear pays 5000 coins. koin1 script + a
@@ -233,7 +233,7 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             Ok(report) if report.changed => {
                 println!(
                     "delilas-challenge: Muscle Dome enrollment offers the Delilas Challenge \
-                     (a 2-round dome course: Che & Lu together, then Gi; a full clear pays \
+                     (a 3-round dome course, Gi/Che/Lu one boss per round; a full clear pays \
                      5000 coins; unlocks after Nivora Ravine; {} bytes of new koin1 script \
                      in PROT {}{})",
                     report.grown_bytes,

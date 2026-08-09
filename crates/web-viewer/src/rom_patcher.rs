@@ -534,7 +534,7 @@ pub fn patch_rom(
     }
 
     // Delilas Challenge: a fourth Muscle Dome enrollment option that runs a
-    // brand-new 2-round dome course - Che & Lu together (1v2), then Gi (1v1),
+    // brand-new 3-round dome course - Gi -> Che -> Lu, one 1v1 per round,
     // routed through the real arena (magic-off, memory-safe), gated on the
     // Koru event in Nivora Ravine. Losing a round returns to the venue by the
     // dome's design; a full clear pays 5000 coins. koin1 script edit + a
@@ -545,8 +545,8 @@ pub fn patch_rom(
         match apply::apply_delilas_challenge(&mut patcher) {
             Ok(rep) if rep.changed => summary.push_str(
                 "delilas-challenge: Muscle Dome enrollment offers the Delilas Challenge \
-                 (a 2-round dome course: Che & Lu together, then Gi; a full clear pays 5000 \
-                 coins; unlocks after Nivora Ravine)\n",
+                 (a 3-round dome course, Gi/Che/Lu one boss per round; a full clear pays \
+                 5000 coins; unlocks after Nivora Ravine)\n",
             ),
             Ok(_) => summary.push_str("delilas-challenge: already applied\n"),
             Err(e) => summary.push_str(&format!("delilas-challenge: skipped ({e:#})\n")),

@@ -14,17 +14,24 @@
 //! meshes at once overflow it (two already hang the load).
 //!
 //! Routing the challenge through the dome's own arena fixes all of that: the
-//! dome loads one fighter + the round's bosses, disables magic by design, and
+//! dome loads one fighter + the round's boss, disables magic by design, and
 //! runs the fight in a real arena. A dome contest is a *course* - a fixed
 //! roster fought one round at a time (the installer `FUN_801D1510` reads the
-//! round's monster id from a course roster and seats it). So the Delilas
-//! Challenge is a **new 2-round course**: **Che & Lu together (1v2), then Gi
-//! (1v1)**. The double-team round is affordable precisely *because* it is a
-//! dome round: only one player battle form is resident (a normal encounter
-//! carries three), which frees the mesh-heap headroom the second distinct
-//! boss needs.
+//! round's monster id from a course roster and seats it as the sole enemy).
+//! So the Delilas Challenge is a **new 3-round course**: Gi -> Che -> Lu,
+//! one boss per round.
 //!
-//! ## The seven edits (all in PROT 0977 + a SCUS cave; koin1 is separate)
+//! **Falsified: a 1v2 double-team round.** A revision seated Che & Lu
+//! together via a second-seat detour in the installer, betting that a dome
+//! round's single resident player battle form (a normal encounter carries
+//! three) would free the heap for the second distinct boss mesh. Live play
+//! froze at the round-1 battle load: **two distinct large boss meshes
+//! overflow the mesh heap even in a dome round**. The only affordable 1v2
+//! is two copies of the *same* id (instanced duplicates share one mesh - the
+//! `[162,162,162]` probe loaded fine), so a distinct-pair round is off the
+//! table, not merely untuned. Don't re-walk it.
+//!
+//! ## The six edits (all in PROT 0977 + a SCUS cave; koin1 is separate)
 //!
 //! The arena reads its course from a packed word `_DAT_8007BAC0`; the init
 //! `FUN_801CEA6C` seeds it from the course-unlock story flags on a fresh
@@ -41,7 +48,7 @@
 //!    word carries course 3 through the remaining rounds (the continuing-leg
 //!    path), and a later normal dome entry reads `0x539` clear.
 //! 2. **Course descriptor** for course 3 at [`COURSE3_DESC_VA`] (`0x801D1A20`
-//!    = the descriptor table base `0x801D1A08` + `3*8`): `{i32 round_count=2;
+//!    = the descriptor table base `0x801D1A08` + `3*8`): `{i32 round_count=3;
 //!    ptr first_round = cave roster}`. All four descriptor readers compute
 //!    `base + course*8`, so writing the slot makes course 3 work everywhere
 //!    with no per-reader hook.
@@ -49,20 +56,12 @@
 //!    actor template (24 bytes, referenced once at [`TEMPLATE_REF_LUI_VA`] /
 //!    `+4`). Its 24 bytes are copied into the cave and that one `lui/addiu`
 //!    pair is repointed there, freeing `0x801D1A20` for the descriptor.
-//! 4. **Cave roster** ([`ROSTER_VA`]): two `{u32 name_ptr; u32 monster_id}`
-//!    entries - Che (163), Gi (162) - reusing the dome's own Delilas name
-//!    strings (resident with 0977) so the ROUND banner shows real names (the
-//!    round-0 banner names Che; Lu is the surprise second seat).
+//! 4. **Cave roster** ([`ROSTER_VA`]): three `{u32 name_ptr; u32 monster_id}`
+//!    entries - Gi (162), Che (163), Lu (164) - reusing the dome's own
+//!    Delilas name strings (resident with 0977) so the ROUND banner shows
+//!    the right names.
 //! 5. **Seed routine** ([`ROUTINE_VA`]): the seed test/clear above.
-//! 6. **Second-seat detour** ([`SEAT_HOOK_VA`] `0x801D15A4`, the installer's
-//!    `sb zero,1(v0)` that zeroes formation seat 1). The installer
-//!    `FUN_801D1510` stages the round as raw id bytes at `0x8007BD0C..0F`
-//!    (seat 0 = the roster id, seats 1..3 zeroed; battle setup counts the
-//!    non-zero seats - the same `0x8007BD0D` cell the enemy-ally feature
-//!    reads to detect a multi-enemy fight). The cave routine seats **Lu
-//!    (164) in seat 1 when course 3, round 0**, else replays the zero store -
-//!    turning round 0 into the Che & Lu double-team.
-//! 7. **Reward detour** ([`REWARD_HOOK_VA`] `0x801D1118`, the settlement's
+//! 6. **Reward detour** ([`REWARD_HOOK_VA`] `0x801D1118`, the settlement's
 //!    payout-table load). `FUN_801D0F60` settles a contest: only when the
 //!    cleared latch (`DAT_801D1ADC`, raised on *course exhausted AND
 //!    survived*) is up does it add `*(0x801D1860 + course*0x40 +
@@ -74,9 +73,9 @@
 //!    halves the accumulated counter on a loss, which is kept).
 //!
 //! The course-length clamp (`0x801CED28`) is Master-only (`bne course,2`), so
-//! course 3 uses its descriptor's `round_count=2` verbatim - two rounds,
+//! course 3 uses its descriptor's `round_count=3` verbatim - three rounds,
 //! no clamp. The full-Master Seru grant (`round >= 13` at `0x801D111C..`)
-//! can never trip at round 2. Everything lives in the loaded-and-preserved
+//! can never trip at round 3. Everything lives in the loaded-and-preserved
 //! SCUS rodata gap (the window every code-injection feature shares) +
 //! same-size overwrites in the arena overlay; an unrecognized build is
 //! refused, not corrupted.
@@ -137,8 +136,9 @@ pub const FLAG_CLEAR_FUNC_VA: u32 = 0x8003_CE34;
 /// Course-descriptor slot for course 3 (`0x801D1A08 + 3*8`). Receives
 /// `{i32 round_count; u32 first_round_ptr}`. Currently the hub actor template.
 pub const COURSE3_DESC_VA: u32 = 0x801D_1A20;
-/// Number of rounds in the Delilas course: Che & Lu (1v2), then Gi (1v1).
-pub const DELILAS_ROUNDS: u32 = 2;
+/// Number of rounds in the Delilas course: Gi, Che, Lu - one 1v1 per round
+/// (a distinct-pair 1v2 round is heap-infeasible; see the module doc).
+pub const DELILAS_ROUNDS: u32 = 3;
 
 /// The hub actor-template `lui`/`addiu` pair (`lui a0,0x801d` ; `addiu
 /// a0,a0,0x1a20`) that materialises the template at [`COURSE3_DESC_VA`]. Both
@@ -156,31 +156,14 @@ pub const TEMPLATE_BYTES: [u8; 24] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
-/// The roster ids in fight order: round 0 = Che (joined by the second-seat
-/// Lu), round 1 = Gi.
-pub const DELILAS_ROSTER_IDS: [u32; 2] = [163, 162];
+/// The three Delilas roster ids, in fight order (round 1..3): Gi, Che, Lu.
+pub const DELILAS_ROSTER_IDS: [u32; 3] = [162, 163, 164];
 /// The dome's own Delilas name-string VAs (resident with 0977), paired with
-/// [`DELILAS_ROSTER_IDS`]: Che (`0x801CE8C4`), Gi (`0x801CE8B8`). The round-0
-/// banner names Che; Lu enters unannounced.
-pub const DELILAS_NAME_PTRS: [u32; 2] = [0x801C_E8C4, 0x801C_E8B8];
-/// The monster id the second-seat hook adds to round 0: Lu (164).
-pub const SECOND_SEAT_ID: u32 = 164;
+/// [`DELILAS_ROSTER_IDS`] so the ROUND banner shows "Gi/Che/Lu Delilas".
+pub const DELILAS_NAME_PTRS: [u32; 3] = [0x801C_E8B8, 0x801C_E8C4, 0x801C_E8D0];
 /// Coins added to the dome winnings counter (`0x80084440`) for a full clear
 /// of the Delilas course.
 pub const COURSE3_CLEAR_COINS: u32 = 5000;
-
-// --- Second-seat hook (installer `FUN_801D1510`) -----------------------------
-
-/// Second-seat detour site: the installer's `sb zero,1(v0)` (`v0` =
-/// `0x8007BD0C`, the formation seat bytes) that zeroes seat 1. Replaced with
-/// `j SEAT_ROUTINE_VA`; the following `sb zero,2(v0)` is its delay slot and
-/// still executes.
-pub const SEAT_HOOK_VA: u32 = 0x801D_15A4;
-/// The stock instruction at [`SEAT_HOOK_VA`] (`sb zero,1(v0)`) - the displaced
-/// store the routine replays on the non-Delilas path, and the build fingerprint.
-pub const SEAT_HOOK_ORIG: u32 = sb(ZERO, V0, 1);
-/// Where the seat detour returns (the `sb zero,3(v0)` after the delay slot).
-pub const SEAT_RETURN_VA: u32 = 0x801D_15AC;
 
 // --- Reward hook (settlement `FUN_801D0F60`) ---------------------------------
 
@@ -209,14 +192,12 @@ pub const ROUND_GLOBAL_VA: u32 = 0x801D_1A94;
 pub const ROUTINE_VA: u32 = 0x8007_AE00;
 /// Load VA of the relocated hub actor template (24 bytes).
 pub const TEMPLATE_VA: u32 = 0x8007_AE40;
-/// Load VA of the cave roster (2 x 8 bytes).
+/// Load VA of the cave roster (3 x 8 bytes).
 pub const ROSTER_VA: u32 = 0x8007_AE60;
-/// Load VA of the second-seat routine (4-aligned - it is a `j` target).
-pub const SEAT_ROUTINE_VA: u32 = 0x8007_AE70;
 /// Load VA of the reward routine (4-aligned - it is a `j` target).
-pub const REWARD_ROUTINE_VA: u32 = 0x8007_AEA4;
+pub const REWARD_ROUTINE_VA: u32 = 0x8007_AE78;
 /// One past the last cave byte used; must stay within the gap end.
-pub const CAVE_END_VA: u32 = 0x8007_AECC;
+pub const CAVE_END_VA: u32 = 0x8007_AEA0;
 /// End of the usable zero window (exclusive): the SsAPI sound I/O register
 /// table begins exactly at `0x8007AF00` and is read every frame (the
 /// shiny-seru read-watch pinned it - see `shiny_seru::layout`), so the cave
@@ -257,47 +238,14 @@ pub fn assemble_routine() -> Vec<u32> {
     words
 }
 
-/// The cave roster bytes: 2 x `{u32 name_ptr; u32 monster_id}`, little-endian.
+/// The cave roster bytes: 3 x `{u32 name_ptr; u32 monster_id}`, little-endian.
 pub fn roster_bytes() -> Vec<u8> {
-    let mut v = Vec::with_capacity(16);
+    let mut v = Vec::with_capacity(24);
     for i in 0..DELILAS_ROSTER_IDS.len() {
         v.extend_from_slice(&DELILAS_NAME_PTRS[i].to_le_bytes());
         v.extend_from_slice(&DELILAS_ROSTER_IDS[i].to_le_bytes());
     }
     v
-}
-
-/// Assemble the second-seat routine: on course 3, round 0, store
-/// [`SECOND_SEAT_ID`] into formation seat 1 (`v0` holds `0x8007BD0C` at the
-/// hook); otherwise replay the displaced `sb zero,1(v0)`. Entered by `j` from
-/// [`SEAT_HOOK_VA`] (whose delay slot, the seat-2 zero store, has already
-/// executed); returns to [`SEAT_RETURN_VA`].
-///
-/// Register discipline: `v0`/`v1`/`a0`/`a1` are live across the detour (seat
-/// base, `0x8008` half, monster id, `0x8008` half) and are not touched;
-/// `t0..t4` are dead here. Loads respect the R3000 load-delay slot (each
-/// loaded register is first read two or more instructions later).
-pub fn assemble_seat_routine() -> Vec<u32> {
-    const DEF: usize = 11; // index of the default (replay) arm
-    let words = vec![
-        lui(T0, hi(COURSE_GLOBAL_VA)),          // 0:  t0 = 0x801D....
-        lw(T1, T0, lo(COURSE_GLOBAL_VA)),       // 1:  t1 = course
-        lw(T2, T0, lo(ROUND_GLOBAL_VA)),        // 2:  t2 = round
-        addiu(T3, ZERO, 3),                     // 3:  t3 = 3
-        addiu(T4, ZERO, SECOND_SEAT_ID as u16), // 4:  t4 = Lu
-        bne(T1, T3, (DEF - (5 + 1)) as i16),    // 5:  course != 3 -> DEF
-        nop(),                                  // 6:  (branch delay)
-        bne(T2, ZERO, (DEF - (7 + 1)) as i16),  // 7:  round != 0 -> DEF
-        nop(),                                  // 8:  (branch delay)
-        j(SEAT_RETURN_VA),                      // 9:  course 3, round 0:
-        sb(T4, V0, 1),                          // 10: seat 1 = Lu (delay)
-        // DEF (idx 11): replay the displaced zero store.
-        j(SEAT_RETURN_VA), // 11:
-        SEAT_HOOK_ORIG,    // 12: sb zero,1(v0) (delay)
-    ];
-    debug_assert_eq!(words.len(), 13);
-    debug_assert_eq!(words[DEF + 1], SEAT_HOOK_ORIG);
-    words
 }
 
 /// Assemble the reward routine: replay the payout-table load, but return
@@ -371,16 +319,12 @@ impl DomeInjection {
         let words_to_bytes =
             |w: Vec<u32>| -> Vec<u8> { w.iter().flat_map(|w| w.to_le_bytes()).collect() };
         let routine = words_to_bytes(assemble_routine());
-        let seat = words_to_bytes(assemble_seat_routine());
         let reward = words_to_bytes(assemble_reward_routine());
         if TEMPLATE_VA < ROUTINE_VA + routine.len() as u32 {
             bail!("dome seed routine overruns the template slot");
         }
-        if SEAT_ROUTINE_VA < ROSTER_VA + roster_bytes().len() as u32 {
-            bail!("dome roster overruns the seat-routine slot");
-        }
-        if REWARD_ROUTINE_VA < SEAT_ROUTINE_VA + seat.len() as u32 {
-            bail!("dome seat routine overruns the reward-routine slot");
+        if REWARD_ROUTINE_VA < ROSTER_VA + roster_bytes().len() as u32 {
+            bail!("dome roster overruns the reward-routine slot");
         }
         if CAVE_END_VA < REWARD_ROUTINE_VA + reward.len() as u32 {
             bail!("dome reward routine overruns the cave end");
@@ -388,11 +332,10 @@ impl DomeInjection {
         if CAVE_END_VA > GAP_END_VA {
             bail!("dome cave overruns the preserved gap end {GAP_END_VA:#x}");
         }
-        let cave: [(u32, Vec<u8>); 5] = [
+        let cave: [(u32, Vec<u8>); 4] = [
             (ROUTINE_VA, routine),
             (TEMPLATE_VA, TEMPLATE_BYTES.to_vec()),
             (ROSTER_VA, roster_bytes()),
-            (SEAT_ROUTINE_VA, seat),
             (REWARD_ROUTINE_VA, reward),
         ];
         let mut scus_writes = Vec::new();
@@ -447,16 +390,6 @@ impl DomeInjection {
         overlay_writes.push(Write {
             off: desc_off,
             bytes: desc,
-        });
-
-        // Second-seat detour: verify the installer's stock seat-1 zero store,
-        // replace with `j SEAT_ROUTINE_VA` (its delay slot, the seat-2 zero
-        // store, is untouched and still executes).
-        let seat_off = overlay_off(SEAT_HOOK_VA)?;
-        expect_word(overlay, seat_off, SEAT_HOOK_ORIG, "second-seat hook")?;
-        overlay_writes.push(Write {
-            off: seat_off,
-            bytes: j(SEAT_ROUTINE_VA).to_le_bytes().to_vec(),
         });
 
         // Reward detour: verify the settlement's stock payout-table load,
@@ -557,17 +490,16 @@ mod tests {
     #[test]
     fn roster_pairs_names_with_ids() {
         let b = roster_bytes();
-        assert_eq!(b.len(), 16);
-        for i in 0..2 {
+        assert_eq!(b.len(), 24);
+        for i in 0..3 {
             let name = u32::from_le_bytes(b[i * 8..i * 8 + 4].try_into().unwrap());
             let id = u32::from_le_bytes(b[i * 8 + 4..i * 8 + 8].try_into().unwrap());
             assert_eq!(name, DELILAS_NAME_PTRS[i]);
             assert_eq!(id, DELILAS_ROSTER_IDS[i]);
         }
-        // Che first (with the surprise Lu seat), Gi as the closer.
-        assert_eq!(DELILAS_ROSTER_IDS[0], 163);
-        assert_eq!(DELILAS_ROSTER_IDS[1], 162);
-        assert_eq!(SECOND_SEAT_ID, 164);
+        // Gi, Che, Lu order (the fight sequence).
+        assert_eq!(DELILAS_ROSTER_IDS[0], 162);
+        assert_eq!(DELILAS_ROSTER_IDS[2], 164);
     }
 
     #[test]
@@ -575,25 +507,6 @@ mod tests {
         let w = template_ref_words();
         assert_eq!(w[0], lui(A0, hi(TEMPLATE_VA)));
         assert_eq!(w[1], addiu(A0, A0, lo(TEMPLATE_VA)));
-    }
-
-    #[test]
-    fn seat_routine_shape() {
-        let r = assemble_seat_routine();
-        assert_eq!(r.len(), 13);
-        // Reads course + round off the arena globals.
-        assert_eq!(r[1], lw(T1, T0, lo(COURSE_GLOBAL_VA)));
-        assert_eq!(r[2], lw(T2, T0, lo(ROUND_GLOBAL_VA)));
-        // Course-3 round-0 arm seats Lu into formation seat 1; both `j`
-        // delay slots store into seat 1 (`1(v0)`), never elsewhere.
-        assert_eq!(r[9], j(SEAT_RETURN_VA));
-        assert_eq!(r[10], sb(T4, V0, 1));
-        // Default arm replays the displaced stock zero store.
-        assert_eq!(r[11], j(SEAT_RETURN_VA));
-        assert_eq!(r[12], SEAT_HOOK_ORIG);
-        // Branch offsets: idx5 -> DEF(11) = +5, idx7 -> DEF(11) = +3.
-        assert_eq!(r[5], bne(T1, T3, 5));
-        assert_eq!(r[7], bne(T2, ZERO, 3));
     }
 
     #[test]
@@ -621,9 +534,7 @@ mod tests {
     fn cave_fits_the_gap() {
         assert!(ROUTINE_VA + assemble_routine().len() as u32 * 4 <= TEMPLATE_VA);
         assert!(TEMPLATE_VA + TEMPLATE_BYTES.len() as u32 <= ROSTER_VA);
-        assert!(ROSTER_VA + roster_bytes().len() as u32 <= SEAT_ROUTINE_VA);
-        assert_eq!(SEAT_ROUTINE_VA % 4, 0, "seat routine is a j target");
-        assert!(SEAT_ROUTINE_VA + assemble_seat_routine().len() as u32 * 4 <= REWARD_ROUTINE_VA);
+        assert!(ROSTER_VA + roster_bytes().len() as u32 <= REWARD_ROUTINE_VA);
         assert_eq!(REWARD_ROUTINE_VA % 4, 0, "reward routine is a j target");
         let end = REWARD_ROUTINE_VA + assemble_reward_routine().len() as u32 * 4;
         assert!(end <= CAVE_END_VA);

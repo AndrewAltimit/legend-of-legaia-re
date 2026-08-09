@@ -8,9 +8,8 @@ use legaia_asset::item_names::file_offset_for_va;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::delilas_dome::{
     ARENA_BASE_VA, ARENA_OVERLAY_PROT_INDEX, DomeInjection, REWARD_HOOK_ORIG, REWARD_HOOK_VA,
-    REWARD_ROUTINE_VA, ROSTER_VA, ROUTINE_VA, SEAT_HOOK_ORIG, SEAT_HOOK_VA, SEAT_ROUTINE_VA,
-    SEED_HOOK_ORIG, SEED_HOOK_VA, TEMPLATE_BYTES, TEMPLATE_REF_ADDIU_ORIG, TEMPLATE_REF_LUI_ORIG,
-    TEMPLATE_REF_LUI_VA, TEMPLATE_VA,
+    REWARD_ROUTINE_VA, ROSTER_VA, ROUTINE_VA, SEED_HOOK_ORIG, SEED_HOOK_VA, TEMPLATE_BYTES,
+    TEMPLATE_REF_ADDIU_ORIG, TEMPLATE_REF_LUI_ORIG, TEMPLATE_REF_LUI_VA, TEMPLATE_VA,
 };
 use legaia_patcher::disc::DiscPatcher;
 
@@ -45,12 +44,6 @@ fn baseline_sites_match_the_known_build() {
         overlay_word(&overlay, SEED_HOOK_VA),
         SEED_HOOK_ORIG,
         "seed hook is the recognized `lw v0,-0x4540(s1)`"
-    );
-    // Second-seat hook: the installer's stock `sb zero,1(v0)` seat-1 zero.
-    assert_eq!(
-        overlay_word(&overlay, SEAT_HOOK_VA),
-        SEAT_HOOK_ORIG,
-        "seat hook is the recognized `sb zero,1(v0)`"
     );
     // Reward hook: the settlement's stock `lw v0,0(v0)` payout-table load.
     assert_eq!(
@@ -91,13 +84,9 @@ fn plan_validates_against_the_real_build() {
 
     let plan = DomeInjection::plan(&scus, &overlay).expect("plan against real build");
 
-    // Five SCUS-cave writes (seed routine + template + roster + seat routine
-    // + reward routine), all landing in all-zero dead space.
-    assert_eq!(
-        plan.scus.len(),
-        5,
-        "seed + template + roster + seat + reward"
-    );
+    // Four SCUS-cave writes (seed routine + template + roster + reward
+    // routine), all landing in all-zero dead space.
+    assert_eq!(plan.scus.len(), 4, "seed + template + roster + reward");
     for w in &plan.scus {
         assert!(!w.bytes.is_empty());
         assert!(
@@ -107,25 +96,19 @@ fn plan_validates_against_the_real_build() {
         );
     }
     // Each cave slot resolves where we expect.
-    for (i, va) in [
-        ROUTINE_VA,
-        TEMPLATE_VA,
-        ROSTER_VA,
-        SEAT_ROUTINE_VA,
-        REWARD_ROUTINE_VA,
-    ]
-    .into_iter()
-    .enumerate()
+    for (i, va) in [ROUTINE_VA, TEMPLATE_VA, ROSTER_VA, REWARD_ROUTINE_VA]
+        .into_iter()
+        .enumerate()
     {
         assert_eq!(plan.scus[i].off, file_offset_for_va(&scus, va).unwrap());
     }
     // The relocated template copies the stock bytes verbatim.
     assert_eq!(plan.scus[1].bytes, TEMPLATE_BYTES.to_vec());
 
-    // Five overlay writes: seed detour, template repoint, descriptor, seat
-    // detour, reward detour; every detour is a `j` (opcode 2).
-    assert_eq!(plan.overlay.len(), 5);
-    for idx in [0usize, 3, 4] {
+    // Four overlay writes: seed detour, template repoint, descriptor, reward
+    // detour; every detour is a `j` (opcode 2).
+    assert_eq!(plan.overlay.len(), 4);
+    for idx in [0usize, 3] {
         let detour = u32::from_le_bytes(plan.overlay[idx].bytes[..4].try_into().unwrap());
         assert_eq!(detour >> 26, 0x02, "overlay write {idx} is a `j` detour");
     }
@@ -134,8 +117,8 @@ fn plan_validates_against_the_real_build() {
     assert_eq!(plan.overlay[2].bytes.len(), 24);
     assert_eq!(
         &plan.overlay[2].bytes[..4],
-        &2u32.to_le_bytes(),
-        "course-3 round count = 2 (Che & Lu, then Gi)"
+        &3u32.to_le_bytes(),
+        "course-3 round count = 3 (Gi -> Che -> Lu, 1v1 each)"
     );
 
     // Refuses a build it doesn't recognize (flip a hook-site byte).
