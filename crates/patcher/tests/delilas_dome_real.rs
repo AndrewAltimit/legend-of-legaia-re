@@ -10,8 +10,8 @@ use legaia_asset::item_names::file_offset_for_va;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::delilas_dome::{
     ARENA_BASE_VA, ARENA_OVERLAY_PROT_INDEX, CLONE_IDS, DELILAS_PAIR_IDS, DomeInjection,
-    REWARD_HOOK_ORIG, REWARD_HOOK_VA, REWARD_ROUTINE_VA, ROUTINE_VA, SEAT_HOOK_ORIG, SEAT_HOOK_VA,
-    SEAT_ROUTINE_VA, SEED_HOOK_ORIG, SEED_HOOK_VA, STREAM_HOOK_ORIG, STREAM_HOOK_VA,
+    REWARD_HOOK_ORIG, REWARD_HOOK_VA, REWARD_ROUTINE_VA, ROSTER_VA, ROUTINE_VA, SEAT_HOOK_ORIG,
+    SEAT_HOOK_VA, SEAT_ROUTINE_VA, SEED_HOOK_ORIG, SEED_HOOK_VA, STREAM_HOOK_ORIG, STREAM_HOOK_VA,
     STREAM_ROUTINE_VA, STREAM2_HOOK_ORIG, STREAM2_HOOK_VA, STREAM2_ROUTINE_VA, TEMPLATE_BYTES,
     TEMPLATE_REF_ADDIU_ORIG, TEMPLATE_REF_LUI_ORIG, TEMPLATE_REF_LUI_VA, TEMPLATE_VA,
 };
@@ -108,11 +108,11 @@ fn plan_validates_against_the_real_build() {
 
     let plan = DomeInjection::plan(&scus, &overlay).expect("plan against real build");
 
-    // Six SCUS-cave writes (seed / template / seat / reward / two stream
-    // routines), all in all-zero dead space, plus the two stream-map hooks
-    // over live code.
-    assert_eq!(plan.scus.len(), 8, "six cave writes + two stream hooks");
-    for w in &plan.scus[..6] {
+    // Seven SCUS-cave writes (seed / template / roster / seat / reward /
+    // two stream routines), all in all-zero dead space, plus the two
+    // stream-map hooks over live code.
+    assert_eq!(plan.scus.len(), 9, "seven cave writes + two stream hooks");
+    for w in &plan.scus[..7] {
         assert!(!w.bytes.is_empty());
         assert!(
             scus[w.off..w.off + w.bytes.len()].iter().all(|&b| b == 0),
@@ -123,6 +123,7 @@ fn plan_validates_against_the_real_build() {
     for (i, va) in [
         ROUTINE_VA,
         TEMPLATE_VA,
+        ROSTER_VA,
         SEAT_ROUTINE_VA,
         REWARD_ROUTINE_VA,
         STREAM_ROUTINE_VA,
@@ -136,7 +137,7 @@ fn plan_validates_against_the_real_build() {
     // The relocated template copies the stock bytes verbatim.
     assert_eq!(plan.scus[1].bytes, TEMPLATE_BYTES.to_vec());
     // Both stream hooks are `j` detours over their stock sites.
-    for (i, hook_va) in [(6usize, STREAM_HOOK_VA), (7, STREAM2_HOOK_VA)] {
+    for (i, hook_va) in [(7usize, STREAM_HOOK_VA), (8, STREAM2_HOOK_VA)] {
         assert_eq!(
             plan.scus[i].off,
             file_offset_for_va(&scus, hook_va).unwrap()

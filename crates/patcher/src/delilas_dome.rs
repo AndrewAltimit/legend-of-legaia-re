@@ -298,22 +298,23 @@ pub const ROUND_GLOBAL_VA: u32 = 0x801D_1A94;
 pub const ROUTINE_VA: u32 = 0x8007_AE00;
 /// Load VA of the relocated hub actor template (24 bytes).
 pub const TEMPLATE_VA: u32 = 0x8007_AE24;
-/// Load VA of the course roster (2 x 8 bytes) - **in the arena overlay**, not
-/// the SCUS cave: it fills the zeroed 16-byte tail of the freed 24-byte
-/// template slot, right behind the course-3 descriptor at `0x801D1A20`. The
-/// installer reads it only while the arena overlay is resident, and the move
-/// frees 16 cave bytes for the magic-gate routine.
-pub const ROSTER_VA: u32 = 0x801D_1A28;
+/// Load VA of the cave roster (2 x 8 bytes). Deliberately **in the SCUS
+/// cave, not the arena overlay**: an experiment that parked it in the freed
+/// template slot's zero tail (`0x801D1A28`) froze the live dome at the
+/// round-banner phase - the live-proven layout writes only ZEROS over that
+/// tail (see [`DomeInjection::plan`]), so nothing may assume those overlay
+/// bytes are free for nonzero data.
+pub const ROSTER_VA: u32 = 0x8007_AE3C;
 /// Load VA of the second-seat routine (4-aligned - it is a `j` target).
-pub const SEAT_ROUTINE_VA: u32 = 0x8007_AE3C;
+pub const SEAT_ROUTINE_VA: u32 = 0x8007_AE4C;
 /// Load VA of the reward routine (4-aligned - it is a `j` target).
-pub const REWARD_ROUTINE_VA: u32 = 0x8007_AE60;
+pub const REWARD_ROUTINE_VA: u32 = 0x8007_AE70;
 /// Load VA of the site-A stream-map routine (4-aligned - a `j` target).
-pub const STREAM_ROUTINE_VA: u32 = 0x8007_AE88;
+pub const STREAM_ROUTINE_VA: u32 = 0x8007_AE98;
 /// Load VA of the site-B stream-map routine (4-aligned - a `j` target).
-pub const STREAM2_ROUTINE_VA: u32 = 0x8007_AEB0;
+pub const STREAM2_ROUTINE_VA: u32 = 0x8007_AEC0;
 /// One past the last cave byte used; must stay within the gap end.
-pub const CAVE_END_VA: u32 = 0x8007_AED8;
+pub const CAVE_END_VA: u32 = 0x8007_AEE8;
 /// End of the usable zero window (exclusive): the SsAPI sound I/O register
 /// table begins exactly at `0x8007AF00` and is read every frame (the
 /// shiny-seru read-watch pinned it - see `shiny_seru::layout`), so the cave
@@ -524,8 +525,11 @@ impl DomeInjection {
         if TEMPLATE_VA < ROUTINE_VA + routine.len() as u32 {
             bail!("dome seed routine overruns the template slot");
         }
-        if SEAT_ROUTINE_VA < TEMPLATE_VA + TEMPLATE_BYTES.len() as u32 {
-            bail!("dome template overruns the seat-routine slot");
+        if ROSTER_VA < TEMPLATE_VA + TEMPLATE_BYTES.len() as u32 {
+            bail!("dome template overruns the roster slot");
+        }
+        if SEAT_ROUTINE_VA < ROSTER_VA + roster_bytes().len() as u32 {
+            bail!("dome roster overruns the seat-routine slot");
         }
         if REWARD_ROUTINE_VA < SEAT_ROUTINE_VA + seat.len() as u32 {
             bail!("dome seat routine overruns the reward-routine slot");
@@ -542,9 +546,10 @@ impl DomeInjection {
         if CAVE_END_VA > GAP_END_VA {
             bail!("dome cave overruns the preserved gap end {GAP_END_VA:#x}");
         }
-        let cave: [(u32, Vec<u8>); 6] = [
+        let cave: [(u32, Vec<u8>); 7] = [
             (ROUTINE_VA, routine),
             (TEMPLATE_VA, TEMPLATE_BYTES.to_vec()),
+            (ROSTER_VA, roster_bytes()),
             (SEAT_ROUTINE_VA, seat),
             (REWARD_ROUTINE_VA, reward),
             (STREAM_ROUTINE_VA, stream),
@@ -620,11 +625,13 @@ impl DomeInjection {
         });
 
         // Course-3 descriptor at 0x801D1A20 (over the now-relocated template
-        // head); the 16-byte template tail becomes the course roster the
-        // descriptor points at ([`ROSTER_VA`] = 0x801D1A28).
+        // head); the 16-byte template tail is written as ZEROS - the
+        // live-proven shape. Parking nonzero data there (a roster
+        // experiment) froze the dome at the round-banner phase, so treat
+        // those bytes as live hub state, not free space.
         let desc_off = overlay_off(COURSE3_DESC_VA)?;
         let mut desc = descriptor_bytes().to_vec();
-        desc.extend_from_slice(&roster_bytes());
+        desc.extend_from_slice(&[0u8; 16]);
         // The bytes there are the stock template (non-zero); confirm they match
         // so a re-layout doesn't silently clobber live code.
         expect_bytes(
@@ -839,7 +846,8 @@ mod tests {
     #[test]
     fn cave_fits_the_gap() {
         assert!(ROUTINE_VA + assemble_routine().len() as u32 * 4 <= TEMPLATE_VA);
-        assert!(TEMPLATE_VA + TEMPLATE_BYTES.len() as u32 <= SEAT_ROUTINE_VA);
+        assert!(TEMPLATE_VA + TEMPLATE_BYTES.len() as u32 <= ROSTER_VA);
+        assert!(ROSTER_VA + roster_bytes().len() as u32 <= SEAT_ROUTINE_VA);
         assert_eq!(SEAT_ROUTINE_VA % 4, 0, "seat routine is a j target");
         assert!(SEAT_ROUTINE_VA + assemble_seat_routine().len() as u32 * 4 <= REWARD_ROUTINE_VA);
         assert_eq!(REWARD_ROUTINE_VA % 4, 0, "reward routine is a j target");
@@ -856,8 +864,8 @@ mod tests {
         assert!(end <= CAVE_END_VA);
         // The cave must stay below the live SsAPI I/O table at GAP_END_VA.
         const { assert!(CAVE_END_VA <= GAP_END_VA) }
-        // The roster lives in the arena overlay's freed template tail, right
-        // behind the 8-byte descriptor.
-        const { assert!(ROSTER_VA == COURSE3_DESC_VA + 8) }
+        // The roster is SCUS-cave data (the overlay template tail must stay
+        // zero - live hub state; see the ROSTER_VA doc).
+        const { assert!(ROSTER_VA < GAP_END_VA) }
     }
 }

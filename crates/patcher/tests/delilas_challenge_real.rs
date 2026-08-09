@@ -90,12 +90,18 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
         scus[routine_off..routine_off + 8].iter().any(|&b| b != 0),
         "seed routine must be present in the cave"
     );
-    // The roster rides the descriptor write into the arena overlay (the
-    // freed template slot's tail at 0x801D1A28).
-    let roster_off = (ROSTER_VA - ARENA_BASE_VA) as usize;
+    let roster_off =
+        legaia_asset::item_names::file_offset_for_va(&scus, ROSTER_VA).expect("resolve roster VA");
     assert!(
-        overlay[roster_off..roster_off + 16].iter().any(|&b| b != 0),
-        "Delilas roster must be present behind the descriptor"
+        scus[roster_off..roster_off + 16].iter().any(|&b| b != 0),
+        "Delilas roster must be present in the cave"
+    );
+    // The overlay template tail behind the descriptor must be ZEROS (live
+    // hub state - a nonzero roster there froze the dome at the banners).
+    let tail_off = (COURSE3_DESC_VA + 8 - ARENA_BASE_VA) as usize;
+    assert!(
+        overlay[tail_off..tail_off + 16].iter().all(|&b| b == 0),
+        "template tail must stay zero"
     );
 
     // The patched image locates as applied, and a second apply is a no-op.
