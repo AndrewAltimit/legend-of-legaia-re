@@ -123,8 +123,13 @@ fn plan_validates_against_the_real_build() {
 
     // Seven SCUS-cave writes (seed routine + template + roster + seat routine
     // + reward routine + the two stream routines), all in all-zero dead
-    // space, plus the two stream-map hooks over live code.
-    assert_eq!(plan.scus.len(), 9, "seven cave writes + two stream hooks");
+    // space, plus the two stream-map hooks and the PRG ERR flag-set NOP over
+    // live code.
+    assert_eq!(
+        plan.scus.len(),
+        10,
+        "seven cave writes + two stream hooks + PRG ERR silence"
+    );
     for w in &plan.scus[..7] {
         assert!(!w.bytes.is_empty());
         assert!(

@@ -326,6 +326,26 @@ pub const REWARD_RETURN_VA: u32 = 0x801D_1120;
 
 /// Course global (`DAT_801D1A90`) read by the seat + reward routines.
 pub const COURSE_GLOBAL_VA: u32 = 0x801D_1A90;
+/// The hub's koin1 menu-selection residue (`0x80084140 + 0x308`). The
+/// round-end routing (`0x801CEE44` in the arena overlay) treats the value
+/// **4** as "the player chose the quit option": it clears the win latch,
+/// sets the ran-away marker `DAT_801D1A74`, and the settlement then ZEROES
+/// the winnings counter and skips the payout add. The Delilas enrollment
+/// rides the who-menu's 4th slot, so its residue is exactly 4 - every
+/// cleared course paid nothing and wiped the balance until the seat
+/// routine started clearing this cell at round-0 install.
+pub const MENU_RESIDUE_VA: u32 = 0x8008_4448;
+/// The move-VM effect-instance spawner's failure arm (`FUN_80020F88`): when
+/// its `0x9C` transient alloc returns NULL it ORs `0x4000` into the status
+/// word `DAT_80083828`, which the on-screen error reporter renders as
+/// `PRG ERR%d` every frame. The 1v2's tight heap makes bursts fail
+/// (tolerated - the spawn is skipped), so the Delilas patch NOPs the
+/// flag-set to keep the retail-dev error text off the screen. No dumped
+/// code reads bit `0x4000` back.
+pub const PRGERR_FLAG_SET_VA: u32 = 0x8002_11A0;
+/// The stock instruction at [`PRGERR_FLAG_SET_VA`] (`ori v1,v1,0x4000`) -
+/// the flag-set the patch NOPs, and the build fingerprint.
+pub const PRGERR_FLAG_SET_ORIG: u32 = ori(V1, V1, 0x4000);
 /// Round global (`DAT_801D1A94`), sibling of [`COURSE_GLOBAL_VA`].
 pub const ROUND_GLOBAL_VA: u32 = 0x801D_1A94;
 
@@ -342,13 +362,13 @@ pub const ROSTER_VA: u32 = 0x8007_AE50;
 /// Load VA of the second-seat routine (4-aligned - it is a `j` target).
 pub const SEAT_ROUTINE_VA: u32 = 0x8007_AE60;
 /// Load VA of the reward routine (4-aligned - it is a `j` target).
-pub const REWARD_ROUTINE_VA: u32 = 0x8007_AE84;
+pub const REWARD_ROUTINE_VA: u32 = 0x8007_AE8C;
 /// Load VA of the site-A stream-map routine (4-aligned - a `j` target).
-pub const STREAM_ROUTINE_VA: u32 = 0x8007_AEAC;
+pub const STREAM_ROUTINE_VA: u32 = 0x8007_AEB0;
 /// Load VA of the site-B stream-map routine (4-aligned - a `j` target).
-pub const STREAM2_ROUTINE_VA: u32 = 0x8007_AED4;
+pub const STREAM2_ROUTINE_VA: u32 = 0x8007_AED8;
 /// One past the last cave byte used; must stay within the gap end.
-pub const CAVE_END_VA: u32 = 0x8007_AEFC;
+pub const CAVE_END_VA: u32 = 0x8007_AF00;
 /// End of the usable zero window (exclusive): the SsAPI sound I/O register
 /// table begins exactly at `0x8007AF00` and is read every frame (the
 /// shiny-seru read-watch pinned it - see `shiny_seru::layout`), so the cave
@@ -406,20 +426,22 @@ pub fn roster_bytes() -> Vec<u8> {
 /// by `j` from [`SEAT_HOOK_VA`]; `v0` holds the formation-cell base, `t0..t4`
 /// are dead, and `ra` is restored by the installer's own epilogue.
 pub fn assemble_seat_routine() -> Vec<u32> {
-    const DEF: usize = 7; // index of the default (replay) arm
+    const DEF: usize = 9; // index of the default (replay) arm
     let words = vec![
         lui(T0, hi(COURSE_WORD_VA)),               // 0: t0 = 0x8008
         lw(T1, T0, lo(COURSE_WORD_VA)),            // 1: t1 = course word
         addiu(T2, ZERO, COURSE3_SEED_WORD as u16), // 2: t2 = 0x131 (load delay)
         bne(T1, T2, (DEF - (3 + 1)) as i16),       // 3: not round 0 -> DEF
         addiu(T3, ZERO, SECOND_SEAT_ID as u16),    // 4: t3 = Lu (delay, harmless)
-        j(SEAT_RETURN_VA),                         // 5: course 3, round 0:
-        sb(T3, V0, 1),                             // 6: seat 1 = Lu (delay)
-        // DEF (idx 7): replay the displaced zero store.
-        j(SEAT_RETURN_VA), // 7:
-        SEAT_HOOK_ORIG,    // 8: sb zero,1(v0) (delay)
+        sb(T3, V0, 1),                             // 5: seat 1 = Lu
+        lui(T4, hi(MENU_RESIDUE_VA)),              // 6: t4 = 0x8008
+        j(SEAT_RETURN_VA),                         // 7:
+        sw(ZERO, T4, lo(MENU_RESIDUE_VA)),         // 8: clear quit residue (delay)
+        // DEF (idx 9): replay the displaced zero store.
+        j(SEAT_RETURN_VA), // 9:
+        SEAT_HOOK_ORIG,    // 10: sb zero,1(v0) (delay)
     ];
-    debug_assert_eq!(words.len(), 9);
+    debug_assert_eq!(words.len(), 11);
     debug_assert_eq!(words[DEF + 1], SEAT_HOOK_ORIG);
     words
 }
@@ -497,21 +519,20 @@ pub fn assemble_stream2_map_routine() -> Vec<u32> {
 /// value) / `a1` (Seru gate) / `a2` (state base) are live and untouched;
 /// `t0..t3` are dead. Load-delay respected as in [`assemble_seat_routine`].
 pub fn assemble_reward_routine() -> Vec<u32> {
-    const STOCK: usize = 8; // index of the stock (table value) arm
+    const SKIP: usize = 7; // branch target: past the stock-value overwrite
     let words = vec![
         lw(T1, V0, 0),                               // 0: t1 = table value
         lui(T0, hi(COURSE_GLOBAL_VA)),               // 1: t0 = 0x801D....
         lw(T2, T0, lo(COURSE_GLOBAL_VA)),            // 2: t2 = course
         addiu(T3, ZERO, 3),                          // 3: t3 = 3
-        bne(T2, T3, (STOCK - (4 + 1)) as i16),       // 4: course != 3 -> STOCK
-        nop(),                                       // 5: (branch delay)
-        j(REWARD_RETURN_VA),                         // 6: course 3:
-        addiu(V0, ZERO, COURSE3_CLEAR_COINS as u16), // 7: v0 = 5000 (delay)
-        // STOCK (idx 8): the retail table value.
-        j(REWARD_RETURN_VA), // 8:
-        addu(V0, T1, ZERO),  // 9: v0 = table value (delay)
+        beq(T2, T3, (SKIP - (4 + 1)) as i16),        // 4: course 3 -> keep 5000
+        addiu(V0, ZERO, COURSE3_CLEAR_COINS as u16), // 5: v0 = 5000 (delay, always)
+        addu(V0, T1, ZERO),                          // 6: stock: v0 = table value
+        // SKIP (idx 7):
+        j(REWARD_RETURN_VA), // 7:
+        nop(),               // 8: (delay)
     ];
-    debug_assert_eq!(words.len(), 10);
+    debug_assert_eq!(words.len(), 9);
     words
 }
 
@@ -638,6 +659,17 @@ impl DomeInjection {
             STREAM2_DELAY_ORIG,
             "stream hook B delay slot",
         )?;
+
+        // Silence the effect spawner's PRG ERR flag-set: under the 1v2's
+        // tight heap a transient-alloc burst can fail (the spawn is skipped,
+        // which retail tolerates), and the flag would paint the dev error
+        // reporter's `PRG ERR%d` over the fight.
+        let prgerr_off = scus_off(scus, PRGERR_FLAG_SET_VA)?;
+        expect_word(scus, prgerr_off, PRGERR_FLAG_SET_ORIG, "PRG ERR flag-set")?;
+        scus_writes.push(Write {
+            off: prgerr_off,
+            bytes: nop().to_le_bytes().to_vec(),
+        });
 
         // --- Arena overlay: seed detour + template repoint + descriptor ------
         let mut overlay_writes = Vec::new();
