@@ -1044,14 +1044,15 @@ not by the static suite:
 > at decode level, and no scripted-battle op); the seed hook becomes a `j`
 > into the cave, the course-3 descriptor and roster land, the edit is
 > byte-deterministic and idempotent, composes with the Earth Egg price edit
-> in either order, and every touched sector stays EDC/ECC-valid. Live play
-> confirms the warp lands in the arena and round 1 fields Gi Delilas (the
-> course machinery executes).
+> in either order, and every touched sector stays EDC/ECC-valid.
 >
-> **Remaining live-verification gaps**: the full three-round run (win
-> continuation through the between-leg hub, and the course-3 settlement /
-> payout - the settle tables are course-indexed and course 3 may need a
-> reward hook before a full clear pays sensibly).
+> **Live-verified end to end**: the clerk dialog flows cleanly to the option,
+> the confirm shows, the warp lands in the arena, the course runs Gi -> Che ->
+> Lu one boss per round, a lost leg routes through the dome's own loss scenes
+> back to the venue (no game over), and a full clear settles benignly - the
+> course-indexed payout table simply has no course-3 row, so a clear currently
+> pays **zero coins**. The settlement reward hook (coins + the planned
+> custom-item prizes) is the outstanding follow-up.
 
 ### Fishing prize prices
 
