@@ -27,14 +27,32 @@ local FORMATION_CELL = 0x8007BD0C
 local ACTOR_TABLE    = 0x801C9370 -- 8 x u32 actor pointers
 local BATTLE_MAIN    = 0x15
 
+-- Custom 2-pool heap (FUN_8002b3d4 init / FUN_8002b468 alloc); gp=0x8007B318.
+local HEAP_DESC_PTR  = 0x8007BB58 -- gp+0x840: -> descriptor {TOP, pool_count}
+local MALLOC_ERR     = 0x8007B828 -- gp+0x510: += 0x20000 per failed malloc
+local LOADER_SUBSTATE = 0x8007BD71 -- gp+0xa59: battle scene-loader SM byte
+local RECORD_TABLE   = 0x801C9348 -- per-enemy decoded-record pointers
+
 local SSTATE   = probe.getenv("LEGAIA_SSTATE", "")
 local FRAMES   = probe.getenv_num("LEGAIA_FRAMES", 1800)
 local FORCE_AT = probe.getenv_num("LEGAIA_FORCE_AT", 120)
 local IDS_RAW  = probe.getenv("LEGAIA_IDS", "162,163,164")
+-- Optional party-roster override (comma list of character ids, e.g. "1" =
+-- Vahn only). Written to DAT_8007BD10[0..2] at install time; the battle
+-- setup FUN_80055B6C only re-seeds that table when byte 0 is zero, and the
+-- party-pack loader FUN_80052FA0 skips zero roster bytes - so this sheds
+-- the benched members' ~62 KB battle packs from the heap, the same net
+-- effect as the field-VM 0x3D PARTY_REMOVE idiom the ravine duels use.
+local PARTY_RAW = probe.getenv("LEGAIA_PARTY", "")
+local PARTY_TABLE = 0x8007BD10
 
 local ids = {}
 for tok in string.gmatch(IDS_RAW, "[^,%s]+") do
     ids[#ids + 1] = tonumber(tok)
+end
+local party = {}
+for tok in string.gmatch(PARTY_RAW, "[^,%s]+") do
+    party[#party + 1] = tonumber(tok)
 end
 
 local CSV = probe.csv_open(probe.out_path("delilas_battle_load.csv"),
@@ -55,22 +73,91 @@ local verdict_written = false
 local last_mode = -1
 local settle = 0
 
+-- Walk the heap free ring + report the malloc-err accumulator and the
+-- per-enemy record table, so a stuck verdict names WHERE the load died.
+local function heap_report(tag)
+    local desc = probe.read_u32(HEAP_DESC_PTR)
+    if desc == nil or desc == 0 then
+        CSV:row("0,0,0,%s heap: no descriptor", tag)
+        return
+    end
+    local top = probe.read_u32(desc) or 0
+    local err = probe.read_u32(MALLOC_ERR) or 0
+    local sub = probe.read_u8(LOADER_SUBSTATE) or 0
+    CSV:row("0,0,0,%s heap desc=0x%X top=0x%X malloc_err=0x%X loader_sub=0x%X",
+        tag, desc, top, err, sub)
+    local sent = top + 0xC
+    local node = probe.read_u32(top + 0x10)
+    local total, largest, n = 0, 0, 0
+    while node ~= nil and node ~= sent and n < 64 do
+        local size = probe.read_u32(node + 8) or 0
+        total = total + size
+        if size > largest then largest = size end
+        n = n + 1
+        CSV:row("0,0,0,%s free node @0x%X size=0x%X", tag, node, size)
+        node = probe.read_u32(node + 4)
+    end
+    CSV:row("0,0,0,%s free total=0x%X (%d KB) largest=0x%X nodes=%d",
+        tag, total, math.floor(total / 1024), largest, n)
+    for i = 0, 4 do
+        local r = probe.read_u32(RECORD_TABLE + i * 4) or 0
+        if r ~= 0 then
+            CSV:row("0,0,0,%s record[%d]=0x%X", tag, i, r)
+        end
+    end
+end
+
 local function verdict(note, mode)
     if verdict_written then return end
     verdict_written = true
     CSV:row("0,0x%X,%d,%s", mode, actors_seated(), note)
+    heap_report("at-verdict")
     CSV:close()
+end
+
+-- Allocator instrumentation. FUN_80017888 is the malloc wrapper
+-- (a0 = pool, a1 = size); its failure branch falls through to 0x800178B8
+-- only when the best-fit alloc FUN_8002B468 returned NULL. A hang at
+-- battle load stops vsync callbacks entirely, so these breakpoints are
+-- the only way to see the failing allocation and the heap at that moment.
+local MALLOC_ENTRY = 0x80017888
+local MALLOC_FAIL  = 0x800178B8
+
+local function reg(r, name)
+    local ok, v = pcall(function() return tonumber(r.GPR.n[name]) % 0x100000000 end)
+    if ok then return v end
+    return 0
 end
 
 probe.run({
     sstate = SSTATE,
     capture_frames = FRAMES,
-    on_arm = function()
+    on_arm = function(ctx)
+        probe.arm_breakpoint(MALLOC_ENTRY, "Exec", 4, "malloc", function()
+            if not installed then return end
+            local r = PCSX.getRegisters()
+            CSV:row("0,0,0,malloc pool=%d size=0x%X ra=0x%08X",
+                reg(r, "a0"), reg(r, "a1"), reg(r, "ra"))
+        end)
+        probe.arm_breakpoint(MALLOC_FAIL, "Exec", 4, "malloc_fail", function()
+            local r = PCSX.getRegisters()
+            CSV:row("0,0,0,MALLOC FAILED size=0x%X", reg(r, "s1"))
+            heap_report("at-malloc-fail")
+            verdict("VERDICT: malloc failed during battle load", last_mode)
+            ctx.request_quit = true
+        end)
         return {}
     end,
     on_capture = function(ctx, elapsed)
         local mode = probe.read_u16(GAME_MODE) or -1
         if elapsed == FORCE_AT then
+            heap_report("pre-install")
+            if #party > 0 then
+                for i = 0, 2 do
+                    probe.write_u8(PARTY_TABLE + i, party[i + 1] or 0)
+                end
+                CSV:row("%d,0x%X,0,party override=%s", elapsed, mode, PARTY_RAW)
+            end
             for i = 0, 3 do
                 probe.write_u8(FORMATION_CELL + i, ids[i + 1] or 0)
             end

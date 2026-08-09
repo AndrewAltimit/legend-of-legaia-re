@@ -6,9 +6,9 @@
 //! into the dome arena and runs a brand-new 3-round contest course - Gi ->
 //! Che -> Lu, one 1v1 per round - installed by the companion code injection
 //! [`crate::delilas_dome`], which also pays 5000 coins for a full clear.
-//! (A Che & Lu double-team round was tried and is heap-infeasible - two
-//! distinct large boss meshes overflow the load even in a dome round; see
-//! the `delilas_dome` module doc.)
+//! (A Che & Lu double-team round was tried and misses the battle heap
+//! budget by single-digit KB - the arithmetic is in the `delilas_dome`
+//! module doc and `docs/subsystems/battle.md`.)
 //!
 //! ## Why the arena, not a scripted battle
 //!
@@ -17,9 +17,10 @@
 //! so it never installs the battle-effect / summon / player-magic asset
 //! residency, and casting a spell (or opening the magic list) dereferences
 //! unloaded buffers and freezes - which is exactly why the retail Muscle Dome
-//! disables magic. And the battle mesh heap holds only about one large boss's
-//! worth of *distinct* geometry, so three distinct Delilas meshes at once
-//! overflow it. Routing the challenge through the dome's own arena fixes both:
+//! disables magic. And the battle heap's distinct-monster budget
+//! (~152-156 KB) holds only one Delilas-sized block (~82 KB each) plus a
+//! normal-sized partner, so seating two or three distinct Delilas at once
+//! fails the load. Routing the challenge through the dome's arena fixes both:
 //! the dome loads one boss per round and disables magic by design. This module
 //! is therefore only the **casino-menu half** - the menu option and the warp;
 //! the course itself is [`crate::delilas_dome`].

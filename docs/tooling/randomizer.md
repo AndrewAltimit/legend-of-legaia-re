@@ -964,13 +964,24 @@ duels spread across the story). It is delivered as a dome course rather than
 a single fight for two reasons live testing forced: a normal battle staged
 from the town scene `koin1` freezes on any spell (the scene never installs
 battle-effect / summon / player-magic asset residency - which is exactly why
-the Muscle Dome disables magic), and the battle mesh heap cannot hold more
-than one distinct large boss mesh. A **double-team round is genuinely
-impossible**: a revision seated Che & Lu together, betting that a dome
-round's single resident player battle form (a normal encounter carries
-three) would free the heap for the second boss - live play froze at the
-round-1 load. Two distinct large boss meshes overflow the heap even in a
-dome round; only instanced duplicates of one id share a mesh. The option is
+the Muscle Dome disables magic), and the battle heap cannot seat two
+Delilas-sized blocks at once. A **double-team round misses the battle heap
+budget** - by single-digit KB, but structurally: a revision seated Che & Lu
+together and live play froze at the round-1 load. The mechanism is fully
+pinned (see the battle-heap-budget section of
+[`battle.md`](../subsystems/battle.md#the-battle-heap-budget---why-a-formation-of-large-distinct-bosses-cannot-load)):
+each distinct monster costs its block's pre-texture bytes in the battle heap
+(Gi/Che/Lu = 84.0/81.2/82.0 KB - the three largest siblings on the disc bar
+one), the workable distinct-monster budget is ~145 KB, and any two Delilas
+together need 163-166 KB. The malloc that fails returns NULL and the loader
+copies through it unchecked - hence a freeze, not an error. Only instanced
+duplicates of one id share a mesh (the loader dedupes by formation id); a
+probe-loaded Gi + Gimard pair (123 KB) runs fine, so nothing but the byte
+budget stops a distinct pair. A future true 1v2 is feasible by slimming the
+siblings' animation payloads in the monster archive (~20-25 KB combined out
+of their ~50 KB each of packed keyframes - roughly two castable-spell
+animations per sibling); a 1v3 with all three distinct siblings would need
+~105 KB reclaimed and is not realistic without deeper surgery. The option is
 gated on story flag `0x378` - the flag the Koru death event latches and the
 world map reads to flip the ravine entrance from `nilboa` to `nilboa2` - so
 until that event the clerk brushes the player off. On by default in the web
@@ -1063,9 +1074,10 @@ not by the static suite:
 > course runs its roster one round at a time, a lost leg routes through the
 > dome's own loss scenes back to the venue (no game over), and settlement is
 > benign. The double-team revision was live-falsified (freeze at the round-1
-> load - two distinct large boss meshes overflow even a dome round) and
-> reverted. The 5000-coin payout hook passes the static + disc oracles;
-> its live confirmation and the custom-item prize are the follow-ups.
+> load - two distinct Delilas blocks miss the battle heap budget; the byte
+> arithmetic is in `battle.md`'s heap-budget section) and reverted. The
+> 5000-coin payout hook passes the static + disc oracles; its live
+> confirmation and the custom-item prize are the follow-ups.
 
 ### Fishing prize prices
 

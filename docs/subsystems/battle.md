@@ -2039,6 +2039,54 @@ Two SCUS-side archive loaders feed the battle state. Their record-walk helpers:
 
 Both archive loaders interact with the battle character / monster slots via the 8-actor table at `0x801C9370`.
 
+### The battle heap budget - why a formation of large distinct bosses cannot load
+
+Everything the battle loader places in RAM comes from one custom heap, and its arithmetic is what bounds a formation - not VRAM (each battle seat owns its own texture-page column at `(320 + slot*64, 256)` / CLUT row `484 + slot`, so distinct enemies never contend), and not the AI (a load failure freezes the machine before any AI runs; retail's own `[161,161,161]` scripted fight proves multi-instance AI works).
+
+**The heap.** `FUN_8002B3D4(pool_count=2, DAT_8007B414, size)` initialises a
+best-fit free-list heap with 12-byte node headers, one shared free ring and a
+per-pool allocated ring (so a pool can be mass-freed). The stage-init path
+(`FUN_8001E1B4`) sizes it `0x134800` (~1.23 MB), arena
+`0x80091800..0x801C6000`. With `gp = 0x8007B318`: descriptor pointer
+`gp+0x840 = 0x8007BB58`, alloc counter `gp+0x488 = 0x8007B7A0`, malloc-error
+accumulator `gp+0x510 = 0x8007B828`. The malloc wrapper
+`FUN_80017888(pool, size)` → `FUN_8002B468` **returns NULL on exhaustion**
+(dev-console `malloc err size %d`); the monster streamer `FUN_800542C8` stores
+and copies through that pointer **unchecked**, so an over-budget formation
+writes the decoded block over low kernel RAM and the machine locks inside the
+mode-`0x15` tick (vsync stops - an emulator-side observer sees the mode byte
+parked at `0x15` forever).
+
+**The per-monster RAM cost is `block[+0x08]` bytes** (the texture-pool offset): stats + name + TMD + all action entries and animation streams. The texture pool itself never enters the heap - it is decoded into the staging area at `DAT_8007B728 + 0x12800` (inside the GPU packet buffer) and uploaded to VRAM from there (`FUN_80055468`). The loader dedupes by id: only the first occurrence of an id in the formation cells `DAT_8007BD0C[0..3]` streams and allocates; duplicate seats share the record and mesh, which is why instanced trios are nearly free.
+
+**The measured ledger** (allocator breakpoint trace over a forced battle load
+from a town scene; every row `FUN_80017888(0, size)`): scene asset buffer
+`0x62C00`, GPU primitive-packet double buffer `0x64000` (`FUN_8001E3B8`,
+`packet_size 0x32000 << 1`), the enemy stager's fixed working buffer `0x2E390`
+(`FUN_800513F0` @`0x80051740`, stored `gp+0xa5c = 0x8007BD74` - **fixed-size,
+party-count-independent**; shrinking the party roster `DAT_8007BD10` does not
+reclaim it), battle ctx `0x7A34` (`FUN_80055B6C`), a transient `0x19000`
+party-mesh decode temp (`FUN_80052FA0`, freed in-loop), sound streaming
+`0x1014` chunks, then one allocation per distinct monster, then a post-monster
+tail (`0x1800` + small nodes).
+
+What remains at the first monster allocation in that context is ~`0x28230`
+(164.4 KB); the measured post-monster tail (`0x1800` + `0x3100` + small
+nodes) is ~19.5 KB, so the workable distinct-monster budget is **~145 KB**.
+Probe-bracketed: `[162,10]` (123.3 KB of monster blocks) loads and runs with
+18.5 KB free; `[162,79]` (152.2 KB) seats both monsters but dies on the
+`0x3100` tail alloc; `[162,163]` (165.2 KB) dies on the second monster
+itself. Retail's own authoring respects the budget: the largest distinct-id
+formation on the disc costs 124.3 KB of heap ([108,3] / [107,2] in the Drake
+kingdom bundle), and no retail formation exceeds two distinct ids. The three
+Delilas blocks cost `0x15030`/`0x144D0`/`0x147E8` (84.0/81.2/82.0 KB) each -
+any two together (163-166 KB) overshoot by ~20-25 KB, which is the entire
+reason the Delilas Challenge dome course fields them one per round.
+Instrument: `scripts/pcsx-redux/autorun_delilas_battle_load.lua` (formation
+install + allocator breakpoints + free-ring walk); offline sibling
+`scripts/asset-investigation/battle-heap-walk.py` (free + allocated rings
+from a save-state RAM extract).
+
 ## Character record layout
 
 Stride `0x414` bytes per character, base `0x80084708` (so character `n` lives at `0x80084708 + n*0x414`). Surfaced by the inventory/spell helpers (`FUN_80042558`, `FUN_80042DBC`, `FUN_800432BC`, `FUN_800431FC`, `FUN_80043264`):

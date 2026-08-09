@@ -25,11 +25,17 @@
 //! together via a second-seat detour in the installer, betting that a dome
 //! round's single resident player battle form (a normal encounter carries
 //! three) would free the heap for the second distinct boss mesh. Live play
-//! froze at the round-1 battle load: **two distinct large boss meshes
-//! overflow the mesh heap even in a dome round**. The only affordable 1v2
-//! is two copies of the *same* id (instanced duplicates share one mesh - the
-//! `[162,162,162]` probe loaded fine), so a distinct-pair round is off the
-//! table, not merely untuned. Don't re-walk it.
+//! froze at the round-1 battle load: **two distinct Delilas blocks miss the
+//! battle heap budget** - the bet was wrong because the party-side buffer is
+//! fixed-size, not per-member. The full arithmetic is pinned in
+//! `docs/subsystems/battle.md` (heap-budget section): each distinct monster
+//! costs its block's pre-texture bytes (Gi/Che/Lu = 84.0/81.2/82.0 KB), the
+//! workable distinct-monster budget is ~145 KB, any Delilas pair needs
+//! 163-166 KB, and the failed malloc returns NULL that the loader uses
+//! unchecked - hence a freeze. Duplicates of the *same* id are free
+//! (the loader dedupes by formation id - `[162,162,162]` loads), so a twins
+//! round works today; a distinct-pair round would first need ~20-25 KB of
+//! the siblings' animation payload slimmed out of the monster archive.
 //!
 //! ## The six edits (all in PROT 0977 + a SCUS cave; koin1 is separate)
 //!
