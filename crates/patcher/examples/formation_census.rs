@@ -59,6 +59,11 @@ fn main() -> anyhow::Result<()> {
     }
 
     println!("total formations: {}", rows.len());
+    let mut all_ids: BTreeSet<u8> = BTreeSet::new();
+    for (_, _, ids, _, _, _) in &rows {
+        all_ids.extend(ids.iter().copied());
+    }
+    println!("all-formation id set ({}): {:?}", all_ids.len(), all_ids);
     rows.sort_by_key(|r| std::cmp::Reverse(r.3));
     println!("\ntop 25 by DISTINCT-id decoded-size sum (the RAM cost if blocks load once per id):");
     for (idx, f, ids, dsum, tsum, rnd) in rows.iter().take(25) {

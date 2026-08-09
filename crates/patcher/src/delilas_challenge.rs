@@ -3,12 +3,12 @@
 //! The Muscle Dome entry clerk (scene `koin1`, the P1 interaction record that
 //! carries the enter / who-enrolls / difficulty menus) gains a fourth option on
 //! the "who will be entering" picker: **Delilas Challenge**. Picking it warps
-//! into the dome arena and runs a brand-new 3-round contest course - Gi ->
-//! Che -> Lu, one 1v1 per round - installed by the companion code injection
+//! into the dome arena and runs a brand-new 2-round contest course - Che & Lu
+//! together (1v2), then Gi (1v1) - installed by the companion code injection
 //! [`crate::delilas_dome`], which also pays 5000 coins for a full clear.
-//! (A Che & Lu double-team round was tried and misses the battle heap
-//! budget by single-digit KB - the arithmetic is in the `delilas_dome`
-//! module doc and `docs/subsystems/battle.md`.)
+//! (The double-team fits the battle heap by streaming slim clones from
+//! unreachable archive slots - the arithmetic and the mechanism are in the
+//! `delilas_dome` module doc and `docs/subsystems/battle.md`.)
 //!
 //! ## Why the arena, not a scripted battle
 //!
@@ -17,13 +17,13 @@
 //! so it never installs the battle-effect / summon / player-magic asset
 //! residency, and casting a spell (or opening the magic list) dereferences
 //! unloaded buffers and freezes - which is exactly why the retail Muscle Dome
-//! disables magic. And the battle heap's distinct-monster budget
-//! (~152-156 KB) holds only one Delilas-sized block (~82 KB each) plus a
-//! normal-sized partner, so seating two or three distinct Delilas at once
-//! fails the load. Routing the challenge through the dome's arena fixes both:
-//! the dome loads one boss per round and disables magic by design. This module
-//! is therefore only the **casino-menu half** - the menu option and the warp;
-//! the course itself is [`crate::delilas_dome`].
+//! disables magic. And the battle heap's distinct-monster budget (~145 KB)
+//! holds only one full Delilas block (~82 KB each) plus a normal-sized
+//! partner - the double-team round only fits because the course streams
+//! slim clones (see [`crate::delilas_dome`]). Routing the challenge through
+//! the dome's arena fixes both: the arena stages its own rounds and disables
+//! magic by design. This module is therefore only the **casino-menu half** -
+//! the menu option and the warp; the course itself is [`crate::delilas_dome`].
 //!
 //! ## Mechanism - script + data, plus the companion code hook
 //!
@@ -855,7 +855,7 @@ fn write_u24(buf: &mut [u8], at: usize, v: u32) -> Result<(), String> {
 /// ```text
 ///        if KORU_DEFEATED -> AVAIL          ; else fall to the decline flow
 ///        jmp DECLINE_TAIL
-/// AVAIL: text  "You'll face Gi, Che and Lu, one at a time!"
+/// AVAIL: text  "You'll face Che and Lu, then Gi!"
 ///        0x27 picker: [0] -> WARP, [1] -> CANCEL
 ///        label "Bring them on!"  label "Maybe later."
 /// WARP:  55 09                              ; SET dome-active (0x509)
@@ -900,7 +900,7 @@ fn build_branch(base: usize, common_tail: usize, decline_tail: usize) -> Result<
 
     // AVAIL: confirm picker (immediate-labels form, entries then labels).
     labels.push((Label::Avail, b.len()));
-    b.extend(seg("You'll face Gi, Che and Lu, one at a time!"));
+    b.extend(seg("You'll face Che and Lu, then Gi!"));
     b.push(0x27);
     b.extend_from_slice(&[0, 0]);
     fixups.push((b.len() - 2, Label::Warp));

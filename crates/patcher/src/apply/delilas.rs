@@ -3,19 +3,23 @@
 //! Two coordinated halves ship together (the koin1 warp is meaningless without
 //! the arena course it warps into, and vice-versa):
 //!
-//! - [`inject_delilas_dome`] - the code-injection half: a new 3-round dome
-//!   *course* (Gi -> Che -> Lu) installed into the arena overlay (PROT 0977)
-//!   plus a `SCUS_942.54` routine cave (see [`crate::delilas_dome`]).
+//! - [`inject_delilas_dome`] - the code-injection half: a 2-round dome
+//!   *course* (Che & Lu double-team, then Gi) installed into the arena overlay
+//!   (PROT 0977), a `SCUS_942.54` routine cave + stream-map hook, and the two
+//!   slim-clone archive slots the double-team round streams (see
+//!   [`crate::delilas_dome`]).
 //! - the koin1 half: a fourth "who will enter" enrollment option that warps
 //!   into the arena requesting that course (see [`crate::delilas_challenge`]).
 
 use super::*;
 
+use legaia_asset::monster_archive;
 use legaia_asset::scene_asset_table::encode_size_word;
 
 use crate::delilas_challenge::DelilasSites;
 use crate::delilas_dome::{
-    ARENA_BASE_VA, ARENA_OVERLAY_PROT_INDEX, DomeInjection, ROUTINE_VA, SEED_HOOK_VA,
+    ARENA_BASE_VA, ARENA_OVERLAY_PROT_INDEX, CLONE_IDS, DELILAS_PAIR_IDS, DomeInjection,
+    ROUTINE_VA, SEED_HOOK_VA,
 };
 
 /// Outcome of a Delilas Challenge application.
@@ -36,9 +40,34 @@ pub struct DelilasChallengeReport {
     pub changed: bool,
 }
 
-/// Inject the **Delilas dome course** (the code-hook half): a new 3-round
-/// Muscle Dome course - Gi -> Che -> Lu, one boss per round - installed into
-/// the arena overlay (PROT 0977) and a `SCUS_942.54` routine cave. See
+/// Build the two slim-clone archive slots for the double-team round: Che
+/// (163) and Lu (164) minus their generic-AI castable spell entries, encoded
+/// as slots for [`CLONE_IDS`] (190/191). The originals are read from - and
+/// never written back to - the user's own disc; see
+/// `legaia_asset::monster_archive::slim_castables` for what is dropped and
+/// why the fight cannot tell.
+fn build_clone_slots(patcher: &DiscPatcher) -> Result<[(u16, Vec<u8>); 2]> {
+    let mut out: Vec<(u16, Vec<u8>)> = Vec::with_capacity(2);
+    for (&src, &dst) in DELILAS_PAIR_IDS.iter().zip(CLONE_IDS.iter()) {
+        let slot = patcher
+            .monster_slot(src)
+            .with_context(|| format!("read monster slot {src}"))?;
+        let size = u32::from_le_bytes(slot[..4].try_into().unwrap()) as usize;
+        let block = legaia_lzs::decompress(&slot[4..], size)
+            .with_context(|| format!("decode monster block {src}"))?;
+        let slim = monster_archive::slim_castables(&block)
+            .with_context(|| format!("slim monster block {src}"))?;
+        let encoded = monster_archive::encode_slot(&slim.bytes)
+            .with_context(|| format!("encode slim clone slot {dst}"))?;
+        out.push((dst, encoded));
+    }
+    Ok(out.try_into().expect("exactly two clone slots"))
+}
+
+/// Inject the **Delilas dome course** (the code-hook half): a 2-round Muscle
+/// Dome course - Che & Lu together, then Gi - installed into the arena
+/// overlay (PROT 0977), a `SCUS_942.54` routine cave + stream-map hook, and
+/// the two slim-clone archive slots the double-team round streams. See
 /// [`crate::delilas_dome`] for the byte-level design.
 ///
 /// Idempotent: if the seed hook is already the injected `j ROUTINE_VA`, the
@@ -61,13 +90,23 @@ pub fn inject_delilas_dome(patcher: &mut DiscPatcher) -> Result<bool> {
         return Ok(false);
     }
 
+    // Plan everything before writing anything: the code plan validates every
+    // hook fingerprint, and the clone slots must build from the disc's own
+    // archive (they are read from the pristine 163/164 slots).
     let plan = DomeInjection::plan(&scus, &overlay)?;
-    // SCUS-cave writes (routine + relocated template + roster), then the arena
-    // overlay writes (seed detour + template repoint + course-3 descriptor).
+    let clones = build_clone_slots(patcher)?;
+
+    // Slim-clone archive slots first (data the hooks will stream), then the
+    // SCUS-cave writes + stream hook, then the arena overlay detours.
+    for (dst, slot) in &clones {
+        patcher
+            .patch_monster_slot(*dst, slot)
+            .with_context(|| format!("write slim clone slot {dst}"))?;
+    }
     for w in &plan.scus {
         patcher
             .patch_named_file(SCUS_NAME, w.off as u64, &w.bytes)
-            .with_context(|| format!("write delilas-dome SCUS cave at {:#x}", w.off))?;
+            .with_context(|| format!("write delilas-dome SCUS write at {:#x}", w.off))?;
     }
     for w in &plan.overlay {
         patcher
@@ -79,7 +118,7 @@ pub fn inject_delilas_dome(patcher: &mut DiscPatcher) -> Result<bool> {
 
 /// Install the **Delilas Challenge** on the Muscle Dome enrollment menu: a
 /// fourth "who will enter" option that warps into the arena and runs the new
-/// Delilas dome course (Gi -> Che -> Lu), gated on the Koru death event (story
+/// Delilas dome course (Che & Lu together, then Gi), gated on the Koru death event (story
 /// flag `0x378` - the `nilboa2` switch). Losing a dome round returns to the
 /// venue (no game over) by the dome's own design.
 ///

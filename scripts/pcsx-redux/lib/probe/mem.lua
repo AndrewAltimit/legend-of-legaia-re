@@ -104,6 +104,14 @@ function M.write_u16(addr, value)
     return ok
 end
 
+function M.write_u32(addr, value)
+    local off = M.ram_offset(addr)
+    if off == nil or off + 4 > RAM_SIZE then return false end
+    local mf = get_mem_file()
+    local ok = pcall(function() mf:writeU32At(bit.band(value, 0xFFFFFFFF), off) end)
+    return ok
+end
+
 -- Scratchpad reader. The 1 KiB scratchpad sits at 0x1F800000 and is
 -- accessible via PCSX.getScratchPtr() as a uint8_t*. Any virtual
 -- address in 0x1F800000..0x1F8003FF maps to that buffer.

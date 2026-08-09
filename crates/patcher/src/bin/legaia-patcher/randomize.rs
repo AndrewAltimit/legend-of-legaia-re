@@ -222,20 +222,21 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("shiny_seru = false".to_string());
     }
 
-    // Delilas Challenge: a fourth Muscle Dome enrollment option - fight all
-    // a 3-round Muscle Dome course fighting Gi -> Che -> Lu one 1v1 per round,
-    // routed through the real arena (magic-off, memory-safe), gated on the
-    // Koru event (story flag 0x378). Losing a round returns to the venue by
-    // the dome's design; a full clear pays 5000 coins. koin1 script + a
-    // companion arena code injection.
+    // Delilas Challenge: a fourth Muscle Dome enrollment option - a 2-round
+    // arena course, Che & Lu double-team (1v2) then Gi (1v1), routed through
+    // the real arena (magic-off), gated on the Koru event (story flag 0x378).
+    // The 1v2 fits the battle heap via slim clones at unreachable archive
+    // slots + a stream-map hook; the originals are untouched. Losing a round
+    // returns to the venue by the dome's design; a full clear pays 5000
+    // coins. koin1 script + a companion arena/SCUS code injection.
     if args.delilas_challenge {
         match apply::apply_delilas_challenge(&mut patcher) {
             Ok(report) if report.changed => {
                 println!(
                     "delilas-challenge: Muscle Dome enrollment offers the Delilas Challenge \
-                     (a 3-round dome course, Gi/Che/Lu one boss per round; a full clear pays \
-                     5000 coins; unlocks after Nivora Ravine; {} bytes of new koin1 script \
-                     in PROT {}{})",
+                     (a 2-round dome course: Che & Lu double-team, then Gi; a full clear \
+                     pays 5000 coins; unlocks after Nivora Ravine; {} bytes of new koin1 \
+                     script in PROT {}{})",
                     report.grown_bytes,
                     report.entry_idx,
                     if report.dome_injected {

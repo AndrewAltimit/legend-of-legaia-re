@@ -73,7 +73,7 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
     let seed_off = (SEED_HOOK_VA - ARENA_BASE_VA) as usize;
     let seed = u32::from_le_bytes(overlay[seed_off..seed_off + 4].try_into().unwrap());
     assert_eq!(seed >> 26, 0x02, "seed hook detours with a `j`");
-    // Course-3 descriptor {round_count=3, roster_ptr} sits at 0x801D1A20.
+    // Course-3 descriptor {round_count=2, roster_ptr} sits at 0x801D1A20.
     let desc_off = (COURSE3_DESC_VA - ARENA_BASE_VA) as usize;
     assert_eq!(
         &overlay[desc_off..desc_off + 8],
@@ -93,7 +93,7 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
     let roster_off =
         legaia_asset::item_names::file_offset_for_va(&scus, ROSTER_VA).expect("resolve roster VA");
     assert!(
-        scus[roster_off..roster_off + 24].iter().any(|&b| b != 0),
+        scus[roster_off..roster_off + 16].iter().any(|&b| b != 0),
         "Delilas roster must be present in the cave"
     );
 

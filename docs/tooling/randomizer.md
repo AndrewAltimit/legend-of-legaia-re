@@ -44,7 +44,7 @@ disc-gated, so CI runs without a disc. There is also a
   for running away, charming an enemy onto your side, shiny Seru, and Seru
   trading.
 - **A new dome course retail never ships** - the [Delilas Challenge](#delilas-challenge),
-  a fourth Muscle Dome enrollment option that runs a brand-new 3-round arena
+  a fourth Muscle Dome enrollment option that runs a brand-new 2-round arena
   course - Gi, Che and Lu, one duel per round - paying 5000 coins for a
   clear (a koin1 script edit plus a small arena code injection).
 - **Textures** - replace any TIM on the disc with a user-authored PNG
@@ -289,7 +289,7 @@ unless asked for:
 | `--seru-trade` | vendors swap one of a character's seru for another, reseeding every two in-game hours | `--seru-trade-offers N` caps offers per vendor | [Seru trading](#seru-trading) |
 | `--jewel-fix` | the boss cinematic casts (Xain, Cort, the Delilas trio) respect elemental guards like every other special | - | [Jewel fix](#jewel-fix) |
 | `--approach-softlock-fix` | a monster whose approach animation dies mid-walk is re-staged and resumes walking instead of parking the battle forever (the "endless camera orbit") | - | [Approach-softlock fix](#approach-softlock-fix) |
-| `--delilas-challenge` | a fourth Muscle Dome enrollment option: a new 3-round arena course (Gi, Che, Lu - one duel per round; 5000 coins for a clear); unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
+| `--delilas-challenge` | a fourth Muscle Dome enrollment option: a new 2-round arena course (Che & Lu double-team, then Gi; 5000 coins for a clear); unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
 | `--fishing-price ITEM=POINTS` | set the fishing-exchange point cost of a prize (e.g. the Buma Water Egg); the price also gates when the prize appears | repeatable / comma-separated | [Fishing prize prices](#fishing-prize-prices) |
 | `--rename-location INDEX=NAME` | rename a world-map location (save / load / pause + quick-travel menu), e.g. an element cave to match a re-elemented party | repeatable | [Location names](#location-names) |
 | `--earth-egg-price VALUE` | set the casino-coin threshold to obtain the Earth Egg (Sol Tower Prize Counter; retail 100000), gate + debit together | single value | [Earth Egg coin threshold](#earth-egg-coin-threshold) |
@@ -956,36 +956,45 @@ and an already-fixed image is a no-op.
 
 `--delilas-challenge` adds a fourth option to the Muscle Dome enrollment
 clerk's "who will be entering" menu (`delilas_challenge` module): the
-**Delilas Challenge** - a brand-new 3-round Muscle Dome *course* fighting
-Gi, then Che, then Lu Delilas back to back, one duel per round, with **5000
-coins** paid into the dome winnings counter for a full clear. The gauntlet
-exists nowhere in retail (the Nivora Ravine confrontations are one-off solo
-duels spread across the story). It is delivered as a dome course rather than
-a single fight for two reasons live testing forced: a normal battle staged
+**Delilas Challenge** - a brand-new 2-round Muscle Dome *course* - **Che &
+Lu Delilas together (1v2), then Gi (1v1)** - with **5000 coins** paid into
+the dome winnings counter for a full clear. The gauntlet exists nowhere in
+retail (the Nivora Ravine confrontations are one-off solo duels spread
+across the story, and no retail formation anywhere fields two distinct
+Delilas). It is delivered as a dome course because a normal battle staged
 from the town scene `koin1` freezes on any spell (the scene never installs
 battle-effect / summon / player-magic asset residency - which is exactly why
-the Muscle Dome disables magic), and the battle heap cannot seat two
-Delilas-sized blocks at once. A **double-team round misses the battle heap
-budget** - by single-digit KB, but structurally: a revision seated Che & Lu
-together and live play froze at the round-1 load. The mechanism is fully
-pinned (see the battle-heap-budget section of
-[`battle.md`](../subsystems/battle.md#the-battle-heap-budget---why-a-formation-of-large-distinct-bosses-cannot-load)):
-each distinct monster costs its block's pre-texture bytes in the battle heap
-(Gi/Che/Lu = 84.0/81.2/82.0 KB - the three largest siblings on the disc bar
-one), the workable distinct-monster budget is ~145 KB, and any two Delilas
-together need 163-166 KB. The malloc that fails returns NULL and the loader
-copies through it unchecked - hence a freeze, not an error. Only instanced
-duplicates of one id share a mesh (the loader dedupes by formation id); a
-probe-loaded Gi + Gimard pair (123 KB) runs fine, so nothing but the byte
-budget stops a distinct pair. A future true 1v2 is feasible by slimming the
-siblings' animation payloads in the monster archive (~20-25 KB combined out
-of their ~50 KB each of packed keyframes - roughly two castable-spell
-animations per sibling); a 1v3 with all three distinct siblings would need
-~105 KB reclaimed and is not realistic without deeper surgery. The option is
-gated on story flag `0x378` - the flag the Koru death event latches and the
-world map reads to flip the ravine entrance from `nilboa` to `nilboa2` - so
-until that event the clerk brushes the player off. On by default in the web
-patcher's Balanced and Full Chaos presets.
+the Muscle Dome disables magic).
+
+The double-team round is the interesting engineering: two full Delilas
+blocks (163-166 KB of pre-texture bytes) overshoot the battle heap's ~145 KB
+distinct-monster budget, and the failing malloc returns NULL that the loader
+uses unchecked - a naive 1v2 froze at the round-1 load (the byte-level
+mechanism is the battle-heap-budget section of
+[`battle.md`](../subsystems/battle.md#the-battle-heap-budget---why-a-formation-of-large-distinct-bosses-cannot-load)).
+The shipped fix streams **slim clones** without touching the originals:
+
+- `legaia_asset::monster_archive::slim_castables` rebuilds Che's and Lu's
+  blocks minus their generic-AI castable spell entries (the exact set the
+  enemy spell picker can roll; mesh, stats, name, reactions, specials, and
+  the `agl=0xFF` choreography entries survive byte-identical). The slim pair
+  costs ~133 KB - under budget.
+- The clones are written to archive slots 190/191, two ids no formation,
+  encounter, or dome roster on the disc ever references (full-disc sweep;
+  also outside the `--unused-enemies` pool). The real 163/164 slots are
+  never modified, so the ravine duels and the Master course keep every move.
+- The formation seats the **real ids** 163/164 - the bespoke
+  attack-attack-special AI, the names, and every id-keyed table stay
+  genuine. Two 10-word cave routines hooked at the loader's two
+  id-to-slot-offset sites (`0x8005451C` in the streamer, `0x80054B74` in
+  the first-enemy pre-streamer) add 27 to the id **for the archive fetch
+  only**, and only while the course word reads `0x131` (the Delilas course,
+  round 0) - every other battle streams the untouched originals.
+
+The option is gated on story flag `0x378` - the flag the Koru death event
+latches and the world map reads to flip the ravine entrance from `nilboa`
+to `nilboa2` - so until that event the clerk brushes the player off. On by
+default in the web patcher's Balanced and Full Chaos presets.
 
 The feature is two coordinated halves that ship together
 (`apply_delilas_challenge` installs both):

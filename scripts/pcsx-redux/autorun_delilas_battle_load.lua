@@ -45,6 +45,19 @@ local IDS_RAW  = probe.getenv("LEGAIA_IDS", "162,163,164")
 -- effect as the field-VM 0x3D PARTY_REMOVE idiom the ravine duels use.
 local PARTY_RAW = probe.getenv("LEGAIA_PARTY", "")
 local PARTY_TABLE = 0x8007BD10
+-- Optional RAM pokes applied at install time, "addr:word,addr:word,..."
+-- (hex or decimal). Used to dress-rehearse the shipped Delilas stream-map
+-- hook: the save state carries vanilla SCUS code in RAM, so the cave routine
+-- + the `j` hook word (read out of the patched disc's SCUS) are poked in
+-- here while the CLONE SLOTS stream from the patched --iso image.
+local POKES_RAW = probe.getenv("LEGAIA_POKES", "")
+local pokes = {}
+for pair in string.gmatch(POKES_RAW, "[^,%s]+") do
+    local a, v = string.match(pair, "([^:]+):(.+)")
+    if a and v then
+        pokes[#pokes + 1] = { addr = tonumber(a), val = tonumber(v) }
+    end
+end
 
 local ids = {}
 for tok in string.gmatch(IDS_RAW, "[^,%s]+") do
@@ -152,6 +165,10 @@ probe.run({
         local mode = probe.read_u16(GAME_MODE) or -1
         if elapsed == FORCE_AT then
             heap_report("pre-install")
+            for _, p in ipairs(pokes) do
+                probe.write_u32(p.addr, p.val)
+                CSV:row("%d,0x%X,0,poke 0x%08X=0x%08X", elapsed, mode, p.addr, p.val)
+            end
             if #party > 0 then
                 for i = 0, 2 do
                     probe.write_u8(PARTY_TABLE + i, party[i + 1] or 0)

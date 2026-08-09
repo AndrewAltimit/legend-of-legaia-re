@@ -9,35 +9,49 @@
 //! installs the battle-effect / summon / player-magic asset residency, and a
 //! spell cast (or opening the magic list) dereferences unloaded buffers and
 //! freezes. That is exactly why the retail Muscle Dome disables magic - its
-//! arena doesn't load those assets. And the battle mesh heap holds only about
-//! one large boss's worth of *distinct* geometry, so three distinct Delilas
-//! meshes at once overflow it (two already hang the load).
+//! arena doesn't load those assets. And the battle heap's distinct-monster
+//! budget (~145 KB) cannot seat two full Delilas blocks at once.
 //!
-//! Routing the challenge through the dome's own arena fixes all of that: the
-//! dome loads one fighter + the round's boss, disables magic by design, and
-//! runs the fight in a real arena. A dome contest is a *course* - a fixed
+//! Routing the challenge through the dome's own arena fixes the residency
+//! problem, and the slim-clone stream (below) fixes the heap one. A dome
+//! contest is a *course* - a fixed
 //! roster fought one round at a time (the installer `FUN_801D1510` reads the
 //! round's monster id from a course roster and seats it as the sole enemy).
-//! So the Delilas Challenge is a **new 3-round course**: Gi -> Che -> Lu,
-//! one boss per round.
+//! So the Delilas Challenge is a **2-round course**: Che & Lu together
+//! (1v2), then Gi (1v1).
 //!
-//! **Falsified: a 1v2 double-team round.** A revision seated Che & Lu
-//! together via a second-seat detour in the installer, betting that a dome
-//! round's single resident player battle form (a normal encounter carries
-//! three) would free the heap for the second distinct boss mesh. Live play
-//! froze at the round-1 battle load: **two distinct Delilas blocks miss the
-//! battle heap budget** - the bet was wrong because the party-side buffer is
-//! fixed-size, not per-member. The full arithmetic is pinned in
-//! `docs/subsystems/battle.md` (heap-budget section): each distinct monster
-//! costs its block's pre-texture bytes (Gi/Che/Lu = 84.0/81.2/82.0 KB), the
-//! workable distinct-monster budget is ~145 KB, any Delilas pair needs
-//! 163-166 KB, and the failed malloc returns NULL that the loader uses
-//! unchecked - hence a freeze. Duplicates of the *same* id are free
-//! (the loader dedupes by formation id - `[162,162,162]` loads), so a twins
-//! round works today; a distinct-pair round would first need ~20-25 KB of
-//! the siblings' animation payload slimmed out of the monster archive.
+//! ## How the double-team round fits the battle heap
 //!
-//! ## The six edits (all in PROT 0977 + a SCUS cave; koin1 is separate)
+//! Two distinct Delilas blocks (163-166 KB of pre-texture bytes) overshoot
+//! the measured ~145 KB distinct-monster budget by ~20-25 KB - a naive 1v2
+//! froze at the round-1 load (`docs/subsystems/battle.md`, heap-budget
+//! section: the failed malloc returns NULL and the loader copies through it
+//! unchecked). Neither VRAM nor the AI is involved, so the fix is to shrink
+//! what the loader *streams*, without touching what the game *is*:
+//!
+//! - **Slim clones.** `legaia_asset::monster_archive::slim_castables`
+//!   rebuilds Che's and Lu's blocks minus their generic-AI castable spell
+//!   entries (the ~5-6 KB packed keyframe streams the AI picker can roll;
+//!   mesh, stats, name, reactions, approach/special entries, and the two
+//!   `agl=0xFF` choreography entries all survive byte-identical). The slim
+//!   pair costs ~133 KB - under budget. The clones are written into
+//!   [`CLONE_IDS`] (190/191), two archive slots **no formation, encounter,
+//!   or dome roster on the disc ever references**; the originals at 163/164
+//!   are never modified, so the ravine duels and the Master course keep
+//!   every move.
+//! - **Stream-map detour.** The formation still seats the *real* ids
+//!   163/164 - the bespoke attack-attack-special AI arm (`case 0xa2..0xa4`
+//!   keys on the formation cell), the name, and every id-keyed table stay
+//!   genuine. A cave routine hooked at the monster streamer's single
+//!   id-to-slot-offset site ([`STREAM_HOOK_VA`]) adds [`CLONE_ID_OFFSET`]
+//!   to the id **only for the archive fetch**, and only while the course
+//!   word says the Delilas course is running - a ravine duel or Master
+//!   round streams the untouched originals.
+//!
+//! The second seat itself comes from a detour at the installer's seat-1 zero
+//! store ([`SEAT_HOOK_VA`]): round 0 seats Lu (164) beside the roster's Che.
+//!
+//! ## The course edits (PROT 0977 + the SCUS cave; koin1 is separate)
 //!
 //! The arena reads its course from a packed word `_DAT_8007BAC0`; the init
 //! `FUN_801CEA6C` seeds it from the course-unlock story flags on a fresh
@@ -54,7 +68,7 @@
 //!    word carries course 3 through the remaining rounds (the continuing-leg
 //!    path), and a later normal dome entry reads `0x539` clear.
 //! 2. **Course descriptor** for course 3 at [`COURSE3_DESC_VA`] (`0x801D1A20`
-//!    = the descriptor table base `0x801D1A08` + `3*8`): `{i32 round_count=3;
+//!    = the descriptor table base `0x801D1A08` + `3*8`): `{i32 round_count=2;
 //!    ptr first_round = cave roster}`. All four descriptor readers compute
 //!    `base + course*8`, so writing the slot makes course 3 work everywhere
 //!    with no per-reader hook.
@@ -62,10 +76,10 @@
 //!    actor template (24 bytes, referenced once at [`TEMPLATE_REF_LUI_VA`] /
 //!    `+4`). Its 24 bytes are copied into the cave and that one `lui/addiu`
 //!    pair is repointed there, freeing `0x801D1A20` for the descriptor.
-//! 4. **Cave roster** ([`ROSTER_VA`]): three `{u32 name_ptr; u32 monster_id}`
-//!    entries - Gi (162), Che (163), Lu (164) - reusing the dome's own
-//!    Delilas name strings (resident with 0977) so the ROUND banner shows
-//!    the right names.
+//! 4. **Cave roster** ([`ROSTER_VA`]): two `{u32 name_ptr; u32 monster_id}`
+//!    entries - Che (163) for round 0 (the seat detour adds Lu beside her)
+//!    and Gi (162) for round 1 - reusing the dome's own Delilas name strings
+//!    (resident with 0977) so the ROUND banner shows the right names.
 //! 5. **Seed routine** ([`ROUTINE_VA`]): the seed test/clear above.
 //! 6. **Reward detour** ([`REWARD_HOOK_VA`] `0x801D1118`, the settlement's
 //!    payout-table load). `FUN_801D0F60` settles a contest: only when the
@@ -79,12 +93,14 @@
 //!    halves the accumulated counter on a loss, which is kept).
 //!
 //! The course-length clamp (`0x801CED28`) is Master-only (`bne course,2`), so
-//! course 3 uses its descriptor's `round_count=3` verbatim - three rounds,
+//! course 3 uses its descriptor's `round_count=2` verbatim - two rounds,
 //! no clamp. The full-Master Seru grant (`round >= 13` at `0x801D111C..`)
-//! can never trip at round 3. Everything lives in the loaded-and-preserved
+//! can never trip at round 2. Everything lives in the loaded-and-preserved
 //! SCUS rodata gap (the window every code-injection feature shares) +
-//! same-size overwrites in the arena overlay; an unrecognized build is
-//! refused, not corrupted.
+//! same-size overwrites in the arena overlay and one same-size SCUS code
+//! hook ([`STREAM_HOOK_VA`]); an unrecognized build is refused, not
+//! corrupted. The slim-clone archive slots are written by the apply layer
+//! ([`crate::apply`]), which builds them from the user's own disc.
 
 use anyhow::{Result, bail};
 
@@ -142,9 +158,8 @@ pub const FLAG_CLEAR_FUNC_VA: u32 = 0x8003_CE34;
 /// Course-descriptor slot for course 3 (`0x801D1A08 + 3*8`). Receives
 /// `{i32 round_count; u32 first_round_ptr}`. Currently the hub actor template.
 pub const COURSE3_DESC_VA: u32 = 0x801D_1A20;
-/// Number of rounds in the Delilas course: Gi, Che, Lu - one 1v1 per round
-/// (a distinct-pair 1v2 round is heap-infeasible; see the module doc).
-pub const DELILAS_ROUNDS: u32 = 3;
+/// Number of rounds in the Delilas course: Che & Lu (1v2), then Gi (1v1).
+pub const DELILAS_ROUNDS: u32 = 2;
 
 /// The hub actor-template `lui`/`addiu` pair (`lui a0,0x801d` ; `addiu
 /// a0,a0,0x1a20`) that materialises the template at [`COURSE3_DESC_VA`]. Both
@@ -162,14 +177,87 @@ pub const TEMPLATE_BYTES: [u8; 24] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
-/// The three Delilas roster ids, in fight order (round 1..3): Gi, Che, Lu.
-pub const DELILAS_ROSTER_IDS: [u32; 3] = [162, 163, 164];
+/// The Delilas roster ids, in fight order: round 0 = Che (Lu joins via the
+/// seat detour), round 1 = Gi.
+pub const DELILAS_ROSTER_IDS: [u32; 2] = [163, 162];
 /// The dome's own Delilas name-string VAs (resident with 0977), paired with
-/// [`DELILAS_ROSTER_IDS`] so the ROUND banner shows "Gi/Che/Lu Delilas".
-pub const DELILAS_NAME_PTRS: [u32; 3] = [0x801C_E8B8, 0x801C_E8C4, 0x801C_E8D0];
+/// [`DELILAS_ROSTER_IDS`] so the ROUND banner shows "Che/Gi Delilas".
+pub const DELILAS_NAME_PTRS: [u32; 2] = [0x801C_E8C4, 0x801C_E8B8];
+/// The monster id the seat detour adds beside the roster's Che in round 0.
+pub const SECOND_SEAT_ID: u32 = 164;
 /// Coins added to the dome winnings counter (`0x80084440`) for a full clear
 /// of the Delilas course.
 pub const COURSE3_CLEAR_COINS: u32 = 5000;
+
+// --- Seat hook (installer `FUN_801D1510`) ------------------------------------
+
+/// Second-seat detour site: the installer's `sb zero,1(v0)` that zeroes
+/// formation seat 1 (`0x8007BD0D`). The installer stages the round as raw id
+/// bytes at `0x8007BD0C..0F` (seat 0 = the roster id, seats 1..3 zeroed;
+/// battle setup counts the non-zero seats). Replaced with
+/// `j SEAT_ROUTINE_VA`.
+pub const SEAT_HOOK_VA: u32 = 0x801D_15A4;
+/// The stock instruction at [`SEAT_HOOK_VA`] (`sb zero,1(v0)`) - the displaced
+/// store the routine replays on the non-Delilas path, and the build fingerprint.
+pub const SEAT_HOOK_ORIG: u32 = sb(ZERO, V0, 1);
+/// Where the seat detour returns (the `sb zero,3(v0)` after the delay slot).
+pub const SEAT_RETURN_VA: u32 = 0x801D_15AC;
+
+// --- Stream-map hook (monster streamer `FUN_800542C8`) -----------------------
+
+/// Offset added to a Delilas pair id (163/164) to reach its slim-clone
+/// archive slot: `163 -> 190`, `164 -> 191` (same offset for both, so one
+/// `addiu` remaps either).
+pub const CLONE_ID_OFFSET: u32 = 27;
+/// The slim-clone archive slots. Battle-unreachable on the retail disc: no
+/// encounter formation, scripted-battle row, or dome-course roster references
+/// ids 190/191 (full-disc formation census + the three retail dome rosters),
+/// and they are outside the `--unused-enemies` pool.
+pub const CLONE_IDS: [u16; 2] = [190, 191];
+/// The two original ids the stream map redirects (Che, Lu).
+pub const DELILAS_PAIR_IDS: [u16; 2] = [163, 164];
+
+/// Stream-map detour site A: the id-to-slot-offset conversion in the monster
+/// streamer `FUN_800542C8` (`addiu v1,a0,-0x1` at `0x8005451C`, feeding
+/// `(id-1)*5 << 14` = `(id-1)*0x14000`). `a0` holds the formation id here
+/// and is dead after; the hook's own delay slot (the staging-pointer store
+/// at `0x80054520`) is unrelated and still executes. Replaced with
+/// `j STREAM_ROUTINE_VA`. This is a **SCUS** site, not an overlay one.
+///
+/// The battle load streams monsters through **two** paths: the first
+/// (lowest-id) enemy is pre-streamed by `FUN_80054A6C` during party setup
+/// (its scan loop reads the enemy formation cells, seeks `(id-1)*0x14000`,
+/// and raises the loaded-count `DAT_8007B649` so `FUN_800542C8` decodes the
+/// staged slot without re-seeking), and every further distinct enemy seeks
+/// through this site. Round 0 therefore fetches Che via site B and Lu via
+/// site A - each site only ever needs its one sibling remapped, which is
+/// what lets both routines share the compact single-test shape.
+pub const STREAM_HOOK_VA: u32 = 0x8005_451C;
+/// The stock instruction at [`STREAM_HOOK_VA`] (`addiu v1,a0,-0x1`) - the
+/// displaced conversion the routine replays, and the build fingerprint.
+pub const STREAM_HOOK_ORIG: u32 = addiu(V1, A0, 0xFFFF);
+/// Where the site-A detour returns (the `sll v0,v1,0x2` of the `*0x14000`).
+pub const STREAM_RETURN_VA: u32 = 0x8005_4524;
+
+/// Stream-map detour site B: in the pre-streamer `FUN_80054A6C`, one
+/// instruction **before** its `addiu v0,v1,-0x1` conversion. Hooking the
+/// conversion itself is impossible: a `j` detour's branch-delay slot
+/// executes before the routine, and the conversion's successor is the
+/// `sll v1,v0,0x2` that clobbers `v1` - the id register - with stale data.
+/// Hooking the preceding `ori a0,a0,0x2800` instead leaves only the
+/// harmless conversion in the delay shadow (it recomputes after return),
+/// so the routine sees the id intact. Replaced with `j STREAM2_ROUTINE_VA`.
+pub const STREAM2_HOOK_VA: u32 = 0x8005_4B70;
+/// The stock instruction at [`STREAM2_HOOK_VA`] (`ori a0,a0,0x2800` - the
+/// staging-offset materialisation) - replayed in the routine's return delay.
+pub const STREAM2_HOOK_ORIG: u32 = ori(A0, A0, 0x2800);
+/// The stock instruction in the hook's delay slot (`addiu v0,v1,-0x1`) -
+/// runs once pre-routine on the intact id (result discarded) and once after
+/// return with the possibly-remapped id. A second build fingerprint.
+pub const STREAM2_DELAY_ORIG: u32 = addiu(V0, V1, 0xFFFF);
+/// Where the site-B detour returns: the conversion itself, which re-runs
+/// with the remapped id and feeds the stock multiply.
+pub const STREAM2_RETURN_VA: u32 = 0x8005_4B74;
 
 // --- Reward hook (settlement `FUN_801D0F60`) ---------------------------------
 
@@ -197,13 +285,19 @@ pub const ROUND_GLOBAL_VA: u32 = 0x801D_1A94;
 /// Load VA of the seed routine in the preserved SCUS gap.
 pub const ROUTINE_VA: u32 = 0x8007_AE00;
 /// Load VA of the relocated hub actor template (24 bytes).
-pub const TEMPLATE_VA: u32 = 0x8007_AE40;
-/// Load VA of the cave roster (3 x 8 bytes).
-pub const ROSTER_VA: u32 = 0x8007_AE60;
+pub const TEMPLATE_VA: u32 = 0x8007_AE38;
+/// Load VA of the cave roster (2 x 8 bytes).
+pub const ROSTER_VA: u32 = 0x8007_AE50;
+/// Load VA of the second-seat routine (4-aligned - it is a `j` target).
+pub const SEAT_ROUTINE_VA: u32 = 0x8007_AE60;
 /// Load VA of the reward routine (4-aligned - it is a `j` target).
-pub const REWARD_ROUTINE_VA: u32 = 0x8007_AE78;
+pub const REWARD_ROUTINE_VA: u32 = 0x8007_AE84;
+/// Load VA of the site-A stream-map routine (4-aligned - a `j` target).
+pub const STREAM_ROUTINE_VA: u32 = 0x8007_AEAC;
+/// Load VA of the site-B stream-map routine (4-aligned - a `j` target).
+pub const STREAM2_ROUTINE_VA: u32 = 0x8007_AED4;
 /// One past the last cave byte used; must stay within the gap end.
-pub const CAVE_END_VA: u32 = 0x8007_AEA0;
+pub const CAVE_END_VA: u32 = 0x8007_AEFC;
 /// End of the usable zero window (exclusive): the SsAPI sound I/O register
 /// table begins exactly at `0x8007AF00` and is read every frame (the
 /// shiny-seru read-watch pinned it - see `shiny_seru::layout`), so the cave
@@ -244,14 +338,101 @@ pub fn assemble_routine() -> Vec<u32> {
     words
 }
 
-/// The cave roster bytes: 3 x `{u32 name_ptr; u32 monster_id}`, little-endian.
+/// The cave roster bytes: 2 x `{u32 name_ptr; u32 monster_id}`, little-endian.
 pub fn roster_bytes() -> Vec<u8> {
-    let mut v = Vec::with_capacity(24);
+    let mut v = Vec::with_capacity(16);
     for i in 0..DELILAS_ROSTER_IDS.len() {
         v.extend_from_slice(&DELILAS_NAME_PTRS[i].to_le_bytes());
         v.extend_from_slice(&DELILAS_ROSTER_IDS[i].to_le_bytes());
     }
     v
+}
+
+/// Assemble the second-seat routine: when course-3 round 0 is being
+/// installed (course word == [`COURSE3_SEED_WORD`] exactly - round 1 carries
+/// `0x132`), seat [`SECOND_SEAT_ID`] (Lu) in formation seat 1 instead of
+/// zeroing it; every other course replays the displaced zero store. Entered
+/// by `j` from [`SEAT_HOOK_VA`]; `v0` holds the formation-cell base, `t0..t4`
+/// are dead, and `ra` is restored by the installer's own epilogue.
+pub fn assemble_seat_routine() -> Vec<u32> {
+    const DEF: usize = 7; // index of the default (replay) arm
+    let words = vec![
+        lui(T0, hi(COURSE_WORD_VA)),               // 0: t0 = 0x8008
+        lw(T1, T0, lo(COURSE_WORD_VA)),            // 1: t1 = course word
+        addiu(T2, ZERO, COURSE3_SEED_WORD as u16), // 2: t2 = 0x131 (load delay)
+        bne(T1, T2, (DEF - (3 + 1)) as i16),       // 3: not round 0 -> DEF
+        addiu(T3, ZERO, SECOND_SEAT_ID as u16),    // 4: t3 = Lu (delay, harmless)
+        j(SEAT_RETURN_VA),                         // 5: course 3, round 0:
+        sb(T3, V0, 1),                             // 6: seat 1 = Lu (delay)
+        // DEF (idx 7): replay the displaced zero store.
+        j(SEAT_RETURN_VA), // 7:
+        SEAT_HOOK_ORIG,    // 8: sb zero,1(v0) (delay)
+    ];
+    debug_assert_eq!(words.len(), 9);
+    debug_assert_eq!(words[DEF + 1], SEAT_HOOK_ORIG);
+    words
+}
+
+/// Assemble the site-A stream-map routine: replay the displaced `id-1`
+/// conversion, but add [`CLONE_ID_OFFSET`] first when the course word is
+/// exactly [`COURSE3_SEED_WORD`] (round 0 - the only round that streams the
+/// pair) **and** the id is Lu (site A only ever needs Lu: Che, the lower id,
+/// is pre-streamed through site B). Both conditions fold into one zero test:
+/// `(word - 0x131) | (id - 164) == 0`.
+///
+/// Register discipline at [`STREAM_HOOK_VA`]: `a0` = the formation id, dead
+/// after the conversion; `v0` is overwritten by the first instruction at
+/// [`STREAM_RETURN_VA`]; `a1` is written (never read) before its first use
+/// at `0x80054538`. The `lw` load-delay slot is filled with the id compare.
+pub fn assemble_stream_map_routine() -> Vec<u32> {
+    const SKIP: usize = 8; // index of the replay conversion
+    let neg_word = -(COURSE3_SEED_WORD as i32) as u32 as u16;
+    let neg_lu = -(SECOND_SEAT_ID as i32) as u32 as u16;
+    let words = vec![
+        lui(A1, hi(COURSE_WORD_VA)),            // 0: a1 = 0x8008
+        lw(V0, A1, lo(COURSE_WORD_VA)),         // 1: v0 = course word
+        addiu(A1, A0, neg_lu),                  // 2: a1 = id - 164 (load delay)
+        addiu(V0, V0, neg_word),                // 3: v0 = word - 0x131
+        or(V0, V0, A1),                         // 4: 0 iff round 0 AND id == Lu
+        bne(V0, ZERO, (SKIP - (5 + 1)) as i16), // 5: anything else -> SKIP
+        nop(),                                  // 6: (branch delay)
+        addiu(A0, A0, CLONE_ID_OFFSET as u16),  // 7: id -> clone slot id
+        // SKIP (idx 8): replay the displaced conversion, return.
+        j(STREAM_RETURN_VA), // 8:
+        STREAM_HOOK_ORIG,    // 9: addiu v1,a0,-1 (delay)
+    ];
+    debug_assert_eq!(words.len(), 10);
+    debug_assert_eq!(words[SKIP + 1], STREAM_HOOK_ORIG);
+    words
+}
+
+/// Assemble the site-B stream-map routine - the pre-streamer's mirror of
+/// [`assemble_stream_map_routine`]: the id lives in `v1` (site B only ever
+/// needs Che, the lowest formation id, which the pre-streamer picks first),
+/// and `v0`/`a1`/`at` are dead at the hook. Returns to the stock conversion
+/// ([`STREAM2_RETURN_VA`]) with the displaced `ori` replayed in the return
+/// delay, so the whole seek recomputes from the (possibly remapped) id.
+pub fn assemble_stream2_map_routine() -> Vec<u32> {
+    const SKIP: usize = 8; // index of the return jump
+    let neg_word = -(COURSE3_SEED_WORD as i32) as u32 as u16;
+    let neg_che = -(DELILAS_PAIR_IDS[0] as i32) as u32 as u16;
+    let words = vec![
+        lui(A1, hi(COURSE_WORD_VA)),            // 0: a1 = 0x8008
+        lw(V0, A1, lo(COURSE_WORD_VA)),         // 1: v0 = course word
+        addiu(A1, V1, neg_che),                 // 2: a1 = id - 163 (load delay)
+        addiu(V0, V0, neg_word),                // 3: v0 = word - 0x131
+        or(V0, V0, A1),                         // 4: 0 iff round 0 AND id == Che
+        bne(V0, ZERO, (SKIP - (5 + 1)) as i16), // 5: anything else -> SKIP
+        nop(),                                  // 6: (branch delay)
+        addiu(V1, V1, CLONE_ID_OFFSET as u16),  // 7: id -> clone slot id
+        // SKIP (idx 8): return to the stock conversion, replaying the
+        // displaced `ori` in the delay slot.
+        j(STREAM2_RETURN_VA), // 8:
+        STREAM2_HOOK_ORIG,    // 9: ori a0,a0,0x2800 (delay)
+    ];
+    debug_assert_eq!(words.len(), 10);
+    debug_assert_eq!(words[SKIP + 1], STREAM2_HOOK_ORIG);
+    words
 }
 
 /// Assemble the reward routine: replay the payout-table load, but return
@@ -305,44 +486,61 @@ pub struct Write {
     pub bytes: Vec<u8>,
 }
 
-/// A planned Delilas-dome injection: the SCUS-cave writes (routine, relocated
-/// template, roster) and the arena-overlay writes (seed detour, template
-/// repoint, course-3 descriptor).
+/// A planned Delilas-dome injection: the SCUS-cave writes (routines,
+/// relocated template, roster), the same-size SCUS stream-map hook, and the
+/// arena-overlay writes (seed/seat/reward detours, template repoint,
+/// course-3 descriptor). The slim-clone archive slots are planned separately
+/// by the apply layer (they need the disc's monster archive).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomeInjection {
-    /// Writes into `SCUS_942.54` (the routine + relocated template + roster).
+    /// Writes into `SCUS_942.54` (cave regions + the stream-map hook).
     pub scus: Vec<Write>,
-    /// Writes into the arena overlay PROT entry (detour + repoint + descriptor).
+    /// Writes into the arena overlay PROT entry (detours + repoint + descriptor).
     pub overlay: Vec<Write>,
 }
 
 impl DomeInjection {
     /// Plan the injection. Fails (rather than corrupts) if the build isn't
     /// recognized: the SCUS cave must be all-zero dead space within the gap,
-    /// and each overlay hook site must hold its known stock word.
+    /// and each hook site must hold its known stock word.
     pub fn plan(scus: &[u8], overlay: &[u8]) -> Result<Self> {
         // --- SCUS cave: routines + template + roster -------------------------
         let words_to_bytes =
             |w: Vec<u32>| -> Vec<u8> { w.iter().flat_map(|w| w.to_le_bytes()).collect() };
         let routine = words_to_bytes(assemble_routine());
+        let seat = words_to_bytes(assemble_seat_routine());
         let reward = words_to_bytes(assemble_reward_routine());
+        let stream = words_to_bytes(assemble_stream_map_routine());
+        let stream2 = words_to_bytes(assemble_stream2_map_routine());
         if TEMPLATE_VA < ROUTINE_VA + routine.len() as u32 {
             bail!("dome seed routine overruns the template slot");
         }
-        if REWARD_ROUTINE_VA < ROSTER_VA + roster_bytes().len() as u32 {
-            bail!("dome roster overruns the reward-routine slot");
+        if SEAT_ROUTINE_VA < ROSTER_VA + roster_bytes().len() as u32 {
+            bail!("dome roster overruns the seat-routine slot");
         }
-        if CAVE_END_VA < REWARD_ROUTINE_VA + reward.len() as u32 {
-            bail!("dome reward routine overruns the cave end");
+        if REWARD_ROUTINE_VA < SEAT_ROUTINE_VA + seat.len() as u32 {
+            bail!("dome seat routine overruns the reward-routine slot");
+        }
+        if STREAM_ROUTINE_VA < REWARD_ROUTINE_VA + reward.len() as u32 {
+            bail!("dome reward routine overruns the stream-routine slot");
+        }
+        if STREAM2_ROUTINE_VA < STREAM_ROUTINE_VA + stream.len() as u32 {
+            bail!("dome site-A stream routine overruns the site-B slot");
+        }
+        if CAVE_END_VA < STREAM2_ROUTINE_VA + stream2.len() as u32 {
+            bail!("dome site-B stream routine overruns the cave end");
         }
         if CAVE_END_VA > GAP_END_VA {
             bail!("dome cave overruns the preserved gap end {GAP_END_VA:#x}");
         }
-        let cave: [(u32, Vec<u8>); 4] = [
+        let cave: [(u32, Vec<u8>); 7] = [
             (ROUTINE_VA, routine),
             (TEMPLATE_VA, TEMPLATE_BYTES.to_vec()),
             (ROSTER_VA, roster_bytes()),
+            (SEAT_ROUTINE_VA, seat),
             (REWARD_ROUTINE_VA, reward),
+            (STREAM_ROUTINE_VA, stream),
+            (STREAM2_ROUTINE_VA, stream2),
         ];
         let mut scus_writes = Vec::new();
         for (va, bytes) in cave {
@@ -353,6 +551,39 @@ impl DomeInjection {
             }
             scus_writes.push(Write { off, bytes });
         }
+
+        // Stream-map hooks: verify each stock id-1 conversion, replace with
+        // a `j` into its cave routine (same-size SCUS code writes; each delay
+        // slot is untouched).
+        for (hook_va, orig, routine_va, what) in [
+            (
+                STREAM_HOOK_VA,
+                STREAM_HOOK_ORIG,
+                STREAM_ROUTINE_VA,
+                "stream hook A",
+            ),
+            (
+                STREAM2_HOOK_VA,
+                STREAM2_HOOK_ORIG,
+                STREAM2_ROUTINE_VA,
+                "stream hook B",
+            ),
+        ] {
+            let off = scus_off(scus, hook_va)?;
+            expect_word(scus, off, orig, what)?;
+            scus_writes.push(Write {
+                off,
+                bytes: j(routine_va).to_le_bytes().to_vec(),
+            });
+        }
+        // Hook B's delay slot is displaced (replayed by the routine); pin it
+        // as a second fingerprint so an unexpected build is refused.
+        expect_word(
+            scus,
+            scus_off(scus, STREAM2_HOOK_VA + 4)?,
+            STREAM2_DELAY_ORIG,
+            "stream hook B delay slot",
+        )?;
 
         // --- Arena overlay: seed detour + template repoint + descriptor ------
         let mut overlay_writes = Vec::new();
@@ -396,6 +627,16 @@ impl DomeInjection {
         overlay_writes.push(Write {
             off: desc_off,
             bytes: desc,
+        });
+
+        // Second-seat detour: verify the installer's stock seat-1 zero store,
+        // replace with `j SEAT_ROUTINE_VA` (its delay slot, the seat-2 zero
+        // store, is untouched and still executes).
+        let seat_off = overlay_off(SEAT_HOOK_VA)?;
+        expect_word(overlay, seat_off, SEAT_HOOK_ORIG, "seat hook")?;
+        overlay_writes.push(Write {
+            off: seat_off,
+            bytes: j(SEAT_ROUTINE_VA).to_le_bytes().to_vec(),
         });
 
         // Reward detour: verify the settlement's stock payout-table load,
@@ -496,16 +737,66 @@ mod tests {
     #[test]
     fn roster_pairs_names_with_ids() {
         let b = roster_bytes();
-        assert_eq!(b.len(), 24);
-        for i in 0..3 {
+        assert_eq!(b.len(), 16);
+        for i in 0..2 {
             let name = u32::from_le_bytes(b[i * 8..i * 8 + 4].try_into().unwrap());
             let id = u32::from_le_bytes(b[i * 8 + 4..i * 8 + 8].try_into().unwrap());
             assert_eq!(name, DELILAS_NAME_PTRS[i]);
             assert_eq!(id, DELILAS_ROSTER_IDS[i]);
         }
-        // Gi, Che, Lu order (the fight sequence).
-        assert_eq!(DELILAS_ROSTER_IDS[0], 162);
-        assert_eq!(DELILAS_ROSTER_IDS[2], 164);
+        // Round 0 = Che (Lu joins via the seat detour), round 1 = Gi.
+        assert_eq!(DELILAS_ROSTER_IDS[0], 163);
+        assert_eq!(DELILAS_ROSTER_IDS[1], 162);
+        assert_eq!(SECOND_SEAT_ID, 164);
+    }
+
+    #[test]
+    fn seat_routine_shape() {
+        let r = assemble_seat_routine();
+        assert_eq!(r.len(), 9);
+        // One exact test: course word == 0x131 (course 3, round 0).
+        assert_eq!(r[1], lw(T1, T0, lo(COURSE_WORD_VA)));
+        assert_eq!(r[2], addiu(T2, ZERO, 0x131));
+        assert_eq!(r[3], bne(T1, T2, 3)); // idx3 -> DEF(7)
+        // Course-3 round-0 arm seats Lu in formation seat 1.
+        assert_eq!(r[5], j(SEAT_RETURN_VA));
+        assert_eq!(r[6], sb(T3, V0, 1));
+        // Default arm replays the displaced zero store.
+        assert_eq!(r[7], j(SEAT_RETURN_VA));
+        assert_eq!(r[8], SEAT_HOOK_ORIG);
+    }
+
+    #[test]
+    fn stream_map_routine_shape() {
+        // Site A: remaps Lu (164) during round 0 only.
+        let r = assemble_stream_map_routine();
+        assert_eq!(r.len(), 10);
+        assert_eq!(r[1], lw(V0, A1, lo(COURSE_WORD_VA)));
+        assert_eq!(r[2], addiu(A1, A0, 0xFF5C)); // -164
+        assert_eq!(r[3], addiu(V0, V0, 0xFECF)); // -0x131
+        assert_eq!(r[4], or(V0, V0, A1));
+        assert_eq!(r[5], bne(V0, ZERO, 2));
+        assert_eq!(r[7], addiu(A0, A0, 27));
+        assert_eq!(r[8], j(STREAM_RETURN_VA));
+        assert_eq!(r[9], STREAM_HOOK_ORIG);
+
+        // Site B: remaps Che (163), the id the pre-streamer always picks.
+        // The hook sits one instruction early (delay-slot discipline - see
+        // STREAM2_HOOK_VA) and returns to the stock conversion with the
+        // displaced `ori` replayed in the return delay.
+        let r2 = assemble_stream2_map_routine();
+        assert_eq!(r2.len(), 10);
+        assert_eq!(r2[2], addiu(A1, V1, 0xFF5D)); // -163
+        assert_eq!(r2[7], addiu(V1, V1, 27));
+        assert_eq!(r2[8], j(STREAM2_RETURN_VA));
+        assert_eq!(r2[9], STREAM2_HOOK_ORIG);
+        assert_eq!(STREAM2_RETURN_VA, STREAM2_HOOK_VA + 4);
+
+        // Clone mapping is the same offset for both siblings.
+        const {
+            assert!(DELILAS_PAIR_IDS[0] as u32 + CLONE_ID_OFFSET == CLONE_IDS[0] as u32);
+            assert!(DELILAS_PAIR_IDS[1] as u32 + CLONE_ID_OFFSET == CLONE_IDS[1] as u32);
+        }
     }
 
     #[test]
@@ -540,9 +831,20 @@ mod tests {
     fn cave_fits_the_gap() {
         assert!(ROUTINE_VA + assemble_routine().len() as u32 * 4 <= TEMPLATE_VA);
         assert!(TEMPLATE_VA + TEMPLATE_BYTES.len() as u32 <= ROSTER_VA);
-        assert!(ROSTER_VA + roster_bytes().len() as u32 <= REWARD_ROUTINE_VA);
+        assert!(ROSTER_VA + roster_bytes().len() as u32 <= SEAT_ROUTINE_VA);
+        assert_eq!(SEAT_ROUTINE_VA % 4, 0, "seat routine is a j target");
+        assert!(SEAT_ROUTINE_VA + assemble_seat_routine().len() as u32 * 4 <= REWARD_ROUTINE_VA);
         assert_eq!(REWARD_ROUTINE_VA % 4, 0, "reward routine is a j target");
-        let end = REWARD_ROUTINE_VA + assemble_reward_routine().len() as u32 * 4;
+        assert!(
+            REWARD_ROUTINE_VA + assemble_reward_routine().len() as u32 * 4 <= STREAM_ROUTINE_VA
+        );
+        assert_eq!(STREAM_ROUTINE_VA % 4, 0, "stream routine A is a j target");
+        assert!(
+            STREAM_ROUTINE_VA + assemble_stream_map_routine().len() as u32 * 4
+                <= STREAM2_ROUTINE_VA
+        );
+        assert_eq!(STREAM2_ROUTINE_VA % 4, 0, "stream routine B is a j target");
+        let end = STREAM2_ROUTINE_VA + assemble_stream2_map_routine().len() as u32 * 4;
         assert!(end <= CAVE_END_VA);
         // The cave must stay below the live SsAPI I/O table at GAP_END_VA.
         const { assert!(CAVE_END_VA <= GAP_END_VA) }

@@ -89,6 +89,7 @@ M.bytes_to_hex    = mem.bytes_to_hex
 M.read_scratch_u32 = mem.read_scratch_u32
 M.write_u8        = mem.write_u8
 M.write_u16       = mem.write_u16
+M.write_u32       = mem.write_u32
 
 -- sstate
 M.load_save_state = sstate.load
