@@ -33,10 +33,17 @@ fn che_and_lu_slim_blocks_keep_everything_the_fight_uses() {
         return;
     };
 
-    // (id, expected dropped castable ids in entry order, minimum heap saving)
+    // (id, expected dropped castable ids in entry order, minimum heap saving).
+    // One rollable castable survives per block - the fewest-frames one (Che
+    // keeps 0x0F at 35 frames, Lu keeps 0x0D at 23) - because the AI's cast
+    // pick is `rand() % castable_count` and a zero count executes the
+    // div-guard `break` (the BIOS hang the live tests hit). Lu's two
+    // never-rolled `0x0C @ 0xFF` entries are dropped too: the reclaimed
+    // ~8 KB is what keeps the in-battle transient allocs (0x9C effect
+    // instances) from starving at `[163,164]`.
     let cases: &[(u16, &[u8], usize)] = &[
-        (163, &[0x0F, 0x0D, 0x10, 0x0E], 0x5000),
-        (164, &[0x0D, 0x13, 0x0E, 0x12], 0x2000),
+        (163, &[0x0D, 0x10, 0x0E], 0x3800),
+        (164, &[0x13, 0x0E, 0x12, 0x0C, 0x0C], 0x3800),
     ];
 
     let mut pair_heap = 0usize;
@@ -133,7 +140,7 @@ fn che_and_lu_slim_blocks_keep_everything_the_fight_uses() {
     // The measured workable distinct-monster budget is ~145 KB
     // (docs/subsystems/battle.md); the slim pair must clear it with margin.
     assert!(
-        pair_heap <= 140 * 1024,
+        pair_heap <= 132 * 1024,
         "slim pair heap cost {pair_heap} bytes exceeds the budget margin"
     );
 }

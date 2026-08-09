@@ -1852,6 +1852,18 @@ Retail monster AI is two routines in the battle overlay:
   from the encounter record's `[+4 + slot]` ids (the `[3 reserved][count][ids]`
   format) - so each `switch` case is bespoke AI for a specific monster id, not
   an abstract AI-type.
+
+  One hard data constraint hides in the cast path: after a magic choice the
+  picker counts the block's **rollable castable entries** (record `+0x4C`
+  entries with id `0x0C..=0x1F` and AGL cost `!= 0xFF`) into `sp+0x10` and
+  rolls `rand % count` (`div` at `0x801EA30C`). A count of **zero** executes
+  the compiler's divide-by-zero guard - `break 0x1C00` at `0x801EA318` - and
+  the BIOS parks the machine forever (vsync alive, pads dead). Retail data
+  never has that shape (every caster's block carries rollable entries), so
+  this is a constraint on *rebuilt* blocks: a modded block whose `+0x21`
+  magic array is live must keep at least one rollable castable entry, which
+  is exactly what `legaia_asset::monster_archive::slim_castables` enforces
+  (see [randomizer.md](../tooling/randomizer.md)).
 - **`FUN_801E7320` - target resolver.** Called from the action SM
   (`FUN_801E295C`) at `ActionSeed` as the `monster_setup` hook, but only for
   monster actors with `actor[+0x16e] & 0x380 != 0`. It reads the targeting class

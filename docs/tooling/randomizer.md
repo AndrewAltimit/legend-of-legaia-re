@@ -975,14 +975,20 @@ mechanism is the battle-heap-budget section of
 The shipped fix streams **slim clones** without touching the originals:
 
 - `legaia_asset::monster_archive::slim_castables` rebuilds Che's and Lu's
-  blocks minus their generic-AI castable spell entries (the exact set the
-  enemy spell picker can roll; mesh, stats, name, reactions, specials, and
-  the `agl=0xFF` choreography entries survive byte-identical). The entry
-  count and index space are preserved - kept entries keep their retail
-  indices and a dropped slot aliases the basic-attack entry - because the
-  engine addresses animations by raw entry index (actor `+0x1DA`) and the
-  streamed special modules were authored against the retail layout. The
-  slim pair costs ~133 KB - under budget.
+  blocks minus their castable spell entries - keeping exactly **one**
+  rollable castable (the fewest-keyframes one): the AI's cast pick is
+  `rand % castable_count` and an empty menu executes the div-guard
+  `break 0x1C00` the BIOS parks on (the [AI-picker
+  section](../subsystems/battle.md#monster-ai-fun_801e9fd4-action-picker--fun_801e7320-target-resolver)
+  has the mechanism). The never-rolled `agl=0xFF` entries are dropped too -
+  the reclaimed bytes keep the in-battle transient pool (damage popups,
+  effect instances) from starving. Mesh, stats, name, reactions, and
+  specials survive byte-identical. The entry count and index space are
+  preserved - kept entries keep their retail indices and a dropped slot
+  aliases the basic-attack entry - because the engine addresses animations
+  by raw entry index (actor `+0x1DA`) and the streamed special modules were
+  authored against the retail layout. The slim pair costs ~132 KB - under
+  budget with ~12 KB of combat headroom.
 - The clones are written to archive slots 190/191, two ids no formation,
   encounter, or dome roster on the disc ever references (full-disc sweep;
   also outside the `--unused-enemies` pool). The real 163/164 slots are

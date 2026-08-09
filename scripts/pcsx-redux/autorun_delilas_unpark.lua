@@ -38,6 +38,16 @@ probe.run({
             probe.write_u8(bctx + 6, 0x28)
             CSV:row("%d,0x%X,poked phase 0x1E->0x28", elapsed, mode)
         end
+        if MODE == "poke874" and elapsed > 30 then
+            -- Bypass the pad pipeline: write the accept bit straight into
+            -- the processed-input word for a few consecutive frames.
+            local ph = elapsed % 120
+            if ph >= 0 and ph < 4 then
+                probe.write_u32(0x8007B874, 0x8000)
+            elseif ph >= 60 and ph < 64 then
+                probe.write_u32(0x8007B874, 0x2000)
+            end
+        end
         if MODE == "pad" and elapsed > 30 then
             local ph = elapsed % 80
             if ph == 0 then

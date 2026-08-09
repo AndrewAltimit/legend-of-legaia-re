@@ -12,12 +12,15 @@
 //!
 //! ## What is dropped, and why it is safe
 //!
-//! An entry is dropped iff it is a **castable** (`id` in `0x0C..=0x1F`) with
-//! `agl_cost != 0xFF`. That set is exactly the enemy-AI spell picker's menu
-//! (`overlay_0898_801e9fd4` only considers castables whose cost the actor's
-//! AGL can pay; `0xFF` = never considered) - removing them narrows what the
-//! generic AI can roll to basic attacks, which is invisible to everything
-//! else:
+//! Dropped: every **castable** (`id` in `0x0C..=0x1F`, `agl_cost != 0xFF`)
+//! except the one with the fewest keyframes. That set is the enemy-AI spell
+//! picker's menu (`overlay_0898_801e9fd4`), and **the menu must not become
+//! empty**: the picker rolls `rand() % castable_count` (`0x801EA30C`), and a
+//! zero count executes the compiler's divide-by-zero `break 0x1C00`, which
+//! the BIOS parks on forever - the live-test "freeze before the first move"
+//! (kernel TCB receipt: EPC = the `break`). Keeping one real castable makes
+//! the roll `rand() % 1` - always safe, and genuine retail behavior for the
+//! kept spell. Narrowing the menu is invisible to everything else:
 //!
 //! - The bespoke Delilas arm (`case 0xa2..0xa4` in the AI switch) writes only
 //!   the every-3rd-phase signature-special action id; it references no record
@@ -25,9 +28,13 @@
 //! - Reaction staging (`FUN_80054CB0` caches tags `2,3,4,5,0xB`), the
 //!   approach/victory first-byte searches (`0x20/0x21/0x22`), and the `0x23`
 //!   special entries all survive untouched.
-//! - `agl_cost == 0xFF` castables are kept: they are never AI-rolled but may
-//!   be referenced as choreography by the streamed special modules (Lu's two
-//!   `0x0C` entries carry effect-table links).
+//! - `agl_cost == 0xFF` castable-class entries are dropped too: the AI's
+//!   roll menu excludes them (that exclusion is the very count that guards
+//!   the `break`), so they are pure heap weight. If a streamed special
+//!   module references one by index it lands on the basic-attack alias - a
+//!   valid animation, a cosmetic downgrade at worst. The reclaimed bytes are
+//!   what keeps the in-battle transient pool (damage popups, effect
+//!   instances - the `0x9C` allocs) from starving at `[163,164]`.
 //!
 //! ## Relocation rules
 //!
@@ -83,8 +90,16 @@ fn u32_at(b: &[u8], off: usize) -> Result<u32> {
     legaia_bytes::u32_le(b, off).with_context(|| format!("read u32 at +{off:#x}"))
 }
 
-fn is_dropped(id: u8, agl: u8) -> bool {
-    (0x0C..=0x1F).contains(&id) && agl != 0xFF
+/// Castable-class ids: the entry family the AI spell menu is built from.
+fn is_castable_class(id: u8) -> bool {
+    (0x0C..=0x1F).contains(&id)
+}
+
+/// AI-rollable: castable-class AND available (`agl_cost != 0xFF`). This is
+/// the set `overlay_0898_801e9fd4` counts into `sp+0x10` before its
+/// `rand() % count` roll.
+fn is_rollable(id: u8, agl: u8) -> bool {
+    is_castable_class(id) && agl != 0xFF
 }
 
 /// Rebuild `block` without its generic-AI castable entries. Errors (rather
@@ -185,12 +200,26 @@ pub fn slim_castables(block: &[u8]) -> Result<SlimBlock> {
     // index reference lands on a harmless, always-valid animation. Keeping
     // the count also keeps the loader's effect-table word formula
     // (`idx + count + 0x12`) fixed, so entry effect indices need no bumping.
+    // The generic monster AI picks its cast with `rand() % castable_count`
+    // (`overlay_0898_801e9fd4` at `0x801EA30C`); a count of ZERO hits the
+    // compiler's divide-by-zero guard - a `break 0x1C00` the BIOS parks on
+    // forever. So the slim MUST keep at least one AI-rollable castable: we
+    // keep the one with the fewest keyframes (the cheapest animation) and
+    // drop the rest.
+    let rollable: Vec<usize> = (0..count)
+        .filter(|&i| is_rollable(entries[i].id, entries[i].agl))
+        .collect();
+    let keep_castable = rollable
+        .iter()
+        .copied()
+        .min_by_key(|&i| entries[i].span)
+        .ok_or_else(|| anyhow::anyhow!("block has no AI-rollable castables"))?;
     let kept: Vec<usize> = (0..count)
-        .filter(|&i| !is_dropped(entries[i].id, entries[i].agl))
+        .filter(|&i| !is_castable_class(entries[i].id) || i == keep_castable)
         .collect();
     let dropped_n = count - kept.len();
     if dropped_n == 0 {
-        bail!("nothing to drop - block has no AI-rollable castables");
+        bail!("nothing to drop - block has a single AI-rollable castable already");
     }
     let alias_idx = *kept
         .iter()
@@ -263,14 +292,15 @@ pub fn slim_castables(block: &[u8]) -> Result<SlimBlock> {
 mod tests {
     use super::*;
 
-    /// Build a tiny synthetic block: head, 3 entries (attack 0x01, castable
-    /// 0x0D @28, special 0x23 with effect idx 1), a one-word effect table, a
-    /// descriptor in the tail, and a texture pool.
+    /// Build a tiny synthetic block: head, 5 entries (attack 0x01, rollable
+    /// castables 0x0D @28 and 0x0F @28, an unavailable 0x0C @0xFF, special
+    /// 0x23 with effect idx 1), a one-word effect table, a descriptor in the
+    /// tail, and a texture pool.
     fn synthetic() -> Vec<u8> {
-        let count = 3usize;
+        let count = 5usize;
         // Head is large enough for the offset array + the effect table word
-        // for idx=1: word (1 + 3 + 0x12) = 22 -> byte 0x58.
-        let entry_area = 0x60usize;
+        // for idx=1: word (1 + 5 + 0x12) = 24 -> byte 0x60.
+        let entry_area = 0x70usize;
         let mk_entry = |id: u8, agl: u8, idx4: u32, frames: u8| {
             let mut e = vec![0u8; ENTRY_STREAM_OFF + 2 + frames as usize * 9];
             e[0] = id;
@@ -282,11 +312,15 @@ mod tests {
         };
         let e0 = mk_entry(0x01, 0, 0, 2);
         let e1 = mk_entry(0x0D, 28, 0, 4);
-        let e2 = mk_entry(0x23, 0, 1, 3);
+        let e2 = mk_entry(0x0F, 28, 0, 9); // the longer castable - dropped
+        let e3 = mk_entry(0x0C, 0xFF, 0, 6); // never AI-rolled - dropped
+        let e4 = mk_entry(0x23, 0, 1, 3);
         let o0 = entry_area;
         let o1 = (o0 + e0.len()).div_ceil(4) * 4;
         let o2 = (o1 + e1.len()).div_ceil(4) * 4;
-        let tail = (o2 + e2.len()).div_ceil(4) * 4;
+        let o3 = (o2 + e2.len()).div_ceil(4) * 4;
+        let o4 = (o3 + e3.len()).div_ceil(4) * 4;
+        let tail = (o4 + e4.len()).div_ceil(4) * 4;
         let desc_off = tail; // 8-byte descriptor
         let tex = tail + 8;
         let total = tex + 16;
@@ -295,7 +329,7 @@ mod tests {
         b[4..8].copy_from_slice(&0x48u32.to_le_bytes()); // "tmd"
         b[8..12].copy_from_slice(&(tex as u32).to_le_bytes());
         b[COUNT_OFF] = count as u8;
-        for (k, o) in [o0, o1, o2].iter().enumerate() {
+        for (k, o) in [o0, o1, o2, o3, o4].iter().enumerate() {
             b[ARRAY_OFF + k * 4..ARRAY_OFF + k * 4 + 4].copy_from_slice(&(*o as u32).to_le_bytes());
         }
         // Effect table word for idx=1 -> descriptor in the tail.
@@ -304,6 +338,8 @@ mod tests {
         b[o0..o0 + e0.len()].copy_from_slice(&e0);
         b[o1..o1 + e1.len()].copy_from_slice(&e1);
         b[o2..o2 + e2.len()].copy_from_slice(&e2);
+        b[o3..o3 + e3.len()].copy_from_slice(&e3);
+        b[o4..o4 + e4.len()].copy_from_slice(&e4);
         b[desc_off..desc_off + 8].copy_from_slice(&[0xAA; 8]);
         b[tex..].fill(0x55);
         b
@@ -313,51 +349,83 @@ mod tests {
     fn drops_the_castable_and_relocates() {
         let b = synthetic();
         let slim = slim_castables(&b).unwrap();
-        assert_eq!(slim.dropped.len(), 1);
-        assert_eq!(slim.dropped[0].id, 0x0D);
-        // Count and index space preserved; texture offset shifted by the
-        // saved bytes.
-        assert_eq!(slim.bytes[COUNT_OFF], 3);
+        // The LONGER castable (0x0F) and the never-rolled 0x0C @0xFF are
+        // dropped; the shortest rollable (0x0D) is kept so the AI's
+        // `rand() % castable_count` roll never divides by zero.
+        assert_eq!(slim.dropped.len(), 2);
+        assert_eq!(slim.dropped[0].id, 0x0F);
+        assert_eq!(slim.dropped[1].id, 0x0C);
+        assert_eq!(slim.dropped[1].agl_cost, 0xFF);
+        assert_eq!(slim.bytes[COUNT_OFF], 5);
         let old_tex = u32::from_le_bytes(b[8..12].try_into().unwrap()) as usize;
         let new_tex = u32::from_le_bytes(slim.bytes[8..12].try_into().unwrap()) as usize;
         assert_eq!(old_tex - new_tex, slim.heap_saved);
-        // Texture bytes intact at the new offset.
         assert!(slim.bytes[new_tex..].iter().all(|&x| x == 0x55));
-        // The dropped castable's slot (index 1) aliases the attack entry
-        // (index 0): same offset, id 0x01 at the target.
-        let o0 =
-            u32::from_le_bytes(slim.bytes[ARRAY_OFF..ARRAY_OFF + 4].try_into().unwrap()) as usize;
+        // Kept castable at its original index (1), id intact.
         let o1 = u32::from_le_bytes(slim.bytes[ARRAY_OFF + 4..ARRAY_OFF + 8].try_into().unwrap())
             as usize;
-        assert_eq!(o1, o0, "dropped slot aliases the attack entry");
-        assert_eq!(slim.bytes[o0], 0x01);
-        // The special keeps its ORIGINAL index (2) and its verbatim effect
-        // index (1): the table word position is count-stable and its value
-        // still resolves to the descriptor, now shifted with the tail.
-        let o23 = u32::from_le_bytes(
+        assert_eq!(slim.bytes[o1], 0x0D);
+        // The dropped slot (index 2) aliases the attack entry (index 0).
+        let o0 =
+            u32::from_le_bytes(slim.bytes[ARRAY_OFF..ARRAY_OFF + 4].try_into().unwrap()) as usize;
+        let o2 = u32::from_le_bytes(
             slim.bytes[ARRAY_OFF + 8..ARRAY_OFF + 12]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        assert_eq!(o2, o0, "dropped slot aliases the attack entry");
+        assert_eq!(slim.bytes[o0], 0x01);
+        // The dropped 0x0C slot (index 3) aliases the attack entry too.
+        let o3 = u32::from_le_bytes(
+            slim.bytes[ARRAY_OFF + 12..ARRAY_OFF + 16]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        assert_eq!(o3, o0, "dropped 0xFF slot aliases the attack entry");
+        // The special keeps its original index (4) and verbatim effect index.
+        let o23 = u32::from_le_bytes(
+            slim.bytes[ARRAY_OFF + 16..ARRAY_OFF + 20]
                 .try_into()
                 .unwrap(),
         ) as usize;
         assert_eq!(slim.bytes[o23], 0x23);
         let idx = u32::from_le_bytes(slim.bytes[o23 + 4..o23 + 8].try_into().unwrap());
-        assert_eq!(idx, 1, "effect index verbatim - no bumping");
-        let word = (idx as usize + 3 + TABLE_WORD_BIAS) * 4;
+        assert_eq!(idx, 1, "effect index verbatim");
+        let word = (idx as usize + 5 + TABLE_WORD_BIAS) * 4;
         let desc = u32::from_le_bytes(slim.bytes[word..word + 4].try_into().unwrap()) as usize;
         assert_eq!(&slim.bytes[desc..desc + 8], &[0xAA; 8]);
-        // The kept attack entry is byte-identical and unmoved.
-        let old_o0 = u32::from_le_bytes(b[ARRAY_OFF..ARRAY_OFF + 4].try_into().unwrap()) as usize;
-        assert_eq!(o0, old_o0);
-        let span = ENTRY_STREAM_OFF + 2 + 2 * 9;
-        assert_eq!(&slim.bytes[o0..o0 + span], &b[old_o0..old_o0 + span]);
     }
 
     #[test]
     fn refuses_a_block_with_nothing_to_drop() {
         let mut b = synthetic();
-        // Make the castable unavailable (0xFF): nothing left to drop.
-        let o1 = u32::from_le_bytes(b[ARRAY_OFF + 4..ARRAY_OFF + 8].try_into().unwrap()) as usize;
-        b[o1 + ENTRY_AGL_OFF] = 0xFF;
+        // Turn every castable-class entry except 0x0D into a non-castable id:
+        // the sole rollable is kept, and nothing is left to drop.
+        for k in [2usize, 3] {
+            let o = u32::from_le_bytes(
+                b[ARRAY_OFF + k * 4..ARRAY_OFF + k * 4 + 4]
+                    .try_into()
+                    .unwrap(),
+            ) as usize;
+            b[o] = 0x23;
+        }
+        assert!(slim_castables(&b).is_err());
+    }
+
+    #[test]
+    fn refuses_a_block_with_no_rollable_castable() {
+        let mut b = synthetic();
+        // Make every castable unavailable (0xFF): keeping one rollable is
+        // impossible, and shipping a zero-count menu would hit the AI's
+        // divide-by-zero `break`.
+        for k in [1usize, 2] {
+            let o = u32::from_le_bytes(
+                b[ARRAY_OFF + k * 4..ARRAY_OFF + k * 4 + 4]
+                    .try_into()
+                    .unwrap(),
+            ) as usize;
+            b[o + ENTRY_AGL_OFF] = 0xFF;
+        }
         assert!(slim_castables(&b).is_err());
     }
 }
