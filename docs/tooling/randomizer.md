@@ -1020,21 +1020,38 @@ conflict with either - enabling it alongside the challenge (or shiny-Seru) is
 refused up front. This is why the Balanced/Full Chaos presets, which enable
 both the challenge and shiny-Seru, install the challenge and skip shiny-Seru.
 
+Two byte-level details are load-bearing and both were caught by live play,
+not by the static suite:
+
+- **The seed word must carry bit `0x100`** (`0x131`, not a bare course/round
+  encoding): the battle-exit selector `FUN_80046A20` tests
+  `_DAT_8007BAC0 & 0x100` to route a leg's end back to arena mode `0x18`.
+  Without the bit a lost leg fell into the ordinary game-over gate and a won
+  leg would have exited to the field instead of the between-leg hub. Every
+  retail seed (`0x101`/`0x111`/`0x321`) carries it.
+- **The who-menu skip tests are retargeted, never NOPed**: `0x21` is the
+  field VM's frame-yield/stop opcode
+  ([script-vm.md](../subsystems/script-vm.md#per-frame-scheduling)), not a
+  no-op - an earlier build's eight-byte `0x21` fill broke the clerk dialog
+  mid-interaction (the "re-talk the NPC several times" bug). The tests keep
+  their exact retail op shape with the flag id swapped to never-set flags.
+
 > Verified by the `delilas_challenge_real` and `delilas_dome_real` disc
 > oracles: the retail image locates as unpatched and every hooked address
 > matches the known US build; the patched koin1 MAN re-parses with the
-> 4-option picker targeting the new branch (gate, dome-active/course-unlock
-> flags, course-3 request, arena warp all asserted at decode level, and no
-> scripted-battle op); the seed hook becomes a `j` into the cave, the
-> course-3 descriptor and roster land, the edit is byte-deterministic and
-> idempotent, composes with the Earth Egg price edit in either order, and
-> every touched sector stays EDC/ECC-valid.
+> 4-option picker targeting the new branch (gate, confirm picker,
+> dome-active/course-unlock flags, course-3 request, arena warp all asserted
+> at decode level, and no scripted-battle op); the seed hook becomes a `j`
+> into the cave, the course-3 descriptor and roster land, the edit is
+> byte-deterministic and idempotent, composes with the Earth Egg price edit
+> in either order, and every touched sector stays EDC/ECC-valid. Live play
+> confirms the warp lands in the arena and round 1 fields Gi Delilas (the
+> course machinery executes).
 >
-> **Not yet emulator-verified live** - the hand-assembled MIPS seed routine
-> and the warp path pass every static + disc-round-trip check, but launching
-> a Delilas round in the arena on real hardware/emulator is the remaining
-> proof, and the reward hook (paying a prize for a course-3 clear) is not yet
-> wired.
+> **Remaining live-verification gaps**: the full three-round run (win
+> continuation through the between-leg hub, and the course-3 settlement /
+> payout - the settle tables are course-indexed and course 3 may need a
+> reward hook before a full clear pays sensibly).
 
 ### Fishing prize prices
 

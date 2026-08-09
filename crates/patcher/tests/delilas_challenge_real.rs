@@ -7,7 +7,7 @@
 use legaia_patcher::apply;
 use legaia_patcher::delilas_challenge::{
     ARENA_ENTER_BGM, COURSE_UNLOCK_FLAGS, DOME_ACTIVE_FLAG, DOME_WARP_OP, DelilasSites,
-    KORU_DEFEATED_FLAG,
+    KORU_DEFEATED_FLAG, NEVER_SET_FLAGS,
 };
 use legaia_patcher::delilas_dome::{
     ARENA_BASE_VA, ARENA_OVERLAY_PROT_INDEX, COURSE_FLAG, COURSE3_DESC_VA, ROSTER_VA, ROUTINE_VA,
@@ -205,8 +205,19 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
                 branch.windows(6).any(|w| w == DOME_WARP_OP),
                 "branch must carry the arena warp op"
             );
+            // The confirm picker sits between the gate and the warp (its
+            // labels are inline text right after the two jump entries).
+            let confirm_label = b"Bring them on!";
+            assert!(
+                branch
+                    .windows(confirm_label.len())
+                    .any(|w| w == confirm_label),
+                "confirm picker label missing from the branch"
+            );
             // The retail quick-path skip tests (flags 0x559/0x558) before the
-            // who-picker are NOPed - the enrollment menu always shows.
+            // who-picker are retargeted at never-set flags (same op shape) -
+            // the enrollment menu always shows, and no 0x21 yield-fill exists
+            // (the fill broke the clerk dialog mid-interaction live).
             let before = &rec[..open];
             for pat in [[0x75, 0x59], [0x75, 0x58]] {
                 assert!(
@@ -214,6 +225,17 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
                     "who-menu skip test survived before the picker"
                 );
             }
+            for &flag in &NEVER_SET_FLAGS {
+                let retargeted = [0x70 | (flag >> 8) as u8, (flag & 0xFF) as u8];
+                assert!(
+                    before.windows(2).any(|w| w == retargeted),
+                    "retargeted skip test {flag:#x} missing before the picker"
+                );
+            }
+            assert!(
+                !before.windows(4).any(|w| w == [0x21, 0x21, 0x21, 0x21]),
+                "0x21 yield-fill run must not exist before the picker"
+            );
         }
     }
     assert!(found_picker, "patched MAN must carry the 4-option picker");

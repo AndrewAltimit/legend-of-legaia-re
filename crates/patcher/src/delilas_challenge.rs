@@ -37,20 +37,30 @@
 //!   The new option's branch is appended at the record's end. The two
 //!   quick-path skip tests before the picker (flags `0x559`/`0x558`: once
 //!   Noa or Gala has refused enrollment, retail skips the who-menu forever
-//!   and auto-registers Vahn) are NOPed so the menu always shows - without
-//!   that, any save that ever picked Noa or Gala could never reach the
-//!   challenge option.
+//!   and auto-registers Vahn) are **retargeted at never-set flags**
+//!   ([`NEVER_SET_FLAGS`]) so the menu always shows - without that, any save
+//!   that ever picked Noa or Gala could never reach the challenge option.
+//!   They are *not* NOPed: `0x21` (the byte an earlier build filled them
+//!   with) is the field VM's **frame-yield/stop opcode**, not a no-op - the
+//!   run-until-yield slice stops on it (`docs/subsystems/script-vm.md`), and
+//!   eight of them in a row broke the clerk dialog mid-interaction (the
+//!   "have to re-talk the NPC several times" live-test bug). Retargeting the
+//!   flag id keeps the exact retail op shape with zero new semantics.
 //! - **Gate.** The branch opens with a `0x70`-family SYSTEM-flag test of
 //!   [`KORU_DEFEATED_FLAG`] (`0x378`) - the exact flag the game latches when
 //!   Koru dies and the world-map ravine entrance flips from `nilboa` to
 //!   `nilboa2` (`map03 P2[15]` sets it, `map03 P2[3]` selects the scene on it).
 //!   Until then the clerk routes to its own decline flow.
-//! - **Warp.** The available arm mirrors a retail difficulty arm: set
-//!   [`DOME_ACTIVE_FLAG`], clear the three [`COURSE_UNLOCK_FLAGS`], set the
-//!   course-3 request flag, then the verbatim BGM ([`ARENA_ENTER_BGM`]) + wait
-//!   ops and the verbatim `3E 69` warp ([`DOME_WARP_OP`]). Losing or winning
-//!   is scored by the dome itself (no game over on a loss - a lost dome round
-//!   returns to the venue), so no marker/outcome bookkeeping lives here.
+//! - **Warp.** The available arm shows a short confirm picker (the challenge
+//!   warps to the arena the moment it launches, so a misclick needs an out;
+//!   "cancel" routes into the record's own decline flow), then mirrors a
+//!   retail difficulty arm: set [`DOME_ACTIVE_FLAG`], clear the three
+//!   [`COURSE_UNLOCK_FLAGS`], set the course-3 request flag, then the
+//!   verbatim BGM ([`ARENA_ENTER_BGM`]) + wait ops and the verbatim `3E 69`
+//!   warp ([`DOME_WARP_OP`]). Losing or winning is scored by the dome itself
+//!   (a lost leg routes back through the arena hub - the battle-exit
+//!   selector's `_DAT_8007BAC0 & 0x100` test, which is why the injected seed
+//!   word carries bit `0x100`), so no marker/outcome bookkeeping lives here.
 //!
 //! The dome fields whichever fighter the arena normally seats (retail's Muscle
 //! Dome enrolls Vahn); routing a *chosen* party member into the arena's fighter
@@ -112,6 +122,14 @@ pub const ARENA_ENTER_WAIT_B: [u8; 3] = [0x4A, 0x08, 0x00];
 /// copied verbatim from a retail difficulty arm - it enters the dome arena
 /// (game mode 24); the course is selected by the flags set just before it.
 pub const DOME_WARP_OP: [u8; 6] = [0x3E, 0x69, 0x00, 0x00, 0x00, 0x00];
+
+/// The two never-set SYSTEM flags the who-menu skip tests are retargeted at
+/// (in order). Chosen from the high band that reads zero across retail saves
+/// and absent from both the field-VM and motion-VM disc-wide flag censuses -
+/// and nothing in this patch (or retail) ever sets them, so the retargeted
+/// tests always fall through into the who-menu. Same 4-byte op shape as the
+/// originals; only the op's flag-nibble + id byte change.
+pub const NEVER_SET_FLAGS: [u16; 2] = [0xD76, 0xD77];
 
 /// The picker option label shown on the grown enrollment menu.
 pub const OPTION_LABEL: &str = "Delilas Challenge";
@@ -208,8 +226,8 @@ pub struct DelilasSites {
     /// `(pc, size)` of the two quick-path skip tests before the who-picker
     /// (retail flag `0x559`/`0x558` TESTs: once Noa or Gala has refused
     /// enrollment, the script skips the who-menu forever and auto-registers
-    /// Vahn). The patch NOPs them out so the menu - and the challenge
-    /// option - always shows. Empty when already applied.
+    /// Vahn). The patch retargets them at [`NEVER_SET_FLAGS`] so the menu -
+    /// and the challenge option - always shows. Empty when already applied.
     skip_tests: Vec<(usize, usize)>,
     /// Every control-flow field in the clerk record (opcode deltas + every
     /// picker's jump entries), record-relative.
@@ -365,8 +383,9 @@ fn walk_record(rec: &[u8], pc0: usize) -> Result<Walk, String> {
 /// Normalized opcode-stream signature of a walked record for old-vs-new
 /// verification, as `(pc, token)` pairs. Picker opens normalize to one token
 /// (the patch legitimately widens `0x28` to `0x29`); text segments count as
-/// one token each; Nop opcodes are skipped (the patch legitimately NOPs the
-/// who-menu skip tests, and Nops carry no behaviour to preserve).
+/// one token each; the 1-byte reserved opcodes are skipped. The retargeted
+/// who-menu skip tests (opcode byte changes with the flag nibble) are masked
+/// out by PC at the compare site, not here.
 fn walk_signature(rec: &[u8], pc0: usize) -> Result<Vec<(usize, u8)>, String> {
     const TEXT: u8 = 0xFD;
     const PICKER: u8 = 0xFE;
@@ -499,7 +518,8 @@ impl DelilasSites {
         // before the who-picker, both jumping to the same auto-register-Vahn
         // block. Retail latches those flags the first time Noa / Gala refuse
         // enrollment, after which the who-menu never shows again - which
-        // would strand the challenge option. They are NOPed by the build.
+        // would strand the challenge option. The build retargets them at
+        // never-set flags (same op shape, always falls through).
         let skip_tests: Vec<(usize, usize)> = if already_applied {
             Vec::new()
         } else {
@@ -574,6 +594,10 @@ impl DelilasSites {
         let man = &self.decoded;
         let rec_len = self.rec_end - self.rec_start;
         let rec = &man[self.rec_start..self.rec_end];
+        // The skip-test retarget changes those ops' flag nibble (0x75 -> 0x7D),
+        // so the signature compare masks them out ON BOTH SIDES by PC. The PCs
+        // are stable across the splice: every skip test sits before the first
+        // insertion seam (asserted below).
         let skip_pcs: Vec<usize> = self.skip_tests.iter().map(|&(pc, _)| pc).collect();
         let expected_sig: Vec<u8> = walk_signature(rec, self.rec_pc0)?
             .into_iter()
@@ -587,6 +611,9 @@ impl DelilasSites {
         let label_bytes = seg(OPTION_LABEL);
         let branch_ins_at = rec_len; // record end
         let pre_branch_shift = 2 + label_bytes.len();
+        if skip_pcs.iter().any(|&pc| pc >= entry_ins_at) {
+            return Err("skip test unexpectedly at/after the first insertion seam".into());
+        }
 
         // Record-relative shift for a point in the OLD record layout.
         let shift = |x: usize| -> usize {
@@ -625,19 +652,24 @@ impl DelilasSites {
         }
         out[open_abs] = (out[open_abs] & 0x80) | 0x29;
 
-        // NOP the who-menu skip tests so the enrollment menu (and with it the
-        // challenge option) always shows; their delta fields die with them.
-        for &(pc, size) in &self.skip_tests {
+        // Retarget the who-menu skip tests (flags 0x559/0x558) at never-set
+        // flags so the enrollment menu (and with it the challenge option)
+        // always shows. NOT NOPed: `0x21` is the field VM's frame-yield/stop
+        // opcode, and a run of them broke the clerk dialog mid-interaction
+        // (see the module doc). Only the op's flag nibble + id byte change;
+        // the delta field stays live and relocates like any other ref.
+        for (i, &(pc, size)) in self.skip_tests.iter().enumerate() {
+            if size != 4 || i >= NEVER_SET_FLAGS.len() {
+                return Err("unexpected skip-test shape".into());
+            }
+            let flag = NEVER_SET_FLAGS[i];
             let abs = self.rec_start + pc;
-            out[abs..abs + size].fill(0x21);
+            out[abs] = 0x70 | ((flag >> 8) as u8 & 0x0F);
+            out[abs + 1] = (flag & 0xFF) as u8;
         }
-        let dead_fields: Vec<usize> = self.skip_tests.iter().map(|&(pc, _)| pc + 2).collect();
 
         // Every collected control-flow field: rewrite with post-shift values.
         for r in &self.refs {
-            if dead_fields.contains(&r.field) {
-                continue;
-            }
             let f_new = r.field + shift(r.field);
             let t_new = r.target + shift(r.target);
             let value: u16 = match r.kind {
@@ -706,13 +738,25 @@ impl DelilasSites {
         let n_start = self.rec_start + abs_shift(self.rec_start.saturating_sub(1));
         let n_len = rec_len + pre_branch_shift + branch.len();
         let n_rec = &new_man[n_start..n_start + n_len];
-        // The rebuilt clerk record must decode as the original stream.
+        // The rebuilt clerk record must decode as the original stream (the
+        // retargeted skip tests masked by PC on both sides - their PCs sit
+        // before every insertion seam, so old and new PCs coincide).
         let new_sig: Vec<u8> = walk_signature(n_rec, self.rec_pc0)?
             .into_iter()
+            .filter(|(pc, _)| !skip_pcs.contains(pc))
             .map(|(_, t)| t)
             .collect();
         if new_sig[..expected_sig.len().min(new_sig.len())] != expected_sig[..] {
             return Err("rebuilt record diverges from the original stream".into());
+        }
+        // The retargeted skip tests decode at their original PCs with the
+        // never-set flag ids (and no 0x21 yield bytes were introduced there).
+        for (i, &pc) in skip_pcs.iter().enumerate() {
+            let flag = NEVER_SET_FLAGS[i];
+            let want = [0x70 | ((flag >> 8) as u8 & 0x0F), (flag & 0xFF) as u8];
+            if n_rec[pc..pc + 2] != want {
+                return Err("skip-test retarget missing from the rebuilt record".into());
+            }
         }
         // The who-picker must re-parse as a 4-option picker: options 0..2
         // relocated intact, option 3 targeting the branch.
@@ -796,32 +840,45 @@ fn write_u24(buf: &mut [u8], at: usize, v: u32) -> Result<(), String> {
     Ok(())
 }
 
-/// Build the Delilas branch bytecode: gate on the Koru flag, then request the
-/// injected Delilas dome course and warp into the arena the same way retail's
-/// own difficulty arms do. `base` is the branch's record-relative start in the
-/// NEW layout; `common_tail` is the shared post-warp exit (NEW layout) and
-/// `decline_tail` the locked-gate refusal target (NEW layout). All internal
-/// jumps are emitted position-correct.
+/// Build the Delilas branch bytecode: gate on the Koru flag, confirm, then
+/// request the injected Delilas dome course and warp into the arena the same
+/// way retail's own difficulty arms do. `base` is the branch's record-relative
+/// start in the NEW layout; `common_tail` is the shared post-warp exit (NEW
+/// layout) and `decline_tail` the refusal target (NEW layout) both the locked
+/// gate and the confirm's cancel route into. All internal jumps are emitted
+/// position-correct.
 ///
 /// ```text
-///       if KORU_DEFEATED -> AVAIL          ; else fall to the decline flow
-///       jmp DECLINE_TAIL
-/// AVAIL: 55 09                              ; SET dome-active (0x509)
+///        if KORU_DEFEATED -> AVAIL          ; else fall to the decline flow
+///        jmp DECLINE_TAIL
+/// AVAIL: text  "You'll face Gi, Che and Lu, one at a time!"
+///        0x27 picker: [0] -> WARP, [1] -> CANCEL
+///        label "Bring them on!"  label "Maybe later."
+/// WARP:  55 09                              ; SET dome-active (0x509)
 ///        65 36 65 37 65 38                  ; CLEAR the course-unlock flags
 ///        55 39                              ; SET course-3 request (0x539)
 ///        34 01 FF FF FF 1E 00               ; arena-entry BGM (verbatim)
 ///        4A 1E 00  4A 08 00                 ; arena transition waits (verbatim)
 ///        3E 69 00 00 00 00                  ; arena warp (verbatim)
 ///        jmp COMMON_TAIL
+/// CANCEL: jmp DECLINE_TAIL
 /// ```
+///
+/// The confirm exists because the warp fires the moment the arm runs - with
+/// no picker, selecting the menu option launches the contest instantly and a
+/// misclick has no out. Cancel routes into the record's own decline flow
+/// (through a local trampoline jump: every retail picker entry observed jumps
+/// forward, so the backward hop is taken by the proven `0x26` op instead).
 fn build_branch(base: usize, common_tail: usize, decline_tail: usize) -> Result<Vec<u8>, String> {
     #[derive(Clone, Copy, PartialEq)]
     enum Label {
         Avail,
+        Warp,
+        Cancel,
         CommonTail,
         DeclineTail,
     }
-    let mut b: Vec<u8> = Vec::with_capacity(48);
+    let mut b: Vec<u8> = Vec::with_capacity(128);
     let mut fixups: Vec<(usize, Label)> = Vec::new(); // (local field off, dest)
     let mut labels: Vec<(Label, usize)> = Vec::new();
     let jmp = |b: &mut Vec<u8>, fixups: &mut Vec<(usize, Label)>, l: Label| {
@@ -837,12 +894,23 @@ fn build_branch(base: usize, common_tail: usize, decline_tail: usize) -> Result<
     fixups.push((b.len() - 2, Label::Avail));
     jmp(&mut b, &mut fixups, Label::DeclineTail);
 
-    // AVAIL: mirror a retail difficulty arm, but request course 3 (the
+    // AVAIL: confirm picker (immediate-labels form, entries then labels).
+    labels.push((Label::Avail, b.len()));
+    b.extend(seg("You'll face Gi, Che and Lu, one at a time!"));
+    b.push(0x27);
+    b.extend_from_slice(&[0, 0]);
+    fixups.push((b.len() - 2, Label::Warp));
+    b.extend_from_slice(&[0, 0]);
+    fixups.push((b.len() - 2, Label::Cancel));
+    b.extend(seg("Bring them on!"));
+    b.extend(seg("Maybe later."));
+
+    // WARP: mirror a retail difficulty arm, but request course 3 (the
     // injected Delilas dome course) via the extra flag the delilas_dome seed
     // hook decodes. Set the dome-active flag, clear the three course-unlock
     // flags so retail's own seed logic picks nothing, and set the course-3
     // request flag. Then the verbatim BGM + wait + warp ops.
-    labels.push((Label::Avail, b.len()));
+    labels.push((Label::Warp, b.len()));
     b.extend_from_slice(&sysflag_set(DOME_ACTIVE_FLAG));
     for &flag in &COURSE_UNLOCK_FLAGS {
         b.extend_from_slice(&sysflag_clear(flag));
@@ -854,11 +922,15 @@ fn build_branch(base: usize, common_tail: usize, decline_tail: usize) -> Result<
     b.extend_from_slice(&DOME_WARP_OP);
     jmp(&mut b, &mut fixups, Label::CommonTail);
 
+    // CANCEL: trampoline into the decline flow.
+    labels.push((Label::Cancel, b.len()));
+    jmp(&mut b, &mut fixups, Label::DeclineTail);
+
     let resolve = |l: Label| -> Result<usize, String> {
         match l {
             Label::CommonTail => return Ok(common_tail),
             Label::DeclineTail => return Ok(decline_tail),
-            Label::Avail => {}
+            _ => {}
         }
         labels
             .iter()
@@ -890,7 +962,7 @@ mod tests {
     }
 
     #[test]
-    fn branch_is_a_gated_arena_warp() {
+    fn branch_is_a_gated_confirmed_arena_warp() {
         let base = 0x0FF4;
         let tail = 0x0FDF;
         let decline = 0x0F5A;
@@ -905,19 +977,24 @@ mod tests {
         assert_eq!(b[4], 0x26);
         let dd = u16::from_le_bytes([b[5], b[6]]) as usize;
         assert_eq!((base + 5 + dd) & 0xFFFF, decline);
+        // AVAIL is the confirm prompt (a text segment).
+        assert_eq!(b[avail - base], 0x1F);
 
-        // AVAIL requests the dome course exactly as a retail arm does: set
-        // dome-active, clear the three course-unlock flags, set course 3.
-        let avail_local = avail - base;
+        // The dome-course request mirrors a retail arm: dome-active set once,
+        // each course-unlock flag cleared once, course-3 requested once, the
+        // BGM + warp verbatim, warp exactly once. No scripted battle op.
         assert_eq!(
-            &b[avail_local..avail_local + 2],
-            &sysflag_set(DOME_ACTIVE_FLAG)
+            b.windows(2)
+                .filter(|w| *w == sysflag_set(DOME_ACTIVE_FLAG))
+                .count(),
+            1
         );
-        for (i, &flag) in COURSE_UNLOCK_FLAGS.iter().enumerate() {
-            let at = avail_local + 2 + i * 2;
-            assert_eq!(&b[at..at + 2], &sysflag_clear(flag));
+        for &flag in &COURSE_UNLOCK_FLAGS {
+            assert_eq!(
+                b.windows(2).filter(|w| *w == sysflag_clear(flag)).count(),
+                1
+            );
         }
-        // The course-3 request and the arena warp are both present, warp last.
         let course = sysflag_set(crate::delilas_dome::COURSE_FLAG);
         assert_eq!(b.windows(2).filter(|w| *w == course).count(), 1);
         assert_eq!(
@@ -927,17 +1004,28 @@ mod tests {
             1
         );
         assert_eq!(b.windows(7).filter(|w| *w == ARENA_ENTER_BGM).count(), 1);
-        // No scripted battle op survives (this is a warp, not a fight).
         assert!(!b.windows(3).any(|w| w == [0x3E, 0xFF, 0x00]));
 
         // Placed at `base` in a synthetic record, the branch walks cleanly to
-        // the end (every byte decoded) and carries no pickers.
-        let mut rec = vec![0x21u8; base];
+        // the end (every byte decoded) and carries exactly the confirm picker.
+        let mut rec = vec![0x21u8; base]; // pad decodes as 1-byte ops in the walk
         rec[base - 1] = 0x00; // the gate op follows a terminator in the real record
         rec.extend_from_slice(&b);
         let w = walk_record(&rec, base).unwrap();
         assert_eq!(w.end, rec.len(), "branch walk must consume every byte");
-        assert!(w.pickers.is_empty(), "the warp branch has no pickers");
+        assert_eq!(w.pickers.len(), 1, "exactly the confirm picker");
+        assert_eq!(w.pickers[0].n, 2);
+        // Entry 0 (fight) lands on the dome-active set; entry 1 (cancel) on a
+        // local trampoline jump that exits to the decline tail.
+        let fight = w.pickers[0].entries[0].target;
+        assert_eq!(
+            &rec[fight..fight + 2],
+            &sysflag_set(DOME_ACTIVE_FLAG),
+            "confirm-yes must land on the warp arm"
+        );
+        let cancel = w.pickers[0].entries[1].target;
+        assert_eq!(rec[cancel], 0x26, "cancel lands on the trampoline jump");
+        assert!(cancel >= base && cancel < base + b.len());
         // The warp op is a 6-byte warp form (not the 2-byte interact form).
         let warp_at = base + b.windows(6).position(|w| w == DOME_WARP_OP).unwrap();
         assert!(

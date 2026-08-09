@@ -76,9 +76,17 @@ pub const ARENA_BASE_VA: u32 = 0x801C_E818;
 pub const COURSE_FLAG: u16 = 0x539;
 
 /// Packed course/round word the seed routine writes for course 3, round 0:
-/// `course = ((0x431-1)&0xff)>>4 = 3`, `round = (0x431-1)&0xf = 0`. Mirrors
-/// the retail seeds' non-zero high byte (`0x101`/`0x111`/`0x321`).
-pub const COURSE3_SEED_WORD: u32 = 0x0000_0431;
+/// `course = ((0x131-1)&0xff)>>4 = 3`, `round = (0x131-1)&0xf = 0`.
+///
+/// Bit `0x100` is **load-bearing**: it is the dome-contest marker the battle
+/// exit selector `FUN_80046A20` tests (`_DAT_8007BAC0 & 0x100`) to route a
+/// leg's end back to arena mode `0x18` instead of MAIN INIT - every retail
+/// seed carries it (`0x101`/`0x111`/`0x321`). Without it a dome wipe falls
+/// into the ordinary game-over gate (CARD continue screen) and a win exits to
+/// the field instead of the between-leg hub - the exact live-test failure an
+/// earlier `0x431` seed produced. Master's extra `0x200` bit is not copied
+/// (only `0x321` has it; Beginner/Expert prove `0x100` alone suffices).
+pub const COURSE3_SEED_WORD: u32 = 0x0000_0131;
 
 /// Word global holding the packed course/round (`_DAT_8007BAC0`), addressed in
 /// the init as `s1 - 0x4540` with `s1 = 0x80080000`.
@@ -348,6 +356,10 @@ mod tests {
         let round = (word - 1) & 0xf;
         assert_eq!(course, 3);
         assert_eq!(round, 0);
+        // Bit 0x100 = the dome-contest marker `FUN_80046A20` tests at battle
+        // exit (`_DAT_8007BAC0 & 0x100`); without it a dome wipe game-overs
+        // and a win exits to the field. Every retail seed carries it.
+        assert_ne!(word & 0x100, 0, "seed word must carry the dome marker bit");
     }
 
     #[test]
