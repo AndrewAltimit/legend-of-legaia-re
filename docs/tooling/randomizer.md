@@ -996,15 +996,18 @@ The shipped fix streams **slim clones** without touching the originals:
   so the hook cannot sit on it) add 27 to the id **for the archive fetch
   only**, and only while the course word reads `0x131` (the Delilas course,
   round 0) - every other battle streams the untouched originals.
-- Seru magic is locked out by **retail's own mechanism**: the course seed
-  word carries the Master tier's `0x200` bit (`0x331`), which the battle
-  round driver tests to reject the Magic command selection and the
-  command-cluster init tests to gray the plate (`overlay_0898_801d0748`).
-  Beginner/Expert seeds (`0x101`/`0x111`) lack the bit - only Master
-  (`0x321`) locks magic in retail. The lockout matters because the arena
-  never installs the summon / player-magic sound+art residency: a live test
-  cast Meta in the course and got audio-state corruption (the koin1
-  magic-freeze class).
+- Seru magic is locked out through **retail's own reject path**: the
+  battle round driver's two Magic-command input arms reject the selection
+  when `_DAT_8007BAC0 & 0x200` - the Master course's lockout bit
+  (`overlay_0898_801d0748`; Beginner/Expert seeds lack it and genuinely
+  allow magic). The patch widens each test's mask to `0x300` (two
+  same-size words in the battle-action overlay, PROT 0898), so the reject
+  fires on the dome-contest marker `0x100` every contest seed carries -
+  including the course's own `0x131`. The lockout matters because the
+  arena never installs the summon / player-magic sound+art residency: a
+  live test cast Meta in the course and got audio-state corruption (the
+  koin1 magic-freeze class). Retail Beginner/Expert legs lose their latent
+  magic access too - the same corruption waits there.
 
 The option is gated on story flag `0x378` - the flag the Koru death event
 latches and the world map reads to flip the ravine entrance from `nilboa`

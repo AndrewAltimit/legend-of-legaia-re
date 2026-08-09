@@ -124,26 +124,17 @@ pub const ARENA_BASE_VA: u32 = 0x801C_E818;
 pub const COURSE_FLAG: u16 = 0x539;
 
 /// Packed course/round word the seed routine writes for course 3, round 0:
-/// `course = ((0x331-1)&0xff)>>4 = 3`, `round = (0x331-1)&0xf = 0`.
+/// `course = ((0x131-1)&0xff)>>4 = 3`, `round = (0x131-1)&0xf = 0`.
 ///
-/// Both high bits are **load-bearing**:
-///
-/// - `0x100` is the dome-contest marker the battle exit selector
-///   `FUN_80046A20` tests (`_DAT_8007BAC0 & 0x100`) to route a leg's end
-///   back to arena mode `0x18` instead of MAIN INIT - every retail seed
-///   carries it (`0x101`/`0x111`/`0x321`). Without it a dome wipe falls
-///   into the ordinary game-over gate and a win exits to the field - the
-///   exact live-test failure an earlier `0x431` seed produced.
-/// - `0x200` is the **Master-tier magic lockout** (only `0x321` carries
-///   it): the battle round driver rejects the Magic command selection when
-///   `_DAT_8007BAC0 & 0x200` is set (`overlay_0898_801d0748`, the
-///   `uVar10 & 0x2000` input arm), and the command-cluster init grays the
-///   plate through the same test. A live test proved a Delilas cast in the
-///   arena corrupts the audio state (the arena never installs the summon /
-///   player-magic sound+art residency - the koin1 magic-freeze class), so
-///   the course copies Master's lockout bit and magic is blocked by
-///   retail's own mechanism, with no injected code.
-pub const COURSE3_SEED_WORD: u32 = 0x0000_0331;
+/// Bit `0x100` is **load-bearing**: it is the dome-contest marker the battle
+/// exit selector `FUN_80046A20` tests (`_DAT_8007BAC0 & 0x100`) to route a
+/// leg's end back to arena mode `0x18` instead of MAIN INIT - every retail
+/// seed carries it (`0x101`/`0x111`/`0x321`). Without it a dome wipe falls
+/// into the ordinary game-over gate (CARD continue screen) and a win exits to
+/// the field instead of the between-leg hub - the exact live-test failure an
+/// earlier `0x431` seed produced. Master's extra `0x200` bit is not copied
+/// (only `0x321` has it; Beginner/Expert prove `0x100` alone suffices).
+pub const COURSE3_SEED_WORD: u32 = 0x0000_0131;
 
 /// Word global holding the packed course/round (`_DAT_8007BAC0`), addressed in
 /// the init as `s1 - 0x4540` with `s1 = 0x80080000`.
@@ -271,6 +262,31 @@ pub const STREAM2_DELAY_ORIG: u32 = addiu(V0, V1, 0xFFFF);
 /// with the remapped id and feeds the stock multiply.
 pub const STREAM2_RETURN_VA: u32 = 0x8005_4B74;
 
+// --- Magic lockout (battle-action overlay, PROT 0898) ------------------------
+
+/// PROT entry index of the battle-action overlay - the round driver
+/// `FUN_801D0748` that every battle (dome legs included) runs.
+pub const BATTLE_OVERLAY_PROT_INDEX: usize = 898;
+/// Load base VA of the battle-action overlay.
+pub const BATTLE_BASE_VA: u32 = 0x801C_E818;
+/// The round driver's two Magic-command input arms each reject the
+/// selection when `_DAT_8007BAC0 & 0x200` is set - the Master course's
+/// magic-lockout bit (`word = 0x321`); Beginner/Expert (`0x101`/`0x111`)
+/// lack it and genuinely allow magic. The arena never installs the summon /
+/// player-magic sound+art residency, and a live test proved a cast in the
+/// Delilas course corrupts the audio state (the koin1 magic-freeze class).
+/// Widening each test's mask to `0x300` makes the reject fire on the
+/// dome-contest marker bit `0x100` that **every** contest seed carries -
+/// so the course (word `0x131`) locks magic through retail's own reject
+/// path, with no cave code and no seed-word change. (Retail Beginner /
+/// Expert legs lose their latent magic access too - the same corruption
+/// waits there, so this is a fix, not a loss.)
+pub const MAGIC_REJECT_SITES: [u32; 2] = [0x801D_12E4, 0x801D_1450];
+/// The stock instruction at each reject site (`andi v0,v0,0x200`).
+pub const MAGIC_REJECT_ORIG: u32 = andi(V0, V0, 0x200);
+/// The widened test (`andi v0,v0,0x300`).
+pub const MAGIC_REJECT_NEW: u32 = andi(V0, V0, 0x300);
+
 // --- Reward hook (settlement `FUN_801D0F60`) ---------------------------------
 
 /// Reward detour site: the settlement's payout-table load `lw v0,0(v0)`
@@ -297,24 +313,19 @@ pub const ROUND_GLOBAL_VA: u32 = 0x801D_1A94;
 /// Load VA of the seed routine in the preserved SCUS gap.
 pub const ROUTINE_VA: u32 = 0x8007_AE00;
 /// Load VA of the relocated hub actor template (24 bytes).
-pub const TEMPLATE_VA: u32 = 0x8007_AE24;
-/// Load VA of the cave roster (2 x 8 bytes). Deliberately **in the SCUS
-/// cave, not the arena overlay**: an experiment that parked it in the freed
-/// template slot's zero tail (`0x801D1A28`) froze the live dome at the
-/// round-banner phase - the live-proven layout writes only ZEROS over that
-/// tail (see [`DomeInjection::plan`]), so nothing may assume those overlay
-/// bytes are free for nonzero data.
-pub const ROSTER_VA: u32 = 0x8007_AE3C;
+pub const TEMPLATE_VA: u32 = 0x8007_AE38;
+/// Load VA of the cave roster (2 x 8 bytes).
+pub const ROSTER_VA: u32 = 0x8007_AE50;
 /// Load VA of the second-seat routine (4-aligned - it is a `j` target).
-pub const SEAT_ROUTINE_VA: u32 = 0x8007_AE4C;
+pub const SEAT_ROUTINE_VA: u32 = 0x8007_AE60;
 /// Load VA of the reward routine (4-aligned - it is a `j` target).
-pub const REWARD_ROUTINE_VA: u32 = 0x8007_AE70;
+pub const REWARD_ROUTINE_VA: u32 = 0x8007_AE84;
 /// Load VA of the site-A stream-map routine (4-aligned - a `j` target).
-pub const STREAM_ROUTINE_VA: u32 = 0x8007_AE98;
+pub const STREAM_ROUTINE_VA: u32 = 0x8007_AEAC;
 /// Load VA of the site-B stream-map routine (4-aligned - a `j` target).
-pub const STREAM2_ROUTINE_VA: u32 = 0x8007_AEC0;
+pub const STREAM2_ROUTINE_VA: u32 = 0x8007_AED4;
 /// One past the last cave byte used; must stay within the gap end.
-pub const CAVE_END_VA: u32 = 0x8007_AEE8;
+pub const CAVE_END_VA: u32 = 0x8007_AEFC;
 /// End of the usable zero window (exclusive): the SsAPI sound I/O register
 /// table begins exactly at `0x8007AF00` and is read every frame (the
 /// shiny-seru read-watch pinned it - see `shiny_seru::layout`), so the cave
@@ -323,28 +334,35 @@ pub const GAP_END_VA: u32 = 0x8007_AF00;
 
 /// Assemble the seed routine: if [`COURSE_FLAG`] is set, store
 /// [`COURSE3_SEED_WORD`] into the course word and clear the flag; always
-/// replay the displaced `lw v0,word` (in the return jump's delay slot) and
-/// return to [`SEED_RETURN_VA`].
+/// replay the displaced `lw v0,word` and return to [`SEED_RETURN_VA`].
 ///
 /// `s1` (the `0x80080000` base) is live across the detour and preserved by the
 /// flag helpers (callee-saved); `ra` is saved on `FUN_801CEA6C`'s own frame, so
 /// the `jal`s here are free to clobber it. `v0`/`a0`/`t0` are scratch.
 pub fn assemble_routine() -> Vec<u32> {
-    const SKIP: usize = 7; // index of the return jump (flag-clear tail target)
+    const SKIP: usize = 11; // index of the replay `lw` (the flag-clear tail target)
+    let flag_clear_skip = (SKIP as i32 - (3 + 1)) as i16;
+
     let words = vec![
-        jal(FLAG_TEST_FUNC_VA),                    // 0: v0 = flag_test(0x539)
-        addiu(A0, ZERO, COURSE_FLAG),              // 1: a0 = 0x539 (jal delay)
-        beq(V0, ZERO, (SKIP - (2 + 1)) as i16),    // 2: flag clear -> SKIP
-        addiu(T0, ZERO, COURSE3_SEED_WORD as u16), // 3: t0 = 0x131 (delay, harmless)
-        sw(T0, S1, WORD_OFF_FROM_S1),              // 4: word (s1-0x4540) = 0x131
-        jal(FLAG_CLEAR_FUNC_VA),                   // 5: flag_clear(0x539) (one-shot)
-        addiu(A0, ZERO, COURSE_FLAG),              // 6: a0 = 0x539 (jal delay)
-        // SKIP (idx 7): return, replaying the displaced `lw` in the delay.
-        j(SEED_RETURN_VA), // 7:
-        SEED_HOOK_ORIG,    // 8: lw v0,-0x4540(s1) (delay)
+        addiu(A0, ZERO, COURSE_FLAG),   // 0:  a0 = 0x539
+        jal(FLAG_TEST_FUNC_VA),         // 1:  v0 = flag_test(0x539)
+        nop(),                          // 2:  (branch delay)
+        beq(V0, ZERO, flag_clear_skip), // 3:  flag clear -> SKIP (replay)
+        nop(),                          // 4:  (branch delay)
+        // flag set: word = 0x431 (course 3, round 0)
+        lui(T0, imm_hi(COURSE3_SEED_WORD)),     // 5: \ t0 = 0x431
+        ori(T0, T0, imm_lo(COURSE3_SEED_WORD)), // 6: /
+        sw(T0, S1, WORD_OFF_FROM_S1),           // 7:  word (s1-0x4540) = 0x431
+        addiu(A0, ZERO, COURSE_FLAG),           // 8:  a0 = 0x539
+        jal(FLAG_CLEAR_FUNC_VA),                // 9:  flag_clear(0x539)  (one-shot)
+        nop(),                                  // 10: (branch delay)
+        // SKIP (idx 11): replay displaced `lw v0,word`, return.
+        SEED_HOOK_ORIG,    // 11: lw v0,-0x4540(s1)
+        j(SEED_RETURN_VA), // 12: back to the decode
+        nop(),             // 13: (branch delay)
     ];
-    debug_assert_eq!(words.len(), 9);
-    debug_assert_eq!(words[SKIP + 1], SEED_HOOK_ORIG);
+    debug_assert_eq!(words.len(), 14);
+    debug_assert_eq!(words[SKIP], SEED_HOOK_ORIG);
     words
 }
 
@@ -507,13 +525,16 @@ pub struct DomeInjection {
     pub scus: Vec<Write>,
     /// Writes into the arena overlay PROT entry (detours + repoint + descriptor).
     pub overlay: Vec<Write>,
+    /// Writes into the battle-action overlay PROT entry (the widened
+    /// magic-reject masks).
+    pub battle: Vec<Write>,
 }
 
 impl DomeInjection {
     /// Plan the injection. Fails (rather than corrupts) if the build isn't
     /// recognized: the SCUS cave must be all-zero dead space within the gap,
     /// and each hook site must hold its known stock word.
-    pub fn plan(scus: &[u8], overlay: &[u8]) -> Result<Self> {
+    pub fn plan(scus: &[u8], overlay: &[u8], battle: &[u8]) -> Result<Self> {
         // --- SCUS cave: routines + template + roster -------------------------
         let words_to_bytes =
             |w: Vec<u32>| -> Vec<u8> { w.iter().flat_map(|w| w.to_le_bytes()).collect() };
@@ -524,9 +545,6 @@ impl DomeInjection {
         let stream2 = words_to_bytes(assemble_stream2_map_routine());
         if TEMPLATE_VA < ROUTINE_VA + routine.len() as u32 {
             bail!("dome seed routine overruns the template slot");
-        }
-        if ROSTER_VA < TEMPLATE_VA + TEMPLATE_BYTES.len() as u32 {
-            bail!("dome template overruns the roster slot");
         }
         if SEAT_ROUTINE_VA < ROSTER_VA + roster_bytes().len() as u32 {
             bail!("dome roster overruns the seat-routine slot");
@@ -625,10 +643,7 @@ impl DomeInjection {
         });
 
         // Course-3 descriptor at 0x801D1A20 (over the now-relocated template
-        // head); the 16-byte template tail is written as ZEROS - the
-        // live-proven shape. Parking nonzero data there (a roster
-        // experiment) froze the dome at the round-banner phase, so treat
-        // those bytes as live hub state, not free space.
+        // head); zero the 16-byte template tail so no stale course-4 slot.
         let desc_off = overlay_off(COURSE3_DESC_VA)?;
         let mut desc = descriptor_bytes().to_vec();
         desc.extend_from_slice(&[0u8; 16]);
@@ -665,9 +680,22 @@ impl DomeInjection {
             bytes: j(REWARD_ROUTINE_VA).to_le_bytes().to_vec(),
         });
 
+        // Magic-reject mask widening in the battle-action overlay: verify
+        // each stock `andi v0,v0,0x200`, replace with the `0x300` mask.
+        let mut battle_writes = Vec::new();
+        for va in MAGIC_REJECT_SITES {
+            let off = battle_off(va)?;
+            expect_word(battle, off, MAGIC_REJECT_ORIG, "magic-reject mask")?;
+            battle_writes.push(Write {
+                off,
+                bytes: MAGIC_REJECT_NEW.to_le_bytes().to_vec(),
+            });
+        }
+
         Ok(Self {
             scus: scus_writes,
             overlay: overlay_writes,
+            battle: battle_writes,
         })
     }
 }
@@ -676,6 +704,13 @@ impl DomeInjection {
 fn scus_off(scus: &[u8], va: u32) -> Result<usize> {
     legaia_asset::item_names::file_offset_for_va(scus, va)
         .ok_or_else(|| anyhow::anyhow!("cannot resolve SCUS VA {va:#x}"))
+}
+
+/// Resolve a battle-action-overlay VA to its raw PROT-entry file offset.
+fn battle_off(va: u32) -> Result<usize> {
+    va.checked_sub(BATTLE_BASE_VA)
+        .map(|d| d as usize)
+        .ok_or_else(|| anyhow::anyhow!("battle-overlay VA {va:#x} below base {BATTLE_BASE_VA:#x}"))
 }
 
 /// Resolve an arena-overlay VA to its raw PROT-entry file offset.
@@ -725,19 +760,19 @@ mod tests {
     #[test]
     fn seed_routine_shape() {
         let r = assemble_routine();
-        assert_eq!(r.len(), 9);
-        // Opens with the flag test, the flag id riding the jal delay.
-        assert_eq!(r[0], jal(FLAG_TEST_FUNC_VA));
-        assert_eq!(r[1], addiu(A0, ZERO, COURSE_FLAG));
-        // beq at idx 2 skips to the return jump at idx 7: off = 7-(2+1) = 4.
-        assert_eq!(r[2], beq(V0, ZERO, 4));
-        // Set path: seed word + one-shot clear.
-        assert_eq!(r[3], addiu(T0, ZERO, 0x331));
-        assert_eq!(r[4], sw(T0, S1, WORD_OFF_FROM_S1));
-        assert_eq!(r[5], jal(FLAG_CLEAR_FUNC_VA));
-        // Return replays the displaced `lw` in the delay slot.
-        assert_eq!(r[7], j(SEED_RETURN_VA));
-        assert_eq!(r[8], SEED_HOOK_ORIG);
+        assert_eq!(r.len(), 14);
+        // Opens by loading the flag id and testing it.
+        assert_eq!(r[0], addiu(A0, ZERO, COURSE_FLAG));
+        assert_eq!(r[1], jal(FLAG_TEST_FUNC_VA));
+        // The flag-clear branch target is the replay `lw`.
+        assert_eq!(r[11], SEED_HOOK_ORIG);
+        // beq at idx 3 skips to idx 11 (SKIP): off = 11 - (3+1) = 7.
+        assert_eq!(r[3], beq(V0, ZERO, 7));
+        // Ends by returning to the decode.
+        assert_eq!(r[12], j(SEED_RETURN_VA));
+        // Seeds the course-3 word and clears the flag on the set path.
+        assert_eq!(r[7], sw(T0, S1, WORD_OFF_FROM_S1));
+        assert_eq!(r[9], jal(FLAG_CLEAR_FUNC_VA));
     }
 
     #[test]
@@ -772,7 +807,7 @@ mod tests {
         assert_eq!(r.len(), 9);
         // One exact test: course word == 0x131 (course 3, round 0).
         assert_eq!(r[1], lw(T1, T0, lo(COURSE_WORD_VA)));
-        assert_eq!(r[2], addiu(T2, ZERO, 0x331));
+        assert_eq!(r[2], addiu(T2, ZERO, 0x131));
         assert_eq!(r[3], bne(T1, T2, 3)); // idx3 -> DEF(7)
         // Course-3 round-0 arm seats Lu in formation seat 1.
         assert_eq!(r[5], j(SEAT_RETURN_VA));
@@ -789,7 +824,7 @@ mod tests {
         assert_eq!(r.len(), 10);
         assert_eq!(r[1], lw(V0, A1, lo(COURSE_WORD_VA)));
         assert_eq!(r[2], addiu(A1, A0, 0xFF5C)); // -164
-        assert_eq!(r[3], addiu(V0, V0, 0xFCCF)); // -0x331
+        assert_eq!(r[3], addiu(V0, V0, 0xFECF)); // -0x131
         assert_eq!(r[4], or(V0, V0, A1));
         assert_eq!(r[5], bne(V0, ZERO, 2));
         assert_eq!(r[7], addiu(A0, A0, 27));
@@ -864,8 +899,5 @@ mod tests {
         assert!(end <= CAVE_END_VA);
         // The cave must stay below the live SsAPI I/O table at GAP_END_VA.
         const { assert!(CAVE_END_VA <= GAP_END_VA) }
-        // The roster is SCUS-cave data (the overlay template tail must stay
-        // zero - live hub state; see the ROSTER_VA doc).
-        const { assert!(ROSTER_VA < GAP_END_VA) }
     }
 }

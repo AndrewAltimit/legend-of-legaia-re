@@ -9,7 +9,8 @@
 use legaia_asset::item_names::file_offset_for_va;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::delilas_dome::{
-    ARENA_BASE_VA, ARENA_OVERLAY_PROT_INDEX, CLONE_IDS, DELILAS_PAIR_IDS, DomeInjection,
+    ARENA_BASE_VA, ARENA_OVERLAY_PROT_INDEX, BATTLE_OVERLAY_PROT_INDEX, CLONE_IDS,
+    DELILAS_PAIR_IDS, DomeInjection, MAGIC_REJECT_NEW, MAGIC_REJECT_ORIG, MAGIC_REJECT_SITES,
     REWARD_HOOK_ORIG, REWARD_HOOK_VA, REWARD_ROUTINE_VA, ROSTER_VA, ROUTINE_VA, SEAT_HOOK_ORIG,
     SEAT_HOOK_VA, SEAT_ROUTINE_VA, SEED_HOOK_ORIG, SEED_HOOK_VA, STREAM_HOOK_ORIG, STREAM_HOOK_VA,
     STREAM_ROUTINE_VA, STREAM2_HOOK_ORIG, STREAM2_HOOK_VA, STREAM2_ROUTINE_VA, TEMPLATE_BYTES,
@@ -43,6 +44,9 @@ fn baseline_sites_match_the_known_build() {
     let overlay = patcher
         .read_entry(ARENA_OVERLAY_PROT_INDEX)
         .expect("read arena overlay");
+    let battle = patcher
+        .read_entry(BATTLE_OVERLAY_PROT_INDEX)
+        .expect("read battle overlay");
 
     // Seed hook: the stock `lw v0,-0x4540(s1)` word reload.
     assert_eq!(
@@ -84,6 +88,12 @@ fn baseline_sites_match_the_known_build() {
         overlay_word(&overlay, TEMPLATE_REF_LUI_VA + 4),
         TEMPLATE_REF_ADDIU_ORIG
     );
+    // The two Magic-command reject masks are the stock `andi v0,v0,0x200`.
+    for va in MAGIC_REJECT_SITES {
+        let off = (va - legaia_patcher::delilas_dome::BATTLE_BASE_VA) as usize;
+        let got = u32::from_le_bytes(battle[off..off + 4].try_into().unwrap());
+        assert_eq!(got, MAGIC_REJECT_ORIG, "stock magic-reject mask at {va:#x}");
+    }
     // The course-3 descriptor slot (0x801D1A20) currently holds the 24-byte
     // hub actor template.
     let desc_off = (0x801D_1A20 - ARENA_BASE_VA) as usize;
@@ -105,12 +115,15 @@ fn plan_validates_against_the_real_build() {
     let overlay = patcher
         .read_entry(ARENA_OVERLAY_PROT_INDEX)
         .expect("read arena overlay");
+    let battle = patcher
+        .read_entry(BATTLE_OVERLAY_PROT_INDEX)
+        .expect("read battle overlay");
 
-    let plan = DomeInjection::plan(&scus, &overlay).expect("plan against real build");
+    let plan = DomeInjection::plan(&scus, &overlay, &battle).expect("plan against real build");
 
-    // Seven SCUS-cave writes (seed / template / roster / seat / reward /
-    // two stream routines), all in all-zero dead space, plus the two
-    // stream-map hooks over live code.
+    // Seven SCUS-cave writes (seed routine + template + roster + seat routine
+    // + reward routine + the two stream routines), all in all-zero dead
+    // space, plus the two stream-map hooks over live code.
     assert_eq!(plan.scus.len(), 9, "seven cave writes + two stream hooks");
     for w in &plan.scus[..7] {
         assert!(!w.bytes.is_empty());
@@ -136,14 +149,14 @@ fn plan_validates_against_the_real_build() {
     }
     // The relocated template copies the stock bytes verbatim.
     assert_eq!(plan.scus[1].bytes, TEMPLATE_BYTES.to_vec());
-    // Both stream hooks are `j` detours over their stock sites.
+    // Both stream hooks are `j` detours over the stock conversion sites.
     for (i, hook_va) in [(7usize, STREAM_HOOK_VA), (8, STREAM2_HOOK_VA)] {
         assert_eq!(
             plan.scus[i].off,
             file_offset_for_va(&scus, hook_va).unwrap()
         );
         let detour = u32::from_le_bytes(plan.scus[i].bytes[..4].try_into().unwrap());
-        assert_eq!(detour >> 26, 0x02, "code hook {i} is a `j` detour");
+        assert_eq!(detour >> 26, 0x02, "stream hook {i} is a `j` detour");
     }
 
     // Five overlay writes: seed detour, template repoint, descriptor, seat
@@ -162,12 +175,18 @@ fn plan_validates_against_the_real_build() {
         "course-3 round count = 2 (Che & Lu double-team, then Gi)"
     );
 
+    // Two battle-overlay writes: the widened magic-reject masks.
+    assert_eq!(plan.battle.len(), 2);
+    for w in &plan.battle {
+        assert_eq!(w.bytes, MAGIC_REJECT_NEW.to_le_bytes().to_vec());
+    }
+
     // Refuses a build it doesn't recognize (flip a hook-site byte).
     let mut bad = overlay.clone();
     let seed_off = (SEED_HOOK_VA - ARENA_BASE_VA) as usize;
     bad[seed_off] ^= 0xFF;
     assert!(
-        DomeInjection::plan(&scus, &bad).is_err(),
+        DomeInjection::plan(&scus, &bad, &battle).is_err(),
         "must refuse an unrecognized seed-hook site"
     );
 

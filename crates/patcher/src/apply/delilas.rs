@@ -18,8 +18,8 @@ use legaia_asset::scene_asset_table::encode_size_word;
 
 use crate::delilas_challenge::DelilasSites;
 use crate::delilas_dome::{
-    ARENA_BASE_VA, ARENA_OVERLAY_PROT_INDEX, CLONE_IDS, DELILAS_PAIR_IDS, DomeInjection,
-    ROUTINE_VA, SEED_HOOK_VA,
+    ARENA_BASE_VA, ARENA_OVERLAY_PROT_INDEX, BATTLE_OVERLAY_PROT_INDEX, CLONE_IDS,
+    DELILAS_PAIR_IDS, DomeInjection, ROUTINE_VA, SEED_HOOK_VA,
 };
 
 /// Outcome of a Delilas Challenge application.
@@ -80,6 +80,9 @@ pub fn inject_delilas_dome(patcher: &mut DiscPatcher) -> Result<bool> {
     let overlay = patcher
         .read_entry(ARENA_OVERLAY_PROT_INDEX)
         .context("read arena overlay (0977) for delilas-dome injection")?;
+    let battle = patcher
+        .read_entry(BATTLE_OVERLAY_PROT_INDEX)
+        .context("read battle-action overlay (0898) for delilas-dome injection")?;
 
     // Idempotency: once applied, the seed hook is our `j ROUTINE_VA`.
     let seed_off = (SEED_HOOK_VA - ARENA_BASE_VA) as usize;
@@ -93,7 +96,7 @@ pub fn inject_delilas_dome(patcher: &mut DiscPatcher) -> Result<bool> {
     // Plan everything before writing anything: the code plan validates every
     // hook fingerprint, and the clone slots must build from the disc's own
     // archive (they are read from the pristine 163/164 slots).
-    let plan = DomeInjection::plan(&scus, &overlay)?;
+    let plan = DomeInjection::plan(&scus, &overlay, &battle)?;
     let clones = build_clone_slots(patcher)?;
 
     // Slim-clone archive slots first (data the hooks will stream), then the
@@ -112,6 +115,11 @@ pub fn inject_delilas_dome(patcher: &mut DiscPatcher) -> Result<bool> {
         patcher
             .patch_prot_entry(ARENA_OVERLAY_PROT_INDEX, w.off as u64, &w.bytes)
             .with_context(|| format!("write delilas-dome overlay hook at {:#x}", w.off))?;
+    }
+    for w in &plan.battle {
+        patcher
+            .patch_prot_entry(BATTLE_OVERLAY_PROT_INDEX, w.off as u64, &w.bytes)
+            .with_context(|| format!("write delilas-dome magic-reject mask at {:#x}", w.off))?;
     }
     Ok(true)
 }

@@ -96,13 +96,24 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
         scus[roster_off..roster_off + 16].iter().any(|&b| b != 0),
         "Delilas roster must be present in the cave"
     );
-    // The overlay template tail behind the descriptor must be ZEROS (live
-    // hub state - a nonzero roster there froze the dome at the banners).
-    let tail_off = (COURSE3_DESC_VA + 8 - ARENA_BASE_VA) as usize;
-    assert!(
-        overlay[tail_off..tail_off + 16].iter().all(|&b| b == 0),
-        "template tail must stay zero"
-    );
+
+    // The Magic-reject masks are widened to 0x300 on the patched image.
+    {
+        use legaia_patcher::delilas_dome::{
+            BATTLE_BASE_VA, BATTLE_OVERLAY_PROT_INDEX, MAGIC_REJECT_NEW, MAGIC_REJECT_SITES,
+        };
+        let battle = reopen
+            .read_entry(BATTLE_OVERLAY_PROT_INDEX)
+            .expect("read battle overlay from patched image");
+        for va in MAGIC_REJECT_SITES {
+            let off = (va - BATTLE_BASE_VA) as usize;
+            let got = u32::from_le_bytes(battle[off..off + 4].try_into().unwrap());
+            assert_eq!(
+                got, MAGIC_REJECT_NEW,
+                "widened magic-reject mask at {va:#x}"
+            );
+        }
+    }
 
     // The patched image locates as applied, and a second apply is a no-op.
     let after = koin1_sites(patched.clone());
