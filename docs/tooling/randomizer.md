@@ -977,8 +977,12 @@ The shipped fix streams **slim clones** without touching the originals:
 - `legaia_asset::monster_archive::slim_castables` rebuilds Che's and Lu's
   blocks minus their generic-AI castable spell entries (the exact set the
   enemy spell picker can roll; mesh, stats, name, reactions, specials, and
-  the `agl=0xFF` choreography entries survive byte-identical). The slim pair
-  costs ~133 KB - under budget.
+  the `agl=0xFF` choreography entries survive byte-identical). The entry
+  count and index space are preserved - kept entries keep their retail
+  indices and a dropped slot aliases the basic-attack entry - because the
+  engine addresses animations by raw entry index (actor `+0x1DA`) and the
+  streamed special modules were authored against the retail layout. The
+  slim pair costs ~133 KB - under budget.
 - The clones are written to archive slots 190/191, two ids no formation,
   encounter, or dome roster on the disc ever references (full-disc sweep;
   also outside the `--unused-enemies` pool). The real 163/164 slots are

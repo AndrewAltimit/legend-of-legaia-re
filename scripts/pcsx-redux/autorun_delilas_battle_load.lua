@@ -21,6 +21,7 @@
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
+local pad = require("probe.pad")
 
 local GAME_MODE      = 0x8007B83C
 local FORMATION_CELL = 0x8007BD0C
@@ -50,6 +51,9 @@ local PARTY_TABLE = 0x8007BD10
 -- hook: the save state carries vanilla SCUS code in RAM, so the cave routine
 -- + the `j` hook word (read out of the patched disc's SCUS) are poked in
 -- here while the CLONE SLOTS stream from the patched --iso image.
+-- Mash mode: once battle main is reached, press through the command flow so
+-- moves execute (see the battle-main block). 0 = idle (load-only verdict).
+local MASH = probe.getenv_num("LEGAIA_MASH", 0)
 local POKES_RAW = probe.getenv("LEGAIA_POKES", "")
 local pokes = {}
 for pair in string.gmatch(POKES_RAW, "[^,%s]+") do
@@ -191,9 +195,30 @@ probe.run({
         if installed and mode == BATTLE_MAIN then
             reached_main = true
             settle = settle + 1
-            if settle > 240 then
+            if MASH == 0 and settle > 240 then
                 verdict("VERDICT: battle loads and runs", mode)
                 ctx.request_quit = true
+            end
+            -- Mash mode: drive the command flow so moves actually execute
+            -- (the idle probe never leaves the command menu, which is how a
+            -- first-action defect can hide behind a "loads and runs"
+            -- verdict). Alternate short presses; report the heap
+            -- periodically so an in-battle OOM shows its slope.
+            if MASH ~= 0 then
+                local phase = settle % 40
+                if phase == 0 then
+                    pad.force(pad.BTN.CROSS)
+                elseif phase == 6 then
+                    pad.release(pad.BTN.CROSS)
+                elseif phase == 20 then
+                    pad.force(pad.BTN.UP)
+                elseif phase == 26 then
+                    pad.release(pad.BTN.UP)
+                end
+                if settle % 300 == 1 then
+                    CSV:row("%d,0x%X,%d,mash-tick", elapsed, mode, actors_seated())
+                    heap_report("mash")
+                end
             end
         end
     end,

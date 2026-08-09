@@ -33,8 +33,11 @@
 //!   rebuilds Che's and Lu's blocks minus their generic-AI castable spell
 //!   entries (the ~5-6 KB packed keyframe streams the AI picker can roll;
 //!   mesh, stats, name, reactions, approach/special entries, and the two
-//!   `agl=0xFF` choreography entries all survive byte-identical). The slim
-//!   pair costs ~133 KB - under budget. The clones are written into
+//!   `agl=0xFF` choreography entries all survive byte-identical). Entry
+//!   count + index space are preserved (dropped slots alias the basic
+//!   attack): the engine addresses animations by raw entry index, so the
+//!   specials must stay at their retail indices. The slim pair costs
+//!   ~133 KB - under budget. The clones are written into
 //!   [`CLONE_IDS`] (190/191), two archive slots **no formation, encounter,
 //!   or dome roster on the disc ever references**; the originals at 163/164
 //!   are never modified, so the ravine duels and the Master course keep

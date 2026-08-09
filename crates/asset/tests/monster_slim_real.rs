@@ -66,10 +66,27 @@ fn che_and_lu_slim_blocks_keep_everything_the_fight_uses() {
         assert_eq!(orig_rec.gold, slim_rec.gold);
         assert_eq!(orig_rec.exp, slim_rec.exp);
         assert_eq!(
-            orig_rec.spells.len() - want_dropped.len(),
+            orig_rec.spells.len(),
             slim_rec.spells.len(),
-            "id {id} entry count"
+            "id {id} entry count preserved (dropped slots alias the attack)"
         );
+        // Kept entries keep their ORIGINAL index; dropped slots alias the
+        // basic-attack entry (the engine addresses animations by raw entry
+        // index, and the streamed specials were authored against the retail
+        // layout).
+        for (i, (o, s)) in orig_rec
+            .spells
+            .iter()
+            .zip(slim_rec.spells.iter())
+            .enumerate()
+        {
+            if want_dropped.contains(&o.id) {
+                assert_eq!(s.id, 0x01, "id {id} slot {i} aliases the attack");
+            } else {
+                assert_eq!(o.id, s.id, "id {id} slot {i} keeps its entry");
+                assert_eq!(o.effect_offset.is_some(), s.effect_offset.is_some());
+            }
+        }
 
         // Mesh + texture pools byte-identical.
         let orig_mesh = monster_archive::mesh(&orig_arch, 1).unwrap().unwrap();
@@ -88,26 +105,17 @@ fn che_and_lu_slim_blocks_keep_everything_the_fight_uses() {
             "id {id} texture pool"
         );
 
-        // Every kept action animation byte-identical (matched by position
-        // among the kept set - order is preserved).
+        // Every entry's animation resolves, and every KEPT entry's animation
+        // is identical by original index (aliased slots play the attack).
         let orig_anims = monster_archive::animations(&orig_arch, 1).unwrap().unwrap();
         let slim_anims = monster_archive::animations(&slim_arch, 1).unwrap().unwrap();
-        let kept_orig: Vec<_> = orig_anims
-            .iter()
-            .filter(|a| {
-                !want_dropped.contains(&a.action_id)
-                    || orig_anims
-                        .iter()
-                        .filter(|b| b.action_id == a.action_id)
-                        .count()
-                        > 1
-            })
-            .collect();
-        // The dropped castable ids are unique within each block, so the
-        // filter above is exact; sanity-check the counts line up.
-        assert_eq!(kept_orig.len(), slim_anims.len(), "id {id} kept anims");
-        for (o, s) in kept_orig.iter().zip(slim_anims.iter()) {
-            assert_eq!(o.action_id, s.action_id, "id {id} anim order");
+        assert_eq!(orig_anims.len(), slim_anims.len(), "id {id} anim count");
+        for (i, (o, s)) in orig_anims.iter().zip(slim_anims.iter()).enumerate() {
+            if want_dropped.contains(&o.action_id) {
+                assert_eq!(s.action_id, 0x01, "id {id} anim slot {i} aliased");
+                continue;
+            }
+            assert_eq!(o.action_id, s.action_id, "id {id} anim order at {i}");
             assert_eq!(o.part_count, s.part_count);
             assert_eq!(
                 o.frames, s.frames,

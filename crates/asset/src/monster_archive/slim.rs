@@ -33,13 +33,19 @@
 //!
 //! Entries sit in one contiguous ascending run (1-3 byte alignment padding)
 //! between the TMD and the block tail (effect descriptors, then the texture
-//! pool). Dropping entries compacts that run; everything after shifts down by
-//! a 4-aligned delta. Fixed up: the `+0x08` texture-pool offset, the `+0x4A`
-//! count, the `+0x4C` offset array, each surviving entry's `+0x04`/`+0x08`
-//! effect-table *indices* (bumped by the dropped count so `idx + count +
-//! 0x12` - the loader's table-word formula - resolves to the same table word),
-//! and the referenced table words' *values* where they point into the moved
-//! tail. The name and TMD offsets precede the entries and never move.
+//! pool). Dropping entries compacts that run; everything after shifts down
+//! by a 4-aligned delta. **The entry count and the array's index space are
+//! preserved**: the engine addresses animations by raw entry index (actor
+//! `+0x1DA`; the streamed special-move modules were authored against the
+//! retail layout), so a kept entry keeps its index and a dropped slot is
+//! aliased to the basic-attack entry - harmless to the AI picker (id `0x01`
+//! is not castable), invisible to the tag-search/reaction consumers, and a
+//! valid animation for any stray index reference. Keeping the count also
+//! pins the loader's effect-table word formula (`idx + count + 0x12`), so
+//! entry effect indices stay verbatim. Fixed up: the `+0x08` texture-pool
+//! offset, the `+0x4C` offset array, and the referenced table words' values
+//! where they point into the moved tail. The name and TMD offsets precede
+//! the entries and never move.
 
 use anyhow::{Context, Result, bail};
 
@@ -168,6 +174,17 @@ pub fn slim_castables(block: &[u8]) -> Result<SlimBlock> {
     }
 
     // Rebuild: head verbatim, kept entries compacted, tail shifted down.
+    //
+    // The entry COUNT and the array's INDEX SPACE are preserved: the engine
+    // addresses animations by raw entry index (actor `+0x1DA`, and the
+    // streamed special-move modules were authored against the retail layout),
+    // so a kept entry must keep its index. A dropped castable's array slot is
+    // aliased to the block's basic-attack entry instead of being removed -
+    // the AI spell picker skips it (id `0x01` is not a castable), the
+    // tag-search and reaction-map consumers never match it, and any stray
+    // index reference lands on a harmless, always-valid animation. Keeping
+    // the count also keeps the loader's effect-table word formula
+    // (`idx + count + 0x12`) fixed, so entry effect indices need no bumping.
     let kept: Vec<usize> = (0..count)
         .filter(|&i| !is_dropped(entries[i].id, entries[i].agl))
         .collect();
@@ -175,13 +192,18 @@ pub fn slim_castables(block: &[u8]) -> Result<SlimBlock> {
     if dropped_n == 0 {
         bail!("nothing to drop - block has no AI-rollable castables");
     }
+    let alias_idx = *kept
+        .iter()
+        .find(|&&i| entries[i].id == 0x01)
+        .or_else(|| kept.first())
+        .expect("at least one kept entry");
     let mut out = block[..region_start].to_vec();
-    let mut new_offs = Vec::with_capacity(kept.len());
+    let mut new_off_by_index = vec![0usize; count];
     for &i in &kept {
         while !out.len().is_multiple_of(4) {
             out.push(0);
         }
-        new_offs.push(out.len());
+        new_off_by_index[i] = out.len();
         let e = &entries[i];
         out.extend_from_slice(&block[e.off..e.off + e.span]);
     }
@@ -195,27 +217,25 @@ pub fn slim_castables(block: &[u8]) -> Result<SlimBlock> {
     }
     out.extend_from_slice(&block[tail_start..]);
 
-    // Fixups.
+    // Fixups: the texture-pool offset, the offset array (kept entries at
+    // their original indices, dropped slots aliased), and the effect-table
+    // word values where they point into the moved tail.
     out[8..12].copy_from_slice(&((tex_off - delta) as u32).to_le_bytes());
-    out[COUNT_OFF] = kept.len() as u8;
-    for (k, &new_off) in new_offs.iter().enumerate() {
-        out[ARRAY_OFF + k * 4..ARRAY_OFF + k * 4 + 4]
-            .copy_from_slice(&(new_off as u32).to_le_bytes());
+    for i in 0..count {
+        let target = if new_off_by_index[i] != 0 || kept.contains(&i) {
+            new_off_by_index[i]
+        } else {
+            new_off_by_index[alias_idx]
+        };
+        out[ARRAY_OFF + i * 4..ARRAY_OFF + i * 4 + 4]
+            .copy_from_slice(&(target as u32).to_le_bytes());
     }
-    for k in kept.len()..count {
-        out[ARRAY_OFF + k * 4..ARRAY_OFF + k * 4 + 4].copy_from_slice(&[0; 4]);
-    }
-    // Surviving entries' effect-table indices bump by the dropped count so the
-    // loader's `idx + count + 0x12` still lands on the original table word;
-    // the word values themselves shift down where they point into the tail.
-    for (k, &i) in kept.iter().enumerate() {
+    for &i in &kept {
         let e = &entries[i];
-        for (field_off, idx) in [(4usize, e.raw4), (8usize, e.raw8)] {
+        for idx in [e.raw4, e.raw8] {
             if idx == 0 {
                 continue;
             }
-            let at = new_offs[k] + field_off;
-            out[at..at + 4].copy_from_slice(&(idx + dropped_n as u32).to_le_bytes());
             let word_off = (idx as usize + count + TABLE_WORD_BIAS) * 4;
             let val = u32_at(&out, word_off)? as usize;
             if val >= tail_start {
@@ -295,30 +315,41 @@ mod tests {
         let slim = slim_castables(&b).unwrap();
         assert_eq!(slim.dropped.len(), 1);
         assert_eq!(slim.dropped[0].id, 0x0D);
-        // Count down to 2, texture offset shifted by the saved bytes.
-        assert_eq!(slim.bytes[COUNT_OFF], 2);
+        // Count and index space preserved; texture offset shifted by the
+        // saved bytes.
+        assert_eq!(slim.bytes[COUNT_OFF], 3);
         let old_tex = u32::from_le_bytes(b[8..12].try_into().unwrap()) as usize;
         let new_tex = u32::from_le_bytes(slim.bytes[8..12].try_into().unwrap()) as usize;
         assert_eq!(old_tex - new_tex, slim.heap_saved);
         // Texture bytes intact at the new offset.
         assert!(slim.bytes[new_tex..].iter().all(|&x| x == 0x55));
-        // Surviving special: id 0x23, effect index bumped 1 -> 2 so the
-        // loader formula (idx + count + 0x12) resolves to the same word.
-        let o23 = u32::from_le_bytes(slim.bytes[ARRAY_OFF + 4..ARRAY_OFF + 8].try_into().unwrap())
+        // The dropped castable's slot (index 1) aliases the attack entry
+        // (index 0): same offset, id 0x01 at the target.
+        let o0 =
+            u32::from_le_bytes(slim.bytes[ARRAY_OFF..ARRAY_OFF + 4].try_into().unwrap()) as usize;
+        let o1 = u32::from_le_bytes(slim.bytes[ARRAY_OFF + 4..ARRAY_OFF + 8].try_into().unwrap())
             as usize;
+        assert_eq!(o1, o0, "dropped slot aliases the attack entry");
+        assert_eq!(slim.bytes[o0], 0x01);
+        // The special keeps its ORIGINAL index (2) and its verbatim effect
+        // index (1): the table word position is count-stable and its value
+        // still resolves to the descriptor, now shifted with the tail.
+        let o23 = u32::from_le_bytes(
+            slim.bytes[ARRAY_OFF + 8..ARRAY_OFF + 12]
+                .try_into()
+                .unwrap(),
+        ) as usize;
         assert_eq!(slim.bytes[o23], 0x23);
         let idx = u32::from_le_bytes(slim.bytes[o23 + 4..o23 + 8].try_into().unwrap());
-        assert_eq!(idx, 2);
-        let word = (idx as usize + 2 + TABLE_WORD_BIAS) * 4;
+        assert_eq!(idx, 1, "effect index verbatim - no bumping");
+        let word = (idx as usize + 3 + TABLE_WORD_BIAS) * 4;
         let desc = u32::from_le_bytes(slim.bytes[word..word + 4].try_into().unwrap()) as usize;
         assert_eq!(&slim.bytes[desc..desc + 8], &[0xAA; 8]);
-        // The kept attack entry is byte-identical.
-        let o01 =
-            u32::from_le_bytes(slim.bytes[ARRAY_OFF..ARRAY_OFF + 4].try_into().unwrap()) as usize;
-        let old_o01 = u32::from_le_bytes(b[ARRAY_OFF..ARRAY_OFF + 4].try_into().unwrap()) as usize;
-        assert_eq!(o01, old_o01); // first entry doesn't move
+        // The kept attack entry is byte-identical and unmoved.
+        let old_o0 = u32::from_le_bytes(b[ARRAY_OFF..ARRAY_OFF + 4].try_into().unwrap()) as usize;
+        assert_eq!(o0, old_o0);
         let span = ENTRY_STREAM_OFF + 2 + 2 * 9;
-        assert_eq!(&slim.bytes[o01..o01 + span], &b[old_o01..old_o01 + span]);
+        assert_eq!(&slim.bytes[o0..o0 + span], &b[old_o0..old_o0 + span]);
     }
 
     #[test]
