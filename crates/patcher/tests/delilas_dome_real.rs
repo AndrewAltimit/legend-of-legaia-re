@@ -11,12 +11,13 @@ use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::delilas_dome::{
     AI_BLOCK_CAPACITY, AI_BLOCK_VA, ARENA_BASE_VA, ARENA_OVERLAY_PROT_INDEX,
     BATTLE_OVERLAY_PROT_INDEX, CLONE_IDS, DELILAS_PAIR_IDS, DISPLAY_ROUTINE_CAPACITY,
-    DISPLAY_ROUTINE_VA, DomeInjection, MAGIC_REJECT_NEW, MAGIC_REJECT_ORIG, MAGIC_REJECT_SITES,
-    PRGERR_PRINT_GATE_NEW, PRGERR_PRINT_GATE_VA, REWARD_HOOK_ORIG, REWARD_HOOK_VA,
-    REWARD_ROUTINE_VA, ROSTER_VA, ROUTINE_VA, SEAT_HOOK_ORIG, SEAT_HOOK_VA, SEAT_ROUTINE_VA,
-    SEED_HOOK_ORIG, SEED_HOOK_VA, STREAM_HOOK_ORIG, STREAM_HOOK_VA, STREAM_ROUTINE_VA,
-    STREAM2_HOOK_ORIG, STREAM2_HOOK_VA, STREAM2_ROUTINE_VA, TEMPLATE_BYTES,
-    TEMPLATE_REF_ADDIU_ORIG, TEMPLATE_REF_LUI_ORIG, TEMPLATE_REF_LUI_VA, TEMPLATE_VA,
+    DISPLAY_ROUTINE_VA, DomeInjection, GI_ARM_CAPACITY, GI_ARM_ORIG_HEAD, GI_ARM_ORIG_WORD2,
+    GI_ARM_VA, MAGIC_REJECT_NEW, MAGIC_REJECT_ORIG, MAGIC_REJECT_SITES, PRGERR_PRINT_GATE_NEW,
+    PRGERR_PRINT_GATE_VA, REWARD_HOOK_ORIG, REWARD_HOOK_VA, REWARD_ROUTINE_VA, ROSTER_VA,
+    ROUTINE_VA, SEAT_HOOK_ORIG, SEAT_HOOK_VA, SEAT_ROUTINE_VA, SEED_HOOK_ORIG, SEED_HOOK_VA,
+    STREAM_HOOK_ORIG, STREAM_HOOK_VA, STREAM_ROUTINE_VA, STREAM2_HOOK_ORIG, STREAM2_HOOK_VA,
+    STREAM2_ROUTINE_VA, TEMPLATE_BYTES, TEMPLATE_REF_ADDIU_ORIG, TEMPLATE_REF_LUI_ORIG,
+    TEMPLATE_REF_LUI_VA, TEMPLATE_VA,
 };
 use legaia_patcher::disc::DiscPatcher;
 
@@ -104,6 +105,18 @@ fn baseline_sites_match_the_known_build() {
         &TEMPLATE_BYTES,
         "descriptor slot holds the stock actor template"
     );
+    // The Gi arm's cave home (unreferenced FUN_80050d40) holds its known
+    // head words - word 0 and word 2 (word 1 is a `move` pseudo-op).
+    assert_eq!(
+        scus_word(&scus, GI_ARM_VA),
+        GI_ARM_ORIG_HEAD,
+        "Gi arm home is the recognized `andi a0,a0,0xfff`"
+    );
+    assert_eq!(
+        scus_word(&scus, GI_ARM_VA + 8),
+        GI_ARM_ORIG_WORD2,
+        "Gi arm home +8 is the recognized `andi a1,a1,0xfff`"
+    );
 }
 
 #[test]
@@ -126,12 +139,13 @@ fn plan_validates_against_the_real_build() {
     // Seven SCUS-cave writes (seed routine + template + roster + seat routine
     // + reward routine + the two stream routines), all in all-zero dead
     // space, plus the two stream-map hooks, the PRG ERR print-gate flip,
-    // the AI block (over unreferenced FUN_80035274) and the winnings-display
-    // override (over unreferenced FUN_800260DC).
+    // the AI main block (over unreferenced FUN_80035274), the Gi arm (over
+    // unreferenced FUN_80050d40) and the winnings-display override + flags
+    // cell (over unreferenced FUN_800260DC).
     assert_eq!(
         plan.scus.len(),
-        12,
-        "seven cave writes + two stream hooks + PRG ERR gate + AI block + display override"
+        13,
+        "seven cave writes + two stream hooks + PRG ERR gate + AI block + Gi arm + display override"
     );
     for w in &plan.scus[..7] {
         assert!(!w.bytes.is_empty());
@@ -166,8 +180,8 @@ fn plan_validates_against_the_real_build() {
         let detour = u32::from_le_bytes(plan.scus[i].bytes[..4].try_into().unwrap());
         assert_eq!(detour >> 26, 0x02, "stream hook {i} is a `j` detour");
     }
-    // PRG ERR print-gate flip, then the AI block and the display override
-    // over their fingerprinted unreferenced bodies.
+    // PRG ERR print-gate flip, then the AI main block, the Gi arm and the
+    // display override over their fingerprinted unreferenced bodies.
     assert_eq!(
         plan.scus[9].off,
         file_offset_for_va(&scus, PRGERR_PRINT_GATE_VA).unwrap()
@@ -180,9 +194,14 @@ fn plan_validates_against_the_real_build() {
     assert!(plan.scus[10].bytes.len() <= AI_BLOCK_CAPACITY);
     assert_eq!(
         plan.scus[11].off,
+        file_offset_for_va(&scus, GI_ARM_VA).unwrap()
+    );
+    assert!(plan.scus[11].bytes.len() <= GI_ARM_CAPACITY);
+    assert_eq!(
+        plan.scus[12].off,
         file_offset_for_va(&scus, DISPLAY_ROUTINE_VA).unwrap()
     );
-    assert!(plan.scus[11].bytes.len() <= DISPLAY_ROUTINE_CAPACITY);
+    assert!(plan.scus[12].bytes.len() <= DISPLAY_ROUTINE_CAPACITY);
 
     // Six overlay writes: seed detour, template repoint, descriptor, seat
     // detour, reward detour, winnings-display detour; every detour is a `j`

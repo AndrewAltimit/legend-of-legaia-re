@@ -320,10 +320,11 @@ pub const MAGIC_REJECT_NEW: u32 = andi(V0, V0, 0x300);
 /// special once per **4** turns with the siblings **staggered 2 apart**, so
 /// the arm's ctx reload `lw v0,-0x42dc(v0)` (its `lui` already executed, its
 /// delay slot is the stock load-delay `nop` - both safe) becomes
-/// `j AI_BLOCK_VA`. The block is course-gated: any context whose course word
-/// is not exactly [`COURSE3_SEED_WORD`] (ravine duels, Master rounds, the
-/// course's own Gi round) resumes the stock arm with every register as
-/// retail left it.
+/// `j AI_BLOCK_VA`. The block is course-gated: the Che & Lu round
+/// ([`COURSE3_SEED_WORD`]) takes the local retime arm, the Gi round
+/// ([`GI_ROUND_WORD`]) is forwarded to the second cave
+/// ([`assemble_gi_arm`]), and every other context (ravine duels, Master
+/// rounds) resumes the stock arm with every register as retail left it.
 pub const AI_HOOK_VA: u32 = 0x801E_B7C4;
 /// The stock instruction at [`AI_HOOK_VA`] (`lw v0,-0x42dc(v0)` - the ctx
 /// reload the block replays first) - the build fingerprint.
@@ -373,15 +374,43 @@ pub const GI_ROUND_WORD: u32 = COURSE3_SEED_WORD + 1;
 pub const GI_DIVIDE_SPELL: u16 = 0x50;
 /// Spore Gas (Berserker's status cloud) - capture-class, module PROT 0939.
 pub const GI_SPORE_GAS_SPELL: u16 = 0x4F;
-/// The turn-counter value that queues Divide (counter 1 = the player's
-/// second turn). Exact equality on the monotonic per-battle counter makes
-/// each cast a one-shot with no state cell.
-pub const GI_DIVIDE_TURN: u16 = 1;
-/// The turn-counter value that queues Spore Gas (the player's fourth turn).
-pub const GI_SPORE_GAS_TURN: u16 = 3;
+/// The turn-counter floor for Spore Gas: Gi's first pick with the shared
+/// counter at/after this value casts it (one-shot via [`GI_FLAGS_VA`]).
+/// A floor, not exact equality: post-Divide the round has three combatants,
+/// so Gi's picks no longer land on every odd counter value and an exact
+/// test could skip past its turn forever.
+pub const GI_SPORE_GAS_MIN_TURN: u16 = 3;
 
-/// Assemble the course-3 AI block (45 words, capacity 48): the Che & Lu
-/// retime plus the Gi one-shot arm.
+/// The Gi arm's home: `FUN_80050d40`, the SCUS 12-bit angle tween - a
+/// 48-instruction frameless leaf with **zero references of any form** in
+/// any image (the same five-form sweep that cleared the other two cave
+/// homes; `scripts/ci/port-catalog-ignore.toml` `[unreferenced]`). The
+/// HP-gated Divide + Blazing Slash lockout grew the Gi logic past sharing
+/// `FUN_80035274` with the Che & Lu arm, so it claims the third
+/// unreferenced body; the main block reaches it by `j`.
+pub const GI_ARM_VA: u32 = 0x8005_0D40;
+/// First stock word of the overwritten tween (`andi a0,a0,0xfff`) - the
+/// build fingerprint.
+pub const GI_ARM_ORIG_HEAD: u32 = andi(A0, A0, 0xFFF);
+/// Third stock word (`andi a1,a1,0xfff`, at `+8`) - the second fingerprint
+/// pin. Word 1 is a `move` pseudo-op whose concrete encoding (`addu` vs
+/// `or`) the dump does not disambiguate, so it is not pinned.
+pub const GI_ARM_ORIG_WORD2: u32 = andi(A1, A1, 0xFFF);
+/// Capacity of the overwritten tween body (48 instructions).
+pub const GI_ARM_CAPACITY: usize = 48 * 4;
+
+/// The Gi one-shot flags word: bit 0 = Divide cast, bit 1 = Spore Gas cast.
+/// Lives in the display cave's data tail (word 8 of the overwritten
+/// `FUN_800260DC` body, materialised as the trailing zero word of
+/// [`assemble_display_routine`]); the Che & Lu arm zeroes it on every
+/// round-0 pick, so a re-enrolled course (which always replays round 0)
+/// re-arms both casts with no extra reset hook.
+pub const GI_FLAGS_VA: u32 = DISPLAY_ROUTINE_VA + 8 * 4;
+
+/// Assemble the course-3 AI main block (30 words, capacity 48): the course
+/// dispatch, the Che & Lu retime, and the Gi flags reset. The Gi round's
+/// own logic lives in the second cave ([`assemble_gi_arm`]), reached by `j`
+/// with `a0 = word - 0x131` still live.
 ///
 /// Entry state (from the hooked arm): `v0 = 0x80080000` (the arm's own
 /// `lui`), `s4` = actor, `s7` = battle slot (the formation-cell index);
@@ -389,18 +418,12 @@ pub const GI_SPORE_GAS_TURN: u16 = 3;
 /// The stock-resume path must leave `v0` = the battle ctx pointer, which
 /// the replayed `lw` provides.
 ///
-/// Gi arm (`word == 0x132`, seat 0 only): turn counter exactly
-/// [`GI_DIVIDE_TURN`] queues Divide, exactly [`GI_SPORE_GAS_TURN`] queues
-/// Spore Gas - the counter never repeats a value within a battle, so each
-/// fires once with no state cell. Every other turn (and any Divide-spawned
-/// clone, which sits in a non-zero seat) falls to the stock arm, keeping
-/// the retail Blazing Slash cadence.
+/// The round-0 arm zeroes [`GI_FLAGS_VA`] on every pick: a course always
+/// enters through round 0, so the Gi one-shots are re-armed for every
+/// enrollment with no dedicated reset hook.
 pub fn assemble_ai_block() -> Vec<u32> {
-    const NOSPEC: usize = 24;
-    const STOCK: usize = 26;
-    const GI: usize = 28;
-    const DIV: usize = 40;
-    const QUEUE: usize = 41;
+    const CHELU: usize = 9;
+    const NOSPEC: usize = 28;
     let neg_word = -(COURSE3_SEED_WORD as i32) as u32 as u16;
     let words = vec![
         lw(V0, V0, 0xBD24),                      //  0: replay: v0 = battle ctx
@@ -408,55 +431,122 @@ pub fn assemble_ai_block() -> Vec<u32> {
         lw(A0, A3, lo(COURSE_WORD_VA)),          //  2: a0 = course word
         addiu(A3, A3, 0xBD0C),                   //  3: a3 = formation base (delay)
         addiu(A0, A0, neg_word),                 //  4: a0 -= 0x131
-        bne(A0, ZERO, (GI - (5 + 1)) as i16),    //  5: not Che&Lu round -> Gi gate
+        beq(A0, ZERO, (CHELU - (5 + 1)) as i16), //  5: Che&Lu round -> local arm
         nop(),                                   //  6
-        lbu(A0, V0, 0x28A),                      //  7: a0 = shared turn counter
-        addu(V1, S7, A3),                        //  8
-        lbu(V1, V1, 0),                          //  9: v1 = formation id
-        nop(),                                   // 10: (load delay)
-        andi(A3, V1, 1),                         // 11: Che(163)=1, Lu(164)=0
-        xori(A3, A3, 1),                         // 12: Che=0, Lu=1
-        sll(A3, A3, 1),                          // 13: Che=0, Lu=2 (stagger)
-        addu(A0, A0, A3),                        // 14: counter + offset
-        andi(A0, A0, AI_PERIOD_MASK),            // 15: % 4
-        addiu(A3, ZERO, AI_SPECIAL_PHASE),       // 16
-        bne(A0, A3, (NOSPEC - (17 + 1)) as i16), // 17: wrong phase -> no special
-        nop(),                                   // 18
-        addiu(V0, ZERO, 2),                      // 19
-        sb(V0, S4, 0x1DE),                       // 20: actor+0x1DE = 2
-        addiu(V1, V1, 0xFFD7),                   // 21: action = id - 0x29
-        j(AI_ARM_JOIN_VA),                       // 22
-        sb(V1, S4, 0x1DF),                       // 23: queue special (delay)
-        // NOSPEC (idx 24):
-        j(AI_ARM_JOIN_VA), // 24
-        nop(),             // 25
-        // STOCK (idx 26): resume the retail arm, v0 = ctx as it expects.
-        j(AI_STOCK_RESUME_VA), // 26
-        nop(),                 // 27
-        // GI (idx 28): the one-shot Divide / Spore Gas arm. a0 currently
-        // holds `word - 0x131`.
-        addiu(A0, A0, 0xFFFF), // 28: a0 = word - 0x132
-        bne(A0, ZERO, (STOCK as isize - (29 + 1)) as i16), // 29: not the Gi round -> stock
-        nop(),                 // 30
-        bne(S7, ZERO, (STOCK as isize - (31 + 1)) as i16), // 31: clone seat -> stock
-        lbu(A0, V0, 0x28A),    // 32: a0 = turn counter (delay;
-        //     a0 is dead on the stock path - the resume point reloads it)
-        addiu(V1, ZERO, GI_DIVIDE_TURN), // 33: (also the load-delay filler)
-        beq(A0, V1, (DIV - (34 + 1)) as i16), // 34: Divide turn
-        addiu(V1, ZERO, GI_SPORE_GAS_TURN), // 35: (delay - harmless both ways)
-        bne(A0, V1, (STOCK as isize - (36 + 1)) as i16), // 36: neither turn -> stock
-        addiu(V1, ZERO, GI_SPORE_GAS_SPELL), // 37: (delay; v1 dead on stock path)
-        beq(ZERO, ZERO, (QUEUE - (38 + 1)) as i16), // 38
-        nop(),                           // 39
-        // DIV (idx 40):
-        addiu(V1, ZERO, GI_DIVIDE_SPELL), // 40
-        // QUEUE (idx 41): mirror the stock arm's special-queue stores.
-        addiu(V0, ZERO, 2), // 41
-        sb(V0, S4, 0x1DE),  // 42
-        j(AI_ARM_JOIN_VA),  // 43
-        sb(V1, S4, 0x1DF),  // 44: queue the cast (delay)
+        j(GI_ARM_VA),                            //  7: all else -> the Gi cave
+        nop(),                                   //  8
+        // CHELU (idx 9): the retime arm; first re-arm the Gi one-shots.
+        lui(A0, hi(GI_FLAGS_VA)),                //  9
+        sw(ZERO, A0, lo(GI_FLAGS_VA)),           // 10: flags = 0 (every pick)
+        lbu(A0, V0, 0x28A),                      // 11: a0 = shared turn counter
+        addu(V1, S7, A3),                        // 12
+        lbu(V1, V1, 0),                          // 13: v1 = formation id
+        nop(),                                   // 14: (load delay)
+        andi(A3, V1, 1),                         // 15: Che(163)=1, Lu(164)=0
+        xori(A3, A3, 1),                         // 16: Che=0, Lu=1
+        sll(A3, A3, 1),                          // 17: Che=0, Lu=2 (stagger)
+        addu(A0, A0, A3),                        // 18: counter + offset
+        andi(A0, A0, AI_PERIOD_MASK),            // 19: % 4
+        addiu(A3, ZERO, AI_SPECIAL_PHASE),       // 20
+        bne(A0, A3, (NOSPEC - (21 + 1)) as i16), // 21: wrong phase -> no special
+        nop(),                                   // 22
+        addiu(V0, ZERO, 2),                      // 23
+        sb(V0, S4, 0x1DE),                       // 24: actor+0x1DE = 2
+        addiu(V1, V1, 0xFFD7),                   // 25: action = id - 0x29
+        j(AI_ARM_JOIN_VA),                       // 26
+        sb(V1, S4, 0x1DF),                       // 27: queue special (delay)
+        // NOSPEC (idx 28):
+        j(AI_ARM_JOIN_VA), // 28
+        nop(),             // 29
     ];
     debug_assert!(words.len() * 4 <= AI_BLOCK_CAPACITY);
+    words
+}
+
+/// Assemble the Gi arm (47 words, capacity 48, over `FUN_80050d40`).
+/// Entered by `j` from the main block with `a0 = word - 0x131`, `v0` =
+/// battle ctx, `s4` = actor, `s7` = seat; `v1`/`a3` dead both ways.
+///
+/// Per Gi pick (`word == 0x132`, seat 0 = the real Gi):
+///
+/// 1. **Divide** - queued on the first pick with HP strictly below half of
+///    max (`+0x14C < +0x14E >> 1`), once ([`GI_FLAGS_VA`] bit 0).
+/// 2. **Spore Gas** - queued on the first pick with the shared counter at
+///    or past [`GI_SPORE_GAS_MIN_TURN`], once (bit 1); checked on both the
+///    pre- and post-Divide paths so neither ordering can starve it. When a
+///    pick qualifies for both casts, Divide wins and Spore Gas follows on
+///    the next pick (the HP and counter conditions both persist).
+/// 3. **Blazing Slash lockout** - before Divide, non-cast picks resume the
+///    stock arm (the retail `% 3` Blazing Slash cadence stands); after
+///    Divide, they jump straight to the arm join, so the generic
+///    attack-picker runs and the special can never be queued again. The
+///    Divide clone sits in a non-zero seat and always takes the join path:
+///    it melees only, and can neither re-Divide nor Blazing Slash.
+pub fn assemble_gi_arm() -> Vec<u32> {
+    const TRYSPORE_PD: usize = 20;
+    const TRYSPORE_ST: usize = 29;
+    const SPOREQ: usize = 36;
+    const QUEUE: usize = 39;
+    const GNOSPEC: usize = 43;
+    const GSTOCK: usize = 45;
+    let words = vec![
+        addiu(A0, A0, 0xFFFF), //                     0: a0 = word - 0x132
+        bne(A0, ZERO, (GSTOCK - (1 + 1)) as i16), //  1: not the Gi round -> stock
+        lui(A3, hi(GI_FLAGS_VA)), //                  2: (delay; a3 dead on stock)
+        bne(S7, ZERO, (GNOSPEC - (3 + 1)) as i16), // 3: clone seat -> plain attack
+        lw(V1, A3, lo(GI_FLAGS_VA)), //               4: v1 = one-shot flags (delay)
+        nop(),                 //                     5: (load delay)
+        andi(A0, V1, 1),       //                     6
+        bne(A0, ZERO, (TRYSPORE_PD - (7 + 1)) as i16), // 7: already divided
+        lhu(A0, S4, 0x14C),    //                     8: a0 = current HP (delay)
+        lhu(A3, S4, 0x14E),    //                     9: a3 = max HP
+        nop(),                 //                    10: (load delay)
+        srl(A3, A3, 1),        //                    11: a3 = max/2
+        sltu(A0, A0, A3),      //                    12: a0 = (hp < max/2)
+        beq(A0, ZERO, (TRYSPORE_ST - (13 + 1)) as i16), // 13: healthy -> spore?
+        nop(),                 //                    14
+        ori(V1, V1, 1),        //                    15: mark Divide used
+        lui(A3, hi(GI_FLAGS_VA)), //                 16: (a3 held max/2)
+        sw(V1, A3, lo(GI_FLAGS_VA)), //              17
+        beq(ZERO, ZERO, (QUEUE - (18 + 1)) as i16), // 18
+        addiu(V1, ZERO, GI_DIVIDE_SPELL), //         19: (delay)
+        // TRYSPORE_PD (20): divided - a special only if Spore Gas is owed;
+        // otherwise join (Blazing Slash locked out).
+        andi(A0, V1, 2),                             //                          20
+        bne(A0, ZERO, (GNOSPEC - (21 + 1)) as i16),  // 21: spore done -> join
+        lbu(A0, V0, 0x28A), //                       22: a0 = counter (delay)
+        nop(),              //                          23: (load delay)
+        sltiu(A0, A0, GI_SPORE_GAS_MIN_TURN), //     24
+        bne(A0, ZERO, (GNOSPEC - (25 + 1)) as i16), // 25: too early -> join
+        ori(V1, V1, 2),     //                           26: (delay; v1 dead if taken)
+        beq(ZERO, ZERO, (SPOREQ - (27 + 1)) as i16), // 27
+        nop(),              //                           28
+        // TRYSPORE_ST (29): not divided & healthy - a special only if Spore
+        // Gas is due; otherwise stock (Blazing Slash cadence stands).
+        andi(A0, V1, 2),                           //                          29
+        bne(A0, ZERO, (GSTOCK - (30 + 1)) as i16), // 30: spore done -> stock
+        lbu(A0, V0, 0x28A),                        //                       31: (delay)
+        nop(),                                     //                          32: (load delay)
+        sltiu(A0, A0, GI_SPORE_GAS_MIN_TURN),      //     33
+        bne(A0, ZERO, (GSTOCK - (34 + 1)) as i16), // 34: too early -> stock
+        ori(V1, V1, 2), //                           35: (delay; v1 dead if taken)
+        // SPOREQ (36): mark Spore Gas used, queue it.
+        lui(A3, hi(GI_FLAGS_VA)),            //                 36
+        sw(V1, A3, lo(GI_FLAGS_VA)),         //              37
+        addiu(V1, ZERO, GI_SPORE_GAS_SPELL), //      38
+        // QUEUE (39): mirror the stock arm's special-queue stores.
+        addiu(V0, ZERO, 2), //                       39
+        sb(V0, S4, 0x1DE),  //                       40
+        j(AI_ARM_JOIN_VA),  //                       41
+        sb(V1, S4, 0x1DF),  //                       42: queue the cast (delay)
+        // GNOSPEC (43): no special - the generic attack-picker runs.
+        j(AI_ARM_JOIN_VA), // 43
+        nop(),             // 44
+        // GSTOCK (45): resume the retail arm, v0 = ctx as it expects.
+        j(AI_STOCK_RESUME_VA), // 45
+        nop(),                 // 46
+    ];
+    debug_assert!(words.len() * 4 <= GI_ARM_CAPACITY);
     words
 }
 
@@ -498,9 +588,12 @@ pub const DISPLAY_HOME_ORIG_HEAD2: u32 = sw(ZERO, V0, 0x40B8);
 /// Capacity of the overwritten camera-preset body (16 instructions).
 pub const DISPLAY_ROUTINE_CAPACITY: usize = 16 * 4;
 
-/// Assemble the winnings-display override (8 words, over `FUN_800260DC`).
-/// Entry: `v0` = `(round-1)*4 + (course<<6)`, `a0` = table base, `v1` =
-/// `course << 6`.
+/// Assemble the winnings-display override (8 code words + 1 data word, over
+/// `FUN_800260DC`). Entry: `v0` = `(round-1)*4 + (course<<6)`, `a0` = table
+/// base, `v1` = `course << 6`. The trailing zero word is [`GI_FLAGS_VA`],
+/// the Gi arm's one-shot flags cell - included in the write because the
+/// overwritten body holds code there, not zeros, and the cell must start
+/// clear.
 pub fn assemble_display_routine() -> Vec<u32> {
     const SKIP: usize = 5;
     let words = vec![
@@ -513,8 +606,9 @@ pub fn assemble_display_routine() -> Vec<u32> {
         lw(V1, V0, 0),        // 5
         j(DISPLAY_RETURN_VA), // 6
         nop(),                // 7
+        0,                    // 8: GI_FLAGS_VA (data - the Gi one-shot flags)
     ];
-    debug_assert_eq!(words.len(), 8);
+    debug_assert_eq!(words.len(), 9);
     words
 }
 
@@ -777,6 +871,7 @@ pub fn probe_ram_writes() -> Vec<(u32, Vec<u8>)> {
     let words = |w: Vec<u32>| -> Vec<u8> { w.iter().flat_map(|w| w.to_le_bytes()).collect() };
     vec![
         (AI_BLOCK_VA, words(assemble_ai_block())),
+        (GI_ARM_VA, words(assemble_gi_arm())),
         (DISPLAY_ROUTINE_VA, words(assemble_display_routine())),
         (ROUTINE_VA, words(assemble_routine())),
         (TEMPLATE_VA, TEMPLATE_BYTES.to_vec()),
@@ -926,9 +1021,9 @@ impl DomeInjection {
             bytes: PRGERR_PRINT_GATE_NEW.to_le_bytes().to_vec(),
         });
 
-        // AI block (Che & Lu retime + the Gi one-shot arm) over the
-        // unreferenced passive-name draw FUN_80035274 (fingerprint its head;
-        // the body is code, not zeros).
+        // AI main block (course dispatch + Che & Lu retime + Gi flags reset)
+        // over the unreferenced passive-name draw FUN_80035274 (fingerprint
+        // its head; the body is code, not zeros).
         let ai_block: Vec<u8> = words_to_bytes(assemble_ai_block());
         if ai_block.len() > AI_BLOCK_CAPACITY {
             bail!("dome AI block overruns the unreferenced body it overwrites");
@@ -939,6 +1034,22 @@ impl DomeInjection {
         scus_writes.push(Write {
             off: ai_off,
             bytes: ai_block,
+        });
+
+        // Gi arm (HP-gated Divide + Spore Gas one-shots + Blazing Slash
+        // lockout) over the unreferenced angle tween FUN_80050d40. Words 0
+        // and 2 are pinned; word 1 is a `move` pseudo-op the dump does not
+        // disambiguate.
+        let gi_arm: Vec<u8> = words_to_bytes(assemble_gi_arm());
+        if gi_arm.len() > GI_ARM_CAPACITY {
+            bail!("dome Gi arm overruns the unreferenced body it overwrites");
+        }
+        let gi_off = scus_off(scus, GI_ARM_VA)?;
+        expect_word(scus, gi_off, GI_ARM_ORIG_HEAD, "Gi arm home (head)")?;
+        expect_word(scus, gi_off + 8, GI_ARM_ORIG_WORD2, "Gi arm home (+8)")?;
+        scus_writes.push(Write {
+            off: gi_off,
+            bytes: gi_arm,
         });
 
         // Winnings-display override over the unreferenced camera preset
@@ -1290,54 +1401,79 @@ mod tests {
         // Entry replays the displaced ctx reload, so the stock-resume path
         // hands the retail arm the register it expects.
         assert_eq!(r[0], AI_HOOK_ORIG);
-        // Course gate: exactly the Che & Lu round word (0x131); everything
-        // else falls to the Gi gate, which takes exactly 0x132 and resumes
-        // the stock arm for the rest (ravine duels, Master rounds).
+        // Course gate: exactly the Che & Lu round word (0x131) runs the
+        // local retime; everything else is forwarded to the Gi cave (which
+        // resumes the stock arm for non-course-3 contexts itself).
         assert_eq!(r[2], lw(A0, A3, lo(COURSE_WORD_VA)));
         assert_eq!(r[4], addiu(A0, A0, 0xFECF));
-        assert_eq!(r[5], bne(A0, ZERO, 22)); // idx5 -> GI(28)
-        assert_eq!(r[26], j(AI_STOCK_RESUME_VA));
+        assert_eq!(r[5], beq(A0, ZERO, 3)); // idx5 -> CHELU(9)
+        assert_eq!(r[7], j(GI_ARM_VA));
+        // The retime arm re-arms the Gi one-shots on every round-0 pick.
+        assert_eq!(r[9], lui(A0, hi(GI_FLAGS_VA)));
+        assert_eq!(r[10], sw(ZERO, A0, lo(GI_FLAGS_VA)));
         // Retime: (counter + {Che 0, Lu 2}) % 4 == 3 queues the special.
-        assert_eq!(r[15], andi(A0, A0, AI_PERIOD_MASK));
-        assert_eq!(r[16], addiu(A3, ZERO, AI_SPECIAL_PHASE));
-        assert_eq!(r[17], bne(A0, A3, 6)); // idx17 -> NOSPEC(24)
+        assert_eq!(r[19], andi(A0, A0, AI_PERIOD_MASK));
+        assert_eq!(r[20], addiu(A3, ZERO, AI_SPECIAL_PHASE));
+        assert_eq!(r[21], bne(A0, A3, 6)); // idx21 -> NOSPEC(28)
         // Special queue mirrors the stock arm's stores.
-        assert_eq!(r[20], sb(V0, S4, 0x1DE));
-        assert_eq!(r[21], addiu(V1, V1, 0xFFD7));
-        assert_eq!(r[22], j(AI_ARM_JOIN_VA));
-        assert_eq!(r[23], sb(V1, S4, 0x1DF));
-        assert_eq!(r[24], j(AI_ARM_JOIN_VA));
-        // Gi arm: exact-word gate (0x132), seat-0 gate, and the two
-        // one-shot turn tests.
-        assert_eq!(r[28], addiu(A0, A0, 0xFFFF)); // word-0x131 -> word-0x132
-        assert_eq!(r[29], bne(A0, ZERO, -4)); // idx29 -> STOCK(26)
-        assert_eq!(r[31], bne(S7, ZERO, -6)); // clone seat -> STOCK(26)
-        assert_eq!(r[32], lbu(A0, V0, 0x28A));
-        assert_eq!(r[33], addiu(V1, ZERO, GI_DIVIDE_TURN));
-        assert_eq!(r[34], beq(A0, V1, 5)); // idx34 -> DIV(40)
-        assert_eq!(r[35], addiu(V1, ZERO, GI_SPORE_GAS_TURN));
-        assert_eq!(r[36], bne(A0, V1, -11)); // idx36 -> STOCK(26)
-        assert_eq!(r[37], addiu(V1, ZERO, GI_SPORE_GAS_SPELL));
-        assert_eq!(r[38], beq(ZERO, ZERO, 2)); // idx38 -> QUEUE(41)
-        assert_eq!(r[40], addiu(V1, ZERO, GI_DIVIDE_SPELL));
-        assert_eq!(r[42], sb(V0, S4, 0x1DE));
-        assert_eq!(r[43], j(AI_ARM_JOIN_VA));
-        assert_eq!(r[44], sb(V1, S4, 0x1DF));
-        assert_eq!(r.len(), 45);
-        // The one-shot turns must dodge the stock arm's own special phase
-        // (counter % 3 == 2 queues Blazing Slash): a collision would be
-        // shadowed by our arm, silently deleting a stock special.
-        const {
-            assert!(GI_DIVIDE_TURN % 3 != 2);
-            assert!(GI_SPORE_GAS_TURN % 3 != 2);
-            assert!(GI_DIVIDE_TURN != GI_SPORE_GAS_TURN);
-            assert!(GI_ROUND_WORD == 0x132);
-        }
+        assert_eq!(r[24], sb(V0, S4, 0x1DE));
+        assert_eq!(r[25], addiu(V1, V1, 0xFFD7));
+        assert_eq!(r[26], j(AI_ARM_JOIN_VA));
+        assert_eq!(r[27], sb(V1, S4, 0x1DF));
+        assert_eq!(r[28], j(AI_ARM_JOIN_VA));
+        assert_eq!(r.len(), 30);
         // Fingerprint sanity: the hook context words are what the battle
         // overlay really holds (pinned against the dump in plan()).
         assert_eq!(AI_HOOK_PREV_ORIG, lui(V0, 0x8008));
         assert_eq!(AI_BLOCK_ORIG_HEAD, 0x27BD_FFE0);
         assert_eq!(AI_BLOCK_ORIG_HEAD2, 0x3C03_8007);
+    }
+
+    #[test]
+    fn gi_arm_shape() {
+        let r = assemble_gi_arm();
+        assert!(r.len() * 4 <= GI_ARM_CAPACITY);
+        assert_eq!(r.len(), 47);
+        // Exact-word gate (0x132) and the clone-seat gate: a clone pick
+        // takes the join path (no specials), never the stock arm.
+        assert_eq!(r[0], addiu(A0, A0, 0xFFFF)); // word-0x131 -> word-0x132
+        assert_eq!(r[1], bne(A0, ZERO, 43)); // idx1 -> GSTOCK(45)
+        assert_eq!(r[3], bne(S7, ZERO, 39)); // idx3 -> GNOSPEC(43)
+        assert_eq!(r[4], lw(V1, A3, lo(GI_FLAGS_VA)));
+        // Divide: HP strictly below half of max, one-shot via flags bit 0.
+        assert_eq!(r[8], lhu(A0, S4, 0x14C));
+        assert_eq!(r[9], lhu(A3, S4, 0x14E));
+        assert_eq!(r[11], srl(A3, A3, 1));
+        assert_eq!(r[12], sltu(A0, A0, A3));
+        assert_eq!(r[15], ori(V1, V1, 1));
+        assert_eq!(r[17], sw(V1, A3, lo(GI_FLAGS_VA)));
+        assert_eq!(r[19], addiu(V1, ZERO, GI_DIVIDE_SPELL));
+        // Spore Gas: counter floor test on both paths, one-shot via bit 1.
+        assert_eq!(r[24], sltiu(A0, A0, GI_SPORE_GAS_MIN_TURN));
+        assert_eq!(r[33], sltiu(A0, A0, GI_SPORE_GAS_MIN_TURN));
+        assert_eq!(r[26], ori(V1, V1, 2));
+        assert_eq!(r[35], ori(V1, V1, 2));
+        assert_eq!(r[38], addiu(V1, ZERO, GI_SPORE_GAS_SPELL));
+        // Post-Divide non-cast picks join (Blazing Slash locked out);
+        // pre-Divide ones resume the stock cadence.
+        assert_eq!(r[21], bne(A0, ZERO, 21)); // idx21 -> GNOSPEC(43)
+        assert_eq!(r[25], bne(A0, ZERO, 17)); // idx25 -> GNOSPEC(43)
+        assert_eq!(r[30], bne(A0, ZERO, 14)); // idx30 -> GSTOCK(45)
+        assert_eq!(r[34], bne(A0, ZERO, 10)); // idx34 -> GSTOCK(45)
+        // Queue mirrors the stock arm's stores; the two tails.
+        assert_eq!(r[40], sb(V0, S4, 0x1DE));
+        assert_eq!(r[41], j(AI_ARM_JOIN_VA));
+        assert_eq!(r[42], sb(V1, S4, 0x1DF));
+        assert_eq!(r[43], j(AI_ARM_JOIN_VA));
+        assert_eq!(r[45], j(AI_STOCK_RESUME_VA));
+        const {
+            assert!(GI_ROUND_WORD == 0x132);
+            // The flags cell is the display cave's data tail (word 8).
+            assert!(GI_FLAGS_VA == DISPLAY_ROUTINE_VA + 32);
+        }
+        // The cave fingerprints match FUN_80050d40's real head.
+        assert_eq!(GI_ARM_ORIG_HEAD, 0x3084_0FFF);
+        assert_eq!(GI_ARM_ORIG_WORD2, 0x30A5_0FFF);
     }
 
     #[test]
@@ -1356,6 +1492,9 @@ mod tests {
         assert_eq!(r[5], DISPLAY_HOOK_DELAY_ORIG); // stock table read
         assert_eq!(r[3], j(DISPLAY_RETURN_VA));
         assert_eq!(r[6], j(DISPLAY_RETURN_VA));
+        // The data tail: the Gi one-shot flags cell, initialised clear.
+        assert_eq!(r[8], 0);
+        assert_eq!(r.len() as u32, (GI_FLAGS_VA - DISPLAY_ROUTINE_VA) / 4 + 1);
         // Stock fingerprints match the arena overlay's real words.
         assert_eq!(DISPLAY_HOOK_ORIG, 0x0044_1021);
         assert_eq!(DISPLAY_HOOK_DELAY_ORIG, 0x8C43_0000);

@@ -1,18 +1,24 @@
 -- autorun_delilas_gi_trace.lua
 --
 -- Drive the Delilas course through round 0 (Che & Lu weakened to 1 HP) into
--- the Gi round and observe the one-shot Divide / Spore Gas arm:
+-- the Gi round and observe the HP-gated Divide / Spore Gas / Blazing Slash
+-- lockout arm:
 --   - round 0 (word 0x131): per-slot one-shot weaken so the mash clears it,
---   - round 1 (word 0x132): all actors untouched. Do NOT boost the player's
---     HP: the displayed-HP mirror (+0x172) is DELTA-driven, so a raw +0x14C
---     write desyncs it forever and the 0x51 exit gate then parks the battle
---     on the acting enemy's party-slot target - a probe-induced wedge that
---     perfectly impersonates a real one (LEGAIA_PLAYER_HP=n re-enables it
---     for wedge-shape experiments only),
---   - exec BP on the AI block's Gi queue (AI_BLOCK_VA + 41*4 = 0x80035318)
---     logs the queued spell id + turn counter - the cast receipt,
+--   - round 1 (word 0x132): once the shared turn counter reaches
+--     LEGAIA_GI_WEAKEN_TURN (default 6; 0 disables), Gi (slot 3) is
+--     one-shot weakened to max/4 - strictly below the half-HP Divide gate -
+--     so the trace shows the pre-weaken stock cadence (Spore Gas at counter
+--     3, Blazing Slash 0x79 at counter 5) and then the Divide + lockout.
+--     Enemy raw +0x14C writes are safe (round-0 precedent); do NOT boost
+--     the player's HP: the party displayed-HP mirror (+0x172) is
+--     DELTA-driven, a raw write desyncs it forever and the 0x51 exit gate
+--     parks the battle (LEGAIA_PLAYER_HP=n re-enables for wedge-shape
+--     experiments only),
+--   - exec BP on the Gi cave's queue (GI_ARM_VA + 39*4 = 0x80050DDC) logs
+--     the queued spell id + turn counter - the cast receipt,
 --   - per-tick actor rows (anim pair / action id / HP) show the cast playing
---     out, a Divide clone appearing as a new live slot, and any wedge,
+--     out, a Divide clone appearing as a new live slot, the one-shot flags
+--     cell (0x800260FC), and any wedge,
 --   - the entry-table tag-search BP + malloc-fail BP from the special trace
 --     stay armed (wedge + heap-pressure evidence).
 --
@@ -35,13 +41,24 @@ local COURSE_WORD = 0x8007BAC0
 local TAG_SEARCH  = 0x80050E2C
 local ACTOR_TABLE = 0x801C9370
 local MALLOC_FAIL = 0x800178B8
--- The Gi arm's queue inside the SCUS AI block (idx 41): only the Divide /
--- Spore Gas one-shots reach it (the Che & Lu queue is a separate range).
-local GI_QUEUE    = 0x80035318
+-- The queue inside the Gi cave (FUN_80050d40 home, idx 39): only the
+-- Divide / Spore Gas one-shots reach it (the Che & Lu queue is a separate
+-- range in the main block).
+local GI_QUEUE    = 0x80050DDC
+-- The Gi cave's two exit tails: GNOSPEC (idx 43 - straight to the arm
+-- join, no special possible) and GSTOCK (idx 45 - stock arm resumes, the
+-- retail Blazing cadence may fire). Post-Divide picks must all route
+-- GNOSPEC - the lockout receipt.
+local GI_NOSPEC   = 0x80050DEC
+local GI_STOCK    = 0x80050DF4
+-- The Gi one-shot flags word (display-cave data tail): bit0 = Divide cast,
+-- bit1 = Spore Gas cast; the round-0 arm zeroes it.
+local GI_FLAGS    = 0x800260FC
 
 local FRAMES = probe.getenv_num("LEGAIA_FRAMES", 18000)
 local FORCE_AT = probe.getenv_num("LEGAIA_FORCE_AT", 120)
 local PLAYER_HP = probe.getenv_num("LEGAIA_PLAYER_HP", 0)
+local GI_WEAKEN_TURN = probe.getenv_num("LEGAIA_GI_WEAKEN_TURN", 6)
 local POKES_RAW = probe.getenv("LEGAIA_POKES", "")
 
 local pokes = {}
@@ -65,6 +82,7 @@ local installed = false
 local last_mode = -1
 local weakened = {}
 local boosted = false
+local gi_weakened = false
 local last_search = ""
 local repeat_n = 0
 local search_rows = 0
@@ -86,6 +104,16 @@ probe.run({
             local r = PCSX.getRegisters()
             CSV:row("0,0,GI CAST QUEUED spell=0x%02X turn=%d",
                 reg(r, "v1"), turn_counter())
+        end)
+        probe.arm_breakpoint(GI_NOSPEC, "Exec", 4, "gi_nospec", function()
+            local r = PCSX.getRegisters()
+            CSV:row("0,0,GI PICK nospec seat=%d turn=%d flags=%d",
+                reg(r, "s7"), turn_counter(), probe.read_u32(GI_FLAGS) or -1)
+        end)
+        probe.arm_breakpoint(GI_STOCK, "Exec", 4, "gi_stock", function()
+            local r = PCSX.getRegisters()
+            CSV:row("0,0,GI PICK stock seat=%d turn=%d flags=%d",
+                reg(r, "s7"), turn_counter(), probe.read_u32(GI_FLAGS) or -1)
         end)
         -- Divide-clone spawn writer: the actor-table slot-4 cell is written
         -- by the spawn helper - its ra names the hook site for the eventual
@@ -148,6 +176,7 @@ probe.run({
             if mode == 0x15 then
                 weakened = {}
                 boosted = false
+                gi_weakened = false
             end
             last_mode = mode
         end
@@ -163,6 +192,21 @@ probe.run({
                             CSV:row("%d,0x%X,slot %d weakened", elapsed, mode, slot)
                         end
                     end
+                end
+            end
+        end
+        if mode == 0x15 and word == 0x132 and not gi_weakened and GI_WEAKEN_TURN ~= 0
+            and turn_counter() >= GI_WEAKEN_TURN then
+            -- Drop Gi below the half-HP Divide gate (enemy raw writes are
+            -- safe; only party actors carry the delta-driven mirror trap).
+            local a = probe.read_u32(ACTOR_TABLE + 3 * 4) or 0
+            if a > 0x80000000 and a < 0x80200000 then
+                local max = probe.read_u16(a + 0x14E) or 0
+                if max > 0 and (probe.read_u16(a + 0x14C) or 0) > 0 then
+                    probe.write_u16(a + 0x14C, math.floor(max / 4))
+                    gi_weakened = true
+                    CSV:row("%d,0x%X,gi weakened to %d/%d at turn %d", elapsed,
+                        mode, math.floor(max / 4), max, turn_counter())
                 end
             end
         end
@@ -215,9 +259,10 @@ probe.run({
                     st = probe.read_u8(bctx + 7) or -1
                     cur = probe.read_u8(bctx + 0x13) or -1
                 end
-                CSV:row("%d,0x%X,word=0x%X turn=%d st=0x%02X cur=%d actors %s",
+                CSV:row("%d,0x%X,word=0x%X turn=%d st=0x%02X cur=%d flags=%d actors %s",
                     elapsed, mode, word, turn_counter(),
-                    st, cur, table.concat(cells, " | "))
+                    st, cur, probe.read_u32(GI_FLAGS) or -1,
+                    table.concat(cells, " | "))
             end
         end
     end,

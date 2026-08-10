@@ -1040,18 +1040,26 @@ The shipped fix streams **slim clones** without touching the originals:
   `[unreferenced]`) - the only always-resident home left once the shared
   rodata gap filled and the battle overlay's image proved packed
   (`static-overlays.toml`: all `.text+.rodata` RAM-matched live).
-- **Gi borrows two one-shot casts in his round.** In the course's Gi round
-  (word `0x132` exactly, seat 0 only - a Divide clone never re-casts) the
-  same block queues **Divide** (`0x50`, Green Slime's split) on turn
-  counter 1 and **Spore Gas** (`0x4F`, Berserker's status cloud) on
-  counter 3 by writing the actor's cast queue (`+0x1DE = 2`, `+0x1DF` =
-  the spell id) - the exact mechanism the signature specials ride: both
-  are capture-class spells whose modules stream from PROT 0940 / 0939 at
-  cast time ([`spell-table.md`](../formats/spell-table.md)). The counter
-  never repeats a value inside a battle, so exact equality is a one-shot
-  with no state cell, and both turns dodge the stock arm's `% 3 == 2`
-  phase, so Blazing Slash keeps its retail cadence around them. Gi's
-  monster block is byte-untouched.
+- **Gi borrows two one-shot casts in his round, and Divide retires
+  Blazing Slash.** In the course's Gi round (word `0x132` exactly, seat 0
+  only - a Divide clone never re-casts) a second cave arm (over the
+  unreferenced SCUS angle tween `FUN_80050d40`, reached by `j` from the
+  main block) queues **Divide** (`0x50`, Green Slime's split) on Gi's
+  first pick with HP strictly below half of max (`+0x14C < +0x14E >> 1`)
+  and **Spore Gas** (`0x4F`, Berserker's status cloud) on his first pick
+  with the shared counter at or past 3, by writing the actor's cast queue
+  (`+0x1DE = 2`, `+0x1DF` = the spell id) - the exact mechanism the
+  signature specials ride: both are capture-class spells whose modules
+  stream from PROT 0940 / 0939 at cast time
+  ([`spell-table.md`](../formats/spell-table.md)). Each is one-shot via a
+  two-bit flags word in the display cave's data tail, zeroed by the
+  Che & Lu arm on every round-0 pick (a course always re-enters through
+  round 0, so re-enrollment re-arms both). Before Divide, non-cast picks
+  resume the stock arm and Blazing Slash keeps its retail `% 3 == 2`
+  cadence; after Divide, they jump straight to the arm join so the
+  generic attack-picker runs and Blazing Slash can never be queued again
+  (the clone always takes that path - it melees only). Gi's monster block
+  is byte-untouched.
 - **The dev reporter's `PRG ERR%d` paint is gated off.** The 1v2's tight
   heap fails transient effect-instance allocs in bursts (retail tolerates
   the skipped spawns), but every failure bumps the malloc accumulator
