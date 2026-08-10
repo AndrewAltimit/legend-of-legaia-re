@@ -691,11 +691,15 @@ pub(crate) fn cmd_starting_items(input: &Path) -> Result<()> {
 /// Print the Delilas-dome SCUS-side injection as a `LEGAIA_POKES` string for
 /// the PCSX-Redux probes (`autorun_delilas_dome_course.lua` /
 /// `autorun_delilas_reward_trace.lua`). Static data - no disc required.
-pub(crate) fn cmd_delilas_pokes() -> Result<()> {
-    use legaia_patcher::delilas_dome;
+pub(crate) fn cmd_delilas_pokes(custom_items: bool) -> Result<()> {
+    use legaia_patcher::{custom_items as ci, delilas_dome};
 
+    let mut writes = delilas_dome::probe_ram_writes();
+    if custom_items {
+        writes.extend(ci::probe_ram_writes());
+    }
     let mut pokes: Vec<String> = Vec::new();
-    for (va, bytes) in delilas_dome::probe_ram_writes() {
+    for (va, bytes) in writes {
         anyhow::ensure!(
             bytes.len() % 4 == 0,
             "probe write at {va:#x} is not word-aligned"

@@ -1075,6 +1075,53 @@ latches and the world map reads to flip the ravine entrance from `nilboa`
 to `nilboa2` - so until that event the clerk brushes the player off. On by
 default in the web patcher's Balanced and Full Chaos presets.
 
+#### Completion reward - three custom items
+
+A winning course settle grants **three brand-new items** alongside the
+5000 coins (`custom_items` module), claimed from the item table's only
+free slots - the executable's three empty-name records (`0xB9` the cut
+Ra-Seru-egg item, `0x12` / `0x1A` the cut top-tier Ra-Seru weapon slots;
+a dual census - the curated gamedata cross-reference and the patcher's
+own drops / chests / steals / shops / casino / fishing / starting-item
+sweeps - shows every other named id is reachable in retail):
+
+- **Nature's Elixir** - restores an ally's HP *and* MP to full, in the
+  field menu or in battle. Its effect class is a new applier jump-table
+  arm (`0x48`) that fills MP (with the retail `-amount` mirror write) and
+  tail-jumps into the retail tier-2 HP-restore arm, so the popup and
+  displayed-HP accounting are retail's own.
+- **Seru Tear** - battle-only; using it turns the committed item action
+  into a **real Ra-Seru summon cast of the user's own Ra-Seru** (Vahn
+  Meta, Noa Terra, Gala Ozma) with the 240-MP cost skipped - a free
+  summon any character can shed. The conversion hooks the action-seed
+  category dispatch (`0x801E2D60`): the item is already deducted at menu
+  commit, the spell id is `0x9D +` the roster char id, and a one-shot
+  flag makes the summon leg's unconditional MP deduct (`0x801E4584` -
+  it underflows a u16 when unchecked) write a zero-cost mirror instead.
+  Caster-matched is a mechanism constraint, not flavour: the big summons
+  stream the caster's own choreography, and a forced mismatched pair
+  (Gala casting Meta) parks the battle forever in the summon driver's
+  completion poll while the matched pair completes and lands damage.
+- **Delilas Tear** - battle-only; the siblings' fury strikes the first
+  living enemy for `500 + rand % 512`, clamped to current HP, through
+  the retail damage-popup accumulator and flinch-or-death animation pick,
+  plus a cue-group flash. A literal player-side cast of Blazing Slash /
+  Megaton Press / Plasma Strike is structurally impossible: the streamed
+  signature modules stage the *caster's* monster-block entries by raw
+  index, and a party actor has no monster block - the cast parks the
+  battle at the capture band's completion wait.
+
+The grant rides the settle's own latch-gated winning arm (the code path
+that pays the coins and, on the Master course, the retail War God Icon):
+a two-word detour at the post-payout `s0` staging (`0x801D114C`) runs
+three `FUN_800421D4(id, 1)` gives when the settling course is 3, then
+replays the displaced pair. New code follows the same
+unreferenced-function cave discipline as the course itself, across the
+class-14 Point Card arm (reachable code with no reachable data), four
+more zero-reference SCUS functions, and the tails of the course's own
+two caves; the menu validator's class table points both new classes at
+its existing always-usable arm.
+
 The feature is two coordinated halves that ship together
 (`apply_delilas_challenge` installs both):
 

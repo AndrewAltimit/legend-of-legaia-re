@@ -135,7 +135,12 @@ pub(crate) enum Cmd {
     /// hooks, PRG ERR print-gate patch, plus the course-unlock flag byte). Library
     /// save states predate the patched disc, so the probes must RAM-install
     /// the always-resident SCUS half; the overlay halves ride the `--iso`.
-    DelilasPokes,
+    DelilasPokes {
+        /// Also emit the custom-items SCUS-side writes (item records,
+        /// descriptors, jump-table words, cave routines).
+        #[arg(long)]
+        custom_items: bool,
+    },
     /// Read-only: show the Earth Egg coin threshold (the Sol Tower Prize Counter
     /// exchange) - the value the `--earth-egg-price` editor changes.
     EarthEgg {

@@ -126,6 +126,50 @@ pub fn inject_delilas_dome(patcher: &mut DiscPatcher) -> Result<bool> {
     Ok(true)
 }
 
+/// Install the custom-item reward set (Nature's Elixir / Seru Tear / Delilas
+/// Tear - see [`crate::custom_items`]): the three item records + effect
+/// machinery in `SCUS_942.54`, the battle-overlay conversion + MP-skip
+/// hooks, and the arena-settle grant hook that hands all three out on a
+/// winning course-3 settle. Idempotent on the applier jump-table word.
+pub fn inject_custom_items(patcher: &mut DiscPatcher) -> Result<bool> {
+    use crate::custom_items::{APPLY_JT_VA, CustomItemsInjection, ELIXIR_ARM_VA, ELIXIR_CLASS};
+    let scus = patcher
+        .read_named_file(SCUS_NAME)
+        .context("read SCUS_942.54 for custom-items injection")?;
+    let jt_off =
+        legaia_asset::item_names::file_offset_for_va(&scus, APPLY_JT_VA + ELIXIR_CLASS as u32 * 4)
+            .context("resolve applier jump-table offset")?;
+    let cur = scus
+        .get(jt_off..jt_off + 4)
+        .map(|w| u32::from_le_bytes(w.try_into().unwrap()));
+    if cur == Some(ELIXIR_ARM_VA) {
+        return Ok(false);
+    }
+    let battle = patcher
+        .read_entry(BATTLE_OVERLAY_PROT_INDEX)
+        .context("read battle-action overlay (0898) for custom-items injection")?;
+    let overlay = patcher
+        .read_entry(ARENA_OVERLAY_PROT_INDEX)
+        .context("read arena overlay (0977) for custom-items injection")?;
+    let plan = CustomItemsInjection::plan(&scus, &battle, &overlay)?;
+    for w in &plan.scus {
+        patcher
+            .patch_named_file(SCUS_NAME, w.off as u64, &w.bytes)
+            .with_context(|| format!("write custom-items SCUS write at {:#x}", w.off))?;
+    }
+    for w in &plan.battle {
+        patcher
+            .patch_prot_entry(BATTLE_OVERLAY_PROT_INDEX, w.off as u64, &w.bytes)
+            .with_context(|| format!("write custom-items battle hook at {:#x}", w.off))?;
+    }
+    for w in &plan.overlay {
+        patcher
+            .patch_prot_entry(ARENA_OVERLAY_PROT_INDEX, w.off as u64, &w.bytes)
+            .with_context(|| format!("write custom-items grant hook at {:#x}", w.off))?;
+    }
+    Ok(true)
+}
+
 /// Install the **Delilas Challenge** on the Muscle Dome enrollment menu: a
 /// fourth "who will enter" option that warps into the arena and runs the new
 /// Delilas dome course (Che & Lu together, then Gi), gated on the Koru death event (story
@@ -170,6 +214,7 @@ pub fn apply_delilas_challenge(patcher: &mut DiscPatcher) -> Result<DelilasChall
         // The menu is already present; ensure the arena course is too (a
         // re-run over a partially-applied image), then report the no-op.
         let dome_injected = inject_delilas_dome(patcher)?;
+        inject_custom_items(patcher)?;
         return Ok(DelilasChallengeReport {
             entry_idx,
             grown_bytes: 0,
@@ -194,8 +239,10 @@ pub fn apply_delilas_challenge(patcher: &mut DiscPatcher) -> Result<DelilasChall
         );
     };
 
-    // Arena course first (the warp target), then the koin1 menu + warp.
+    // Arena course first (the warp target), then the custom-item reward set,
+    // then the koin1 menu + warp.
     let dome_injected = inject_delilas_dome(patcher)?;
+    inject_custom_items(patcher)?;
 
     patcher
         .patch_prot_entry(

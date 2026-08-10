@@ -31,6 +31,9 @@ local REWARD_CAVE = 0x8007AE8C
 -- only, no BPs: the battle overlay aliases the VA band and BPs there fire
 -- constantly on the wrong code).
 local MENU_RESIDUE = 0x80084448 -- koin1 menu-selection residue (4 = "quit" arm)
+local GRANT_CAVE   = 0x800352EC -- custom-items grant routine (AI-block tail)
+local BAG          = 0x80085958 -- 2 bytes/slot [id, count]
+local REWARD_ITEMS = { 0xB9, 0x12, 0x1A }
 local WIN_LATCH    = 0x801D1ADC -- settle pays only while this is set
 local RAN_AWAY     = 0x801D1A74 -- set by the quit arm -> counter zeroed
 local BATTLE_RESULT = 0x80083D60 -- bit 0x80 = survived
@@ -89,6 +92,11 @@ probe.run({
             local v1 = 0
             pcall(function() v1 = tonumber(r.GPR.n.v1) % 0x100000000 end)
             CSV:row("0,0,DISPLAY routine entered course_shifted=0x%X", v1)
+        end)
+        -- Custom-items grant (fires on every settle; gives only when the
+        -- settling course is 3 - the receipt logs the course global).
+        probe.arm_breakpoint(GRANT_CAVE, "Exec", 4, "grant_cave", function()
+            CSV:row("0,0,GRANT routine entered course_g=%d", probe.read_u32(COURSE_G) or -1)
         end)
         probe.arm_breakpoint(PRGERR_PRINT_JAL, "Exec", 4, "prgerr_print", function()
             CSV:row("0,0,PRGERR PRINT reached (gate patch absent/broken) accum=%d",
@@ -194,7 +202,18 @@ probe.run({
         end
     end,
     on_done = function()
-        CSV:row("0,0x%X,done counter=%d", last_mode, probe.read_u32(COUNTER) or -1)
+        local counts = {}
+        for _, want in ipairs(REWARD_ITEMS) do
+            local n = 0
+            for slot = 0, 0x1FF do
+                if (probe.read_u8(BAG + slot * 2) or 0) == want then
+                    n = n + (probe.read_u8(BAG + slot * 2 + 1) or 0)
+                end
+            end
+            counts[#counts + 1] = string.format("0x%02X=%d", want, n)
+        end
+        CSV:row("0,0x%X,done counter=%d bag %s", last_mode,
+            probe.read_u32(COUNTER) or -1, table.concat(counts, " "))
         pcall(function()
             local sstate = require("probe.sstate")
             sstate.save(probe.out_path("reward_trace_end.sstate"))

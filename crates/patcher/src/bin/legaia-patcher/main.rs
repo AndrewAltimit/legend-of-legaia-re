@@ -49,7 +49,7 @@ fn main() -> Result<()> {
         Cmd::Shops { input } => commands::cmd_shops(&input),
         Cmd::Casino { input } => commands::cmd_casino(&input),
         Cmd::Fishing { input } => commands::cmd_fishing(&input),
-        Cmd::DelilasPokes => commands::cmd_delilas_pokes(),
+        Cmd::DelilasPokes { custom_items } => commands::cmd_delilas_pokes(custom_items),
         Cmd::EarthEgg { input } => commands::cmd_earth_egg(&input),
         Cmd::Locations { input } => commands::cmd_locations(&input),
         Cmd::MonsterStats { input } => commands::cmd_monster_stats(&input),

@@ -62,6 +62,7 @@ pub mod bonus_drop;
 pub mod casino;
 pub mod charm_fix;
 pub mod chest;
+pub mod custom_items;
 pub mod damage_ap;
 pub mod delilas_challenge;
 pub mod delilas_dome;
