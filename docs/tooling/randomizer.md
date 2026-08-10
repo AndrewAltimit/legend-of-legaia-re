@@ -1104,8 +1104,8 @@ sweeps - shows every other named id is reachable in retail):
   completion poll while the matched pair completes and lands damage.
 - **Delilas Tear** - battle-only; the siblings' fury strikes the first
   living enemy for `500 + rand % 512`, clamped to current HP, through
-  the retail damage-popup accumulator and flinch-or-death animation pick,
-  plus a cue-group flash. A literal player-side cast of Blazing Slash /
+  the retail damage-popup accumulator and flinch-or-death animation pick.
+  A literal player-side cast of Blazing Slash /
   Megaton Press / Plasma Strike is structurally impossible: the streamed
   signature modules stage the *caster's* monster-block entries by raw
   index, and a party actor has no monster block - the cast parks the
@@ -1116,11 +1116,18 @@ that pays the coins and, on the Master course, the retail War God Icon):
 a two-word detour at the post-payout `s0` staging (`0x801D114C`) runs
 three `FUN_800421D4(id, 1)` gives when the settling course is 3, then
 replays the displaced pair. New code follows the same
-unreferenced-function cave discipline as the course itself, across the
-class-14 Point Card arm (reachable code with no reachable data), four
+unreferenced-function cave discipline as the course itself - the
+class-14 Point Card arm (reachable code with no reachable data), three
 more zero-reference SCUS functions, and the tails of the course's own
-two caves; the menu validator's class table points both new classes at
-its existing always-usable arm.
+two caves - plus one rule the course never needed: **a claimed cave
+must also survive a cold boot**. The zero-reference libapi VBlank-tier
+slot `FUN_800605C8` passes every static scan and every save-state
+probe, yet the kernel invokes it during boot init and a disc that
+overwrites it parks at the PS1 logo
+([`re-do-not-re-walk.md`](../reference/re-do-not-re-walk.md)); the
+cold-boot watcher `autorun_boot_watch.lua` is now part of the cave
+verification standard. The menu validator's class table points both
+new classes at its existing always-usable arm.
 
 The feature is two coordinated halves that ship together
 (`apply_delilas_challenge` installs both):

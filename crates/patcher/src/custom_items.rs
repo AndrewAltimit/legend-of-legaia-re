@@ -32,16 +32,17 @@
 //! are left alone). The menu validator's own class table (`0x80014D70`)
 //! points both at the existing always-usable arm `0x80040204`.
 //!
-//! New code lives across seven verified-dead SCUS regions (the same
-//! unreferenced-function cave discipline as [`crate::delilas_dome`]):
+//! New code lives across six verified-dead SCUS regions (the same
+//! unreferenced-function cave discipline as [`crate::delilas_dome`], plus
+//! a **cold-boot** verification pass - see [`STRIKE_VA`] for the
+//! boot-live libapi slot that falsified the seventh):
 //!
 //! | Region | Home | Contents |
 //! |---|---|---|
 //! | `0x80025054` | unreferenced actor-template tick | elixir arm + name |
 //! | `0x8003EDAC` | unreferenced CD mode toggle | conversion stage 1 + elixir desc |
 //! | `0x8003F210` | unreferenced CD re-seek arm | conversion stage 2 + delilas desc + seru name |
-//! | `0x800605C8` | unreferenced libapi VBlank slot | the MP-deduct skip |
-//! | `0x8004209C` | the unreachable class-14 Point Card arm | delilas strike arm + seru desc + spell table |
+//! | `0x8004209C` | the unreachable class-14 Point Card arm | strike arm + seru desc + the MP-deduct skip |
 //! | `0x800352EC` | tail of the dome's AI-block cave (words 30..47) | the reward grant |
 //! | `0x80026100` | tail of the dome's display cave (words 9..15) | delilas name + free-cast flag |
 //!
@@ -115,9 +116,6 @@ const RAND_VA: u32 = 0x8005_6798;
 /// `FUN_800421D4(item_id, count)` - the give-item routine (bag at
 /// `0x80084140+0x1818`, stacks by id, cap 99; preserves `s*` and `a1`).
 const GIVE_ITEM_VA: u32 = 0x8004_21D4;
-/// `FUN_801E22C8(tint, state_word, slot, group)` - the battle cue-group
-/// expander (overlay 0898; the strike arm is battle-gated before calling).
-const CUE_EXPANDER_VA: u32 = 0x801E_22C8;
 
 // --- cave homes -------------------------------------------------------------
 
@@ -140,19 +138,23 @@ pub const CONV2_REGION_CAPACITY: usize = 32 * 4;
 pub const CONV2_ORIG_HEAD: u32 = 0x8F82_0988; // lw v0,0x988(gp)
 const CONV2_ORIG_WORD1: u32 = 0x27BD_FFE8; // addiu sp,sp,-0x18
 
-/// MP-skip home: the unreferenced libapi VBlank-tier callback (11 words).
-pub const MPSKIP_VA: u32 = 0x8006_05C8;
-pub const MPSKIP_REGION_CAPACITY: usize = 11 * 4;
-pub const MPSKIP_ORIG_HEAD: u32 = 0x3C02_8008; // lui v0,0x8008
-const MPSKIP_ORIG_WORD1: u32 = 0x2442_A874; // addiu v0,v0,-0x578c
-
-/// Delilas strike home: the class-14 Point Card arm - reachable code with no
-/// reachable data (`docs/formats/item-effect-table.md`); 65 words ending at
-/// the class-0x82 arm `0x800421A0`.
+/// Delilas strike + MP-skip home: the class-14 Point Card arm - reachable
+/// code with no reachable data (`docs/formats/item-effect-table.md`); 65
+/// words ending at the class-0x82 arm `0x800421A0`.
+///
+/// The MP-skip's first home, the "unreferenced" libapi VBlank-tier slot
+/// `FUN_800605C8`, is **boot-live**: the kernel/libapi init invokes it
+/// during a cold boot (the game parks at boot mode `0x10` with it
+/// overwritten), which no static reference scan or save-state probe can
+/// see - every library save state postdates boot. Cold-boot bisect
+/// (`autorun_boot_watch.lua`) pinned it; that region must never be
+/// claimed as a cave.
 pub const STRIKE_VA: u32 = 0x8004_209C;
 pub const STRIKE_REGION_CAPACITY: usize = 65 * 4;
 pub const STRIKE_ORIG_HEAD: u32 = 0x3C02_8008; // lui v0,0x8008
 const STRIKE_ORIG_WORD1: u32 = 0x2446_4140; // addiu a2,v0,0x4140
+/// The MP-skip lives after the strike arm + Seru Tear description.
+pub const MPSKIP_VA: u32 = STRIKE_VA + 55 * 4;
 
 /// Grant home: words 30..47 of the dome's AI-block cave (`FUN_80035274` -
 /// the dome's main block uses words 0..29; the tail keeps its retail bytes).
@@ -178,12 +180,12 @@ pub const ELIXIR_NAME_VA: u32 = ELIXIR_ARM_VA + 27 * 4;
 pub const ELIXIR_DESC_VA: u32 = CONV1_VA + 18 * 4;
 pub const SERU_NAME_VA: u32 = CONV2_VA + 28 * 4;
 pub const DELILAS_DESC_VA: u32 = CONV2_VA + 21 * 4;
-pub const SERU_DESC_VA: u32 = STRIKE_VA + 57 * 4;
+pub const SERU_DESC_VA: u32 = STRIKE_VA + 50 * 4;
 
 pub const ELIXIR_NAME: &[u8] = b"Nature's Elixir\0";
 pub const ELIXIR_DESC: &[u8] = b"Full HP&MP.\0";
 pub const SERU_NAME: &[u8] = b"Seru Tear\0";
-pub const SERU_DESC: &[u8] = b"Casts your|Ra-Seru summon.\0";
+pub const SERU_DESC: &[u8] = b"Sheds your|Ra-Seru.\0";
 pub const DELILAS_NAME: &[u8] = b"Delilas Tear\0";
 pub const DELILAS_DESC: &[u8] = b"A Delilas sibling|attacks.\0";
 
@@ -367,22 +369,22 @@ pub fn assemble_conversion_stage2() -> Vec<u32> {
 /// the deduct - the free cast, which also prevents the unconditional
 /// deduct's u16 underflow (probe-observed `27 - 240 = 65323`).
 pub fn assemble_mp_skip() -> Vec<u32> {
-    const SKIP: usize = 7;
+    const STOCK: usize = 8;
     let words = vec![
-        lui(T0, hi(FREECAST_FLAG_VA)),          // 0
-        lbu(T1, T0, lo(FREECAST_FLAG_VA)),      // 1
-        lhu(V0, S3, 0x150),                     // 2: curMP (replay; fills t1 delay)
-        bne(T1, ZERO, (SKIP - (3 + 1)) as i16), // 3
-        sh(S0, S3, 0x178),                      // 4: (delay) mirror = cost, both paths
-        j(MP_STOCK_RESUME_VA),                  // 5: stock deduct continues
-        nop(),                                  // 6: (delay)
-        // SKIP (idx 7):
-        sb(ZERO, T0, lo(FREECAST_FLAG_VA)), // 7: consume the flag
-        sh(ZERO, S3, 0x178),                // 8: no cost shown
-        j(MP_EXIT_VA),                      // 9: skip the deduct
-        nop(),                              // 10: (delay)
+        lui(T0, hi(FREECAST_FLAG_VA)),           // 0
+        lbu(T1, T0, lo(FREECAST_FLAG_VA)),       // 1
+        lhu(V0, S3, 0x150),                      // 2: curMP (replay; fills t1 delay)
+        beq(T1, ZERO, (STOCK - (3 + 1)) as i16), // 3
+        sh(S0, S3, 0x178),                       // 4: (delay) mirror = cost, both paths
+        // flag set - the free cast:
+        sb(ZERO, T0, lo(FREECAST_FLAG_VA)), // 5: consume the flag
+        j(MP_EXIT_VA),                      // 6: skip the deduct
+        sh(ZERO, S3, 0x178),                // 7: (delay) no cost shown
+        // STOCK (idx 8):
+        j(MP_STOCK_RESUME_VA), // 8: stock deduct continues
+        nop(),                 // 9: (delay)
     ];
-    debug_assert_eq!(words.len(), 11);
+    debug_assert_eq!(words.len(), 10);
     words
 }
 
@@ -400,7 +402,7 @@ pub fn assemble_delilas_strike() -> Vec<u32> {
     const NOCL: usize = 34;
     const FLINCH: usize = 45;
     const STORE: usize = 47;
-    const EXIT: usize = 55;
+    const EXIT: usize = 48;
     let words = vec![
         lui(V0, hi(GAME_MODE_VA)),            // 0
         lh(V0, V0, lo(GAME_MODE_VA)),         // 1
@@ -454,19 +456,12 @@ pub fn assemble_delilas_strike() -> Vec<u32> {
         lbu(V0, S1, 0x1ef), // 45
         nop(),              // 46
         // STORE (idx 47):
-        sb(V0, S1, 0x1da),    // 47
-        lui(A0, 0x80),        // 48
-        ori(A0, A0, 0x8080),  // 49: neutral tint
-        lui(A1, 0xf),         // 50
-        ori(A1, A1, 0xffff),  // 51: actor-state word
-        addu(A2, S4, ZERO),   // 52: slot
-        jal(CUE_EXPANDER_VA), // 53
-        addiu(A3, ZERO, 0xC), // 54: (delay) cue group
-        // EXIT (idx 55):
-        j(APPLY_DEFAULT_ARM), // 55
-        nop(),                // 56: (delay)
+        sb(V0, S1, 0x1da), // 47
+        // EXIT (idx 48):
+        j(APPLY_DEFAULT_ARM), // 48
+        nop(),                // 49: (delay)
     ];
-    debug_assert_eq!(words.len(), 57);
+    debug_assert_eq!(words.len(), 50);
     words
 }
 
@@ -571,7 +566,7 @@ fn cave_payloads() -> Vec<CaveRegion> {
     conv2.extend_from_slice(&padded(SERU_NAME));
     let mut strike = words_to_bytes(assemble_delilas_strike());
     strike.extend_from_slice(&padded(SERU_DESC));
-    let mpskip = words_to_bytes(assemble_mp_skip());
+    strike.extend_from_slice(&words_to_bytes(assemble_mp_skip()));
     let grant = words_to_bytes(assemble_grant_routine());
     let mut tail = padded(DELILAS_NAME);
     tail.extend_from_slice(&0u32.to_le_bytes()); // the free-cast flag cell
@@ -598,18 +593,11 @@ fn cave_payloads() -> Vec<CaveRegion> {
             "conversion stage-2 cave",
         ),
         (
-            MPSKIP_VA,
-            MPSKIP_REGION_CAPACITY,
-            [MPSKIP_ORIG_HEAD, MPSKIP_ORIG_WORD1],
-            mpskip,
-            "MP-skip cave",
-        ),
-        (
             STRIKE_VA,
             STRIKE_REGION_CAPACITY,
             [STRIKE_ORIG_HEAD, STRIKE_ORIG_WORD1],
             strike,
-            "Delilas strike cave (class-14 arm)",
+            "Delilas strike + MP-skip cave (class-14 arm)",
         ),
         (
             GRANT_VA,
@@ -901,20 +889,23 @@ mod tests {
     #[test]
     fn mp_skip_shape() {
         let w = assemble_mp_skip();
-        assert_eq!(w.len(), 11);
+        assert_eq!(w.len(), 10);
         assert_eq!(w[2], MP_HOOK_ORIG, "the skip must replay the deduct load");
         assert_eq!(w[4], MP_HOOK_DELAY_ORIG, "mirror write rides the delay");
-        assert_eq!(w[5], j(MP_STOCK_RESUME_VA));
-        assert_eq!(w[9], j(MP_EXIT_VA));
+        assert_eq!(w[6], j(MP_EXIT_VA));
+        assert_eq!(w[8], j(MP_STOCK_RESUME_VA));
     }
 
     #[test]
     fn strike_shape() {
         let w = assemble_delilas_strike();
-        assert_eq!(w.len(), 57);
-        assert_eq!(w[55], j(APPLY_DEFAULT_ARM));
+        assert_eq!(w.len(), 50);
+        assert_eq!(w[48], j(APPLY_DEFAULT_ARM));
         // The loop's back-branch lands on its own head.
         assert_eq!(w[18], bne(V0, ZERO, -11));
+        // The MP-skip and Seru desc pack after the arm inside the class-14
+        // region.
+        assert_eq!(MPSKIP_VA, SERU_DESC_VA + padded(SERU_DESC).len() as u32);
     }
 
     #[test]

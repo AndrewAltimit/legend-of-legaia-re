@@ -36,8 +36,8 @@ fn plan_validates_against_the_real_build() {
         .expect("read arena overlay");
     let plan =
         CustomItemsInjection::plan(&scus, &battle, &overlay).expect("plan against real build");
-    // 3 item records + 3 descriptors + 2 jump-table writes + 7 caves.
-    assert_eq!(plan.scus.len(), 15, "SCUS write count");
+    // 3 item records + 3 descriptors + 2 jump-table writes + 6 caves.
+    assert_eq!(plan.scus.len(), 14, "SCUS write count");
     assert_eq!(plan.battle.len(), 2, "battle hook count");
     assert_eq!(plan.overlay.len(), 1, "grant hook count");
 }
