@@ -91,6 +91,7 @@ pub mod monster_class;
 pub mod monster_stats;
 pub mod move_power;
 pub mod ppf;
+pub mod rewards;
 pub mod rng;
 pub mod save_icon;
 pub mod seru_overlay;

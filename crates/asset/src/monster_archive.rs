@@ -42,6 +42,12 @@
 //!                           ; FUN_801f0348 (`ctx+0x6D0 = size << 7`, clamped
 //!                           ; 0x0C00..0x1400) and by the enemy stager FUN_800513f0
 //!                           ; (`actor+0x58 = size << 5`). Not copied to the actor.
+//! +0x3E  u8   seru_id       ; capturable-Seru id (0 = not capturable); read
+//!                           ; record-DIRECT through 0x801C9348 by the killing-blow
+//!                           ; capture roll in FUN_801ec3e4; on success written to
+//!                           ; battle ctx +0x269 (learned spell = seru_id + 0x80)
+//! +0x3F  u8   catch_rate    ; Seru catch chance, percent (rand()%100 < pct;
+//!                           ; Magic Boost / Ivory Book adds a flat +30 first)
 //! +0x44  u16  gold          ; base gold reward (victory spoils)
 //! +0x46  u16  exp           ; base EXP reward (victory spoils)
 //! +0x48  u8   drop_item     ; drop item id (0 = no drop)

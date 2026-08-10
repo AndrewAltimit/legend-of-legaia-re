@@ -66,6 +66,21 @@ pub struct MonsterRecord {
     pub drop_item: u8,
     /// Drop chance in percent (`+0x49`; `rand() % 100 < drop_chance_pct`).
     pub drop_chance_pct: u8,
+    /// Seru id (`+0x3E`; `0` = not capturable). Nonzero marks the monster as a
+    /// capturable Seru: on a killing physical blow the battle kernel
+    /// `FUN_801ec3e4` (overlay 0898, block `0x801ee250..0x801ee2e8`) reads this
+    /// byte record-direct through the per-enemy pointer table `0x801C9348` and,
+    /// on a successful catch roll, writes it into the battle context at
+    /// `+0x269` - the spell the post-battle grant then teaches is global id
+    /// `seru_id + 0x80` (Gimard's `1` -> spell `0x81`).
+    pub seru_id: u8,
+    /// Seru catch chance in percent (`+0x3F`; `rand() % 100 < catch_rate_pct`).
+    /// Rolled by the same `FUN_801ec3e4` block only when the blow kills and
+    /// [`Self::seru_id`] is nonzero; a party member carrying the Magic Boost
+    /// passive (Ivory Book, ability word `+0xF8` bit `0x4000`) adds a flat
+    /// `+30` percentage points before the roll. Retail spans `1..=80` across
+    /// the 63 capturable records; `0` on every non-Seru monster.
+    pub catch_rate_pct: u8,
     /// Element id (`+0x1D`, `0..=7`): the affinity scale `FUN_801dd864` reads
     /// this byte **directly from the record** (via the per-enemy record-pointer
     /// table `0x801C9348[slot-3]`, dump `overlay_battle_action_801dd864.txt`
@@ -237,6 +252,8 @@ fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
     let exp = legaia_bytes::u16_le(block, 0x46)?;
     let drop_item = *block.get(0x48)?;
     let drop_chance_pct = *block.get(0x49)?;
+    let seru_id = *block.get(0x3E)?;
+    let catch_rate_pct = *block.get(0x3F)?;
     let magic_count = *block.get(0x4A)?;
     let spells = parse_spells(block, magic_count);
     // Global magic-attack ids at +0x21..=+0x23; a slot is live when its value
@@ -257,6 +274,8 @@ fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
         exp,
         drop_item,
         drop_chance_pct,
+        seru_id,
+        catch_rate_pct,
         magic_count,
         spells,
         magic_attacks,
@@ -389,6 +408,8 @@ mod tests {
         block[0x16..0x18].copy_from_slice(&15u16.to_le_bytes());
         block[0x18..0x1A].copy_from_slice(&16u16.to_le_bytes());
         block[0x1A..0x1C].copy_from_slice(&22u16.to_le_bytes());
+        block[0x3E] = 1; // Seru id (capturable; spell 0x81)
+        block[0x3F] = 55; // catch rate %
         block[0x44..0x46].copy_from_slice(&60u16.to_le_bytes()); // gold
         block[0x46..0x48].copy_from_slice(&55u16.to_le_bytes()); // exp
         block[0x48] = 119; // drop item id
@@ -422,6 +443,8 @@ mod tests {
         assert_eq!(rec.exp, 55);
         assert_eq!(rec.drop_item, 119);
         assert_eq!(rec.drop_chance_pct, 10);
+        assert_eq!(rec.seru_id, 1);
+        assert_eq!(rec.catch_rate_pct, 55);
         assert_eq!(
             rec.spells,
             vec![
@@ -464,6 +487,8 @@ mod tests {
             exp: 42000,
             drop_item: 0,
             drop_chance_pct: 0,
+            seru_id: 0,
+            catch_rate_pct: 0,
             magic_count: 0,
             spells: vec![],
             magic_attacks: vec![],

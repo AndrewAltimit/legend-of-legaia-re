@@ -33,8 +33,8 @@ disc-gated, so CI runs without a disc. There is also a
 - **Loot** - monster item drops, treasure-chest contents, per-monster steal
   items, and an optional low-chance bonus equipment drop.
 - **Fights** - random-encounter formations, monster combat stats, a global enemy
-  difficulty multiplier, special-attack power, the element-affinity matrix, and
-  spell MP costs.
+  difficulty multiplier, an experience multiplier, the Seru catch rate,
+  special-attack power, the element-affinity matrix, and spell MP costs.
 - **Economy** - what town stores sell, and the casino prize exchange.
 - **Navigation** - scene-transition doors/exits, intra-town (house / interior)
   doors, and `.MAP` intra-scene teleports.
@@ -77,6 +77,8 @@ disc-gated, so CI runs without a disc. There is also a
   - [Monster combat stats](#monster-combat-stats)
   - [Enemy difficulty scale](#enemy-difficulty-scale)
     - [Which enemies count as bosses](#which-enemies-count-as-bosses)
+  - [Experience multiplier](#experience-multiplier)
+  - [Seru catch rate](#seru-catch-rate)
   - [Special-attack power](#special-attack-power)
   - [Element-affinity matrix](#element-affinity-matrix)
   - [Spell MP costs](#spell-mp-costs)
@@ -299,6 +301,8 @@ unless asked for:
 | `--spirit-ap AP` | set how much AP the Spirit command charges into the battle gauge (retail 32): `0` = defence boost only, `100` = one press fills the gauge, negative = Spirit drains the gauge | single value -100..=100 | [Spirit AP](#spirit-ap) |
 | `--damage-ap AP` | set how much AP taking damage charges into the battle gauge, per 100% of max HP lost (retail 100): `0` = damage never feeds the gauge, negative = being hit drains it | single value -200..=200 | [Enemy-damage AP](#enemy-damage-ap) |
 | `--enemy-stat-scale MULT`, `STAT=MULT,...` or `GROUP:SCALE\|...` | scale enemy combat stats (HP / MP / ATK / UDF / LDF / INT / SPD), story bosses included; one number scales all seven, a `stat=mult` list scales only what it names, and a `regular:`/`boss:` split gives random encounters and set-pieces their own scale. Nothing moves between monsters, and EXP / gold / drops are untouched | each value 0.1..=5 | [Enemy difficulty scale](#enemy-difficulty-scale) |
+| `--exp-scale MULT` | scale every monster's base EXP reward - the victory payout, its party split and the `--flee-exp` grant all read the scaled field; gold and drops stay retail | 0.1..=5 | [Experience multiplier](#experience-multiplier) |
+| `--seru-catch-rate PCT` | override every capturable Seru's catch chance with one flat percent (the odds a killing blow absorbs its magic; retail 1..=80% per monster); only the 63 capturable records are touched | 0..=100 | [Seru catch rate](#seru-catch-rate) |
 
 **Tuning the encounter and door passes:**
 
@@ -1562,6 +1566,51 @@ describes the disc the player will actually receive. The boss set survives that
 rewrite by construction - the encounter randomizer never touches a scripted
 formation and never donates a scripted-only id into a random one - so a
 randomized run classifies bosses exactly as a vanilla one does.
+
+### Experience multiplier
+
+`--exp-scale` multiplies every populated monster's **base EXP reward** - the
+`u16` at decoded-record `+0x46` in the `battle_data` archive (PROT entry 867) -
+by a factor `0.1x`..`5x` (retail `1`). One field is the whole feature, because
+every EXP grant in the game reads it: the victory-spoils routine
+`FUN_8004E568` sums it `* 3/4` across dead enemies and splits the total among
+living party members, and the [Run-away EXP](#run-away-exp) hook sums the same
+halfword - so a scaled disc pays scaled EXP on wins and on flees alike. Gold
+(`+0x44`), drops and stats are untouched: the knob moves the pacing, not the
+economy.
+
+The multiplier shares `monster_stats::ScalePermille` with the
+[difficulty scale](#enemy-difficulty-scale) - same parser, same range, same
+rounding - so the CLI flag and the browser slider accept the same spellings and
+emit the same bytes. Clamps mirror the stat scale's: a zero reward stays zero,
+a non-zero one floors at `1` (a `0.1x` run still pays *something* per kill)
+and saturates at `65535` (a `5x` run cannot wrap Gaza's 42000 into garbage).
+Seedless and idempotent; each edit re-packs the monster's slot through the
+same-size machinery ([Re-pack slack](#re-pack-slack)), so it composes with the
+drop / stat passes on the same archive. Module `rewards`; apply
+`apply::scale_monster_exp`; disc oracle `tests/rewards_real.rs`.
+
+### Seru catch rate
+
+`--seru-catch-rate` overrides the **catch chance** of every capturable Seru
+monster with one flat percent, `0..=100`. Retail decides an absorb at the
+moment a killing physical blow lands: the battle kernel `FUN_801EC3E4` reads
+the dying monster's record direct (pointer table `0x801C9348`), and when its
+Seru id (`+0x3E`) is nonzero rolls `rand % 100` against the record's catch
+byte (`+0x3F`) - full trace in
+[battle.md](../subsystems/battle.md#the-retail-capture-roll-fun_801ec3e4).
+Retail rates span 80% (an early Gimard) down to 1% (the rarest late-game
+Seru); the override replaces that whole gradient with one dial. `100` makes
+every eligible kill absorb (the d100 cannot miss it), `0` disables absorption
+outright - a challenge run without Seru magic.
+
+Only records whose `+0x3E` is already nonzero (63 on the retail disc) are
+written, so the override can never make a non-Seru monster capturable, and
+the Magic Boost passive (Ivory Book) still adds its flat `+30` points on top
+of whatever the dial set. Seedless, idempotent, same-size slot re-pack; the
+un-touched sibling byte means it composes with `--drops` / `--monster-stats` /
+`--exp-scale` on the same records. Module `rewards`; apply
+`apply::set_seru_catch_rate`; disc oracle `tests/rewards_real.rs`.
 
 ### Special-attack power
 

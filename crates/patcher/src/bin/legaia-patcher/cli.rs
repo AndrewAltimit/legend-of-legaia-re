@@ -11,8 +11,8 @@ use legaia_patcher::apply;
 use legaia_patcher::drops::DropMode;
 
 use crate::util::{
-    parse_arts_ap_cost, parse_arts_ap_grant, parse_arts_power, parse_item_spec,
-    parse_location_rename, parse_prize_price, parse_stat_scale,
+    parse_arts_ap_cost, parse_arts_ap_grant, parse_arts_power, parse_exp_scale, parse_item_spec,
+    parse_location_rename, parse_prize_price, parse_seru_catch_rate, parse_stat_scale,
 };
 
 #[derive(Parser)]
@@ -903,6 +903,25 @@ pub(crate) struct RandomizeArgs {
     /// compose. `legaia-patcher monster-stats` lists the current stats.
     #[arg(long, value_name = "MULT|STAT=MULT,...|GROUP:SCALE|...", value_parser = parse_stat_scale)]
     pub(crate) enemy_stat_scale: Option<legaia_patcher::monster_stats::ScaleProfile>,
+    /// **Scale every battle's EXP payout** by a multiplier (`0.1x..=5x`,
+    /// retail `1`): `--exp-scale 2` doubles every monster's base EXP reward,
+    /// `--exp-scale 0.5` halves it. Edits the base-EXP halfword in each
+    /// monster's record, so the victory spoils, the post-battle split among
+    /// living party members, and the `--flee-exp` grant all scale together.
+    /// Gold, drops and everything else stay retail. A scaled reward never
+    /// drops to zero (floors at 1 EXP) and saturates at 65535. Seedless.
+    #[arg(long, value_name = "MULT", value_parser = parse_exp_scale)]
+    pub(crate) exp_scale: Option<legaia_patcher::monster_stats::ScalePermille>,
+    /// **Override every capturable Seru's catch rate** with one flat percent
+    /// (`0..=100`): the chance that a killing blow on a Seru monster absorbs
+    /// its magic. Retail rates run from 80% (an early Gimard) down to 1% (the
+    /// rarest late-game Seru); `--seru-catch-rate 100` makes every eligible
+    /// kill absorb, `--seru-catch-rate 0` disables absorption entirely. Only
+    /// the 63 capturable records are touched - the override never makes a
+    /// non-Seru monster capturable, and the Ivory Book's +30-point bonus
+    /// still applies on top (capped by the roll's own d100).
+    #[arg(long, value_name = "PCT", value_parser = parse_seru_catch_rate)]
+    pub(crate) seru_catch_rate: Option<u8>,
     /// How special-attack power is reassigned (the battle-action move-power
     /// table - enemy specials + Seru-magic, NOT party Tactical Arts). `shuffle`
     /// permutes the 44 power values (multiset preserved); `random` draws each

@@ -531,6 +531,26 @@
           <button type="button" class="rom-scale-reset" id="rom-enemy-scale-reset">Reset every stat to 1.0x</button>
         </div>
       </div>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-exp-scale-on">
+        <span>Experience multiplier <span class="rom-opt-note">- scale every battle's EXP payout 0.1x-5x</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Multiplies <strong>every monster's EXP reward</strong> by a factor from <code>0.1x</code> to <code>5x</code>. The victory payout, its split among living party members, and the flee-EXP grant all read the same per-monster value, so one dial scales them together; gold and item drops are untouched. A scaled reward never drops below 1 EXP and caps at 65535. Pairs naturally with the difficulty scale - a hard run can pay better, or a breezy one less. A manual tuning, unaffected by the seed.</span></span></span>
+      </label>
+      <div class="rom-opt rom-sub" id="rom-exp-scale-row">
+        <label class="rom-opt-label" for="rom-exp-scale">&#8627; EXP scale: <output id="rom-exp-scale-val">1.0x</output></label>
+        <input type="range" id="rom-exp-scale" min="0.1" max="5" step="0.1" value="1">
+      </div>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-seru-catch-on">
+        <span>Seru catch rate <span class="rom-opt-note">- one flat absorb chance for every Seru monster</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Sets the chance that a killing blow on a <strong>Seru monster</strong> absorbs its magic to one flat percent, replacing the per-monster retail rates (which run from 80% on an early Gimard down to 1% on the rarest late-game Seru). At <code>100</code> every eligible kill absorbs; at <code>0</code> absorption never happens - a challenge run without Seru magic. Only the game's own capturable monsters are affected - nothing new becomes capturable - and the Ivory Book's +30-point bonus still applies on top. A manual tuning, unaffected by the seed.</span></span></span>
+      </label>
+      <div class="rom-opt rom-sub" id="rom-seru-catch-row">
+        <label class="rom-opt-label" for="rom-seru-catch">&#8627; Catch chance: <output id="rom-seru-catch-val">100</output>%</label>
+        <input type="range" id="rom-seru-catch" min="0" max="100" step="1" value="100">
+      </div>
     </details>
 
     <!-- ---- Tactical-Art overrides (per-art picker; rows built by JS) ---- -->

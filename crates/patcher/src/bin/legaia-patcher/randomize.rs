@@ -728,6 +728,58 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("enemy_stat_scale = \"retail\"".to_string());
     }
 
+    // EXP multiplier: scales every monster's base-EXP reward halfword.
+    // Seedless, like the difficulty scale.
+    if let Some(scale) = args.exp_scale {
+        let report = apply::scale_monster_exp(&mut patcher, scale)?;
+        println!(
+            "exp scale: {scale} ({} monsters changed)",
+            report.monsters_changed
+        );
+        if !report.skipped.is_empty() {
+            println!(
+                "  note: {} monster slot(s) too tight to re-pack, left unchanged: {:?}",
+                report.skipped.len(),
+                report.skipped
+            );
+            manifest.push(format!("exp_scale_skipped = {:?}", report.skipped));
+        }
+        manifest.push(format!("exp_scale = {:?}", scale.to_string()));
+        manifest.push(format!(
+            "exp_scale_monsters_changed = {}",
+            report.monsters_changed
+        ));
+    } else {
+        println!("exp scale: 1x (retail)");
+        manifest.push("exp_scale = \"retail\"".to_string());
+    }
+
+    // Seru catch-rate override: one flat percent into every capturable
+    // record's catch-chance byte.
+    if let Some(pct) = args.seru_catch_rate {
+        let report = apply::set_seru_catch_rate(&mut patcher, pct)?;
+        println!(
+            "seru catch rate: {pct}% ({} monsters changed)",
+            report.monsters_changed
+        );
+        if !report.skipped.is_empty() {
+            println!(
+                "  note: {} monster slot(s) too tight to re-pack, left unchanged: {:?}",
+                report.skipped.len(),
+                report.skipped
+            );
+            manifest.push(format!("seru_catch_rate_skipped = {:?}", report.skipped));
+        }
+        manifest.push(format!("seru_catch_rate = {pct}"));
+        manifest.push(format!(
+            "seru_catch_rate_monsters_changed = {}",
+            report.monsters_changed
+        ));
+    } else {
+        println!("seru catch rate: retail");
+        manifest.push("seru_catch_rate = \"retail\"".to_string());
+    }
+
     if let Some(move_power_mode) = move_power_mode {
         let changed = apply::randomize_move_powers(&mut patcher, seed, move_power_mode)?;
         println!("move power: {changed} special-attack power(s) changed ({move_power_mode:?})");

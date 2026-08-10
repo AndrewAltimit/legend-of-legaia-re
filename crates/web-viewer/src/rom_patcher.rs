@@ -211,7 +211,15 @@ pub fn resolve_seed(seed: &str) -> String {
 /// `|`-separated per-group split (`"regular:0.75|boss:2"`, each half itself
 /// either of the first two spellings) gives random encounters and scripted boss
 /// fights their own scale - which is what the page's simple and advanced slider
-/// panes send. These are all manual, seedless edits.
+/// panes send. `exp_scale` (empty or `1` = untouched) multiplies every
+/// monster's base EXP reward (`0.1`..`5`) - the victory spoils, the party
+/// split, and the flee-EXP grant all read that record field, so one edit
+/// scales them together; gold and drops stay retail, a scaled reward floors
+/// at 1 EXP and saturates at 65535. `seru_catch_rate` (empty = untouched)
+/// overrides every capturable Seru monster's catch chance with one flat
+/// percent (`0`..`100`) - the odds that a killing blow absorbs its magic;
+/// only the 63 capturable records are touched, so a non-Seru monster can
+/// never become capturable. These are all manual, seedless edits.
 /// `starting_level`
 /// begins the new game at that character level instead of 1 (`0` or `1` =
 /// vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -277,6 +285,8 @@ pub fn patch_rom(
     spirit_ap: &str,
     damage_ap: &str,
     enemy_stat_scale: &str,
+    exp_scale: &str,
+    seru_catch_rate: &str,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -905,6 +915,45 @@ pub fn patch_rom(
                 Err(e) => summary.push_str(&format!("enemy-stat-scale: {e}\n")),
             },
             Err(e) => summary.push_str(&format!("enemy-stat-scale: skipped - {e}\n")),
+        }
+    }
+
+    // EXP multiplier: scales every monster's base-EXP reward halfword (empty
+    // or 1 = retail). Seedless, same shape as the difficulty scale above.
+    let exp_scale = exp_scale.trim();
+    if exp_scale.is_empty() {
+        summary.push_str("exp-scale: 1x (retail)\n");
+    } else {
+        match legaia_patcher::monster_stats::ScalePermille::parse(exp_scale) {
+            Ok(scale) if scale.is_retail() => {
+                summary.push_str("exp-scale: 1x (retail)\n");
+            }
+            Ok(scale) => match apply::scale_monster_exp(&mut patcher, scale) {
+                Ok(rep) => summary.push_str(&format!(
+                    "exp-scale: {scale} ({} monsters changed)\n",
+                    rep.monsters_changed
+                )),
+                Err(e) => summary.push_str(&format!("exp-scale: {e}\n")),
+            },
+            Err(e) => summary.push_str(&format!("exp-scale: skipped - {e}\n")),
+        }
+    }
+
+    // Seru catch-rate override: one flat percent into every capturable
+    // record's catch-chance byte (empty = retail per-monster rates).
+    let seru_catch_rate = seru_catch_rate.trim();
+    if seru_catch_rate.is_empty() {
+        summary.push_str("seru-catch-rate: retail\n");
+    } else {
+        match legaia_patcher::rewards::parse_catch_rate(seru_catch_rate) {
+            Ok(pct) => match apply::set_seru_catch_rate(&mut patcher, pct) {
+                Ok(rep) => summary.push_str(&format!(
+                    "seru-catch-rate: {pct}% ({} monsters changed)\n",
+                    rep.monsters_changed
+                )),
+                Err(e) => summary.push_str(&format!("seru-catch-rate: {e}\n")),
+            },
+            Err(e) => summary.push_str(&format!("seru-catch-rate: skipped - {e}\n")),
         }
     }
 

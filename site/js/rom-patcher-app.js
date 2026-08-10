@@ -11,7 +11,8 @@
  * solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru,
  * jewel_fix, approach_softlock_fix, delilas_challenge, fishing_prices, location_renames,
  * earth_egg_price, arts_powers,
- * arts_ap_grants, arts_ap_costs, spirit_ap, damage_ap, enemy_stat_scale)
+ * arts_ap_grants, arts_ap_costs, spirit_ap, damage_ap, enemy_stat_scale,
+ * exp_scale, seru_catch_rate)
  * -> { data, summary, seed, lang }`, `resolve_seed(str)`,
  * `validate_lang_pack(image, yaml) -> { ok, language, applied, skipped, message, report }`,
  * `export_lang_pack(image, language) -> yaml_string`, and
@@ -1374,7 +1375,7 @@ const PRESET_BASE = {
   drops: 'none', encounters: 'none', encounter_scope: 'scene', soloStrong: false, fleeExp: false, chests: 'none',
   shops: 'none', casino: 'none', steals: 'none', arts: 'none', doors: 'none',
   door_coupling: 'coupled', houseDoors: false, equipmentDrops: false, seruTrade: false,
-  enemyAlly: false, shinySeru: false, jewelFix: false, approachFix: false, delilasChallenge: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '',
+  enemyAlly: false, shinySeru: false, jewelFix: false, approachFix: false, delilasChallenge: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '',
   startingItems: 0, doorOfWind: false, incense: false,
   speedChain: false, chickenHeart: false, goodLuckBell: false,
   allWarps: false,
@@ -1482,15 +1483,25 @@ function init() {
   const damageApSlider = $('rom-damage-ap');
   const damageApVal = $('rom-damage-ap-val');
   const enemyScaleChk = $('rom-enemy-scale-on');
+  const expScaleChk = $('rom-exp-scale-on');
+  const expScaleSlider = $('rom-exp-scale');
+  const expScaleVal = $('rom-exp-scale-val');
+  const seruCatchChk = $('rom-seru-catch-on');
+  const seruCatchSlider = $('rom-seru-catch');
+  const seruCatchVal = $('rom-seru-catch-val');
   // Live read-out next to each AP slider. `input` fires while dragging;
   // `change` (which drives markCustom/syncDependents) only fires on release.
-  for (const [slider, out] of [[spiritApSlider, spiritApVal], [damageApSlider, damageApVal]]) {
+  for (const [slider, out] of [[spiritApSlider, spiritApVal], [damageApSlider, damageApVal], [seruCatchSlider, seruCatchVal]]) {
     if (slider && out) slider.addEventListener('input', () => { out.textContent = slider.value; });
   }
   // The difficulty scale is a multiplier, so it reads out as "2.5x". Its step
   // is 0.1, and float steps can land on 2.5000000000000004 - fix the display
   // (and everything derived from it) to one decimal.
   const fmtScale = (v) => Number(v).toFixed(1) + 'x';
+  // The EXP multiplier reads out like the difficulty scale ("2.5x").
+  if (expScaleSlider && expScaleVal) {
+    expScaleSlider.addEventListener('input', () => { expScaleVal.textContent = fmtScale(expScaleSlider.value); });
+  }
   // Bind one slider + read-out pair, and return a handle the setters use.
   // Dropped silently if the markup is absent, so an older page still works.
   const bindScale = (id, key) => {
@@ -1716,6 +1727,12 @@ function init() {
     damageApChk.checked = cfg.damageAp !== '' && cfg.damageAp != null;
     damageApSlider.value = String(damageApChk.checked ? cfg.damageAp : 100);
     damageApVal.textContent = damageApSlider.value;
+    expScaleChk.checked = cfg.expScale !== '' && cfg.expScale != null;
+    expScaleSlider.value = String(expScaleChk.checked ? cfg.expScale : 1);
+    expScaleVal.textContent = fmtScale(expScaleSlider.value);
+    seruCatchChk.checked = cfg.seruCatchRate !== '' && cfg.seruCatchRate != null;
+    seruCatchSlider.value = String(seruCatchChk.checked ? cfg.seruCatchRate : 100);
+    seruCatchVal.textContent = seruCatchSlider.value;
     // Difficulty scale. A config value is one string carrying both groups; each
     // group's body is either a bare multiplier or a `stat=mult` list, so the
     // string itself picks the view mode - a preset that shapes individual stats
@@ -1802,6 +1819,10 @@ function init() {
     if (spiritRow) spiritRow.classList.toggle('is-disabled', !(spiritApChk && spiritApChk.checked));
     const damageRow = $('rom-damage-ap-row');
     if (damageRow) damageRow.classList.toggle('is-disabled', !(damageApChk && damageApChk.checked));
+    const expScaleRow = $('rom-exp-scale-row');
+    if (expScaleRow) expScaleRow.classList.toggle('is-disabled', !(expScaleChk && expScaleChk.checked));
+    const seruCatchRow = $('rom-seru-catch-row');
+    if (seruCatchRow) seruCatchRow.classList.toggle('is-disabled', !(seruCatchChk && seruCatchChk.checked));
     const enemyScaleRow = $('rom-enemy-scale-row');
     if (enemyScaleRow) enemyScaleRow.classList.toggle('is-disabled', !(enemyScaleChk && enemyScaleChk.checked));
     // The scale's two view modes: exactly one pane is ever visible, and the
@@ -1907,6 +1928,14 @@ function init() {
       else if (bodies[0][1] === bodies[1][1]) enemyStatScale = bodies[0][1];
       else enemyStatScale = bodies.map(([g, b]) => `${g}:${b || '1.0'}`).join('|');
     }
+    // EXP multiplier: like the difficulty scale, "enabled but at 1.0x" is the
+    // identity and collapses to '' (retail) rather than rewriting every slot.
+    // Fixed to one decimal for the same float-step reason.
+    const expScaleNum = expScaleChk.checked ? Number(expScaleSlider.value) : 1;
+    const expScale = expScaleNum !== 1 ? expScaleNum.toFixed(1) : '';
+    // Seru catch rate: every flat percent is a real override (100% is not the
+    // identity - retail rates vary per monster), so send whatever is set.
+    const seruCatchRate = seruCatchChk.checked ? String(seruCatchSlider.value) : '';
     // Art overrides = the per-art rows serialized to `combo=value` pairs,
     // merged with anything typed into the raw (advanced) inputs.
     const artOv = artBuilder.collect();
@@ -1968,7 +1997,7 @@ function init() {
       spellCost === 'none' && equipBonus === 'none' && !weaponSpecialty &&
       startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !jewelFix && !approachFix && !delilasChallenge &&
       !fishingPrice && !renameLocation && !earthEggPrice && !artsPower && !artsApGrant && !artsApCost &&
-      !spiritAp && !damageAp && !enemyStatScale
+      !spiritAp && !damageAp && !enemyStatScale && !expScale && !seruCatchRate
     );
     if (!baseActive && texSpecs.length === 0) {
       setStatus('Enable at least one option (pick a preset, a language, a texture, or flip a toggle).', 'err');
@@ -1999,7 +2028,7 @@ function init() {
       let summaryText = '';
       let langReport = null;
       if (baseActive) {
-        const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale);
+        const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate);
         data = result.data;
         usedSeed = result.seed;
         summaryText = result.summary || '';

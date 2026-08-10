@@ -1648,6 +1648,8 @@ This is the canonical "monster spawn" path. Engine port reads the record once, p
 | `+0x1A` | u16 | **SPD** → actor `+0x164/+0x166` (turn-order initiative seed; buffable). |
 | `+0x1F` | u8 | **Size class** - body bulk. Read **record-direct** through the same `0x801C9348` pointer table, never copied to the actor: the battle camera's per-action framing `FUN_801F0348` computes `ctx+0x6D0 = clamp(size << 7, 0x0C00, 0x1400)` and the enemy stager `FUN_800513F0` writes `actor+0x58 = size << 5`. Spans `14..=48` across the roster with no zero and no outlier, and it tracks model bulk rather than any stat - Lapis is 64800 HP at size class `20` against Koru's `48`, so a byte tracking HP could not produce the column. Parser: `MonsterRecord::size_class`. |
 | `+0x21` | u8[3] | **Magic-attack ids** (`+0x21..+0x23`): up to three **global** spell ids the enemy casts. A slot is live when its value is `> 1`. The AI spell picker `FUN_801E9FD4` (`overlay_0898`) reads `record[0x21 + slot]`, writes it into the live actor at `+0x1DF`, and the battle-action SM names it via `&DAT_800754D0 + id*0xC` (`0x27` → `Tail Fire`). These global ids are **distinct** from the local `+0x4C` entry ids (which only gate the AGL cost); they are the names that appear on screen. Parser: `MonsterRecord::magic_attacks` + `legaia_asset::spell_names`. |
+| `+0x3E` | u8 | **Seru id** (`0` = not capturable). Read record-direct through `0x801C9348` by the [killing-blow capture roll](#the-retail-capture-roll-fun_801ec3e4); on success it is written to battle ctx `+0x269`, and the granted spell is global id `seru_id + 0x80` (Gimard's `1` → `0x81`). 63 records carry Seru ids `0x01..=0x15`. Parser: `MonsterRecord::seru_id`. |
+| `+0x3F` | u8 | **Seru catch chance** in percent (`rand() % 100 < pct`); rolled only when the blow kills and `+0x3E` is nonzero. Retail spans `1..=80`. Parser: `MonsterRecord::catch_rate_pct`. |
 | `+0x44` | u16 | **gold** (base victory-spoils gold). |
 | `+0x46` | u16 | **EXP** (base victory-spoils experience). |
 | `+0x48` | u8 | **drop item id** (`0` = no drop). |
@@ -3599,6 +3601,38 @@ Per-character per-Seru capture-point accumulator. Each captured Seru contributes
 `SeruDef::learnable_mask` is a 3-bit per-character mask (bit 0 = Vahn, bit 1 = Noa, bit 2 = Gala) so single-character Seru can teach only their bearer. `record_capture` is the pure resolver; `SeruCaptureSession` drives the post-capture banner sequence (`Capturing → Announcing[i] → Done`) for engines to render.
 
 Implementation: [`crates/engine-core::seru_learning`](../../crates/engine-core/src/seru_learning.rs).
+
+### The retail capture roll (`FUN_801ec3e4`)
+
+Retail decides a capture inside the arms execution resolver `FUN_801EC3E4`
+(overlay 0898, base `0x801CE818`; dump `overlay_0898_801ec3e4.txt`, block
+`0x801ee1c0..0x801ee2e8`), at the moment a physical hit resolves:
+
+1. **Killing blow only.** The block is entered from the damage-vs-HP compare
+   at `0x801ee1cc` (`sltu` of damage against the target's current HP at
+   `+0x14C`): a hit that leaves the monster alive branches past the whole
+   capture path. The attacker must also be a party slot (`< 3`).
+2. **Capturable gate.** The target's record (per-enemy record-pointer table
+   `0x801C9348[slot-3]`) is read record-direct: `+0x3E` (Seru id) zero → no
+   roll.
+3. **The roll** (`0x801ee268..0x801ee2a8`): base chance = record `+0x3F`
+   (percent). If the attacker's character record carries ability-word `+0xF8`
+   bit `0x4000` - passive index `0x2E`, **Magic Boost** (Ivory Book) - a flat
+   `+30` percentage points is added first (`0x801ee238`). Then
+   `rand() % 100 < chance` (rand at `jal 0x80056798`, the `%100` folded
+   through the `0x51EB851F` reciprocal multiply).
+4. **Success**: after an eligibility check (`jal 0x801e91e8` - the
+   already-learned filter), the Seru id is stored into the battle context at
+   `+0x269` (`sb v0,0x269(a0)` at `0x801ee2e8` - the byte the shiny-Seru
+   patch hooks), which routes the action SM into the capture cinematic
+   (states `0x68..0x6B`) and the post-battle grant `FUN_801E92DC` teaches
+   spell `seru_id + 0x80`.
+
+The engine port's missing-HP-fraction model (`World::resolve_capture`) is a
+clean-room approximation of the same "reliable only on a weakened Seru" feel;
+retail's actual condition is the killing blow plus the flat per-monster
+percent. The catch-rate byte is the `--seru-catch-rate` randomizer target
+([randomizer.md](../tooling/randomizer.md#seru-catch-rate)).
 
 ## Arts command input
 

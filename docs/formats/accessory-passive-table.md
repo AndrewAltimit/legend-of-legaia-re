@@ -168,7 +168,7 @@ accessory table (`accessory_passives_vs_disc`).
 | `0x2B` | AP Used Down | consume 50% less AP | Mettle Gem |
 | `0x2C` | Arts Power | arts power up | War Soul |
 | `0x2D` | Rage | unpredictable behavior | Evil Medallion |
-| `0x2E` | Magic Boost | magic (Seru absorb) accrual up | Ivory Book |
+| `0x2E` | Magic Boost | Seru catch roll +30 percentage points (the killing-blow absorb roll in `FUN_801EC3E4` reads ability word `+0xF8` bit `0x4000` and adds a flat `0x1E` to the monster's catch byte before the d100) | Ivory Book |
 | `0x2F` | EXP Boost | XP after battle up | Crimson Book |
 | `0x30` | Gold Boost† | gold +25% after battle | Golden Book |
 | `0x31` | Items Up† | item drop rate up | Bronze Book |

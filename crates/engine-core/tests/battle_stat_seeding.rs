@@ -38,6 +38,8 @@ fn gaza_record() -> MonsterRecord {
         exp: 42000,
         drop_item: 0,
         drop_chance_pct: 0,
+        seru_id: 0,
+        catch_rate_pct: 0,
         magic_count: 0,
         spells: vec![],
         magic_attacks: vec![],
