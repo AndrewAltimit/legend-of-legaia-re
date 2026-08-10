@@ -77,6 +77,20 @@ pub(crate) fn parse_stat_scale(s: &str) -> Result<legaia_patcher::monster_stats:
     legaia_patcher::monster_stats::ScaleProfile::parse(s).map_err(|e| anyhow::anyhow!(e))
 }
 
+/// Parse an `--exp-scale` multiplier (`"2"`, `"0.5x"`; `0.1..=5`). Shares
+/// [`ScalePermille::parse`](legaia_patcher::monster_stats::ScalePermille::parse)
+/// with the difficulty scale and the browser slider, so every front-end
+/// accepts exactly the same values and emits the same bytes.
+pub(crate) fn parse_exp_scale(s: &str) -> Result<legaia_patcher::monster_stats::ScalePermille> {
+    legaia_patcher::monster_stats::ScalePermille::parse(s).map_err(|e| anyhow::anyhow!(e))
+}
+
+/// Parse a `--seru-catch-rate` percent (`"55"`, `"100%"`; `0..=100`). Shared
+/// with the browser slider via [`legaia_patcher::rewards::parse_catch_rate`].
+pub(crate) fn parse_seru_catch_rate(s: &str) -> Result<u8> {
+    legaia_patcher::rewards::parse_catch_rate(s).map_err(|e| anyhow::anyhow!(e))
+}
+
 /// Parse an `--arts-power` entry: `COMBO=VALUE` (`RDLDL=0x16`). The combo is a
 /// run of `L/R/D/U` glyphs (case-insensitive); `VALUE` is a power-encoding byte
 /// (`0` to disable, or `0x0C..=0x1F` for a real damage tier), given in decimal

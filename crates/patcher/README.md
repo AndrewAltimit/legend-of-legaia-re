@@ -69,6 +69,7 @@ full design.
   - [Steals](#steals)
   - [Monster stats](#monster-stats)
   - [Enemy difficulty scale](#enemy-difficulty-scale)
+  - [Experience multiplier + Seru catch rate](#experience-multiplier--seru-catch-rate-rewards-module)
   - [Move power](#move-power)
   - [Element affinity](#element-affinity)
   - [Spell cost](#spell-cost)
@@ -603,6 +604,29 @@ edited a different way.
 - Integer permille arithmetic - `(value * permille + 500) / 1000`, round half up
   - so no float reaches the disc. A `0` stays `0`, a non-zero floors at `1`, and
   the top saturates at the record's `u16` ceiling.
+
+## Experience multiplier + Seru catch rate (`rewards` module)
+
+Two more knobs over the same monster records, both plain data edits through
+`monster::repack_slot`.
+
+- `--exp-scale MULT` scales every monster's base-EXP halfword (record `+0x46`)
+  by `0.1x..=5x` (`ScalePermille`, shared with the difficulty scale - same
+  parser, same round-half-up permille arithmetic, same `0 stays 0` /
+  `floor 1` / `u16` saturation clamps). Every EXP grant reads that field - the
+  victory spoils, the party split, and the `--flee-exp` hook's sum - so one
+  edit scales them all; gold and drops never move.
+- `--seru-catch-rate PCT` (`0..=100`) overrides the catch-chance byte (record
+  `+0x3F`) of every record whose Seru id (`+0x3E`) is nonzero - the percent
+  the killing-blow absorb roll in overlay-0898 `FUN_801EC3E4` throws a d100
+  against (`docs/subsystems/battle.md`, *The retail capture roll*). Only the
+  63 capturable records are written, so nothing new becomes capturable; the
+  Ivory Book's flat `+30` still applies on top.
+
+Both are seedless and idempotent, compose with `--drops` / `--monster-stats` /
+`--enemy-stat-scale` on the same slots, and carry the usual disc oracles
+(`tests/rewards_real.rs`: exact per-record expectation, untouched-sibling
+sweep, footprint + determinism).
 
 ## Move power
 
@@ -1336,6 +1360,10 @@ legaia-patcher verify --input DISC.bin --patch run.ppf
   for individual ones, or a `regular:...|boss:...` split for the two enemy groups.
   Seedless, and applied after `--monster-stats`, so a shuffle-then-scale run
   scales the shuffled values.
+- `--exp-scale` scales every monster's base EXP reward (`0.1`..`5`, retail `1`),
+  and `--seru-catch-rate` overrides every capturable Seru's absorb chance with
+  one flat percent (`0`..`100`). Both seedless data edits to the same records -
+  see [Experience multiplier + Seru catch rate](#experience-multiplier--seru-catch-rate-rewards-module).
 - `--equipment-drops` injects a low-chance bonus equipment drop into the
   battle-end reward routine - granted on top of `--drops`, never disturbing it.
   `--equipment-drop-chance N` sets the per-battle percent (default 5).
