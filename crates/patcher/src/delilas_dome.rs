@@ -410,6 +410,53 @@ pub fn assemble_ai_block() -> Vec<u32> {
     words
 }
 
+// --- Winnings-display hook (`FUN_801D1184`, arena overlay) -------------------
+
+/// The results screen's own payout-table read: `FUN_801D1184` loads
+/// `*(0x801D1860 + course*0x40 + (round-1)*4)` into the winnings-display
+/// variable `DAT_801D1AAC` - a second, display-only reader the settlement's
+/// reward detour does not cover, so a cleared course *paid* 5000 while the
+/// end screen still *said* 0 (the course-3 index reads past the table).
+/// The final address `addu` at `0x801D125C` becomes `j` into a small gated
+/// override; the displaced table `lw` runs in the delay slot with the
+/// unfinished address (a word-aligned low-RAM read - harmless) and the
+/// routine recomputes it. On entry `v1` still holds `course << 6`, so the
+/// course test costs one immediate.
+pub const DISPLAY_HOOK_VA: u32 = 0x801D_125C;
+/// The stock instruction at [`DISPLAY_HOOK_VA`] (`addu v0,v0,a0` - the final
+/// table-address add the routine replays) - the build fingerprint.
+pub const DISPLAY_HOOK_ORIG: u32 = addu(V0, V0, A0);
+/// The word after the hook (the table `lw v1,0(v0)` that becomes the delay
+/// slot) - pinned as a second fingerprint.
+pub const DISPLAY_HOOK_DELAY_ORIG: u32 = lw(V1, V0, 0);
+/// Where the display override returns (the `lui` before the
+/// `sw v1,0x1AAC`).
+pub const DISPLAY_RETURN_VA: u32 = 0x801D_1264;
+
+/// The display override's home: the free tail of the AI block's
+/// 48-instruction body ([`AI_BLOCK_VA`] + 28 words).
+pub const DISPLAY_ROUTINE_VA: u32 = 0x8003_52E4;
+
+/// Assemble the winnings-display override (8 words, in the AI block's tail).
+/// Entry: `v0` = `(round-1)*4 + (course<<6)`, `a0` = table base, `v1` =
+/// `course << 6`.
+pub fn assemble_display_routine() -> Vec<u32> {
+    const SKIP: usize = 5;
+    let words = vec![
+        addiu(T0, ZERO, 3 << 6),                     // 0: course 3, pre-shifted
+        bne(V1, T0, (SKIP - (1 + 1)) as i16),        // 1: not course 3 -> stock
+        addu(V0, V0, A0),                            // 2: replay addr add (delay)
+        j(DISPLAY_RETURN_VA),                        // 3
+        addiu(V1, ZERO, COURSE3_CLEAR_COINS as u16), // 4: display 5000 (delay)
+        // SKIP (idx 5): stock display value.
+        lw(V1, V0, 0),        // 5
+        j(DISPLAY_RETURN_VA), // 6
+        nop(),                // 7
+    ];
+    debug_assert_eq!(words.len(), 8);
+    words
+}
+
 // --- Reward hook (settlement `FUN_801D0F60`) ---------------------------------
 
 /// Reward detour site: the settlement's payout-table load `lw v0,0(v0)`
@@ -669,6 +716,7 @@ pub fn probe_ram_writes() -> Vec<(u32, Vec<u8>)> {
     let words = |w: Vec<u32>| -> Vec<u8> { w.iter().flat_map(|w| w.to_le_bytes()).collect() };
     vec![
         (AI_BLOCK_VA, words(assemble_ai_block())),
+        (DISPLAY_ROUTINE_VA, words(assemble_display_routine())),
         (ROUTINE_VA, words(assemble_routine())),
         (TEMPLATE_VA, TEMPLATE_BYTES.to_vec()),
         (ROSTER_VA, roster_bytes()),
@@ -817,12 +865,17 @@ impl DomeInjection {
             bytes: PRGERR_PRINT_GATE_NEW.to_le_bytes().to_vec(),
         });
 
-        // AI-retime block over the unreferenced passive-name draw
-        // FUN_80035274 (fingerprint its head; the body is code, not zeros).
-        let ai_block: Vec<u8> = assemble_ai_block()
-            .iter()
-            .flat_map(|w| w.to_le_bytes())
-            .collect();
+        // AI-retime block + winnings-display override, contiguous over the
+        // unreferenced passive-name draw FUN_80035274 (fingerprint its head;
+        // the body is code, not zeros).
+        let mut ai_words = assemble_ai_block();
+        debug_assert_eq!(
+            AI_BLOCK_VA + ai_words.len() as u32 * 4,
+            DISPLAY_ROUTINE_VA,
+            "display routine sits at the AI block's tail"
+        );
+        ai_words.extend(assemble_display_routine());
+        let ai_block: Vec<u8> = ai_words.iter().flat_map(|w| w.to_le_bytes()).collect();
         if ai_block.len() > AI_BLOCK_CAPACITY {
             bail!("dome AI block overruns the unreferenced body it overwrites");
         }
@@ -896,6 +949,22 @@ impl DomeInjection {
         overlay_writes.push(Write {
             off: reward_off,
             bytes: j(REWARD_ROUTINE_VA).to_le_bytes().to_vec(),
+        });
+
+        // Winnings-display detour: the results screen's own table read
+        // (`FUN_801D1184`) - without it a cleared course pays 5000 while
+        // the end screen says 0.
+        let disp_off = overlay_off(DISPLAY_HOOK_VA)?;
+        expect_word(overlay, disp_off, DISPLAY_HOOK_ORIG, "display hook")?;
+        expect_word(
+            overlay,
+            disp_off + 4,
+            DISPLAY_HOOK_DELAY_ORIG,
+            "display hook delay slot",
+        )?;
+        overlay_writes.push(Write {
+            off: disp_off,
+            bytes: j(DISPLAY_ROUTINE_VA).to_le_bytes().to_vec(),
         });
 
         // Magic-reject mask widening in the battle-action overlay: verify
@@ -1164,5 +1233,26 @@ mod tests {
         assert_eq!(AI_HOOK_PREV_ORIG, lui(V0, 0x8008));
         assert_eq!(AI_BLOCK_ORIG_HEAD, 0x27BD_FFE0);
         assert_eq!(AI_BLOCK_ORIG_HEAD2, 0x3C03_8007);
+    }
+
+    #[test]
+    fn display_routine_shape() {
+        let ai = assemble_ai_block();
+        // The display routine starts exactly at the AI block's tail and
+        // the pair fits the overwritten 48-instruction body.
+        assert_eq!(AI_BLOCK_VA + ai.len() as u32 * 4, DISPLAY_ROUTINE_VA);
+        let r = assemble_display_routine();
+        assert!((ai.len() + r.len()) * 4 <= AI_BLOCK_CAPACITY);
+        // Course test rides the pre-shifted course<<6 still live in v1.
+        assert_eq!(r[0], addiu(T0, ZERO, 0xC0));
+        assert_eq!(r[1], bne(V1, T0, 3)); // idx1 -> SKIP(5)
+        assert_eq!(r[2], DISPLAY_HOOK_ORIG); // replayed address add
+        assert_eq!(r[4], addiu(V1, ZERO, COURSE3_CLEAR_COINS as u16));
+        assert_eq!(r[5], DISPLAY_HOOK_DELAY_ORIG); // stock table read
+        assert_eq!(r[3], j(DISPLAY_RETURN_VA));
+        assert_eq!(r[6], j(DISPLAY_RETURN_VA));
+        // Stock fingerprints match the arena overlay's real words.
+        assert_eq!(DISPLAY_HOOK_ORIG, 0x0044_1021);
+        assert_eq!(DISPLAY_HOOK_DELAY_ORIG, 0x8C43_0000);
     }
 }

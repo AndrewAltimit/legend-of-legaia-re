@@ -112,8 +112,9 @@ probe.run({
             return
         end
         if mode ~= last_mode then
-            CSV:row("%d,0x%X,mode-change word=0x%X counter=%d", elapsed, mode,
-                probe.read_u32(COURSE_WORD) or 0, probe.read_u32(COUNTER) or -1)
+            CSV:row("%d,0x%X,mode-change word=0x%X counter=%d display=%d", elapsed, mode,
+                probe.read_u32(COURSE_WORD) or 0, probe.read_u32(COUNTER) or -1,
+                probe.read_u32(0x801D1AAC) or -1)
             CSV:row("%d,0x%X,routing residue=%d win_latch=%d ran_away=%d result=0x%02X",
                 elapsed, mode,
                 probe.read_u32(MENU_RESIDUE) or -1,
