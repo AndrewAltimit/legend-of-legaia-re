@@ -353,9 +353,14 @@ pub(crate) fn monster_archive_one(
         monster_archive::SLOT_STRIDE
     );
     let print_rec = |r: &monster_archive::MonsterRecord| {
+        let seru = if r.seru_id != 0 {
+            format!("  seru 0x{:02X}@{:3}%", r.seru_id, r.catch_rate_pct)
+        } else {
+            String::new()
+        };
         println!(
             "  id {:3}  {:<22} HP {:5}  MP {:5}  stats {:?}  magic {}  \
-             gold {:5}  exp {:5}  drop {:3}@{:3}%",
+             gold {:5}  exp {:5}  drop {:3}@{:3}%{}",
             r.id,
             r.name,
             r.hp,
@@ -365,7 +370,8 @@ pub(crate) fn monster_archive_one(
             r.gold,
             r.exp,
             r.drop_item,
-            r.drop_chance_pct
+            r.drop_chance_pct,
+            seru
         );
         if !r.spells.is_empty() {
             let spells: Vec<String> = r
