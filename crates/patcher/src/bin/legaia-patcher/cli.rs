@@ -130,6 +130,12 @@ pub(crate) enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only: print the Delilas-dome SCUS-side injection as a
+    /// `LEGAIA_POKES` list for the PCSX-Redux probes (cave routines, stream
+    /// hooks, PRG ERR nop, plus the course-unlock story-flag byte). Library
+    /// save states predate the patched disc, so the probes must RAM-install
+    /// the always-resident SCUS half; the overlay halves ride the `--iso`.
+    DelilasPokes,
     /// Read-only: show the Earth Egg coin threshold (the Sol Tower Prize Counter
     /// exchange) - the value the `--earth-egg-price` editor changes.
     EarthEgg {

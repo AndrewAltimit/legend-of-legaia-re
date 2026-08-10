@@ -549,6 +549,32 @@ pub fn template_ref_words() -> [u32; 2] {
     [lui(A0, hi(TEMPLATE_VA)), addiu(A0, A0, lo(TEMPLATE_VA))]
 }
 
+/// The SCUS-side half of the injection as `(VA, bytes)` pairs, for
+/// RAM-installing it in an emulator probe: a library save state predates the
+/// patched disc, so the always-resident SCUS image in RAM lacks the cave and
+/// hooks, while the arena/battle overlay halves stream in from the patched
+/// `--iso` disc on their own. Mirrors exactly the `scus` writes [`DomeInjection::plan`]
+/// produces (cave regions, the two stream-map hook `j`s, the PRG ERR nop) -
+/// no disc needed because every word is static.
+pub fn probe_ram_writes() -> Vec<(u32, Vec<u8>)> {
+    let words = |w: Vec<u32>| -> Vec<u8> { w.iter().flat_map(|w| w.to_le_bytes()).collect() };
+    vec![
+        (ROUTINE_VA, words(assemble_routine())),
+        (TEMPLATE_VA, TEMPLATE_BYTES.to_vec()),
+        (ROSTER_VA, roster_bytes()),
+        (SEAT_ROUTINE_VA, words(assemble_seat_routine())),
+        (REWARD_ROUTINE_VA, words(assemble_reward_routine())),
+        (STREAM_ROUTINE_VA, words(assemble_stream_map_routine())),
+        (STREAM2_ROUTINE_VA, words(assemble_stream2_map_routine())),
+        (STREAM_HOOK_VA, j(STREAM_ROUTINE_VA).to_le_bytes().to_vec()),
+        (
+            STREAM2_HOOK_VA,
+            j(STREAM2_ROUTINE_VA).to_le_bytes().to_vec(),
+        ),
+        (PRGERR_FLAG_SET_VA, nop().to_le_bytes().to_vec()),
+    ]
+}
+
 /// One same-size write into a target image: `(file_offset, bytes)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Write {
