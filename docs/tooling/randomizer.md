@@ -1024,23 +1024,34 @@ The shipped fix streams **slim clones** without touching the originals:
   live test cast Meta in the course and got audio-state corruption (the
   koin1 magic-freeze class). Retail Beginner/Expert legs lose their latent
   magic access too - the same corruption waits there.
-- **The special cadence is retimed for the double-team round only.** The
-  bespoke Delilas AI arm (`case 0xa2..0xa4` in the monster picker
-  `FUN_801E9FD4`, battle overlay) queues the signature special whenever the
-  shared battle turn counter `ctx[0x28A]` hits `% 3 == 2` - attack, attack,
-  special, with both siblings synchronized in a 1v2. The course reroutes
-  the arm: its ctx reload (`0x801EB7C4`) jumps to a course-gated block that
-  resumes the stock arm register-exactly for every other context (ravine
-  duels, Master rounds, the course's own Gi round), and in the Che & Lu
-  round (course word `0x131` exactly) fires a sibling's special on
-  `(counter + offset) % 4 == 3`, Lu offset 2 / Che offset 0 - one special
-  every four turns, staggered two turns apart. The block overwrites the
-  SCUS passive-name draw `FUN_80035274`, a 48-instruction function with
-  zero references of any form in any image (the five-form address-word
-  scan; `port-catalog-ignore.toml` `[unreferenced]`) - the only
-  always-resident home left once the shared rodata gap filled and the
-  battle overlay's image proved packed (`static-overlays.toml`: all
-  `.text+.rodata` RAM-matched live).
+- **The special cadence is retimed, per round.** The bespoke Delilas AI
+  arm (`case 0xa2..0xa4` in the monster picker `FUN_801E9FD4`, battle
+  overlay) queues the signature special whenever the shared battle turn
+  counter `ctx[0x28A]` hits `% 3 == 2` - attack, attack, special, with
+  both siblings synchronized in a 1v2. The course reroutes the arm: its
+  ctx reload (`0x801EB7C4`) jumps to a course-gated block that resumes the
+  stock arm register-exactly for every non-course context (ravine duels,
+  Master rounds), and in the Che & Lu round (course word `0x131` exactly)
+  fires a sibling's special on `(counter + offset) % 4 == 3`, Lu offset 2
+  / Che offset 0 - one special every four turns, staggered two turns
+  apart. The block overwrites the SCUS passive-name draw `FUN_80035274`,
+  a 48-instruction function with zero references of any form in any image
+  (the five-form address-word scan; `port-catalog-ignore.toml`
+  `[unreferenced]`) - the only always-resident home left once the shared
+  rodata gap filled and the battle overlay's image proved packed
+  (`static-overlays.toml`: all `.text+.rodata` RAM-matched live).
+- **Gi borrows two one-shot casts in his round.** In the course's Gi round
+  (word `0x132` exactly, seat 0 only - a Divide clone never re-casts) the
+  same block queues **Divide** (`0x50`, Green Slime's split) on turn
+  counter 1 and **Spore Gas** (`0x4F`, Berserker's status cloud) on
+  counter 3 by writing the actor's cast queue (`+0x1DE = 2`, `+0x1DF` =
+  the spell id) - the exact mechanism the signature specials ride: both
+  are capture-class spells whose modules stream from PROT 0940 / 0939 at
+  cast time ([`spell-table.md`](../formats/spell-table.md)). The counter
+  never repeats a value inside a battle, so exact equality is a one-shot
+  with no state cell, and both turns dodge the stock arm's `% 3 == 2`
+  phase, so Blazing Slash keeps its retail cadence around them. Gi's
+  monster block is byte-untouched.
 - **The dev reporter's `PRG ERR%d` paint is gated off.** The 1v2's tight
   heap fails transient effect-instance allocs in bursts (retail tolerates
   the skipped spawns), but every failure bumps the malloc accumulator
@@ -1096,7 +1107,12 @@ The feature is two coordinated halves that ship together
   residue is exactly 4; the seat routine clears the cell at round-0 install
   (the intermission menu overwrites it with its own small pick afterward,
   so one clear suffices). Leaving the course mid-way settles as a loss
-  (halve), not a quit (zero).
+  (halve), not a quit (zero). The results screen reads the same payout
+  table again on its own (`FUN_801D1184` into the winnings-display
+  variable `DAT_801D1AAC`), so a second, display-only detour at its final
+  address add (`0x801D125C`) shows the same 5000 - the override lives over
+  `FUN_800260DC`, the SCUS per-mode camera preset, the second
+  zero-reference function claimed after the Gi arm filled `FUN_80035274`.
 
 The `koin1` MAN is sector-aligned with zero compressed slack, so the grown
 script only fits back into its footprint through the optimal LZS packer -

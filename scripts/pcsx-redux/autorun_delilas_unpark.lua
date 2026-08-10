@@ -38,6 +38,25 @@ probe.run({
             probe.write_u8(bctx + 6, 0x28)
             CSV:row("%d,0x%X,poked phase 0x1E->0x28", elapsed, mode)
         end
+        if MODE == "cloneclear" then
+            -- Staged unstick of the Divide-clone act-latch: the spawned copy
+            -- inherits the caster's mid-cast action state (+0x1DD=9,
+            -- +0x1DE=2, +0x1DF=0x50) whose completion belongs to the
+            -- original's cast. Clear progressively and watch the phase.
+            local s3 = probe.read_u32(0x801C9370 + 3 * 4) or 0
+            local s4 = probe.read_u32(0x801C9370 + 4 * 4) or 0
+            if elapsed == 60 and s4 > 0x80000000 then
+                probe.write_u8(s4 + 0x1DE, 0)
+                CSV:row("%d,0x%X,cleared clone +0x1DE", elapsed, mode)
+            elseif elapsed == 600 and s4 > 0x80000000 then
+                probe.write_u8(s4 + 0x1DD, 0)
+                probe.write_u8(s4 + 0x1DF, 0)
+                CSV:row("%d,0x%X,cleared clone +0x1DD/+0x1DF", elapsed, mode)
+            elseif elapsed == 1200 and s3 > 0x80000000 then
+                probe.write_u8(s3 + 0x1DE, 0)
+                CSV:row("%d,0x%X,cleared original +0x1DE", elapsed, mode)
+            end
+        end
         if MODE == "poke874" and elapsed > 30 then
             -- Bypass the pad pipeline: write the accept bit straight into
             -- the processed-input word for a few consecutive frames.
@@ -86,6 +105,14 @@ probe.run({
             end
             CSV:row("%d,0x%X,phase=0x%02X pc=0x%08X ra=0x%08X sp=0x%08X stackptrs=%s",
                 elapsed, mode, phase, pc, ra, sp, table.concat(stack, " "))
+        end
+        if elapsed % 100 == 0 then
+            -- Kernel TCB saved context (the receipt that caught the AI
+            -- div-by-zero `break` park): EPC at TCB+0x88, ra at +0x84.
+            -- 0xA000E1F4 physical = 0x8000E1F4 through the probe's KSEG0 map.
+            CSV:row("%d,0x%X,tcb epc=0x%08X ra=0x%08X", elapsed, mode,
+                probe.read_u32(0x8000E1F4 + 0x88) or 0,
+                probe.read_u32(0x8000E1F4 + 0x84) or 0)
         end
     end,
     on_done = function()

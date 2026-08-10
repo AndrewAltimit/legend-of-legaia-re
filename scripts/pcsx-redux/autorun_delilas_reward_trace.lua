@@ -81,10 +81,10 @@ probe.run({
             CSV:row("0,0,CAVE reward routine entered course_g=%d round_g=%d",
                 probe.read_u32(COURSE_G) or -1, probe.read_u32(ROUND_G) or -1)
         end)
-        -- The winnings-display override in the AI block's tail (SCUS - no
+        -- The winnings-display override over FUN_800260DC (SCUS - no
         -- VA aliasing): entry receipt + whether the course-3 arm was taken
         -- (v1 = course<<6 at entry; 0xC0 = course 3).
-        probe.arm_breakpoint(0x800352E4, "Exec", 4, "display_routine", function()
+        probe.arm_breakpoint(0x800260DC, "Exec", 4, "display_routine", function()
             local r = PCSX.getRegisters()
             local v1 = 0
             pcall(function() v1 = tonumber(r.GPR.n.v1) % 0x100000000 end)
