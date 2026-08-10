@@ -136,7 +136,7 @@ probe.run({
                     probe.write_u16(a + 0x14C, HEAL)
                 end
             end
-            if elapsed % 120 == 0 and mode == 0x15 then
+            if elapsed % 60 == 0 and mode == 0x15 then
                 local cells = {}
                 for slot = 0, 5 do
                     local a = probe.read_u32(ACTOR_TABLE + slot * 4) or 0
@@ -149,7 +149,14 @@ probe.run({
                             probe.read_u16(a + 0x14C) or 0)
                     end
                 end
-                CSV:row("%d,0x%X,actors %s", elapsed, mode,
+                -- ctx[0x28A] = the shared battle turn counter the Delilas AI
+                -- arm keys its special cadence on (AI-retime calibration).
+                local bctx = probe.read_u32(0x8007BD24) or 0
+                local cnt = -1
+                if bctx > 0x80000000 and bctx < 0x80200000 then
+                    cnt = probe.read_u8(bctx + 0x28A) or -1
+                end
+                CSV:row("%d,0x%X,turn=%d actors %s", elapsed, mode, cnt,
                     table.concat(cells, " | "))
             end
         end

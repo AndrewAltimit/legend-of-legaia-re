@@ -1024,6 +1024,32 @@ The shipped fix streams **slim clones** without touching the originals:
   live test cast Meta in the course and got audio-state corruption (the
   koin1 magic-freeze class). Retail Beginner/Expert legs lose their latent
   magic access too - the same corruption waits there.
+- **The special cadence is retimed for the double-team round only.** The
+  bespoke Delilas AI arm (`case 0xa2..0xa4` in the monster picker
+  `FUN_801E9FD4`, battle overlay) queues the signature special whenever the
+  shared battle turn counter `ctx[0x28A]` hits `% 3 == 2` - attack, attack,
+  special, with both siblings synchronized in a 1v2. The course reroutes
+  the arm: its ctx reload (`0x801EB7C4`) jumps to a course-gated block that
+  resumes the stock arm register-exactly for every other context (ravine
+  duels, Master rounds, the course's own Gi round), and in the Che & Lu
+  round (course word `0x131` exactly) fires a sibling's special on
+  `(counter + offset) % 4 == 3`, Lu offset 2 / Che offset 0 - one special
+  every four turns, staggered two turns apart. The block overwrites the
+  SCUS passive-name draw `FUN_80035274`, a 48-instruction function with
+  zero references of any form in any image (the five-form address-word
+  scan; `port-catalog-ignore.toml` `[unreferenced]`) - the only
+  always-resident home left once the shared rodata gap filled and the
+  battle overlay's image proved packed (`static-overlays.toml`: all
+  `.text+.rodata` RAM-matched live).
+- **The dev reporter's `PRG ERR%d` paint is gated off.** The 1v2's tight
+  heap fails transient effect-instance allocs in bursts (retail tolerates
+  the skipped spawns), but every failure bumps the malloc accumulator
+  `gp+0x510` that the on-screen dev error reporter (`0x80016444`) prints
+  from. The `beqz` guarding that one print arm becomes an unconditional
+  branch; the WORK/READ/CD error arms and the accumulator itself are
+  untouched. (The spawner's own `ori 0x4000` failure flag at `0x800211A0`
+  is *not* the mechanism - nothing on the disc references the word it
+  writes.)
 
 The option is gated on story flag `0x378` - the flag the Koru death event
 latches and the world map reads to flip the ravine entrance from `nilboa`
@@ -1062,7 +1088,15 @@ The feature is two coordinated halves that ship together
   latch (`DAT_801D1ADC`, raised only on *course exhausted and survived*), so
   a loss pays nothing - and retail's halve-the-winnings-on-a-loss behavior
   is untouched. All four descriptor readers compute `base + course*8`, so
-  one descriptor write makes course 3 work everywhere.
+  one descriptor write makes course 3 work everywhere. One more cell
+  matters: the arena hub's round-end routing (`0x801CEE44`) reads the koin1
+  menu-selection residue at `0x80084448` and treats the value **4** as "the
+  player chose the quit option" - clearing the win latch and zeroing the
+  winnings. The Delilas enrollment rides the who-menu's 4th slot, so its
+  residue is exactly 4; the seat routine clears the cell at round-0 install
+  (the intermission menu overwrites it with its own small pick afterward,
+  so one clear suffices). Leaving the course mid-way settles as a loss
+  (halve), not a quit (zero).
 
 The `koin1` MAN is sector-aligned with zero compressed slack, so the grown
 script only fits back into its footprint through the optimal LZS packer -

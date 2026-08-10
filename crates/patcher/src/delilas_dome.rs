@@ -310,6 +310,106 @@ pub const MAGIC_REJECT_ORIG: u32 = andi(V0, V0, 0x200);
 /// The widened test (`andi v0,v0,0x300`).
 pub const MAGIC_REJECT_NEW: u32 = andi(V0, V0, 0x300);
 
+// --- AI retime (the bespoke Delilas arm, battle overlay) ---------------------
+
+/// AI-retime hook site: the bespoke Delilas AI arm (`case 0xa2..0xa4` in the
+/// monster picker `FUN_801E9FD4`, battle overlay) queues the signature
+/// special (`action = formation_id - 0x29`) whenever the shared battle turn
+/// counter `ctx[0x28A]` satisfies `% 3 == 2` - attack, attack, special, with
+/// both siblings synchronized in the 1v2. The retimed course round wants the
+/// special once per **4** turns with the siblings **staggered 2 apart**, so
+/// the arm's ctx reload `lw v0,-0x42dc(v0)` (its `lui` already executed, its
+/// delay slot is the stock load-delay `nop` - both safe) becomes
+/// `j AI_BLOCK_VA`. The block is course-gated: any context whose course word
+/// is not exactly [`COURSE3_SEED_WORD`] (ravine duels, Master rounds, the
+/// course's own Gi round) resumes the stock arm with every register as
+/// retail left it.
+pub const AI_HOOK_VA: u32 = 0x801E_B7C4;
+/// The stock instruction at [`AI_HOOK_VA`] (`lw v0,-0x42dc(v0)` - the ctx
+/// reload the block replays first) - the build fingerprint.
+pub const AI_HOOK_ORIG: u32 = lw(V0, V0, 0xBD24);
+/// The word before the hook (`lui v0,0x8008`) - pinned so the hook's
+/// register assumption (v0 = `0x80080000` on block entry) stays true.
+pub const AI_HOOK_PREV_ORIG: u32 = lui(V0, 0x8008);
+/// Stock-arm resume point (the `lbu a0,0x28a(v0)` counter load): the block
+/// jumps back here for every non-course-3 context.
+pub const AI_STOCK_RESUME_VA: u32 = 0x801E_B7CC;
+/// The arm's join (the switch `break`): where both the special-queued and
+/// no-special exits land.
+pub const AI_ARM_JOIN_VA: u32 = 0x801E_BDAC;
+
+/// The AI block's home: `FUN_80035274`, the SCUS item/equipment
+/// passive-NAME draw - a real 48-instruction function with **zero
+/// references of any form** in any image (five-form address-word scan;
+/// `scripts/ci/port-catalog-ignore.toml` `[unreferenced]`). Overwriting an
+/// unreferenced body is the only way left into always-resident SCUS: the
+/// preserved rodata gap `0x8007AB38..0x8007AF00` is fully allocated across
+/// the injection features, and the battle overlay's own image is packed
+/// (`static-overlays.toml`: all `.text+.rodata` RAM-matched live).
+pub const AI_BLOCK_VA: u32 = 0x8003_5274;
+/// First stock word of the overwritten body (`addiu sp,sp,-0x20`) - the
+/// build fingerprint.
+pub const AI_BLOCK_ORIG_HEAD: u32 = addiu(SP, SP, 0xFFE0);
+/// Second stock word (`lui v1,0x8007`) - a second fingerprint pin.
+pub const AI_BLOCK_ORIG_HEAD2: u32 = lui(V1, 0x8007);
+/// Capacity of the overwritten body (48 instructions).
+pub const AI_BLOCK_CAPACITY: usize = 48 * 4;
+
+/// Retimed special period mask (`% 4`) and firing phase: a sibling queues
+/// its special when `(counter + offset) & 3 == 3`. With the stock counter
+/// starting the first turn at 0, Lu (offset 2) fires on turns 2, 6, 10...
+/// and Che (offset 0) on turns 4, 8, 12... - three regular attacks between
+/// each sibling's specials, staggered two turns apart.
+pub const AI_PERIOD_MASK: u16 = 3;
+/// The remainder that queues the special.
+pub const AI_SPECIAL_PHASE: u16 = 3;
+
+/// Assemble the course-3 AI-retime block (28 words, capacity 48).
+///
+/// Entry state (from the hooked arm): `v0 = 0x80080000` (the arm's own
+/// `lui`), `s4` = actor, `s7` = battle slot; `v1`/`a0`/`a3` are dead (the
+/// stock arm overwrites each before reading). The stock-resume path must
+/// leave `v0` = the battle ctx pointer, which the replayed `lw` provides.
+pub fn assemble_ai_block() -> Vec<u32> {
+    const NOSPEC: usize = 24;
+    const STOCK: usize = 26;
+    let neg_word = -(COURSE3_SEED_WORD as i32) as u32 as u16;
+    let words = vec![
+        lw(V0, V0, 0xBD24),                      //  0: replay: v0 = battle ctx
+        lui(A3, 0x8008),                         //  1
+        lw(A0, A3, lo(COURSE_WORD_VA)),          //  2: a0 = course word
+        addiu(A3, A3, 0xBD0C),                   //  3: a3 = formation base (delay)
+        addiu(A0, A0, neg_word),                 //  4: a0 -= 0x131
+        bne(A0, ZERO, (STOCK - (5 + 1)) as i16), //  5: not Che&Lu round -> stock
+        nop(),                                   //  6
+        lbu(A0, V0, 0x28A),                      //  7: a0 = shared turn counter
+        addu(V1, S7, A3),                        //  8
+        lbu(V1, V1, 0),                          //  9: v1 = formation id
+        nop(),                                   // 10: (load delay)
+        andi(A3, V1, 1),                         // 11: Che(163)=1, Lu(164)=0
+        xori(A3, A3, 1),                         // 12: Che=0, Lu=1
+        sll(A3, A3, 1),                          // 13: Che=0, Lu=2 (stagger)
+        addu(A0, A0, A3),                        // 14: counter + offset
+        andi(A0, A0, AI_PERIOD_MASK),            // 15: % 4
+        addiu(A3, ZERO, AI_SPECIAL_PHASE),       // 16
+        bne(A0, A3, (NOSPEC - (17 + 1)) as i16), // 17: wrong phase -> no special
+        nop(),                                   // 18
+        addiu(V0, ZERO, 2),                      // 19
+        sb(V0, S4, 0x1DE),                       // 20: actor+0x1DE = 2
+        addiu(V1, V1, 0xFFD7),                   // 21: action = id - 0x29
+        j(AI_ARM_JOIN_VA),                       // 22
+        sb(V1, S4, 0x1DF),                       // 23: queue special (delay)
+        // NOSPEC (idx 24):
+        j(AI_ARM_JOIN_VA), // 24
+        nop(),             // 25
+        // STOCK (idx 26): resume the retail arm, v0 = ctx as it expects.
+        j(AI_STOCK_RESUME_VA), // 26
+        nop(),                 // 27
+    ];
+    debug_assert!(words.len() * 4 <= AI_BLOCK_CAPACITY);
+    words
+}
+
 // --- Reward hook (settlement `FUN_801D0F60`) ---------------------------------
 
 /// Reward detour site: the settlement's payout-table load `lw v0,0(v0)`
@@ -563,11 +663,12 @@ pub fn template_ref_words() -> [u32; 2] {
 /// patched disc, so the always-resident SCUS image in RAM lacks the cave and
 /// hooks, while the arena/battle overlay halves stream in from the patched
 /// `--iso` disc on their own. Mirrors exactly the `scus` writes [`DomeInjection::plan`]
-/// produces (cave regions, the two stream-map hook `j`s, the PRG ERR nop) -
-/// no disc needed because every word is static.
+/// produces (cave regions, the two stream-map hook `j`s, the PRG ERR print
+/// gate, the AI-retime block) - no disc needed because every word is static.
 pub fn probe_ram_writes() -> Vec<(u32, Vec<u8>)> {
     let words = |w: Vec<u32>| -> Vec<u8> { w.iter().flat_map(|w| w.to_le_bytes()).collect() };
     vec![
+        (AI_BLOCK_VA, words(assemble_ai_block())),
         (ROUTINE_VA, words(assemble_routine())),
         (TEMPLATE_VA, TEMPLATE_BYTES.to_vec()),
         (ROSTER_VA, roster_bytes()),
@@ -716,6 +817,23 @@ impl DomeInjection {
             bytes: PRGERR_PRINT_GATE_NEW.to_le_bytes().to_vec(),
         });
 
+        // AI-retime block over the unreferenced passive-name draw
+        // FUN_80035274 (fingerprint its head; the body is code, not zeros).
+        let ai_block: Vec<u8> = assemble_ai_block()
+            .iter()
+            .flat_map(|w| w.to_le_bytes())
+            .collect();
+        if ai_block.len() > AI_BLOCK_CAPACITY {
+            bail!("dome AI block overruns the unreferenced body it overwrites");
+        }
+        let ai_off = scus_off(scus, AI_BLOCK_VA)?;
+        expect_word(scus, ai_off, AI_BLOCK_ORIG_HEAD, "AI block home (prologue)")?;
+        expect_word(scus, ai_off + 4, AI_BLOCK_ORIG_HEAD2, "AI block home (+4)")?;
+        scus_writes.push(Write {
+            off: ai_off,
+            bytes: ai_block,
+        });
+
         // --- Arena overlay: seed detour + template repoint + descriptor ------
         let mut overlay_writes = Vec::new();
 
@@ -791,6 +909,19 @@ impl DomeInjection {
                 bytes: MAGIC_REJECT_NEW.to_le_bytes().to_vec(),
             });
         }
+
+        // AI-retime hook: the bespoke Delilas arm's ctx reload becomes
+        // `j AI_BLOCK_VA`. Pin the neighbours the detour depends on: the
+        // `lui` before it (v0 = 0x80080000 on block entry) and the stock
+        // load-delay `nop` that becomes the hook's delay slot.
+        let ai_hook_off = battle_off(AI_HOOK_VA)?;
+        expect_word(battle, ai_hook_off - 4, AI_HOOK_PREV_ORIG, "AI hook lui")?;
+        expect_word(battle, ai_hook_off, AI_HOOK_ORIG, "AI hook")?;
+        expect_word(battle, ai_hook_off + 4, nop(), "AI hook delay slot")?;
+        battle_writes.push(Write {
+            off: ai_hook_off,
+            bytes: j(AI_BLOCK_VA).to_le_bytes().to_vec(),
+        });
 
         Ok(Self {
             scus: scus_writes,
@@ -1002,5 +1133,36 @@ mod tests {
         assert!(end <= CAVE_END_VA);
         // The cave must stay below the live SsAPI I/O table at GAP_END_VA.
         const { assert!(CAVE_END_VA <= GAP_END_VA) }
+    }
+
+    #[test]
+    fn ai_block_shape() {
+        let r = assemble_ai_block();
+        assert!(r.len() * 4 <= AI_BLOCK_CAPACITY);
+        // Entry replays the displaced ctx reload, so the stock-resume path
+        // hands the retail arm the register it expects.
+        assert_eq!(r[0], AI_HOOK_ORIG);
+        // Course gate: exactly the Che & Lu round word (0x131); everything
+        // else (ravine duels, Master rounds, the Gi round 0x132) resumes the
+        // stock arm.
+        assert_eq!(r[2], lw(A0, A3, lo(COURSE_WORD_VA)));
+        assert_eq!(r[4], addiu(A0, A0, 0xFECF));
+        assert_eq!(r[5], bne(A0, ZERO, 20)); // idx5 -> STOCK(26)
+        assert_eq!(r[26], j(AI_STOCK_RESUME_VA));
+        // Retime: (counter + {Che 0, Lu 2}) % 4 == 3 queues the special.
+        assert_eq!(r[15], andi(A0, A0, AI_PERIOD_MASK));
+        assert_eq!(r[16], addiu(A3, ZERO, AI_SPECIAL_PHASE));
+        assert_eq!(r[17], bne(A0, A3, 6)); // idx17 -> NOSPEC(24)
+        // Special queue mirrors the stock arm's stores.
+        assert_eq!(r[20], sb(V0, S4, 0x1DE));
+        assert_eq!(r[21], addiu(V1, V1, 0xFFD7));
+        assert_eq!(r[22], j(AI_ARM_JOIN_VA));
+        assert_eq!(r[23], sb(V1, S4, 0x1DF));
+        assert_eq!(r[24], j(AI_ARM_JOIN_VA));
+        // Fingerprint sanity: the hook context words are what the battle
+        // overlay really holds (pinned against the dump in plan()).
+        assert_eq!(AI_HOOK_PREV_ORIG, lui(V0, 0x8008));
+        assert_eq!(AI_BLOCK_ORIG_HEAD, 0x27BD_FFE0);
+        assert_eq!(AI_BLOCK_ORIG_HEAD2, 0x3C03_8007);
     }
 }
