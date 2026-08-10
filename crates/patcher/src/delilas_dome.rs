@@ -885,17 +885,20 @@ mod tests {
     #[test]
     fn seat_routine_shape() {
         let r = assemble_seat_routine();
-        assert_eq!(r.len(), 9);
+        assert_eq!(r.len(), 11);
         // One exact test: course word == 0x131 (course 3, round 0).
         assert_eq!(r[1], lw(T1, T0, lo(COURSE_WORD_VA)));
         assert_eq!(r[2], addiu(T2, ZERO, 0x131));
-        assert_eq!(r[3], bne(T1, T2, 3)); // idx3 -> DEF(7)
-        // Course-3 round-0 arm seats Lu in formation seat 1.
-        assert_eq!(r[5], j(SEAT_RETURN_VA));
-        assert_eq!(r[6], sb(T3, V0, 1));
-        // Default arm replays the displaced zero store.
+        assert_eq!(r[3], bne(T1, T2, 5)); // idx3 -> DEF(9)
+        // Course-3 round-0 arm seats Lu in formation seat 1 and clears the
+        // koin1 menu-selection residue (the quit-reclassification cell) in
+        // the return delay slot.
+        assert_eq!(r[5], sb(T3, V0, 1));
         assert_eq!(r[7], j(SEAT_RETURN_VA));
-        assert_eq!(r[8], SEAT_HOOK_ORIG);
+        assert_eq!(r[8], sw(ZERO, T4, lo(MENU_RESIDUE_VA)));
+        // Default arm replays the displaced zero store.
+        assert_eq!(r[9], j(SEAT_RETURN_VA));
+        assert_eq!(r[10], SEAT_HOOK_ORIG);
     }
 
     #[test]
@@ -941,22 +944,22 @@ mod tests {
     #[test]
     fn reward_routine_shape() {
         let r = assemble_reward_routine();
-        assert_eq!(r.len(), 10);
+        assert_eq!(r.len(), 9);
         // Replays the displaced table load first (t1 = table value).
         assert_eq!(r[0], lw(T1, V0, 0));
         // Course-3 arm returns the flat clear payout (5000; the const block
-        // pins that it fits a positive `addiu` immediate).
+        // pins that it fits a positive `addiu` immediate). The 5000 load
+        // rides the branch delay slot (always executes); the fall-through
+        // arm overwrites it with the stock table value.
         const {
             assert!(COURSE3_CLEAR_COINS == 5000);
             assert!(COURSE3_CLEAR_COINS <= 0x7FFF);
         }
-        assert_eq!(r[6], j(REWARD_RETURN_VA));
-        assert_eq!(r[7], addiu(V0, ZERO, COURSE3_CLEAR_COINS as u16));
-        // Stock arm returns the table value.
-        assert_eq!(r[8], j(REWARD_RETURN_VA));
-        assert_eq!(r[9], addu(V0, T1, ZERO));
-        // Branch offset: idx4 -> STOCK(8) = +3.
-        assert_eq!(r[4], bne(T2, T3, 3));
+        assert_eq!(r[5], addiu(V0, ZERO, COURSE3_CLEAR_COINS as u16));
+        assert_eq!(r[6], addu(V0, T1, ZERO));
+        assert_eq!(r[7], j(REWARD_RETURN_VA));
+        // Branch offset: idx4 -> SKIP(7) = +2 (past the stock overwrite).
+        assert_eq!(r[4], beq(T2, T3, 2));
     }
 
     #[test]
