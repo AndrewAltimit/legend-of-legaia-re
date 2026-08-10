@@ -27,6 +27,13 @@ local COUNTER     = 0x80084440
 local COURSE_G    = 0x801D1A90
 local ROUND_G     = 0x801D1A94
 local REWARD_CAVE = 0x8007AE8C
+-- Round-end routing / settlement state (arena-overlay globals - RAM reads
+-- only, no BPs: the battle overlay aliases the VA band and BPs there fire
+-- constantly on the wrong code).
+local MENU_RESIDUE = 0x80084448 -- koin1 menu-selection residue (4 = "quit" arm)
+local WIN_LATCH    = 0x801D1ADC -- settle pays only while this is set
+local RAN_AWAY     = 0x801D1A74 -- set by the quit arm -> counter zeroed
+local BATTLE_RESULT = 0x80083D60 -- bit 0x80 = survived
 
 local FRAMES = probe.getenv_num("LEGAIA_FRAMES", 12000)
 local FORCE_AT = probe.getenv_num("LEGAIA_FORCE_AT", 120)
@@ -51,7 +58,7 @@ end
 
 local installed = false
 local last_mode = -1
-local weaken_at = -1
+local weaken_pending = false
 
 probe.run({
     sstate = probe.getenv("LEGAIA_SSTATE", ""),
@@ -87,23 +94,59 @@ probe.run({
         if mode ~= last_mode then
             CSV:row("%d,0x%X,mode-change word=0x%X counter=%d", elapsed, mode,
                 probe.read_u32(COURSE_WORD) or 0, probe.read_u32(COUNTER) or -1)
+            CSV:row("%d,0x%X,routing residue=%d win_latch=%d ran_away=%d result=0x%02X",
+                elapsed, mode,
+                probe.read_u32(MENU_RESIDUE) or -1,
+                probe.read_u32(WIN_LATCH) or -1,
+                probe.read_u32(RAN_AWAY) or -1,
+                probe.read_u8(BATTLE_RESULT) or 0)
             if mode == 0x15 then
-                weaken_at = elapsed + 20
+                weaken_pending = true
             end
             last_mode = mode
         end
-        if weaken_at > 0 and elapsed == weaken_at then
-            weaken_at = -1
+        -- Battle HP trace: discriminates "mash lost the round" from "round
+        -- won but the intermission routed out" - the two exits the
+        -- mode/counter rows cannot tell apart.
+        if mode == 0x15 and elapsed % 120 == 0 then
+            local hps = {}
+            for slot = 0, 5 do
+                local a = probe.read_u32(ACTOR_TABLE + slot * 4) or 0
+                if a > 0x80000000 and a < 0x80200000 then
+                    hps[#hps + 1] = string.format("%d", probe.read_u16(a + 0x14C) or -1)
+                else
+                    hps[#hps + 1] = "-"
+                end
+            end
+            CSV:row("%d,0x%X,hp %s", elapsed, mode, table.concat(hps, "/"))
+        end
+        -- Weaken on the FIRST tick an enemy HP is actually live: a fixed
+        -- "entry+20" delay fires before battle setup stages the actors
+        -- (every HP still 0 -> the >1 guard skips every slot and the
+        -- fight runs at full HP). Waiting for a live value IS "battle
+        -- start" - still before the Begin menu and any settle-relevant
+        -- action, which is what the never-write-HP-mid-battle trap is
+        -- about.
+        if weaken_pending and mode == 0x15 then
+            local live = false
             for slot = 3, 5 do
                 local a = probe.read_u32(ACTOR_TABLE + slot * 4) or 0
                 if a > 0x80000000 and a < 0x80200000 then
-                    local hp = probe.read_u16(a + 0x14C) or 0
-                    if hp > 1 then
-                        probe.write_u16(a + 0x14C, 1)
-                    end
+                    if (probe.read_u16(a + 0x14C) or 0) > 1 then live = true end
                 end
             end
-            CSV:row("%d,0x%X,monsters weakened to 1 hp", elapsed, mode)
+            if live then
+                weaken_pending = false
+                for slot = 3, 5 do
+                    local a = probe.read_u32(ACTOR_TABLE + slot * 4) or 0
+                    if a > 0x80000000 and a < 0x80200000 then
+                        if (probe.read_u16(a + 0x14C) or 0) > 1 then
+                            probe.write_u16(a + 0x14C, 1)
+                        end
+                    end
+                end
+                CSV:row("%d,0x%X,monsters weakened to 1 hp", elapsed, mode)
+            end
         end
         if installed then
             -- Mash Up then Cross: the intermission continue-menu's first
