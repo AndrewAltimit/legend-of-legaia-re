@@ -335,17 +335,26 @@ pub const COURSE_GLOBAL_VA: u32 = 0x801D_1A90;
 /// cleared course paid nothing and wiped the balance until the seat
 /// routine started clearing this cell at round-0 install.
 pub const MENU_RESIDUE_VA: u32 = 0x8008_4448;
-/// The move-VM effect-instance spawner's failure arm (`FUN_80020F88`): when
-/// its `0x9C` transient alloc returns NULL it ORs `0x4000` into the status
-/// word `DAT_80083828`, which the on-screen error reporter renders as
-/// `PRG ERR%d` every frame. The 1v2's tight heap makes bursts fail
-/// (tolerated - the spawn is skipped), so the Delilas patch NOPs the
-/// flag-set to keep the retail-dev error text off the screen. No dumped
-/// code reads bit `0x4000` back.
-pub const PRGERR_FLAG_SET_VA: u32 = 0x8002_11A0;
-/// The stock instruction at [`PRGERR_FLAG_SET_VA`] (`ori v1,v1,0x4000`) -
-/// the flag-set the patch NOPs, and the build fingerprint.
-pub const PRGERR_FLAG_SET_ORIG: u32 = ori(V1, V1, 0x4000);
+/// The on-screen dev error reporter's `PRG ERR%d` arm (reporter at
+/// `0x80016444`; the only referent of the `"PRG ERR%d"` string at
+/// `0x80010100`): it prints when the **malloc-failure accumulator**
+/// `gp+0x510` = `0x8007B828` is non-zero - the same accumulator the malloc
+/// wrapper bumps on every failed allocation. The 1v2's effect-alloc bursts
+/// feed it directly (each failed transient `0x9C` spawn is tolerated but
+/// counted), so the patch silences the print at its gate: the `beqz a1`
+/// guarding the print `jal` becomes an unconditional branch. The
+/// WORK/READ/CD error arms and the accumulator itself are untouched.
+///
+/// An earlier build instead NOPed the effect spawner's `ori 0x4000` into
+/// `DAT_80083828` - **falsified by a live test** (the text still painted):
+/// the reporter never reads that word, and no reference to it exists in any
+/// image (address-word scan). Do not re-walk that path.
+pub const PRGERR_PRINT_GATE_VA: u32 = 0x8001_64D4;
+/// The stock instruction at [`PRGERR_PRINT_GATE_VA`] (`beqz a1, +4` - skip
+/// the print when the accumulator is zero) - the build fingerprint.
+pub const PRGERR_PRINT_GATE_ORIG: u32 = beq(A1, ZERO, 4);
+/// The replacement: `b +4` - skip the print unconditionally.
+pub const PRGERR_PRINT_GATE_NEW: u32 = beq(ZERO, ZERO, 4);
 /// Round global (`DAT_801D1A94`), sibling of [`COURSE_GLOBAL_VA`].
 pub const ROUND_GLOBAL_VA: u32 = 0x801D_1A94;
 
@@ -571,7 +580,10 @@ pub fn probe_ram_writes() -> Vec<(u32, Vec<u8>)> {
             STREAM2_HOOK_VA,
             j(STREAM2_ROUTINE_VA).to_le_bytes().to_vec(),
         ),
-        (PRGERR_FLAG_SET_VA, nop().to_le_bytes().to_vec()),
+        (
+            PRGERR_PRINT_GATE_VA,
+            PRGERR_PRINT_GATE_NEW.to_le_bytes().to_vec(),
+        ),
     ]
 }
 
@@ -686,15 +698,22 @@ impl DomeInjection {
             "stream hook B delay slot",
         )?;
 
-        // Silence the effect spawner's PRG ERR flag-set: under the 1v2's
-        // tight heap a transient-alloc burst can fail (the spawn is skipped,
-        // which retail tolerates), and the flag would paint the dev error
-        // reporter's `PRG ERR%d` over the fight.
-        let prgerr_off = scus_off(scus, PRGERR_FLAG_SET_VA)?;
-        expect_word(scus, prgerr_off, PRGERR_FLAG_SET_ORIG, "PRG ERR flag-set")?;
+        // Silence the dev reporter's `PRG ERR%d` print: under the 1v2's
+        // tight heap a transient effect-alloc burst fails (the spawn is
+        // skipped, which retail tolerates), but every failure bumps the
+        // malloc accumulator the reporter prints from. The `beqz` guarding
+        // the print becomes unconditional; the accumulator and the other
+        // error arms are untouched.
+        let prgerr_off = scus_off(scus, PRGERR_PRINT_GATE_VA)?;
+        expect_word(
+            scus,
+            prgerr_off,
+            PRGERR_PRINT_GATE_ORIG,
+            "PRG ERR print gate",
+        )?;
         scus_writes.push(Write {
             off: prgerr_off,
-            bytes: nop().to_le_bytes().to_vec(),
+            bytes: PRGERR_PRINT_GATE_NEW.to_le_bytes().to_vec(),
         });
 
         // --- Arena overlay: seed detour + template repoint + descriptor ------

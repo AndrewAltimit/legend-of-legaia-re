@@ -38,6 +38,14 @@ local BATTLE_RESULT = 0x80083D60 -- bit 0x80 = survived
 local FRAMES = probe.getenv_num("LEGAIA_FRAMES", 12000)
 local FORCE_AT = probe.getenv_num("LEGAIA_FORCE_AT", 120)
 local POKES_RAW = probe.getenv("LEGAIA_POKES", "")
+-- Skip the enemy weaken (round 0 runs at full HP): the long full-HP fight
+-- is what exercises the effect-alloc bursts behind the PRG ERR print.
+local NO_WEAKEN = probe.getenv_num("LEGAIA_NO_WEAKEN", 0)
+-- The dev reporter's PRG ERR print jal (only reachable if the print-gate
+-- patch is absent/broken) and the malloc-failure branch (proves a run
+-- actually produced the bursts, so a silent print BP is non-vacuous).
+local PRGERR_PRINT_JAL = 0x800164E0
+local MALLOC_FAIL      = 0x800178B8
 
 local pokes = {}
 for pair in string.gmatch(POKES_RAW, "[^,%s]+") do
@@ -58,7 +66,8 @@ end
 
 local installed = false
 local last_mode = -1
-local weaken_pending = false
+local weakened = {}
+local malloc_fails = 0
 
 probe.run({
     sstate = probe.getenv("LEGAIA_SSTATE", ""),
@@ -71,6 +80,17 @@ probe.run({
             local r = PCSX.getRegisters()
             CSV:row("0,0,CAVE reward routine entered course_g=%d round_g=%d",
                 probe.read_u32(COURSE_G) or -1, probe.read_u32(ROUND_G) or -1)
+        end)
+        probe.arm_breakpoint(PRGERR_PRINT_JAL, "Exec", 4, "prgerr_print", function()
+            CSV:row("0,0,PRGERR PRINT reached (gate patch absent/broken) accum=%d",
+                probe.read_u32(0x8007B828) or -1)
+        end)
+        probe.arm_breakpoint(MALLOC_FAIL, "Exec", 4, "malloc_fail", function()
+            malloc_fails = malloc_fails + 1
+            if malloc_fails % 50 == 1 then
+                CSV:row("0,0,malloc fail #%d (accum=%d)", malloc_fails,
+                    probe.read_u32(0x8007B828) or -1)
+            end
         end)
         return {}
     end,
@@ -101,7 +121,7 @@ probe.run({
                 probe.read_u32(RAN_AWAY) or -1,
                 probe.read_u8(BATTLE_RESULT) or 0)
             if mode == 0x15 then
-                weaken_pending = true
+                weakened = {}
             end
             last_mode = mode
         end
@@ -120,32 +140,26 @@ probe.run({
             end
             CSV:row("%d,0x%X,hp %s", elapsed, mode, table.concat(hps, "/"))
         end
-        -- Weaken on the FIRST tick an enemy HP is actually live: a fixed
-        -- "entry+20" delay fires before battle setup stages the actors
-        -- (every HP still 0 -> the >1 guard skips every slot and the
-        -- fight runs at full HP). Waiting for a live value IS "battle
-        -- start" - still before the Begin menu and any settle-relevant
-        -- action, which is what the never-write-HP-mid-battle trap is
-        -- about.
-        if weaken_pending and mode == 0x15 then
-            local live = false
+        -- Weaken each enemy on the FIRST tick its own HP reads live,
+        -- one-shot per slot per battle: a fixed "entry+20" delay fires
+        -- before battle setup stages any actor (every HP still 0 -> the
+        -- >1 guard skips all slots), and the seats stage at DIFFERENT
+        -- ticks - a single all-slots pass on the first live seat left the
+        -- late-staging sibling at full HP. Per-slot first-live is still
+        -- before any action on that actor, which is what the
+        -- never-write-HP-mid-battle trap is about.
+        if mode == 0x15 and NO_WEAKEN == 0 then
             for slot = 3, 5 do
-                local a = probe.read_u32(ACTOR_TABLE + slot * 4) or 0
-                if a > 0x80000000 and a < 0x80200000 then
-                    if (probe.read_u16(a + 0x14C) or 0) > 1 then live = true end
-                end
-            end
-            if live then
-                weaken_pending = false
-                for slot = 3, 5 do
+                if not weakened[slot] then
                     local a = probe.read_u32(ACTOR_TABLE + slot * 4) or 0
                     if a > 0x80000000 and a < 0x80200000 then
                         if (probe.read_u16(a + 0x14C) or 0) > 1 then
                             probe.write_u16(a + 0x14C, 1)
+                            weakened[slot] = true
+                            CSV:row("%d,0x%X,slot %d weakened to 1 hp", elapsed, mode, slot)
                         end
                     end
                 end
-                CSV:row("%d,0x%X,monsters weakened to 1 hp", elapsed, mode)
             end
         end
         if installed then

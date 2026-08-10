@@ -715,7 +715,7 @@ pub(crate) fn cmd_delilas_pokes() -> Result<()> {
     pokes.push(format!("0x{flag_addr:08X}:0x{flag_bit:02X}:b"));
     println!("{}", pokes.join(","));
     eprintln!(
-        "{} pokes: SCUS cave + stream hooks + PRG ERR nop + course flag {:#x}.",
+        "{} pokes: SCUS cave + stream hooks + PRG ERR print gate + course flag {:#x}.",
         pokes.len(),
         flag
     );
