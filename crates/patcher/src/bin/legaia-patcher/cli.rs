@@ -197,6 +197,50 @@ pub(crate) enum Cmd {
         #[arg(long)]
         patch: Option<PathBuf>,
     },
+    /// Export a monster's 3D model (mesh + texture page + baked colours) as
+    /// editable OBJ+MTL+PNG, or replace it with a custom model. A replacement
+    /// keeping the retail `o part_NN` group count performs every retail
+    /// battle animation - the streams pose parts rigidly by index. Written
+    /// back as the same same-size in-place slot edit `monster-block` uses.
+    MonsterModel {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references). Never
+        /// modified.
+        #[arg(long)]
+        input: PathBuf,
+        /// 1-based monster id (`monster-stats` lists the populated ids).
+        #[arg(long)]
+        id: u16,
+        /// Export the model here: writes `<stem>.obj`, `<stem>.mtl`,
+        /// `<stem>.png`.
+        #[arg(long, value_name = "STEM")]
+        export: Option<PathBuf>,
+        /// Replacement model (Wavefront OBJ, `o part_NN` groups, raw GTE
+        /// units). Requires `--texture`, plus `--output`/`--patch` or
+        /// `--dry-run`.
+        #[arg(long)]
+        obj: Option<PathBuf>,
+        /// Replacement texture page (PNG, same dimensions as the retail
+        /// page - see the exported PNG).
+        #[arg(long)]
+        texture: Option<PathBuf>,
+        /// Permit the decoded block to grow past its retail size (the battle
+        /// heap budget is tuned to retail; growth risks the loader's
+        /// unchecked allocation). The 0x14000 compressed-slot cap always
+        /// applies.
+        #[arg(long)]
+        allow_grow: bool,
+        /// Validate + report sizes without writing anything.
+        #[arg(long)]
+        dry_run: bool,
+        /// Write the patched image here (contains Sony bytes - local play
+        /// only, never redistribute).
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Write a portable PPF 3.0 patch here (safe to share).
+        #[arg(long)]
+        patch: Option<PathBuf>,
+    },
     /// Read-only: list the special-attack move-power table (the 44 power values
     /// the `--move-power` randomizer redistributes), each tagged with the
     /// spell-table name of a move id that resolves to it.
