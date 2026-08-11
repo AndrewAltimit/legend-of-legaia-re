@@ -170,10 +170,11 @@ pub fn resolve_seed(seed: &str) -> String {
 /// Muscle Dome enrollment option: a new 2-round dome course - Che & Lu
 /// Delilas double-team, then Gi - unlocked by the Koru event; losing a round
 /// returns to the venue by the dome's design - no game over (seedless).
-/// `delilas_custom_items` picks the full-clear reward alongside the 5000
-/// coins: `true` injects and awards the three custom items (Nature's Elixir /
-/// Ra-Seru Tear / Fury Bloom), `false` awards a retail Honey; it has no
-/// effect unless `delilas_challenge` is set. `approach_softlock_fix` re-stages a
+/// `custom_items` injects three brand-new items into cut item slots
+/// (Nature's Elixir / Ra-Seru Tear / Fury Bloom) - standalone: with a
+/// `random` drop / chest / steal mode they join the fill pool, and with
+/// `delilas_challenge` they replace the Honey as the course's full-clear
+/// reward. `approach_softlock_fix` re-stages a
 /// monster's approach animation when it dies mid-approach (the summon-then-
 /// melee clip death that parks the battle in an infinite range poll - the
 /// "endless camera orbit" softlock), so the monster resumes walking instead
@@ -279,7 +280,7 @@ pub fn patch_rom(
     jewel_fix: bool,
     approach_softlock_fix: bool,
     delilas_challenge: bool,
-    delilas_custom_items: bool,
+    custom_items: bool,
     fishing_prices: &str,
     location_renames: &str,
     earth_egg_price: &str,
@@ -359,6 +360,31 @@ pub fn patch_rom(
     };
 
     let mut summary = String::new();
+
+    // Custom items: inject the standalone item set (records, effect machinery,
+    // battle hooks - no Delilas dependency) and widen the random-fill pool so
+    // the `random` drop/chest/steal modes can hand them out. With the Delilas
+    // Challenge also on, they become the course's full-clear reward (the grant
+    // half is installed with the challenge below).
+    if custom_items {
+        match apply::inject_custom_item_set(&mut patcher) {
+            Ok(true) => summary
+                .push_str("custom-items: injected Nature's Elixir, Ra-Seru Tear, Fury Bloom\n"),
+            Ok(false) => summary.push_str("custom-items: already injected\n"),
+            Err(e) => return Err(err(format!("custom-items: {e:#}"))),
+        }
+        if needs_pool {
+            legaia_patcher::unused::extend_pool(
+                &mut pool,
+                legaia_patcher::custom_items::CUSTOM_ITEM_IDS,
+            );
+        } else if !delilas_challenge {
+            summary.push_str(
+                "  note: without a random drop/chest/steal mode or the Delilas Challenge, \
+                 the custom items exist but nothing hands them out\n",
+            );
+        }
+    }
 
     // Language pack, phase 1 of 2: the dialog sections (`man:` / `raw:` keys)
     // go FIRST, before any data randomization - a dialog edit is keyed by a
@@ -557,12 +583,12 @@ pub fn patch_rom(
     // seedless. A koin1 MAN another edit has already grown past its
     // zero-slack footprint skips with a note instead of failing the run.
     if delilas_challenge {
-        match apply::apply_delilas_challenge(&mut patcher, delilas_custom_items) {
+        match apply::apply_delilas_challenge(&mut patcher, custom_items) {
             Ok(rep) if rep.changed => summary.push_str(&format!(
                 "delilas-challenge: Muscle Dome enrollment offers the Delilas Challenge \
                  (a 2-round dome course: Che & Lu double-team, then Gi; a full clear pays \
                  5000 coins + {}; unlocks after Nivora Ravine)\n",
-                if delilas_custom_items {
+                if custom_items {
                     "the three custom items"
                 } else {
                     "a Honey"

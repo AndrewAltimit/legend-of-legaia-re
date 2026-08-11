@@ -706,14 +706,14 @@ pub(crate) struct RandomizeArgs {
     /// arena/SCUS code injection.
     #[arg(long, default_value_t = false)]
     pub(crate) delilas_challenge: bool,
-    /// With `--delilas-challenge`: a full clear also awards the three
-    /// **custom items** - Nature's Elixir (full HP+MP restore), the Ra-Seru
-    /// Tear (a free cast of the user's own Ra-Seru summon), and the Fury
-    /// Bloom (party-wide Fury Boost) - injected into cut item slots. Without
-    /// this flag the clear awards a retail Honey instead. No effect unless
-    /// `--delilas-challenge` is also set.
+    /// **Custom items**: inject three brand-new items into cut item slots -
+    /// Nature's Elixir (full HP+MP restore), the Ra-Seru Tear (a free cast
+    /// of the user's own Ra-Seru summon), and the Fury Bloom (party-wide
+    /// Fury Boost). Standalone: with a `random` drop / chest / steal mode
+    /// they join the fill pool, and with `--delilas-challenge` they replace
+    /// the Honey as the course's full-clear reward.
     #[arg(long, default_value_t = false)]
-    pub(crate) delilas_custom_items: bool,
+    pub(crate) custom_items: bool,
     /// Per-battle percentage chance a capturable enemy is shiny (only with
     /// `--shiny-seru`).
     #[arg(long, default_value_t = legaia_patcher::shiny_seru::DEFAULT_PCT)]

@@ -83,3 +83,83 @@ fn free_cast_flag_starts_clear_on_the_patched_image() {
         "the free-cast flag cell must ship clear"
     );
 }
+
+#[test]
+fn item_set_plan_carries_no_arena_writes() {
+    let Some(disc) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let patcher = DiscPatcher::open(disc.clone()).expect("open disc");
+    let scus = read_file_in_image(&disc, "SCUS_942.54").expect("SCUS in image");
+    let battle = patcher
+        .read_entry(BATTLE_OVERLAY_PROT_INDEX)
+        .expect("read battle overlay");
+    let plan = CustomItemsInjection::plan_item_set(&scus, &battle).expect("plan item set");
+    // 3 item records + 3 descriptors + 2 jump-table writes + 5 caves.
+    assert_eq!(plan.scus.len(), 13, "SCUS write count");
+    assert_eq!(plan.battle.len(), 2, "battle hook count");
+    assert!(plan.overlay.is_empty(), "no arena writes in the item set");
+}
+
+/// The standalone shape: the item set installs (and names) the items with
+/// no arena writes at all, and the full injection over that image completes
+/// just the grant half - the compose path a `--custom-items
+/// --delilas-challenge` run takes.
+#[test]
+fn item_set_alone_leaves_the_arena_untouched_and_composes_with_the_grant() {
+    use legaia_patcher::apply::inject_custom_item_set;
+    use legaia_patcher::custom_items::{GRANT_HOOK_ORIG, GRANT_HOOK_VA, GRANT_VA};
+    use legaia_patcher::delilas_dome::ARENA_BASE_VA;
+
+    let Some(disc) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let patcher0 = DiscPatcher::open(disc.clone()).expect("open disc");
+    let retail_arena = patcher0
+        .read_entry(ARENA_OVERLAY_PROT_INDEX)
+        .expect("read retail arena overlay");
+
+    let mut patcher = DiscPatcher::open(disc).expect("open disc");
+    assert!(
+        inject_custom_item_set(&mut patcher).expect("inject item set"),
+        "first application must report a change"
+    );
+    assert!(
+        !inject_custom_item_set(&mut patcher).expect("re-inject"),
+        "item set must be idempotent"
+    );
+
+    // Items are named; the arena overlay is byte-identical to retail and the
+    // grant cave still carries its retail head.
+    let scus = read_file_in_image(patcher.image(), "SCUS_942.54").expect("SCUS in patched image");
+    let names = legaia_asset::item_names::ItemNameTable::from_scus(&scus).expect("parse names");
+    assert_eq!(names.name(ELIXIR_ITEM_ID), Some("Nature's Elixir"));
+    let arena = patcher
+        .read_entry(ARENA_OVERLAY_PROT_INDEX)
+        .expect("read arena overlay");
+    assert_eq!(arena, retail_arena, "arena overlay must stay retail");
+    let grant_off = file_offset_for_va(&scus, GRANT_VA).expect("resolve grant VA");
+    let head = u32::from_le_bytes(scus[grant_off..grant_off + 4].try_into().unwrap());
+    assert_ne!(
+        head, 0,
+        "sanity: the cave head reads as retail code, not zeros"
+    );
+
+    // The full injection now completes only the grant half.
+    assert!(
+        inject_custom_items(&mut patcher).expect("complete with the grant"),
+        "the grant half must still be missing"
+    );
+    let arena = patcher
+        .read_entry(ARENA_OVERLAY_PROT_INDEX)
+        .expect("re-read arena overlay");
+    let hook_off = (GRANT_HOOK_VA - ARENA_BASE_VA) as usize;
+    let hook = u32::from_le_bytes(arena[hook_off..hook_off + 4].try_into().unwrap());
+    assert_ne!(hook, GRANT_HOOK_ORIG, "settle hook must now be detoured");
+    assert!(
+        !inject_custom_items(&mut patcher).expect("full injection re-run"),
+        "the completed image must be a no-op"
+    );
+}
