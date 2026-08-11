@@ -190,11 +190,13 @@ use anyhow::{Result, bail};
 
 mod animation;
 mod mesh;
+mod rebuild;
 mod record;
 mod slim;
 
 pub use animation::*;
 pub use mesh::*;
+pub use rebuild::*;
 pub use record::*;
 pub use slim::*;
 
