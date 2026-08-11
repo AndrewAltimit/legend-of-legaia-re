@@ -75,6 +75,7 @@ pub mod mips_overlay;
 pub mod mode_table;
 pub mod monster_archive;
 pub mod monster_gltf;
+pub mod monster_model;
 pub mod move_power;
 pub mod muscle_dome;
 pub mod new_game;
