@@ -667,8 +667,7 @@ impl SceneEncounters {
         if self.raw_in_place {
             return Some(self.decoded.clone());
         }
-        let stream = legaia_lzs::compress(&self.decoded);
-        (stream.len() <= self.compressed_budget).then_some(stream)
+        crate::compress_within(&self.decoded, self.compressed_budget)
     }
 }
 

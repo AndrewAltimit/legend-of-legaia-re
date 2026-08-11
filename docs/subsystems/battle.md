@@ -1465,7 +1465,19 @@ wipe and one plain-formation wipe on the `map01` overworld):
    end, and MAIN INIT consumes the latch (both captured live - the flag
    byte walks `0x41 -> 0xC1` at battle entry and back to `0x01` on
    return). Flag index 1 (bit `0x40`) is managed by the same block.
-5. Scripts can invoke the same handoff directly: `FUN_8003C7EC` is a
+   The consumption is **unconditional**: both the survived exit and the
+   loss-return exit join at `0x8003B5F4..0x8003B60C`, whose `andi 0x7f`
+   clears flag index 0 on every back-from-battle pass - so the latch can
+   never linger into a later battle, and it cannot be read back as an
+   outcome signal (`ghidra/scripts/funcs/8003aeb0.txt`).
+5. Story-flag index 1 doubles as a script-readable **battle-outcome
+   flag**: the same gate sets it on the survived path (`ori 0x40` at
+   `0x8003B58C`) and clears it on the wipe path (`andi 0xbf` at
+   `0x8003B5A0`), before either path reaches the shared flag-0 clear. A
+   scene script that runs on the post-battle reload can therefore test
+   flag `1` to distinguish a won battle from a wiped one - the general
+   mechanism for scoring a scripted battle from the scene script.
+6. Scripts can invoke the same handoff directly: `FUN_8003C7EC` is a
    helper twin of the inline gate body (same three stores), and the
    field-VM op `4C EA` (MENU_CTRL nibble-E sub-A, see
    [script-vm-menuctrl.md](script-vm-menuctrl.md#0x4c-nibble-0xe00xef---misc-scene-writes--emitter-helpers))
@@ -1842,6 +1854,18 @@ Retail monster AI is two routines in the battle overlay:
   from the encounter record's `[+4 + slot]` ids (the `[3 reserved][count][ids]`
   format) - so each `switch` case is bespoke AI for a specific monster id, not
   an abstract AI-type.
+
+  One hard data constraint hides in the cast path: after a magic choice the
+  picker counts the block's **rollable castable entries** (record `+0x4C`
+  entries with id `0x0C..=0x1F` and AGL cost `!= 0xFF`) into `sp+0x10` and
+  rolls `rand % count` (`div` at `0x801EA30C`). A count of **zero** executes
+  the compiler's divide-by-zero guard - `break 0x1C00` at `0x801EA318` - and
+  the BIOS parks the machine forever (vsync alive, pads dead). Retail data
+  never has that shape (every caster's block carries rollable entries), so
+  this is a constraint on *rebuilt* blocks: a modded block whose `+0x21`
+  magic array is live must keep at least one rollable castable entry, which
+  is exactly what `legaia_asset::monster_archive::slim_castables` enforces
+  (see [randomizer.md](../tooling/randomizer.md)).
 - **`FUN_801E7320` - target resolver.** Called from the action SM
   (`FUN_801E295C`) at `ActionSeed` as the `monster_setup` hook, but only for
   monster actors with `actor[+0x16e] & 0x380 != 0`. It reads the targeting class
@@ -2028,6 +2052,54 @@ Two SCUS-side archive loaders feed the battle state. Their record-walk helpers:
 - `FUN_80053B9C` - copies short-array records into the per-slot UI buffer at `iVar1 + 0x894 + slot*0x1E0`, OR-ing `0x8000` into each entry (the "active" flag).
 
 Both archive loaders interact with the battle character / monster slots via the 8-actor table at `0x801C9370`.
+
+### The battle heap budget - why a formation of large distinct bosses cannot load
+
+Everything the battle loader places in RAM comes from one custom heap, and its arithmetic is what bounds a formation - not VRAM (each battle seat owns its own texture-page column at `(320 + slot*64, 256)` / CLUT row `484 + slot`, so distinct enemies never contend), and not the AI (a load failure freezes the machine before any AI runs; retail's own `[161,161,161]` scripted fight proves multi-instance AI works).
+
+**The heap.** `FUN_8002B3D4(pool_count=2, DAT_8007B414, size)` initialises a
+best-fit free-list heap with 12-byte node headers, one shared free ring and a
+per-pool allocated ring (so a pool can be mass-freed). The stage-init path
+(`FUN_8001E1B4`) sizes it `0x134800` (~1.23 MB), arena
+`0x80091800..0x801C6000`. With `gp = 0x8007B318`: descriptor pointer
+`gp+0x840 = 0x8007BB58`, alloc counter `gp+0x488 = 0x8007B7A0`, malloc-error
+accumulator `gp+0x510 = 0x8007B828`. The malloc wrapper
+`FUN_80017888(pool, size)` → `FUN_8002B468` **returns NULL on exhaustion**
+(dev-console `malloc err size %d`); the monster streamer `FUN_800542C8` stores
+and copies through that pointer **unchecked**, so an over-budget formation
+writes the decoded block over low kernel RAM and the machine locks inside the
+mode-`0x15` tick (vsync stops - an emulator-side observer sees the mode byte
+parked at `0x15` forever).
+
+**The per-monster RAM cost is `block[+0x08]` bytes** (the texture-pool offset): stats + name + TMD + all action entries and animation streams. The texture pool itself never enters the heap - it is decoded into the staging area at `DAT_8007B728 + 0x12800` (inside the GPU packet buffer) and uploaded to VRAM from there (`FUN_80055468`). The loader dedupes by id: only the first occurrence of an id in the formation cells `DAT_8007BD0C[0..3]` streams and allocates; duplicate seats share the record and mesh, which is why instanced trios are nearly free.
+
+**The measured ledger** (allocator breakpoint trace over a forced battle load
+from a town scene; every row `FUN_80017888(0, size)`): scene asset buffer
+`0x62C00`, GPU primitive-packet double buffer `0x64000` (`FUN_8001E3B8`,
+`packet_size 0x32000 << 1`), the enemy stager's fixed working buffer `0x2E390`
+(`FUN_800513F0` @`0x80051740`, stored `gp+0xa5c = 0x8007BD74` - **fixed-size,
+party-count-independent**; shrinking the party roster `DAT_8007BD10` does not
+reclaim it), battle ctx `0x7A34` (`FUN_80055B6C`), a transient `0x19000`
+party-mesh decode temp (`FUN_80052FA0`, freed in-loop), sound streaming
+`0x1014` chunks, then one allocation per distinct monster, then a post-monster
+tail (`0x1800` + small nodes).
+
+What remains at the first monster allocation in that context is ~`0x28230`
+(164.4 KB); the measured post-monster tail (`0x1800` + `0x3100` + small
+nodes) is ~19.5 KB, so the workable distinct-monster budget is **~145 KB**.
+Probe-bracketed: `[162,10]` (123.3 KB of monster blocks) loads and runs with
+18.5 KB free; `[162,79]` (152.2 KB) seats both monsters but dies on the
+`0x3100` tail alloc; `[162,163]` (165.2 KB) dies on the second monster
+itself. Retail's own authoring respects the budget: the largest distinct-id
+formation on the disc costs 124.3 KB of heap ([108,3] / [107,2] in the Drake
+kingdom bundle), and no retail formation exceeds two distinct ids. The three
+Delilas blocks cost `0x15030`/`0x144D0`/`0x147E8` (84.0/81.2/82.0 KB) each -
+any two together (163-166 KB) overshoot by ~20-25 KB, which is the entire
+reason the Delilas Challenge dome course fields them one per round.
+Instrument: `scripts/pcsx-redux/autorun_delilas_battle_load.lua` (formation
+install + allocator breakpoints + free-ring walk); offline sibling
+`scripts/asset-investigation/battle-heap-walk.py` (free + allocated rings
+from a save-state RAM extract).
 
 ## Character record layout
 

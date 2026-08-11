@@ -43,6 +43,10 @@ disc-gated, so CI runs without a disc. There is also a
 - **Additions retail has no table for**, added as machine-code hooks: experience
   for running away, charming an enemy onto your side, shiny Seru, and Seru
   trading.
+- **A new dome course retail never ships** - the [Delilas Challenge](#delilas-challenge),
+  a fourth Muscle Dome enrollment option that runs a brand-new 2-round arena
+  course - Gi, Che and Lu, one duel per round - paying 5000 coins for a
+  clear (a koin1 script edit plus a small arena code injection).
 - **Textures** - replace any TIM on the disc with a user-authored PNG
   ([texture replacement](#texture-replacement)).
 
@@ -62,6 +66,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Seru trading](#seru-trading)
   - [Jewel fix](#jewel-fix)
   - [Approach-softlock fix](#approach-softlock-fix)
+  - [Delilas Challenge](#delilas-challenge)
   - [Fishing prize prices](#fishing-prize-prices)
   - [Location names](#location-names)
   - [Earth Egg coin threshold](#earth-egg-coin-threshold)
@@ -200,6 +205,7 @@ legaia-patcher randomize --input DISC.bin --seed pal --shiny-seru               
 legaia-patcher randomize --input DISC.bin --seed swap --seru-trade                        # vendors trade seru-for-seru (clean-room engine UI)
 legaia-patcher randomize --input DISC.bin --seed fair --jewel-fix                         # boss cinematic casts respect elemental guards
 legaia-patcher randomize --input DISC.bin --seed fair --approach-softlock-fix              # dead approach animations re-stage instead of wedging
+legaia-patcher randomize --input DISC.bin --seed fair --delilas-challenge                  # Muscle Dome option: fight all three Delilas at once
 legaia-patcher fishing   --input DISC.bin                                                 # read-only: list fishing-exchange prizes + prices
 legaia-patcher randomize --input DISC.bin --seed fish --fishing-price 0x6F=500            # Buma Water Egg costs 500 fishing points
 legaia-patcher locations --input DISC.bin                                                 # read-only: list the 16 world-map location names
@@ -285,6 +291,7 @@ unless asked for:
 | `--seru-trade` | vendors swap one of a character's seru for another, reseeding every two in-game hours | `--seru-trade-offers N` caps offers per vendor | [Seru trading](#seru-trading) |
 | `--jewel-fix` | the boss cinematic casts (Xain, Cort, the Delilas trio) respect elemental guards like every other special | - | [Jewel fix](#jewel-fix) |
 | `--approach-softlock-fix` | a monster whose approach animation dies mid-walk is re-staged and resumes walking instead of parking the battle forever (the "endless camera orbit") | - | [Approach-softlock fix](#approach-softlock-fix) |
+| `--delilas-challenge` | a fourth Muscle Dome enrollment option: a new 2-round arena course (Che & Lu double-team, then Gi; 5000 coins for a clear); unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
 | `--fishing-price ITEM=POINTS` | set the fishing-exchange point cost of a prize (e.g. the Buma Water Egg); the price also gates when the prize appears | repeatable / comma-separated | [Fishing prize prices](#fishing-prize-prices) |
 | `--rename-location INDEX=NAME` | rename a world-map location (save / load / pause + quick-travel menu), e.g. an element cave to match a re-elemented party | repeatable | [Location names](#location-names) |
 | `--earth-egg-price VALUE` | set the casino-coin threshold to obtain the Earth Egg (Sol Tower Prize Counter; retail 100000), gate + debit together | single value | [Earth Egg coin threshold](#earth-egg-coin-threshold) |
@@ -948,6 +955,292 @@ and an already-fixed image is a no-op.
 > (~19 units/vsync), the strike lands and the round completes. The
 > no-Move-clip edge case is vacuous - a roster sweep
 > (`monster_move_tags` example) finds all 186 monsters carry tag `1`.
+
+### Delilas Challenge
+
+`--delilas-challenge` adds a fourth option to the Muscle Dome enrollment
+clerk's "who will be entering" menu (`delilas_challenge` module): the
+**Delilas Challenge** - a brand-new 2-round Muscle Dome *course* - **Che &
+Lu Delilas together (1v2), then Gi (1v1)** - with **5000 coins** paid into
+the dome winnings counter for a full clear. The gauntlet exists nowhere in
+retail (the Nivora Ravine confrontations are one-off solo duels spread
+across the story, and no retail formation anywhere fields two distinct
+Delilas). It is delivered as a dome course because a normal battle staged
+from the town scene `koin1` freezes on any spell (the scene never installs
+battle-effect / summon / player-magic asset residency - which is exactly why
+the Muscle Dome disables magic).
+
+The double-team round is the interesting engineering: two full Delilas
+blocks (163-166 KB of pre-texture bytes) overshoot the battle heap's ~145 KB
+distinct-monster budget, and the failing malloc returns NULL that the loader
+uses unchecked - a naive 1v2 froze at the round-1 load (the byte-level
+mechanism is the battle-heap-budget section of
+[`battle.md`](../subsystems/battle.md#the-battle-heap-budget---why-a-formation-of-large-distinct-bosses-cannot-load)).
+The shipped fix streams **slim clones** without touching the originals:
+
+- `legaia_asset::monster_archive::slim_castables` rebuilds Che's and Lu's
+  blocks minus most castable spell entries, under two probe-traced safety
+  constraints. First, exactly **one** rollable castable survives (Che's
+  entry 6, Lu's entry 7): the AI's cast pick is `rand % castable_count` and
+  an empty menu executes the div-guard `break 0x1C00` the BIOS parks on
+  (the [AI-picker
+  section](../subsystems/battle.md#monster-ai-fun_801e9fd4-action-picker--fun_801e7320-target-resolver)
+  has the mechanism). Second, each sibling's **streamed signature special
+  stages block entries by raw index** (Lu's Plasma Strike, action `0x7B`,
+  stages `14 -> 12 -> 13`; Che's, action `0x7A`, stages `10 -> 11`), and an
+  aliased stand-in never satisfies the module's completion wait - the
+  caster loops its approach run forever - so those entries survive
+  verbatim (`delilas_dome::slim_policy`); Lu instead force-drops her
+  unstaged `0x23` special at entry 11 to pay for them. Choreography entries
+  are not standalone casts: promoting Lu's never-rolled entry 12 to the
+  rollable menu was tried and wedges her first generic cast. Mesh, stats,
+  name, reactions survive byte-identical; the entry count and index space
+  are preserved - kept entries keep their retail indices and a dropped slot
+  aliases the basic-attack entry (safe for every consumer except the
+  index-staging modules above, hence the protection). The slim pair costs
+  ~137 KB - under budget with ~8 KB of combat headroom.
+- The clones are written to archive slots 190/191, two ids no formation,
+  encounter, or dome roster on the disc ever references (full-disc sweep;
+  also outside the `--unused-enemies` pool). The real 163/164 slots are
+  never modified, so the ravine duels and the Master course keep every move.
+- The formation seats the **real ids** 163/164 - the bespoke
+  attack-attack-special AI, the names, and every id-keyed table stay
+  genuine. Two 10-word cave routines hooked at the loader's two
+  id-to-slot-offset sites (`0x8005451C` in the streamer, and one
+  instruction *before* the first-enemy pre-streamer's conversion at
+  `0x80054B70` - the conversion's own delay slot clobbers the id register,
+  so the hook cannot sit on it) add 27 to the id **for the archive fetch
+  only**, and only while the course word reads `0x131` (the Delilas course,
+  round 0) - every other battle streams the untouched originals.
+- Seru magic is locked out through **retail's own reject path**: the
+  battle round driver's two Magic-command input arms reject the selection
+  when `_DAT_8007BAC0 & 0x200` - the Master course's lockout bit
+  (`overlay_0898_801d0748`; Beginner/Expert seeds lack it and genuinely
+  allow magic). The patch widens each test's mask to `0x300` (two
+  same-size words in the battle-action overlay, PROT 0898), so the reject
+  fires on the dome-contest marker `0x100` every contest seed carries -
+  including the course's own `0x131`. The lockout matters because the
+  arena never installs the summon / player-magic sound+art residency: a
+  live test cast Meta in the course and got audio-state corruption (the
+  koin1 magic-freeze class). Retail Beginner/Expert legs lose their latent
+  magic access too - the same corruption waits there.
+- **The special cadence is retimed, per round.** The bespoke Delilas AI
+  arm (`case 0xa2..0xa4` in the monster picker `FUN_801E9FD4`, battle
+  overlay) queues the signature special whenever the shared battle turn
+  counter `ctx[0x28A]` hits `% 3 == 2` - attack, attack, special, with
+  both siblings synchronized in a 1v2. The course reroutes the arm: its
+  ctx reload (`0x801EB7C4`) jumps to a course-gated block that resumes the
+  stock arm register-exactly for every non-course context (ravine duels,
+  Master rounds), and in the Che & Lu round (course word `0x131` exactly)
+  fires a sibling's special on `(counter + offset) % 4 == 3`, Lu offset 2
+  / Che offset 0 - one special every four turns, staggered two turns
+  apart. The block overwrites the SCUS passive-name draw `FUN_80035274`,
+  a 48-instruction function with zero references of any form in any image
+  (the five-form address-word scan; `port-catalog-ignore.toml`
+  `[unreferenced]`) - the only always-resident home left once the shared
+  rodata gap filled and the battle overlay's image proved packed
+  (`static-overlays.toml`: all `.text+.rodata` RAM-matched live).
+- **Gi borrows two one-shot casts in his round, and Divide retires
+  Blazing Slash.** In the course's Gi round (word `0x132` exactly, seat 0
+  only - a Divide clone never re-casts) a second cave arm (over the
+  unreferenced SCUS angle tween `FUN_80050d40`, reached by `j` from the
+  main block) queues **Divide** (`0x50`, Green Slime's split) on Gi's
+  first pick with HP strictly below half of max (`+0x14C < +0x14E >> 1`)
+  and **Spore Gas** (`0x4F`, Berserker's status cloud) on his first pick
+  with the shared counter at or past 3, by writing the actor's cast queue
+  (`+0x1DE = 2`, `+0x1DF` = the spell id) - the exact mechanism the
+  signature specials ride: both are capture-class spells whose modules
+  stream from PROT 0940 / 0939 at cast time
+  ([`spell-table.md`](../formats/spell-table.md)). Each is one-shot via a
+  two-bit flags word in the display cave's data tail, zeroed by the
+  Che & Lu arm on every round-0 pick (a course always re-enters through
+  round 0, so re-enrollment re-arms both). Before Divide, non-cast picks
+  resume the stock arm and Blazing Slash keeps its retail `% 3 == 2`
+  cadence; after Divide, they jump straight to the arm join so the
+  generic attack-picker runs and Blazing Slash can never be queued again
+  (the clone always takes that path - it melees only). Gi's monster block
+  is byte-untouched.
+- **The dev reporter's `PRG ERR%d` paint is gated off.** The 1v2's tight
+  heap fails transient effect-instance allocs in bursts (retail tolerates
+  the skipped spawns), but every failure bumps the malloc accumulator
+  `gp+0x510` that the on-screen dev error reporter (`0x80016444`) prints
+  from. The `beqz` guarding that one print arm becomes an unconditional
+  branch; the WORK/READ/CD error arms and the accumulator itself are
+  untouched. (The spawner's own `ori 0x4000` failure flag at `0x800211A0`
+  is *not* the mechanism - nothing on the disc references the word it
+  writes.)
+
+The option is gated on story flag `0x378` - the flag the Koru death event
+latches and the world map reads to flip the ravine entrance from `nilboa`
+to `nilboa2` - so until that event the clerk brushes the player off. On by
+default in the web patcher's Balanced and Full Chaos presets.
+
+#### Completion reward - three custom items
+
+A winning course settle grants **three brand-new items** alongside the
+5000 coins (`custom_items` module), claimed from the item table's only
+free slots - the executable's three empty-name records (`0xB9` the cut
+Ra-Seru-egg item, `0x12` / `0x1A` the cut top-tier Ra-Seru weapon slots;
+a dual census - the curated gamedata cross-reference and the patcher's
+own drops / chests / steals / shops / casino / fishing / starting-item
+sweeps - shows every other named id is reachable in retail):
+
+- **Nature's Elixir** - restores an ally's HP *and* MP to full, in the
+  field menu or in battle. Its effect class is a new applier jump-table
+  arm (`0x48`) that fills MP (with the retail `-amount` mirror write) and
+  tail-jumps into the retail tier-2 HP-restore arm, so the popup and
+  displayed-HP accounting are retail's own.
+- **Ra-Seru Tear** - battle-only; using it turns the committed item
+  action into a **real Ra-Seru summon cast of the user's own Ra-Seru**
+  (Vahn Meta, Noa Terra, Gala Ozma) with the 240-MP cost skipped - a
+  free summon any character can shed. The conversion hooks the
+  action-seed category dispatch (`0x801E2D60`): the item is already
+  deducted at menu commit, the spell id is `0x9D +` the roster char id,
+  and a one-shot flag makes the summon leg's unconditional MP deduct
+  (`0x801E4584` - it underflows a u16 when unchecked) write a zero-cost
+  mirror instead.
+  Caster-matched is a mechanism constraint, not flavour: the big summons
+  stream the caster's own choreography, and a forced mismatched pair
+  (Gala casting Meta) parks the battle forever in the summon driver's
+  completion poll while the matched pair completes and lands damage.
+- **Fury Bloom** - battle-only; one use sets the Fury Boost
+  action-gauge extension (`actor+0x1F9`, exactly the retail class-5
+  arm's write) on **every living party member**, with the retail Fury
+  cue on the user. Party-wide application needs a custom arm because
+  group targeting lives inside each retail class arm, not the
+  dispatcher. (An earlier "Delilas Tear" that would cast a sibling
+  signature attack is structurally impossible player-side: the streamed
+  modules stage the *caster's* monster-block entries by raw index, and
+  a party actor has no monster block - the cast parks the battle at the
+  capture band's completion wait.)
+
+All three items play the heal-item chime (`FUN_8004FCC8` cue `0x20C`)
+from their own arms: the cast-audio dispatcher `FUN_801F3990` maps item
+classes to cues through a 9-entry table, so custom classes are silent
+unless the arm plays the cue itself.
+
+The grant rides the settle's own latch-gated winning arm (the code path
+that pays the coins and, on the Master course, the retail War God Icon):
+a two-word detour at the post-payout `s0` staging (`0x801D114C`) runs
+three `FUN_800421D4(id, 1)` gives when the settling course is 3, then
+replays the displaced pair. New code follows the same
+unreferenced-function cave discipline as the course itself - the
+class-14 Point Card arm (reachable code with no reachable data), three
+more zero-reference SCUS functions, and the tails of the course's own
+two caves - plus one rule the course never needed: **a claimed cave
+must also survive a cold boot**. The zero-reference libapi VBlank-tier
+slot `FUN_800605C8` passes every static scan and every save-state
+probe, yet the kernel invokes it during boot init and a disc that
+overwrites it parks at the PS1 logo
+([`re-do-not-re-walk.md`](../reference/re-do-not-re-walk.md)); the
+cold-boot watcher `autorun_boot_watch.lua` is now part of the cave
+verification standard. The menu validator's class table points both
+new classes at its existing always-usable arm.
+
+The feature is two coordinated halves that ship together
+(`apply_delilas_challenge` installs both):
+
+- **The koin1 menu + warp** (`delilas_challenge` module, script + data). The
+  3-option `0x28` who-enrolls picker grows to the 4-option `0x29` form (the
+  picker arity ceiling), with the new arm appended at the record's end, and
+  the quick-path skip before it is retargeted at never-set flags - retail
+  permanently hides the who-menu once Noa or Gala has refused enrollment
+  (flags `0x559`/`0x558`) and auto-registers Vahn, which would strand the
+  new option on most saves. The new arm shows a confirm picker, then mirrors
+  one of retail's own difficulty arms exactly: gate on `0x378`, set the
+  dome-active flag `0x509`, clear the three course-unlock flags
+  `0x536`/`0x537`/`0x538`, set the course-3 request flag `0x539`, then the
+  verbatim BGM + wait ops and the verbatim `3E 69` arena warp. Losing a
+  round returns to the Sol venue by the dome's own design (no game over).
+- **The arena course** (`delilas_dome` module, a code injection). The arena
+  overlay (PROT 0977) has no course beyond Master, so course 3 is added with
+  six same-size edits: a seed detour at the course-select init
+  (`FUN_801CEA6C` @ `0x801CEBCC`) that decodes flag `0x539` into the packed
+  course/round word as course 3; a `{round_count=3, roster_ptr}` descriptor
+  at the course-3 slot `0x801D1A08 + 3*8`; the hub actor template that
+  occupied that slot relocated into a `SCUS_942.54` routine cave (its one
+  `lui`/`addiu` reference repointed); the Delilas roster (Gi/Che/Lu, the
+  dome's own name strings) in the cave; the seed routine; and a **reward
+  detour** at the settlement's payout-table load (`FUN_801D0F60` @
+  `0x801D1118`) that returns 5000 for course 3 instead of the out-of-table
+  read (courses 0-2 pay from `0x801D1860 + course*0x40 + (round-1)*4`;
+  course 3 indexed past it into bytes that read 0 - the "0 tokens" an
+  unhooked clear paid). The payout load sits behind the settlement's cleared
+  latch (`DAT_801D1ADC`, raised only on *course exhausted and survived*), so
+  a loss pays nothing - and retail's halve-the-winnings-on-a-loss behavior
+  is untouched. All four descriptor readers compute `base + course*8`, so
+  one descriptor write makes course 3 work everywhere. One more cell
+  matters: the arena hub's round-end routing (`0x801CEE44`) reads the koin1
+  menu-selection residue at `0x80084448` and treats the value **4** as "the
+  player chose the quit option" - clearing the win latch and zeroing the
+  winnings. The Delilas enrollment rides the who-menu's 4th slot, so its
+  residue is exactly 4; the seat routine clears the cell at round-0 install
+  (the intermission menu overwrites it with its own small pick afterward,
+  so one clear suffices). Leaving the course mid-way settles as a loss
+  (halve), not a quit (zero). The results screen reads the same payout
+  table again on its own (`FUN_801D1184` into the winnings-display
+  variable `DAT_801D1AAC`), so a second, display-only detour at its final
+  address add (`0x801D125C`) shows the same 5000 - the override lives over
+  `FUN_800260DC`, the SCUS per-mode camera preset, the second
+  zero-reference function claimed after the Gi arm filled `FUN_80035274`.
+
+The `koin1` MAN is sector-aligned with zero compressed slack, so the grown
+script only fits back into its footprint through the optimal LZS packer -
+which is why every MAN re-pack site in the patcher now falls back to
+`compress_optimal` when greedy misses (`compress_within`). If another edit
+(e.g. a grown language pack) has already consumed the headroom, the koin1
+half skips with a note instead of failing the run. Seedless; re-application
+is a no-op (the arena injection is idempotent on the seed-hook detour). The
+dome fields whichever fighter the arena normally seats; routing a chosen
+party member into the arena's fighter slot is an open RE thread.
+
+**Shares SCUS arena bytes with shiny-Seru and the arts AP override.** The dome
+course's seed routine + template cave lives in the same verified-dead SCUS
+region (`0x8007AE00`) that [shiny Seru](#shiny-seru) and the arts AP override
+use, and that region is full - the surrounding zero-runs are live-table
+padding, not dead space. So the three cannot coexist. The Delilas Challenge
+takes precedence over shiny-Seru (it is the headline feature the presets
+carry): when both are requested, shiny-Seru yields with a note and the
+challenge is installed. The arts AP override, which is manual-only, is a hard
+conflict with either - enabling it alongside the challenge (or shiny-Seru) is
+refused up front. This is why the Balanced/Full Chaos presets, which enable
+both the challenge and shiny-Seru, install the challenge and skip shiny-Seru.
+
+Two byte-level details are load-bearing and both were caught by live play,
+not by the static suite:
+
+- **The seed word must carry bit `0x100`** (`0x131`, not a bare course/round
+  encoding): the battle-exit selector `FUN_80046A20` tests
+  `_DAT_8007BAC0 & 0x100` to route a leg's end back to arena mode `0x18`.
+  Without the bit a lost leg fell into the ordinary game-over gate and a won
+  leg would have exited to the field instead of the between-leg hub. Every
+  retail seed (`0x101`/`0x111`/`0x321`) carries it.
+- **The who-menu skip tests are retargeted, never NOPed**: `0x21` is the
+  field VM's frame-yield/stop opcode
+  ([script-vm.md](../subsystems/script-vm.md#per-frame-scheduling)), not a
+  no-op - an earlier build's eight-byte `0x21` fill broke the clerk dialog
+  mid-interaction (the "re-talk the NPC several times" bug). The tests keep
+  their exact retail op shape with the flag id swapped to never-set flags.
+
+> Verified by the `delilas_challenge_real` and `delilas_dome_real` disc
+> oracles: the retail image locates as unpatched and every hooked address
+> matches the known US build; the patched koin1 MAN re-parses with the
+> 4-option picker targeting the new branch (gate, confirm picker,
+> dome-active/course-unlock flags, course-3 request, arena warp all asserted
+> at decode level, and no scripted-battle op); the seed hook becomes a `j`
+> into the cave, the course-3 descriptor and roster land, the edit is
+> byte-deterministic and idempotent, composes with the Earth Egg price edit
+> in either order, and every touched sector stays EDC/ECC-valid.
+>
+> **Live-verified** (the 3x 1v1 course shape): the clerk dialog flows
+> cleanly to the option, the confirm shows, the warp lands in the arena, the
+> course runs its roster one round at a time, a lost leg routes through the
+> dome's own loss scenes back to the venue (no game over), and settlement is
+> benign. The double-team revision was live-falsified (freeze at the round-1
+> load - two distinct Delilas blocks miss the battle heap budget; the byte
+> arithmetic is in `battle.md`'s heap-budget section) and reverted. The
+> 5000-coin payout hook passes the static + disc oracles; its live
+> confirmation and the custom-item prize are the follow-ups.
 
 ### Fishing prize prices
 

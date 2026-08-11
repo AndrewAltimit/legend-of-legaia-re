@@ -207,8 +207,7 @@ impl EarthEggExchange {
     /// Recompress the (possibly edited) MAN; `None` if it would overflow the
     /// zero-slack footprint.
     pub fn repack(&self) -> Option<Vec<u8>> {
-        let stream = legaia_lzs::compress(&self.decoded);
-        (stream.len() <= self.compressed_budget).then_some(stream)
+        crate::compress_within(&self.decoded, self.compressed_budget)
     }
 }
 

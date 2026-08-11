@@ -687,3 +687,44 @@ pub(crate) fn cmd_starting_items(input: &Path) -> Result<()> {
     );
     Ok(())
 }
+
+/// Print the Delilas-dome SCUS-side injection as a `LEGAIA_POKES` string for
+/// the PCSX-Redux probes (`autorun_delilas_dome_course.lua` /
+/// `autorun_delilas_reward_trace.lua`). Static data - no disc required.
+pub(crate) fn cmd_delilas_pokes(custom_items: bool) -> Result<()> {
+    use legaia_patcher::{custom_items as ci, delilas_dome};
+
+    let mut writes = delilas_dome::probe_ram_writes();
+    if custom_items {
+        writes.extend(ci::probe_ram_writes());
+    }
+    let mut pokes: Vec<String> = Vec::new();
+    for (va, bytes) in writes {
+        anyhow::ensure!(
+            bytes.len() % 4 == 0,
+            "probe write at {va:#x} is not word-aligned"
+        );
+        for (i, w) in bytes.chunks_exact(4).enumerate() {
+            let word = u32::from_le_bytes(w.try_into().unwrap());
+            pokes.push(format!("0x{:08X}:0x{:08X}", va + (i as u32) * 4, word));
+        }
+    }
+    // Course-unlock story flag (COURSE_FLAG): the seed routine tests it via
+    // the retail flag reader (base 0x80085758, MSB-first bit order). The
+    // whole byte is overwritten - its other bits are the retail course
+    // unlocks 0x538..0x53F, which the koin1 arm clears anyway.
+    let flag = u32::from(delilas_dome::COURSE_FLAG);
+    let flag_addr = 0x8008_5758 + (flag >> 3);
+    let flag_bit = 0x80u32 >> (flag & 7);
+    pokes.push(format!("0x{flag_addr:08X}:0x{flag_bit:02X}:b"));
+    println!("{}", pokes.join(","));
+    eprintln!(
+        "{} pokes: SCUS cave + stream hooks + PRG ERR print gate + course flag {:#x}.",
+        pokes.len(),
+        flag
+    );
+    eprintln!(
+        "To reproduce the balance-wipe report, also seed the winnings counter: 0x80084440:123456"
+    );
+    Ok(())
+}

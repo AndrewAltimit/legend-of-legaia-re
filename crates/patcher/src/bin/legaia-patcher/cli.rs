@@ -130,6 +130,17 @@ pub(crate) enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only: print the Delilas-dome SCUS-side injection as a
+    /// `LEGAIA_POKES` list for the PCSX-Redux probes (cave routines, stream
+    /// hooks, PRG ERR print-gate patch, plus the course-unlock flag byte). Library
+    /// save states predate the patched disc, so the probes must RAM-install
+    /// the always-resident SCUS half; the overlay halves ride the `--iso`.
+    DelilasPokes {
+        /// Also emit the custom-items SCUS-side writes (item records,
+        /// descriptors, jump-table words, cave routines).
+        #[arg(long)]
+        custom_items: bool,
+    },
     /// Read-only: show the Earth Egg coin threshold (the Sol Tower Prize Counter
     /// exchange) - the value the `--earth-egg-price` editor changes.
     EarthEgg {
@@ -682,6 +693,19 @@ pub(crate) struct RandomizeArgs {
     /// in verified-dead SCUS space outside all live tables).
     #[arg(long, default_value_t = false)]
     pub(crate) shiny_seru: bool,
+    /// **Delilas Challenge**: a fourth option on the Muscle Dome enrollment
+    /// menu - a brand-new 2-round arena course: Che & Lu Delilas together
+    /// (1v2), then Gi (1v1). The double-team fits the battle heap by
+    /// streaming slim clones (their generic castable spells trimmed) from
+    /// two unreachable archive slots - the real 163/164 records are never
+    /// modified, and the fight keeps the signature specials, the
+    /// attack-attack-special AI, and the real names. A full clear pays 5000
+    /// coins. Unlocks after the Koru event in Nivora Ravine (the `nilboa2`
+    /// story flag). Losing a round returns to the Sol venue by the dome's
+    /// own design - no game over. A `koin1` script edit plus a small
+    /// arena/SCUS code injection.
+    #[arg(long, default_value_t = false)]
+    pub(crate) delilas_challenge: bool,
     /// Per-battle percentage chance a capturable enemy is shiny (only with
     /// `--shiny-seru`).
     #[arg(long, default_value_t = legaia_patcher::shiny_seru::DEFAULT_PCT)]

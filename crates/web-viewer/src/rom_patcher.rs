@@ -166,7 +166,11 @@ pub fn resolve_seed(seed: &str) -> String {
 /// from the resist-ladder-bypassing wrapper to the guard-respecting one, so
 /// elemental jewels / guards / All Guard apply to Xain's Bloody Horns / Terio
 /// Punch, Cort's Guilty Cross, and the Delilas trio's signature moves (a fix,
-/// not a randomization - it is seedless). `approach_softlock_fix` re-stages a
+/// not a randomization - it is seedless). `delilas_challenge` adds a fourth
+/// Muscle Dome enrollment option: fight all three Delilas siblings at once,
+/// solo (1v3, pays 3x Honey) or full-party (3v3, pays 1x Honey), unlocked by
+/// the Koru event; losing returns to the venue with the party restored - no
+/// game over (seedless). `approach_softlock_fix` re-stages a
 /// monster's approach animation when it dies mid-approach (the summon-then-
 /// melee clip death that parks the battle in an infinite range poll - the
 /// "endless camera orbit" softlock), so the monster resumes walking instead
@@ -271,6 +275,7 @@ pub fn patch_rom(
     shiny_seru: bool,
     jewel_fix: bool,
     approach_softlock_fix: bool,
+    delilas_challenge: bool,
     fishing_prices: &str,
     location_renames: &str,
     earth_egg_price: &str,
@@ -302,12 +307,21 @@ pub fn patch_rom(
     let door_mode = parse_mode(doors);
     let house_door_mode = parse_mode(house_doors);
 
-    // Arts AP-grant and shiny-Seru reuse the same verified-dead SCUS arena bytes,
-    // so they are mutually exclusive - refuse the combination before patching.
-    if shiny_seru && !(arts_ap_grants.trim().is_empty() && arts_ap_costs.trim().is_empty()) {
+    // Arts AP-grant, shiny-Seru, and the Delilas Challenge dome course reuse the
+    // same verified-dead SCUS arena bytes (0x8007AE00). Arts AP-grant is a hard
+    // conflict with either (manual-only); shiny-Seru vs the Delilas Challenge is
+    // resolved softly below (the challenge wins). Refuse the hard combos here.
+    let arts_ap = !(arts_ap_grants.trim().is_empty() && arts_ap_costs.trim().is_empty());
+    if arts_ap && shiny_seru {
         return Err(err(
             "the arts AP override and shiny-seru both inject into the same verified-dead SCUS \
              regions and are mutually exclusive; enable only one",
+        ));
+    }
+    if arts_ap && delilas_challenge {
+        return Err(err(
+            "the arts AP override and the Delilas Challenge both inject into the same \
+             verified-dead SCUS regions and are mutually exclusive; enable only one",
         ));
     }
 
@@ -461,7 +475,14 @@ pub fn patch_rom(
 
     // Shiny Seru: a code hook boosts a rare capturable enemy's stats +35%; the
     // capture/damage hooks make its captured Seru deal +35% damage forever.
-    if shiny_seru {
+    // It shares the verified-dead SCUS arena bytes (0x8007AE00) with the
+    // Delilas Challenge's dome-course cave, so the two cannot coexist; the
+    // Delilas Challenge takes precedence and shiny-Seru yields with a note.
+    if shiny_seru && delilas_challenge {
+        summary.push_str(
+            "shiny-seru: skipped (shares SCUS arena bytes with the Delilas Challenge, which wins)\n",
+        );
+    } else if shiny_seru {
         let rep = apply::inject_shiny_seru(&mut patcher, legaia_patcher::shiny_seru::DEFAULT_PCT)
             .map_err(|e| err(format!("shiny-seru: {e}")))?;
         summary.push_str(&format!(
@@ -520,6 +541,29 @@ pub fn patch_rom(
         });
     } else {
         summary.push_str("approach-softlock-fix: untouched\n");
+    }
+
+    // Delilas Challenge: a fourth Muscle Dome enrollment option that runs a
+    // brand-new 2-round dome course - Che & Lu double-team (1v2), then Gi -
+    // routed through the real arena (magic-off), gated on the Koru event in
+    // Nivora Ravine. The 1v2 fits the battle heap via slim clones at
+    // unreachable archive slots; the originals are untouched. Losing a round
+    // returns to the venue by the dome's design; a full clear pays 5000
+    // coins. koin1 script edit + a companion arena/SCUS code injection;
+    // seedless. A koin1 MAN another edit has already grown past its
+    // zero-slack footprint skips with a note instead of failing the run.
+    if delilas_challenge {
+        match apply::apply_delilas_challenge(&mut patcher) {
+            Ok(rep) if rep.changed => summary.push_str(
+                "delilas-challenge: Muscle Dome enrollment offers the Delilas Challenge \
+                 (a 2-round dome course: Che & Lu double-team, then Gi; a full clear pays \
+                 5000 coins; unlocks after Nivora Ravine)\n",
+            ),
+            Ok(_) => summary.push_str("delilas-challenge: already applied\n"),
+            Err(e) => summary.push_str(&format!("delilas-challenge: skipped ({e:#})\n")),
+        }
+    } else {
+        summary.push_str("delilas-challenge: untouched\n");
     }
 
     // Fishing-exchange price edits: a comma/semicolon/whitespace-separated list
