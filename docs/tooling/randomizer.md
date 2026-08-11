@@ -1093,19 +1093,26 @@ Chaos presets):
 - **On**: the grant gives **three brand-new items**, described below.
 
 The venue's award ceremony announces what was actually won. Retail's
-post-contest narration in `koin1` reads "Contestant {name} is awarded /
-{n} tokens!", but the Delilas course sits outside the token payout table
+post-contest narration in `koin1` reads "That was a good fight. / Well
+done. / We hope you enter again." and then "Contestant {name} is awarded /
+{n} tokens!" - but the Delilas course sits outside the token payout table
 that counter substitutes from, so a course win read "0 tokens" and never
 mentioned the items. The koin1 script edit splices four SYSTEM-flag tests
-in front of that box: any course-unlock flag set (`0x536`/`0x537`/`0x538` -
-a retail arm always sets its own, the Delilas arm clears all three) keeps
-the retail tokens box, and otherwise the settlement's contest-won flag
-(`0x50A`, set only on the cleared-course path and untouched anywhere in
-`koin1`) routes to an appended box reading "You won 1 Ra-Seru Tear, /
-1 Nature's Elixir and / 1 Fury Bloom!" (or "You won 1 Honey!" on the
-fallback), which rejoins the retail flow at the shared box-close. A
-Delilas loss falls through into the retail box
-(`delilas_challenge::reward_box_lines`, `CONTEST_WON_FLAG`).
+at the narration record's own branch point - right after its `76 CB` /
+`75 38` tests, *before* the message run, because the actor-dialog SM
+consumes a `[text][24][text][48]` flow as one contiguous run and control
+ops spliced inside it cut the ceremony short (live-tested). Any
+course-unlock flag set (`0x536`/`0x537`/`0x538` - a retail arm always sets
+its own, the Delilas arm clears all three) keeps the retail flow, and
+otherwise the settlement's contest-won flag (`0x50A`, set only on the
+cleared-course path and untouched anywhere in `koin1`) routes to a
+complete parallel flow appended past the record: the shared "good fight"
+box copied verbatim (LZS folds the repeat), then "You won 1 Ra-Seru Tear,
+/ 1 Nature's Elixir and / 1 Fury Bloom!" (or "You won 1 Honey!" on the
+fallback), then the verbatim close-and-settle ops and a jump to the same
+park loop both retail arms converge on. A Delilas loss falls through into
+the retail box (`delilas_challenge::reward_box_lines`,
+`CONTEST_WON_FLAG`).
 
 `--custom-items` is a standalone feature, not a Delilas sub-option: the
 item set (`CustomItemsInjection::plan_item_set` - records, descriptors,

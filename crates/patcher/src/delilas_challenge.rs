@@ -70,14 +70,18 @@
 //!   "Contestant {name} is awarded / {n} tokens!" - and the Delilas course
 //!   sits outside the token payout the `{ce}` counter substitutes, so a win
 //!   read "0 tokens" while saying nothing about the items actually granted.
-//!   The patch splices four SYSTEM-flag tests right before that box: any
+//!   The patch splices four SYSTEM-flag tests at the record's own branch
+//!   point (right after its `76 CB` / `75 38` tests, before the message
+//!   run - the actor-dialog SM consumes a `[1F..][24][1F..][48]` flow as
+//!   one contiguous run, so ops may only sit at flow boundaries): any
 //!   course-unlock flag set ([`COURSE_UNLOCK_FLAGS`] - a retail arm always
-//!   sets its own, the Delilas arm clears all three) keeps the retail tokens
-//!   box; otherwise the contest-won flag ([`CONTEST_WON_FLAG`] `0x50A`, set
-//!   only by a winning settlement and untouched anywhere in `koin1`) routes
-//!   to an appended box announcing the actual reward items
-//!   ([`reward_box_lines`]), which rejoins the retail flow at the shared
-//!   box-close. A Delilas loss falls through into the retail box.
+//!   sets its own, the Delilas arm clears all three) keeps the retail flow;
+//!   otherwise the contest-won flag ([`CONTEST_WON_FLAG`] `0x50A`, set only
+//!   by a winning settlement and untouched anywhere in `koin1`) routes to a
+//!   complete parallel flow appended past the record: the shared box copied
+//!   verbatim, a reward box ([`reward_box_lines`]), the verbatim close +
+//!   settle ops, and a jump to the same park loop both retail arms converge
+//!   on. A Delilas loss falls through into the retail flow.
 //!
 //! The dome fields whichever fighter the arena normally seats (retail's Muscle
 //! Dome enrolls Vahn); routing a *chosen* party member into the arena's fighter
@@ -257,23 +261,49 @@ pub struct DelilasSites {
     /// picker's jump entries), record-relative.
     refs: Vec<RefSite>,
 
-    /// Absolute start of the award-ceremony narration record (P2[9] on a
-    /// retail disc) - the record P1[0] spawns on a non-gave-up contest end,
-    /// carrying the "Contestant {name} is awarded {n} tokens!" box. All six
-    /// narration fields are `0`/empty when the patch is already applied.
-    narr_start: usize,
-    /// First-opcode offset within the narration record.
-    narr_pc0: usize,
-    /// Absolute one-past-end of the narration record.
-    narr_end: usize,
-    /// Record-relative offset of the `0x24` box-break that opens the tokens
-    /// box - the insertion seam for the Delilas win tests.
-    narr_seam: usize,
-    /// Record-relative offset of the shared `0x48` box-close after the
-    /// tokens text - where the appended item box rejoins the retail flow.
-    narr_rejoin: usize,
-    /// Every control-flow field in the narration record, record-relative.
-    narr_refs: Vec<RefSite>,
+    /// The award-ceremony narration record (P2[9] on a retail disc) - the
+    /// record P1[0] spawns on a non-gave-up contest end, carrying the
+    /// "Contestant {name} is awarded {n} tokens!" box. `None` when the patch
+    /// is already applied (not needed, and its pre-patch shape is gone).
+    narr: Option<NarrationRecord>,
+}
+
+/// The located award-ceremony narration record. `start`/`end` are absolute
+/// MAN offsets; everything else is record-relative.
+///
+/// The runtime constraint every coordinate serves: the actor-dialog SM
+/// consumes a message flow - `[1F seg]... [24] [1F seg]... [48]` - as one
+/// contiguous run, and VM control ops may only sit at flow boundaries (the
+/// retail record's own `76 CB` / `75 38` tests run right before the first
+/// segment; a live test with ops spliced *inside* the run cut the ceremony
+/// short after the first box). So the win tests go at the retail branch
+/// point, and the Delilas path is a complete parallel flow.
+#[derive(Debug, Clone)]
+struct NarrationRecord {
+    /// Absolute start of the record.
+    start: usize,
+    /// First-opcode offset within the record.
+    pc0: usize,
+    /// Absolute one-past-end of the record.
+    end: usize,
+    /// The insertion seam: the `1F` of "That was a good fight." - the retail
+    /// branch point (the `76 CB` repeat-clear test targets exactly this
+    /// offset, and the `75 38` Master test falls through to it).
+    seam: usize,
+    /// The `0x24` box-break between the shared box and the tokens box; the
+    /// bytes `[seam..box_break]` are the shared box's three segments,
+    /// copied verbatim into the parallel flow.
+    box_break: usize,
+    /// The `0x48` box-close after the tokens text.
+    close: usize,
+    /// PC of the shared-tail `0x26` jump after the close; the bytes
+    /// `[close..tail26]` (close + wait + camera ops) are copied verbatim.
+    tail26: usize,
+    /// The `0x26`'s decoded target: the record's yield + park loop both
+    /// retail arms converge on. The parallel flow's final jump goes here.
+    tail_target: usize,
+    /// Every control-flow field in the record, record-relative.
+    refs: Vec<RefSite>,
 }
 
 /// The dialog-box lines announcing a Delilas full-clear reward, one line per
@@ -502,11 +532,6 @@ fn find_sub(hay: &[u8], needle: &[u8]) -> Option<usize> {
     hay.windows(needle.len()).position(|w| w == needle)
 }
 
-/// The narration-record coordinates [`locate_narration`] recovers:
-/// `(start, pc0, end, seam, rejoin, refs)` - see the [`DelilasSites`] field
-/// docs for each one.
-type NarrationSites = (usize, usize, usize, usize, usize, Vec<RefSite>);
-
 /// Locate the award-ceremony narration record: the partition-2 record P1[0]
 /// spawns on a non-gave-up contest end, whose plain path reads "That was a
 /// good fight. / Well done. / We hope you enter again." and then opens the
@@ -515,10 +540,10 @@ type NarrationSites = (usize, usize, usize, usize, usize, Vec<RefSite>);
 /// Partition-2 records open with a Shift-JIS actor-name header whose exact
 /// prologue length varies, so `pc0` is recovered empirically: the first
 /// offset after the name terminator from which the MES-aware walk consumes
-/// the record exactly and lands on both byte-scanned anchors (the seam's
-/// `0x24` box-break and the rejoin's `0x48` box-close) as instruction
-/// boundaries.
-fn locate_narration(man: &[u8], mf: &ManFile) -> Result<NarrationSites, String> {
+/// the record exactly and lands on the byte-scanned anchors (the `0x24`
+/// box-break and the `0x48` box-close) as instruction boundaries.
+fn locate_narration(man: &[u8], mf: &ManFile) -> Result<NarrationRecord, String> {
+    const SEAM_TEXT: &[u8] = b"\x1FThat was a good fight.\x00";
     const BOX_OPEN: &[u8] = b"\x1FContestant ";
     const TOKENS_TAIL: &[u8] = b" tokens!\x00";
     let dro = mf.data_region_offset;
@@ -529,28 +554,34 @@ fn locate_narration(man: &[u8], mf: &ManFile) -> Result<NarrationSites, String> 
         let Some(rec) = man.get(start..end) else {
             continue;
         };
+        let Some(seam) = find_sub(rec, SEAM_TEXT) else {
+            continue;
+        };
         let Some(open) = find_sub(rec, BOX_OPEN) else {
             continue;
         };
         let Some(tok) = find_sub(rec, TOKENS_TAIL) else {
             continue;
         };
-        let rejoin = tok + TOKENS_TAIL.len();
-        if open == 0 || rec[open - 1] != 0x24 || rec.get(rejoin) != Some(&0x48) {
+        let close = tok + TOKENS_TAIL.len();
+        if open <= seam || rec[open - 1] != 0x24 || rec.get(close) != Some(&0x48) {
             continue;
         }
         if found.is_some() {
             return Err("two P2 records carry the award-ceremony tokens box".into());
         }
-        found = Some((start, end, open - 1, rejoin));
+        found = Some((start, end, seam, open - 1, close));
     }
-    let Some((start, end, seam, rejoin)) = found else {
+    let Some((start, end, seam, box_break, close)) = found else {
         return Err("no P2 record carries the award-ceremony tokens box".into());
     };
     let rec = &man[start..end];
+    if find_sub(&rec[seam + 1..], SEAM_TEXT).is_some() {
+        return Err("the shared-box text appears twice in the narration record".into());
+    }
 
     // Recover pc0: first candidate past the actor-name terminator whose walk
-    // consumes the record exactly and hits both anchors on a boundary.
+    // consumes the record exactly and hits the anchors on a boundary.
     let name_nul = rec
         .iter()
         .position(|&b| b == 0)
@@ -560,7 +591,7 @@ fn locate_narration(man: &[u8], mf: &ManFile) -> Result<NarrationSites, String> 
         if let Ok(w) = walk_record(rec, pc0) {
             let on_boundary =
                 |pc: usize, op: u8| w.insns.iter().any(|&(p, o, _)| p == pc && o == op);
-            if w.end == rec.len() && on_boundary(seam, 0x24) && on_boundary(rejoin, 0x48) {
+            if w.end == rec.len() && on_boundary(box_break, 0x24) && on_boundary(close, 0x48) {
                 chosen = Some((pc0, w));
                 break;
             }
@@ -570,28 +601,79 @@ fn locate_narration(man: &[u8], mf: &ManFile) -> Result<NarrationSites, String> 
         return Err("no pc0 walks the narration record onto its anchors".into());
     };
 
-    // Shape lock against a desynced walk: exactly one pre-seam ref may cross
-    // the seam - the Master-congratulation `75 38` SysFlag.Test (its field
-    // sits at op+2). Any phantom ref a mis-decoded prologue produced would
-    // trip this before the build could relocate it.
-    let crossers: Vec<&RefSite> = walk
+    // The shared-tail jump: the first `0x26` at/after the box-close. The
+    // bytes between (the close + wait + camera ops) are what the parallel
+    // flow copies verbatim, so no ref field may sit inside them.
+    let Some(&(tail26, _, _)) = walk
+        .insns
+        .iter()
+        .find(|&&(pc, op, _)| pc >= close && op == 0x26)
+    else {
+        return Err("no shared-tail jump after the tokens box-close".into());
+    };
+    let Some(tail_target) = walk
+        .refs
+        .iter()
+        .find(|r| r.kind == RefKind::Relative && r.field == tail26 + 1)
+        .map(|r| r.target)
+    else {
+        return Err("shared-tail jump carries no decoded target".into());
+    };
+    if walk
+        .refs
+        .iter()
+        .any(|r| (seam..box_break).contains(&r.field) || (close..tail26).contains(&r.field))
+    {
+        return Err("a ref field sits inside a to-be-copied narration region".into());
+    }
+
+    // Shape lock against a desynced walk: exactly two pre-seam refs may
+    // reach at/past the seam - the `76 CB` repeat-clear test targeting
+    // exactly the seam (it must land on the spliced win tests) and the
+    // `75 38` Master test targeting past it. Any phantom ref a mis-decoded
+    // prologue produced would trip this before the build could relocate it.
+    let mut crossers: Vec<&RefSite> = walk
         .refs
         .iter()
         .filter(|r| r.field < seam && r.target >= seam)
         .collect();
-    let [master] = crossers[..] else {
+    crossers.sort_by_key(|r| r.field);
+    let [repeat, master] = crossers[..] else {
         return Err(format!(
-            "expected one seam-crossing narration ref, found {}",
+            "expected two seam-crossing narration refs, found {}",
             crossers.len()
         ));
     };
-    if master.field < 2 || rec[master.field - 2..master.field] != [0x75, 0x38] {
-        return Err("seam-crossing narration ref is not the Master test".into());
+    if repeat.field < 2
+        || rec[repeat.field - 2..repeat.field] != [0x76, 0xCB]
+        || repeat.target != seam
+    {
+        return Err("first seam-crosser is not the repeat-clear test onto the seam".into());
     }
-    if walk.refs.iter().any(|r| r.target == seam) {
-        return Err("a narration ref targets the insertion seam exactly".into());
+    if master.field < 2
+        || rec[master.field - 2..master.field] != [0x75, 0x38]
+        || master.target <= seam
+    {
+        return Err("second seam-crosser is not the Master test past the seam".into());
     }
-    Ok((start, pc0, end, seam, rejoin, walk.refs))
+    if walk
+        .refs
+        .iter()
+        .any(|r| r.target == seam && r.field != repeat.field)
+    {
+        return Err("an unexpected narration ref targets the seam".into());
+    }
+    Ok(NarrationRecord {
+        start,
+        pc0,
+        end,
+        seam,
+        box_break,
+        close,
+        tail26,
+        tail_target,
+        refs: walk.refs,
+    })
 }
 
 impl DelilasSites {
@@ -741,11 +823,10 @@ impl DelilasSites {
 
         // Award-ceremony narration record (not needed - and its pre-patch
         // shape no longer present - once the patch is applied).
-        let (narr_start, narr_pc0, narr_end, narr_seam, narr_rejoin, narr_refs) = if already_applied
-        {
-            (0, 0, 0, 0, 0, Vec::new())
+        let narr = if already_applied {
+            None
         } else {
-            locate_narration(&decoded, &mf)?
+            Some(locate_narration(&decoded, &mf)?)
         };
 
         Ok(Self {
@@ -764,12 +845,7 @@ impl DelilasSites {
             decline_tail,
             skip_tests,
             refs: walk.refs,
-            narr_start,
-            narr_pc0,
-            narr_end,
-            narr_seam,
-            narr_rejoin,
-            narr_refs,
+            narr,
         })
     }
 
@@ -835,28 +911,45 @@ impl DelilasSites {
         let branch = build_branch(branch_start, common_tail_new, decline_tail_new)?;
 
         // --- Narration-record insertion plan (record-relative offsets). ---
-        let narr_len = self.narr_end - self.narr_start;
-        let narr_rec = &man[self.narr_start..self.narr_end];
-        let narr_sig_old = walk_signature(narr_rec, self.narr_pc0)?;
+        // Runtime constraint (live-tested the hard way): the actor-dialog SM
+        // consumes a message flow `[1F seg]... [24] [1F seg]... [48]` as one
+        // contiguous run - VM control ops spliced *inside* the run cut the
+        // ceremony short after the first box. So the win tests sit at the
+        // retail branch point (right after the record's own `76 CB`/`75 38`
+        // tests, before the flow's first segment), and the Delilas path is a
+        // complete parallel flow appended past the record: a verbatim copy
+        // of the shared box, the reward box, a verbatim copy of the
+        // close-and-settle ops, and a jump to the same yield + park loop
+        // both retail arms converge on.
+        let narr = self
+            .narr
+            .as_ref()
+            .ok_or("narration sites absent on an unapplied image")?;
+        let narr_len = narr.end - narr.start;
+        let narr_rec = &man[narr.start..narr.end];
+        let narr_sig_old = walk_signature(narr_rec, narr.pc0)?;
         let tests_len = 4 * (COURSE_UNLOCK_FLAGS.len() + 1);
-        let narr_shift = |x: usize| if x >= self.narr_seam { tests_len } else { 0 };
-        let retail_new = self.narr_seam + tests_len; // the relocated `0x24`
-        let block_new = narr_len + tests_len; // appended item box (new layout)
-        let rejoin_new = self.narr_rejoin + tests_len;
+        // Content moved by the splice: everything from the seam on. Jump
+        // TARGETS use the strict form so the `76 CB` test's jump onto the
+        // seam lands on the spliced tests (locate_narration pins that it is
+        // the only ref targeting the seam).
+        let narr_shift = |x: usize| if x >= narr.seam { tests_len } else { 0 };
+        let narr_shift_target = |x: usize| if x > narr.seam { tests_len } else { 0 };
+        let retail_new = narr.seam + tests_len; // the relocated first segment
+        let block_new = narr_len + tests_len; // the appended parallel flow
 
-        // The win tests, spliced right before the tokens box: any retail
-        // course-unlock flag set means the last-enrolled course was a retail
-        // one (each retail arm sets its own; the Delilas arm clears all
-        // three), so the retail tokens box stands. Otherwise the contest-won
-        // flag - set only by a winning settlement - routes to the appended
-        // item box. A Delilas loss falls through into the retail box
-        // (awarded 0 tokens, the retail loss reading).
+        // The win tests: any retail course-unlock flag set means the
+        // last-enrolled course was a retail one (each retail arm sets its
+        // own; the Delilas arm clears all three), so the retail flow stands.
+        // Otherwise the contest-won flag - set only by a winning settlement
+        // - routes to the parallel flow. A Delilas loss falls through into
+        // the retail flow (awarded 0 tokens, the retail loss reading).
         let mut tests = Vec::with_capacity(tests_len);
         for (i, &flag) in COURSE_UNLOCK_FLAGS.iter().enumerate() {
-            let field = self.narr_seam + i * 4 + 2;
+            let field = narr.seam + i * 4 + 2;
             tests.extend_from_slice(&sysflag_test(flag, retail_new.wrapping_sub(field) as u16));
         }
-        let won_field = self.narr_seam + COURSE_UNLOCK_FLAGS.len() * 4 + 2;
+        let won_field = narr.seam + COURSE_UNLOCK_FLAGS.len() * 4 + 2;
         tests.extend_from_slice(&sysflag_test(
             CONTEST_WON_FLAG,
             block_new.wrapping_sub(won_field) as u16,
@@ -865,18 +958,23 @@ impl DelilasSites {
             return Err("win-test block has an unexpected size".into());
         }
 
-        // The appended item box: box-break, one text row per reward, then a
-        // backward hop onto the shared `0x48` box-close via the proven
-        // wrapped `0x26` (the clerk branch's cancel-path idiom).
+        // The parallel flow: shared-box copy, box-break, one row per reward,
+        // then the verbatim close-and-settle ops and the park-loop jump (a
+        // backward hop via the wrapped `0x26` - retail's own idiom, e.g.
+        // this record's `26 FE FF` park loop).
         let lines = reward_box_lines(rewards)?;
-        let mut item_box = vec![0x24u8];
+        let mut item_box = Vec::new();
+        item_box.extend_from_slice(&narr_rec[narr.seam..narr.box_break]);
+        item_box.push(0x24);
         for l in &lines {
             item_box.extend(seg(l));
         }
+        item_box.extend_from_slice(&narr_rec[narr.close..narr.tail26]);
         item_box.push(0x26);
         let jfield_local = item_box.len();
         item_box.extend_from_slice(&[0, 0]);
-        let jd = rejoin_new.wrapping_sub(block_new + jfield_local) as u16;
+        let jd = (narr.tail_target + narr_shift_target(narr.tail_target))
+            .wrapping_sub(block_new + jfield_local) as u16;
         item_box[jfield_local..jfield_local + 2].copy_from_slice(&jd.to_le_bytes());
 
         // --- Same-size rewrites, applied to a copy at OLD offsets. ---
@@ -917,15 +1015,16 @@ impl DelilasSites {
             out[abs..abs + 2].copy_from_slice(&value.to_le_bytes());
         }
 
-        // Same for the narration record's control-flow fields.
-        for r in &self.narr_refs {
+        // Same for the narration record's control-flow fields (targets use
+        // the strict shift so a jump onto the seam lands on the win tests).
+        for r in &narr.refs {
             let f_new = r.field + narr_shift(r.field);
-            let t_new = r.target + narr_shift(r.target);
+            let t_new = r.target + narr_shift_target(r.target);
             let value: u16 = match r.kind {
                 RefKind::Relative => (t_new.wrapping_sub(f_new)) as u16,
                 RefKind::Absolute => t_new as u16,
             };
-            let abs = self.narr_start + r.field;
+            let abs = narr.start + r.field;
             out[abs..abs + 2].copy_from_slice(&value.to_le_bytes());
         }
 
@@ -940,8 +1039,8 @@ impl DelilasSites {
             ),
             (self.rec_start + label_ins_at, label_bytes.clone()),
             (self.rec_start + branch_ins_at, branch.clone()),
-            (self.narr_start + self.narr_seam, tests.clone()),
-            (self.narr_end, item_box.clone()),
+            (narr.start + narr.seam, tests.clone()),
+            (narr.end, item_box.clone()),
         ];
         if !inserts.windows(2).all(|w| w[0].0 <= w[1].0) {
             return Err("insertions out of order".into());
@@ -1051,25 +1150,43 @@ impl DelilasSites {
         }
 
         // --- Narration-record verification. ---
-        let narr_start_new = self.narr_start + abs_shift(self.narr_start.saturating_sub(1));
+        let narr_start_new = narr.start + abs_shift(narr.start.saturating_sub(1));
         let narr_len_new = narr_len + tests_len + item_box.len();
         let n_narr = &new_man[narr_start_new..narr_start_new + narr_len_new];
-        // The inserted bytes landed verbatim at their new-layout homes, and
-        // the rejoin still lands on the shared box-close.
-        if n_narr[self.narr_seam..self.narr_seam + tests_len] != tests[..] {
+        // The inserted bytes landed verbatim at their new-layout homes, the
+        // relocated flow still opens with its first segment, and the retail
+        // close survives for the loss path.
+        if n_narr[narr.seam..narr.seam + tests_len] != tests[..] {
             return Err("win tests missing from the rebuilt narration record".into());
         }
         if n_narr[block_new..block_new + item_box.len()] != item_box[..] {
-            return Err("item box missing from the rebuilt narration record".into());
+            return Err("parallel flow missing from the rebuilt narration record".into());
         }
-        if n_narr.get(rejoin_new) != Some(&0x48) {
-            return Err("narration rejoin no longer lands on the box-close".into());
+        if n_narr.get(retail_new) != Some(&0x1F) {
+            return Err("retail flow no longer starts with its first segment".into());
+        }
+        if n_narr.get(narr.close + tests_len) != Some(&0x48) {
+            return Err("retail box-close missing from the rebuilt record".into());
+        }
+        // The `76 CB` repeat-clear jump must now land exactly on the first
+        // win test (target unshifted onto the spliced block).
+        {
+            let repeat = narr
+                .refs
+                .iter()
+                .find(|r| r.target == narr.seam)
+                .ok_or("repeat-clear ref lost")?;
+            let f_new = repeat.field + narr_shift(repeat.field);
+            let d = u16::from_le_bytes([n_narr[f_new], n_narr[f_new + 1]]) as usize;
+            if (f_new + d) & 0xFFFF != narr.seam {
+                return Err("repeat-clear jump does not land on the win tests".into());
+            }
         }
         // The rebuilt narration record decodes as the original stream with
-        // exactly the win tests + item box added: every byte consumed, and
-        // the original signature reproduced (position-exact) once the
+        // exactly the win tests + parallel flow added: every byte consumed,
+        // and the original signature reproduced (position-exact) once the
         // inserted instructions are filtered out.
-        let narr_walk = walk_record(n_narr, self.narr_pc0)?;
+        let narr_walk = walk_record(n_narr, narr.pc0)?;
         if narr_walk.end != n_narr.len() {
             return Err(format!(
                 "rebuilt narration walk stalled at +0x{:04X} (len 0x{:04X})",
@@ -1077,11 +1194,9 @@ impl DelilasSites {
                 n_narr.len()
             ));
         }
-        let new_narr_sig: Vec<(usize, u8)> = walk_signature(n_narr, self.narr_pc0)?
+        let new_narr_sig: Vec<(usize, u8)> = walk_signature(n_narr, narr.pc0)?
             .into_iter()
-            .filter(|&(pc, _)| {
-                !(self.narr_seam..self.narr_seam + tests_len).contains(&pc) && pc < block_new
-            })
+            .filter(|&(pc, _)| !(narr.seam..narr.seam + tests_len).contains(&pc) && pc < block_new)
             .collect();
         let expected_narr_sig: Vec<(usize, u8)> = narr_sig_old
             .into_iter()
@@ -1143,7 +1258,7 @@ fn write_u24(buf: &mut [u8], at: usize, v: u32) -> Result<(), String> {
 /// ```text
 ///        if KORU_DEFEATED -> AVAIL          ; else fall to the decline flow
 ///        jmp DECLINE_TAIL
-/// AVAIL: text  "Face Che and Lu, then Gi!"
+/// AVAIL: text  "Face Che and Lu, then Gi."
 ///        0x27 picker: [0] -> WARP, [1] -> CANCEL
 ///        label "Bring them on!"  label "On second thought, forget it."
 /// WARP:  55 09                              ; SET dome-active (0x509)
@@ -1188,7 +1303,7 @@ fn build_branch(base: usize, common_tail: usize, decline_tail: usize) -> Result<
 
     // AVAIL: confirm picker (immediate-labels form, entries then labels).
     labels.push((Label::Avail, b.len()));
-    b.extend(seg("Face Che and Lu, then Gi!"));
+    b.extend(seg("Face Che and Lu, then Gi."));
     b.push(0x27);
     b.extend_from_slice(&[0, 0]);
     fixups.push((b.len() - 2, Label::Warp));

@@ -259,14 +259,14 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
     assert!(found_picker, "patched MAN must carry the 4-option picker");
 
     // --- The award-ceremony narration announces the item rewards. ---
-    // Four SYSTEM-flag tests sit immediately before the relocated tokens
-    // box-break: any course-unlock flag routes to the retail tokens box, the
-    // contest-won flag to the appended item box.
-    let seam_anchor = b"\x24\x1FContestant ";
+    // Four SYSTEM-flag tests sit at the record's branch point, immediately
+    // before the relocated message run: any course-unlock flag routes to the
+    // retail flow, the contest-won flag to the appended parallel flow.
+    let seam_anchor = b"\x1FThat was a good fight.\x00";
     let pos = man
         .windows(seam_anchor.len())
         .position(|w| w == seam_anchor)
-        .expect("tokens box must survive in the patched MAN");
+        .expect("the shared box must survive in the patched MAN");
     let tests = &man[pos - 16..pos];
     for (i, &f) in COURSE_UNLOCK_FLAGS.iter().enumerate() {
         assert_eq!(tests[i * 4], 0x70 | (f >> 8) as u8, "course test {f:#x}");
@@ -274,11 +274,19 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
     }
     assert_eq!(tests[12], 0x70 | (CONTEST_WON_FLAG >> 8) as u8);
     assert_eq!(tests[13], (CONTEST_WON_FLAG & 0xFF) as u8);
-    // The retail tokens text is intact (the loss path still reads it), and
-    // the appended box carries one row per reward item.
+    // The retail tokens text is intact (the loss path still reads it), the
+    // parallel flow re-carries the shared box (a second verbatim copy) and
+    // one row per reward item.
     assert!(
         man.windows(9).any(|w| w == b" tokens!\x00"),
         "retail tokens text must survive"
+    );
+    assert_eq!(
+        man.windows(seam_anchor.len())
+            .filter(|w| *w == seam_anchor)
+            .count(),
+        2,
+        "the parallel flow must re-carry the shared box"
     );
     for line in reward_box_lines(&legaia_patcher::custom_items::REWARD_ANNOUNCE_NAMES)
         .expect("reward lines")
