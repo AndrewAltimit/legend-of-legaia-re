@@ -51,74 +51,73 @@ def paint_texture():
         if streaks:
             span = (y1 - y0) if horiz else (x1 - x0)
             for i in range(n):
-                p = int(span * (i + 0.5) / n)
+                pp = int(span * (i + 0.5) / n)
                 if horiz:
-                    d.line([x0, y0 + p, x1 - 1, y0 + p], fill=streaks + (255,))
+                    d.line([x0, y0 + pp, x1 - 1, y0 + pp], fill=streaks + (255,))
                 else:
-                    d.line([x0 + p, y0, x0 + p, y1 - 1], fill=streaks + (255,))
+                    d.line([x0 + pp, y0, x0 + pp, y1 - 1], fill=streaks + (255,))
 
-    # --- face tile (0,0)-(64,64): skin, one red eye, bandage patch, mask.
-    skin = (232, 200, 178)
+    # --- face tile (0,0)-(64,64): skin, red eye, dark eyepatch, mouth mask.
+    skin = (236, 205, 184)
     patch(0, 0, 64, 64, skin)
-    # her RIGHT eye (character +x = our left in UV; mirrored on the model
-    # anyway) - big red iris, PS1-pixel style
-    d.rectangle([10, 22, 26, 36], fill=(250, 248, 246, 255))  # sclera
-    d.rectangle([14, 24, 22, 36], fill=(196, 32, 40, 255))  # iris
-    d.rectangle([17, 28, 20, 34], fill=(60, 8, 10, 255))  # pupil
-    d.line([8, 18, 28, 16], fill=(72, 60, 60, 255), width=2)  # brow
-    # her LEFT eye: white bandage patch with a seam cross
-    d.rectangle([38, 18, 58, 40], fill=(240, 238, 232, 255))
-    d.line([38, 28, 58, 28], fill=(205, 200, 190, 255))
-    d.line([48, 18, 48, 40], fill=(205, 200, 190, 255))
+    # her visible eye - big red iris
+    d.rectangle([10, 22, 27, 37], fill=(250, 248, 246, 255))  # sclera
+    d.rectangle([14, 24, 23, 37], fill=(198, 30, 42, 255))  # iris
+    d.rectangle([17, 29, 21, 35], fill=(64, 8, 12, 255))  # pupil
+    d.line([8, 18, 29, 16], fill=(88, 78, 84, 255), width=2)  # brow
+    # the other eye: DARK grey eyepatch with a strap line (goal look)
+    d.rectangle([38, 19, 57, 38], fill=(84, 80, 94, 255))
+    d.rectangle([40, 21, 55, 36], fill=(60, 56, 70, 255))
+    d.line([36, 14, 60, 22], fill=(38, 36, 46, 255), width=2)  # strap
     # mouth mask band with stitch ticks
-    d.rectangle([6, 44, 58, 62], fill=(243, 241, 236, 255))
-    for x in range(10, 58, 8):
-        d.line([x, 48, x, 58], fill=(210, 205, 196, 255))
+    d.rectangle([4, 44, 60, 63], fill=(243, 241, 236, 255))
+    for x in range(9, 58, 8):
+        d.line([x, 48, x, 59], fill=(212, 207, 198, 255))
 
     # --- plain skin (64,0)-(96,32)
     patch(64, 0, 96, 32, skin)
 
     # --- hair silver (128,0)-(192,64): vertical strand streaks
-    patch(128, 0, 192, 64, (208, 210, 218), streaks=(168, 172, 184), n=8)
-    d.line([136, 0, 136, 63], fill=(130, 134, 148, 255))
-    d.line([168, 0, 168, 63], fill=(130, 134, 148, 255))
+    patch(128, 0, 192, 64, (208, 210, 220), streaks=(186, 189, 202), horiz=True, n=5)
+    d.line([128, 20, 191, 20], fill=(134, 138, 152, 255))
+    d.line([128, 44, 191, 44], fill=(134, 138, 152, 255))
 
-    # --- hair dark (192,0)-(256,64): near-black strands (tail underside)
-    patch(192, 0, 256, 64, (52, 52, 62), streaks=(30, 30, 38), n=8)
+    # --- hair dark (192,0)-(256,64): near-black (ribbons, tail tips)
+    patch(192, 0, 256, 64, (40, 40, 50), streaks=(24, 24, 32), n=8)
+
+    # --- tail two-tone (192,96)-(256,160): dark strands w/ silver lights
+    patch(192, 96, 256, 160, (58, 58, 70), streaks=(30, 30, 40), horiz=True, n=10)
+    for y in (110, 142):
+        d.line([192, y, 255, y], fill=(140, 144, 158, 255))
 
     # --- dress black (0,64)-(64,128): soft fold lines
-    patch(0, 64, 64, 128, (38, 36, 44), streaks=(24, 22, 28), n=5)
+    patch(0, 64, 64, 128, (34, 32, 40), streaks=(22, 20, 26), n=5)
 
     # --- bandage white (64,64)-(128,128): horizontal wrap seams
-    patch(64, 64, 128, 128, (238, 234, 226), streaks=(206, 200, 188), horiz=True, n=8)
+    patch(64, 64, 128, 128, (238, 234, 226), streaks=(222, 216, 205), horiz=True, n=5)
 
     # --- glove black (128,64)-(160,96)
-    patch(128, 64, 160, 96, (30, 28, 34))
+    patch(128, 64, 160, 96, (28, 26, 32))
 
     # --- rose red (160,64)-(192,96): petal swirl
-    patch(160, 64, 192, 96, (150, 22, 34))
+    patch(160, 64, 192, 96, (152, 20, 34))
     d.ellipse([166, 70, 186, 90], outline=(96, 10, 20, 255), width=2)
     d.ellipse([172, 76, 180, 84], fill=(96, 10, 20, 255))
 
     # --- blade silver (224,64)-(256,96): stepped gradient + edge light
-    # (few bands - each palette holds at most 15 colours)
     for band in range(4):
         g = 150 + 30 * band
         d.rectangle([224 + band * 8, 64, 224 + band * 8 + 7, 95], fill=(g, g + 4, g + 10, 255))
     d.line([254, 64, 254, 95], fill=(255, 255, 255, 255))
 
-    # --- boot black (0,128)-(64,160): strap lines
-    patch(0, 128, 64, 160, (26, 24, 30), streaks=(50, 46, 56), horiz=True, n=3)
+    # --- arm band dark red (128,96)-(160,128)
+    patch(128, 96, 160, 128, (112, 18, 30), streaks=(84, 12, 22), horiz=True, n=3)
 
-    # --- skirt front (64,128)-(128,192): black with white apron + rose
-    patch(64, 128, 128, 192, (38, 36, 44), streaks=(24, 22, 28), n=4)
-    d.polygon([(84, 128), (108, 128), (112, 190), (80, 190)], fill=(238, 234, 226, 255))
-    d.ellipse([88, 140, 104, 156], fill=(150, 22, 34, 255))
-    d.ellipse([93, 145, 99, 151], fill=(96, 10, 20, 255))
+    # --- boot / strap black (0,128)-(64,160)
+    patch(0, 128, 64, 160, (26, 24, 30), streaks=(48, 44, 54), horiz=True, n=3)
 
-    # --- stocking white (128,128)-(160,192): fine wrap + top band
-    patch(128, 128, 160, 192, (238, 234, 226), streaks=(212, 206, 194), horiz=True, n=10)
-    d.rectangle([128, 128, 159, 136], fill=(38, 36, 44, 255))  # garter band
+    # --- stocking white (128,128)-(160,192): fine wrap
+    patch(128, 128, 160, 192, (240, 236, 228), streaks=(226, 220, 209), horiz=True, n=5)
 
     return img
 
@@ -129,13 +128,14 @@ UV = {
     "skin": (66, 2, 94, 30),
     "hair": (130, 2, 190, 62),
     "hair_dark": (194, 2, 254, 62),
+    "hair_tail": (194, 98, 254, 158),
     "dress": (2, 66, 62, 126),
     "bandage": (66, 66, 126, 126),
     "glove": (130, 66, 158, 94),
     "rose": (162, 66, 190, 94),
     "blade": (226, 66, 254, 94),
+    "band": (130, 98, 158, 126),
     "boot": (2, 130, 62, 158),
-    "skirt_front": (66, 130, 126, 190),
     "stocking": (130, 130, 158, 190),
 }
 
@@ -255,48 +255,55 @@ def build():
     m = Model()
 
     # ----- part 0: head (origin at neck; up = -y; face at +z) -------------
-    # skull: big and round (the battle camera is far - silhouette carries)
-    m.prism(0, 0, -2, -70, -12, (30, 30), (22, 24), "hair", sides=8, cap_bot=False)
+    m.prism(0, 0, -2, -70, -12, (27, 27), (20, 22), "hair", sides=8, cap_bot=False)
     # face plate over the front lower half
     m.face(
         0,
-        [(-22, -54, 27), (22, -54, 27), (18, -14, 24), (-18, -14, 24)],
+        [(-21, -54, 26), (21, -54, 26), (17, -14, 23), (-17, -14, 23)],
         "face",
         shade=[1.05, 1.05, 0.95, 0.95],
         uv_rect=[(2, 2), (62, 2), (62, 62), (2, 62)],
     )
-    # bangs: three angled flaps over the brow
-    for x0, x1, drop in ((-24, -8, 16), (-7, 7, 11), (8, 24, 16)):
+    # bangs over the brow + long side locks framing the face
+    for x0, x1, drop in ((-23, -8, 15), (-7, 7, 10), (8, 23, 15)):
         m.face(
             0,
-            [(x0, -62, 29), (x1, -62, 29), (x1, -62 + drop, 32), (x0, -62 + drop, 32)],
+            [(x0, -62, 28), (x1, -62, 28), (x1, -62 + drop, 31), (x0, -62 + drop, 31)],
             "hair",
             shade=[1.1, 1.1, 0.9, 0.9],
         )
+    for sx in (-1, 1):
+        m.face(
+            0,
+            [(sx * 26, -58, 22), (sx * 21, -58, 27), (sx * 17, -6, 22), (sx * 24, -8, 16)],
+            "hair",
+            shade=[1.05, 1.05, 0.8, 0.8],
+        )
     # neck
     m.prism(0, 0, 0, -16, 4, (7, 7), (8, 8), "skin", sides=6, cap_top=False, cap_bot=False)
-    # twintail anchors (black ribbons), high on the sides
+    # twintail ribbons (black), high on the sides
     for sx in (-1, 1):
-        m.box(0, sx * 28 - 6, sx * 28 + 6, -66, -54, -10, 2, "hair_dark")
-    # twintails: thick, flaring OUT to the sides then sweeping down - they
-    # must read from the front battle camera
+        m.box(0, sx * 27 - 6, sx * 27 + 6, -66, -54, -10, 2, "hair_dark")
+    # twintails: silver poof at the ribbon, then LONG dark two-tone strands
+    # sweeping past the waist (the goal's tails reach the skirt)
     for sx in (-1, 1):
-        m.prism(0, sx * 42, -6, -60, -6, (13, 15), (16, 18), "hair", sides=5, cap_top=True, cap_bot=False)
-        m.prism(0, sx * 48, -10, -6, 58, (16, 18), (6, 7), "hair", sides=5, cap_top=False, cap_bot=False)
-        m.prism(0, sx * 50, -12, 58, 82, (6, 7), (2, 2), "hair_dark", sides=4, cap_top=False)
+        m.prism(0, sx * 38, -6, -62, -8, (15, 17), (18, 20), "hair", sides=5, cap_top=True, cap_bot=False)
+        m.prism(0, sx * 49, -10, -6, 54, (17, 19), (9, 10), "hair_tail", sides=5, cap_top=False, cap_bot=False)
+        m.prism(0, sx * 53, -16, 54, 102, (9, 10), (2, 2), "hair_tail", sides=4, cap_top=False)
 
     # ----- part 1: torso (origin waist; up = -y) --------------------------
-    # black bodice: waist to chest (the dress must dominate the read)
-    m.prism(1, 0, 0, -72, 2, (27, 17), (21, 13), "dress", sides=8, cap_top=False, cap_bot=False)
-    # white bandage chest strip + shoulders
-    m.prism(1, 0, -1, -98, -72, (23, 14), (27, 17), "bandage", sides=8, cap_bot=False, mats_cap="bandage")
-    # shoulder puffs (black)
-    for sx in (-1, 1):
-        m.box(1, sx * 24 - 10, sx * 24 + 10, -104, -82, -12, 12, "dress")
-    # rose brooch at the chest
-    m.box(1, -6, 8, -88, -74, 14, 20, "rose", skip=("-z",))
+    # bare shoulders / upper chest (skin!), then the white chest wrap, then
+    # a black bodice tapering to a narrow waist - the goal's figure
+    m.prism(1, 0, -1, -98, -74, (21, 13), (23, 15), "skin", sides=8, cap_bot=False, mats_cap="skin")
+    m.prism(1, 0, -1, -74, -54, (23, 15), (19, 12), "bandage", sides=8, cap_top=False, cap_bot=False)
+    m.prism(1, 0, 0, -54, 2, (19, 12), (13, 9), "dress", sides=8, cap_top=False, cap_bot=False)
+    # rose brooch at the chest, sitting on the wrap/bodice seam
+    m.box(1, -6, 7, -60, -48, 12, 18, "rose", skip=("-z",))
 
     # ----- part 2: skirt (origin waist; down = +y) ------------------------
+    # snug white bandage-wrap miniskirt...
+    m.prism(2, 0, 0, -2, 32, (14, 10), (20, 15), "bandage", sides=8, cap_top=False, cap_bot=True)
+    # ...under a long BLACK open-front train (back + sides only)
     sides = 8
     for i in range(sides):
         j = i + 1
@@ -306,62 +313,54 @@ def build():
         def ring_pt(ang, y, rx, rz):
             return (rx * math.cos(ang), y, rz * math.sin(ang))
 
-        top0 = ring_pt(a0, -2, 24, 16)
-        top1 = ring_pt(a1, -2, 24, 16)
-        hem0 = ring_pt(a0, 64, 54, 38)
-        hem1 = ring_pt(a1, 64, 54, 38)
         zmid = math.sin((a0 + a1) / 2)
-        mat = "skirt_front" if zmid > 0.55 else "dress"
-        s = 0.9 + 0.16 * zmid
-        m.face(2, [top0, top1, hem1, hem0], mat, shade=[s * 1.05, s * 1.05, s * 0.72, s * 0.72])
-    # long back tails (the dress's split rear panels)
-    for sx in (-1, 1):
-        m.face(
-            2,
-            [(sx * 34, 60, -22), (sx * 8, 62, -34), (sx * 14, 100, -38), (sx * 44, 96, -24)],
-            "dress",
-            shade=[0.8, 0.8, 0.55, 0.55],
-        )
+        if zmid > 0.35:
+            continue  # open front - the white wrap shows through
+        top0 = ring_pt(a0, -2, 17, 12)
+        top1 = ring_pt(a1, -2, 17, 12)
+        hem0 = ring_pt(a0, 104, 46, 40)
+        hem1 = ring_pt(a1, 104, 46, 40)
+        sd = 0.86 + 0.14 * zmid
+        m.face(2, [top0, top1, hem1, hem0], "dress", shade=[sd * 1.05, sd * 1.05, sd * 0.7, sd * 0.7])
+    # waist rose + falling ribbon at the front centre
+    m.box(2, -6, 6, 0, 12, 13, 19, "rose", skip=("-z",))
+    m.box(2, -2, 2, 12, 30, 14, 16, "band", skip=("-z",))
 
-    # ----- part 3: LEFT upper arm (origin shoulder; +y to elbow ~55) ------
-    m.prism(3, 0, 0, -6, 56, (12, 12), (9, 9), "bandage", sides=6, cap_top=True, cap_bot=False)
+    # ----- part 3: LEFT upper arm (bare skin + dark-red arm band) ---------
+    m.prism(3, 0, 0, -6, 56, (9, 9), (7, 7), "skin", sides=6, cap_top=True, cap_bot=False)
+    m.prism(3, 0, 0, 12, 19, (9.6, 9.6), (9.6, 9.6), "band", sides=6, cap_top=False, cap_bot=False)
 
-    # ----- part 4: LEFT forearm (origin elbow; +y to wrist ~55) -----------
-    m.prism(4, 0, 0, -3, 56, (11, 11), (9, 9), "bandage", sides=6, cap_top=True, cap_bot=False)
+    # ----- part 4: LEFT forearm (white bandage wrap) ----------------------
+    m.prism(4, 0, 0, -3, 56, (9, 9), (7, 7), "bandage", sides=6, cap_top=True, cap_bot=False)
 
     # ----- part 5: LEFT hand (black glove + a red rose) -------------------
-    m.box(5, -9, 9, 0, 26, -8, 10, "glove")
-    m.box(5, -7, 7, 24, 33, -6, 8, "glove")  # fingers
-    m.box(5, -8, 8, 6, 22, 10, 22, "rose")  # clutched rose
+    m.box(5, -8, 8, 0, 26, -7, 9, "glove")
+    m.box(5, -6, 6, 24, 33, -5, 7, "glove")  # fingers
+    m.box(5, -7, 7, 6, 22, 9, 21, "rose")  # clutched rose
 
     # ----- part 6/7: RIGHT arm = mirror of left ---------------------------
     mirror_part(m, 3, 6)
     mirror_part(m, 4, 7)
 
     # ----- part 8: RIGHT hand (glove + dagger) ----------------------------
-    m.box(8, -9, 9, 0, 26, -8, 10, "glove")
-    m.box(8, -7, 7, 24, 33, -6, 8, "glove")
-    # dagger: crossguard + a long blade so it reads at battle distance
-    m.box(8, -4, 4, 31, 37, -14, 16, "glove")  # guard
-    m.box(8, -2, 2, 37, 74, -4, 12, "blade")  # blade
-    m.face(
-        8,
-        [(-2, 74, 12), (2, 74, 12), (0, 88, 4)],
-        "blade",
-        shade=[1.1, 1.1, 1.2],
-    )  # tip
+    m.box(8, -8, 8, 0, 26, -7, 9, "glove")
+    m.box(8, -6, 6, 24, 33, -5, 7, "glove")
+    m.box(8, -4, 4, 31, 37, -14, 16, "glove")  # crossguard
+    m.box(8, -2, 2, 37, 74, -4, 12, "blade")
+    m.face(8, [(-2, 74, 12), (2, 74, 12), (0, 88, 4)], "blade", shade=[1.1, 1.1, 1.2])
 
-    # ----- part 9: LEFT thigh (origin hip; +y to knee ~100) ---------------
-    m.prism(9, 0, 0, -6, 100, (16, 15), (11, 11), "stocking", sides=6, cap_top=True, cap_bot=False)
+    # ----- part 9: LEFT thigh (skin gap, garter, white wrap) --------------
+    m.prism(9, 0, 0, -6, 24, (13, 12), (13, 12), "skin", sides=6, cap_top=True, cap_bot=False)
+    m.prism(9, 0, 0, 24, 31, (14, 13), (14, 13), "boot", sides=6, cap_top=False, cap_bot=False)
+    m.prism(9, 0, 0, 31, 100, (13, 12), (10, 10), "stocking", sides=6, cap_top=False, cap_bot=False)
 
-    # ----- part 10: LEFT shin (origin knee; +y ~120) ----------------------
-    m.prism(10, 0, 0, -4, 74, (13, 13), (10, 10), "bandage", sides=6, cap_top=True, cap_bot=False)
-    # boot cuff
-    m.prism(10, 0, 0, 74, 118, (12, 12), (10, 11), "boot", sides=6, cap_top=False, cap_bot=True)
+    # ----- part 10: LEFT shin (white wrap boot + black straps) ------------
+    m.prism(10, 0, 0, -4, 118, (11, 11), (9, 9), "stocking", sides=6, cap_top=True, cap_bot=False)
+    m.prism(10, 0, 0, 34, 41, (11.3, 11.3), (10.8, 10.8), "boot", sides=6, cap_top=False, cap_bot=False)
 
-    # ----- part 11: LEFT foot (origin ankle; +z forward) ------------------
-    m.box(11, -9, 9, 2, 24, -16, 32, "boot")
-    m.box(11, -7, 7, 12, 24, 32, 54, "boot")  # toe wedge
+    # ----- part 11: LEFT foot (small black shoe) --------------------------
+    m.box(11, -8, 8, 0, 22, -14, 28, "boot")
+    m.box(11, -6, 6, 12, 22, 28, 44, "boot")  # toe
 
     # ----- part 12/13/14: RIGHT leg = mirror ------------------------------
     mirror_part(m, 9, 12)
