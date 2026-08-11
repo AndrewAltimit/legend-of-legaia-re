@@ -66,6 +66,10 @@ use crate::mips::*;
 
 /// Nature's Elixir claims the empty-name cut-egg item slot.
 pub const ELIXIR_ITEM_ID: u8 = 0xB9;
+/// Honey - the retail all-stats-+4 consumable, and the reward the grant
+/// falls back to when the Delilas Challenge ships *without* the custom
+/// items (see [`plan_honey_grant`]).
+pub const HONEY_ITEM_ID: u8 = 0x65;
 /// Seru Tear claims the empty-name cut "Terra $9" weapon slot.
 pub const SERU_TEAR_ITEM_ID: u8 = 0x12;
 /// Fury Bloom claims the empty-name cut "Ozma $8" weapon slot.
@@ -460,36 +464,44 @@ pub fn assemble_fury_arm() -> Vec<u32> {
 
 /// Assemble the reward grant (entered by `j` from [`GRANT_HOOK_VA`]; `s0`
 /// holds the `lui 0x8007` both winning paths staged). Re-tests course 3
-/// from the settle's own course global, gives the three items, then replays
-/// the displaced `addiu` + `jal` pair and rejoins the settle. `ra` is
-/// frame-saved by the settle (it `jal`s two words later in retail) and the
-/// retail War God give on the fall-through path has already clobbered
+/// from the settle's own course global, gives one of each `items` id, then
+/// replays the displaced `addiu` + `jal` pair and rejoins the settle. `ra`
+/// is frame-saved by the settle (it `jal`s two words later in retail) and
+/// the retail War God give on the fall-through path has already clobbered
 /// `v0/v1/a0/a2/a3` here, so no register needs preserving.
-pub fn assemble_grant_routine() -> Vec<u32> {
-    const OUT: usize = 14;
-    let words = vec![
-        addiu(S0, S0, 0x56c),                      // 0: replay the displaced addiu
-        lui(T0, hi(COURSE_GLOBAL_VA)),             // 1
-        lw(T1, T0, lo(COURSE_GLOBAL_VA)),          // 2
-        addiu(T2, ZERO, 3),                        // 3
-        bne(T1, T2, (OUT - (4 + 1)) as i16),       // 4: not the Delilas course
-        addiu(A1, ZERO, 1),                        // 5: (delay) count = 1
-        jal(GIVE_ITEM_VA),                         // 6
-        addiu(A0, ZERO, ELIXIR_ITEM_ID as u16),    // 7: (delay)
-        addiu(A1, ZERO, 1),                        // 8
-        jal(GIVE_ITEM_VA),                         // 9
-        addiu(A0, ZERO, SERU_TEAR_ITEM_ID as u16), // 10: (delay)
-        addiu(A1, ZERO, 1),                        // 11
-        jal(GIVE_ITEM_VA),                         // 12
-        addiu(A0, ZERO, FURY_ITEM_ID as u16),      // 13: (delay)
-        // OUT (idx 14): replay the displaced jal + delay, rejoin.
-        GRANT_DISPLACED_JAL,   // 14
-        GRANT_DISPLACED_DELAY, // 15: (delay) move a0,s0
-        j(GRANT_RETURN_VA),    // 16
-        nop(),                 // 17: (delay)
+pub fn assemble_grant_routine_for(items: &[u8]) -> Vec<u32> {
+    assert!(!items.is_empty(), "grant needs at least one item");
+    // Head (5 words + branch delay) then 3 words per item (the first item's
+    // count-set rides the branch delay), then the 4-word rejoin tail.
+    let out = 3 * items.len() + 5;
+    let mut words = vec![
+        addiu(S0, S0, 0x56c),                // 0: replay the displaced addiu
+        lui(T0, hi(COURSE_GLOBAL_VA)),       // 1
+        lw(T1, T0, lo(COURSE_GLOBAL_VA)),    // 2
+        addiu(T2, ZERO, 3),                  // 3
+        bne(T1, T2, (out - (4 + 1)) as i16), // 4: not the Delilas course
+        addiu(A1, ZERO, 1),                  // 5: (delay) count = 1
     ];
-    debug_assert_eq!(words.len(), 18);
+    for (i, &id) in items.iter().enumerate() {
+        if i > 0 {
+            words.push(addiu(A1, ZERO, 1)); // count = 1 (clobbered by the give)
+        }
+        words.push(jal(GIVE_ITEM_VA));
+        words.push(addiu(A0, ZERO, id as u16)); // (delay) item id
+    }
+    // OUT (idx `out`): replay the displaced jal + delay, rejoin.
+    words.push(GRANT_DISPLACED_JAL);
+    words.push(GRANT_DISPLACED_DELAY); // (delay) move a0,s0
+    words.push(j(GRANT_RETURN_VA));
+    words.push(nop()); // (delay)
+    debug_assert_eq!(words.len(), out + 4);
     words
+}
+
+/// The full custom-item reward grant: Nature's Elixir + Seru Tear + Fury
+/// Bloom, one of each per winning course-3 settle.
+pub fn assemble_grant_routine() -> Vec<u32> {
+    assemble_grant_routine_for(&[ELIXIR_ITEM_ID, SERU_TEAR_ITEM_ID, FURY_ITEM_ID])
 }
 
 /// Pad a NUL-terminated string to a whole number of words.
@@ -765,6 +777,49 @@ impl CustomItemsInjection {
     }
 }
 
+/// Plan the **Honey fallback** grant - the reward set used when the Delilas
+/// Challenge is enabled *without* the custom items: the same arena settle
+/// hook and grant cave, but a winning course-3 settle awards one retail
+/// Honey (id `0x65`) alongside the 5000 coins. Nothing else is touched - no
+/// item records, descriptors, jump-table words, or battle-overlay hooks -
+/// so the returned plan's `battle` write list is empty.
+///
+/// Fingerprinted like [`CustomItemsInjection::plan`]: an unrecognized build
+/// (or a cave already claimed by the full custom-items set) is refused
+/// rather than corrupted.
+pub fn plan_honey_grant(scus: &[u8], overlay: &[u8]) -> Result<CustomItemsInjection> {
+    let grant = words_to_bytes(assemble_grant_routine_for(&[HONEY_ITEM_ID]));
+    debug_assert!(grant.len() <= GRANT_REGION_CAPACITY);
+    let off = scus_off(scus, GRANT_VA)?;
+    expect_word(scus, off, GRANT_ORIG_HEAD, "grant cave (AI-block tail)")?;
+    expect_word(
+        scus,
+        off + 4,
+        GRANT_ORIG_WORD1,
+        "grant cave (AI-block tail)",
+    )?;
+    let scus_writes = vec![Write { off, bytes: grant }];
+
+    let goff = GRANT_HOOK_VA
+        .checked_sub(ARENA_BASE_VA)
+        .map(|d| d as usize)
+        .ok_or_else(|| anyhow::anyhow!("grant VA below arena base"))?;
+    expect_word(overlay, goff, GRANT_HOOK_ORIG, "grant hook")?;
+    expect_word(overlay, goff + 4, GRANT_HOOK_DELAY_ORIG, "grant hook delay")?;
+    let mut gh = j(GRANT_VA).to_le_bytes().to_vec();
+    gh.extend_from_slice(&nop().to_le_bytes());
+    let overlay_writes = vec![Write {
+        off: goff,
+        bytes: gh,
+    }];
+
+    Ok(CustomItemsInjection {
+        scus: scus_writes,
+        battle: Vec::new(),
+        overlay: overlay_writes,
+    })
+}
+
 /// The SCUS-side half as `(VA, bytes)` pairs for RAM-installing in an
 /// emulator probe (library save states predate the patched disc; the
 /// overlay halves stream from the patched `--iso`). Mirrors the `scus`
@@ -904,6 +959,23 @@ mod tests {
         );
         assert_eq!(w[14], GRANT_DISPLACED_JAL);
         assert_eq!(w[16], j(GRANT_RETURN_VA));
+    }
+
+    #[test]
+    fn honey_grant_shape() {
+        let w = assemble_grant_routine_for(&[HONEY_ITEM_ID]);
+        assert_eq!(w.len(), 12);
+        assert_eq!(w[0], GRANT_HOOK_ORIG, "replay the displaced addiu");
+        // The not-course-3 branch lands exactly on the rejoin tail.
+        assert_eq!(w[4], bne(T1, T2, 3));
+        assert_eq!(w[6], jal(GIVE_ITEM_VA));
+        assert_eq!(w[7], addiu(A0, ZERO, HONEY_ITEM_ID as u16));
+        assert_eq!(w[8], GRANT_DISPLACED_JAL);
+        assert_eq!(w[10], j(GRANT_RETURN_VA));
+        assert!(
+            w.len() * 4 <= GRANT_REGION_CAPACITY,
+            "honey grant must fit the AI-block tail cave"
+        );
     }
 
     #[test]

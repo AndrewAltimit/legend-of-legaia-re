@@ -167,10 +167,13 @@ pub fn resolve_seed(seed: &str) -> String {
 /// elemental jewels / guards / All Guard apply to Xain's Bloody Horns / Terio
 /// Punch, Cort's Guilty Cross, and the Delilas trio's signature moves (a fix,
 /// not a randomization - it is seedless). `delilas_challenge` adds a fourth
-/// Muscle Dome enrollment option: fight all three Delilas siblings at once,
-/// solo (1v3, pays 3x Honey) or full-party (3v3, pays 1x Honey), unlocked by
-/// the Koru event; losing returns to the venue with the party restored - no
-/// game over (seedless). `approach_softlock_fix` re-stages a
+/// Muscle Dome enrollment option: a new 2-round dome course - Che & Lu
+/// Delilas double-team, then Gi - unlocked by the Koru event; losing a round
+/// returns to the venue by the dome's design - no game over (seedless).
+/// `delilas_custom_items` picks the full-clear reward alongside the 5000
+/// coins: `true` injects and awards the three custom items (Nature's Elixir /
+/// Ra-Seru Tear / Fury Bloom), `false` awards a retail Honey; it has no
+/// effect unless `delilas_challenge` is set. `approach_softlock_fix` re-stages a
 /// monster's approach animation when it dies mid-approach (the summon-then-
 /// melee clip death that parks the battle in an infinite range poll - the
 /// "endless camera orbit" softlock), so the monster resumes walking instead
@@ -276,6 +279,7 @@ pub fn patch_rom(
     jewel_fix: bool,
     approach_softlock_fix: bool,
     delilas_challenge: bool,
+    delilas_custom_items: bool,
     fishing_prices: &str,
     location_renames: &str,
     earth_egg_price: &str,
@@ -553,12 +557,17 @@ pub fn patch_rom(
     // seedless. A koin1 MAN another edit has already grown past its
     // zero-slack footprint skips with a note instead of failing the run.
     if delilas_challenge {
-        match apply::apply_delilas_challenge(&mut patcher) {
-            Ok(rep) if rep.changed => summary.push_str(
+        match apply::apply_delilas_challenge(&mut patcher, delilas_custom_items) {
+            Ok(rep) if rep.changed => summary.push_str(&format!(
                 "delilas-challenge: Muscle Dome enrollment offers the Delilas Challenge \
                  (a 2-round dome course: Che & Lu double-team, then Gi; a full clear pays \
-                 5000 coins; unlocks after Nivora Ravine)\n",
-            ),
+                 5000 coins + {}; unlocks after Nivora Ravine)\n",
+                if delilas_custom_items {
+                    "the three custom items"
+                } else {
+                    "a Honey"
+                }
+            )),
             Ok(_) => summary.push_str("delilas-challenge: already applied\n"),
             Err(e) => summary.push_str(&format!("delilas-challenge: skipped ({e:#})\n")),
         }
