@@ -1206,7 +1206,12 @@ The feature is two coordinated halves that ship together
   overlay (PROT 0977) has no course beyond Master, so course 3 is added with
   six same-size edits: a seed detour at the course-select init
   (`FUN_801CEA6C` @ `0x801CEBCC`) that decodes flag `0x539` into the packed
-  course/round word as course 3; a `{round_count=3, roster_ptr}` descriptor
+  course/round word as course 3 - guarded on the retail flag seed having
+  left the word at its no-course default `1`, which only the Delilas arm
+  (it clears all three course-unlock flags) produces, and clearing `0x539`
+  whether or not it seeded, so a stale request flag (a save state frozen
+  during the warp flourish) is scrubbed instead of hijacking a
+  Beginner/Expert/Master enrollment into the Delilas course; a `{round_count=3, roster_ptr}` descriptor
   at the course-3 slot `0x801D1A08 + 3*8`; the hub actor template that
   occupied that slot relocated into a `SCUS_942.54` routine cave (its one
   `lui`/`addiu` reference repointed); the Delilas roster (Gi/Che/Lu, the

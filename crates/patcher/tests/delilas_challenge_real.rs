@@ -86,9 +86,14 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
         .expect("read SCUS from patched image");
     let routine_off = legaia_asset::item_names::file_offset_for_va(&scus, ROUTINE_VA)
         .expect("resolve routine VA");
-    assert!(
-        scus[routine_off..routine_off + 8].iter().any(|&b| b != 0),
-        "seed routine must be present in the cave"
+    let routine_bytes: Vec<u8> = legaia_patcher::delilas_dome::assemble_routine()
+        .iter()
+        .flat_map(|w| w.to_le_bytes())
+        .collect();
+    assert_eq!(
+        &scus[routine_off..routine_off + routine_bytes.len()],
+        &routine_bytes[..],
+        "seed routine in the cave must match the current (guarded) shape"
     );
     let roster_off =
         legaia_asset::item_names::file_offset_for_va(&scus, ROSTER_VA).expect("resolve roster VA");
@@ -127,6 +132,35 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
     );
     let repatched = patcher2.into_image();
     assert_eq!(repatched, patched, "no-op re-apply must not touch bytes");
+
+    // Upgrade path: a disc patched by an older build carries the guard-less
+    // seed routine behind the same installed hook. Simulate one by writing a
+    // stale word into the resident routine, then re-apply: the cave must be
+    // refreshed to the current shape (and only the cave - the report says
+    // changed).
+    {
+        let mut downgraded = DiscPatcher::open(patched.clone()).expect("open patched");
+        let scus = downgraded.read_named_file("SCUS_942.54").expect("scus");
+        let routine_off = legaia_asset::item_names::file_offset_for_va(&scus, ROUTINE_VA)
+            .expect("resolve routine VA");
+        // Any non-current word will do; 0 is what no shipped routine carries
+        // at its first slot (`addiu a0,zero,0x539`).
+        downgraded
+            .patch_named_file("SCUS_942.54", routine_off as u64, &[0, 0, 0, 0])
+            .expect("plant stale routine word");
+        let stale = downgraded.into_image();
+        let mut up = DiscPatcher::open(stale).expect("open stale");
+        let report_up = apply::apply_delilas_challenge(&mut up, true).expect("upgrade apply");
+        assert!(report_up.changed, "routine refresh must report a change");
+        let upgraded = up.into_image();
+        let re = DiscPatcher::open(upgraded).expect("re-open upgraded");
+        let scus = re.read_named_file("SCUS_942.54").expect("scus");
+        assert_eq!(
+            &scus[routine_off..routine_off + routine_bytes.len()],
+            &routine_bytes[..],
+            "re-apply must refresh an older resident seed routine"
+        );
+    }
 
     // Determinism: applying to a fresh copy of the original produces the
     // identical image.
