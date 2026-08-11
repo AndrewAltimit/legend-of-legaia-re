@@ -126,12 +126,13 @@ pub fn inject_delilas_dome(patcher: &mut DiscPatcher) -> Result<bool> {
     Ok(true)
 }
 
-/// Install the custom-item reward set (Nature's Elixir / Seru Tear / Delilas
-/// Tear - see [`crate::custom_items`]): the three item records + effect
-/// machinery in `SCUS_942.54`, the battle-overlay conversion + MP-skip
-/// hooks, and the arena-settle grant hook that hands all three out on a
-/// winning course-3 settle. Idempotent on the applier jump-table word.
-pub fn inject_custom_items(patcher: &mut DiscPatcher) -> Result<bool> {
+/// Install the **custom item set alone** (see [`crate::custom_items`]): the
+/// three item records + effect machinery in `SCUS_942.54` and the
+/// battle-overlay conversion + MP-skip hooks - no reward grant and no arena
+/// writes. This is the standalone shape (usable without the Delilas
+/// Challenge; the randomizer's random drop / chest / steal pools are how a
+/// player obtains the items). Idempotent on the applier jump-table word.
+pub fn inject_custom_item_set(patcher: &mut DiscPatcher) -> Result<bool> {
     use crate::custom_items::{APPLY_JT_VA, CustomItemsInjection, ELIXIR_ARM_VA, ELIXIR_CLASS};
     let scus = patcher
         .read_named_file(SCUS_NAME)
@@ -148,10 +149,7 @@ pub fn inject_custom_items(patcher: &mut DiscPatcher) -> Result<bool> {
     let battle = patcher
         .read_entry(BATTLE_OVERLAY_PROT_INDEX)
         .context("read battle-action overlay (0898) for custom-items injection")?;
-    let overlay = patcher
-        .read_entry(ARENA_OVERLAY_PROT_INDEX)
-        .context("read arena overlay (0977) for custom-items injection")?;
-    let plan = CustomItemsInjection::plan(&scus, &battle, &overlay)?;
+    let plan = CustomItemsInjection::plan_item_set(&scus, &battle)?;
     for w in &plan.scus {
         patcher
             .patch_named_file(SCUS_NAME, w.off as u64, &w.bytes)
@@ -162,25 +160,18 @@ pub fn inject_custom_items(patcher: &mut DiscPatcher) -> Result<bool> {
             .patch_prot_entry(BATTLE_OVERLAY_PROT_INDEX, w.off as u64, &w.bytes)
             .with_context(|| format!("write custom-items battle hook at {:#x}", w.off))?;
     }
-    for w in &plan.overlay {
-        patcher
-            .patch_prot_entry(ARENA_OVERLAY_PROT_INDEX, w.off as u64, &w.bytes)
-            .with_context(|| format!("write custom-items grant hook at {:#x}", w.off))?;
-    }
     Ok(true)
 }
 
-/// Install the **Honey fallback** reward - the grant used when the Delilas
-/// Challenge ships without the custom items: the same arena-settle grant
-/// hook and SCUS cave, but a winning course-3 settle awards one retail
-/// Honey alongside the 5000 coins (see [`crate::custom_items::plan_honey_grant`]).
-/// Idempotent on the arena hook word (which is also why it no-ops when the
-/// full custom-item set is already installed - the hook is shared).
-pub fn inject_honey_reward(patcher: &mut DiscPatcher) -> Result<bool> {
-    use crate::custom_items::{GRANT_HOOK_VA, GRANT_VA, plan_honey_grant};
+/// Install the course-3 reward grant handing out one of each `items` id -
+/// the arena-settle hook plus the grant cave
+/// ([`crate::custom_items::plan_grant`]). Idempotent on the arena hook word,
+/// so whichever grant variant lands first wins a re-run.
+fn inject_reward_grant(patcher: &mut DiscPatcher, items: &[u8]) -> Result<bool> {
+    use crate::custom_items::{GRANT_HOOK_VA, GRANT_VA, plan_grant};
     let overlay = patcher
         .read_entry(ARENA_OVERLAY_PROT_INDEX)
-        .context("read arena overlay (0977) for honey-reward injection")?;
+        .context("read arena overlay (0977) for reward-grant injection")?;
     let hook_off = (GRANT_HOOK_VA - ARENA_BASE_VA) as usize;
     let cur = overlay
         .get(hook_off..hook_off + 4)
@@ -190,19 +181,40 @@ pub fn inject_honey_reward(patcher: &mut DiscPatcher) -> Result<bool> {
     }
     let scus = patcher
         .read_named_file(SCUS_NAME)
-        .context("read SCUS_942.54 for honey-reward injection")?;
-    let plan = plan_honey_grant(&scus, &overlay)?;
+        .context("read SCUS_942.54 for reward-grant injection")?;
+    let plan = plan_grant(&scus, &overlay, items)?;
     for w in &plan.scus {
         patcher
             .patch_named_file(SCUS_NAME, w.off as u64, &w.bytes)
-            .with_context(|| format!("write honey-grant SCUS write at {:#x}", w.off))?;
+            .with_context(|| format!("write reward-grant SCUS write at {:#x}", w.off))?;
     }
     for w in &plan.overlay {
         patcher
             .patch_prot_entry(ARENA_OVERLAY_PROT_INDEX, w.off as u64, &w.bytes)
-            .with_context(|| format!("write honey-grant hook at {:#x}", w.off))?;
+            .with_context(|| format!("write reward-grant hook at {:#x}", w.off))?;
     }
     Ok(true)
+}
+
+/// Install the full custom-item reward set: the item set
+/// ([`inject_custom_item_set`]) plus the arena-settle grant that hands all
+/// three out on a winning course-3 settle. Each half is independently
+/// idempotent, so this also completes a partially-applied image (e.g. the
+/// item set landed standalone and the Delilas Challenge came later).
+pub fn inject_custom_items(patcher: &mut DiscPatcher) -> Result<bool> {
+    let set = inject_custom_item_set(patcher)?;
+    let grant = inject_reward_grant(patcher, crate::custom_items::CUSTOM_ITEM_IDS)?;
+    Ok(set || grant)
+}
+
+/// Install the **Honey fallback** reward - the grant used when the Delilas
+/// Challenge ships without the custom items: the same arena-settle grant
+/// hook and SCUS cave, but a winning course-3 settle awards one retail
+/// Honey alongside the 5000 coins. Idempotent on the arena hook word (which
+/// is also why it no-ops when the full custom-item grant is already
+/// installed - the hook is shared).
+pub fn inject_honey_reward(patcher: &mut DiscPatcher) -> Result<bool> {
+    inject_reward_grant(patcher, &[crate::custom_items::HONEY_ITEM_ID])
 }
 
 /// Install the **Delilas Challenge** on the Muscle Dome enrollment menu: a

@@ -75,6 +75,11 @@ pub const SERU_TEAR_ITEM_ID: u8 = 0x12;
 /// Fury Bloom claims the empty-name cut "Ozma $8" weapon slot.
 pub const FURY_ITEM_ID: u8 = 0x1A;
 
+/// The three custom-item ids, in grant order. Also the ids the randomizer
+/// adds to the random drop / chest / steal fill pool when the custom items
+/// are enabled (the `unused::extend_pool` shape).
+pub const CUSTOM_ITEM_IDS: &[u8] = &[ELIXIR_ITEM_ID, SERU_TEAR_ITEM_ID, FURY_ITEM_ID];
+
 /// Effect-descriptor subtypes claimed - three of the nineteen records no
 /// kind-2 item references (kind-1 equipment `+1` bytes index the equipment
 /// table, never descriptors: Short Sword's `0x23` would otherwise read
@@ -560,8 +565,11 @@ fn expect_word(buf: &[u8], off: usize, want: u32, what: &str) -> Result<()> {
 /// One cave region: `(va, capacity, head fingerprints, payload, label)`.
 type CaveRegion = (u32, usize, [u32; 2], Vec<u8>, &'static str);
 
-/// The seven cave regions.
-fn cave_payloads() -> Vec<CaveRegion> {
+/// The item set's five cave regions - everything the items themselves need
+/// (arms, conversion, names, descriptions, the free-cast flag). The grant
+/// cave is *not* here: the reward grant is a separate, per-reward plan
+/// ([`plan_grant`]) so the item set can ship without the Delilas Challenge.
+fn item_set_cave_payloads() -> Vec<CaveRegion> {
     let elixir = words_to_bytes(assemble_elixir_arm());
     let conv1 = words_to_bytes(assemble_conversion_stage1());
     let mut conv2 = words_to_bytes(assemble_conversion_stage2());
@@ -573,7 +581,6 @@ fn cave_payloads() -> Vec<CaveRegion> {
     fury.extend_from_slice(&padded(ELIXIR_DESC));
     fury.extend_from_slice(&padded(SERU_DESC));
     fury.extend_from_slice(&padded(FURY_DESC));
-    let grant = words_to_bytes(assemble_grant_routine());
     let tail = 0u32.to_le_bytes().to_vec(); // the free-cast flag cell
     vec![
         (
@@ -605,13 +612,6 @@ fn cave_payloads() -> Vec<CaveRegion> {
             "Fury Bloom + MP-skip cave (class-14 arm)",
         ),
         (
-            GRANT_VA,
-            GRANT_REGION_CAPACITY,
-            [GRANT_ORIG_HEAD, GRANT_ORIG_WORD1],
-            grant,
-            "grant cave (AI-block tail)",
-        ),
-        (
             DISPLAY_TAIL_VA,
             DISPLAY_TAIL_CAPACITY,
             [DISPLAY_TAIL_ORIG_HEAD, DISPLAY_TAIL_ORIG_WORD1],
@@ -621,12 +621,34 @@ fn cave_payloads() -> Vec<CaveRegion> {
     ]
 }
 
+/// The grant cave region for a given reward list.
+fn grant_cave_region(items: &[u8]) -> CaveRegion {
+    (
+        GRANT_VA,
+        GRANT_REGION_CAPACITY,
+        [GRANT_ORIG_HEAD, GRANT_ORIG_WORD1],
+        words_to_bytes(assemble_grant_routine_for(items)),
+        "grant cave (AI-block tail)",
+    )
+}
+
+/// All six cave regions of the full injection (item set + the three-item
+/// grant) - the shape the emulator probe installs.
+fn cave_payloads() -> Vec<CaveRegion> {
+    let mut regions = item_set_cave_payloads();
+    regions.push(grant_cave_region(CUSTOM_ITEM_IDS));
+    regions
+}
+
 impl CustomItemsInjection {
-    /// Plan the injection against the three images. Every site is
-    /// fingerprinted; an unrecognized build is refused rather than
-    /// corrupted. Order-independent of the dome injection except that the
-    /// grant only ever fires when the dome's course-3 exists.
-    pub fn plan(scus: &[u8], battle: &[u8], overlay: &[u8]) -> Result<Self> {
+    /// Plan the **item set alone** - the three item records, effect
+    /// descriptors, jump-table words, the item-machinery caves, and the
+    /// battle-overlay hooks - with no reward grant (the `overlay` write list
+    /// is empty). This is the standalone-custom-items shape: the items exist
+    /// and work, and how the player obtains them (randomized pools, the
+    /// Delilas grant) is decided elsewhere. Every site is fingerprinted; an
+    /// unrecognized build is refused rather than corrupted.
+    pub fn plan_item_set(scus: &[u8], battle: &[u8]) -> Result<Self> {
         let mut scus_writes = Vec::new();
 
         // --- item records (empty-name slots; fingerprint the whole record) --
@@ -715,7 +737,7 @@ impl CustomItemsInjection {
         });
 
         // --- caves ----------------------------------------------------------
-        for (va, capacity, heads, payload, what) in cave_payloads() {
+        for (va, capacity, heads, payload, what) in item_set_cave_payloads() {
             if payload.len() > capacity {
                 bail!(
                     "{what}: payload {} bytes exceeds capacity {capacity}",
@@ -755,49 +777,47 @@ impl CustomItemsInjection {
             bytes: mp,
         });
 
-        // --- arena-overlay grant hook (PROT 0977) ---------------------------
-        let goff = GRANT_HOOK_VA
-            .checked_sub(ARENA_BASE_VA)
-            .map(|d| d as usize)
-            .ok_or_else(|| anyhow::anyhow!("grant VA below arena base"))?;
-        expect_word(overlay, goff, GRANT_HOOK_ORIG, "grant hook")?;
-        expect_word(overlay, goff + 4, GRANT_HOOK_DELAY_ORIG, "grant hook delay")?;
-        let mut gh = j(GRANT_VA).to_le_bytes().to_vec();
-        gh.extend_from_slice(&nop().to_le_bytes());
-        let overlay_writes = vec![Write {
-            off: goff,
-            bytes: gh,
-        }];
-
         Ok(Self {
             scus: scus_writes,
             battle: battle_writes,
-            overlay: overlay_writes,
+            overlay: Vec::new(),
         })
+    }
+
+    /// Plan the **full injection** against the three images: the item set
+    /// plus the course-3 reward grant handing out all three items.
+    /// Order-independent of the dome injection except that the grant only
+    /// ever fires when the dome's course-3 exists.
+    pub fn plan(scus: &[u8], battle: &[u8], overlay: &[u8]) -> Result<Self> {
+        let mut plan = Self::plan_item_set(scus, battle)?;
+        let grant = plan_grant(scus, overlay, CUSTOM_ITEM_IDS)?;
+        plan.scus.extend(grant.scus);
+        plan.overlay = grant.overlay;
+        Ok(plan)
     }
 }
 
-/// Plan the **Honey fallback** grant - the reward set used when the Delilas
-/// Challenge is enabled *without* the custom items: the same arena settle
-/// hook and grant cave, but a winning course-3 settle awards one retail
-/// Honey (id `0x65`) alongside the 5000 coins. Nothing else is touched - no
-/// item records, descriptors, jump-table words, or battle-overlay hooks -
-/// so the returned plan's `battle` write list is empty.
+/// Plan the **reward grant alone** - the arena settle hook plus a grant
+/// cave giving one of each `items` id per winning course-3 settle,
+/// alongside the 5000 coins. Nothing else is planned - no item records,
+/// descriptors, jump-table words, or battle-overlay hooks - so the returned
+/// plan's `battle` write list is empty. With `&[HONEY_ITEM_ID]` this is the
+/// Honey fallback used when the Delilas Challenge ships without the custom
+/// items; with [`CUSTOM_ITEM_IDS`] it is the full custom-item reward.
 ///
 /// Fingerprinted like [`CustomItemsInjection::plan`]: an unrecognized build
-/// (or a cave already claimed by the full custom-items set) is refused
-/// rather than corrupted.
-pub fn plan_honey_grant(scus: &[u8], overlay: &[u8]) -> Result<CustomItemsInjection> {
-    let grant = words_to_bytes(assemble_grant_routine_for(&[HONEY_ITEM_ID]));
-    debug_assert!(grant.len() <= GRANT_REGION_CAPACITY);
-    let off = scus_off(scus, GRANT_VA)?;
-    expect_word(scus, off, GRANT_ORIG_HEAD, "grant cave (AI-block tail)")?;
-    expect_word(
-        scus,
-        off + 4,
-        GRANT_ORIG_WORD1,
-        "grant cave (AI-block tail)",
-    )?;
+/// (or an already-claimed cave) is refused rather than corrupted.
+pub fn plan_grant(scus: &[u8], overlay: &[u8], items: &[u8]) -> Result<CustomItemsInjection> {
+    let (va, capacity, heads, grant, what) = grant_cave_region(items);
+    if grant.len() > capacity {
+        bail!(
+            "{what}: payload {} bytes exceeds capacity {capacity}",
+            grant.len()
+        );
+    }
+    let off = scus_off(scus, va)?;
+    expect_word(scus, off, heads[0], what)?;
+    expect_word(scus, off + 4, heads[1], what)?;
     let scus_writes = vec![Write { off, bytes: grant }];
 
     let goff = GRANT_HOOK_VA

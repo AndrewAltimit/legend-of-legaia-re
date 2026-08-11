@@ -292,7 +292,7 @@ unless asked for:
 | `--jewel-fix` | the boss cinematic casts (Xain, Cort, the Delilas trio) respect elemental guards like every other special | - | [Jewel fix](#jewel-fix) |
 | `--approach-softlock-fix` | a monster whose approach animation dies mid-walk is re-staged and resumes walking instead of parking the battle forever (the "endless camera orbit") | - | [Approach-softlock fix](#approach-softlock-fix) |
 | `--delilas-challenge` | a fourth Muscle Dome enrollment option: a new 2-round arena course (Che & Lu double-team, then Gi; a clear pays 5000 coins + a Honey); unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
-| `--delilas-custom-items` | with `--delilas-challenge`: the clear awards the three custom items (Nature's Elixir / Ra-Seru Tear / Fury Bloom) instead of the Honey | - | [Completion reward](#completion-reward---a-honey-or-three-custom-items) |
+| `--custom-items` | inject three brand-new items (Nature's Elixir / Ra-Seru Tear / Fury Bloom) into cut item slots; `random` drop/chest/steal modes add them to the fill pool, and with `--delilas-challenge` they replace the Honey clear reward | - | [Custom items](#completion-reward---a-honey-or-three-custom-items) |
 | `--fishing-price ITEM=POINTS` | set the fishing-exchange point cost of a prize (e.g. the Buma Water Egg); the price also gates when the prize appears | repeatable / comma-separated | [Fishing prize prices](#fishing-prize-prices) |
 | `--rename-location INDEX=NAME` | rename a world-map location (save / load / pause + quick-travel menu), e.g. an element cave to match a re-elemented party | repeatable | [Location names](#location-names) |
 | `--earth-egg-price VALUE` | set the casino-coin threshold to obtain the Earth Egg (Sol Tower Prize Counter; retail 100000), gate + debit together | single value | [Earth Egg coin threshold](#earth-egg-coin-threshold) |
@@ -1081,18 +1081,32 @@ default in the web patcher's Balanced and Full Chaos presets.
 A winning course settle grants a reward alongside the 5000 coins, via a
 two-word detour at the settle's post-payout `s0` staging (`0x801D114C`)
 into a grant routine in the AI-block cave's tail (`0x800352EC`), gated on
-the settling course being 3. Which reward depends on
-`--delilas-custom-items` (the web patcher's "Custom items" sub-toggle,
-on in the Balanced and Full Chaos presets):
+the settling course being 3. Which reward depends on `--custom-items`
+(the web patcher's "Custom items" toggle, on in the Balanced and Full
+Chaos presets):
 
 - **Off** (the default): the grant gives one retail **Honey** (`0x65`,
   the permanent all-stats-+4 consumable) per clear
-  (`custom_items::plan_honey_grant`). Only the grant cave and the arena
-  settle hook are written - item records, effect descriptors, jump
-  tables, and the battle-overlay hooks all stay retail.
+  (`custom_items::plan_grant` over `[HONEY_ITEM_ID]`). Only the grant
+  cave and the arena settle hook are written - item records, effect
+  descriptors, jump tables, and the battle-overlay hooks all stay retail.
 - **On**: the grant gives **three brand-new items**, described below.
 
-With the toggle on, the items are claimed from the item table's only
+`--custom-items` is a standalone feature, not a Delilas sub-option: the
+item set (`CustomItemsInjection::plan_item_set` - records, descriptors,
+jump-table arms, item-machinery caves, battle-overlay hooks, and **no**
+arena writes; applier `apply::inject_custom_item_set`) installs without
+the challenge, and a `random` drop / chest / steal mode then adds the
+three ids to the fill pool (`custom_items::CUSTOM_ITEM_IDS`, the
+`--unused-items` `extend_pool` shape) so they turn up as loot. With
+neither a `random` mode nor the challenge, the items exist but nothing
+hands them out - both CLIs print a note. The Delilas grant is the
+second, independent half; `inject_custom_items` composes the two and
+each half is idempotent on its own key (applier jump-table word / arena
+hook word), so the item set landing first and the challenge arriving on
+a re-run still completes the grant.
+
+The items are claimed from the item table's only
 free slots - the executable's three empty-name records (`0xB9` the cut
 Ra-Seru-egg item, `0x12` / `0x1A` the cut top-tier Ra-Seru weapon slots;
 a dual census - the curated gamedata cross-reference and the patcher's

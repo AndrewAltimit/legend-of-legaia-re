@@ -107,6 +107,36 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         }
         manifest.push(format!("unused_items = {}", args.unused_items));
     }
+    // `--custom-items` injects the three brand-new items (Nature's Elixir /
+    // Ra-Seru Tear / Fury Bloom) standalone - records, effect machinery, and
+    // battle hooks; no Delilas dependency - and widens the random-fill pool
+    // with them so the `random` drop/chest/steal modes can hand them out.
+    // With `--delilas-challenge` they additionally become the course's
+    // full-clear reward (the grant half is installed there).
+    if args.custom_items {
+        match apply::inject_custom_item_set(&mut patcher) {
+            Ok(true) => println!(
+                "custom-items: injected Nature's Elixir (0xB9), Ra-Seru Tear (0x12), \
+                 Fury Bloom (0x1A)"
+            ),
+            Ok(false) => println!("custom-items: already injected"),
+            Err(e) => {
+                anyhow::bail!("custom-items: {e:#}");
+            }
+        }
+        if needs_pool {
+            legaia_patcher::unused::extend_pool(
+                &mut pool,
+                legaia_patcher::custom_items::CUSTOM_ITEM_IDS,
+            );
+        } else if !args.delilas_challenge {
+            println!(
+                "note: without a `random` drop/chest/steal mode or --delilas-challenge, \
+                 the custom items exist but nothing hands them out"
+            );
+        }
+        manifest.push(format!("custom_items = {}", args.custom_items));
+    }
     // The unused-enemy id set (empty unless the toggle is on) is passed to the
     // encounter randomizer below.
     let unused_enemies: &[u8] = if args.unused_enemies {
@@ -230,14 +260,14 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     // returns to the venue by the dome's design; a full clear pays 5000
     // coins. koin1 script + a companion arena/SCUS code injection.
     if args.delilas_challenge {
-        match apply::apply_delilas_challenge(&mut patcher, args.delilas_custom_items) {
+        match apply::apply_delilas_challenge(&mut patcher, args.custom_items) {
             Ok(report) if report.changed => {
                 println!(
                     "delilas-challenge: Muscle Dome enrollment offers the Delilas Challenge \
                      (a 2-round dome course: Che & Lu double-team, then Gi; a full clear \
                      pays 5000 coins + {}; unlocks after Nivora Ravine; {} bytes of new \
                      koin1 script in PROT {}{})",
-                    if args.delilas_custom_items {
+                    if args.custom_items {
                         "the three custom items"
                     } else {
                         "a Honey"
@@ -252,16 +282,16 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
                 );
                 manifest.push("delilas_challenge = true".to_string());
                 manifest.push(format!(
-                    "delilas_custom_items = {}",
-                    args.delilas_custom_items
+                    "delilas_reward_custom_items = {}",
+                    args.custom_items
                 ));
             }
             Ok(_) => {
                 println!("delilas-challenge: already applied");
                 manifest.push("delilas_challenge = true".to_string());
                 manifest.push(format!(
-                    "delilas_custom_items = {}",
-                    args.delilas_custom_items
+                    "delilas_reward_custom_items = {}",
+                    args.custom_items
                 ));
             }
             Err(e) => {
