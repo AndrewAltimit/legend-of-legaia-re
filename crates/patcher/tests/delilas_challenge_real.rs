@@ -53,7 +53,7 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
 
     // Apply.
     let mut patcher = DiscPatcher::open(disc.clone()).expect("open disc");
-    let report = apply::apply_delilas_challenge(&mut patcher).expect("apply");
+    let report = apply::apply_delilas_challenge(&mut patcher, true).expect("apply");
     assert!(report.changed);
     assert!(report.dome_injected, "arena course must be injected too");
     assert!(report.grown_bytes > 0);
@@ -119,7 +119,7 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
     let after = koin1_sites(patched.clone());
     assert!(after.already_applied, "patched disc must read as applied");
     let mut patcher2 = DiscPatcher::open(patched.clone()).expect("re-open");
-    let report2 = apply::apply_delilas_challenge(&mut patcher2).expect("re-apply");
+    let report2 = apply::apply_delilas_challenge(&mut patcher2, true).expect("re-apply");
     assert!(!report2.changed, "second apply must be a no-op");
     assert!(
         !report2.dome_injected,
@@ -131,7 +131,7 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
     // Determinism: applying to a fresh copy of the original produces the
     // identical image.
     let mut patcher3 = DiscPatcher::open(disc.clone()).expect("open disc again");
-    apply::apply_delilas_challenge(&mut patcher3).expect("apply again");
+    apply::apply_delilas_challenge(&mut patcher3, true).expect("apply again");
     assert_eq!(
         patcher3.into_image(),
         patched,
@@ -141,12 +141,12 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
     // Composes with the sibling koin1-MAN feature (Earth Egg price edit):
     // both rewrite PROT 543's MAN, in either order.
     let mut ab = DiscPatcher::open(disc.clone()).expect("open");
-    apply::apply_delilas_challenge(&mut ab).expect("delilas first");
+    apply::apply_delilas_challenge(&mut ab, true).expect("delilas first");
     apply::set_earth_egg_price(&mut ab, 500).expect("earth egg second");
     let ab = ab.into_image();
     let mut ba = DiscPatcher::open(disc).expect("open");
     apply::set_earth_egg_price(&mut ba, 500).expect("earth egg first");
-    apply::apply_delilas_challenge(&mut ba).expect("delilas second");
+    apply::apply_delilas_challenge(&mut ba, true).expect("delilas second");
     let ba = ba.into_image();
     assert!(koin1_sites(ab).already_applied);
     assert!(koin1_sites(ba).already_applied);
@@ -270,7 +270,7 @@ fn delilas_challenge_keeps_touched_sectors_valid() {
         return;
     };
     let mut patcher = DiscPatcher::open(disc.clone()).expect("open disc");
-    apply::apply_delilas_challenge(&mut patcher).expect("apply");
+    apply::apply_delilas_challenge(&mut patcher, true).expect("apply");
     let patched = patcher.into_image();
     assert_eq!(patched.len(), disc.len());
     let mut touched = 0usize;
@@ -288,4 +288,85 @@ fn delilas_challenge_keeps_touched_sectors_valid() {
         }
     }
     assert!(touched > 0, "patch must touch at least one sector");
+}
+
+/// The Honey fallback: applying the challenge with `custom_items = false`
+/// installs the same arena grant hook but a Honey-only grant cave, and
+/// leaves every custom-items-specific site (item records, jump tables,
+/// battle-overlay hooks) at its retail bytes.
+#[test]
+fn delilas_challenge_honey_fallback_skips_the_custom_items() {
+    use legaia_patcher::custom_items::{
+        APPLY_DEFAULT_ARM, APPLY_JT_VA, ELIXIR_CLASS, GRANT_HOOK_VA, GRANT_VA, HONEY_ITEM_ID,
+        SEED_HOOK_ORIG, SEED_HOOK_VA as ITEM_SEED_HOOK_VA, assemble_grant_routine_for,
+    };
+    use legaia_patcher::delilas_dome::{BATTLE_BASE_VA, BATTLE_OVERLAY_PROT_INDEX};
+
+    let Some(disc) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+
+    let mut patcher = DiscPatcher::open(disc.clone()).expect("open disc");
+    let report = apply::apply_delilas_challenge(&mut patcher, false).expect("apply honey variant");
+    assert!(report.changed);
+    assert!(report.dome_injected);
+    let patched = patcher.into_image();
+    assert_eq!(patched.len(), disc.len());
+    let reopen = DiscPatcher::open(patched.clone()).expect("patched image re-parses");
+
+    // The grant cave carries exactly the Honey-only routine.
+    let scus = reopen.read_named_file("SCUS_942.54").expect("read SCUS");
+    let grant_off =
+        legaia_asset::item_names::file_offset_for_va(&scus, GRANT_VA).expect("resolve grant VA");
+    let want: Vec<u8> = assemble_grant_routine_for(&[HONEY_ITEM_ID])
+        .iter()
+        .flat_map(|w| w.to_le_bytes())
+        .collect();
+    assert_eq!(
+        &scus[grant_off..grant_off + want.len()],
+        &want[..],
+        "grant cave must hold the Honey grant"
+    );
+
+    // The arena settle hook detours into the grant cave.
+    let overlay = reopen
+        .read_entry(ARENA_OVERLAY_PROT_INDEX)
+        .expect("read arena overlay");
+    let hook_off = (GRANT_HOOK_VA - ARENA_BASE_VA) as usize;
+    let hook = u32::from_le_bytes(overlay[hook_off..hook_off + 4].try_into().unwrap());
+    assert_eq!(
+        hook,
+        0x0800_0000 | ((GRANT_VA >> 2) & 0x03FF_FFFF),
+        "j GRANT_VA"
+    );
+
+    // Custom-items sites stay retail: the applier jump-table words and the
+    // battle-overlay seed-dispatch hook.
+    let jt_off =
+        legaia_asset::item_names::file_offset_for_va(&scus, APPLY_JT_VA + ELIXIR_CLASS as u32 * 4)
+            .expect("resolve applier JT");
+    for k in 0..2 {
+        let got = u32::from_le_bytes(scus[jt_off + k * 4..jt_off + k * 4 + 4].try_into().unwrap());
+        assert_eq!(got, APPLY_DEFAULT_ARM, "applier JT must stay retail");
+    }
+    let battle = reopen
+        .read_entry(BATTLE_OVERLAY_PROT_INDEX)
+        .expect("read battle overlay");
+    let seed_off = (ITEM_SEED_HOOK_VA - BATTLE_BASE_VA) as usize;
+    let seed = u32::from_le_bytes(battle[seed_off..seed_off + 4].try_into().unwrap());
+    assert_eq!(
+        seed, SEED_HOOK_ORIG,
+        "item seed-dispatch hook must stay retail"
+    );
+
+    // Idempotent, and deterministic on a fresh copy.
+    let mut patcher2 = DiscPatcher::open(patched.clone()).expect("re-open");
+    let report2 = apply::apply_delilas_challenge(&mut patcher2, false).expect("re-apply");
+    assert!(!report2.changed);
+    assert_eq!(
+        patcher2.into_image(),
+        patched,
+        "no-op re-apply must not touch bytes"
+    );
 }

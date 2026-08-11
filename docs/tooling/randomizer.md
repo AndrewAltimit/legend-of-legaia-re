@@ -291,7 +291,8 @@ unless asked for:
 | `--seru-trade` | vendors swap one of a character's seru for another, reseeding every two in-game hours | `--seru-trade-offers N` caps offers per vendor | [Seru trading](#seru-trading) |
 | `--jewel-fix` | the boss cinematic casts (Xain, Cort, the Delilas trio) respect elemental guards like every other special | - | [Jewel fix](#jewel-fix) |
 | `--approach-softlock-fix` | a monster whose approach animation dies mid-walk is re-staged and resumes walking instead of parking the battle forever (the "endless camera orbit") | - | [Approach-softlock fix](#approach-softlock-fix) |
-| `--delilas-challenge` | a fourth Muscle Dome enrollment option: a new 2-round arena course (Che & Lu double-team, then Gi; 5000 coins for a clear); unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
+| `--delilas-challenge` | a fourth Muscle Dome enrollment option: a new 2-round arena course (Che & Lu double-team, then Gi; a clear pays 5000 coins + a Honey); unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
+| `--delilas-custom-items` | with `--delilas-challenge`: the clear awards the three custom items (Nature's Elixir / Ra-Seru Tear / Fury Bloom) instead of the Honey | - | [Completion reward](#completion-reward---a-honey-or-three-custom-items) |
 | `--fishing-price ITEM=POINTS` | set the fishing-exchange point cost of a prize (e.g. the Buma Water Egg); the price also gates when the prize appears | repeatable / comma-separated | [Fishing prize prices](#fishing-prize-prices) |
 | `--rename-location INDEX=NAME` | rename a world-map location (save / load / pause + quick-travel menu), e.g. an element cave to match a re-elemented party | repeatable | [Location names](#location-names) |
 | `--earth-egg-price VALUE` | set the casino-coin threshold to obtain the Earth Egg (Sol Tower Prize Counter; retail 100000), gate + debit together | single value | [Earth Egg coin threshold](#earth-egg-coin-threshold) |
@@ -1075,10 +1076,23 @@ latches and the world map reads to flip the ravine entrance from `nilboa`
 to `nilboa2` - so until that event the clerk brushes the player off. On by
 default in the web patcher's Balanced and Full Chaos presets.
 
-#### Completion reward - three custom items
+#### Completion reward - a Honey, or three custom items
 
-A winning course settle grants **three brand-new items** alongside the
-5000 coins (`custom_items` module), claimed from the item table's only
+A winning course settle grants a reward alongside the 5000 coins, via a
+two-word detour at the settle's post-payout `s0` staging (`0x801D114C`)
+into a grant routine in the AI-block cave's tail (`0x800352EC`), gated on
+the settling course being 3. Which reward depends on
+`--delilas-custom-items` (the web patcher's "Custom items" sub-toggle,
+on in the Balanced and Full Chaos presets):
+
+- **Off** (the default): the grant gives one retail **Honey** (`0x65`,
+  the permanent all-stats-+4 consumable) per clear
+  (`custom_items::plan_honey_grant`). Only the grant cave and the arena
+  settle hook are written - item records, effect descriptors, jump
+  tables, and the battle-overlay hooks all stay retail.
+- **On**: the grant gives **three brand-new items**, described below.
+
+With the toggle on, the items are claimed from the item table's only
 free slots - the executable's three empty-name records (`0xB9` the cut
 Ra-Seru-egg item, `0x12` / `0x1A` the cut top-tier Ra-Seru weapon slots;
 a dual census - the curated gamedata cross-reference and the patcher's
@@ -1119,11 +1133,11 @@ from their own arms: the cast-audio dispatcher `FUN_801F3990` maps item
 classes to cues through a 9-entry table, so custom classes are silent
 unless the arm plays the cue itself.
 
-The grant rides the settle's own latch-gated winning arm (the code path
-that pays the coins and, on the Master course, the retail War God Icon):
-a two-word detour at the post-payout `s0` staging (`0x801D114C`) runs
-three `FUN_800421D4(id, 1)` gives when the settling course is 3, then
-replays the displaced pair. New code follows the same
+Either grant rides the settle's own latch-gated winning arm (the code
+path that pays the coins and, on the Master course, the retail War God
+Icon): the detour runs one `FUN_800421D4(id, 1)` give per reward item
+when the settling course is 3, then replays the displaced pair
+(`custom_items::assemble_grant_routine_for`). New code follows the same
 unreferenced-function cave discipline as the course itself - the
 class-14 Point Card arm (reachable code with no reachable data), three
 more zero-reference SCUS functions, and the tails of the course's own

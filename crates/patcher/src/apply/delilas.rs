@@ -170,6 +170,41 @@ pub fn inject_custom_items(patcher: &mut DiscPatcher) -> Result<bool> {
     Ok(true)
 }
 
+/// Install the **Honey fallback** reward - the grant used when the Delilas
+/// Challenge ships without the custom items: the same arena-settle grant
+/// hook and SCUS cave, but a winning course-3 settle awards one retail
+/// Honey alongside the 5000 coins (see [`crate::custom_items::plan_honey_grant`]).
+/// Idempotent on the arena hook word (which is also why it no-ops when the
+/// full custom-item set is already installed - the hook is shared).
+pub fn inject_honey_reward(patcher: &mut DiscPatcher) -> Result<bool> {
+    use crate::custom_items::{GRANT_HOOK_VA, GRANT_VA, plan_honey_grant};
+    let overlay = patcher
+        .read_entry(ARENA_OVERLAY_PROT_INDEX)
+        .context("read arena overlay (0977) for honey-reward injection")?;
+    let hook_off = (GRANT_HOOK_VA - ARENA_BASE_VA) as usize;
+    let cur = overlay
+        .get(hook_off..hook_off + 4)
+        .map(|w| u32::from_le_bytes(w.try_into().unwrap()));
+    if cur == Some(crate::mips::j(GRANT_VA)) {
+        return Ok(false);
+    }
+    let scus = patcher
+        .read_named_file(SCUS_NAME)
+        .context("read SCUS_942.54 for honey-reward injection")?;
+    let plan = plan_honey_grant(&scus, &overlay)?;
+    for w in &plan.scus {
+        patcher
+            .patch_named_file(SCUS_NAME, w.off as u64, &w.bytes)
+            .with_context(|| format!("write honey-grant SCUS write at {:#x}", w.off))?;
+    }
+    for w in &plan.overlay {
+        patcher
+            .patch_prot_entry(ARENA_OVERLAY_PROT_INDEX, w.off as u64, &w.bytes)
+            .with_context(|| format!("write honey-grant hook at {:#x}", w.off))?;
+    }
+    Ok(true)
+}
+
 /// Install the **Delilas Challenge** on the Muscle Dome enrollment menu: a
 /// fourth "who will enter" option that warps into the arena and runs the new
 /// Delilas dome course (Che & Lu together, then Gi), gated on the Koru death event (story
@@ -181,7 +216,14 @@ pub fn inject_custom_items(patcher: &mut DiscPatcher) -> Result<bool> {
 /// [`crate::delilas_challenge`]). The koin1 MAN is built (and validated)
 /// before either half is written, so an unbuildable edit aborts without
 /// touching the disc.
-pub fn apply_delilas_challenge(patcher: &mut DiscPatcher) -> Result<DelilasChallengeReport> {
+///
+/// `custom_items` selects the full-clear reward: `true` installs the three
+/// custom items ([`inject_custom_items`] - Nature's Elixir / Ra-Seru Tear /
+/// Fury Bloom), `false` the Honey fallback ([`inject_honey_reward`]).
+pub fn apply_delilas_challenge(
+    patcher: &mut DiscPatcher,
+    custom_items: bool,
+) -> Result<DelilasChallengeReport> {
     // Resolve the koin1 block through CDNAME (raw #define numbers are raw-TOC
     // indices; extraction = raw - 2) and locate the enrollment script inside
     // it - the same resolution shape `apply_starting_bag` uses for town01.
@@ -214,7 +256,11 @@ pub fn apply_delilas_challenge(patcher: &mut DiscPatcher) -> Result<DelilasChall
         // The menu is already present; ensure the arena course is too (a
         // re-run over a partially-applied image), then report the no-op.
         let dome_injected = inject_delilas_dome(patcher)?;
-        inject_custom_items(patcher)?;
+        if custom_items {
+            inject_custom_items(patcher)?;
+        } else {
+            inject_honey_reward(patcher)?;
+        }
         return Ok(DelilasChallengeReport {
             entry_idx,
             grown_bytes: 0,
@@ -239,10 +285,14 @@ pub fn apply_delilas_challenge(patcher: &mut DiscPatcher) -> Result<DelilasChall
         );
     };
 
-    // Arena course first (the warp target), then the custom-item reward set,
-    // then the koin1 menu + warp.
+    // Arena course first (the warp target), then the reward set (custom
+    // items or the Honey fallback), then the koin1 menu + warp.
     let dome_injected = inject_delilas_dome(patcher)?;
-    inject_custom_items(patcher)?;
+    if custom_items {
+        inject_custom_items(patcher)?;
+    } else {
+        inject_honey_reward(patcher)?;
+    }
 
     patcher
         .patch_prot_entry(

@@ -45,7 +45,7 @@ fn delilas_composes_with_the_other_gap_features_but_not_shiny() {
     apply::inject_equipment_bonus_drop(&mut p, 10).expect("bonus drop");
     apply::inject_flee_exp(&mut p, 25).expect("flee exp");
     apply::inject_enemy_ally(&mut p, 20).expect("enemy ally");
-    let rep = apply::apply_delilas_challenge(&mut p).expect("delilas after gap features");
+    let rep = apply::apply_delilas_challenge(&mut p, true).expect("delilas after gap features");
     assert!(rep.changed && rep.dome_injected);
     assert!(
         koin1_applied(&p.into_image()),
@@ -57,12 +57,12 @@ fn delilas_composes_with_the_other_gap_features_but_not_shiny() {
     let mut a = DiscPatcher::open(disc.clone()).expect("open");
     apply::inject_shiny_seru(&mut a, 20).expect("shiny first");
     assert!(
-        apply::apply_delilas_challenge(&mut a).is_err(),
+        apply::apply_delilas_challenge(&mut a, true).is_err(),
         "delilas must refuse when shiny already occupies the arena cave"
     );
 
     let mut b = DiscPatcher::open(disc).expect("open");
-    apply::apply_delilas_challenge(&mut b).expect("delilas first");
+    apply::apply_delilas_challenge(&mut b, true).expect("delilas first");
     assert!(
         apply::inject_shiny_seru(&mut b, 20).is_err(),
         "shiny must refuse when the dome cave already occupies the arena"

@@ -230,13 +230,18 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     // returns to the venue by the dome's design; a full clear pays 5000
     // coins. koin1 script + a companion arena/SCUS code injection.
     if args.delilas_challenge {
-        match apply::apply_delilas_challenge(&mut patcher) {
+        match apply::apply_delilas_challenge(&mut patcher, args.delilas_custom_items) {
             Ok(report) if report.changed => {
                 println!(
                     "delilas-challenge: Muscle Dome enrollment offers the Delilas Challenge \
                      (a 2-round dome course: Che & Lu double-team, then Gi; a full clear \
-                     pays 5000 coins; unlocks after Nivora Ravine; {} bytes of new koin1 \
-                     script in PROT {}{})",
+                     pays 5000 coins + {}; unlocks after Nivora Ravine; {} bytes of new \
+                     koin1 script in PROT {}{})",
+                    if args.delilas_custom_items {
+                        "the three custom items"
+                    } else {
+                        "a Honey"
+                    },
                     report.grown_bytes,
                     report.entry_idx,
                     if report.dome_injected {
@@ -246,10 +251,18 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
                     }
                 );
                 manifest.push("delilas_challenge = true".to_string());
+                manifest.push(format!(
+                    "delilas_custom_items = {}",
+                    args.delilas_custom_items
+                ));
             }
             Ok(_) => {
                 println!("delilas-challenge: already applied");
                 manifest.push("delilas_challenge = true".to_string());
+                manifest.push(format!(
+                    "delilas_custom_items = {}",
+                    args.delilas_custom_items
+                ));
             }
             Err(e) => {
                 // A grown koin1 MAN (e.g. a language pack) can leave no room;
