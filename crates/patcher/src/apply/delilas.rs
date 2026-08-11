@@ -286,9 +286,16 @@ pub fn apply_delilas_challenge(
     // Build (and validate) the grown koin1 MAN first, then recompress under the
     // descriptor boundary (greedy, then the optimal packer - the koin1 MAN is
     // sector-aligned with zero slack, and only the optimal packer fits the
-    // grown script back in). Nothing is written if either step fails.
+    // grown script back in). Nothing is written if either step fails. The
+    // award-ceremony narration announces the actual full-clear reward, so
+    // the item list follows the reward toggle.
+    let rewards: &[&str] = if custom_items {
+        &crate::custom_items::REWARD_ANNOUNCE_NAMES
+    } else {
+        &[crate::custom_items::HONEY_ANNOUNCE_NAME]
+    };
     let (new_man, grown) = sites
-        .build()
+        .build(rewards)
         .map_err(|e| anyhow::anyhow!("delilas-challenge build: {e}"))?;
     let Some(stream) = crate::compress_within(&new_man, sites.compressed_budget) else {
         anyhow::bail!(

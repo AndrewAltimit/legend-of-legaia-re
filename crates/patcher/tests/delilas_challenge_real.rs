@@ -6,8 +6,8 @@
 
 use legaia_patcher::apply;
 use legaia_patcher::delilas_challenge::{
-    ARENA_ENTER_BGM, COURSE_UNLOCK_FLAGS, DOME_ACTIVE_FLAG, DOME_WARP_OP, DelilasSites,
-    KORU_DEFEATED_FLAG, NEVER_SET_FLAGS,
+    ARENA_ENTER_BGM, CONTEST_WON_FLAG, COURSE_UNLOCK_FLAGS, DOME_ACTIVE_FLAG, DOME_WARP_OP,
+    DelilasSites, KORU_DEFEATED_FLAG, NEVER_SET_FLAGS, reward_box_lines,
 };
 use legaia_patcher::delilas_dome::{
     ARENA_BASE_VA, ARENA_OVERLAY_PROT_INDEX, COURSE_FLAG, COURSE3_DESC_VA, ROSTER_VA, ROUTINE_VA,
@@ -257,6 +257,40 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
         }
     }
     assert!(found_picker, "patched MAN must carry the 4-option picker");
+
+    // --- The award-ceremony narration announces the item rewards. ---
+    // Four SYSTEM-flag tests sit immediately before the relocated tokens
+    // box-break: any course-unlock flag routes to the retail tokens box, the
+    // contest-won flag to the appended item box.
+    let seam_anchor = b"\x24\x1FContestant ";
+    let pos = man
+        .windows(seam_anchor.len())
+        .position(|w| w == seam_anchor)
+        .expect("tokens box must survive in the patched MAN");
+    let tests = &man[pos - 16..pos];
+    for (i, &f) in COURSE_UNLOCK_FLAGS.iter().enumerate() {
+        assert_eq!(tests[i * 4], 0x70 | (f >> 8) as u8, "course test {f:#x}");
+        assert_eq!(tests[i * 4 + 1], (f & 0xFF) as u8, "course test {f:#x}");
+    }
+    assert_eq!(tests[12], 0x70 | (CONTEST_WON_FLAG >> 8) as u8);
+    assert_eq!(tests[13], (CONTEST_WON_FLAG & 0xFF) as u8);
+    // The retail tokens text is intact (the loss path still reads it), and
+    // the appended box carries one row per reward item.
+    assert!(
+        man.windows(9).any(|w| w == b" tokens!\x00"),
+        "retail tokens text must survive"
+    );
+    for line in reward_box_lines(&legaia_patcher::custom_items::REWARD_ANNOUNCE_NAMES)
+        .expect("reward lines")
+    {
+        let mut segment = vec![0x1F];
+        segment.extend(line.bytes());
+        segment.push(0);
+        assert!(
+            man.windows(segment.len()).any(|w| *w == segment[..]),
+            "reward row {line:?} missing from the narration"
+        );
+    }
 }
 
 /// Sector-level integrity: every 2352-byte sector of the patched image keeps a
@@ -358,6 +392,18 @@ fn delilas_challenge_honey_fallback_skips_the_custom_items() {
     assert_eq!(
         seed, SEED_HOOK_ORIG,
         "item seed-dispatch hook must stay retail"
+    );
+
+    // The award-ceremony narration announces the Honey reward (and not the
+    // custom items, which this variant does not grant).
+    let man = koin1_sites(patched.clone()).decoded;
+    assert!(
+        man.windows(18).any(|w| w == b"\x1FYou won 1 Honey!\x00"),
+        "Honey reward row missing from the narration"
+    );
+    assert!(
+        !man.windows(12).any(|w| w == b"Ra-Seru Tear"),
+        "custom-item name must not appear on the Honey build"
     );
 
     // Idempotent, and deterministic on a fresh copy.
