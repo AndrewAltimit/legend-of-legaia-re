@@ -1,5 +1,5 @@
 //! Disc oracle for the **custom items** injection (Nature's Elixir / Seru
-//! Tear / Delilas Tear): every fingerprint the plan validates - the three
+//! Tear / Fury Bloom): every fingerprint the plan validates - the three
 //! empty-name item records, the spare descriptor slots, both class
 //! jump-table default words, the seven cave heads, the two battle-overlay
 //! hook sites, and the arena-settle grant site - is checked against the real
@@ -10,8 +10,8 @@ use legaia_asset::item_names::file_offset_for_va;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply::inject_custom_items;
 use legaia_patcher::custom_items::{
-    ARENA_OVERLAY_PROT_INDEX, BATTLE_OVERLAY_PROT_INDEX, CustomItemsInjection,
-    DELILAS_TEAR_ITEM_ID, ELIXIR_ITEM_ID, SERU_TEAR_ITEM_ID,
+    ARENA_OVERLAY_PROT_INDEX, BATTLE_OVERLAY_PROT_INDEX, CustomItemsInjection, ELIXIR_ITEM_ID,
+    FURY_ITEM_ID, SERU_TEAR_ITEM_ID,
 };
 use legaia_patcher::disc::DiscPatcher;
 
@@ -57,8 +57,8 @@ fn injection_round_trips_and_is_idempotent() {
     let scus = read_file_in_image(patcher.image(), "SCUS_942.54").expect("SCUS in patched image");
     let names = legaia_asset::item_names::ItemNameTable::from_scus(&scus).expect("parse names");
     assert_eq!(names.name(ELIXIR_ITEM_ID), Some("Nature's Elixir"));
-    assert_eq!(names.name(SERU_TEAR_ITEM_ID), Some("Seru Tear"));
-    assert_eq!(names.name(DELILAS_TEAR_ITEM_ID), Some("Delilas Tear"));
+    assert_eq!(names.name(SERU_TEAR_ITEM_ID), Some("Ra-Seru Tear"));
+    assert_eq!(names.name(FURY_ITEM_ID), Some("Fury Bloom"));
     // Second application is a no-op.
     assert!(
         !inject_custom_items(&mut patcher).expect("re-inject"),

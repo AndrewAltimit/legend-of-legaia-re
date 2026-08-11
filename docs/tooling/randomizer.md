@@ -1090,26 +1090,34 @@ sweeps - shows every other named id is reachable in retail):
   arm (`0x48`) that fills MP (with the retail `-amount` mirror write) and
   tail-jumps into the retail tier-2 HP-restore arm, so the popup and
   displayed-HP accounting are retail's own.
-- **Seru Tear** - battle-only; using it turns the committed item action
-  into a **real Ra-Seru summon cast of the user's own Ra-Seru** (Vahn
-  Meta, Noa Terra, Gala Ozma) with the 240-MP cost skipped - a free
-  summon any character can shed. The conversion hooks the action-seed
-  category dispatch (`0x801E2D60`): the item is already deducted at menu
-  commit, the spell id is `0x9D +` the roster char id, and a one-shot
-  flag makes the summon leg's unconditional MP deduct (`0x801E4584` -
-  it underflows a u16 when unchecked) write a zero-cost mirror instead.
+- **Ra-Seru Tear** - battle-only; using it turns the committed item
+  action into a **real Ra-Seru summon cast of the user's own Ra-Seru**
+  (Vahn Meta, Noa Terra, Gala Ozma) with the 240-MP cost skipped - a
+  free summon any character can shed. The conversion hooks the
+  action-seed category dispatch (`0x801E2D60`): the item is already
+  deducted at menu commit, the spell id is `0x9D +` the roster char id,
+  and a one-shot flag makes the summon leg's unconditional MP deduct
+  (`0x801E4584` - it underflows a u16 when unchecked) write a zero-cost
+  mirror instead.
   Caster-matched is a mechanism constraint, not flavour: the big summons
   stream the caster's own choreography, and a forced mismatched pair
   (Gala casting Meta) parks the battle forever in the summon driver's
   completion poll while the matched pair completes and lands damage.
-- **Delilas Tear** - battle-only; the siblings' fury strikes the first
-  living enemy for `500 + rand % 512`, clamped to current HP, through
-  the retail damage-popup accumulator and flinch-or-death animation pick.
-  A literal player-side cast of Blazing Slash /
-  Megaton Press / Plasma Strike is structurally impossible: the streamed
-  signature modules stage the *caster's* monster-block entries by raw
-  index, and a party actor has no monster block - the cast parks the
-  battle at the capture band's completion wait.
+- **Fury Bloom** - battle-only; one use sets the Fury Boost
+  action-gauge extension (`actor+0x1F9`, exactly the retail class-5
+  arm's write) on **every living party member**, with the retail Fury
+  cue on the user. Party-wide application needs a custom arm because
+  group targeting lives inside each retail class arm, not the
+  dispatcher. (An earlier "Delilas Tear" that would cast a sibling
+  signature attack is structurally impossible player-side: the streamed
+  modules stage the *caster's* monster-block entries by raw index, and
+  a party actor has no monster block - the cast parks the battle at the
+  capture band's completion wait.)
+
+All three items play the heal-item chime (`FUN_8004FCC8` cue `0x20C`)
+from their own arms: the cast-audio dispatcher `FUN_801F3990` maps item
+classes to cues through a 9-entry table, so custom classes are silent
+unless the arm plays the cue itself.
 
 The grant rides the settle's own latch-gated winning arm (the code path
 that pays the coins and, on the Master course, the retail War God Icon):

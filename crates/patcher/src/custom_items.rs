@@ -13,14 +13,15 @@
 //!   usable by any character. Caster-matched is a probe-pinned mechanism
 //!   constraint: the summons stream the caster's own choreography, and a
 //!   mismatched pair parks the battle forever.
-//! - **Delilas Tear** (item id `0x1A`, the cut "Ra-Seru Ozma $8" slot):
-//!   battle-only. The siblings' fury strikes a random living enemy for
-//!   `500 + rand%512` damage with the retail damage-popup / flinch
-//!   accounting. (A literal player-side cast of Blazing Slash / Megaton
-//!   Press / Plasma Strike is structurally impossible: the streamed modules
-//!   PROT 958..960 stage the *caster's* monster-block entries by raw index,
-//!   and a party actor has no monster block - probe-verified park at battle
-//!   state `0x70`.)
+//! - **Fury Bloom** (item id `0x1A`, the cut "Ra-Seru Ozma $8" slot):
+//!   battle-only. One use sets the Fury Boost action-gauge flag
+//!   (`actor+0x1F9`, the retail class-5 write) on **every living party
+//!   member** at once, with the retail Fury cue on the user. (An earlier
+//!   design, a "Delilas Tear" casting a sibling signature attack, is
+//!   structurally impossible player-side: the streamed modules PROT
+//!   958..960 stage the *caster's* monster-block entries by raw index,
+//!   and a party actor has no monster block - probe-verified park at
+//!   battle state `0x70`.)
 //!
 //! ## Mechanism map
 //!
@@ -34,17 +35,17 @@
 //!
 //! New code lives across six verified-dead SCUS regions (the same
 //! unreferenced-function cave discipline as [`crate::delilas_dome`], plus
-//! a **cold-boot** verification pass - see [`STRIKE_VA`] for the
+//! a **cold-boot** verification pass - see [`FURY_ARM_VA`] for the
 //! boot-live libapi slot that falsified the seventh):
 //!
 //! | Region | Home | Contents |
 //! |---|---|---|
-//! | `0x80025054` | unreferenced actor-template tick | elixir arm + name |
-//! | `0x8003EDAC` | unreferenced CD mode toggle | conversion stage 1 + elixir desc |
-//! | `0x8003F210` | unreferenced CD re-seek arm | conversion stage 2 + delilas desc + seru name |
-//! | `0x8004209C` | the unreachable class-14 Point Card arm | strike arm + seru desc + the MP-deduct skip |
+//! | `0x80025054` | unreferenced actor-template tick | elixir arm |
+//! | `0x8003EDAC` | unreferenced CD mode toggle | conversion stage 1 |
+//! | `0x8003F210` | unreferenced CD re-seek arm | conversion stage 2 + the three item names |
+//! | `0x8004209C` | the unreachable class-14 Point Card arm | Fury Bloom arm + the MP-deduct skip + descriptions |
 //! | `0x800352EC` | tail of the dome's AI-block cave (words 30..47) | the reward grant |
-//! | `0x80026100` | tail of the dome's display cave (words 9..15) | delilas name + free-cast flag |
+//! | `0x80026100` | tail of the dome's display cave (words 9..15) | the free-cast flag |
 //!
 //! Battle-overlay hooks (PROT 0898, same-size): the action-seed category
 //! dispatch at `0x801E2D60` detours through the conversion (a committed
@@ -67,8 +68,8 @@ use crate::mips::*;
 pub const ELIXIR_ITEM_ID: u8 = 0xB9;
 /// Seru Tear claims the empty-name cut "Terra $9" weapon slot.
 pub const SERU_TEAR_ITEM_ID: u8 = 0x12;
-/// Delilas Tear claims the empty-name cut "Ozma $8" weapon slot.
-pub const DELILAS_TEAR_ITEM_ID: u8 = 0x1A;
+/// Fury Bloom claims the empty-name cut "Ozma $8" weapon slot.
+pub const FURY_ITEM_ID: u8 = 0x1A;
 
 /// Effect-descriptor subtypes claimed - three of the nineteen records no
 /// kind-2 item references (kind-1 equipment `+1` bytes index the equipment
@@ -76,7 +77,7 @@ pub const DELILAS_TEAR_ITEM_ID: u8 = 0x1A;
 /// "usable flute").
 pub const ELIXIR_SUB: u8 = 0x34;
 pub const SERU_TEAR_SUB: u8 = 0x35;
-pub const DELILAS_TEAR_SUB: u8 = 0x36;
+pub const FURY_SUB: u8 = 0x36;
 
 /// Effect classes claimed. Both resolve to the applier's default arm in
 /// retail (bounded dispatch `sltiu 0x84` at `0x80040444`; no descriptor or
@@ -111,11 +112,15 @@ const BCTX_PTR_VA: u32 = 0x8007_BD24;
 /// Per-slot party roster char ids (1 = Vahn, 2 = Noa, 3 = Gala).
 const ROSTER_VA: u32 = 0x8007_BD10;
 const GAME_MODE_VA: u32 = 0x8007_B83C;
-/// The BIOS `rand()` A-call stub (clobbers `v0/v1/a*/t*`; preserves `s*`).
-const RAND_VA: u32 = 0x8005_6798;
 /// `FUN_800421D4(item_id, count)` - the give-item routine (bag at
 /// `0x80084140+0x1818`, stacks by id, cap 99; preserves `s*` and `a1`).
 const GIVE_ITEM_VA: u32 = 0x8004_21D4;
+/// `FUN_8004FCC8(cue_id)` - the sound-cue dispatcher (the battle-action
+/// cast-audio tail's own play call; cue `0x20C` = the heal-item chime).
+const SFX_CUE_VA: u32 = 0x8004_FCC8;
+/// `FUN_801E22C8(tint, state_word, slot, group)` - the battle cue-group
+/// expander (overlay 0898; callers are battle-gated).
+const CUE_EXPANDER_VA: u32 = 0x801E_22C8;
 
 // --- cave homes -------------------------------------------------------------
 
@@ -138,7 +143,7 @@ pub const CONV2_REGION_CAPACITY: usize = 32 * 4;
 pub const CONV2_ORIG_HEAD: u32 = 0x8F82_0988; // lw v0,0x988(gp)
 const CONV2_ORIG_WORD1: u32 = 0x27BD_FFE8; // addiu sp,sp,-0x18
 
-/// Delilas strike + MP-skip home: the class-14 Point Card arm - reachable
+/// Fury Bloom + MP-skip home: the class-14 Point Card arm - reachable
 /// code with no reachable data (`docs/formats/item-effect-table.md`); 65
 /// words ending at the class-0x82 arm `0x800421A0`.
 ///
@@ -149,12 +154,12 @@ const CONV2_ORIG_WORD1: u32 = 0x27BD_FFE8; // addiu sp,sp,-0x18
 /// see - every library save state postdates boot. Cold-boot bisect
 /// (`autorun_boot_watch.lua`) pinned it; that region must never be
 /// claimed as a cave.
-pub const STRIKE_VA: u32 = 0x8004_209C;
-pub const STRIKE_REGION_CAPACITY: usize = 65 * 4;
-pub const STRIKE_ORIG_HEAD: u32 = 0x3C02_8008; // lui v0,0x8008
-const STRIKE_ORIG_WORD1: u32 = 0x2446_4140; // addiu a2,v0,0x4140
-/// The MP-skip lives after the strike arm + Seru Tear description.
-pub const MPSKIP_VA: u32 = STRIKE_VA + 55 * 4;
+pub const FURY_ARM_VA: u32 = 0x8004_209C;
+pub const FURY_REGION_CAPACITY: usize = 65 * 4;
+pub const FURY_ORIG_HEAD: u32 = 0x3C02_8008; // lui v0,0x8008
+const FURY_ORIG_WORD1: u32 = 0x2446_4140; // addiu a2,v0,0x4140
+/// The MP-skip packs after the Fury Bloom arm inside the class-14 region.
+pub const MPSKIP_VA: u32 = FURY_ARM_VA + 35 * 4;
 
 /// Grant home: words 30..47 of the dome's AI-block cave (`FUN_80035274` -
 /// the dome's main block uses words 0..29; the tail keeps its retail bytes).
@@ -164,30 +169,31 @@ const GRANT_ORIG_HEAD: u32 = 0x3C03_8007; // lui v1,0x8007
 const GRANT_ORIG_WORD1: u32 = 0x2463_625C; // addiu v1,v1,0x625c
 
 /// Display-cave tail (`FUN_800260DC` words 9..15; the dome's display
-/// routine uses words 0..8): the Delilas Tear name + the free-cast flag.
-pub const DELILAS_NAME_VA: u32 = 0x8002_6100;
+/// routine uses words 0..8): the free-cast flag cell.
+pub const DISPLAY_TAIL_VA: u32 = 0x8002_6100;
 pub const DISPLAY_TAIL_CAPACITY: usize = 7 * 4;
 const DISPLAY_TAIL_ORIG_HEAD: u32 = 0xA422_B790; // sh v0,-0x4870(at)
 const DISPLAY_TAIL_ORIG_WORD1: u32 = 0x3C01_8008; // lui at,0x8008
 /// One-shot "next MP deduct is free" flag, set by the conversion and
 /// consumed by the MP-skip hook. Battle actions execute strictly one at a
 /// time, so a single global cell suffices.
-pub const FREECAST_FLAG_VA: u32 = DELILAS_NAME_VA + 4 * 4;
+pub const FREECAST_FLAG_VA: u32 = DISPLAY_TAIL_VA;
 
 // --- derived string / data addresses ---------------------------------------
 
-pub const ELIXIR_NAME_VA: u32 = ELIXIR_ARM_VA + 27 * 4;
-pub const ELIXIR_DESC_VA: u32 = CONV1_VA + 18 * 4;
-pub const SERU_NAME_VA: u32 = CONV2_VA + 28 * 4;
-pub const DELILAS_DESC_VA: u32 = CONV2_VA + 21 * 4;
-pub const SERU_DESC_VA: u32 = STRIKE_VA + 50 * 4;
+pub const SERU_NAME_VA: u32 = CONV2_VA + 21 * 4;
+pub const FURY_NAME_VA: u32 = CONV2_VA + 25 * 4;
+pub const ELIXIR_NAME_VA: u32 = CONV2_VA + 28 * 4;
+pub const ELIXIR_DESC_VA: u32 = FURY_ARM_VA + 45 * 4;
+pub const SERU_DESC_VA: u32 = FURY_ARM_VA + 51 * 4;
+pub const FURY_DESC_VA: u32 = FURY_ARM_VA + 58 * 4;
 
 pub const ELIXIR_NAME: &[u8] = b"Nature's Elixir\0";
-pub const ELIXIR_DESC: &[u8] = b"Full HP&MP.\0";
-pub const SERU_NAME: &[u8] = b"Seru Tear\0";
-pub const SERU_DESC: &[u8] = b"Sheds your|Ra-Seru.\0";
-pub const DELILAS_NAME: &[u8] = b"Delilas Tear\0";
-pub const DELILAS_DESC: &[u8] = b"A Delilas sibling|attacks.\0";
+pub const ELIXIR_DESC: &[u8] = b"Restores full HP & MP.\0";
+pub const SERU_NAME: &[u8] = b"Ra-Seru Tear\0";
+pub const SERU_DESC: &[u8] = b"Sheds your|Ra-Seru summon.\0";
+pub const FURY_NAME: &[u8] = b"Fury Bloom\0";
+pub const FURY_DESC: &[u8] = b"Party-wide|Fury Boost.\0";
 
 /// The three Ra-Seru summon spell ids (Meta / Terra / Ozma), each `class
 /// 0x32` / MP 240 / all-enemies in the spell table. The conversion derives
@@ -246,7 +252,7 @@ const GRANT_RETURN_VA: u32 = 0x801D_1158;
 /// the retail one. A dead target skips the MP fill and lets the HP arm's
 /// own dead-check no-op the item.
 pub fn assemble_elixir_arm() -> Vec<u32> {
-    const HP: usize = 25;
+    const HP: usize = 27;
     let words = vec![
         andi(V0, S3, 0xff),                   // 0
         sll(V1, V0, 2),                       // 1: v1 = slot*4 (kept)
@@ -273,11 +279,16 @@ pub fn assemble_elixir_arm() -> Vec<u32> {
         lw(V0, V0, 0),                        // 22: actor
         subu(T3, ZERO, T3),                   // 23: -mp gained (delay filler)
         sh(T3, V0, 0x178),                    // 24: MP mirror (retail MP-arm idiom)
-        // HP (idx 25): the retail full-heal + popup + exit.
-        j(HP_ARM_VA), // 25
-        nop(),        // 26: (delay)
+        // The heal cue the cast-audio dispatcher (`FUN_801F3990`) plays for
+        // the retail item classes 0..2 - its class jump table stops at 9,
+        // so custom classes are silent unless the arm plays it itself.
+        jal(SFX_CUE_VA),        // 25
+        addiu(A0, ZERO, 0x20C), // 26: (delay) the heal-item cue
+        // HP (idx 27): the retail full-heal + popup + exit.
+        j(HP_ARM_VA), // 27
+        nop(),        // 28: (delay)
     ];
-    debug_assert_eq!(words.len(), 27);
+    debug_assert_eq!(words.len(), 29);
     words
 }
 
@@ -339,7 +350,7 @@ pub fn assemble_conversion_stage2() -> Vec<u32> {
         addiu(V0, ZERO, TEAR_CLASS as u16),    // 1
         bne(T3, V0, (OUT - (2 + 1)) as i16),   // 2: not a tear
         nop(),                                 // 3: (delay)
-        bne(T4, ZERO, (OUT - (4 + 1)) as i16), // 4: Delilas tier stays an item
+        bne(T4, ZERO, (OUT - (4 + 1)) as i16), // 4: Fury Bloom tier stays an item
         nop(),                                 // 5: (delay)
         lui(T0, hi(BCTX_PTR_VA)),              // 6
         lw(T0, T0, lo(BCTX_PTR_VA)),           // 7: battle ctx
@@ -388,21 +399,18 @@ pub fn assemble_mp_skip() -> Vec<u32> {
     words
 }
 
-/// Assemble the Delilas strike arm (entered via `APPLY_JT[0x49]`, the
-/// applier frame; battle-gated - the tears' field bit is clear, so the only
-/// field-side reader, the greyed item menu, never applies one). Picks the
-/// first living enemy (slots 3..7), deals `500 + rand%512`, clamped to
-/// current HP, through the retail accounting (popup accumulator at
-/// `actor+0x10`, HP halfword, flinch-or-death anim pick from the actor's
-/// own `+0x1EF`/`+0x1F1` bytes - the class-14 arm's idiom), and fires the
-/// cue-group expander for the flash.
-pub fn assemble_delilas_strike() -> Vec<u32> {
-    const LOOP: usize = 8;
-    const FOUND: usize = 22;
-    const NOCL: usize = 34;
-    const FLINCH: usize = 45;
-    const STORE: usize = 47;
-    const EXIT: usize = 48;
+/// Assemble the Fury Bloom arm (entered via `APPLY_JT[0x49]` for a tier-1
+/// class-`0x49` item, the applier frame; battle-gated - the field bit is
+/// clear so the field menu greys it). Sets the Fury Boost gauge flag
+/// (`actor+0x1F9 = 1`, exactly the retail class-5 arm's write) on every
+/// **living** party member, fires the retail Fury cue group on the acting
+/// character, and plays the item chime. The retail arm is single-target;
+/// party-wide needs this custom arm because group application lives inside
+/// each class arm, not in the dispatcher.
+pub fn assemble_fury_arm() -> Vec<u32> {
+    const LOOP: usize = 9;
+    const NEXT: usize = 18;
+    const EXIT: usize = 33;
     let words = vec![
         lui(V0, hi(GAME_MODE_VA)),            // 0
         lh(V0, V0, lo(GAME_MODE_VA)),         // 1
@@ -411,57 +419,42 @@ pub fn assemble_delilas_strike() -> Vec<u32> {
         nop(),                                // 4: (delay)
         lui(A1, hi(ACTOR_TABLE_VA)),          // 5
         addiu(A1, A1, lo(ACTOR_TABLE_VA)),    // 6
-        addiu(T0, ZERO, 3),                   // 7
-        // LOOP (idx 8): first living enemy slot.
-        sll(V0, T0, 2),                           // 8
-        addu(V0, V0, A1),                         // 9
-        lw(V0, V0, 0),                            // 10
-        nop(),                                    // 11
-        lhu(V1, V0, 0x14c),                       // 12
-        nop(),                                    // 13
-        bne(V1, ZERO, (FOUND - (14 + 1)) as i16), // 14
-        nop(),                                    // 15: (delay)
-        addiu(T0, T0, 1),                         // 16
-        sltiu(V0, T0, 8),                         // 17
-        bne(V0, ZERO, (LOOP as i16) - (18 + 1)),  // 18
-        nop(),                                    // 19: (delay)
-        j(STRIKE_VA + (EXIT as u32) * 4),         // 20: no living enemy
-        nop(),                                    // 21: (delay)
-        // FOUND (idx 22): v0 = target actor, t0 = slot.
-        addu(S1, V0, ZERO),                      // 22
-        addu(S4, T0, ZERO),                      // 23
-        jal(RAND_VA),                            // 24
-        nop(),                                   // 25: (delay)
-        andi(V0, V0, 0x1FF),                     // 26
-        addiu(V0, V0, 500),                      // 27: dmg = 500 + rand%512
-        lhu(V1, S1, 0x14c),                      // 28: cur HP
-        nop(),                                   // 29
-        sltu(T1, V1, V0),                        // 30
-        beq(T1, ZERO, (NOCL - (31 + 1)) as i16), // 31: no clamp needed
-        nop(),                                   // 32: (delay)
-        addu(V0, V1, ZERO),                      // 33: clamp dmg = cur HP
-        // NOCL (idx 34): apply through the retail accounting.
-        lw(T2, S1, 0x10),                          // 34
-        nop(),                                     // 35
-        addu(T2, T2, V0),                          // 36: popup accumulator +=
-        sw(T2, S1, 0x10),                          // 37
-        subu(V1, V1, V0),                          // 38
-        sh(V1, S1, 0x14c),                         // 39: HP -= dmg
-        bne(V1, ZERO, (FLINCH - (40 + 1)) as i16), // 40
-        nop(),                                     // 41: (delay)
-        lbu(V0, S1, 0x1f1),                        // 42: death anim
-        j(STRIKE_VA + (STORE as u32) * 4),         // 43
-        nop(),                                     // 44: (delay - must NOT load flinch)
-        // FLINCH (idx 45):
-        lbu(V0, S1, 0x1ef), // 45
-        nop(),              // 46
-        // STORE (idx 47):
-        sb(V0, S1, 0x1da), // 47
-        // EXIT (idx 48):
-        j(APPLY_DEFAULT_ARM), // 48
-        nop(),                // 49: (delay)
+        addiu(T1, ZERO, 1),                   // 7: the gauge flag value
+        addiu(T0, ZERO, 0),                   // 8
+        // LOOP (idx 9): every living party slot 0..2.
+        sll(V0, T0, 2),                          // 9
+        addu(V0, V0, A1),                        // 10
+        lw(V0, V0, 0),                           // 11
+        nop(),                                   // 12
+        lhu(V1, V0, 0x14c),                      // 13
+        nop(),                                   // 14
+        beq(V1, ZERO, (NEXT - (15 + 1)) as i16), // 15: dead -> skip
+        nop(),                                   // 16: (delay)
+        sb(T1, V0, 0x1f9),                       // 17: Fury Boost flag
+        // NEXT (idx 18):
+        addiu(T0, T0, 1),                        // 18
+        sltiu(V0, T0, 3),                        // 19
+        bne(V0, ZERO, (LOOP as i16) - (20 + 1)), // 20
+        nop(),                                   // 21: (delay)
+        // The retail class-5 cue (tint 0x004040FF, state 0x100403FF,
+        // group 7) on the acting character.
+        lui(A2, hi(BCTX_PTR_VA)),    // 22
+        lw(A2, A2, lo(BCTX_PTR_VA)), // 23
+        lui(A0, 0x40),               // 24: (fills a2 delay)
+        lbu(A2, A2, 0x13),           // 25: acting slot
+        ori(A0, A0, 0x40ff),         // 26
+        lui(A1, 0x1004),             // 27
+        ori(A1, A1, 0x3ff),          // 28
+        jal(CUE_EXPANDER_VA),        // 29
+        addiu(A3, ZERO, 7),          // 30: (delay) group
+        // The item chime (see the elixir arm's note).
+        jal(SFX_CUE_VA),        // 31
+        addiu(A0, ZERO, 0x20C), // 32: (delay)
+        // EXIT (idx 33):
+        j(APPLY_DEFAULT_ARM), // 33
+        nop(),                // 34: (delay)
     ];
-    debug_assert_eq!(words.len(), 50);
+    debug_assert_eq!(words.len(), 35);
     words
 }
 
@@ -475,20 +468,20 @@ pub fn assemble_delilas_strike() -> Vec<u32> {
 pub fn assemble_grant_routine() -> Vec<u32> {
     const OUT: usize = 14;
     let words = vec![
-        addiu(S0, S0, 0x56c),                         // 0: replay the displaced addiu
-        lui(T0, hi(COURSE_GLOBAL_VA)),                // 1
-        lw(T1, T0, lo(COURSE_GLOBAL_VA)),             // 2
-        addiu(T2, ZERO, 3),                           // 3
-        bne(T1, T2, (OUT - (4 + 1)) as i16),          // 4: not the Delilas course
-        addiu(A1, ZERO, 1),                           // 5: (delay) count = 1
-        jal(GIVE_ITEM_VA),                            // 6
-        addiu(A0, ZERO, ELIXIR_ITEM_ID as u16),       // 7: (delay)
-        addiu(A1, ZERO, 1),                           // 8
-        jal(GIVE_ITEM_VA),                            // 9
-        addiu(A0, ZERO, SERU_TEAR_ITEM_ID as u16),    // 10: (delay)
-        addiu(A1, ZERO, 1),                           // 11
-        jal(GIVE_ITEM_VA),                            // 12
-        addiu(A0, ZERO, DELILAS_TEAR_ITEM_ID as u16), // 13: (delay)
+        addiu(S0, S0, 0x56c),                      // 0: replay the displaced addiu
+        lui(T0, hi(COURSE_GLOBAL_VA)),             // 1
+        lw(T1, T0, lo(COURSE_GLOBAL_VA)),          // 2
+        addiu(T2, ZERO, 3),                        // 3
+        bne(T1, T2, (OUT - (4 + 1)) as i16),       // 4: not the Delilas course
+        addiu(A1, ZERO, 1),                        // 5: (delay) count = 1
+        jal(GIVE_ITEM_VA),                         // 6
+        addiu(A0, ZERO, ELIXIR_ITEM_ID as u16),    // 7: (delay)
+        addiu(A1, ZERO, 1),                        // 8
+        jal(GIVE_ITEM_VA),                         // 9
+        addiu(A0, ZERO, SERU_TEAR_ITEM_ID as u16), // 10: (delay)
+        addiu(A1, ZERO, 1),                        // 11
+        jal(GIVE_ITEM_VA),                         // 12
+        addiu(A0, ZERO, FURY_ITEM_ID as u16),      // 13: (delay)
         // OUT (idx 14): replay the displaced jal + delay, rejoin.
         GRANT_DISPLACED_JAL,   // 14
         GRANT_DISPLACED_DELAY, // 15: (delay) move a0,s0
@@ -557,19 +550,19 @@ type CaveRegion = (u32, usize, [u32; 2], Vec<u8>, &'static str);
 
 /// The seven cave regions.
 fn cave_payloads() -> Vec<CaveRegion> {
-    let mut elixir = words_to_bytes(assemble_elixir_arm());
-    elixir.extend_from_slice(&padded(ELIXIR_NAME));
-    let mut conv1 = words_to_bytes(assemble_conversion_stage1());
-    conv1.extend_from_slice(&padded(ELIXIR_DESC));
+    let elixir = words_to_bytes(assemble_elixir_arm());
+    let conv1 = words_to_bytes(assemble_conversion_stage1());
     let mut conv2 = words_to_bytes(assemble_conversion_stage2());
-    conv2.extend_from_slice(&padded(DELILAS_DESC));
     conv2.extend_from_slice(&padded(SERU_NAME));
-    let mut strike = words_to_bytes(assemble_delilas_strike());
-    strike.extend_from_slice(&padded(SERU_DESC));
-    strike.extend_from_slice(&words_to_bytes(assemble_mp_skip()));
+    conv2.extend_from_slice(&padded(FURY_NAME));
+    conv2.extend_from_slice(&padded(ELIXIR_NAME));
+    let mut fury = words_to_bytes(assemble_fury_arm());
+    fury.extend_from_slice(&words_to_bytes(assemble_mp_skip()));
+    fury.extend_from_slice(&padded(ELIXIR_DESC));
+    fury.extend_from_slice(&padded(SERU_DESC));
+    fury.extend_from_slice(&padded(FURY_DESC));
     let grant = words_to_bytes(assemble_grant_routine());
-    let mut tail = padded(DELILAS_NAME);
-    tail.extend_from_slice(&0u32.to_le_bytes()); // the free-cast flag cell
+    let tail = 0u32.to_le_bytes().to_vec(); // the free-cast flag cell
     vec![
         (
             ELIXIR_ARM_VA,
@@ -590,14 +583,14 @@ fn cave_payloads() -> Vec<CaveRegion> {
             CONV2_REGION_CAPACITY,
             [CONV2_ORIG_HEAD, CONV2_ORIG_WORD1],
             conv2,
-            "conversion stage-2 cave",
+            "conversion stage-2 + names cave",
         ),
         (
-            STRIKE_VA,
-            STRIKE_REGION_CAPACITY,
-            [STRIKE_ORIG_HEAD, STRIKE_ORIG_WORD1],
-            strike,
-            "Delilas strike + MP-skip cave (class-14 arm)",
+            FURY_ARM_VA,
+            FURY_REGION_CAPACITY,
+            [FURY_ORIG_HEAD, FURY_ORIG_WORD1],
+            fury,
+            "Fury Bloom + MP-skip cave (class-14 arm)",
         ),
         (
             GRANT_VA,
@@ -607,11 +600,11 @@ fn cave_payloads() -> Vec<CaveRegion> {
             "grant cave (AI-block tail)",
         ),
         (
-            DELILAS_NAME_VA,
+            DISPLAY_TAIL_VA,
             DISPLAY_TAIL_CAPACITY,
             [DISPLAY_TAIL_ORIG_HEAD, DISPLAY_TAIL_ORIG_WORD1],
             tail,
-            "display-cave tail",
+            "display-cave tail (free-cast flag)",
         ),
     ]
 }
@@ -643,12 +636,12 @@ impl CustomItemsInjection {
                 "Seru Tear item record",
             ),
             (
-                DELILAS_TEAR_ITEM_ID,
-                DELILAS_TEAR_SUB,
-                DELILAS_NAME_VA,
-                DELILAS_DESC_VA,
+                FURY_ITEM_ID,
+                FURY_SUB,
+                FURY_NAME_VA,
+                FURY_DESC_VA,
                 [0x1901, 0x01F4, 0xB500, 0x8007, 0xB508, 0x8007],
-                "Delilas Tear item record",
+                "Fury Bloom item record",
             ),
         ] {
             let off = scus_off(scus, ITEM_TABLE_VA + id as u32 * 12)?;
@@ -676,9 +669,9 @@ impl CustomItemsInjection {
                 "Seru Tear descriptor",
             ),
             (
-                DELILAS_TEAR_SUB,
-                [TEAR_CLASS, 1, 0x84, 0x41],
-                "Delilas Tear descriptor",
+                FURY_SUB,
+                [TEAR_CLASS, 1, 0xA4, 0x41],
+                "Fury Bloom descriptor",
             ),
         ] {
             let off = scus_off(scus, DESC_TABLE_VA + sub as u32 * 4)?;
@@ -694,7 +687,7 @@ impl CustomItemsInjection {
         expect_word(scus, apply_off, APPLY_DEFAULT_ARM, "applier JT[0x48]")?;
         expect_word(scus, apply_off + 4, APPLY_DEFAULT_ARM, "applier JT[0x49]")?;
         let mut jt = ELIXIR_ARM_VA.to_le_bytes().to_vec();
-        jt.extend_from_slice(&STRIKE_VA.to_le_bytes());
+        jt.extend_from_slice(&FURY_ARM_VA.to_le_bytes());
         scus_writes.push(Write {
             off: apply_off,
             bytes: jt,
@@ -781,12 +774,7 @@ pub fn probe_ram_writes() -> Vec<(u32, Vec<u8>)> {
     for (id, sub, name_va, desc_va) in [
         (ELIXIR_ITEM_ID, ELIXIR_SUB, ELIXIR_NAME_VA, ELIXIR_DESC_VA),
         (SERU_TEAR_ITEM_ID, SERU_TEAR_SUB, SERU_NAME_VA, SERU_DESC_VA),
-        (
-            DELILAS_TEAR_ITEM_ID,
-            DELILAS_TEAR_SUB,
-            DELILAS_NAME_VA,
-            DELILAS_DESC_VA,
-        ),
+        (FURY_ITEM_ID, FURY_SUB, FURY_NAME_VA, FURY_DESC_VA),
     ] {
         out.push((
             ITEM_TABLE_VA + id as u32 * 12,
@@ -802,11 +790,11 @@ pub fn probe_ram_writes() -> Vec<(u32, Vec<u8>)> {
         vec![TEAR_CLASS, 0, 0x84, 0x41],
     ));
     out.push((
-        DESC_TABLE_VA + DELILAS_TEAR_SUB as u32 * 4,
-        vec![TEAR_CLASS, 1, 0x84, 0x41],
+        DESC_TABLE_VA + FURY_SUB as u32 * 4,
+        vec![TEAR_CLASS, 1, 0xA4, 0x41],
     ));
     let mut jt = ELIXIR_ARM_VA.to_le_bytes().to_vec();
-    jt.extend_from_slice(&STRIKE_VA.to_le_bytes());
+    jt.extend_from_slice(&FURY_ARM_VA.to_le_bytes());
     out.push((APPLY_JT_VA + ELIXIR_CLASS as u32 * 4, jt));
     let mut vt = VALID_ALWAYS_ARM.to_le_bytes().to_vec();
     vt.extend_from_slice(&VALID_ALWAYS_ARM.to_le_bytes());
@@ -839,39 +827,38 @@ mod tests {
     #[test]
     fn string_addresses_match_the_payload_layout() {
         assert_eq!(
+            SERU_NAME_VA,
+            CONV2_VA + bytes_of(assemble_conversion_stage2()) as u32
+        );
+        assert_eq!(FURY_NAME_VA, SERU_NAME_VA + padded(SERU_NAME).len() as u32);
+        assert_eq!(
             ELIXIR_NAME_VA,
-            ELIXIR_ARM_VA + bytes_of(assemble_elixir_arm()) as u32
+            FURY_NAME_VA + padded(FURY_NAME).len() as u32
+        );
+        assert_eq!(
+            MPSKIP_VA,
+            FURY_ARM_VA + bytes_of(assemble_fury_arm()) as u32
         );
         assert_eq!(
             ELIXIR_DESC_VA,
-            CONV1_VA + bytes_of(assemble_conversion_stage1()) as u32
-        );
-        assert_eq!(
-            DELILAS_DESC_VA,
-            CONV2_VA + bytes_of(assemble_conversion_stage2()) as u32
-        );
-        assert_eq!(
-            SERU_NAME_VA,
-            DELILAS_DESC_VA + padded(DELILAS_DESC).len() as u32
+            MPSKIP_VA + bytes_of(assemble_mp_skip()) as u32
         );
         assert_eq!(
             SERU_DESC_VA,
-            STRIKE_VA + bytes_of(assemble_delilas_strike()) as u32
+            ELIXIR_DESC_VA + padded(ELIXIR_DESC).len() as u32
         );
-        assert_eq!(
-            FREECAST_FLAG_VA,
-            DELILAS_NAME_VA + padded(DELILAS_NAME).len() as u32
-        );
+        assert_eq!(FURY_DESC_VA, SERU_DESC_VA + padded(SERU_DESC).len() as u32);
     }
 
     #[test]
     fn elixir_arm_shape() {
         let w = assemble_elixir_arm();
-        assert_eq!(w.len(), 27);
-        // Dead-target branch reaches the HP tail-jump.
-        assert_eq!(w[7], beq(T2, ZERO, 17));
-        assert_eq!(w[17], bne(V0, T4, 7));
-        assert_eq!(w[25], j(HP_ARM_VA));
+        assert_eq!(w.len(), 29);
+        // Dead-target branch reaches the HP tail-jump (skipping the chime).
+        assert_eq!(w[7], beq(T2, ZERO, 19));
+        assert_eq!(w[17], bne(V0, T4, 9));
+        assert_eq!(w[25], jal(SFX_CUE_VA));
+        assert_eq!(w[27], j(HP_ARM_VA));
     }
 
     #[test]
@@ -897,15 +884,14 @@ mod tests {
     }
 
     #[test]
-    fn strike_shape() {
-        let w = assemble_delilas_strike();
-        assert_eq!(w.len(), 50);
-        assert_eq!(w[48], j(APPLY_DEFAULT_ARM));
+    fn fury_arm_shape() {
+        let w = assemble_fury_arm();
+        assert_eq!(w.len(), 35);
+        assert_eq!(w[33], j(APPLY_DEFAULT_ARM));
         // The loop's back-branch lands on its own head.
-        assert_eq!(w[18], bne(V0, ZERO, -11));
-        // The MP-skip and Seru desc pack after the arm inside the class-14
-        // region.
-        assert_eq!(MPSKIP_VA, SERU_DESC_VA + padded(SERU_DESC).len() as u32);
+        assert_eq!(w[20], bne(V0, ZERO, -12));
+        // The retail class-5 gauge-flag write, per living member.
+        assert_eq!(w[17], sb(T1, V0, 0x1f9));
     }
 
     #[test]
@@ -923,12 +909,9 @@ mod tests {
     #[test]
     fn item_ids_and_subs_are_the_censused_frees() {
         assert_eq!(
-            [ELIXIR_ITEM_ID, SERU_TEAR_ITEM_ID, DELILAS_TEAR_ITEM_ID],
+            [ELIXIR_ITEM_ID, SERU_TEAR_ITEM_ID, FURY_ITEM_ID],
             [0xB9, 0x12, 0x1A]
         );
-        assert_eq!(
-            [ELIXIR_SUB, SERU_TEAR_SUB, DELILAS_TEAR_SUB],
-            [0x34, 0x35, 0x36]
-        );
+        assert_eq!([ELIXIR_SUB, SERU_TEAR_SUB, FURY_SUB], [0x34, 0x35, 0x36]);
     }
 }

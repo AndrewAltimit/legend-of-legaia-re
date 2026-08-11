@@ -11,8 +11,8 @@
 --      +0x1DE flips to 2, spell = the caster's own Ra-Seru summon), the
 --      MP-skip receipt (MPSKIP fires with the flag set, MP unchanged),
 --      and the summon completing (battle continues afterward).
---   3. Delilas Tear (0x1A): expect the strike receipt (STRIKE fires),
---      an enemy losing 500..1011 HP with a flinch, battle continues.
+--   3. Fury Bloom (0x1A): expect the fury receipt (FURY ARM fires) and
+--      every living party member's +0x1F9 gauge flag set.
 --
 -- The SCUS half (records / descriptors / JT words / caves) is RAM-installed
 -- via LEGAIA_POKES; the battle-overlay hooks ride the patched --iso.
@@ -37,10 +37,10 @@ local BAG         = 0x80085958 -- 0x80084140 + 0x1818, 2 bytes/slot
 local SEED_HOOK   = 0x801E2D60
 local CONV1_VA    = 0x8003EDAC
 local CONV2_VA    = 0x8003F210
-local MPSKIP_VA   = 0x80042178 -- STRIKE_VA + 55*4 (packed after the strike arm)
-local STRIKE_VA   = 0x8004209C
+local MPSKIP_VA   = 0x80042128 -- FURY_ARM_VA + 35*4 (packed after the fury arm)
+local FURY_VA     = 0x8004209C
 local ELIXIR_ARM  = 0x80025054
-local FLAG_VA     = 0x80026110
+local FLAG_VA     = 0x80026100 -- DISPLAY_TAIL_VA (flag moved to word 9)
 
 local FRAMES = probe.getenv_num("LEGAIA_FRAMES", 45000)
 local POKES_RAW = probe.getenv("LEGAIA_POKES", "")
@@ -109,8 +109,8 @@ probe.run({
         probe.arm_breakpoint(MPSKIP_VA, "Exec", 4, "mpskip", function()
             CSV:row("%d,0,MPSKIP flag=%d", tick_now, probe.read_u8(FLAG_VA) or -1)
         end)
-        probe.arm_breakpoint(STRIKE_VA, "Exec", 4, "strike", function()
-            CSV:row("%d,0,STRIKE", tick_now)
+        probe.arm_breakpoint(FURY_VA, "Exec", 4, "fury", function()
+            CSV:row("%d,0,FURY ARM", tick_now)
         end)
         probe.arm_breakpoint(ELIXIR_ARM, "Exec", 4, "elixir", function()
             CSV:row("%d,0,ELIXIR ARM", tick_now)
@@ -188,13 +188,14 @@ probe.run({
                 local a = probe.read_u32(ACTOR_TABLE + slot * 4) or 0
                 if a > 0x80000000 and a < 0x80200000 then
                     cells[#cells + 1] = string.format(
-                        "s%d q=%X tgt=%X act=%02X hp=%d mp=%d",
+                        "s%d q=%X tgt=%X act=%02X hp=%d mp=%d f=%d",
                         slot,
                         probe.read_u8(a + 0x1DE) or 0,
                         probe.read_u8(a + 0x1DD) or 0,
                         probe.read_u8(a + 0x1DF) or 0,
                         probe.read_u16(a + 0x14C) or 0,
-                        probe.read_u16(a + 0x150) or 0)
+                        probe.read_u16(a + 0x150) or 0,
+                        probe.read_u8(a + 0x1F9) or 0)
                 end
             end
             local c = bctx()
