@@ -911,6 +911,9 @@ pub fn import_obj(
                 "palette {gi} owns {} distinct colours ({budget} fit) - quantizing",
                 colors.len()
             ));
+            if std::env::var_os("LEGAIA_MODEL_DEBUG").is_some() {
+                eprintln!("[debug] palette {gi} owned colours: {colors:?}");
+            }
             colors.truncate(budget);
         }
         let mut clut = [0u16; 16];

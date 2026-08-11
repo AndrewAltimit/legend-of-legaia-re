@@ -2702,12 +2702,16 @@ is the same in-place `patch_monster_slot` edit `monster-block` uses, and
 the command verifies the patched image re-decodes (part count + every
 animation) before reporting success.
 
-A complete worked example ships in the repo: the **Twintail Duelist**
+Two worked examples ship in the repo. The **Twintail Duelist**
 (`data/models/twintail_duelist/`, generator
-`scripts/models/generate_twintail_duelist.py`) - an original character
+`scripts/models/generate_twintail_duelist.py`) is an original character
 rigged to Lu Delilas's 15-part skeleton, used by the
-`monster_model_real` disc oracle. CLI-only for now (the browser
-ROM-patcher page does not expose model replacement).
+`monster_model_real` disc oracle. `scripts/models/lu_twintails_mod.py`
+is the surgical variant: it appends twintails to the *retail* Lu's
+exported OBJ, harvesting UVs from her own hair faces so the texture page
+and palettes stay untouched (the output is disc-derived and stays
+local). CLI-only for now (the browser ROM-patcher page does not expose
+model replacement).
 
 ### Re-pack slack
 
