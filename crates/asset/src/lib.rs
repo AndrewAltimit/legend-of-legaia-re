@@ -82,6 +82,7 @@ pub mod new_game;
 pub mod ocean;
 pub mod overlay_ptr_table;
 pub mod pack;
+pub mod party_swap;
 pub mod place_names;
 pub mod player_anm;
 pub mod save_icon;
