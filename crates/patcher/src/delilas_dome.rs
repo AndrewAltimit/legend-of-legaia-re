@@ -65,11 +65,18 @@
 //! 1. **Seed detour** ([`SEED_HOOK_VA`] `0x801CEBCC`, the `lw v0,word` reload
 //!    just before the decode). Replaced with `j` into the cave routine, which
 //!    tests the one-shot flag [`COURSE_FLAG`] (`0x539`, set by the koin1
-//!    option): if set, it stores [`COURSE3_SEED_WORD`] (course 3, round 0,
-//!    dome-marker bit) into the word and clears the flag, then replays the
-//!    displaced `lw` and returns. Clearing the flag makes it one-shot - the
-//!    word carries course 3 through the remaining rounds (the continuing-leg
-//!    path), and a later normal dome entry reads `0x539` clear.
+//!    option): if set **and the retail flag seed left the word at its
+//!    no-course default `1`** (only the Delilas arm, which clears all three
+//!    course-unlock flags, produces that - a retail difficulty arm's own
+//!    seed `0x101`/`0x111`/`0x321` wins the guard), it stores
+//!    [`COURSE3_SEED_WORD`] (course 3, round 0, dome-marker bit) into the
+//!    word; either way it clears the flag, then replays the displaced `lw`
+//!    and returns. Clearing on both paths makes the flag one-shot *and*
+//!    scrubs a stale one - a save state frozen during the warp flourish
+//!    otherwise redirected every later dome entry (Beginner included) into
+//!    the Delilas course. The word carries course 3 through the remaining
+//!    rounds (the continuing-leg path), and a later normal dome entry reads
+//!    `0x539` clear.
 //! 2. **Course descriptor** for course 3 at [`COURSE3_DESC_VA`] (`0x801D1A20`
 //!    = the descriptor table base `0x801D1A08` + `3*8`): `{i32 round_count=2;
 //!    ptr first_round = cave roster}`. All four descriptor readers compute
@@ -119,8 +126,11 @@ pub const ARENA_BASE_VA: u32 = 0x801C_E818;
 
 /// One-shot SYSTEM flag the koin1 Delilas option sets to request course 3.
 /// Sits just past the retail course-unlock flags (`0x536`/`0x537`/`0x538`);
-/// the seed routine clears it after seeding, so it never persists into a
-/// normal dome entry. Absent from the disc-wide field/motion flag censuses.
+/// the seed routine clears it whenever it finds it set - after seeding on a
+/// Delilas entry, and as a scrub on a retail-class entry that inherited a
+/// stale flag (e.g. from a save state frozen during the warp flourish) -
+/// so it never persists into a normal dome entry. Absent from the
+/// disc-wide field/motion flag censuses.
 pub const COURSE_FLAG: u16 = 0x539;
 
 /// Packed course/round word the seed routine writes for course 3, round 0:
@@ -686,38 +696,77 @@ pub const CAVE_END_VA: u32 = 0x8007_AF00;
 /// must end below it even though the bytes scan as zero.
 pub const GAP_END_VA: u32 = 0x8007_AF00;
 
-/// Assemble the seed routine: if [`COURSE_FLAG`] is set, store
-/// [`COURSE3_SEED_WORD`] into the course word and clear the flag; always
-/// replay the displaced `lw v0,word` and return to [`SEED_RETURN_VA`].
+/// Assemble the seed routine: if [`COURSE_FLAG`] is set **and no retail
+/// difficulty arm chose a course this entry** (the retail fresh-path seed
+/// left the word at its no-flags default `1` - only the Delilas arm, which
+/// clears all three course-unlock flags, produces that), store
+/// [`COURSE3_SEED_WORD`] into the course word; clear the flag **whenever it
+/// was set**, hijacked or not; always replay the displaced `lw v0,word` and
+/// return to [`SEED_RETURN_VA`].
 ///
-/// `s1` (the `0x80080000` base) is live across the detour and preserved by the
-/// flag helpers (callee-saved); `ra` is saved on `FUN_801CEA6C`'s own frame, so
-/// the `jal`s here are free to clobber it. `v0`/`a0`/`t0` are scratch.
+/// The word guard is the stale-flag scrub: `0x539` normally lives only for
+/// the scripted warp flourish between the koin1 arm and this routine, but a
+/// save state (or an interrupted enrollment) can freeze it set, and without
+/// the guard every later dome entry - Beginner included - started the
+/// Delilas course. With it, a retail arm's own seed (`0x101`/`0x111`/
+/// `0x321 != 1`) wins and the stale flag is cleared as a side effect.
+///
+/// `s1` (the `0x80080000` base) is live across the detour and preserved by
+/// the flag helpers (callee-saved); `s2 == 1` is the retail fresh-path
+/// invariant this very function relies on for its own `sw s2,word` default
+/// seed at `0x801CEB8C`, and the flag helpers touch only `v0`/`v1`/`a0`/
+/// `a1`; `ra` is saved on `FUN_801CEA6C`'s own frame, so the `jal`s here are
+/// free to clobber it. `v0`/`a0`/`t0` are scratch.
 pub fn assemble_routine() -> Vec<u32> {
-    const SKIP: usize = 11; // index of the replay `lw` (the flag-clear tail target)
-    let flag_clear_skip = (SKIP as i32 - (3 + 1)) as i16;
+    const SKIP_SEED: usize = 10; // flag set but a retail arm seeded: clear only
+    const RELOAD: usize = 12; // replay `lw` in the return jump's delay slot
 
     let words = vec![
-        addiu(A0, ZERO, COURSE_FLAG),   // 0:  a0 = 0x539
-        jal(FLAG_TEST_FUNC_VA),         // 1:  v0 = flag_test(0x539)
-        nop(),                          // 2:  (branch delay)
-        beq(V0, ZERO, flag_clear_skip), // 3:  flag clear -> SKIP (replay)
-        nop(),                          // 4:  (branch delay)
-        // flag set: word = 0x431 (course 3, round 0)
-        lui(T0, imm_hi(COURSE3_SEED_WORD)),     // 5: \ t0 = 0x431
-        ori(T0, T0, imm_lo(COURSE3_SEED_WORD)), // 6: /
-        sw(T0, S1, WORD_OFF_FROM_S1),           // 7:  word (s1-0x4540) = 0x431
-        addiu(A0, ZERO, COURSE_FLAG),           // 8:  a0 = 0x539
-        jal(FLAG_CLEAR_FUNC_VA),                // 9:  flag_clear(0x539)  (one-shot)
-        nop(),                                  // 10: (branch delay)
-        // SKIP (idx 11): replay displaced `lw v0,word`, return.
-        SEED_HOOK_ORIG,    // 11: lw v0,-0x4540(s1)
+        addiu(A0, ZERO, COURSE_FLAG),             // 0:  a0 = 0x539
+        jal(FLAG_TEST_FUNC_VA),                   // 1:  v0 = flag_test(0x539)
+        nop(),                                    // 2:  (branch delay)
+        beq(V0, ZERO, (RELOAD - (3 + 1)) as i16), // 3:  flag clear -> RELOAD
+        nop(),                                    // 4:  (branch delay)
+        // Flag set: only seed course 3 when the retail flag seed left the
+        // word at its no-course default (s2 == 1) - i.e. the Delilas arm ran.
+        lw(T0, S1, WORD_OFF_FROM_S1), // 5:  t0 = seeded word
+        addiu(A0, ZERO, COURSE_FLAG), // 6:  (load delay) a0 for the clear
+        bne(T0, S2, (SKIP_SEED - (7 + 1)) as i16), // 7:  retail course chosen -> scrub only
+        addiu(T0, ZERO, COURSE3_SEED_WORD as u16), // 8:  (branch delay) t0 = 0x131
+        sw(T0, S1, WORD_OFF_FROM_S1), // 9:  word = 0x131 (course 3, round 0)
+        // SKIP_SEED (idx 10): clear the request flag (one-shot / stale scrub).
+        jal(FLAG_CLEAR_FUNC_VA), // 10: flag_clear(0x539)
+        nop(),                   // 11: (branch delay)
+        // RELOAD (idx 12): return to the decode, replaying the displaced
+        // `lw v0,word` in the delay slot (the `nop` at SEED_RETURN_VA covers
+        // the load delay before the decode's first `v0` read).
         j(SEED_RETURN_VA), // 12: back to the decode
-        nop(),             // 13: (branch delay)
+        SEED_HOOK_ORIG,    // 13: (jump delay) lw v0,-0x4540(s1)
     ];
     debug_assert_eq!(words.len(), 14);
-    debug_assert_eq!(words[SKIP], SEED_HOOK_ORIG);
+    debug_assert_eq!(words[RELOAD + 1], SEED_HOOK_ORIG);
     words
+}
+
+/// Plan the same-size in-place cave rewrite that brings an already-patched
+/// disc's resident seed routine up to [`assemble_routine`]'s current words,
+/// or `None` when it is already current. Older builds shipped the routine
+/// without the stale-[`COURSE_FLAG`] guard, and the apply layer's
+/// idempotence check keys on the seed *hook*, which those builds already
+/// have - so the upgrade must be planned separately.
+pub fn plan_routine_refresh(scus: &[u8]) -> Result<Option<Write>> {
+    let bytes: Vec<u8> = assemble_routine()
+        .iter()
+        .flat_map(|w| w.to_le_bytes())
+        .collect();
+    let off = scus_off(scus, ROUTINE_VA)?;
+    let Some(cur) = scus.get(off..off + bytes.len()) else {
+        bail!("SCUS too short for the seed-routine cave");
+    };
+    if cur == bytes {
+        return Ok(None);
+    }
+    Ok(Some(Write { off, bytes }))
 }
 
 /// The cave roster bytes: 2 x `{u32 name_ptr; u32 monster_id}`, little-endian.
@@ -1250,19 +1299,47 @@ mod tests {
     #[test]
     fn seed_routine_shape() {
         let r = assemble_routine();
+        // The cave layout is packed: the routine must keep its 14-word slot.
         assert_eq!(r.len(), 14);
         // Opens by loading the flag id and testing it.
         assert_eq!(r[0], addiu(A0, ZERO, COURSE_FLAG));
         assert_eq!(r[1], jal(FLAG_TEST_FUNC_VA));
-        // The flag-clear branch target is the replay `lw`.
-        assert_eq!(r[11], SEED_HOOK_ORIG);
-        // beq at idx 3 skips to idx 11 (SKIP): off = 11 - (3+1) = 7.
-        assert_eq!(r[3], beq(V0, ZERO, 7));
-        // Ends by returning to the decode.
+        // beq at idx 3 skips to RELOAD (idx 12): off = 12 - (3+1) = 8.
+        assert_eq!(r[3], beq(V0, ZERO, 8));
+        // The stale-flag guard: reload the retail-seeded word and only seed
+        // course 3 when it is the no-course default (`s2 == 1`); a retail
+        // arm's own seed wins and the branch skips to the flag clear.
+        assert_eq!(r[5], lw(T0, S1, WORD_OFF_FROM_S1));
+        assert_eq!(r[7], bne(T0, S2, 2));
+        assert_eq!(r[8], addiu(T0, ZERO, COURSE3_SEED_WORD as u16));
+        assert_eq!(r[9], sw(T0, S1, WORD_OFF_FROM_S1));
+        // The flag clear runs on BOTH set-flag paths (one-shot + scrub).
+        assert_eq!(r[10], jal(FLAG_CLEAR_FUNC_VA));
+        // Ends by returning to the decode, replaying the displaced `lw` in
+        // the jump's delay slot.
         assert_eq!(r[12], j(SEED_RETURN_VA));
-        // Seeds the course-3 word and clears the flag on the set path.
-        assert_eq!(r[7], sw(T0, S1, WORD_OFF_FROM_S1));
-        assert_eq!(r[9], jal(FLAG_CLEAR_FUNC_VA));
+        assert_eq!(r[13], SEED_HOOK_ORIG);
+    }
+
+    #[test]
+    fn routine_refresh_plans_only_when_stale() {
+        // A minimal PS-X EXE shell whose text segment covers the cave window.
+        let mut scus = vec![0u8; 0x80000];
+        scus[0..8].copy_from_slice(b"PS-X EXE");
+        scus[0x18..0x1C].copy_from_slice(&0x8001_0000u32.to_le_bytes()); // t_addr
+        scus[0x1C..0x20].copy_from_slice(&0x7_0000u32.to_le_bytes()); // t_size
+        let off = legaia_asset::item_names::file_offset_for_va(&scus, ROUTINE_VA).unwrap();
+        let cur: Vec<u8> = assemble_routine()
+            .iter()
+            .flat_map(|w| w.to_le_bytes())
+            .collect();
+        // Stale bytes (an older routine) -> a same-size in-place rewrite.
+        let w = plan_routine_refresh(&scus).unwrap().expect("stale plans");
+        assert_eq!(w.off, off);
+        assert_eq!(w.bytes, cur);
+        // Current bytes -> no write.
+        scus[off..off + cur.len()].copy_from_slice(&cur);
+        assert!(plan_routine_refresh(&scus).unwrap().is_none());
     }
 
     #[test]

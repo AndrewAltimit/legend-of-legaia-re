@@ -86,12 +86,20 @@ pub fn inject_delilas_dome(patcher: &mut DiscPatcher) -> Result<bool> {
         .read_entry(BATTLE_OVERLAY_PROT_INDEX)
         .context("read battle-action overlay (0898) for delilas-dome injection")?;
 
-    // Idempotency: once applied, the seed hook is our `j ROUTINE_VA`.
+    // Idempotency: once applied, the seed hook is our `j ROUTINE_VA`. An
+    // already-patched disc may still carry an older cave routine (the one
+    // without the stale-course-flag guard); refresh it in place when so.
     let seed_off = (SEED_HOOK_VA - ARENA_BASE_VA) as usize;
     let cur = overlay
         .get(seed_off..seed_off + 4)
         .map(|w| u32::from_le_bytes(w.try_into().unwrap()));
     if cur == Some(crate::mips::j(ROUTINE_VA)) {
+        if let Some(w) = crate::delilas_dome::plan_routine_refresh(&scus)? {
+            patcher
+                .patch_named_file(SCUS_NAME, w.off as u64, &w.bytes)
+                .context("refresh delilas-dome seed routine")?;
+            return Ok(true);
+        }
         return Ok(false);
     }
 
@@ -266,7 +274,9 @@ pub fn apply_delilas_challenge(
 
     if sites.already_applied {
         // The menu is already present; ensure the arena course is too (a
-        // re-run over a partially-applied image), then report the no-op.
+        // re-run over a partially-applied image - which also refreshes an
+        // older resident seed routine in place), then report. `changed`
+        // reflects whether any bytes were actually rewritten.
         let dome_injected = inject_delilas_dome(patcher)?;
         if custom_items {
             inject_custom_items(patcher)?;
@@ -279,16 +289,23 @@ pub fn apply_delilas_challenge(
             compressed_len: 0,
             compressed_budget: sites.compressed_budget,
             dome_injected,
-            changed: false,
+            changed: dome_injected,
         });
     }
 
     // Build (and validate) the grown koin1 MAN first, then recompress under the
     // descriptor boundary (greedy, then the optimal packer - the koin1 MAN is
     // sector-aligned with zero slack, and only the optimal packer fits the
-    // grown script back in). Nothing is written if either step fails.
+    // grown script back in). Nothing is written if either step fails. The
+    // award-ceremony narration announces the actual full-clear reward, so
+    // the item list follows the reward toggle.
+    let rewards: &[&str] = if custom_items {
+        &crate::custom_items::REWARD_ANNOUNCE_NAMES
+    } else {
+        &[crate::custom_items::HONEY_ANNOUNCE_NAME]
+    };
     let (new_man, grown) = sites
-        .build()
+        .build(rewards)
         .map_err(|e| anyhow::anyhow!("delilas-challenge build: {e}"))?;
     let Some(stream) = crate::compress_within(&new_man, sites.compressed_budget) else {
         anyhow::bail!(

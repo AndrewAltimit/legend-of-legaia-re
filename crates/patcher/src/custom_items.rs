@@ -204,6 +204,14 @@ pub const SERU_DESC: &[u8] = b"Sheds your|Ra-Seru summon.\0";
 pub const FURY_NAME: &[u8] = b"Fury Bloom\0";
 pub const FURY_DESC: &[u8] = b"Party-wide|Fury Boost.\0";
 
+/// The full-clear rewards in announcement order - the koin1 award-ceremony
+/// narration reads these out on a Delilas win
+/// (`legaia_patcher::delilas_challenge::reward_box_lines`).
+pub const REWARD_ANNOUNCE_NAMES: [&str; 3] = ["Ra-Seru Tear", "Nature's Elixir", "Fury Bloom"];
+/// Honey's retail display name - the announcement when the challenge ships
+/// with the Honey fallback reward instead of the custom items.
+pub const HONEY_ANNOUNCE_NAME: &str = "Honey";
+
 /// The three Ra-Seru summon spell ids (Meta / Terra / Ozma), each `class
 /// 0x32` / MP 240 / all-enemies in the spell table. The conversion derives
 /// the id as `0x9D + roster char id` - always the caster's own.

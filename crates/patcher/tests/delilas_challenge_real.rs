@@ -6,8 +6,8 @@
 
 use legaia_patcher::apply;
 use legaia_patcher::delilas_challenge::{
-    ARENA_ENTER_BGM, COURSE_UNLOCK_FLAGS, DOME_ACTIVE_FLAG, DOME_WARP_OP, DelilasSites,
-    KORU_DEFEATED_FLAG, NEVER_SET_FLAGS,
+    ARENA_ENTER_BGM, CONTEST_WON_FLAG, COURSE_UNLOCK_FLAGS, DOME_ACTIVE_FLAG, DOME_WARP_OP,
+    DelilasSites, KORU_DEFEATED_FLAG, NEVER_SET_FLAGS, reward_box_lines,
 };
 use legaia_patcher::delilas_dome::{
     ARENA_BASE_VA, ARENA_OVERLAY_PROT_INDEX, COURSE_FLAG, COURSE3_DESC_VA, ROSTER_VA, ROUTINE_VA,
@@ -86,9 +86,14 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
         .expect("read SCUS from patched image");
     let routine_off = legaia_asset::item_names::file_offset_for_va(&scus, ROUTINE_VA)
         .expect("resolve routine VA");
-    assert!(
-        scus[routine_off..routine_off + 8].iter().any(|&b| b != 0),
-        "seed routine must be present in the cave"
+    let routine_bytes: Vec<u8> = legaia_patcher::delilas_dome::assemble_routine()
+        .iter()
+        .flat_map(|w| w.to_le_bytes())
+        .collect();
+    assert_eq!(
+        &scus[routine_off..routine_off + routine_bytes.len()],
+        &routine_bytes[..],
+        "seed routine in the cave must match the current (guarded) shape"
     );
     let roster_off =
         legaia_asset::item_names::file_offset_for_va(&scus, ROSTER_VA).expect("resolve roster VA");
@@ -127,6 +132,35 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
     );
     let repatched = patcher2.into_image();
     assert_eq!(repatched, patched, "no-op re-apply must not touch bytes");
+
+    // Upgrade path: a disc patched by an older build carries the guard-less
+    // seed routine behind the same installed hook. Simulate one by writing a
+    // stale word into the resident routine, then re-apply: the cave must be
+    // refreshed to the current shape (and only the cave - the report says
+    // changed).
+    {
+        let mut downgraded = DiscPatcher::open(patched.clone()).expect("open patched");
+        let scus = downgraded.read_named_file("SCUS_942.54").expect("scus");
+        let routine_off = legaia_asset::item_names::file_offset_for_va(&scus, ROUTINE_VA)
+            .expect("resolve routine VA");
+        // Any non-current word will do; 0 is what no shipped routine carries
+        // at its first slot (`addiu a0,zero,0x539`).
+        downgraded
+            .patch_named_file("SCUS_942.54", routine_off as u64, &[0, 0, 0, 0])
+            .expect("plant stale routine word");
+        let stale = downgraded.into_image();
+        let mut up = DiscPatcher::open(stale).expect("open stale");
+        let report_up = apply::apply_delilas_challenge(&mut up, true).expect("upgrade apply");
+        assert!(report_up.changed, "routine refresh must report a change");
+        let upgraded = up.into_image();
+        let re = DiscPatcher::open(upgraded).expect("re-open upgraded");
+        let scus = re.read_named_file("SCUS_942.54").expect("scus");
+        assert_eq!(
+            &scus[routine_off..routine_off + routine_bytes.len()],
+            &routine_bytes[..],
+            "re-apply must refresh an older resident seed routine"
+        );
+    }
 
     // Determinism: applying to a fresh copy of the original produces the
     // identical image.
@@ -257,6 +291,48 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
         }
     }
     assert!(found_picker, "patched MAN must carry the 4-option picker");
+
+    // --- The award-ceremony narration announces the item rewards. ---
+    // Four SYSTEM-flag tests sit at the record's branch point, immediately
+    // before the relocated message run: any course-unlock flag routes to the
+    // retail flow, the contest-won flag to the appended parallel flow.
+    let seam_anchor = b"\x1FThat was a good fight.\x00";
+    let pos = man
+        .windows(seam_anchor.len())
+        .position(|w| w == seam_anchor)
+        .expect("the shared box must survive in the patched MAN");
+    let tests = &man[pos - 16..pos];
+    for (i, &f) in COURSE_UNLOCK_FLAGS.iter().enumerate() {
+        assert_eq!(tests[i * 4], 0x70 | (f >> 8) as u8, "course test {f:#x}");
+        assert_eq!(tests[i * 4 + 1], (f & 0xFF) as u8, "course test {f:#x}");
+    }
+    assert_eq!(tests[12], 0x70 | (CONTEST_WON_FLAG >> 8) as u8);
+    assert_eq!(tests[13], (CONTEST_WON_FLAG & 0xFF) as u8);
+    // The retail tokens text is intact (the loss path still reads it), the
+    // parallel flow re-carries the shared box (a second verbatim copy) and
+    // one row per reward item.
+    assert!(
+        man.windows(9).any(|w| w == b" tokens!\x00"),
+        "retail tokens text must survive"
+    );
+    assert_eq!(
+        man.windows(seam_anchor.len())
+            .filter(|w| *w == seam_anchor)
+            .count(),
+        2,
+        "the parallel flow must re-carry the shared box"
+    );
+    for line in reward_box_lines(&legaia_patcher::custom_items::REWARD_ANNOUNCE_NAMES)
+        .expect("reward lines")
+    {
+        let mut segment = vec![0x1F];
+        segment.extend(line.bytes());
+        segment.push(0);
+        assert!(
+            man.windows(segment.len()).any(|w| *w == segment[..]),
+            "reward row {line:?} missing from the narration"
+        );
+    }
 }
 
 /// Sector-level integrity: every 2352-byte sector of the patched image keeps a
@@ -358,6 +434,18 @@ fn delilas_challenge_honey_fallback_skips_the_custom_items() {
     assert_eq!(
         seed, SEED_HOOK_ORIG,
         "item seed-dispatch hook must stay retail"
+    );
+
+    // The award-ceremony narration announces the Honey reward (and not the
+    // custom items, which this variant does not grant).
+    let man = koin1_sites(patched.clone()).decoded;
+    assert!(
+        man.windows(18).any(|w| w == b"\x1FYou won 1 Honey!\x00"),
+        "Honey reward row missing from the narration"
+    );
+    assert!(
+        !man.windows(12).any(|w| w == b"Ra-Seru Tear"),
+        "custom-item name must not appear on the Honey build"
     );
 
     // Idempotent, and deterministic on a fresh copy.
