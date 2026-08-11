@@ -1,7 +1,9 @@
 # legaia-tmd
 
-PSX TMD (3D mesh) parser, with the Legaia-specific primitive walker and
-OBJ exporter.
+PSX TMD (3D mesh) parser, with the Legaia-specific primitive walker, an
+OBJ exporter, and a byte-exact **encoder** (`encode`: typed model -> Legaia
+TMD bytes, `decode_model` as its inverse; every monster mesh in the retail
+archive re-encodes byte-identically - the write side of mesh replacement).
 
 TMD is Sony's PlayStation 3D model format (PsyQ `libgte` / `libgs`).
 Legaia ships a custom variant - distinct enough that a stock TMD parser

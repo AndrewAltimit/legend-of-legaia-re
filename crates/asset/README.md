@@ -139,6 +139,13 @@ monster's whole LZS-decoded block to a file and `--write-block` re-packs an
 edited block into its slot in place (`decode_block` / `encode_slot`); the
 disc-image equivalent is `legaia-patcher monster-block`.
 
+`monster_model` is the modder-facing OBJ+PNG codec built on top: lossless
+export of a monster's mesh + texture page (per-part `o part_NN` groups,
+per-vertex baked colours, palette-carrying material names) and the reverse
+importer (auto-palletizing into at most 15 CLUTs), feeding
+`monster_archive::replace_mesh_and_pool` - the full model-replacement path
+behind `legaia-patcher monster-model`.
+
 All three `.glb` exporters share one vertex-colour convention, defined once in
 `gltf_color`: a textured prim's packet word rides `COLOR_0` as the
 `texel * colour / 128` blend factor, an untextured prim's as a `/255` fill, and

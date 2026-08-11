@@ -99,6 +99,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Starting level](#starting-level)
   - [Unused content](#unused-content)
   - [Texture replacement](#texture-replacement)
+  - [Custom monster models](#custom-monster-models)
   - [Re-pack slack](#re-pack-slack)
 - [The patch chain](#the-patch-chain)
 - [EDC/ECC: not game-specific](#edcecc-not-game-specific)
@@ -349,7 +350,8 @@ decode the randomizable populations off the user's disc and print them, with ite
 ids and names resolved from the disc's own SCUS table, and chests and doors
 grouped by scene via CDNAME.
 
-`monster-block` and the `tim-*` family ([texture
+`monster-block`, `monster-model` ([custom monster
+models](#custom-monster-models)) and the `tim-*` family ([texture
 replacement](#texture-replacement)) are the manual-edit subcommands.
 `monster-block`: `--dump` LZS-decodes a
 single monster's `battle_data` block (PROT 867) to a file for hex editing, and
@@ -2654,6 +2656,58 @@ descriptor index in `section`, and `record[0]` block `n` as `-1 - n`. Its rows
 are labelled from the disc's own item-name table, so the search box reaches
 them by the equipment's name rather than by coordinate - typing `terra` finds
 Noa's Ra-Seru armband.
+
+### Custom monster models
+
+Replace a monster's whole 3D model - mesh, texture page, and baked
+vertex shading - with a user-authored one (`monster_model` codec in
+`crates/asset`, `monster-model` subcommand in `crates/patcher`):
+
+```bash
+legaia-patcher monster-model --input DISC.bin --id 164 --export lu    # -> lu.obj / lu.mtl / lu.png
+# ... edit in Blender / repaint the PNG ...
+legaia-patcher monster-model --input DISC.bin --id 164 \
+    --obj custom.obj --texture custom.png [--dry-run] [--allow-grow] \
+    [--output patched.bin] [--patch out.ppf]
+```
+
+The export is a Wavefront OBJ (one `o part_NN` group per TMD object, raw
+GTE units y-down, per-vertex baked colours as OBJ extended `v x y z r g b`,
+UVs in the 256-texel tpage space) plus the 4bpp texture page rendered to
+RGBA through each texel's owning palette. Material names carry the render
+state - `skin_pNN` (opaque, reading CLUT `NN`), `skin_semi_abrN_pNN`
+(semi-transparent with GPU blend rate `N`), `flat` (untextured) - so a
+round trip reproduces the retail palette partition exactly, and a modder
+can steer faces onto specific palettes; faces without a `_pNN` hint are
+palletized automatically (greedy, seam-aware, at most 15 sixteen-colour
+CLUTs).
+
+**The part-count law.** Battle animations pose TMD objects rigidly **by
+index** - there is no skeleton hierarchy, each part gets an absolute
+translation + rotation per frame ([`formats/monster-animation.md`](../formats/monster-animation.md)).
+A replacement that keeps the retail object count therefore performs every
+retail move - idle, flinches, knockdown, victory, and the streamed
+special-move choreography - with zero animation work, which is what makes
+model replacement a data-only edit. The importer rejects a wrong part
+count; each part should also keep roughly the retail origin-to-extremity
+extents (exported geometry shows them) or joints visibly gap mid-pose.
+
+**Size guards.** The rebuilt block (mesh + entries + pool, every offset
+fixed up by `monster_archive::replace_mesh_and_pool`) may not grow past
+the retail decoded size without `--allow-grow` - the battle heap budget is
+tuned to retail data and the loader's allocation is unchecked (the OOM
+freeze in [`subsystems/battle.md`](../subsystems/battle.md)). The re-packed
+LZS stream must fit the fixed `0x14000` archive slot either way; the write
+is the same in-place `patch_monster_slot` edit `monster-block` uses, and
+the command verifies the patched image re-decodes (part count + every
+animation) before reporting success.
+
+A complete worked example ships in the repo: the **Twintail Duelist**
+(`data/models/twintail_duelist/`, generator
+`scripts/models/generate_twintail_duelist.py`) - an original character
+rigged to Lu Delilas's 15-part skeleton, used by the
+`monster_model_real` disc oracle. CLI-only for now (the browser
+ROM-patcher page does not expose model replacement).
 
 ### Re-pack slack
 

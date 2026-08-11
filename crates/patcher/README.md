@@ -25,6 +25,10 @@ Three patching families share that machinery:
 - **Manual edits** - targeted single-record patching for curated mods:
   `monster-block` dumps one monster's decoded `battle_data` block for hex
   editing (stats, element, name) and re-packs it onto a copy of the disc;
+  `monster-model` exports a monster's whole 3D model as editable OBJ+PNG
+  and re-imports a custom one (the mesh must keep the retail part count so
+  the battle animations, which pose parts by index, drive it unchanged -
+  [custom monster models](../../docs/tooling/randomizer.md#custom-monster-models));
   `--fishing-price` / `--rename-location` retune fishing-exchange prices and
   world-map names; `--arts-power COMBO=VALUE` rebalances a Tactical Art's
   per-strike damage-power bytes (`record0 +0x24`, targeted by input combo -
