@@ -35,9 +35,10 @@
     if (!wasmPromise) {
       /* Resolve against the DOCUMENT (dynamic import inside a classic script
        * resolves against this script's own js/ directory otherwise). */
-      var url = new URL('wasm/legaia_web_viewer.js', document.baseURI).href;
+      var wv = window.LEGAIA_WASM_V || '0';
+      var url = new URL('wasm/legaia_web_viewer.js?v=' + wv, document.baseURI).href;
       wasmPromise = import(url).then(function (mod) {
-        return mod.default().then(function () { return mod; });
+        return mod.default(new URL('wasm/legaia_web_viewer_bg.wasm?v=' + wv, document.baseURI)).then(function () { return mod; });
       });
       wasmPromise.catch(function (e) {
         console.warn('MgSaveBar: WASM save tools unavailable -', e);

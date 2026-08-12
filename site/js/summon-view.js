@@ -110,8 +110,9 @@
         prog.indeterminate('Initialising the summon decoder…');
         /* Resolve against the PAGE (this file lives in js/, the wasm glue in
          * wasm/ next to the page). */
-        const mod = await import(new URL('wasm/legaia_web_viewer.js', document.baseURI).href);
-        await mod.default();
+        const v = window.LEGAIA_WASM_V || '0';
+        const mod = await import(new URL('wasm/legaia_web_viewer.js?v=' + v, document.baseURI).href);
+        await mod.default(new URL('wasm/legaia_web_viewer_bg.wasm?v=' + v, document.baseURI));
         if (typeof mod.LegaiaSummons !== 'function') {
           prog.fail('This build of the viewer has no summon support.');
           return;

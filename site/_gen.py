@@ -406,6 +406,21 @@ def version_script_srcs(page: str) -> str:
     return _SCRIPT_SRC_RE.sub(sub, page)
 
 
+def _wasm_version() -> str:
+    """Short content version of the shipped WASM bundle (glue + binary).
+
+    Injected into every page as `window.LEGAIA_WASM_V`; the JS wasm
+    loaders append it as `?v=` to BOTH the glue module import and the
+    `_bg.wasm` binary URL. Dynamic `import()` runs after page load, so
+    even a hard refresh does not reliably bypass the HTTP cache for the
+    module - only a URL that changes with the bytes does. `0` when the
+    bundle is absent (CI builds it at deploy).
+    """
+    glue = _asset_hash("wasm/legaia_web_viewer.js") or ""
+    bg = _asset_hash("wasm/legaia_web_viewer_bg.wasm") or ""
+    return f"{glue[:6]}{bg[:6]}" if glue or bg else "0"
+
+
 def html_template(page_title: str, depth: int, active_key: str, body: str, extra_head: str = "", head_meta: str = "") -> str:
     css = "../" * depth + "css/styles.css"
     layout_js = "../" * depth + "js/layout.js"
@@ -428,6 +443,7 @@ def html_template(page_title: str, depth: int, active_key: str, body: str, extra
   {head_meta}
   <link rel="icon" href="{favicon}" type="image/svg+xml">
   <link rel="stylesheet" href="{css}">
+  <script>window.LEGAIA_WASM_V="{_wasm_version()}";</script>
   {extra_head}
 </head>
 <body>
