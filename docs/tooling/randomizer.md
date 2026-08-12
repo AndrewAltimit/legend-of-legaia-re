@@ -1370,8 +1370,11 @@ party's three channels (0/4/6) of the shared normal-swing grunt bank
 the battle-event bark bank `XA21.XA` whole (the sound-command dispatch
 in `FUN_8004E568` resolves the char-keyed victory ids there - Vahn's
 random pair `0x1A2`/`0x1A3` on channels 2/3, siblings on 4/6/7; the
-whole file is short bark reels). `XA12.XA` stays retail - its only
-captured battle fire is the non-voice jingle path (results music). And
+whole file is short bark reels), plus channel 7 of `XA20.XA` and of
+`XA22.XA` - the jukebox's outlying arms (ids `0x19F`/`0x1AF`, the
+close-call victory barks), short reels interleaved beside those files'
+music channels, which stay byte-identical. `XA12.XA` stays retail - its
+only captured battle fire is the non-voice jingle path (results music). And
 the six staged-event voice banks whole - the voice-id space (`id >= 0x100`
 through `FUN_8004FCC8`, ids picked by the anim materialiser
 `FUN_8004AD80`'s inline char table: Vahn `0x101`, Noa `0x111`, Gala

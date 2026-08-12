@@ -350,6 +350,20 @@ pub fn apply_delilas_party(
             .notes
             .push(format!("party: XA21 victory-bark bank muted ({n} sectors)"));
 
+        // The jukebox's two outlying arms point INTO the music files:
+        // id 0x19F = XA20 channel 7, id 0x1AF = XA22 channel 7 - the
+        // close-call ("barely won") victory barks. Both channels are
+        // short bark reels (12-17 s) interleaved beside 27-274 s music
+        // channels; only channel 7 mutes, the music is untouched.
+        for file in ["XA/XA20.XA", "XA/XA22.XA"] {
+            let n = patcher
+                .silence_xa_channels(file, &[7])
+                .with_context(|| format!("mute {file} bark channel 7"))?;
+            report
+                .notes
+                .push(format!("party: {file} bark channel 7 muted ({n} sectors)"));
+        }
+
         // The FOURTH voice tier: the staged-event voice-id space (id >=
         // 0x100 through `FUN_8004FCC8`; the anim materialiser
         // `FUN_8004AD80` picks the id from an inline char-keyed table -
