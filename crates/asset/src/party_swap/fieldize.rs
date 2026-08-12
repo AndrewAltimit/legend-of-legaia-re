@@ -700,12 +700,62 @@ fn monster_slot_source(archive_entry: &[u8], source_id: u16) -> Result<SlotSourc
     })
 }
 
+/// Emit a winding-reversed twin of every prim: the retail renderer's
+/// NCLIP winding cull drops screen-clockwise faces, and the NPC source
+/// meshes are authored for fixed-camera scenes - not watertight from
+/// the free angles a walking player model is seen from (culled side
+/// faces read as "missing polygons"). A reversed twin guarantees one
+/// of the pair survives the cull from every angle. Reversal = swap the
+/// middle two entries: tri `[a,b,c] -> [a,c,b]`; quad `[a,b,c,d]`
+/// (Z-order, tris (0,1,2)+(1,3,2)) -> `[a,c,b,d]`.
+fn double_side(o: &mut ModelObject) {
+    // A prim whose exact reversed twin is already authored needs no
+    // duplicate.
+    let existing: std::collections::BTreeSet<Vec<u16>> = o
+        .groups
+        .iter()
+        .flat_map(|g| g.prims.iter().map(|p| p.vertices.clone()))
+        .collect();
+    for g in o.groups.iter_mut() {
+        let mut extra: Vec<ModelPrim> = Vec::new();
+        for p in &g.prims {
+            let mut q = p.clone();
+            if q.vertices.len() >= 3 {
+                q.vertices.swap(1, 2);
+            }
+            if q.uvs.len() >= 3 {
+                q.uvs.swap(1, 2);
+            }
+            if q.colors.len() >= 3 {
+                q.colors.swap(1, 2);
+            }
+            if !existing.contains(&q.vertices) {
+                extra.push(q);
+            }
+        }
+        g.prims.append(&mut extra);
+    }
+}
+
+/// How much of the rig gets the reversed-twin treatment - the doubled
+/// geometry must still fit the container's pinned decoded budget, so a
+/// ladder tries progressively smaller scopes (the head is where a
+/// culled hole is most visible: the textured face).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DoubleSideScope {
+    All,
+    HeadTorso,
+    Head,
+    None,
+}
+
 fn fieldize_slot(
     pack: &character_pack::CharacterPack,
     anm: &crate::player_anm::PlayerAnmBundle,
     slot: usize,
     source: &SlotSource,
     decimate: f32,
+    double_sided: DoubleSideScope,
     warnings: &mut Vec<String>,
 ) -> Result<FieldSlot> {
     // Retail field rig + rest pose.
@@ -843,6 +893,16 @@ fn fieldize_slot(
     let template = template_box(&bones[patched], cluts, indices, width);
     bones[10] = template.clone();
     bones[11] = template;
+
+    let ds_bones: Vec<usize> = match double_sided {
+        DoubleSideScope::All => roles.to_vec(),
+        DoubleSideScope::HeadTorso => vec![roles[0], roles[1]],
+        DoubleSideScope::Head => vec![roles[0]],
+        DoubleSideScope::None => Vec::new(),
+    };
+    for b in ds_bones {
+        double_side(&mut bones[b]);
+    }
 
     let tmd = encode(&bones).context("encode field TMD")?;
     Ok(FieldSlot {
@@ -1039,13 +1099,46 @@ fn fieldize_pack_laddered(
     sources: &[SlotSource],
     mapping: [u16; 3],
 ) -> Result<FieldizedPack> {
-    // Detail ladder: try full detail first, then progressively drop
-    // prims under a size threshold (invisible at the chibi field scale)
-    // until the rebuilt container fits its PROT entry.
+    // Detail ladder: full detail DOUBLE-SIDED first (the NPC meshes are
+    // not watertight from free angles - see `double_side`), then
+    // single-sided, then progressively drop prims under a size
+    // threshold (invisible at the chibi field scale) until the rebuilt
+    // container fits its PROT entry.
     let mut last_err = None;
-    for decimate in [0.0f32, 2.0, 3.5, 5.0, 7.0, 9.0, 12.0] {
-        match fieldize_pack_at(prot_0874, entry_len, sources, mapping, decimate) {
+    use DoubleSideScope as Ds;
+    for (decimate, double_sided) in [
+        (0.0f32, Ds::All),
+        (0.0, Ds::HeadTorso),
+        (0.0, Ds::Head),
+        (0.0, Ds::None),
+        (2.0, Ds::None),
+        (3.5, Ds::None),
+        (5.0, Ds::None),
+        (7.0, Ds::None),
+        (9.0, Ds::None),
+        (12.0, Ds::None),
+    ] {
+        match fieldize_pack_at(
+            prot_0874,
+            entry_len,
+            sources,
+            mapping,
+            decimate,
+            double_sided,
+        ) {
             Ok(mut out) => {
+                match double_sided {
+                    Ds::All => {}
+                    Ds::HeadTorso => out
+                        .warnings
+                        .push("field mesh double-sided on head+torso only (container size)".into()),
+                    Ds::Head => out
+                        .warnings
+                        .push("field mesh double-sided on the head only (container size)".into()),
+                    Ds::None => out
+                        .warnings
+                        .push("field mesh single-sided (container size)".into()),
+                }
                 if decimate > 0.0 {
                     out.warnings
                         .push(format!("field detail reduced (min prim size {decimate})"));
@@ -1065,6 +1158,7 @@ fn fieldize_pack_at(
     sources: &[SlotSource],
     mapping: [u16; 3],
     decimate: f32,
+    double_sided: DoubleSideScope,
 ) -> Result<FieldizedPack> {
     let mut warnings = Vec::new();
     let pack = character_pack::parse(prot_0874).context("parse PROT 0874")?;
@@ -1074,8 +1168,16 @@ fn fieldize_pack_at(
     let mut slots: Vec<FieldSlot> = Vec::with_capacity(3);
     for (slot, source) in sources.iter().enumerate() {
         slots.push(
-            fieldize_slot(&pack, &anm, slot, source, decimate, &mut warnings)
-                .with_context(|| format!("field slot {slot} <- monster {}", mapping[slot]))?,
+            fieldize_slot(
+                &pack,
+                &anm,
+                slot,
+                source,
+                decimate,
+                double_sided,
+                &mut warnings,
+            )
+            .with_context(|| format!("field slot {slot} <- monster {}", mapping[slot]))?,
         );
     }
 

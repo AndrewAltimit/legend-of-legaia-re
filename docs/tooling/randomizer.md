@@ -1344,7 +1344,11 @@ geometry that fits the pack budget at full detail. Each NPC part bakes
 into the party field bone's local frame through the same pivot-anchored
 bake as the battle side (the locomotion clips rotate each bone about its
 pivot, so pivot anchoring + axial length matching is what keeps the
-walking chains and the neck closed); the head re-lays into the
+walking chains and the neck closed). NPC meshes are authored for
+fixed-camera scenes and are not watertight from free angles - the
+renderer's winding cull opens them up - so the rebuilt head and torso
+carry a winding-reversed twin per prim (a size ladder narrows the scope
+until the container fits). The head re-lays into the
 character's atlas window,
 bodies stay flat vertex colours - the retail field style. The
 battle-model conversion survives as a fallback when the NPC source is
@@ -1358,11 +1362,15 @@ the always-resident battle bank's programs 7/8/9, so the mapped siblings'
 samples (single-program VABs inside `monster.snd`) splice over them in
 place - cue tracks, routing and residency all stay retail. The replaced
 characters' **XA voice lines** are silenced rather than left wrong-voiced:
-the per-character arts-shout banks (`XA2`/`XA4`/`XA6`) whole, plus the
+the per-character arts-shout banks (`XA2`/`XA4`/`XA6`) whole, the
 party's three channels (0/4/6) of the shared normal-swing grunt bank
-`XA30.XA` (see `docs/subsystems/battle-action.md` § Battle voice cues) -
-subheaders and routing survive, the sectors decode to silence, other
-speakers' XA30 channels stay byte-identical. Still retail: menu
+`XA30.XA` (see `docs/subsystems/battle-action.md` § Battle voice cues),
+and the heroes' six channels (0-5, two reels per character - live
+capture: Vahn's art hits walk channel 0, the battle-end line channel 4)
+of the battle voice-line bank `XA12.XA` seeked by the cue dispatcher
+`FUN_8004DA00` with a char-keyed stride-2 index - subheaders and routing
+survive, the sectors decode to silence, other speakers' channels stay
+byte-identical. Still retail: menu
 portraits, battle HUD faces. Composes with
 `--delilas-challenge` - the challenge applies first, so its memory-tight
 dome 1v2 streams slim clones cut from the retail sibling blocks while the

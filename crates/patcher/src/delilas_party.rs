@@ -333,6 +333,20 @@ pub fn apply_delilas_party(
         report.notes.push(format!(
             "party: XA30 grunt channels 0/4/6 muted ({n} sectors)"
         ));
+
+        // The THIRD voice cue: `XA12.XA` carries per-character battle
+        // voice-line reels seeked by the SCUS cue dispatcher
+        // `FUN_8004DA00` -> `FUN_8003EAE4` with a char-keyed stride-2
+        // index ((char_id - 1) * 2 and siblings) - a live capture shows
+        // Vahn's art hits walking channel 0 and a long battle-end line
+        // on channel 4. Channels 0-5 are the three heroes' two reels
+        // each; 6/7 are unreached by any hero index and survive.
+        let n = patcher
+            .silence_xa_channels("XA/XA12.XA", &[0, 1, 2, 3, 4, 5])
+            .context("mute party XA12 voice-line channels")?;
+        report.notes.push(format!(
+            "party: XA12 voice-line channels 0-5 muted ({n} sectors)"
+        ));
     }
     Ok(report)
 }
