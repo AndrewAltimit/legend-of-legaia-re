@@ -80,7 +80,7 @@ fn band_regions() -> Vec<BandRegion> {
 }
 
 /// Decode a monster pool into per-texel indices + CLUTs.
-fn monster_pool_texels(pool: &[u8]) -> Result<(Vec<[u16; 16]>, Vec<u8>, usize)> {
+pub(super) fn monster_pool_texels(pool: &[u8]) -> Result<(Vec<[u16; 16]>, Vec<u8>, usize)> {
     if pool.len() <= CLUT_REGION_BYTES {
         bail!("monster pool too small");
     }
@@ -119,7 +119,7 @@ fn monster_pool_texels(pool: &[u8]) -> Result<(Vec<[u16; 16]>, Vec<u8>, usize)> 
 type PaletteGroups = (BTreeMap<u8, usize>, Vec<Vec<u16>>);
 
 /// Union-merge the used palettes down to `budget` groups.
-fn merge_palettes(
+pub(super) fn merge_palettes(
     used: &[u8],
     cluts: &[[u16; 16]],
     budget: usize,
@@ -186,7 +186,7 @@ fn merge_palettes(
 }
 
 /// Nearest colour in `colors` to `c` (RGB555 distance).
-fn nearest_color(colors: &[u16], c: u16) -> usize {
+pub(super) fn nearest_color(colors: &[u16], c: u16) -> usize {
     let split = |v: u16| {
         (
             (v & 0x1F) as i32,

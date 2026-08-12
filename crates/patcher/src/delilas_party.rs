@@ -12,16 +12,15 @@
 //! caller-chosen: any permutation of the three siblings over the three
 //! characters.
 //!
-//! Field-map visuals (walking around towns) keep the retail meshes -
-//! the field-form system (PROT 0874) is a separate 10-bone pipeline the
-//! patcher does not rewrite; the swap covers battles, where the models
-//! actually fight.
+//! Field-map visuals swap too: PROT 0874's party field meshes + atlas
+//! rebuild from the same monster models (`party_swap::fieldize`), so
+//! walking around towns shows the same siblings the battles do.
 
 use anyhow::{Context, Result, bail};
 
 use legaia_asset::monster_archive;
 use legaia_asset::new_game;
-use legaia_asset::party_swap::{self, PlayerRig, playerize};
+use legaia_asset::party_swap::{self, PlayerRig, fieldize, playerize};
 
 use crate::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 
@@ -253,6 +252,36 @@ pub fn apply_delilas_party(
             report
                 .notes
                 .push(format!("{who} <-> {}: {w}", sibling.display_name()));
+        }
+    }
+
+    // Field forms: rebuild PROT 0874 so the party walks around as the
+    // mapped siblings too (built from the same monster models as the
+    // battle side, so both forms match). Runs only alongside a fresh
+    // apply - an already-swapped 0874 must not re-convert.
+    if report.changed {
+        let field_entry = fieldize::PROT_ENTRY_INDEX;
+        let prot_0874 = patcher
+            .read_entry_footprint(field_entry)
+            .context("read PROT 0874")?;
+        let entry_len = patcher
+            .read_entry(field_entry)
+            .context("PROT 0874 length")?
+            .len();
+        let fieldized = fieldize::fieldize_pack(
+            &prot_0874,
+            entry_len,
+            &archive,
+            [
+                mapping.vahn.monster_id(),
+                mapping.noa.monster_id(),
+                mapping.gala.monster_id(),
+            ],
+        )
+        .context("rebuild field forms (PROT 0874)")?;
+        patcher.patch_prot_entry(field_entry, 0, &fieldized.entry)?;
+        for w in &fieldized.warnings {
+            report.notes.push(format!("field: {w}"));
         }
     }
     Ok(report)

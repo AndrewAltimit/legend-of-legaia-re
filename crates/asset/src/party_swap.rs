@@ -44,6 +44,7 @@ use crate::monster_archive::{self, PartPose};
 use crate::monster_model::{CBA_BASE, CLUT_COUNT, CLUT_REGION_BYTES, PAGE_HEIGHT, UV_SPACE};
 use legaia_tmd::encode::{ModelGroup, ModelObject, decode_model, encode};
 
+pub mod fieldize;
 pub mod playerize;
 
 /// Canonical part order of the swap = the Delilas mesh order shared by all
