@@ -672,54 +672,43 @@ fn playerize_scaled(
     // Bake each canonical part into its player channel's rest frame,
     // anchored on the retail part's rest bbox (`bake_object_anchored`) -
     // the player's OWN clips (run / arts / block / spirit) move each
-    // baked part exactly like the retail geometry it replaced. The head
-    // additionally absorbs the rig's hair-channel extent (Noa's hair is
-    // a separate channel whose geometry the swap empties), so the
-    // sibling's one-piece head+hair spans both.
+    // baked part exactly like the retail geometry it replaced. The scale
+    // is UNIFORM (whole-rig height ratio): battle rigs are all
+    // human-proportioned, and per-axis spans would balloon a slim
+    // sibling into the replaced character's chunky part boxes.
     let skeleton = dst_rest.len();
+    let dst_stats: Vec<PartStats> = (0..CANONICAL_PARTS)
+        .map(|c| {
+            let ch = rig.channel_for_canonical[c] as usize;
+            let dst_core = dst_model
+                .get(ch)
+                .filter(|_| ch < skeleton)
+                .ok_or_else(|| anyhow::anyhow!("player model missing channel {ch}"))?;
+            let dst_pose = dst_rest
+                .get(ch)
+                .ok_or_else(|| anyhow::anyhow!("player rest pose missing channel {ch}"))?;
+            Ok(part_world_stats(dst_core, dst_pose))
+        })
+        .collect::<Result<_>>()?;
+    let src_stats: Vec<PartStats> = src_model
+        .iter()
+        .enumerate()
+        .map(|(c, o)| part_world_stats(o, &src_rest[c]))
+        .collect();
     let mut baked: Vec<ModelObject> = Vec::with_capacity(CANONICAL_PARTS);
     for (c, src_obj) in src_model.iter().enumerate() {
         let ch = rig.channel_for_canonical[c] as usize;
-        let dst_pose = dst_rest
-            .get(ch)
-            .ok_or_else(|| anyhow::anyhow!("player rest pose missing channel {ch}"))?;
-        let dst_core = dst_model
-            .get(ch)
-            .filter(|_| ch < skeleton)
-            .ok_or_else(|| anyhow::anyhow!("player model missing channel {ch}"))?;
-        let (mut c_dst, mut e_dst) = part_world_stats(dst_core, dst_pose);
-        if c == 0
-            && let Some(hair_ch) = rig.hair_channel
-        {
-            let hair_ch = hair_ch as usize;
-            if let (Some(hair), Some(hair_pose)) = (dst_model.get(hair_ch), dst_rest.get(hair_ch)) {
-                let (hc, he) = part_world_stats(hair, hair_pose);
-                let lo = |c: f32, e: f32| c - e / 2.0;
-                let hi = |c: f32, e: f32| c + e / 2.0;
-                let min = [
-                    lo(c_dst.0, e_dst[0]).min(lo(hc.0, he[0])),
-                    lo(c_dst.1, e_dst[1]).min(lo(hc.1, he[1])),
-                    lo(c_dst.2, e_dst[2]).min(lo(hc.2, he[2])),
-                ];
-                let max = [
-                    hi(c_dst.0, e_dst[0]).max(hi(hc.0, he[0])),
-                    hi(c_dst.1, e_dst[1]).max(hi(hc.1, he[1])),
-                    hi(c_dst.2, e_dst[2]).max(hi(hc.2, he[2])),
-                ];
-                c_dst = (
-                    (min[0] + max[0]) / 2.0,
-                    (min[1] + max[1]) / 2.0,
-                    (min[2] + max[2]) / 2.0,
-                );
-                e_dst = [max[0] - min[0], max[1] - min[1], max[2] - min[2]];
-            }
-        }
-        let (mut c_src, e_src) = part_world_stats(src_obj, &src_rest[c]);
-        if c == 0 {
-            c_src = neck_anchor(c_src, e_src);
-            c_dst = neck_anchor(c_dst, e_dst);
-        }
-        let s = anchored_scale(c, e_src, e_dst);
+        let dst_pose = &dst_rest[ch];
+        let (st_src, st_dst) = (src_stats[c], dst_stats[c]);
+        let (c_src, c_dst) = if c == 0 {
+            (
+                neck_anchor(st_src.center, st_src.ext),
+                neck_anchor(st_dst.center, st_dst.ext),
+            )
+        } else {
+            (st_src.centroid, st_dst.centroid)
+        };
+        let s = anchored_scale(c, st_src.ext, st_dst.ext);
         let mut o = src_obj.clone();
         bake_object_anchored(&mut o, &src_rest[c], c_src, dst_pose, c_dst, s)
             .with_context(|| format!("bake canonical part {c}"))?;

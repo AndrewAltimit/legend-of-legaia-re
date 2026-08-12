@@ -142,17 +142,37 @@ fn round_coord(v: f32) -> Result<i16> {
 /// The anchor for [`bake_object_anchored`]: the bbox centre (not the
 /// vertex average, which vertex density skews) plus per-axis extents,
 /// so a baked part spans exactly where the destination part sat.
-fn part_world_stats(o: &ModelObject, p: &PartPose) -> ((f32, f32, f32), [f32; 3]) {
+fn part_world_stats(o: &ModelObject, p: &PartPose) -> PartStats {
+    // Only prim-REFERENCED vertices count: retail objects carry stray
+    // unreferenced vertices (a hand part shipping far-off orphans skewed
+    // its bbox by ~50 units), and the anchor must reflect what draws.
+    let mut used = vec![false; o.vertices.len()];
+    for g in &o.groups {
+        for prim in &g.prims {
+            for &vi in &prim.vertices {
+                if let Some(u) = used.get_mut(vi as usize) {
+                    *u = true;
+                }
+            }
+        }
+    }
+    if !used.iter().any(|&u| u) {
+        used.fill(true);
+    }
     let m = rot_matrix(p);
     let mut min = [f32::MAX; 3];
     let mut max = [f32::MIN; 3];
-    for v in &o.vertices {
+    let mut acc = [0f64; 3];
+    let mut n = 0f64;
+    for (v, _) in o.vertices.iter().zip(&used).filter(|&(_, &u)| u) {
         let w = apply(&m, [v[0] as f32, v[1] as f32, v[2] as f32]);
         let w = [w[0] + p.tx as f32, w[1] + p.ty as f32, w[2] + p.tz as f32];
         for k in 0..3 {
             min[k] = min[k].min(w[k]);
             max[k] = max[k].max(w[k]);
+            acc[k] += w[k] as f64;
         }
+        n += 1.0;
     }
     if min[0] > max[0] {
         (min, max) = ([0.0; 3], [0.0; 3]);
@@ -167,7 +187,31 @@ fn part_world_stats(o: &ModelObject, p: &PartPose) -> ((f32, f32, f32), [f32; 3]
         (max[1] - min[1]).max(1.0),
         (max[2] - min[2]).max(1.0),
     ];
-    (center, ext)
+    let n = n.max(1.0);
+    let centroid = (
+        (acc[0] / n) as f32,
+        (acc[1] / n) as f32,
+        (acc[2] / n) as f32,
+    );
+    PartStats {
+        center,
+        ext,
+        centroid,
+    }
+}
+
+/// One posed part's rest-pose world statistics.
+#[derive(Debug, Clone, Copy)]
+struct PartStats {
+    /// bbox centre.
+    center: (f32, f32, f32),
+    /// per-axis bbox extents.
+    ext: [f32; 3],
+    /// vertex mass centre - the anchor for uniform-scale battle bakes
+    /// (a long tapered part like a gauntlet puts its bbox centre far
+    /// from where its mass sits, and the mass is what must stay at the
+    /// wrist).
+    centroid: (f32, f32, f32),
 }
 
 /// Per-part scale for an anchored bake: the head (canonical part 0)
@@ -706,7 +750,7 @@ fn monsterize_player_scaled(
     // so a weapon/shield doesn't skew its carrier bone's bbox (the extras
     // then ride the hand's anchor + scale instead of squashing into it).
     let skeleton = rest.len();
-    let mut core_stats: Vec<((f32, f32, f32), [f32; 3])> = source
+    let mut core_stats: Vec<PartStats> = source
         .iter()
         .take(skeleton)
         .enumerate()
@@ -778,17 +822,25 @@ fn monsterize_player_scaled(
     // `bake_object_anchored`) - the target's own clips move each baked
     // part exactly like the geometry it replaced, so the Delilas action
     // streams stay coherent, not just the rest pose.
+    let dst_stats: Vec<PartStats> = target_model
+        .iter()
+        .enumerate()
+        .map(|(c, o)| part_world_stats(o, &target_rest[c]))
+        .collect();
     for (c, o) in objects.iter_mut().enumerate() {
         let ch = rig.channel_for_canonical[c] as usize;
         let src_pose = rest[ch];
         let dst_pose = target_rest[c];
-        let (mut c_src, e_src) = core_stats[ch];
-        let (mut c_dst, e_dst) = part_world_stats(&target_model[c], &dst_pose);
-        if c == 0 {
-            c_src = neck_anchor(c_src, e_src);
-            c_dst = neck_anchor(c_dst, e_dst);
-        }
-        let s = anchored_scale(c, e_src, e_dst);
+        let (st_src, st_dst) = (core_stats[ch], dst_stats[c]);
+        let (c_src, c_dst) = if c == 0 {
+            (
+                neck_anchor(st_src.center, st_src.ext),
+                neck_anchor(st_dst.center, st_dst.ext),
+            )
+        } else {
+            (st_src.centroid, st_dst.centroid)
+        };
+        let s = anchored_scale(c, st_src.ext, st_dst.ext);
         bake_object_anchored(o, &src_pose, c_src, &dst_pose, c_dst, s)
             .with_context(|| format!("bake canonical part {c}"))?;
     }
