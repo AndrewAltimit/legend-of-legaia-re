@@ -442,3 +442,17 @@ edit = "in-place"
 gap = false
 status = "planned"
 notes = "periodic global timer + encounter/loot modulation + overworld CLUT tint"
+
+[[mod]]
+key = "delilas_party"
+name = "Delilas party swap"
+flag = "--delilas-party V,N,G"
+tier = "B"
+variant = "structural rebuild"
+target = "monster archive slots 162-164 + player battle files PROT 863-865 + SCUS new-game template names"
+edit = "cross-rig battle-model rebuild both directions (anatomy permutation + rest-pose bake + 4bpp texel re-layout), monster-block renames, template name writes"
+gap = "field-form models / portraits / HUD faces / XA shouts stay retail"
+status = "shipped"
+test = "delilas_party_real + party_swap_real"
+notes = "play as Gi / Lu / Che (any assignment); the ravine duels + dome Master legs field Vahn / Noa / Gala under the retail Delilas movesets"
+

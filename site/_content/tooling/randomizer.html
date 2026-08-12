@@ -157,6 +157,7 @@ legaia-patcher verify    --input DISC.bin --patch run.ppf       # apply + sanity
       <tr><td><code>--jewel-fix</code></td><td>Toggle (seedless): retarget the boss cinematic casts (Xain's Bloody Horns / Terio Punch, Cort's Guilty Cross, the Delilas trio's signature moves) so elemental Jewels / guards / All Guard apply to them, instead of the retail resist-ladder bypass.</td></tr>
       <tr><td><code>--approach-softlock-fix</code></td><td>Toggle (seedless): fix the retail &ldquo;endless camera orbit&rdquo; softlock - a monster whose approach animation dies mid-walk is re-staged and resumes walking instead of parking the battle forever. See <a href="#approach-softlock-fix">below</a>.</td></tr>
       <tr><td><code>--delilas-challenge</code></td><td>Toggle (seedless): a fourth Muscle Dome enrollment option - a new 2-round dome course (Che &amp; Lu together, then Gi; 5,000 coins for a clear); unlocks after the Koru event in Nivora Ravine. See <a href="#delilas-challenge">below</a>.</td></tr>
+      <tr><td><code>--delilas-party V,N,G</code></td><td>Toggle (seedless): play as the Delilas siblings - the party wears Gi / Lu / Che battle models (any permutation over Vahn, Noa, Gala) while the Nivora Ravine duels and the Muscle Dome Master legs field Vahn / Noa / Gala models under the retail Delilas movesets. See <a href="#delilas-party-swap">below</a>.</td></tr>
       <tr><td><code>--fishing-price ITEM=POINTS</code></td><td>Set the fishing-exchange point cost of a prize (id decimal or <code>0xHH</code>), e.g. <code>0x6F=500</code> for the Buma Water Egg. The price also gates when the prize appears. Repeatable / comma-separated; <code>legaia-patcher fishing</code> lists the current prizes.</td></tr>
       <tr><td><code>--rename-location INDEX=NAME</code></td><td>Rename a world-map location name (save / load / pause + quick-travel menu). Repeatable <code>index=name</code>; e.g. <code>3=Ancient Fire Cave</code>. <code>legaia-patcher locations</code> lists the 16 slots.</td></tr>
       <tr><td><code>--earth-egg-price VALUE</code></td><td>Set the casino-coin threshold the Sol Tower Prize Counter needs before it offers the Earth Ra-Seru Egg (retail 100000) - a hidden scripted exchange, not a casino-table row. VALUE = coins required (1&ndash;8388608); the game debits exactly that many. <code>legaia-patcher earth-egg</code> shows the current value.</td></tr>
@@ -245,6 +246,12 @@ legaia-patcher verify    --input DISC.bin --patch run.ppf       # apply + sanity
     <a href="../subsystems/battle.html">Battle subsystem (party wipe + the game-over gate)</a>
     <a href="../formats/mes.html">MES dialog + option pickers</a>
   </div>
+</section>
+
+<section class="doc-section" id="delilas-party-swap">
+  <h2>Delilas party swap</h2>
+  <p><code>--delilas-party gi,lu,che</code> (any permutation, mapping onto Vahn, Noa, Gala in order) swaps the party's battle identity with the Delilas siblings: each character keeps their own animations, arts, magic, stats and story but wears the mapped sibling's battle model under their name, while each sibling's monster block is rebuilt around the mapped character's battle model - the three Nivora Ravine duels and the Muscle Dome Master legs then field Vahn, Noa and Gala performing the retail Delilas movesets (the animation streams pose parts by index, so a same-part-count model inherits every move).</p>
+  <p>Under the hood the swap is an anatomy permutation plus a per-part rest-pose bake between the two rigs, and a bit-exact 4bpp texel re-layout between the monster texture page and the party texture band - every equipment variant of the player battle files is rewritten so the swap survives any gear. New-game party names follow the mapping; existing saves keep their stored names. Not covered: the walking-around field models, menu portraits, battle HUD faces and voice shouts stay retail. Composes with the Delilas Challenge (the dome course keeps the retail siblings; the duels carry the swap). Not part of any preset; unaffected by the seed.</p>
 </section>
 
 <section class="doc-section" id="shiny-seru">

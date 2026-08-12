@@ -11,8 +11,9 @@ use legaia_patcher::apply;
 use legaia_patcher::drops::DropMode;
 
 use crate::util::{
-    parse_arts_ap_cost, parse_arts_ap_grant, parse_arts_power, parse_exp_scale, parse_item_spec,
-    parse_location_rename, parse_prize_price, parse_seru_catch_rate, parse_stat_scale,
+    parse_arts_ap_cost, parse_arts_ap_grant, parse_arts_power, parse_delilas_party,
+    parse_exp_scale, parse_item_spec, parse_location_rename, parse_prize_price,
+    parse_seru_catch_rate, parse_stat_scale,
 };
 
 #[derive(Parser)]
@@ -758,6 +759,19 @@ pub(crate) struct RandomizeArgs {
     /// the Honey as the course's full-clear reward.
     #[arg(long, default_value_t = false)]
     pub(crate) custom_items: bool,
+    /// **Delilas party swap**: play as the Delilas siblings while the story's
+    /// ravine duels (and the Muscle Dome Master legs) field Vahn / Noa / Gala
+    /// instead. A battle-model + name identity swap: each character keeps
+    /// their own animations, arts, stats and story, but wears the mapped
+    /// sibling's model; each sibling's monster block wears the mapped
+    /// character's battle model under the retail Delilas movesets, renamed to
+    /// match. The value maps the three siblings onto Vahn, Noa, Gala in
+    /// order: any permutation of `gi`, `lu`, `che` (e.g. `--delilas-party
+    /// lu,gi,che` puts Lu on Vahn). New-game party names follow the mapping
+    /// (existing saves keep their stored names); field-map walking sprites
+    /// stay retail.
+    #[arg(long, value_name = "V,N,G", value_parser = parse_delilas_party)]
+    pub(crate) delilas_party: Option<legaia_patcher::delilas_party::PartyMapping>,
     /// Per-battle percentage chance a capturable enemy is shiny (only with
     /// `--shiny-seru`).
     #[arg(long, default_value_t = legaia_patcher::shiny_seru::DEFAULT_PCT)]

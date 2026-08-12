@@ -67,6 +67,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Jewel fix](#jewel-fix)
   - [Approach-softlock fix](#approach-softlock-fix)
   - [Delilas Challenge](#delilas-challenge)
+  - [Delilas party swap](#delilas-party-swap)
   - [Fishing prize prices](#fishing-prize-prices)
   - [Location names](#location-names)
   - [Earth Egg coin threshold](#earth-egg-coin-threshold)
@@ -293,6 +294,7 @@ unless asked for:
 | `--jewel-fix` | the boss cinematic casts (Xain, Cort, the Delilas trio) respect elemental guards like every other special | - | [Jewel fix](#jewel-fix) |
 | `--approach-softlock-fix` | a monster whose approach animation dies mid-walk is re-staged and resumes walking instead of parking the battle forever (the "endless camera orbit") | - | [Approach-softlock fix](#approach-softlock-fix) |
 | `--delilas-challenge` | a fourth Muscle Dome enrollment option: a new 2-round arena course (Che & Lu double-team, then Gi; a clear pays 5000 coins + a Honey); unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
+| `--delilas-party V,N,G` | play as the Delilas siblings: the party wears Gi / Lu / Che battle models (any permutation over Vahn, Noa, Gala) while the ravine duels + dome Master legs field Vahn / Noa / Gala models | - | [Delilas party swap](#delilas-party-swap) |
 | `--custom-items` | inject three brand-new items (Nature's Elixir / Ra-Seru Tear / Fury Bloom) into cut item slots; `random` drop/chest/steal modes add them to the fill pool, and with `--delilas-challenge` they replace the Honey clear reward | - | [Custom items](#completion-reward---a-honey-or-three-custom-items) |
 | `--fishing-price ITEM=POINTS` | set the fishing-exchange point cost of a prize (e.g. the Buma Water Egg); the price also gates when the prize appears | repeatable / comma-separated | [Fishing prize prices](#fishing-prize-prices) |
 | `--rename-location INDEX=NAME` | rename a world-map location (save / load / pause + quick-travel menu), e.g. an element cave to match a re-elemented party | repeatable | [Location names](#location-names) |
@@ -1299,6 +1301,49 @@ not by the static suite:
 > 5000-coin payout hook passes the static + disc oracles; its live
 > confirmation and the custom-item prize are the follow-ups.
 
+
+### Delilas party swap
+
+`--delilas-party gi,lu,che` (any permutation of the three siblings, in
+Vahn, Noa, Gala order) swaps the playable party's battle identity with the
+Delilas siblings: each character keeps their own animations, arts, magic,
+stats and story, but wears the mapped sibling's battle model and fights
+under their name, while each sibling's monster block is rebuilt around the
+mapped character's battle model - so the three Nivora Ravine duels and the
+Muscle Dome Master legs field Vahn, Noa and Gala, performing the retail
+Delilas movesets (the streams pose parts by index, so a same-part-count
+model inherits every move - the same law `monster-model` replacement rides).
+
+Mechanics of the swap (`legaia_asset::party_swap`): both pose systems use
+flat per-part rigid transforms addressed by part index, and both texture
+systems are 4bpp indices + 16-colour CLUTs, so the swap is an anatomy
+permutation (players order bones `torso, pelvis, head, arms, legs`; every
+Delilas mesh orders parts `head, torso, pelvis, arms, legs`; Noa's extra
+hair bone merges into the head part), a **rest-pose bake** per part
+(`v' = R_t^T (s (R_s v + T_s) - T_t)` - local part frames are per-rig
+conventions, so geometry re-expresses through source-rest -> target-rest
+with a uniform height scale), and a bit-exact texel re-layout (islands
+shelf-pack between the monster page and the party band's five section
+tiles, palettes carried over - union-merged on the player side into the
+CLUT columns `record[0]` does not claim). On the player side **every
+equipment-section record** of the `PLAYERn` file is rewritten (the swap
+must survive any equipment) with the swing action records and the
+character's own `record[0]` animation source preserved; the descriptor
+chain repacks with sector-aligned slots inside the retail entry footprint.
+New-game template names follow the mapping ("Gi" / "Lu" / "Che"; existing
+saves keep their stored names).
+
+Not covered (v1): the walking-around **field** models (PROT 0874's
+separate 10-bone field-form system) stay retail, as do menu portraits,
+battle HUD faces and the XA voice shouts. Composes with
+`--delilas-challenge` - the challenge applies first, so its memory-tight
+dome 1v2 streams slim clones cut from the retail sibling blocks while the
+1v1 ravine duels (ample heap headroom) carry the swapped models. Not part
+of any preset; unaffected by the seed.
+
+> Verified by the `delilas_party_real` disc oracles (apply / re-decode /
+> idempotence / determinism / mapping rearrangement) and the
+> `party_swap_real` conversion oracles over all nine pairings.
 ### Fishing prize prices
 
 The fishing minigame's prize counters (the **Buma** and **Vidna** ponds) sell

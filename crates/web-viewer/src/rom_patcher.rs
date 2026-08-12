@@ -292,6 +292,7 @@ pub fn patch_rom(
     enemy_stat_scale: &str,
     exp_scale: &str,
     seru_catch_rate: &str,
+    delilas_party: &str,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -989,6 +990,31 @@ pub fn patch_rom(
                 Err(e) => summary.push_str(&format!("seru-catch-rate: {e}\n")),
             },
             Err(e) => summary.push_str(&format!("seru-catch-rate: skipped - {e}\n")),
+        }
+    }
+
+    // Delilas party swap (empty = off): play as the mapped siblings, the
+    // ravine duels field Vahn / Noa / Gala models. Runs after
+    // --delilas-challenge (same ordering as the CLI - the challenge cuts
+    // its slim dome clones from the pre-swap blocks).
+    let delilas_party = delilas_party.trim();
+    if delilas_party.is_empty() {
+        summary.push_str("delilas-party: off\n");
+    } else {
+        match legaia_patcher::delilas_party::PartyMapping::parse(delilas_party) {
+            Ok(mapping) => {
+                match legaia_patcher::delilas_party::apply_delilas_party(&mut patcher, &mapping) {
+                    Ok(rep) if rep.changed => summary.push_str(&format!(
+                        "delilas-party: playing as {} / {} / {} (duels field the heroes)\n",
+                        mapping.vahn.display_name(),
+                        mapping.noa.display_name(),
+                        mapping.gala.display_name()
+                    )),
+                    Ok(_) => summary.push_str("delilas-party: already applied\n"),
+                    Err(e) => summary.push_str(&format!("delilas-party: skipped - {e}\n")),
+                }
+            }
+            Err(e) => summary.push_str(&format!("delilas-party: skipped - {e}\n")),
         }
     }
 
