@@ -670,12 +670,14 @@ fn playerize_scaled(
     let dst_model = decode_model(&dst_tmd, &asm.tmd)?;
 
     // Bake each canonical part into its player channel's rest frame,
-    // anchored on the retail part's rest bbox (`bake_object_anchored`) -
-    // the player's OWN clips (run / arts / block / spirit) move each
-    // baked part exactly like the retail geometry it replaced. The scale
-    // is UNIFORM (whole-rig height ratio): battle rigs are all
-    // human-proportioned, and per-axis spans would balloon a slim
-    // sibling into the replaced character's chunky part boxes.
+    // pivot-anchored (`bake_object_pivot`): the pivot is the joint the
+    // engine rotates the part about, the bone frames re-aim the part
+    // from the sibling's rest stance onto the player's (twist pinned by
+    // the bend plane), and the axial scale puts the part's far end on
+    // the player's child joint - so the player's OWN clips (run / arts
+    // / block / spirit) move each baked part exactly like the retail
+    // geometry it replaced, joints staying closed. The radial scale is
+    // UNIFORM (whole-rig height ratio) so the sibling's shapes survive.
     let skeleton = dst_rest.len();
     let dst_stats: Vec<PartStats> = (0..CANONICAL_PARTS)
         .map(|c| {
@@ -695,20 +697,32 @@ fn playerize_scaled(
         .enumerate()
         .map(|(c, o)| part_world_stats(o, &src_rest[c]))
         .collect();
+    let radial = global_height_scale(&src_stats, &dst_stats)[0];
+    let pivot_of = |p: &PartPose| [p.tx as f32, p.ty as f32, p.tz as f32];
+    let src_pivots: Vec<[f32; 3]> = src_rest
+        .iter()
+        .take(CANONICAL_PARTS)
+        .map(pivot_of)
+        .collect();
+    let dst_pivots: Vec<[f32; 3]> = (0..CANONICAL_PARTS)
+        .map(|c| pivot_of(&dst_rest[rig.channel_for_canonical[c] as usize]))
+        .collect();
+    let src_frames = bone_frames(&src_pivots, &CANONICAL_CHILD, &CANONICAL_PARENT);
+    let dst_frames = bone_frames(&dst_pivots, &CANONICAL_CHILD, &CANONICAL_PARENT);
     let mut baked: Vec<ModelObject> = Vec::with_capacity(CANONICAL_PARTS);
-    let s_uniform = global_height_scale(&src_stats, &dst_stats);
     for (c, src_obj) in src_model.iter().enumerate() {
         let ch = rig.channel_for_canonical[c] as usize;
-        let dst_pose = &dst_rest[ch];
-        let (st_src, st_dst) = (src_stats[c], dst_stats[c]);
-        let (c_src, c_dst, s) = if c == 0 {
-            head_bake_params(&st_src, &src_stats[1], &st_dst, &dst_stats[1])
-        } else {
-            (st_src.centroid, st_dst.centroid, s_uniform)
-        };
         let mut o = src_obj.clone();
-        bake_object_anchored(&mut o, &src_rest[c], c_src, dst_pose, c_dst, s)
+        let pb = pivot_bake_params(&src_frames[c], &dst_frames[c], radial);
+        bake_object_pivot(&mut o, &src_rest[c], src_pivots[c], &dst_rest[ch], &pb)
             .with_context(|| format!("bake canonical part {c}"))?;
+        if c == 0 {
+            // Seat the head on the neck: its near edge along the bone
+            // axis lands where the replaced head's sat.
+            if let Some(dst_head) = dst_model.get(ch) {
+                seat_terminal_axial(&mut o, dst_head, &dst_rest[ch], pb.x_dst)?;
+            }
+        }
         compact_object(&mut o);
         baked.push(o);
     }

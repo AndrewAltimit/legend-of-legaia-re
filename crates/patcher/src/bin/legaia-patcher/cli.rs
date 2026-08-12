@@ -770,8 +770,10 @@ pub(crate) struct RandomizeArgs {
     /// lu,gi,che` puts Lu on Vahn). New-game party names follow the mapping
     /// (existing saves keep their stored names). The field walking models
     /// rebuild from the same sibling models, and the party's battle grunt
-    /// voices resample from the siblings' own voice banks; the arts XA
-    /// shouts stay (they are the moves' own audio).
+    /// voices resample from the siblings' own voice banks; the replaced
+    /// characters' XA voice lines (arts shouts + swing grunts) are
+    /// silenced - the siblings have no XA lines to swap in, and hearing
+    /// Vahn shout out of Lu's body is worse than silence.
     #[arg(long, value_name = "V,N,G", value_parser = parse_delilas_party)]
     pub(crate) delilas_party: Option<legaia_patcher::delilas_party::PartyMapping>,
     /// Per-battle percentage chance a capturable enemy is shiny (only with

@@ -319,6 +319,20 @@ pub fn apply_delilas_party(
                 .notes
                 .push(format!("{who}: XA shout bank muted ({n} sectors)"));
         }
+
+        // The SECOND voice cue: `XA30.XA` carries the party's normal-move
+        // grunt, one channel per character (Vahn 0, Noa 4, Gala 6 - see
+        // docs/subsystems/battle-action.md "Battle voice cues"). The
+        // battle-action input handler fires it on every ordinary swing -
+        // and a tactical art IS a chain of swings, so with only XA2/4/6
+        // muted the loudest Vahn line in an art still played. Mute the
+        // three hero channels; every other channel in the bank survives.
+        let n = patcher
+            .silence_xa_channels("XA/XA30.XA", &[0, 4, 6])
+            .context("mute party XA30 grunt channels")?;
+        report.notes.push(format!(
+            "party: XA30 grunt channels 0/4/6 muted ({n} sectors)"
+        ));
     }
     Ok(report)
 }

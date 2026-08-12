@@ -71,6 +71,36 @@ const FIELD_ROLE_SOURCES: [&[usize]; FIELD_BONES] = [
     &[13, 14], // legB shin + foot
 ];
 
+/// Field role chain child (role space, see [`FIELD_ROLE_SOURCES`]):
+/// torso -> head, each upper limb -> its lower limb; lowers and the
+/// head are terminal.
+const FIELD_CHILD: [Option<usize>; FIELD_BONES] = [
+    None,
+    Some(0),
+    Some(3),
+    None,
+    Some(5),
+    None,
+    Some(7),
+    None,
+    Some(9),
+    None,
+];
+
+/// Field role chain parent (chain-internal edges only).
+const FIELD_PARENT: [Option<usize>; FIELD_BONES] = [
+    Some(1),
+    None,
+    None,
+    Some(2),
+    None,
+    Some(4),
+    None,
+    Some(6),
+    None,
+    Some(8),
+];
+
 /// Derived anatomy of one retail field rig: `bone_for_role[r]` = the
 /// field bone index playing canonical role `r` (see
 /// [`FIELD_ROLE_SOURCES`]). Derived from rest-pose world centroids per
@@ -196,37 +226,6 @@ fn group_world_stats(parts: &[(&ModelObject, &PartPose)]) -> ((f32, f32, f32), [
         (max[2] - min[2]).max(1.0),
     ];
     (center, ext)
-}
-
-/// Bake `o` (source local frame `src`, world anchored at `c_src`) into
-/// the target local frame `dst`, scaled per world axis by `s` about the
-/// source anchor and re-anchored at `c_dst`:
-/// `v' = R_dst^T (s ⊙ (R_src v + T_src - C_src) + C_dst - T_dst)`.
-/// The per-axis scale spans the source part across the retail part's
-/// rest extents - the locomotion clips' translations dictate the joint
-/// spacing, so matching retail extents is what keeps limb chains
-/// connected under every clip.
-fn bake_anchored(
-    o: &mut ModelObject,
-    src: &PartPose,
-    c_src: (f32, f32, f32),
-    dst: &PartPose,
-    c_dst: (f32, f32, f32),
-    s: [f32; 3],
-) -> Result<()> {
-    let ms = rot_matrix(src);
-    let md = rot_matrix(dst);
-    for v in o.vertices.iter_mut() {
-        let w = apply(&ms, [v[0] as f32, v[1] as f32, v[2] as f32]);
-        let world = [
-            s[0] * (w[0] + src.tx as f32 - c_src.0) + c_dst.0 - dst.tx as f32,
-            s[1] * (w[1] + src.ty as f32 - c_src.1) + c_dst.1 - dst.ty as f32,
-            s[2] * (w[2] + src.tz as f32 - c_src.2) + c_dst.2 - dst.tz as f32,
-        ];
-        let l = apply_transposed(&md, world);
-        *v = [round_coord(l[0])?, round_coord(l[1])?, round_coord(l[2])?];
-    }
-    Ok(())
 }
 
 /// Drop prims whose baked extent falls under `threshold` (invisible at
@@ -739,53 +738,42 @@ fn fieldize_slot(
             scale: legaia_tmd::encode::LEGAIA_OBJECT_SCALE,
         });
     }
-    // Torso stats first: the head bakes body-relative (scales like the
-    // torso, anchors at the neck placed over the torso's x/z) so a
-    // sibling's oversized hair stays proportional to their body instead
-    // of being crushed into the replaced character's bare-head box.
-    let torso_stats = {
-        let bone = roles[1];
-        let pose = field_rest[bone];
-        let dst = group_world_stats(&[(&field_model[bone], &pose)]);
-        let src_parts: Vec<(&ModelObject, &PartPose)> = source.role_sources[1]
+    // Pivot-anchored bake (see `party_swap::bake_object_pivot`): each
+    // role's geometry is expressed relative to its source bone's rest
+    // pivot, re-aimed into the retail field bone's rest frame, and
+    // scaled axially so the far end lands on the retail child joint -
+    // the locomotion clips rotate each bone about its pivot, so this is
+    // what keeps the walking chains (and the neck) closed. The radial
+    // scale is the uniform whole-rig height ratio, so the sibling's own
+    // proportions survive.
+    let radial = {
+        let dst_parts: Vec<(&ModelObject, &PartPose)> = roles
             .iter()
+            .map(|&b| (&field_model[b], &field_rest[b]))
+            .collect();
+        let src_parts: Vec<(&ModelObject, &PartPose)> = source
+            .role_sources
+            .iter()
+            .flatten()
             .map(|&c| (&src_model[c], &src_rest[c]))
             .collect();
-        (group_world_stats(&src_parts), dst)
+        let (_, e_dst) = group_world_stats(&dst_parts);
+        let (_, e_src) = group_world_stats(&src_parts);
+        (e_dst[1] / e_src[1]).clamp(0.25, 4.0)
     };
+    let pivot_of = |p: &PartPose| [p.tx as f32, p.ty as f32, p.tz as f32];
+    let src_role_pivots: Vec<[f32; 3]> = source
+        .role_sources
+        .iter()
+        .map(|s| pivot_of(&src_rest[s[0]]))
+        .collect();
+    let dst_role_pivots: Vec<[f32; 3]> = roles.iter().map(|&b| pivot_of(&field_rest[b])).collect();
+    let src_frames = bone_frames(&src_role_pivots, &FIELD_CHILD, &FIELD_PARENT);
+    let dst_frames = bone_frames(&dst_role_pivots, &FIELD_CHILD, &FIELD_PARENT);
     for (role, sources) in source.role_sources.iter().enumerate() {
         let bone = roles[role];
         let dst_pose = field_rest[bone];
-        let dst_parts = [(&field_model[bone], &dst_pose)];
-        let (mut c_dst, e_dst) = group_world_stats(&dst_parts);
-        let src_parts: Vec<(&ModelObject, &PartPose)> = sources
-            .iter()
-            .map(|&c| (&src_model[c], &src_rest[c]))
-            .collect();
-        let (mut c_src, e_src) = group_world_stats(&src_parts);
-        // Limbs/torso stretch per axis to span the retail part (joint
-        // spacing comes from the clips).
-        let s = if role == 0 {
-            let ((ts_c, ts_e), (td_c, td_e)) = torso_stats;
-            let diag = |e: [f32; 3]| (e[0] * e[0] + e[1] * e[1] + e[2] * e[2]).sqrt();
-            let sh = (diag(td_e) / diag(ts_e)).clamp(0.05, 3.0);
-            // Preserve the source's own head-torso overlap (scaled) so
-            // the neck seats like the sibling's original - aligning
-            // bbox bottoms bares the neck when the source head carries
-            // less below-chin geometry than the retail one.
-            let src_head_bottom = c_src.1 + e_src[1] / 2.0;
-            let src_torso_top = ts_c.1 - ts_e[1] / 2.0;
-            let dst_torso_top = td_c.1 - td_e[1] / 2.0;
-            c_src = (ts_c.0, src_head_bottom, ts_c.2);
-            c_dst = (
-                td_c.0,
-                dst_torso_top + (src_head_bottom - src_torso_top) * sh,
-                td_c.2,
-            );
-            [sh; 3]
-        } else {
-            anchored_scale(role, e_src, e_dst)
-        };
+        let pb = pivot_bake_params(&src_frames[role], &dst_frames[role], radial);
         for &c in sources.iter() {
             let mut part = src_model[c].clone();
             // Flatten every textured prim except on the head.
@@ -806,8 +794,19 @@ fn fieldize_slot(
                     g.semi_transparent = false;
                 }
             }
-            bake_anchored(&mut part, &src_rest[c], c_src, &dst_pose, c_dst, s)
-                .with_context(|| format!("field bake role {role} canonical {c}"))?;
+            bake_object_pivot(
+                &mut part,
+                &src_rest[c],
+                src_role_pivots[role],
+                &dst_pose,
+                &pb,
+            )
+            .with_context(|| format!("field bake role {role} canonical {c}"))?;
+            if role == 0 {
+                // Seat the head on the neck (near edge along the bone
+                // axis lands where the retail head's sat).
+                seat_terminal_axial(&mut part, &field_model[bone], &dst_pose, pb.x_dst)?;
+            }
             compact_object(&mut part);
             merge_object(&mut bones[bone], &part);
         }

@@ -18,16 +18,16 @@
 //!    into the attach bone's object is pose-exact (same local frame).
 //!    Noa's hair object rides its own channel and is rebased into the
 //!    head's rest frame instead (rigid approximation).
-//! 3. **Anchored rest-pose bake.** Local part frames are per-rig
+//! 3. **Pivot-anchored rest-pose bake.** Local part frames are per-rig
 //!    conventions (a retail player mesh even shares one mesh between its
 //!    left and right limb chains, mirrored purely by pose rotations), so
 //!    each part's geometry is re-expressed through `source rest pose ->
-//!    target rest pose` anchored on the target part's rest bbox with a
-//!    per-axis span (see `bake_object_anchored`; the head keeps its
-//!    proportions under a uniform fit). Anchoring is load-bearing: a
-//!    world-aligned bake is exact at the rest pose but leaves each part
-//!    a joint-mismatch lever arm that scatters the mesh under every
-//!    other clip (running / arts / blocking).
+//!    target rest pose` anchored at each part's rest PIVOT - the joint
+//!    the engine rotates the part about - with the bone frames aligned
+//!    and the part's length scaled onto the target's joint-to-joint span
+//!    (see `bake_object_pivot`). Pivot anchoring is load-bearing: any
+//!    other anchor leaves a lever arm that scatters the mesh under every
+//!    clip whose rotations differ from the rest pose.
 //! 4. **Texture re-layout.** Both texture systems are 4bpp indices +
 //!    16-colour CLUTs, so no quantization happens in either direction:
 //!    used texel islands are copied bit-exact between the player band
@@ -132,16 +132,8 @@ fn round_coord(v: f32) -> Result<i16> {
     Ok(r as i16)
 }
 
-/// Local part frames are per-rig conventions (retail player meshes even
-/// share one mesh between the left and right limb chains, mirrored purely
-/// by the pose rotations), so a raw geometry copy scatters parts - every
-/// cross-rig transplant below goes through an ANCHORED rest-pose bake
-/// ([`bake_object_anchored`]).
-///
-/// Rest-pose world bbox centre + per-axis extents of one posed part.
-/// The anchor for [`bake_object_anchored`]: the bbox centre (not the
-/// vertex average, which vertex density skews) plus per-axis extents,
-/// so a baked part spans exactly where the destination part sat.
+/// Rest-pose world bbox centre + per-axis extents of one posed part -
+/// feeds the whole-rig height ratio (the bake's radial scale).
 fn part_world_stats(o: &ModelObject, p: &PartPose) -> PartStats {
     // Only prim-REFERENCED vertices count: retail objects carry stray
     // unreferenced vertices (a hand part shipping far-off orphans skewed
@@ -162,17 +154,13 @@ fn part_world_stats(o: &ModelObject, p: &PartPose) -> PartStats {
     let m = rot_matrix(p);
     let mut min = [f32::MAX; 3];
     let mut max = [f32::MIN; 3];
-    let mut acc = [0f64; 3];
-    let mut n = 0f64;
     for (v, _) in o.vertices.iter().zip(&used).filter(|&(_, &u)| u) {
         let w = apply(&m, [v[0] as f32, v[1] as f32, v[2] as f32]);
         let w = [w[0] + p.tx as f32, w[1] + p.ty as f32, w[2] + p.tz as f32];
         for k in 0..3 {
             min[k] = min[k].min(w[k]);
             max[k] = max[k].max(w[k]);
-            acc[k] += w[k] as f64;
         }
-        n += 1.0;
     }
     if min[0] > max[0] {
         (min, max) = ([0.0; 3], [0.0; 3]);
@@ -187,17 +175,7 @@ fn part_world_stats(o: &ModelObject, p: &PartPose) -> PartStats {
         (max[1] - min[1]).max(1.0),
         (max[2] - min[2]).max(1.0),
     ];
-    let n = n.max(1.0);
-    let centroid = (
-        (acc[0] / n) as f32,
-        (acc[1] / n) as f32,
-        (acc[2] / n) as f32,
-    );
-    PartStats {
-        center,
-        ext,
-        centroid,
-    }
+    PartStats { center, ext }
 }
 
 /// One posed part's rest-pose world statistics.
@@ -207,43 +185,7 @@ struct PartStats {
     center: (f32, f32, f32),
     /// per-axis bbox extents.
     ext: [f32; 3],
-    /// vertex mass centre - the anchor for uniform-scale battle bakes
-    /// (a long tapered part like a gauntlet puts its bbox centre far
-    /// from where its mass sits, and the mass is what must stay at the
-    /// wrist).
-    centroid: (f32, f32, f32),
 }
-
-/// Per-part scale for an anchored bake: the head (canonical part 0)
-/// keeps its proportions under a uniform diagonal fit that never GROWS
-/// it (`min(1, fit)`) - hair extents differ wildly between rigs, and
-/// growing a one-piece head+hair to span a bigger-haired target droops
-/// it over the torso like a second head. Every other part spans the
-/// destination part's extents per world axis - the clips' translations
-/// dictate the joint spacing, so matching the destination extents is
-/// what keeps limb chains connected under every clip.
-fn anchored_scale(canonical: usize, e_src: [f32; 3], e_dst: [f32; 3]) -> [f32; 3] {
-    if canonical == 0 {
-        let diag = |e: [f32; 3]| (e[0] * e[0] + e[1] * e[1] + e[2] * e[2]).sqrt();
-        [(diag(e_dst) / diag(e_src)).clamp(0.05, 1.0); 3]
-    } else {
-        [
-            (e_dst[0] / e_src[0]).clamp(0.05, 3.0),
-            (e_dst[1] / e_src[1]).clamp(0.05, 3.0),
-            (e_dst[2] / e_src[2]).clamp(0.05, 3.0),
-        ]
-    }
-}
-
-/// Head bake parameters, BODY-relative: the head scales like the torso
-/// does (a sibling's oversized hair stays proportional to their body
-/// instead of being crushed into the replaced character's bare-head
-/// box - Lu's head+hair fitted to Vahn's bare head shrank to a pea),
-/// and anchors at the neck point placed relative to the torso (bottom
-/// of the head bbox, x/z of the torso mass), which keeps the face
-/// centred over the body no matter how the hair skews the head bbox.
-/// Returns `(c_src, c_dst, scale)`.
-type HeadParams = ((f32, f32, f32), (f32, f32, f32), [f32; 3]);
 
 /// Uniform battle-side scale: the height ratio of the two rigs' whole
 /// rest-pose bboxes. Battle limbs scale UNIFORMLY - per-axis spans
@@ -264,153 +206,295 @@ fn global_height_scale(stats_src: &[PartStats], stats_dst: &[PartStats]) -> [f32
     let s = (span(stats_dst) / span(stats_src)).clamp(0.25, 4.0);
     [s; 3]
 }
-fn head_bake_params(
-    src_head: &PartStats,
-    src_torso: &PartStats,
-    dst_head: &PartStats,
-    dst_torso: &PartStats,
-) -> HeadParams {
-    let diag = |e: [f32; 3]| (e[0] * e[0] + e[1] * e[1] + e[2] * e[2]).sqrt();
-    let s = (diag(dst_torso.ext) / diag(src_torso.ext)).clamp(0.05, 3.0);
-    // The vertical anchor preserves the SOURCE's own head-torso overlap
-    // (scaled): aligning head-bbox-bottoms instead rides a short-chinned
-    // head high on a deep-collared torso and bares the neck. y-down:
-    // torso top = centre - half extent; head bottom = centre + half.
-    let src_head_bottom = src_head.center.1 + src_head.ext[1] / 2.0;
-    let src_torso_top = src_torso.center.1 - src_torso.ext[1] / 2.0;
-    let dst_torso_top = dst_torso.center.1 - dst_torso.ext[1] / 2.0;
-    let _ = dst_head;
-    let c_src = (src_torso.centroid.0, src_head_bottom, src_torso.centroid.2);
-    let c_dst = (
-        dst_torso.centroid.0,
-        dst_torso_top + (src_head_bottom - src_torso_top) * s,
-        dst_torso.centroid.2,
-    );
-    (c_src, c_dst, [s; 3])
-}
+/// Canonical chain child per part: 0=head, 1=torso, 2=pelvis, 3/4/5
+/// armA upper/fore/hand, 6/7/8 armB, 9/10/11 legA thigh/shin/foot,
+/// 12/13/14 legB. Terminal parts (head, hands, feet) have no child.
+pub(crate) const CANONICAL_CHILD: [Option<usize>; CANONICAL_PARTS] = [
+    None,
+    Some(0),
+    Some(1),
+    Some(4),
+    Some(5),
+    None,
+    Some(7),
+    Some(8),
+    None,
+    Some(10),
+    Some(11),
+    None,
+    Some(13),
+    Some(14),
+    None,
+];
 
-/// Minimal rotation taking unit vector `a` onto unit vector `b`
-/// (Rodrigues). Falls back to identity when either is degenerate or
-/// they are opposed (a 180-degree flip has no unique axis; the rigs'
-/// rest limbs never oppose).
-fn rotation_between(a: [f32; 3], b: [f32; 3]) -> [[f32; 3]; 3] {
-    let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    let cross = [
+/// Chain parent per canonical part (chain-internal only - the shoulder
+/// and hip attachments are not chain edges).
+pub(crate) const CANONICAL_PARENT: [Option<usize>; CANONICAL_PARTS] = [
+    Some(1),
+    Some(2),
+    None,
+    None,
+    Some(3),
+    Some(4),
+    None,
+    Some(6),
+    Some(7),
+    None,
+    Some(9),
+    Some(10),
+    None,
+    Some(12),
+    Some(13),
+];
+
+fn vsub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+fn vdot(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+fn vcross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [
         a[1] * b[2] - a[2] * b[1],
         a[2] * b[0] - a[0] * b[2],
         a[0] * b[1] - a[1] * b[0],
-    ];
-    let s2 = cross[0] * cross[0] + cross[1] * cross[1] + cross[2] * cross[2];
-    if s2 < 1e-12 || dot < -0.999 {
-        return [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
-    }
-    let k = (1.0 - dot) / s2;
-    [
-        [
-            dot + k * cross[0] * cross[0],
-            k * cross[0] * cross[1] - cross[2],
-            k * cross[0] * cross[2] + cross[1],
-        ],
-        [
-            k * cross[0] * cross[1] + cross[2],
-            dot + k * cross[1] * cross[1],
-            k * cross[1] * cross[2] - cross[0],
-        ],
-        [
-            k * cross[0] * cross[2] - cross[1],
-            k * cross[1] * cross[2] + cross[0],
-            dot + k * cross[2] * cross[2],
-        ],
     ]
 }
+fn vnorm(a: [f32; 3]) -> f32 {
+    vdot(a, a).sqrt()
+}
 
-/// Rest "bone direction" per canonical part, from the rest-pose mass
-/// centres: limb parts point at their chain child (upper arm ->
-/// forearm, forearm/hand -> along the forearm, thigh -> shin,
-/// shin/foot -> along the shin), the spine parts point up the spine.
-/// The clips animate each channel relative to the rig's OWN rest
-/// directions, so a transplanted part must be re-aimed from the source
-/// rig's rest direction onto the destination's - a part carried over
-/// at the source stance's angle reads "completely angled wrong" the
-/// moment the two rests differ (Lu's guard stance vs Vahn's).
-fn canonical_bone_dirs(stats: &[PartStats]) -> [[f32; 3]; CANONICAL_PARTS] {
-    let c = |i: usize| stats[i].centroid;
-    let dir = |from: (f32, f32, f32), to: (f32, f32, f32)| -> [f32; 3] {
-        let v = [to.0 - from.0, to.1 - from.1, to.2 - from.2];
-        let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-        if n < 1.0 {
-            [0.0, -1.0, 0.0]
-        } else {
-            [v[0] / n, v[1] / n, v[2] / n]
-        }
+/// One part's rest bone frame: columns `[x, y, z]` with `x` along the
+/// bone (pivot -> child pivot), `y` in the bend plane, plus the bone
+/// length. Terminal parts inherit their chain parent's frame.
+#[derive(Clone, Copy)]
+pub(crate) struct BoneFrame {
+    /// Column-major orthonormal frame: `axes[0]` = bone axis.
+    axes: [[f32; 3]; 3],
+    /// Pivot-to-child-pivot distance; `None` on terminal parts.
+    len: Option<f32>,
+}
+
+/// Build per-part rest bone frames from the rig's rest **pivots** (each
+/// channel's rest-pose translation - the world point the part rotates
+/// about). The frame's `x` axis is the bone (pivot to child pivot); the
+/// `y` reference prefers the adjacent chain bone (child's own bone,
+/// else the parent bone) so the bend plane - elbow/knee - is part of
+/// the frame, which is what pins the twist DOF a single-axis minimal
+/// rotation leaves free (the "arm angled completely wrong" failure).
+/// Degenerate references (straight chains, spines) fall back to world
+/// axes, consistently on both rigs.
+pub(crate) fn bone_frames(
+    pivots: &[[f32; 3]],
+    child: &[Option<usize>],
+    parent: &[Option<usize>],
+) -> Vec<BoneFrame> {
+    let ident = BoneFrame {
+        axes: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        len: None,
     };
-    let mut dirs = [[0.0, -1.0, 0.0]; CANONICAL_PARTS];
-    dirs[0] = dir(c(1), c(0)); // head: up the spine
-    dirs[1] = dir(c(2), c(1)); // torso: up from pelvis
-    dirs[2] = dir(c(2), c(1)); // pelvis: same axis
-    for base in [3usize, 6] {
-        dirs[base] = dir(c(base), c(base + 1));
-        dirs[base + 1] = dir(c(base + 1), c(base + 2));
-        dirs[base + 2] = dirs[base + 1]; // hand rides the forearm axis
+    let n = pivots.len();
+    let bone = |i: usize| -> Option<([f32; 3], f32)> {
+        let k = child.get(i).copied().flatten()?;
+        let b = vsub(pivots[k], pivots[i]);
+        let l = vnorm(b);
+        (l >= 2.0).then(|| ([b[0] / l, b[1] / l, b[2] / l], l))
+    };
+    let mut frames: Vec<Option<BoneFrame>> = vec![None; n];
+    for i in 0..n {
+        let Some((x, l)) = bone(i) else { continue };
+        // Bend-plane reference: child's bone, else parent's bone, else
+        // the world axis least parallel to the bone.
+        let mut refs: Vec<[f32; 3]> = Vec::new();
+        if let Some((d, _)) = child[i].and_then(&bone) {
+            refs.push(d);
+        }
+        if let Some((d, _)) = parent[i].and_then(&bone) {
+            refs.push(d);
+        }
+        refs.extend([[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
+        let mut axes = None;
+        for r in refs {
+            let perp = vsub(r, [x[0] * vdot(r, x), x[1] * vdot(r, x), x[2] * vdot(r, x)]);
+            let pl = vnorm(perp);
+            if pl > 0.25 {
+                let y = [perp[0] / pl, perp[1] / pl, perp[2] / pl];
+                axes = Some([x, y, vcross(x, y)]);
+                break;
+            }
+        }
+        if let Some(axes) = axes {
+            frames[i] = Some(BoneFrame { axes, len: Some(l) });
+        }
     }
-    for base in [9usize, 12] {
-        dirs[base] = dir(c(base), c(base + 1));
-        dirs[base + 1] = dir(c(base + 1), c(base + 2));
-        dirs[base + 2] = dirs[base + 1]; // foot rides the shin axis
-    }
-    dirs
+    // Terminals (and degenerate bones) ride their chain parent's frame;
+    // a part with neither gets the identity.
+    (0..n)
+        .map(|i| {
+            frames[i]
+                .or_else(|| {
+                    parent
+                        .get(i)
+                        .copied()
+                        .flatten()
+                        .and_then(|p| frames[p])
+                        .map(|f| BoneFrame { len: None, ..f })
+                })
+                .unwrap_or(ident)
+        })
+        .collect()
 }
 
-/// Anchored variant: scale per world axis by `s` about the source
-/// anchor `c_src` and re-anchor at `c_dst`:
-/// `v' = R_dst^T (s ⊙ (R_src v + T_src - C_src) + C_dst - T_dst)`.
-/// The world-aligned form (no anchoring) reproduces the source's rest
-/// stance exactly at the bake pose but leaves each part's local origin
-/// offset by the full joint mismatch - a lever arm that scatters the
-/// mesh under every clip whose rotations differ from the rest pose
-/// (running / arts / blocking). Anchoring pins each part to the
-/// destination part's rest bbox instead, so the clips move it exactly
-/// like the geometry it replaced.
-fn bake_object_anchored(
-    o: &mut ModelObject,
-    src: &PartPose,
-    c_src: (f32, f32, f32),
-    dst: &PartPose,
-    c_dst: (f32, f32, f32),
-    s: [f32; 3],
+/// The rotation taking source frame axes onto destination frame axes:
+/// `R = F_dst * F_src^T` (both proper rotations, so this is one too).
+pub(crate) fn frame_align(src: &BoneFrame, dst: &BoneFrame) -> [[f32; 3]; 3] {
+    let mut r = [[0.0f32; 3]; 3];
+    for (row, r_row) in r.iter_mut().enumerate() {
+        for (col, cell) in r_row.iter_mut().enumerate() {
+            // (F_d * F_s^T)[row][col] = sum_k F_d[row][k] * F_s[col][k];
+            // axes are stored column-major (axes[k] = column k).
+            *cell = (0..3).map(|k| dst.axes[k][row] * src.axes[k][col]).sum();
+        }
+    }
+    r
+}
+
+/// Per-part pivot-anchored bake parameters: the alignment rotation, the
+/// destination bone axis (the axial-scale direction), and the two scale
+/// factors.
+pub(crate) struct PivotBake {
+    r_align: [[f32; 3]; 3],
+    x_dst: [f32; 3],
+    axial: f32,
+    radial: f32,
+}
+
+/// Compute one part's [`PivotBake`]: frames aligned, axial scale =
+/// destination bone length over source bone length (so the part's far
+/// end lands exactly on the destination's child joint - the joint gaps
+/// were parts keeping the source's limb proportions), radial scale =
+/// the uniform whole-rig ratio (the sibling's shapes survive). Terminal
+/// parts scale uniformly.
+pub(crate) fn pivot_bake_params(src: &BoneFrame, dst: &BoneFrame, radial: f32) -> PivotBake {
+    let axial = match (src.len, dst.len) {
+        (Some(ls), Some(ld)) if ls >= 2.0 => (ld / ls).clamp(0.25, 4.0),
+        _ => radial,
+    };
+    PivotBake {
+        r_align: frame_align(src, dst),
+        x_dst: dst.axes[0],
+        axial,
+        radial,
+    }
+}
+
+/// Prim-referenced vertex mask (retail objects carry stray orphan
+/// vertices that must not influence any measurement).
+fn used_verts(o: &ModelObject) -> Vec<bool> {
+    let mut used = vec![false; o.vertices.len()];
+    for g in &o.groups {
+        for prim in &g.prims {
+            for &vi in &prim.vertices {
+                if let Some(u) = used.get_mut(vi as usize) {
+                    *u = true;
+                }
+            }
+        }
+    }
+    if !used.iter().any(|&u| u) {
+        used.fill(true);
+    }
+    used
+}
+
+/// Seat a baked TERMINAL part along its bone axis: slide the baked
+/// geometry (already in `dst`'s local space) so its near edge along the
+/// destination bone axis sits where the destination part's own near
+/// edge sat. Shape-preserving - a head whose chin starts higher above
+/// its neck pivot than the replaced head's did otherwise leaves a bare
+/// neck gap no scale can close without distorting it.
+pub(crate) fn seat_terminal_axial(
+    baked: &mut ModelObject,
+    dst_obj: &ModelObject,
+    dst_pose: &PartPose,
+    x_dst: [f32; 3],
 ) -> Result<()> {
-    let ident = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
-    bake_object_anchored_aligned(o, src, c_src, dst, c_dst, s, &ident)
+    let md = rot_matrix(dst_pose);
+    // The bone axis expressed in the destination part's local space.
+    let a = apply_transposed(&md, x_dst);
+    let near = |o: &ModelObject| -> Option<f32> {
+        let used = used_verts(o);
+        o.vertices
+            .iter()
+            .zip(&used)
+            .filter(|&(_, &u)| u)
+            .map(|(v, _)| a[0] * v[0] as f32 + a[1] * v[1] as f32 + a[2] * v[2] as f32)
+            .min_by(|x, y| x.partial_cmp(y).unwrap())
+    };
+    let (Some(b), Some(d)) = (near(baked), near(dst_obj)) else {
+        return Ok(());
+    };
+    // Sink slightly PAST the destination's near edge (a tenth of the
+    // destination part's own axial span): a transplant with a slimmer
+    // skull base bares the neck during pitch clips even with the near
+    // edges flush - the pose-worst neck gap measured ~1.7x retail's at
+    // flush, retail-equivalent with the extra overlap.
+    let far = {
+        let used = used_verts(dst_obj);
+        dst_obj
+            .vertices
+            .iter()
+            .zip(&used)
+            .filter(|&(_, &u)| u)
+            .map(|(v, _)| a[0] * v[0] as f32 + a[1] * v[1] as f32 + a[2] * v[2] as f32)
+            .max_by(|x, y| x.partial_cmp(y).unwrap())
+            .unwrap_or(d)
+    };
+    let shift = (d - b) - 0.10 * (far - d).abs();
+    for v in baked.vertices.iter_mut() {
+        *v = [
+            round_coord(v[0] as f32 + a[0] * shift)?,
+            round_coord(v[1] as f32 + a[1] * shift)?,
+            round_coord(v[2] as f32 + a[2] * shift)?,
+        ];
+    }
+    Ok(())
 }
 
-/// [`bake_object_anchored`] with a world-space re-aim about the anchor:
-/// `v' = R_dst^T (R_align (s ⊙ (R_src v + T_src - C_src)) + C_dst - T_dst)`.
-#[allow(clippy::too_many_arguments)]
-fn bake_object_anchored_aligned(
+/// Pivot-anchored bake: the part's geometry, expressed relative to its
+/// SOURCE rest pivot, is re-aimed into the destination's rest bone
+/// frame, scaled (axial along the destination bone, radial across it),
+/// and written into the destination part's local space:
+/// `v' = R_dst^T * S(R_align * ((R_src * v + T_src) - anchor_src))`.
+/// The pivot is the point the engine rotates the part about, so
+/// anchoring there (not at a bbox or mass centre) is what makes every
+/// clip move the baked part exactly like the geometry it replaced.
+/// `anchor_src` is the owning bone's pivot - for a part merged into
+/// another bone's role it differs from the part's own `T_src`.
+pub(crate) fn bake_object_pivot(
     o: &mut ModelObject,
     src: &PartPose,
-    c_src: (f32, f32, f32),
+    anchor_src: [f32; 3],
     dst: &PartPose,
-    c_dst: (f32, f32, f32),
-    s: [f32; 3],
-    r_align: &[[f32; 3]; 3],
+    pb: &PivotBake,
 ) -> Result<()> {
     let ms = rot_matrix(src);
     let md = rot_matrix(dst);
     for v in o.vertices.iter_mut() {
         let w = apply(&ms, [v[0] as f32, v[1] as f32, v[2] as f32]);
-        let centred = [
-            s[0] * (w[0] + src.tx as f32 - c_src.0),
-            s[1] * (w[1] + src.ty as f32 - c_src.1),
-            s[2] * (w[2] + src.tz as f32 - c_src.2),
+        let d = [
+            w[0] + src.tx as f32 - anchor_src[0],
+            w[1] + src.ty as f32 - anchor_src[1],
+            w[2] + src.tz as f32 - anchor_src[2],
         ];
-        let aimed = apply(r_align, centred);
-        let world = [
-            aimed[0] + c_dst.0 - dst.tx as f32,
-            aimed[1] + c_dst.1 - dst.ty as f32,
-            aimed[2] + c_dst.2 - dst.tz as f32,
+        let e = apply(&pb.r_align, d);
+        let t = vdot(e, pb.x_dst);
+        let e = [
+            pb.x_dst[0] * (pb.axial * t) + pb.radial * (e[0] - pb.x_dst[0] * t),
+            pb.x_dst[1] * (pb.axial * t) + pb.radial * (e[1] - pb.x_dst[1] * t),
+            pb.x_dst[2] * (pb.axial * t) + pb.radial * (e[2] - pb.x_dst[2] * t),
         ];
-        let l = apply_transposed(&md, world);
+        let l = apply_transposed(&md, e);
         *v = [round_coord(l[0])?, round_coord(l[1])?, round_coord(l[2])?];
     }
     Ok(())
@@ -959,35 +1043,37 @@ fn monsterize_player_scaled(
         .first()
         .ok_or_else(|| anyhow::anyhow!("monster idle has no frames"))?;
     // Bake each part through source-channel rest -> target-part rest,
-    // anchored on the target part's rest bbox (see
-    // `bake_object_anchored`) - the target's own clips move each baked
-    // part exactly like the geometry it replaced, so the Delilas action
-    // streams stay coherent, not just the rest pose.
+    // pivot-anchored (see `bake_object_pivot`): the pivot is the joint
+    // the engine rotates the part about, and axial length matching puts
+    // the part's far end on the target's child joint - so the target's
+    // own clips move each baked part exactly like the geometry it
+    // replaced, joints staying closed, not just the rest pose.
     let dst_stats: Vec<PartStats> = target_model
         .iter()
         .enumerate()
         .map(|(c, o)| part_world_stats(o, &target_rest[c]))
         .collect();
-    let torso_ch = rig.channel_for_canonical[1] as usize;
     let src_stats: Vec<PartStats> = (0..CANONICAL_PARTS)
         .map(|c| core_stats[rig.channel_for_canonical[c] as usize])
         .collect();
-    let s_uniform = global_height_scale(&src_stats, &dst_stats);
-    let src_dirs = canonical_bone_dirs(&src_stats);
-    let dst_dirs = canonical_bone_dirs(&dst_stats);
+    let radial = global_height_scale(&src_stats, &dst_stats)[0];
+    let pivot_of = |p: &PartPose| [p.tx as f32, p.ty as f32, p.tz as f32];
+    let src_pivots: Vec<[f32; 3]> = (0..CANONICAL_PARTS)
+        .map(|c| pivot_of(&rest[rig.channel_for_canonical[c] as usize]))
+        .collect();
+    let dst_pivots: Vec<[f32; 3]> = target_rest.iter().map(pivot_of).collect();
+    let src_frames = bone_frames(&src_pivots, &CANONICAL_CHILD, &CANONICAL_PARENT);
+    let dst_frames = bone_frames(&dst_pivots, &CANONICAL_CHILD, &CANONICAL_PARENT);
     for (c, o) in objects.iter_mut().enumerate() {
         let ch = rig.channel_for_canonical[c] as usize;
-        let src_pose = rest[ch];
-        let dst_pose = target_rest[c];
-        let (st_src, st_dst) = (core_stats[ch], dst_stats[c]);
-        let (c_src, c_dst, s) = if c == 0 {
-            head_bake_params(&st_src, &core_stats[torso_ch], &st_dst, &dst_stats[1])
-        } else {
-            (st_src.centroid, st_dst.centroid, s_uniform)
-        };
-        let r_align = rotation_between(src_dirs[c], dst_dirs[c]);
-        bake_object_anchored_aligned(o, &src_pose, c_src, &dst_pose, c_dst, s, &r_align)
+        let pb = pivot_bake_params(&src_frames[c], &dst_frames[c], radial);
+        bake_object_pivot(o, &rest[ch], src_pivots[c], &target_rest[c], &pb)
             .with_context(|| format!("bake canonical part {c}"))?;
+        if c == 0 {
+            // Seat the head on the neck: its near edge along the bone
+            // axis lands where the replaced head's sat.
+            seat_terminal_axial(o, &target_model[0], &target_rest[0], pb.x_dst)?;
+        }
     }
 
     // Texture re-layout from the player band into the monster page.

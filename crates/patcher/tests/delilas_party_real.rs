@@ -223,6 +223,40 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         assert!(audio > 100, "XA2.XA had only {audio} Form 2 sectors");
     }
 
+    // The XA30 normal-move grunt bank: the party's channels (Vahn 0,
+    // Noa 4, Gala 6) are silenced, every other speaker's channel is
+    // byte-identical to retail (the file is shared).
+    {
+        let (lba, size) =
+            legaia_iso::iso9660::find_path_in_image(&patched, "XA/XA30.XA").expect("XA30.XA");
+        let sectors = (size as usize).div_ceil(2048);
+        let (mut muted, mut kept) = (0usize, 0usize);
+        for i in 0..sectors {
+            let base = (lba as usize + i) * 2352;
+            let sector = &patched[base..base + 2352];
+            if sector[0x12] & 0x20 == 0 {
+                continue;
+            }
+            let chan = sector[0x11];
+            if [0u8, 4, 6].contains(&chan) {
+                assert!(
+                    sector[0x18..0x92C].iter().all(|&b| b == 0),
+                    "XA30 hero channel {chan} sector {i} still carries audio"
+                );
+                muted += 1;
+            } else {
+                assert_eq!(
+                    &original[base..base + 2352],
+                    sector,
+                    "XA30 non-hero channel {chan} sector {i} was touched"
+                );
+                kept += 1;
+            }
+        }
+        assert!(muted > 10, "only {muted} XA30 hero sectors muted");
+        assert!(kept > 10, "only {kept} XA30 non-hero sectors survive");
+    }
+
     // Idempotence: a second apply is a no-op and changes no bytes.
     let mut second = DiscPatcher::open(patched.clone()).expect("open patched");
     let report2 = apply_delilas_party(&mut second, &mapping).expect("re-apply");

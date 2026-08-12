@@ -292,6 +292,20 @@ impl DiscPatcher {
     /// silence). Form 1 sectors inside the extent are left alone. Returns
     /// the number of sectors silenced.
     pub fn silence_xa_file(&mut self, name: &str) -> Result<usize> {
+        self.silence_xa(name, None)
+    }
+
+    /// [`Self::silence_xa_file`] restricted to a channel set: only Form 2
+    /// sectors whose subheader channel (byte `0x11`) is in `channels` are
+    /// zeroed; every other channel's audio survives. Multi-voice banks
+    /// like `XA30.XA` interleave many speakers into one file, one channel
+    /// each - the party's grunt channels can go quiet without touching
+    /// anyone else's.
+    pub fn silence_xa_channels(&mut self, name: &str, channels: &[u8]) -> Result<usize> {
+        self.silence_xa(name, Some(channels))
+    }
+
+    fn silence_xa(&mut self, name: &str, channels: Option<&[u8]>) -> Result<usize> {
         let (lba, size) = legaia_iso::iso9660::find_path_in_image(&self.image, name)
             .with_context(|| format!("{name} not found in disc image"))?;
         // The mastering records Form 2 extents with 2048-unit sizes (the
@@ -304,6 +318,9 @@ impl DiscPatcher {
                 break;
             };
             if !legaia_iso::write::is_form2(sector) {
+                continue;
+            }
+            if channels.is_some_and(|set| !set.contains(&sector[0x11])) {
                 continue;
             }
             sector[0x18..0x92C].fill(0);

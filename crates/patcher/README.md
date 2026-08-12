@@ -1375,7 +1375,10 @@ legaia-patcher verify --input DISC.bin --patch run.ppf
   under the retail Delilas movesets, and both sides' names follow. Field
   walking models rebuild from the same sibling models, and the party's
   battle grunt voices resample from the siblings' voice banks in place
-  (`delilas_voice`); the arts XA shouts stay. Seedless, not in any
+  (`delilas_voice`); the replaced characters' XA voice lines are silenced
+  (the XA2/4/6 arts-shout banks whole, plus the party's three channels of
+  the shared `XA30.XA` swing-grunt bank - routing intact, sectors decode
+  to silence). Seedless, not in any
   preset - the swap machinery lives in `legaia_asset::party_swap`, the
   disc apply in `delilas_party`. See `docs/tooling/randomizer.md`
   § Delilas party swap.
