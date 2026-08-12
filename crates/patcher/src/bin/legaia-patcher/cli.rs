@@ -768,8 +768,10 @@ pub(crate) struct RandomizeArgs {
     /// match. The value maps the three siblings onto Vahn, Noa, Gala in
     /// order: any permutation of `gi`, `lu`, `che` (e.g. `--delilas-party
     /// lu,gi,che` puts Lu on Vahn). New-game party names follow the mapping
-    /// (existing saves keep their stored names); field-map walking sprites
-    /// stay retail.
+    /// (existing saves keep their stored names). The field walking models
+    /// rebuild from the same sibling models, and the party's battle grunt
+    /// voices resample from the siblings' own voice banks; the arts XA
+    /// shouts stay (they are the moves' own audio).
     #[arg(long, value_name = "V,N,G", value_parser = parse_delilas_party)]
     pub(crate) delilas_party: Option<legaia_patcher::delilas_party::PartyMapping>,
     /// Per-battle percentage chance a capturable enemy is shiny (only with

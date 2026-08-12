@@ -1,0 +1,232 @@
+//! Delilas party voices: make the swapped party GRUNT like the siblings.
+//!
+//! The party's battle reaction voices (hit / knockdown / block / swing)
+//! are SPU one-shots out of programs 7 (Vahn), 8 (Gala), 9 (Noa) of the
+//! always-resident battle bank PROT 0869; the cue ids in the animation
+//! cue tracks (`entry+0x54`) resolve there through the static SFX
+//! descriptors and the `>= 0xA7` party band. The Delilas grunts live in
+//! per-monster single-program VABs inside `monster.snd` (PROT 0891,
+//! programs 62/63/64), which are only in SPU RAM when that monster is in
+//! the formation - so copying cue ids would be silent in every other
+//! battle (and the party/monster routing legs use different id spaces
+//! anyway).
+//!
+//! The swap therefore re-points the party's OWN programs at the sibling
+//! samples, entirely in place: each target tone's `VagAtr` timbre fields
+//! (ADSR / pitch / volume) take the source tone's values while `prog` /
+//! `vag` stay, and the target tone's VAG body is overwritten with the
+//! source ADPCM (truncated at a block boundary with the end flag forced
+//! when the source is longer; a shorter source just ends early - bytes
+//! past the end flag never play). Nothing moves, nothing grows, the cue
+//! tracks and both routing legs stay retail, the samples are resident in
+//! every battle, and the arts XA shouts (a separate roster-keyed path)
+//! are untouched.
+
+use anyhow::{Context, Result, bail};
+
+use crate::delilas_party::PartyMapping;
+use crate::disc::DiscPatcher;
+
+/// PROT entry of the always-resident battle voice/SFX bank (VAB slot 2).
+pub const BATTLE_BANK_ENTRY: usize = 869;
+
+/// PROT entry of `monster.snd` (the per-monster voice banks).
+pub const MONSTER_SND_ENTRY: usize = 891;
+
+/// The party's voice program per template slot (Vahn / Noa / Gala).
+pub const PARTY_VOICE_PROGRAMS: [usize; 3] = [7, 9, 8];
+
+/// SPU-ADPCM block size.
+const BLOCK: usize = 16;
+
+/// One parsed VAB's write-relevant geometry inside an entry buffer.
+struct VabView {
+    header_offset: usize,
+    /// Populated program slots in page order (tone page `i` belongs to
+    /// `page_programs[i]`).
+    page_programs: Vec<usize>,
+    /// Per-page tone counts (from `ProgAtr.tones`).
+    page_tones: Vec<usize>,
+    /// `(byte_offset, size)` per VAG body, 0-indexed by `vag - 1`.
+    vag_spans: Vec<(usize, usize)>,
+}
+
+fn view(buf: &[u8], offset: usize) -> Result<VabView> {
+    let report = legaia_vab::parse(buf, offset).context("parse VAB")?;
+    // Tone pages appear in populated-program order; each page's first
+    // tone names its program slot. Fall back to the populated-slot scan
+    // when a page's `prog` field is unhelpful.
+    let populated: Vec<usize> = report
+        .programs
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.tones > 0)
+        .map(|(i, _)| i)
+        .collect();
+    if populated.len() != report.tones.len() {
+        bail!(
+            "VAB at {offset:#x}: {} populated programs but {} tone pages",
+            populated.len(),
+            report.tones.len()
+        );
+    }
+    let page_tones = populated
+        .iter()
+        .map(|&p| report.programs[p].tones as usize)
+        .collect();
+    Ok(VabView {
+        header_offset: report.header_offset,
+        page_programs: populated,
+        page_tones,
+        vag_spans: report
+            .vag_samples
+            .iter()
+            .map(|s| (s.byte_offset, s.size))
+            .collect(),
+    })
+}
+
+impl VabView {
+    fn page_of(&self, program: usize) -> Result<usize> {
+        self.page_programs
+            .iter()
+            .position(|&p| p == program)
+            .ok_or_else(|| anyhow::anyhow!("program {program} not populated"))
+    }
+
+    /// Byte offset of tone `t` of tone page `page`.
+    fn tone_offset(&self, page: usize, t: usize) -> usize {
+        self.header_offset
+            + legaia_vab::VAB_HEADER_SIZE
+            + legaia_vab::PROGRAMS_TABLE_SIZE
+            + (page * legaia_vab::TONES_PER_PROGRAM + t) * legaia_vab::TONE_SIZE
+    }
+
+    /// The 1-based VAG index tone `t` of `page` points at.
+    fn tone_vag(&self, buf: &[u8], page: usize, t: usize) -> usize {
+        let o = self.tone_offset(page, t);
+        i16::from_le_bytes(buf[o + 22..o + 24].try_into().unwrap()) as usize
+    }
+}
+
+/// Locate the Delilas monster's VAB inside `monster.snd`: header
+/// `[u32][u32 count][u32 sector_offsets[count]]`, monster `id`'s slot at
+/// sector `tbl[id]`, VAB 4 bytes in.
+fn monster_vab_offset(snd: &[u8], monster_id: u16) -> Result<usize> {
+    let count = u32::from_le_bytes(
+        snd.get(4..8)
+            .ok_or_else(|| anyhow::anyhow!("monster.snd too short"))?
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    // The sector table is 1-based: monster `id`'s slot starts at
+    // `tbl[id - 1]` (verified: 162/163/164 resolve to the VABs whose
+    // single populated programs are 62/63/64 = id - 100).
+    let id = monster_id as usize - 1;
+    if id >= count {
+        bail!("monster id {monster_id} past monster.snd count {count}");
+    }
+    let sec = u32::from_le_bytes(snd[8 + id * 4..12 + id * 4].try_into().unwrap()) as usize;
+    let base = sec * 0x800;
+    // The slot leads with one u32; the VAB follows.
+    for probe in [base + 4, base] {
+        if snd.len() > probe + 4
+            && u32::from_le_bytes(snd[probe..probe + 4].try_into().unwrap())
+                == legaia_vab::VAB_MAGIC
+        {
+            return Ok(probe);
+        }
+    }
+    bail!("monster id {monster_id}: no VAB at monster.snd sector {sec}")
+}
+
+/// Copy a VAG body over another in place. When the source is longer it
+/// truncates at a block boundary and forces the end flag (no repeat) on
+/// the final block; when shorter, the source's own end flag stops
+/// playback and the stale tail is never read.
+fn overwrite_vag(dst: &mut [u8], src: &[u8]) {
+    let n = src.len().min(dst.len()) / BLOCK * BLOCK;
+    if n == 0 {
+        return;
+    }
+    dst[..n].copy_from_slice(&src[..n]);
+    if n < src.len() {
+        // Truncated: end flag on, repeat off.
+        let flags = &mut dst[n - BLOCK + 1];
+        *flags = (*flags & !0x02) | 0x01;
+    }
+}
+
+/// Splice the mapped siblings' voice samples into the party's battle
+/// voice programs. Returns human-readable notes.
+pub fn splice_party_voices(
+    patcher: &mut DiscPatcher,
+    mapping: &PartyMapping,
+) -> Result<Vec<String>> {
+    let mut notes = Vec::new();
+    let mut bank = patcher
+        .read_entry(BATTLE_BANK_ENTRY)
+        .context("read battle voice bank (PROT 0869)")?;
+    let snd = patcher
+        .read_entry_footprint(MONSTER_SND_ENTRY)
+        .context("read monster.snd (PROT 0891)")?;
+
+    let bank_off = *legaia_vab::find_vabs(&bank)
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("PROT 0869 carries no VAB"))?;
+    let bank_view = view(&bank, bank_off)?;
+
+    let siblings = [mapping.vahn, mapping.noa, mapping.gala];
+    for (slot, sibling) in siblings.iter().enumerate() {
+        let party_prog = PARTY_VOICE_PROGRAMS[slot];
+        let dst_page = bank_view.page_of(party_prog)?;
+        let dst_tones = bank_view.page_tones[dst_page];
+
+        let src_off = monster_vab_offset(&snd, sibling.monster_id())?;
+        let src_view = view(&snd, src_off)?;
+        let src_page = 0;
+        let src_prog = *src_view
+            .page_programs
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("sibling VAB has no populated program"))?;
+        let src_tones = src_view.page_tones[src_page];
+        if src_tones == 0 {
+            bail!("sibling program {src_prog} has no tones");
+        }
+
+        for t in 0..dst_tones {
+            let s = t % src_tones;
+            // Timbre fields (bytes 0..22: prior..adsr2) come from the
+            // sibling tone; `prog`/`vag`/reserved stay the party's.
+            let src_o = src_view.tone_offset(src_page, s);
+            let timbre: [u8; 22] = snd[src_o..src_o + 22].try_into().unwrap();
+            let dst_o = bank_view.tone_offset(dst_page, t);
+            bank[dst_o..dst_o + 22].copy_from_slice(&timbre);
+
+            // Sample body.
+            let src_vag = src_view.tone_vag(&snd, src_page, s);
+            let dst_vag = bank_view.tone_vag(&bank, dst_page, t);
+            let (so, sn) = *src_view
+                .vag_spans
+                .get(src_vag.wrapping_sub(1))
+                .ok_or_else(|| anyhow::anyhow!("sibling VAG {src_vag} out of range"))?;
+            let (do_, dn) = *bank_view
+                .vag_spans
+                .get(dst_vag.wrapping_sub(1))
+                .ok_or_else(|| anyhow::anyhow!("bank VAG {dst_vag} out of range"))?;
+            let src_body = snd[so..so + sn].to_vec();
+            overwrite_vag(&mut bank[do_..do_ + dn], &src_body);
+        }
+        notes.push(format!(
+            "{}: program {party_prog} voices <- {} ({} tones over {})",
+            ["Vahn", "Noa", "Gala"][slot],
+            sibling.display_name(),
+            dst_tones,
+            src_tones,
+        ));
+    }
+    patcher
+        .patch_prot_entry(BATTLE_BANK_ENTRY, 0, &bank)
+        .context("write battle voice bank")?;
+    Ok(notes)
+}

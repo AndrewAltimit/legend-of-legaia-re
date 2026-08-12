@@ -283,6 +283,12 @@ pub fn apply_delilas_party(
         for w in &fieldized.warnings {
             report.notes.push(format!("field: {w}"));
         }
+
+        // Battle voices: the party grunts like the mapped siblings (the
+        // arts XA shouts are a separate roster-keyed path and stay).
+        let notes = crate::delilas_voice::splice_party_voices(patcher, mapping)
+            .context("splice party battle voices")?;
+        report.notes.extend(notes);
     }
     Ok(report)
 }

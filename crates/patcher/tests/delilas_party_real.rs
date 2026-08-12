@@ -91,6 +91,49 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     assert_eq!(name_at(1), "Lu");
     assert_eq!(name_at(2), "Che");
 
+    // Battle voices: the party's voice program now carries the mapped
+    // sibling's samples - program 7 (Vahn) tone 0 decodes to the same
+    // PCM as Gi's monster.snd program tone 0.
+    {
+        use legaia_patcher::delilas_voice::{BATTLE_BANK_ENTRY, MONSTER_SND_ENTRY};
+        let bank = reopened.read_entry(BATTLE_BANK_ENTRY).expect("bank");
+        let bank_off = *legaia_vab::find_vabs(&bank).first().expect("bank VAB");
+        let bank_vab = legaia_vab::parse(&bank, bank_off).expect("bank parses after splice");
+        let snd = reopened
+            .read_entry_footprint(MONSTER_SND_ENTRY)
+            .expect("monster.snd");
+        let gi_sec =
+            u32::from_le_bytes(snd[8 + 161 * 4..12 + 161 * 4].try_into().unwrap()) as usize * 0x800;
+        let gi_vab = legaia_vab::parse(&snd, gi_sec + 4).expect("Gi VAB");
+        let tone_vag = |vab: &legaia_vab::VabReport, prog: usize, tone: usize| -> usize {
+            let page = vab
+                .programs
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| p.tones > 0)
+                .position(|(i, _)| i == prog)
+                .expect("program populated");
+            vab.tones[page][tone].vag as usize
+        };
+        let bank_span = bank_vab.vag_samples[tone_vag(&bank_vab, 7, 0) - 1];
+        let gi_span = gi_vab.vag_samples[tone_vag(&gi_vab, 62, 0) - 1];
+        let bank_pcm = legaia_vab::decode_vag_aligned(
+            &bank[bank_span.byte_offset..bank_span.byte_offset + bank_span.size],
+        )
+        .expect("patched VAG decodes");
+        let gi_pcm = legaia_vab::decode_vag_aligned(
+            &snd[gi_span.byte_offset..gi_span.byte_offset + gi_span.size],
+        )
+        .expect("Gi VAG decodes");
+        let n = bank_pcm.len().min(gi_pcm.len());
+        assert!(n > 1000, "spliced sample too short ({n} samples)");
+        assert_eq!(
+            &bank_pcm[..n.min(2000)],
+            &gi_pcm[..n.min(2000)],
+            "program 7 tone 0 does not carry Gi's sample"
+        );
+    }
+
     // Idempotence: a second apply is a no-op and changes no bytes.
     let mut second = DiscPatcher::open(patched.clone()).expect("open patched");
     let report2 = apply_delilas_party(&mut second, &mapping).expect("re-apply");

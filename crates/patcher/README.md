@@ -1372,11 +1372,13 @@ legaia-patcher verify --input DISC.bin --patch run.ppf
   siblings (any permutation of `gi` / `lu` / `che` over Vahn, Noa, Gala): the
   party wears the siblings' battle models under their own animations and
   arts, the ravine duels + dome Master legs field Vahn / Noa / Gala models
-  under the retail Delilas movesets, and both sides' names follow. Battle
-  models + new-game names only (field-form walking models stay retail);
-  seedless, not in any preset - the swap machinery lives in
-  `legaia_asset::party_swap`, the disc apply in `delilas_party`. See
-  `docs/tooling/randomizer.md` § Delilas party swap.
+  under the retail Delilas movesets, and both sides' names follow. Field
+  walking models rebuild from the same sibling models, and the party's
+  battle grunt voices resample from the siblings' voice banks in place
+  (`delilas_voice`); the arts XA shouts stay. Seedless, not in any
+  preset - the swap machinery lives in `legaia_asset::party_swap`, the
+  disc apply in `delilas_party`. See `docs/tooling/randomizer.md`
+  § Delilas party swap.
 - `--equipment-drops` injects a low-chance bonus equipment drop into the
   battle-end reward routine - granted on top of `--drops`, never disturbing it.
   `--equipment-drop-chance N` sets the per-battle percent (default 5).

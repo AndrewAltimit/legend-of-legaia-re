@@ -1333,9 +1333,17 @@ chain repacks with sector-aligned slots inside the retail entry footprint.
 New-game template names follow the mapping ("Gi" / "Lu" / "Che"; existing
 saves keep their stored names).
 
-Not covered (v1): the walking-around **field** models (PROT 0874's
-separate 10-bone field-form system) stay retail, as do menu portraits,
-battle HUD faces and the XA voice shouts. Composes with
+The **field** walking models rebuild too (`party_swap::fieldize`): each
+character's PROT 0874 field mesh + atlas window rebuilds from the same
+monster model, baked per field bone with a centroid-anchored scale that
+keeps the chibi proportions, the head textured and the body flattened to
+vertex colours - the retail field style. Battle **voices** follow as well
+(`delilas_voice`): the party's reaction grunts are SPU one-shots out of
+the always-resident battle bank's programs 7/8/9, so the mapped siblings'
+samples (single-program VABs inside `monster.snd`) splice over them in
+place - cue tracks, routing and residency all stay retail, and the arts
+XA shouts (a separate roster-keyed path) are untouched. Still retail:
+menu portraits, battle HUD faces, the XA shout voices themselves. Composes with
 `--delilas-challenge` - the challenge applies first, so its memory-tight
 dome 1v2 streams slim clones cut from the retail sibling blocks while the
 1v1 ravine duels (ample heap headroom) carry the swapped models. Not part
