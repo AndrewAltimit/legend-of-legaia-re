@@ -46,8 +46,15 @@ loader (`_DAT_8007b8c2`) chooses between PROT-TOC indices (dev) and
 - **State `0x8`** - loads the battle texture pack: PROT `0x368` (872) / `etim.dat`.
 - **State `0xb`** - loads the battle **model** pack: PROT `0x36a` (**874**) / `etmd.dat`
   (`FUN_8003e68c(0x36a)` + `async_lba_loader`), with PROT `0x369` (873) as its index.
-- **State `0xc`** - walks the loaded 874 pack and calls `tmd_register` on every
-  entry (`jal 0x80026b4c` = `FUN_80026B4C`, the sole `DAT_8007C018` installer),
+- **State `0xc`** - two loops over the contiguous 873+874 load. The FIRST
+  (`jal 0x8001FBCC`) walks **874's own header** as a flat pack - count =
+  word 0 (`meta[0]` = 3), then registers words 1..3 (`meta[1]`,
+  `type<<24|size0`, `offset0`) verbatim as battle-VDF pointers off the raw
+  874 base; `meta[1]` addresses a VDF tail past the LZS payload inside the
+  entry, so those words are a byte-exact editing contract - see
+  [`character-mesh.md` § Dual consumer](../formats/character-mesh.md#dual-consumer---the-battle-loader-registers-the-header-words-as-vdf-pointers).
+  The SECOND walks the **873** pack and calls `tmd_register` on every entry
+  (`jal 0x80026b4c` = `FUN_80026B4C`, the sole `DAT_8007C018` installer),
   then loads `efect.dat` / PROT `0x36b` (875). **This registration fills the
   effect/model window `DAT_8007C018[3..]`, NOT the party `[0..=2]`.** The party
   battle meshes come from a **separate** pack - **PROT 1204 (`other5`)**,

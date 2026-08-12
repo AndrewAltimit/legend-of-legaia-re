@@ -145,6 +145,48 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
             &retail_party[..n - 16],
             "Gi's duel bank does not carry Vahn's sample"
         );
+
+        // Sharing rules: retail's silent placeholder tone (prog 7 tone 2,
+        // vol 0) stays silent, and the SHARED vag-1 body it points at
+        // (also a battle SFX + other programs' placeholders) stays
+        // byte-identical to retail.
+        let vab = legaia_vab::parse(&bank, bank_off).expect("patched bank");
+        let retail_vab = legaia_vab::parse(&retail_bank, bank_off).expect("retail bank");
+        let page7 = vab
+            .programs
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.tones > 0)
+            .position(|(i, _)| i == 7)
+            .expect("program 7 page");
+        assert_eq!(
+            vab.tones[page7][2].vol, 0,
+            "silent placeholder tone woke up"
+        );
+        let (r1, p1) = (retail_vab.vag_samples[0], vab.vag_samples[0]);
+        assert_eq!(
+            &retail_bank[r1.byte_offset..r1.byte_offset + r1.size],
+            &bank[p1.byte_offset..p1.byte_offset + p1.size],
+            "shared vag 1 body was overwritten"
+        );
+    }
+
+    // The container header words the battle scene loader registers as
+    // battle-VDF pointers at every battle load (FUN_800520F0 state 0xc:
+    // meta[0], meta[1], type<<24|size0, offset0) must stay byte-exact -
+    // meta[1] is the offset of the VDF tail past the LZS payload, and a
+    // recomputed value points the effect system at garbage (battle-load
+    // hang). PROT 0874 is a dual-consumer entry: field player pack AND
+    // battle VDF carrier.
+    {
+        let retail = DiscPatcher::open(original.clone()).expect("open retail");
+        let r = retail.read_entry(874).expect("retail 874");
+        let p = reopened.read_entry(874).expect("patched 874");
+        assert_eq!(
+            &r[..16],
+            &p[..16],
+            "PROT 0874 registered header words changed"
+        );
     }
 
     // Idempotence: a second apply is a no-op and changes no bytes.

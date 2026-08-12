@@ -664,7 +664,16 @@ fn fieldize_pack_at(
         );
     }
 
-    // New §0: the 5-body pack with slots 0..2 replaced.
+    // New §0: the 5-body pack with slots 0..2 replaced. Its DECODED size
+    // must stay EXACTLY retail's: the battle scene loader registers the
+    // container's first three header words (`meta[1]`, `type<<24|size0`,
+    // `offset0`) as battle-VDF pointers off the raw entry base at every
+    // battle load (`FUN_800520F0` state 0xc first loop -> `FUN_8001FBCC`),
+    // and `meta[1]` doubles as the byte offset of the VDF tail that lives
+    // PAST the LZS payload inside the same PROT entry. Changing either
+    // word points the effect system at garbage and hangs the battle load.
+    // Retail's own §0 carries ~19 KB of trailing pack padding, so padding
+    // to the exact size is the retail shape.
     let sec0 = &container.descriptors[character_pack::CONTAINER_SECTION];
     let sec0_decoded = crate::decode(prot_0874, sec0, crate::DecodeMode::Lzs)?;
     let bodies = extract_pack(&sec0_decoded)?;
@@ -694,6 +703,15 @@ fn fieldize_pack_at(
             sec0_new.push(0);
         }
     }
+    if sec0_new.len() > sec0_decoded.len() {
+        bail!(
+            "rebuilt §0 pack decodes to {} bytes, retail's {} is a hard cap \
+             (battle-VDF header words must stay byte-exact)",
+            sec0_new.len(),
+            sec0_decoded.len()
+        );
+    }
+    sec0_new.resize(sec0_decoded.len(), 0);
 
     // New §2: the atlas with each character entry's pixels + CLUT
     // repainted in place (same TIM sizes).
@@ -727,6 +745,17 @@ fn fieldize_pack_at(
     if header_and_slack + s0.len() + sec1_raw.len() + s2.len() > entry_len {
         s0 = legaia_lzs::compress_optimal(&sec0_new);
         s2 = legaia_lzs::compress_optimal(&sec2_new);
+    }
+    if std::env::var("LEGAIA_FIELDIZE_DEBUG").is_ok() {
+        eprintln!(
+            "[fieldize] decimate {decimate}: sec0 {} (lzs {}), sec1 raw {}, sec2 {} (lzs {}), entry {}",
+            sec0_new.len(),
+            s0.len(),
+            sec1_raw.len(),
+            sec2_new.len(),
+            s2.len(),
+            entry_len
+        );
     }
     let streams = [s0, sec1_raw, s2];
     let sizes = [sec0_new.len() as u32, sec1.size, sec2_new.len() as u32];

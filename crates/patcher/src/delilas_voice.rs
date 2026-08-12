@@ -21,6 +21,13 @@
 //! tracks and both routing legs stay retail, the samples are resident in
 //! every battle, and the arts XA shouts (a separate roster-keyed path)
 //! are untouched.
+//!
+//! Two retail sharing rules bound the overwrite:
+//! - A **silent tone** (vol 0) is a placeholder cue retail keeps quiet
+//!   (Vahn's cue 2, Noa's cues 0/1); the swap leaves it silent.
+//! - A **shared VAG body** (vag 1 of PROT 0869 backs a battle SFX and
+//!   the placeholder cues of several programs at once) is never
+//!   overwritten - only page-exclusive bodies are.
 
 use anyhow::{Context, Result, bail};
 
@@ -92,6 +99,24 @@ impl VabView {
             .iter()
             .position(|&p| p == program)
             .ok_or_else(|| anyhow::anyhow!("program {program} not populated"))
+    }
+
+    /// Is `vag` referenced by any tone OUTSIDE tone page `page`? Retail
+    /// shares placeholder/SFX bodies between programs (vag 1 of PROT
+    /// 0869 backs a battle SFX and several silent cue slots at once), so
+    /// an in-place body overwrite is only safe on a page-exclusive vag.
+    fn vag_shared_outside(&self, buf: &[u8], page: usize, vag: usize) -> bool {
+        for (p, &tones) in self.page_tones.iter().enumerate() {
+            if p == page {
+                continue;
+            }
+            for t in 0..tones {
+                if self.tone_vag(buf, p, t) == vag {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// Byte offset of tone `t` of tone page `page`.
@@ -168,23 +193,42 @@ fn splice_program(
     src_page: usize,
 ) -> Result<(usize, usize)> {
     let dst_tones = dst_view.page_tones[dst_page];
-    let src_tones = src_view.page_tones[src_page];
-    if src_tones == 0 {
-        bail!("source program has no tones");
+    // Cycle over the source's AUDIBLE tones only (a vol-0 tone is a
+    // retail placeholder, not a voice).
+    let src_pool: Vec<usize> = (0..src_view.page_tones[src_page])
+        .filter(|&t| {
+            let o = src_view.tone_offset(src_page, t);
+            src[o + 2] != 0
+        })
+        .collect();
+    if src_pool.is_empty() {
+        bail!("source program has no audible tones");
     }
+    let mut spliced = 0usize;
     for t in 0..dst_tones {
-        let s = t % src_tones;
+        let dst_o = dst_view.tone_offset(dst_page, t);
+        // A silent destination tone is a retail placeholder cue (vol 0,
+        // usually pointing at a SHARED body) - retail keeps that cue
+        // silent, so the swap does too.
+        if dst[dst_o + 2] == 0 {
+            continue;
+        }
+        let dst_vag = dst_view.tone_vag(dst, dst_page, t);
+        // Never overwrite a body other programs read (shared SFX).
+        if dst_view.vag_shared_outside(dst, dst_page, dst_vag) {
+            continue;
+        }
+        let s = src_pool[spliced % src_pool.len()];
+        spliced += 1;
         // Timbre fields (bytes 0..20: prior..adsr2) come from the source
         // tone; `prog` (bytes 20..22), `vag` and reserved stay the
         // destination's - the SPU driver reads the prog field back.
         let src_o = src_view.tone_offset(src_page, s);
         let timbre: [u8; 20] = src[src_o..src_o + 20].try_into().unwrap();
-        let dst_o = dst_view.tone_offset(dst_page, t);
         dst[dst_o..dst_o + 20].copy_from_slice(&timbre);
 
         // Sample body.
         let src_vag = src_view.tone_vag(src, src_page, s);
-        let dst_vag = dst_view.tone_vag(dst, dst_page, t);
         let (so, sn) = *src_view
             .vag_spans
             .get(src_vag.wrapping_sub(1))
@@ -196,7 +240,7 @@ fn splice_program(
         let body = src[so..so + sn].to_vec();
         overwrite_vag(&mut dst[do_..do_ + dn], &body);
     }
-    Ok((dst_tones, src_tones))
+    Ok((spliced, src_pool.len()))
 }
 
 /// Splice the voice identity both ways: the party's battle voice

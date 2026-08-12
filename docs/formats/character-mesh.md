@@ -68,6 +68,28 @@ padding. This is byte-equality-verified against the live `DAT_8007C018[4]`
 allocation in retail (see
 [`world-map-overlay.md` § Disc-side source of `[0..4]`](world-map-overlay.md#disc-side-source-of-04)).
 
+### Dual consumer - the battle loader registers the header words as VDF pointers
+
+PROT 0874 serves a **second, battle-side reader** with a different shape
+expectation (its extraction label is `vdf` for a reason). At every battle
+load, `FUN_800520F0` state `0xc` (first loop, `jal 0x8001FBCC`) walks the
+raw entry as a flat pack: word 0 (`meta[0]` = 3) is the count, and words
+1..3 - `meta[1]`, `type<<24|size0`, `offset0` - are registered verbatim as
+battle-VDF pointers off the raw entry base. `meta[1]` (`0x2CBA0`) is **not**
+just the decoded-size sum: it is the byte offset of a VDF data tail that
+lives *past* the LZS payload inside the same PROT entry (payload ends at
+`0x19800`; the entry footprint extends further). Any editor that rebuilds
+the container and recomputes `meta[1]` or changes §0's decoded size points
+the effect system at garbage: the field walks fine, and the corruption
+detonates at the next battle load ("efect init" reads through the stale
+pointer - observed as a wild read at `0x808425F8` under PCSX-Redux and a
+battle-intro hang on stricter emulators). An in-place edit must keep the
+first four words (`meta[0]`, `meta[1]`, `type<<24|size0`, `offset0`)
+byte-exact, which pins §0's decoded size at retail's 46 236 bytes (pad the
+pack tail - retail itself pads ~19 KB in slot 4) and leave the entry bytes
+past the LZS payload untouched. `legaia_asset::party_swap::fieldize`
+implements exactly this contract.
+
 Byte-equality verified against a settled field-scene RAM snapshot at
 `DAT_8007C018[0..=4]` - see
 [`world-map-overlay.md` § Disc-side source of `[0..4]`](world-map-overlay.md#disc-side-source-of-04)
