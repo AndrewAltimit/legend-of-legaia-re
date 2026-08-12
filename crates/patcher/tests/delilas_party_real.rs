@@ -39,6 +39,17 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     let mapping = PartyMapping::default();
     let report = apply_delilas_party(&mut patcher, &mapping).expect("apply");
     assert!(report.changed);
+    // The field forms must come from the siblings' own NPC meshes at
+    // full detail - no battle-model fallback, no decimation ladder, no
+    // head-texture downscale.
+    for note in &report.notes {
+        assert!(
+            !note.contains("NPC-mesh source unavailable")
+                && !note.contains("detail reduced")
+                && !note.contains("resolution"),
+            "field quality regression: {note}"
+        );
+    }
     let patched = patcher.into_image();
     assert_eq!(patched.len(), original.len(), "image length preserved");
 

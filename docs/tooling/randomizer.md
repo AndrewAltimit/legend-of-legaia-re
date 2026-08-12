@@ -1334,10 +1334,21 @@ New-game template names follow the mapping ("Gi" / "Lu" / "Che"; existing
 saves keep their stored names).
 
 The **field** walking models rebuild too (`party_swap::fieldize`): each
-character's PROT 0874 field mesh + atlas window rebuilds from the same
-monster model, baked per field bone with a centroid-anchored scale that
-keeps the chibi proportions, the head textured and the body flattened to
-vertex colours - the retail field style. Battle **voices** follow as well
+character's PROT 0874 field mesh + atlas window rebuilds from the
+sibling's **own field NPC mesh** (the nilboa duel-scene pack, PROT 0639,
+with rest poses + head TIMs from PROT 0638) - retail-authored chibi
+geometry that fits the pack budget at full detail. Each NPC part bakes
+into the party field bone's local frame anchored on the retail part's
+rest bbox (per-axis span - the locomotion clips' translations dictate
+joint spacing, so matching retail extents keeps limb chains connected
+under every clip); the head re-lays into the character's atlas window,
+bodies stay flat vertex colours - the retail field style. The
+battle-model conversion survives as a fallback when the NPC source is
+unavailable. The rebuilt container keeps the entry's first four header
+words byte-exact - the battle loader registers them as battle-VDF
+pointers (see [`character-mesh.md` § Dual
+consumer](../formats/character-mesh.md#dual-consumer---the-battle-loader-registers-the-header-words-as-vdf-pointers)).
+Battle **voices** follow as well
 (`delilas_voice`): the party's reaction grunts are SPU one-shots out of
 the always-resident battle bank's programs 7/8/9, so the mapped siblings'
 samples (single-program VABs inside `monster.snd`) splice over them in

@@ -1,26 +1,32 @@
 //! Field-side of the party swap: rebuild PROT 0874 so the party's
 //! walking-around (field) models depict the Delilas siblings.
 //!
-//! The field forms are built from the same monster-archive models the
-//! battle side uses, so both forms match. The field rig is a 12-group
-//! TMD per character (10 posed bones + 2 unposed equipment-template
-//! groups), driven by the shared locomotion ANM bundle whose records
-//! decode to the same flat per-part pose model as the battle streams -
-//! so the same rest-pose bake applies, collapsed onto 10 bones
-//! (torso+pelvis merge, forearm+hand merge, shin+foot merge) with a
-//! **per-bone, centroid-anchored** scale: each merged source group is
-//! placed at the retail field part's rest centroid and sized to its
-//! extent, which keeps the chibi field proportions instead of producing
-//! a lanky miniature.
+//! The preferred source ([`fieldize_pack_npc`]) is the siblings' **own
+//! field NPC meshes** from the nilboa duel scene ([`NPC_PACK_ENTRY`] /
+//! [`NPC_BUNDLE_ENTRY`]): retail-authored 10-part chibi rigs (duel
+//! costume, matching the battle forms) whose geometry fits the §0
+//! budget at full detail. The battle-monster conversion
+//! ([`fieldize_pack`]) survives as a fallback; its high-entropy baked
+//! geometry only fits through the decimation ladder.
+//!
+//! The party field rig is a 12-group TMD per character (10 posed bones
+//! plus 2 unposed equipment-template groups), driven by the shared
+//! locomotion ANM bundle whose records decode to the same flat per-part
+//! pose model as the battle streams - so a rest-pose bake retargets
+//! either source: each source part bakes into the party bone's local
+//! frame anchored on the retail part's rest **bbox** with a per-axis
+//! span (the clips' translations dictate joint spacing, so matching
+//! retail extents is what keeps limb chains connected under every
+//! clip); the head keeps its proportions under a uniform fit.
 //!
 //! Texture: the field atlas gives each character an 80x128-texel window
-//! of texpage 0x1D plus four 16-colour CLUT columns on row 478 - far
-//! too small for a monster page, and retail field models are mostly
-//! flat-shaded anyway (bodies are vertex-coloured; only faces carry
-//! texture). The converter does the same: the **head** part stays
-//! textured (its islands re-lay into the atlas window, palettes
-//! union-merged to four), every other textured face converts to a
-//! gouraud prim whose corner colours sample the source texture.
+//! of texpage 0x1D plus four 16-colour CLUT columns on row 478. Retail
+//! field models are mostly flat-shaded (bodies are vertex-coloured;
+//! only faces carry texture) and the NPC meshes share that split. The
+//! converter keeps the **head** textured (its islands re-lay into the
+//! atlas window, palettes union-merged to four) and converts every
+//! other textured face to a flat prim whose colour samples the source
+//! texture.
 
 use super::*;
 use crate::character_pack;
@@ -157,10 +163,12 @@ fn derive_field_roles(model: &[ModelObject], rest: &[PartPose]) -> Result<[usize
     ])
 }
 
-/// Rest-pose world centroid + bbox diagonal of a set of posed parts.
-fn group_world_stats(parts: &[(&ModelObject, &PartPose)]) -> ((f32, f32, f32), f32) {
-    let mut c = [0f64; 3];
-    let mut n = 0f64;
+/// Rest-pose world bbox centre + per-axis extents of a set of posed
+/// parts. The bbox centre (not the vertex average, which vertex density
+/// skews) is the anchor: with the per-axis span, the baked part's bbox
+/// coincides with the target part's, so limb chains meet exactly where
+/// retail's do.
+fn group_world_stats(parts: &[(&ModelObject, &PartPose)]) -> ((f32, f32, f32), [f32; 3]) {
     let mut min = [f32::MAX; 3];
     let mut max = [f32::MIN; 3];
     for (o, p) in parts {
@@ -169,41 +177,51 @@ fn group_world_stats(parts: &[(&ModelObject, &PartPose)]) -> ((f32, f32, f32), f
             let w = apply(&m, [v[0] as f32, v[1] as f32, v[2] as f32]);
             let w = [w[0] + p.tx as f32, w[1] + p.ty as f32, w[2] + p.tz as f32];
             for k in 0..3 {
-                c[k] += w[k] as f64;
                 min[k] = min[k].min(w[k]);
                 max[k] = max[k].max(w[k]);
             }
-            n += 1.0;
         }
     }
-    let n = n.max(1.0);
-    let centroid = ((c[0] / n) as f32, (c[1] / n) as f32, (c[2] / n) as f32);
-    let diag = ((max[0] - min[0]).powi(2) + (max[1] - min[1]).powi(2) + (max[2] - min[2]).powi(2))
-        .sqrt()
-        .max(1.0);
-    (centroid, diag)
+    if min[0] > max[0] {
+        (min, max) = ([0.0; 3], [0.0; 3]);
+    }
+    let center = (
+        (min[0] + max[0]) / 2.0,
+        (min[1] + max[1]) / 2.0,
+        (min[2] + max[2]) / 2.0,
+    );
+    let ext = [
+        (max[0] - min[0]).max(1.0),
+        (max[1] - min[1]).max(1.0),
+        (max[2] - min[2]).max(1.0),
+    ];
+    (center, ext)
 }
 
 /// Bake `o` (source local frame `src`, world anchored at `c_src`) into
-/// the target local frame `dst`, scaled by `s` about the source anchor
-/// and re-anchored at `c_dst`:
-/// `v' = R_dst^T (s (R_src v + T_src - C_src) + C_dst - T_dst)`.
+/// the target local frame `dst`, scaled per world axis by `s` about the
+/// source anchor and re-anchored at `c_dst`:
+/// `v' = R_dst^T (s ⊙ (R_src v + T_src - C_src) + C_dst - T_dst)`.
+/// The per-axis scale spans the source part across the retail part's
+/// rest extents - the locomotion clips' translations dictate the joint
+/// spacing, so matching retail extents is what keeps limb chains
+/// connected under every clip.
 fn bake_anchored(
     o: &mut ModelObject,
     src: &PartPose,
     c_src: (f32, f32, f32),
     dst: &PartPose,
     c_dst: (f32, f32, f32),
-    s: f32,
+    s: [f32; 3],
 ) -> Result<()> {
     let ms = rot_matrix(src);
     let md = rot_matrix(dst);
     for v in o.vertices.iter_mut() {
         let w = apply(&ms, [v[0] as f32, v[1] as f32, v[2] as f32]);
         let world = [
-            s * (w[0] + src.tx as f32 - c_src.0) + c_dst.0 - dst.tx as f32,
-            s * (w[1] + src.ty as f32 - c_src.1) + c_dst.1 - dst.ty as f32,
-            s * (w[2] + src.tz as f32 - c_src.2) + c_dst.2 - dst.tz as f32,
+            s[0] * (w[0] + src.tx as f32 - c_src.0) + c_dst.0 - dst.tx as f32,
+            s[1] * (w[1] + src.ty as f32 - c_src.1) + c_dst.1 - dst.ty as f32,
+            s[2] * (w[2] + src.tz as f32 - c_src.2) + c_dst.2 - dst.tz as f32,
         ];
         let l = apply_transposed(&md, world);
         *v = [round_coord(l[0])?, round_coord(l[1])?, round_coord(l[2])?];
@@ -317,6 +335,214 @@ fn flatten_prim(p: &ModelPrim, cluts: &[[u16; 16]], indices: &[u8], width: usize
     }
 }
 
+/// PROT entry of the nilboa (Nivora Ravine duel scene) TMD pack that
+/// carries the Delilas siblings' own field NPC meshes.
+pub const NPC_PACK_ENTRY: usize = 639;
+
+/// PROT entry of the nilboa bundle carrying the scene ANM records (the
+/// siblings' idle rest poses) and the TIM list their head textures live
+/// in.
+pub const NPC_BUNDLE_ENTRY: usize = 638;
+
+/// nilboa coordinates per Delilas monster id: `(pack member, idle ANM
+/// record)`. The pack members are 10-object field rigs (duel costume,
+/// matching the battle forms); the idle records are the placements'
+/// anim bytes minus one.
+fn npc_coords(monster_id: u16) -> Option<(usize, usize)> {
+    match monster_id {
+        162 => Some((106, 55)), // Gi
+        163 => Some((107, 68)), // Che
+        164 => Some((108, 78)), // Lu
+        _ => None,
+    }
+}
+
+/// Source from the sibling's own field NPC mesh in the nilboa scene:
+/// already field-scale, flat-colored body + textured head - retail
+/// authoring that fits the §0 budget with no decimation. The NPC rig is
+/// a 10-part humanoid, so roles map 1:1 through the same centroid
+/// anatomy used for the retail party rig.
+fn npc_slot_source(npc_pack: &[u8], npc_bundle: &[u8], monster_id: u16) -> Result<SlotSource> {
+    let (member, idle_rec) = npc_coords(monster_id)
+        .ok_or_else(|| anyhow::anyhow!("monster id {monster_id} has no field NPC coordinates"))?;
+
+    // The pack entry is a raw stream: [u32 (type<<24)|size][asset::pack].
+    let head = u32::from_le_bytes(
+        npc_pack
+            .get(0..4)
+            .ok_or_else(|| anyhow::anyhow!("NPC pack entry too short"))?
+            .try_into()
+            .unwrap(),
+    );
+    if head >> 24 != 0x02 {
+        bail!("NPC pack entry head {head:#x} is not a type-2 TMD stream");
+    }
+    let pack = &npc_pack[4..];
+    let entries = crate::pack::parse_pack(pack)?;
+    let e = entries
+        .get(member)
+        .ok_or_else(|| anyhow::anyhow!("NPC pack member {member} missing"))?;
+    let tmd_bytes = pack
+        .get(e.byte_offset..e.byte_offset + e.size)
+        .ok_or_else(|| anyhow::anyhow!("NPC pack member {member} out of range"))?;
+    let tmd = legaia_tmd::parse(tmd_bytes).context("NPC TMD")?;
+    let mut model = decode_model(&tmd, tmd_bytes)?;
+    if model.len() != FIELD_BONES {
+        bail!("NPC mesh has {} parts, expected {FIELD_BONES}", model.len());
+    }
+
+    // Rest pose from the scene ANM bundle's idle record.
+    let bundle = crate::player_anm::find_in_entry(npc_bundle, 5)
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("NPC bundle entry carries no ANM bundle"))?;
+    let idle = bundle
+        .record_to_monster_animation(idle_rec)
+        .ok_or_else(|| anyhow::anyhow!("NPC idle record {idle_rec} missing"))?;
+    if idle.part_count != FIELD_BONES {
+        bail!(
+            "NPC idle poses {} bones, expected {FIELD_BONES}",
+            idle.part_count
+        );
+    }
+    let rest = idle
+        .frames
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("NPC idle has no frames"))?
+        .clone();
+
+    // Texel space: paint the bundle's TIM list into a virtual VRAM and
+    // sample the one 4bpp texpage the prims reference; CLUTs re-key to
+    // local palette ids (cba & 0x3F indexes `cluts`, the pipeline's
+    // convention).
+    let container = parse_player_lzs(npc_bundle, 3).context("NPC bundle container")?;
+    let tims_payload = crate::decode(
+        npc_bundle,
+        &container.descriptors[0],
+        crate::DecodeMode::Lzs,
+    )
+    .context("NPC bundle TIM list")?;
+    let mut vram = vec![0u16; 1024 * 512];
+    let mut off = 0usize;
+    while off + 8 <= tims_payload.len() {
+        if u32::from_le_bytes(tims_payload[off..off + 4].try_into().unwrap()) == 0x10
+            && let Ok(tim) = legaia_tim::parse(&tims_payload[off..])
+        {
+            for block in [tim.clut.as_ref().map(|c| {
+                (
+                    c.fb_x,
+                    c.fb_y,
+                    c.w,
+                    c.h,
+                    c.entries
+                        .iter()
+                        .flat_map(|e| e.to_le_bytes())
+                        .collect::<Vec<u8>>(),
+                )
+            })]
+            .into_iter()
+            .flatten()
+            {
+                let (fx, fy, w, h, data) = block;
+                paint_vram(&mut vram, fx, fy, w, h, &data);
+            }
+            paint_vram(
+                &mut vram,
+                tim.image.fb_x,
+                tim.image.fb_y,
+                tim.image.fb_w,
+                tim.image.h,
+                &tim.image.data,
+            );
+        }
+        off += 4;
+    }
+
+    // Collect the textured prims' page + palettes; re-key cba.
+    // Page identity is tsb bits 0..4 (x tile + y half); bits 5..6 are the
+    // ABR semi-transparency rate and vary per prim on one page.
+    let mut pages: Vec<u16> = Vec::new();
+    let mut cbas: Vec<u16> = Vec::new();
+    for o in &model {
+        for g in &o.groups {
+            if !g.shape.is_textured() {
+                continue;
+            }
+            for p in &g.prims {
+                if !pages.contains(&(p.tsb & 0x1F)) {
+                    pages.push(p.tsb & 0x1F);
+                }
+                if !cbas.contains(&p.cba) {
+                    cbas.push(p.cba);
+                }
+            }
+        }
+    }
+    let page = match pages.as_slice() {
+        [] => 0u16,
+        [one] => *one,
+        more => bail!("NPC mesh references {} texpages, expected 1", more.len()),
+    };
+    let (page_x, page_y) = (
+        ((page & 0xF) as usize) * 64,
+        (((page >> 4) & 1) as usize) * 256,
+    );
+    let width = UV_SPACE;
+    let mut indices = vec![0u8; width * PAGE_HEIGHT];
+    for v in 0..PAGE_HEIGHT {
+        for u in 0..width {
+            let hw = vram[(page_y + v) * 1024 + page_x + u / 4];
+            indices[v * width + u] = ((hw >> ((u % 4) * 4)) & 0xF) as u8;
+        }
+    }
+    let cluts: Vec<[u16; 16]> = cbas
+        .iter()
+        .map(|&cba| {
+            let (cx, cy) = (((cba & 0x3F) as usize) * 16, (cba >> 6) as usize);
+            let mut pal = [0u16; 16];
+            for (i, p) in pal.iter_mut().enumerate() {
+                *p = vram[cy * 1024 + cx + i];
+            }
+            pal
+        })
+        .collect();
+    for o in model.iter_mut() {
+        for g in o.groups.iter_mut() {
+            if !g.shape.is_textured() {
+                continue;
+            }
+            for p in g.prims.iter_mut() {
+                p.cba = cbas.iter().position(|&c| c == p.cba).unwrap_or(0) as u16;
+            }
+        }
+    }
+
+    // Roles from the NPC's own rest anatomy, mapped 1:1.
+    let npc_roles = derive_field_roles(&model, &rest)?;
+    Ok(SlotSource {
+        role_sources: npc_roles.map(|b| vec![b]),
+        model,
+        rest,
+        cluts,
+        indices,
+        width,
+    })
+}
+
+/// Paint one TIM block (16-bit framebuffer units) into a 1024x512 VRAM
+/// image.
+fn paint_vram(vram: &mut [u16], fb_x: u16, fb_y: u16, w: u16, h: u16, data: &[u8]) {
+    for row in 0..h as usize {
+        for col in 0..w as usize {
+            let src = (row * w as usize + col) * 2;
+            let (x, y) = (fb_x as usize + col, fb_y as usize + row);
+            if src + 2 <= data.len() && x < 1024 && y < 512 {
+                vram[y * 1024 + x] = u16::from_le_bytes(data[src..src + 2].try_into().unwrap());
+            }
+        }
+    }
+}
+
 /// The rebuilt PROT 0874 entry.
 #[derive(Debug, Clone)]
 pub struct FieldizedPack {
@@ -334,12 +560,57 @@ struct FieldSlot {
     palettes: Vec<Vec<u16>>,
 }
 
+/// A field-conversion source: a posed multi-part model plus the texel
+/// space its textured prims sample (`cba & 0x3F` indexes `cluts`, UVs
+/// index `indices` as a `width x PAGE_HEIGHT` 4bpp page). Built from
+/// either the battle monster archive or the siblings' own field NPC
+/// meshes ([`npc_slot_source`]).
+struct SlotSource {
+    model: Vec<ModelObject>,
+    rest: Vec<PartPose>,
+    /// Canonical field role -> source part indices.
+    role_sources: [Vec<usize>; FIELD_BONES],
+    cluts: Vec<[u16; 16]>,
+    indices: Vec<u8>,
+    width: usize,
+}
+
+/// Source from the monster archive (battle model, 15 canonical parts
+/// merged onto the 10 field roles).
+fn monster_slot_source(archive_entry: &[u8], source_id: u16) -> Result<SlotSource> {
+    let mesh = monster_archive::mesh(archive_entry, source_id)?
+        .ok_or_else(|| anyhow::anyhow!("monster id {source_id}: empty slot"))?;
+    let src_tmd = legaia_tmd::parse(mesh.tmd_bytes())?;
+    let model = decode_model(&src_tmd, mesh.tmd_bytes())?;
+    if model.len() != CANONICAL_PARTS {
+        bail!("monster id {source_id} has {} parts", model.len());
+    }
+    let pool = mesh
+        .texture_pool_bytes()
+        .ok_or_else(|| anyhow::anyhow!("monster id {source_id}: no texture pool"))?;
+    let (cluts, indices, width) = monster_pool_texels(pool)?;
+    let src_idle = monster_archive::idle_animation(archive_entry, source_id)?
+        .ok_or_else(|| anyhow::anyhow!("monster id {source_id}: no idle"))?;
+    let rest = src_idle
+        .frames
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("monster idle empty"))?
+        .clone();
+    Ok(SlotSource {
+        model,
+        rest,
+        role_sources: FIELD_ROLE_SOURCES.map(|s| s.to_vec()),
+        cluts,
+        indices,
+        width,
+    })
+}
+
 fn fieldize_slot(
     pack: &character_pack::CharacterPack,
     anm: &crate::player_anm::PlayerAnmBundle,
     slot: usize,
-    archive_entry: &[u8],
-    source_id: u16,
+    source: &SlotSource,
     decimate: f32,
     warnings: &mut Vec<String>,
 ) -> Result<FieldSlot> {
@@ -360,24 +631,8 @@ fn fieldize_slot(
         .ok_or_else(|| anyhow::anyhow!("field idle has no frames"))?;
     let roles = derive_field_roles(&field_model, field_rest)?;
 
-    // Source model + rest pose (canonical Delilas order).
-    let mesh = monster_archive::mesh(archive_entry, source_id)?
-        .ok_or_else(|| anyhow::anyhow!("monster id {source_id}: empty slot"))?;
-    let src_tmd = legaia_tmd::parse(mesh.tmd_bytes())?;
-    let src_model = decode_model(&src_tmd, mesh.tmd_bytes())?;
-    if src_model.len() != CANONICAL_PARTS {
-        bail!("monster id {source_id} has {} parts", src_model.len());
-    }
-    let pool = mesh
-        .texture_pool_bytes()
-        .ok_or_else(|| anyhow::anyhow!("monster id {source_id}: no texture pool"))?;
-    let (cluts, indices, width) = monster_pool_texels(pool)?;
-    let src_idle = monster_archive::idle_animation(archive_entry, source_id)?
-        .ok_or_else(|| anyhow::anyhow!("monster id {source_id}: no idle"))?;
-    let src_rest = src_idle
-        .frames
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("monster idle empty"))?;
+    let (src_model, src_rest) = (&source.model, &source.rest);
+    let (cluts, indices, width) = (&source.cluts, &source.indices, source.width);
 
     // Per field bone: bake the mapped canonical parts, anchored at the
     // retail field part's centroid + extent.
@@ -389,17 +644,29 @@ fn fieldize_slot(
             scale: legaia_tmd::encode::LEGAIA_OBJECT_SCALE,
         });
     }
-    for (role, sources) in FIELD_ROLE_SOURCES.iter().enumerate() {
+    for (role, sources) in source.role_sources.iter().enumerate() {
         let bone = roles[role];
         let dst_pose = field_rest[bone];
         let dst_parts = [(&field_model[bone], &dst_pose)];
-        let (c_dst, d_dst) = group_world_stats(&dst_parts);
+        let (c_dst, e_dst) = group_world_stats(&dst_parts);
         let src_parts: Vec<(&ModelObject, &PartPose)> = sources
             .iter()
             .map(|&c| (&src_model[c], &src_rest[c]))
             .collect();
-        let (c_src, d_src) = group_world_stats(&src_parts);
-        let s = (d_dst / d_src).clamp(0.05, 2.0);
+        let (c_src, e_src) = group_world_stats(&src_parts);
+        // Limbs/torso stretch per axis to span the retail part (joint
+        // spacing comes from the clips); the head keeps the sibling's
+        // proportions under a uniform fit.
+        let s = if role == 0 {
+            let diag = |e: [f32; 3]| (e[0] * e[0] + e[1] * e[1] + e[2] * e[2]).sqrt();
+            [(diag(e_dst) / diag(e_src)).clamp(0.05, 3.0); 3]
+        } else {
+            [
+                (e_dst[0] / e_src[0]).clamp(0.05, 3.0),
+                (e_dst[1] / e_src[1]).clamp(0.05, 3.0),
+                (e_dst[2] / e_src[2]).clamp(0.05, 3.0),
+            ]
+        };
         for &c in sources.iter() {
             let mut part = src_model[c].clone();
             // Flatten every textured prim except on the head.
@@ -414,7 +681,7 @@ fn fieldize_slot(
                         PacketShape::F3
                     };
                     for p in g.prims.iter_mut() {
-                        *p = flatten_prim(p, &cluts, &indices, width);
+                        *p = flatten_prim(p, cluts, indices, width);
                     }
                     g.shape = new_shape;
                     g.semi_transparent = false;
@@ -433,14 +700,7 @@ fn fieldize_slot(
 
     // Head texture: re-lay its islands into the 80x128 atlas window.
     let head_bone = roles[0];
-    let window = layout_head_window(
-        &mut bones[head_bone],
-        &cluts,
-        &indices,
-        width,
-        slot,
-        warnings,
-    )?;
+    let window = layout_head_window(&mut bones[head_bone], cluts, indices, width, slot, warnings)?;
 
     let mut tmd = encode(&bones).context("encode field TMD")?;
     // The runtime equipment toggle (FUN_8001EBEC) copies template
@@ -616,12 +876,45 @@ pub fn fieldize_pack(
     archive_entry: &[u8],
     mapping: [u16; 3],
 ) -> Result<FieldizedPack> {
+    let sources = mapping
+        .iter()
+        .map(|&id| monster_slot_source(archive_entry, id))
+        .collect::<Result<Vec<_>>>()?;
+    fieldize_pack_laddered(prot_0874, entry_len, &sources, mapping)
+}
+
+/// Like [`fieldize_pack`], but sourcing each character's model from the
+/// sibling's own field NPC mesh (nilboa scene, [`NPC_PACK_ENTRY`] /
+/// [`NPC_BUNDLE_ENTRY`]) instead of converting the battle monster model.
+/// Retail-authored field geometry fits the §0 budget at full detail, so
+/// this is the quality-preserving path; the monster conversion stays the
+/// fallback.
+pub fn fieldize_pack_npc(
+    prot_0874: &[u8],
+    entry_len: usize,
+    npc_pack: &[u8],
+    npc_bundle: &[u8],
+    mapping: [u16; 3],
+) -> Result<FieldizedPack> {
+    let sources = mapping
+        .iter()
+        .map(|&id| npc_slot_source(npc_pack, npc_bundle, id))
+        .collect::<Result<Vec<_>>>()?;
+    fieldize_pack_laddered(prot_0874, entry_len, &sources, mapping)
+}
+
+fn fieldize_pack_laddered(
+    prot_0874: &[u8],
+    entry_len: usize,
+    sources: &[SlotSource],
+    mapping: [u16; 3],
+) -> Result<FieldizedPack> {
     // Detail ladder: try full detail first, then progressively drop
     // prims under a size threshold (invisible at the chibi field scale)
     // until the rebuilt container fits its PROT entry.
     let mut last_err = None;
     for decimate in [0.0f32, 2.0, 3.5, 5.0, 7.0, 9.0, 12.0] {
-        match fieldize_pack_at(prot_0874, entry_len, archive_entry, mapping, decimate) {
+        match fieldize_pack_at(prot_0874, entry_len, sources, mapping, decimate) {
             Ok(mut out) => {
                 if decimate > 0.0 {
                     out.warnings
@@ -639,7 +932,7 @@ pub fn fieldize_pack(
 fn fieldize_pack_at(
     prot_0874: &[u8],
     entry_len: usize,
-    archive_entry: &[u8],
+    sources: &[SlotSource],
     mapping: [u16; 3],
     decimate: f32,
 ) -> Result<FieldizedPack> {
@@ -649,18 +942,10 @@ fn fieldize_pack_at(
     let container = parse_player_lzs(prot_0874, character_pack::CONTAINER_DESCRIPTORS)?;
 
     let mut slots: Vec<FieldSlot> = Vec::with_capacity(3);
-    for (slot, &source_id) in mapping.iter().enumerate() {
+    for (slot, source) in sources.iter().enumerate() {
         slots.push(
-            fieldize_slot(
-                &pack,
-                &anm,
-                slot,
-                archive_entry,
-                source_id,
-                decimate,
-                &mut warnings,
-            )
-            .with_context(|| format!("field slot {slot} <- monster {source_id}"))?,
+            fieldize_slot(&pack, &anm, slot, source, decimate, &mut warnings)
+                .with_context(|| format!("field slot {slot} <- monster {}", mapping[slot]))?,
         );
     }
 

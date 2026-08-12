@@ -268,16 +268,30 @@ pub fn apply_delilas_party(
             .read_entry(field_entry)
             .context("PROT 0874 length")?
             .len();
-        let fieldized = fieldize::fieldize_pack(
+        let field_mapping = [
+            mapping.vahn.monster_id(),
+            mapping.noa.monster_id(),
+            mapping.gala.monster_id(),
+        ];
+        // Preferred source: the siblings' own field NPC meshes (nilboa
+        // duel scene) - retail-authored chibi geometry that fits the §0
+        // budget at full detail. The battle-model conversion is the
+        // fallback (it survives only via heavy decimation).
+        let npc_pack = patcher.read_entry_footprint(fieldize::NPC_PACK_ENTRY)?;
+        let npc_bundle = patcher.read_entry_footprint(fieldize::NPC_BUNDLE_ENTRY)?;
+        let fieldized = fieldize::fieldize_pack_npc(
             &prot_0874,
             entry_len,
-            &archive,
-            [
-                mapping.vahn.monster_id(),
-                mapping.noa.monster_id(),
-                mapping.gala.monster_id(),
-            ],
+            &npc_pack,
+            &npc_bundle,
+            field_mapping,
         )
+        .or_else(|npc_err| {
+            report.notes.push(format!(
+                "field: NPC-mesh source unavailable ({npc_err:#}); using battle-model conversion"
+            ));
+            fieldize::fieldize_pack(&prot_0874, entry_len, &archive, field_mapping)
+        })
         .context("rebuild field forms (PROT 0874)")?;
         patcher.patch_prot_entry(field_entry, 0, &fieldized.entry)?;
         for w in &fieldized.warnings {
