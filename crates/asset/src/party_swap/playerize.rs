@@ -657,7 +657,7 @@ fn playerize_scaled(
         .first()
         .ok_or_else(|| anyhow::anyhow!("monster idle empty"))?;
 
-    // Player rest pose + heights.
+    // Player rest pose + the retail per-channel part anchors.
     let idle = battle_char_assembly::idle_battle_animation(player_file)?
         .ok_or_else(|| anyhow::anyhow!("player file has no idle"))?;
     let dst_rest = idle
@@ -665,32 +665,63 @@ fn playerize_scaled(
         .first()
         .ok_or_else(|| anyhow::anyhow!("player idle empty"))?
         .clone();
-    let identity: Vec<u8> = (0..CANONICAL_PARTS as u8).collect();
-    let src_height = posed_height(&src_model, src_rest, &identity);
     let asm = battle_char_assembly::assemble_character(player_file, &pack, &[0; SECTION_COUNT])?;
     let dst_tmd = legaia_tmd::parse(&asm.tmd)?;
     let dst_model = decode_model(&dst_tmd, &asm.tmd)?;
-    let dst_height = posed_height(&dst_model, &dst_rest, &asm.anm_bones);
-    let s = if src_height > 1.0 && dst_height > 1.0 {
-        dst_height / src_height
-    } else {
-        1.0
-    };
-    if (s - 1.0).abs() > 0.01 {
-        warnings.push(format!(
-            "geometry scaled by {s:.3} to the player rig height"
-        ));
-    }
 
-    // Bake each canonical part into its player channel's rest frame.
+    // Bake each canonical part into its player channel's rest frame,
+    // anchored on the retail part's rest bbox (`bake_object_anchored`) -
+    // the player's OWN clips (run / arts / block / spirit) move each
+    // baked part exactly like the retail geometry it replaced. The head
+    // additionally absorbs the rig's hair-channel extent (Noa's hair is
+    // a separate channel whose geometry the swap empties), so the
+    // sibling's one-piece head+hair spans both.
+    let skeleton = dst_rest.len();
     let mut baked: Vec<ModelObject> = Vec::with_capacity(CANONICAL_PARTS);
     for (c, src_obj) in src_model.iter().enumerate() {
         let ch = rig.channel_for_canonical[c] as usize;
         let dst_pose = dst_rest
             .get(ch)
             .ok_or_else(|| anyhow::anyhow!("player rest pose missing channel {ch}"))?;
+        let dst_core = dst_model
+            .get(ch)
+            .filter(|_| ch < skeleton)
+            .ok_or_else(|| anyhow::anyhow!("player model missing channel {ch}"))?;
+        let (mut c_dst, mut e_dst) = part_world_stats(dst_core, dst_pose);
+        if c == 0
+            && let Some(hair_ch) = rig.hair_channel
+        {
+            let hair_ch = hair_ch as usize;
+            if let (Some(hair), Some(hair_pose)) = (dst_model.get(hair_ch), dst_rest.get(hair_ch)) {
+                let (hc, he) = part_world_stats(hair, hair_pose);
+                let lo = |c: f32, e: f32| c - e / 2.0;
+                let hi = |c: f32, e: f32| c + e / 2.0;
+                let min = [
+                    lo(c_dst.0, e_dst[0]).min(lo(hc.0, he[0])),
+                    lo(c_dst.1, e_dst[1]).min(lo(hc.1, he[1])),
+                    lo(c_dst.2, e_dst[2]).min(lo(hc.2, he[2])),
+                ];
+                let max = [
+                    hi(c_dst.0, e_dst[0]).max(hi(hc.0, he[0])),
+                    hi(c_dst.1, e_dst[1]).max(hi(hc.1, he[1])),
+                    hi(c_dst.2, e_dst[2]).max(hi(hc.2, he[2])),
+                ];
+                c_dst = (
+                    (min[0] + max[0]) / 2.0,
+                    (min[1] + max[1]) / 2.0,
+                    (min[2] + max[2]) / 2.0,
+                );
+                e_dst = [max[0] - min[0], max[1] - min[1], max[2] - min[2]];
+            }
+        }
+        let (mut c_src, e_src) = part_world_stats(src_obj, &src_rest[c]);
+        if c == 0 {
+            c_src = neck_anchor(c_src, e_src);
+            c_dst = neck_anchor(c_dst, e_dst);
+        }
+        let s = anchored_scale(c, e_src, e_dst);
         let mut o = src_obj.clone();
-        bake_object(&mut o, &src_rest[c], dst_pose, s)
+        bake_object_anchored(&mut o, &src_rest[c], c_src, dst_pose, c_dst, s)
             .with_context(|| format!("bake canonical part {c}"))?;
         compact_object(&mut o);
         baked.push(o);

@@ -648,25 +648,21 @@ fn fieldize_slot(
         let bone = roles[role];
         let dst_pose = field_rest[bone];
         let dst_parts = [(&field_model[bone], &dst_pose)];
-        let (c_dst, e_dst) = group_world_stats(&dst_parts);
+        let (mut c_dst, e_dst) = group_world_stats(&dst_parts);
         let src_parts: Vec<(&ModelObject, &PartPose)> = sources
             .iter()
             .map(|&c| (&src_model[c], &src_rest[c]))
             .collect();
-        let (c_src, e_src) = group_world_stats(&src_parts);
+        let (mut c_src, e_src) = group_world_stats(&src_parts);
         // Limbs/torso stretch per axis to span the retail part (joint
         // spacing comes from the clips); the head keeps the sibling's
-        // proportions under a uniform fit.
-        let s = if role == 0 {
-            let diag = |e: [f32; 3]| (e[0] * e[0] + e[1] * e[1] + e[2] * e[2]).sqrt();
-            [(diag(e_dst) / diag(e_src)).clamp(0.05, 3.0); 3]
-        } else {
-            [
-                (e_dst[0] / e_src[0]).clamp(0.05, 3.0),
-                (e_dst[1] / e_src[1]).clamp(0.05, 3.0),
-                (e_dst[2] / e_src[2]).clamp(0.05, 3.0),
-            ]
-        };
+        // proportions (never grown - see `anchored_scale`) and anchors
+        // at the neck.
+        if role == 0 {
+            c_src = neck_anchor(c_src, e_src);
+            c_dst = neck_anchor(c_dst, e_dst);
+        }
+        let s = anchored_scale(role, e_src, e_dst);
         for &c in sources.iter() {
             let mut part = src_model[c].clone();
             // Flatten every textured prim except on the head.

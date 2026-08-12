@@ -18,14 +18,16 @@
 //!    into the attach bone's object is pose-exact (same local frame).
 //!    Noa's hair object rides its own channel and is rebased into the
 //!    head's rest frame instead (rigid approximation).
-//! 3. **Rest-pose bake.** Local part frames are per-rig conventions (a
-//!    retail player mesh even shares one mesh between its left and right
-//!    limb chains, mirrored purely by pose rotations), so each part's
-//!    geometry is re-expressed through `source rest pose -> target rest
-//!    pose` (see `bake_object`), with a uniform `target_height /
-//!    source_height` world scale. At the target's rest frame the swapped
-//!    model reproduces the source's own combat stance exactly; the
-//!    target streams move it rigidly from there.
+//! 3. **Anchored rest-pose bake.** Local part frames are per-rig
+//!    conventions (a retail player mesh even shares one mesh between its
+//!    left and right limb chains, mirrored purely by pose rotations), so
+//!    each part's geometry is re-expressed through `source rest pose ->
+//!    target rest pose` anchored on the target part's rest bbox with a
+//!    per-axis span (see `bake_object_anchored`; the head keeps its
+//!    proportions under a uniform fit). Anchoring is load-bearing: a
+//!    world-aligned bake is exact at the rest pose but leaves each part
+//!    a joint-mismatch lever arm that scatters the mesh under every
+//!    other clip (running / arts / blocking).
 //! 4. **Texture re-layout.** Both texture systems are 4bpp indices +
 //!    16-colour CLUTs, so no quantization happens in either direction:
 //!    used texel islands are copied bit-exact between the player band
@@ -122,24 +124,6 @@ fn apply_transposed(m: &[[f32; 3]; 3], v: [f32; 3]) -> [f32; 3] {
     ]
 }
 
-/// Rest-pose model height: `-min(world y)` over every vertex of every
-/// posed part (y-down space; feet rest near 0). `poses[i]` drives
-/// `objects[channel_of(i)]` - the caller supplies the channel mapping so
-/// player (channel-indexed) and monster (identity) rigs share the code.
-fn posed_height(objects: &[ModelObject], poses: &[PartPose], channel_of: &[u8]) -> f32 {
-    let mut min_y = f32::MAX;
-    for (oi, o) in objects.iter().enumerate() {
-        let ch = channel_of.get(oi).copied().unwrap_or(0) as usize;
-        let Some(pose) = poses.get(ch) else { continue };
-        let m = rot_matrix(pose);
-        for v in &o.vertices {
-            let w = apply(&m, [v[0] as f32, v[1] as f32, v[2] as f32]);
-            min_y = min_y.min(w[1] + pose.ty as f32);
-        }
-    }
-    if min_y == f32::MAX { 0.0 } else { -min_y }
-}
-
 fn round_coord(v: f32) -> Result<i16> {
     let r = v.round();
     if !(i16::MIN as f32..=i16::MAX as f32).contains(&r) {
@@ -148,26 +132,98 @@ fn round_coord(v: f32) -> Result<i16> {
     Ok(r as i16)
 }
 
-/// Re-express `o`'s geometry (authored in `src`'s local frame) in `dst`'s
-/// local frame, with a uniform world scale `s` about the model origin:
-/// `v' = R_dst^T (s (R_src v + T_src) - T_dst)`.
-///
 /// Local part frames are per-rig conventions (retail player meshes even
 /// share one mesh between the left and right limb chains, mirrored purely
-/// by the pose rotations), so a raw geometry copy scatters parts. Baking
-/// through the two rest poses makes the swapped model reproduce the
-/// source rig's own rest stance exactly at the target's rest frame, and
-/// the target streams then move it rigidly from there - no local-frame
-/// assumptions at all.
-fn bake_object(o: &mut ModelObject, src: &PartPose, dst: &PartPose, s: f32) -> Result<()> {
+/// by the pose rotations), so a raw geometry copy scatters parts - every
+/// cross-rig transplant below goes through an ANCHORED rest-pose bake
+/// ([`bake_object_anchored`]).
+///
+/// Rest-pose world bbox centre + per-axis extents of one posed part.
+/// The anchor for [`bake_object_anchored`]: the bbox centre (not the
+/// vertex average, which vertex density skews) plus per-axis extents,
+/// so a baked part spans exactly where the destination part sat.
+fn part_world_stats(o: &ModelObject, p: &PartPose) -> ((f32, f32, f32), [f32; 3]) {
+    let m = rot_matrix(p);
+    let mut min = [f32::MAX; 3];
+    let mut max = [f32::MIN; 3];
+    for v in &o.vertices {
+        let w = apply(&m, [v[0] as f32, v[1] as f32, v[2] as f32]);
+        let w = [w[0] + p.tx as f32, w[1] + p.ty as f32, w[2] + p.tz as f32];
+        for k in 0..3 {
+            min[k] = min[k].min(w[k]);
+            max[k] = max[k].max(w[k]);
+        }
+    }
+    if min[0] > max[0] {
+        (min, max) = ([0.0; 3], [0.0; 3]);
+    }
+    let center = (
+        (min[0] + max[0]) / 2.0,
+        (min[1] + max[1]) / 2.0,
+        (min[2] + max[2]) / 2.0,
+    );
+    let ext = [
+        (max[0] - min[0]).max(1.0),
+        (max[1] - min[1]).max(1.0),
+        (max[2] - min[2]).max(1.0),
+    ];
+    (center, ext)
+}
+
+/// Per-part scale for an anchored bake: the head (canonical part 0)
+/// keeps its proportions under a uniform diagonal fit that never GROWS
+/// it (`min(1, fit)`) - hair extents differ wildly between rigs, and
+/// growing a one-piece head+hair to span a bigger-haired target droops
+/// it over the torso like a second head. Every other part spans the
+/// destination part's extents per world axis - the clips' translations
+/// dictate the joint spacing, so matching the destination extents is
+/// what keeps limb chains connected under every clip.
+fn anchored_scale(canonical: usize, e_src: [f32; 3], e_dst: [f32; 3]) -> [f32; 3] {
+    if canonical == 0 {
+        let diag = |e: [f32; 3]| (e[0] * e[0] + e[1] * e[1] + e[2] * e[2]).sqrt();
+        [(diag(e_dst) / diag(e_src)).clamp(0.05, 1.0); 3]
+    } else {
+        [
+            (e_dst[0] / e_src[0]).clamp(0.05, 3.0),
+            (e_dst[1] / e_src[1]).clamp(0.05, 3.0),
+            (e_dst[2] / e_src[2]).clamp(0.05, 3.0),
+        ]
+    }
+}
+
+/// Head anchor: the bbox BOTTOM centre (the neck joint) instead of the
+/// bbox centre - a head anchors where it attaches, so differently-sized
+/// hair spans up/outward from the neck instead of shifting the face.
+fn neck_anchor(c: (f32, f32, f32), e: [f32; 3]) -> (f32, f32, f32) {
+    (c.0, c.1 + e[1] / 2.0, c.2)
+}
+
+/// Anchored variant: scale per world axis by `s` about the source
+/// anchor `c_src` and re-anchor at `c_dst`:
+/// `v' = R_dst^T (s ⊙ (R_src v + T_src - C_src) + C_dst - T_dst)`.
+/// The world-aligned form (no anchoring) reproduces the source's rest
+/// stance exactly at the bake pose but leaves each part's local origin
+/// offset by the full joint mismatch - a lever arm that scatters the
+/// mesh under every clip whose rotations differ from the rest pose
+/// (running / arts / blocking). Anchoring pins each part to the
+/// destination part's rest bbox instead, so the clips move it exactly
+/// like the geometry it replaced.
+fn bake_object_anchored(
+    o: &mut ModelObject,
+    src: &PartPose,
+    c_src: (f32, f32, f32),
+    dst: &PartPose,
+    c_dst: (f32, f32, f32),
+    s: [f32; 3],
+) -> Result<()> {
     let ms = rot_matrix(src);
     let md = rot_matrix(dst);
     for v in o.vertices.iter_mut() {
         let w = apply(&ms, [v[0] as f32, v[1] as f32, v[2] as f32]);
         let world = [
-            s * (w[0] + src.tx as f32) - dst.tx as f32,
-            s * (w[1] + src.ty as f32) - dst.ty as f32,
-            s * (w[2] + src.tz as f32) - dst.tz as f32,
+            s[0] * (w[0] + src.tx as f32 - c_src.0) + c_dst.0 - dst.tx as f32,
+            s[1] * (w[1] + src.ty as f32 - c_src.1) + c_dst.1 - dst.ty as f32,
+            s[2] * (w[2] + src.tz as f32 - c_src.2) + c_dst.2 - dst.tz as f32,
         ];
         let l = apply_transposed(&md, world);
         *v = [round_coord(l[0])?, round_coord(l[1])?, round_coord(l[2])?];
@@ -646,12 +702,19 @@ fn monsterize_player_scaled(
         .ok_or_else(|| anyhow::anyhow!("idle animation has no frames"))?
         .clone();
 
-    // Source height before any surgery (channel map = anm_bones).
-    let src_height = posed_height(&source, &rest, &asm.anm_bones);
+    // Per-channel CORE part anchors, snapshotted before the extras merge
+    // so a weapon/shield doesn't skew its carrier bone's bbox (the extras
+    // then ride the hand's anchor + scale instead of squashing into it).
+    let skeleton = rest.len();
+    let mut core_stats: Vec<((f32, f32, f32), [f32; 3])> = source
+        .iter()
+        .take(skeleton)
+        .enumerate()
+        .map(|(ch, o)| part_world_stats(o, &rest[ch]))
+        .collect();
 
     // Merge the equipment extras into their attach bones' objects (same
     // channel = same local frame; plain concat).
-    let skeleton = rest.len();
     let mut merged: Vec<Option<ModelObject>> = source.drain(..).map(Some).collect();
     for (oi, &ch) in asm.anm_bones.iter().enumerate() {
         if oi < skeleton {
@@ -664,7 +727,8 @@ fn monsterize_player_scaled(
             merge_object(dst, &extra);
         }
     }
-    // Noa's hair: rebase into the head frame.
+    // Noa's hair: rebase into the head frame. The head anchor then
+    // recomputes over the merged head+hair (one visual unit).
     if let Some(hair_ch) = rig.hair_channel {
         let head_ch = rig.channel_for_canonical[0] as usize;
         if let Some(hair) = merged.get_mut(hair_ch as usize).and_then(|h| h.take()) {
@@ -672,6 +736,7 @@ fn monsterize_player_scaled(
             let hair_pose = rest[hair_ch as usize];
             if let Some(head) = merged.get_mut(head_ch).and_then(|d| d.as_mut()) {
                 rebase_merge(head, &head_pose, &hair, &hair_pose)?;
+                core_stats[head_ch] = part_world_stats(head, &head_pose);
             }
         }
     }
@@ -708,25 +773,23 @@ fn monsterize_player_scaled(
         .frames
         .first()
         .ok_or_else(|| anyhow::anyhow!("monster idle has no frames"))?;
-    let identity: Vec<u8> = (0..CANONICAL_PARTS as u8).collect();
-    let dst_height = posed_height(&target_model, target_rest, &identity);
-    let s = if src_height > 1.0 && dst_height > 1.0 {
-        dst_height / src_height
-    } else {
-        1.0
-    };
-    if (s - 1.0).abs() > 0.01 {
-        warnings.push(format!(
-            "geometry scaled by {s:.3} to the target rig height"
-        ));
-    }
-    // Bake each part through source-channel rest -> target-part rest (see
-    // `bake_object` - this is what makes arbitrary rig pairings pose
-    // coherently despite per-rig local-frame conventions).
+    // Bake each part through source-channel rest -> target-part rest,
+    // anchored on the target part's rest bbox (see
+    // `bake_object_anchored`) - the target's own clips move each baked
+    // part exactly like the geometry it replaced, so the Delilas action
+    // streams stay coherent, not just the rest pose.
     for (c, o) in objects.iter_mut().enumerate() {
-        let src_pose = rest[rig.channel_for_canonical[c] as usize];
+        let ch = rig.channel_for_canonical[c] as usize;
+        let src_pose = rest[ch];
         let dst_pose = target_rest[c];
-        bake_object(o, &src_pose, &dst_pose, s)
+        let (mut c_src, e_src) = core_stats[ch];
+        let (mut c_dst, e_dst) = part_world_stats(&target_model[c], &dst_pose);
+        if c == 0 {
+            c_src = neck_anchor(c_src, e_src);
+            c_dst = neck_anchor(c_dst, e_dst);
+        }
+        let s = anchored_scale(c, e_src, e_dst);
+        bake_object_anchored(o, &src_pose, c_src, &dst_pose, c_dst, s)
             .with_context(|| format!("bake canonical part {c}"))?;
     }
 
