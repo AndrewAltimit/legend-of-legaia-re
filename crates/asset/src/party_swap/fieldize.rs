@@ -428,23 +428,29 @@ fn npc_slot_source(npc_pack: &[u8], npc_bundle: &[u8], monster_id: u16) -> Resul
         if u32::from_le_bytes(tims_payload[off..off + 4].try_into().unwrap()) == 0x10
             && let Ok(tim) = legaia_tim::parse(&tims_payload[off..])
         {
-            for block in [tim.clut.as_ref().map(|c| {
-                (
-                    c.fb_x,
-                    c.fb_y,
-                    c.w,
-                    c.h,
-                    c.entries
+            // Multi-row CLUT blocks flatten SIDE BY SIDE at upload: a
+            // 16x2 block at (x, y) lands as two 16-colour palettes at
+            // (x, y) and (x+16, y) - which is exactly how the siblings'
+            // prim CBAs address their second palettes (Gi's block at
+            // (128,481) h2 backs cba columns 8 AND 9). Painting the rows
+            // stacked left every second palette zero - transparent face
+            // prims.
+            if let Some(c) = tim.clut.as_ref() {
+                for row in 0..c.h as usize {
+                    let row_bytes: Vec<u8> = c.entries
+                        [row * c.w as usize..(row + 1) * c.w as usize]
                         .iter()
                         .flat_map(|e| e.to_le_bytes())
-                        .collect::<Vec<u8>>(),
-                )
-            })]
-            .into_iter()
-            .flatten()
-            {
-                let (fx, fy, w, h, data) = block;
-                paint_vram(&mut vram, fx, fy, w, h, &data);
+                        .collect();
+                    paint_vram(
+                        &mut vram,
+                        c.fb_x + (row as u16) * c.w,
+                        c.fb_y,
+                        c.w,
+                        1,
+                        &row_bytes,
+                    );
+                }
             }
             paint_vram(
                 &mut vram,

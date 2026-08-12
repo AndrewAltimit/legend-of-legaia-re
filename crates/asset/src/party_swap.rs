@@ -289,6 +289,78 @@ fn head_bake_params(
     (c_src, c_dst, [s; 3])
 }
 
+/// Minimal rotation taking unit vector `a` onto unit vector `b`
+/// (Rodrigues). Falls back to identity when either is degenerate or
+/// they are opposed (a 180-degree flip has no unique axis; the rigs'
+/// rest limbs never oppose).
+fn rotation_between(a: [f32; 3], b: [f32; 3]) -> [[f32; 3]; 3] {
+    let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let cross = [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ];
+    let s2 = cross[0] * cross[0] + cross[1] * cross[1] + cross[2] * cross[2];
+    if s2 < 1e-12 || dot < -0.999 {
+        return [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    }
+    let k = (1.0 - dot) / s2;
+    [
+        [
+            dot + k * cross[0] * cross[0],
+            k * cross[0] * cross[1] - cross[2],
+            k * cross[0] * cross[2] + cross[1],
+        ],
+        [
+            k * cross[0] * cross[1] + cross[2],
+            dot + k * cross[1] * cross[1],
+            k * cross[1] * cross[2] - cross[0],
+        ],
+        [
+            k * cross[0] * cross[2] - cross[1],
+            k * cross[1] * cross[2] + cross[0],
+            dot + k * cross[2] * cross[2],
+        ],
+    ]
+}
+
+/// Rest "bone direction" per canonical part, from the rest-pose mass
+/// centres: limb parts point at their chain child (upper arm ->
+/// forearm, forearm/hand -> along the forearm, thigh -> shin,
+/// shin/foot -> along the shin), the spine parts point up the spine.
+/// The clips animate each channel relative to the rig's OWN rest
+/// directions, so a transplanted part must be re-aimed from the source
+/// rig's rest direction onto the destination's - a part carried over
+/// at the source stance's angle reads "completely angled wrong" the
+/// moment the two rests differ (Lu's guard stance vs Vahn's).
+fn canonical_bone_dirs(stats: &[PartStats]) -> [[f32; 3]; CANONICAL_PARTS] {
+    let c = |i: usize| stats[i].centroid;
+    let dir = |from: (f32, f32, f32), to: (f32, f32, f32)| -> [f32; 3] {
+        let v = [to.0 - from.0, to.1 - from.1, to.2 - from.2];
+        let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        if n < 1.0 {
+            [0.0, -1.0, 0.0]
+        } else {
+            [v[0] / n, v[1] / n, v[2] / n]
+        }
+    };
+    let mut dirs = [[0.0, -1.0, 0.0]; CANONICAL_PARTS];
+    dirs[0] = dir(c(1), c(0)); // head: up the spine
+    dirs[1] = dir(c(2), c(1)); // torso: up from pelvis
+    dirs[2] = dir(c(2), c(1)); // pelvis: same axis
+    for base in [3usize, 6] {
+        dirs[base] = dir(c(base), c(base + 1));
+        dirs[base + 1] = dir(c(base + 1), c(base + 2));
+        dirs[base + 2] = dirs[base + 1]; // hand rides the forearm axis
+    }
+    for base in [9usize, 12] {
+        dirs[base] = dir(c(base), c(base + 1));
+        dirs[base + 1] = dir(c(base + 1), c(base + 2));
+        dirs[base + 2] = dirs[base + 1]; // foot rides the shin axis
+    }
+    dirs
+}
+
 /// Anchored variant: scale per world axis by `s` about the source
 /// anchor `c_src` and re-anchor at `c_dst`:
 /// `v' = R_dst^T (s ⊙ (R_src v + T_src - C_src) + C_dst - T_dst)`.
@@ -307,14 +379,36 @@ fn bake_object_anchored(
     c_dst: (f32, f32, f32),
     s: [f32; 3],
 ) -> Result<()> {
+    let ident = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    bake_object_anchored_aligned(o, src, c_src, dst, c_dst, s, &ident)
+}
+
+/// [`bake_object_anchored`] with a world-space re-aim about the anchor:
+/// `v' = R_dst^T (R_align (s ⊙ (R_src v + T_src - C_src)) + C_dst - T_dst)`.
+#[allow(clippy::too_many_arguments)]
+fn bake_object_anchored_aligned(
+    o: &mut ModelObject,
+    src: &PartPose,
+    c_src: (f32, f32, f32),
+    dst: &PartPose,
+    c_dst: (f32, f32, f32),
+    s: [f32; 3],
+    r_align: &[[f32; 3]; 3],
+) -> Result<()> {
     let ms = rot_matrix(src);
     let md = rot_matrix(dst);
     for v in o.vertices.iter_mut() {
         let w = apply(&ms, [v[0] as f32, v[1] as f32, v[2] as f32]);
+        let centred = [
+            s[0] * (w[0] + src.tx as f32 - c_src.0),
+            s[1] * (w[1] + src.ty as f32 - c_src.1),
+            s[2] * (w[2] + src.tz as f32 - c_src.2),
+        ];
+        let aimed = apply(r_align, centred);
         let world = [
-            s[0] * (w[0] + src.tx as f32 - c_src.0) + c_dst.0 - dst.tx as f32,
-            s[1] * (w[1] + src.ty as f32 - c_src.1) + c_dst.1 - dst.ty as f32,
-            s[2] * (w[2] + src.tz as f32 - c_src.2) + c_dst.2 - dst.tz as f32,
+            aimed[0] + c_dst.0 - dst.tx as f32,
+            aimed[1] + c_dst.1 - dst.ty as f32,
+            aimed[2] + c_dst.2 - dst.tz as f32,
         ];
         let l = apply_transposed(&md, world);
         *v = [round_coord(l[0])?, round_coord(l[1])?, round_coord(l[2])?];
@@ -879,6 +973,8 @@ fn monsterize_player_scaled(
         .map(|c| core_stats[rig.channel_for_canonical[c] as usize])
         .collect();
     let s_uniform = global_height_scale(&src_stats, &dst_stats);
+    let src_dirs = canonical_bone_dirs(&src_stats);
+    let dst_dirs = canonical_bone_dirs(&dst_stats);
     for (c, o) in objects.iter_mut().enumerate() {
         let ch = rig.channel_for_canonical[c] as usize;
         let src_pose = rest[ch];
@@ -889,7 +985,8 @@ fn monsterize_player_scaled(
         } else {
             (st_src.centroid, st_dst.centroid, s_uniform)
         };
-        bake_object_anchored(o, &src_pose, c_src, &dst_pose, c_dst, s)
+        let r_align = rotation_between(src_dirs[c], dst_dirs[c]);
+        bake_object_anchored_aligned(o, &src_pose, c_src, &dst_pose, c_dst, s, &r_align)
             .with_context(|| format!("bake canonical part {c}"))?;
     }
 
