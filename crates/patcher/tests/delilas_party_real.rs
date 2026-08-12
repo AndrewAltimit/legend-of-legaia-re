@@ -214,6 +214,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         "XA/XA27.XA",
         "XA/XA28.XA",
         "XA/XA29.XA",
+        "XA/XA21.XA",
     ] {
         let (lba, size) = legaia_iso::iso9660::find_path_in_image(&patched, name).expect(name);
         let sectors = (size as usize).div_ceil(2048);
@@ -268,37 +269,20 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         assert!(kept > 10, "only {kept} XA30 non-hero sectors survive");
     }
 
-    // The XA12 battle voice-line reels: hero channels 0-5 silenced,
-    // channels 6/7 byte-identical to retail.
+    // XA12 is untouched: its only captured battle fire was the
+    // results-music jingle path, not a hero voice line.
     {
         let (lba, size) =
             legaia_iso::iso9660::find_path_in_image(&patched, "XA/XA12.XA").expect("XA12.XA");
         let sectors = (size as usize).div_ceil(2048);
-        let (mut muted, mut kept) = (0usize, 0usize);
         for i in 0..sectors {
             let base = (lba as usize + i) * 2352;
-            let sector = &patched[base..base + 2352];
-            if sector[0x12] & 0x20 == 0 {
-                continue;
-            }
-            let chan = sector[0x11];
-            if chan <= 5 {
-                assert!(
-                    sector[0x18..0x92C].iter().all(|&b| b == 0),
-                    "XA12 hero channel {chan} sector {i} still carries audio"
-                );
-                muted += 1;
-            } else {
-                assert_eq!(
-                    &original[base..base + 2352],
-                    sector,
-                    "XA12 non-hero channel {chan} sector {i} was touched"
-                );
-                kept += 1;
-            }
+            assert_eq!(
+                &original[base..base + 2352],
+                &patched[base..base + 2352],
+                "XA12.XA sector {i} was touched"
+            );
         }
-        assert!(muted > 100, "only {muted} XA12 hero sectors muted");
-        assert!(kept > 100, "only {kept} XA12 non-hero sectors survive");
     }
 
     // Idempotence: a second apply is a no-op and changes no bytes.
