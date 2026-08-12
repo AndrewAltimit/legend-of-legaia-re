@@ -700,15 +700,15 @@ fn playerize_scaled(
         let ch = rig.channel_for_canonical[c] as usize;
         let dst_pose = &dst_rest[ch];
         let (st_src, st_dst) = (src_stats[c], dst_stats[c]);
-        let (c_src, c_dst) = if c == 0 {
-            (
-                neck_anchor(st_src.center, st_src.ext),
-                neck_anchor(st_dst.center, st_dst.ext),
-            )
+        let (c_src, c_dst, s) = if c == 0 {
+            head_bake_params(&st_src, &src_stats[1], &st_dst, &dst_stats[1])
         } else {
-            (st_src.centroid, st_dst.centroid)
+            (
+                st_src.centroid,
+                st_dst.centroid,
+                anchored_scale(c, st_src.ext, st_dst.ext),
+            )
         };
-        let s = anchored_scale(c, st_src.ext, st_dst.ext);
         let mut o = src_obj.clone();
         bake_object_anchored(&mut o, &src_rest[c], c_src, dst_pose, c_dst, s)
             .with_context(|| format!("bake canonical part {c}"))?;

@@ -543,6 +543,95 @@ fn paint_vram(vram: &mut [u16], fb_x: u16, fb_y: u16, w: u16, h: u16, data: &[u8
     }
 }
 
+/// A tiny flat-colored box spanning `part`'s local bbox: the low-poly
+/// equipment-template stand-in (mimics retail's ~16-vert world-map
+/// variants; see the template block in `fieldize_slot`).
+fn template_box(
+    part: &ModelObject,
+    cluts: &[[u16; 16]],
+    indices: &[u8],
+    width: usize,
+) -> ModelObject {
+    let _ = (indices, width);
+    // Colour: average of the part's flat prim colours; a fully-textured
+    // part (the head) falls back to the source palettes' average - the
+    // dominant cloth/hair tone.
+    let mut acc = [0u32; 3];
+    let mut n = 0u32;
+    for g in &part.groups {
+        if g.shape.is_textured() {
+            continue;
+        }
+        for p in &g.prims {
+            for c in &p.colors {
+                for k in 0..3 {
+                    acc[k] += c[k] as u32;
+                }
+                n += 1;
+            }
+        }
+    }
+    if n == 0 {
+        let s5 = |x: u16| ((x << 3) | (x >> 2)) as u32;
+        for pal in cluts {
+            for &c in pal.iter().skip(1) {
+                if c != 0 {
+                    acc[0] += s5(c & 0x1F);
+                    acc[1] += s5((c >> 5) & 0x1F);
+                    acc[2] += s5((c >> 10) & 0x1F);
+                    n += 1;
+                }
+            }
+        }
+    }
+    let n = n.max(1);
+    let color = [(acc[0] / n) as u8, (acc[1] / n) as u8, (acc[2] / n) as u8];
+
+    // Fixed-tiny geometry, tucked just BELOW the part's local origin
+    // (y-down: positive y). Unposed in the field the box sits under the
+    // ground plane at the actor origin; posed by the world-map toggle it
+    // is a small blob at the joint. Never size it to the part's bbox - a
+    // head-sized unposed box parks itself over the walker's legs.
+    let _ = part;
+    let (lo, hi) = ([-4i16, 1, -4], [4i16, 9, 4]);
+    let vertices: Vec<[i16; 3]> = (0..8)
+        .map(|i| {
+            [
+                if i & 1 == 0 { lo[0] } else { hi[0] },
+                if i & 2 == 0 { lo[1] } else { hi[1] },
+                if i & 4 == 0 { lo[2] } else { hi[2] },
+            ]
+        })
+        .collect();
+    let quads: [[u16; 4]; 6] = [
+        [0, 1, 2, 3],
+        [4, 5, 6, 7],
+        [0, 1, 4, 5],
+        [2, 3, 6, 7],
+        [0, 2, 4, 6],
+        [1, 3, 5, 7],
+    ];
+    let prims = quads
+        .iter()
+        .map(|q| ModelPrim {
+            vertices: q.to_vec(),
+            uvs: Vec::new(),
+            cba: 0,
+            tsb: 0,
+            colors: vec![color],
+        })
+        .collect();
+    ModelObject {
+        vertices,
+        groups: vec![ModelGroup {
+            shape: PacketShape::F4,
+            semi_transparent: false,
+            prims,
+        }],
+        scale: legaia_tmd::encode::LEGAIA_OBJECT_SCALE,
+    }
+}
+
 /// The rebuilt PROT 0874 entry.
 #[derive(Debug, Clone)]
 pub struct FieldizedPack {
@@ -644,6 +733,20 @@ fn fieldize_slot(
             scale: legaia_tmd::encode::LEGAIA_OBJECT_SCALE,
         });
     }
+    // Torso stats first: the head bakes body-relative (scales like the
+    // torso, anchors at the neck placed over the torso's x/z) so a
+    // sibling's oversized hair stays proportional to their body instead
+    // of being crushed into the replaced character's bare-head box.
+    let torso_stats = {
+        let bone = roles[1];
+        let pose = field_rest[bone];
+        let dst = group_world_stats(&[(&field_model[bone], &pose)]);
+        let src_parts: Vec<(&ModelObject, &PartPose)> = source.role_sources[1]
+            .iter()
+            .map(|&c| (&src_model[c], &src_rest[c]))
+            .collect();
+        (group_world_stats(&src_parts), dst)
+    };
     for (role, sources) in source.role_sources.iter().enumerate() {
         let bone = roles[role];
         let dst_pose = field_rest[bone];
@@ -655,14 +758,16 @@ fn fieldize_slot(
             .collect();
         let (mut c_src, e_src) = group_world_stats(&src_parts);
         // Limbs/torso stretch per axis to span the retail part (joint
-        // spacing comes from the clips); the head keeps the sibling's
-        // proportions (never grown - see `anchored_scale`) and anchors
-        // at the neck.
-        if role == 0 {
-            c_src = neck_anchor(c_src, e_src);
-            c_dst = neck_anchor(c_dst, e_dst);
-        }
-        let s = anchored_scale(role, e_src, e_dst);
+        // spacing comes from the clips).
+        let s = if role == 0 {
+            let ((ts_c, ts_e), (td_c, td_e)) = torso_stats;
+            let diag = |e: [f32; 3]| (e[0] * e[0] + e[1] * e[1] + e[2] * e[2]).sqrt();
+            c_src = (ts_c.0, c_src.1 + e_src[1] / 2.0, ts_c.2);
+            c_dst = (td_c.0, c_dst.1 + e_dst[1] / 2.0, td_c.2);
+            [(diag(td_e) / diag(ts_e)).clamp(0.05, 3.0); 3]
+        } else {
+            anchored_scale(role, e_src, e_dst)
+        };
         for &c in sources.iter() {
             let mut part = src_model[c].clone();
             // Flatten every textured prim except on the head.
@@ -698,19 +803,24 @@ fn fieldize_slot(
     let head_bone = roles[0];
     let window = layout_head_window(&mut bones[head_bone], cluts, indices, width, slot, warnings)?;
 
-    let mut tmd = encode(&bones).context("encode field TMD")?;
-    // The runtime equipment toggle (FUN_8001EBEC) copies template
-    // descriptor 10 or 11 over group {0 Vahn, 3 Noa, 5 Gala} on every
-    // equip evaluation - an empty template would vanish that body part.
-    // Make both templates byte-copies of the final patched-group
-    // descriptor so the toggle is a no-op.
+    // Equipment templates (groups 10/11). Retail's are LOW-POLY
+    // world-map variants of group {0 Vahn, 3 Noa, 5 Gala}: the world-map
+    // walker's equip toggle (FUN_8001EBEC) copies one of them over that
+    // group, while the FIELD renderer draws all 12 objects - the
+    // templates render unposed at the actor origin, so they must be
+    // SMALL like retail's (16-vert bits that hide at the feet). The
+    // first ship made them byte-copies of the full patched group, which
+    // drew a second unposed HEAD riding the walker on the Vahn slot
+    // (whose patched group is the head). Emit a tiny flat-colored box
+    // spanning the patched group's local bbox instead: harmless in the
+    // field, a plausible low-poly stand-in on the world map.
     const PATCHED_GROUP: [usize; 3] = [0, 3, 5];
     let patched = PATCHED_GROUP.get(slot).copied().unwrap_or(0);
-    let src = 0x0C + patched * 0x1C;
-    let desc: [u8; 0x1C] = tmd[src..src + 0x1C].try_into().unwrap();
-    for tpl in [0x0C + 10 * 0x1C, 0x0C + 11 * 0x1C] {
-        tmd[tpl..tpl + 0x1C].copy_from_slice(&desc);
-    }
+    let template = template_box(&bones[patched], cluts, indices, width);
+    bones[10] = template.clone();
+    bones[11] = template;
+
+    let tmd = encode(&bones).context("encode field TMD")?;
     Ok(FieldSlot {
         tmd,
         window: window.0,

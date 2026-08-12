@@ -235,11 +235,34 @@ fn anchored_scale(canonical: usize, e_src: [f32; 3], e_dst: [f32; 3]) -> [f32; 3
     }
 }
 
-/// Head anchor: the bbox BOTTOM centre (the neck joint) instead of the
-/// bbox centre - a head anchors where it attaches, so differently-sized
-/// hair spans up/outward from the neck instead of shifting the face.
-fn neck_anchor(c: (f32, f32, f32), e: [f32; 3]) -> (f32, f32, f32) {
-    (c.0, c.1 + e[1] / 2.0, c.2)
+/// Head bake parameters, BODY-relative: the head scales like the torso
+/// does (a sibling's oversized hair stays proportional to their body
+/// instead of being crushed into the replaced character's bare-head
+/// box - Lu's head+hair fitted to Vahn's bare head shrank to a pea),
+/// and anchors at the neck point placed relative to the torso (bottom
+/// of the head bbox, x/z of the torso mass), which keeps the face
+/// centred over the body no matter how the hair skews the head bbox.
+/// Returns `(c_src, c_dst, scale)`.
+type HeadParams = ((f32, f32, f32), (f32, f32, f32), [f32; 3]);
+fn head_bake_params(
+    src_head: &PartStats,
+    src_torso: &PartStats,
+    dst_head: &PartStats,
+    dst_torso: &PartStats,
+) -> HeadParams {
+    let diag = |e: [f32; 3]| (e[0] * e[0] + e[1] * e[1] + e[2] * e[2]).sqrt();
+    let s = (diag(dst_torso.ext) / diag(src_torso.ext)).clamp(0.05, 3.0);
+    let c_src = (
+        src_torso.centroid.0,
+        src_head.center.1 + src_head.ext[1] / 2.0,
+        src_torso.centroid.2,
+    );
+    let c_dst = (
+        dst_torso.centroid.0,
+        dst_head.center.1 + dst_head.ext[1] / 2.0,
+        dst_torso.centroid.2,
+    );
+    (c_src, c_dst, [s; 3])
 }
 
 /// Anchored variant: scale per world axis by `s` about the source
@@ -827,20 +850,21 @@ fn monsterize_player_scaled(
         .enumerate()
         .map(|(c, o)| part_world_stats(o, &target_rest[c]))
         .collect();
+    let torso_ch = rig.channel_for_canonical[1] as usize;
     for (c, o) in objects.iter_mut().enumerate() {
         let ch = rig.channel_for_canonical[c] as usize;
         let src_pose = rest[ch];
         let dst_pose = target_rest[c];
         let (st_src, st_dst) = (core_stats[ch], dst_stats[c]);
-        let (c_src, c_dst) = if c == 0 {
-            (
-                neck_anchor(st_src.center, st_src.ext),
-                neck_anchor(st_dst.center, st_dst.ext),
-            )
+        let (c_src, c_dst, s) = if c == 0 {
+            head_bake_params(&st_src, &core_stats[torso_ch], &st_dst, &dst_stats[1])
         } else {
-            (st_src.centroid, st_dst.centroid)
+            (
+                st_src.centroid,
+                st_dst.centroid,
+                anchored_scale(c, st_src.ext, st_dst.ext),
+            )
         };
-        let s = anchored_scale(c, st_src.ext, st_dst.ext);
         bake_object_anchored(o, &src_pose, c_src, &dst_pose, c_dst, s)
             .with_context(|| format!("bake canonical part {c}"))?;
     }
