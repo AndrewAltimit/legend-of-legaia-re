@@ -200,11 +200,22 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         );
     }
 
-    // The arts XA shout banks are muted: every Form 2 sector's ADPCM
-    // payload is zero while the subheaders (channel routing) survive.
-    {
-        let (lba, size) =
-            legaia_iso::iso9660::find_path_in_image(&patched, "XA/XA2.XA").expect("XA2.XA");
+    // The hero XA voice banks are muted whole - arts shouts (XA2/4/6)
+    // and the staged-event voice banks (XA1/3/5 + XA27/28/29): every
+    // Form 2 sector's ADPCM payload is zero while the subheaders
+    // (channel routing) survive.
+    for name in [
+        "XA/XA2.XA",
+        "XA/XA4.XA",
+        "XA/XA6.XA",
+        "XA/XA1.XA",
+        "XA/XA3.XA",
+        "XA/XA5.XA",
+        "XA/XA27.XA",
+        "XA/XA28.XA",
+        "XA/XA29.XA",
+    ] {
+        let (lba, size) = legaia_iso::iso9660::find_path_in_image(&patched, name).expect(name);
         let sectors = (size as usize).div_ceil(2048);
         let mut audio = 0usize;
         for i in 0..sectors {
@@ -215,12 +226,12 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
             }
             assert!(
                 sector[0x18..0x92C].iter().all(|&b| b == 0),
-                "XA2.XA sector {i} still carries audio"
+                "{name} sector {i} still carries audio"
             );
             assert_ne!(&sector[0x10..0x18], &[0u8; 8], "subheader wiped");
             audio += 1;
         }
-        assert!(audio > 100, "XA2.XA had only {audio} Form 2 sectors");
+        assert!(audio > 100, "{name} had only {audio} Form 2 sectors");
     }
 
     // The XA30 normal-move grunt bank: the party's channels (Vahn 0,

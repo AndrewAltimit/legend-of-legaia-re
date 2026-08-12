@@ -551,16 +551,10 @@ fn paint_vram(vram: &mut [u16], fb_x: u16, fb_y: u16, w: u16, h: u16, data: &[u8
 /// A tiny flat-colored box spanning `part`'s local bbox: the low-poly
 /// equipment-template stand-in (mimics retail's ~16-vert world-map
 /// variants; see the template block in `fieldize_slot`).
-fn template_box(
-    part: &ModelObject,
-    cluts: &[[u16; 16]],
-    indices: &[u8],
-    width: usize,
-) -> ModelObject {
-    let _ = (indices, width);
-    // Colour: average of the part's flat prim colours; a fully-textured
-    // part (the head) falls back to the source palettes' average - the
-    // dominant cloth/hair tone.
+/// Average colour of a part's flat prims; a fully-textured part (the
+/// head) falls back to the source palettes' average - the dominant
+/// cloth/hair tone.
+fn template_fill_color(part: &ModelObject, cluts: &[[u16; 16]]) -> [u8; 3] {
     let mut acc = [0u32; 3];
     let mut n = 0u32;
     for g in &part.groups {
@@ -590,7 +584,17 @@ fn template_box(
         }
     }
     let n = n.max(1);
-    let color = [(acc[0] / n) as u8, (acc[1] / n) as u8, (acc[2] / n) as u8];
+    [(acc[0] / n) as u8, (acc[1] / n) as u8, (acc[2] / n) as u8]
+}
+
+fn template_box(
+    part: &ModelObject,
+    cluts: &[[u16; 16]],
+    indices: &[u8],
+    width: usize,
+) -> ModelObject {
+    let _ = (indices, width);
+    let color = template_fill_color(part, cluts);
 
     // Fixed-tiny geometry, tucked just BELOW the part's local origin
     // (y-down: positive y). Unposed in the field the box sits under the
@@ -698,6 +702,104 @@ fn monster_slot_source(archive_entry: &[u8], source_id: u16) -> Result<SlotSourc
         indices,
         width,
     })
+}
+
+/// Close a part's OPEN boundary loops with flat fan fills. The NPC
+/// meshes leave genuine openings (the hair shell's underside, regions
+/// the fixed scene camera never exposed) that read as missing polygons
+/// from the field camera's free angles - no winding trick can draw a
+/// polygon that does not exist. A boundary edge is an undirected
+/// triangle edge used exactly once; each closed loop of them gains a
+/// centroid vertex + an F3 fan in the part's fill colour. Winding is
+/// arbitrary - the head is double-sided afterwards.
+fn seal_boundaries(o: &mut ModelObject, color: [u8; 3]) {
+    use std::collections::{BTreeMap, BTreeSet};
+    let key = |a: u16, b: u16| (a.min(b), a.max(b));
+    let mut count: BTreeMap<(u16, u16), usize> = BTreeMap::new();
+    for g in &o.groups {
+        for p in &g.prims {
+            let v = &p.vertices;
+            let tris: Vec<[u16; 3]> = match v.len() {
+                3 => vec![[v[0], v[1], v[2]]],
+                4 => vec![[v[0], v[1], v[2]], [v[1], v[3], v[2]]],
+                _ => continue,
+            };
+            for t in tris {
+                for e in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+                    *count.entry(key(e.0, e.1)).or_default() += 1;
+                }
+            }
+        }
+    }
+    let boundary: Vec<(u16, u16)> = count
+        .iter()
+        .filter(|&(_, &c)| c == 1)
+        .map(|(&e, _)| e)
+        .collect();
+    if boundary.is_empty() {
+        return;
+    }
+    let mut adj: BTreeMap<u16, Vec<u16>> = BTreeMap::new();
+    for &(a, b) in &boundary {
+        adj.entry(a).or_default().push(b);
+        adj.entry(b).or_default().push(a);
+    }
+    let mut used: BTreeSet<(u16, u16)> = BTreeSet::new();
+    let mut loops: Vec<Vec<u16>> = Vec::new();
+    for &(a0, b0) in &boundary {
+        if used.contains(&key(a0, b0)) {
+            continue;
+        }
+        used.insert(key(a0, b0));
+        let mut path = vec![a0, b0];
+        loop {
+            let cur = *path.last().unwrap();
+            let prev = path[path.len() - 2];
+            let next = adj[&cur]
+                .iter()
+                .copied()
+                .find(|&n| n != prev && !used.contains(&key(cur, n)));
+            let Some(next) = next else { break };
+            used.insert(key(cur, next));
+            if next == path[0] {
+                loops.push(path.clone());
+                break;
+            }
+            path.push(next);
+        }
+    }
+    for lv in loops {
+        if lv.len() < 3 {
+            continue;
+        }
+        let mut c = [0f32; 3];
+        for &vi in &lv {
+            for (k, ck) in c.iter_mut().enumerate() {
+                *ck += o.vertices[vi as usize][k] as f32;
+            }
+        }
+        let n = lv.len() as f32;
+        let ci = o.vertices.len() as u16;
+        o.vertices.push([
+            (c[0] / n).round() as i16,
+            (c[1] / n).round() as i16,
+            (c[2] / n).round() as i16,
+        ]);
+        let prims: Vec<ModelPrim> = (0..lv.len())
+            .map(|w| ModelPrim {
+                vertices: vec![ci, lv[w], lv[(w + 1) % lv.len()]],
+                uvs: Vec::new(),
+                cba: 0,
+                tsb: 0,
+                colors: vec![color],
+            })
+            .collect();
+        o.groups.push(ModelGroup {
+            shape: PacketShape::F3,
+            semi_transparent: false,
+            prims,
+        });
+    }
 }
 
 /// Emit a winding-reversed twin of every prim: the retail renderer's
@@ -875,6 +977,10 @@ fn fieldize_slot(
     for g in bones[head_bone].groups.iter_mut() {
         g.semi_transparent = false;
     }
+    // Close the head's real openings (hair underside) before the UV
+    // relayout - the fills are flat prims the layout never touches.
+    let fill = template_fill_color(&bones[head_bone], cluts);
+    seal_boundaries(&mut bones[head_bone], fill);
     let window = layout_head_window(&mut bones[head_bone], cluts, indices, width, slot, warnings)?;
 
     // Equipment templates (groups 10/11). Retail's are LOW-POLY

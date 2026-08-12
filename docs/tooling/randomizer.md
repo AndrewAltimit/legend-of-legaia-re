@@ -1348,8 +1348,10 @@ walking chains and the neck closed). NPC meshes are authored for
 fixed-camera scenes and are not watertight from free angles - the
 renderer's winding cull opens them up - so the rebuilt head and torso
 carry a winding-reversed twin per prim (a size ladder narrows the scope
-until the container fits). The head re-lays into the
-character's atlas window,
+until the container fits), and the head's genuine openings (the hair
+shell's underside, which the fixed scene camera never exposed) seal
+with flat fan fills in the part's fill colour before the relayout. The
+head re-lays into the character's atlas window,
 bodies stay flat vertex colours - the retail field style. The
 battle-model conversion survives as a fallback when the NPC source is
 unavailable. The rebuilt container keeps the entry's first four header
@@ -1362,15 +1364,23 @@ the always-resident battle bank's programs 7/8/9, so the mapped siblings'
 samples (single-program VABs inside `monster.snd`) splice over them in
 place - cue tracks, routing and residency all stay retail. The replaced
 characters' **XA voice lines** are silenced rather than left wrong-voiced:
-the per-character arts-shout banks (`XA2`/`XA4`/`XA6`) whole, the
+the per-character arts-shout banks (`XA2`/`XA4`/`XA6`) whole; the
 party's three channels (0/4/6) of the shared normal-swing grunt bank
-`XA30.XA` (see `docs/subsystems/battle-action.md` § Battle voice cues),
-and the heroes' six channels (0-5, two reels per character - live
-capture: Vahn's art hits walk channel 0, the battle-end line channel 4)
-of the battle voice-line bank `XA12.XA` seeked by the cue dispatcher
-`FUN_8004DA00` with a char-keyed stride-2 index - subheaders and routing
-survive, the sectors decode to silence, other speakers' channels stay
-byte-identical. Still retail: menu
+`XA30.XA` (see `docs/subsystems/battle-action.md` § Battle voice cues);
+the heroes' six channels (0-5, two reels per character - live capture:
+Vahn's art hits walk channel 0, the battle-end line channel 4) of the
+battle voice-line bank `XA12.XA` seeked by the cue dispatcher
+`FUN_8004DA00` with a char-keyed stride-2 index; and the six
+staged-event voice banks whole - the voice-id space (`id >= 0x100`
+through `FUN_8004FCC8`, ids picked by the anim materialiser
+`FUN_8004AD80`'s inline char table: Vahn `0x101`, Noa `0x111`, Gala
+`0x121`) resolves 16 ids per hero across `XA1`+`XA27` (Vahn),
+`XA3`+`XA28` (Noa), `XA5`+`XA29` (Gala) - item use, Spirit, cut-ins, KO
+and victory lines. Subheaders and routing survive everywhere, muted
+sectors decode to silence, other speakers' channels stay byte-identical.
+NB the old reading of XA3/XA5 as "stereo Miracle fanfares" is falsified
+- those captured fires were the heroes' voice lines through the same
+dispatcher. Still retail: menu
 portraits, battle HUD faces. Composes with
 `--delilas-challenge` - the challenge applies first, so its memory-tight
 dome 1v2 streams slim clones cut from the retail sibling blocks while the

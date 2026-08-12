@@ -347,6 +347,30 @@ pub fn apply_delilas_party(
         report.notes.push(format!(
             "party: XA12 voice-line channels 0-5 muted ({n} sectors)"
         ));
+
+        // The FOURTH voice tier: the staged-event voice-id space (id >=
+        // 0x100 through `FUN_8004FCC8`; the anim materialiser
+        // `FUN_8004AD80` picks the id from an inline char-keyed table -
+        // Vahn 0x101, Noa 0x111, Gala 0x121). Sixteen ids per hero,
+        // split across two 8-channel banks each: Vahn = XA1 + XA27,
+        // Noa = XA3 + XA28, Gala = XA5 + XA29. These fire on item use,
+        // Spirit, cut-ins, KO and victory - whole files, all channels
+        // hero-owned, so they mute whole.
+        for (who, file) in [
+            ("Vahn", "XA/XA1.XA"),
+            ("Vahn", "XA/XA27.XA"),
+            ("Noa", "XA/XA3.XA"),
+            ("Noa", "XA/XA28.XA"),
+            ("Gala", "XA/XA5.XA"),
+            ("Gala", "XA/XA29.XA"),
+        ] {
+            let n = patcher
+                .silence_xa_file(file)
+                .with_context(|| format!("mute {who} staged-event voice bank {file}"))?;
+            report
+                .notes
+                .push(format!("{who}: {file} voice bank muted ({n} sectors)"));
+        }
     }
     Ok(report)
 }
