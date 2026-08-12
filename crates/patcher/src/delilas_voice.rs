@@ -157,8 +157,52 @@ fn overwrite_vag(dst: &mut [u8], src: &[u8]) {
     }
 }
 
-/// Splice the mapped siblings' voice samples into the party's battle
-/// voice programs. Returns human-readable notes.
+/// One direction of the splice: every tone of `dst` tone page `dst_page`
+/// takes the cycled tones (timbre + sample body) of `src` page `src_page`.
+fn splice_program(
+    dst: &mut [u8],
+    dst_view: &VabView,
+    dst_page: usize,
+    src: &[u8],
+    src_view: &VabView,
+    src_page: usize,
+) -> Result<(usize, usize)> {
+    let dst_tones = dst_view.page_tones[dst_page];
+    let src_tones = src_view.page_tones[src_page];
+    if src_tones == 0 {
+        bail!("source program has no tones");
+    }
+    for t in 0..dst_tones {
+        let s = t % src_tones;
+        // Timbre fields (bytes 0..22: prior..adsr2) come from the source
+        // tone; `prog`/`vag`/reserved stay the destination's.
+        let src_o = src_view.tone_offset(src_page, s);
+        let timbre: [u8; 22] = src[src_o..src_o + 22].try_into().unwrap();
+        let dst_o = dst_view.tone_offset(dst_page, t);
+        dst[dst_o..dst_o + 22].copy_from_slice(&timbre);
+
+        // Sample body.
+        let src_vag = src_view.tone_vag(src, src_page, s);
+        let dst_vag = dst_view.tone_vag(dst, dst_page, t);
+        let (so, sn) = *src_view
+            .vag_spans
+            .get(src_vag.wrapping_sub(1))
+            .ok_or_else(|| anyhow::anyhow!("source VAG {src_vag} out of range"))?;
+        let (do_, dn) = *dst_view
+            .vag_spans
+            .get(dst_vag.wrapping_sub(1))
+            .ok_or_else(|| anyhow::anyhow!("destination VAG {dst_vag} out of range"))?;
+        let body = src[so..so + sn].to_vec();
+        overwrite_vag(&mut dst[do_..do_ + dn], &body);
+    }
+    Ok((dst_tones, src_tones))
+}
+
+/// Splice the voice identity both ways: the party's battle voice
+/// programs (always-resident PROT 0869) take the mapped siblings'
+/// samples, and each sibling's own `monster.snd` bank takes the replaced
+/// character's retail samples - so the duel enemies grunt like the
+/// heroes they now depict. Returns human-readable notes.
 pub fn splice_party_voices(
     patcher: &mut DiscPatcher,
     mapping: &PartyMapping,
@@ -167,8 +211,8 @@ pub fn splice_party_voices(
     let mut bank = patcher
         .read_entry(BATTLE_BANK_ENTRY)
         .context("read battle voice bank (PROT 0869)")?;
-    let snd = patcher
-        .read_entry_footprint(MONSTER_SND_ENTRY)
+    let mut snd = patcher
+        .read_entry(MONSTER_SND_ENTRY)
         .context("read monster.snd (PROT 0891)")?;
 
     let bank_off = *legaia_vab::find_vabs(&bank)
@@ -176,57 +220,56 @@ pub fn splice_party_voices(
         .ok_or_else(|| anyhow::anyhow!("PROT 0869 carries no VAB"))?;
     let bank_view = view(&bank, bank_off)?;
 
+    // The party programs' retail samples, captured BEFORE the overwrite -
+    // the enemy-side mirror sources from them.
+    let retail_bank = bank.clone();
+
     let siblings = [mapping.vahn, mapping.noa, mapping.gala];
     for (slot, sibling) in siblings.iter().enumerate() {
         let party_prog = PARTY_VOICE_PROGRAMS[slot];
-        let dst_page = bank_view.page_of(party_prog)?;
-        let dst_tones = bank_view.page_tones[dst_page];
+        let who = ["Vahn", "Noa", "Gala"][slot];
+        let party_page = bank_view.page_of(party_prog)?;
 
         let src_off = monster_vab_offset(&snd, sibling.monster_id())?;
-        let src_view = view(&snd, src_off)?;
-        let src_page = 0;
-        let src_prog = *src_view
-            .page_programs
-            .first()
-            .ok_or_else(|| anyhow::anyhow!("sibling VAB has no populated program"))?;
-        let src_tones = src_view.page_tones[src_page];
-        if src_tones == 0 {
-            bail!("sibling program {src_prog} has no tones");
-        }
+        let sibling_view = view(&snd, src_off)?;
 
-        for t in 0..dst_tones {
-            let s = t % src_tones;
-            // Timbre fields (bytes 0..22: prior..adsr2) come from the
-            // sibling tone; `prog`/`vag`/reserved stay the party's.
-            let src_o = src_view.tone_offset(src_page, s);
-            let timbre: [u8; 22] = snd[src_o..src_o + 22].try_into().unwrap();
-            let dst_o = bank_view.tone_offset(dst_page, t);
-            bank[dst_o..dst_o + 22].copy_from_slice(&timbre);
-
-            // Sample body.
-            let src_vag = src_view.tone_vag(&snd, src_page, s);
-            let dst_vag = bank_view.tone_vag(&bank, dst_page, t);
-            let (so, sn) = *src_view
-                .vag_spans
-                .get(src_vag.wrapping_sub(1))
-                .ok_or_else(|| anyhow::anyhow!("sibling VAG {src_vag} out of range"))?;
-            let (do_, dn) = *bank_view
-                .vag_spans
-                .get(dst_vag.wrapping_sub(1))
-                .ok_or_else(|| anyhow::anyhow!("bank VAG {dst_vag} out of range"))?;
-            let src_body = snd[so..so + sn].to_vec();
-            overwrite_vag(&mut bank[do_..do_ + dn], &src_body);
-        }
+        // Party <- sibling (the sibling VAB is single-program: page 0).
+        let sibling_bytes = snd.clone();
+        let (dt, st) = splice_program(
+            &mut bank,
+            &bank_view,
+            party_page,
+            &sibling_bytes,
+            &sibling_view,
+            0,
+        )
+        .with_context(|| format!("{who} voices <- {}", sibling.display_name()))?;
         notes.push(format!(
-            "{}: program {party_prog} voices <- {} ({} tones over {})",
-            ["Vahn", "Noa", "Gala"][slot],
+            "{who}: program {party_prog} voices <- {} ({dt} tones over {st})",
             sibling.display_name(),
-            dst_tones,
-            src_tones,
+        ));
+
+        // Sibling bank <- the character's retail samples (the duel enemy
+        // wears the character's model AND voice).
+        let (dt, st) = splice_program(
+            &mut snd,
+            &sibling_view,
+            0,
+            &retail_bank,
+            &bank_view,
+            party_page,
+        )
+        .with_context(|| format!("{} bank <- {who} retail voices", sibling.display_name()))?;
+        notes.push(format!(
+            "{} duels: bank voices <- {who} ({dt} tones over {st})",
+            sibling.display_name(),
         ));
     }
     patcher
         .patch_prot_entry(BATTLE_BANK_ENTRY, 0, &bank)
         .context("write battle voice bank")?;
+    patcher
+        .patch_prot_entry(MONSTER_SND_ENTRY, 0, &snd)
+        .context("write monster.snd")?;
     Ok(notes)
 }

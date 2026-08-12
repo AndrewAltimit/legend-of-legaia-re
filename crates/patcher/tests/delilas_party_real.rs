@@ -91,20 +91,13 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     assert_eq!(name_at(1), "Lu");
     assert_eq!(name_at(2), "Che");
 
-    // Battle voices: the party's voice program now carries the mapped
-    // sibling's samples - program 7 (Vahn) tone 0 decodes to the same
-    // PCM as Gi's monster.snd program tone 0.
+    // Battle voices, both directions: program 7 (Vahn) tone 0 now decodes
+    // to RETAIL Gi's grunt, and the patched monster.snd Gi bank tone 0
+    // decodes to RETAIL Vahn's grunt (the samples are byte-copies, so the
+    // decoded prefix over the copied span must match exactly).
     {
         use legaia_patcher::delilas_voice::{BATTLE_BANK_ENTRY, MONSTER_SND_ENTRY};
-        let bank = reopened.read_entry(BATTLE_BANK_ENTRY).expect("bank");
-        let bank_off = *legaia_vab::find_vabs(&bank).first().expect("bank VAB");
-        let bank_vab = legaia_vab::parse(&bank, bank_off).expect("bank parses after splice");
-        let snd = reopened
-            .read_entry_footprint(MONSTER_SND_ENTRY)
-            .expect("monster.snd");
-        let gi_sec =
-            u32::from_le_bytes(snd[8 + 161 * 4..12 + 161 * 4].try_into().unwrap()) as usize * 0x800;
-        let gi_vab = legaia_vab::parse(&snd, gi_sec + 4).expect("Gi VAB");
+        let retail = DiscPatcher::open(original.clone()).expect("open retail");
         let tone_vag = |vab: &legaia_vab::VabReport, prog: usize, tone: usize| -> usize {
             let page = vab
                 .programs
@@ -115,22 +108,42 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
                 .expect("program populated");
             vab.tones[page][tone].vag as usize
         };
-        let bank_span = bank_vab.vag_samples[tone_vag(&bank_vab, 7, 0) - 1];
-        let gi_span = gi_vab.vag_samples[tone_vag(&gi_vab, 62, 0) - 1];
-        let bank_pcm = legaia_vab::decode_vag_aligned(
-            &bank[bank_span.byte_offset..bank_span.byte_offset + bank_span.size],
-        )
-        .expect("patched VAG decodes");
-        let gi_pcm = legaia_vab::decode_vag_aligned(
-            &snd[gi_span.byte_offset..gi_span.byte_offset + gi_span.size],
-        )
-        .expect("Gi VAG decodes");
-        let n = bank_pcm.len().min(gi_pcm.len());
-        assert!(n > 1000, "spliced sample too short ({n} samples)");
+        let body = |buf: &[u8], off: usize, prog: usize, tone: usize| -> Vec<u8> {
+            let vab = legaia_vab::parse(buf, off).expect("VAB parses");
+            let span = vab.vag_samples[tone_vag(&vab, prog, tone) - 1];
+            buf[span.byte_offset..span.byte_offset + span.size].to_vec()
+        };
+        let gi_off = |snd: &[u8]| -> usize {
+            u32::from_le_bytes(snd[8 + 161 * 4..12 + 161 * 4].try_into().unwrap()) as usize * 0x800
+                + 4
+        };
+
+        let bank = reopened.read_entry(BATTLE_BANK_ENTRY).expect("bank");
+        let bank_off = *legaia_vab::find_vabs(&bank).first().expect("bank VAB");
+        let retail_bank = retail.read_entry(BATTLE_BANK_ENTRY).expect("retail bank");
+        let snd = reopened.read_entry(MONSTER_SND_ENTRY).expect("monster.snd");
+        let retail_snd = retail.read_entry(MONSTER_SND_ENTRY).expect("retail snd");
+
+        let patched_party = body(&bank, bank_off, 7, 0);
+        let retail_gi = body(&retail_snd, gi_off(&retail_snd), 62, 0);
+        let n = patched_party.len().min(retail_gi.len());
+        assert!(n > 500, "spliced sample too short ({n} bytes)");
         assert_eq!(
-            &bank_pcm[..n.min(2000)],
-            &gi_pcm[..n.min(2000)],
+            &patched_party[..n / 16 * 16],
+            &retail_gi[..n / 16 * 16],
             "program 7 tone 0 does not carry Gi's sample"
+        );
+
+        let patched_gi = body(&snd, gi_off(&snd), 62, 0);
+        let retail_party = body(&retail_bank, bank_off, 7, 0);
+        let n = patched_gi.len().min(retail_party.len()) / 16 * 16;
+        assert!(n > 500, "mirrored sample too short ({n} bytes)");
+        // The mirror truncates into the smaller sibling slot; the copied
+        // prefix (minus the re-flagged final block) matches byte-exact.
+        assert_eq!(
+            &patched_gi[..n - 16],
+            &retail_party[..n - 16],
+            "Gi's duel bank does not carry Vahn's sample"
         );
     }
 
