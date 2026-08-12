@@ -762,9 +762,21 @@ fn fieldize_slot(
         let s = if role == 0 {
             let ((ts_c, ts_e), (td_c, td_e)) = torso_stats;
             let diag = |e: [f32; 3]| (e[0] * e[0] + e[1] * e[1] + e[2] * e[2]).sqrt();
-            c_src = (ts_c.0, c_src.1 + e_src[1] / 2.0, ts_c.2);
-            c_dst = (td_c.0, c_dst.1 + e_dst[1] / 2.0, td_c.2);
-            [(diag(td_e) / diag(ts_e)).clamp(0.05, 3.0); 3]
+            let sh = (diag(td_e) / diag(ts_e)).clamp(0.05, 3.0);
+            // Preserve the source's own head-torso overlap (scaled) so
+            // the neck seats like the sibling's original - aligning
+            // bbox bottoms bares the neck when the source head carries
+            // less below-chin geometry than the retail one.
+            let src_head_bottom = c_src.1 + e_src[1] / 2.0;
+            let src_torso_top = ts_c.1 - ts_e[1] / 2.0;
+            let dst_torso_top = td_c.1 - td_e[1] / 2.0;
+            c_src = (ts_c.0, src_head_bottom, ts_c.2);
+            c_dst = (
+                td_c.0,
+                dst_torso_top + (src_head_bottom - src_torso_top) * sh,
+                td_c.2,
+            );
+            [sh; 3]
         } else {
             anchored_scale(role, e_src, e_dst)
         };
@@ -800,7 +812,14 @@ fn fieldize_slot(
     }
 
     // Head texture: re-lay its islands into the 80x128 atlas window.
+    // The NPC source authors some face prims semi-transparent (scene
+    // ABR context); in the party atlas context ABE blends them against
+    // the field background - a see-through face. Retail field heads are
+    // opaque; clear the flag.
     let head_bone = roles[0];
+    for g in bones[head_bone].groups.iter_mut() {
+        g.semi_transparent = false;
+    }
     let window = layout_head_window(&mut bones[head_bone], cluts, indices, width, slot, warnings)?;
 
     // Equipment templates (groups 10/11). Retail's are LOW-POLY

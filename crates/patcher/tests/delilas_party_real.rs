@@ -200,6 +200,29 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         );
     }
 
+    // The arts XA shout banks are muted: every Form 2 sector's ADPCM
+    // payload is zero while the subheaders (channel routing) survive.
+    {
+        let (lba, size) =
+            legaia_iso::iso9660::find_path_in_image(&patched, "XA/XA2.XA").expect("XA2.XA");
+        let sectors = (size as usize).div_ceil(2048);
+        let mut audio = 0usize;
+        for i in 0..sectors {
+            let base = (lba as usize + i) * 2352;
+            let sector = &patched[base..base + 2352];
+            if sector[0x12] & 0x20 == 0 {
+                continue; // not Form 2
+            }
+            assert!(
+                sector[0x18..0x92C].iter().all(|&b| b == 0),
+                "XA2.XA sector {i} still carries audio"
+            );
+            assert_ne!(&sector[0x10..0x18], &[0u8; 8], "subheader wiped");
+            audio += 1;
+        }
+        assert!(audio > 100, "XA2.XA had only {audio} Form 2 sectors");
+    }
+
     // Idempotence: a second apply is a no-op and changes no bytes.
     let mut second = DiscPatcher::open(patched.clone()).expect("open patched");
     let report2 = apply_delilas_party(&mut second, &mapping).expect("re-apply");

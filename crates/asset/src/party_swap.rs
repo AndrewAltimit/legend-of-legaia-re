@@ -244,6 +244,26 @@ fn anchored_scale(canonical: usize, e_src: [f32; 3], e_dst: [f32; 3]) -> [f32; 3
 /// centred over the body no matter how the hair skews the head bbox.
 /// Returns `(c_src, c_dst, scale)`.
 type HeadParams = ((f32, f32, f32), (f32, f32, f32), [f32; 3]);
+
+/// Uniform battle-side scale: the height ratio of the two rigs' whole
+/// rest-pose bboxes. Battle limbs scale UNIFORMLY - per-axis spans
+/// visibly distort the sibling's part shapes (the user matched the
+/// swapped model against the enemy-table original and saw the
+/// difference), and the battle parts are large enough that mass-centred
+/// placement alone keeps the chains reading connected.
+fn global_height_scale(stats_src: &[PartStats], stats_dst: &[PartStats]) -> [f32; 3] {
+    let span = |stats: &[PartStats]| {
+        let mut lo = f32::MAX;
+        let mut hi = f32::MIN;
+        for st in stats {
+            lo = lo.min(st.center.1 - st.ext[1] / 2.0);
+            hi = hi.max(st.center.1 + st.ext[1] / 2.0);
+        }
+        (hi - lo).max(1.0)
+    };
+    let s = (span(stats_dst) / span(stats_src)).clamp(0.25, 4.0);
+    [s; 3]
+}
 fn head_bake_params(
     src_head: &PartStats,
     src_torso: &PartStats,
@@ -252,14 +272,18 @@ fn head_bake_params(
 ) -> HeadParams {
     let diag = |e: [f32; 3]| (e[0] * e[0] + e[1] * e[1] + e[2] * e[2]).sqrt();
     let s = (diag(dst_torso.ext) / diag(src_torso.ext)).clamp(0.05, 3.0);
-    let c_src = (
-        src_torso.centroid.0,
-        src_head.center.1 + src_head.ext[1] / 2.0,
-        src_torso.centroid.2,
-    );
+    // The vertical anchor preserves the SOURCE's own head-torso overlap
+    // (scaled): aligning head-bbox-bottoms instead rides a short-chinned
+    // head high on a deep-collared torso and bares the neck. y-down:
+    // torso top = centre - half extent; head bottom = centre + half.
+    let src_head_bottom = src_head.center.1 + src_head.ext[1] / 2.0;
+    let src_torso_top = src_torso.center.1 - src_torso.ext[1] / 2.0;
+    let dst_torso_top = dst_torso.center.1 - dst_torso.ext[1] / 2.0;
+    let _ = dst_head;
+    let c_src = (src_torso.centroid.0, src_head_bottom, src_torso.centroid.2);
     let c_dst = (
         dst_torso.centroid.0,
-        dst_head.center.1 + dst_head.ext[1] / 2.0,
+        dst_torso_top + (src_head_bottom - src_torso_top) * s,
         dst_torso.centroid.2,
     );
     (c_src, c_dst, [s; 3])
@@ -851,6 +875,10 @@ fn monsterize_player_scaled(
         .map(|(c, o)| part_world_stats(o, &target_rest[c]))
         .collect();
     let torso_ch = rig.channel_for_canonical[1] as usize;
+    let src_stats: Vec<PartStats> = (0..CANONICAL_PARTS)
+        .map(|c| core_stats[rig.channel_for_canonical[c] as usize])
+        .collect();
+    let s_uniform = global_height_scale(&src_stats, &dst_stats);
     for (c, o) in objects.iter_mut().enumerate() {
         let ch = rig.channel_for_canonical[c] as usize;
         let src_pose = rest[ch];
@@ -859,11 +887,7 @@ fn monsterize_player_scaled(
         let (c_src, c_dst, s) = if c == 0 {
             head_bake_params(&st_src, &core_stats[torso_ch], &st_dst, &dst_stats[1])
         } else {
-            (
-                st_src.centroid,
-                st_dst.centroid,
-                anchored_scale(c, st_src.ext, st_dst.ext),
-            )
+            (st_src.centroid, st_dst.centroid, s_uniform)
         };
         bake_object_anchored(o, &src_pose, c_src, &dst_pose, c_dst, s)
             .with_context(|| format!("bake canonical part {c}"))?;

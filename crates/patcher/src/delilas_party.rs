@@ -298,11 +298,27 @@ pub fn apply_delilas_party(
             report.notes.push(format!("field: {w}"));
         }
 
-        // Battle voices: the party grunts like the mapped siblings (the
-        // arts XA shouts are a separate roster-keyed path and stay).
+        // Battle voices: the party grunts like the mapped siblings.
         let notes = crate::delilas_voice::splice_party_voices(patcher, mapping)
             .context("splice party battle voices")?;
         report.notes.extend(notes);
+
+        // The arts XA shout banks (XA2/XA4/XA6 - the character's VOICE
+        // on arts, item use and other callouts) have no sibling
+        // counterpart to splice (the Delilas only grunt), so hearing
+        // Vahn shout out of Gi's body is worse than silence: mute the
+        // swapped characters' banks. The cue still fires (routing
+        // untouched); the sectors decode to silence, and the spliced
+        // SPU grunts remain the audible voice.
+        for (slot, file) in ["XA/XA2.XA", "XA/XA4.XA", "XA/XA6.XA"].iter().enumerate() {
+            let who = ["Vahn", "Noa", "Gala"][slot];
+            let n = patcher
+                .silence_xa_file(file)
+                .with_context(|| format!("mute {who} XA shout bank"))?;
+            report
+                .notes
+                .push(format!("{who}: XA shout bank muted ({n} sectors)"));
+        }
     }
     Ok(report)
 }

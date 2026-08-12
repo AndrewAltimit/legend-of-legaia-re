@@ -286,6 +286,36 @@ impl DiscPatcher {
         legaia_iso::write::patch_file_logical(&mut self.image, self.prot_lba, logical_off, bytes)
     }
 
+    /// Silence a Mode 2 Form 2 XA audio file in place: zero the ADPCM
+    /// payload of every Form 2 sector (subheaders - the channel routing -
+    /// survive, so the streamer still plays the file; it just decodes to
+    /// silence). Form 1 sectors inside the extent are left alone. Returns
+    /// the number of sectors silenced.
+    pub fn silence_xa_file(&mut self, name: &str) -> Result<usize> {
+        let (lba, size) = legaia_iso::iso9660::find_path_in_image(&self.image, name)
+            .with_context(|| format!("{name} not found in disc image"))?;
+        // The mastering records Form 2 extents with 2048-unit sizes (the
+        // XA/ files' LBA gaps equal size/2048 exactly).
+        let sectors = (size as usize).div_ceil(USER_DATA_SIZE);
+        let mut silenced = 0usize;
+        for i in 0..sectors {
+            let base = (lba as usize + i) * SECTOR_SIZE;
+            let Some(sector) = self.image.get_mut(base..base + SECTOR_SIZE) else {
+                break;
+            };
+            if !legaia_iso::write::is_form2(sector) {
+                continue;
+            }
+            sector[0x18..0x92C].fill(0);
+            legaia_iso::write::encode_mode2_form2_sector(sector)?;
+            silenced += 1;
+        }
+        if silenced == 0 {
+            bail!("{name}: no Form 2 sectors found to silence");
+        }
+        Ok(silenced)
+    }
+
     /// Replace monster `id`'s `0x14000`-byte slot in the `battle_data` archive
     /// with `new_slot` (which must be exactly one slot). Use with a slot built
     /// by [`crate::monster::set_drop`] / [`crate::monster::repack_slot`].

@@ -696,6 +696,7 @@ fn playerize_scaled(
         .map(|(c, o)| part_world_stats(o, &src_rest[c]))
         .collect();
     let mut baked: Vec<ModelObject> = Vec::with_capacity(CANONICAL_PARTS);
+    let s_uniform = global_height_scale(&src_stats, &dst_stats);
     for (c, src_obj) in src_model.iter().enumerate() {
         let ch = rig.channel_for_canonical[c] as usize;
         let dst_pose = &dst_rest[ch];
@@ -703,11 +704,7 @@ fn playerize_scaled(
         let (c_src, c_dst, s) = if c == 0 {
             head_bake_params(&st_src, &src_stats[1], &st_dst, &dst_stats[1])
         } else {
-            (
-                st_src.centroid,
-                st_dst.centroid,
-                anchored_scale(c, st_src.ext, st_dst.ext),
-            )
+            (st_src.centroid, st_dst.centroid, s_uniform)
         };
         let mut o = src_obj.clone();
         bake_object_anchored(&mut o, &src_rest[c], c_src, dst_pose, c_dst, s)

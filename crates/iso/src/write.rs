@@ -134,6 +134,34 @@ pub fn is_form2(sector: &[u8]) -> bool {
     sector.len() > SUBMODE_OFF && sector[SUBMODE_OFF] & FORM2_BIT != 0
 }
 
+/// Mode 2 Form 2 user-data bytes per sector (what a Form 2 file's
+/// ISO9660 size is counted in).
+pub const FORM2_DATA_SIZE: usize = 2324;
+
+/// Byte span + placement of the Mode 2 Form 2 EDC: the checksum covers
+/// subheader + 2324 data bytes and lands in the sector's final word.
+const FORM2_EDC_RANGE: usize = 0x91C;
+const FORM2_EDC_OFF: usize = 0x92C;
+
+/// Recompute the (optional) EDC of a Mode 2 Form 2 sector in place after
+/// its data was overwritten. Form 2 carries no ECC; the EDC is optional
+/// per the XA spec, so a sector whose stored EDC is zero (mastering left
+/// it blank) is kept blank.
+pub fn encode_mode2_form2_sector(sector: &mut [u8]) -> Result<()> {
+    if sector.len() != SECTOR_SIZE {
+        bail!("sector must be {SECTOR_SIZE} bytes, got {}", sector.len());
+    }
+    if !is_form2(sector) {
+        bail!("sector is Form 1; Form 2 expected");
+    }
+    if sector[FORM2_EDC_OFF..FORM2_EDC_OFF + 4] == [0, 0, 0, 0] {
+        return Ok(());
+    }
+    let edc = edc_compute(&sector[SUBHEADER_OFF..SUBHEADER_OFF + FORM2_EDC_RANGE]);
+    sector[FORM2_EDC_OFF..FORM2_EDC_OFF + 4].copy_from_slice(&edc.to_le_bytes());
+    Ok(())
+}
+
 /// Recompute the EDC and P/Q ECC of a Mode 2 Form 1 sector in place.
 ///
 /// Call after overwriting any of the sector's 2048-byte user data. Errors if

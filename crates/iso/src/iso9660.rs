@@ -126,6 +126,70 @@ pub fn list_directory(disc: &mut RawDisc, dir: &DirectoryRecord) -> Result<Vec<D
 ///
 /// Returns `None` if the image isn't ISO 9660, the root directory can't be read,
 /// or no root entry matches `name` (case-sensitive, version suffix stripped).
+/// Like [`find_file_in_image`], but takes a `/`-separated path and walks
+/// subdirectories (`"XA/XA2.XA"`). A bare filename degrades to the root
+/// walk.
+pub fn find_path_in_image(image: &[u8], path: &str) -> Option<(u32, u32)> {
+    let user = |lba: usize| -> Option<&[u8]> {
+        let base = lba * SECTOR_SIZE + USER_DATA_OFFSET;
+        image.get(base..base + USER_DATA_SIZE)
+    };
+    let pvd = user(16)?;
+    if pvd[0] != 1 || &pvd[1..6] != b"CD001" {
+        return None;
+    }
+    let mut dir = parse_record(&pvd[156..156 + 34]).ok()?;
+    let components: Vec<&str> = path.split('/').filter(|c| !c.is_empty()).collect();
+    'component: for (ci, comp) in components.iter().enumerate() {
+        if !dir.is_dir || dir.size > MAX_DIRECTORY_BYTES {
+            return None;
+        }
+        let sector_count = dir.size.div_ceil(USER_DATA_SIZE as u32) as usize;
+        let mut buf = Vec::with_capacity(sector_count * USER_DATA_SIZE);
+        for i in 0..sector_count {
+            buf.extend_from_slice(user(dir.lba as usize + i)?);
+        }
+        buf.truncate(dir.size as usize);
+        let mut offset = 0usize;
+        while offset < buf.len() {
+            let len = buf[offset] as usize;
+            if len == 0 {
+                let next = offset.div_ceil(USER_DATA_SIZE) * USER_DATA_SIZE;
+                let next = if next == offset {
+                    offset + USER_DATA_SIZE
+                } else {
+                    next
+                };
+                if next >= buf.len() {
+                    break;
+                }
+                offset = next;
+                continue;
+            }
+            if offset + len > buf.len() {
+                break;
+            }
+            if let Ok(rec) = parse_record(&buf[offset..offset + len]) {
+                let stem = rec.name.split(';').next().unwrap_or(&rec.name);
+                if stem.eq_ignore_ascii_case(comp) {
+                    if ci + 1 == components.len() {
+                        return if rec.is_dir {
+                            None
+                        } else {
+                            Some((rec.lba, rec.size))
+                        };
+                    }
+                    dir = rec;
+                    continue 'component;
+                }
+            }
+            offset += len;
+        }
+        return None;
+    }
+    None
+}
+
 pub fn find_file_in_image(image: &[u8], name: &str) -> Option<(u32, u32)> {
     let user = |lba: usize| -> Option<&[u8]> {
         let base = lba * SECTOR_SIZE + USER_DATA_OFFSET;
