@@ -174,12 +174,13 @@ fn splice_program(
     }
     for t in 0..dst_tones {
         let s = t % src_tones;
-        // Timbre fields (bytes 0..22: prior..adsr2) come from the source
-        // tone; `prog`/`vag`/reserved stay the destination's.
+        // Timbre fields (bytes 0..20: prior..adsr2) come from the source
+        // tone; `prog` (bytes 20..22), `vag` and reserved stay the
+        // destination's - the SPU driver reads the prog field back.
         let src_o = src_view.tone_offset(src_page, s);
-        let timbre: [u8; 22] = src[src_o..src_o + 22].try_into().unwrap();
+        let timbre: [u8; 20] = src[src_o..src_o + 20].try_into().unwrap();
         let dst_o = dst_view.tone_offset(dst_page, t);
-        dst[dst_o..dst_o + 22].copy_from_slice(&timbre);
+        dst[dst_o..dst_o + 20].copy_from_slice(&timbre);
 
         // Sample body.
         let src_vag = src_view.tone_vag(src, src_page, s);
