@@ -454,6 +454,113 @@ pub fn apply_delilas_party(
         let notes = crate::delilas_voice::splice_party_voices(patcher, mapping)
             .context("splice party battle voices")?;
         report.notes.extend(notes);
+
+        // The signature-special reskin (name + combo; its fanfare audio
+        // was already written by the fills above).
+        let notes =
+            reskin_plasma_strike(patcher, mapping).context("reskin the Plasma Strike art")?;
+        report.notes.extend(notes);
     }
     Ok(report)
+}
+
+/// Reskin a hero Hyper art as the mapped sibling's signature special.
+/// v1 covers Lu on the Vahn slot: **Burning Flare becomes "Plasma
+/// Strike"** - same-length name swap (13 = 13 chars) in the SCUS
+/// arts-name table (menu + battle banner), a fresh 5-input combo
+/// `L R L R D` written to both copies retail keeps in sync (the SCUS
+/// display glyphs and the player-file record0 matcher), and the art's
+/// fanfare channel pair (XA1 ch 4/7) already carries her Plasma Strike
+/// soundtrack via [`crate::delilas_xa_voice::capture_victory_lines`].
+/// The animation stays the host art's until the monster-clip conversion
+/// lands. Must run while record0 still holds the VANILLA combo bytes
+/// (the playerize rebuild keeps record0 verbatim, so ordering after it
+/// is fine).
+fn reskin_plasma_strike(patcher: &mut DiscPatcher, mapping: &PartyMapping) -> Result<Vec<String>> {
+    use legaia_art::arts_table;
+    use legaia_art::queue::{Character, Command};
+    if mapping.vahn != Sibling::Lu {
+        return Ok(vec![
+            "Plasma Strike reskin: only wired for Lu on the Vahn slot (skipped)".into(),
+        ]);
+    }
+    let mut notes = Vec::new();
+
+    // 1. Name: same-length swap everywhere the string appears.
+    let scus = patcher
+        .read_named_file(crate::arts::SCUS_NAME)
+        .context("read SCUS for the art rename")?;
+    let old = b"Burning Flare";
+    let new = b"Plasma Strike";
+    let mut hits = Vec::new();
+    let mut at = 0usize;
+    while let Some(pos) = scus[at..].windows(old.len()).position(|w| w == old) {
+        hits.push(at + pos);
+        at += pos + 1;
+    }
+    if hits.is_empty() {
+        bail!("SCUS carries no 'Burning Flare' string to rename");
+    }
+    for &off in &hits {
+        patcher
+            .patch_named_file(crate::arts::SCUS_NAME, off as u64, new)
+            .context("write art name")?;
+    }
+    notes.push(format!(
+        "art renamed: Burning Flare -> Plasma Strike ({}x)",
+        hits.len()
+    ));
+
+    // 2. Combo: L R L R D, checked unique among Vahn's arts.
+    let edits =
+        crate::arts::ArtsEdits::locate(patcher.image()).context("locate arts-name table")?;
+    let target = edits
+        .records()
+        .iter()
+        .find(|r| r.character == Character::Vahn && r.index == 1 && !r.is_miracle)
+        .cloned()
+        .context("Vahn art index 1 (Burning Flare) not found")?;
+    let new_combo = vec![
+        Command::Left,
+        Command::Right,
+        Command::Left,
+        Command::Right,
+        Command::Down,
+    ];
+    for r in edits.records() {
+        if r.character == Character::Vahn && r.cmd_ptr != target.cmd_ptr && r.commands == new_combo
+        {
+            bail!("combo L R L R D collides with Vahn art index {}", r.index);
+        }
+    }
+    let layout = arts_table::combo_string_layout(&scus, target.cmd_ptr)
+        .context("decode Burning Flare combo layout")?;
+    let plan = vec![crate::arts::ComboEdit {
+        cmd_ptr: target.cmd_ptr,
+        direction_slots: layout.direction_slots.clone(),
+        old_directions: layout.directions.clone(),
+        new_directions: new_combo.clone(),
+    }];
+    // Matcher first (player record0), then the display glyphs.
+    let char_edits = edits.player_edits(&plan, Character::Vahn);
+    if !char_edits.is_empty() {
+        let index = crate::arts::player_entry_index(Character::Vahn);
+        let entry = patcher
+            .read_entry(index)
+            .with_context(|| format!("read player file PROT {index}"))?;
+        if let Some((lzs_off, recompressed)) =
+            crate::arts::patch_player_record0(&entry, &char_edits)
+        {
+            patcher
+                .patch_prot_entry(index, lzs_off as u64, &recompressed)
+                .context("write player record0 combo matcher")?;
+        }
+    }
+    for (off, bytes) in edits.glyph_patches(&plan) {
+        patcher
+            .patch_named_file(crate::arts::SCUS_NAME, off, &bytes)
+            .context("write combo display glyph")?;
+    }
+    notes.push("Plasma Strike combo: L R L R D (was R D L D L)".into());
+    Ok(notes)
 }

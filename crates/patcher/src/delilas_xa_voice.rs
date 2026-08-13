@@ -147,18 +147,49 @@ fn victory_xa_pick(sibling: crate::delilas_party::Sibling) -> Option<(&'static s
     }
 }
 
-/// Per-slot sibling victory lines, captured from the XA reels BEFORE
-/// the voice passes mute them. Index = replaced-hero slot (Vahn, Noa,
+/// The sibling's Spirit cue audio: ear-picked stand-ins from the retail
+/// reels ("close enough" beats a fight grunt on a focus stance). Lu
+/// borrows Noa's Spirit sting (`XA3.XA` channel 0 - the cast-cue band
+/// of Noa's fanfare bank). Whole channel, no utterance cut.
+fn spirit_xa_pick(sibling: crate::delilas_party::Sibling) -> Option<(&'static str, u8)> {
+    use crate::delilas_party::Sibling;
+    match sibling {
+        Sibling::Lu => Some(("XA/XA3.XA", 0)),
+        Sibling::Gi | Sibling::Che => None,
+    }
+}
+
+/// The sibling's signature special-attack soundtrack: `XA20.XA` holds
+/// the Delilas attack-sequence reels (ear-mapped); channel 2 is Lu's
+/// Plasma Strike. It becomes the fanfare audio of the Hyper art the
+/// party swap reskins as "Plasma Strike" (Vahn slot: Burning Flare's
+/// channel pair 4/7). Capped at 12 s - the fanfare channel span and the
+/// cue's duration table bound playback anyway.
+fn special_xa_pick(sibling: crate::delilas_party::Sibling) -> Option<(&'static str, u8)> {
+    use crate::delilas_party::Sibling;
+    match sibling {
+        Sibling::Lu => Some(("XA/XA20.XA", 2)),
+        Sibling::Gi | Sibling::Che => None,
+    }
+}
+
+/// Per-slot sibling voice lines, captured from the XA reels BEFORE the
+/// voice passes mute them. Index = replaced-hero slot (Vahn, Noa,
 /// Gala).
 pub struct VictoryLines {
     lines: [Option<(Vec<i16>, u32)>; 3],
+    spirit: [Option<(Vec<i16>, u32)>; 3],
+    special: [Option<(Vec<i16>, u32)>; 3],
 }
 
-/// Capture every mapped sibling's XA victory line off the (still
-/// retail) image. MUST run before any XA mute touches the reels.
+/// Capture every mapped sibling's XA lines (victory bark, Spirit sting,
+/// special-attack soundtrack) off the (still retail) image. MUST run
+/// before any XA mute touches the reels.
 pub fn capture_victory_lines(patcher: &DiscPatcher, mapping: &PartyMapping) -> VictoryLines {
     let siblings = [mapping.vahn, mapping.noa, mapping.gala];
     let mut lines: [Option<(Vec<i16>, u32)>; 3] = [None, None, None];
+    let mut spirit: [Option<(Vec<i16>, u32)>; 3] = [None, None, None];
+    let mut special: [Option<(Vec<i16>, u32)>; 3] = [None, None, None];
     for (slot, sibling) in siblings.iter().enumerate() {
         if let Some((file, chan)) = victory_xa_pick(*sibling)
             && let Ok((pcm, rate)) = patcher.read_xa_channel_pcm(file, chan)
@@ -168,8 +199,26 @@ pub fn capture_victory_lines(patcher: &DiscPatcher, mapping: &PartyMapping) -> V
                 lines[slot] = Some((cut, rate));
             }
         }
+        if let Some((file, chan)) = spirit_xa_pick(*sibling)
+            && let Ok((pcm, rate)) = patcher.read_xa_channel_pcm(file, chan)
+            && pcm.len() > rate as usize / 10
+        {
+            spirit[slot] = Some((pcm, rate));
+        }
+        if let Some((file, chan)) = special_xa_pick(*sibling)
+            && let Ok((mut pcm, rate)) = patcher.read_xa_channel_pcm(file, chan)
+        {
+            pcm.truncate(rate as usize * 12);
+            if pcm.len() > rate as usize / 10 {
+                special[slot] = Some((pcm, rate));
+            }
+        }
     }
-    VictoryLines { lines }
+    VictoryLines {
+        lines,
+        spirit,
+        special,
+    }
 }
 
 /// Hero victory-voice clip bands inside `monster.snd` (clip id ranges,
@@ -603,7 +652,31 @@ pub fn fill_hero_xa_voices(
                 filled += 1;
             }
         }
+        let spirit_line = lines.spirit[slot].as_ref().map(|(pcm, rate)| Grunt {
+            vag: 0,
+            pcm: pcm.clone(),
+            rate: *rate,
+        });
+        let special_line = lines.special[slot].as_ref().map(|(pcm, rate)| Grunt {
+            vag: 0,
+            pcm: pcm.clone(),
+            rate: *rate,
+        });
         let fanfare_pick = |i: usize, chan: u8| -> &Grunt {
+            // Spirit fires through the cast-cue band (channel 0); the
+            // sibling's ear-picked Spirit sting lands there.
+            if chan == 0
+                && let Some(g) = &spirit_line
+            {
+                return g;
+            }
+            // The reskinned "Plasma Strike" Hyper (Burning Flare's pair
+            // {4, 7}) carries the sibling's special-attack soundtrack.
+            if (chan == 4 || chan == 7)
+                && let Some(g) = &special_line
+            {
+                return g;
+            }
             if let Some(c) = &cast {
                 let vag = match chan {
                     0 => Some(c.barks[0]),
