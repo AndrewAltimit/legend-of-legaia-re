@@ -336,6 +336,10 @@ pub fn apply_delilas_party(
         // out of Lu's bank and hands the "sibling" slots to the wrong
         // speaker.
 
+        // Sibling XA victory lines - captured off the still-retail
+        // reels BEFORE any mute below wipes them (XA21 mutes whole).
+        let victory_lines = crate::delilas_xa_voice::capture_victory_lines(patcher, mapping);
+
         // The arts XA shout banks (XA2/XA4/XA6 - the character's VOICE
         // on arts, item use and other callouts) have no sibling
         // counterpart to splice (the Delilas only grunt), so hearing
@@ -426,7 +430,7 @@ pub fn apply_delilas_party(
         // run after EVERY mute above (a later whole-file mute would
         // erase the fill) and before the duel-bank splice below (which
         // replaces the sibling banks' samples with the heroes').
-        let notes = crate::delilas_xa_voice::fill_hero_xa_voices(patcher, mapping)
+        let notes = crate::delilas_xa_voice::fill_hero_xa_voices(patcher, mapping, &victory_lines)
             .context("fill hero XA voice slots with sibling grunts")?;
         report.notes.extend(notes);
 
@@ -437,8 +441,9 @@ pub fn apply_delilas_party(
         // 0x80078867). Replace the heroes' clip bands with the mapped
         // siblings' own victory lines, re-pitched to their recorded
         // rates - verbatim SPU-ADPCM, same file.
-        let notes = crate::delilas_xa_voice::fill_hero_victory_clips(patcher, mapping)
-            .context("fill hero victory-voice clips in monster.snd")?;
+        let notes =
+            crate::delilas_xa_voice::fill_hero_victory_clips(patcher, mapping, &victory_lines)
+                .context("fill hero victory-voice clips in monster.snd")?;
         report.notes.extend(notes);
 
         // Battle voices: the party grunts like the mapped siblings.

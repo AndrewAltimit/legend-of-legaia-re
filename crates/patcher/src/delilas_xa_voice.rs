@@ -51,6 +51,127 @@ fn tone_rate(center: u8, shift: u8, note: u8) -> u32 {
 /// Peak-normalization target (fraction of i16 full scale).
 const PEAK: f64 = 0.60;
 
+/// Encode mono PCM into SPU-ADPCM blocks - the exact inverse of
+/// `legaia_vab::decode_vag`'s recurrence (prediction
+/// `(p1*F0 + p2*F1 + 32) >> 6`, gain `(nibble << 12) >> shift`, low
+/// nibble first): per 28-sample block an exhaustive (filter, shift)
+/// search minimizes squared error against the real decoder state.
+/// Interior flag bytes are zero; the caller places terminal flags.
+fn spu_encode(pcm: &[i16]) -> Vec<u8> {
+    const F0: [i32; 5] = [0, 60, 115, 98, 122];
+    const F1: [i32; 5] = [0, 0, -52, -55, -60];
+    let mut out = Vec::with_capacity(pcm.len().div_ceil(28) * 16);
+    let (mut p1, mut p2) = (0i32, 0i32);
+    for chunk in pcm.chunks(28) {
+        let mut best: Option<(u64, usize, i32, [i8; 28], i32, i32)> = None;
+        for f in 0..5 {
+            for shift in 0..=12i32 {
+                let (mut q1, mut q2) = (p1, p2);
+                let mut nibs = [0i8; 28];
+                let mut err = 0u64;
+                for (i, &x) in chunk.iter().enumerate() {
+                    let pred = (q1 * F0[f] + q2 * F1[f] + 32) >> 6;
+                    let d = x as i32 - pred;
+                    let scale = 1i32 << (12 - shift);
+                    let n = if d >= 0 {
+                        (d + scale / 2) / scale
+                    } else {
+                        -((-d + scale / 2) / scale)
+                    }
+                    .clamp(-8, 7);
+                    let rec = (((n << 12) >> shift) + pred).clamp(i16::MIN as i32, i16::MAX as i32);
+                    err += ((rec - x as i32) * (rec - x as i32)) as u64;
+                    nibs[i] = n as i8;
+                    q2 = q1;
+                    q1 = rec;
+                }
+                if best.as_ref().map(|b| err < b.0).unwrap_or(true) {
+                    best = Some((err, f, shift, nibs, q1, q2));
+                }
+            }
+        }
+        let (_, f, shift, nibs, q1, q2) = best.expect("non-empty search");
+        p1 = q1;
+        p2 = q2;
+        let mut block = [0u8; 16];
+        block[0] = ((f as u8) << 4) | (shift as u8);
+        for i in 0..14 {
+            block[2 + i] = (nibs[i * 2] as u8 & 0x0F) | ((nibs[i * 2 + 1] as u8 & 0x0F) << 4);
+        }
+        out.extend_from_slice(&block);
+    }
+    out
+}
+
+/// Cut the first utterance out of a voice-reel channel: skip leading
+/// silence, then stop at the first sustained (0.3 s) quiet gap after
+/// 0.2 s of speech; fall back to a 2.5 s cap.
+fn first_utterance(pcm: &[i16], rate: u32) -> Vec<i16> {
+    let loud = 400i16;
+    let quiet = 300i16;
+    let start = pcm
+        .iter()
+        .position(|s| s.unsigned_abs() > loud as u16)
+        .unwrap_or(0);
+    let min_len = rate as usize / 5;
+    let gap_len = rate as usize * 3 / 10;
+    let mut quiet_run = 0usize;
+    let mut end = (start + rate as usize * 5 / 2).min(pcm.len());
+    for (i, s) in pcm.iter().enumerate().skip(start + min_len) {
+        if s.unsigned_abs() < quiet as u16 {
+            quiet_run += 1;
+            if quiet_run >= gap_len {
+                end = i - gap_len + rate as usize / 20;
+                break;
+            }
+        } else {
+            quiet_run = 0;
+        }
+        if i >= start + rate as usize * 5 / 2 {
+            break;
+        }
+    }
+    pcm[start..end.min(pcm.len())].to_vec()
+}
+
+/// XA channels carrying a sibling's OWN victory line in retail - found
+/// by ear on the soundboard: the jukebox reel `XA21.XA` channel 6 is
+/// Lu's game-over victory bark (the duel bosses' win lines live in the
+/// same bank as the heroes'). `None` = no line found yet; the victory
+/// voice falls back to the bank sample ([`victory_vag_pick`]).
+fn victory_xa_pick(sibling: crate::delilas_party::Sibling) -> Option<(&'static str, u8)> {
+    use crate::delilas_party::Sibling;
+    match sibling {
+        Sibling::Lu => Some(("XA/XA21.XA", 6)),
+        Sibling::Gi | Sibling::Che => None,
+    }
+}
+
+/// Per-slot sibling victory lines, captured from the XA reels BEFORE
+/// the voice passes mute them. Index = replaced-hero slot (Vahn, Noa,
+/// Gala).
+pub struct VictoryLines {
+    lines: [Option<(Vec<i16>, u32)>; 3],
+}
+
+/// Capture every mapped sibling's XA victory line off the (still
+/// retail) image. MUST run before any XA mute touches the reels.
+pub fn capture_victory_lines(patcher: &DiscPatcher, mapping: &PartyMapping) -> VictoryLines {
+    let siblings = [mapping.vahn, mapping.noa, mapping.gala];
+    let mut lines: [Option<(Vec<i16>, u32)>; 3] = [None, None, None];
+    for (slot, sibling) in siblings.iter().enumerate() {
+        if let Some((file, chan)) = victory_xa_pick(*sibling)
+            && let Ok((pcm, rate)) = patcher.read_xa_channel_pcm(file, chan)
+        {
+            let cut = first_utterance(&pcm, rate);
+            if cut.len() > rate as usize / 10 {
+                lines[slot] = Some((cut, rate));
+            }
+        }
+    }
+    VictoryLines { lines }
+}
+
 /// Hero victory-voice clip bands inside `monster.snd` (clip id ranges,
 /// inclusive), slot order Vahn / Noa / Gala. The battle results
 /// sequencer picks a pose action (`0x11..=0x18`, HP-tier table at SCUS
@@ -164,6 +285,7 @@ fn write_victory_body(dst: &mut [u8], src: &[u8]) {
 pub fn fill_hero_victory_clips(
     patcher: &mut DiscPatcher,
     mapping: &PartyMapping,
+    lines: &VictoryLines,
 ) -> Result<Vec<String>> {
     let mut notes = Vec::new();
     let snd = patcher
@@ -193,7 +315,16 @@ pub fn fill_hero_victory_clips(
     let mut patched = snd.clone();
     let siblings = [mapping.vahn, mapping.noa, mapping.gala];
     for (slot, sibling) in siblings.iter().enumerate() {
-        let voice = sibling_victory_voice(&snd, *sibling)?;
+        // Prefer the sibling's REAL XA victory line (captured pre-mute)
+        // over the bank sample; the line is PCM and gets SPU-encoded
+        // per clip, resampled down when a clip's span is shorter than
+        // the line.
+        let line = lines.lines[slot].as_ref();
+        let bank_voice = if line.is_none() {
+            Some(sibling_victory_voice(&snd, *sibling)?)
+        } else {
+            None
+        };
         let (lo, hi) = VICTORY_CLIP_BANDS[slot];
         for clip in lo..=hi {
             let span = clip_span(clip)?;
@@ -212,13 +343,8 @@ pub fn fill_hero_victory_clips(
                 if dst.end > span.end {
                     anyhow::bail!("clip {clip:#x}: VAG body escapes the clip span");
                 }
-                write_victory_body(&mut patched[dst], &voice.body);
-                // Re-pitch the destination tone so the body plays at its
-                // recorded rate: the clip keys its tone at the tone's own
-                // one-note range, so matching the source's note-to-center
-                // interval reproduces the source rate exactly. Without
-                // this, a body recorded in the other pitch family plays
-                // an octave off (the "squeak").
+                // Body + the (center, shift) that plays it at its true
+                // rate when the clip keys its one-note range.
                 let (t, dst_tone) = vab
                     .tones
                     .iter()
@@ -228,23 +354,60 @@ pub fn fill_hero_victory_clips(
                     .ok_or_else(|| {
                         anyhow::anyhow!("clip {clip:#x}: no tone keys vag {}", vi + 1)
                     })?;
+                let (center, shift) = match (line, &bank_voice) {
+                    (Some((pcm, rate)), _) => {
+                        let cap_blocks = vag.size / 16;
+                        let max_samples = cap_blocks.saturating_sub(1) * 28;
+                        let (body_pcm, eff_rate) = if max_samples > 0 && pcm.len() > max_samples {
+                            let out_rate =
+                                (*rate as u64 * max_samples as u64 / pcm.len() as u64) as u32;
+                            (
+                                legaia_xa::encode::resample_linear(pcm, *rate, out_rate),
+                                out_rate,
+                            )
+                        } else {
+                            (pcm.clone(), *rate)
+                        };
+                        let body = spu_encode(&body_pcm);
+                        write_victory_body(&mut patched[dst], &body);
+                        // note - (center + shift/128) = 12*log2(rate/44100)
+                        let total = dst_tone.min as f64 - 12.0 * (eff_rate as f64 / 44100.0).log2();
+                        let mut center = total.floor();
+                        let mut shift = ((total - center) * 128.0).round();
+                        if shift >= 128.0 {
+                            center += 1.0;
+                            shift = 0.0;
+                        }
+                        (center.clamp(0.0, 127.0) as u8, shift as u8)
+                    }
+                    (None, Some(voice)) => {
+                        write_victory_body(&mut patched[dst], &voice.body);
+                        let center = (voice.center as i32 + dst_tone.min as i32 - voice.note as i32)
+                            .clamp(0, 127) as u8;
+                        (center, voice.shift)
+                    }
+                    (None, None) => unreachable!("one victory source always set"),
+                };
                 let attr_off = span.start
                     + 4
                     + legaia_vab::VAB_HEADER_SIZE
                     + legaia_vab::PROGRAMS_TABLE_SIZE
                     + t * legaia_vab::TONE_SIZE;
-                let center =
-                    (voice.center as i32 + dst_tone.min as i32 - voice.note as i32).clamp(0, 127);
-                patched[attr_off + 4] = center as u8;
-                patched[attr_off + 5] = voice.shift;
+                patched[attr_off + 4] = center;
+                patched[attr_off + 5] = shift;
             }
         }
         notes.push(format!(
-            "{}: victory voice clips {:#x}..={:#x} carry {}'s victory line",
+            "{}: victory voice clips {:#x}..={:#x} carry {}'s {}",
             ["Vahn", "Noa", "Gala"][slot],
             lo,
             hi,
             sibling.display_name(),
+            if line.is_some() {
+                "real XA victory line"
+            } else {
+                "bank victory sample"
+            },
         ));
     }
     patcher
@@ -345,6 +508,7 @@ fn write_grunt(
 pub fn fill_hero_xa_voices(
     patcher: &mut DiscPatcher,
     mapping: &PartyMapping,
+    lines: &VictoryLines,
 ) -> Result<Vec<String>> {
     let mut notes = Vec::new();
     let snd = patcher
@@ -500,9 +664,16 @@ pub fn fill_hero_xa_voices(
                 filled += 1;
             }
         }
-        // Victory barks.
+        // Victory barks: the sibling's real XA victory line when
+        // captured, else the longest grunt.
+        let bark_line = lines.lines[slot].as_ref().map(|(pcm, rate)| Grunt {
+            vag: 0,
+            pcm: pcm.clone(),
+            rate: *rate,
+        });
+        let bark: &Grunt = bark_line.as_ref().unwrap_or(longest);
         for &chan in &victory_chans[slot] {
-            if write_grunt(patcher, "XA/XA21.XA", chan, longest, &mut notes)? {
+            if write_grunt(patcher, "XA/XA21.XA", chan, bark, &mut notes)? {
                 filled += 1;
             }
         }
@@ -516,16 +687,23 @@ pub fn fill_hero_xa_voices(
     }
 
     // The close-call victory bark (speaker not statically attributable):
-    // the Vahn-slot sibling's longest grunt.
+    // the Vahn-slot sibling's XA victory line when captured, else their
+    // longest grunt.
     let lead = sibling_grunts(&snd, mapping.vahn.monster_id())?;
+    let lead_line = lines.lines[0].as_ref().map(|(pcm, rate)| Grunt {
+        vag: 0,
+        pcm: pcm.clone(),
+        rate: *rate,
+    });
     let lead_longest = lead
         .iter()
         .max_by(|a, b| {
             (a.pcm.len() as f64 / a.rate as f64).total_cmp(&(b.pcm.len() as f64 / b.rate as f64))
         })
         .expect("non-empty");
+    let lead_pick: &Grunt = lead_line.as_ref().unwrap_or(lead_longest);
     for file in ["XA/XA20.XA", "XA/XA22.XA"] {
-        write_grunt(patcher, file, 7, lead_longest, &mut notes)?;
+        write_grunt(patcher, file, 7, lead_pick, &mut notes)?;
     }
     Ok(notes)
 }
@@ -578,5 +756,62 @@ fn voice_cast(sibling: crate::delilas_party::Sibling) -> Option<VoiceCast> {
             efforts: [4, 5],
         }),
         Sibling::Gi | Sibling::Che => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The SPU encoder must round-trip through the real decoder with
+    /// speech-grade fidelity and legal block structure.
+    #[test]
+    fn spu_encode_round_trips_through_the_decoder() {
+        // A synthetic voice-ish signal: two tones + an amplitude sweep.
+        let n = 28 * 200;
+        let pcm: Vec<i16> = (0..n)
+            .map(|i| {
+                let t = i as f64 / 18900.0;
+                let env = 1.0 - (i as f64 / n as f64);
+                (((t * 440.0 * std::f64::consts::TAU).sin() * 0.5
+                    + (t * 1310.0 * std::f64::consts::TAU).sin() * 0.3)
+                    * env
+                    * 20000.0) as i16
+            })
+            .collect();
+        let body = spu_encode(&pcm);
+        assert_eq!(body.len() % 16, 0);
+        for block in body.chunks_exact(16) {
+            assert!(block[0] >> 4 <= 4, "illegal filter");
+            assert!(block[0] & 0x0F <= 12, "illegal shift");
+            assert_eq!(block[1], 0, "encoder must leave flags to the caller");
+        }
+        let decoded = legaia_vab::decode_vag(&body).expect("decodes");
+        let m = pcm.len().min(decoded.len());
+        assert!(m >= pcm.len() - 28);
+        let (mut se, mut sp) = (0f64, 0f64);
+        for i in 0..m {
+            let d = decoded[i] as f64 - pcm[i] as f64;
+            se += d * d;
+            sp += (pcm[i] as f64) * (pcm[i] as f64);
+        }
+        let snr = 10.0 * (sp / se.max(1.0)).log10();
+        assert!(snr > 30.0, "SPU encode SNR {snr:.1} dB below speech grade");
+    }
+
+    /// The utterance cutter keeps the loud head and drops a long tail.
+    #[test]
+    fn first_utterance_cuts_at_the_gap() {
+        let rate = 18900u32;
+        let mut pcm = vec![0i16; rate as usize / 10];
+        pcm.extend(std::iter::repeat_n(8000i16, rate as usize / 2));
+        pcm.extend(std::iter::repeat_n(0i16, rate as usize));
+        pcm.extend(std::iter::repeat_n(8000i16, rate as usize / 2));
+        let cut = first_utterance(&pcm, rate);
+        let secs = cut.len() as f64 / rate as f64;
+        assert!(
+            (0.4..=0.9).contains(&secs),
+            "cut {secs:.2}s should keep the first burst only"
+        );
     }
 }

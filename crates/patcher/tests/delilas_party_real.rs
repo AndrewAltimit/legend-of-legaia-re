@@ -379,7 +379,6 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
             |b: &[u8], o: usize| u32::from_le_bytes(b[o..o + 4].try_into().unwrap()) as usize;
         assert_eq!(rd32(&p_snd, 4), rd32(&r_snd, 4), "clip TOC count changed");
         for (lo, hi) in [(0xB8usize, 0xBCusize), (0xC4, 0xCB), (0xBD, 0xC3)] {
-            let mut band_interval: Option<i32> = None;
             for clip in lo..=hi {
                 let s = rd32(&p_snd, (clip + 2) * 4) * 2048;
                 let e = rd32(&p_snd, (clip + 3) * 4) * 2048;
@@ -420,19 +419,18 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
                     pv.vag_samples.len(),
                     "victory clip {clip:#x} VAG count changed"
                 );
-                // Every keyed tone in the band plays the SAME sibling
-                // body, so the note-to-center interval (which pins the
-                // playback rate) must agree across the whole band.
+                // Every keyed tone's implied playback rate must be sane
+                // (an XA-sourced line resamples per clip to fit, so the
+                // intervals legitimately differ across a band).
                 for tone in pv.tones.iter().flatten() {
                     if tone.vag == 0 {
                         continue;
                     }
-                    let interval =
-                        tone.min as i32 * 128 - tone.center as i32 * 128 - tone.shift as i32;
-                    let prev = band_interval.get_or_insert(interval);
-                    assert_eq!(
-                        *prev, interval,
-                        "victory clip {clip:#x} plays the body at a different rate"
+                    let semis = tone.min as f64 - tone.center as f64 - tone.shift as f64 / 128.0;
+                    let rate = 44100.0 * (semis / 12.0).exp2();
+                    assert!(
+                        (4000.0..=48000.0).contains(&rate),
+                        "victory clip {clip:#x} implies a wild rate {rate:.0}"
                     );
                 }
                 for (i, vag) in rv.vag_samples.iter().enumerate() {
