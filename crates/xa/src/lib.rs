@@ -78,6 +78,7 @@ pub const K0: [f64; 5] = [0.0, 0.9375, 1.796875, 1.53125, 1.90625];
 pub const K1: [f64; 5] = [0.0, 0.0, -0.8125, -0.859375, -0.9375];
 
 pub mod demux;
+pub mod encode;
 
 /// Channel mode for XA-ADPCM.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

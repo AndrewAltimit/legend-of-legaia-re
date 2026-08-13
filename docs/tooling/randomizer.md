@@ -1390,8 +1390,15 @@ through `FUN_8004FCC8`, ids picked by the anim materialiser
 `FUN_8004AD80`'s inline char table: Vahn `0x101`, Noa `0x111`, Gala
 `0x121`) resolves 16 ids per hero across `XA1`+`XA27` (Vahn),
 `XA3`+`XA28` (Noa), `XA5`+`XA29` (Gala) - item use, Spirit, cut-ins, KO
-and victory lines. Subheaders and routing survive everywhere, muted
-sectors decode to silence, other speakers' channels stay byte-identical.
+and victory lines. Subheaders and routing survive everywhere, other speakers' channels
+stay byte-identical - and the silenced hero slots are then **re-voiced
+with the siblings' real grunts** (`delilas_xa_voice`): each sibling's
+`monster.snd` SPU samples decode to PCM, peak-normalize, resample to
+the channel's CD-XA rate and re-encode through the crate's XA-ADPCM
+encoder (`legaia_xa::encode`, mono and dual-mono-stereo 4-bit; the
+staged-event banks and victory barks ship stereo), written at each
+channel head. Arts shouts, swing grunts, staged-event lines and
+victory barks all speak with the Delilas voice.
 NB the old reading of XA3/XA5 as "stereo Miracle fanfares" is falsified
 - those captured fires were the heroes' voice lines through the same
 dispatcher. Still retail: menu

@@ -68,6 +68,7 @@ pub mod delilas_challenge;
 pub mod delilas_dome;
 pub mod delilas_party;
 pub mod delilas_voice;
+pub mod delilas_xa_voice;
 pub mod disc;
 pub mod door;
 pub mod drops;

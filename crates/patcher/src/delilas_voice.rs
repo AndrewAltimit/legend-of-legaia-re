@@ -137,7 +137,7 @@ impl VabView {
 /// Locate the Delilas monster's VAB inside `monster.snd`: header
 /// `[u32][u32 count][u32 sector_offsets[count]]`, monster `id`'s slot at
 /// sector `tbl[id]`, VAB 4 bytes in.
-fn monster_vab_offset(snd: &[u8], monster_id: u16) -> Result<usize> {
+pub(crate) fn monster_vab_offset(snd: &[u8], monster_id: u16) -> Result<usize> {
     let count = u32::from_le_bytes(
         snd.get(4..8)
             .ok_or_else(|| anyhow::anyhow!("monster.snd too short"))?

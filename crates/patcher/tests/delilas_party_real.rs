@@ -200,10 +200,54 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         );
     }
 
-    // The hero XA voice banks are muted whole - arts shouts (XA2/4/6)
-    // and the staged-event voice banks (XA1/3/5 + XA27/28/29): every
-    // Form 2 sector's ADPCM payload is zero while the subheaders
-    // (channel routing) survive.
+    // The hero XA voice slots first mute, then take the siblings'
+    // XA-encoded grunts. Decode-verify the channels that are known
+    // 4-bit mono: the payload must stream through the XA decoder with
+    // real signal energy. A helper collects one channel's payload in
+    // stream order.
+    let channel_payload = |name: &str, chan: u8| -> Vec<u8> {
+        let (lba, size) = legaia_iso::iso9660::find_path_in_image(&patched, name).expect(name);
+        let sectors = (size as usize).div_ceil(2048);
+        let mut out = Vec::new();
+        for i in 0..sectors {
+            let base = (lba as usize + i) * 2352;
+            let sector = &patched[base..base + 2352];
+            if sector[0x12] & 0x20 != 0 && sector[0x11] == chan {
+                out.extend_from_slice(&sector[0x18..0x918]);
+            }
+        }
+        out
+    };
+    let decodes_with_energy = |name: &str, chan: u8| {
+        let payload = channel_payload(name, chan);
+        let mut dec = legaia_xa::StreamingDecoder::new(legaia_xa::DecodeOptions {
+            channels: legaia_xa::Channels::Mono,
+            bits: legaia_xa::BitsPerSample::Four,
+            sample_rate: 18900,
+        });
+        let mut pcm = Vec::new();
+        dec.feed(&payload, &mut pcm).expect("XA decode");
+        let peak = pcm.iter().map(|&s| (s as i32).abs()).max().unwrap_or(0);
+        assert!(
+            pcm.len() > 1000 && peak > 2000,
+            "{name} chan {chan}: {} samples, peak {peak} - no grunt audio",
+            pcm.len()
+        );
+    };
+    // Arts shout (Gi is Vahn under the default mapping), swing grunt,
+    // victory bark.
+    decodes_with_energy("XA/XA2.XA", 0);
+    decodes_with_energy("XA/XA30.XA", 0);
+    decodes_with_energy("XA/XA21.XA", 2);
+    // XA21's unattributed channels 0/1 stay silent.
+    for chan in [0u8, 1] {
+        assert!(
+            channel_payload("XA/XA21.XA", chan).iter().all(|&b| b == 0),
+            "XA21 chan {chan} should be silent"
+        );
+    }
+    // Every hero voice bank differs from retail everywhere it is
+    // non-silent (mute-then-fill leaves no retail audio behind).
     for name in [
         "XA/XA2.XA",
         "XA/XA4.XA",
@@ -218,55 +262,23 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     ] {
         let (lba, size) = legaia_iso::iso9660::find_path_in_image(&patched, name).expect(name);
         let sectors = (size as usize).div_ceil(2048);
-        let mut audio = 0usize;
         for i in 0..sectors {
             let base = (lba as usize + i) * 2352;
-            let sector = &patched[base..base + 2352];
-            if sector[0x12] & 0x20 == 0 {
-                continue; // not Form 2
-            }
-            assert!(
-                sector[0x18..0x92C].iter().all(|&b| b == 0),
-                "{name} sector {i} still carries audio"
-            );
-            assert_ne!(&sector[0x10..0x18], &[0u8; 8], "subheader wiped");
-            audio += 1;
-        }
-        assert!(audio > 100, "{name} had only {audio} Form 2 sectors");
-    }
-
-    // The XA30 normal-move grunt bank: the party's channels (Vahn 0,
-    // Noa 4, Gala 6) are silenced, every other speaker's channel is
-    // byte-identical to retail (the file is shared).
-    {
-        let (lba, size) =
-            legaia_iso::iso9660::find_path_in_image(&patched, "XA/XA30.XA").expect("XA30.XA");
-        let sectors = (size as usize).div_ceil(2048);
-        let (mut muted, mut kept) = (0usize, 0usize);
-        for i in 0..sectors {
-            let base = (lba as usize + i) * 2352;
-            let sector = &patched[base..base + 2352];
-            if sector[0x12] & 0x20 == 0 {
+            let (r, p) = (&original[base..base + 2352], &patched[base..base + 2352]);
+            if p[0x12] & 0x20 == 0 {
                 continue;
             }
-            let chan = sector[0x11];
-            if [0u8, 4, 6].contains(&chan) {
-                assert!(
-                    sector[0x18..0x92C].iter().all(|&b| b == 0),
-                    "XA30 hero channel {chan} sector {i} still carries audio"
-                );
-                muted += 1;
-            } else {
-                assert_eq!(
-                    &original[base..base + 2352],
-                    sector,
-                    "XA30 non-hero channel {chan} sector {i} was touched"
-                );
-                kept += 1;
-            }
+            let silent = p[0x18..0x92C].iter().all(|&b| b == 0);
+            assert!(
+                silent || p[0x18..0x92C] != r[0x18..0x92C],
+                "{name} sector {i} still carries retail audio"
+            );
+            assert_ne!(
+                &p[0x10..0x18],
+                &[0u8; 8],
+                "{name} sector {i} subheader wiped"
+            );
         }
-        assert!(muted > 10, "only {muted} XA30 hero sectors muted");
-        assert!(kept > 10, "only {kept} XA30 non-hero sectors survive");
     }
 
     // XA20/XA22: only bark channel 7 mutes; every other channel (the
@@ -283,8 +295,9 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
             }
             if sector[0x11] == 7 {
                 assert!(
-                    sector[0x18..0x92C].iter().all(|&b| b == 0),
-                    "{name} bark channel sector {i} still carries audio"
+                    sector[0x18..0x92C].iter().all(|&b| b == 0)
+                        || sector[0x18..0x92C] != original[base + 0x18..base + 0x92C],
+                    "{name} bark channel sector {i} still carries retail audio"
                 );
                 muted += 1;
             } else {

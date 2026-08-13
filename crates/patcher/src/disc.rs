@@ -305,6 +305,80 @@ impl DiscPatcher {
         self.silence_xa(name, Some(channels))
     }
 
+    /// Every distinct channel number present among a Mode 2 Form 2 XA
+    /// file's sectors, ascending.
+    pub fn xa_channels(&self, name: &str) -> Result<Vec<u8>> {
+        let (lba, size) = legaia_iso::iso9660::find_path_in_image(&self.image, name)
+            .with_context(|| format!("{name} not found in disc image"))?;
+        let sectors = (size as usize).div_ceil(USER_DATA_SIZE);
+        let mut seen = std::collections::BTreeSet::new();
+        for i in 0..sectors {
+            let base = (lba as usize + i) * SECTOR_SIZE;
+            let Some(sector) = self.image.get(base..base + SECTOR_SIZE) else {
+                break;
+            };
+            if legaia_iso::write::is_form2(sector) {
+                seen.insert(sector[0x11]);
+            }
+        }
+        Ok(seen.into_iter().collect())
+    }
+
+    /// The CD-XA coding byte (subheader `+0x13`) of a channel's first
+    /// Form 2 sector: bits 0-1 = mono/stereo, 2-3 = sample rate
+    /// (0 = 37800 Hz, 1 = 18900 Hz), 4-5 = bits per sample.
+    pub fn xa_channel_coding(&self, name: &str, chan: u8) -> Result<u8> {
+        let (lba, size) = legaia_iso::iso9660::find_path_in_image(&self.image, name)
+            .with_context(|| format!("{name} not found in disc image"))?;
+        let sectors = (size as usize).div_ceil(USER_DATA_SIZE);
+        for i in 0..sectors {
+            let base = (lba as usize + i) * SECTOR_SIZE;
+            let Some(sector) = self.image.get(base..base + SECTOR_SIZE) else {
+                break;
+            };
+            if legaia_iso::write::is_form2(sector) && sector[0x11] == chan {
+                return Ok(sector[0x13]);
+            }
+        }
+        bail!("{name}: channel {chan} has no Form 2 sectors")
+    }
+
+    /// Write encoded XA-ADPCM sound groups into one channel of a Mode 2
+    /// Form 2 XA file: the channel's Form 2 sectors (in stream order)
+    /// take 18 groups each from `groups` until it runs out; the rest of
+    /// the channel is zeroed (silence). Subheaders survive untouched.
+    /// Returns the number of sectors written with audio.
+    pub fn write_xa_channel(&mut self, name: &str, chan: u8, groups: &[u8]) -> Result<usize> {
+        const GROUPS_PER_SECTOR: usize = 18;
+        const GROUP_BYTES: usize = 128;
+        let (lba, size) = legaia_iso::iso9660::find_path_in_image(&self.image, name)
+            .with_context(|| format!("{name} not found in disc image"))?;
+        let sectors = (size as usize).div_ceil(USER_DATA_SIZE);
+        let mut cursor = 0usize;
+        let mut written = 0usize;
+        for i in 0..sectors {
+            let base = (lba as usize + i) * SECTOR_SIZE;
+            let Some(sector) = self.image.get_mut(base..base + SECTOR_SIZE) else {
+                break;
+            };
+            if !legaia_iso::write::is_form2(sector) || sector[0x11] != chan {
+                continue;
+            }
+            sector[0x18..0x92C].fill(0);
+            if cursor < groups.len() {
+                let take = (groups.len() - cursor).min(GROUPS_PER_SECTOR * GROUP_BYTES);
+                sector[0x18..0x18 + take].copy_from_slice(&groups[cursor..cursor + take]);
+                cursor += take;
+                written += 1;
+            }
+            legaia_iso::write::encode_mode2_form2_sector(sector)?;
+        }
+        if written == 0 {
+            bail!("{name}: channel {chan} has no Form 2 sectors");
+        }
+        Ok(written)
+    }
+
     fn silence_xa(&mut self, name: &str, channels: Option<&[u8]>) -> Result<usize> {
         let (lba, size) = legaia_iso::iso9660::find_path_in_image(&self.image, name)
             .with_context(|| format!("{name} not found in disc image"))?;

@@ -394,6 +394,12 @@ pub fn apply_delilas_party(
                 .push(format!("party: {file} bark channel 7 muted ({n} sectors)"));
         }
 
+        // Then give the silenced slots the siblings' REAL voices: their
+        // monster.snd grunts, XA-encoded over the muted channels.
+        let notes = crate::delilas_xa_voice::fill_hero_xa_voices(patcher, mapping)
+            .context("fill hero XA voice slots with sibling grunts")?;
+        report.notes.extend(notes);
+
         // The FOURTH voice tier: the staged-event voice-id space (id >=
         // 0x100 through `FUN_8004FCC8`; the anim materialiser
         // `FUN_8004AD80` picks the id from an inline char-keyed table -
