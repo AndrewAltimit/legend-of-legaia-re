@@ -392,12 +392,98 @@ pub fn fill_hero_xa_voices(
             .unwrap_or(shortest);
         let mut filled = 0usize;
 
-        // Arts shouts + staged-event banks: every channel, pool cycled.
-        for file in std::iter::once(shout_banks[slot]).chain(staged_banks[slot]) {
-            for (i, chan) in patcher.xa_channels(file)?.into_iter().enumerate() {
-                if write_grunt(patcher, file, chan, pool[i % pool.len()], &mut notes)? {
-                    filled += 1;
+        // Voice casting. When the sibling's samples are ear-labeled
+        // ([`voice_cast`]), the channels the battle engine is KNOWN to
+        // key get role-matched samples instead of a blind cycle
+        // (`docs/subsystems/battle-action.md` § battle voice cues):
+        //
+        // - arts-shout bank: live in-battle arts observe channels
+        //   14/15 (the `(0,0)` pool variant's members) - those carry
+        //   the LINE (her long attack call);
+        // - fanfare/staged bank 1 (`XA1`-family): channel 1 is the
+        //   Super/Miracle cue -> the line; channels 2..=7 are the
+        //   Hyper fanfare pairs {2,5} {3,6} {4,7} -> each pair carries
+        //   one consistent voice (line / effort / effort); channel 0
+        //   (id 0x100, the cast-cue dispatcher's band - Spirit lives
+        //   here) -> a composed bark, the focus "hmph";
+        // - staged bank 2: minor-event lines (cut-ins, KO, item) ->
+        //   barks + efforts cycled, never the big line.
+        let cast = voice_cast(*sibling);
+        let shout_pick = |i: usize, chan: u8| -> &Grunt {
+            if let Some(c) = &cast
+                && chan >= 14
+                && let Some(g) = by_vag(c.line)
+            {
+                return g;
+            }
+            pool[i % pool.len()]
+        };
+        for (i, chan) in patcher
+            .xa_channels(shout_banks[slot])?
+            .into_iter()
+            .enumerate()
+        {
+            if write_grunt(
+                patcher,
+                shout_banks[slot],
+                chan,
+                shout_pick(i, chan),
+                &mut notes,
+            )? {
+                filled += 1;
+            }
+        }
+        let fanfare_pick = |i: usize, chan: u8| -> &Grunt {
+            if let Some(c) = &cast {
+                let vag = match chan {
+                    0 => Some(c.barks[0]),
+                    1 => Some(c.line),
+                    2..=7 => Some([c.line, c.efforts[0], c.efforts[1]][(chan as usize - 2) % 3]),
+                    _ => None,
+                };
+                if let Some(g) = vag.and_then(by_vag) {
+                    return g;
                 }
+            }
+            pool[i % pool.len()]
+        };
+        for (i, chan) in patcher
+            .xa_channels(staged_banks[slot][0])?
+            .into_iter()
+            .enumerate()
+        {
+            if write_grunt(
+                patcher,
+                staged_banks[slot][0],
+                chan,
+                fanfare_pick(i, chan),
+                &mut notes,
+            )? {
+                filled += 1;
+            }
+        }
+        let staged2_pick = |i: usize| -> &Grunt {
+            if let Some(c) = &cast {
+                let ids = [c.barks[0], c.barks[1], c.efforts[0], c.efforts[1]];
+                if let Some(g) = by_vag(ids[i % ids.len()]) {
+                    return g;
+                }
+            }
+            pool[i % pool.len()]
+        };
+        for (i, chan) in patcher
+            .xa_channels(staged_banks[slot][1])?
+            .into_iter()
+            .enumerate()
+        {
+            if write_grunt(
+                patcher,
+                staged_banks[slot][1],
+                chan,
+                staged2_pick(i),
+                &mut notes,
+            )? {
+                filled += 1;
             }
         }
         // XA30 short vocals: the anchor channel takes the swing grunt
@@ -461,6 +547,30 @@ fn swing_vag_pick(sibling: crate::delilas_party::Sibling) -> Option<usize> {
     use crate::delilas_party::Sibling;
     match sibling {
         Sibling::Lu => Some(4),
+        Sibling::Gi | Sibling::Che => None,
+    }
+}
+
+/// Ear-labeled voice roles (bank vag ids) driving the semantic channel
+/// casting in [`fill_hero_xa_voices`]. `line` = the long attack call
+/// (arts / Super / Hyper material), `barks` = the short composed
+/// 44100 Hz vocalizations (Spirit focus, minor events), `efforts` =
+/// the mid-length attack efforts. `None` = no labels yet; those
+/// siblings keep the generic cycle.
+struct VoiceCast {
+    line: usize,
+    barks: [usize; 2],
+    efforts: [usize; 2],
+}
+
+fn voice_cast(sibling: crate::delilas_party::Sibling) -> Option<VoiceCast> {
+    use crate::delilas_party::Sibling;
+    match sibling {
+        Sibling::Lu => Some(VoiceCast {
+            line: 3,
+            barks: [1, 2],
+            efforts: [4, 5],
+        }),
         Sibling::Gi | Sibling::Che => None,
     }
 }
