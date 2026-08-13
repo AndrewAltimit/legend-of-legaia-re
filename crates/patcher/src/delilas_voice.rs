@@ -165,10 +165,12 @@ pub(crate) fn monster_vab_offset(snd: &[u8], monster_id: u16) -> Result<usize> {
     bail!("monster id {monster_id}: no VAB at monster.snd sector {sec}")
 }
 
-/// Copy a VAG body over another in place. When the source is longer it
-/// truncates at a block boundary and forces the end flag (no repeat) on
-/// the final block; when shorter, the source's own end flag stops
-/// playback and the stale tail is never read.
+/// Copy a VAG body over another in place. Both windows must start on
+/// the TRUE ADPCM block grid: the parser's raw spans sit 4 bytes early,
+/// so shift them before calling. When the source is longer it truncates
+/// at a block boundary and forces the end flag (no repeat) on the final
+/// block; when shorter, the source's own end flag stops playback and
+/// the stale tail is never read.
 pub(crate) fn overwrite_vag(dst: &mut [u8], src: &[u8]) {
     let n = src.len().min(dst.len()) / BLOCK * BLOCK;
     if n == 0 {
@@ -227,7 +229,13 @@ fn splice_program(
         let timbre: [u8; 20] = src[src_o..src_o + 20].try_into().unwrap();
         dst[dst_o..dst_o + 20].copy_from_slice(&timbre);
 
-        // Sample body.
+        // Sample body. The parser's spans sit the documented 4 bytes
+        // BEFORE the true ADPCM block grid (see `decode_vag_aligned`);
+        // both windows shift +4 so the copy lands on real blocks.
+        // Writing at the raw span instead clobbers the tail of the
+        // PREVIOUS sample in the bank - audible as a glitch at the end
+        // of any cue that sustains it (the results fanfare shares this
+        // bank) - and lands the truncation END flag mid-block.
         let src_vag = src_view.tone_vag(src, src_page, s);
         let (so, sn) = *src_view
             .vag_spans
@@ -237,8 +245,13 @@ fn splice_program(
             .vag_spans
             .get(dst_vag.wrapping_sub(1))
             .ok_or_else(|| anyhow::anyhow!("destination VAG {dst_vag} out of range"))?;
-        let body = src[so..so + sn].to_vec();
-        overwrite_vag(&mut dst[do_..do_ + dn], &body);
+        let s_end = (so + 4 + sn).min(src.len());
+        let d_end = (do_ + 4 + dn).min(dst.len());
+        if so + 4 >= s_end || do_ + 4 >= d_end {
+            bail!("VAG span escapes its bank (src {so}+{sn}, dst {do_}+{dn})");
+        }
+        let body = src[so + 4..s_end].to_vec();
+        overwrite_vag(&mut dst[do_ + 4..d_end], &body);
     }
     Ok((spliced, src_pool.len()))
 }

@@ -356,6 +356,55 @@ fn npc_coords(monster_id: u16) -> Option<(usize, usize)> {
     }
 }
 
+/// Angle (degrees) of the relative rotation between two rest channels -
+/// the joint bend a terminal part carries through the pivot bake.
+fn rel_bend_deg(a: &PartPose, b: &PartPose) -> f32 {
+    let (ma, mb) = (rot_matrix(a), rot_matrix(b));
+    let mut tr = 0.0f32;
+    for i in 0..3 {
+        for j in 0..3 {
+            tr += ma[j][i] * mb[j][i]; // trace(Ma^T * Mb)
+        }
+    }
+    ((tr - 1.0) / 2.0).clamp(-1.0, 1.0).acos().to_degrees()
+}
+
+/// Sagittal mirror of one rest channel (mirror plane x = 0): under the
+/// `Rz*Ry*Rx` convention, `M*R(rx,ry,rz)*M = R(rx,-ry,-rz)` for
+/// `M = diag(-1,1,1)`, and the pivot's x negates.
+fn mirror_channel(p: &PartPose) -> PartPose {
+    let neg = |r: u16| (4096 - (r & 0xFFF) as i32) as u16 & 0xFFF;
+    PartPose {
+        tx: -p.tx,
+        ty: p.ty,
+        tz: p.tz,
+        rx: p.rx & 0xFFF,
+        ry: neg(p.ry),
+        rz: neg(p.rz),
+    }
+}
+
+/// Straighten an asymmetric standing rest: some NPC placements rest in
+/// a scene-flair stance (Lu's nilboa taunt props one leg at a ~71
+/// degree knee bend - her ONLY static record), and a terminal part's
+/// relative bend rides through the pivot bake verbatim, so the walking
+/// model limps. When the two legs' knee bends disagree badly, mirror
+/// the straighter leg's channels onto the bent one (10-part scene rig:
+/// legs at parts 6/7 and 8/9).
+fn symmetrize_rest_legs(rest: &mut [PartPose]) {
+    if rest.len() < FIELD_BONES {
+        return;
+    }
+    let bend_a = rel_bend_deg(&rest[6], &rest[7]);
+    let bend_b = rel_bend_deg(&rest[8], &rest[9]);
+    if (bend_a - bend_b).abs() < 20.0 {
+        return;
+    }
+    let (from, to) = if bend_a < bend_b { (6, 8) } else { (8, 6) };
+    rest[to] = mirror_channel(&rest[from]);
+    rest[to + 1] = mirror_channel(&rest[from + 1]);
+}
+
 /// Source from the sibling's own field NPC mesh in the nilboa scene:
 /// already field-scale, flat-colored body + textured head - retail
 /// authoring that fits the §0 budget with no decimation. The NPC rig is
@@ -404,11 +453,12 @@ fn npc_slot_source(npc_pack: &[u8], npc_bundle: &[u8], monster_id: u16) -> Resul
             idle.part_count
         );
     }
-    let rest = idle
+    let mut rest = idle
         .frames
         .first()
         .ok_or_else(|| anyhow::anyhow!("NPC idle has no frames"))?
         .clone();
+    symmetrize_rest_legs(&mut rest);
 
     // Texel space: paint the bundle's TIM list into a virtual VRAM and
     // sample the one 4bpp texpage the prims reference; CLUTs re-key to

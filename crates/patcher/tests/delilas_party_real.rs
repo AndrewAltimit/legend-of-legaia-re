@@ -119,10 +119,12 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
                 .expect("program populated");
             vab.tones[page][tone].vag as usize
         };
+        // Bodies compare on the TRUE ADPCM grid (the parser's spans sit
+        // 4 bytes early; the splice writes at +4).
         let body = |buf: &[u8], off: usize, prog: usize, tone: usize| -> Vec<u8> {
             let vab = legaia_vab::parse(buf, off).expect("VAB parses");
             let span = vab.vag_samples[tone_vag(&vab, prog, tone) - 1];
-            buf[span.byte_offset..span.byte_offset + span.size].to_vec()
+            buf[span.byte_offset + 4..(span.byte_offset + 4 + span.size).min(buf.len())].to_vec()
         };
         let gi_off = |snd: &[u8]| -> usize {
             u32::from_le_bytes(snd[8 + 161 * 4..12 + 161 * 4].try_into().unwrap()) as usize * 0x800
