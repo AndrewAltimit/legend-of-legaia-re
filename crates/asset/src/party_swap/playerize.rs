@@ -730,6 +730,42 @@ fn playerize_scaled(
         baked.push(o);
     }
 
+    // Seat the upper arms on the sibling's OWN shoulder sockets. The
+    // arms hang at the PLAYER's shoulder pivots (the clips' channel
+    // translations dictate that), but the baked torso's socket surface
+    // lands where the SIBLING's shoulder sits after the torso bake -
+    // on a narrower rig the arm floats outboard of the body (Lu's
+    // shoulder gap: her torso wraps her sockets at ~4 units, the baked
+    // pair left ~26). The shoulder END of each upper arm tucks in by
+    // the socket delta, TAPERING to zero at the elbow: a rigid
+    // whole-chain shift instead makes the per-part offsets rotate
+    // apart mid-swing and opens the elbow/wrist, so the elbow end (and
+    // the forearm + hand parts) must stay exactly where the clips
+    // expect them.
+    {
+        let pb_torso = pivot_bake_params(&src_frames[1], &dst_frames[1], radial);
+        for c in [3usize, 6usize] {
+            let socket = bake_point_pivot(src_pivots[c], src_pivots[1], dst_pivots[1], &pb_torso);
+            let delta = vsub(socket, dst_pivots[c]);
+            let Some(len) = dst_frames[c].len.filter(|l| *l >= 2.0) else {
+                continue;
+            };
+            let ch = rig.channel_for_canonical[c] as usize;
+            let md = rot_matrix(&dst_rest[ch]);
+            let ld = apply_transposed(&md, delta);
+            let ax = apply_transposed(&md, dst_frames[c].axes[0]);
+            for v in baked[c].vertices.iter_mut() {
+                let t = v[0] as f32 * ax[0] + v[1] as f32 * ax[1] + v[2] as f32 * ax[2];
+                let w = (1.0 - t / len).clamp(0.0, 1.0);
+                *v = [
+                    round_coord(v[0] as f32 + ld[0] * w)?,
+                    round_coord(v[1] as f32 + ld[1] * w)?,
+                    round_coord(v[2] as f32 + ld[2] * w)?,
+                ];
+            }
+        }
+    }
+
     // Texture re-layout (rewrites the baked objects' UV/CBA/TSB).
     let reserved: Vec<u16> = record0_texture_uploads(player_file, 0)?
         .iter()

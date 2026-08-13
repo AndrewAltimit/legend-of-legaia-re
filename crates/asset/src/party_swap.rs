@@ -442,6 +442,28 @@ pub(crate) fn pivot_bake_params(src: &BoneFrame, dst: &BoneFrame, radial: f32) -
     }
 }
 
+/// Where a source-rig WORLD point (a joint pivot riding a baked part)
+/// lands at destination rest, through the same pivot-anchored
+/// transform [`bake_object_pivot`] applies to geometry (align about
+/// the anchor, axial/radial scale, re-anchor on the destination
+/// pivot). The `md^T` un-pose and rest-playback `md` cancel, so the
+/// destination-rest world position is direct.
+pub(crate) fn bake_point_pivot(
+    w: [f32; 3],
+    anchor_src: [f32; 3],
+    dst_pivot: [f32; 3],
+    pb: &PivotBake,
+) -> [f32; 3] {
+    let d = vsub(w, anchor_src);
+    let e = apply(&pb.r_align, d);
+    let t = vdot(e, pb.x_dst);
+    [
+        dst_pivot[0] + pb.x_dst[0] * (pb.axial * t) + pb.radial * (e[0] - pb.x_dst[0] * t),
+        dst_pivot[1] + pb.x_dst[1] * (pb.axial * t) + pb.radial * (e[1] - pb.x_dst[1] * t),
+        dst_pivot[2] + pb.x_dst[2] * (pb.axial * t) + pb.radial * (e[2] - pb.x_dst[2] * t),
+    ]
+}
+
 /// Prim-referenced vertex mask (retail objects carry stray orphan
 /// vertices that must not influence any measurement).
 fn used_verts(o: &ModelObject) -> Vec<bool> {
