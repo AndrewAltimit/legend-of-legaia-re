@@ -382,15 +382,39 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
             for clip in lo..=hi {
                 let s = rd32(&p_snd, (clip + 2) * 4) * 2048;
                 let e = rd32(&p_snd, (clip + 3) * 4) * 2048;
-                assert_ne!(
-                    &r_snd[s..e],
-                    &p_snd[s..e],
-                    "victory clip {clip:#x} still retail"
+                // Each clip is a mini VAB the game REGISTERS at victory
+                // time: the patched clip must still parse (a clobbered
+                // header softlocks the results sequence), its header
+                // block must be byte-identical to retail, and only the
+                // VAG voice bodies may differ - which they must, and
+                // they must still decode with energy.
+                let rv = legaia_vab::parse(&r_snd, s + 4).expect("retail clip VAB");
+                let pv = legaia_vab::parse(&p_snd, s + 4).expect("patched clip VAB parses");
+                let first_vag = rv.vag_samples.iter().map(|v| v.byte_offset).min().unwrap();
+                assert_eq!(
+                    &r_snd[s..first_vag],
+                    &p_snd[s..first_vag],
+                    "victory clip {clip:#x} header block changed"
                 );
-                let pcm = legaia_vab::decode_vag_aligned(&p_snd[s..s + 8192.min(e - s)])
-                    .expect("clip head decodes");
-                let peak = pcm.iter().map(|&v| (v as i32).abs()).max().unwrap_or(0);
-                assert!(peak > 500, "victory clip {clip:#x} head is silent");
+                assert_eq!(
+                    rv.vag_samples.len(),
+                    pv.vag_samples.len(),
+                    "victory clip {clip:#x} VAG count changed"
+                );
+                for (i, vag) in rv.vag_samples.iter().enumerate() {
+                    let span = vag.byte_offset..vag.byte_offset + vag.size;
+                    assert!(span.end <= e, "victory clip {clip:#x} VAG {i} out of span");
+                    assert_ne!(
+                        &r_snd[span.clone()],
+                        &p_snd[span.clone()],
+                        "victory clip {clip:#x} VAG {i} still retail"
+                    );
+                    let head = span.start..span.start + 8192.min(span.len());
+                    let pcm =
+                        legaia_vab::decode_vag_aligned(&p_snd[head]).expect("VAG body decodes");
+                    let peak = pcm.iter().map(|&v| (v as i32).abs()).max().unwrap_or(0);
+                    assert!(peak > 500, "victory clip {clip:#x} VAG {i} is silent");
+                }
             }
         }
     }

@@ -82,11 +82,13 @@ fn sibling_grunt_spans(snd: &[u8], monster_id: u16) -> Result<Vec<std::ops::Rang
 }
 
 /// Replace the heroes' victory-voice clips in `monster.snd` with the
-/// mapped siblings' own grunts. The clips are plain SPU-ADPCM bodies,
-/// so the sibling VAG bytes copy verbatim (already resident in the same
-/// file); a truncated copy gets its final 16-byte block END-flagged and
-/// the rest of the clip span zero-fills (decodes silent, and playback
-/// stops at the END flag anyway).
+/// mapped siblings' own grunts. Each clip is a **mini VAB**
+/// (`[u32 header_size]["VABp" header + attr tables + VAG size table]
+/// [VAG bodies]`) that the results sequencer REGISTERS at victory time,
+/// so the header and every table byte stay retail - only the VAG voice
+/// bodies swap, via [`crate::delilas_voice::overwrite_vag`] (truncating
+/// copies END-flag their final block; shorter copies stop at their own
+/// END flag and never reach the stale tail).
 pub fn fill_hero_victory_clips(
     patcher: &mut DiscPatcher,
     mapping: &PartyMapping,
@@ -121,19 +123,25 @@ pub fn fill_hero_victory_clips(
     for (slot, sibling) in siblings.iter().enumerate() {
         let grunts = sibling_grunt_spans(&snd, sibling.monster_id())?;
         let (lo, hi) = VICTORY_CLIP_BANDS[slot];
-        for (k, clip) in (lo..=hi).enumerate() {
-            let dst = clip_span(clip)?;
-            let src = &snd[grunts[k % grunts.len()].clone()];
-            let n = src.len().min(dst.len()) & !15;
-            let (start, end) = (dst.start, dst.end);
-            patched[start..start + n].copy_from_slice(&src[..n]);
-            if n < src.len() && n >= 16 {
-                // Truncated body: END-flag the final block so playback
-                // stops inside the span.
-                patched[start + n - 15] |= 0x01;
+        let mut cursor = 0usize;
+        for clip in lo..=hi {
+            let span = clip_span(clip)?;
+            if snd.get(span.start + 4..span.start + 8) != Some(&b"pBAV"[..]) {
+                anyhow::bail!("clip {clip:#x}: no VABp header at clip start");
             }
-            for b in &mut patched[start + n..end] {
-                *b = 0;
+            let vab = legaia_vab::parse(&snd, span.start + 4)
+                .with_context(|| format!("parse victory clip {clip:#x} mini VAB"))?;
+            if vab.vag_samples.is_empty() {
+                anyhow::bail!("clip {clip:#x}: mini VAB has no VAG bodies");
+            }
+            for vag in &vab.vag_samples {
+                let dst = vag.byte_offset..vag.byte_offset + vag.size;
+                if dst.end > span.end {
+                    anyhow::bail!("clip {clip:#x}: VAG body escapes the clip span");
+                }
+                let src = snd[grunts[cursor % grunts.len()].clone()].to_vec();
+                cursor += 1;
+                crate::delilas_voice::overwrite_vag(&mut patched[dst], &src);
             }
         }
         notes.push(format!(

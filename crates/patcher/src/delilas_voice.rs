@@ -169,7 +169,7 @@ pub(crate) fn monster_vab_offset(snd: &[u8], monster_id: u16) -> Result<usize> {
 /// truncates at a block boundary and forces the end flag (no repeat) on
 /// the final block; when shorter, the source's own end flag stops
 /// playback and the stale tail is never read.
-fn overwrite_vag(dst: &mut [u8], src: &[u8]) {
+pub(crate) fn overwrite_vag(dst: &mut [u8], src: &[u8]) {
     let n = src.len().min(dst.len()) / BLOCK * BLOCK;
     if n == 0 {
         return;
