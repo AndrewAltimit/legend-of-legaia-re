@@ -81,14 +81,37 @@ fn sibling_grunt_spans(snd: &[u8], monster_id: u16) -> Result<Vec<std::ops::Rang
     Ok(out)
 }
 
+/// Write one victory voice body over another, both on the TRUE ADPCM
+/// block grid. The copied region's interior flags strip to zero (a
+/// monster grunt's own END/REPEAT/LOOP flags would stop playback early
+/// or loop backward into the body), and the body terminates with
+/// retail's own idiom: a silent self-looping block (flags `0x07` =
+/// END + REPEAT + LOOP-START), which sustains silence until the
+/// sequencer keys the voice off. The rest of the span zero-fills.
+fn write_victory_body(dst: &mut [u8], src: &[u8]) {
+    let n = (src.len().min(dst.len().saturating_sub(16)) / 16) * 16;
+    dst[..n].copy_from_slice(&src[..n]);
+    for block in dst[..n].chunks_exact_mut(16) {
+        block[1] = 0;
+    }
+    for b in &mut dst[n..] {
+        *b = 0;
+    }
+    if dst.len() >= n + 16 {
+        dst[n + 1] = 0x07;
+    }
+}
+
 /// Replace the heroes' victory-voice clips in `monster.snd` with the
 /// mapped siblings' own grunts. Each clip is a **mini VAB**
 /// (`[u32 header_size]["VABp" header + attr tables + VAG size table]
 /// [VAG bodies]`) that the results sequencer REGISTERS at victory time,
 /// so the header and every table byte stay retail - only the VAG voice
-/// bodies swap, via [`crate::delilas_voice::overwrite_vag`] (truncating
-/// copies END-flag their final block; shorter copies stop at their own
-/// END flag and never reach the stale tail).
+/// bodies swap. NB `legaia_vab::parse` spans are the documented **4
+/// bytes before the real ADPCM grid** (see `decode_vag_aligned`'s doc);
+/// both source and destination shift `+4` here - writing at the raw
+/// span misaligns every block, which reads as random loop/end flags on
+/// real SPU hardware and hangs the victory sequence.
 pub fn fill_hero_victory_clips(
     patcher: &mut DiscPatcher,
     mapping: &PartyMapping,
@@ -135,13 +158,19 @@ pub fn fill_hero_victory_clips(
                 anyhow::bail!("clip {clip:#x}: mini VAB has no VAG bodies");
             }
             for vag in &vab.vag_samples {
-                let dst = vag.byte_offset..vag.byte_offset + vag.size;
+                // +4: the parser's spans sit one word before the real
+                // block grid (documented in `decode_vag_aligned`).
+                let dst = vag.byte_offset + 4..vag.byte_offset + 4 + vag.size;
                 if dst.end > span.end {
                     anyhow::bail!("clip {clip:#x}: VAG body escapes the clip span");
                 }
-                let src = snd[grunts[cursor % grunts.len()].clone()].to_vec();
+                let g = grunts[cursor % grunts.len()].clone();
+                if g.end + 4 > snd.len() {
+                    anyhow::bail!("sibling grunt span escapes monster.snd");
+                }
+                let src = snd[g.start + 4..g.end + 4].to_vec();
                 cursor += 1;
-                crate::delilas_voice::overwrite_vag(&mut patched[dst], &src);
+                write_victory_body(&mut patched[dst], &src);
             }
         }
         notes.push(format!(

@@ -390,10 +390,14 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
                 // they must still decode with energy.
                 let rv = legaia_vab::parse(&r_snd, s + 4).expect("retail clip VAB");
                 let pv = legaia_vab::parse(&p_snd, s + 4).expect("patched clip VAB parses");
+                // The parser's spans sit 4 bytes before the real block
+                // grid (see `decode_vag_aligned`); the header block AND
+                // that lead word must stay retail, so the identical
+                // prefix extends to first_vag + 4.
                 let first_vag = rv.vag_samples.iter().map(|v| v.byte_offset).min().unwrap();
                 assert_eq!(
-                    &r_snd[s..first_vag],
-                    &p_snd[s..first_vag],
+                    &r_snd[s..first_vag + 4],
+                    &p_snd[s..first_vag + 4],
                     "victory clip {clip:#x} header block changed"
                 );
                 assert_eq!(
@@ -402,12 +406,33 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
                     "victory clip {clip:#x} VAG count changed"
                 );
                 for (i, vag) in rv.vag_samples.iter().enumerate() {
-                    let span = vag.byte_offset..vag.byte_offset + vag.size;
+                    let span = vag.byte_offset + 4..vag.byte_offset + 4 + vag.size;
                     assert!(span.end <= e, "victory clip {clip:#x} VAG {i} out of span");
                     assert_ne!(
                         &r_snd[span.clone()],
                         &p_snd[span.clone()],
                         "victory clip {clip:#x} VAG {i} still retail"
+                    );
+                    // On the true grid: every block flag legal, and the
+                    // body ends with retail's silent self-looping
+                    // terminal (flags 0x07) followed only by zeros.
+                    let body = &p_snd[span.clone()];
+                    let mut terminal = None;
+                    for (bi, block) in body.chunks_exact(16).enumerate() {
+                        assert!(
+                            block[1] <= 7,
+                            "victory clip {clip:#x} VAG {i} block {bi} bad flags {:#x}",
+                            block[1]
+                        );
+                        if block[1] == 0x07 && terminal.is_none() {
+                            terminal = Some(bi);
+                        }
+                    }
+                    let t = terminal
+                        .unwrap_or_else(|| panic!("victory clip {clip:#x} VAG {i} no terminal"));
+                    assert!(
+                        body[(t + 1) * 16..].iter().all(|&b| b == 0),
+                        "victory clip {clip:#x} VAG {i} data after terminal"
                     );
                     let head = span.start..span.start + 8192.min(span.len());
                     let pcm =
