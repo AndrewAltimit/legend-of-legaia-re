@@ -57,6 +57,7 @@ pub mod approach_fix;
 pub mod arts;
 pub mod arts_ap_grant;
 pub mod arts_power;
+pub mod attack_count;
 pub mod battle_texture;
 pub mod bonus_drop;
 pub mod casino;

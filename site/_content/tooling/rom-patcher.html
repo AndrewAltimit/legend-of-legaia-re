@@ -556,6 +556,16 @@
         <label class="rom-opt-label" for="rom-seru-catch">&#8627; Catch chance: <output id="rom-seru-catch-val">100</output>%</label>
         <input type="range" id="rom-seru-catch" min="0" max="100" step="1" value="100">
       </div>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-attack-count-on">
+        <span>Enemy attack count <span class="rom-opt-note">- scale how many hits standard attacks land 0.1x-5x</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Scales how many <strong>physical strikes</strong> an enemy's standard attack turn lands. The game prices each attack move in AGL and lets a per-round AGL gauge afford as many strikes as fit, so this dial divides each attack's AGL price by the multiplier - at <code>2x</code> a two-hit enemy swings about four times, at <code>0.5x</code> about once. AGL itself, spell casts, and every damage number stay retail, so it composes with the difficulty scale; an enemy that attacks in retail always keeps <em>at least one</em> hit per turn, and the engine's own 15-action queue bounds the top end. A manual tuning, unaffected by the seed.</span></span></span>
+      </label>
+      <div class="rom-opt rom-sub" id="rom-attack-count-row">
+        <label class="rom-opt-label" for="rom-attack-count">&#8627; Attack count: <output id="rom-attack-count-val">1.0x</output></label>
+        <input type="range" id="rom-attack-count" min="0.1" max="5" step="0.1" value="1">
+      </div>
     </details>
 
     <!-- ---- Tactical-Art overrides (per-art picker; rows built by JS) ---- -->

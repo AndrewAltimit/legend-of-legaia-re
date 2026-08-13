@@ -116,6 +116,71 @@ pub fn scale_monster_stats(
     scale_monster_stats_profile(patcher, monster_stats::ScaleProfile::uniform(scale))
 }
 
+/// Outcome of the enemy attack-count scale ([`scale_enemy_attack_count`]).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct AttackCountReport {
+    /// Monster slots actually rewritten.
+    pub monsters_changed: usize,
+    /// Attack-entry cost bytes changed across all rewritten monsters.
+    pub entries_changed: usize,
+    /// Monster ids whose re-packed slot would overflow the `0x14000` footprint,
+    /// so the edit was skipped (the original costs are kept). Same rare LZS
+    /// re-pack guard as the drop / stat passes (see [`crate::monster`]).
+    pub skipped: Vec<u16>,
+}
+
+/// Scale every monster's standard-attack hit count by a multiplier
+/// (`0.1x..=5x`; see [`crate::attack_count`] for the mechanism): each
+/// retail-affordable attack entry's AGL-cost byte is divided by the scale, so
+/// the unchanged per-round AGL budget affords proportionally more (or fewer)
+/// strikes. Seedless - the result depends only on the disc and the scale. A
+/// retail (`1x`) scale writes nothing. Only the unwinnable-by-design tutorial
+/// fight ([`crate::monster_stats::SCALE_PINNED_MONSTER_IDS`]) is pinned. Slot
+/// handling (same-size re-pack, skip-on-overflow) matches the stat scale.
+pub fn scale_enemy_attack_count(
+    patcher: &mut DiscPatcher,
+    scale: monster_stats::ScalePermille,
+) -> Result<AttackCountReport> {
+    let mut report = AttackCountReport::default();
+    if scale.is_retail() {
+        return Ok(report);
+    }
+    let entry = patcher
+        .read_entry(MONSTER_ARCHIVE_ENTRY)
+        .context("read monster battle_data archive")?;
+    let records =
+        legaia_asset::monster_archive::records(&entry).context("decode monster archive records")?;
+    for rec in &records {
+        if monster_stats::SCALE_PINNED_MONSTER_IDS.contains(&rec.id) {
+            continue;
+        }
+        let plan = crate::attack_count::plan_record(rec, scale);
+        if plan.is_empty() {
+            continue;
+        }
+        let slot = patcher
+            .monster_slot(rec.id)
+            .with_context(|| format!("read monster {} slot", rec.id))?;
+        let new_slot = match crate::attack_count::set_costs(&slot, &plan) {
+            Ok(s) => s,
+            // Only the slot-overflow guard can fire here; a malformed slot
+            // would already have failed decoding above.
+            Err(_) => {
+                report.skipped.push(rec.id);
+                continue;
+            }
+        };
+        if new_slot != slot {
+            patcher
+                .patch_monster_slot(rec.id, &new_slot)
+                .with_context(|| format!("write monster {} slot", rec.id))?;
+            report.monsters_changed += 1;
+            report.entries_changed += plan.len();
+        }
+    }
+    Ok(report)
+}
+
 /// Split every scene's formation table into random encounters and scripted
 /// fights, and return the per-monster classification the split difficulty scale
 /// selects its multiplier with (see [`crate::monster_class`]).
