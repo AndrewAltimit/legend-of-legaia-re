@@ -127,10 +127,16 @@ fn sibling_victory_voice(
 /// Write one victory voice body over another, both on the TRUE ADPCM
 /// block grid. The copied region's interior flags strip to zero (a
 /// monster grunt's own END/REPEAT/LOOP flags would stop playback early
-/// or loop backward into the body), and the body terminates with
-/// retail's own idiom: a silent self-looping block (flags `0x07` =
-/// END + REPEAT + LOOP-START), which sustains silence until the
-/// sequencer keys the voice off. The rest of the span zero-fills.
+/// or loop backward into the body), and the body terminates with an
+/// END-without-REPEAT block (flags `0x01`), which releases the voice's
+/// envelope to silence. Retail's own idiom is a silent SELF-LOOPING
+/// terminal (`0x07`), but that keeps the voice's envelope OPEN while
+/// it loops - retail's bodies fill their clips so the voice is keyed
+/// off first, while these bodies are much shorter, and the field-scene
+/// load then uploads fresh sample data over the still-looping region:
+/// an audible garbage burst right after the victory pose. The mute
+/// terminal makes the voice inert the moment the line ends. The rest
+/// of the span zero-fills.
 fn write_victory_body(dst: &mut [u8], src: &[u8]) {
     let n = (src.len().min(dst.len().saturating_sub(16)) / 16) * 16;
     dst[..n].copy_from_slice(&src[..n]);
@@ -141,7 +147,7 @@ fn write_victory_body(dst: &mut [u8], src: &[u8]) {
         *b = 0;
     }
     if dst.len() >= n + 16 {
-        dst[n + 1] = 0x07;
+        dst[n + 1] = 0x01;
     }
 }
 

@@ -426,12 +426,23 @@ pub fn rebuild_base_slot(
     }
     let ar = me_archive::parse(slot).context("parse base ME archive")?;
     let n = ar.len();
+    // Entries 4/5 back the WEAK victory actions (0x15/0x16), which the
+    // results sequencer LOOPS - retail authors them as near-static
+    // breathing so the loop is invisible. A looping victory flourish
+    // visibly replays, and a frozen final pose reads as the animation
+    // skipping to its end - so those entries carry the sibling's IDLE
+    // clip instead: authored as a seamless cycle, it survives the loop
+    // the way retail's breathing does.
+    let idle = monster_archive::idle_animation(archive_entry, source_id)
+        .context("weak-entry idle clip")?
+        .ok_or_else(|| anyhow::anyhow!("monster id {source_id}: no idle for weak entries"))?;
     let mut bodies: Vec<Vec<u8>> = Vec::with_capacity(n);
     for i in 0..n {
         let retail = ar.entry(i).with_context(|| format!("decode entry {i}"))?;
         let (parts, frames) = (retail[0] as usize, retail[1] as usize);
-        let mut frames_out = retarget_clip(
-            clip,
+        let source = if (4..=5).contains(&i) { &idle } else { clip };
+        let frames_out = retarget_clip(
+            source,
             rig,
             player_file,
             archive_entry,
@@ -439,18 +450,6 @@ pub fn rebuild_base_slot(
             parts,
             frames,
         )?;
-        // Entries 4/5 back the WEAK victory actions (0x15/0x16), which
-        // the results sequencer LOOPS - retail authors them as
-        // near-static breathing so the loop is invisible. A looping
-        // flourish visibly replays, so those entries hold the clip's
-        // final pose instead.
-        if (4..=5).contains(&i)
-            && let Some(last) = frames_out.last().cloned()
-        {
-            for row in frames_out.iter_mut() {
-                *row = last.clone();
-            }
-        }
         let mut decoded = Vec::with_capacity(2 + parts * frames * 9);
         decoded.push(parts as u8);
         decoded.push(frames as u8);

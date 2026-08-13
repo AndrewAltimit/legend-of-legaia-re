@@ -352,18 +352,16 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
                 assert_eq!(r[1], p[1], "slot {slot} entry {i} frame count");
                 assert_ne!(r, p, "slot {slot} entry {i} still retail frames");
                 if (4..=5).contains(&i) {
-                    // The weak-victory entries loop in retail, so the
-                    // rebuild holds one constant pose there.
+                    // The weak-victory entries loop in retail; the
+                    // rebuild carries the sibling's IDLE cycle there -
+                    // animated (not a frozen hold), and cycle-closed
+                    // enough that the loop seam stays subtle.
                     let (parts, frames) = (p[0] as usize, p[1] as usize);
                     let stride = parts * 9;
                     let first = &p[2..2 + stride];
-                    for f in 1..frames {
-                        assert_eq!(
-                            &p[2 + f * stride..2 + (f + 1) * stride],
-                            first,
-                            "slot {slot} entry {i} frame {f} not a hold"
-                        );
-                    }
+                    let animated =
+                        (1..frames).any(|f| &p[2 + f * stride..2 + (f + 1) * stride] != first);
+                    assert!(animated, "slot {slot} entry {i} is a frozen hold");
                 }
             }
         }
@@ -446,8 +444,10 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
                         "victory clip {clip:#x} VAG {i} still retail"
                     );
                     // On the true grid: every block flag legal, and the
-                    // body ends with retail's silent self-looping
-                    // terminal (flags 0x07) followed only by zeros.
+                    // body ends with the END-mute terminal (flags 0x01,
+                    // envelope release) followed only by zeros - NOT
+                    // retail's self-looping 0x07, which leaves the
+                    // voice alive for the field load to corrupt.
                     let body = &p_snd[span.clone()];
                     let mut terminal = None;
                     for (bi, block) in body.chunks_exact(16).enumerate() {
@@ -456,7 +456,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
                             "victory clip {clip:#x} VAG {i} block {bi} bad flags {:#x}",
                             block[1]
                         );
-                        if block[1] == 0x07 && terminal.is_none() {
+                        if block[1] == 0x01 && terminal.is_none() {
                             terminal = Some(bi);
                         }
                     }
