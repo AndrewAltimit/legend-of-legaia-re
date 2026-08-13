@@ -259,6 +259,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         "XA/XA28.XA",
         "XA/XA29.XA",
         "XA/XA21.XA",
+        "XA/XA30.XA",
     ] {
         let (lba, size) = legaia_iso::iso9660::find_path_in_image(&patched, name).expect(name);
         let sectors = (size as usize).div_ceil(2048);

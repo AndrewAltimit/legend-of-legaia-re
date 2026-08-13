@@ -1375,8 +1375,8 @@ samples (single-program VABs inside `monster.snd`) splice over them in
 place - cue tracks, routing and residency all stay retail. The replaced
 characters' **XA voice lines** are silenced rather than left wrong-voiced:
 the per-character arts-shout banks (`XA2`/`XA4`/`XA6`) whole; the
-party's three channels (0/4/6) of the shared normal-swing grunt bank
-`XA30.XA` (see `docs/subsystems/battle-action.md` § Battle voice cues);
+party's channel groups (0-3 / 4-5 / 6-9, anchored on the traced swing
+channels 0/4/6) of the shared short-vocalization bank `XA30.XA` (see `docs/subsystems/battle-action.md` § Battle voice cues);
 the battle-event bark bank `XA21.XA` whole (the sound-command dispatch
 in `FUN_8004E568` resolves the char-keyed victory ids there - Vahn's
 random pair `0x1A2`/`0x1A3` on channels 2/3, siblings on 4/6/7; the

@@ -128,7 +128,12 @@ pub fn fill_hero_xa_voices(
         ["XA/XA3.XA", "XA/XA28.XA"],
         ["XA/XA5.XA", "XA/XA29.XA"],
     ];
-    let swing_chan = [0u8, 4, 6];
+    // XA30 is a ten-channel short-vocalization bank; the traced swing
+    // site anchors Vahn at 0, Noa at 4, Gala at 6, and the remaining
+    // channels hold the same speakers' other short vocals (the weak
+    // "barely won" pant among them - it survived every other bank's
+    // mute). Grouped around the anchors.
+    let xa30_chans: [&[u8]; 3] = [&[0u8, 1, 2, 3], &[4, 5], &[6, 7, 8, 9]];
     let victory_chans: [[u8; 2]; 3] = [[2, 3], [4, 5], [6, 7]];
 
     for (slot, sibling) in siblings.iter().enumerate() {
@@ -153,15 +158,17 @@ pub fn fill_hero_xa_voices(
                 }
             }
         }
-        // Swing grunt.
-        if write_grunt(
-            patcher,
-            "XA/XA30.XA",
-            swing_chan[slot],
-            &shortest,
-            &mut notes,
-        )? {
-            filled += 1;
+        // XA30 short vocals: the anchor channel takes the shortest
+        // grunt (the swing), the rest cycle.
+        for (i, &chan) in xa30_chans[slot].iter().enumerate() {
+            let pcm = if i == 0 {
+                &shortest
+            } else {
+                &grunts[i % grunts.len()]
+            };
+            if write_grunt(patcher, "XA/XA30.XA", chan, pcm, &mut notes)? {
+                filled += 1;
+            }
         }
         // Victory barks.
         for &chan in &victory_chans[slot] {
