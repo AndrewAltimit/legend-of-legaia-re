@@ -349,7 +349,7 @@ pub fn rebuild_base_slot(
     for i in 0..n {
         let retail = ar.entry(i).with_context(|| format!("decode entry {i}"))?;
         let (parts, frames) = (retail[0] as usize, retail[1] as usize);
-        let frames_out = retarget_clip(
+        let mut frames_out = retarget_clip(
             clip,
             rig,
             player_file,
@@ -358,6 +358,18 @@ pub fn rebuild_base_slot(
             parts,
             frames,
         )?;
+        // Entries 4/5 back the WEAK victory actions (0x15/0x16), which
+        // the results sequencer LOOPS - retail authors them as
+        // near-static breathing so the loop is invisible. A looping
+        // flourish visibly replays, so those entries hold the clip's
+        // final pose instead.
+        if (4..=5).contains(&i)
+            && let Some(last) = frames_out.last().cloned()
+        {
+            for row in frames_out.iter_mut() {
+                *row = last.clone();
+            }
+        }
         let mut decoded = Vec::with_capacity(2 + parts * frames * 9);
         decoded.push(parts as u8);
         decoded.push(frames as u8);

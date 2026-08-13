@@ -1519,6 +1519,7 @@ dependencies = [
  "legaia-tim",
  "legaia-tmd",
  "legaia-vab",
+ "legaia-xa",
  "libc",
  "serde",
  "serde_yaml",

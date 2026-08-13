@@ -400,6 +400,16 @@ pub fn apply_delilas_party(
             .context("fill hero XA voice slots with sibling grunts")?;
         report.notes.extend(notes);
 
+        // The FIFTH voice tier, and the one every XA sweep is blind to:
+        // the ordinary victory pose's voice is an SPU sample streamed
+        // from `monster.snd`'s own sector TOC (`FUN_8003e104`; pose
+        // action -> clip byte via the SCUS tables at 0x800788A0 /
+        // 0x80078867). Replace the heroes' clip bands with the mapped
+        // siblings' grunts - verbatim SPU-ADPCM, same file.
+        let notes = crate::delilas_xa_voice::fill_hero_victory_clips(patcher, mapping)
+            .context("fill hero victory-voice clips in monster.snd")?;
+        report.notes.extend(notes);
+
         // The FOURTH voice tier: the staged-event voice-id space (id >=
         // 0x100 through `FUN_8004FCC8`; the anim materialiser
         // `FUN_8004AD80` picks the id from an inline char-keyed table -

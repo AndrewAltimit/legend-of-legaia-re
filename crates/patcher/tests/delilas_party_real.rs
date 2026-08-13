@@ -349,6 +349,48 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
                 assert_eq!(r[0], p[0], "slot {slot} entry {i} part count");
                 assert_eq!(r[1], p[1], "slot {slot} entry {i} frame count");
                 assert_ne!(r, p, "slot {slot} entry {i} still retail frames");
+                if (4..=5).contains(&i) {
+                    // The weak-victory entries loop in retail, so the
+                    // rebuild holds one constant pose there.
+                    let (parts, frames) = (p[0] as usize, p[1] as usize);
+                    let stride = parts * 9;
+                    let first = &p[2..2 + stride];
+                    for f in 1..frames {
+                        assert_eq!(
+                            &p[2 + f * stride..2 + (f + 1) * stride],
+                            first,
+                            "slot {slot} entry {i} frame {f} not a hold"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // Victory-voice clips: the heroes' bands in monster.snd's sector
+    // TOC now carry the siblings' SPU-ADPCM grunts - every clip differs
+    // from retail and its head still decodes as SPU-ADPCM with energy.
+    {
+        use legaia_patcher::delilas_voice::MONSTER_SND_ENTRY;
+        let retail = DiscPatcher::open(original.clone()).expect("open retail");
+        let r_snd = retail.read_entry(MONSTER_SND_ENTRY).expect("monster.snd");
+        let p_snd = reopened.read_entry(MONSTER_SND_ENTRY).expect("monster.snd");
+        let rd32 =
+            |b: &[u8], o: usize| u32::from_le_bytes(b[o..o + 4].try_into().unwrap()) as usize;
+        assert_eq!(rd32(&p_snd, 4), rd32(&r_snd, 4), "clip TOC count changed");
+        for (lo, hi) in [(0xB8usize, 0xBCusize), (0xC4, 0xCB), (0xBD, 0xC3)] {
+            for clip in lo..=hi {
+                let s = rd32(&p_snd, (clip + 2) * 4) * 2048;
+                let e = rd32(&p_snd, (clip + 3) * 4) * 2048;
+                assert_ne!(
+                    &r_snd[s..e],
+                    &p_snd[s..e],
+                    "victory clip {clip:#x} still retail"
+                );
+                let pcm = legaia_vab::decode_vag_aligned(&p_snd[s..s + 8192.min(e - s)])
+                    .expect("clip head decodes");
+                let peak = pcm.iter().map(|&v| (v as i32).abs()).max().unwrap_or(0);
+                assert!(peak > 500, "victory clip {clip:#x} head is silent");
             }
         }
     }

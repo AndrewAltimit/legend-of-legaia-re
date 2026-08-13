@@ -1368,7 +1368,12 @@ retargeted onto the player rig with the bake's per-part conjugation,
 nearest-frame resampled to each retail entry's frame count, and
 re-encoded with the retail channel-delta codec (encoder
 `winpose::encode_channel_delta`, round-trip self-checked through the
-retail decoder on every apply). Battle **voices** follow as well
+retail decoder on every apply). Entries 4/5 - the weak-victory actions
+(`0x15`/`0x16`), which the results sequencer **loops** (retail authors
+them as near-static breathing) - hold the clip's final pose instead, so
+the loop reads as a held pose rather than a replaying flourish (see
+[`audio.md` § Hero victory voices](../subsystems/audio.md#hero-victory-voices---the-tail-clips-of-monstersnd)
+for the action/tier mechanism). Battle **voices** follow as well
 (`delilas_voice`): the party's reaction grunts are SPU one-shots out of
 the always-resident battle bank's programs 7/8/9, so the mapped siblings'
 samples (single-program VABs inside `monster.snd`) splice over them in
@@ -1381,8 +1386,9 @@ the battle-event bark bank `XA21.XA` whole (the sound-command dispatch
 in `FUN_8004E568` resolves the char-keyed victory ids there - Vahn's
 random pair `0x1A2`/`0x1A3` on channels 2/3, siblings on 4/6/7; the
 whole file is short bark reels), plus channel 7 of `XA20.XA` and of
-`XA22.XA` - the jukebox's outlying arms (ids `0x19F`/`0x1AF`, the
-close-call victory barks), short reels interleaved beside those files'
+`XA22.XA` - the jukebox's outlying arms (ids `0x19F`/`0x1AF`; the whole
+`gp+0x9F4`-keyed jukebox is a special-sequence path that ordinary
+victories never enter), short reels interleaved beside those files'
 music channels, which stay byte-identical. `XA12.XA` stays retail - its
 only captured battle fire is the non-voice jingle path (results music). And
 the six staged-event voice banks whole - the voice-id space (`id >= 0x100`
@@ -1398,7 +1404,15 @@ the channel's CD-XA rate and re-encode through the crate's XA-ADPCM
 encoder (`legaia_xa::encode`, mono and dual-mono-stereo 4-bit; the
 staged-event banks and victory barks ship stereo), written at each
 channel head. Arts shouts, swing grunts, staged-event lines and
-victory barks all speak with the Delilas voice.
+victory barks all speak with the Delilas voice. The **ordinary
+victory-pose voice is none of those XA tiers**: it is an SPU sample
+streamed from `monster.snd`'s own sector TOC (`FUN_8003E104`; pose
+action → clip byte via SCUS `0x800788A0` / `0x80078867` - see
+[`audio.md` § Hero victory voices](../subsystems/audio.md#hero-victory-voices---the-tail-clips-of-monstersnd)),
+so the heroes' clip bands (Vahn `0xB8..=0xBC`, Gala `0xBD..=0xC3`, Noa
+`0xC4..=0xCB`) are overwritten with the mapped siblings' grunt bodies -
+verbatim SPU-ADPCM copies out of the same file, END-flagged when
+truncated to the clip span.
 NB the old reading of XA3/XA5 as "stereo Miracle fanfares" is falsified
 - those captured fires were the heroes' voice lines through the same
 dispatcher. Still retail: menu

@@ -15,12 +15,17 @@
 //!   every channel (item use, Spirit, cut-ins, KO, victory lines);
 //! - `XA30` swing-grunt channel (0/4/6): the shortest grunt;
 //! - `XA21` victory barks (channels 2/3, 4/5, 6/7): the longest grunt;
-//! - `XA20`/`XA22` channel 7 (the close-call victory): the Vahn-slot
+//! - `XA20`/`XA22` channel 7 (special-sequence barks): the Vahn-slot
 //!   sibling's longest grunt.
 //!
 //! Stereo channels (the staged-event banks and victory barks ship
 //! stereo) take a dual-mono encode; only non-4-bit channels are skipped
 //! (none ship on the retail disc).
+//!
+//! The ORDINARY victory pose's voice is none of the above: it is an
+//! SPU sample streamed from `monster.snd` itself - see
+//! [`fill_hero_victory_clips`], which replaces those clips with the
+//! siblings' grunts (verbatim SPU-ADPCM copy, no re-encode needed).
 
 use anyhow::{Context, Result};
 
@@ -35,6 +40,115 @@ const VAG_RATE: u32 = 22050;
 
 /// Peak-normalization target (fraction of i16 full scale).
 const PEAK: f64 = 0.60;
+
+/// Hero victory-voice clip bands inside `monster.snd` (clip id ranges,
+/// inclusive), slot order Vahn / Noa / Gala. The battle results
+/// sequencer picks a pose action (`0x11..=0x18`, HP-tier table at SCUS
+/// `0x800788A0`), maps it to a voice clip byte via the SCUS table at
+/// `0x80078867 + action + char_id*8` (clip = byte - 1) and streams that
+/// clip's sectors straight out of `monster.snd`'s own sector TOC to the
+/// SPU (`FUN_8003e104`, runtime file id 0x37D = this entry). Pinned by
+/// recomp capture: a forced weak victory read exactly clip `0xC1`'s
+/// sectors at pose time. The bands cover every clip the three heroes'
+/// table rows reference plus the in-band gaps (KO/damage siblings).
+const VICTORY_CLIP_BANDS: [(usize, usize); 3] = [(0xB8, 0xBC), (0xC4, 0xCB), (0xBD, 0xC3)];
+
+/// One sibling's grunt set as RAW SPU-ADPCM byte ranges within
+/// `monster.snd` (same filter as [`sibling_grunts`]), longest first.
+fn sibling_grunt_spans(snd: &[u8], monster_id: u16) -> Result<Vec<std::ops::Range<usize>>> {
+    let off = monster_vab_offset(snd, monster_id)?;
+    let vab = legaia_vab::parse(snd, off).context("parse sibling VAB")?;
+    let page = vab
+        .tones
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("sibling VAB has no tone page"))?;
+    let mut seen = std::collections::BTreeSet::new();
+    let mut out = Vec::new();
+    for tone in page {
+        let vag = tone.vag as usize;
+        if tone.vol == 0 || vag == 0 || vag > vab.vag_samples.len() || !seen.insert(vag) {
+            continue;
+        }
+        let span = vab.vag_samples[vag - 1];
+        if span.size > 512 {
+            out.push(span.byte_offset..span.byte_offset + span.size);
+        }
+    }
+    if out.is_empty() {
+        anyhow::bail!("monster id {monster_id}: no usable grunt spans");
+    }
+    out.sort_by_key(|r| std::cmp::Reverse(r.len()));
+    Ok(out)
+}
+
+/// Replace the heroes' victory-voice clips in `monster.snd` with the
+/// mapped siblings' own grunts. The clips are plain SPU-ADPCM bodies,
+/// so the sibling VAG bytes copy verbatim (already resident in the same
+/// file); a truncated copy gets its final 16-byte block END-flagged and
+/// the rest of the clip span zero-fills (decodes silent, and playback
+/// stops at the END flag anyway).
+pub fn fill_hero_victory_clips(
+    patcher: &mut DiscPatcher,
+    mapping: &PartyMapping,
+) -> Result<Vec<String>> {
+    let mut notes = Vec::new();
+    let snd = patcher
+        .read_entry(MONSTER_SND_ENTRY)
+        .context("read monster.snd")?;
+    let rd32 = |b: &[u8], o: usize| -> Result<usize> {
+        Ok(u32::from_le_bytes(
+            b.get(o..o + 4)
+                .ok_or_else(|| anyhow::anyhow!("monster.snd TOC truncated"))?
+                .try_into()
+                .unwrap(),
+        ) as usize)
+    };
+    let count = rd32(&snd, 4)?;
+    if count < 0xCE {
+        anyhow::bail!("monster.snd TOC has {count} clips, expected >= 0xCE");
+    }
+    let clip_span = |c: usize| -> Result<std::ops::Range<usize>> {
+        let s = rd32(&snd, (c + 2) * 4)? * 2048;
+        let e = rd32(&snd, (c + 3) * 4)? * 2048;
+        if s >= e || e > snd.len() {
+            anyhow::bail!("clip {c:#x}: bad span {s:#x}..{e:#x}");
+        }
+        Ok(s..e)
+    };
+
+    let mut patched = snd.clone();
+    let siblings = [mapping.vahn, mapping.noa, mapping.gala];
+    for (slot, sibling) in siblings.iter().enumerate() {
+        let grunts = sibling_grunt_spans(&snd, sibling.monster_id())?;
+        let (lo, hi) = VICTORY_CLIP_BANDS[slot];
+        for (k, clip) in (lo..=hi).enumerate() {
+            let dst = clip_span(clip)?;
+            let src = &snd[grunts[k % grunts.len()].clone()];
+            let n = src.len().min(dst.len()) & !15;
+            let (start, end) = (dst.start, dst.end);
+            patched[start..start + n].copy_from_slice(&src[..n]);
+            if n < src.len() && n >= 16 {
+                // Truncated body: END-flag the final block so playback
+                // stops inside the span.
+                patched[start + n - 15] |= 0x01;
+            }
+            for b in &mut patched[start + n..end] {
+                *b = 0;
+            }
+        }
+        notes.push(format!(
+            "{}: victory voice clips {:#x}..={:#x} carry {}'s grunts",
+            ["Vahn", "Noa", "Gala"][slot],
+            lo,
+            hi,
+            sibling.display_name(),
+        ));
+    }
+    patcher
+        .patch_prot_entry(MONSTER_SND_ENTRY, 0, &patched)
+        .context("write monster.snd victory clips")?;
+    Ok(notes)
+}
 
 /// One sibling's grunt set, decoded and peak-normalized at `VAG_RATE`.
 fn sibling_grunts(snd: &[u8], monster_id: u16) -> Result<Vec<Vec<i16>>> {
