@@ -299,6 +299,51 @@ pub fn retarget_clip(
         })
         .collect();
 
+    // Arm-chain FK data: the baked mesh carries VAHN-proportioned arm
+    // parts (and the shoulder tuck), so uniformly radial-scaled sibling
+    // translations leave the arms off the baked torso's sockets at
+    // victory time. Per frame the arm chains re-derive their pivots by
+    // forward kinematics instead: shoulder = the baked torso's socket
+    // (minus the played tuck, so the tucked near-edge - not the pivot -
+    // meets the socket), elbow/hand = along the baked parts' own bone
+    // vectors. At destination-rest rotations this reduces exactly to
+    // the player's retail pivots.
+    struct ArmFk {
+        chain: [usize; 3],
+        socket_local: [f32; 3],
+        tuck_local: [f32; 3],
+        bv_local: [[f32; 3]; 2],
+    }
+    let torso_ch = rig.channel_for_canonical[1] as usize;
+    let pb_torso = pivot_bake_params(&src_frames[1], &dst_frames[1], radial);
+    let md_t = rot_matrix(&dst_rest[torso_ch]);
+    let arm_fk: Vec<ArmFk> = [[3usize, 4, 5], [6usize, 7, 8]]
+        .iter()
+        .map(|&chain| {
+            let socket = bake_point_pivot(
+                src_pivots[chain[0]],
+                src_pivots[1],
+                dst_pivots[1],
+                &pb_torso,
+            );
+            let ch0 = rig.channel_for_canonical[chain[0]] as usize;
+            let md0 = rot_matrix(&dst_rest[ch0]);
+            let bv = |c: usize| {
+                let chp = rig.channel_for_canonical[c] as usize;
+                apply_transposed(
+                    &rot_matrix(&dst_rest[chp]),
+                    vsub(dst_pivots[c + 1], dst_pivots[c]),
+                )
+            };
+            ArmFk {
+                chain,
+                socket_local: apply_transposed(&md_t, vsub(socket, dst_pivots[1])),
+                tuck_local: apply_transposed(&md0, vsub(socket, dst_pivots[chain[0]])),
+                bv_local: [bv(chain[0]), bv(chain[1])],
+            }
+        })
+        .collect();
+
     let n_src = clip.frames.len();
     let mut out = Vec::with_capacity(frame_count);
     for f in 0..frame_count {
@@ -321,6 +366,37 @@ pub fn retarget_clip(
                 ry,
                 rz,
             };
+        }
+        if torso_ch < part_count {
+            let rt = rot_matrix(&row[torso_ch]);
+            let tw = [
+                row[torso_ch].tx as f32,
+                row[torso_ch].ty as f32,
+                row[torso_ch].tz as f32,
+            ];
+            for fk in &arm_fk {
+                let set = |p: &mut PartPose, w: [f32; 3]| {
+                    p.tx = w[0].round().clamp(-2048.0, 2047.0) as i16;
+                    p.ty = w[1].round().clamp(-2048.0, 2047.0) as i16;
+                    p.tz = w[2].round().clamp(-2048.0, 2047.0) as i16;
+                };
+                let chs = fk.chain.map(|c| rig.channel_for_canonical[c] as usize);
+                if chs.iter().any(|&ch| ch >= part_count) {
+                    continue;
+                }
+                let s = apply(&rt, fk.socket_local);
+                let socket = [s[0] + tw[0], s[1] + tw[1], s[2] + tw[2]];
+                let r0 = rot_matrix(&row[chs[0]]);
+                let tk = apply(&r0, fk.tuck_local);
+                let mut pos = [socket[0] - tk[0], socket[1] - tk[1], socket[2] - tk[2]];
+                set(&mut row[chs[0]], pos);
+                let b0 = apply(&r0, fk.bv_local[0]);
+                pos = [pos[0] + b0[0], pos[1] + b0[1], pos[2] + b0[2]];
+                set(&mut row[chs[1]], pos);
+                let b1 = apply(&rot_matrix(&row[chs[1]]), fk.bv_local[1]);
+                pos = [pos[0] + b1[0], pos[1] + b1[1], pos[2] + b1[2]];
+                set(&mut row[chs[2]], pos);
+            }
         }
         if let Some(hair) = rig.hair_channel {
             let head_ch = rig.channel_for_canonical[0] as usize;

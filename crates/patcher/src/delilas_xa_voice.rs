@@ -10,10 +10,12 @@
 //! 2 = Gala), grunts cycled per channel so different cues pick
 //! different vocalizations:
 //!
-//! - arts-shout bank (`XA2`/`XA4`/`XA6`): every channel;
+//! - arts-shout bank (`XA2`/`XA4`/`XA6`): every channel, cycling the
+//!   sibling's attack-voice pool ([`art_voice_vags`]);
 //! - staged-event banks (`XA1`+`XA27` / `XA3`+`XA28` / `XA5`+`XA29`):
 //!   every channel (item use, Spirit, cut-ins, KO, victory lines);
-//! - `XA30` swing-grunt channel (0/4/6): the shortest grunt;
+//! - `XA30` swing-grunt channel (0/4/6): the sibling's swing pick
+//!   ([`swing_vag_pick`], default shortest);
 //! - `XA21` victory barks (channels 2/3, 4/5, 6/7): the longest grunt;
 //! - `XA20`/`XA22` channel 7 (special-sequence barks): the Vahn-slot
 //!   sibling's longest grunt.
@@ -245,9 +247,17 @@ pub fn fill_hero_victory_clips(
     Ok(notes)
 }
 
-/// One sibling's grunt set, decoded and peak-normalized, each paired
-/// with the playback rate its own tone implies (see [`tone_rate`]).
-fn sibling_grunts(snd: &[u8], monster_id: u16) -> Result<Vec<(Vec<i16>, u32)>> {
+/// One decoded sibling voice sample: its 1-based vag id in the bank,
+/// peak-normalized PCM, and the playback rate its tone implies
+/// (see [`tone_rate`]).
+struct Grunt {
+    vag: usize,
+    pcm: Vec<i16>,
+    rate: u32,
+}
+
+/// One sibling's grunt set, in bank tone order.
+fn sibling_grunts(snd: &[u8], monster_id: u16) -> Result<Vec<Grunt>> {
     let off = monster_vab_offset(snd, monster_id)?;
     let vab = legaia_vab::parse(snd, off).context("parse sibling VAB")?;
     let page = vab
@@ -276,7 +286,11 @@ fn sibling_grunts(snd: &[u8], monster_id: u16) -> Result<Vec<(Vec<i16>, u32)>> {
             }
         }
         if pcm.len() > 256 {
-            out.push((pcm, tone_rate(tone.center, tone.shift, tone.min)));
+            out.push(Grunt {
+                vag,
+                pcm,
+                rate: tone_rate(tone.center, tone.shift, tone.min),
+            });
         }
     }
     if out.is_empty() {
@@ -292,7 +306,7 @@ fn write_grunt(
     patcher: &mut DiscPatcher,
     file: &str,
     chan: u8,
-    grunt: &(Vec<i16>, u32),
+    grunt: &Grunt,
     notes: &mut Vec<String>,
 ) -> Result<bool> {
     let coding = patcher.xa_channel_coding(file, chan)?;
@@ -308,7 +322,7 @@ fn write_grunt(
     } else {
         37800
     };
-    let resampled = legaia_xa::encode::resample_linear(&grunt.0, grunt.1, rate);
+    let resampled = legaia_xa::encode::resample_linear(&grunt.pcm, grunt.rate, rate);
     let groups = if stereo {
         // Stereo bank, mono source: dual-mono.
         legaia_xa::encode::encode_stereo_4bit_dualmono(&resampled)
@@ -350,42 +364,53 @@ pub fn fill_hero_xa_voices(
         let grunts = sibling_grunts(&snd, sibling.monster_id())?;
         // Duration in seconds, not sample count - the pitch families mix
         // 44100 and ~17-22 kHz recordings.
-        let secs = |g: &(Vec<i16>, u32)| g.0.len() as f64 / g.1 as f64;
+        let secs = |g: &Grunt| g.pcm.len() as f64 / g.rate as f64;
         let longest = grunts
             .iter()
             .max_by(|a, b| secs(a).total_cmp(&secs(b)))
-            .expect("non-empty")
-            .clone();
+            .expect("non-empty");
         let shortest = grunts
             .iter()
             .min_by(|a, b| secs(a).total_cmp(&secs(b)))
-            .expect("non-empty")
-            .clone();
+            .expect("non-empty");
+        // The pool the ATTACK-side cues cycle over: the sibling's
+        // by-ear move-voice picks where known (a hit squeal cycled
+        // into an arts-shout channel plays "she got damaged" on her
+        // own art), the full bank otherwise.
+        let by_vag = |id: usize| grunts.iter().find(|g| g.vag == id);
+        let pool: Vec<&Grunt> = match art_voice_vags(*sibling) {
+            Some(ids) => ids.iter().filter_map(|&id| by_vag(id)).collect(),
+            None => grunts.iter().collect(),
+        };
+        let pool = if pool.is_empty() {
+            grunts.iter().collect::<Vec<_>>()
+        } else {
+            pool
+        };
+        let swing = swing_vag_pick(*sibling)
+            .and_then(by_vag)
+            .unwrap_or(shortest);
         let mut filled = 0usize;
 
-        // Arts shouts + staged-event banks: every channel, grunts cycled.
+        // Arts shouts + staged-event banks: every channel, pool cycled.
         for file in std::iter::once(shout_banks[slot]).chain(staged_banks[slot]) {
             for (i, chan) in patcher.xa_channels(file)?.into_iter().enumerate() {
-                if write_grunt(patcher, file, chan, &grunts[i % grunts.len()], &mut notes)? {
+                if write_grunt(patcher, file, chan, pool[i % pool.len()], &mut notes)? {
                     filled += 1;
                 }
             }
         }
-        // XA30 short vocals: the anchor channel takes the shortest
-        // grunt (the swing), the rest cycle.
+        // XA30 short vocals: the anchor channel takes the swing grunt
+        // (the per-swing cue arts chain from), the rest cycle the pool.
         for (i, &chan) in xa30_chans[slot].iter().enumerate() {
-            let pcm = if i == 0 {
-                &shortest
-            } else {
-                &grunts[i % grunts.len()]
-            };
+            let pcm = if i == 0 { swing } else { pool[i % pool.len()] };
             if write_grunt(patcher, "XA/XA30.XA", chan, pcm, &mut notes)? {
                 filled += 1;
             }
         }
         // Victory barks.
         for &chan in &victory_chans[slot] {
-            if write_grunt(patcher, "XA/XA21.XA", chan, &longest, &mut notes)? {
+            if write_grunt(patcher, "XA/XA21.XA", chan, longest, &mut notes)? {
                 filled += 1;
             }
         }
@@ -403,10 +428,39 @@ pub fn fill_hero_xa_voices(
     let lead = sibling_grunts(&snd, mapping.vahn.monster_id())?;
     let lead_longest = lead
         .iter()
-        .max_by(|a, b| (a.0.len() as f64 / a.1 as f64).total_cmp(&(b.0.len() as f64 / b.1 as f64)))
+        .max_by(|a, b| {
+            (a.pcm.len() as f64 / a.rate as f64).total_cmp(&(b.pcm.len() as f64 / b.rate as f64))
+        })
         .expect("non-empty");
     for file in ["XA/XA20.XA", "XA/XA22.XA"] {
         write_grunt(patcher, file, 7, lead_longest, &mut notes)?;
     }
     Ok(notes)
+}
+
+/// By-ear attack-voice vag ids per sibling (bank order, cycled across
+/// the arts-shout / staged-event channels). Lu's pool leads with her
+/// long special-attack line (vag 3) and her effort barks, and EXCLUDES
+/// vag 6 - the short squeal that reads as her damage cry (cycled into
+/// an art's shout channel it played "she got hit" at the start of her
+/// own somersault). `None` = no ear-confirmed labels yet; cycle the
+/// whole bank.
+fn art_voice_vags(sibling: crate::delilas_party::Sibling) -> Option<&'static [usize]> {
+    use crate::delilas_party::Sibling;
+    match sibling {
+        Sibling::Lu => Some(&[3, 4, 5, 1, 2]),
+        Sibling::Gi | Sibling::Che => None,
+    }
+}
+
+/// The vag carried by the XA30 swing-anchor channel (fires on every
+/// ordinary attack swing, so an arts chain opens with it). Default is
+/// the sibling's shortest grunt; Lu's shortest is her damage squeal,
+/// so she swings with an effort bark instead.
+fn swing_vag_pick(sibling: crate::delilas_party::Sibling) -> Option<usize> {
+    use crate::delilas_party::Sibling;
+    match sibling {
+        Sibling::Lu => Some(4),
+        Sibling::Gi | Sibling::Che => None,
+    }
 }
