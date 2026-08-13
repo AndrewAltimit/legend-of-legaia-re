@@ -730,6 +730,78 @@ fn playerize_scaled(
         baked.push(o);
     }
 
+    // Buried-head lift: `seat_terminal_axial` seats the head's near
+    // edge, but a sibling whose head geometry extends far along the
+    // axis (Gi's tall helmet) can end with its centroid BELOW the
+    // torso top - the face sinks into the chest and the whole figure
+    // reads short. When the baked head's world centroid at rest is
+    // below the torso's top, lift it until its margin matches the
+    // replaced head's. Raise-only: heads that clear the torso are
+    // left as baked.
+    {
+        let head_ch = rig.channel_for_canonical[0] as usize;
+        let centroid_y = |o: &ModelObject, p: &PartPose| -> f32 {
+            let m = rot_matrix(p);
+            let mut y = 0.0f32;
+            for v in &o.vertices {
+                y += apply(&m, [v[0] as f32, v[1] as f32, v[2] as f32])[1] + p.ty as f32;
+            }
+            y / o.vertices.len().max(1) as f32
+        };
+        let torso_ch = rig.channel_for_canonical[1] as usize;
+        let torso_top = {
+            let p = &dst_rest[torso_ch];
+            let m = rot_matrix(p);
+            baked[1]
+                .vertices
+                .iter()
+                .map(|v| apply(&m, [v[0] as f32, v[1] as f32, v[2] as f32])[1] + p.ty as f32)
+                .fold(f32::MAX, f32::min)
+        };
+        let baked_c = centroid_y(&baked[0], &dst_rest[head_ch]);
+        let host_margin = dst_model
+            .get(head_ch)
+            .map(|o| torso_top - centroid_y(o, &dst_rest[head_ch]))
+            .unwrap_or(15.0)
+            .max(6.0);
+        let margin = torso_top - baked_c;
+        if margin < 0.0 {
+            let dy = -(host_margin - margin); // world up = -y
+            let ld = apply_transposed(&rot_matrix(&dst_rest[head_ch]), [0.0, dy, 0.0]);
+            for v in baked[0].vertices.iter_mut() {
+                *v = [
+                    round_coord(v[0] as f32 + ld[0])?,
+                    round_coord(v[1] as f32 + ld[1])?,
+                    round_coord(v[2] as f32 + ld[2])?,
+                ];
+            }
+        }
+    }
+
+    // Hip-clearance taper: shrink each thigh's radial extent near the
+    // hip (12% at the pivot, fading to zero 60% down the bone) so the
+    // thigh's upper rim stops cutting through the pelvis skirt when the
+    // host's clips swing the leg (Lu's thigh clipped through her rear).
+    for c in [9usize, 12usize] {
+        let Some(len) = dst_frames[c].len.filter(|l| *l >= 2.0) else {
+            continue;
+        };
+        let ch = rig.channel_for_canonical[c] as usize;
+        let md = rot_matrix(&dst_rest[ch]);
+        let ax = apply_transposed(&md, dst_frames[c].axes[0]);
+        for v in baked[c].vertices.iter_mut() {
+            let p = [v[0] as f32, v[1] as f32, v[2] as f32];
+            let t = p[0] * ax[0] + p[1] * ax[1] + p[2] * ax[2];
+            let w = (1.0 - t / (0.6 * len)).clamp(0.0, 1.0) * 0.12;
+            let perp = [p[0] - ax[0] * t, p[1] - ax[1] * t, p[2] - ax[2] * t];
+            *v = [
+                round_coord(p[0] - perp[0] * w)?,
+                round_coord(p[1] - perp[1] * w)?,
+                round_coord(p[2] - perp[2] * w)?,
+            ];
+        }
+    }
+
     // Seat the upper arms on the sibling's OWN shoulder sockets. The
     // arms hang at the PLAYER's shoulder pivots (the clips' channel
     // translations dictate that), but the baked torso's socket surface

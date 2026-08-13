@@ -168,13 +168,18 @@ pub(crate) fn normalize_battle_rest_feet(
     };
     let src_frames = bone_frames(&src_pivots, &CANONICAL_CHILD, &CANONICAL_PARENT);
     let dst_frames = bone_frames(&dst_pivots, &CANONICAL_CHILD, &CANONICAL_PARENT);
-    for foot in [11usize, 14usize] {
-        let a = frame_align(&src_frames[foot], &dst_frames[foot]);
-        let m = mmul(&transpose(&a), &rot_matrix(&src_rest[foot]));
+    // Feet AND hands: both terminal, both drag the whole stance delta
+    // through their parent's frame alignment. A foot pitched its toe up
+    // (Lu); a hand swung Che's club into space above his shoulder - his
+    // hand part carries the weapon, and the forearm alignment rotated
+    // its authored orientation ~wholesale.
+    for term in [5usize, 8, 11, 14] {
+        let a = frame_align(&src_frames[term], &dst_frames[term]);
+        let m = mmul(&transpose(&a), &rot_matrix(&src_rest[term]));
         let (rx, ry, rz) = to_euler(&m);
-        src_rest[foot].rx = rx;
-        src_rest[foot].ry = ry;
-        src_rest[foot].rz = rz;
+        src_rest[term].rx = rx;
+        src_rest[term].ry = ry;
+        src_rest[term].rz = rz;
     }
 }
 
