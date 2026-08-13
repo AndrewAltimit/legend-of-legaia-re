@@ -125,6 +125,59 @@ fn apply_transposed(m: &[[f32; 3]; 3], v: [f32; 3]) -> [f32; 3] {
     ]
 }
 
+/// Keep a battle-bake source rest's FEET at their authored WORLD
+/// orientation through the stance realignment. A terminal foot rides
+/// its shin's bone frame, and the shin's frame alignment encodes the
+/// STANCE DIFFERENCE between the monster idle and the player idle (a
+/// near-vertical sibling shin re-aims onto the player's angled
+/// fighting-stance shin) - so the foot, dragged rigidly along, pitches
+/// by that whole delta (Lu's flat front foot played with its toe ~50
+/// units up; her authored raise is ~5). Pre-rotating the foot channel
+/// by the alignment's INVERSE cancels the drag: at player idle the
+/// baked foot plays back at exactly its authored world orientation.
+/// Pivots (and therefore the frames themselves) are untouched.
+///
+/// Must be applied to the SAME rest by both the mesh bake
+/// (`playerize`) and the win-pose conversion (`winpose`): the
+/// conversion's conjugation cancels the source rest exactly, so
+/// converted streams keep their authored look either way.
+pub(crate) fn normalize_battle_rest_feet(
+    src_rest: &mut [PartPose],
+    dst_rest: &[PartPose],
+    rig: &PlayerRig,
+) {
+    use winpose::{mmul, to_euler, transpose};
+    if src_rest.len() < CANONICAL_PARTS {
+        return;
+    }
+    let pivot_of = |p: &PartPose| [p.tx as f32, p.ty as f32, p.tz as f32];
+    let src_pivots: Vec<[f32; 3]> = src_rest
+        .iter()
+        .take(CANONICAL_PARTS)
+        .map(pivot_of)
+        .collect();
+    let Some(dst_pivots) = (0..CANONICAL_PARTS)
+        .map(|c| {
+            dst_rest
+                .get(rig.channel_for_canonical[c] as usize)
+                .map(pivot_of)
+        })
+        .collect::<Option<Vec<[f32; 3]>>>()
+    else {
+        return;
+    };
+    let src_frames = bone_frames(&src_pivots, &CANONICAL_CHILD, &CANONICAL_PARENT);
+    let dst_frames = bone_frames(&dst_pivots, &CANONICAL_CHILD, &CANONICAL_PARENT);
+    for foot in [11usize, 14usize] {
+        let a = frame_align(&src_frames[foot], &dst_frames[foot]);
+        let m = mmul(&transpose(&a), &rot_matrix(&src_rest[foot]));
+        let (rx, ry, rz) = to_euler(&m);
+        src_rest[foot].rx = rx;
+        src_rest[foot].ry = ry;
+        src_rest[foot].rz = rz;
+    }
+}
+
 fn round_coord(v: f32) -> Result<i16> {
     let r = v.round();
     if !(i16::MIN as f32..=i16::MAX as f32).contains(&r) {

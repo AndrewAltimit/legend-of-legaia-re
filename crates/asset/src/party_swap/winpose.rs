@@ -25,7 +25,7 @@ pub fn base_slot_index(char_index: usize) -> usize {
     3 * char_index + 2
 }
 
-fn mmul(a: &[[f32; 3]; 3], b: &[[f32; 3]; 3]) -> [[f32; 3]; 3] {
+pub(crate) fn mmul(a: &[[f32; 3]; 3], b: &[[f32; 3]; 3]) -> [[f32; 3]; 3] {
     let mut m = [[0.0f32; 3]; 3];
     for (i, row) in m.iter_mut().enumerate() {
         for (j, cell) in row.iter_mut().enumerate() {
@@ -35,7 +35,7 @@ fn mmul(a: &[[f32; 3]; 3], b: &[[f32; 3]; 3]) -> [[f32; 3]; 3] {
     m
 }
 
-fn transpose(a: &[[f32; 3]; 3]) -> [[f32; 3]; 3] {
+pub(crate) fn transpose(a: &[[f32; 3]; 3]) -> [[f32; 3]; 3] {
     let mut m = [[0.0f32; 3]; 3];
     for (i, row) in m.iter_mut().enumerate() {
         for (j, cell) in row.iter_mut().enumerate() {
@@ -48,7 +48,7 @@ fn transpose(a: &[[f32; 3]; 3]) -> [[f32; 3]; 3] {
 /// Extract PSX euler angles (1/4096 turns, `R = Rz * Ry * Rx`) from a
 /// rotation matrix - the inverse of `rot_matrix`. Near gimbal lock
 /// (`|cos y| ~ 0`) the x/z split is degenerate; z folds to 0 there.
-fn to_euler(m: &[[f32; 3]; 3]) -> (u16, u16, u16) {
+pub(crate) fn to_euler(m: &[[f32; 3]; 3]) -> (u16, u16, u16) {
     let sy = (-m[2][0]).clamp(-1.0, 1.0);
     let y = sy.asin();
     let (x, z) = if y.cos().abs() > 1e-4 {
@@ -234,10 +234,11 @@ pub fn retarget_clip(
     // The same rest data the playerize bake uses.
     let src_idle = monster_archive::idle_animation(archive_entry, source_id)?
         .ok_or_else(|| anyhow::anyhow!("monster id {source_id}: no idle"))?;
-    let src_rest = src_idle
+    let mut src_rest = src_idle
         .frames
         .first()
-        .ok_or_else(|| anyhow::anyhow!("monster idle empty"))?;
+        .ok_or_else(|| anyhow::anyhow!("monster idle empty"))?
+        .clone();
     let idle = battle_char_assembly::idle_battle_animation(player_file)?
         .ok_or_else(|| anyhow::anyhow!("player file has no idle"))?;
     let dst_rest = idle
@@ -245,6 +246,10 @@ pub fn retarget_clip(
         .first()
         .ok_or_else(|| anyhow::anyhow!("player idle empty"))?
         .clone();
+    // Player-shaped ankles - MUST match the playerize mesh bake's rest,
+    // or the conjugation stops cancelling and every converted pose's
+    // feet skew by the ankle delta.
+    normalize_battle_rest_feet(&mut src_rest, &dst_rest, rig);
     let pack = battle_data_pack::parse(player_file)?;
     let asm = battle_char_assembly::assemble_character(player_file, &pack, &[0; SECTION_COUNT])?;
     let dst_tmd = legaia_tmd::parse(&asm.tmd)?;

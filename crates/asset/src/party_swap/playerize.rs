@@ -652,10 +652,11 @@ fn playerize_scaled(
     let (cluts, indices, src_width) = monster_pool_texels(pool)?;
     let src_idle = monster_archive::idle_animation(archive_entry, source_id)?
         .ok_or_else(|| anyhow::anyhow!("monster id {source_id}: no idle"))?;
-    let src_rest = src_idle
+    let mut src_rest = src_idle
         .frames
         .first()
-        .ok_or_else(|| anyhow::anyhow!("monster idle empty"))?;
+        .ok_or_else(|| anyhow::anyhow!("monster idle empty"))?
+        .clone();
 
     // Player rest pose + the retail per-channel part anchors.
     let idle = battle_char_assembly::idle_battle_animation(player_file)?
@@ -665,6 +666,8 @@ fn playerize_scaled(
         .first()
         .ok_or_else(|| anyhow::anyhow!("player idle empty"))?
         .clone();
+    // Player-shaped ankles (mirrored in `winpose` - the two must agree).
+    normalize_battle_rest_feet(&mut src_rest, &dst_rest, rig);
     let asm = battle_char_assembly::assemble_character(player_file, &pack, &[0; SECTION_COUNT])?;
     let dst_tmd = legaia_tmd::parse(&asm.tmd)?;
     let dst_model = decode_model(&dst_tmd, &asm.tmd)?;

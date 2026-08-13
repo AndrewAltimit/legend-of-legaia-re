@@ -390,11 +390,16 @@ fn mirror_channel(p: &PartPose) -> PartPose {
 /// relative bend rides through the pivot bake verbatim, so the walking
 /// model limps. When the two legs' knee bends disagree badly, mirror
 /// the straighter leg's channels onto the bent one (10-part scene rig:
-/// legs at parts 6/7 and 8/9).
+/// legs at parts 6/7 and 8/9). The head channel (part 0) gets its ROLL
+/// zeroed the same way: the NPC heads are level-authored (the channel
+/// is the stance's gaze), so a lateral `rz` term is scene flair - Lu's
+/// taunt cocks her head 4.2 degrees - that would ride into every field
+/// pose.
 fn symmetrize_rest_legs(rest: &mut [PartPose]) {
     if rest.len() < FIELD_BONES {
         return;
     }
+    level_head_roll(&mut rest[0]);
     let bend_a = rel_bend_deg(&rest[6], &rest[7]);
     let bend_b = rel_bend_deg(&rest[8], &rest[9]);
     if (bend_a - bend_b).abs() < 20.0 {
@@ -403,6 +408,24 @@ fn symmetrize_rest_legs(rest: &mut [PartPose]) {
     let (from, to) = if bend_a < bend_b { (6, 8) } else { (8, 6) };
     rest[to] = mirror_channel(&rest[from]);
     rest[to + 1] = mirror_channel(&rest[from + 1]);
+}
+
+/// Zero the roll (canonical `rz`) of one rest channel, preserving pitch
+/// and yaw. Works on the MATRIX, not the raw fields: retail channels
+/// may encode a small pose as a near-180 Euler composite (Gi's head is
+/// `(2144, 2016, 2032)` = an 8-degree nod), where zeroing the raw `rz`
+/// would wreck the pose. Canonical ZYX extraction for `R = Rz*Ry*Rx`:
+/// `rz = atan2(m10, m00)`, `ry = asin(-m20)`, `rx = atan2(m21, m22)`.
+fn level_head_roll(p: &mut PartPose) {
+    let m = rot_matrix(p);
+    let to_u16 = |rad: f32| {
+        (((rad / std::f32::consts::TAU * 4096.0).round() as i32).rem_euclid(4096)) as u16
+    };
+    let rx = m[2][1].atan2(m[2][2]);
+    let ry = (-m[2][0]).clamp(-1.0, 1.0).asin();
+    p.rx = to_u16(rx);
+    p.ry = to_u16(ry);
+    p.rz = 0;
 }
 
 /// Source from the sibling's own field NPC mesh in the nilboa scene:
