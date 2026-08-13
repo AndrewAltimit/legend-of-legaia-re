@@ -1358,7 +1358,17 @@ unavailable. The rebuilt container keeps the entry's first four header
 words byte-exact - the battle loader registers them as battle-VDF
 pointers (see [`character-mesh.md` § Dual
 consumer](../formats/character-mesh.md#dual-consumer---the-battle-loader-registers-the-header-words-as-vdf-pointers)).
-Battle **voices** follow as well
+The **victory poses** follow too (`party_swap::winpose`): each
+character's eight win-pose streams (the base "ME" archive, `readef.DAT`
+slot `3*char+2` - [`battle-data-pack.md` § "ME" stream
+archives](../formats/battle-data-pack.md#me-stream-archives-readefdat))
+rebuild from the mapped sibling's own victory clip (monster action tag
+`0x22`; Che ships none, so his last `0x23` flourish stands in),
+retargeted onto the player rig with the bake's per-part conjugation,
+nearest-frame resampled to each retail entry's frame count, and
+re-encoded with the retail channel-delta codec (encoder
+`winpose::encode_channel_delta`, round-trip self-checked through the
+retail decoder on every apply). Battle **voices** follow as well
 (`delilas_voice`): the party's reaction grunts are SPU one-shots out of
 the always-resident battle bank's programs 7/8/9, so the mapped siblings'
 samples (single-program VABs inside `monster.snd`) splice over them in

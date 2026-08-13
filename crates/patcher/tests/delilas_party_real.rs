@@ -316,6 +316,29 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         }
     }
 
+    // Win poses: each character's base "ME" archive (readef slot
+    // 3*char+2) reparses with the retail entry count and frame counts,
+    // and its streams decode through the retail codec.
+    {
+        use legaia_patcher::delilas_party::READEF_ENTRY;
+        let retail = DiscPatcher::open(original.clone()).expect("open retail");
+        let r_readef = retail.read_entry_footprint(READEF_ENTRY).expect("readef");
+        let p_readef = reopened.read_entry_footprint(READEF_ENTRY).expect("readef");
+        for slot in [2usize, 5, 8] {
+            let span = slot * 0x10800..(slot + 1) * 0x10800;
+            let ra = legaia_asset::me_archive::parse(&r_readef[span.clone()]).expect("retail ME");
+            let pa = legaia_asset::me_archive::parse(&p_readef[span]).expect("patched ME");
+            assert_eq!(ra.len(), pa.len(), "slot {slot} entry count");
+            for i in 0..ra.len() {
+                let r = ra.entry(i).expect("retail entry");
+                let p = pa.entry(i).expect("patched entry");
+                assert_eq!(r[0], p[0], "slot {slot} entry {i} part count");
+                assert_eq!(r[1], p[1], "slot {slot} entry {i} frame count");
+                assert_ne!(r, p, "slot {slot} entry {i} still retail frames");
+            }
+        }
+    }
+
     // Idempotence: a second apply is a no-op and changes no bytes.
     let mut second = DiscPatcher::open(patched.clone()).expect("open patched");
     let report2 = apply_delilas_party(&mut second, &mapping).expect("re-apply");

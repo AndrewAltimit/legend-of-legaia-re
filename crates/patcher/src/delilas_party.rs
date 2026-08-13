@@ -20,7 +20,10 @@ use anyhow::{Context, Result, bail};
 
 use legaia_asset::monster_archive;
 use legaia_asset::new_game;
-use legaia_asset::party_swap::{self, PlayerRig, fieldize, playerize};
+use legaia_asset::party_swap::{self, PlayerRig, fieldize, playerize, winpose};
+
+/// PROT entry of `readef.DAT` (the battle side-band streaming slots).
+pub const READEF_ENTRY: usize = 894;
 
 use crate::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 
@@ -231,6 +234,33 @@ pub fn apply_delilas_party(
             playerize::playerize_player_file(&player_file, entry_len, rig, &archive, id)
                 .with_context(|| format!("{who} <- monster {id}"))?;
         patcher.patch_prot_entry(entry, 0, &playerized.file)?;
+
+        // Win poses: the character's eight base "ME" victory streams
+        // (readef.DAT slot 3*char+2) rebuild from the sibling's own
+        // victory clip, retargeted onto the player rig - the swapped
+        // character celebrates like the Delilas they depict. Non-fatal:
+        // a failed rebuild leaves the retail pose (with a note).
+        match winpose::victory_clip(&archive, id).and_then(|clip| {
+            let readef = patcher
+                .read_entry_footprint(READEF_ENTRY)
+                .context("read readef.DAT")?;
+            let slot_idx = winpose::base_slot_index(template_slot);
+            let off = slot_idx * winpose::READEF_SLOT;
+            let slot = readef
+                .get(off..off + winpose::READEF_SLOT)
+                .ok_or_else(|| anyhow::anyhow!("readef slot {slot_idx} out of range"))?;
+            let rebuilt = winpose::rebuild_base_slot(slot, &clip, rig, &player_file, &archive, id)?;
+            patcher.patch_prot_entry(READEF_ENTRY, off as u64, &rebuilt)?;
+            Ok(clip.action_id)
+        }) {
+            Ok(_) => report.notes.push(format!(
+                "{who}: victory poses <- {}'s own victory clip",
+                sibling.display_name()
+            )),
+            Err(e) => report
+                .notes
+                .push(format!("{who}: victory poses stay retail ({e:#})")),
+        }
 
         // New-game template name (fixed 10-byte NUL-padded field; only
         // affects new games - existing saves keep their stored names).

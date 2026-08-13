@@ -48,6 +48,7 @@ use legaia_tmd::encode::{ModelGroup, ModelObject, decode_model, encode};
 
 pub mod fieldize;
 pub mod playerize;
+pub mod winpose;
 
 /// Canonical part order of the swap = the Delilas mesh order shared by all
 /// three siblings: `[head, torso, pelvis, armA(u,f,h), armB(u,f,h),
