@@ -328,10 +328,13 @@ pub fn apply_delilas_party(
             report.notes.push(format!("field: {w}"));
         }
 
-        // Battle voices: the party grunts like the mapped siblings.
-        let notes = crate::delilas_voice::splice_party_voices(patcher, mapping)
-            .context("splice party battle voices")?;
-        report.notes.extend(notes);
+        // Battle-voice passes, in dependency order: every XA mute first,
+        // then the XA + victory-clip fills (which SOURCE the siblings'
+        // grunts from monster.snd), and the duel-bank splice LAST -
+        // the splice overwrites the sibling banks with the heroes'
+        // samples, so a fill that runs after it reads Vahn's voice back
+        // out of Lu's bank and hands the "sibling" slots to the wrong
+        // speaker.
 
         // The arts XA shout banks (XA2/XA4/XA6 - the character's VOICE
         // on arts, item use and other callouts) have no sibling
@@ -394,22 +397,6 @@ pub fn apply_delilas_party(
                 .push(format!("party: {file} bark channel 7 muted ({n} sectors)"));
         }
 
-        // Then give the silenced slots the siblings' REAL voices: their
-        // monster.snd grunts, XA-encoded over the muted channels.
-        let notes = crate::delilas_xa_voice::fill_hero_xa_voices(patcher, mapping)
-            .context("fill hero XA voice slots with sibling grunts")?;
-        report.notes.extend(notes);
-
-        // The FIFTH voice tier, and the one every XA sweep is blind to:
-        // the ordinary victory pose's voice is an SPU sample streamed
-        // from `monster.snd`'s own sector TOC (`FUN_8003e104`; pose
-        // action -> clip byte via the SCUS tables at 0x800788A0 /
-        // 0x80078867). Replace the heroes' clip bands with the mapped
-        // siblings' grunts - verbatim SPU-ADPCM, same file.
-        let notes = crate::delilas_xa_voice::fill_hero_victory_clips(patcher, mapping)
-            .context("fill hero victory-voice clips in monster.snd")?;
-        report.notes.extend(notes);
-
         // The FOURTH voice tier: the staged-event voice-id space (id >=
         // 0x100 through `FUN_8004FCC8`; the anim materialiser
         // `FUN_8004AD80` picks the id from an inline char-keyed table -
@@ -433,6 +420,35 @@ pub fn apply_delilas_party(
                 .notes
                 .push(format!("{who}: {file} voice bank muted ({n} sectors)"));
         }
+
+        // Then give the silenced slots the siblings' REAL voices: their
+        // monster.snd grunts, XA-encoded over the muted channels. Must
+        // run after EVERY mute above (a later whole-file mute would
+        // erase the fill) and before the duel-bank splice below (which
+        // replaces the sibling banks' samples with the heroes').
+        let notes = crate::delilas_xa_voice::fill_hero_xa_voices(patcher, mapping)
+            .context("fill hero XA voice slots with sibling grunts")?;
+        report.notes.extend(notes);
+
+        // The FIFTH voice tier, and the one every XA sweep is blind to:
+        // the ordinary victory pose's voice is an SPU sample streamed
+        // from `monster.snd`'s own sector TOC (`FUN_8003e104`; pose
+        // action -> clip byte via the SCUS tables at 0x800788A0 /
+        // 0x80078867). Replace the heroes' clip bands with the mapped
+        // siblings' own victory lines, re-pitched to their recorded
+        // rates - verbatim SPU-ADPCM, same file.
+        let notes = crate::delilas_xa_voice::fill_hero_victory_clips(patcher, mapping)
+            .context("fill hero victory-voice clips in monster.snd")?;
+        report.notes.extend(notes);
+
+        // Battle voices: the party grunts like the mapped siblings.
+        // LAST of the voice passes - this swaps the heroes' samples
+        // INTO the sibling banks, so any pass sourcing "the sibling's
+        // voice" from monster.snd after this point reads the wrong
+        // speaker.
+        let notes = crate::delilas_voice::splice_party_voices(patcher, mapping)
+            .context("splice party battle voices")?;
+        report.notes.extend(notes);
     }
     Ok(report)
 }

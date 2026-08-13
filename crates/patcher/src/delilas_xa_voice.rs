@@ -33,10 +33,18 @@ use crate::delilas_party::PartyMapping;
 use crate::delilas_voice::{MONSTER_SND_ENTRY, monster_vab_offset};
 use crate::disc::DiscPatcher;
 
-/// Assumed natural sample rate of the `monster.snd` VAG bodies. The SPU
-/// plays them pitch-modulated; 22050 Hz is the audition rate the VAB
-/// tooling uses and matches the banks by ear.
-const VAG_RATE: u32 = 22050;
+/// Playback rate a tone's pitch attrs imply, from the PsyQ convention:
+/// keying the center note plays the sample at 44100 Hz, and these banks
+/// key each tone at its own one-note range (`min == max`), so
+/// `rate = 44100 * 2^((note - center - shift/128) / 12)`. The sibling
+/// banks split into two families: the 44100 voice barks (center == note)
+/// and the ~17-22 kHz lines (center 12-16.5 semitones above the keyed
+/// note). Exporting or resampling at a flat rate plays the other family
+/// an octave off - the "squeak" class of bug.
+fn tone_rate(center: u8, shift: u8, note: u8) -> u32 {
+    let semis = note as f64 - center as f64 - shift as f64 / 128.0;
+    (44100.0 * (semis / 12.0).exp2()).round() as u32
+}
 
 /// Peak-normalization target (fraction of i16 full scale).
 const PEAK: f64 = 0.60;
@@ -53,32 +61,65 @@ const PEAK: f64 = 0.60;
 /// table rows reference plus the in-band gaps (KO/damage siblings).
 const VICTORY_CLIP_BANDS: [(usize, usize); 3] = [(0xB8, 0xBC), (0xC4, 0xCB), (0xBD, 0xC3)];
 
-/// One sibling's grunt set as RAW SPU-ADPCM byte ranges within
-/// `monster.snd` (same filter as [`sibling_grunts`]), longest first.
-fn sibling_grunt_spans(snd: &[u8], monster_id: u16) -> Result<Vec<std::ops::Range<usize>>> {
-    let off = monster_vab_offset(snd, monster_id)?;
+/// One sibling's victory voice: the raw SPU-ADPCM body (true block grid)
+/// plus the pitch attrs of the tone that keys it in the sibling's own
+/// bank, so a destination clip can be re-pitched to play it at its
+/// recorded rate.
+struct VictoryVoice {
+    body: Vec<u8>,
+    center: u8,
+    shift: u8,
+    note: u8,
+}
+
+/// The vag id (1-based, within the sibling's `monster.snd` bank) of each
+/// sibling's victory voice line, picked by ear from the tone-rate-correct
+/// audition set. Lu's tag-`0x22` victory entry fires sound cue `1` and her
+/// bank keys vags 1-2 as the 44100 Hz bark family (the "humph" heard when
+/// the Delilas win their own retail fights - the plasma-strike-tail
+/// sibling take); Gi's victory cue byte is `0` (silent) and Che carries no
+/// tag-`0x22` entry at all, so theirs are the most victory-like lines from
+/// their voice pools.
+fn victory_vag_pick(sibling: crate::delilas_party::Sibling) -> usize {
+    use crate::delilas_party::Sibling;
+    match sibling {
+        Sibling::Lu => 2,
+        Sibling::Gi => 3,
+        Sibling::Che => 2,
+    }
+}
+
+/// Extract one sibling's victory voice (see [`victory_vag_pick`]) from
+/// `monster.snd`.
+fn sibling_victory_voice(
+    snd: &[u8],
+    sibling: crate::delilas_party::Sibling,
+) -> Result<VictoryVoice> {
+    let off = monster_vab_offset(snd, sibling.monster_id())?;
     let vab = legaia_vab::parse(snd, off).context("parse sibling VAB")?;
-    let page = vab
+    let pick = victory_vag_pick(sibling);
+    let tone = vab
         .tones
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("sibling VAB has no tone page"))?;
-    let mut seen = std::collections::BTreeSet::new();
-    let mut out = Vec::new();
-    for tone in page {
-        let vag = tone.vag as usize;
-        if tone.vol == 0 || vag == 0 || vag > vab.vag_samples.len() || !seen.insert(vag) {
-            continue;
-        }
-        let span = vab.vag_samples[vag - 1];
-        if span.size > 512 {
-            out.push(span.byte_offset..span.byte_offset + span.size);
-        }
-    }
-    if out.is_empty() {
-        anyhow::bail!("monster id {monster_id}: no usable grunt spans");
-    }
-    out.sort_by_key(|r| std::cmp::Reverse(r.len()));
-    Ok(out)
+        .iter()
+        .flatten()
+        .find(|t| t.vag as usize == pick)
+        .ok_or_else(|| anyhow::anyhow!("{sibling:?}: no tone keys vag {pick}"))?;
+    let span = *vab
+        .vag_samples
+        .get(pick - 1)
+        .ok_or_else(|| anyhow::anyhow!("{sibling:?}: bank has no vag {pick}"))?;
+    // +4: the parser's spans sit one word before the real block grid
+    // (documented in `decode_vag_aligned`).
+    let body = snd
+        .get(span.byte_offset + 4..span.byte_offset + 4 + span.size)
+        .ok_or_else(|| anyhow::anyhow!("{sibling:?}: vag {pick} span escapes monster.snd"))?
+        .to_vec();
+    Ok(VictoryVoice {
+        body,
+        center: tone.center,
+        shift: tone.shift,
+        note: tone.min,
+    })
 }
 
 /// Write one victory voice body over another, both on the TRUE ADPCM
@@ -144,9 +185,8 @@ pub fn fill_hero_victory_clips(
     let mut patched = snd.clone();
     let siblings = [mapping.vahn, mapping.noa, mapping.gala];
     for (slot, sibling) in siblings.iter().enumerate() {
-        let grunts = sibling_grunt_spans(&snd, sibling.monster_id())?;
+        let voice = sibling_victory_voice(&snd, *sibling)?;
         let (lo, hi) = VICTORY_CLIP_BANDS[slot];
-        let mut cursor = 0usize;
         for clip in lo..=hi {
             let span = clip_span(clip)?;
             if snd.get(span.start + 4..span.start + 8) != Some(&b"pBAV"[..]) {
@@ -157,24 +197,42 @@ pub fn fill_hero_victory_clips(
             if vab.vag_samples.is_empty() {
                 anyhow::bail!("clip {clip:#x}: mini VAB has no VAG bodies");
             }
-            for vag in &vab.vag_samples {
+            for (vi, vag) in vab.vag_samples.iter().enumerate() {
                 // +4: the parser's spans sit one word before the real
                 // block grid (documented in `decode_vag_aligned`).
                 let dst = vag.byte_offset + 4..vag.byte_offset + 4 + vag.size;
                 if dst.end > span.end {
                     anyhow::bail!("clip {clip:#x}: VAG body escapes the clip span");
                 }
-                let g = grunts[cursor % grunts.len()].clone();
-                if g.end + 4 > snd.len() {
-                    anyhow::bail!("sibling grunt span escapes monster.snd");
-                }
-                let src = snd[g.start + 4..g.end + 4].to_vec();
-                cursor += 1;
-                write_victory_body(&mut patched[dst], &src);
+                write_victory_body(&mut patched[dst], &voice.body);
+                // Re-pitch the destination tone so the body plays at its
+                // recorded rate: the clip keys its tone at the tone's own
+                // one-note range, so matching the source's note-to-center
+                // interval reproduces the source rate exactly. Without
+                // this, a body recorded in the other pitch family plays
+                // an octave off (the "squeak").
+                let (t, dst_tone) = vab
+                    .tones
+                    .iter()
+                    .flatten()
+                    .enumerate()
+                    .find(|(_, tone)| tone.vag as usize == vi + 1)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("clip {clip:#x}: no tone keys vag {}", vi + 1)
+                    })?;
+                let attr_off = span.start
+                    + 4
+                    + legaia_vab::VAB_HEADER_SIZE
+                    + legaia_vab::PROGRAMS_TABLE_SIZE
+                    + t * legaia_vab::TONE_SIZE;
+                let center =
+                    (voice.center as i32 + dst_tone.min as i32 - voice.note as i32).clamp(0, 127);
+                patched[attr_off + 4] = center as u8;
+                patched[attr_off + 5] = voice.shift;
             }
         }
         notes.push(format!(
-            "{}: victory voice clips {:#x}..={:#x} carry {}'s grunts",
+            "{}: victory voice clips {:#x}..={:#x} carry {}'s victory line",
             ["Vahn", "Noa", "Gala"][slot],
             lo,
             hi,
@@ -187,8 +245,9 @@ pub fn fill_hero_victory_clips(
     Ok(notes)
 }
 
-/// One sibling's grunt set, decoded and peak-normalized at `VAG_RATE`.
-fn sibling_grunts(snd: &[u8], monster_id: u16) -> Result<Vec<Vec<i16>>> {
+/// One sibling's grunt set, decoded and peak-normalized, each paired
+/// with the playback rate its own tone implies (see [`tone_rate`]).
+fn sibling_grunts(snd: &[u8], monster_id: u16) -> Result<Vec<(Vec<i16>, u32)>> {
     let off = monster_vab_offset(snd, monster_id)?;
     let vab = legaia_vab::parse(snd, off).context("parse sibling VAB")?;
     let page = vab
@@ -217,7 +276,7 @@ fn sibling_grunts(snd: &[u8], monster_id: u16) -> Result<Vec<Vec<i16>>> {
             }
         }
         if pcm.len() > 256 {
-            out.push(pcm);
+            out.push((pcm, tone_rate(tone.center, tone.shift, tone.min)));
         }
     }
     if out.is_empty() {
@@ -233,7 +292,7 @@ fn write_grunt(
     patcher: &mut DiscPatcher,
     file: &str,
     chan: u8,
-    pcm: &[i16],
+    grunt: &(Vec<i16>, u32),
     notes: &mut Vec<String>,
 ) -> Result<bool> {
     let coding = patcher.xa_channel_coding(file, chan)?;
@@ -249,7 +308,7 @@ fn write_grunt(
     } else {
         37800
     };
-    let resampled = legaia_xa::encode::resample_linear(pcm, VAG_RATE, rate);
+    let resampled = legaia_xa::encode::resample_linear(&grunt.0, grunt.1, rate);
     let groups = if stereo {
         // Stereo bank, mono source: dual-mono.
         legaia_xa::encode::encode_stereo_4bit_dualmono(&resampled)
@@ -289,14 +348,17 @@ pub fn fill_hero_xa_voices(
 
     for (slot, sibling) in siblings.iter().enumerate() {
         let grunts = sibling_grunts(&snd, sibling.monster_id())?;
+        // Duration in seconds, not sample count - the pitch families mix
+        // 44100 and ~17-22 kHz recordings.
+        let secs = |g: &(Vec<i16>, u32)| g.0.len() as f64 / g.1 as f64;
         let longest = grunts
             .iter()
-            .max_by_key(|g| g.len())
+            .max_by(|a, b| secs(a).total_cmp(&secs(b)))
             .expect("non-empty")
             .clone();
         let shortest = grunts
             .iter()
-            .min_by_key(|g| g.len())
+            .min_by(|a, b| secs(a).total_cmp(&secs(b)))
             .expect("non-empty")
             .clone();
         let mut filled = 0usize;
@@ -339,7 +401,10 @@ pub fn fill_hero_xa_voices(
     // The close-call victory bark (speaker not statically attributable):
     // the Vahn-slot sibling's longest grunt.
     let lead = sibling_grunts(&snd, mapping.vahn.monster_id())?;
-    let lead_longest = lead.iter().max_by_key(|g| g.len()).expect("non-empty");
+    let lead_longest = lead
+        .iter()
+        .max_by(|a, b| (a.0.len() as f64 / a.1 as f64).total_cmp(&(b.0.len() as f64 / b.1 as f64)))
+        .expect("non-empty");
     for file in ["XA/XA20.XA", "XA/XA22.XA"] {
         write_grunt(patcher, file, 7, lead_longest, &mut notes)?;
     }

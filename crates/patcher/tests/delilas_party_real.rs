@@ -379,32 +379,62 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
             |b: &[u8], o: usize| u32::from_le_bytes(b[o..o + 4].try_into().unwrap()) as usize;
         assert_eq!(rd32(&p_snd, 4), rd32(&r_snd, 4), "clip TOC count changed");
         for (lo, hi) in [(0xB8usize, 0xBCusize), (0xC4, 0xCB), (0xBD, 0xC3)] {
+            let mut band_interval: Option<i32> = None;
             for clip in lo..=hi {
                 let s = rd32(&p_snd, (clip + 2) * 4) * 2048;
                 let e = rd32(&p_snd, (clip + 3) * 4) * 2048;
                 // Each clip is a mini VAB the game REGISTERS at victory
                 // time: the patched clip must still parse (a clobbered
                 // header softlocks the results sequence), its header
-                // block must be byte-identical to retail, and only the
-                // VAG voice bodies may differ - which they must, and
-                // they must still decode with energy.
+                // block must stay byte-identical to retail EXCEPT each
+                // tone's center/shift pair - the fill re-pitches the
+                // destination tone so the spliced body plays at its
+                // recorded rate - and only the VAG voice bodies may
+                // differ, which they must, still decoding with energy.
                 let rv = legaia_vab::parse(&r_snd, s + 4).expect("retail clip VAB");
                 let pv = legaia_vab::parse(&p_snd, s + 4).expect("patched clip VAB parses");
                 // The parser's spans sit 4 bytes before the real block
                 // grid (see `decode_vag_aligned`); the header block AND
-                // that lead word must stay retail, so the identical
-                // prefix extends to first_vag + 4.
+                // that lead word must stay retail (minus the re-pitch
+                // bytes), so the checked prefix extends to first_vag + 4.
                 let first_vag = rv.vag_samples.iter().map(|v| v.byte_offset).min().unwrap();
-                assert_eq!(
-                    &r_snd[s..first_vag + 4],
-                    &p_snd[s..first_vag + 4],
-                    "victory clip {clip:#x} header block changed"
-                );
+                let tone_base =
+                    s + 4 + legaia_vab::VAB_HEADER_SIZE + legaia_vab::PROGRAMS_TABLE_SIZE;
+                let repitch: std::collections::BTreeSet<usize> = (0..16)
+                    .flat_map(|t| {
+                        let a = tone_base + t * legaia_vab::TONE_SIZE;
+                        [a + 4, a + 5]
+                    })
+                    .collect();
+                for off in s..first_vag + 4 {
+                    if repitch.contains(&off) {
+                        continue;
+                    }
+                    assert_eq!(
+                        r_snd[off], p_snd[off],
+                        "victory clip {clip:#x} header byte {off:#x} changed outside re-pitch"
+                    );
+                }
                 assert_eq!(
                     rv.vag_samples.len(),
                     pv.vag_samples.len(),
                     "victory clip {clip:#x} VAG count changed"
                 );
+                // Every keyed tone in the band plays the SAME sibling
+                // body, so the note-to-center interval (which pins the
+                // playback rate) must agree across the whole band.
+                for tone in pv.tones.iter().flatten() {
+                    if tone.vag == 0 {
+                        continue;
+                    }
+                    let interval =
+                        tone.min as i32 * 128 - tone.center as i32 * 128 - tone.shift as i32;
+                    let prev = band_interval.get_or_insert(interval);
+                    assert_eq!(
+                        *prev, interval,
+                        "victory clip {clip:#x} plays the body at a different rate"
+                    );
+                }
                 for (i, vag) in rv.vag_samples.iter().enumerate() {
                     let span = vag.byte_offset + 4..vag.byte_offset + 4 + vag.size;
                     assert!(span.end <= e, "victory clip {clip:#x} VAG {i} out of span");
