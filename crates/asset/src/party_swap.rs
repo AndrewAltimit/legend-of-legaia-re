@@ -168,12 +168,14 @@ pub(crate) fn normalize_battle_rest_feet(
     };
     let src_frames = bone_frames(&src_pivots, &CANONICAL_CHILD, &CANONICAL_PARENT);
     let dst_frames = bone_frames(&dst_pivots, &CANONICAL_CHILD, &CANONICAL_PARENT);
-    // Feet AND hands: both terminal, both drag the whole stance delta
-    // through their parent's frame alignment. A foot pitched its toe up
-    // (Lu); a hand swung Che's club into space above his shoulder - his
-    // hand part carries the weapon, and the forearm alignment rotated
-    // its authored orientation ~wholesale.
-    for term in [5usize, 8, 11, 14] {
+    // The COMPLETE terminal family: head, hands, feet - every part with
+    // no child pivot drags the whole stance delta through its parent's
+    // frame alignment. A foot pitched its toe up (Lu); a hand swung
+    // Che's club into space above his shoulder; Che's HEAD - riding his
+    // hunched torso's bone frame re-aimed onto Gala's upright one -
+    // played looking sideways (the in-game screenshot's misaligned
+    // face; the head was the one family member left unnormalized).
+    for term in [0usize, 5, 8, 11, 14] {
         let a = frame_align(&src_frames[term], &dst_frames[term]);
         let m = mmul(&transpose(&a), &rot_matrix(&src_rest[term]));
         let (rx, ry, rz) = to_euler(&m);
@@ -455,25 +457,13 @@ pub(crate) struct PivotBake {
 /// were parts keeping the source's limb proportions), radial scale =
 /// the uniform whole-rig ratio (the sibling's shapes survive). Terminal
 /// parts scale uniformly.
-/// Battle-side TORSO bake params: uniform scale on both axes. The
-/// torso's chain child is the head - a terminal riding its own pivot -
-/// so the axial closure has no seam to close that plain overlap does
-/// not, while on a long-torsoed sibling it crushes the slab (Che:
-/// torso->head bone 164 vs Gala's 90 = 0.55 axial, a fifth of his
-/// relative torso size gone vs his enemy-table render). The head seat
-/// and the shoulder-socket tuck own the neck/shoulder seams. Both the
-/// mesh bake and the winpose socket FK must use this same variant (the
-/// tuck/FK pair law); the enemy-side monsterize keeps the axial fit.
-pub(crate) fn pivot_bake_params_torso_uniform(
-    src: &BoneFrame,
-    dst: &BoneFrame,
-    radial: f32,
-) -> PivotBake {
-    let mut pb = pivot_bake_params(src, dst, radial);
-    pb.axial = radial;
-    pb
-}
-
+// NB a torso-uniform variant (axial = radial) was tried and REVERTED:
+// pretty at rest (Che's slab kept its proportions, and the idle-frame
+// enemy-table diff scored it closer), but the host's head and shoulder
+// pivots are authored at the torso BONE's end - a uniform long torso
+// towers past them, so in-game the head poked out mid-hump with the
+// shoulder pads above it. Attachment beats shape: the torso keeps the
+// axial fit.
 pub(crate) fn pivot_bake_params(src: &BoneFrame, dst: &BoneFrame, radial: f32) -> PivotBake {
     let axial = match (src.len, dst.len) {
         (Some(ls), Some(ld)) if ls >= 2.0 => (ld / ls).clamp(0.25, 4.0),

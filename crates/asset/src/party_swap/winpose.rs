@@ -315,7 +315,7 @@ pub fn retarget_clip(
         bv_local: [[f32; 3]; 2],
     }
     let torso_ch = rig.channel_for_canonical[1] as usize;
-    let pb_torso = pivot_bake_params_torso_uniform(&src_frames[1], &dst_frames[1], radial);
+    let pb_torso = pivot_bake_params(&src_frames[1], &dst_frames[1], radial);
     let md_t = rot_matrix(&dst_rest[torso_ch]);
     let arm_fk: Vec<ArmFk> = [[3usize, 4, 5], [6usize, 7, 8]]
         .iter()

@@ -716,11 +716,14 @@ fn playerize_scaled(
     for (c, src_obj) in src_model.iter().enumerate() {
         let ch = rig.channel_for_canonical[c] as usize;
         let mut o = src_obj.clone();
-        let pb = if c == 1 {
-            pivot_bake_params_torso_uniform(&src_frames[c], &dst_frames[c], radial)
-        } else {
-            pivot_bake_params(&src_frames[c], &dst_frames[c], radial)
-        };
+        // The torso keeps the AXIAL fit like every chained part: its
+        // bone spans torso->head pivot, and the host's head + shoulder
+        // pivots are authored at that span's end - a uniform-scaled
+        // long torso (Che: 164 vs Gala's 90) towers past them, so the
+        // head pokes out mid-hump and the shoulder pads ride above the
+        // head (the in-game screenshot). The axial crush is the price
+        // of attachment; width stays radial.
+        let pb = pivot_bake_params(&src_frames[c], &dst_frames[c], radial);
         bake_object_pivot(&mut o, &src_rest[c], src_pivots[c], &dst_rest[ch], &pb)
             .with_context(|| format!("bake canonical part {c}"))?;
         if c == 0 {
@@ -734,53 +737,13 @@ fn playerize_scaled(
         baked.push(o);
     }
 
-    // Buried-head lift: `seat_terminal_axial` seats the head's near
-    // edge, but a sibling whose head geometry extends far along the
-    // axis (Gi's tall helmet) can end with its centroid BELOW the
-    // torso top - the face sinks into the chest and the whole figure
-    // reads short. When the baked head's world centroid at rest is
-    // below the torso's top, lift it until its margin matches the
-    // replaced head's. Raise-only: heads that clear the torso are
-    // left as baked.
-    {
-        let head_ch = rig.channel_for_canonical[0] as usize;
-        let centroid_y = |o: &ModelObject, p: &PartPose| -> f32 {
-            let m = rot_matrix(p);
-            let mut y = 0.0f32;
-            for v in &o.vertices {
-                y += apply(&m, [v[0] as f32, v[1] as f32, v[2] as f32])[1] + p.ty as f32;
-            }
-            y / o.vertices.len().max(1) as f32
-        };
-        let torso_ch = rig.channel_for_canonical[1] as usize;
-        let torso_top = {
-            let p = &dst_rest[torso_ch];
-            let m = rot_matrix(p);
-            baked[1]
-                .vertices
-                .iter()
-                .map(|v| apply(&m, [v[0] as f32, v[1] as f32, v[2] as f32])[1] + p.ty as f32)
-                .fold(f32::MAX, f32::min)
-        };
-        let baked_c = centroid_y(&baked[0], &dst_rest[head_ch]);
-        let host_margin = dst_model
-            .get(head_ch)
-            .map(|o| torso_top - centroid_y(o, &dst_rest[head_ch]))
-            .unwrap_or(15.0)
-            .max(6.0);
-        let margin = torso_top - baked_c;
-        if margin < 0.0 {
-            let dy = -(host_margin - margin); // world up = -y
-            let ld = apply_transposed(&rot_matrix(&dst_rest[head_ch]), [0.0, dy, 0.0]);
-            for v in baked[0].vertices.iter_mut() {
-                *v = [
-                    round_coord(v[0] as f32 + ld[0])?,
-                    round_coord(v[1] as f32 + ld[1])?,
-                    round_coord(v[2] as f32 + ld[2])?,
-                ];
-            }
-        }
-    }
+    // NB a "buried-head lift" (raise the head when its rest CENTROID
+    // sat below the torso top) was tried here and REVERTED: a tall
+    // helmet biases the centroid low even when the face is seated
+    // correctly, so the lift hoisted Gi's whole head ~25 units off the
+    // neck - in-game (where head channels animate) that read as a
+    // DETACHED head with sky through the gap. `seat_terminal_axial`
+    // alone owns the neck seam.
 
     // Hip-clearance taper: shrink each thigh's radial extent near the
     // hip (12% at the pivot, fading to zero 60% down the bone) so the
@@ -819,9 +782,40 @@ fn playerize_scaled(
     // the forearm + hand parts) must stay exactly where the clips
     // expect them.
     {
-        let pb_torso = pivot_bake_params_torso_uniform(&src_frames[1], &dst_frames[1], radial);
+        let pb_torso = pivot_bake_params(&src_frames[1], &dst_frames[1], radial);
         for c in [3usize, 6usize] {
             let socket = bake_point_pivot(src_pivots[c], src_pivots[1], dst_pivots[1], &pb_torso);
+            let delta = vsub(socket, dst_pivots[c]);
+            let Some(len) = dst_frames[c].len.filter(|l| *l >= 2.0) else {
+                continue;
+            };
+            let ch = rig.channel_for_canonical[c] as usize;
+            let md = rot_matrix(&dst_rest[ch]);
+            let ld = apply_transposed(&md, delta);
+            let ax = apply_transposed(&md, dst_frames[c].axes[0]);
+            for v in baked[c].vertices.iter_mut() {
+                let t = v[0] as f32 * ax[0] + v[1] as f32 * ax[1] + v[2] as f32 * ax[2];
+                let w = (1.0 - t / len).clamp(0.0, 1.0);
+                *v = [
+                    round_coord(v[0] as f32 + ld[0] * w)?,
+                    round_coord(v[1] as f32 + ld[1] * w)?,
+                    round_coord(v[2] as f32 + ld[2] * w)?,
+                ];
+            }
+        }
+    }
+
+    // Hip-socket tuck - the shoulder tuck's mirror for the legs: the
+    // thigh tops ride the HOST's hip pivots, which sit wider than a
+    // slimmer sibling's authored hips, so the thigh's upper rim pokes
+    // through the pelvis skirt from OUTSIDE (Lu's in-game hip overlap).
+    // Each thigh's hip end tucks to where the sibling's own hip socket
+    // lands through the pelvis bake, tapering to zero at the knee (the
+    // knee/shin/foot stay exactly where the clips expect them).
+    {
+        let pb_pelvis = pivot_bake_params(&src_frames[2], &dst_frames[2], radial);
+        for c in [9usize, 12usize] {
+            let socket = bake_point_pivot(src_pivots[c], src_pivots[2], dst_pivots[2], &pb_pelvis);
             let delta = vsub(socket, dst_pivots[c]);
             let Some(len) = dst_frames[c].len.filter(|l| *l >= 2.0) else {
                 continue;
