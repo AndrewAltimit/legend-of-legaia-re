@@ -147,15 +147,14 @@ fn victory_xa_pick(sibling: crate::delilas_party::Sibling) -> Option<(&'static s
     }
 }
 
-/// The sibling's Spirit cue audio: ear-picked stand-ins from the retail
-/// reels ("close enough" beats a fight grunt on a focus stance). Lu
-/// borrows Noa's Spirit sting (`XA3.XA` channel 0 - the cast-cue band
-/// of Noa's fanfare bank). Whole channel, no utterance cut.
+/// The sibling's Spirit cue audio, when an XA line beats their own
+/// bank. `None` (all siblings today) = the cast-cue channel falls back
+/// to the sibling's own bark grunt via `voice_cast` - the user found a
+/// borrowed sting (Lu wearing Noa's Spirit) odder than her own voice.
 fn spirit_xa_pick(sibling: crate::delilas_party::Sibling) -> Option<(&'static str, u8)> {
     use crate::delilas_party::Sibling;
     match sibling {
-        Sibling::Lu => Some(("XA/XA3.XA", 0)),
-        Sibling::Gi | Sibling::Che => None,
+        Sibling::Lu | Sibling::Gi | Sibling::Che => None,
     }
 }
 
@@ -180,6 +179,18 @@ pub struct VictoryLines {
     lines: [Option<(Vec<i16>, u32)>; 3],
     spirit: [Option<(Vec<i16>, u32)>; 3],
     special: [Option<(Vec<i16>, u32)>; 3],
+}
+
+impl VictoryLines {
+    /// Length in seconds of the special-attack excerpt captured for a
+    /// hero slot (0 Vahn / 1 Noa / 2 Gala) - what the fanfare duration
+    /// table must cover for the audio to complete.
+    pub fn special_secs(&self, slot: usize) -> Option<f64> {
+        self.special
+            .get(slot)?
+            .as_ref()
+            .map(|(pcm, rate)| pcm.len() as f64 / *rate as f64)
+    }
 }
 
 /// Capture every mapped sibling's XA lines (victory bark, Spirit sting,
@@ -208,7 +219,39 @@ pub fn capture_victory_lines(patcher: &DiscPatcher, mapping: &PartyMapping) -> V
         if let Some((file, chan)) = special_xa_pick(*sibling)
             && let Ok((mut pcm, rate)) = patcher.read_xa_channel_pcm(file, chan)
         {
-            pcm.truncate(rate as usize * 12);
+            // Cut at the reel's natural end (trailing silence trimmed),
+            // capped to the destination fanfare pair's channel capacity
+            // (`write_xa_channel` fills only the channel's own sectors,
+            // so anything past it is silently dropped - the old flat
+            // 12 s cap wrote ~7 s and cut mid-decay). A short fade-out
+            // makes the excerpt COMPLETE instead of stopping abruptly.
+            let hero_bank = legaia_art::hyper_fanfare::FANFARE_XA_FILE[slot];
+            let cap = [4u8, 7]
+                .iter()
+                .filter_map(|&c| {
+                    patcher
+                        .read_xa_channel_pcm(&format!("XA/{hero_bank}"), c)
+                        .ok()
+                        .map(|(p, _)| p.len())
+                })
+                .min()
+                .unwrap_or(rate as usize * 12);
+            let win = (rate as usize / 4).max(1);
+            let quiet = |w: &[i16]| {
+                (w.iter().map(|&s| (s as f64) * (s as f64)).sum::<f64>() / w.len() as f64).sqrt()
+                    < 300.0
+            };
+            let mut end = pcm.len();
+            while end > win && quiet(&pcm[end - win..end]) {
+                end -= win;
+            }
+            pcm.truncate(end.min(cap));
+            let fade = (rate as usize * 3 / 5).min(pcm.len());
+            let n = pcm.len();
+            for i in 0..fade {
+                let k = (fade - i) as f64 / fade as f64;
+                pcm[n - fade + i] = (pcm[n - fade + i] as f64 * k) as i16;
+            }
             if pcm.len() > rate as usize / 10 {
                 special[slot] = Some((pcm, rate));
             }

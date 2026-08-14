@@ -486,6 +486,93 @@ pub fn rebuild_base_slot(
     Ok(out)
 }
 
+/// Rebuild ONE entry of a (main art) "ME" archive slot: entry
+/// `entry_index` becomes the retargeted sibling `clip` at the entry's
+/// RETAIL `(parts, frames)` shape - so the art record's timing, effect
+/// script and cue track stay valid - and every other entry's stored
+/// body is carried over byte-identical (size-table flags included).
+/// Returns the full `READEF_SLOT`-byte slot, zero-padded.
+pub fn rebuild_art_slot_entry(
+    slot: &[u8],
+    entry_index: usize,
+    clip: &crate::monster_archive::MonsterAnimation,
+    rig: &PlayerRig,
+    player_file: &[u8],
+    archive_entry: &[u8],
+    source_id: u16,
+) -> Result<Vec<u8>> {
+    if slot.len() != READEF_SLOT {
+        bail!("art slot is {} bytes, expected {READEF_SLOT}", slot.len());
+    }
+    let ar = me_archive::parse(slot).context("parse art ME archive")?;
+    let n = ar.len();
+    if entry_index >= n {
+        bail!("art archive has {n} entries, wanted {entry_index}");
+    }
+    let retail = ar
+        .entry(entry_index)
+        .with_context(|| format!("decode art entry {entry_index}"))?;
+    let (parts, frames) = (retail[0] as usize, retail[1] as usize);
+    let frames_out = retarget_clip(
+        clip,
+        rig,
+        player_file,
+        archive_entry,
+        source_id,
+        parts,
+        frames,
+    )?;
+    let mut decoded = Vec::with_capacity(2 + parts * frames * 9);
+    decoded.push(parts as u8);
+    decoded.push(frames as u8);
+    for row in &frames_out {
+        for p in row {
+            decoded.extend_from_slice(&pack_part(p));
+        }
+    }
+    let encoded = encode_channel_delta(&decoded)?;
+    let back = me_archive::decode_channel_delta(&encoded)
+        .with_context(|| format!("re-decode art entry {entry_index}"))?;
+    if back != decoded {
+        bail!("art entry {entry_index}: codec round-trip mismatch");
+    }
+
+    let mut sizes: Vec<u16> = Vec::with_capacity(n);
+    let mut bodies: Vec<&[u8]> = Vec::with_capacity(n);
+    for i in 0..n {
+        if i == entry_index {
+            sizes.push((encoded.len() as u16) | 0x8000);
+            bodies.push(&encoded);
+        } else {
+            let body = ar
+                .raw_body(i)
+                .ok_or_else(|| anyhow::anyhow!("art entry {i} body missing"))?;
+            let flag = if ar.is_compressed(i) == Some(true) {
+                0x8000
+            } else {
+                0
+            };
+            sizes.push((body.len() as u16) | flag);
+            bodies.push(body);
+        }
+    }
+    let total = 3 + 2 * n + bodies.iter().map(|b| b.len()).sum::<usize>();
+    if total > READEF_SLOT {
+        bail!("rebuilt art archive ({total} bytes) exceeds the slot");
+    }
+    let mut out = Vec::with_capacity(READEF_SLOT);
+    out.extend_from_slice(&me_archive::MAGIC);
+    out.push(n as u8);
+    for s in &sizes {
+        out.extend_from_slice(&s.to_le_bytes());
+    }
+    for b in &bodies {
+        out.extend_from_slice(b);
+    }
+    out.resize(READEF_SLOT, 0);
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

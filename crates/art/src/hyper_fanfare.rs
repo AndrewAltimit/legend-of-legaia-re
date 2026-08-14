@@ -305,6 +305,13 @@ pub struct FanfareDurTable {
     entries: [u16; 0x40],
 }
 
+/// File offset of the jingle duration table inside `SCUS_942.54` (for
+/// patching an entry in place - the `u16` for jingle id `0x100 + n`
+/// sits at `offset + n*2`).
+pub fn dur_table_file_offset(scus: &[u8]) -> Option<usize> {
+    scus_off(scus, FANFARE_DUR_TABLE_VA)
+}
+
 impl FanfareDurTable {
     /// Parse the table out of `SCUS_942.54`.
     pub fn parse_from_scus(scus: &[u8]) -> Option<Self> {
