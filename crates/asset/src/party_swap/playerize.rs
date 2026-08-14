@@ -716,7 +716,11 @@ fn playerize_scaled(
     for (c, src_obj) in src_model.iter().enumerate() {
         let ch = rig.channel_for_canonical[c] as usize;
         let mut o = src_obj.clone();
-        let pb = pivot_bake_params(&src_frames[c], &dst_frames[c], radial);
+        let pb = if c == 1 {
+            pivot_bake_params_torso_uniform(&src_frames[c], &dst_frames[c], radial)
+        } else {
+            pivot_bake_params(&src_frames[c], &dst_frames[c], radial)
+        };
         bake_object_pivot(&mut o, &src_rest[c], src_pivots[c], &dst_rest[ch], &pb)
             .with_context(|| format!("bake canonical part {c}"))?;
         if c == 0 {
@@ -815,7 +819,7 @@ fn playerize_scaled(
     // the forearm + hand parts) must stay exactly where the clips
     // expect them.
     {
-        let pb_torso = pivot_bake_params(&src_frames[1], &dst_frames[1], radial);
+        let pb_torso = pivot_bake_params_torso_uniform(&src_frames[1], &dst_frames[1], radial);
         for c in [3usize, 6usize] {
             let socket = bake_point_pivot(src_pivots[c], src_pivots[1], dst_pivots[1], &pb_torso);
             let delta = vsub(socket, dst_pivots[c]);

@@ -332,6 +332,15 @@ pub(crate) struct BoneFrame {
     axes: [[f32; 3]; 3],
     /// Pivot-to-child-pivot distance; `None` on terminal parts.
     len: Option<f32>,
+    /// False only for the world-axes fallback of a part with neither an
+    /// own bone nor an inheritable parent frame. A fallback frame's axes
+    /// carry no anatomy, so aligning against one manufactures a rotation
+    /// onto arbitrary world axes - Che is the one sibling whose pelvis
+    /// has a measurable pelvis->torso bone (20 units) while every player
+    /// pelvis is degenerate, and that asymmetry baked his pelvis ~90 deg
+    /// off. [`frame_align`] refuses to align when either side is a
+    /// fallback.
+    real: bool,
 }
 
 /// Build per-part rest bone frames from the rig's rest **pivots** (each
@@ -351,6 +360,7 @@ pub(crate) fn bone_frames(
     let ident = BoneFrame {
         axes: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
         len: None,
+        real: false,
     };
     let n = pivots.len();
     let bone = |i: usize| -> Option<([f32; 3], f32)> {
@@ -383,7 +393,11 @@ pub(crate) fn bone_frames(
             }
         }
         if let Some(axes) = axes {
-            frames[i] = Some(BoneFrame { axes, len: Some(l) });
+            frames[i] = Some(BoneFrame {
+                axes,
+                len: Some(l),
+                real: true,
+            });
         }
     }
     // Terminals (and degenerate bones) ride their chain parent's frame;
@@ -406,7 +420,14 @@ pub(crate) fn bone_frames(
 
 /// The rotation taking source frame axes onto destination frame axes:
 /// `R = F_dst * F_src^T` (both proper rotations, so this is one too).
+/// When either frame is the world-axes fallback the alignment is the
+/// identity: a fallback's axes are not anatomy, and aligning a real
+/// bone frame against one rotates the part onto arbitrary world axes
+/// (the Che pelvis defect - see [`BoneFrame::real`]).
 pub(crate) fn frame_align(src: &BoneFrame, dst: &BoneFrame) -> [[f32; 3]; 3] {
+    if !src.real || !dst.real {
+        return [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    }
     let mut r = [[0.0f32; 3]; 3];
     for (row, r_row) in r.iter_mut().enumerate() {
         for (col, cell) in r_row.iter_mut().enumerate() {
@@ -434,6 +455,25 @@ pub(crate) struct PivotBake {
 /// were parts keeping the source's limb proportions), radial scale =
 /// the uniform whole-rig ratio (the sibling's shapes survive). Terminal
 /// parts scale uniformly.
+/// Battle-side TORSO bake params: uniform scale on both axes. The
+/// torso's chain child is the head - a terminal riding its own pivot -
+/// so the axial closure has no seam to close that plain overlap does
+/// not, while on a long-torsoed sibling it crushes the slab (Che:
+/// torso->head bone 164 vs Gala's 90 = 0.55 axial, a fifth of his
+/// relative torso size gone vs his enemy-table render). The head seat
+/// and the shoulder-socket tuck own the neck/shoulder seams. Both the
+/// mesh bake and the winpose socket FK must use this same variant (the
+/// tuck/FK pair law); the enemy-side monsterize keeps the axial fit.
+pub(crate) fn pivot_bake_params_torso_uniform(
+    src: &BoneFrame,
+    dst: &BoneFrame,
+    radial: f32,
+) -> PivotBake {
+    let mut pb = pivot_bake_params(src, dst, radial);
+    pb.axial = radial;
+    pb
+}
+
 pub(crate) fn pivot_bake_params(src: &BoneFrame, dst: &BoneFrame, radial: f32) -> PivotBake {
     let axial = match (src.len, dst.len) {
         (Some(ls), Some(ld)) if ls >= 2.0 => (ld / ls).clamp(0.25, 4.0),
