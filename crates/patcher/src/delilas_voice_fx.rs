@@ -147,7 +147,7 @@ pub const DEFAULT_VOICE_MAP: [[VoiceFx; 3]; 3] = [
             ..VOICE_FX_BASE
         }, // Gi
         VoiceFx {
-            pitch: -6.0,
+            pitch: -3.5,
             ..VOICE_FX_BASE
         }, // Che
     ],
@@ -162,7 +162,7 @@ pub const DEFAULT_VOICE_MAP: [[VoiceFx; 3]; 3] = [
             ..VOICE_FX_BASE
         }, // Gi
         VoiceFx {
-            pitch: -11.0,
+            pitch: -10.0,
             formant_st: -5.0,
             timbre: 0.6,
             growl_hz: 50.0,
@@ -182,7 +182,7 @@ pub const DEFAULT_VOICE_MAP: [[VoiceFx; 3]; 3] = [
             ..VOICE_FX_BASE
         }, // Gi
         VoiceFx {
-            pitch: -2.0,
+            pitch: 1.5,
             ..VOICE_FX_BASE
         }, // Che
     ],
@@ -906,10 +906,10 @@ mod tests {
         assert_eq!(v_lu.bend0, 6.5);
         assert_eq!(v_lu.hp, 90.0);
         let n_che = voice_map(1, Sibling::Che);
-        assert_eq!(n_che.pitch, -11.0);
+        assert_eq!(n_che.pitch, -10.0);
         assert_eq!(n_che.timbre, 0.6);
         assert_eq!(voice_map(2, Sibling::Gi).formant_st, -6.0);
-        assert_eq!(voice_map(2, Sibling::Che).pitch, -2.0);
+        assert_eq!(voice_map(2, Sibling::Che).pitch, 1.5);
         // untouched knobs stay at base
         assert_eq!(voice_map(0, Sibling::Gi).carrier, 0.0);
         assert!(voice_map(1, Sibling::Lu).preserve);
