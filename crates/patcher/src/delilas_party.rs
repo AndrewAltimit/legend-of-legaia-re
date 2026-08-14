@@ -177,6 +177,7 @@ pub struct DelilasPartyReport {
 pub fn apply_delilas_party(
     patcher: &mut DiscPatcher,
     mapping: &PartyMapping,
+    arts_voice: crate::delilas_voice_fx::ArtsVoiceMode,
 ) -> Result<DelilasPartyReport> {
     let mut report = DelilasPartyReport::default();
     let archive = patcher
@@ -346,6 +347,16 @@ pub fn apply_delilas_party(
         // reels BEFORE any mute below wipes them (XA21 mutes whole).
         let victory_lines = crate::delilas_xa_voice::capture_victory_lines(patcher, mapping);
 
+        // Retail arts shouts, same read-before-mute law: the `adjusted`
+        // arts-voice mode re-voices this audio toward the siblings.
+        let hero_shouts = if arts_voice == crate::delilas_voice_fx::ArtsVoiceMode::Adjusted {
+            crate::delilas_xa_voice::capture_hero_shouts(patcher)
+        } else {
+            crate::delilas_xa_voice::HeroShoutCapture {
+                banks: Default::default(),
+            }
+        };
+
         // The arts XA shout banks (XA2/XA4/XA6 - the character's VOICE
         // on arts, item use and other callouts) have no sibling
         // counterpart to splice (the Delilas only grunt), so hearing
@@ -353,14 +364,18 @@ pub fn apply_delilas_party(
         // swapped characters' banks. The cue still fires (routing
         // untouched); the sectors decode to silence, and the spliced
         // SPU grunts remain the audible voice.
-        for (slot, file) in ["XA/XA2.XA", "XA/XA4.XA", "XA/XA6.XA"].iter().enumerate() {
-            let who = ["Vahn", "Noa", "Gala"][slot];
-            let n = patcher
-                .silence_xa_file(file)
-                .with_context(|| format!("mute {who} XA shout bank"))?;
-            report
-                .notes
-                .push(format!("{who}: XA shout bank muted ({n} sectors)"));
+        // `original` arts-voice mode keeps the retail shouts: skip the
+        // mute entirely (the fill below leaves the banks untouched too).
+        if arts_voice != crate::delilas_voice_fx::ArtsVoiceMode::Original {
+            for (slot, file) in ["XA/XA2.XA", "XA/XA4.XA", "XA/XA6.XA"].iter().enumerate() {
+                let who = ["Vahn", "Noa", "Gala"][slot];
+                let n = patcher
+                    .silence_xa_file(file)
+                    .with_context(|| format!("mute {who} XA shout bank"))?;
+                report
+                    .notes
+                    .push(format!("{who}: XA shout bank muted ({n} sectors)"));
+            }
         }
 
         // The SECOND voice cue: `XA30.XA` carries the party's normal-move
@@ -436,8 +451,14 @@ pub fn apply_delilas_party(
         // run after EVERY mute above (a later whole-file mute would
         // erase the fill) and before the duel-bank splice below (which
         // replaces the sibling banks' samples with the heroes').
-        let notes = crate::delilas_xa_voice::fill_hero_xa_voices(patcher, mapping, &victory_lines)
-            .context("fill hero XA voice slots with sibling grunts")?;
+        let notes = crate::delilas_xa_voice::fill_hero_xa_voices(
+            patcher,
+            mapping,
+            &victory_lines,
+            arts_voice,
+            &hero_shouts,
+        )
+        .context("fill hero XA voice slots with sibling grunts")?;
         report.notes.extend(notes);
 
         // The FIFTH voice tier, and the one every XA sweep is blind to:

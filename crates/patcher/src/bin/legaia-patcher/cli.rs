@@ -770,12 +770,18 @@ pub(crate) struct RandomizeArgs {
     /// lu,gi,che` puts Lu on Vahn). New-game party names follow the mapping
     /// (existing saves keep their stored names). The field walking models
     /// rebuild from the same sibling models, and the party's battle grunt
-    /// voices resample from the siblings' own voice banks; the replaced
-    /// characters' XA voice lines (arts shouts + swing grunts) are
-    /// silenced - the siblings have no XA lines to swap in, and hearing
-    /// Vahn shout out of Lu's body is worse than silence.
+    /// voices resample from the siblings' own voice banks; what the
+    /// Tactical Arts shout banks carry is picked by
+    /// `--delilas-arts-voice`.
     #[arg(long, value_name = "V,N,G", value_parser = parse_delilas_party)]
     pub(crate) delilas_party: Option<legaia_patcher::delilas_party::PartyMapping>,
+    /// With `--delilas-party`: what the Tactical Arts shout banks
+    /// (XA2/XA4/XA6) carry. `adjusted` (default) re-voices the retail
+    /// hero shouts toward each mapped sibling with the tuned
+    /// pitch/formant map; `original` keeps the retail Vahn / Noa / Gala
+    /// shouts; `removed` silences arts shouts (attack grunts remain).
+    #[arg(long, value_name = "MODE", default_value = "adjusted")]
+    pub(crate) delilas_arts_voice: legaia_patcher::delilas_voice_fx::ArtsVoiceMode,
     /// Per-battle percentage chance a capturable enemy is shiny (only with
     /// `--shiny-seru`).
     #[arg(long, default_value_t = legaia_patcher::shiny_seru::DEFAULT_PCT)]

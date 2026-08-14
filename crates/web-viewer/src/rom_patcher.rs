@@ -293,6 +293,7 @@ pub fn patch_rom(
     exp_scale: &str,
     seru_catch_rate: &str,
     delilas_party: &str,
+    delilas_arts_voice: &str,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -1001,11 +1002,22 @@ pub fn patch_rom(
     if delilas_party.is_empty() {
         summary.push_str("delilas-party: off\n");
     } else {
+        // Arts-voice mode for the swapped shout banks; an empty or
+        // unknown value falls back to the tuned default (adjusted).
+        let arts_voice = delilas_arts_voice
+            .trim()
+            .parse::<legaia_patcher::delilas_voice_fx::ArtsVoiceMode>()
+            .unwrap_or_default();
         match legaia_patcher::delilas_party::PartyMapping::parse(delilas_party) {
             Ok(mapping) => {
-                match legaia_patcher::delilas_party::apply_delilas_party(&mut patcher, &mapping) {
+                match legaia_patcher::delilas_party::apply_delilas_party(
+                    &mut patcher,
+                    &mapping,
+                    arts_voice,
+                ) {
                     Ok(rep) if rep.changed => summary.push_str(&format!(
-                        "delilas-party: playing as {} / {} / {} (duels field the heroes)\n",
+                        "delilas-party: playing as {} / {} / {} (duels field the heroes); \
+                         arts voices: {arts_voice}\n",
                         mapping.vahn.display_name(),
                         mapping.noa.display_name(),
                         mapping.gala.display_name()

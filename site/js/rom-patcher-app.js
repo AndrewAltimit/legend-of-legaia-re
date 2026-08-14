@@ -12,7 +12,7 @@
  * jewel_fix, approach_softlock_fix, delilas_challenge, custom_items, fishing_prices, location_renames,
  * earth_egg_price, arts_powers,
  * arts_ap_grants, arts_ap_costs, spirit_ap, damage_ap, enemy_stat_scale,
- * exp_scale, seru_catch_rate, delilas_party)
+ * exp_scale, seru_catch_rate, delilas_party, delilas_arts_voice)
  * -> { data, summary, seed, lang }`, `resolve_seed(str)`,
  * `validate_lang_pack(image, yaml) -> { ok, language, applied, skipped, message, report }`,
  * `export_lang_pack(image, language) -> yaml_string`, and
@@ -1376,7 +1376,7 @@ const PRESET_BASE = {
   drops: 'none', encounters: 'none', encounter_scope: 'scene', soloStrong: false, fleeExp: false, chests: 'none',
   shops: 'none', casino: 'none', steals: 'none', arts: 'none', doors: 'none',
   door_coupling: 'coupled', houseDoors: false, equipmentDrops: false, seruTrade: false,
-  enemyAlly: false, shinySeru: false, jewelFix: false, approachFix: false, delilasChallenge: false, customItems: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '', delilasParty: '',
+  enemyAlly: false, shinySeru: false, jewelFix: false, approachFix: false, delilasChallenge: false, customItems: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '', delilasParty: '', delilasArtsVoice: 'adjusted',
   startingItems: 0, doorOfWind: false, incense: false,
   speedChain: false, chickenHeart: false, goodLuckBell: false,
   allWarps: false,
@@ -1476,6 +1476,13 @@ function init() {
   const delilasChallengeChk = $('rom-delilas-challenge');
   const customItemsChk = $('rom-custom-items');
   const delilasPartySel = $('rom-delilas-party');
+  const delilasArtsVoiceSel = $('rom-delilas-arts-voice');
+  const delilasArtsVoiceRow = $('rom-delilas-arts-voice-row');
+  // The arts-voice sub-option only means anything with the swap on.
+  const syncDelilasArtsRow = () => {
+    delilasArtsVoiceRow.hidden = !delilasPartySel.value;
+  };
+  delilasPartySel.addEventListener('change', syncDelilasArtsRow);
   const fishingPriceInput = $('rom-fishing-price');
   const renameLocationInput = $('rom-rename-location');
   const earthEggPriceInput = $('rom-earth-egg-price');
@@ -1723,6 +1730,8 @@ function init() {
     delilasChallengeChk.checked = cfg.delilasChallenge;
     customItemsChk.checked = cfg.customItems;
     delilasPartySel.value = cfg.delilasParty ?? '';
+    delilasArtsVoiceSel.value = cfg.delilasArtsVoice ?? 'adjusted';
+    syncDelilasArtsRow();
     fishingPriceInput.value = cfg.fishingPrice || '';
     renameLocationInput.value = cfg.renameLocation || '';
     earthEggPriceInput.value = cfg.earthEggPrice || '';
@@ -1943,6 +1952,7 @@ function init() {
     // identity - retail rates vary per monster), so send whatever is set.
     const seruCatchRate = seruCatchChk.checked ? String(seruCatchSlider.value) : '';
     const delilasParty = delilasPartySel.value;
+    const delilasArtsVoice = delilasParty ? delilasArtsVoiceSel.value : '';
     // Art overrides = the per-art rows serialized to `combo=value` pairs,
     // merged with anything typed into the raw (advanced) inputs.
     const artOv = artBuilder.collect();
@@ -2035,7 +2045,7 @@ function init() {
       let summaryText = '';
       let langReport = null;
       if (baseActive) {
-        const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate, delilasParty);
+        const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate, delilasParty, delilasArtsVoice);
         data = result.data;
         usedSeed = result.seed;
         summaryText = result.summary || '';

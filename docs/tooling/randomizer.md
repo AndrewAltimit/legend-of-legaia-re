@@ -295,6 +295,7 @@ unless asked for:
 | `--approach-softlock-fix` | a monster whose approach animation dies mid-walk is re-staged and resumes walking instead of parking the battle forever (the "endless camera orbit") | - | [Approach-softlock fix](#approach-softlock-fix) |
 | `--delilas-challenge` | a fourth Muscle Dome enrollment option: a new 2-round arena course (Che & Lu double-team, then Gi; a clear pays 5000 coins + a Honey); unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
 | `--delilas-party V,N,G` | play as the Delilas siblings: the party wears Gi / Lu / Che battle models (any permutation over Vahn, Noa, Gala) while the ravine duels + dome Master legs field Vahn / Noa / Gala models | - | [Delilas party swap](#delilas-party-swap) |
+| `--delilas-arts-voice MODE` | with the swap: what the arts shout banks carry - `adjusted` (default; hero shouts re-voiced toward the siblings), `original`, `removed` | `adjusted` | [Delilas party swap](#delilas-party-swap) |
 | `--custom-items` | inject three brand-new items (Nature's Elixir / Ra-Seru Tear / Fury Bloom) into cut item slots; `random` drop/chest/steal modes add them to the fill pool, and with `--delilas-challenge` they replace the Honey clear reward | - | [Custom items](#completion-reward---a-honey-or-three-custom-items) |
 | `--fishing-price ITEM=POINTS` | set the fishing-exchange point cost of a prize (e.g. the Buma Water Egg); the price also gates when the prize appears | repeatable / comma-separated | [Fishing prize prices](#fishing-prize-prices) |
 | `--rename-location INDEX=NAME` | rename a world-map location (save / load / pause + quick-travel menu), e.g. an element cave to match a re-elemented party | repeatable | [Location names](#location-names) |
@@ -1415,7 +1416,27 @@ verbatim SPU-ADPCM copies out of the same file, END-flagged when
 truncated to the clip span.
 NB the old reading of XA3/XA5 as "stereo Miracle fanfares" is falsified
 - those captured fires were the heroes' voice lines through the same
-dispatcher. Still retail: menu
+dispatcher.
+
+What the **Tactical Arts shout banks** (`XA2`/`XA4`/`XA6`) carry is a
+separate three-way pick, `--delilas-arts-voice MODE` (browser: the
+"Arts voices" sub-option under the swap):
+
+- `adjusted` (default) - the retail hero shouts are captured before the
+  mute and **re-voiced toward each mapped sibling** through the tuned
+  pitch/formant map in `delilas_voice_fx` (`DEFAULT_VOICE_MAP`, tuned
+  by ear per hero-sibling cell). The DSP chain is deterministic pure
+  data: WSOLA time-stretch (duration preserved), resample, one
+  cepstral spectral pass doing the formant warp and the timbre
+  transfer toward the sibling's longest grunt, pitch-contour bend,
+  and an RBJ biquad tone chain; each voiced clip is processed alone
+  and laid back at its original start so arts cue timing holds.
+- `original` - the shout banks are left retail (never muted): Vahn /
+  Noa / Gala call their own arts out of the siblings' bodies.
+- `removed` - the banks stay silent; the spliced SPU grunts remain the
+  audible attack voice.
+
+Still retail: menu
 portraits, battle HUD faces. Composes with
 `--delilas-challenge` - the challenge applies first, so its memory-tight
 dome 1v2 streams slim clones cut from the retail sibling blocks while the

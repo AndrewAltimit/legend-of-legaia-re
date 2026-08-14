@@ -312,7 +312,11 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     // 1v2 on the retail sibling data while the ravine duels (1v1, ample
     // headroom) carry the swapped models.
     if let Some(mapping) = &args.delilas_party {
-        match legaia_patcher::delilas_party::apply_delilas_party(&mut patcher, mapping) {
+        match legaia_patcher::delilas_party::apply_delilas_party(
+            &mut patcher,
+            mapping,
+            args.delilas_arts_voice,
+        ) {
             Ok(report) if report.changed => {
                 println!(
                     "delilas-party: playing as {} (Vahn), {} (Noa), {} (Gala); the ravine \
@@ -330,6 +334,7 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
                     mapping.noa.display_name().to_ascii_lowercase(),
                     mapping.gala.display_name().to_ascii_lowercase(),
                 ));
+                manifest.push(format!("delilas_arts_voice = {}", args.delilas_arts_voice));
             }
             Ok(_) => {
                 println!("delilas-party: already applied");

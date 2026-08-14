@@ -3,6 +3,7 @@
 //! Skips (and passes) when `LEGAIA_DISC_BIN` is unset.
 
 use legaia_patcher::delilas_party::{PartyMapping, Sibling, apply_delilas_party};
+use legaia_patcher::delilas_voice_fx::ArtsVoiceMode;
 use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -37,7 +38,8 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     assert_eq!(block_name(&patcher, 164), "Lu Delilas");
 
     let mapping = PartyMapping::default();
-    let report = apply_delilas_party(&mut patcher, &mapping).expect("apply");
+    let report =
+        apply_delilas_party(&mut patcher, &mapping, ArtsVoiceMode::default()).expect("apply");
     assert!(report.changed);
     // The field forms must come from the siblings' own NPC meshes at
     // full detail - no battle-model fallback, no decimation ladder, no
@@ -476,13 +478,14 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
 
     // Idempotence: a second apply is a no-op and changes no bytes.
     let mut second = DiscPatcher::open(patched.clone()).expect("open patched");
-    let report2 = apply_delilas_party(&mut second, &mapping).expect("re-apply");
+    let report2 =
+        apply_delilas_party(&mut second, &mapping, ArtsVoiceMode::default()).expect("re-apply");
     assert!(!report2.changed, "second apply must be a no-op");
     assert_eq!(second.into_image(), patched, "re-apply changed bytes");
 
     // Determinism: a fresh run over the retail image is byte-identical.
     let mut third = DiscPatcher::open(original).expect("open again");
-    apply_delilas_party(&mut third, &mapping).expect("apply again");
+    apply_delilas_party(&mut third, &mapping, ArtsVoiceMode::default()).expect("apply again");
     assert_eq!(third.into_image(), patched, "apply is deterministic");
 }
 
@@ -496,7 +499,8 @@ fn custom_mapping_rearranges_the_assignment() {
     let mapping = PartyMapping::parse("lu,gi,che").expect("parse mapping");
     assert_eq!(mapping.vahn, Sibling::Lu);
     let mut patcher = DiscPatcher::open(original).expect("open disc");
-    let report = apply_delilas_party(&mut patcher, &mapping).expect("apply");
+    let report =
+        apply_delilas_party(&mut patcher, &mapping, ArtsVoiceMode::default()).expect("apply");
     assert!(report.changed);
     let reopened = DiscPatcher::open(patcher.into_image()).expect("re-open");
     // Lu's block now depicts Vahn, Gi's depicts Noa, Che's depicts Gala.
@@ -511,4 +515,72 @@ fn mapping_parser_rejects_non_permutations() {
     assert!(PartyMapping::parse("gi,lu").is_err());
     assert!(PartyMapping::parse("gi,lu,songi").is_err());
     assert!(PartyMapping::parse("che,gi,lu").is_ok());
+}
+
+/// The three `--delilas-arts-voice` modes against the retail shout
+/// banks: `original` leaves XA2 byte-identical, `removed` leaves every
+/// channel silent, `adjusted` (default) writes processed audio that is
+/// voiced, differs from retail, and is byte-deterministic.
+#[test]
+fn arts_voice_modes_shape_the_shout_banks() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let retail = DiscPatcher::open(original.clone()).expect("open retail");
+    let mapping = PartyMapping::default();
+
+    // pick a retail-voiced channel of Vahn's shout bank as the probe
+    let chans = retail.xa_channels("XA/XA2.XA").expect("xa2 channels");
+    let probe = *chans
+        .iter()
+        .find(|&&c| {
+            retail
+                .read_xa_channel_pcm("XA/XA2.XA", c)
+                .map(|(pcm, _)| pcm.iter().any(|&s| s.unsigned_abs() > 1000))
+                .unwrap_or(false)
+        })
+        .expect("XA2 has a voiced channel");
+    let (retail_pcm, _) = retail
+        .read_xa_channel_pcm("XA/XA2.XA", probe)
+        .expect("read");
+
+    let run = |mode: ArtsVoiceMode| -> DiscPatcher {
+        let mut p = DiscPatcher::open(original.clone()).expect("open scratch");
+        let rep = apply_delilas_party(&mut p, &mapping, mode).expect("apply");
+        assert!(rep.changed, "{mode}: apply reported no change");
+        p
+    };
+
+    // original: the shout bank survives byte-identical
+    let p_orig = run(ArtsVoiceMode::Original);
+    let (pcm, _) = p_orig
+        .read_xa_channel_pcm("XA/XA2.XA", probe)
+        .expect("read");
+    assert_eq!(pcm, retail_pcm, "original mode must not touch XA2");
+
+    // removed: every channel decodes to silence
+    let p_rm = run(ArtsVoiceMode::Removed);
+    for &c in &chans {
+        if let Ok((pcm, _)) = p_rm.read_xa_channel_pcm("XA/XA2.XA", c) {
+            assert!(
+                pcm.iter().all(|&s| s.unsigned_abs() <= 24),
+                "removed mode left channel {c} audible"
+            );
+        }
+    }
+
+    // adjusted: voiced, different from retail, deterministic
+    let p_adj = run(ArtsVoiceMode::Adjusted);
+    let (adj, _) = p_adj.read_xa_channel_pcm("XA/XA2.XA", probe).expect("read");
+    assert!(
+        adj.iter().any(|&s| s.unsigned_abs() > 1000),
+        "adjusted mode silenced the probe channel"
+    );
+    assert_ne!(adj, retail_pcm, "adjusted mode left retail audio untouched");
+    let p_adj2 = run(ArtsVoiceMode::Adjusted);
+    let (adj2, _) = p_adj2
+        .read_xa_channel_pcm("XA/XA2.XA", probe)
+        .expect("read");
+    assert_eq!(adj, adj2, "adjusted mode must be byte-deterministic");
 }

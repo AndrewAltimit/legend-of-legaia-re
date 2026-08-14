@@ -596,11 +596,42 @@ fn write_grunt(
     Ok(true)
 }
 
+/// The retail arts-shout banks (XA2/XA4/XA6), captured per channel
+/// BEFORE the whole-file mutes wipe them - the `adjusted` arts-voice
+/// mode re-voices exactly this audio.
+pub struct HeroShoutCapture {
+    /// `[hero slot][..] = (channel, mono pcm, sample rate)`.
+    pub banks: [Vec<(u8, Vec<i16>, u32)>; 3],
+}
+
+/// Best-effort capture of the three retail shout banks (a channel that
+/// fails to demux is skipped - it was never voiced).
+pub fn capture_hero_shouts(patcher: &DiscPatcher) -> HeroShoutCapture {
+    let mut banks: [Vec<(u8, Vec<i16>, u32)>; 3] = Default::default();
+    for (slot, file) in ["XA/XA2.XA", "XA/XA4.XA", "XA/XA6.XA"].iter().enumerate() {
+        let Ok(chans) = patcher.xa_channels(file) else {
+            continue;
+        };
+        for chan in chans {
+            if let Ok((pcm, rate)) = patcher.read_xa_channel_pcm(file, chan) {
+                banks[slot].push((chan, pcm, rate));
+            }
+        }
+    }
+    HeroShoutCapture { banks }
+}
+
 /// Fill every muted hero voice slot with the mapped siblings' grunts.
+/// `arts_voice` picks what the arts-shout banks (XA2/4/6) carry:
+/// `Original` leaves them retail (they were never muted), `Removed`
+/// keeps them silent, `Adjusted` re-voices the captured retail shouts
+/// toward each slot's sibling via [`crate::delilas_voice_fx`].
 pub fn fill_hero_xa_voices(
     patcher: &mut DiscPatcher,
     mapping: &PartyMapping,
     lines: &VictoryLines,
+    arts_voice: crate::delilas_voice_fx::ArtsVoiceMode,
+    shouts: &HeroShoutCapture,
 ) -> Result<Vec<String>> {
     let mut notes = Vec::new();
     let snd = patcher
@@ -671,28 +702,47 @@ pub fn fill_hero_xa_voices(
         // - staged bank 2: minor-event lines (cut-ins, KO, item) ->
         //   barks + efforts cycled, never the big line.
         let cast = voice_cast(*sibling);
-        let shout_pick = |i: usize, chan: u8| -> &Grunt {
-            if let Some(c) = &cast
-                && chan >= 14
-                && let Some(g) = by_vag(c.line)
-            {
-                return g;
+        // Arts-shout bank: what plays when the character calls an art.
+        match arts_voice {
+            crate::delilas_voice_fx::ArtsVoiceMode::Original => {
+                notes.push(format!(
+                    "{}: arts shouts left retail (original mode)",
+                    ["Vahn", "Noa", "Gala"][slot]
+                ));
             }
-            pool[i % pool.len()]
-        };
-        for (i, chan) in patcher
-            .xa_channels(shout_banks[slot])?
-            .into_iter()
-            .enumerate()
-        {
-            if write_grunt(
-                patcher,
-                shout_banks[slot],
-                chan,
-                shout_pick(i, chan),
-                &mut notes,
-            )? {
-                filled += 1;
+            crate::delilas_voice_fx::ArtsVoiceMode::Removed => {
+                // the bank was muted whole; arts stay voiceless, the
+                // spliced SPU grunts remain the attack voice
+                notes.push(format!(
+                    "{}: arts shouts removed (bank stays silent)",
+                    ["Vahn", "Noa", "Gala"][slot]
+                ));
+            }
+            crate::delilas_voice_fx::ArtsVoiceMode::Adjusted => {
+                let fx = crate::delilas_voice_fx::voice_map(slot, *sibling);
+                let reference = (longest.pcm.as_slice(), longest.rate);
+                let mut adjusted = 0usize;
+                for (chan, pcm, rate) in &shouts.banks[slot] {
+                    let out =
+                        crate::delilas_voice_fx::process_channel(pcm, *rate, fx, Some(reference));
+                    if out.iter().all(|&s| s == 0) {
+                        continue; // channel carried no voiced clip
+                    }
+                    let g = Grunt {
+                        vag: 0,
+                        pcm: out,
+                        rate: *rate,
+                    };
+                    if write_grunt(patcher, shout_banks[slot], *chan, &g, &mut notes)? {
+                        adjusted += 1;
+                        filled += 1;
+                    }
+                }
+                notes.push(format!(
+                    "{}: {adjusted} arts-shout channels pitch-mapped toward {} (adjusted mode)",
+                    ["Vahn", "Noa", "Gala"][slot],
+                    sibling.display_name()
+                ));
             }
         }
         let spirit_line = lines.spirit[slot].as_ref().map(|(pcm, rate)| Grunt {
