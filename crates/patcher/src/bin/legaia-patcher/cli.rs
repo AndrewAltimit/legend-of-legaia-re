@@ -782,6 +782,15 @@ pub(crate) struct RandomizeArgs {
     /// shouts; `removed` silences arts shouts (attack grunts remain).
     #[arg(long, value_name = "MODE", default_value = "adjusted")]
     pub(crate) delilas_arts_voice: legaia_patcher::delilas_voice_fx::ArtsVoiceMode,
+    /// With `--delilas-party`: how much of the hero's Tactical Arts kit
+    /// becomes the sibling's. `hybrid` (default) keeps every host art's
+    /// own animation and only reskins one Hyper into the sibling's
+    /// signature special; `delilas` rebuilds the whole art-stream
+    /// archive from the sibling's own motions, renames each surviving
+    /// art after the clip it plays, and blanks every art the Super and
+    /// Miracle Arts do not need out of the matcher.
+    #[arg(long, value_name = "MODE", default_value = "hybrid")]
+    pub(crate) delilas_moves: legaia_patcher::delilas_party::DelilasMoveMode,
     /// Per-battle percentage chance a capturable enemy is shiny (only with
     /// `--shiny-seru`).
     #[arg(long, default_value_t = legaia_patcher::shiny_seru::DEFAULT_PCT)]

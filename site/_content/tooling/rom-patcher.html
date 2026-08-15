@@ -473,6 +473,15 @@
           <option value="removed">Removed - arts silent, attack grunts remain</option>
         </select>
       </div>
+      <div class="rom-opt rom-sub" id="rom-delilas-moves-row" hidden>
+        <label class="rom-opt-label" for="rom-delilas-moves">&#8627; Move set
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Which animations the swapped hero's Tactical Arts play. Hybrid (the default) leaves every art exactly as retail authored it and only reskins one Hyper Art into the sibling's signature special. Delilas re-authors the character's whole battle-animation archive from the mapped sibling's own monster clips, so every art in the list plays a Delilas motion, renames each surviving art after the clip it performs, and blanks the arts that neither a Super Art nor the Miracle Art needs - a blanked art is never learned, so it never appears in the Moves list. Super and Miracle Arts stay reachable either way. Unaffected by the seed.</span></span>
+        </label>
+        <select id="rom-delilas-moves">
+          <option value="hybrid" selected>Hybrid - host arts keep their own animations</option>
+          <option value="delilas">Delilas - every art plays a sibling motion</option>
+        </select>
+      </div>
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-spirit-ap-on">

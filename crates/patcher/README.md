@@ -1393,6 +1393,22 @@ legaia-patcher verify --input DISC.bin --patch run.ppf
   `arts_table::name_field`, the enemy row through `spell_names::name_field` -
   each written into its own record's measured NUL slack, never by searching
   the image for the old text.
+- `--delilas-moves delilas` re-authors the *rest* of the kit
+  (`apply_delilas_moveset`). The character's whole art `"ME"` archive is
+  rebuilt from the sibling's own monster clips - retail leaves only
+  20374 / 2446 / 17361 free bytes in the three slots, so extending is not
+  a shape the disc has room for, while re-emitting is, because retail
+  already points several art records at one stream. Every record is
+  repointed round-robin over the sibling's swings, re-timed to the clip's
+  rate, stripped of the host's impact class and loop hold, and renamed
+  after the clip it plays - and the renames are what keep `record[0]`
+  inside its LZS footprint, since repeated strings compress where 22
+  distinct ones do not (measured spare: 143 / 268 / 48 bytes). Arts that
+  no Super or Miracle trigger needs get their combos blanked, which hides
+  them for free (an art is only listed once it has been performed). What
+  must survive is measured, not chosen: the Miracle's own row 11, every
+  row a Super `find` names, and the innate block below the `0x801F686C`
+  cap, which is script-granted rather than self-taught.
 - The swing camera is **re-timed, not replaced** (`retime_camera_arm`). Its
   shot changes are `slti` immediates in the battle overlay, cut against the
   clip the art plays in retail (the highest in the dispatcher is keyframe 17),

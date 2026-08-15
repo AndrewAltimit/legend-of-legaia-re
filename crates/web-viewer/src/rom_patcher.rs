@@ -294,6 +294,7 @@ pub fn patch_rom(
     seru_catch_rate: &str,
     delilas_party: &str,
     delilas_arts_voice: &str,
+    delilas_moves: &str,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -1008,16 +1009,23 @@ pub fn patch_rom(
             .trim()
             .parse::<legaia_patcher::delilas_voice_fx::ArtsVoiceMode>()
             .unwrap_or_default();
+        // Move mode for the swapped kit; an empty or unknown value falls
+        // back to the retail-preserving default (hybrid).
+        let move_mode = delilas_moves
+            .trim()
+            .parse::<legaia_patcher::delilas_party::DelilasMoveMode>()
+            .unwrap_or_default();
         match legaia_patcher::delilas_party::PartyMapping::parse(delilas_party) {
             Ok(mapping) => {
                 match legaia_patcher::delilas_party::apply_delilas_party(
                     &mut patcher,
                     &mapping,
                     arts_voice,
+                    move_mode,
                 ) {
                     Ok(rep) if rep.changed => summary.push_str(&format!(
                         "delilas-party: playing as {} / {} / {} (duels field the heroes); \
-                         arts voices: {arts_voice}\n",
+                         moves: {move_mode}; arts voices: {arts_voice}\n",
                         mapping.vahn.display_name(),
                         mapping.noa.display_name(),
                         mapping.gala.display_name()

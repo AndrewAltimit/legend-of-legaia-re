@@ -316,6 +316,7 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             &mut patcher,
             mapping,
             args.delilas_arts_voice,
+            args.delilas_moves,
         ) {
             Ok(report) if report.changed => {
                 println!(
@@ -335,6 +336,7 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
                     mapping.gala.display_name().to_ascii_lowercase(),
                 ));
                 manifest.push(format!("delilas_arts_voice = {}", args.delilas_arts_voice));
+                manifest.push(format!("delilas_moves = {}", args.delilas_moves));
             }
             Ok(_) => {
                 println!("delilas-party: already applied");

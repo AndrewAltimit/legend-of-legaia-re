@@ -47,6 +47,7 @@ use crate::monster_model::{CBA_BASE, CLUT_COUNT, CLUT_REGION_BYTES, PAGE_HEIGHT,
 use legaia_tmd::encode::{ModelGroup, ModelObject, decode_model, encode};
 
 pub mod fieldize;
+pub mod moveset;
 pub mod playerize;
 pub mod winpose;
 

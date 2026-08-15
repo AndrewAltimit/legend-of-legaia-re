@@ -92,7 +92,7 @@ pub(crate) fn to_euler(m: &[[f32; 3]; 3]) -> (u16, u16, u16) {
 
 /// Pack one part pose into the 9-byte stream record (six 12-bit fields;
 /// the `FUN_8004998C` unpack layout in reverse).
-fn pack_part(p: &PartPose) -> [u8; 9] {
+pub(crate) fn pack_part(p: &PartPose) -> [u8; 9] {
     let f = [
         (p.tx as u16) & 0xFFF,
         (p.ty as u16) & 0xFFF,

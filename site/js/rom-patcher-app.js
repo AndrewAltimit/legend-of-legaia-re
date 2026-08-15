@@ -1376,7 +1376,7 @@ const PRESET_BASE = {
   drops: 'none', encounters: 'none', encounter_scope: 'scene', soloStrong: false, fleeExp: false, chests: 'none',
   shops: 'none', casino: 'none', steals: 'none', arts: 'none', doors: 'none',
   door_coupling: 'coupled', houseDoors: false, equipmentDrops: false, seruTrade: false,
-  enemyAlly: false, shinySeru: false, jewelFix: false, approachFix: false, delilasChallenge: false, customItems: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '', delilasParty: '', delilasArtsVoice: 'adjusted',
+  enemyAlly: false, shinySeru: false, jewelFix: false, approachFix: false, delilasChallenge: false, customItems: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '', delilasParty: '', delilasArtsVoice: 'adjusted', delilasMoves: 'hybrid',
   startingItems: 0, doorOfWind: false, incense: false,
   speedChain: false, chickenHeart: false, goodLuckBell: false,
   allWarps: false,
@@ -1478,9 +1478,12 @@ function init() {
   const delilasPartySel = $('rom-delilas-party');
   const delilasArtsVoiceSel = $('rom-delilas-arts-voice');
   const delilasArtsVoiceRow = $('rom-delilas-arts-voice-row');
+  const delilasMovesSel = $('rom-delilas-moves');
+  const delilasMovesRow = $('rom-delilas-moves-row');
   // The arts-voice sub-option only means anything with the swap on.
   const syncDelilasArtsRow = () => {
     delilasArtsVoiceRow.hidden = !delilasPartySel.value;
+    delilasMovesRow.hidden = !delilasPartySel.value;
   };
   delilasPartySel.addEventListener('change', syncDelilasArtsRow);
   const fishingPriceInput = $('rom-fishing-price');
@@ -1731,6 +1734,7 @@ function init() {
     customItemsChk.checked = cfg.customItems;
     delilasPartySel.value = cfg.delilasParty ?? '';
     delilasArtsVoiceSel.value = cfg.delilasArtsVoice ?? 'adjusted';
+    delilasMovesSel.value = cfg.delilasMoves ?? 'hybrid';
     syncDelilasArtsRow();
     fishingPriceInput.value = cfg.fishingPrice || '';
     renameLocationInput.value = cfg.renameLocation || '';
@@ -1953,6 +1957,7 @@ function init() {
     const seruCatchRate = seruCatchChk.checked ? String(seruCatchSlider.value) : '';
     const delilasParty = delilasPartySel.value;
     const delilasArtsVoice = delilasParty ? delilasArtsVoiceSel.value : '';
+    const delilasMoves = delilasParty ? delilasMovesSel.value : '';
     // Art overrides = the per-art rows serialized to `combo=value` pairs,
     // merged with anything typed into the raw (advanced) inputs.
     const artOv = artBuilder.collect();
@@ -2045,7 +2050,7 @@ function init() {
       let summaryText = '';
       let langReport = null;
       if (baseActive) {
-        const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate, delilasParty, delilasArtsVoice);
+        const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate, delilasParty, delilasArtsVoice, delilasMoves);
         data = result.data;
         usedSeed = result.seed;
         summaryText = result.summary || '';

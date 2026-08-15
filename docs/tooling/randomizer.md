@@ -68,6 +68,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Approach-softlock fix](#approach-softlock-fix)
   - [Delilas Challenge](#delilas-challenge)
   - [Delilas party swap](#delilas-party-swap)
+    - [The Delilas move set](#the-delilas-move-set)
   - [Fishing prize prices](#fishing-prize-prices)
   - [Location names](#location-names)
   - [Earth Egg coin threshold](#earth-egg-coin-threshold)
@@ -296,6 +297,7 @@ unless asked for:
 | `--delilas-challenge` | a fourth Muscle Dome enrollment option: a new 2-round arena course (Che & Lu double-team, then Gi; a clear pays 5000 coins + a Honey); unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
 | `--delilas-party V,N,G` | play as the Delilas siblings: the party wears Gi / Lu / Che battle models (any permutation over Vahn, Noa, Gala) while the ravine duels + dome Master legs field Vahn / Noa / Gala models | - | [Delilas party swap](#delilas-party-swap) |
 | `--delilas-arts-voice MODE` | with the swap: what the arts shout AND Super/Hyper fanfare banks carry - `adjusted` (default; re-voiced toward the siblings), `original`, `removed` | `adjusted` | [Delilas party swap](#delilas-party-swap) |
+| `--delilas-moves MODE` | with the swap: whose animations the hero's Tactical Arts play - `hybrid` (default; only the signature Hyper is the sibling's), `delilas` (whole art archive rebuilt from the sibling's clips, arts renamed, non-essential arts hidden) | `hybrid` | [The Delilas move set](#the-delilas-move-set) |
 | `--custom-items` | inject three brand-new items (Nature's Elixir / Ra-Seru Tear / Fury Bloom) into cut item slots; `random` drop/chest/steal modes add them to the fill pool, and with `--delilas-challenge` they replace the Honey clear reward | - | [Custom items](#completion-reward---a-honey-or-three-custom-items) |
 | `--fishing-price ITEM=POINTS` | set the fishing-exchange point cost of a prize (e.g. the Buma Water Egg); the price also gates when the prize appears | repeatable / comma-separated | [Fishing prize prices](#fishing-prize-prices) |
 | `--rename-location INDEX=NAME` | rename a world-map location (save / load / pause + quick-travel menu), e.g. an element cave to match a re-elemented party | repeatable | [Location names](#location-names) |
@@ -1895,6 +1897,109 @@ data. One knob left for a listener: `0x801F6418[37]` is sound cue 208,
 so the transplant fires that cue - a one-byte edit if it is wrong for
 the move.
 
+#### The Delilas move set
+
+`--delilas-moves` (browser: the "Move set" dropdown under the party
+picker) picks how much of the hero's Tactical Arts kit becomes the
+sibling's. `hybrid` is the default and is exactly the behaviour above:
+every art keeps the animation retail authored for it, and only the one
+reskinned Hyper plays a Delilas motion. `delilas` re-authors the rest of
+the kit (`delilas_party::apply_delilas_moveset` +
+`legaia_asset::party_swap::moveset`).
+
+**The archive is rebuilt, not extended.** A character's art streams live
+in one `0x10800`-byte `readef.DAT` slot, and retail fills most of it: the
+three main slots have 20374 / 2446 / 17361 bytes free. Noa's cannot take
+even one more full-length clip. It does not have to: retail already
+points several art records at one stream (Vahn's 25 records resolve to at
+most 17), so the record's `+0x0A` stream index is a free-standing pointer
+and the whole archive can be re-emitted as long as every record that
+reads it is repointed in the same pass. What ships is the signature
+stream carried over byte-identical, the sibling's locomotion clip, and
+one entry per distinct sibling swing, against 17 / 18 / 19 retail
+streams. On the default `gi,lu,che` mapping that is 5 / 6 / 6 streams in
+16511 / 16133 / 26565 bytes; the counts follow the sibling, not the
+slot, so a rearranged party moves them.
+
+A swing is an archive entry whose action tag falls in the `0x0C..=0x1F`
+band and that no stage of the signature chain claims; that yields 3 (Gi)
+/ 4 (Che) / 4 (Lu) without a per-sibling table. The tag alone is not
+enough - Lu carries an unstaged `0x23` - which is why the chain is
+subtracted rather than the specials being inferred from tags.
+
+Every record that reads the archive is then repointed round-robin over
+the swings and re-timed to the clip's own rate; the two combo-starter
+records take the locomotion clip. Each record's frame-indexed fields -
+the hit list at entry `+0x10..0x13` and the eight effect-script gates -
+are rescaled from the stream it used to read onto the one it reads now,
+and the host's impact-effect class (`+0x7A`) and mid-clip loop hold
+(`+0x84..0x86`) are cleared, both being keyed to choreography that no
+longer exists.
+
+**The renames are load-bearing, not decoration.** Every record's inline
+name becomes the label of the clip it now plays, and a handful of
+repeated strings compresses far better than 22 distinct ones - which is
+what keeps the rewritten `record[0]` inside its LZS footprint. Spare
+bytes with the whole pass applied, on the default mapping: Vahn 143, Noa
+272, Gala 56.
+
+The menu side follows through each arts-table record's own `+0xC`
+pointer, over the retail string plus its measured NUL padding. Labels are
+capped at seven bytes for **every** sibling, not sized against the slot
+each usually lands in: the tightest field any retained art carries is
+Vahn's `Cyclone`, the mapping is a free permutation, and a label that
+does not fit is skipped - so a per-sibling cap would silently keep the
+retail name under a rearranged party. The apply says so when it happens
+rather than passing in silence.
+
+##### What survives, and why hiding the rest is free
+
+An art is only listed once `FUN_801EFBFC` has inserted it at char record
+`+0x185` on a successful performance, so an art that can never be
+performed never appears. What makes a blanked combo unperformable is the
+`combo_len == 1` guard at `0x801EF424`: a blanked combo is
+zero-terminated at byte 0, so a match can only ever complete at length 1,
+and that length is abandoned outright. This is retail's own mechanism for
+the same job - the Super and Miracle **finisher** rows all carry a
+single-`D` combo and are unreachable for exactly this reason. The
+`token - 0x0B` compare at `0x801EF3EC` is a second line of defence
+(`0x0B` is `BlockAnim`, not an input), but it was not proved exhaustively
+over every queue writer and the conclusion does not rest on it.
+
+Four groups keep a working combo:
+
+- **the signature host**, which now carries the sibling's special;
+- **bank row 11**, the Miracle Art. Its combo is the only route to the
+  wholesale queue overwrite: `FUN_801EED1C` branches to the replacement
+  table at `0x801F64F4` only while its rows-visited counter is still zero
+  (`0x801EF4D8`-`0x801EF4E0`), i.e. only on that first row, and the disc
+  confirms it - row 11 carries `RDLULURDL` / `LURDULUDR` / `RRDUDUDLL`,
+  the three combos the SCUS arts table flags as Miracle;
+- **every art a Super Art trigger names.** A Super is not entered as a
+  combo. `FUN_801EF9E4` walks the *finished* action queue at
+  `actor[+0x1DF]` and tail-matches it against the resident trigger table
+  (`find` `0x801F6524 + char*0x41 + row*13`, `replace` `0x801F65E8 +
+  char*0x50 + row*0x10`), and the only writer that puts an art constant
+  into that queue is the combo matcher. So a blanked component silently
+  costs the Super. Bank row and queue constant differ by `0x10`
+  (`0x801EF63C` writes `row + 0x10`), which turns each trigger's art
+  sequence into a row set: 8 rows for Vahn, 10 for Noa, 8 for Gala;
+- **every art at or below the innate cap** at `0x801F686C` (`[3, 5, 3]`
+  on the USA disc - each character's Hyper block). `FUN_801EFBFC` only
+  self-teaches ids *above* that cap, so those arts arrive through the
+  script grant instead (the `+0x74E` insert at `0x80041FB4` in SCUS
+  `FUN_800402F4`). Blanking one would leave an art listed that can never
+  fire, so they are kept and re-animated like the rest.
+
+That leaves 12 / 16 / 12 performable arts per character and 3 / 1 / 3
+hidden. The residual: the script grant is data-driven and its operand set
+has not been enumerated, so a scene that grants an id *above* the cap
+would list a blanked art. No retail grant of that shape is known.
+
+The Miracle Art itself needs no component art kept. Its replacement
+string is written into the queue verbatim, so the arts it names only have
+to exist as records - which they do, untouched.
+
 Still retail: menu
 portraits, battle HUD faces. Composes with
 `--delilas-challenge` - the challenge applies first, so its memory-tight
@@ -1903,8 +2008,10 @@ dome 1v2 streams slim clones cut from the retail sibling blocks while the
 of any preset; unaffected by the seed.
 
 > Verified by the `delilas_party_real` disc oracles (apply / re-decode /
-> idempotence / determinism / mapping rearrangement) and the
-> `party_swap_real` conversion oracles over all nine pairings.
+> idempotence / determinism / mapping rearrangement, plus a hybrid-mode
+> contrast against retail that pins every coordinate the Delilas pass
+> owns) and the `party_swap_real` conversion oracles over all nine
+> pairings.
 ### Fishing prize prices
 
 The fishing minigame's prize counters (the **Buma** and **Vidna** ponds) sell

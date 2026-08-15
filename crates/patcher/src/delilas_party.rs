@@ -31,6 +31,47 @@ const BATTLE_OVERLAY_ENTRY: usize = 898;
 
 use crate::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 
+/// How much of the swapped hero's Tactical-Arts kit becomes the
+/// sibling's.
+///
+/// See [`apply_delilas_moveset`] for what `Delilas` rebuilds and
+/// [`retained_bank_rows`] for why the host arts it keeps cannot be
+/// dropped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DelilasMoveMode {
+    /// Every art keeps the host hero's animation; only the one
+    /// reskinned Hyper plays the sibling's signature special.
+    #[default]
+    Hybrid,
+    /// The hero's whole art-stream archive is rebuilt from the
+    /// sibling's own motions, the arts that survive are renamed after
+    /// the clip each plays, and every art the Supers and the Miracle do
+    /// not need is blanked out of the matcher.
+    Delilas,
+}
+
+impl std::str::FromStr for DelilasMoveMode {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "hybrid" => Ok(Self::Hybrid),
+            "delilas" => Ok(Self::Delilas),
+            other => Err(format!(
+                "unknown Delilas move mode {other:?} (expected hybrid or delilas)"
+            )),
+        }
+    }
+}
+
+impl std::fmt::Display for DelilasMoveMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Hybrid => "hybrid",
+            Self::Delilas => "delilas",
+        })
+    }
+}
+
 /// One Delilas sibling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sibling {
@@ -182,6 +223,7 @@ pub fn apply_delilas_party(
     patcher: &mut DiscPatcher,
     mapping: &PartyMapping,
     arts_voice: crate::delilas_voice_fx::ArtsVoiceMode,
+    move_mode: DelilasMoveMode,
 ) -> Result<DelilasPartyReport> {
     let mut report = DelilasPartyReport::default();
     let archive = patcher
@@ -522,9 +564,465 @@ pub fn apply_delilas_party(
             let notes = reskin_signature_art(patcher, &ctx, &mut cave_taken)
                 .with_context(|| format!("reskin the {who}-slot signature art"))?;
             report.notes.extend(notes);
+
+            // The rest of the kit, when the caller asked for it. Runs
+            // last per slot: it carries the signature stream the reskin
+            // just authored into the archive it re-authors, so it has
+            // to see that pass's output.
+            if move_mode == DelilasMoveMode::Delilas {
+                match apply_delilas_moveset(patcher, &ctx) {
+                    Ok(notes) => report.notes.extend(notes),
+                    Err(e) => report
+                        .notes
+                        .push(format!("{who} moves: stay the host's ({e:#})")),
+                }
+            }
         }
     }
     Ok(report)
+}
+
+// ---------------------------------------------------------------------------
+// Delilas move mode: the whole art kit re-animated from the sibling's
+// own clips.
+// ---------------------------------------------------------------------------
+
+/// Bank row the arts matcher starts each scan at, and the Miracle Art's
+/// own record.
+///
+/// `FUN_801EED1C` seeds its row cursor `li s3, 0xb` (`0x801EF2EC`) and
+/// abandons the whole scan when the bank's record count is `<= 0x0B`
+/// (`0x801EF2F4`-`0x801EF2FC`), so rows below 11 are never matched. Row
+/// 11 is additionally the Miracle Art: the substitution path branches to
+/// the wholesale queue overwrite from `0x801F64F4` only while the
+/// rows-visited counter is still zero (`0x801EF4D8`-`0x801EF4E0`), i.e.
+/// only on this first row - and reading the disc confirms it, row 11
+/// carrying `RDLULURDL` / `LURDULUDR` / `RRDUDUDLL`, the three Miracle
+/// combos the SCUS arts table flags.
+const MIRACLE_BANK_ROW: usize = 0x0B;
+
+/// Queue action constant of bank row `row`: the matcher writes
+/// `s3 + 0x10` (`0x801EF63C` single-record arts, `0x801EF610` the
+/// multi-record form), so the two spaces differ by a constant.
+const ART_CONSTANT_BASE: usize = 0x10;
+
+/// VA of the per-character **innate art cap** the learn-on-use gate
+/// reads (`FUN_801EFBFC`, `0x801EFD0C`-`0x801EFD18`): an art id is only
+/// self-taught when `cap < id`. Reads `[3, 5, 3]` on the USA disc, which
+/// is exactly each character's Hyper-Art block - those are granted by a
+/// script instead (the `+0x74E` insert at `0x80041FB4` in SCUS
+/// `FUN_800402F4`), so blanking their combos would list an art that can
+/// never fire.
+const INNATE_ART_CAP_VA: u32 = 0x801F_686C;
+
+/// Record-image span of an art record's zero-terminated combo. `+0x0A`
+/// is the stream index and `+0x0B..+0x0D` size the matcher's row stride,
+/// so blanking must stop short of them.
+const COMBO_FIELD: std::ops::Range<usize> = 0..9;
+
+/// Record-image span of the inline art name (`+0x10`, NUL-padded, ends
+/// where the embedded action entry begins).
+const NAME_FIELD: std::ops::Range<usize> = 0x10..0x24;
+
+/// Bank rows whose art constant appears in one of the character's Super
+/// Art `find` patterns.
+///
+/// A Super is not entered as a combo - `FUN_801EF9E4` walks the
+/// **finished** action queue at `actor[+0x1DF]` and tail-matches it
+/// against the resident trigger table, so a Super can only fire if every
+/// regular art of its `find` string reached that queue, and the only
+/// writer that puts an art constant there is the combo matcher. Blanking
+/// one of these rows would silently cost the Super.
+fn super_critical_rows(
+    character: legaia_art::queue::Character,
+) -> std::collections::BTreeSet<usize> {
+    legaia_art::super_art::SUPER_ARTS
+        .iter()
+        .filter(|s| s.character == character)
+        .flat_map(|s| s.art_sequence())
+        .filter_map(|c| (c as usize).checked_sub(ART_CONSTANT_BASE))
+        .collect()
+}
+
+/// The innate cap byte for a party slot, read off the battle overlay.
+fn innate_art_cap(overlay: &[u8], slot: usize) -> Result<u8> {
+    let off = (INNATE_ART_CAP_VA - BATTLE_OVERLAY_BASE) as usize + slot;
+    overlay
+        .get(off)
+        .copied()
+        .ok_or_else(|| anyhow::anyhow!("innate art cap for slot {slot} is past the overlay"))
+}
+
+/// Which bank rows keep a working combo under [`DelilasMoveMode::Delilas`].
+///
+/// Four reasons a row survives, and only the first is about taste:
+///
+/// - the **signature host** row, which now carries the sibling's special;
+/// - row 11, the **Miracle Art** - its combo is the only thing that
+///   reaches the wholesale queue overwrite;
+/// - every row a **Super Art** trigger names ([`super_critical_rows`]);
+/// - every row whose art id is at or below the **innate cap**, because
+///   those are script-granted and blanking them would leave a listed art
+///   that can never be performed.
+///
+/// Everything else is blanked, and blanking hides it for free: an art is
+/// only listed once `FUN_801EFBFC` has inserted it at char record
+/// `+0x185` on a successful performance, and a blanked combo can never
+/// be performed. The load-bearing reason is the `combo_len == 1` guard at
+/// `0x801EF424`, which abandons a one-input match outright - a blanked
+/// combo is zero-terminated at byte 0, so it can only ever complete at
+/// length 1. That guard is retail's own mechanism for the same job: the
+/// Super and Miracle **finisher** rows all carry a single-`D` combo and
+/// are unreachable for exactly this reason. The weaker argument - that
+/// the `token - 0x0B` compare at `0x801EF3EC` needs a `0x0B` queue token
+/// and `0x0B` is `BlockAnim`, not an input - is a second line of defence
+/// and was not proved exhaustively over every queue writer.
+fn retained_bank_rows(
+    character: legaia_art::queue::Character,
+    cap: u8,
+    host_row: usize,
+    bank_len: usize,
+) -> std::collections::BTreeSet<usize> {
+    let mut keep = super_critical_rows(character);
+    keep.insert(MIRACLE_BANK_ROW);
+    keep.insert(host_row);
+    for row in MIRACLE_BANK_ROW..bank_len {
+        if (row - MIRACLE_BANK_ROW) <= cap as usize {
+            keep.insert(row);
+        }
+    }
+    keep.retain(|&r| r < bank_len);
+    keep
+}
+
+/// Menu labels for the sibling's swing clips, in the archive order
+/// [`legaia_asset::party_swap::moveset::swing_entries`] returns.
+///
+/// [`LABEL_MAX`] bytes at most, for every sibling. The SCUS arts-name
+/// field is rewritten in place over the retail string plus its measured
+/// NUL padding, the tightest field any retained art carries is Vahn's
+/// "Cyclone", and the mapping is a free permutation - so a label sized
+/// against the slot its sibling usually lands in would silently keep the
+/// retail name under a rearranged party.
+/// Longest menu label that fits every retained art's name field on the
+/// USA disc. Vahn's "Cyclone" is the binding one: seven string bytes and
+/// one byte of NUL padding, and a replacement needs one of those for its
+/// own terminator.
+const LABEL_MAX: usize = 7;
+
+fn swing_labels(sibling: Sibling) -> &'static [&'static str] {
+    match sibling {
+        Sibling::Gi => &["Gi Cut", "Gi Chop", "Gi Ram", "Gi Rush"],
+        Sibling::Che => &["Che Ram", "Che Jab", "Che Hit", "Che Arm"],
+        Sibling::Lu => &["Lu Bolt", "Lu Zap", "Lu Jolt", "Lu Volt"],
+    }
+}
+
+/// Rebuild one hero slot's whole art kit around the mapped sibling.
+///
+/// Runs after [`reskin_signature_art`], and depends on it: the signature
+/// stream it built is carried into the new archive byte-identical, so
+/// every frame-indexed field that pass tuned stays valid.
+///
+/// Four coordinated edits, all same-size:
+///
+/// 1. the main `"ME"` slot is re-authored from the sibling's motions
+///    ([`legaia_asset::party_swap::moveset`]) - the retail streams are
+///    dropped, which is the only way Noa's slot (2446 free bytes) has
+///    room for anything new;
+/// 2. every art record that reads that archive is repointed at one of
+///    the new streams and re-timed to its rate, with the record's
+///    frame-indexed hit list and effect-script gates rescaled from the
+///    stream it used to read;
+/// 3. the host's impact-effect class and mid-clip loop hold are cleared
+///    (both are keyed to choreography that no longer exists), and every
+///    inline record name becomes the label of the clip it now plays -
+///    which is also what makes the block fit, since a handful of
+///    repeated strings compress far better than 22 distinct ones;
+/// 4. the arts outside [`retained_bank_rows`] have their combos blanked.
+fn apply_delilas_moveset(patcher: &mut DiscPatcher, ctx: &SignatureCtx<'_>) -> Result<Vec<String>> {
+    use legaia_asset::battle_char_assembly;
+    use legaia_asset::party_swap::moveset;
+
+    let &SignatureCtx {
+        slot,
+        sibling,
+        rig,
+        retail_player,
+        archive,
+        ..
+    } = ctx;
+    let who = ["Vahn", "Noa", "Gala"][slot];
+    let character = slot_character(slot);
+    let mut notes = Vec::new();
+
+    let index = crate::arts::player_entry_index(character);
+    let entry = patcher
+        .read_entry(index)
+        .with_context(|| format!("read player file PROT {index}"))?;
+    let rec0 = battle_char_assembly::decode_record0(&entry)
+        .with_context(|| format!("decode {who} record0"))?;
+    let bank = battle_char_assembly::art_animation_bank(&rec0)
+        .with_context(|| format!("{who} art bank"))?;
+
+    // The signature row, found by the combo the reskin just wrote.
+    let host_combo: Vec<u8> = host_art(slot)
+        .ok_or_else(|| anyhow::anyhow!("no {who}-slot host art"))?
+        .combo
+        .iter()
+        .map(|c| c.as_byte())
+        .collect();
+    let host = bank
+        .iter()
+        .find(|r| !r.uses_base_archive() && r.combo == host_combo)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "{who}'s signature combo is not in the art bank - the reskin did not land"
+            )
+        })?;
+    let host_row = host.index;
+    let signature_stream = host.stream_source as usize;
+
+    let overlay = patcher
+        .read_entry(BATTLE_OVERLAY_ENTRY)
+        .context("read the battle-action overlay")?;
+    let cap = innate_art_cap(&overlay, slot)?;
+    let keep = retained_bank_rows(character, cap, host_row, bank.len());
+
+    // Re-author the stream archive from the sibling's own clips.
+    let source_id = sibling.monster_id();
+    let anims = moveset::sibling_animations(archive, source_id)?;
+    let chain = signature_clip_chain(sibling);
+    let swings = moveset::swing_entries(&anims, chain);
+    let approach = moveset::approach_entry(&anims);
+    let readef = patcher
+        .read_entry_footprint(READEF_ENTRY)
+        .context("read readef.DAT")?;
+    let me_off = battle_char_assembly::art_me_slot(slot, false) * winpose::READEF_SLOT;
+    let me = readef
+        .get(me_off..me_off + winpose::READEF_SLOT)
+        .ok_or_else(|| anyhow::anyhow!("readef art slot for {who} out of range"))?;
+    let old_frames = moveset::entry_frames(me).context("read the retail stream frame counts")?;
+    let rebuilt = moveset::rebuild_moveset_archive(
+        me,
+        signature_stream,
+        &anims,
+        approach,
+        &swings,
+        rig,
+        retail_player,
+        archive,
+        source_id,
+    )
+    .with_context(|| {
+        format!(
+            "rebuild {who}'s art streams from {}",
+            sibling.display_name()
+        )
+    })?;
+
+    // Repoint / re-time / rename every record that reads that archive.
+    // Nothing is written until BOTH halves are known to fit: a rebuilt
+    // archive whose records still hold their retail stream indices would
+    // send most of them past the end of it.
+    let labels = swing_labels(sibling);
+    let mut offset_edits: Vec<(usize, u8)> = Vec::new();
+    let mut assignments: Vec<(usize, usize, &'static str)> = Vec::new();
+    let mut blanked = Vec::new();
+    let mut nth = 0usize;
+    for rec in &bank {
+        if rec.uses_base_archive() {
+            continue;
+        }
+        let record_off = rec.entry_offset - battle_char_assembly::ART_ENTRY_OFFSET;
+        if rec.index == host_row {
+            // The signature keeps the stream the reskin authored; only
+            // its index moved.
+            offset_edits.push((record_off + 0x0A, rebuilt.signature as u8));
+            continue;
+        }
+        if rec.index < MIRACLE_BANK_ROW {
+            // The combo starters: the sibling's locomotion clip, which is
+            // what a step-in before a chain wants.
+            let stream = &rebuilt.streams[rebuilt.approach];
+            offset_edits.push((record_off + 0x0A, rebuilt.approach as u8));
+            offset_edits.push((rec.entry_offset + 0x78, stream.rate));
+            continue;
+        }
+        let swing = rebuilt.swing_for(nth);
+        let label = labels[(nth % rebuilt.swings.len()).min(labels.len() - 1)];
+        nth += 1;
+        let stream = &rebuilt.streams[swing];
+        let from = old_frames
+            .get(rec.stream_source as usize)
+            .copied()
+            .unwrap_or(0);
+        offset_edits.push((record_off + 0x0A, swing as u8));
+        offset_edits.push((rec.entry_offset + 0x78, stream.rate));
+        // The host's element spark / afterimage tint, and the mid-clip
+        // loop hold - both keyed to choreography that is gone.
+        offset_edits.push((rec.entry_offset + IMPACT_CLASS_OFFSET, 0));
+        for k in [0x84usize, 0x85, 0x86] {
+            offset_edits.push((rec.entry_offset + k, 0));
+        }
+        // Frame-indexed fields, rescaled from the stream the record used
+        // to read onto the one it reads now.
+        for i in 0..4 {
+            let f = rec.effect_script.get(0x10 + i).copied().unwrap_or(0);
+            if f != 0 {
+                offset_edits.push((
+                    rec.entry_offset + 0x10 + i,
+                    rescale_frame(f, from, stream.frames),
+                ));
+            }
+        }
+        for i in 0..FX_RECORDS {
+            let at = FX_BASE + i * FX_RECORD;
+            let gate = rec.effect_script.get(at).copied().unwrap_or(0);
+            if gate != 0 {
+                offset_edits.push((
+                    rec.entry_offset + at,
+                    rescale_frame(gate, from, stream.frames),
+                ));
+            }
+        }
+        // The inline name: the clip's label, NUL-padded over the retail
+        // string. Repetition here is what buys the LZS margin.
+        let mut field = label.as_bytes().to_vec();
+        field.resize(NAME_FIELD.len(), 0);
+        offset_edits.extend(
+            field
+                .iter()
+                .enumerate()
+                .map(|(i, &b)| (record_off + NAME_FIELD.start + i, b)),
+        );
+        // A retail row whose combo is a single direction is already
+        // unmatchable (`0x801EF424` rejects a one-input match outright)
+        // - those are the Super and Miracle finisher rows. Blanking them
+        // too is free and compresses, but only a real multi-input art
+        // counts as one this mode hid.
+        let is_art = rec.combo.len() >= 2;
+        if !keep.contains(&rec.index) {
+            offset_edits.extend(COMBO_FIELD.map(|i| (record_off + i, 0u8)));
+            if is_art {
+                blanked.push(rec.index);
+            }
+        } else if is_art {
+            assignments.push((rec.index, swing, label));
+        }
+    }
+
+    let (lzs_off, recompressed) =
+        crate::arts::patch_player_record0_full(&entry, &[], &offset_edits).ok_or_else(|| {
+            anyhow::anyhow!(
+                "{who}'s record0 will not fit its LZS footprint with the Delilas \
+                 moveset applied"
+            )
+        })?;
+    let region = crate::arts::record0_lzs_region(&entry)
+        .ok_or_else(|| anyhow::anyhow!("{who} record0 LZS region"))?;
+
+    // Both halves fit - commit them together.
+    patcher
+        .patch_prot_entry(READEF_ENTRY, me_off as u64, &rebuilt.bytes)
+        .context("write the rebuilt art-stream archive")?;
+    patcher
+        .patch_prot_entry(index, lzs_off as u64, &recompressed)
+        .context("write the repointed art bank")?;
+    notes.push(format!(
+        "{who} moves: {} stream(s) rebuilt from {}'s own clips - the signature, \
+         the approach and {} swing(s) - {} B of {} used",
+        rebuilt.streams.len(),
+        sibling.display_name(),
+        rebuilt.swings.len(),
+        rebuilt.used,
+        winpose::READEF_SLOT
+    ));
+    notes.push(format!(
+        "{who} record0: {} B of {} used ({} B spare)",
+        recompressed.len(),
+        region.avail,
+        region.avail - recompressed.len()
+    ));
+
+    // The menu side: each surviving art is named after the clip it plays.
+    match rename_retained_arts(patcher, character, &assignments) {
+        Ok((n, 0)) => notes.push(format!("{who} art names: {n} renamed after their clip")),
+        Ok((n, skipped)) => notes.push(format!(
+            "{who} art names: {n} renamed after their clip, {skipped} too tight \
+             for a {LABEL_MAX}-byte label and left retail"
+        )),
+        Err(e) => notes.push(format!("{who} art names: left retail ({e:#})")),
+    }
+    notes.push(format!(
+        "{who} arts: {} performable (the signature, the Miracle, {} Super component(s) \
+         and the innate block below cap {cap}), {} blanked out of the matcher",
+        assignments.len() + 1,
+        super_critical_rows(character).len(),
+        blanked.len()
+    ));
+    let mut per_clip: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    for (_, _, label) in &assignments {
+        *per_clip.entry(label).or_default() += 1;
+    }
+    notes.push(format!(
+        "{who} clips: {}",
+        per_clip
+            .iter()
+            .map(|(l, n)| format!("{l} x{n}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    ));
+    Ok(notes)
+}
+
+/// Rewrite the SCUS arts-name string of each retained art to the label of
+/// the sibling clip it plays. Same-size, in place, through each record's
+/// own name pointer; a label that will not fit its field is skipped.
+fn rename_retained_arts(
+    patcher: &mut DiscPatcher,
+    character: legaia_art::queue::Character,
+    assignments: &[(usize, usize, &'static str)],
+) -> Result<(usize, usize)> {
+    let scus = patcher
+        .read_named_file(crate::arts::SCUS_NAME)
+        .ok_or_else(|| anyhow::anyhow!("SCUS_942.54 not found"))?;
+    let records = legaia_art::arts_table::raw_records_from_scus(&scus)
+        .ok_or_else(|| anyhow::anyhow!("arts-name table not parseable"))?;
+    let mut written = std::collections::BTreeSet::new();
+    let mut n = 0usize;
+    let mut skipped = 0usize;
+    for &(row, _, label) in assignments {
+        let id = row - MIRACLE_BANK_ROW;
+        let Some(rec) = records
+            .iter()
+            .find(|r| r.character == character && !r.is_miracle && r.index as usize == id)
+        else {
+            continue;
+        };
+        let Some(field) = legaia_art::arts_table::name_field(&scus, rec.record_file_offset) else {
+            continue;
+        };
+        // The field is the string plus its measured NUL padding, and a
+        // replacement needs one byte of that for its own terminator - so
+        // a label may be longer than the retail name it covers. A name
+        // string can also be shared between records; the first
+        // assignment in bank order wins, so the write stays deterministic.
+        if !written.insert(field.file_offset) {
+            continue;
+        }
+        if label.len() + 1 > field.budget {
+            skipped += 1;
+            continue;
+        }
+        let mut bytes = label.as_bytes().to_vec();
+        bytes.resize(field.budget, 0);
+        patcher
+            .patch_named_file(crate::arts::SCUS_NAME, field.file_offset as u64, &bytes)
+            .context("write a retained art's name")?;
+        n += 1;
+    }
+    Ok((n, skipped))
 }
 
 /// The sibling's signature special, as the disc spells it. All three
@@ -1731,4 +2229,82 @@ fn combo_str(cmds: &[legaia_art::queue::Command]) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use legaia_art::queue::Character;
+
+    #[test]
+    fn move_mode_round_trips_and_defaults_to_hybrid() {
+        assert_eq!(DelilasMoveMode::default(), DelilasMoveMode::Hybrid);
+        for m in [DelilasMoveMode::Hybrid, DelilasMoveMode::Delilas] {
+            assert_eq!(m.to_string().parse::<DelilasMoveMode>().unwrap(), m);
+        }
+        assert_eq!(
+            "  DELILAS ".parse::<DelilasMoveMode>().unwrap(),
+            DelilasMoveMode::Delilas
+        );
+        assert!("purist".parse::<DelilasMoveMode>().is_err());
+    }
+
+    /// The Super trigger table is static, so the row set each character's
+    /// Supers depend on is too - and it is the thing a blank would cost.
+    #[test]
+    fn super_critical_rows_come_from_the_trigger_table() {
+        // Vahn's Tri-Somersault chains arts 0x27, 0x1F, 0x27, so rows
+        // 0x17 and 0x0F must both be in the set.
+        let vahn = super_critical_rows(Character::Vahn);
+        assert!(vahn.contains(&0x17) && vahn.contains(&0x0F));
+        assert_eq!(vahn.len(), 8);
+        assert_eq!(super_critical_rows(Character::Noa).len(), 10);
+        assert_eq!(super_critical_rows(Character::Gala).len(), 8);
+        // Every row is a real bank row above the matcher's start.
+        for ch in [Character::Vahn, Character::Noa, Character::Gala] {
+            for row in super_critical_rows(ch) {
+                assert!(row > MIRACLE_BANK_ROW, "{ch:?}: row {row}");
+            }
+        }
+    }
+
+    #[test]
+    fn retained_rows_hold_the_miracle_the_host_and_the_innate_block() {
+        // Vahn's shape on the USA disc: 33 bank records, innate cap 3,
+        // the signature hosted on row 12.
+        let keep = retained_bank_rows(Character::Vahn, 3, 12, 33);
+        assert!(keep.contains(&MIRACLE_BANK_ROW), "the Miracle row");
+        assert!(keep.contains(&12), "the signature host");
+        // Ids 1..=3 are the script-granted Hyper block.
+        for row in 12..=14 {
+            assert!(keep.contains(&row), "innate row {row}");
+        }
+        // Rows 16 / 19 / 20 are ordinary arts no Super names.
+        for row in [16, 19, 20] {
+            assert!(!keep.contains(&row), "row {row} should be hidden");
+        }
+        assert!(keep.iter().all(|&r| r < 33), "no row past the bank");
+        // A cap of 0 keeps only the Miracle, the host and the Supers.
+        let tight = retained_bank_rows(Character::Vahn, 0, 12, 33);
+        assert!(tight.len() < keep.len());
+        assert!(tight.contains(&MIRACLE_BANK_ROW) && tight.contains(&12));
+    }
+
+    #[test]
+    fn every_sibling_has_a_label_per_swing_clip() {
+        // The archive carries at most four swings per sibling, and the
+        // menu field they are written into is seven bytes at its
+        // tightest.
+        for sib in [Sibling::Gi, Sibling::Che, Sibling::Lu] {
+            let labels = swing_labels(sib);
+            assert!(labels.len() >= 4, "{sib:?}: only {} label(s)", labels.len());
+            for l in labels {
+                assert!(
+                    l.len() <= LABEL_MAX,
+                    "{sib:?}: {l:?} will not fit a {LABEL_MAX}-byte field"
+                );
+                assert!(l.starts_with(sib.display_name()), "{sib:?}: {l:?}");
+            }
+        }
+    }
 }
