@@ -509,6 +509,165 @@ fn custom_mapping_rearranges_the_assignment() {
     assert_eq!(block_name(&reopened, 163), "Gala");
 }
 
+/// Every hero slot gets its mapped sibling's signature special: renamed,
+/// re-combo'd, and driven by that sibling's own choreography instead of
+/// the host art's.
+///
+/// The assertions are chosen to fail on retail. A shape check would not
+/// be: the host streams are already 15-part, so "15 parts" passes on an
+/// unpatched disc and proves nothing. What cannot happen by accident is
+/// the frame count moving from the host's to the sibling clip's, and the
+/// effect script losing the host's hand-authored flame.
+#[test]
+fn every_slot_gets_its_siblings_signature_art() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    use legaia_asset::battle_char_assembly as bca;
+    use legaia_asset::party_swap::winpose;
+    use legaia_patcher::delilas_party::READEF_ENTRY;
+
+    /// One hero slot's expected reskin. Combo glyphs: 1 L, 2 R, 3 D, 4 U,
+    /// so the three retail combos read R D L D L / L L R L R / R R L L L.
+    struct Expect {
+        slot: usize,
+        /// The host art's retail name, which must lose exactly one site.
+        host_name: &'static str,
+        /// The signature name replacing it, which must gain exactly one.
+        sig_name: &'static str,
+        monster_id: u16,
+        /// Monster-archive entry index of the sibling's signature clip.
+        clip_entry: usize,
+        /// The host art's retail combo - how its bank record is addressed.
+        host_combo: &'static [u8],
+    }
+    let expect = [
+        Expect {
+            slot: 0,
+            host_name: "Burning Flare",
+            sig_name: "Plasma Strike",
+            monster_id: 164,
+            clip_entry: 13,
+            host_combo: &[2, 3, 1, 3, 1],
+        },
+        Expect {
+            slot: 1,
+            host_name: "Vulture Blade",
+            sig_name: "Blazing Slash",
+            monster_id: 162,
+            clip_entry: 12,
+            host_combo: &[1, 1, 2, 1, 2],
+        },
+        Expect {
+            slot: 2,
+            host_name: "Explosive Fist",
+            sig_name: "Megaton Press",
+            monster_id: 163,
+            clip_entry: 11,
+            host_combo: &[2, 2, 1, 1, 1],
+        },
+    ];
+
+    let mapping = PartyMapping::parse("lu,gi,che").expect("parse mapping");
+    let retail = DiscPatcher::open(original.clone()).expect("open disc");
+    let retail_scus = retail
+        .read_named_file("SCUS_942.54")
+        .expect("read retail SCUS");
+    let retail_readef = retail
+        .read_entry_footprint(READEF_ENTRY)
+        .expect("read retail readef");
+    let archive = retail
+        .read_entry_footprint(MONSTER_ARCHIVE_ENTRY)
+        .expect("read archive");
+
+    let mut patcher = DiscPatcher::open(original).expect("open disc");
+    apply_delilas_party(&mut patcher, &mapping, ArtsVoiceMode::default()).expect("apply");
+    let patched = DiscPatcher::open(patcher.into_image()).expect("re-open");
+    let scus = patched.read_named_file("SCUS_942.54").expect("read SCUS");
+    let readef = patched
+        .read_entry_footprint(READEF_ENTRY)
+        .expect("read readef");
+
+    let occurrences = |hay: &[u8], needle: &str| -> usize {
+        hay.windows(needle.len())
+            .filter(|w| *w == needle.as_bytes())
+            .count()
+    };
+
+    for Expect {
+        slot,
+        host_name,
+        sig_name,
+        monster_id,
+        clip_entry,
+        host_combo,
+    } in expect
+    {
+        // The name moved, and it is the ONLY thing that moved: the host
+        // name is gone and the signature name gained exactly one site.
+        // (The signature names already exist once each as spell-table
+        // rows, which is why this is a delta and not a count.)
+        assert_eq!(
+            occurrences(&scus, host_name),
+            occurrences(&retail_scus, host_name) - 1,
+            "slot {slot}: {host_name} should have lost exactly one site"
+        );
+        assert_eq!(
+            occurrences(&scus, sig_name),
+            occurrences(&retail_scus, sig_name) + 1,
+            "slot {slot}: {sig_name} should have gained exactly one site"
+        );
+
+        // The host art's stream now carries the sibling's clip at the
+        // clip's OWN length - not the host stream's retail length.
+        let host_rec = {
+            let entry = retail
+                .read_entry(863 + slot)
+                .expect("read retail player file");
+            let rec0 = bca::decode_record0(&entry).expect("decode record0");
+            let bank = bca::art_animation_bank(&rec0).expect("art bank");
+            // Addressed by the retail combo, never by the inline name -
+            // that field is a dev label ("Fiery Miyawaki"), not the art's
+            // display name, so a name match silently finds nothing.
+            let matches: Vec<_> = bank
+                .iter()
+                .filter(|r| !r.uses_base_archive() && r.combo == host_combo)
+                .collect();
+            assert_eq!(
+                matches.len(),
+                1,
+                "slot {slot}: {host_name}'s combo should address exactly one bank record"
+            );
+            matches[0].clone()
+        };
+        let clip = legaia_asset::monster_archive::animations(&archive, monster_id)
+            .expect("animations")
+            .expect("archive slot")
+            .into_iter()
+            .nth(clip_entry)
+            .expect("signature clip");
+
+        let off = bca::art_me_slot(slot, false) * winpose::READEF_SLOT;
+        let src = host_rec.stream_source as usize;
+        let before = winpose::art_entry_shape(&retail_readef[off..off + winpose::READEF_SLOT], src)
+            .expect("retail shape");
+        let after = winpose::art_entry_shape(&readef[off..off + winpose::READEF_SLOT], src)
+            .expect("patched shape");
+        assert_eq!(before.0, after.0, "slot {slot}: part count must not move");
+        assert_eq!(
+            after.1, clip.frame_count,
+            "slot {slot}: the stream should carry the clip's own {} frames \
+             (retail carried {})",
+            clip.frame_count, before.1
+        );
+        assert_ne!(
+            after.1, before.1,
+            "slot {slot}: frame count identical to retail - the retarget did not land"
+        );
+    }
+}
+
 #[test]
 fn mapping_parser_rejects_non_permutations() {
     assert!(PartyMapping::parse("gi,gi,che").is_err());

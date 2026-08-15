@@ -545,17 +545,69 @@ struct HostArt {
     combo: [legaia_art::queue::Command; 5],
 }
 
-/// Which art each hero slot (0 Vahn / 1 Noa / 2 Gala) gives up.
+/// Which art each hero slot (0 Vahn / 1 Noa / 2 Gala) gives up: each
+/// character's 50-AP Hyper.
+///
+/// They are the only three that clear every gate at once. The combo has
+/// to be the same LENGTH as the one it replaces (`player_edits` drops a
+/// mismatched edit and `glyph_patches` zips slot-for-slot), which by
+/// itself rules out every 3- and 4-input Hyper. Of what is left, Noa's
+/// Hurricane Kick is disqualified twice over - three bank records carry
+/// its combo, and its ME stream is shared with a Super Art - and the
+/// remaining candidates share a combo STRING across characters
+/// (`0x80014198` is both Vahn's Tornado Flame and Gala's Thunder Punch,
+/// so rewriting one rewrites the other's menu glyphs).
+///
+/// `L R L R D` is free on all three: no character has it, and the whole
+/// disc's length-5 combos are Vahn `RDLDL`, Noa `LLRLR`/`UULDR`/`DUDLR`,
+/// Gala `RRLLL`/`LURDL`/`ULDRL`/`LLRUL`.
 fn host_art(slot: usize) -> Option<HostArt> {
     use legaia_art::queue::Command::{Down, Left, Right};
+    let combo = [Left, Right, Left, Right, Down];
     match slot {
         0 => Some(HostArt {
             retail_name: b"Burning Flare",
             index: 1,
             action_constant: 0x1C,
-            combo: [Left, Right, Left, Right, Down],
+            combo,
+        }),
+        1 => Some(HostArt {
+            retail_name: b"Vulture Blade",
+            index: 4,
+            action_constant: 0x1F,
+            combo,
+        }),
+        2 => Some(HostArt {
+            retail_name: b"Explosive Fist",
+            index: 1,
+            action_constant: 0x1C,
+            combo,
         }),
         _ => None,
+    }
+}
+
+/// The monster-archive animation **entry index** carrying each sibling's
+/// signature choreography.
+///
+/// Entry index, not action tag, and not a heuristic. The tag space does
+/// not separate a special from an ordinary castable - Gi's and Che's
+/// signature clips are both tagged `0x23`, and the old
+/// `max_by_key(frame_count)` over the `0x0C..=0x1F` band therefore could
+/// not reach either of them (it returned a generic castable for Gi, and
+/// only found Che's by landing on a byte-identical duplicate).
+///
+/// Lu's and Che's rows are the last stage of the chains
+/// `delilas_dome` stages for their enemy actions (`0x7B`: `14 -> 12 ->
+/// 13`; `0x7A`: `10 -> 11`). Gi's chain is not statically determined;
+/// entry 12 is picked because it is byte-identical to his costliest
+/// castable (entry 7, AGL `0x22`) - the same structural signature Che's
+/// staged entry shows against his own.
+fn signature_clip_entry(sibling: Sibling) -> usize {
+    match sibling {
+        Sibling::Gi => 12,
+        Sibling::Che => 11,
+        Sibling::Lu => 13,
     }
 }
 
@@ -623,45 +675,11 @@ fn reskin_signature_art(
     };
     let mut notes = Vec::new();
 
-    // 1. Name: same-length swap everywhere the string appears.
     let scus = patcher
         .read_named_file(crate::arts::SCUS_NAME)
         .context("read SCUS for the art rename")?;
     let old = art.retail_name;
     let new = signature_name(sibling);
-    if old.len() != new.len() {
-        bail!(
-            "{who}-slot rename is not same-length: {} -> {}",
-            String::from_utf8_lossy(old),
-            String::from_utf8_lossy(new)
-        );
-    }
-    let mut hits = Vec::new();
-    let mut at = 0usize;
-    while let Some(pos) = scus[at..].windows(old.len()).position(|w| w == old) {
-        hits.push(at + pos);
-        at += pos + 1;
-    }
-    if hits.is_empty() {
-        bail!(
-            "SCUS carries no '{}' string to rename",
-            String::from_utf8_lossy(old)
-        );
-    }
-    for &off in &hits {
-        patcher
-            .patch_named_file(crate::arts::SCUS_NAME, off as u64, new)
-            .context("write art name")?;
-    }
-    notes.push(format!(
-        "art renamed: {} -> {} ({}x)",
-        String::from_utf8_lossy(old),
-        String::from_utf8_lossy(new),
-        hits.len()
-    ));
-
-    // 2. Combo: fresh 5-input sequence, checked unique among the
-    // character's own arts.
     let edits =
         crate::arts::ArtsEdits::locate(patcher.image()).context("locate arts-name table")?;
     let target = edits
@@ -676,6 +694,51 @@ fn reskin_signature_art(
                 String::from_utf8_lossy(old)
             )
         })?;
+
+    // 1. Name: written through the record's own `+0xC` pointer, never by
+    // searching the image for the old text. The strings nest - searching
+    // for "Hurricane" finds the "Hurricane Kick" that contains it - so a
+    // text-driven renamer is one table row away from corrupting a
+    // neighbour. The field is NUL-padded, so a shorter name is written
+    // with the tail cleared to the old length.
+    let field = legaia_art::arts_table::name_field(&scus, target.record_file_offset)
+        .with_context(|| format!("locate the {who} art's name field"))?;
+    let current = scus
+        .get(field.file_offset..field.file_offset + field.len)
+        .unwrap_or_default();
+    if current != old {
+        bail!(
+            "{who} art index {} reads {:?}, expected {:?} - the host-art table is stale",
+            art.index,
+            String::from_utf8_lossy(current),
+            String::from_utf8_lossy(old)
+        );
+    }
+    if new.len() > old.len() || old.len() >= field.budget {
+        bail!(
+            "{:?} ({} B) does not fit the {who} art's {}-byte name field",
+            String::from_utf8_lossy(new),
+            new.len(),
+            field.budget
+        );
+    }
+    let mut name_bytes = new.to_vec();
+    name_bytes.resize(old.len(), 0);
+    patcher
+        .patch_named_file(
+            crate::arts::SCUS_NAME,
+            field.file_offset as u64,
+            &name_bytes,
+        )
+        .context("write art name")?;
+    notes.push(format!(
+        "art renamed: {} -> {}",
+        String::from_utf8_lossy(old),
+        String::from_utf8_lossy(new)
+    ));
+
+    // 2. Combo: fresh 5-input sequence, checked unique among the
+    // character's own arts.
     let new_combo: Vec<Command> = art.combo.to_vec();
     for r in edits.records() {
         if r.character == character && r.cmd_ptr != target.cmd_ptr && r.commands == new_combo {
@@ -694,10 +757,10 @@ fn reskin_signature_art(
         new_directions: new_combo.clone(),
     }];
     // Matcher first (player record0), then the display glyphs. The
-    // host bank record is found by its VANILLA combo bytes; its rate
-    // byte (entry +0x78) halves 2 -> 1 in the SAME record0 rewrite, so
-    // the shorter host stream carrying the sibling's longer clip plays
-    // at her authored pace instead of double speed.
+    // host bank record is found by its VANILLA combo bytes, and its rate
+    // byte (entry +0x78) is re-timed in the SAME record0 rewrite so the
+    // host's shorter stream, now carrying the sibling's longer clip,
+    // still runs for the clip's authored duration.
     use legaia_asset::battle_char_assembly;
     let char_edits = edits.player_edits(&plan, character);
     let index = crate::arts::player_entry_index(character);
@@ -715,9 +778,96 @@ fn reskin_signature_art(
                 .find(|r| !r.uses_base_archive() && r.combo == *vanilla)
         })
         .cloned();
+
+    // The sibling's signature clip, and the readef shape it has to fit -
+    // both needed before the record0 write, because the re-timed rate is
+    // a function of the two.
+    let source_id = sibling.monster_id();
+    let clip_entry = signature_clip_entry(sibling);
+    let sibling_clips = monster_archive::animations(archive, source_id)
+        .with_context(|| format!("read monster {source_id} animations"))?
+        .unwrap_or_default();
+    let clip = sibling_clips.get(clip_entry).cloned();
+    let readef = patcher
+        .read_entry_footprint(READEF_ENTRY)
+        .context("read readef.DAT")?;
+    let me_slot_idx = battle_char_assembly::art_me_slot(slot, false);
+    let me_off = me_slot_idx * winpose::READEF_SLOT;
+    // 3. The sibling's own choreography, retargeted onto the player rig
+    // into the host art's "ME" stream. Rebuilt BEFORE the record0 write,
+    // because the frame count it lands on is what every frame-indexed
+    // field of the art record has to be rescaled against. Non-fatal: a
+    // failed rebuild leaves the host animation (with a note).
+    let rebuilt = (|| -> Result<winpose::RebuiltArtSlot> {
+        let h = host
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("host art bank record not found by vanilla combo"))?;
+        let c = clip.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("monster {source_id} has no animation entry {clip_entry}")
+        })?;
+        if c.part_count != party_swap::CANONICAL_PARTS {
+            bail!(
+                "monster {source_id} entry {clip_entry} has {} parts, expected {}",
+                c.part_count,
+                party_swap::CANONICAL_PARTS
+            );
+        }
+        let me = readef
+            .get(me_off..me_off + winpose::READEF_SLOT)
+            .ok_or_else(|| anyhow::anyhow!("readef art slot {me_slot_idx} out of range"))?;
+        winpose::rebuild_art_slot_entry(
+            me,
+            h.stream_source as usize,
+            c,
+            rig,
+            retail_player,
+            archive,
+            source_id,
+        )
+    })();
+    let rebuilt = match rebuilt {
+        Ok(r) => {
+            patcher
+                .patch_prot_entry(READEF_ENTRY, me_off as u64, &r.bytes)
+                .context("write the retargeted art stream")?;
+            let tag = clip.as_ref().map_or(0, |c| c.action_id);
+            notes.push(format!(
+                "{} animation: {}'s own clip (entry {clip_entry}, tag 0x{tag:02X}), \
+                 {} frames (host stream carried {})",
+                String::from_utf8_lossy(new),
+                sibling.display_name(),
+                r.frames,
+                r.retail_frames
+            ));
+            Some(r)
+        }
+        Err(e) => {
+            notes.push(format!(
+                "{} animation stays the host's ({e:#})",
+                String::from_utf8_lossy(new)
+            ));
+            None
+        }
+    };
+
+    // Everything the art record says about WHEN things happen is an index
+    // into the stream that just changed under it, so each frame-indexed
+    // field is rescaled by the same ratio.
     let mut offset_edits = Vec::new();
-    if let Some(h) = &host {
-        offset_edits.push((h.entry_offset + 0x78, 1u8));
+    if let (Some(h), Some(c), Some(r)) = (&host, &clip, &rebuilt) {
+        let rate = winpose::retimed_rate(r.frames, c.frame_count, c.rate);
+        offset_edits.push((h.entry_offset + 0x78, rate));
+        notes.push(format!(
+            "{} pace: {} frames at rate {} -> {} at rate {rate}",
+            String::from_utf8_lossy(new),
+            c.frame_count,
+            c.rate,
+            r.frames
+        ));
+        offset_edits.extend(retimed_hit_frames(h, r));
+        let (fx, why) = effect_script_edits(h, c, &sibling_clips, r);
+        offset_edits.extend(fx);
+        notes.push(format!("{} effects: {why}", String::from_utf8_lossy(new)));
     }
     if (!char_edits.is_empty() || !offset_edits.is_empty())
         && let Some((lzs_off, recompressed)) =
@@ -738,57 +888,6 @@ fn reskin_signature_art(
         combo_str(&new_combo),
         combo_str(&target.commands)
     ));
-
-    // 3. The sibling's own animation: the highest-energy command-band
-    // clip of their monster archive, retargeted onto the player rig
-    // into the host art's "ME" stream at its retail (parts, frames)
-    // shape - the art record's timing/effect/cue fields stay valid.
-    // Non-fatal: a failed rebuild leaves the host animation (with a
-    // note).
-    let source_id = sibling.monster_id();
-    match host
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("host art bank record not found by vanilla combo"))
-        .and_then(|h| {
-            let clip = monster_archive::animations(archive, source_id)?
-                .ok_or_else(|| anyhow::anyhow!("monster id {source_id}: no animations"))?
-                .into_iter()
-                .filter(|a| {
-                    (0x0C..=0x1F).contains(&a.action_id)
-                        && a.part_count == party_swap::CANONICAL_PARTS
-                })
-                .max_by_key(|a| a.frame_count)
-                .ok_or_else(|| anyhow::anyhow!("monster id {source_id}: no attack clip"))?;
-            let readef = patcher
-                .read_entry_footprint(READEF_ENTRY)
-                .context("read readef.DAT")?;
-            let slot_idx = battle_char_assembly::art_me_slot(slot, false);
-            let off = slot_idx * winpose::READEF_SLOT;
-            let slot = readef
-                .get(off..off + winpose::READEF_SLOT)
-                .ok_or_else(|| anyhow::anyhow!("readef art slot {slot_idx} out of range"))?;
-            let rebuilt = winpose::rebuild_art_slot_entry(
-                slot,
-                h.stream_source as usize,
-                &clip,
-                rig,
-                retail_player,
-                archive,
-                source_id,
-            )?;
-            patcher.patch_prot_entry(READEF_ENTRY, off as u64, &rebuilt)?;
-            Ok(clip.action_id)
-        }) {
-        Ok(tag) => notes.push(format!(
-            "{} animation: {}'s own clip (tag 0x{tag:02X}) on the player rig",
-            String::from_utf8_lossy(new),
-            sibling.display_name()
-        )),
-        Err(e) => notes.push(format!(
-            "{} animation stays the host's ({e:#})",
-            String::from_utf8_lossy(new)
-        )),
-    }
 
     // 4. Fanfare duration: the cue's read span must cover the excerpt
     // the fills wrote into the host art's own channel pair or the audio
@@ -819,6 +918,149 @@ fn reskin_signature_art(
         ));
     }
     Ok(notes)
+}
+
+/// Bytes of one effect-script record, and where the eight of them start
+/// inside an action entry (`[frame_gate, effect_id, i16 x, i16 y, i16 z]`,
+/// walked by `FUN_801DEA50`).
+const FX_RECORD: usize = 8;
+const FX_BASE: usize = 0x14;
+const FX_RECORDS: usize = 8;
+
+/// Map a frame index from the host stream's timeline onto the rebuilt
+/// one, never past the last frame.
+fn rescale_frame(f: u8, from: usize, to: usize) -> u8 {
+    if from == 0 || to == 0 {
+        return f;
+    }
+    let scaled = (f as usize * to).div_ceil(from);
+    scaled.min(to - 1) as u8
+}
+
+/// Re-time the art's hit events (`entry +0x10..0x13`) onto the rebuilt
+/// stream. These are the frames the strike lands on; left alone, a longer
+/// clip lands its damage a third of the way through the swing.
+fn retimed_hit_frames(
+    host: &legaia_asset::battle_char_assembly::ArtAnimRecord,
+    rebuilt: &legaia_asset::party_swap::winpose::RebuiltArtSlot,
+) -> Vec<(usize, u8)> {
+    if rebuilt.frames == rebuilt.retail_frames {
+        return Vec::new();
+    }
+    let head = &host.effect_script;
+    (0..4)
+        .filter_map(|i| {
+            let f = *head.get(0x10 + i)?;
+            // 0 is "no event"; only real frames move.
+            (f != 0).then(|| {
+                (
+                    host.entry_offset + 0x10 + i,
+                    rescale_frame(f, rebuilt.retail_frames, rebuilt.frames),
+                )
+            })
+        })
+        .collect()
+}
+
+/// Whether an effect-script record actually spawns something: id `0` is
+/// an empty slot and `id & 0x7F == 0x7F` terminates the walk.
+fn fx_record_spawns(script: &[u8], i: usize) -> bool {
+    script
+        .get(FX_BASE + i * FX_RECORD + 1)
+        .is_some_and(|&id| id != 0 && id & 0x7F != 0x7F)
+}
+
+/// How many of a script's eight records spawn.
+fn fx_live_count(script: &[u8]) -> usize {
+    if script.len() < FX_BASE + FX_RECORDS * FX_RECORD {
+        return 0;
+    }
+    (0..FX_RECORDS)
+        .filter(|&i| fx_record_spawns(script, i))
+        .count()
+}
+
+/// Give the art the SIBLING's own visual effects.
+///
+/// The host art's script is eight `[frame_gate, effect_id, x, y, z]`
+/// records - for Vahn's Burning Flare, eight spawns of flame `0x96`
+/// sweeping forward through the swing. That flame is why a reskinned art
+/// still reads as the host's move however faithful the body animation
+/// gets, so it has to go.
+///
+/// The staged special clips carry **no** script of their own: as an
+/// enemy, a sibling's signature move gets its visuals from a per-spell
+/// code module (PROT 960 for Lu's), which spawns from module-resident
+/// parameter blocks the art record's one-byte id cannot name. What the
+/// siblings do have is their ordinary casts, whose entries carry real
+/// scripts in exactly this format - so the effects come from there,
+/// re-timed onto the rebuilt stream.
+///
+/// With nothing to borrow, the host's script is suppressed instead by
+/// deferring every gate to `0xFF`: the walker never advances its cursor
+/// past a gate it has not reached, so nothing spawns and no terminator
+/// arm runs. That leaves the art quiet but honest - the body still
+/// swings and the hits still land, with no borrowed fire.
+fn effect_script_edits(
+    host: &legaia_asset::battle_char_assembly::ArtAnimRecord,
+    clip: &legaia_asset::monster_archive::MonsterAnimation,
+    siblings_clips: &[legaia_asset::monster_archive::MonsterAnimation],
+    rebuilt: &legaia_asset::party_swap::winpose::RebuiltArtSlot,
+) -> (Vec<(usize, u8)>, String) {
+    // The clip's own script first; failing that, the sibling's richest
+    // other one (their casts spawn the projectile art they own).
+    let donor = if fx_live_count(&clip.effect_script) > 0 {
+        Some((clip, "its own"))
+    } else {
+        // Only the offensive band: the reaction tags (idle, walk, flinch,
+        // knockdown, block - everything below 0x0C) carry scripts too,
+        // and a knockdown's dust cloud is not what a signature move
+        // should spawn.
+        siblings_clips
+            .iter()
+            .filter(|a| a.action_id >= 0x0C && fx_live_count(&a.effect_script) > 0)
+            .max_by_key(|a| fx_live_count(&a.effect_script))
+            .map(|a| (a, "borrowed from the sibling's own casts"))
+    };
+    let Some((donor, origin)) = donor else {
+        let edits = (0..FX_RECORDS)
+            .map(|i| (host.entry_offset + FX_BASE + i * FX_RECORD, 0xFFu8))
+            .collect();
+        return (
+            edits,
+            "host art's flame suppressed (the sibling has no script to give)".into(),
+        );
+    };
+    let src = &donor.effect_script;
+    let mut edits = Vec::with_capacity(FX_RECORDS * FX_RECORD);
+    for i in 0..FX_RECORDS {
+        let rec = &src[FX_BASE + i * FX_RECORD..FX_BASE + (i + 1) * FX_RECORD];
+        let dst = host.entry_offset + FX_BASE + i * FX_RECORD;
+        // The gate is a frame index in the DONOR's timeline; the rebuilt
+        // stream is a different length, so it moves with the ratio. An
+        // empty or terminating record is copied verbatim.
+        let gate = if fx_record_spawns(src, i) {
+            rescale_frame(rec[0], donor.frame_count, rebuilt.frames)
+        } else {
+            rec[0]
+        };
+        edits.push((dst, gate));
+        for (k, &b) in rec.iter().enumerate().skip(1) {
+            edits.push((dst + k, b));
+        }
+    }
+    let ids: Vec<String> = (0..FX_RECORDS)
+        .filter(|&i| fx_record_spawns(src, i))
+        .map(|i| format!("0x{:02X}", src[FX_BASE + i * FX_RECORD + 1]))
+        .collect();
+    (
+        edits,
+        format!(
+            "{} spawn(s) {origin} ({})",
+            fx_live_count(src),
+            ids.join(", ")
+        ),
+    )
 }
 
 /// A combo as the game prints it: `L R L R D`.

@@ -233,7 +233,8 @@ pub fn capture_victory_lines(patcher: &DiscPatcher, mapping: &PartyMapping) -> V
             // 12 s cap wrote ~7 s and cut mid-decay). A short fade-out
             // makes the excerpt COMPLETE instead of stopping abruptly.
             let hero_bank = legaia_art::hyper_fanfare::FANFARE_XA_FILE[slot];
-            let cap = [4u8, 7]
+            let pair = crate::delilas_party::signature_fanfare_channels(slot).unwrap_or((4, 7));
+            let cap = [pair.0, pair.1]
                 .iter()
                 .filter_map(|&c| {
                     patcher

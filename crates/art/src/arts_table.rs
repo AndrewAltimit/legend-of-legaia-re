@@ -295,6 +295,58 @@ impl RawArtRecord {
     pub fn cmd_ptr_file_offset(&self) -> usize {
         self.record_file_offset + 8
     }
+
+    /// File offset of the `+0xC` name pointer word.
+    pub fn name_ptr_file_offset(&self) -> usize {
+        self.record_file_offset + 0xC
+    }
+}
+
+/// Where an art's display name lives in `SCUS_942.54`, and how much room
+/// it has.
+///
+/// A renamer that finds the string by searching the image is searching a
+/// substring: `"Hurricane"` matches twice because it is a prefix of
+/// `"Hurricane Kick"`, so a same-length write over the shorter name
+/// corrupts the longer one. Editing through the record's own `+0xC`
+/// pointer cannot make that mistake.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NameField {
+    /// File offset of the first name byte.
+    pub file_offset: usize,
+    /// Bytes of the current string, terminator excluded.
+    pub len: usize,
+    /// Writable bytes before the next object: the string plus the run of
+    /// NUL padding that follows it. A replacement needs one byte of this
+    /// for its own terminator, so it may be at most `budget - 1` long.
+    pub budget: usize,
+}
+
+/// Locate the name field of the arts-table record at `record_file_offset`.
+///
+/// The budget is measured, not assumed: the strings are NUL-padded and the
+/// next pointed-at object starts at the first non-zero byte after them, so
+/// the padding run is exactly the slack.
+pub fn name_field(scus: &[u8], record_file_offset: usize) -> Option<NameField> {
+    let map = ExeMap::parse(scus)?;
+    let rec = scus.get(record_file_offset..record_file_offset + RECORD_STRIDE)?;
+    let name_ptr = u32::from_le_bytes(rec[0xC..0x10].try_into().ok()?);
+    let file_offset = map.off(name_ptr)?;
+    let len = scus
+        .get(file_offset..)?
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(0);
+    let pad = scus
+        .get(file_offset + len..)?
+        .iter()
+        .position(|&b| b != 0)
+        .unwrap_or(0);
+    Some(NameField {
+        file_offset,
+        len,
+        budget: len + pad,
+    })
 }
 
 /// Parse the arts-name table into raw editing records (file offset + `+8`

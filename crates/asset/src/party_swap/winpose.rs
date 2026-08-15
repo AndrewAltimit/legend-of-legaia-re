@@ -583,6 +583,62 @@ pub fn rebuild_base_slot(
 /// script and cue track stay valid - and every other entry's stored
 /// body is carried over byte-identical (size-table flags included).
 /// Returns the full `READEF_SLOT`-byte slot, zero-padded.
+/// The `(parts, frames)` shape a readef art slot's entry is authored at.
+///
+/// A retarget writes into this shape, so the caller needs it before it
+/// can work out what playback rate keeps the source clip's pace.
+pub fn art_entry_shape(slot: &[u8], entry_index: usize) -> Result<(usize, usize)> {
+    let ar = me_archive::parse(slot).context("parse art ME archive")?;
+    let decoded = ar
+        .entry(entry_index)
+        .with_context(|| format!("decode art entry {entry_index}"))?;
+    if decoded.len() < 2 {
+        bail!("art entry {entry_index} is empty");
+    }
+    Ok((decoded[0] as usize, decoded[1] as usize))
+}
+
+/// The rate byte that makes `src_frames` of source choreography, authored
+/// at `src_rate`, take the same wall time once resampled into a
+/// `host_frames` stream.
+///
+/// The cursor advances `rate / 8` keyframes per 60 Hz tick at the normal
+/// `actor[+0x21D] == 4` (`FUN_80047430`), so a clip runs for
+/// `frames * 8 / rate` ticks and holding that constant across the
+/// resample gives `rate' = host_frames * rate / src_frames`. Retail rates
+/// are not all 2 - Noa's Vulture Blade stream is authored at 6 - so this
+/// cannot be a constant.
+pub fn retimed_rate(host_frames: usize, src_frames: usize, src_rate: u8) -> u8 {
+    if src_frames == 0 {
+        return src_rate.max(1);
+    }
+    let scaled = (host_frames * src_rate as usize * 2)
+        .div_ceil(src_frames)
+        .div_ceil(2);
+    scaled.clamp(1, u8::MAX as usize) as u8
+}
+
+/// A rebuilt art slot, plus the frame count the new entry ended up with.
+///
+/// The caller needs the count: the art record's own frame-indexed fields
+/// (hit events, effect-script gates, the loop window) are relative to it,
+/// so they have to be rescaled by whatever ratio the rebuild chose.
+pub struct RebuiltArtSlot {
+    pub bytes: Vec<u8>,
+    /// Frames in the rebuilt entry.
+    pub frames: usize,
+    /// Frames the retail entry carried.
+    pub retail_frames: usize,
+}
+
+/// Rebuild one entry of a readef art slot around a monster clip.
+///
+/// The entry is written at the **clip's own length** when the slot has
+/// room for it, and only falls back to the retail frame count when it
+/// does not. Resampling a 39-frame clip down to a 21-frame stream throws
+/// away 18 of its poses and forces a compensating rate edit; keeping the
+/// authored length costs about 2 KB in a slot that has 20 KB free, needs
+/// no rate edit at all, and doubles the pose rate the player sees.
 pub fn rebuild_art_slot_entry(
     slot: &[u8],
     entry_index: usize,
@@ -591,7 +647,7 @@ pub fn rebuild_art_slot_entry(
     player_file: &[u8],
     archive_entry: &[u8],
     source_id: u16,
-) -> Result<Vec<u8>> {
+) -> Result<RebuiltArtSlot> {
     if slot.len() != READEF_SLOT {
         bail!("art slot is {} bytes, expected {READEF_SLOT}", slot.len());
     }
@@ -603,7 +659,55 @@ pub fn rebuild_art_slot_entry(
     let retail = ar
         .entry(entry_index)
         .with_context(|| format!("decode art entry {entry_index}"))?;
-    let (parts, frames) = (retail[0] as usize, retail[1] as usize);
+    let (parts, retail_frames) = (retail[0] as usize, retail[1] as usize);
+    // Everything but the rebuilt entry is carried verbatim, so the room
+    // available is the slot's free space plus what this entry gives back.
+    let others: usize = (0..n)
+        .filter(|&i| i != entry_index)
+        .map(|i| ar.raw_body(i).map_or(0, |b| b.len()))
+        .sum();
+    let headroom = READEF_SLOT.saturating_sub(3 + 2 * n + others);
+    let mut frames = clip.frame_count.min(u8::MAX as usize).max(1);
+    let mut built = build_entry(
+        clip,
+        rig,
+        player_file,
+        archive_entry,
+        source_id,
+        parts,
+        frames,
+    )?;
+    if built.len() > headroom && frames != retail_frames {
+        frames = retail_frames;
+        built = build_entry(
+            clip,
+            rig,
+            player_file,
+            archive_entry,
+            source_id,
+            parts,
+            frames,
+        )?;
+    }
+    let encoded = built;
+    let bytes = assemble_slot(&ar, n, entry_index, &encoded)?;
+    Ok(RebuiltArtSlot {
+        bytes,
+        frames,
+        retail_frames,
+    })
+}
+
+/// Retarget + encode one entry body at a chosen `(parts, frames)` shape.
+fn build_entry(
+    clip: &crate::monster_archive::MonsterAnimation,
+    rig: &PlayerRig,
+    player_file: &[u8],
+    archive_entry: &[u8],
+    source_id: u16,
+    parts: usize,
+    frames: usize,
+) -> Result<Vec<u8>> {
     let frames_out = retarget_clip(
         clip,
         rig,
@@ -622,18 +726,27 @@ pub fn rebuild_art_slot_entry(
         }
     }
     let encoded = encode_channel_delta(&decoded)?;
-    let back = me_archive::decode_channel_delta(&encoded)
-        .with_context(|| format!("re-decode art entry {entry_index}"))?;
+    let back = me_archive::decode_channel_delta(&encoded).context("re-decode rebuilt art entry")?;
     if back != decoded {
-        bail!("art entry {entry_index}: codec round-trip mismatch");
+        bail!("rebuilt art entry: codec round-trip mismatch");
     }
+    Ok(encoded)
+}
 
+/// Re-emit the whole slot with `entry_index`'s body replaced; every other
+/// entry is carried verbatim, flag bit included.
+fn assemble_slot(
+    ar: &me_archive::MeArchive<'_>,
+    n: usize,
+    entry_index: usize,
+    encoded: &[u8],
+) -> Result<Vec<u8>> {
     let mut sizes: Vec<u16> = Vec::with_capacity(n);
     let mut bodies: Vec<&[u8]> = Vec::with_capacity(n);
     for i in 0..n {
         if i == entry_index {
             sizes.push((encoded.len() as u16) | 0x8000);
-            bodies.push(&encoded);
+            bodies.push(encoded);
         } else {
             let body = ar
                 .raw_body(i)

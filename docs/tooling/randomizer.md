@@ -1451,6 +1451,60 @@ contract as the shouts:
 - `removed` - the banks stay silent; the spliced SPU grunts remain the
   audible attack voice.
 
+Each hero slot also gives up one Hyper art to carry the mapped sibling's
+**signature special** - Gi's *Blazing Slash*, Che's *Megaton Press*, Lu's
+*Plasma Strike*, all three names read off the disc's own spell table
+(actions `0x79`/`0x7A`/`0x7B`). The host is that character's 50-AP Hyper:
+Vahn's Burning Flare, Noa's Vulture Blade, Gala's Explosive Fist. They are
+the only three that clear every gate at once - the replacement combo must
+be the same **length** as the one it replaces, which rules out every 3- and
+4-input Hyper; Noa's Hurricane Kick carries its combo on three bank records
+and shares its stream with a Super Art; and the remaining candidates share
+a combo **string** across characters (`0x80014198` is both Vahn's Tornado
+Flame and Gala's Thunder Punch, so rewriting one rewrites the other's menu
+glyphs). The new combo `L R L R D` is free on all three.
+
+Four coordinated edits per slot (`delilas_party::reskin_signature_art`):
+
+- **Name** - written through the arts-table record's own `+0xC` pointer
+  into its NUL-padded field (`arts_table::name_field`), never by searching
+  the image for the old text. The names nest: searching for `Hurricane`
+  finds the `Hurricane Kick` containing it, so a text-driven rename is one
+  table row from corrupting a neighbour.
+- **Combo** - written to both copies retail keeps in sync, the SCUS display
+  glyphs and the player-file `record0` matcher, after a collision check
+  against every one of that character's arts.
+- **Animation** - the sibling's own choreography retargeted onto the player
+  rig into the host art's "ME" stream, addressed by monster-archive **entry
+  index**, not action tag: Gi's and Che's signature clips are both tagged
+  `0x23`, so no tag band reaches them. The entry is written at the clip's
+  **own** length whenever the slot has room (Lu 39 frames, Gi 23, Che 50,
+  against host streams of 21/58/20), because resampling throws poses away
+  and forces a compensating rate edit; the rate byte then only moves when
+  the fallback shape was used, by `rate' = frames' * rate / frames`
+  (`winpose::retimed_rate` - retail rates are not all 2, Noa's stream is
+  authored at 6). Every frame-indexed field of the art record rescales with
+  it: the hit events at entry `+0x10`, and the effect script's gates.
+- **Effects** - the host's script is eight `[frame_gate, effect_id, x, y,
+  z]` records, and for Burning Flare all eight spawn flame `0x96` across
+  the swing. That flame is why a reskinned art keeps reading as the host's
+  move however faithful the body gets, so it is replaced. The staged
+  special clips carry no script of their own - as an **enemy**, a sibling's
+  signature move draws its visuals from a per-spell code module (PROT 960
+  for Lu's), which spawns from module-resident parameter blocks that a
+  one-byte art id cannot name. What the siblings do have is their ordinary
+  casts, whose entries carry real scripts in exactly this format, so the
+  spawn comes from there (all three land on direct-form `0x84`). With
+  nothing to borrow the host's script is suppressed instead, by deferring
+  every gate to `0xFF` - the walker never advances past a gate it has not
+  reached, so nothing spawns and no terminator arm runs.
+
+Two channels stay the host's and are not data-editable. The **run-in** is a
+separate queue action (constant `0x19`, `Starter`) shared by every one of
+that character's arts, so retargeting it would change all of them. The
+**camera** is dispatched per (character, anim id) through a jump table in
+PROT 0898, so the swing framing is the host art's.
+
 Still retail: menu
 portraits, battle HUD faces. Composes with
 `--delilas-challenge` - the challenge applies first, so its memory-tight
