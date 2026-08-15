@@ -11,7 +11,11 @@
 [meta]
 scene_label = "town0d"
 display_name = "Sol"
-prot_block_start = 347
+# Extraction index, not the raw CDNAME `#define`. `#define town0d 347`
+# is a raw-TOC index and extraction entries run two lower
+# (`legaia_prot::cdname::block_for_extraction_index`), so the block
+# starts on town0d's own field_map at 345.
+prot_block_start = 345
 notes = """
 Sol is a vertical structure with a B2 basement reachable via a service
 elevator. The Genesis Tree Seedling side-quest plants the basement; the

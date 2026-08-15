@@ -49,7 +49,8 @@ enum Cmd {
     },
     /// Best-effort parse of a raw art record from a binary blob.
     ///
-    /// Input: a raw art-record blob, e.g. sliced out of PROT entry 0x05C4
+    /// Input: a raw art-record blob, e.g. sliced out of a player file's
+    /// decoded `record0` (extraction 0863/0864/0865)
     /// in `legaia-extract <disc.bin> --out extracted` output (see
     /// docs/formats/art-data.md).
     Parse {

@@ -83,7 +83,9 @@ The **enemy analogue** is the AGL action-budget in `FUN_801E9FD4`: a monster fil
 
 `FUN_801e93c8` (battle overlay, PROT 0898;
 `see ghidra/scripts/funcs/overlay_battle_action_801e93c8.txt`) resets the
-per-actor gauge slot flags when a committed action begins, so a fresh art draws
+per-actor gauge slot flags when a committed action **finishes** - its only call
+site is the Done/cleanup arm (`0x50`) at `0x801E5F64`, right after the
+`0x50 -> 0x51` advance - so the next art draws
 its arrows from a clean state. It reads the active actor
 (`_DAT_8007bd24 + 0x13` indexes the actor-pointer table `DAT_801C9370`), then
 gates on **what** was staged: the actor's last-staged action id `+0x1D9`. For a
@@ -92,13 +94,17 @@ staged id is a plain direction (`0x0C..=0x0F`), not a materialized art or
 starter (`>= 0x10`). For a monster (index `>= 3`) it resolves the materialized
 art record (`+0x4C`) instead and bails when the record's `+0x87` flag byte is
 set. When the gate passes it walks all seven actor slots, clearing each slot's
-`+0x21C` latch (only when it holds `1`) and writing `+0x21D = 8` (the default
-per-slot arm-width seed the gauge builder later overwrites with the real
-`+0x74` cost), then clears the active actor's `+0x243` byte.
+`+0x21C` latch (only when it holds `1`) and writing `+0x21D = 8` - restoring the
+per-actor **animation-rate scalar** to normal after an art's slow-motion arms
+(`FUN_8004AD80`) dropped it to `4` / `2` / `0`. It then clears the **battle
+context's** `+0x243` byte (`ctx[+0x243] = 0`, `0x801E94F8`, off the pointer
+re-loaded from `_DAT_8007BD24`) - the marker state `0x3C` sets, not an actor
+field.
 
-The `+0x21D = 8` seed is why a slot briefly reads the neutral width before
-[the gauge build](#how-the-gauge-consumes-it) stamps the weapon-specialty
-`+0x74` cost over it; the `+0x1D9 < 0x10` gate is the same
+Nothing later overwrites `+0x21D` with an arm cost: the gauge builder
+`FUN_801D388C` never touches that byte, and the per-command `+0x74` cost it
+reads lands in `ctx[0x14 + slot]` (`0x801D3B3C`) with the icon width as
+`cost - 6`. The `+0x1D9 < 0x10` gate is the same
 direction-vs-materialized-art split the action queue uses (see
 [art-data.md § Action Constants](../formats/art-data.md#action-constants)).
 
@@ -112,9 +118,9 @@ bit-for-bit:
 
 | `+0x16E` bit | Arrow grayed (draw pos) | Blocks command |
 |---|---|---|
-| `0x08` (limb 0) | LEFT (`0xb3 - w/2, 0x42`) | Square `0x8000` / dir 0 |
-| `0x10` (limb 1) | RIGHT (`0xe5 + w/2, 0x42`) | Circle `0x2000` / dir 3 |
-| `0x20` (limb 2) | UP (`0xcc, 0x22`) **and** DOWN (`0xcc, 0x62`) | Triangle `0x1000` / dir 1 **and** Cross `0x4000` / dir 2 |
+| `0x08` (limb 0) | LEFT (`0xb3 - w/2, 0x42`) | Left `0x8000` / dir 0 |
+| `0x10` (limb 1) | RIGHT (`0xe5 + w/2, 0x42`) | Right `0x2000` / dir 3 |
+| `0x20` (limb 2) | UP (`0xcc, 0x22`) **and** DOWN (`0xcc, 0x62`) | Up `0x1000` / dir 1 **and** Down `0x4000` / dir 2 |
 | `0x1000` (**Curse**) | the whole MAGIC command (`FUN_801dbec4(0xf8, 0x42)`, `:3229-3230`) | Magic |
 
 With all three limb bits set (`0x38`) the whole Arm command is skipped and
@@ -234,9 +240,11 @@ number of commands a turn admits is `AGL / cost` on either side, which is why a
 retail party turn runs to two-to-four commands at the base cost `0x1E` (30) and
 why a wider off-class arm (42) or the Astral Sword (54) buys fewer of them.
 
-The alternate seed in the same builder (`ctx + 0x6DC = _DAT_80076D7E`) is the
-[Muscle Dome](minigame-muscle-dome.md#hand-deck-decoded) hand's fixed budget,
-not a party battle path.
+There is no alternate seed. All four `ctx + 0x6DC` stores in the builder
+(`0x801D3A30`, `0x801D4E18`, `0x801D5068`, `0x801D5364`) read the acting actor's
+AGL `+0x154`; the same value less 6 is *also* written out to `_DAT_80076D7E`
+(`0x801D3A38`) for the readout, which is a destination, not a source. The
+decompiled C renders that pair in the opposite order - read the disassembly.
 
 ## The port's input session
 

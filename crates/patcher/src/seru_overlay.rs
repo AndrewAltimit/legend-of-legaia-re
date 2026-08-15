@@ -6,10 +6,15 @@
 //!
 //! ## The mechanism
 //!
-//! 1. The randomizer overwrites a **pochi-filler PROT slot** (265 exist, the
-//!    largest >1 MB - reserved dev fillers with real allocated disc sectors) with
-//!    a small custom overlay. Because the randomizer placed it, it knows that
-//!    slot's exact start LBA + sector count from the disc TOC.
+//! 1. The randomizer overwrites a **pochi-filler PROT slot** (266 exist, each
+//!    exactly one 2048-byte sector - reserved dev fillers with real allocated
+//!    disc sectors) with a small custom overlay. Because the randomizer placed
+//!    it, it knows that slot's exact start LBA + sector count from the disc
+//!    TOC. One sector is the whole budget: the slots are uniform, so
+//!    `find_pochi_host`'s "largest that fits" degenerates to the lowest index
+//!    that fits, and an overlay past 2048 bytes finds no host at all. (A pochi
+//!    slot only measures >1 MB through the superseded `toc[p+5] - toc[p+3] + 4`
+//!    entry-size expression - see `docs/formats/pochi.md`.)
 //! 2. A tiny **loader stub** in the preserved SCUS rodata gap calls the
 //!    game's own synchronous CD reader [`LOADER_FN`]
 //!    (`FUN_8005E4D4(sector_count, lba, dest)` - verified sync: it issues the

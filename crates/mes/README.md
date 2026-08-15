@@ -79,6 +79,15 @@ open bytes); `parse_picker_at` decodes one at a known offset;
 `Picker::jump_target` resolves an option's branch. See
 [`docs/formats/mes.md` § Picker control-region layout](../../docs/formats/mes.md).
 
+## Dialog-box grouping
+
+`dialog_box` groups a conversation branch's `0x1F` segments the way retail's
+per-actor dialog SM (`FUN_80039B7C`) pages them: up to `LINES_PER_BOX` rows
+per window, then the control byte after the last row decides what the pager
+does next (`Dispatch`). `pack_box` / `pack_boxes` walk that grouping from a
+starting lead - the view a caller editing a MAN's dialog needs, where what
+matters is which lines share a window.
+
 ## CLI
 
 ```bash
@@ -87,6 +96,7 @@ mes disasm     <path>             # walk bytecode tokens
 mes json       <path>             # JSON dump
 mes events     <path> [--index N] # walk one message via the interpreter
 mes stats-all  <path>             # event-type histogram across every message
+mes boxes      <path> [--start H] [--limit N] [--all] [--unfiltered]
 ```
 
 ## See also

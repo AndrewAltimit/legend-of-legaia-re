@@ -452,7 +452,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
 
     // Sister of `data_field_streaming` - leading chunks decode cleanly but
     // the final chunk's declared size walks past EOF without a terminator.
-    // Strict structural detector: requires >= 3 leading chunks, all known
+    // Strict structural detector: requires >= MIN_LEADING_CHUNKS leading chunks, all known
     // types and magic-OK, plus a partial trailing chunk with a known type.
     if let Some(t) = crate::data_field_truncated::detect(buf) {
         let mut report = mk(

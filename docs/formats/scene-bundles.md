@@ -10,7 +10,7 @@ All four lead with the same 4-byte chunk0 header, in the form `(type << 24) | si
 
 - [scene_tmd_stream - bare-TMD prefix](#scene_tmd_stream---bare-tmd-prefix)
 - [scene_vab_stream - VAB-prefix](#scene_vab_stream---vab-prefix)
-- [scene_v12_table - scene header + event-script bundle](#scene_v12_table---scene-header--event-script-bundle)
+- [scene_v12_table - the per-scene `.PCH` walk-on trigger sidecar](#scene_v12_table---the-per-scene-pch-walk-on-trigger-sidecar)
 - [scene_asset_table - count-prefixed asset bundle](#scene_asset_table---count-prefixed-asset-bundle)
 - [scene_scripted_asset_table - a shape retail does not have](#scene_scripted_asset_table---a-shape-retail-does-not-have)
 - [tmd_size_prefix - truncated TMD-prefix](#tmd_size_prefix---truncated-tmd-prefix)
@@ -118,7 +118,7 @@ Strict gate validates the VAB header: `version <= 10`, `program_count <= 128`, `
 
 Cluster anatomy:
 - 119 of 123 entries in the CDNAME `vab_01` cluster (1072..1194) match - the standard distributed-bank layout.
-- 53 entries in `sound_data2` (878..890), 19 in `music_01`, 14 in `monster_data` / `battle_data`, plus scattered hits in `teien`, `other5`, `player_data`.
+- 77 in `music_01` (990..1071) and 11 in `sound_data2` (877..889); the rest are pairs in `teien`, `monster_test` and `other1`, and one each in `battle_data`, `monster_data`, `befect_data`, `player_data` and `other7`.
 
 Reading:
 
@@ -132,34 +132,33 @@ if let Some(s) = scene_vab_stream::detect(buf) {
 }
 ```
 
-## scene_v12_table - scene header + event-script bundle
+## scene_v12_table - the per-scene `.PCH` walk-on trigger sidecar
 
-A scene-named container that bundles a small runtime-fixup header with a full event-script prescript at sector offset `0x800`. Implementation: `crates/asset/src/scene_v12_table.rs`. 97 PROT entries match - one per scene. Detailed reference: [`scene-v12-table.md`](scene-v12-table.md).
+A scene-named four-kind sub-table directory carrying the scene's walk-on tile-trigger records - dev filename `DATA\FIELD\<scene>.PCH`. Implementation: `crates/asset/src/scene_v12_table.rs`. 97 PROT entries match - one per scene. Detailed reference: [`scene-v12-table.md`](scene-v12-table.md).
 
 ```text
-+0x000   u16  N + 4              ; runtime fixup-slot offset; header field
-+0x002   u16  0x0012             ; constant magic
-+0x004   u16  0x0000             ; constant
-+0x006   u16  0x0014             ; constant magic (= byte offset of records)
-+0x008   u16  param              ; count of inline records (0..=192 in retail)
-+0x00A   u16  N                  ; runtime fixup-slot offset; header field
-+0x00C   u16  0x0000             ; constant
-+0x00E   u16  N + 2              ; runtime fixup-slot offset; header field
-+0x010   u32  0                  ; padding to 0x14
-+0x014   param × 4 bytes         ; inline record table
-+end_records (= 0x14 + 4*param)  ; runtime writes three pointers here
-                                 ; (slots at +N, +N+2, +N+4 - zero on disc).
-+end_records .. 0x800            ; zero padding
-+0x800   u16  script_count       ; scene event-scripts prescript
-+0x802   script_count × u16      ;   offset table relative to +0x800
-+0x800 + offsets[i]              ;   per-record field-VM bytecode
++0x000   u16  N + 4              ; directory end-of-table offset
++0x002   u16  0x0012             ; kind-0 sub-table offset (empty in retail)
++0x004   u16  0x0000             ; kind-0 count
++0x006   u16  0x0014             ; kind-1 sub-table offset (= the records)
++0x008   u16  param              ; kind-1 count (0..=192 in retail)
++0x00A   u16  N                  ; kind-2 sub-table offset (empty)
++0x00C   u16  0x0000             ; kind-2 count
++0x00E   u16  N + 2              ; kind-3 sub-table offset (empty)
++0x010   u32  0                  ; kind-3 count + pad to 0x14
++0x014   param × 4 bytes         ; kind-1 trigger records
++end_records (= 0x14 + 4*param)  ; empty kind-2/3 sub-table bodies at
+                                 ; +N, +N+2, +N+4 - zero on disc.
++end_records .. 0x800            ; zero padding; the entry ENDS at 0x800
 ```
 
-The header's `u16[0]`, `u16[5]`, `u16[7]` are algebraically tied to a single per-scene constant `N`: `u16[0] = N + 4`, `u16[5] = N`, `u16[7] = N + 2`, and `N = 4 * param + 22` (= byte distance from the file head to the first runtime fixup slot). Strict structural checks combine the three constant words, the algebraic ties, and the `N/param` algebra. Across the entire 1233-entry PROT corpus this matches **97** entries with zero false positives - and **every** match parses cleanly as a scene-event-scripts prescript at `+0x800`.
+The header's `u16[0]`, `u16[5]`, `u16[7]` are algebraically tied to a single per-scene constant `N`: `u16[0] = N + 4`, `u16[5] = N`, `u16[7] = N + 2`, and `N = 4 * param + 22` (= the byte distance from the file head to the first empty sub-table body). Strict structural checks combine the three constant words, the algebraic ties, and the `N/param` algebra. Across the entire 1233-entry PROT corpus this matches **97** entries with zero false positives.
 
-The post-header dense data is the [scene_event_scripts](#scene_event_scripts---prescript-only) prescript - a word-aligned per-scene actor/event command structure, **not** field-VM (`FUN_801DE840`) bytecode (see that section for the falsification). The pre-header table at `+0x14` is per-scene runtime metadata: `param` records of 4 bytes each, grouped by the third byte (`b2`) into 1..N scene regions; the last byte is always `0x01` (probably a "live" flag). See [`scene-v12-table.md`](scene-v12-table.md) for the per-byte semantics.
+**The entry is exactly one `0x800`-byte sector, in all 97 cases**, so `0x800` is one past its end rather than a field inside it. The [scene_event_scripts](#scene_event_scripts---prescript-only) prescript that appears to sit there is the **next PROT entry**, reached by the superseded over-reading entry size ([`prot.md`](prot.md)); parse it with `legaia_asset::scene_v12_table::parse_prescript_entry` against the successor's own bytes. Those records are move-VM (`FUN_80023070`) stager records, **not** field-VM (`FUN_801DE840`) bytecode - see that section for the falsification.
 
-Each scene block on the disc carries **both** a v12 entry (this format, prescript at `+0x800`) and a sister `scene_event_scripts` entry (prescript at offset 0, no v12 header). Both carry the same word-aligned record structure. The genuine per-scene field-VM scripts live elsewhere - in the scene MAN sub-asset (`FUN_8003A1E4` → `FUN_801DE840`; see [`subsystems/script-vm.md`](../subsystems/script-vm.md)).
+The record table at `+0x14` is per-scene trigger metadata: `param` records of 4 bytes each, grouped by the third byte (`b2`) into 1..N scene regions; the last byte is always `0x01`. See [`scene-v12-table.md`](scene-v12-table.md) for the per-byte semantics and the CDNAME position law (`.PCH` at raw TOC index `define + 1`).
+
+Each scene block on the disc therefore carries a `.PCH` entry and, in the very next slot, its `scene_event_scripts` sibling (prescript at offset 0, no directory header). The genuine per-scene field-VM scripts live elsewhere - in the scene MAN sub-asset (`FUN_8003A1E4` → `FUN_801DE840`; see [`subsystems/script-vm.md`](../subsystems/script-vm.md)).
 
 ## scene_asset_table - count-prefixed asset bundle
 

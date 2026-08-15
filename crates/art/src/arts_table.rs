@@ -6,7 +6,8 @@
 //! **command-input glyph string** - the arrow sequence shown in the arts menu.
 //! Decoding the glyph string recovers the real on-disc directional command for
 //! each art, an independent source from (and validation oracle for) the
-//! best-effort PROT `0x05C4` art-record parser in [`crate::parse`].
+//! best-effort art-record parser in [`crate::parse`], which reads the
+//! player-file `record0` blobs (extraction 0863/0864/0865).
 //!
 //! ## Record layout (20 bytes, stride `0x14`, sorted by character)
 //!
@@ -391,7 +392,7 @@ pub fn raw_records_from_scus(scus: &[u8]) -> Option<Vec<RawArtRecord>> {
 ///
 /// The SCUS table is the executable's **ground-truth** source for each art's
 /// command sequence + AP. This wrapper is the validation oracle the
-/// best-effort PROT `0x05C4` art-record parser ([`crate::parse::parse_record`])
+/// best-effort art-record parser ([`crate::parse::parse_record`])
 /// and the curated `legaia-gamedata` `directions` column are checked against:
 /// a decoded command sequence either resolves to a named art here or it
 /// disagrees with the executable.
@@ -429,7 +430,7 @@ impl ArtsOracle {
 
     /// Find the art whose decoded command sequence exactly matches
     /// `commands` for `character`. This is the contract a command decoder
-    /// (the PROT `0x05C4` parser, or a player's live input) must satisfy:
+    /// (the art-record parser, or a player's live input) must satisfy:
     /// the bytes it produced map to exactly one named art. Empty sequences
     /// (the Miracle-art rows carry only the separator marker) never match.
     pub fn by_command(&self, character: Character, commands: &[Command]) -> Option<&ArtTableEntry> {

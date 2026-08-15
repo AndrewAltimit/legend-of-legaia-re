@@ -27,7 +27,7 @@ the shared orientation; the per-VM pages carry the detail.
 
 | VM | Driver fn | Where | Opcode count | Operand width |
 |---|---|---|---|---|
-| [Actor / sprite VM](actor-vm.md) | `FUN_801D6628` | Title-screen overlay (unindexed PROT.DAT gap after entry 899; PROT 0971 is the debug-menu overlay) | 13 | byte stream |
+| [Actor / sprite VM](actor-vm.md) | `FUN_801D6628` | Menu overlay (PROT 0899, slot-A base `0x801CE818`) | 13 | byte stream |
 | **Move VM** (this page) | `FUN_80023070` | `SCUS_942.54` | 71 (`0x00..0x46`) + 61 sub-ops via `0x2F` | u16 stream |
 | [Motion VMs](motion-vm.md) | `FUN_8003774C` (pursue / patrol / face-target) and `FUN_80038158` (scripted motion + flag writes) | `SCUS_942.54` | see page | byte stream, high bit = "select target" |
 | [Field / event VM](script-vm.md) | `FUN_801DE840` | Town / field overlay (0897) | 43 (`0x21..0x4F`, with gaps) + 0x5x/6x/7x default-route | byte stream |
@@ -253,7 +253,7 @@ cadence) from this op. (The battle party's facial-texel stamps share the
 `MoveImage` primitive but are NOT this op - they come from the dedicated
 facial animator `FUN_8004C7B4`; see
 [`battle-data-pack.md` § Facial animation tracks](../formats/battle-data-pack.md#facial-animation-tracks-entry-0x8c--0x98).)
-Engine hook: `MoveVmHost::move_image` (`crates/engine-vm/src/move_vm.rs`).
+Engine hook: `MoveHost::move_image` (`crates/engine-vm/src/move_vm/host.rs`).
 
 ### Remaining opcodes
 

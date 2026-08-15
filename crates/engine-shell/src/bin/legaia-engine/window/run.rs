@@ -989,7 +989,7 @@ pub(super) fn cmd_play_window_with_record(
         field_terrain_color_draws: Vec::new(),
         world_map_terrain_draws: Vec::new(),
         ground_heightfield: None,
-        // Headless capture harnesses can't press `C`; let them start on the
+        // Headless capture harnesses can't press `F3`; let them start on the
         // wide debug vantage via the env switch.
         field_debug_camera: std::env::var_os("LEGAIA_FIELD_DEBUG_CAM").is_some(),
         world_map_slot4_lines: None,

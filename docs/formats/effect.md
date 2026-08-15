@@ -360,8 +360,13 @@ read from its disassembly, not the C).
 +0x000  16 bytes   table-head record set by init
 +0x010  4096 bytes 128 × 32-byte child slots - per-sprite render state
 +0x1010 896 bytes  32 × 28-byte master slots - per-effect-instance state
-+0x1390 1968 bytes (unused / future expansion)
+        (ends at +0x1390 = 5008)
 ```
+
+The three regions account for the pool exactly: `16 + 4096 + 896 = 5008`, and
+the init `FUN_801DE914` zeroes `0x4E4 = 1252` words = those same 5008 bytes
+(`sltiu v0,a0,0x4e4` at `0x801DE938`). There is no unused tail inside the
+cleared span.
 
 32 max simultaneous effects × ~4 sprites avg = 128-child sprite pool.
 

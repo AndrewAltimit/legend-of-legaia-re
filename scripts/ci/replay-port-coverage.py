@@ -91,13 +91,15 @@ the earlier single-binary default understated the denominator by 1.7x without
 saying anything at all.
 
 The cost is why this stays a manual step rather than a pre-commit gate: each
-export is an instrumented release build plus a full disc-gated ladder run, and
-the ladders are minutes each. `--fail-on-disclosed` is the gateable part, and
+export is an instrumented build plus a full disc-gated ladder run, and the
+ladders are minutes each. (Instrumented, NOT `--release` - the recipe below
+passes no `--release` anywhere, because the line table a release build emits
+does not survive the span join.) `--fail-on-disclosed` is the gateable part, and
 it is the part that needs no complete union to be meaningful.
 
 Usage:
-    # produce one export per ladder (slow: instrumented release build of the
-    # engine crates). One export each rather than one multi---test run: the
+    # produce one export per ladder (slow: instrumented build of the engine
+    # crates). One export each rather than one multi---test run: the
     # per-ladder table is only possible when the exports are separate, and
     # that table is what makes dropping a ladder a visible cost. The package
     # differs per ladder ([`CANONICAL_LADDERS`] carries it): the engine-shell
@@ -110,7 +112,7 @@ Usage:
     cargo llvm-cov clean --workspace
 
     # NO `--release` anywhere - see "a release export loses executed code"
-    # below. The whole 12-ladder set takes about ten minutes on the default
+    # below. The whole set (`--list-ladders`) takes tens of minutes on the default
     # profile (`menu_replay` is a 4.7s run), so the optimised build buys
     # nothing here and costs executed code.
     # `--list-ladders` prints `<test> <package>` for every canonical entry, so
@@ -183,9 +185,11 @@ DEFAULT_OUT = REPO / "target" / "port-catalog" / "replay-port-entry.md"
 # frame per tick from the browser play page's builders, which is what makes
 # the union see a rendering host at all (see the module docstring).
 #
-# This list exists so a *partial* union is visible. Four of the five is not a
-# conservative version of the number; it is a number about four ladders, and
-# without naming the absentee it reads exactly like the full one.
+# This list exists so a *partial* union is visible. A union missing a ladder
+# is not a conservative version of the full number; it is a number about the
+# ladders that ran, and without naming the absentees it reads exactly like the
+# complete one. `--list-ladders` prints the current membership - prefer it to
+# any count written down elsewhere, which is what goes stale as ladders land.
 CANONICAL_LADDERS = [
     ("critical_path_replay", "legaia-engine-shell"),
     ("menu_replay", "legaia-engine-shell"),

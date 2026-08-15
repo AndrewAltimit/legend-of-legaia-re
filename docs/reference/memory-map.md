@@ -132,18 +132,18 @@ patching an instruction. Useful Ghidra anchors.
 | `0x8007B3C4` | `".PCH"`. |
 | `0x8007B3D4` | `".pac"`. |
 | `0x8007B3DC` | `"STR"`. |
-| `0x8007B7F8` | sin lookup table. |
-| `0x8007B81C` | cos lookup table. |
-| `0x8007B824` | u32 | Party base index into `DAT_8007C018` (see the fuller entry below); read by `FUN_8001EBEC` to address the three active-party battle-TMD pointers `DAT_8007C018[0x8007B824 + 0..2]`. (Earlier "sound mode index" reading was wrong.) |
+| `0x8007B7F8` | Pointer to the **cosine** view of the shared trig LUT - `0x8007122C`, the sine base offset by a quarter turn. Installed by `FUN_80026BE0` (`0x80026C0C`). |
+| `0x8007B81C` | Pointer to the **sine** base `0x80070A2C` (`FUN_80026BE0` at `0x80026C00`). The table is `4096 * sin(2*pi*i / 4096)` over 5120 `i16` entries, `0x80070A2C..0x8007322C` - one revolution plus the quarter turn the cosine view needs, which is why consumers mask the angle with `0xFFF`. |
+| `0x8007B824` | u32 - Party base index into `DAT_8007C018` (see the fuller entry below); read by `FUN_8001EBEC` to address the three active-party battle-TMD pointers `DAT_8007C018[0x8007B824 + 0..2]`. (Earlier "sound mode index" reading was wrong.) |
 | `0x8007B840` | MOVE2 buffer base. |
 | `0x8007B888` | MOVE buffer base. |
-| `0x8007B750` | u32 | Sound flag word coordinating the BGM track-swap handshake (bit 1 = pause, bit 3 = load settled, bit 4 = release ack); full bit map + writer census in [`audio.md`](../subsystems/audio.md#the-track-swap-handshake-fun_800243f0--op-0x35-sub-op-0xa). |
-| `0x8007B868` | u32 | Dev/dual-mode gate the actor-sound family and several loaders check (`retail 0`). No static writer sets it - its only store, in `FUN_8001DCF8` (`0x8001E008`), clears bit 1. |
-| `0x8007B8D0` | u32 | `bse.dat` master bank pointer (0x1800-byte buffer). |
-| `0x8007BAC8` | u16 | BGM ID written by field-VM op 0x35 sub-1. |
-| `0x8007BC64` | u16 | Global BGM pool base for IDs ≥ 2000. |
-| `0x8007BD30` | 5008 bytes | Effect-runtime pool: 16-byte head + 128 child slots + 32 master slots. |
-| `0x8007BD5C` | u32 | Effect 2-pack wrapper buffer pointer (post-init). |
+| `0x8007B750` | u32 - Sound flag word coordinating the BGM track-swap handshake (bit 1 = pause, bit 3 = load settled, bit 4 = release ack); full bit map + writer census in [`audio.md`](../subsystems/audio.md#the-track-swap-handshake-fun_800243f0--op-0x35-sub-op-0xa). |
+| `0x8007B868` | u32 - Dev/dual-mode gate the actor-sound family and several loaders check (`retail 0`). No static writer sets it - its only store, in `FUN_8001DCF8` (`0x8001E008`), clears bit 1. |
+| `0x8007B8D0` | u32 - `bse.dat` master bank pointer (0x1800-byte buffer). |
+| `0x8007BAC8` | u16 - BGM ID written by field-VM op 0x35 sub-1. |
+| `0x8007BC64` | u16 - Global BGM pool base for IDs ≥ 2000. |
+| `0x8007BD30` | 5008 bytes - Effect-runtime pool: 16-byte head + 128 child slots + 32 master slots. |
+| `0x8007BD5C` | u32 - Effect 2-pack wrapper buffer pointer (post-init). |
 
 ## Runtime PROT TOC + asset chain
 
@@ -169,17 +169,19 @@ patching an instruction. Useful Ghidra anchors.
 | `0x1F800314 +0x74`..`+0x7A` | u16 x4 - scratchpad draw-context **2-D clip rect** used by `FUN_801D56E4`: `+0x74` x-min, `+0x76` y-min, `+0x78` x-max, `+0x7A` y-max. |
 | `0x801D91DC` / `0x801D91E4` | Fishing overlay **reel-cadence ring**: write index, then 16 `(button, duration)` records of two words. `FUN_801D746C` clears both; `FUN_801D3DB4` walks them. Not a catch log. |
 | `0x1F80037E` | u16 - scratchpad **near cutoff**; `FUN_801D5C2C` rejects a segment whose two transformed Z both fall inside it. |
-| `0x80073280` | 0x24-byte block immediately below the widget class table `DAT_800732A4`: seven 4-byte records followed by two pointers, `0x8007B41C` and `0x8007B418`. Role unidentified; recorded so the block is not mistaken for the head of the class table. |
+| `0x8007329C` | The two words between the TMD descriptor table's last row and the widget class table `DAT_800732A4`: pointers `0x8007B41C` and `0x8007B418`. Role unidentified; recorded so they are not mistaken for the head of the class table. Everything below them back to `0x8007326C` is that descriptor table's own six rows, not a separate block. |
 | `0x8007C018` | TMD pointer table (`idx * 4` stride). Sole writer is `FUN_80026B4C`. All populated entries (`[0..DAT_8007BB38]`) are post-fixup Legaia TMDs. |
-| `0x8007C348` | u32 | Free-list LIFO stack pointer for the actor allocator. |
-| `0x8007C34C..0x36C` | u32[7] | Actor-list slot table consumed by `FUN_8002519c`. Seven linked-list heads at strides of 4 bytes (`+0x00`/`+0x04`/`+0x08`/`+0x0C`/`+0x10`/`+0x14`/`+0x20`). `FUN_80016444` walks five of them per frame as separate render passes; per-node entry-point is `node[+0x0C]` invoked via `jalr`. `_DAT_8007C354` and `_DAT_8007C364` are also read by `func_0x8003C83C` for the `0xF8`/`0xFB` motion-VM channel lookups (same list, two consumers). |
-| `0x8007C364` | u32 | Player context pointer (`_DAT_8007C364`). Corpus-stable at `0x80083794` across the field/battle Tetsu captures. `+0x10` carries the `0x80000` "encounter active" flag the entity SM raises during install and clears at the battle handoff. |
-| `0x8007BD24` | u32 | Battle context pointer (`_DAT_8007BD24`). `0x800EB654` while a battle is resident, `0` in the field. Base of the battle-actor / AI ctx block (`+0x13` = active slot, `+0x276` = tutorial byte gating arts-voice XA cues, `+0x28A` = battle-mode counter; the pending-SFX write counter lives at `+0x9`). |
-| `0x8007B6D8` | u16[4] | Pending-SFX cue ring (counter = battle ctx `+0x9`, wraps past 3). Written by the cue router `FUN_8004FE5C` (and directly by minigame overlays), drained by `FUN_80016B6C` against the SFX descriptor table. Engine mirror `legaia_engine_core::sfx_cue`. |
-| `0x8007B724` | u32 | Last-played SFX id - the cue router's dedupe compare. |
-| `0x80070536` | i16 | Bound voice id of the field-BGM sound source (`0x8007052C + 0xA`; the id `FUN_80026478` resumes). Runtime-written at track attach (`0` in the static image); read by `FUN_800267A8` and the battle-intro phase 0 (`FUN_801CF5BC`) as the `SsSeqSetVol` slot argument. |
-| `0x800788B8` | u16[N] | Per-arts-voice XA clip duration table (index = cue id − `0x100`); `FUN_8004FE5C` converts to sectors as `(raw*60 + 99)/100`. |
-| `0x8007326C` | u32 | TMD per-mode descriptor table (8-byte stride × 6 entries). |
+| `0x8007C348` | u32 - Free-list LIFO stack pointer for the actor allocator. |
+| `0x8007C34C..0x36C` | u32[7] - Actor-list slot table consumed by `FUN_8002519c`. Seven linked-list heads at strides of 4 bytes (`+0x00`/`+0x04`/`+0x08`/`+0x0C`/`+0x10`/`+0x14`/`+0x20`). `FUN_80016444` walks five of them per frame as separate render passes; per-node entry-point is `node[+0x0C]` invoked via `jalr`. `_DAT_8007C354` and `_DAT_8007C364` are also read by `func_0x8003C83C` for the `0xF8`/`0xFB` motion-VM channel lookups (same list, two consumers). |
+| `0x8007C364` | u32 - Player context pointer (`_DAT_8007C364`). Corpus-stable at `0x80083794` across the field/battle Tetsu captures. `+0x10` carries the `0x80000` "encounter active" flag the entity SM raises during install and clears at the battle handoff. |
+| `0x8007BD0C` | u8[4] - **Formation cell** - the per-slot monster id, indexed by 0-based monster index (monster `m` is battle-actor slot `m + 3`, `0x801EA008`). Filled from the encounter record by `FUN_801DA51C`, or from a scripted battle id by `FUN_8005567C`. The AI picker `FUN_801E9FD4` switches on it (`0x801EB73C`), so each case is bespoke AI for one monster id. `see ghidra/scripts/funcs/overlay_battle_action_801e9fd4.txt`. |
+| `0x8007BD10` | u8[] - **Per-seat character id**, 1-based (`1` Vahn, `2` Noa, `3` Gala, `0` empty), indexed by battle-actor slot. Selects the character record, the battle-mesh install slot (`FUN_800513F0`), the element row, the caption label and the attack camera's per-character jump table (`FUN_801D71B8` at `0x801D7290`). |
+| `0x8007BD24` | u32 - Battle context pointer (`_DAT_8007BD24`). `0x800EB654` while a battle is resident, `0` in the field. Base of the battle-actor / AI ctx block (`+0x13` = active slot, `+0x276` = tutorial byte gating arts-voice XA cues, `+0x28A` = battle-mode counter; the pending-SFX write counter lives at `+0x9`). |
+| `0x8007B6D8` | u16[4] - Pending-SFX cue ring (counter = battle ctx `+0x9`, wraps past 3). Written by the cue router `FUN_8004FE5C` (and directly by minigame overlays), drained by `FUN_80016B6C` against the SFX descriptor table. Engine mirror `legaia_engine_core::sfx_cue`. |
+| `0x8007B724` | u32 - Last-played SFX id - the cue router's dedupe compare. |
+| `0x80070536` | i16 - Bound voice id of the field-BGM sound source (`0x8007052C + 0xA`; the id `FUN_80026478` resumes). Runtime-written at track attach (`0` in the static image); read by `FUN_800267A8` and the battle-intro phase 0 (`FUN_801CF5BC`) as the `SsSeqSetVol` slot argument. |
+| `0x800788B8` | u16[N] - Per-arts-voice XA clip duration table (index = cue id − `0x100`); `FUN_8004FE5C` converts to sectors as `(raw*60 + 99)/100`. |
+| `0x8007326C` | u32 - TMD per-mode descriptor table (8-byte stride × 6 entries). |
 | `0x8007A940` | SsAPI per-note pitch / per-voice volume exponential lookup table (read by `FUN_80066E50` / `FUN_80067550`). |
 | `0x801CD2B8` | SsAPI 16-bit slot-allocation bitmap. Bit `i` = sequencer slot `i` allocated. |
 | `0x801CD2C0` | SsAPI 16-entry per-slot pointer table. Each entry → `0xB0`-byte sequence-state struct. |
@@ -197,7 +199,7 @@ chain. End-to-end walkthrough in [`subsystems/world-map.md`](../subsystems/world
 | `0x8007BC3C` | u32 | World-map submode register. `FUN_80016444` gates its `jal 0x801D7EA0` on this being `2`. Six SCUS writers (`FUN_80016230` / `FUN_80025980` / `FUN_80025DA0` / `FUN_8001D424`). |
 | `0x8007BCD0..D8` | u32[3] | Source globals for the gate-arm scale / step / OT-layer params. `FUN_801D1344` reads these and forwards as args to `FUN_801D8258`. |
 | `0x801F351C` | u32 | One-shot gate flag for the world-map POLY_FT4 batch emitter. `FUN_801D8258` sets it to `1`; `FUN_801D7EA0` (and 0897 sibling `FUN_801C9688`) clear it after one emission. Lives in the persistent `0x801F0000+` region so survives overlay swaps. |
-| `0x801F3518` | u32 | Running camera angle for the cos-rotation POLY_FT4 batch. Advanced by `DAT_1F800393 * _DAT_801F3524` per `FUN_801D7EA0` call; masked to the 4096-entry cos LUT at `0x8007B81C`. |
+| `0x801F3518` | u32 | Running camera angle for the cos-rotation POLY_FT4 batch. Advanced by `DAT_1F800393 * _DAT_801F3524` per `FUN_801D7EA0` call; masked to the 4096-entry trig LUT reached through `0x8007B81C` (the sine base). |
 | `0x801F3520` | u32 | Render scale / range. Sourced from `_DAT_8007BCD4` via `FUN_801D8258`'s `param_2`. Used both as `local_3c` and `local_3c / 5`. |
 | `0x801F3524` | u32 | Angle step per frame tick. Sourced from `_DAT_8007BCD8` via `FUN_801D8258`'s `param_3`. |
 | `0x801F3528` | u32 | OT layer / draw priority. Sourced from `_DAT_8007BCDC` via `FUN_801D8258`'s `param_4`. |

@@ -7,6 +7,7 @@ Implementation: [`crates/art`](../../crates/art/README.md).
 ## Contents
 
 - [Where the data lives](#where-the-data-lives)
+- [Confidence](#confidence)
 - [Action Constants](#action-constants)
 - [Art record layout](#art-record-layout)
   - [Fixed prefix](#fixed-prefix)
@@ -32,11 +33,27 @@ Implementation: [`crates/art`](../../crates/art/README.md).
 | Noa art records (RAM)  | `0x80176998` (first record) onwards |
 | Gala art records (RAM) | `0x8018BA54` (first record) onwards |
 | Learned Art Constants (RAM) | Vahn `0x8008488D`, Noa `0x80084CA1`, Gala `0x8008506C` |
-| On-disc source | PROT entry `0x05C4` (Inferred, see warning) |
+| On-disc source | Per-character player-data `record0` - extraction `0863` Vahn / `0864` Noa / `0865` Gala |
 | Miracle Art trigger entries (RAM `801F` segment) | Vahn's Craze `0x64F4`, Noa's Ark `0x6504`, Biron Rage `0x6514` |
-| Miracle Art trigger entries (PROT `0x05C4` area) | Vahn's Craze `0x0CDC`, Noa's Ark `0x0CEC`, Biron Rage `0x0CFC` |
+| Miracle Art trigger entries (record-file offsets) | Vahn's Craze `0x0CDC`, Noa's Ark `0x0CEC`, Biron Rage `0x0CFC` |
 
-Confidence: **Inferred** - the per-record damage / animation / effect schema below comes from external RE work cross-referenced with Meth962's earlier observations; a watchpoint trace pinning the runtime read sites is still pending.
+**"PROT entry `0x05C4`" is not a location.** `0x05C4` = 1476 is past the last
+PROT index, and the external RE work this page draws on used it as a label for
+the record file rather than as an archive coordinate. The records live in the
+player-data `record0` above; the `0x05C4`-area offsets in the third row are
+offsets inside that file.
+
+## Confidence
+
+Split by part, not per-page:
+
+- **Confirmed** - the command-sequence prefix at record `+0` and the fixed
+  `0xD0` record stride (savestate-proven, both copies located); the damage
+  power byte at `record0 +0x24` (disassembly-traced read chain below); the
+  SCUS arts-name table (`DAT_80075EC4`).
+- **Inferred** - the exact byte offsets of the variable-field tail (damage /
+  animation / effect fields after the prefix), which come from external RE work
+  cross-referenced with Meth962's earlier observations.
 
 > **Where the button combos live - there are TWO copies (savestate-proven).**
 > The directional command of each art is stored in two different files, and they
@@ -300,7 +317,7 @@ Crate API: [`legaia_art::learned_art_action(character, slot)`](../../crates/art/
 | `0x06` | PK Combo (`0x21`) | Tempest Break (`0x21`) | Neo Raising (`0x21`) |
 | `0x07` | Spin Combo (`0x22`) | Rushing Gale (`0x22`) | Black Rain (`0x22`) |
 | `0x08` | Pyro Pummel (`0x23`) | Tough Love (`0x23`) | Side Kick (`0x23`) |
-| `0x09` | Cross Kick (`0x24`) | Swan Driver (`0x24`) | Head-Splitter (`0x24`) |
+| `0x09` | Cross-Kick (`0x24`) | Swan Driver (`0x24`) | Head-Splitter (`0x24`) |
 | `0x0A` | Power Punch (`0x25`) | Bird Step (`0x25`) | Guillotine (`0x25`) |
 | `0x0B` | Slash Kick (`0x26`) | Dolphin Attack (`0x26`) | Back Punch (`0x26`) |
 | `0x0C` | Somersault (`0x27`) | Mirage Lancer (`0x27`) | Ironhead (`0x27`) |
@@ -335,7 +352,7 @@ Crate API: [`legaia_art::art_anim_name(character, anim_index)`](../../crates/art
 | `0x0D` | Burning Flare | Vulture Blade | Black Rain |
 | `0x0E` | Spin Combo | Mirage Lancer | - |
 | `0x0F` | Pyro Pummel | Blizzard Bash | - |
-| `0x10` | Cross Kick | Sonic Javelin | Side Kick |
+| `0x10` | Cross-Kick | Sonic Javelin | Side Kick |
 | `0x11` | Acrobatic Blitz | Electro Thrash | - |
 | `0x12` | - | - | Neo Raising |
 
@@ -345,7 +362,7 @@ Most art records reference exactly one anim slot; a handful (e.g. Hurricane Kick
 
 Each character has one Miracle Art. When the player enters the *exact* command sequence for that art, the runtime **clears the entire action queue** and writes the art's replacement string instead.
 
-| Character | Art | RAM | PROT | Command sequence |
+| Character | Art | RAM | Record-file offset | Command sequence |
 |---|---|---|---|---|
 | Vahn | Vahn's Craze | `0x64F4` | `0x0CDC` | R D L U L U R D L |
 | Noa | Noa's Ark | `0x6504` | `0x0CEC` | L U R D U L U D R |
@@ -456,13 +473,14 @@ walkthrough error (Vahn's *Hyper Elbow* is `L R L` on disc, not `Arms / Ra-Seru
 Because the glyph string is byte-exact ground truth, it serves as the
 validation oracle for the two derived command sources:
 
-- **The best-effort PROT `0x05C4` parser** ([`legaia_art::parse_record`]).
+- **The best-effort art-record parser** ([`legaia_art::parse_record`]).
   `legaia_art::ArtsOracle::by_command(character, &commands)` resolves a decoded
   command sequence back to a named art; the disc-gated contract test
   `crates/art/tests/arts_table_real.rs` runs every art's canonical record bytes
   through `parse_record` and asserts the decode round-trips through the oracle.
   This pins the parser's `1=L,2=R,3=D,4=U` command-byte decode against the
-  executable without needing the (still-unpinned) full record stride.
+  executable without depending on the record's still-Inferred variable-field
+  tail.
 - **The curated `legaia-gamedata` `arts.toml` `ap` + `directions` columns.**
   The disc-gated test `crates/gamedata/tests/arts_scus_oracle.rs` matches each
   curated art to its SCUS row by name and asserts AP + directions agree, with a

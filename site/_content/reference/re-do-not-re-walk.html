@@ -90,6 +90,12 @@
         <td>The revive path's bare accumulator assign is real, but the timing premise fails: readout credits land per strike <em>early</em> in a resolution, the revive state arrives only after the remaining targets and effects wind down, and the quarter-step drain empties any accumulator faster than every observed gap. A three-capture campaign with a Lost-Grail-armed party (no harness writes to any HP, readout, or accumulator field) drove twelve retail auto-revives across cast-path, kernel-path, single-target and party-wide kills: every restore found the accumulator already at zero, margins 143&ndash;280 vsyncs. The surviving question is narrower and lives on the open-threads page.</td>
         <td><a href="../subsystems/battle-action.html">battle-action</a></td>
       </tr>
+      <tr>
+        <td>An art whose attack camera films flat has the wrong <strong>arm</strong>, so pick a better-choreographed one</td>
+        <td><span class="tag tag-done">falsified</span> (every arm is timed for a ~20-frame swing, and none is spare)</td>
+        <td>The arms really do differ in shot count &mdash; one commits a single framing for a whole swing while others change shot two or three times &mdash; and 37 of the three dispatch tables' 54 slots point at a bare return, which reads as spare capacity. Both halves fail. Each shot change is an <code>slti</code> immediate against the animation cursor <code>actor[+0x22C][+0x68]</code> in sixteenths of a keyframe, and the thirteen such tests in the whole arm span carry immediates <code>64</code>&hellip;<code>272</code> &mdash; keyframe 4 through 17, sized for a ~20-frame retail swing &mdash; so a 46&ndash;100 frame clip mistimes <em>any</em> arm. And the 37 dead slots all point at one shared epilogue, while the 17 live slots reach 13 distinct arms of which every one is already some art's camera and none is shared across characters: a retarget can only alias an arm another art still uses. The fix is to re-time the arm the art already dispatches to. Generalises: "pick a better one" presumes the candidates differ along the axis the defect lies on, and emptiness in an index is not slack in what it indexes.</td>
+        <td><a href="../tooling/randomizer.html">randomizer</a></td>
+      </tr>
     </tbody>
   </table>
 </section>

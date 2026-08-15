@@ -1382,6 +1382,33 @@ legaia-patcher verify --input DISC.bin --patch run.ppf
   preset - the swap machinery lives in `legaia_asset::party_swap`, the
   disc apply in `delilas_party`. See `docs/tooling/randomizer.md`
   § Delilas party swap.
+- With the swap, each hero slot also gives up its 50-AP Hyper to carry the
+  mapped sibling's **signature special**, which is where it stops being a
+  reskin. That clip is a *chain* of monster-archive entries the enemy cast
+  module stages in sequence, so it is retargeted stage by stage and
+  concatenated, and the art's event frames (entry `+0x10..0x13`, its hit
+  timing) are replaced rather than rescaled so the contacts land inside the
+  payoff stage. Names
+  are exchanged in both directions - the party art through
+  `arts_table::name_field`, the enemy row through `spell_names::name_field` -
+  each written into its own record's measured NUL slack, never by searching
+  the image for the old text.
+- The swing camera is **re-timed, not replaced** (`retime_camera_arm`). Its
+  shot changes are `slti` immediates in the battle overlay, cut against the
+  clip the art plays in retail (the highest in the dispatcher is keyframe 17),
+  so a longer chain finishes the whole choreography inside its wind-up and
+  then holds one shot. Two constraints make that a code edit whose blast
+  radius has to be checked rather than assumed. Every arm in the dispatcher
+  is already live in some character's table, so a slot is **exchanged** with
+  another rather than retargeted - a retarget aliases an arm a second art
+  still uses, and the re-time then follows the alias into that art. And
+  because the arms are branch cascades, a straight-line liveness read calls
+  the cursor register dead on exactly the paths that jump over its reuse, so
+  the immediates are found by shape instead: `slti` (the dispatcher's own
+  bounds checks are `sltiu`, a different opcode) against a register some
+  `lh`/`lhu` loaded from `+0x68`, with a threshold in the keyframe range.
+  Format side:
+  [`docs/formats/battle-attack-camera-table.md`](../../docs/formats/battle-attack-camera-table.md).
 - `--equipment-drops` injects a low-chance bonus equipment drop into the
   battle-end reward routine - granted on top of `--drops`, never disturbing it.
   `--equipment-drop-chance N` sets the per-battle percent (default 5).

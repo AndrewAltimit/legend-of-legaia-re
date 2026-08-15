@@ -1372,10 +1372,12 @@ HP / MP value colour ramp via `_DAT_8007b454`: 7 (green, default), 6
 `legaia_engine_core::save_select::SaveSelectSession::info_panel_slide_anim_t()`
 holds at 0 during Browsing / NowChecking / Done, ramps during
 SlotPreview / Confirm (matching retail's two-stage flow).
-`legaia_engine_render::INFO_PANEL_OFFSCREEN_Y = 394` and
-`INFO_PANEL_PARKED_Y = 138` drive the interpolation. The renderer
+`legaia_engine_core::save_select::INFO_PANEL_OFFSCREEN_Y = 394` and
+`INFO_PANEL_PARKED_Y = 138` drive the interpolation (they live in
+`engine-core`, which `engine-render` does not depend on - both hosts read them
+from there directly). The renderer
 functions `slot_info_panel_draws_for` (chrome + portrait) and
-`slot_info_panel_text_draws_for` (text rows) now take a
+`slot_info_panel_text_draws_for` (text rows) take a
 `panel_y_offset: i32` parameter - caller-provided delta from the
 parked y. The shell driver
 (`legaia-engine play-window --boot-ui`) wires this via

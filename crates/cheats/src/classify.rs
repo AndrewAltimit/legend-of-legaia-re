@@ -165,9 +165,15 @@ fn classify_character_record(addr: u32) -> Option<ClassifiedAddress> {
 /// See `docs/formats/save-record.md` for the source of every offset.
 pub fn field_name_for_offset(off: u32) -> &'static str {
     match off {
-        0x000..=0x003 => "xp_low_word_alt(+0x000)",
-        0x004..=0x005 => "xp_cumulative_u16(+0x004)",
-        0x006..=0x00F => "header_tail",
+        // One XP total and one threshold, both u32 - see
+        // `legaia_save::CharacterRecord::{cumulative_xp, next_level_xp}`.
+        // The "u16 cumulative XP at +0x004" reading is falsified: that half-
+        // word is the low half of the threshold word, which the level-up
+        // applier rewrites on every level change, so it steps in exactly the
+        // places cumulative XP does.
+        0x000..=0x003 => "xp_cumulative(+0x000)",
+        0x004..=0x007 => "xp_next_threshold(+0x004)",
+        0x008..=0x00F => "header_tail",
         0x010..=0x0F3 => "stat_block_unmapped",
         0x0F4..=0x103 => "ability_bits[16]",
         // Each live pair is (max, cur): the aggregator FUN_80042558 rewrites
@@ -417,7 +423,10 @@ mod tests {
         let c = classify_address(0x80084708);
         assert_eq!(c.category, Category::CharacterRecord);
         assert!(c.detail.contains("vahn_record"));
-        assert!(c.detail.contains("xp_low_word_alt"));
+        assert!(c.detail.contains("xp_cumulative"));
+        // `+0x004` is the next-level threshold, not a second XP total.
+        let t = classify_address(0x8008470C);
+        assert!(t.detail.contains("xp_next_threshold"), "{}", t.detail);
     }
 
     #[test]

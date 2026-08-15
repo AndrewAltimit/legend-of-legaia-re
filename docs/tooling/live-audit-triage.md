@@ -94,7 +94,7 @@ roots, so it wired the moment it existed.
 ## Analysis defects this triage found
 
 Four classes of audit false negative, each verified against a positive control,
-and all four now fixed in `scripts/ci/port-catalog.py`. Together they account
+and all four fixed in `scripts/ci/port-catalog.py`. Together they account
 for every `FALSE INERT` row below. The mechanisms are kept here because each one
 is a shape that can recur - a new externally-dispatched trait, a new tag on a
 struct with no `impl` - and because they are what the regression set tests.
@@ -111,8 +111,8 @@ in-edges no matter how many hosts run it.
 Positive control: `op4c_n5_sub0_set_actor_model` has two definitions. The
 `impl TestHost` copy resolves live from `op_4c_n5` in
 `crates/engine-vm/src/field/step/menu_ctrl/nibble_5_6_7.rs`, proving the caller
-is reachable; the `trait FieldHost` default copy at
-`crates/engine-vm/src/field/host.rs:1226` has zero in-edges from the same call.
+is reachable; the `trait FieldHost` default copy in
+`crates/engine-vm/src/field/host.rs` has zero in-edges from the same call.
 
 **Fixed** by scanning `trait Name { }` bodies alongside `impl` blocks and giving
 a default method its trait's name as `impl_type`. It is listed among both the

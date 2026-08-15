@@ -327,9 +327,10 @@ impl Pool {
     /// PORT: FUN_801DE914
     pub fn init(&mut self, head: PoolHead) {
         // Retail clears `_DAT_8007BD30` for `0x4E4 = 1252` u32 words = 5008
-        // bytes, which spans the head + child slots + master slots + the
-        // unused tail. We just rewrite the typed structs; the result is
-        // bytewise equivalent.
+        // bytes, which is the pool exactly - no tail: 16 (head) + 128 * 32
+        // (children, `+0x10..+0x1010`) + 32 * 28 (masters, from `+0x1010`)
+        // = 5008. We just rewrite the typed structs; the result is bytewise
+        // equivalent.
         for child in &mut self.children {
             *child = ChildSlot::default();
         }

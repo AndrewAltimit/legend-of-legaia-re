@@ -101,10 +101,10 @@ drops LTO:
 cargo test --workspace --profile release-test
 ```
 
-Measured on `legaia-engine-core` (156 test binaries), rebuilding after a
-one-line source change: **490 s on `release`, 62 s on `release-test`**. The
-tradeoff is a second set of artifacts in `target/`, and test binaries whose
-codegen no longer matches a release build.
+On a crate with a few hundred test binaries, the relink after a one-line
+source change is dominated by that link-time work, so dropping it is close to
+an order of magnitude. The tradeoff is a second set of artifacts in
+`target/`, and test binaries whose codegen no longer matches a release build.
 
 CI stays on `--release`: its `ci` job runs `cargo build --release` alongside the
 test step and the runner's target directory persists, so there the two profiles
@@ -165,7 +165,8 @@ with a release archive the same binaries sit in the unpacked directory, so run
 ./target/release/legaia-engine play-str /path/to/cutscene.str
 
 # Persist input bindings to TOML (engine-core::input::Mapping).
-./target/release/legaia-engine config set --binding cross=Z
+# The form is KEY=BUTTON: a friendly key name, then a PSX pad button name.
+./target/release/legaia-engine config set --binding Z=Cross
 ```
 
 Asset inspection, after `legaia-extract` has populated `extracted/`:

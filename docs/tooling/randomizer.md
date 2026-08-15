@@ -1646,13 +1646,27 @@ one-way rename: the party art gives up `Burning Flare` to become
 padding measured by `spell_names::name_field`, never grown - the retail
 slots hold 16 bytes against 13-14 byte names.
 
-Still missing from that mirror, and both larger jobs: the Delilas **field
-forms** in `nilboa` (scene-resident, `model = 106/107/108` of PROT entry
-639, which the three hero meshes overshoot by about 3 KB against 4 bytes
-of pack slack), and the enemy special's **choreography** - the body motion
-is size-neutral to retarget, but the fire, lift and camera are compiled
-MIPS spawn sites in the cast modules with no data channel a player art's
-8-slot effect list can drive.
+Still missing from that mirror, and both larger jobs.
+
+The Delilas **field forms** in `nilboa` are scene-resident: MAN placements
+carry `model = 106/107/108`, which are pack-member indices into PROT entry
+`0639`, and a byte search over all 1233 entries finds each of those meshes
+exactly once, so that pack is their only carrier. The size problem is that
+the pack's 112 members **tile its declared stream with no internal slack**,
+and the three the heroes would replace hold 30276 bytes between them - a
+budget the hero forms exceed. By how much is the open question: the
+uncompressed field forms in PROT 0874 §0 are 38676 bytes, but the fieldize
+path decimates before writing, so the figure that decides this is the
+post-decimation one and it has not been measured against the pack's real
+tail slack. Treat both the overshoot and the slack as unmeasured until
+something derives them together.
+
+The enemy special's **choreography** is the harder half regardless. The
+body motion is size-neutral to retarget - written at each entry's retail
+`(parts, frames)` shape it costs nothing - but the fire, lift and camera
+are hardcoded `jal` sites in the cast modules (15 in PROT `0958`, 41 in
+`0959`, 24 in `0960`), with no data channel a player art's 8-slot effect
+list can drive.
 
 The **battle idle** is rebuilt too, and it is a stance change more than a
 motion one. Retail authors each character's combat stance in idle frame 0,
@@ -1710,7 +1724,8 @@ Each arm is a cascade of `slti` tests on the animation cursor
 how a swing gets several framings instead of one. Gala's Explosive Fist
 arm changes shot at keyframes 4, 7 and 10; Noa's Vulture Blade arm and
 Vahn's Tornado Flame arm at 14. **Those thresholds are literals sized for
-a ~20-frame retail swing**, and a signature chain runs 46 to 100 frames,
+the retail clip** - the highest threshold anywhere in the dispatcher is
+keyframe 17 - and a signature chain runs 46 to 100 frames,
 so the camera finishes its entire choreography inside the wind-up and then
 holds one shot for the rest of the move. That is the whole defect, and it
 is invisible to any check that only asks which arm ran.
@@ -1735,10 +1750,11 @@ register is dead where it is live.
 
 Editing an arm is only safe while exactly one art dispatches to it, and
 that is checked rather than assumed. Burning Flare's own arm `0x801D7650`
-is the sole live arm in the dispatcher with **no cursor gate** at all -
-one static framing for the entire swing - so it has no choreography to
-re-time, and its slot instead **swaps** with Tornado Flame's `0x801D74A8`
-(two cursor bands, three ramp folds, no side effects). A swap, not a
+reads **no cursor** at all - one static framing for the entire swing, and
+so nothing to re-time. Four of the thirteen arms are flat like that, but
+it is the only flat one a host art dispatches to. Its slot instead
+**swaps** with Tornado Flame's `0x801D74A8` (two cursor bands, three ramp
+folds, no side effects). A swap, not a
 retarget: every arm is already live somewhere, so a plain retarget would
 alias an arm a second art still uses and the re-time would follow the
 alias into that art. Exchanging leaves the set of live arms unchanged -

@@ -85,9 +85,9 @@ failure shaped like "that state is corrupt" rather than "my reader handles one
 of two formats". `legaia_pcsxr::SaveState` dispatches on the `1f 8b` magic and
 opens both.
 
-The corpus-wide consequence is worth stating plainly: before that dispatch
-existed the scene index over every state on this machine resolved 21 scenes;
-after it, 50.
+The corpus-wide consequence is worth stating plainly: a gzip-only reader indexes
+only the quicksave minority, so the scene index it produces silently under-reports
+the corpus by more than half.
 
 ### Save-state library (immutable backups)
 
@@ -144,8 +144,12 @@ The wrapper:
    (fails early with a clear error if any one is missing).
 2. Launches PCSX-Redux with `-interpreter -debugger -run -bios
    <SCPH> -iso <bin> -dofile <lua> -stdout` and pipes the emulator
-   log to `logs/pcsx_<probe>.log`.
-3. Tails the log for a `=== summary ===` block on exit.
+   log to `pcsx.log` inside the run's output directory - or to
+   `logs/pcsx_<probe-stem>.log` when `LEGAIA_OUT` pins a single output
+   file instead (`--log PATH` overrides either).
+3. On exit, prints the CSV row count and greps the log for the probe's
+   own `=== probe hits ===`-style banner, echoing it back as a
+   `=== probe summary ===` block.
 
 The `-stdout` flag is what makes the autorun's `PCSX.log(...)`
 calls visible to the parent shell.
@@ -771,7 +775,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | `autorun_battle_reward_source.lua` | Confirmed the victory reward path. → [detail](#autorun_battle_reward_sourcelua) |
 | `autorun_super_art_queue_builder.lua` | Watches `ctx[+0x274]` (`*(0x8007BD24)+0x274`); a capture showed this is the turn-order active-actor index (`FUN_801DABA4`), **not** the art queue. Kept as a turn-order diagnostic. See [super-art-queue-capture.md](super-art-queue-capture.md). |
 | `autorun_super_art_action_queue.lua` | Reads + range-watches the party actors' `actor[+0x1DF..+0x1F2]` action-parameter stream (the real Super/Miracle queue) via the `0x801C9370` table. Validated Noa's Miracle queue byte-exact vs `miracle.rs`. See [super-art-queue-capture.md](super-art-queue-capture.md). |
-| `autorun_super_art_input_replay.lua` | Loads an arts-input battle state, optionally injects a direction sequence (`LEGAIA_INPUT_SEQ`, edge-only pad-override calls), and CSV-logs every change to all three party actors' `+0x1DF..+0x1F2` queues per frame. Verified live: injected directions append 1:1 as raw queue bytes. With an empty sequence it is a pure crash-free queue observer for manual-input hybrid runs. Caveats: the catalogued arts-input states' command bars (Gala 5 / Noa 8 blocks) are too short for any Super (9-15 inputs) - a fresh endgame-card arts-input state is needed per character - and the pad-override path can segfault the 2026-05 PCSX-Redux build after ~7-9 press/release cycles, so prefer manual input with the observer. |
+| `autorun_super_art_input_replay.lua` | Loads an arts-input battle state, optionally injects a direction sequence (`LEGAIA_INPUT_SEQ`, edge-only pad-override calls), and CSV-logs every change to all three party actors' `+0x1DF..+0x1F2` queues per frame. Verified live: injected directions append 1:1 as raw queue bytes. With an empty sequence it is a pure crash-free queue observer for manual-input hybrid runs. Caveats: the catalogued arts-input states' command bars (Gala 5 / Noa 8 blocks) are too short for any Super (9-15 inputs) - a fresh endgame-card arts-input state is needed per character - and the pad-override path can segfault this PCSX-Redux build after ~7-9 press/release cycles, so prefer manual input with the observer. |
 | `autorun_title_staging_capture.lua` | Pins the PROT source of the title overlay. → [detail](#autorun_title_staging_capturelua) |
 | `autorun_battle_palette_source.lua` | Confirms the scene bundle is LZS-decompressed into the work arena at load; does NOT pin the party palette. → [detail](#autorun_battle_palette_sourcelua) |
 | `autorun_load_screen_dump.lua` | Ground-truth capture for the load-screen panel border + slot-pill source sprites. → [detail](#autorun_load_screen_dumplua) |

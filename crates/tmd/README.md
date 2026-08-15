@@ -132,8 +132,8 @@ tmd dump-obj extracted/tmd_scan/0148_retock/raw_off000004.tmd --out mesh.obj --n
 tmd prims extracted/tmd_scan/0148_retock/raw_off000004.tmd
 
 # Same, but also simulate the targeted VRAM upload the viewer does at runtime:
-# per-prim Ok / MissingClut / ClutDepthMismatch / MissingTexturePage. This is
-# the fast way to diagnose a wrong-palette mesh without opening the GUI.
+# per-prim Ok / MissingClut / MissingTexturePage. This is the fast way to
+# diagnose a wrong-palette mesh without opening the GUI.
 # --vram-dir is repeatable.
 tmd prims extracted/tmd_scan/0148_retock/raw_off000004.tmd --vram-dir extracted/tim_scan/0148_retock
 

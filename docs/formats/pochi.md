@@ -13,7 +13,7 @@
 > reached through the entry-size expression that spanned neighbouring entries
 > (corrected in [`prot.md`](prot.md)). The symptom was attributed to the slot
 > a sweep was standing on rather than to the entry it over-read into. See
-> [the scratch tail](#the-scratch-tail-is-live-looking-data---never-load-it).
+> [the hazard's real source](#the-stale-scratch-hazard-belongs-to-the-next-entry).
 
 ## Layout
 
@@ -40,30 +40,37 @@ Treat as known-empty:
 - Don't include in TMD/TIM bulk-scan totals.
 - Skip in any "what's still uncategorised" tally.
 
-## The scratch tail is *live-looking* data - never load it
+## The stale-scratch hazard belongs to the next entry
 
-The bytes after the `0x1A` are **not zeros**: they are whatever the mastering
-tool left in the sector, and a large share of scene-block pochi slots carry a
-complete, well-formed `256 x 256` 4bpp PSX TIM (often two: image blocks at fb
-`(768, 0)` and `(832, 0)` with CLUT rows 473 / 479 - the block's battle-side
-character pages). They parse. They upload. Retail never touches them: the field
-loader dispatches the scene's asset table, not its reserved slots.
+A pochi slot's own tail - the bytes between the `0x1A` and the end of its single
+sector - is fill. There is no second sector for a stale asset to sit in, and
+nothing in the 266-slot corpus parses as a TIM. The slot cannot put a page
+anywhere.
 
-An engine-side "scan every entry in the CDNAME block for TIMs" sweep therefore
-uploads a page of stale texels *over a page the scene is actively using*. The
-collision is not hypothetical - fb `(768, 0)` is tpage `0x0C`, which is where
-most field scenes put their **ground-tile atlas** (the per-cell page in the
-`.MAP` object record's `+0x15`; see [`world-map.md`](../subsystems/world-map.md)
-"Ground texturing"). A pochi upload lands last and erases it, and the ground
-quads then sample character / backdrop texels: Jeremi's floor becomes a grid of
-grey "tombstones", Mt. Dhini's becomes a repeating vine/crack pattern. Rim Elm
-escapes only because its sibling slots are all `scene_tmd_stream` entries, which
-the field build already excludes.
+The **rendering hazard is real**, and it is worth keeping because the symptom
+points at the wrong entry. Two `64 x 256` pages land at framebuffer `(768, 0)`
+and `(832, 0)` - the block's battle-side character pages, CLUT rows 473 / 479 -
+and fb `(768, 0)` is tpage `0x0C`, where most field scenes put their
+**ground-tile atlas** (the per-cell page in the `.MAP` object record's `+0x15`;
+see [`world-map.md`](../subsystems/world-map.md) "Ground texturing"). Uploaded
+last, they erase the atlas and the ground quads sample character / backdrop
+texels: Jeremi's floor becomes a grid of grey "tombstones", Mt. Dhini's a
+repeating vine/crack pattern.
 
-The engine's field VRAM pre-pass skips `Class::PochiFiller` entries outright
-(`legaia_engine_core::scene_resources`); the disc-gated regression
-`field_ground_texture_pages_disc` pins both halves - the hazard exists on the
-disc, and the built VRAM does not contain it.
+Those pages are the **`scene_tmd_stream` entry that follows the pochi slot** -
+its `FUN_8001FE70` type-`0x01` chunks. A "scan every entry in the CDNAME block
+for TIMs" sweep reached them by standing on the pochi slot and reading past its
+end, under the superseded entry-size expression ([`prot.md`](prot.md)). Rim Elm
+escapes because its sibling slots are all `scene_tmd_stream` entries, which the
+field build already excludes - which is the same statement about the neighbour,
+read as a statement about the slot.
+
+With an entry sized as the sector gap to its successor, a pochi slot has no
+reach at all. The engine's field VRAM pre-pass skips `Class::PochiFiller`
+entries outright (`legaia_engine_core::scene_resources`); the disc-gated
+regression `field_ground_texture_pages_disc` pins both halves - every
+pochi-filler entry is one sector carrying no TIM, and the built VRAM does not
+contain the neighbour's page.
 
 ## See also
 

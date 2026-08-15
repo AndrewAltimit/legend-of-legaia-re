@@ -15,8 +15,14 @@ instead of every raw entry.
 - `legaia-prot` - TOC + CDNAME.
 - `legaia-asset` - categorize + tim_scan + `monster_archive`.
 - `legaia-lzs` - LZS decoder.
-- `legaia-tmd` - mesh parser.
+- `legaia-tim` / `legaia-tmd` / `legaia-mes` / `legaia-seq` / `legaia-vab` /
+  `legaia-xa` / `legaia-mdec` - the sub-asset parsers behind the entry
+  inspector.
 - `legaia-patcher` + `legaia-iso` - the randomizer / disc patcher (see `rom_patcher` below).
+- `legaia-engine-core` / `-vm` / `-ui` / `-audio` (the last with
+  `audio-webaudio`) + `legaia-font` + `legaia-save` - the ported engine the
+  play page runs. Not a wrapper layer: these are the same crates the native
+  window links.
 
 ## Playing the port in the browser (`runtime` + `play`)
 
@@ -782,15 +788,25 @@ animations). Disc-gated smoke: `legaia-asset`'s
 
 ## In-browser ROM patcher (`rom_patcher`)
 
-`rom_patcher::patch_rom(image, seed, drops, encounters, chests)` runs the
-Track-1 [`legaia-patcher`](../patcher/README.md) randomizer entirely client-side and
+`rom_patcher::patch_rom(image, seed, lang_pack, …)` runs the Track-1
+[`legaia-patcher`](../patcher/README.md) randomizer entirely client-side and
 returns `{ data, summary, seed }` - the patched disc bytes for download, a
 human-readable change report, and the resolved numeric seed. `resolve_seed`
 exposes the seed-string hash so the page can display it. It drives the static
-site's `tooling/rom-patcher.html` page: the user supplies their own disc, toggles
-the drop / encounter / chest settings, and downloads a patched image. The disc
-bytes never leave the browser and nothing is uploaded - the same "user supplies
-the disc" model as the CLI, so the site ships only code.
+site's `tooling/rom-patcher.html` page: the user supplies their own disc, sets
+the toggles, and downloads a patched image. The disc bytes never leave the
+browser and nothing is uploaded - the same "user supplies the disc" model as
+the CLI, so the site ships only code.
+
+Every knob is a flat argument, one per CLI flag - the randomized pools (drops,
+encounters, chests, shops, casino, steals, arts, doors), the tuning strings
+(monster stats, move power, element affinity, spell costs, equip bonuses, XP
+and catch-rate scales, the AP sliders), the softlock and quality-of-life
+fixes, and the standalone content toggles. The function is the browser twin of
+`legaia-patcher randomize`, so its argument list tracks that CLI's flags
+rather than being a curated subset; the
+[randomizer reference](../../docs/tooling/randomizer.md) is the per-feature
+page for all of them.
 
 An optional `lang_pack` YAML argument (default `""` = English, strictly opt-in)
 applies a [language pack](../patcher/README.md#translation-packs) **before** any

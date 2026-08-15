@@ -439,6 +439,16 @@ party render node's anim context (`node +0x4C`, consumed by `FUN_80047430` →
 the disc decode (`crates/engine-shell/tests/battle_party_pose_live.rs`); no
 PROT 1203 record is resident in battle RAM.
 
+Those inline `record[0]` streams are **raw packed** - `2 + parts * frames * 9`
+bytes, sized entirely by their own `[parts][frames]` head, with no size word,
+flag or codec between them and the block's LZS. The character's **art** clips
+carry the same decoded bytes but arrive in a different container: they are
+`"ME"` archive bodies in `readef.DAT`, and every player-art body on the retail
+disc is channel-delta coded. One pose format, two container encodings - the
+consequence, and why it decides what an edit to a clip costs, is
+[`battle-data-pack.md` § Two container encodings, one pose
+format](battle-data-pack.md#two-container-encodings-one-pose-format).
+
 The **PROT 1203** ANM bundle (`other5`, decoded per
 [`anm.md`](anm.md#per-bone-frame-8-byte-encoding)) is the rig for the
 **PROT 1204 pack's own object order** - the Baka Fighter / viewer

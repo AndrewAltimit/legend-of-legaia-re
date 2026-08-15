@@ -54,18 +54,20 @@ If you've never built the wrapper before, first run also handles UID/GID matchin
 
 ## Importing SCUS_942.54
 
-PSX executables are PSX-EXE format: skip the 0x800-byte header, base address `0x80010000`.
+PSX executables are PSX-EXE format: a 0x800-byte header, then the text section, which the header's `t_addr` (file `0x18`) places at `0x80010000`. So the mapping every dump and citation in this repo assumes is `file offset = 0x800 + va - 0x80010000`, and the import has to reproduce it. Basing the **whole file** at `0x8000F800` does that with no extra loader option - the header occupies `0x8000F800..0x80010000` and the first text byte lands on `0x80010000`:
 
 ```bash
 docker compose exec ghidra /ghidra/support/analyzeHeadless \
     /projects legaia \
     -import /data/SCUS_942.54 \
     -loader BinaryLoader \
-    -loader-baseAddr 0x80010000 \
+    -loader-baseAddr 0x8000F800 \
     -processor MIPS:LE:32:default
 ```
 
 > **Use `MIPS:LE:32:default`, not `MIPS:LE:32:R3000`.** Ghidra rejects `R3000` as `Unsupported language`. The PSX R3000A is a strict subset of MIPS-I; the default little-endian profile handles it correctly.
+
+> **A base of `0x80010000` on the whole file shifts every address by `0x800`.** It reads as the natural choice - it is the text VA - but it loads the header there too, so each function's printed entry point is `0x800` high while the instruction text stays perfectly plausible. That is exactly the failure [`dump-corpus-integrity.md`](dump-corpus-integrity.md) is about. Check the import before dumping anything from it: the TMD renderer at `0x8002735C` must open on `addiu sp,sp,-0x158`, and any function entry that opens mid-body instead means the base is wrong.
 
 After import, run analysis:
 
@@ -144,7 +146,7 @@ docker compose exec ghidra /ghidra/support/analyzeHeadless \
     0x8007C018 0x8007BB38 0x8007B7DC
 ```
 
-Arguments may be decimal or hex (`0x...` prefix). Multiple addresses are scanned in a single pass. Alternative: set `GHIDRA_FIND_ADDRS='0x8007c018,0x8007bb38'` and run without args.
+Arguments may be decimal or hex (`0x...` prefix). Multiple addresses are scanned in a single pass. Alternative: pass the address set through the environment with `docker compose exec -e GHIDRA_FIND_ADDRS='0x8007c018,0x8007bb38' ghidra …` and run the script without args - the variable is read inside the container, so exporting it in the host shell has no effect.
 
 The pattern this catches (the actual installer for `DAT_8007C018` at `FUN_80026B4C` - missed by the reference manager):
 
@@ -173,13 +175,17 @@ Empirical workflow:
 
 ## Adding a new function dump
 
-1. Edit `ghidra/scripts/dump_funcs.py`'s `TARGETS` list to add the entry-point address.
+1. Edit `ghidra/scripts/dump_funcs.py`'s `TARGETS` list to add the entry-point address. **SCUS-resident addresses only.** The script writes `funcs/<addr>.txt` with no overlay prefix, so an overlay-resident address (VA `>= 0x801C0000`) would collide with any other overlay's function at the same VA. Those belong in a per-overlay `dump_<label>_overlay.py`, whose `out_path_for()` prefixes the output as `overlay_<label>_<addr>.txt`.
 2. Run the dump:
    ```bash
-   docker compose exec ghidra /ghidra/support/analyzeHeadless \
+   docker compose exec -e DUMP_ONLY=8002735c ghidra /ghidra/support/analyzeHeadless \
        /projects legaia -process SCUS_942.54 -noanalysis \
        -postScript /scripts/dump_funcs.py
    ```
+   `DUMP_ONLY=<addr>[,<addr>...]` dumps just those; without it the whole
+   `TARGETS` catalogue is re-dumped, which is the slow path. It is read inside
+   the container, so it has to travel via `exec -e` - exporting it in the host
+   shell does nothing.
 3. Open `ghidra/scripts/funcs/<addr>.txt` and analyze.
 4. Update [`reference/functions.md`](../reference/functions.md) if it's a notable entry point.
 
@@ -199,17 +205,18 @@ Every script needs the `# @runtime Jython` header line (with `# @category Legaia
 
 | Script | Purpose |
 |---|---|
-| `dump_funcs.py` | Dump disassembly + decompiled C for a list of function entry points. Output goes to `ghidra/scripts/funcs/<addr>.txt`. |
+| `dump_funcs.py` | Dump disassembly + decompiled C for a list of function entry points. Output goes to `ghidra/scripts/funcs/<addr>.txt`. SCUS-resident targets only - see [adding a new function dump](#adding-a-new-function-dump). |
+| `dump_pending_helpers.py` | The overlay-aware dumper pattern every `dump_<label>_overlay.py` copies: a rotating `TARGETS` list, an `in_program()` guard that silently skips addresses the current program doesn't hold, and `out_path_for()` naming output `<addr>.txt` under SCUS but `<prog_label>_<addr>.txt` under an overlay. One target list, run once per program, no per-program lists to maintain. |
 | `dump_scus_gaps.py` | Dumper for the disc-denominated **code gap** worklist [`disc-coverage.py`](disc-coverage.md) emits. Takes address `RANGES` rather than entry points, because a gap is bounded by dumped functions rather than named by one: it walks the listing per range, dumps every function entry inside, and reports the bytes no function covers. Those go in `FORCE_RANGES`, which force-disassembles the run and creates one function per `jr ra` + delay-slot unit - the shape a sequence of separately-emitted library leaves has, where `force_disasm_dump.py`'s one-entry-per-address model needs the entries known in advance. `in_program()`-guarded. |
-| `repair_truncated_dumps.py` | Repairs dumps whose function **body ends before the routine does** - the defect class on [`dump-corpus-integrity.md`](dump-corpus-integrity.md) that no header or base check can see, because such a dump is internally consistent. Ignores Ghidra's boundary, walks from the entry to the first `jr ra`, deletes the interior `FUN_` entries that cut the body, and rebuilds over the whole span. Targets come from `TARGETS` or the gitignored `redump_targets.txt`; a bare address is a plain re-dump and a `!` suffix forces the rebuild. **Only force where the sweep says `NO_RETURN`** - the walk stops at the first return in address order, so forcing it on a routine with an early-exit arm truncates the very dump it is meant to repair. |
-| `force_disasm_dump.py` | Force-disassemble + create-function at addresses Ghidra didn't auto-detect (JALR-only entry points), then dump. Validates the result has `>=8` instructions ending in `jr $ra` before committing the function. |
-| `resolve_render_tail.py` | Companion to the [trace-driven coverage](playthrough-coverage.md) program: for a hardcoded list of overlay trace-hit addresses (default = the S5 battle render-tail), reports `getFunctionContaining` + `memory.contains` per hit in the currently-open overlay program - separating "in-program but un-analyzed" (a create+dump target) from "out-of-program" (a different co-resident overlay). |
+| `repair_truncated_dumps.py` | Repairs dumps whose function **body ends before the routine does** - the defect class on [`dump-corpus-integrity.md`](dump-corpus-integrity.md) that no header or base check can see, because such a dump is internally consistent. Ignores Ghidra's boundary, walks the routine's real extent, deletes the interior `FUN_` entries that cut the body, and rebuilds over the whole span. → [detail](#repair_truncated_dumpspy-detail) |
+| `force_disasm_dump.py` | Force-disassemble + create-function at addresses Ghidra didn't auto-detect (JALR-only entry points), then dump. Targets are one hex address per line in `force_disasm_targets.txt` beside the script (gitignored - populate it per run), not a `TARGETS` constant. The walk must reach a `jr $ra` and produce at least two instructions before the function is committed; the floor is low on purpose, so `jr ra; nop` PsyQ thunks survive it. |
+| `resolve_render_tail.py` | Companion to the [trace-driven coverage](playthrough-coverage.md) program: for the hardcoded `HITS` list of overlay trace-hit addresses (the S5 battle render-tail, with hit counts), reports each hit's `getFunctionContaining` result in the currently-open overlay program plus whether a dump for that entry already exists on disk, then rolls the hits up per enclosing function. A hit with no containing function is undefined code in this program - a create+dump target, or a sign the address belongs to a co-resident overlay. Run against `overlay_battle_action.bin`. |
 | `dump_battle_rendertail.py` | Disassemble + create-function + dump the in-`0898` battle render-tail functions the trace found un-analyzed (e.g. `FUN_801E0080`). Output naming matches the overlay dumps (`overlay_battle_action_<addr>.txt`). Run against `overlay_battle_action.bin`. |
 | `dump_battle_rendertail_0x801f.py` | Dump the `0x801F` render tail the older windowed `overlay_battle_action.bin` import stops short of. Run against a **full-length** re-import of the `0898` blob at base `0x801CE818` (`-import /data/overlays/overlay_battle_action_0898.bin -loader BinaryLoader -loader-baseAddr 0x801CE818`, span `0x801CE818..0x801F8018`); resolves the `0x801F0xxx` hits cleanly (`FUN_801F0450`). The `0x801F6xxx`/`0x801F7xxx` sub-cluster is *not* `0898` (a resident-RAM comparison found the live bytes differ) - it is the co-resident sparring-tutorial overlay PROT 0967 (see next row). |
 | `dump_effect_overlay_0967.py` | Dump the battle **sparring-tutorial overlay PROT 0967**, co-resident at base `0x801F69D8` during the Tetsu tutorial fight (overlapping `0898`'s rodata tail). Run against a fresh import of `/data/PROT/0967_xxx_dat.BIN` at `-loader-baseAddr 0x801F69D8`; create+dumps the S5 `0x801F6xxx`/`0x801F7xxx` hit functions (message-pacing driver `FUN_801F71E0` + the step text emitters) as `overlay_effect_0967_<addr>.txt`. |
 | `dump_menu_inventory_refs.py` | Content-grep dumper: decompiles every function in the current program and dumps the C for any whose body mentions a configurable needle list (default: the inventory array `0x80085958` + the SCUS accessor family + the `gp+0x2D2/0x2D4/0x2D6` window registers). Robust against the LUI+ADDIU xref gap (matches decompiled text, not the reference manager). Used to audit `overlay_menu.bin` for raw-index inventory writes (found none - every mutation goes through the bounds-checked helpers). |
 | `dump_arts_input.py` | Decompiles the battle-overlay (0898) arts-combo execution cluster: the Arms resolver `FUN_801EC3E4` (with its caller list from the reference manager) plus every function referencing the move-power tables (`0x801F4F5C` per-move power, `0x801F64E4` power-byte, `0x801F4E63` 128-byte action map). Confirms the resolver is dispatched by a runtime function pointer (0 static callers) and that the move-power referrers are damage/action-step builders, not the arts-input bar builder. |
-| `dump_terrain_trigger.py` | Per-overlay-aware dumper for the world-map render-pipeline chain (`FUN_801D7EA0` / `FUN_801D8258` / `FUN_801D1344` / `FUN_80016444` + SCUS callers and the 0897 relocation copy). Uses `prog.getMemory().contains(addr)` to skip any TARGET that isn't mapped in the current program, so the same script can be run against SCUS plus each overlay and only emits files for the addresses that exist there. Output naming: `<program_label>_<addr>.txt`. |
+| `dump_terrain_trigger.py` | Per-overlay-aware dumper for the world-map render-pipeline chain around the continent-terrain emitter `FUN_801D7EA0`: its gate writer `FUN_801D8258`, the outer callers `FUN_801D1344` / `FUN_80016444` + their SCUS callers, and the 0897 relocation copy. Uses `prog.getMemory().contains(addr)` to skip any TARGET that isn't mapped in the current program, so the same script can be run against SCUS plus each overlay and only emits files for the addresses that exist there. Output naming: `<program_label>_<addr>.txt`. |
 | `trace_field_loader.py` | Targeted trace of the per-scene field-file loader `FUN_8001f7c0`; pins the loader's **dual-mode** dispatch. → [detail](#trace_field_loaderpy-detail) |
 | `find_mesh_chain_writer.py` | Finds the writer of the field/world-map actor's mesh-chain pointer `actor+0x44` (the chain `FUN_8001ADA4` case 5 draws). Scans for non-stack `sw/sh …,0x44(reg)`, scores each containing function by pool-table (`DAT_8007C018`) refs / TMD object-stride (`0x1c`) math / actor-field reads, dumps the top candidates. Pins the resolver chain for the walk view: `FUN_80024d78` builds `actor+0x44` from `DAT_8007C018[*(u16*)(actor+0x64)]`, and `FUN_80020f88` sets `actor+0x64 = .MAP_record[+0x10] + DAT_8007b6f8 (prefix)` → so the per-object pool index is `record[+0x10] + prefix`. |
 
@@ -222,6 +229,30 @@ Targeted trace of the per-scene field-file loader `FUN_8001f7c0`:
 - Verifies the in-RAM PROT TOC base (`0x801c70f0`) inside the retail resolver `FUN_8003e8a8`.
 
 Pins the loader's **dual-mode** dispatch: retail resolves the `.MAP` by **PROT index** (`FUN_8003e8a8(param_3=*(0x80084540))`, e.g. `map01` → entry `0085`), while the `break 0x103` path (`FUN_800608f0`) is the **dev-host `fopen`** of `DATA\FIELD\<scene>.MAP` (no extension→PROT map, never taken on retail).
+
+###### `repair_truncated_dumps.py` detail
+
+Targets come from `TARGETS` or the gitignored `redump_targets.txt`, one
+`addr[!?]` per line: a bare address is a plain re-dump, `!` forces the rebuild,
+`?` audits and writes a verdict without touching the database, and a `+` prefix
+restores a function entry an over-long rebuild deleted. **Only force where the
+sweep says `NO_RETURN`** - a rebuild deletes every function entry inside its
+span, which is a database mutation, so it wants a body already shown to be cut.
+
+Neither obvious walking rule is safe alone, and they fail silently in opposite
+directions: stopping at the first `jr ra` truncates any routine with an
+early-exit arm, and stopping at the first unconditional `j` truncates any
+routine that jumps forward into a shared epilogue. So the walk tracks the
+highest forward branch or jump target seen, and a return or outbound jump below
+that frontier is an early exit rather than the end. A walk that ends any other
+way is reported and the target skipped - an instruction count that is really a
+lower bound is indistinguishable from a whole body once it is quoted elsewhere.
+
+Output is named from `getEntryPoint()`, never from the requested address, which
+is preserved in the header as `requested=`. Ghidra resolves an address with
+`getFunctionContaining()`, so a dumper that names its file after what it asked
+for asserts an entry point that may not exist; an interior request is reported
+as `INTERIOR` here and never rebuilt.
 
 **LUI+ADDIU and address-resolution helpers**
 
@@ -262,9 +293,9 @@ Pins the loader's **dual-mode** dispatch: retail resolves the `.MAP` by **PROT i
 | `find_field_loader_callers.py` | Callers of the field/town asset loaders (`FUN_8001f7c0` / `FUN_800255b8`) with arg-prep context. |
 | `asset_table_xrefs.py` | Xrefs to and around `0x801C70F0` (the in-RAM PROT TOC). |
 | `find_effect_bundle_consumers.py` | Effect-bundle init / spawn / walker (run on an imported battle overlay). |
-| `dump_field_locomotion_cluster.py` | Re-decompile the 0897 field camera / region cluster (`801db81c` / `801dbec4` / `801f5748`) + raw-disassemble the surrounding window. Read-only; surfaces the data holes that corrupt the decompiles. |
+| `dump_field_locomotion_cluster.py` | Re-decompile the 0897 field camera / region cluster (`TARGETS` leads with `801db81c` / `801dbec4`) + raw-disassemble the surrounding windows in `RAW_WINDOWS`. Read-only; surfaces the data holes that corrupt the decompiles. |
 | `fix_field_locomotion_flow.py` | DB-modifying repair for the same cluster: force-disassemble the `jal 0x8003ce9c` (non-returning operand reader) data holes, drop mid-block fake `FUN_` entries, re-create functions at real `addiu sp,sp,-N` prologues, then re-decompile. General pattern for any overlay region split into bogus mid-block functions by a non-returning-call hole. |
-| `dump_player_locomotion_integrator.py` | Dumps the player free-movement controller `FUN_801d01b0` + collision `FUN_801cfe4c` / `FUN_801cf9f4` + pad-remap `func_0x800467e8` / `FUN_80046494`, pinned by the `autorun_player_pos_watch.lua` write-watchpoint. `in_program` guards run it across SCUS + overlay_0897. See [`subsystems/field-locomotion.md`](../subsystems/field-locomotion.md). |
+| `dump_player_locomotion_integrator.py` | Dumps the field free-movement cluster the `scripts/pcsx-redux/autorun_player_pos_watch.lua` write-watchpoint pinned: collision `FUN_801cfe4c` / `FUN_801cf9f4` and pad-remap `func_0x800467e8` / `FUN_80046494`, alongside the position-writing callers in `TARGETS`. `in_program` guards run it across SCUS + overlay_0897. See [`subsystems/field-locomotion.md`](../subsystems/field-locomotion.md). |
 | `dump_4c_jumptables.py` | Dumps the field-VM main dispatcher JT (`0x801E00F4`) + the `0x4C` outer-nibble JT (`0x801CEE60`, 16 entries) with each target's containing function. Use to pin a `0x4C` sub-opcode's exact nibble when the decompiler's reconstructed `case` numbering is ambiguous - e.g. confirmed the collision-grid paint is nibble-7 (`0x801e1c64`), not the decompile's misleading "case 5". |
 
 **Game-mode state-machine recon**
@@ -289,6 +320,7 @@ Pins the loader's **dual-mode** dispatch: retail resolves the `.MAP` by **PROT i
 | `inventory_overlay.py` | Per-program function inventory. Emits `inventory_<programname>.csv` with one row per function (entry / size / outgoing / incoming / top callees). |
 | `list_overlay_functions.py` | List functions in the active overlay program sorted by size, with outgoing-call counts. |
 | `list_programs.py` | List every program currently in the Ghidra project. |
+| `report_program_bases.py` | Per-program memory-block VA span + analyzed function count, for every program in the project. `list_programs.py` names the imports; this says where each one thinks it lives - the fact that decides whether a dump taken from it is usable at all. Run as a `-preScript`. |
 
 **Static-analysis utilities**
 
@@ -304,7 +336,7 @@ Cross-cutting helpers under `scripts/` (host-side, not Ghidra):
 | `scripts/ghidra-analysis/call-graph.py` | `callees` / `callers` / `xref` over the dumps; replaces grep-across-files. |
 | `scripts/asset-investigation/scene-asset-detect.py` | Joins `categorize.json` with TIM/TMD scan hits to surface unknown-bucket entries that look like scene bundles. |
 | `scripts/ghidra-analysis/bulk-import-overlays.sh` | Reads `find-overlay` output, imports each high-score candidate, runs analysis + the inventory dumper. |
-| `scripts/ghidra-analysis/extract-mednafen-overlay.py` | Slices `0x801C0000-0x80200000` (256 KB) out of a gzipped mednafen save state. |
+| `scripts/ghidra-analysis/extract-mednafen-overlay.py` | Slices the overlay code window `0x801C0000..0x801F9000` out of a gzipped mednafen save state; `--start` / `--end` take PSX virtual addresses for a different slice. |
 | `scripts/ghidra-analysis/analyze-overlay.sh` | One-shot capture pipeline: decompress save → slice → import → emit asset-load CSV. |
 
 ## Known dev paths in the binary
@@ -341,9 +373,9 @@ at. Those are a separate axis with their own sweep:
 | `\|\|` rendered as nested `if`s | Two siblings that share one branch pair look like they use different operators, inventing a behavioural difference. | Compare the branch pairs themselves, not the C. De Morgan makes `if (w) { if (h) }` and `w == 0 \|\| h == 0` the same predicate. |
 | Reordered or dropped stores | A store hoisted above its neighbours, or omitted entirely - so "field X is copied from field Y" and "only three of four slots are written" both come out wrong. | Take store order and store count from the instruction stream. |
 | Hand-written annotations | A Ghidra label or plate comment (`path_opener`, "dev path -> PROT index via CDNAME map") read as fact. It is somebody's earlier guess. `FUN_8003E6BC` was named `path_opener`, which reads as a filesystem abstraction retail could plausibly own - its body is `strcpy` -> `break 0x103` -> fseek/fread/fclose, an unservable dev-station host trap. The name alone kept a backwards branch polarity alive across a dozen pages. | Read the body. An annotation is provenance-free. |
-| `size=1 bytes, 0 instructions` | A dump with decompiled C but an empty disassembly section - nothing to cross-check the C against. Corpus-wide: **207** dumps carry no disassembly section at all and **380** report zero instructions, ~16% of 3,624. | Disassemble from `SCUS_942.54` directly: text VA `0x80010000`, file offset `0x800 + va - base`. |
-| Dump-sweep negatives | "An exhaustive sweep of the dumped corpus finds no reader of X." The sweep ran over dumps, and ~16% of them have no instructions to sweep. The searcher sees zero hits either way, so the failure is silent and looks like a clean result. | Sweep **bytes**, not dumps - word-wise capstone over `extracted/SCUS_942.54` and the images in `extracted/overlays/`. State coverage explicitly ("no reader in SCUS exhaustive, 15 overlays; 11 dump-only") instead of asserting exhaustiveness. |
-| Mis-based dumps | Printed addresses are a property of the load base a dump was imported at. Get it wrong and every address is wrong by a constant while the instruction text stays plausible. 263 dumps are shifted, 167 of them by exactly `0xE818`. A filename prefix is not evidence of base correctness. | Verify against the extracted image, and see [`dump-corpus-integrity.md`](dump-corpus-integrity.md) - it carries the census, the clusters, and a re-runnable checker. |
+| `size=1 bytes, 0 instructions` | A dump with decompiled C but an empty disassembly section - nothing to cross-check the C against. A sixth of the corpus is in this shape, some carrying no disassembly section at all; `check-dump-base-integrity.py --shape` counts them. | Disassemble from `SCUS_942.54` directly: text VA `0x80010000`, file offset `0x800 + va - base`. |
+| Dump-sweep negatives | "An exhaustive sweep of the dumped corpus finds no reader of X." The sweep ran over dumps, and a sixth of them have no instructions to sweep. The searcher sees zero hits either way, so the failure is silent and looks like a clean result. | Sweep **bytes**, not dumps - word-wise capstone over `extracted/SCUS_942.54` and the images in `extracted/overlays/`. State coverage explicitly ("no reader in SCUS exhaustive, 15 overlays; 11 dump-only") instead of asserting exhaustiveness. |
+| Mis-based dumps | Printed addresses are a property of the load base a dump was imported at. Get it wrong and every address is wrong by a constant while the instruction text stays plausible. Hundreds of dumps are shifted, most of them by exactly `0xE818`. A filename prefix is not evidence of base correctness. | Verify against the extracted image, and see [`dump-corpus-integrity.md`](dump-corpus-integrity.md) - it carries the census, the clusters, and a re-runnable checker. |
 | `unaff_*` / `in_stack_*` | Read as proof the address is a mid-function fragment. But leaf functions legitimately open on `lw`, `unaff_gp` is ordinary gp-relative addressing, and a prologue can sit several instructions in. | A fragment is proven by a missing `addiu sp,sp,-N` in the **disassembly**, plus callee-saved reads with no matching save.  |
 | Absolute-only address sweeps | A "no static writers" claim from a sweep that searched only the absolute `lui`+offset form. MIPS reaches the same address gp-relative, and that form carries a different immediate, so it is invisible to the scan. `0x8007B8C2` was recorded as writer-less across 2661 dumps; the writer is `0x80015F08 sh v0,0x5aa(gp)`. The same form also hides **reads**: `0x8007B8C2` has three gp-relative `lh 0x5aa(gp)` sites (`0x80015FD4`/`0x80016038`/`0x8001631C`) an absolute-only sweep undercounts, so its read total is 43, not the 40 an absolute-form scan finds. | Resolve `gp` first (`lui gp` / `addiu gp,gp` in the entry stub), then scan **both** forms - absolute `lui base`+offset and `gp`-relative - before asserting anything about writers **or reader counts**. |
 

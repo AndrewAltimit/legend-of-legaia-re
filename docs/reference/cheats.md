@@ -73,7 +73,7 @@ encoding as Format 1.
 | [`parse_mednafen_cht`] | Format 2 → [`Database`] |
 | [`Database::dedupe_identical`] | Drop the "Have 99 Items × 70" duplicate sprawl |
 | [`classify_address`] | Map one address to a [`Category`] + detail label |
-| [`Category`] | Coarse buckets: CharacterRecord / Inventory / BattleActor / ScriptVmGlobal / CameraGlobal / PadInput / WorldStoryFlag / Minigame / FieldVmCollision / ScratchActiveActor / CodePatch / Unknown |
+| [`Category`] | Coarse buckets, in enum order: CharacterRecord / PartyMoney / Inventory / BattleActor / ScriptVmGlobal / PadInput / CameraGlobal / WorldStoryFlag / Minigame / FieldVmCollision / ScratchActiveActor / CodePatch / Unknown |
 | `classify_writes` | Roll a set of **changed** RAM addresses up into per-region buckets (the classification half of a gameplay-driven write tracer) |
 
 ### Write taxonomy
@@ -93,6 +93,7 @@ The companion `cheat-tool` CLI:
 
 ```bash
 cargo run -p legaia-cheats --bin cheat-tool -- parse data/cheats/legaia-ntsc-u.cht
+cargo run -p legaia-cheats --bin cheat-tool -- list data/cheats/legaia-ntsc-u.gs.txt
 cargo run -p legaia-cheats --bin cheat-tool -- classify data/cheats/legaia-ntsc-u.gs.txt --dedupe
 cargo run -p legaia-cheats --bin cheat-tool -- diff data/cheats/legaia-ntsc-u.gs.txt data/cheats/legaia-ntsc-u.cht
 cargo run -p legaia-cheats --bin cheat-tool -- extract-offsets data/cheats/legaia-ntsc-u.cht
@@ -160,13 +161,24 @@ clamping.
 `0x8007B6F4` is the camera mode word. "Control Camera" and "Small
 Maps" cheats target it.
 
+### PartyMoney
+
+The party-wide globals between the inventory header and the per-character
+records: `0x80084540` scene-name pool slot, `0x80084570` game time (u32),
+`0x80084594` party-member count, `0x80084598..0x8008459A` member ids and the
+Noa / Gala join gates, `0x8008459C` gold (u32), `0x800845A4` / `0x800845A6`
+casino coins, `0x800845DC` scene-name mirror.
+
 ### WorldStoryFlag
 
-The "Access All Towns When You Use Door of Wind" cheat targets
-`0x8008575C / 0x8008575E` (a 32-bit visited-towns bitmask). This is
-*outside* the per-character records and *outside* the inventory
-window - it lives in the dedicated story-flag block at
-`0x80085600..0x80085800`.
+A region bucket for the story-flag block at `0x80085600..0x80085800` - outside
+the per-character records and outside the inventory window. **No cheat in the
+shipped corpus lands in it.** The one candidate, "Access All Towns When You Use
+Door of Wind" at `0x8008575C` / `0x8008575E` (a 32-bit visited-towns bitmask),
+is claimed first by `classify_script_vm_global`, which names those two cells
+`story_flag_door_of_wind_lo` / `_hi`, so `cheat-tool list` reports it as
+`ScriptVmGlobal`. That is arm ordering inside `classify_address`, not a
+statement about the cheat.
 
 ### Minigame
 
@@ -194,17 +206,24 @@ stat-leak issues.
 
 ### CodePatch
 
-A handful of cheats patch `SCUS_942.54` instructions to `0x2400`
-(MIPS `nop`). The classifier flags these so we can tell them apart
-from RAM cells:
+A handful of cheats patch running code rather than a RAM cell. The classifier
+flags these so we can tell them apart. Three write `0x2400` to an instruction's
+**upper** halfword (`addr % 4 == 2`), rendering it `addiu $zero, $zero, imm` -
+the GameShark `nop` idiom:
 
-- `0x800422F4` – "Bought Any Item / Find Items You Will Get 99 Quantity"
-  patches the inventory-add helper.
-- `0x8004309E` – "Infinite Items All Slots" patches the
+- `0x8004309E` – "Infinite Items All Slots" nops the
   count-decrement instruction.
-- `0x8004390E` – "Remove Vahn's Chest" patches a draw-call site.
-- `0x8007EA96` – "Maxed HP for All Characters" patches an HP-write
-  branch.
+- `0x8004390E` – "Remove Vahn's Chest" nops a draw-call site.
+- `0x8007EA96` – "Maxed HP for All Characters". **This address is past the end
+  of the `SCUS_942.54` image** - text spans `0x80010000..0x8007B800` - so
+  whatever it patches is not SCUS code, even though the bucket is `CodePatch`.
+
+One is a different shape and does not write `0x2400` at all:
+
+- `0x800422F4` – "Bought Any Item / Find Items You Will Get 99 Quantity" writes
+  `0001`. The word there is `bne r2, r0, +2` inside the inventory-add clamp
+  (`slti r2,r2,100` / `addiu r3,99` / `sb`); shortening the displacement makes
+  the clamp always run.
 
 These are all useful Ghidra anchors; the patched instruction
 addresses give us callsite hints the LUI+ADDIU resolver wouldn't.
@@ -212,7 +231,7 @@ addresses give us callsite hints the LUI+ADDIU resolver wouldn't.
 ## Runtime applier
 
 `legaia-engine play-window --cheat-file <PATH>` parses the file via
-`legaia_cheats`, builds a per-frame applier via
+`legaia_cheats`, applies every entry **once at boot** via
 `legaia_engine_core::cheat_applier::apply`, and dispatches each
 write through the `ram_map` registry to the appropriate `World` /
 `CharacterRecord` field. Conditional codes are treated as

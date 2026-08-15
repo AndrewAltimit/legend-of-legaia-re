@@ -323,10 +323,10 @@ selection, and the states are regular decimal multiples of ten:
 | `ctx[+0x06]` | Handler | On screen | Leaves to |
 |---|---|---|---|
 | `0x1E` = 30 | `0x801D102C` | `[Begin]` / `[Escape]` turn prompt | `0x28`, `0x32`, `0x6E` |
-| `0x28` = 40 | `0x801D1188` | Action-category menu | `0x1E`, `0x3C`, `0x46`, `0x5A`, `0x6E`, `0x78` |
+| `0x28` = 40 | `0x801D1188` | Action-category menu | `0x1E`, `0x3C`, `0x46`, `0x50`, `0x5A`, `0x6E`, `0x78` |
 | `0x32` = 50 | `0x801D10F8` | Flee confirm | `0x1E`, `0xFE` |
 | `0x3C` = 60 | `0x801D17DC` | Item window | `0x28`, `0x5B`, `0x5D`, `0x64` |
-| `0x46` = 70 | `0x801D19F8` | Magic window | `0x28`, `0x5C`, `0x65`, `0x67` |
+| `0x46` = 70 | `0x801D19F8` | Magic window | `0x28`, `0x5C`, `0x5E`, `0x65`, `0x67` |
 | `0x50` = 80 | `0x801D1D84` | Arts command-entry screen | `0x28`, `0x5A`, `0x78` |
 | `0x5A` = 90 | `0x801D21CC` | Target cursor | `0x28`, `0x50`, `0x6E`, `0x78` |
 | `0x64` = 100 | `0x801D2A00` | Target confirm (item window's own) | `0x28`, `0x3C`, `0x6E` |
@@ -338,9 +338,17 @@ selection, and the states are regular decimal multiples of ten:
 loaded at `0x801D0780`), resolved by constant propagation over the `li` / `move`
 / `clear` that feed the stored register - not a per-branch narration. Every
 handler can also fall through without storing, which is the implicit "stay put".
-Two earlier readings do not survive that sweep: state `0x28` never stores `0x50`
-(Attack reaches the arts screen via the `0x78` attack-mode prompt), and state
-`0x46` never stores `0x6E`. Both were nested-`if` renderings, not stores.
+One earlier reading does not survive that sweep: state `0x46` never stores
+`0x6E` - that was a nested-`if` rendering, not a store.
+
+A sweep of this kind has to read **branch delay slots**, or it under-counts. Two
+edges live only there. State `0x28`'s Left/Attack arm does reach `0x50`
+directly: `0x801D15F4 beq s0,v0,0x801D1650` with `0x801D15F8 _li v0,0x50` in the
+slot, and `0x801D1650 sb v0,0x0(s3)` has that branch as its only predecessor -
+so option `_DAT_800846C4 == 2` goes straight to the arts screen rather than
+through the `0x78` prompt. State `0x46` reaches `0x5E` the same way
+(`0x801D1C5C bne` / `_li v0,0x5e` in the slot / `0x801D1CDC sb`), which is what
+supplies the `0x5E` the sub-cursor run `0x5B..0x5E` needs.
 
 Above the selection band sit the per-window target sub-cursors. They are two
 disjoint runs, `0x5B..0x5E` and `0x64..0x67` - there is no case for
@@ -988,8 +996,9 @@ prologue orbit, the seed (`0x0C`) and action (`0x14..=0x48`) bands arm case
 `6`, the Run band (`0x64..=0x67`) arms case `9` plus the orbit itself, and the
 Done band (`0x50..=0x5A`) arms case `6`/`8` under a **bounded** tail - retail
 seeds `ctx[+0x6D8] = 0x3C` in the `0x50` arm and leaves for `0x5A` when the
-frame step drives it negative, so the per-action framing survives at most ~60
-display frames past the strike.
+frame step drives it negative, so the per-action framing survives ~60 display
+frames past the strike. `0x3C` is the default, not the ceiling: a non-zero
+`ctx[+0x15]` raises the seed to `0x96` (150 frames) at `0x801E5F2C..0x801E5F3C`.
 
 That bound is the one thing the port cannot copy: its `DoneFadeDown` waits on
 the HP-bar display cursor settling, which is unbounded, and a measured
@@ -1362,7 +1371,7 @@ upright family really is upright and the reaction family really is prone.
 
 `_DAT_8007BD24` is a **pointer** to the active battle context struct (typed `int*` in the decompile output). The pointer itself is resolved at battle entry; `*_DAT_8007BD24` = `0x800EB654` for the captured battle. The action state machine accesses fields as `(*_DAT_8007BD24)[N]` - i.e. byte N of the pointed-to struct.
 
-The outer dispatch is `switch((*_DAT_8007BD24)[7])` - byte +0x07 of the ctx struct, which holds the **active action ID** for the currently-resolving party action slot. (Byte +0x06 holds the parallel ID for the monster action slot; only one is non-`0xFF` at a time.) The inner dispatch is `switch(actor[+0x1DE])` - the per-actor **action sub-state** (windup → execute → recover-style staging within each action).
+The outer dispatch is `switch((*_DAT_8007BD24)[7])` - byte +0x07 of the ctx struct, which holds the **active action ID** for the currently-resolving action slot. Byte `+0x06` is not a parallel monster ID: it is the command **menu** SM's flow byte (`FUN_801D0748`), a different state machine on the same struct. The inner dispatch is `switch(actor[+0x1DE])` - the committed **action category** (`1` item, `3` attack, `4` spirit, `5` run), which `FUN_801D0748` stamps on all three party actors at commit (`0x801D1174..0x801D1184`).
 
 Action IDs surfaced from save-state captures:
 
@@ -1559,7 +1568,7 @@ The active battle context lives at `0x800EB654` (resolved at battle entry; the g
 | Offset | Type | Use |
 |---|---|---|
 | `+0x00` | u8 × 6 | Battle phase/state flags (mostly `01 01 01 00 00 00` while a turn is resolving). |
-| `+0x06` | u8 | Monster-slot active action ID (or `0xFF` if no monster action queued). |
+| `+0x06` | u8 | The **command-flow byte** - the menu state machine's cursor, dispatched by `FUN_801D0748`. Value space `0x00`, `0x0A`, `0x0B`, `0x14`, `0x1E`, `0x28`, `0x32`, `0x3C`, `0x46`, `0x50`, `0x5A..0x5E`, `0x64..0x67`, `0x6E`, `0x78`, `0xFE`. See the flow table above. |
 | `+0x07` | u8 | Party-slot active action ID (or `0xFF`). The outer `switch((*_DAT_8007BD24)[7])` in `FUN_801E295C` keys on this. |
 | `+0x09` | u8 | Turn / phase counter. |
 | `+0x13` | u8 | Active-actor slot index - used to look up the actor pointer via `(&DAT_801C9370)[ctx[0x13]]`. |
@@ -1568,7 +1577,7 @@ The active battle context lives at `0x800EB654` (resolved at battle entry; the g
 | `+0x1D` | u8 | Action context flag - `0x03` for summon and capture; `0x00` otherwise. |
 | `+0x29..+0x2D` | string | Active spell/move icon glyph (`0xCE 0x14 0x20 'G' 'i' 'm' 'a' 'r' 'd' …`). |
 | `+0xA9..+0xEC` | text | Battle dialog buffer (`"Vahn won the battle!|Gained …Experience and …G."`). |
-| `+0x6D6..` | u8 × N | The action state machine's "PC offset" / sub-state cursor (read by `*(byte*)(ctx + 0x6D6)`). |
+| `+0x6D6` | u16 | Battle-open **intro timer**, written as a halfword by the `0x0A` arm (`0x5A`, or `0x78` when `ctx[+0x290] != 0`) and counted down by `0x0B`. Base of the camera/timer trio with `+0x6D8` (Done-band countdown) and `+0x6DA` (drifting yaw). The action SM's own cursor is `ctx[+0x07]`. |
 
 Only the leading 32 bytes vary between captures. Beyond `+0x40` the buffer is a long text-rendering scratch area populated when battle messages are printed. Engine port models this as a 1-of-N enum for the action-ID byte, with side-data fields populated per-action.
 
@@ -1590,9 +1599,9 @@ Combatant struct fields surfaced by helpers analysed so far:
 | `+0x4C` | int* | Spell-entry pointer array (each entry: `[u8 spell/action id, …, u8 AGL (action) cost @ +0x74]`). |
 | `+0x14C..+0x152` / `+0x172..+0x174` / `+0x150..+0x158` | u16 | HP / MP / current / max - three-way mirror layout. |
 | `+0x1BC..+0x1BE` | u8 | "Show damage" overlay byte triplet. |
-| `+0x1DF` | u8 | Monster size byte (read from a monster record at `+0x1F` and stored here at init). |
+| `+0x1DF` | u8 | First byte of the **arts / queued-move command buffer** (`+0x1DF..=+0x1E3`), written by the command commit. The monster size byte is *not* copied here - `FUN_800513F0` stores `size << 5` to `actor+0x58`. |
 | `+0x1EF..+0x1F3` | u8 | Per-element spell-slot index (from the spell ids `2,3,4,5,0xB`). |
-| `+0x230` | u32 | Attack-effect / animation data pointer (set from record `+0x04`; **not** XP/drop). |
+| `+0x230` | u32 | Pointer to the monster's **battle-model TMD** (set from record `+0x04`; **not** XP/drop). `FUN_800495C8` walks it as a `0x1C`-stride object table. See [Monster mesh](#monster-mesh-record-0x04). |
 
 ## Stage seats (`FUN_800513F0` placement tables)
 
@@ -1630,9 +1639,9 @@ Engine mirror: [`engine-core::battle_seats`](../../crates/engine-core/src/battle
 Called from `FUN_800542C8` (secondary battle archive loader). Populates a battle-actor at `[DAT_801C9370 + (slot+3)*4]` from a monster record:
 
 - HP / MP / AGL triplets at `+0x14C..0x158` and `+0x172..0x174` (AGL = the agility / action gauge at `+0x154/+0x156`).
-- Magic-resistance bytes at `+0x1EF..+0x1F3` (5 elements; one nibble per element).
+- Five per-action-tag **slot indices** at `+0x1EF..+0x1F3`. The tag-match loop (`0x80055340..0x800553F0`) walks the `+0x4C` entry list, compares each entry's first byte against `2 / 3 / 4 / 5 / 0xB`, and stores the **loop index** - so these are staged-anim entry ids (tag-2 flinch, tag-4 knockdown, tag-5 get-up), not packed resistance nibbles.
 - Walks the spell list at `+0x4C` (count at `+0x4A`): for the elemental ids (`2,3,4,5,0xB`) it records the matching spell's slot index into the per-element table at `+0x1EF..+0x1F3`.
-- Attack-effect / animation data pointer (record `+0x04`) into `+0x230`.
+- Battle-model TMD pointer (record `+0x04`) into `+0x230`.
 
 This is the canonical "monster spawn" path. Engine port reads the record once, populates the actor struct, and lets `FUN_801E295C` take over.
 
@@ -3464,7 +3473,7 @@ A pre/post encounter save pair (one frame walking the `map01` field scene; the n
 | Range | Bytes changed | What it is |
 |---|---:|---|
 | `0x801CE808..0x801F3818` | ~133 KB | Battle overlay loaded into RAM (single contiguous region) |
-| `0x801C9370..0x801C9900` | ~200-500 B | 8-slot battle actor pointer table; stride `0x60` per slot |
+| `0x801C9370..0x801C9900` | ~200-500 B | 8-slot battle actor pointer **table**, stride **4** (eight pointers = 32 bytes); every consumer indexes it `<< 2`. The `0x590` span is the region that changes across the diff, not the table's size. |
 | `0x80083000..0x80084000` | ~600 B | Scene-bundle / sound-pool: encounter formation + BGM resolution |
 
 The active scene-name table at `0x80084540` (CDNAME label + scene index) is **identical** between the pre-encounter and post-encounter saves - the battle is layered on top of the field scene rather than swapping it out. Engines that drive the field-to-battle transition therefore preserve the active-scene state and only resolve the formation + battle overlay.
@@ -3656,7 +3665,7 @@ which is where it was captured (the dome runs the same screen verbatim).
 
 Port: session `engine_core::arts_command_input`, opened from the command
 menu's Arts arm and driven by the live loop while the action SM is parked.
-Chrome: `engine_ui::arts_input`, drawn by both hosts off the shared baked
+Chrome: `legaia_engine_ui::arts_input`, drawn by both hosts off the shared baked
 system-UI atlas. `World::arts_input_active()` / `arts_input_actor()` tell a
 host's party surface that an actor owns the pad - retail parks the status
 plate off-screen for the whole session. The older saved-chain list stays

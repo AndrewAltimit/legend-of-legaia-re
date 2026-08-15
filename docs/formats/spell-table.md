@@ -12,6 +12,12 @@ through two interleaved base pointers that view the same 12-byte records:
 Both step by `0xC` per spell id, so record `id` lives at `DAT_800754C8 +
 id*0xC`.
 
+The table holds **190 records, ids `0x00..=0xBD`**. Record `0xBD`'s last word
+ends exactly where the description-pointer table `0x80075DB0` begins, so the
+extent is pinned by its neighbour rather than by where the values stop looking
+plausible - see [Reading past the extent](#reading-past-the-extent) for what a
+higher id resolves to.
+
 ## Record layout (12 bytes, stride `0xC`)
 
 | Offset | Type | Field |
@@ -102,6 +108,56 @@ is actually dispatched by `spell_id - 0x81` - see the summon section
 below - and the menu decompile pins `+4` as the description index.)
 Parser: `legaia_asset::spell_names` (`SpellEntry::desc`).
 
+### Name field (record `+8`) - a pointer into NUL-padded slack
+
+The `+8` word is a pointer, and the string it names is followed by a run of
+NUL bytes before the next pointed-at object begins. That run is the record's
+whole edit budget, and it is **word alignment, not a fixed slot**: across the
+named block every extent is `4 * ceil((len + 1) / 4)` bytes, so a 13-byte name
+has three spare bytes and a 15-byte name one. A replacement of the same length
+always fits, a slightly longer one sometimes does, and the difference is
+per-row. `legaia_asset::spell_names::name_field` measures the run rather than
+assuming it - the slack ends at the first non-zero byte after the terminator -
+and returns `(file_offset, len, budget)` with `budget` counting the string
+plus its padding, one byte of which the replacement needs for its own NUL.
+
+Reaching a name through its record's own pointer is the only safe way to
+rewrite one. **These names nest**: a text search of the image for `Hurricane`
+finds the `Hurricane Kick` that contains it, so a search-and-replace rename is
+one table row away from corrupting a neighbour. `legaia_art::arts_table::name_field`
+is the same accessor for the [arts-name table](art-data.md#arts-name-table-dat_80075ec4),
+and both exist because a name change that has to stay consistent across the
+party and enemy paths touches both tables.
+
+### Reading past the extent
+
+The table's 12-byte walk does not stop at record `0xBD`; nothing bounds it but
+the reader. An id above the extent resolves into whatever static data follows,
+and on the retail disc that is two known tables:
+
+| Ids | What the walk lands in |
+|---|---|
+| `0xBE..=0xD4` | the description-pointer table `0x80075DB0` |
+| `0xD5..` | the [arts-name table](art-data.md#arts-name-table-dat_80075ec4) `0x80075EC4` |
+
+Both boundaries fall on exact multiples of the stride
+(`0x80075DB0 − 0x800754C8 = 0xBE × 0xC`, `0x80075EC4 − 0x800754C8 = 0xD5 ×
+0xC`), so an over-read reads whole neighbouring words rather than straddling
+them. The arts table's stride is `0x14` and its name pointer sits at `+0xC`,
+which coincides with the spell record's `+8` name pointer whenever the arts
+record index is `1 mod 3` - so **spell `0xD7`'s name pointer word and arts
+record 1's are the same four bytes** at `0x80075EE4`, and on the retail disc
+they both read `0x80014220`, `Burning Flare` (`0x80075EF4` / spell `0xDC` /
+arts record 4 is the next such pair, `Cyclone`). A rename addressed through
+either coordinate is one write, not two - which is a trap for anything that
+enumerates "every spell id" and a shortcut for nothing, since ids that far up
+name no cast.
+
+`legaia_asset::spell_names` sweeps a full 256 ids, so `asset spell-names`
+prints the aliased rows too: `Spin Combo`, `Hurricane Kick`, `Mirage Lancer`
+and their description strings all appear above `0xD4`. They are Tactical Art
+names read through the wrong table, not spells.
+
 ### Target shape (`+2`)
 
 Two independent bits over a side/scope pair:
@@ -172,8 +228,9 @@ The `+0x21` array is **not** the only cast source: the picker's tail runs a
 hardcoded `switch` on the **formation monster id** (`DAT_8007BD0C[slot]`,
 dump `overlay_battle_action_801e9fd4.txt` `0x801EB0xx..0x801EBD24`, ~30
 cases) that queues boss- and species-specific casts **directly into
-`actor+0x1DF`**, gated on HP fraction, MP, the battle round counter
-(`ctx+0xA28`), RNG cadence, the not-charmed check (`+0x16E & 0x380 == 0`),
+`actor+0x1DF`**, gated on HP fraction, MP, the battle round counter (byte
+`+0x28A` of the context at `*0x8007BD24`), RNG cadence, the not-charmed check
+(`+0x16E & 0x380 == 0`),
 and per-slot chain-state cells at `DAT_801C8FE0[slot+4]` (+ the one-shot
 counter `DAT_801C8FE4`). Verified live: the Zeto mid-cast states hold
 `+0x1DF = 0x55/0x56` while the record's array still reads its disc value
@@ -192,6 +249,45 @@ counter `DAT_801C8FE4`). Verified live: the Zeto mid-cast states hold
 
 No case queues Curse All `0x53` (or Curse `0x40`) - with neither mechanism
 sourcing them, both are confirmed **casterless** in retail.
+
+#### The Delilas arm: three ids, one body, an arithmetic cast id
+
+`0xA2`, `0xA3` and `0xA4` are three consecutive jump-table slots pointing at
+the **same** arm, `0x801EB7C0`, and that arm names no spell of its own - it
+computes one from the formation id:
+
+```text
+801eb7c0  lui   v0,0x8008
+801eb7c4  lw    v0,-0x42dc(v0)   ; v0 = *0x8007BD24, the battle context
+801eb7cc  lbu   a0,0x28a(v0)     ; the round counter
+801eb7d0  lui   v0,0xaaaa
+801eb7d4  ori   v0,v0,0xaaab     ; 0xAAAAAAAB - the divide-by-3 reciprocal
+801eb7d8  multu a0,v0
+801eb7dc  mfhi  a3
+801eb7e0  srl   v1,a3,0x1        ; v1 = round / 3
+801eb7e4  sll   v0,v1,0x1
+801eb7e8  addu  v0,v0,v1         ; v0 = 3 * (round / 3)
+801eb7ec  subu  a0,a0,v0
+801eb7f0  andi  a0,a0,0xff       ; a0 = round % 3
+801eb7f4  li    v0,0x2
+801eb7f8  bne   a0,v0,0x801ebdac ; fire only on round % 3 == 2
+801eb7fc  _lui  v0,0x8008
+801eb800  addiu v0,v0,-0x42f4    ; DAT_8007BD0C
+801eb804  addu  v0,s7,v0         ; + the formation slot
+801eb808  sb    a0,0x1de(s4)     ; actor[+0x1DE] = 2, the Magic category
+801eb80c  lbu   v0,0x0(v0)       ; the formation monster id
+801eb814  addiu v0,v0,-0x29      ; the whole mapping
+801eb818  j     0x801ebdac
+801eb81c  _sb   v0,0x1df(s4)     ; actor[+0x1DF] = id - 0x29
+```
+
+So monsters `162` / `163` / `164` resolve to spells `0x79` / `0x7A` / `0x7B` -
+Blazing Slash, Megaton Press, Plasma Strike - and the entire mapping is one
+literal, `0x2442FFD7` (`addiu v0,v0,-0x29`) at PROT 0898 file offset
+`0x1CFFC` (VA `0x801EB814`). Nothing in the arm is otherwise per-sibling: the
+three casters share one body, and which cast fires is a function of the id the
+formation seats. The name the banner prints then comes from this table at that
+resolved id, exactly as it does for a party caster.
 
 (The `0xC5` MES substitution table at `DAT_80075EC4`, once mistaken for a
 spell-name source, is the [Tactical Arts name

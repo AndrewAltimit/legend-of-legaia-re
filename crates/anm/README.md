@@ -42,14 +42,24 @@ independent captures (title screen, town):
 ```text
 u16 a       // varies (e.g. 0x0A, 0x06, 0x02)
 u16 b       // varies (e.g. 0x1E, 0x14, 0x28) - likely frame count
-u16 marker1 // = 0x080C in every record observed
-u16 marker2 // = 0x0002 in every record observed
+u16 marker1 // = 0x080C in every record observed (RECORD_MARKER_1)
+u16 flags   // sub-format selector; observed 0x0002 and 0x0004
+            //   (RECORD_FLAG_VALUES) - not a constant
 ...payload bytes...
 ```
 
-Per-record bytecode interpretation is **not** in this crate yet - the
-animation system is overlay-resident. The only static reader of ANM
-containers is `FUN_80024cfc` (`play_anm_by_id`).
+## Per-record content: keyframe tables
+
+Records whose size satisfies `8 + 32*N` are per-bone keyframe tables and
+*are* decoded here: `KeyframeReader` walks the `header[8] | output[8*N] |
+keyframes[24*N]` layout, `BoneKeyframe::interpolate` mirrors the retail
+interpolation, and `player::AnimPlayer` wraps both in the per-frame driver
+that mirrors `FUN_80021DF4`'s keyframe walk.
+
+Records that do **not** fit that layout carry a per-frame bytecode whose
+dispatcher is overlay-resident (`actor[+0x4C]`) and is not interpreted here;
+`anm scan-non-keyframe` lists them. The only static reader of ANM containers
+is `FUN_80024cfc` (`play_anm_by_id`).
 
 ## CLI
 
@@ -57,7 +67,14 @@ containers is `FUN_80024cfc` (`play_anm_by_id`).
 anm info    <file>                  # count, header markers, record sizes
 anm extract <file> <out_dir>        # split records to disk
 anm json    <file>                  # JSON dump
+anm histogram <file> [--top N]      # byte histogram over the bytecode regions
+anm bigrams   <file> [--top N]      # (byte_n, byte_n+1) histogram
+anm keyframes <file> [--record N] [--bones N]   # per-bone poses + deltas
+anm scan-non-keyframe <files...>    # records that are NOT `8 + 32*N`
 ```
+
+Every subcommand takes `--with-preamble` when the input is a RAM-extracted
+blob that still carries the 16-byte allocator wrapper.
 
 ## See also
 

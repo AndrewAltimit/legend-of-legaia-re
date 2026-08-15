@@ -150,7 +150,7 @@ const VAHN_ART_NAMES: [Option<&'static str>; 24] = [
     /* 0x21 */ Some("PK Combo"),
     /* 0x22 */ Some("Spin Combo"),
     /* 0x23 */ Some("Pyro Pummel"),
-    /* 0x24 */ Some("Cross Kick"),
+    /* 0x24 */ Some("Cross-Kick"),
     /* 0x25 */ Some("Power Punch"),
     /* 0x26 */ Some("Slash Kick"),
     /* 0x27 */ Some("Somersault"),
@@ -241,7 +241,7 @@ const VAHN_LEARNED_ART_SLOTS: [u8; 0x0F] = [
     /* 0x06 */ 0x21, /* PK Combo */
     /* 0x07 */ 0x22, /* Spin Combo */
     /* 0x08 */ 0x23, /* Pyro Pummel */
-    /* 0x09 */ 0x24, /* Cross Kick */
+    /* 0x09 */ 0x24, /* Cross-Kick */
     /* 0x0A */ 0x25, /* Power Punch */
     /* 0x0B */ 0x26, /* Slash Kick */
     /* 0x0C */ 0x27, /* Somersault */
@@ -312,7 +312,7 @@ const VAHN_ART_ANIM_NAMES: [Option<&'static str>; 0x12] = [
     /* 0x0D */ Some("Burning Flare"),
     /* 0x0E */ Some("Spin Combo"),
     /* 0x0F */ Some("Pyro Pummel"),
-    /* 0x10 */ Some("Cross Kick"),
+    /* 0x10 */ Some("Cross-Kick"),
     /* 0x11 */ Some("Acrobatic Blitz"),
 ];
 

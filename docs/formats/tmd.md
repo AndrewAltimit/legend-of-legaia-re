@@ -114,9 +114,9 @@ indices of a lit textured quad at **byte 12** for both rows (see the layouts
 below), so [`legaia_tmd::descriptor`](../../crates/tmd/src/descriptor.rs) resolves
 `6` (u16 units) for both - which is what `FUN_80029888` computes for row 1, and
 the one place its row-0 arithmetic (`byte4` = 7 → byte 14) parts company with the
-data. Pinned across every field/town env pack (10105 lit quads, 107 scenes):
+data. Pinned across every field/town env pack (10229 lit quads, 107 scenes):
 offset 12 is the only candidate with zero out-of-range indices, and it leaves the
-quads planar (0.79 units mean out-of-plane, vs 68-167 for 14/16/18). Guarded by
+quads planar (0.78 units mean out-of-plane, vs 65-166 for 14/16/18). Guarded by
 `crates/engine-core/tests/env_mesh_prims_disc.rs`.
 
 Reading rows 0/1 quads at the `FUN_8002735c` offset makes their indices exceed

@@ -193,7 +193,7 @@ A fourth defect came out of `module-orphan` triage: **calling a sibling was not
 counted as corroboration**. The feature-set intersection could never see it,
 because the callee is the sibling's own address rather than a shared third
 party, and `save_select.rs` read as having an orphan that calls four of its own
-siblings. Fixing it took `module-orphan` from 110 findings to 67.
+siblings. Fixing it retired a large fraction of the class in one change.
 
 A fifth came out of `doc-citation` triage, and it is the same mistake in a new
 place. Both citation signals exempt a cited **function entry**, because prose
@@ -269,11 +269,11 @@ check. `--strict` fails on any finding without a waiver, for a reader who has
 worked the list down.
 
 `module-orphan` is the signal that has been pushed hardest on precision, and it
-is still not a gate on its own numbers. Against a hand-reviewed set of 66 rows -
-four of them real - the structural fixes above take the class from 67 findings
-to 15 while every one of the four keeps firing, so roughly one row in four is
-now real where it was one in seventeen. Four in fifteen is a worklist a reader
-can finish; it is not a check that may fail a commit. What can gate is the
+is still not a gate on its own numbers. Against a hand-reviewed control set the
+structural fixes above cut most of the class away while every known-real defect
+in it keeps firing, which raises the share of rows worth acting on by roughly a
+factor of four. What survives is a worklist a reader can finish; it is not a
+check that may fail a commit. What can gate is the
 *delta*: with the reviewed rows waived, `--strict` fires only on rows nobody has
 read, and those arrive a handful at a time.
 

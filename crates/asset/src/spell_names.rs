@@ -31,8 +31,21 @@ pub const STATS_VA: u32 = 0x8007_54C8;
 pub const DESC_PTR_TABLE_VA: u32 = 0x8007_5DB0;
 /// Per-id stride in bytes.
 pub const RECORD_STRIDE: usize = 0x0C;
-/// Number of spell ids the table covers.
-pub const SPELL_COUNT: usize = 256;
+/// Number of spell ids the table covers: ids `0x00..=0xBD`.
+///
+/// The count is pinned by the table's own end, not by the id type:
+/// [`STATS_VA`]` + 190 * `[`RECORD_STRIDE`]` == `[`DESC_PTR_TABLE_VA`], so
+/// record 190 would begin on the first word of the description-pointer
+/// table.
+///
+/// **Trap:** a `u8` id space invites `256` here, and reading 256 records
+/// decodes the description-pointer table as spell records - the `+8` name
+/// pointer lands on a description pointer, so ids `0xCA`, `0xCB`, ... come
+/// back "named" with description text and an MP cost of `128` (the `0x80`
+/// high byte of a `0x800xxxxx` pointer). The over-read reads as data, never
+/// as an error, and a writer using the same span writes MP-cost bytes into
+/// live description pointers.
+pub const SPELL_COUNT: usize = 190;
 
 /// PSX-EXE `t_addr` -> file-offset resolver (see [`crate::item_names`]).
 struct ExeMap {
@@ -254,7 +267,10 @@ impl SpellEntry {
     }
 }
 
-/// The decoded spell table: one entry per spell id (`0x00..=0xFF`).
+/// The decoded spell table: one entry per spell id (`0x00..=0xBD`, see
+/// [`SPELL_COUNT`]). Every accessor takes a `u8`, so an id past the table's
+/// end returns `None` rather than a record read out of the neighbouring
+/// description-pointer table.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SpellNameTable {
     entries: Vec<SpellEntry>,

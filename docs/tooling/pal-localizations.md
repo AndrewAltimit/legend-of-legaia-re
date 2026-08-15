@@ -9,7 +9,13 @@ values, offsets, counts and encodings only).
 
 The cross-region measurement tool is `legaia-patcher translate diff-disc`
 (`legaia_patcher::translation::diff`); it is region-agnostic and emits counts and
-byte values only.
+byte values only. Its two discs are named `--input` (the target the importer
+would patch, i.e. USA) and `--other` (the disc aligned against it) - not the
+`--from` / `--target` pair its `lift-official` / `fit-report` siblings take:
+
+```bash
+legaia-patcher translate diff-disc --input <USA.bin> --other <PAL.bin>
+```
 
 ## Region ids
 
@@ -293,11 +299,15 @@ non-recompressing rather than dropped quietly.
 
 ### Recommended path to a distributable pack
 
-1. `translate lift-official` -> working pack (scratchpad only).
-2. `translate fit-report` -> the residual budget picture.
-3. `translate import --allow-relayout --output <patched.bin>` -> byte-faithful
-   dialog for every non-structural MAN (no `--patch`: a relayout grows the image,
-   so it is not a same-size PPF overlay).
+1. `translate lift-official --from <PAL.bin> --target <USA.bin> -o <pack.yaml>`
+   -> working pack (scratchpad only).
+2. `translate fit-report --from <PAL.bin> --target <USA.bin>` -> the residual
+   budget picture.
+3. `translate import --input <USA.bin> --pack <pack.yaml> --allow-relayout
+   --output <patched.bin>` -> byte-faithful dialog for every non-structural MAN
+   (no `--patch`: a relayout grows the image, so it is not a same-size PPF
+   overlay).
 4. Font patch (separate deliverable) so accents render instead of folding to
    ASCII.
-5. `translate strip` -> a source-free distributable `site/lang/{de,fr,it}.yaml`.
+5. `translate strip --pack <pack.yaml> -o site/lang/<lang>.yaml` -> a source-free
+   distributable pack (`site/lang/{de,fr,it}.yaml`).

@@ -186,13 +186,13 @@ menu list for the world map developer menu. String table at `0x801CF344..`:
 
 | Index | Label |
 |---|---|
-| 0 | `MAP_CHANGE` (or `CLOSED` when `_DAT_8007B868 != 0`) |
-| 1 | `CARD_OPTION` (or `CLOSED`) |
-| 2 | `PLAYER_STATUS` |
+| 0 | `MAP CHANGE` (or `CLOSED` when `_DAT_8007B868 != 0`) |
+| 1 | `CARD OPTION` (or `CLOSED`) |
+| 2 | `PLAYER STATUS` |
 | 3 | `CAMERA` - shows `_DAT_80089120/_DAT_80089118` as `000 000` |
 | 4 | `ENCOUNT` - shows encounter rate from `DAT_8007B5F8` |
-| 5 | `OTHER_SETTINGS` |
-| 6 | `BGM_CALL` - shows `_DAT_801F2E90` as `00` |
+| 5 | `OTHER SETTINGS` |
+| 6 | `BGM CALL` - shows `_DAT_801F2E90` as `00` |
 | 7 | `DEBUG` |
 | … | At least 24 entries total (bounds check `local_40 > 0x17`) |
 
@@ -244,8 +244,8 @@ was the earlier reading; it is falsified by the epilogue.)
 The renderer-free half of the dev-menu leaves lives in
 `legaia_engine_vm::world_map_overlay`: `panel_geometry`,
 `dev_menu_cursor_step` (swap-wrap), `list_body_draws` (the phase×gate draw
-gate), `DevMenuRow` + `is_closed` (the 24-row model incl. the `MAP_CHANGE` /
-`CARD_OPTION` CLOSED gating), `format_fixed_decimal` (the zero-padded digit
+gate), `DevMenuRow` + `is_closed` (the 24-row model incl. the `MAP CHANGE` /
+`CARD OPTION` CLOSED gating), `format_fixed_decimal` (the zero-padded digit
 kernel `FUN_801EAD98` inlines per numeric readout), and
 `decode_camera_readout`. The module also ports the battle-records data model
 (`records_screen`, from `FUN_801ED710`) and the equipment stat-comparison
@@ -1610,8 +1610,8 @@ known CDNAME label.
 resolver rebuilt from disc per scene. The `0x3F` op's `i16 index` is a
 story/entry id in its **own** id space (observed past `u8` range, e.g. `630`),
 so the resolver keys on `i16` and is deliberately **not** the `u8`-keyed
-[`MapIdResolver`](#) (which serves the separate `0x3E` door-warp's 7 scene-*type*
-selectors `0..=6`).
+[`MapIdResolver`](../../crates/engine-core/src/scene/resolvers.rs) (which serves
+the separate `0x3E` door-warp's 7 scene-*type* selectors `0..=6`).
 
 **Runtime transition (live).** The field-VM executor drives `0x3F` as a live
 named scene-change: it decodes the inline destination name (gated by the
@@ -1751,9 +1751,9 @@ The engine port loads the scene's **kingdom-bundle slot-1 landmark TMD pack**
 [`SceneLoadKind::WorldMap`], and [`SceneResources::build_targeted_with_options`]
 decodes slot 1 (via [`legaia_asset::kingdom_bundle`] + [`legaia_asset::pack`])
 into the TMD pool and slot 0 into the VRAM upload set, **instead of** the generic
-raw/LZS `tmd_scan` sweep. The generic sweep can't follow the LZS-compressed
-descriptor table, so before this it picked up only a handful of stray meshes -
-the historical "the world map looks like a battle map" symptom. Only the
+raw/LZS `tmd_scan` sweep. The generic sweep cannot follow the LZS-compressed
+descriptor table, so it reaches only a handful of stray meshes - which is what
+the "the world map looks like a battle map" symptom is. Only the
 scene's primary kingdom entry contributes; the sub-area sibling entries are
 skipped so they neither leak stray meshes nor inflate `scene_aabb`.
 
@@ -2485,17 +2485,17 @@ window stopped at `0x801F0000` (which clipped every leaf address).
 Every overlay leaf is its SCUS sibling body plus a **distance-cue fog
 post-process** inserted between the GTE projection and the OT packet write
 (constant shape across all eight slots): per-vertex `Z_far = max(z1,z2,z3) >>
-shift`, mix the far-plane reference into the prim cmd, `dpcs`/`dpct` against the
-fog colour, then a per-Z RGB-LUT tint added into the OT packet. The two textured-
-quad modes (slots 15, 19) use `dpct` (triple); the rest use `dpcs`. The fog
-parameters sit at GP-relative offsets in the per-frame camera/render context:
+shift`, seed `IR0` and `RGBC`, `dpcs`/`dpct`, then a per-Z LUT value added into
+the OT packet's vertex screen coordinates. The two textured-quad modes (slots
+15, 19) use `dpct` (triple); the rest use `dpcs`. The parameters sit at
+GP-relative offsets in the per-frame camera/render context:
 
 | GP offset | Role |
 |---|---|
-| `-0x2e0` | Far-plane reference Z (mixed into prim cmd word). |
-| `-0x2dc` | Fog color (loaded into GTE color register before `dpcs`). |
-| `-0x2d1` | Fog-enable flags byte; bit `0x10` gates the whole fog path. |
-| `-0x2bc` | Pointer to per-Z fog-tint LUT (2-byte entries, indexed by `Z >> 5`). |
+| `-0x2e0` | Word OR'd into the value written to `RGBC` (cop2 data reg 6) at `0x801F774C..0x801F7758`. |
+| `-0x2dc` | Loaded by `lwc2 t0` into cop2 data reg **8 = `IR0`**, the depth-cue interpolation factor - *not* a fog colour. |
+| `-0x2d1` | Flags byte; bit `0x10` selects the OT-bucket index source (`max(SZ) >> shift` vs `AVSZ`/`OTZ`), with the cue path running either way. |
+| `-0x2bc` | Pointer to a per-Z LUT (2-byte entries, indexed by `Z >> 5`) whose entry is shifted **left by 16** and added to each vertex `SXY` word - i.e. a per-vertex **screen-Y nudge**, not an RGB tint (`0x801F776C..0x801F7794`). |
 | `+0x90`  | Z shift exponent (controls how aggressively far-plane Z compresses). |
 
 The full per-slot disassembly and the fog-pass implementation are documented in

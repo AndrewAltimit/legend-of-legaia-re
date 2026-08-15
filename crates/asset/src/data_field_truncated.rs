@@ -22,14 +22,28 @@
 //! container (full-fat [`StreamReport`] with `all_known_types = true`,
 //! `all_magic_ok = true`), but instead of reaching a `size == 0` terminator
 //! the parser walks off the buffer end on the final chunk's declared size.
-//! Real PROT entries matching this layout (`0157_rikuroa`, `0228_station`,
-//! `0373_taiku`) carry a per-scene secondary table in the trailing chunk
-//! whose declared `size` exceeds the remaining file by 4–66 KB - the
-//! runtime extends the chunk via streaming DMA continuation rather than
-//! consuming a literal terminator on disc.
 //!
 //! Distinct from [`Class::DataFieldStreaming`], which requires a clean
 //! terminator within the buffer.
+//!
+//! ### What actually matches on retail
+//!
+//! Exactly one PROT entry: `0892_level_up`. Its three leading chunks are
+//! type `0x00` and tiny (2, 3 and 8331 bytes), and the word at the end of
+//! them declares a type-`0x00` body of ~8.7 MB against a 66 KB entry. That
+//! the shape is reached at all is measured; that the word is a chunk header
+//! the runtime continues by streaming DMA - rather than entry payload that
+//! happens to decode as one - is **not** established, so nothing downstream
+//! should read this class as a decoded format.
+//!
+//! **Trap: this class is an artefact detector as much as a format one.**
+//! `0157_rikuroa` / `0228_station` / `0373_taiku` were once read as the
+//! canonical members. They are not: each terminates cleanly in four chunks
+//! and classifies as [`Class::DataFieldStreaming`]. They matched only while
+//! entry size came from the superseded `toc[p+5] - toc[p+3] + 4` expression,
+//! which for these three falls *short* of the real footprint (80 vs 91, 47
+//! vs 81, 82 vs 86 sectors) and so cut the buffer before the terminator.
+//! A hit here is a reason to check the reader's extent first.
 //!
 //! ### Validation criteria
 //!
@@ -157,9 +171,9 @@ mod tests {
 
     #[test]
     fn detects_truncated_after_two_chunks() {
-        // The minimum-leading-chunks threshold is 2; this matches the
-        // 0228_station / 0373_taiku layout (2 small chunks then a final
-        // chunk whose declared MOVE-table size walks past EOF).
+        // The minimum-leading-chunks threshold is 2. No retail entry sits
+        // on the threshold - the one match, `0892_level_up`, has three
+        // leading chunks - so this pins the boundary synthetically.
         let buf = synth_truncated(2, 100);
         let r = detect(&buf).expect("should detect at the threshold");
         assert_eq!(r.leading_chunks, 2);

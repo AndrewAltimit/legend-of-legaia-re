@@ -39,6 +39,7 @@ Implementations:
 - [Slot region](#slot-region)
 - [Decompressed slot layout](#decompressed-slot-layout)
 - [Battle animations (record[0])](#battle-animations-record0)
+  - [Two container encodings, one pose format](#two-container-encodings-one-pose-format)
   - [Swing records](#swing-records-equipment-sections--slots-0xc0xf)
   - [Art-animation bank](#art-animation-bank-record0-0x58)
   - ["ME" stream archives](#me-stream-archives-readefdat)
@@ -398,6 +399,37 @@ Ghidra dumps. To close the negative completely, extract those with
 statement is "no reader in SCUS or the 15 extracted overlays", **not**
 "no reader anywhere".
 
+### Two container encodings, one pose format
+
+A character's clips reach the same decoder through two containers that encode
+them differently, and the difference decides what an edit costs.
+
+- **Inline in `record[0]` - raw.** Every entry the action-offset table points
+  at carries its stream **verbatim** at `+0xAC`: `[u8 parts][u8 frames]` then
+  `parts * frames` 9-byte TRS records, so the stream is exactly
+  `2 + parts * frames * 9` bytes and its own head is the only length there is.
+  Entries are laid end to end (word-aligned) in the decoded block, and the
+  retail splice `FUN_800557B8` copies `(parts*frames*9 + 5) >> 2` words after
+  the `0xAC` header, which pins the same arithmetic from the code side. There
+  is no size field, no flag and no compression at this layer - the block's own
+  LZS is the only encoding between the stream and the disc. This covers the
+  reaction family, the idle, and the spliced [swing
+  records](#swing-records-equipment-sections--slots-0xc0xf).
+- **In a `readef.DAT` `"ME"` body - channel-delta.** An art record's stream is
+  not inline; it is an archive body whose size word carries a bit-15
+  compression flag, and every player-art body on the retail disc has that bit
+  set, so it is delta-coded per 12-bit channel by `FUN_8002A9CC` (see
+  [`"ME"` stream archives](#me-stream-archives-readefdat)).
+
+Both decode to the same `[parts][frames][9-byte TRS]` bytes and the same
+absolute-model-space pose model
+([`monster-animation.md` § Packed stream](monster-animation.md#packed-stream-entry-0x8c)),
+so the two are interchangeable **after** decoding and not before. The trap is
+in the other direction: a raw inline stream can be rewritten byte-for-byte in
+place - hold `parts` and `frames` and every later offset in the block stays
+valid, with no relocation - whereas a `"ME"` body has to be re-encoded, and its
+encoded length is a property of the content rather than of the pose count.
+
 ### Swing records (equipment sections → slots 0xC..0xF)
 
 Each selected section's decoded payload carries self-relative offsets to
@@ -472,8 +504,12 @@ The self-relative word at record[0] `+0x58` locates the bank:
                               ; (FUN_8005112C weapon trail, FUN_8004CE2C
                               ; impact freeze/tint arms)
        +0x78 u8  rate         ; playback rate (FUN_80047430 cursor)
-       +0x84 u8  rate_alt     ; secondary anim-rate field (-> actor +0x21B);
-                              ; 0xFF marks the eight base-archive records
+       +0x84 u8  loop_count   ; times the clip replays frames [+0x85, +0x86]
+                              ; (FUN_8004AD80 -> actor +0x21B and +0x176<<4;
+                              ; FUN_80047430 does the wrap). NOT a rate - the
+                              ; rate is +0x78, and 0 here would freeze a clip
+                              ; while 0 is what most playable art records
+                              ; carry. 0xFF marks the base-archive records
        +0x88 u32 stream_ptr   ; 0 on disc - FUN_8004AD80 points it at the
                               ; decoded scratch buffer at commit
        +0x8C u8  eyes[4][3]   ; facial eye track (= record +0xB0) - the
@@ -571,7 +607,11 @@ temporally per channel; each frame row re-packs into the standard 9-byte
 TRS records. **Every** art entry on the retail disc has bit 15 set, so the
 codec is the exercised path. Decoded output validated across the full
 corpus: every stream is length-exact (`2 + parts*frames*9`) with
-`parts` == the character's skeleton bone count.
+`parts` == the character's skeleton bone count. The record[0] entries'
+inline streams carry the identical decoded bytes with no codec in front of
+them - see [Two container encodings, one pose
+format](#two-container-encodings-one-pose-format) for what that asymmetry
+costs an edit.
 
 Parsers: `legaia_asset::me_archive` (`parse` + `decode_channel_delta`) and
 `legaia_asset::battle_char_assembly::art_me_archive` (the readef slot

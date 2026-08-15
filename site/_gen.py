@@ -605,9 +605,13 @@ PAGES: list[tuple[str, str, str, str]] = [
 # ---------------------------------------------------------------------------
 # Curated CDNAME -> category map.
 #
-# Each entry pins the *first* PROT index for a CDNAME block (the value
-# of the `#define <label> N` marker). Coverage runs from each label's
-# `prot_start` to the *next* label's start - 1, inclusive. The category
+# Each entry's `start` is the block's `#define <label> N` number, transcribed
+# from CDNAME.TXT verbatim so the table stays diffable against the disc.
+# Those numbers live in the **raw in-RAM PROT-TOC** index space, not the
+# extraction space every consumer of scenes.json indexes in, so
+# `build_scenes_json` converts them (`RAW_TOC_INDEX_OFFSET`) on the way out -
+# do not pre-shift a `start` here. Coverage runs from each label's converted
+# start to the next label's converted start - 1, inclusive. The category
 # drives the asset viewer's Scene filter; the display name is the
 # walkthrough's English town/area name where one exists.
 #
@@ -787,21 +791,47 @@ CDNAME_SCENES: list[dict] = [
 ]
 
 
+# The boot TOC loader copies PROT.DAT verbatim - 8-byte header included - into
+# 0x801C70F0, so a CDNAME `#define` number is two rows ahead of the same
+# content's extraction-entry index: `extraction = raw - 2`. Mirrors
+# `legaia_prot::cdname::RAW_TOC_INDEX_OFFSET`; see docs/formats/cdname.md
+# "Numbering space" for the loader-constant identities that pin it.
+RAW_TOC_INDEX_OFFSET = 2
+
+
 def build_scenes_json() -> list[dict]:
     """Expand CDNAME_SCENES into a sorted list with prot_end inclusive.
+
+    Starts are converted from the raw-TOC frame the `#define` numbers use to
+    the extraction frame, because that is the space every consumer indexes:
+    `prot_index` in the WASM viewer's entry list is `legaia_prot::Entry::index`,
+    the TOC row `p` whose start LBA is `toc[p + 2]`. Left unconverted, a block's
+    window drops its own field `.MAP` and v12 sidecar (retail slots 0 and 1)
+    and bleeds in the next block's - so `town01` would cover the two entries
+    that open `town0b` while hiding its own map. Same conversion as
+    `legaia_prot::cdname::block_range_for_name_extraction`.
+
+    `init_data` drops out: its raw 0..1 rows *are* the TOC header, so it owns
+    no extraction entry, and extraction 0 belongs to `gameover_data`'s second
+    slot (the `0000_init_data.BIN` filename label carries the same +2 skew).
 
     The last entry runs to PROT_MAX so the viewer always has coverage.
     """
     PROT_MAX = 1233
     entries = sorted(CDNAME_SCENES, key=lambda s: s["start"])
+    starts = [max(s["start"] - RAW_TOC_INDEX_OFFSET, 0) for s in entries]
     out: list[dict] = []
     for i, s in enumerate(entries):
-        end = entries[i + 1]["start"] - 1 if i + 1 < len(entries) else PROT_MAX
+        start = starts[i]
+        end = starts[i + 1] - 1 if i + 1 < len(entries) else PROT_MAX
+        if end < start:
+            # A block whose whole window fell inside the TOC header rows.
+            continue
         out.append({
             "label": s["label"],
             "display": s["display"],
             "category": s["category"],
-            "prot_start": s["start"],
+            "prot_start": start,
             "prot_end": end,
         })
     return out

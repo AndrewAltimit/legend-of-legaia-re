@@ -613,11 +613,12 @@ fn host_art(slot: usize) -> Option<HostArt> {
             index: 1,
             action_constant: 0x1C,
             combo,
-            // Burning Flare's own arm (`0x801D7650`) is the ONLY live
-            // arm in the dispatcher with no cursor gate at all: one
-            // static framing for the entire swing. That is why this
-            // slot reads flat, and it is also why there is nothing here
-            // to re-time. Take Tornado Flame's arm instead (two cursor
+            // Burning Flare's own arm (`0x801D7650`) reads no cursor at
+            // all: one static framing for the entire swing. That is why
+            // this slot reads flat, and it is also why there is nothing
+            // here to re-time. It is not unique in that - three of Noa's
+            // arms are flat too - but it is the only flat one any of the
+            // three host arts dispatches to. Take Tornado Flame's arm instead (two cursor
             // bands, gate at keyframe 14, three ramp folds) and hand
             // Tornado Flame - and the Miracle finisher that shares it -
             // the static one in exchange.
@@ -1234,7 +1235,8 @@ const CURSOR_DISP: u32 = 0x0068;
 /// (`actor[+0x22C][+0x68]`, sixteenths of a keyframe), which is how a
 /// swing gets several framings instead of one: Gala's Explosive Fist arm
 /// changes shot at keyframes 4, 7 and 10, Noa's Vulture Blade arm at 14.
-/// Those thresholds are literals sized for a ~20-frame retail swing, and
+/// Those thresholds are literals sized for the retail clip - the highest
+/// in the whole dispatcher is keyframe 17 - and
 /// the signature chains run 75 to 100 frames - so the camera finishes its
 /// whole choreography inside the wind-up and then holds one shot for the
 /// rest of the move. Scaling each threshold by the length ratio spreads

@@ -62,7 +62,7 @@ action_constant = 0x25
 
 [[arts]]
 character = "Vahn"
-name = "Cross Kick"
+name = "Cross-Kick"
 kind = "regular"
 ap = 24
 command = ["Low", "Low", "Low", "High"]

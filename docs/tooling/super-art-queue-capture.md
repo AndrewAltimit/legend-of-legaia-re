@@ -48,8 +48,9 @@ screen, executing, right after you confirm the arts input. Concretely:
    chained arts begin).
 3. **Save the save-state on that frame or one or two frames into the
    execution** - while the chained arts are visibly playing out. Saving exactly
-   at the commit is fine; the probe runs ~1200 frames forward through the whole
-   resolution and will catch the queue writes either way.
+   at the commit is fine: the probe snapshots the resident queue the moment it
+   arms, so the built queue is captured either way. Raise `LEGAIA_FRAMES`
+   (default 60) only if you also want the dequeue write trace below.
 
 A **Miracle Art** (the find/replace finisher of any saved chain) writes the
 same `actor[+0x1DF]` queue and is an equally good - often easier - capture than

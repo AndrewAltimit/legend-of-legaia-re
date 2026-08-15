@@ -17,6 +17,7 @@ PROT entries                      // 0865_battle_data.BIN, 0972_move_program_no.
 Sub-assets                        // TIM, TMD, VAB, MES, ANM, stage-geom, scene bundles
    │  legaia-tim         TIM → PNG (--skip-png skips)
    │  legaia-xa          CD-XA demux → per-channel WAV (--skip-xa skips)
+   │  legaia-font        dialog font atlas + widths (--skip-font skips)
    │  legaia-asset       TIM catalog → TSV inventory (--skip-catalog skips)
    ▼
 extracted/                        // human-browsable output tree
@@ -48,6 +49,7 @@ together with a clap CLI and a SHA-256 check on the input.
 # Common flags:
 #   --skip-png       skip the slow PNG conversion
 #   --skip-xa        skip the CD-XA demux → WAV step
+#   --skip-font      skip writing the extracted/font/ artifacts
 #   --skip-catalog   skip writing the TIM-catalog TSVs
 #   --skip-verify    skip the input SHA-256 check
 #   -v               per-file output

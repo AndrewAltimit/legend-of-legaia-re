@@ -46,7 +46,7 @@ Every binary answers `--version` and `--help`; subcommand help
 A good USA dump prints:
 
 ```
-[ok] matches: Legend of Legaia (USA) - SCUS-94254
+[ok] matches: Legend of Legaia (USA) - SCUS-94254 - Mode2/2352 .bin
 ```
 
 An unrecognized dump (a PAL disc, a re-track, a bad rip) prints an `[unknown]`
@@ -62,13 +62,20 @@ rejected up front with `not a Mode2/2352 disc image: <path>`.
 ```
 
 On a modern machine this takes about five seconds and writes roughly 1.1 GB.
-The pipeline runs eight steps: disc verify, ISO9660 walk (the disc's 45
-files), `PROT.DAT` split (1233 entries, named via `CDNAME.TXT`), per-entry
-format categorization, streaming sub-asset extraction, streaming-TIM PNG
-conversion, the TIM-catalog TSVs, CD-XA demux to per-channel WAVs (316 of
-them), and finally the dialog-font artifacts. Skip flags exist for each slow
-or optional step: `--skip-verify`, `--skip-png`, `--skip-xa`,
-`--skip-catalog`, `--skip-font`.
+A disc-fingerprint check runs first, then eight numbered steps, each logged
+as `step N/8`:
+
+1. ISO9660 walk - the disc's 45 files.
+2. `PROT.DAT` split - 1233 entries, named via `CDNAME.TXT`.
+3. Per-entry format categorization.
+4. Streaming sub-asset extraction.
+5. Streaming-container TIMs → PNG.
+6. CD-XA demux → per-channel WAVs (316 of them).
+7. The TIM-catalog TSVs.
+8. The dialog-font artifacts.
+
+Skip flags exist for the verify pass and for each slow or optional step:
+`--skip-verify`, `--skip-png`, `--skip-xa`, `--skip-catalog`, `--skip-font`.
 
 What lands where:
 

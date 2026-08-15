@@ -103,6 +103,100 @@ packed stream at entry `+0xAC` instead of `+0x8C`, `parts` = the
 character's skeleton bone count. See
 [`battle-data-pack.md` § Battle animations](battle-data-pack.md#battle-animations-record0).
 
+### A special attack can be a chain of entries
+
+An action id is one entry, but a **move** need not be. The per-spell cast
+modules paged into the slot-B overlay window for a capture-class cast
+([`spell-table.md` § Capture-class module index](spell-table.md#capture-class-module-index-prot-09350966))
+drive the caster's clip themselves, writing `actor[+0x1DA]` directly, and a
+boss signature attack is several archive entries staged in sequence - a
+wind-up, a carry and a strike - rather than one long clip. Nothing in the
+archive marks the grouping: the chain lives in the module's code.
+
+The staging sites are `sb ?,0x1DA(<caster>)` in the module image, at module VA
+= the slot-B link base `0x801F69D8` + file offset. Sites that store
+`<target>[+0x1F1]` (the knockdown index from the reaction map) are the
+victim's clip, not the caster's, and the ~936-byte tail the modules share -
+including a `sb zero,0x1DA(s0)` at `0x801F96F4` - is a common epilogue rather
+than a per-move stage. For the three Delilas siblings:
+
+| Module | Cast | Caster stages | Closing entry |
+|---|---|---|---|
+| PROT 958 | Gi, `0x79` | `10 -> 11 -> 12` | `13` |
+| PROT 959 | Che, `0x7A` | `10 -> 11` | none |
+| PROT 960 | Lu, `0x7B` | `14 -> 12 -> 13` | `15` |
+
+Two staging idioms appear. A **literal** seeds or jumps the chain: `li v0,10`
+at `0x801F6F88` (Gi), `li v1,10` at `0x801F6F40` (Che), and Lu's whole chain
+as three of them - `li v0,14` at `0x801F7744`, `li v1,12` at `0x801F7A6C`,
+`li v0,13` at `0x801F7AE0`. A **stepper** advances it in place,
+`lbu +0x1DA; addiu +1; sb`: Gi's at `0x801F72C0` / `0x801F7628` /
+`0x801F854C`, Che's single one at `0x801F768C`. The closing entries are
+literals too - `li v0,13` at `0x801F89B0` and `li v0,15` at `0x801F8214`.
+
+The archive agrees with the scan. Gi's `10`/`11`/`12` are his three
+consecutive tag-`0x23` entries (11 / 30 / 23 frames, rates 1 / 2 / 2) with
+`13` his tag-`0x22` close; Che's `10`/`11` are his only two tag-`0x23`
+entries (50 / 50 frames) and his archive carries no tag-`0x22` entry at all,
+which is why his module stages no closing index; Lu's `14` is her tag-`0x23`
+entry and `12`/`13` her two tag-`0x0C` entries (16 / 19 / 39 frames, rates
+1 / 2 / 2), with `15` her tag-`0x22` close.
+
+Two consequences for anyone reading a chain out of the archive. **The stages
+are addressed by entry index, not by tag** - Gi's and Che's are all tagged
+`0x23`, so no tag search separates a stage from a generic castable. And
+**stages do not share a rate byte**, so a chain's real duration is
+`sum(frames_i * 8 / rate_i)` ticks, not a frame sum.
+
+## Event-frame list (entry `+0x10..+0x13`)
+
+Four bytes ahead of the effect script are a **zero-terminated list of up to
+four clip frame indices** - the action's own significant beats. The list is
+strictly ascending and never holed: across every action entry of every archive
+in PROT 867 no populated run is out of order and no zero is followed by a
+non-zero, and only four entries carry a value at or past their own
+`frame_count`. Frames, not sixteenths - these are compared against the anim
+tick's integer frame, `cursor >> 4`.
+
+Both traced consumers are in the anim tick `FUN_80047430`, and both locate the
+slot through the helper `FUN_80050E00(entry + 0x10)`
+(`ghidra/scripts/funcs/80050e00.txt`), which walks `+0x11..+0x13` and returns
+the 1-based index of the first zero, capped at `3`. The tick then reads
+`entry[+0x10 + index]`:
+
+- `0x80047918` - the event-flag path. With `actor[+0x1DC]` bit 1 set and
+  `entry[+0x76] == 0`, the queued clip commits mid-clip once
+  `event_frame + 2 < frame` (the bit-1 arm of [Playback](#playback) below).
+- `0x80047E28` - runs every tick and latches
+  `actor[+0x1F7] = (frame < event_frame)`. That byte gates `actor[+0x1F6]`
+  in the commit `FUN_8004AD80` (the counter / guard window, which additionally
+  requires the staged id to be one of the `+0x1EF`/`+0x1F0`/`+0x1F3` reaction
+  entries) and paces the arts-input band.
+
+Because the helper returns the index of the **terminator**, only a list with
+all four slots populated hands its consumer a real frame - `entry[+0x13]`, the
+last beat. Any shorter list resolves to the zero that ends it, i.e. no gate.
+Those are the only two consumers reachable: a word-wise `jal` scan over
+`SCUS_942.54` and every image in `extracted/overlays/` finds no third call
+site for `FUN_80050E00`.
+
+Reading the field as "the hit frames" fits the offensive entries and no more.
+The archive census by tag is unambiguous about that - idle, walk, knockdown,
+get-up and the approach/victory tags are all-zero almost everywhere, while
+**every** light-flinch (tags `2`/`3`) and every block (`0x0B`) entry carries
+exactly one early frame, and the castable/attack band (`0x0C..0x15`) carries
+one to four ascending ones. So the field marks a clip's beats generally, of
+which contact is the offensive case; a reaction's single value is the beat its
+own clip turns on, not a hit it deals (Confidence: the layout, the ordering
+invariant and the two consumers are **Confirmed**; "contact" for the offensive
+band is **Inferred**).
+
+The same field sits at the same offset on the player battle files' record[0]
+entries, their equipment swing records and the art-bank records' embedded
+entries ([`battle-data-pack.md`](battle-data-pack.md#battle-animations-record0)),
+with the same shape - Vahn's flinch and block entries each carry a single
+frame `3`, his idle / walk / knockdown / get-up entries none.
+
 ## Effect-script records (entry `+0x14..+0x53`)
 
 Every per-action entry's head carries the action's **battle effect script**:
