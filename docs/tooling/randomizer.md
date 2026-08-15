@@ -1583,13 +1583,38 @@ Four coordinated edits per slot (`delilas_party::reskin_signature_art`):
   and a concatenated stream has only one. Each stage is therefore
   resampled to hold its authored duration at the chain's fastest rate -
   `frames_i * R / rate_i`, since a clip runs `frames * 8 / rate` ticks -
-  so a slower stage stretches rather than any stage being decimated. If
-  the slot cannot hold the whole chain, stages are dropped from the
-  **front** (a move that loses its wind-up still reads; one that loses its
-  strike does not), and only then does it fall back to the retail frame
-  count with `winpose::retimed_rate`. Every frame-indexed field of the art
-  record rescales against the result: the hit events at entry `+0x10`, and
-  the effect script's gates.
+  so a slower stage stretches rather than any stage being decimated.
+
+  When the slot cannot hold the whole chain, the next rung is a **coarser
+  keyframe density, not a lost stage**: halving the rate and every stage's
+  frame count together leaves `frames * 8 / rate` unchanged, so the move
+  plays for exactly as long on half the poses - and several of these
+  stages are authored at rate 1 to begin with, so the coarser stream is a
+  density retail itself ships. Only exact divisors are tried, so no stage
+  is silently re-timed relative to its neighbours. Lu's chain needs this
+  rung whenever she lands in Noa's slot, whose rig has 16 parts to
+  everyone else's 15: at full density her three stages do not fit and the
+  wind-up would be dropped, while at half they fit at the same duration.
+  Dropping stages from the **front** (a move that loses its wind-up still
+  reads; one that loses its strike does not) is the rung below that, and
+  the retail frame count with `winpose::retimed_rate` the last.
+- **Hit timing** - the art's hit events (entry `+0x10..0x13`) are frame
+  indices into the stream that just changed under them, and a proportional
+  rescale across the whole chain is the wrong correction. The host's hits
+  were spaced against a single swing, so spreading them over wind-up plus
+  payoff drops most of them into the wind-up: Burning Flare's four hits at
+  frames 11-14 of its own 21-frame clip land at 42-53 of a 75-frame chain
+  whose strike does not begin until frame 52, and the damage fires while
+  the character is still winding up.
+
+  Every hit therefore lands inside the **payoff stage**, and the payoff's
+  own event frames are preferred where the clip carries them - Lu's strike
+  stage is authored with its contacts, and authored beats interpolated;
+  Gi's and Che's payoff stages carry none, so the host's rhythm is
+  compressed into the payoff span instead. Only the placement moves. The
+  number of non-zero slots is always the host's, because that count is how
+  many times the action applies damage, so changing it would change the
+  move rather than its timing.
 - **Effects** - the host's script is eight `[frame_gate, effect_id, x, y,
   z]` records, and for Burning Flare all eight spawn flame `0x96` across
   the swing. That flame is why a reskinned art keeps reading as the host's
@@ -1608,31 +1633,60 @@ The **run-in** stays the host's: it is a separate queue action (constant
 `0x19`, `Starter`) shared by every one of that character's arts, so
 retargeting it would change all of them.
 
-The **swing camera** is reachable, but only by choosing among arms retail
-already wrote. `FUN_801D71B8` dispatches per (character, art constant)
-through three per-character jump tables (`0x801CEA88` / `0x801CEAD0` /
-`0x801CEB20`, file `0x0270` / `0x02B8` / `0x0308` of the raw battle
-overlay), slot = `(constant - 0x1A) * 4`. Thirteen distinct arms exist and
-**no live arm is shared across characters**; 37 dead slots point at a bare
-return. So a one-word write retargets exactly one art of exactly one
-character - and the dispatcher's prologue admits only party seats `0..2`
-and only action category 3 (Attack), so no enemy cast and no Super-Art
-expansion can reach a slot at all (every Super finisher constant falls
-outside its table's bound; Super Arts get no attack camera in retail).
+The **swing camera** needs re-timing, not replacing, and that is the
+correction to make here: the earlier reading treated the camera as a
+choice among arms, and the arm was never the problem.
 
-Only the **Vahn** slot takes the write, and the asymmetry is the finding:
-Burning Flare's own arm `0x801D7650` is the sole live arm in the whole
-dispatcher with **no cursor gate** - one static framing, one commit, for
-the entire swing - which is why a reskin on that slot reads flat while the
-other two do not. It is repointed at Tornado Flame's arm `0x801D74A8`: two
-cursor bands (gate at keyframe 14), three ramp folds, all five channels,
-no side effects, and the camera retail already gives Vahn's other Hyper
-Art and reuses for his Miracle finisher. Noa's Vulture Blade arm is
-already the second-richest in her table and Gala's Explosive Fist arm is
-the most band-rich in the function (four framings, and uniquely it reads
-no table row and never touches `ctx+0x26D`, so it is immune to the
-per-turn column coin-flip) - both are left alone, because every in-table
-alternative is flatter.
+`FUN_801D71B8` dispatches per (character, art constant) through three
+per-character jump tables (`0x801CEA88` / `0x801CEAD0` / `0x801CEB20`,
+file `0x0270` / `0x02B8` / `0x0308` of the raw battle overlay), slot =
+`(constant - 0x1A) * 4`. Thirteen distinct arms exist and **no live arm is
+shared across characters**; 37 dead slots point at a bare return. The
+dispatcher's prologue admits only party seats `0..2` and only action
+category 3 (Attack), so no enemy cast and no Super-Art expansion can reach
+a slot at all (every Super finisher constant falls outside its table's
+bound; Super Arts get no attack camera in retail).
+
+Each arm is a cascade of `slti` tests on the animation cursor
+`actor[+0x22C][+0x68]` - sixteenths of a keyframe - and that cascade is
+how a swing gets several framings instead of one. Gala's Explosive Fist
+arm changes shot at keyframes 4, 7 and 10; Noa's Vulture Blade arm and
+Vahn's Tornado Flame arm at 14. **Those thresholds are literals sized for
+a ~20-frame retail swing**, and a signature chain runs 46 to 100 frames,
+so the camera finishes its entire choreography inside the wind-up and then
+holds one shot for the rest of the move. That is the whole defect, and it
+is invisible to any check that only asks which arm ran.
+
+`delilas_party::retime_camera_arm` scales each threshold so the **last**
+shot change lands on the frame the payoff stage begins, with the earlier
+ones scaled by the same factor to keep their spacing. Anchoring on the
+payoff beats scaling by the raw length ratio: the final framing is the one
+that films the strike, so it should start when the strike does, and a
+chain can come out the same length as its host while still opening with a
+wind-up the retail thresholds know nothing about - Lu's stream is 58
+frames either way, so a length ratio of 1 would leave her final shot
+sitting in the wind-up.
+
+The immediates are found by shape rather than by address: a `slti` (the
+dispatcher's own bounds checks are `sltiu`, a different opcode) against a
+register some `lh`/`lhu` loaded from `+0x68`, with a threshold in the
+keyframe range. Linear liveness analysis would be **wrong** here - the
+arms are branch cascades, and the path that reaches a later test jumps
+over the block that reuses the register, so a straight-line read says the
+register is dead where it is live.
+
+Editing an arm is only safe while exactly one art dispatches to it, and
+that is checked rather than assumed. Burning Flare's own arm `0x801D7650`
+is the sole live arm in the dispatcher with **no cursor gate** at all -
+one static framing for the entire swing - so it has no choreography to
+re-time, and its slot instead **swaps** with Tornado Flame's `0x801D74A8`
+(two cursor bands, three ramp folds, no side effects). A swap, not a
+retarget: every arm is already live somewhere, so a plain retarget would
+alias an arm a second art still uses and the re-time would follow the
+alias into that art. Exchanging leaves the set of live arms unchanged -
+only which art dispatches to which - and leaves the borrowed arm reachable
+from one slot, which is what makes it re-timable. Noa's and Gala's arms
+are each already theirs alone and are re-timed in place.
 
 Borrowing an arm *across* characters is possible but strictly dominated,
 and the reason is worth recording: both per-character adjustments are

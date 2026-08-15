@@ -881,6 +881,14 @@ pub struct RebuiltArtSlot {
     pub stages: usize,
     /// The rate byte the concatenated stream wants.
     pub rate: u8,
+    /// Frame index where the **payoff** stage - the last one, the strike
+    /// itself - begins in the concatenated stream. Everything before it is
+    /// wind-up, so it is the floor for anything the art record schedules
+    /// on contact.
+    pub payoff_start: usize,
+    /// How many frames the payoff stage occupies, after the rate
+    /// normalisation that stretched it to the chain's common rate.
+    pub payoff_frames: usize,
 }
 
 /// Rebuild one entry of a readef art slot around a monster clip.
@@ -929,26 +937,42 @@ pub fn rebuild_art_slot_entry(
     // to the retail shape.
     for start in 0..chain.len() {
         let stages = &chain[start..];
-        let Some((frames, per_stage)) = chain_frames(stages) else {
-            continue;
-        };
-        let built = build_chain(
-            stages,
-            &per_stage,
-            rig,
-            player_file,
-            archive_entry,
-            source_id,
-            parts,
-        )?;
-        if built.len() <= headroom {
-            return Ok(RebuiltArtSlot {
-                bytes: assemble_slot(&ar, n, entry_index, &built)?,
-                frames,
-                retail_frames,
-                stages: stages.len(),
-                rate: chain_rate(stages),
-            });
+        let full = chain_rate(stages);
+        // Coarser keyframe density BEFORE a lost stage. Halving the rate
+        // and the frame count together keeps the clip's duration exactly
+        // (`frames * 8 / rate`) while costing half its poses, and losing
+        // pose density is a far smaller loss than losing the whole
+        // wind-up: several of these stages are authored at rate 1 in the
+        // first place, so the coarser stream is a density retail itself
+        // ships. Only exact divisors, so no stage is re-timed.
+        for rate in [full, full / 2, full / 4] {
+            if rate == 0 || !full.is_multiple_of(rate) {
+                continue;
+            }
+            let Some((frames, per_stage)) = chain_frames(stages, rate) else {
+                continue;
+            };
+            let built = build_chain(
+                stages,
+                &per_stage,
+                rig,
+                player_file,
+                archive_entry,
+                source_id,
+                parts,
+            )?;
+            if built.len() <= headroom {
+                let payoff_frames = *per_stage.last().unwrap_or(&frames);
+                return Ok(RebuiltArtSlot {
+                    bytes: assemble_slot(&ar, n, entry_index, &built)?,
+                    frames,
+                    retail_frames,
+                    stages: stages.len(),
+                    rate,
+                    payoff_start: frames - payoff_frames,
+                    payoff_frames,
+                });
+            }
         }
     }
     // Last resort: the final stage squeezed into the retail frame count.
@@ -968,6 +992,9 @@ pub fn rebuild_art_slot_entry(
         retail_frames,
         stages: 1,
         rate: winpose_rate(last),
+        // The one surviving stage IS the payoff, so it starts at zero.
+        payoff_start: 0,
+        payoff_frames: retail_frames,
     })
 }
 
@@ -991,8 +1018,9 @@ fn winpose_rate(clip: &crate::monster_archive::MonsterAnimation) -> u8 {
 /// `u8` frame count.
 fn chain_frames(
     stages: &[&crate::monster_archive::MonsterAnimation],
+    target_rate: u8,
 ) -> Option<(usize, Vec<usize>)> {
-    let r = chain_rate(stages) as usize;
+    let r = target_rate.max(1) as usize;
     let per: Vec<usize> = stages
         .iter()
         .map(|c| {

@@ -552,15 +552,21 @@ struct HostArt {
     /// The replacement 5-input combo, checked unique against the
     /// character's other arts before anything is written.
     combo: [legaia_art::queue::Command; 5],
-    /// An attack-camera upgrade for this art, as `(file offset of the
-    /// slot's word in the raw battle overlay, arm VA to point it at)`.
+    /// A better-choreographed camera arm to take, when the host art's
+    /// own has nothing to re-time.
     ///
-    /// `FUN_801D71B8` dispatches the swing camera per (character, art
-    /// constant) through a per-character jump table, so retargeting one
-    /// slot changes exactly one art of exactly one character. `None`
-    /// where the host art's retail camera is already the better one -
-    /// see [`host_art`].
-    camera_arm: Option<(u64, u32)>,
+    /// Taken as a **swap**, not a retarget: every arm in the dispatcher
+    /// is already live in some character's table, so pointing this art
+    /// at another one would alias an arm a second art still uses, and
+    /// [`retime_camera_arm`] would then follow the alias and mistune
+    /// that art too. The slots that held the borrowed arm therefore take
+    /// this art's own in exchange - no art loses its camera, both
+    /// cameras are still retail, and the borrowed arm ends up reachable
+    /// from exactly one slot, which is what makes re-timing it safe.
+    ///
+    /// `None` where the host art's own arm is already cursor-gated and
+    /// so has choreography worth re-timing - see [`host_art`].
+    camera_swap: Option<u32>,
 }
 
 /// Which art each hero slot (0 Vahn / 1 Noa / 2 Gala) gives up: each
@@ -607,29 +613,26 @@ fn host_art(slot: usize) -> Option<HostArt> {
             index: 1,
             action_constant: 0x1C,
             combo,
-            // Burning Flare's own camera arm (`0x801D7650`) is the ONLY
-            // live arm in the whole dispatcher with no cursor gate at
-            // all: one static framing, one commit, for the entire swing.
-            // That is why this slot's reskin reads flat while the other
-            // two do not - the flatness is the host art's retail camera,
-            // not the retarget. Point it at Tornado Flame's arm instead
-            // (two cursor bands with the gate at keyframe 14, three ramp
-            // folds, all five channels, no side effects) - the camera
-            // retail gives Vahn's OTHER Hyper Art, and already reuses for
-            // his Miracle finisher.
-            camera_arm: Some((0x278, 0x801D_74A8)),
+            // Burning Flare's own arm (`0x801D7650`) is the ONLY live
+            // arm in the dispatcher with no cursor gate at all: one
+            // static framing for the entire swing. That is why this
+            // slot reads flat, and it is also why there is nothing here
+            // to re-time. Take Tornado Flame's arm instead (two cursor
+            // bands, gate at keyframe 14, three ramp folds) and hand
+            // Tornado Flame - and the Miracle finisher that shares it -
+            // the static one in exchange.
+            camera_swap: Some(0x801D_74A8),
         }),
         1 => Some(HostArt {
             retail_name: b"Vulture Blade",
             index: 4,
             action_constant: 0x1F,
             combo,
-            // Vulture Blade's arm is already the second-richest in Noa's
-            // table (two bands, gate at keyframe 14, five ramp folds, no
-            // side effects). Every other arm of hers except the
-            // SpecialStarter has NO cursor gate - a single static
-            // framing - so any retarget here is a downgrade.
-            camera_arm: None,
+            // Vulture Blade's arm is already the second-richest in
+            // Noa's table (two bands, gate at keyframe 14, five ramp
+            // folds, no side effects) and is hers alone, so it is
+            // re-timed in place.
+            camera_swap: None,
         }),
         2 => Some(HostArt {
             retail_name: b"Explosive Fist",
@@ -638,10 +641,11 @@ fn host_art(slot: usize) -> Option<HostArt> {
             combo,
             // Explosive Fist's arm is the most band-rich in the entire
             // dispatcher: four framings across the swing at keyframes
-            // 4/7/10, no side effects, and uniquely it reads no table row
-            // and never touches `ctx+0x26D`, so it is immune to the
-            // per-turn column coin-flip. Nothing to upgrade to.
-            camera_arm: None,
+            // 4/7/10, no side effects, and uniquely it reads no table
+            // row and never touches `ctx+0x26D`, so it is immune to the
+            // per-turn column coin-flip. Nothing to upgrade to, and
+            // hers alone, so it is re-timed in place.
+            camera_swap: None,
         }),
         _ => None,
     }
@@ -988,7 +992,9 @@ fn reskin_signature_art(
             r.frames,
             rate
         ));
-        offset_edits.extend(retimed_hit_frames(h, r));
+        let (hits, why) = retimed_hit_frames(h, r, c);
+        offset_edits.extend(hits);
+        notes.push(format!("{} hits: {why}", String::from_utf8_lossy(new)));
 
         // The real enemy-side burst, when the cave is still free: one of
         // the signature cast module's own effect records, transplanted
@@ -1055,33 +1061,16 @@ fn reskin_signature_art(
         combo_str(&target.commands)
     ));
 
-    // 3b. The swing camera, where the host art's own is the weak one.
-    // A same-size word in the raw battle overlay, scoped to exactly
-    // (this character, this art constant): the dispatcher's prologue
-    // admits only party seats 0..2 and only action category 3 (Attack),
-    // so no enemy and no Super/Miracle expansion can reach the slot, and
-    // the three per-character tables share no live arm.
-    if let Some((off, arm)) = art.camera_arm {
-        let cur = patcher
-            .read_entry(BATTLE_OVERLAY_ENTRY)
-            .context("read battle overlay for the camera retarget")?;
-        let old = cur
-            .get(off as usize..off as usize + 4)
-            .map(|w| u32::from_le_bytes(w.try_into().unwrap()))
-            .unwrap_or(0);
-        if old == arm {
-            notes.push(format!(
-                "{} camera: already retargeted",
+    // 3b. The swing camera. Not a retarget - a re-time. See
+    // [`retime_camera_arm`] for why the arm the art already dispatches to
+    // is the right one to edit and the wrong one to replace.
+    if let Some(r) = &rebuilt {
+        match retime_camera_arm(patcher, slot, &art, r) {
+            Ok(why) => notes.push(format!("{} camera: {why}", String::from_utf8_lossy(new))),
+            Err(e) => notes.push(format!(
+                "{} camera: left retail ({e:#})",
                 String::from_utf8_lossy(new)
-            ));
-        } else {
-            patcher
-                .patch_prot_entry(BATTLE_OVERLAY_ENTRY, off, &arm.to_le_bytes())
-                .context("write the attack-camera arm")?;
-            notes.push(format!(
-                "{} camera: arm {old:#010X} -> {arm:#010X} (the retail one has no cursor gate)",
-                String::from_utf8_lossy(new)
-            ));
+            )),
         }
     }
 
@@ -1123,6 +1112,239 @@ const FX_RECORD: usize = 8;
 const FX_BASE: usize = 0x14;
 const FX_RECORDS: usize = 8;
 
+/// PROT 0898 file offset of each character's attack-camera jump table
+/// (`0x801CEA88` / `0x801CEAD0` / `0x801CEB20` less the overlay base) and
+/// how many art constants it admits - the `sltiu` bounds at `0x801D72E0`
+/// / `0x801D76C4` / `0x801D7B24`. Reading past them walks into the next
+/// character's table.
+const CAMERA_TABLES: [(usize, usize); 3] = [(0x270, 17), (0x2B8, 20), (0x308, 17)];
+/// Load base the overlay's own addresses are printed against.
+const BATTLE_OVERLAY_BASE: u32 = 0x801C_E818;
+/// The shared epilogue every unused table slot points at. Not an arm.
+const CAMERA_EPILOGUE: u32 = 0x801D_828C;
+/// `actor[+0x22C][+0x68]`, the animation cursor in sixteenths of a
+/// keyframe - the displacement an arm loads it from.
+const CURSOR_DISP: u32 = 0x0068;
+
+/// Re-time the attack camera to the length of the swing it now films.
+///
+/// Each arm is a cascade of `slti` tests on the animation cursor
+/// (`actor[+0x22C][+0x68]`, sixteenths of a keyframe), which is how a
+/// swing gets several framings instead of one: Gala's Explosive Fist arm
+/// changes shot at keyframes 4, 7 and 10, Noa's Vulture Blade arm at 14.
+/// Those thresholds are literals sized for a ~20-frame retail swing, and
+/// the signature chains run 75 to 100 frames - so the camera finishes its
+/// whole choreography inside the wind-up and then holds one shot for the
+/// rest of the move. Scaling each threshold by the length ratio spreads
+/// the same shots across the same *fractions* of the new swing.
+///
+/// The arm is edited, never replaced. Retargeting a table slot to a
+/// better-choreographed arm is possible and was tried, but every arm in
+/// the overlay is already live in some character's table, so a retarget
+/// can only alias an arm that another art still uses - and the re-time
+/// would then follow the alias into that art and mistune it. Editing the
+/// arm the art already dispatches to keeps the blast radius at exactly
+/// one (character, art constant) pair, which this checks rather than
+/// assumes: the arm must be reachable from exactly one live table slot
+/// across all three tables.
+///
+/// An arm with no cursor test (Vahn's Burning Flare arm reads only the
+/// `ctx[+0x26E]` ramp) has no choreography to mistime and is left alone.
+fn retime_camera_arm(
+    patcher: &mut DiscPatcher,
+    slot: usize,
+    art: &HostArt,
+    rebuilt: &legaia_asset::party_swap::winpose::RebuiltArtSlot,
+) -> Result<String> {
+    let (frames, retail) = (rebuilt.frames, rebuilt.retail_frames);
+    if retail == 0 || (frames == retail && rebuilt.stages == 1) {
+        return Ok("unchanged (the swing is its retail shape)".into());
+    }
+    let (base, len) = *CAMERA_TABLES
+        .get(slot)
+        .ok_or_else(|| anyhow::anyhow!("no camera table for party slot {slot}"))?;
+    let row = (art.action_constant as usize)
+        .checked_sub(0x1A)
+        .filter(|&r| r < len)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "art constant {:#04X} is outside the table",
+                art.action_constant
+            )
+        })?;
+    let mut swapped = String::new();
+    if let Some(want) = art.camera_swap {
+        swapped = swap_camera_arms(patcher, base + row * 4, want)?;
+    }
+    let overlay = patcher
+        .read_entry(BATTLE_OVERLAY_ENTRY)
+        .context("read the battle-action overlay")?;
+    let word = |off: usize| -> Option<u32> {
+        overlay
+            .get(off..off + 4)
+            .map(|w| u32::from_le_bytes(w.try_into().unwrap()))
+    };
+    let arm = word(base + row * 4)
+        .ok_or_else(|| anyhow::anyhow!("camera table row {row} out of range"))?;
+    if arm == 0 || arm == CAMERA_EPILOGUE {
+        return Ok("the art dispatches straight to the shared epilogue".into());
+    }
+
+    // Every live arm across all three tables: the exclusivity check, and
+    // the address list that bounds this arm's body.
+    let mut live: Vec<u32> = Vec::new();
+    let mut uses = 0usize;
+    for &(b, n) in &CAMERA_TABLES {
+        for r in 0..n {
+            let Some(w) = word(b + r * 4) else { continue };
+            if w == arm {
+                uses += 1;
+            }
+            if w != 0 && w != CAMERA_EPILOGUE {
+                live.push(w);
+            }
+        }
+    }
+    if uses != 1 {
+        bail!(
+            "arm {arm:#010X} is reached from {uses} table slots, so re-timing it would mistune another art"
+        );
+    }
+    live.sort_unstable();
+    live.dedup();
+    // The arms are laid out in dispatch order, so the next one up is this
+    // one's end. The epilogue closes the last arm.
+    let end_va = live
+        .iter()
+        .copied()
+        .find(|&a| a > arm)
+        .unwrap_or(CAMERA_EPILOGUE);
+    let (start, end) = (
+        (arm - BATTLE_OVERLAY_BASE) as usize,
+        (end_va - BATTLE_OVERLAY_BASE) as usize,
+    );
+    if end <= start || end > overlay.len() {
+        bail!("arm {arm:#010X} spans {start:#X}..{end:#X}, outside the overlay");
+    }
+
+    // Which register holds the cursor, and every `slti` against it.
+    // Linear clobber tracking would be wrong here: the arms are branch
+    // cascades, and the path that reaches a later test skips the block
+    // that reuses the register, so the register is live on the path even
+    // though a straight-line read says otherwise. The test is instead
+    // shape-based - a `slti` (the dispatcher's own bounds checks are
+    // `sltiu`, a different opcode) against a register some `lh`/`lhu`
+    // loaded from `+0x68`, with a threshold in the keyframe range.
+    let mut cursor_regs = [false; 32];
+    let mut sites: Vec<(usize, u32)> = Vec::new();
+    for off in (start..end).step_by(4) {
+        let Some(w) = word(off) else { continue };
+        let (op, rs, rt, imm) = (w >> 26, (w >> 21) & 0x1F, (w >> 16) & 0x1F, w & 0xFFFF);
+        match op {
+            // lh / lhu rt, 0x68(rs)
+            0x21 | 0x25 if imm == CURSOR_DISP => cursor_regs[rt as usize] = true,
+            // slti rt, rs, imm
+            0x0A if cursor_regs[rs as usize] && (0x10..=0x400).contains(&imm) => {
+                sites.push((off, imm))
+            }
+            _ => {}
+        }
+    }
+    let Some(&last_shot) = sites.iter().map(|(_, i)| i).max() else {
+        return Ok(format!(
+            "{swapped}arm {arm:#010X} has no cursor-gated shot change to re-time"
+        ));
+    };
+    // Anchor the LAST shot change on the frame the payoff stage begins,
+    // and scale the earlier ones by the same factor so their spacing is
+    // preserved. Anchoring beats scaling by the raw length ratio: the
+    // final framing is the one that films the strike, so it should start
+    // when the strike does, and a chain can be its host's length while
+    // still opening with a wind-up the retail thresholds know nothing
+    // about - Lu's two-stage strike is 58 frames either way, so a length
+    // ratio of 1 would leave her final shot in the wind-up. The ratio is
+    // the fallback for a stream with no wind-up to clear.
+    let (num, den) = if rebuilt.payoff_start > 0 && last_shot > 0 {
+        (rebuilt.payoff_start * 16, last_shot as usize)
+    } else {
+        (frames, retail)
+    };
+    let edits: Vec<(usize, u16, u16)> = sites
+        .iter()
+        .filter_map(|&(off, imm)| {
+            let scaled = ((imm as usize * num + den / 2) / den).min(0x7FFF) as u16;
+            (scaled != imm as u16).then_some((off, imm as u16, scaled))
+        })
+        .collect();
+    if edits.is_empty() {
+        return Ok(format!(
+            "{swapped}arm {arm:#010X} is already timed for this swing"
+        ));
+    }
+    let shots: Vec<String> = edits
+        .iter()
+        .map(|(_, o, n)| format!("kf {}->{}", o / 16, n / 16))
+        .collect();
+    for (off, _, scaled) in &edits {
+        // The immediate is the instruction word's low halfword, and the
+        // word is stored little-endian, so it is the two bytes AT the
+        // instruction - not two bytes into it.
+        patcher
+            .patch_prot_entry(BATTLE_OVERLAY_ENTRY, *off as u64, &scaled.to_le_bytes()[..])
+            .context("write a re-timed camera threshold")?;
+    }
+    Ok(format!(
+        "{swapped}arm {arm:#010X} re-timed over {frames} frames (host had {retail}), \
+         final shot on the strike at kf {}: {}",
+        rebuilt.payoff_start,
+        shots.join(", ")
+    ))
+}
+
+/// Exchange a table slot's camera arm with another arm already live in
+/// the dispatcher, giving every slot that held the wanted arm this
+/// slot's own in return.
+///
+/// A plain retarget would leave the wanted arm reachable from two arts,
+/// which is exactly the condition [`retime_camera_arm`] refuses to edit
+/// under. The exchange keeps the set of live arms unchanged - only which
+/// art dispatches to which - and leaves the wanted arm reachable from
+/// this slot alone. Idempotent: a slot that already holds the wanted arm
+/// is left alone, so a re-apply cannot swap the pair back.
+fn swap_camera_arms(patcher: &mut DiscPatcher, slot_off: usize, want: u32) -> Result<String> {
+    let overlay = patcher
+        .read_entry(BATTLE_OVERLAY_ENTRY)
+        .context("read the battle-action overlay for the camera swap")?;
+    let word = |off: usize| -> Option<u32> {
+        overlay
+            .get(off..off + 4)
+            .map(|w| u32::from_le_bytes(w.try_into().unwrap()))
+    };
+    let mine = word(slot_off).ok_or_else(|| anyhow::anyhow!("camera slot out of range"))?;
+    if mine == want {
+        return Ok(String::new()); // already swapped
+    }
+    let mut ceded = Vec::new();
+    for &(b, n) in &CAMERA_TABLES {
+        for r in 0..n {
+            let off = b + r * 4;
+            if off != slot_off && word(off) == Some(want) {
+                ceded.push(format!("{:#04X}", 0x1A + r));
+                patcher
+                    .patch_prot_entry(BATTLE_OVERLAY_ENTRY, off as u64, &mine.to_le_bytes())
+                    .context("cede the borrower's arm")?;
+            }
+        }
+    }
+    patcher
+        .patch_prot_entry(BATTLE_OVERLAY_ENTRY, slot_off as u64, &want.to_le_bytes())
+        .context("take the borrowed arm")?;
+    Ok(format!(
+        "took arm {want:#010X}, ceded {mine:#010X} to art(s) {}; ",
+        ceded.join(", ")
+    ))
+}
+
 /// Map a frame index from the host stream's timeline onto the rebuilt
 /// one, never past the last frame.
 fn rescale_frame(f: u8, from: usize, to: usize) -> u8 {
@@ -1134,28 +1356,108 @@ fn rescale_frame(f: u8, from: usize, to: usize) -> u8 {
 }
 
 /// Re-time the art's hit events (`entry +0x10..0x13`) onto the rebuilt
-/// stream. These are the frames the strike lands on; left alone, a longer
-/// clip lands its damage a third of the way through the swing.
+/// stream. These are the frames the strike lands on.
+///
+/// A proportional rescale across the WHOLE stream is wrong for a chain.
+/// The stream is now wind-up stages followed by the payoff, and the host's
+/// hits were spaced against a single swing, so spreading them over the
+/// full length drops most of them into the wind-up: Burning Flare's four
+/// hits at frames 11..14 of its own clip land at 42..53 of a 75-frame
+/// chain whose strike does not begin until frame 52. The damage fires
+/// while the character is still winding up.
+///
+/// Every hit therefore lands inside the payoff stage, and the payoff's
+/// OWN event frames are preferred when the clip carries them - Lu's
+/// strike stage is authored with its contacts, and authored beats
+/// interpolated. Only the placement moves; the number of non-zero slots
+/// is always the host's, because that count is how many times the action
+/// applies damage and changing it would change the move.
 fn retimed_hit_frames(
     host: &legaia_asset::battle_char_assembly::ArtAnimRecord,
     rebuilt: &legaia_asset::party_swap::winpose::RebuiltArtSlot,
-) -> Vec<(usize, u8)> {
-    if rebuilt.frames == rebuilt.retail_frames {
-        return Vec::new();
+    payoff: &legaia_asset::monster_archive::MonsterAnimation,
+) -> (Vec<(usize, u8)>, String) {
+    if rebuilt.frames == rebuilt.retail_frames && rebuilt.stages == 1 {
+        return (Vec::new(), "unchanged (retail shape)".into());
     }
     let head = &host.effect_script;
-    (0..4)
-        .filter_map(|i| {
-            let f = *head.get(0x10 + i)?;
-            // 0 is "no event"; only real frames move.
-            (f != 0).then(|| {
-                (
-                    host.entry_offset + 0x10 + i,
-                    rescale_frame(f, rebuilt.retail_frames, rebuilt.frames),
-                )
-            })
+    let host_hits: Vec<u8> = (0..4)
+        .filter_map(|i| head.get(0x10 + i).copied())
+        .filter(|&f| f != 0)
+        .collect();
+    if host_hits.is_empty() {
+        return (Vec::new(), "none scheduled".into());
+    }
+    let last = rebuilt.frames.saturating_sub(1) as u8;
+    let start = rebuilt.payoff_start.min(last as usize);
+    // The payoff's own contacts, lifted onto the chain: its frame indices
+    // are clip-local and it was stretched to the chain's common rate.
+    let own: Vec<u8> = (0..4)
+        .filter_map(|i| payoff.effect_script.get(0x10 + i).copied())
+        .filter(|&f| f != 0)
+        .map(|f| {
+            let scaled = (f as usize * rebuilt.payoff_frames).div_ceil(payoff.frame_count.max(1));
+            (start + scaled).min(last as usize) as u8
         })
-        .collect()
+        .collect();
+    let (frames, why) = if own.is_empty() {
+        // Nothing authored: keep the host's rhythm, compressed into the
+        // payoff stage so the whole pattern lands on the strike.
+        let span = rebuilt.frames - start;
+        let f = host_hits
+            .iter()
+            .map(|&h| {
+                let scaled = rescale_frame(h, rebuilt.retail_frames, span) as usize;
+                (start + scaled).min(last as usize) as u8
+            })
+            .collect::<Vec<_>>();
+        (
+            f,
+            format!(
+                "the host's {} hit(s) re-spaced inside the payoff stage \
+                 (frames {start}..{})",
+                host_hits.len(),
+                rebuilt.frames
+            ),
+        )
+    } else {
+        // Authored contacts, extended with their own spacing when the
+        // host schedules more hits than the stage carries.
+        let step = own
+            .windows(2)
+            .map(|w| w[1].saturating_sub(w[0]))
+            .max()
+            .unwrap_or(2)
+            .max(1);
+        let mut f = own.clone();
+        while f.len() < host_hits.len() {
+            let next = f.last().unwrap().saturating_add(step).min(last);
+            f.push(next);
+        }
+        f.truncate(host_hits.len());
+        (
+            f,
+            format!(
+                "the payoff clip's own {} authored contact(s) (tag {:#04X}){}",
+                own.len(),
+                payoff.action_id,
+                if host_hits.len() > own.len() {
+                    format!(", extended to the host's {}", host_hits.len())
+                } else {
+                    String::new()
+                }
+            ),
+        )
+    };
+    let edits = (0..4)
+        .map(|i| {
+            (
+                host.entry_offset + 0x10 + i,
+                frames.get(i).copied().unwrap_or(0),
+            )
+        })
+        .collect();
+    (edits, why)
 }
 
 /// Whether an effect-script record actually spawns something: id `0` is

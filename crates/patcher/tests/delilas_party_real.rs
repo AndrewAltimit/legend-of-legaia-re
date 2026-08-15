@@ -542,6 +542,8 @@ fn every_slot_gets_its_siblings_signature_art() {
         chain: &'static [usize],
         /// The host art's retail combo - how its bank record is addressed.
         host_combo: &'static [u8],
+        /// The art's action constant - the attack-camera table row.
+        action_constant: u8,
     }
     let expect = [
         Expect {
@@ -551,6 +553,7 @@ fn every_slot_gets_its_siblings_signature_art() {
             monster_id: 164,
             chain: &[14, 12, 13],
             host_combo: &[2, 3, 1, 3, 1],
+            action_constant: 0x1C,
         },
         Expect {
             slot: 1,
@@ -559,6 +562,7 @@ fn every_slot_gets_its_siblings_signature_art() {
             monster_id: 162,
             chain: &[10, 11, 12],
             host_combo: &[1, 1, 2, 1, 2],
+            action_constant: 0x1F,
         },
         Expect {
             slot: 2,
@@ -567,6 +571,7 @@ fn every_slot_gets_its_siblings_signature_art() {
             monster_id: 163,
             chain: &[10, 11],
             host_combo: &[2, 2, 1, 1, 1],
+            action_constant: 0x1C,
         },
     ];
 
@@ -603,6 +608,7 @@ fn every_slot_gets_its_siblings_signature_art() {
         monster_id,
         chain,
         host_combo,
+        action_constant,
     } in expect
     {
         // The name moved, and it is the ONLY thing that moved: the host
@@ -695,11 +701,14 @@ fn every_slot_gets_its_siblings_signature_art() {
         let anims = legaia_asset::monster_archive::animations(&archive, monster_id)
             .expect("animations")
             .expect("archive slot");
-        let stages: Vec<usize> = chain
+        let stages: Vec<&legaia_asset::monster_archive::MonsterAnimation> = chain
             .iter()
-            .map(|&i| anims.get(i).expect("chain stage").frame_count)
+            .map(|&i| anims.get(i).expect("chain stage"))
             .collect();
-        let payoff = *stages.last().expect("a payoff stage");
+        assert!(
+            !stages.is_empty(),
+            "slot {slot}: chain {chain:?} has no stages"
+        );
 
         let off = bca::art_me_slot(slot, false) * winpose::READEF_SLOT;
         let src = host_rec.stream_source as usize;
@@ -712,16 +721,142 @@ fn every_slot_gets_its_siblings_signature_art() {
             after.1, before.1,
             "slot {slot}: frame count identical to retail - the retarget did not land"
         );
-        // The whole chain, not just the payoff. Shipping only the final
-        // stage is what made these moves appear to start halfway through,
-        // and the stream is longer than any one stage exactly when more
-        // than one landed - which no single-clip build can fake.
+        // The patched art record: the rate the stream is written at, and
+        // the hit frames scheduled against it.
+        let patched_rec = {
+            let entry = patched
+                .read_entry(863 + slot)
+                .expect("read patched player file");
+            let rec0 = bca::decode_record0(&entry).expect("decode patched record0");
+            let bank = bca::art_animation_bank(&rec0).expect("patched art bank");
+            bank.into_iter()
+                .find(|r| !r.uses_base_archive() && r.combo == [1, 2, 4, 4, 3])
+                .expect("the signature record")
+        };
+
+        // The whole chain, not just the payoff, measured as DURATION
+        // rather than frame count. A clip runs `frames * 8 / rate` ticks,
+        // so the rebuild is free to trade keyframe density for room (it
+        // halves the rate and the count together when a slot is tight)
+        // and a raw frame-count test would read that as a lost stage.
+        // Duration is what actually has to survive: every stage's
+        // authored playing time, still there.
+        let want: f64 = stages
+            .iter()
+            .map(|c| c.frame_count as f64 / c.rate.max(1) as f64)
+            .sum();
+        let got = after.1 as f64 / patched_rec.rate.max(1) as f64;
         assert!(
-            after.1 > payoff,
-            "slot {slot}: stream is {} frames, no longer than the payoff stage's {payoff} \
-             - the wind-up stages {chain:?} did not land (stage lengths {stages:?})",
-            after.1
+            (got - want).abs() / want < 0.10,
+            "slot {slot}: stream runs {got:.1} units against the chain's authored {want:.1} \
+             - the wind-up stages {chain:?} did not land"
         );
+
+        // Where the payoff stage begins in the rebuilt stream, derived
+        // the same way the rebuild derives it: each stage stretched from
+        // its own rate to the stream's.
+        let rate = patched_rec.rate.max(1) as usize;
+        let payoff_start: usize = stages[..stages.len() - 1]
+            .iter()
+            .map(|c| {
+                (c.frame_count * rate)
+                    .div_ceil(c.rate.max(1) as usize)
+                    .max(1)
+            })
+            .sum();
+
+        // Every hit lands on the strike, not in the wind-up, and the
+        // number of them is untouched - the count is how many times the
+        // action applies damage, so moving it would change the move.
+        let hits = |r: &bca::ArtAnimRecord| -> Vec<u8> {
+            (0..4)
+                .filter_map(|i| r.effect_script.get(0x10 + i).copied())
+                .filter(|&f| f != 0)
+                .collect()
+        };
+        let (was, now) = (hits(&host_rec), hits(&patched_rec));
+        assert_eq!(
+            was.len(),
+            now.len(),
+            "slot {slot}: hit count moved {was:?} -> {now:?}"
+        );
+        for h in &now {
+            assert!(
+                (*h as usize) >= payoff_start,
+                "slot {slot}: hit at frame {h} is before the payoff stage starts \
+                 ({payoff_start}) - the damage fires during the wind-up. hits {now:?}"
+            );
+            assert!(
+                (*h as usize) < after.1,
+                "slot {slot}: hit at frame {h} is past the {}-frame stream",
+                after.1
+            );
+        }
+
+        // The attack camera is re-timed to the swing it now films: the
+        // arm this art dispatches to must be reachable from exactly one
+        // live table slot (or re-timing it would mistune another art),
+        // and its last cursor threshold must sit on the payoff frame.
+        {
+            const TABLES: [(usize, usize); 3] = [(0x270, 17), (0x2B8, 20), (0x308, 17)];
+            const BASE: u32 = 0x801C_E818;
+            const EPILOGUE: u32 = 0x801D_828C;
+            let ov = patched.read_entry(898).expect("battle overlay");
+            let word = |o: usize| u32::from_le_bytes(ov[o..o + 4].try_into().unwrap());
+            let (tb, tn) = TABLES[slot];
+            let row = action_constant as usize - 0x1A;
+            assert!(
+                row < tn,
+                "slot {slot}: art constant {action_constant:#04X} is past the table"
+            );
+            let arm = word(tb + row * 4);
+            assert!(
+                arm != 0 && arm != EPILOGUE,
+                "slot {slot}: art has no camera arm"
+            );
+            let uses = TABLES
+                .iter()
+                .flat_map(|&(b, n)| (0..n).map(move |r| b + r * 4))
+                .filter(|&o| word(o) == arm)
+                .count();
+            assert_eq!(
+                uses, 1,
+                "slot {slot}: arm {arm:#010X} is reached from {uses} table slots - \
+                 re-timing it would mistune another art"
+            );
+            let mut ends: Vec<u32> = TABLES
+                .iter()
+                .flat_map(|&(b, n)| (0..n).map(move |r| b + r * 4))
+                .map(word)
+                .filter(|&a| a != 0 && a != EPILOGUE)
+                .collect();
+            ends.sort_unstable();
+            let end = ends.iter().copied().find(|&a| a > arm).unwrap_or(EPILOGUE);
+            let mut cursor = [false; 32];
+            let mut shots = Vec::new();
+            for o in ((arm - BASE) as usize..(end - BASE) as usize).step_by(4) {
+                let w = word(o);
+                let (op, rs, rt, imm) = (w >> 26, (w >> 21) & 0x1F, (w >> 16) & 0x1F, w & 0xFFFF);
+                match op {
+                    0x21 | 0x25 if imm == 0x68 => cursor[rt as usize] = true,
+                    0x0A if cursor[rs as usize] && (0x10..=0x4000).contains(&imm) => {
+                        shots.push(imm)
+                    }
+                    _ => {}
+                }
+            }
+            let last = *shots.iter().max().expect("a cursor-gated shot change");
+            // Sixteenths of a keyframe; one keyframe of slack for the
+            // integer rounding the scale factor carries.
+            let want = (payoff_start * 16) as i64;
+            assert!(
+                (last as i64 - want).abs() <= 16,
+                "slot {slot}: arm {arm:#010X} last shot change at cursor {last} \
+                 (kf {}), payoff starts at kf {payoff_start} - the camera finishes \
+                 its choreography before the strike. shots {shots:?}",
+                last / 16
+            );
+        }
     }
 }
 
