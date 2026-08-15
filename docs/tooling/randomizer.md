@@ -1960,8 +1960,13 @@ spells out any combo-sharing art the edit also reaches; the raw
 the named Super Art (hit count preserved), and is a same-size `record0` edit with
 no display copy to sync. Module
 [`legaia_patcher::super_art_power`](../../crates/patcher/src/super_art_power.rs);
-disc oracle `crates/patcher/tests/super_art_power_real.rs`. Browser: an advanced
-`name=value` field inside "Tactical-Art overrides".
+disc oracle `crates/patcher/tests/super_art_power_real.rs`. Browser: the fifteen
+Super Arts are options in the "Tactical-Art overrides" **picker**, in a per-
+character `... - Super Arts` group beside that character's regular arts. A Super
+Art row's damage control behaves exactly like a regular row's; its AP controls
+are **disabled** and the row states the reason, because there is no AP number to
+edit. The advanced `name=value` text field remains as the CLI-syntax route and
+merges with the picker rows.
 
 **Why a Super Art needs its own knob.** Every other arts knob keys on something a
 Super Art does not have. `--arts-power` and `--arts` address an art by its

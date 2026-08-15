@@ -502,6 +502,53 @@ const ART_TABLE = [
 
 const ARROW = { L: '←', R: '→', D: '↓', U: '↑' };
 
+// The fifteen Super Arts - the per-character finishers a chain of ordinary arts
+// triggers. They sit in the same picker as the regular arts, but they are a
+// different kind of thing and only one of the two override features can reach
+// them:
+//
+//  * **Damage works.** A Super Art has its own art record in the character's
+//    player battle file (addressed by its finisher action constant `f`), with
+//    the same per-strike power bytes every regular art has. That is what
+//    `--super-art-power NAME=VALUE` edits, keyed by name.
+//  * **AP does not apply at all.** Retail charges the *chain* arts and the
+//    Super itself is free, and the injected AP config table is keyed by a row
+//    in the game's arts-name table - which holds 45 records, fifteen per
+//    character, none of them a Super Art. So there is no AP number to edit,
+//    and the row's AP controls are disabled rather than left inert.
+//
+// `chain` is the ordered list of named arts whose combination fires it - what a
+// regular row shows as a button combo. `h` is the retail per-hit multiplier for
+// context, same column the regular table carries.
+const SUPER_ART_TABLE = [
+  { c: 'Vahn', f: 0x2B, n: 'Tri-Somersault', chain: ['Somersault', 'Cyclone', 'Somersault'], h: '12' },
+  { c: 'Vahn', f: 0x2C, n: 'Maximum Blow', chain: ['Charging Scorch', 'Slash Kick', 'Power Punch'], h: '28' },
+  { c: 'Vahn', f: 0x2D, n: 'Fire Tackle', chain: ['Hyper Elbow', 'Power Punch', 'Charging Scorch'], h: '28' },
+  { c: 'Vahn', f: 0x2E, n: 'Power Slash', chain: ['Charging Scorch', 'Somersault', 'Slash Kick'], h: '28' },
+  { c: 'Vahn', f: 0x2F, n: 'Rolling Combo', chain: ['Spin Combo', 'Power Punch', 'PK Combo'], h: '12/12' },
+  { c: 'Noa', f: 0x2E, n: 'Triple Lizard', chain: ['Bird Step', 'Swan Driver', 'Lizard Tail'], h: '12' },
+  { c: 'Noa', f: 0x2F, n: 'Super Javelin', chain: ['Rushing Gale', 'Sonic Javelin'], h: '28' },
+  { c: 'Noa', f: 0x30, n: 'Super Tempest', chain: ['Dolphin Attack', 'Tempest Break'], h: '12/12/12/12' },
+  { c: 'Noa', f: 0x31, n: 'Love You', chain: ['Mirage Lancer', 'Lizard Tail', 'Tough Love'], h: '12/12/12/12' },
+  { c: 'Noa', f: 0x32, n: 'Dragon Fangs', chain: ['Lizard Tail', 'Swan Driver', 'Acrobatic Blitz'], h: '12/12/12/12' },
+  { c: 'Gala', f: 0x2B, n: 'Back Punch x3', chain: ['Ironhead', 'Flying Knee Attack', 'Back Punch'], h: '12' },
+  { c: 'Gala', f: 0x2C, n: 'Super Ironhead', chain: ['Flying Knee Attack', 'Head-Splitter', 'Ironhead'], h: '28' },
+  { c: 'Gala', f: 0x2D, n: 'Rushing Crush', chain: ['Battering Ram', 'Flying Knee Attack', 'Head-Splitter'], h: '28' },
+  { c: 'Gala', f: 0x2E, n: "Heaven's Drop", chain: ['Flying Knee Attack', 'Head-Splitter', 'Black Rain'], h: '12/12/12/12' },
+  { c: 'Gala', f: 0x2F, n: 'Neo Static Raising', chain: ['Back Punch', 'Guillotine', 'Neo Raising'], h: '12/12/12' },
+];
+
+/// A picker option value for a Super Art. Names carry no colon, so this stays
+/// unambiguous against the regular rows' `Character:COMBO`.
+const SUPER_PICK_PREFIX = 'super:';
+
+function superArtByPick(value) {
+  if (!value || !value.startsWith(SUPER_PICK_PREFIX)) return null;
+  const name = value.slice(SUPER_PICK_PREFIX.length);
+  return SUPER_ART_TABLE.find((a) => a.n === name) || null;
+}
+
+
 function comboArrows(k) {
   return k.split('').map((ch) => ARROW[ch] || ch).join('');
 }
@@ -557,6 +604,17 @@ function makeArtRow(onRemove) {
       g.appendChild(o);
     }
     pick.appendChild(g);
+    // The character's five Super Arts, as their own visibly-separate group so
+    // the fifteen read as a set rather than as more entries in the arts list.
+    const sg = document.createElement('optgroup');
+    sg.label = `${ch} - Super Arts`;
+    for (const a of SUPER_ART_TABLE.filter((x) => x.c === ch)) {
+      const o = document.createElement('option');
+      o.value = `${SUPER_PICK_PREFIX}${a.n}`;
+      o.textContent = `${a.n}  (Super Art - damage only)`;
+      sg.appendChild(o);
+    }
+    pick.appendChild(sg);
   }
 
   const apMode = document.createElement('select');
@@ -567,6 +625,14 @@ function makeArtRow(onRemove) {
     o.textContent = t;
     apMode.appendChild(o);
   }
+  // A Super Art has no AP number to edit at all, so its rows select this and
+  // the control is disabled - an enabled-looking control that does nothing is
+  // worse than one that says why it cannot be used.
+  const apNa = document.createElement('option');
+  apNa.value = 'na';
+  apNa.textContent = 'Not applicable';
+  apNa.hidden = true;
+  apMode.appendChild(apNa);
 
   // One amount box for both modes. The encoded range is the same either way:
   // the injected config table stores a signed byte per (character, art row) and
@@ -605,8 +671,9 @@ function makeArtRow(onRemove) {
   remove.textContent = '✕ Remove';
   remove.addEventListener('click', onRemove);
 
+  const apField = mkField('AP', apMode);
   main.appendChild(mkField('Art', pick));
-  main.appendChild(mkField('AP', apMode));
+  main.appendChild(apField);
   main.appendChild(mkField('Amount', amtWrap));
   main.appendChild(mkField('Damage', dmg));
   main.appendChild(remove);
@@ -618,6 +685,32 @@ function makeArtRow(onRemove) {
   row.appendChild(note);
 
   const refresh = () => {
+    const sup = superArtByPick(pick.value);
+    // A Super Art row: damage behaves exactly as a regular row's, the AP
+    // controls are switched off, and the note says why.
+    if (sup) {
+      if (apMode.value !== 'na') apMode.value = 'na';
+      apMode.disabled = true;
+      apField.classList.add('art-field-na');
+      apField.title = 'Super Arts have no AP cost of their own.';
+      amtWrap.parentElement.hidden = true;
+      const parts = [
+        `${sup.c}'s ${sup.n} is a Super Art: it fires when ${sup.chain.join(' > ')} are chained in that order, so it has no button combo of its own.`,
+        'AP is not editable here - retail charges the chain arts and the Super itself is free, so there is no AP number to change (edit the chain arts above to move what it costs).',
+      ];
+      if (dmg.value !== '') {
+        const tier = DMG_TIERS.find((t) => t.v === dmg.value);
+        parts.push(`Damage: ${tier.label.toLowerCase()} (was \u00d7${sup.h}). This one is per Super Art - no other art changes.`);
+      } else {
+        parts.push('No change yet - pick a damage tier.');
+      }
+      note.textContent = parts.join(' ');
+      return;
+    }
+    apMode.disabled = false;
+    apField.classList.remove('art-field-na');
+    apField.removeAttribute('title');
+    if (apMode.value === 'na') apMode.value = 'keep';
     const sel = pick.value ? pick.value.split(':') : null;
     const art = sel ? ART_TABLE.find((a) => a.c === sel[0] && a.k === sel[1]) : null;
     const grant = apMode.value === 'grant';
@@ -625,7 +718,7 @@ function makeArtRow(onRemove) {
     amtSign.textContent = grant ? '+' : '';
     amtUnit.textContent = 'AP each use';
     if (!art) {
-      note.textContent = 'Pick an art to change what it does.';
+      note.textContent = 'Pick an art or a Super Art to change what it does.';
       return;
     }
     const parts = [];
@@ -667,7 +760,12 @@ function makeArtRow(onRemove) {
 // entries stay combo-only because that feature edits the shared art record.
 function setupArtBuilder(container, addBtn, onEdit) {
   if (!container || !addBtn) {
-    return { clear() {}, collect() { return { power: '', grant: '', cost: '', error: '' }; } };
+    return {
+      clear() {},
+      collect() {
+        return { power: '', grant: '', cost: '', superPower: '', error: '' };
+      },
+    };
   }
 
   const addRow = () => {
@@ -691,12 +789,27 @@ function setupArtBuilder(container, addBtn, onEdit) {
       const power = [];
       const grant = [];
       const cost = [];
+      const superPower = [];
       const seenPower = new Set();
       const seenAp = new Set();
-      const fail = (error) => ({ power: '', grant: '', cost: '', error });
+      const seenSuper = new Set();
+      const fail = (error) => ({ power: '', grant: '', cost: '', superPower: '', error });
       for (const row of container.querySelectorAll('.art-row')) {
         const { pick, apMode, amt, dmg } = row.artControls;
         if (!pick.value) continue;
+        // Super Art rows carry damage only - they have no AP cell to read, and
+        // they serialize by name into `super_art_powers` rather than by combo.
+        const sup = superArtByPick(pick.value);
+        if (sup) {
+          if (dmg.value !== '') {
+            if (seenSuper.has(sup.n)) {
+              return fail(`${sup.n} has two damage rows - remove the duplicate.`);
+            }
+            seenSuper.add(sup.n);
+            superPower.push(`${sup.n}=${dmg.value}`);
+          }
+          continue;
+        }
         const [chName, combo] = pick.value.split(':');
         const art = ART_TABLE.find((a) => a.c === chName && a.k === combo);
         if (apMode.value !== 'keep') {
@@ -722,6 +835,7 @@ function setupArtBuilder(container, addBtn, onEdit) {
         power: power.join(', '),
         grant: grant.join(', '),
         cost: cost.join(', '),
+        superPower: superPower.join(', '),
         error: '',
       };
     },
@@ -1951,8 +2065,10 @@ function init() {
     const artsPower = [artOv.power, (artsPowerInput.value || '').trim()]
       .filter(Boolean).join(', ');
     // Super Art names contain spaces, so this list is comma-separated only -
-    // it is never merged with the combo-keyed power list above.
-    const superArtPower = (superArtPowerInput.value || '').trim();
+    // it is never merged with the combo-keyed power list above. Picker rows
+    // first, then anything typed into the raw (advanced) input.
+    const superArtPower = [artOv.superPower, (superArtPowerInput.value || '').trim()]
+      .filter(Boolean).join(', ');
     const artsApGrant = [artOv.grant, (artsApGrantInput.value || '').trim()]
       .filter(Boolean).join(', ');
     const artsApCost = artOv.cost;

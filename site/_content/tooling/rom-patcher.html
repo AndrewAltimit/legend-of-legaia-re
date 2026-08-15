@@ -562,7 +562,7 @@
     <details class="rom-group" id="rom-art-overrides" open>
       <summary>Tactical-Art overrides <span class="rom-summary-note">AP cost, AP refund, damage per art</span></summary>
       <div class="rom-group-body">
-        <p class="rom-art-intro">Pick any Tactical Art and change what it costs in AP, make it <em>give</em> AP back, or change its damage.
+        <p class="rom-art-intro">Pick any Tactical Art and change what it costs in AP, make it <em>give</em> AP back, or change its damage. <strong>Super Arts</strong> - the five per-character finishers a chain of arts triggers - are in the same picker, under their own <em>&hellip; &ndash; Super Arts</em> group; they support the damage change only, and the row says why.
           <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><strong>AP</strong>: set what an art <em>costs</em> in AP (Spirit), or flip it to <em>give AP back</em> - a giving art becomes usable at any AP level and adds the amount you choose, up to the 100 cap, every time it lands in a combo. Either way the amount is 1..100: the injected setting is one signed byte per art and <code>0</code> is its &ldquo;leave alone&rdquo; value, so a completely free art is not offered - use 1. AP changes are <strong>per character</strong>, and the pause-menu arts list is rewritten to match; a giving art shows as <strong>0 AP</strong> there - the in-game marker for &ldquo;this one pays you&rdquo;. <strong>Damage</strong>: pick a per-hit damage tier, or turn its damage off; damage is keyed by the button combo rather than by character, so another character with the same combo changes too (each row's note says which). AP overrides are <strong>mutually exclusive with Shiny Seru</strong> (both use the same injected-code arena).</span></span></p>
         <div id="rom-art-rows"></div>
         <button type="button" id="rom-art-add" class="rom-button rom-button-ghost rom-art-add">+ Add an art</button>
@@ -576,7 +576,7 @@
           </div>
           <div class="rom-opt">
             <label class="rom-opt-label" for="rom-super-art-power">Super Art power</label>
-            <span class="rom-opt-note">Rebalance a <strong>Super Art</strong>'s damage - the five per-character finishers a chain of arts triggers (Tri-Somersault, Neo Static Raising, ...). One or more <code>name=value</code> pairs, <strong>comma-separated</strong> (names contain spaces, so spaces do not separate entries); <code>value</code> is the same power byte the field above takes: <code>0x0C..0x1F</code> is a damage tier, <code>0</code> disables the hits. A Super Art is not entered as a button combo and has no row in the game's arts-name table, so it cannot be reached by combo the way the picker rows above are - its name is the only key it has, and it costs no AP of its own (the chain arts pay), so damage is the knob it has. Names are matched ignoring case, spaces and punctuation. <code>legaia-patcher arts</code> lists every Super Art with the chain that triggers it.
+            <span class="rom-opt-note">The CLI-syntax route to the same thing the <strong>&hellip; &ndash; Super Arts</strong> rows in the picker above do; entries from both are merged. One or more <code>name=value</code> pairs, <strong>comma-separated</strong> (names contain spaces, so spaces do not separate entries); <code>value</code> is the same power byte the field above takes: <code>0x0C..0x1F</code> is a damage tier, <code>0</code> disables the hits. A Super Art is not entered as a button combo and has no row in the game's arts-name table, so it cannot be reached by combo the way a regular art's picker row is - its name is the only key it has, and it costs no AP of its own (the chain arts pay), so damage is the knob it has. Names are matched ignoring case, spaces and punctuation. <code>legaia-patcher arts</code> lists every Super Art with the chain that triggers it.
               <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">The fifteen names: <strong>Vahn</strong> - Tri-Somersault, Maximum Blow, Fire Tackle, Power Slash, Rolling Combo. <strong>Noa</strong> - Triple Lizard, Super Javelin, Super Tempest, Love You, Dragon Fangs. <strong>Gala</strong> - Back Punch x3, Super Ironhead, Rushing Crush, Heaven's Drop, Neo Static Raising. Every per-strike power byte of the named Super Art is set to your value, keeping its hit count, so a four-hit finisher stays four hits.</span></span></span>
             <input type="text" id="rom-super-art-power" placeholder="e.g. Tri-Somersault=0x1A, Heaven's Drop=0x0C" spellcheck="false" autocomplete="off">
           </div>
@@ -864,6 +864,10 @@
   .art-field { display: flex; flex-direction: column; gap: 0.15rem; margin: 0; }
   .art-field[hidden] { display: none; }
   .art-field > span { font-size: 0.78em; font-weight: 600; color: var(--text-dim); }
+  /* A Super Art row has no AP number to edit at all - the control is disabled
+     and dimmed so it reads as unavailable rather than as an inert control. */
+  .art-field-na { opacity: 0.5; }
+  .rom-form .art-row select:disabled { cursor: not-allowed; }
   .rom-form .art-row select { width: auto; max-width: 18rem; }
   .rom-form .art-row input.art-amt { width: 4.5em; padding: 0.3rem 0.4rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
   .art-amt-wrap { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--text-muted); font-size: 0.9em; }
