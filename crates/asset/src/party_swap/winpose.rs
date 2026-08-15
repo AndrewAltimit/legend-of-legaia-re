@@ -1138,6 +1138,68 @@ pub struct RebuiltIdle {
     pub pace: f32,
 }
 
+/// The single whole-body translation that seats a retargeted idle on the
+/// host's own rest: `[dx, dy, dz]`, to be added to EVERY part of every
+/// frame.
+///
+/// Rigid is not a nicety. Battle poses are flat - each part carries an
+/// absolute `R * v + T` about the object origin and nothing in the stream
+/// hangs one part off another - so a translation written to one channel
+/// moves that part and nothing else. Applied to the torso channel alone
+/// it does not re-seat the character at all; it shears the torso off the
+/// body, which is what a 21-90 unit tear at every torso and pelvis joint
+/// looked like in game (measured against the 1.8-2.4 units retail's own
+/// idles carry: `crates/asset/tests/party_swap_idle_continuity_real.rs`).
+///
+/// The two axes come from different places because they answer different
+/// questions.
+///
+/// **x / z from the torso.** The torso is the FK root the retarget hangs
+/// the skeleton off, and it is the part the actor's world position, the
+/// attack camera and the damage numbers all frame. Anchoring the SUPPORT
+/// POINT (the ankles' midpoint) instead is the physically tidier reading
+/// but costs more: the siblings plant their feet 16-101 units from where
+/// the host plants theirs, so foot-anchoring slides the visible body that
+/// far off its mark, up to a third of a body height. The feet landing
+/// where the sibling's stance puts them IS the stance.
+///
+/// **y from the floor.** The character has to stand ON the ground, and
+/// the torso's height above it is exactly the part of the stance worth
+/// keeping - Lu stands taller than Gala, Che crouches under Noa. Taking y
+/// from the torso as well pins the wrong end of the leg: measured, it
+/// floated Lu 46-50 units clear of the floor on both her hosts and sank
+/// Che 48 into it on Noa's. The floor is read as the DEEPEST (largest y -
+/// GTE space is y-down) ankle pivot over the whole cycle, on both sides,
+/// so a lifted foot in either frame 0 cannot bias it and no frame of the
+/// rebuilt idle plants deeper than retail's own idle does.
+pub fn idle_anchor(rows: &[Vec<PartPose>], host: &[Vec<PartPose>], rig: &PlayerRig) -> [i16; 3] {
+    let torso = rig.channel_for_canonical[1] as usize;
+    let feet = [
+        rig.channel_for_canonical[11] as usize,
+        rig.channel_for_canonical[14] as usize,
+    ];
+    // Deepest ankle over the cycle; `None` if the stream cannot supply it.
+    let floor = |frames: &[Vec<PartPose>]| -> Option<i16> {
+        frames
+            .iter()
+            .filter_map(|f| feet.iter().filter_map(|&c| f.get(c)).map(|p| p.ty).max())
+            .max()
+    };
+    let (Some(first), Some(rest)) = (
+        rows.first().and_then(|f| f.get(torso)),
+        host.first().and_then(|f| f.get(torso)),
+    ) else {
+        return [0; 3];
+    };
+    let dy = match (floor(rows), floor(host)) {
+        (Some(a), Some(b)) => b - a,
+        // No ankle channel to read: the torso's own height is the only
+        // answer left, and it is the one this used to give unconditionally.
+        _ => rest.ty - first.ty,
+    };
+    [rest.tx - first.tx, dy, rest.tz - first.tz]
+}
+
 /// Rebuild a character's battle idle from the mapped sibling's own idle.
 ///
 /// This is a **stance** change more than a motion one. Retail authors each
@@ -1155,14 +1217,9 @@ pub struct RebuiltIdle {
 /// cannot go lower, so a 35-frame sibling cycle resampled to 9 frames
 /// breathes faster. Stance is worth more than tempo here.
 ///
-/// The torso translation is re-anchored to the host's own rest. The
-/// retarget rebuilds translations by forward kinematics, so its frame 0
-/// does not land where the host's does, and every clip we do NOT rebuild
-/// (walk, flinch, block, get-up) still starts from the host's rest - an
-/// un-anchored idle would pop the whole body on every transition into and
-/// out of it. Subtracting the constant frame-0 torso delta keeps the
-/// sibling's authored sway while putting it back where the rest of the
-/// skeleton's clips expect the body to be.
+/// The stream is then re-anchored onto the host's own rest by ONE RIGID
+/// whole-body translation - see [`idle_anchor`] for what that means and
+/// why a per-part one would tear the model apart.
 pub fn rebuild_idle_stream(
     player_file: &[u8],
     rig: &PlayerRig,
@@ -1200,26 +1257,21 @@ pub fn rebuild_idle_stream(
         frames,
     )?;
 
-    // Re-anchor: the constant torso offset that puts frame 0 back on the
-    // host's rest, applied to every frame so the sway survives.
-    let host_rest = battle_char_assembly::idle_battle_animation(player_file)?
-        .ok_or_else(|| anyhow::anyhow!("player file has no idle"))?
-        .frames
-        .first()
-        .and_then(|f| f.first().copied())
-        .ok_or_else(|| anyhow::anyhow!("player idle is empty"))?;
-    if let Some(first) = rows.first().and_then(|f| f.first()).copied() {
-        let (dx, dy, dz) = (
-            host_rest.tx - first.tx,
-            host_rest.ty - first.ty,
-            host_rest.tz - first.tz,
-        );
-        for row in &mut rows {
-            if let Some(t) = row.first_mut() {
-                t.tx = t.tx.wrapping_add(dx);
-                t.ty = t.ty.wrapping_add(dy);
-                t.tz = t.tz.wrapping_add(dz);
-            }
+    let host_idle = battle_char_assembly::idle_battle_animation(player_file)?
+        .ok_or_else(|| anyhow::anyhow!("player file has no idle"))?;
+    let [dx, dy, dz] = idle_anchor(&rows, &host_idle.frames, rig);
+    // Clamped, not wrapped: `pack_part` keeps 12 bits and the decoder
+    // sign-extends them, so a coordinate pushed past the range would come
+    // back out the far side and teleport that part. Retail idles peak
+    // around 450 of the 2047 the field holds, and the anchor is tens of
+    // units, so the clamp is a guard rail rather than a working limit -
+    // and a clamped part is the only thing here that is not rigid.
+    let put = |v: i16, d: i16| (v as i32 + d as i32).clamp(-2048, 2047) as i16;
+    for row in &mut rows {
+        for t in row.iter_mut() {
+            t.tx = put(t.tx, dx);
+            t.ty = put(t.ty, dy);
+            t.tz = put(t.tz, dz);
         }
     }
 

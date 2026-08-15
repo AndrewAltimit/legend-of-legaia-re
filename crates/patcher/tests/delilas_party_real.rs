@@ -814,10 +814,17 @@ fn every_slot_gets_its_siblings_signature_art() {
         // The battle idle carries the sibling's own combat stance, at
         // exactly its retail byte length (the stream is inline in a
         // record[0] whose every later offset would otherwise move), and
-        // anchored so frame 0 still puts the body where the host's rest
-        // pose does - every clip the swap does NOT rebuild (walk,
-        // flinch, block, get-up) still starts from there, so an
+        // anchored back onto the host's rest by one rigid whole-body
+        // translation - every clip the swap does NOT rebuild (walk,
+        // flinch, block, get-up) still starts from the host's rest, so an
         // un-anchored idle pops the whole body at every transition.
+        //
+        // The anchor's two references are what this checks (see
+        // `winpose::idle_anchor`): the torso's x/z land exactly on the
+        // host rest, and the deepest ankle over the cycle lands exactly
+        // on the host idle's, so the character stands on the ground. The
+        // torso's HEIGHT is deliberately not the host's - that difference
+        // is the stance (Lu stands taller than Vahn, Che crouches).
         {
             let retail_idle = bca::idle_battle_animation(
                 &retail.read_entry(863 + slot).expect("retail player file"),
@@ -840,9 +847,31 @@ fn every_slot_gets_its_siblings_signature_art() {
             );
             let (was, now) = (retail_idle.frames[0][0], new_idle.frames[0][0]);
             assert_eq!(
-                (was.tx, was.ty, was.tz),
-                (now.tx, now.ty, now.tz),
-                "slot {slot}: idle frame 0 moved the torso off the host rest pose"
+                (was.tx, was.tz),
+                (now.tx, now.tz),
+                "slot {slot}: idle frame 0 moved the torso off the host rest ground spot"
+            );
+            let rig = if slot == 1 {
+                &legaia_asset::party_swap::RIG_NOA
+            } else {
+                &legaia_asset::party_swap::RIG_VAHN_GALA
+            };
+            let feet = [
+                rig.channel_for_canonical[11] as usize,
+                rig.channel_for_canonical[14] as usize,
+            ];
+            // GTE space is y-down, so the deepest contact is the LARGEST y.
+            let floor = |a: &legaia_asset::monster_archive::MonsterAnimation| {
+                a.frames
+                    .iter()
+                    .map(|f| feet.iter().map(|&c| f[c].ty).max().unwrap())
+                    .max()
+                    .unwrap()
+            };
+            assert_eq!(
+                floor(&retail_idle),
+                floor(&new_idle),
+                "slot {slot}: the swapped idle does not plant its feet on the host's floor"
             );
         }
 

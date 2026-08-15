@@ -1681,14 +1681,39 @@ keeps every later offset in the block valid and needs no relocation. Two
 consequences follow from that budget. The sibling's cycle is resampled to
 the host's 8-9 frames from its own 13-35, and the rate byte floors at `1`
 where all three hosts already sit, so the rebuilt idle cycles 1.3x to 1.9x
-its authored speed and cannot be slowed back down. And the torso
-translation is **re-anchored to the host's rest**: the retarget rebuilds
-translations by forward kinematics, so its frame 0 does not land where the
-host's does, while every clip the swap does not rebuild - walk, flinch,
-block, get-up - still starts from the host's rest. Un-anchored, the whole
-body pops on each transition into and out of idle. Subtracting the
-constant frame-0 torso delta keeps the sibling's authored sway and puts it
-back where the rest of the skeleton's clips expect the body to be.
+its authored speed and cannot be slowed back down. And the stream is
+**re-anchored to the host's rest**: the retarget rebuilds translations by
+forward kinematics, so its frame 0 does not land where the host's does,
+while every clip the swap does not rebuild - walk, flinch, block, get-up -
+still starts from the host's rest, and an un-anchored idle pops the whole
+body on each transition into and out of it.
+
+The re-anchor is **one rigid whole-body translation**
+(`winpose::idle_anchor`), added to every part of every frame. Battle poses
+are flat - each part carries an absolute `R * v + T` about the object
+origin and nothing in the stream hangs one part off another - so a
+translation written to the torso channel alone does not re-seat the
+character at all: it shears the torso off the body. That is a defect this
+feature shipped with, and it read in game as the torso floating clear of
+the model; measured, it opened a 21.6 to 89.8 unit gap at every torso and
+pelvis joint of all nine sibling/host pairs, against the 1.8 to 2.4 units
+retail's own idles carry. Oracle:
+`crates/asset/tests/party_swap_idle_continuity_real.rs`.
+
+The translation's two axes come from different references, because they
+answer different questions. **x / z from the torso** - the FK root the
+retarget hangs the skeleton off, and the part the actor's world position
+and the attack camera frame. Anchoring the support point (the ankles'
+midpoint) instead is the physically tidier reading but costs more: the
+siblings plant their feet 16-101 units from where the host plants theirs,
+so foot-anchoring slides the visible body that far off its mark. **y from
+the floor** - the character has to stand on the ground, and the torso's
+height above it is exactly the part of the stance worth keeping, so
+taking y from the torso as well pins the wrong end of the leg (measured,
+it floated Lu 46-50 units clear of the floor on both her hosts and sank
+Che 48 into it on Noa's). The floor is the deepest ankle pivot over the
+whole cycle on both sides, so a lifted foot in either frame 0 cannot bias
+it and no frame plants deeper than the host's own idle does.
 
 The idle rides the **same** `record0` write as the signature-art edits,
 because it is the only one of them that adds bytes and batching means one
