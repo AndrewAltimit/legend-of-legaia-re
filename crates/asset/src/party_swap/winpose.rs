@@ -8,7 +8,11 @@
 //! model wears those parts on the player rig via the pivot bake, so the
 //! clip retargets with the bake's own per-part conjugation:
 //! `R_play = R_sib * R_src_rest^T * R_align^T * R_dst_rest` (the bake's
-//! linear map cancelled out of the played pose), `T_play = r * T_sib`.
+//! linear map cancelled out of the played pose). Translations do NOT
+//! carry over: only the torso keeps the clip's own placement
+//! (`T_play = r * T_sib`) and the rest of the skeleton hangs off it by
+//! forward kinematics over the baked rig's bone vectors, because the
+//! baked parts sit at the HOST's joint spacing, not the sibling's.
 //! Each retail entry keeps its exact frame count (the art records'
 //! timing fields stay retail) by nearest-frame resampling, and the
 //! rebuilt entries re-encode with the retail channel-delta codec.
@@ -299,50 +303,105 @@ pub fn retarget_clip(
         })
         .collect();
 
-    // Arm-chain FK data: the baked mesh carries VAHN-proportioned arm
-    // parts (and the shoulder tuck), so uniformly radial-scaled sibling
-    // translations leave the arms off the baked torso's sockets at
-    // victory time. Per frame the arm chains re-derive their pivots by
-    // forward kinematics instead: shoulder = the baked torso's socket
-    // (minus the played tuck, so the tucked near-edge - not the pivot -
-    // meets the socket), elbow/hand = along the baked parts' own bone
-    // vectors. At destination-rest rotations this reduces exactly to
-    // the player's retail pivots.
-    struct ArmFk {
+    // Skeleton FK data. The baked mesh wears HOST-proportioned parts at
+    // the HOST's joint spacing (plus the shoulder and hip tucks), so a
+    // uniformly radial-scaled sibling translation puts every pivot where
+    // the SIBLING's joint sat, not where the baked part is. The error is
+    // `|radial * src_bone - dst_bone|` per joint: harmless where the two
+    // rigs agree, and a hole where they do not - Che's torso bone is 164
+    // against Gala's 90, which floated his head 38 units clear of the
+    // neck for the whole victory flourish.
+    //
+    // So per frame the skeleton re-derives its pivots by forward
+    // kinematics from the BAKED rig's own bone vectors: the torso keeps
+    // the clip's world placement, head and pelvis ride it at the baked
+    // offsets, and each limb chain hangs off its socket (minus the
+    // played tuck, so the tucked near-edge - not the pivot - meets the
+    // socket) along the baked parts' bone vectors. At destination-rest
+    // rotations every term reduces exactly to the player's retail pivot.
+    struct ChainFk {
+        /// Canonical parts of the limb chain, root joint first.
         chain: [usize; 3],
+        /// Canonical part carrying the chain's socket (1 torso, 2 pelvis).
+        root: usize,
         socket_local: [f32; 3],
         tuck_local: [f32; 3],
         bv_local: [[f32; 3]; 2],
     }
     let torso_ch = rig.channel_for_canonical[1] as usize;
     let pb_torso = pivot_bake_params(&src_frames[1], &dst_frames[1], radial);
-    let md_t = rot_matrix(&dst_rest[torso_ch]);
-    let arm_fk: Vec<ArmFk> = [[3usize, 4, 5], [6usize, 7, 8]]
+    let pb_pelvis = pivot_bake_params(&src_frames[2], &dst_frames[2], radial);
+    // A part's baked offset from its carrier, in the carrier's rest frame.
+    let rest_local = |c: usize, root: usize| -> [f32; 3] {
+        let rch = rig.channel_for_canonical[root] as usize;
+        apply_transposed(
+            &rot_matrix(&dst_rest[rch]),
+            vsub(dst_pivots[c], dst_pivots[root]),
+        )
+    };
+    // Head and pelvis carry no socket of their own: the head's geometry is
+    // seated on the player's neck by `seat_terminal_axial`, so the played
+    // head pivot has to BE the player's neck.
+    //
+    // These two keep the clip's AUTHORED motion, unlike the limb chains.
+    // A victory clip bobs the head against the torso, and a rigid re-seat
+    // throws that away - it cost Lu more (her authored bob) than the pivot
+    // error it removed (2.9 units). So only the constant rest offset is
+    // replaced: the frame's deviation from the sibling's own rest
+    // attachment is carried across into the player's torso frame through
+    // the torso's own conjugation, and scaled with the rig.
+    struct Carried {
+        part: usize,
+        root: usize,
+        /// The player's own rest offset, in the root's rest frame.
+        rest_local: [f32; 3],
+        /// The sibling's rest offset, in ITS root's rest frame.
+        src_rest_local: [f32; 3],
+        /// Maps a sibling-authored root-local displacement onto the player.
+        transfer: [[f32; 3]; 3],
+    }
+    let carried: Vec<Carried> = [(0usize, 1usize), (2, 1)]
         .iter()
-        .map(|&chain| {
-            let socket = bake_point_pivot(
-                src_pivots[chain[0]],
-                src_pivots[1],
-                dst_pivots[1],
-                &pb_torso,
-            );
-            let ch0 = rig.channel_for_canonical[chain[0]] as usize;
-            let md0 = rot_matrix(&dst_rest[ch0]);
-            let bv = |c: usize| {
-                let chp = rig.channel_for_canonical[c] as usize;
-                apply_transposed(
-                    &rot_matrix(&dst_rest[chp]),
-                    vsub(dst_pivots[c + 1], dst_pivots[c]),
-                )
-            };
-            ArmFk {
-                chain,
-                socket_local: apply_transposed(&md_t, vsub(socket, dst_pivots[1])),
-                tuck_local: apply_transposed(&md0, vsub(socket, dst_pivots[chain[0]])),
-                bv_local: [bv(chain[0]), bv(chain[1])],
-            }
+        .map(|&(part, root)| Carried {
+            part,
+            root,
+            rest_local: rest_local(part, root),
+            src_rest_local: apply_transposed(
+                &rot_matrix(&src_rest[root]),
+                vsub(src_pivots[part], src_pivots[root]),
+            ),
+            transfer: transpose(&conj[root]),
         })
         .collect();
+    let chain_fk: Vec<ChainFk> = [
+        ([3usize, 4, 5], 1usize),
+        ([6, 7, 8], 1),
+        ([9, 10, 11], 2),
+        ([12, 13, 14], 2),
+    ]
+    .iter()
+    .map(|&(chain, root)| {
+        let pb = if root == 1 { &pb_torso } else { &pb_pelvis };
+        let socket = bake_point_pivot(src_pivots[chain[0]], src_pivots[root], dst_pivots[root], pb);
+        let ch0 = rig.channel_for_canonical[chain[0]] as usize;
+        let md0 = rot_matrix(&dst_rest[ch0]);
+        let mdr = rot_matrix(&dst_rest[rig.channel_for_canonical[root] as usize]);
+        let bv = |c: usize| {
+            let chp = rig.channel_for_canonical[c] as usize;
+            apply_transposed(
+                &rot_matrix(&dst_rest[chp]),
+                vsub(dst_pivots[c + 1], dst_pivots[c]),
+            )
+        };
+        ChainFk {
+            chain,
+            root,
+            socket_local: apply_transposed(&mdr, vsub(socket, dst_pivots[root])),
+            tuck_local: apply_transposed(&md0, vsub(socket, dst_pivots[chain[0]])),
+            bv_local: [bv(chain[0]), bv(chain[1])],
+        }
+    })
+    .collect();
 
     let n_src = clip.frames.len();
     let mut out = Vec::with_capacity(frame_count);
@@ -368,24 +427,56 @@ pub fn retarget_clip(
             };
         }
         if torso_ch < part_count {
-            let rt = rot_matrix(&row[torso_ch]);
-            let tw = [
-                row[torso_ch].tx as f32,
-                row[torso_ch].ty as f32,
-                row[torso_ch].tz as f32,
-            ];
-            for fk in &arm_fk {
-                let set = |p: &mut PartPose, w: [f32; 3]| {
-                    p.tx = w[0].round().clamp(-2048.0, 2047.0) as i16;
-                    p.ty = w[1].round().clamp(-2048.0, 2047.0) as i16;
-                    p.tz = w[2].round().clamp(-2048.0, 2047.0) as i16;
-                };
-                let chs = fk.chain.map(|c| rig.channel_for_canonical[c] as usize);
-                if chs.iter().any(|&ch| ch >= part_count) {
+            let set = |p: &mut PartPose, w: [f32; 3]| {
+                p.tx = w[0].round().clamp(-2048.0, 2047.0) as i16;
+                p.ty = w[1].round().clamp(-2048.0, 2047.0) as i16;
+                p.tz = w[2].round().clamp(-2048.0, 2047.0) as i16;
+            };
+            let world = |p: &PartPose| [p.tx as f32, p.ty as f32, p.tz as f32];
+            // Carried parts first: the leg chains socket onto the pelvis,
+            // so the pelvis has to be placed before they hang off it.
+            for cr in &carried {
+                let ch = rig.channel_for_canonical[cr.part] as usize;
+                let rch = rig.channel_for_canonical[cr.root] as usize;
+                if ch >= part_count || rch >= part_count {
                     continue;
                 }
-                let s = apply(&rt, fk.socket_local);
-                let socket = [s[0] + tw[0], s[1] + tw[1], s[2] + tw[2]];
+                // This frame's deviation from the sibling's rest attachment,
+                // in the sibling's root-local frame.
+                let u = apply_transposed(
+                    &rot_matrix(&sf[cr.root]),
+                    vsub(
+                        [
+                            sf[cr.part].tx as f32,
+                            sf[cr.part].ty as f32,
+                            sf[cr.part].tz as f32,
+                        ],
+                        [
+                            sf[cr.root].tx as f32,
+                            sf[cr.root].ty as f32,
+                            sf[cr.root].tz as f32,
+                        ],
+                    ),
+                );
+                let dev = apply(&cr.transfer, vsub(u, cr.src_rest_local));
+                let local = [
+                    cr.rest_local[0] + dev[0] * radial,
+                    cr.rest_local[1] + dev[1] * radial,
+                    cr.rest_local[2] + dev[2] * radial,
+                ];
+                let o = apply(&rot_matrix(&row[rch]), local);
+                let t = world(&row[rch]);
+                set(&mut row[ch], [t[0] + o[0], t[1] + o[1], t[2] + o[2]]);
+            }
+            for fk in &chain_fk {
+                let chs = fk.chain.map(|c| rig.channel_for_canonical[c] as usize);
+                let rch = rig.channel_for_canonical[fk.root] as usize;
+                if rch >= part_count || chs.iter().any(|&ch| ch >= part_count) {
+                    continue;
+                }
+                let rt = world(&row[rch]);
+                let s = apply(&rot_matrix(&row[rch]), fk.socket_local);
+                let socket = [s[0] + rt[0], s[1] + rt[1], s[2] + rt[2]];
                 let r0 = rot_matrix(&row[chs[0]]);
                 let tk = apply(&r0, fk.tuck_local);
                 let mut pos = [socket[0] - tk[0], socket[1] - tk[1], socket[2] - tk[2]];
