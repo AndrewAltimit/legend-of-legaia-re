@@ -2087,7 +2087,46 @@ blob renders identically to a retail row's.
 [Shiny Seru](#shiny-seru), the [arts AP override](#arts-ap-override) and the
 Delilas Challenge contend over, so `--show-super-arts` is **mutually exclusive**
 with all three, enforced in the CLI and the web patcher with an error naming the
-conflicting feature.
+conflicting feature. That exclusion is arithmetic, not policy - see
+[The injected-code arena budget](#the-injected-code-arena-budget).
+
+#### The injected-code arena budget
+
+Every hand-assembled feature lands in the same four verified-dead SCUS regions,
+and they add up to **652 bytes**:
+
+| Region | Span | Size | Used by `--shiny-seru` |
+|---|---|---|---|
+| `SCUS_GAP` | `0x80077728..0x80077828` | 256 B | 246 B |
+| `ARENA1` | `0x8007AE00..0x8007AF00` | 256 B | 252 B |
+| `ARENA2` | `0x8007AFF8..0x8007B040` | 72 B | 64 B |
+| `SLOT6` | `0x80078A88..0x80078ACC` | 68 B | 56 B |
+
+Shiny Seru alone occupies **618 of the 652 bytes**, leaving 34 bytes split into
+fragments of 4, 5, 8 and 12. `--show-super-arts` needs 418 (196 B of routines,
+222 B of name table + blob), and even with the names chased in RAM instead of
+carried it still needs 196 B of routines. `618 + 196 > 652`, so no allocator and
+no packing makes that pair fit; the exclusion is not a hard-coded region clash
+that a smarter allocator would dissolve. A sweep of every zero run in the whole
+`SCUS_942.54` image outside the known live tables finds **53 further candidate
+bytes** in total, so there is no fifth region to grow into either. (The 4208-byte
+run at `0x800797D0` is inside the live SsAPI cluster - see
+["zero is not dead"](../../crates/patcher/README.md).)
+
+**Moving the payload into the battle overlay does not work either**, and the
+reason is a measured reference fact rather than a judgement call. The list
+renderer `FUN_80034358` has exactly one reference of any form anywhere on the
+disc - a `jal` at `0x8003238C`, inside the SCUS window-content dispatcher
+`FUN_80031D00` - and that dispatcher has **64** `jal` references, from SCUS, the
+**field** overlay (0897) and the **menu** overlay (0899). The arts list is a
+window widget, so the renderer runs with PROT 0898 *not* resident, and a hook
+inside it that jumped into 0898's address space would execute whatever the field
+or menu overlay has paged there. Scan:
+`scripts/ghidra-analysis/find-address-word-refs.py 80034358 --prot` and the same
+for `80031d00` (see [address-reference-scan.md](address-reference-scan.md)).
+
+A Super Art's **damage** row carries no AP override and never claims the arena,
+so `--super-art-power` composes with everything.
 
 **Known cosmetic gap.** The Triangle caption's own page thresholds (`< 6`,
 `< 11`, in `FUN_801D3444`) stay retail, so on the added page the prompt can still

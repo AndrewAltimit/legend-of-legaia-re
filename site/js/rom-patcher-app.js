@@ -542,6 +542,97 @@ const SUPER_ART_TABLE = [
   { c: 'Gala', f: 0x2F, n: 'Neo Static Raising', chain: ['Back Punch', 'Guillotine', 'Neo Raising'], h: '12/12/12' },
 ];
 
+// --- Injected-code arena conflicts ------------------------------------------
+//
+// Four features hand-assemble MIPS into the same 652 bytes of verified-dead
+// space in SCUS_942.54, so at most one of them can be enabled at a time. The
+// guard for that used to fire only at submit time and only named the *features*
+// - useless when the "feature" is two picker rows the user added seconds ago
+// via the Super Art row's own "add rows for those arts" button, which nobody
+// reads as a mod toggle. These helpers describe the conflict in terms of the
+// controls that actually cause it, so the same sentence can be shown live next
+// to the control and again at submit.
+
+// Every Tactical-Art picker row currently carrying an AP override, named.
+function apOverrideRows() {
+  return [...document.querySelectorAll('#rom-art-rows .art-row')]
+    .filter((r) => r.artControls && r.artControls.pick.value)
+    .filter((r) => !superArtByPick(r.artControls.pick.value))
+    .filter((r) => r.artControls.apMode.value === 'cost' || r.artControls.apMode.value === 'grant')
+    .map((r) => {
+      const [c, k] = r.artControls.pick.value.split(':');
+      const art = ART_TABLE.find((a) => a.c === c && a.k === k);
+      return { row: r, name: art ? art.n : k, character: c, mode: r.artControls.apMode.value };
+    });
+}
+
+// Everything claiming the arena right now, each as { key, label, where }.
+// `label` names the control the way the page labels it; `where` says how to
+// turn it off, because "turn one of them off" is not actionable on its own.
+function arenaClaims() {
+  const out = [];
+  const chk = (id) => document.getElementById(id);
+  if (chk('rom-show-super-arts') && chk('rom-show-super-arts').checked) {
+    out.push({
+      key: 'showSuperArts',
+      label: 'Show Super Arts on the in-battle move list',
+      where: 'the checkbox in Gameplay',
+    });
+  }
+  if (chk('rom-shiny-seru') && chk('rom-shiny-seru').checked) {
+    out.push({ key: 'shinySeru', label: 'Shiny Seru', where: 'the checkbox in Gameplay' });
+  }
+  if (chk('rom-delilas-challenge') && chk('rom-delilas-challenge').checked) {
+    out.push({
+      key: 'delilasChallenge',
+      label: 'the Delilas Challenge',
+      where: 'the checkbox in Gameplay',
+    });
+  }
+  const rows = apOverrideRows();
+  const raw = [chk('rom-arts-ap-grant'), chk('rom-arts-ap-cost')]
+    .some((el) => el && (el.value || '').trim());
+  if (rows.length || raw) {
+    const names = [...new Set(rows.map((r) => r.name))];
+    const label = rows.length
+      ? `${rows.length} Tactical-Art ${rows.length === 1 ? 'row' : 'rows'} set to change AP (${names.join(', ')})`
+      : 'the advanced AP-override field';
+    out.push({
+      key: 'artsAp',
+      label,
+      where: rows.length
+        ? 'set their AP back to "Keep original", or remove those rows'
+        : 'clear the AP-override text field',
+      rows,
+    });
+  }
+  return out;
+}
+
+// The one sentence shown both live and at submit, or '' when there is no
+// conflict. Only the pairs the patcher refuses outright are reported: shiny
+// Seru vs the Delilas Challenge is resolved in the patcher's favour (the
+// challenge wins, shiny is skipped with a note) and is not an error.
+function arenaConflictMessage() {
+  const claims = arenaClaims();
+  const hard =
+    claims.some((c) => c.key === 'showSuperArts') && claims.length > 1
+      ? claims
+      : claims.some((c) => c.key === 'shinySeru') && claims.some((c) => c.key === 'artsAp')
+        ? claims.filter((c) => c.key === 'shinySeru' || c.key === 'artsAp')
+        : null;
+  if (!hard) return '';
+  const [first, ...rest] = hard;
+  const others = rest.map((c) => c.label).join(', and ');
+  return (
+    `\u201c${first.label}\u201d cannot be combined with ${others}. ` +
+    'They inject hand-written code into the same 652 bytes of unused space on the disc, ' +
+    'and only one of them can have it. To fix, either ' +
+    rest.map((c) => c.where).join(', or ') +
+    `; or turn off \u201c${first.label}\u201d (${first.where}).`
+  );
+}
+
 /// A picker option value for a Super Art. Names carry no colon, so this stays
 /// unambiguous against the regular rows' `Character:COMBO`.
 const SUPER_PICK_PREFIX = 'super:';
@@ -734,15 +825,25 @@ function makeArtRow(onRemove, onAddChain) {
       const siblings = row.parentElement ? [...row.parentElement.querySelectorAll('.art-row')] : [];
       const have = new Set(siblings.filter((r) => r.artControls).map((r) => r.artControls.pick.value));
       const wanted = chainArts.filter((a) => !have.has(`${a.c}:${a.k}`));
+      // Adding AP rows for the chain is exactly what collides with the
+      // move-list toggle, so say it here rather than only at submit.
+      const listOn = !!(document.getElementById('rom-show-super-arts') || {}).checked;
       chainBtn.hidden = !onAddChain;
       chainBtn.disabled = wanted.length === 0;
       chainBtn.title = wanted.length
-        ? `Add a row for ${wanted.map((a) => a.n).join(', ')} so you can set the AP you pay to set this up.`
+        ? (listOn
+          ? `Adds a row for ${wanted.map((a) => a.n).join(', ')}. An AP override cannot be combined with "Show Super Arts on the in-battle move list" - untick that first, or leave these rows on "Keep original".`
+          : `Add a row for ${wanted.map((a) => a.n).join(', ')} so you can set the AP you pay to set this up.`)
         : `${chainNames} already have rows above.`;
       const parts = [
         `${sup.c}'s ${sup.n} is a Super Art: it fires when ${sup.chain.join(' > ')} are chained in that order, so it has no button combo of its own.`,
         `A Super Art costs no AP of its own - the chain arts pay it. To change what this costs to set up, adjust the AP of ${chainNames}.`,
       ];
+      if (listOn) {
+        parts.push(
+          'Note: changing their AP cannot be combined with "Show Super Arts on the in-battle move list" - both inject code into the same unused bytes on the disc. Damage on this row is fine either way.',
+        );
+      }
       if (dmg.value !== '') {
         const tier = DMG_TIERS.find((t) => t.v === dmg.value);
         parts.push(`Damage: ${tier.label.toLowerCase()} (was \u00d7${sup.h}). This one is per Super Art - no other art changes.`);
@@ -830,7 +931,11 @@ function setupArtBuilder(container, addBtn, onEdit) {
       row.artControls.pick.value = prefill;
       // Land on "Costs AP" - the reason the user came here is to change what
       // setting the Super up costs, and "Keep original" would write nothing.
-      row.artControls.apMode.value = 'cost';
+      // EXCEPT while the move-list toggle is on: an AP override cannot be
+      // combined with it, and one click that silently creates a blocking
+      // conflict is worse than a row the user has to arm deliberately.
+      const listOn = !!(document.getElementById('rom-show-super-arts') || {}).checked;
+      row.artControls.apMode.value = listOn ? 'keep' : 'cost';
       row.dispatchEvent(new Event('change', { bubbles: true }));
     }
     return row;
@@ -2004,8 +2109,42 @@ function init() {
     if (customChip) customChip.hidden = false;
   }
 
+  // Show the arena conflict the moment it exists, next to the control that
+  // causes it. Submit time is the worst moment to learn that two settings are
+  // incompatible - by then everything else has been configured.
+  function syncArenaConflict() {
+    const box = $('rom-arena-conflict');
+    if (!box) return '';
+    const msg = arenaConflictMessage();
+    box.textContent = msg;
+    box.hidden = !msg;
+    const claims = msg ? arenaClaims() : [];
+    const apClaim = claims.find((c) => c.key === 'artsAp');
+    // Mark the exact rows, so "2 Tactical-Art rows" is something you can see.
+    for (const r of document.querySelectorAll('#rom-art-rows .art-row')) {
+      r.classList.remove('art-row-conflict');
+    }
+    if (msg && apClaim && apClaim.rows) {
+      for (const { row } of apClaim.rows) row.classList.add('art-row-conflict');
+    }
+    // ...and the checkboxes, so every side of the conflict is visibly marked.
+    const BOX = {
+      showSuperArts: 'rom-show-super-arts',
+      shinySeru: 'rom-shiny-seru',
+      delilasChallenge: 'rom-delilas-challenge',
+    };
+    const lit = new Set(claims.map((c) => BOX[c.key]).filter(Boolean));
+    for (const id of Object.values(BOX)) {
+      const el = $(id);
+      const rowEl = el && el.closest('.rom-check-row');
+      if (rowEl) rowEl.classList.toggle('rom-check-conflict', lit.has(id));
+    }
+    return msg;
+  }
+
   // Grey out controls that have no effect given the current state.
   function syncDependents() {
+    syncArenaConflict();
     const encOn = segVal('encounters', 'none') !== 'none';
     const doorsOn = segVal('doors', 'none') !== 'none';
     const scopeRow = $('rom-scope-row');
@@ -2212,12 +2351,12 @@ function init() {
       setStatus('Enable at least one option (pick a preset, a language, a texture, or flip a toggle).', 'err');
       return;
     }
-    if (shinySeru && (artsApGrant || artsApCost)) {
-      setStatus('Shiny Seru and per-art AP overrides cannot be combined (they use the same injected-code arena) - turn one of them off.', 'err');
-      return;
-    }
-    if (showSuperArts && (shinySeru || artsApGrant || artsApCost || delilasChallenge)) {
-      setStatus('Showing Super Arts on the move list cannot be combined with Shiny Seru, per-art AP overrides or the Delilas Challenge (they use the same injected-code arena) - turn one of them off.', 'err');
+    // The arena conflicts, described in terms of the controls that cause them
+    // (see arenaConflictMessage). The banner already says this live; repeating
+    // it verbatim here means the submit error is never a new sentence to parse.
+    const arenaMsg = syncArenaConflict();
+    if (arenaMsg) {
+      setStatus(arenaMsg, 'err');
       return;
     }
     const seed = (seedInput.value || '').trim() || String(Date.now());
