@@ -25,6 +25,10 @@ use legaia_asset::party_swap::{self, PlayerRig, fieldize, playerize, winpose};
 /// PROT entry of `readef.DAT` (the battle side-band streaming slots).
 pub const READEF_ENTRY: usize = 894;
 
+/// PROT entry of the raw battle-action overlay (base VA `0x801CE818`) -
+/// where the per-character attack-camera jump tables live.
+const BATTLE_OVERLAY_ENTRY: usize = 898;
+
 use crate::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 
 /// One Delilas sibling.
@@ -543,6 +547,15 @@ struct HostArt {
     /// The replacement 5-input combo, checked unique against the
     /// character's other arts before anything is written.
     combo: [legaia_art::queue::Command; 5],
+    /// An attack-camera upgrade for this art, as `(file offset of the
+    /// slot's word in the raw battle overlay, arm VA to point it at)`.
+    ///
+    /// `FUN_801D71B8` dispatches the swing camera per (character, art
+    /// constant) through a per-character jump table, so retargeting one
+    /// slot changes exactly one art of exactly one character. `None`
+    /// where the host art's retail camera is already the better one -
+    /// see [`host_art`].
+    camera_arm: Option<(u64, u32)>,
 }
 
 /// Which art each hero slot (0 Vahn / 1 Noa / 2 Gala) gives up: each
@@ -558,30 +571,72 @@ struct HostArt {
 /// (`0x80014198` is both Vahn's Tornado Flame and Gala's Thunder Punch,
 /// so rewriting one rewrites the other's menu glyphs).
 ///
-/// `L R L R D` is free on all three: no character has it, and the whole
-/// disc's length-5 combos are Vahn `RDLDL`, Noa `LLRLR`/`UULDR`/`DUDLR`,
-/// Gala `RRLLL`/`LURDL`/`ULDRL`/`LLRUL`.
+/// The combo must be free of every other art of that character **as a
+/// substring at any offset**, which is a much stronger condition than
+/// not being equal to one. The retail matcher (`FUN_801EED1C`, the
+/// arrow-to-art normalisation) walks the scan START index DOWNWARD from
+/// 15 and takes the first art that matches anywhere, so **a match
+/// starting later in the input beats a longer match starting earlier**,
+/// regardless of art length or bank order. An ordinary art also does not
+/// consume its run - only its last direction becomes the action
+/// constant, the leading N-1 stay in the queue and remain matchable.
+///
+/// `L R L R D` was the first choice and it fails on Gala: his Battering
+/// Ram is `L R D`, which sits at offset 2, so it matches three passes
+/// before the host art gets a look, does not consume, and leaves `L R`
+/// for Back Punch - two arts fire and the signature never does. Vahn
+/// survived the same mistake only by luck: his collision (`L R L`, Hyper
+/// Elbow) is at offset 0, and the host being a Hyper consumes all five
+/// inputs before the ordinary row is reached.
+///
+/// `L R U U D` occurs at no offset in any bank record of any of the
+/// three (405 of the 1024 five-input combos are substring-free on all
+/// three; the alternates `L R R R D`, `U R U R D`, `L D U R D` are
+/// equally clean).
 fn host_art(slot: usize) -> Option<HostArt> {
-    use legaia_art::queue::Command::{Down, Left, Right};
-    let combo = [Left, Right, Left, Right, Down];
+    use legaia_art::queue::Command::{Down, Left, Right, Up};
+    let combo = [Left, Right, Up, Up, Down];
     match slot {
         0 => Some(HostArt {
             retail_name: b"Burning Flare",
             index: 1,
             action_constant: 0x1C,
             combo,
+            // Burning Flare's own camera arm (`0x801D7650`) is the ONLY
+            // live arm in the whole dispatcher with no cursor gate at
+            // all: one static framing, one commit, for the entire swing.
+            // That is why this slot's reskin reads flat while the other
+            // two do not - the flatness is the host art's retail camera,
+            // not the retarget. Point it at Tornado Flame's arm instead
+            // (two cursor bands with the gate at keyframe 14, three ramp
+            // folds, all five channels, no side effects) - the camera
+            // retail gives Vahn's OTHER Hyper Art, and already reuses for
+            // his Miracle finisher.
+            camera_arm: Some((0x278, 0x801D_74A8)),
         }),
         1 => Some(HostArt {
             retail_name: b"Vulture Blade",
             index: 4,
             action_constant: 0x1F,
             combo,
+            // Vulture Blade's arm is already the second-richest in Noa's
+            // table (two bands, gate at keyframe 14, five ramp folds, no
+            // side effects). Every other arm of hers except the
+            // SpecialStarter has NO cursor gate - a single static
+            // framing - so any retarget here is a downgrade.
+            camera_arm: None,
         }),
         2 => Some(HostArt {
             retail_name: b"Explosive Fist",
             index: 1,
             action_constant: 0x1C,
             combo,
+            // Explosive Fist's arm is the most band-rich in the entire
+            // dispatcher: four framings across the swing at keyframes
+            // 4/7/10, no side effects, and uniquely it reads no table row
+            // and never touches `ctx+0x26D`, so it is immune to the
+            // per-turn column coin-flip. Nothing to upgrade to.
+            camera_arm: None,
         }),
         _ => None,
     }
@@ -599,13 +654,19 @@ fn host_art(slot: usize) -> Option<HostArt> {
 ///
 /// Lu's and Che's rows are the last stage of the chains
 /// `delilas_dome` stages for their enemy actions (`0x7B`: `14 -> 12 ->
-/// 13`; `0x7A`: `10 -> 11`). Gi's chain is not statically determined;
-/// entry 12 is picked because it is byte-identical to his costliest
-/// castable (entry 7, AGL `0x22`) - the same structural signature Che's
-/// staged entry shows against his own.
+/// 13`; `0x7A`: `10 -> 11`). Gi's chain is not statically determined.
+///
+/// Gi's row is entry **11**, his one `0x23` clip with no duplicate
+/// anywhere in his archive. Entry 12 was tried first, on the reasoning
+/// that it is byte-identical to his costliest castable the way Che's
+/// staged entry is - but that identity is the argument against it: a
+/// signature move whose pose stream is byte-for-byte one of his ordinary
+/// casts reads on screen as an ordinary cast. Che's pick (50 frames) and
+/// Lu's (39) are the longest and most distinctive clips those siblings
+/// own; entry 11 (30 frames) is the same choice for Gi.
 fn signature_clip_entry(sibling: Sibling) -> usize {
     match sibling {
-        Sibling::Gi => 12,
+        Sibling::Gi => 11,
         Sibling::Che => 11,
         Sibling::Lu => 13,
     }
@@ -779,6 +840,25 @@ fn reskin_signature_art(
         })
         .cloned();
 
+    // `patch_player_record0_full` reports success when ANY of its edits
+    // changed, so a combo needle that matches nothing is dropped in
+    // silence while the offset edits still write - the art would then
+    // display the new combo in the menu and still answer to the old one
+    // in battle. Prove the needle exists first.
+    for (vanilla, _) in &char_edits {
+        let hits = rec0
+            .windows(vanilla.len() + 1)
+            .filter(|w| &w[..vanilla.len()] == vanilla.as_slice() && w[vanilla.len()] == 0)
+            .count();
+        if hits == 0 {
+            bail!(
+                "{who} record0 carries no {} combo to rewrite - the matcher \
+                 would keep answering to the retail input",
+                combo_str(&target.commands)
+            );
+        }
+    }
+
     // The sibling's signature clip, and the readef shape it has to fit -
     // both needed before the record0 write, because the re-timed rate is
     // a function of the two.
@@ -906,6 +986,36 @@ fn reskin_signature_art(
         combo_str(&new_combo),
         combo_str(&target.commands)
     ));
+
+    // 3b. The swing camera, where the host art's own is the weak one.
+    // A same-size word in the raw battle overlay, scoped to exactly
+    // (this character, this art constant): the dispatcher's prologue
+    // admits only party seats 0..2 and only action category 3 (Attack),
+    // so no enemy and no Super/Miracle expansion can reach the slot, and
+    // the three per-character tables share no live arm.
+    if let Some((off, arm)) = art.camera_arm {
+        let cur = patcher
+            .read_entry(BATTLE_OVERLAY_ENTRY)
+            .context("read battle overlay for the camera retarget")?;
+        let old = cur
+            .get(off as usize..off as usize + 4)
+            .map(|w| u32::from_le_bytes(w.try_into().unwrap()))
+            .unwrap_or(0);
+        if old == arm {
+            notes.push(format!(
+                "{} camera: already retargeted",
+                String::from_utf8_lossy(new)
+            ));
+        } else {
+            patcher
+                .patch_prot_entry(BATTLE_OVERLAY_ENTRY, off, &arm.to_le_bytes())
+                .context("write the attack-camera arm")?;
+            notes.push(format!(
+                "{} camera: arm {old:#010X} -> {arm:#010X} (the retail one has no cursor gate)",
+                String::from_utf8_lossy(new)
+            ));
+        }
+    }
 
     // 4. Fanfare duration: the cue's read span must cover the excerpt
     // the fills wrote into the host art's own channel pair or the audio

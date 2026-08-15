@@ -1164,10 +1164,12 @@ sweeps - shows every other named id is reachable in retail):
   cue on the user. Party-wide application needs a custom arm because
   group targeting lives inside each retail class arm, not the
   dispatcher. (An earlier "Delilas Tear" that would cast a sibling
-  signature attack is structurally impossible player-side: the streamed
-  modules stage the *caster's* monster-block entries by raw index, and
-  a party actor has no monster block - the cast parks the battle at the
-  capture band's completion wait.)
+  signature attack parks the battle at the capture band's completion
+  wait. The reason is **not** "a party actor has no monster block" - see
+  [Casting a sibling signature attack from a party
+  slot](#casting-a-sibling-signature-attack-from-a-party-slot) for what
+  actually blocks it, and for the seat-0 hazard that makes it unsafe to
+  ship even where it runs.)
 
 All three items play the heal-item chime (`FUN_8004FCC8` cue `0x20C`)
 from their own arms: the cast-audio dispatcher `FUN_801F3990` maps item
@@ -1529,11 +1531,95 @@ Four coordinated edits per slot (`delilas_party::reskin_signature_art`):
   every gate to `0xFF` - the walker never advances past a gate it has not
   reached, so nothing spawns and no terminator arm runs.
 
-Two channels stay the host's and are not data-editable. The **run-in** is a
-separate queue action (constant `0x19`, `Starter`) shared by every one of
-that character's arts, so retargeting it would change all of them. The
-**camera** is dispatched per (character, anim id) through a jump table in
-PROT 0898, so the swing framing is the host art's.
+The **run-in** stays the host's: it is a separate queue action (constant
+`0x19`, `Starter`) shared by every one of that character's arts, so
+retargeting it would change all of them.
+
+The **swing camera** is reachable, but only by choosing among arms retail
+already wrote. `FUN_801D71B8` dispatches per (character, art constant)
+through three per-character jump tables (`0x801CEA88` / `0x801CEAD0` /
+`0x801CEB20`, file `0x0270` / `0x02B8` / `0x0308` of the raw battle
+overlay), slot = `(constant - 0x1A) * 4`. Thirteen distinct arms exist and
+**no live arm is shared across characters**; 37 dead slots point at a bare
+return. So a one-word write retargets exactly one art of exactly one
+character - and the dispatcher's prologue admits only party seats `0..2`
+and only action category 3 (Attack), so no enemy cast and no Super-Art
+expansion can reach a slot at all (every Super finisher constant falls
+outside its table's bound; Super Arts get no attack camera in retail).
+
+Only the **Vahn** slot takes the write, and the asymmetry is the finding:
+Burning Flare's own arm `0x801D7650` is the sole live arm in the whole
+dispatcher with **no cursor gate** - one static framing, one commit, for
+the entire swing - which is why a reskin on that slot reads flat while the
+other two do not. It is repointed at Tornado Flame's arm `0x801D74A8`: two
+cursor bands (gate at keyframe 14), three ramp folds, all five channels,
+no side effects, and the camera retail already gives Vahn's other Hyper
+Art and reuses for his Miracle finisher. Noa's Vulture Blade arm is
+already the second-richest in her table and Gala's Explosive Fist arm is
+the most band-rich in the function (four framings, and uniquely it reads
+no table row and never touches `ctx+0x26D`, so it is immune to the
+per-turn column coin-flip) - both are left alone, because every in-table
+alternative is flatter.
+
+Borrowing an arm *across* characters is possible but strictly dominated,
+and the reason is worth recording: both per-character adjustments are
+applied in the dispatch **preamble**, before the arm runs, so a borrowed
+arm cannot compensate for them. Character 3 seeds camera `TR.y = 0x600`
+against `0x400` for characters 1-2, and `ctx+0x26D` (the table column) is
+forced to 0 for character 3 while everyone else gets `rand() % 2`. Gala's
+Lightning Storm arm on Vahn therefore flips columns per turn - measured
+row deltas include sign flips, so alternating turns frame from opposite
+sides - and Gala's Explosive Fist arm on Vahn sits 512 units low in the
+two bands that do not write `TR.y` themselves.
+
+**Slow motion is already there** and needs no change: retail halves
+`actor+0x21D` on every party Tactical Art strike, and a SpecialStarter
+adds a freeze-frame plus quarter speed, both from `FUN_8004AD80` and both
+gated party-only.
+
+#### Casting a sibling signature attack from a party slot
+
+The genuine enemy-side move - Lu's Plasma Strike as PROT 960 drives it -
+is **reachable but deliberately not shipped**. The reasoning matters
+because a previously committed claim here was wrong.
+
+What is *not* the blocker: "a party actor has no monster block". A party
+actor has a first-class equivalent anim table (`DAT_801C9360[slot]` against
+a monster seat's `DAT_801C9348[slot-3]+0x4C`, the two arms of
+`FUN_8004AD80`), the raw indices the module stages resolve on it, and the
+module's single monster-block access is a hardcoded **seat-0** write to
+one field of one clip, unrelated to who is casting.
+
+What actually blocks it, in order of severity:
+
+- **Kernel-RAM corruption, on every cast.** That seat-0 access reads word
+  32 of monster seat 0's block. The loader fixes up only `magic_count`
+  words at `+0x4C`; past that the words are unfixed block-relative
+  offsets, so a seat-0 monster with `magic_count <= 13` - Che Delilas
+  himself has 12 - turns the pointer into a bare offset and the following
+  store lands a halfword in PSX kernel RAM. Retail never trips it because
+  the module is only ever reached with Lu (16 entries) in seat 0.
+- **A softlock with no escape.** Battle state `0x70` re-enters the module
+  every frame and advances only when it returns 0; there is no timer and
+  no bail-out. Four phase gates can stall it, and the last needs a clip of
+  at least 23 keyframes - which Gala's party index `0x0D` fails today at
+  17 of 19 equippable section-2 ids.
+- **Friendly fire.** The damage call and both HP writes are hardcoded to
+  actor slot 0, not the chosen target.
+- **The choreography is not free either.** The staged raw indices mean
+  "the four basic swings" on a party actor, so getting the sibling's clip
+  there needs a detour in the hottest per-actor path in the battle loop.
+
+The cheap part of what the module provides is separable and is what the
+swap ships instead: the camera above, and the effect script. A future
+route for the effects, not yet taken: the module's five part prototypes
+contain **no absolute pointers** (measured over its whole data region), so
+they can be copied verbatim into a resident cave and named by a spare
+`0x801F6324` prototype id, which the art's own effect script can then
+reference - no capture path, no hook. Two things would have to be settled
+first: whether any `0x801F6324` slot is genuinely spare, and whether the
+prototypes' move-VM bytecode names model slots that only a capture-cast
+load installs.
 
 Still retail: menu
 portraits, battle HUD faces. Composes with

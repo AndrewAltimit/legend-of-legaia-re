@@ -556,7 +556,7 @@ fn every_slot_gets_its_siblings_signature_art() {
             host_name: "Vulture Blade",
             sig_name: "Blazing Slash",
             monster_id: 162,
-            clip_entry: 12,
+            clip_entry: 11,
             host_combo: &[1, 1, 2, 1, 2],
         },
         Expect {
@@ -641,6 +641,56 @@ fn every_slot_gets_its_siblings_signature_art() {
             );
             matches[0].clone()
         };
+        // The new combo must not occur INSIDE any of that character's
+        // other arts, at any offset. Equality is the wrong test: the
+        // retail matcher walks the scan start index downward, so a rival
+        // art matching at offset >= 1 wins outright, and an ordinary art
+        // does not consume its run - which is how `L R L R D` used to
+        // fire Gala's Battering Ram (`L R D`, offset 2) plus Back Punch
+        // instead of his signature.
+        {
+            let entry = patched
+                .read_entry(863 + slot)
+                .expect("read patched player file");
+            let rec0 = bca::decode_record0(&entry).expect("decode patched record0");
+            let bank = bca::art_animation_bank(&rec0).expect("patched art bank");
+            // Glyphs 1 L, 2 R, 3 D, 4 U.
+            const SIGNATURE_COMBO: [u8; 5] = [1, 2, 4, 4, 3];
+            assert!(
+                bank.iter()
+                    .any(|r| !r.uses_base_archive() && r.combo == SIGNATURE_COMBO),
+                "slot {slot}: no bank record answers to the signature combo"
+            );
+            assert!(
+                !bank.iter().any(|r| r.combo == host_combo),
+                "slot {slot}: the retail combo {host_combo:?} still matches something"
+            );
+            // Art rows start at bank record 11 - where the retail matcher
+            // starts its own scan (`li s3,0xb` in `FUN_801EED1C`) - and an
+            // art input is at least three directions (the shortest on the
+            // disc are `RRL` / `LLD` / `UDL` / `RLD` / `LUU`, one per
+            // character). Shorter rows are starters and basic swings;
+            // including them flags every combo that contains any single
+            // direction, i.e. all of them.
+            for other in bank
+                .iter()
+                .skip(11)
+                .filter(|r| !r.uses_base_archive() && r.combo.len() >= 3)
+            {
+                if other.combo == SIGNATURE_COMBO {
+                    continue;
+                }
+                assert!(
+                    !SIGNATURE_COMBO
+                        .windows(other.combo.len())
+                        .any(|w| w == other.combo.as_slice()),
+                    "slot {slot}: {:?} occurs inside the signature combo - it would \
+                     match first, and an ordinary art does not consume its run",
+                    other.combo
+                );
+            }
+        }
+
         let clip = legaia_asset::monster_archive::animations(&archive, monster_id)
             .expect("animations")
             .expect("archive slot")

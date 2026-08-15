@@ -158,11 +158,11 @@ pub const DEFAULT_VOICE_MAP: [[VoiceFx; 3]; 3] = [
             ..VOICE_FX_BASE
         }, // Lu
         VoiceFx {
-            pitch: -8.5,
+            pitch: -12.0,
             ..VOICE_FX_BASE
         }, // Gi
         VoiceFx {
-            pitch: -10.0,
+            pitch: -10.5,
             formant_st: -5.0,
             timbre: 0.6,
             growl_hz: 50.0,
