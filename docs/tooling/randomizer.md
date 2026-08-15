@@ -1505,6 +1505,36 @@ contract as the shouts:
   formant only) - the timbre, carrier and attack-graft stages assume a
   lone voice and smear a music bed - and keeps its full retail length,
   so the cue plays end to end.
+
+  The two axes are **not** independent, and mis-reading that is what
+  made the gender-crossing cells resist tuning. `pitch` is a resample,
+  so it drags the whole spectral envelope with F0: the audible formant
+  shift is `pitch + formant_st`, and `formant_st: 0` therefore means
+  "formants dragged the full pitch" - a slowed-tape voice, deep without
+  being male. A female-to-male recast wants F0 far down and the vocal
+  tract only 10-15% longer, i.e. a **sum** near -2..-3, not 0.
+  Measured on a synthetic vowel: `pitch` alone moves the envelope by its
+  full amount (-12 -> -11.78 st), `formant_st` alone is accurate
+  (+9 -> +9.00).
+
+  Worse, past about 6 semitones of downshift the correction went inert.
+  The cepstral lifter was hardwired at `SPEC_L = 48` bins of a 1024-point
+  FFT, an envelope resolution of about 790 Hz at 37.8 kHz; an octave
+  down the formants are 450-570 Hz apart, below that resolution, so the
+  warp reads one broad blob with no peaks to move. Sweeping
+  `formant_st` 0 to +12 at `pitch: -12` moved the envelope 0.16 st in
+  total. `formant_pre` (warp before the resample, in the clip's native
+  scale) and `env_track` (scale the lifter order by `2^(-pitch/12)`)
+  each restore it independently - measured -2.93 and -2.92 against a
+  -3.00 target.
+
+  **This was a host drift, not just a bug.** The browser tuning
+  dashboard applies its spectral pass *before* the `playbackRate`
+  resample, so it has always behaved as `formant_pre = 1`, while the
+  Rust bake applied it after. `formant_st` worked in the tab the map was
+  tuned in and was inert on the patched disc, which is exactly the shape
+  [`host-drift.md`](host-drift.md) warns about: a value that reads as
+  tuned because the surface you tuned it on honoured it.
 - `original` - both bank families are left retail (never muted): Vahn /
   Noa / Gala call their own arts out of the siblings' bodies.
 - `removed` - the banks stay silent; the spliced SPU grunts remain the

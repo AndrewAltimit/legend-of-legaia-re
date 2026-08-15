@@ -63,9 +63,51 @@ pub struct VoiceFx {
     pub preserve: bool,
     /// Duration divisor (1.0 = retail length).
     pub speed: f32,
-    /// EXTRA spectral-envelope warp in semitones (vocal-tract scale)
-    /// on top of what the pitch resample already does.
+    /// EXTRA spectral-envelope warp in semitones (vocal-tract scale).
+    ///
+    /// The pitch shift is a resample, so it already drags the whole
+    /// spectral envelope with F0: after `pitch`, the formants sit
+    /// `pitch` semitones lower on their own. This field adds to that,
+    /// and the audible result is the **sum**:
+    ///
+    /// ```text
+    /// net formant shift (st) = pitch + formant_st
+    /// ```
+    ///
+    /// `formant_st: 0` therefore is not "formants untouched" - it is
+    /// "formants dragged the full `pitch`", i.e. a slowed-tape voice.
+    /// A female-to-male recast wants F0 down a lot and the vocal tract
+    /// only 10-15% longer, so the target is `pitch + formant_st` near
+    /// -2..-3, NOT 0. [`net_formant_st`] states the sum;
+    /// [`formant_st_for_net`] solves for this field.
+    ///
+    /// Past about 6 semitones of downshift this field needs
+    /// [`VoiceFx::formant_pre`] or [`VoiceFx::env_track`] to bite at
+    /// all - see those fields.
     pub formant_st: f32,
+    /// Run the formant warp BEFORE the pitch resample instead of after
+    /// it.
+    ///
+    /// Mathematically the net envelope is the same either way (the
+    /// resample scales frequency uniformly, so warp and resample
+    /// commute). What differs is how well-conditioned the envelope
+    /// estimate is: the warp reads a cepstral envelope whose resolution
+    /// is fixed at `rate / SPEC_L` (about 790 Hz at 37.8 kHz), and after
+    /// a large downshift the formants are packed closer than that, so
+    /// the post-resample warp has no peaks left to move. Warping first,
+    /// in the clip's native scale, is the domain that resolution was
+    /// sized for. `false` keeps the legacy ordering.
+    pub formant_pre: bool,
+    /// Scale the cepstral envelope lifter with the pitch resample.
+    ///
+    /// The resample moves formants *and* the harmonic comb by the same
+    /// factor, so the lifter order that keeps the same margin after a
+    /// shift of `pitch` semitones is `SPEC_L * 2^(-pitch/12)`. With this
+    /// off, a downshifted clip is analysed with a resolution too coarse
+    /// for its own formants, which mostly costs the timbre transfer
+    /// ([`VoiceFx::timbre`]) its target detail. `false` keeps the legacy
+    /// fixed order.
+    pub env_track: bool,
     /// 0..1 morph of each frame's envelope toward the sibling
     /// reference clip's average envelope.
     pub timbre: f32,
@@ -96,8 +138,17 @@ pub struct VoiceFx {
     /// 0..1 blend of the reference clip tiled under the shout with the
     /// shout's amplitude envelope imposed.
     pub carrier: f32,
-    /// Spectral tilt in dB (+ = brighter; opposed shelves 400/3000 Hz).
+    /// Spectral tilt in dB (+ = brighter): opposed shelves, `-tilt/2`
+    /// low and `+tilt/2` high. Male phonation puts relatively more
+    /// energy low, so a female-to-male recast wants this negative.
     pub tilt: f32,
+    /// Corner of the tilt's low shelf in Hz; the high shelf sits at
+    /// `7.5 x` this (400 / 3000 Hz at the default, which is the legacy
+    /// hardwired pair). Lowering it puts the pivot between the first
+    /// two harmonics of a deep voice, where it trades H1 against H2 -
+    /// the breathy-vs-pressed cue - instead of only re-colouring the
+    /// vowel. Range roughly 150..800 Hz.
+    pub tilt_hz: f32,
     /// Output gain.
     pub gain: f32,
 }
@@ -108,6 +159,8 @@ pub const VOICE_FX_BASE: VoiceFx = VoiceFx {
     preserve: true,
     speed: 1.0,
     formant_st: 0.0,
+    formant_pre: false,
+    env_track: false,
     timbre: 0.0,
     bend0: 0.0,
     bend1: 0.0,
@@ -124,8 +177,24 @@ pub const VOICE_FX_BASE: VoiceFx = VoiceFx {
     graft_ms: 0.0,
     carrier: 0.0,
     tilt: 0.0,
+    tilt_hz: 400.0,
     gain: 1.0,
 };
+
+/// The audible formant shift of a cell, in semitones relative to
+/// retail: the pitch resample drags the envelope by `pitch`, and
+/// [`VoiceFx::formant_st`] adds to that.
+pub fn net_formant_st(fx: &VoiceFx) -> f32 {
+    fx.pitch + fx.formant_st
+}
+
+/// The [`VoiceFx::formant_st`] that lands the envelope `net` semitones
+/// from retail under a `pitch`-semitone shift. A female-to-male recast
+/// wants `net` near -2..-3 (a male vocal tract is 10-15% longer, so the
+/// formants want 0.85..0.90x), whatever `pitch` does.
+pub fn formant_st_for_net(pitch: f32, net: f32) -> f32 {
+    net - pitch
+}
 
 /// The tuned default mapping, `[hero slot 0..3][Lu, Gi, Che]`,
 /// transcribed verbatim from the by-ear voice-lab session.
@@ -157,15 +226,36 @@ pub const DEFAULT_VOICE_MAP: [[VoiceFx; 3]; 3] = [
             pitch: -2.5,
             ..VOICE_FX_BASE
         }, // Lu
+        // Gi. The two gender-crossing cells are the only ones where the
+        // pitch shift is deep enough for the resample's formant drag to
+        // dominate: at `pitch: -12, formant_st: 0` the vocal tract
+        // sounds a full octave longer, which is slowed tape, not a man.
+        // `formant_pre` is what lets `formant_st` bite at this depth
+        // (see the field docs); the sum puts the tract at -3 st = 0.84x,
+        // and the tilt shelf supplies the low-energy bias separately
+        // instead of stealing it from the formants. `lp` trims the hiss
+        // the warp lifts out of the source's top octave.
         VoiceFx {
             pitch: -12.0,
+            formant_st: 9.0,
+            formant_pre: true,
+            tilt: -8.0,
+            tilt_hz: 300.0,
+            lp: 5500.0,
             ..VOICE_FX_BASE
         }, // Gi
+        // Che. Same correction; here the darkening comes from the
+        // timbre transfer toward Che's own low bank growl, so no tilt
+        // shelf on top of it. `env_track` gives that transfer an
+        // envelope resolution matched to the downshifted clip.
         VoiceFx {
             pitch: -10.5,
-            formant_st: -5.0,
+            formant_st: 8.0,
+            formant_pre: true,
+            env_track: true,
             timbre: 0.6,
             growl_hz: 50.0,
+            lp: 6000.0,
             ..VOICE_FX_BASE
         }, // Che
     ],
@@ -187,6 +277,80 @@ pub const DEFAULT_VOICE_MAP: [[VoiceFx; 3]; 3] = [
         }, // Che
     ],
 ];
+
+/// One cell as the voice-lab dashboard's JSON object (its camelCase
+/// field names, booleans as 1/0).
+///
+/// The destructure below is deliberately exhaustive - no `..` - so
+/// adding a field to [`VoiceFx`] fails the build here until the
+/// dashboard learns about it. That is the whole point: the dashboard
+/// loads the shipped map through [`voice_map_json`] instead of carrying
+/// a hand-copied snapshot, which would go quietly stale the first time
+/// anyone re-tunes a cell.
+fn cell_json(fx: &VoiceFx) -> String {
+    let VoiceFx {
+        pitch,
+        preserve,
+        speed,
+        formant_st,
+        formant_pre,
+        env_track,
+        timbre,
+        bend0,
+        bend1,
+        formant_hz,
+        formant_db,
+        hp,
+        lp,
+        drive,
+        growl,
+        growl_hz,
+        sub,
+        breath,
+        detune,
+        graft_ms,
+        carrier,
+        tilt,
+        tilt_hz,
+        gain,
+    } = *fx;
+    let b = |v: bool| if v { 1 } else { 0 };
+    format!(
+        "{{\"pitch\":{pitch:?},\"preserve\":{},\"speed\":{speed:?},\
+\"formantSt\":{formant_st:?},\"formantPre\":{},\"envTrack\":{},\
+\"timbre\":{timbre:?},\"bend0\":{bend0:?},\"bend1\":{bend1:?},\
+\"formantHz\":{formant_hz:?},\"formantDb\":{formant_db:?},\
+\"hp\":{hp:?},\"lp\":{lp:?},\"drive\":{drive:?},\"growl\":{growl:?},\
+\"growlHz\":{growl_hz:?},\"sub\":{sub:?},\"breath\":{breath:?},\
+\"detune\":{detune:?},\"graftMs\":{graft_ms:?},\"carrier\":{carrier:?},\
+\"tilt\":{tilt:?},\"tiltHz\":{tilt_hz:?},\"gain\":{gain:?}}}",
+        b(preserve),
+        b(formant_pre),
+        b(env_track),
+    )
+}
+
+/// The whole shipped [`DEFAULT_VOICE_MAP`] in the voice-lab dashboard's
+/// export shape: `{"vahn>lu": {...}, ..., "gala>che": {...}}`.
+///
+/// The dashboard's "load shipped defaults" button reads this, so what it
+/// offers as a starting point is always what the patcher actually bakes.
+pub fn voice_map_json() -> String {
+    let mut out = String::from("{\n");
+    for (h, hero) in ["vahn", "noa", "gala"].iter().enumerate() {
+        for (s, sib) in ["lu", "gi", "che"].iter().enumerate() {
+            if h + s > 0 {
+                out.push_str(",\n");
+            }
+            out.push_str(&format!(
+                " \"{hero}>{sib}\": {}",
+                cell_json(&DEFAULT_VOICE_MAP[h][s])
+            ));
+        }
+    }
+    out.push_str("\n}\n");
+    out
+}
 
 /// The tuned cell for hero slot `hero` (0 = Vahn, 1 = Noa, 2 = Gala)
 /// mapped to `sibling`.
@@ -211,6 +375,10 @@ pub fn fanfare_fx(hero: usize, sibling: Sibling) -> VoiceFx {
     VoiceFx {
         pitch: tuned.pitch,
         formant_st: tuned.formant_st,
+        // carried, not cosmetic: without it `formant_st` is inert past
+        // about six semitones of shift, so dropping it would silently
+        // give the fanfare the full uncorrected formant drag
+        formant_pre: tuned.formant_pre,
         ..VOICE_FX_BASE
     }
 }
@@ -276,20 +444,29 @@ fn fft(re: &mut [f64], im: &mut [f64], inv: bool) {
 }
 
 /// Cepstral log-envelope of one magnitude spectrum (lifter keeps the
-/// first [`SPEC_L`] quefrency bins).
-fn frame_log_env(mag: &[f64], cr: &mut [f64], ci: &mut [f64], env: &mut [f64]) {
+/// first `l` quefrency bins; [`SPEC_L`] is the native-scale order).
+fn frame_log_env(mag: &[f64], cr: &mut [f64], ci: &mut [f64], env: &mut [f64], l: usize) {
     let n = SPEC_N;
     for k in 0..n {
         cr[k] = (mag[k] + 1e-9).ln();
         ci[k] = 0.0;
     }
     fft(cr, ci, true);
-    for k in SPEC_L + 1..n - SPEC_L {
+    for k in l + 1..n - l {
         cr[k] = 0.0;
         ci[k] = 0.0;
     }
     fft(cr, ci, false);
     env.copy_from_slice(cr);
+}
+
+/// Lifter order for a signal whose frequencies have been scaled by
+/// `scale` away from the native clip. [`SPEC_L`] is sized for the
+/// native scale; a resample moves formants and the harmonic comb by the
+/// same factor, so dividing by `scale` keeps the same margin between
+/// "envelope" and "harmonics".
+fn lifter_bins(scale: f64) -> usize {
+    ((SPEC_L as f64 / scale).round() as usize).clamp(8, SPEC_N / 8)
 }
 
 /// WSOLA time-stretch: `factor` > 1 lengthens; pitch preserved.
@@ -373,7 +550,13 @@ fn lin_resample(x: &[f32], factor: f64) -> Vec<f32> {
 /// scale) and the timbre transfer toward `ref_env` (log-envelope
 /// sampled at this signal's bin frequencies) by `strength`. The
 /// timbre correction is zero-meaned so frame loudness survives.
-fn spectral_pass(x: &[f32], alpha: f64, ref_env: Option<&[f64]>, strength: f64) -> Vec<f32> {
+fn spectral_pass(
+    x: &[f32],
+    alpha: f64,
+    ref_env: Option<&[f64]>,
+    strength: f64,
+    lifter: usize,
+) -> Vec<f32> {
     let warp = (alpha - 1.0).abs() >= 0.005;
     let morph = ref_env.is_some() && strength > 0.01;
     if !warp && !morph {
@@ -398,7 +581,7 @@ fn spectral_pass(x: &[f32], alpha: f64, ref_env: Option<&[f64]>, strength: f64) 
         for k in 0..n {
             mag[k] = re[k].hypot(im[k]);
         }
-        frame_log_env(&mag, &mut cr, &mut ci, &mut env);
+        frame_log_env(&mag, &mut cr, &mut ci, &mut env, lifter);
         let mut mean = 0.0f64;
         for k in 0..=n / 2 {
             let mut c = 0.0f64;
@@ -479,7 +662,7 @@ fn ref_log_env_raw(pcm: &[i16]) -> Vec<f64> {
             for k in 0..n {
                 mag[k] = re[k].hypot(im[k]);
             }
-            frame_log_env(&mag, &mut cr, &mut ci, &mut env);
+            frame_log_env(&mag, &mut cr, &mut ci, &mut env, SPEC_L);
             let w = en.sqrt();
             for (a, e) in acc.iter_mut().zip(env.iter()) {
                 *a += e * w;
@@ -662,16 +845,30 @@ pub fn process_clip(
         (1.0, r * speed)
     };
     let mut y = wsola(&x, stretch);
-    y = lin_resample(&y, 1.0 / play);
-    // spectral: formant warp + timbre transfer (post-resample domain,
-    // so bin k sits at its final perceived frequency)
     let alpha = (fx.formant_st as f64 / 12.0).exp2();
+    // Formant warp: either in the clip's native scale (before the
+    // resample, where SPEC_L was sized) or in the final scale.
+    if fx.formant_pre {
+        y = spectral_pass(&y, alpha, None, 0.0, lifter_bins(1.0));
+    }
+    y = lin_resample(&y, 1.0 / play);
+    // Post-resample pass: the remaining warp plus the timbre transfer,
+    // which has to run here because the reference envelope is mapped by
+    // absolute frequency.
     let ref_env = if fx.timbre > 0.01 {
         reference.map(|(rp, rr)| map_ref_env(&ref_log_env_raw(rp), rate, rr))
     } else {
         None
     };
-    y = spectral_pass(&y, alpha, ref_env.as_deref(), fx.timbre as f64);
+    let post_alpha = if fx.formant_pre { 1.0 } else { alpha };
+    let post_lifter = lifter_bins(if fx.env_track { play } else { 1.0 });
+    y = spectral_pass(
+        &y,
+        post_alpha,
+        ref_env.as_deref(),
+        fx.timbre as f64,
+        post_lifter,
+    );
     y = pitch_bend(&y, fx.bend0, fx.bend1);
     if fx.sub > 0.01 {
         // -12st same-duration layer: WSOLA to half length, upsample x2
@@ -786,8 +983,13 @@ pub fn process_clip(
         Biquad::peaking(fx.formant_hz as f64, sr, 1.0, fx.formant_db as f64).run(&mut y);
     }
     if fx.tilt.abs() > 0.05 {
-        Biquad::shelf(400.0, sr, -fx.tilt as f64 / 2.0, true).run(&mut y);
-        Biquad::shelf(3000.0, sr, fx.tilt as f64 / 2.0, false).run(&mut y);
+        let lo = if fx.tilt_hz > 20.0 {
+            fx.tilt_hz as f64
+        } else {
+            400.0
+        };
+        Biquad::shelf(lo, sr, -fx.tilt as f64 / 2.0, true).run(&mut y);
+        Biquad::shelf(lo * 7.5, sr, fx.tilt as f64 / 2.0, false).run(&mut y);
     }
     let mut peak = 0.0f32;
     for v in y.iter_mut() {
@@ -922,13 +1124,197 @@ mod tests {
         assert_eq!(v_lu.bend0, 6.5);
         assert_eq!(v_lu.hp, 90.0);
         let n_che = voice_map(1, Sibling::Che);
-        assert_eq!(n_che.pitch, -10.0);
+        assert_eq!(n_che.pitch, -10.5);
         assert_eq!(n_che.timbre, 0.6);
         assert_eq!(voice_map(2, Sibling::Gi).formant_st, -6.0);
         assert_eq!(voice_map(2, Sibling::Che).pitch, 1.5);
         // untouched knobs stay at base
         assert_eq!(voice_map(0, Sibling::Gi).carrier, 0.0);
         assert!(voice_map(1, Sibling::Lu).preserve);
+    }
+
+    /// The audible formant shift is `pitch + formant_st`, so a cell
+    /// crossing gender has to hold the sum near the male-tract target
+    /// (-2..-3 st) no matter how far the pitch travels - and it has to
+    /// set `formant_pre`, without which `formant_st` cannot reach that
+    /// far. Every deep cell in the map is checked, so a future re-tune
+    /// that drops the flag fails here rather than silently reverting to
+    /// slowed tape.
+    #[test]
+    fn deep_cells_correct_the_formant_drag() {
+        for hero in 0..3 {
+            for sib in [Sibling::Lu, Sibling::Gi, Sibling::Che] {
+                let fx = voice_map(hero, sib);
+                if fx.pitch.abs() < 6.0 {
+                    continue; // shallow: the drag is small and the warp bites anyway
+                }
+                assert!(
+                    fx.formant_pre,
+                    "hero {hero} -> {sib:?}: pitch {} needs formant_pre for formant_st to bite",
+                    fx.pitch
+                );
+                let net = net_formant_st(fx);
+                assert!(
+                    (-5.0..=0.0).contains(&net),
+                    "hero {hero} -> {sib:?}: net formant shift {net} is a tape-speed voice"
+                );
+            }
+        }
+        // the two cells the gender-crossing retune targeted
+        assert_eq!(net_formant_st(voice_map(1, Sibling::Gi)), -3.0);
+        assert_eq!(net_formant_st(voice_map(1, Sibling::Che)), -2.5);
+    }
+
+    /// The dashboard's "load shipped defaults" reads this, so it has to
+    /// carry every cell and every knob - including the ones added after
+    /// the page was written.
+    #[test]
+    fn voice_map_json_carries_every_cell_and_knob() {
+        let j = voice_map_json();
+        for hero in ["vahn", "noa", "gala"] {
+            for sib in ["lu", "gi", "che"] {
+                assert!(
+                    j.contains(&format!("\"{hero}>{sib}\"")),
+                    "missing {hero}>{sib}"
+                );
+            }
+        }
+        for knob in [
+            "pitch",
+            "preserve",
+            "speed",
+            "formantSt",
+            "formantPre",
+            "envTrack",
+            "timbre",
+            "bend0",
+            "bend1",
+            "formantHz",
+            "formantDb",
+            "hp",
+            "lp",
+            "drive",
+            "growl",
+            "growlHz",
+            "sub",
+            "breath",
+            "detune",
+            "graftMs",
+            "carrier",
+            "tilt",
+            "tiltHz",
+            "gain",
+        ] {
+            assert!(j.contains(&format!("\"{knob}\":")), "missing knob {knob}");
+        }
+        // spot-check that it is the SHIPPED table, not the base cell
+        assert!(j.contains("\"formantSt\":9.0"), "Noa>Gi warp missing");
+        assert_eq!(j.matches("\"formantPre\":1").count(), 2);
+    }
+
+    #[test]
+    fn net_formant_helpers_round_trip() {
+        assert_eq!(formant_st_for_net(-12.0, -3.0), 9.0);
+        let fx = VoiceFx {
+            pitch: -12.0,
+            formant_st: formant_st_for_net(-12.0, -2.5),
+            ..VOICE_FX_BASE
+        };
+        assert_eq!(net_formant_st(&fx), -2.5);
+    }
+
+    /// `formant_st` has to actually move the spectral envelope at the
+    /// depth the Noa cells run at.
+    ///
+    /// The subject is a dense-excitation synthetic vowel - a 40 Hz
+    /// impulse train through resonators at 760 / 1900 / 2800 Hz - so the
+    /// envelope is sampled every 40 Hz and no F0-resolution bias enters
+    /// the measurement. Three formants matter: an octave down they sit
+    /// 450-570 Hz apart, closer than the fixed lifter's ~790 Hz, which
+    /// is exactly the condition that makes the post-resample warp inert.
+    /// The statistic is the median-power frequency, which scales exactly
+    /// with a frequency scaling.
+    #[test]
+    fn formant_pre_makes_the_warp_bite_at_octave_depth() {
+        let rate = 37800u32;
+        let n = (rate as f64 * 1.0) as usize;
+        let mut x = vec![0.0f64; n];
+        let period = rate as f64 / 40.0;
+        for f in [760.0f64, 1900.0, 2800.0] {
+            let r = (-std::f64::consts::PI * 90.0 / rate as f64).exp();
+            let th = 2.0 * std::f64::consts::PI * f / rate as f64;
+            let (a1, a2) = (-2.0 * r * th.cos(), r * r);
+            let (mut y1, mut y2) = (0.0f64, 0.0f64);
+            let mut acc = 0.0f64;
+            for (i, slot) in x.iter_mut().enumerate() {
+                let imp = if (i as f64) >= acc {
+                    acc += period;
+                    1.0
+                } else {
+                    0.0
+                };
+                let y = (1.0 - r) * imp - a1 * y1 - a2 * y2;
+                y2 = y1;
+                y1 = y;
+                *slot += y;
+            }
+        }
+        let peak = x.iter().fold(0.0f64, |m, v| m.max(v.abs())).max(1e-9);
+        let x: Vec<i16> = x.iter().map(|v| (v / peak * 22000.0) as i16).collect();
+
+        /// Frequency below which half the power sits. A pure frequency
+        /// scaling multiplies it by exactly that scale.
+        fn median_hz(pcm: &[i16], rate: u32) -> f64 {
+            let nfft = 4096usize;
+            let win = hann(nfft);
+            let mut acc = vec![0.0f64; nfft / 2 + 1];
+            let mut p = 0usize;
+            while p + nfft <= pcm.len() {
+                let mut re = vec![0.0f64; nfft];
+                let mut im = vec![0.0f64; nfft];
+                for i in 0..nfft {
+                    re[i] = pcm[p + i] as f64 / 32768.0 * win[i];
+                }
+                fft(&mut re, &mut im, false);
+                for (k, a) in acc.iter_mut().enumerate() {
+                    *a += re[k] * re[k] + im[k] * im[k];
+                }
+                p += nfft / 2;
+            }
+            let total: f64 = acc.iter().sum();
+            let mut run = 0.0f64;
+            for (k, v) in acc.iter().enumerate() {
+                run += v;
+                if run >= total * 0.5 {
+                    return k as f64 * rate as f64 / nfft as f64;
+                }
+            }
+            rate as f64 / 2.0
+        }
+
+        let base = median_hz(&x, rate);
+        let run = |pre: bool| {
+            let fx = VoiceFx {
+                pitch: -12.0,
+                formant_st: 9.0,
+                formant_pre: pre,
+                ..VOICE_FX_BASE
+            };
+            median_hz(&process_clip(&x, rate, &fx, None), rate) / base
+        };
+        let want = (-3.0f64 / 12.0).exp2(); // net -3 st => 0.841x
+        let with = run(true);
+        let without = run(false);
+        assert!(
+            (with - want).abs() < 0.12,
+            "formant_pre: envelope scale {with:.3}, wanted {want:.3}"
+        );
+        // the legacy ordering cannot reach it: it stays near the full
+        // -12 st drag (0.5x) that the resample applied on its own
+        assert!(
+            without < 0.65,
+            "post-resample warp unexpectedly reached {without:.3}"
+        );
     }
 
     #[test]
