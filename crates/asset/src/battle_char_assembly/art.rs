@@ -55,10 +55,23 @@ pub struct ArtAnimRecord {
     /// Playback-rate byte (entry `+0x78`, the `FUN_80047430` cursor
     /// multiplier; `1..=7` observed).
     pub rate: u8,
-    /// Entry `+0x84` (a secondary anim-rate field - `FUN_8004AD80` copies
-    /// it into actor `+0x21B`). `0xFF` marks the eight **base-archive**
-    /// records present in every character's bank - see
-    /// [`Self::uses_base_archive`].
+    /// Entry `+0x84`: the clip's **loop count**, not a rate.
+    ///
+    /// `FUN_8004AD80` (`0x8004BDEC`) copies it into both `actor+0x21B`
+    /// and `actor+0x176 << 4`; the tick `FUN_80047430` (`0x80047768`)
+    /// then, once the 12.4 cursor reaches `entry[+0x86] << 4`, subtracts
+    /// `(+0x86 - +0x85) << 4` and decrements `+0x176`, so the stream
+    /// cycles frames `[+0x85, +0x86]` that many times. `+0x21B` is only
+    /// the remaining-count mirror - the cursor multiplier is `+0x21D`.
+    /// (This field was previously documented here as "a secondary
+    /// anim-rate field", which conflicted with
+    /// `docs/formats/monster-animation.md`; the disassembly settles it
+    /// in favour of the loop-count reading. A rate of `0` would freeze
+    /// the clip, and `0` is what every playable art record but five
+    /// carries.)
+    ///
+    /// `0xFF` marks the eight **base-archive** records present in every
+    /// character's bank - see [`Self::uses_base_archive`].
     pub rate_alt: u8,
     /// The embedded entry's facial keyframe tracks (entry `+0x8C` eyes /
     /// `+0x98` mouth = record `+0xB0` / `+0xBC`). `FUN_8004AD80` installs

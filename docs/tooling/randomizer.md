@@ -1398,13 +1398,35 @@ retargeted onto the player rig with the bake's per-part conjugation
 `playerize::bake_frames` - the played pose cancels the bake's `R_align`, so any
 change to how the mesh is oriented is a change the win pose has to
 mirror or every converted pose inherits the difference),
-nearest-frame resampled to each retail entry's frame count, and
 re-encoded with the retail channel-delta codec (encoder
 `winpose::encode_channel_delta`, round-trip self-checked through the
-retail decoder on every apply). Entries 4/5 - the weak-victory actions
-(`0x15`/`0x16`), which the results sequencer **loops** (retail authors
-them as near-static breathing) - hold the clip's final pose instead, so
-the loop reads as a held pose rather than a replaying flourish (see
+retail decoder on every apply).
+
+A win pose is **not** a one-shot stream, and this is what a uniform
+resample gets wrong. Every one of the 24 retail base records carries a
+loop window: entry `+0x84` seeds the hold counter `actor+0x176` and
+`+0x85`/`+0x86` bound the frames the tick replays (`FUN_80047430` -
+once the 12.4 cursor reaches `+0x86 << 4` it subtracts
+`(+0x86 - +0x85) << 4` and decrements the counter, so the stream cycles
+that span up to 255 times before the results sequencer moves on). Retail
+authors those frames as a seamless celebration cycle: measured across all
+24 records, the pose gap over the wrap is 0.1-1.0 model units and
+0.35-2.01 degrees per part, at or below the window's own mean frame step.
+Resampling a one-shot flourish uniformly into that shape points the
+window at the flourish's own tail, so the last second replays for as
+long as the results panel is up - measured on the rebuilt streams, a
+4.0-164.1 unit / 5.4-122.9 degree snap at every wrap.
+
+So the rebuilt stream is **composed**, not uniformly resampled: the
+sibling's flourish plays over the lead-in `[0, +0x85)` and what the
+sibling itself replays after winning fills `[+0x85, +0x86]`,
+phase-mapped so the frame the wrap lands on is the frame it wraps to.
+Lu contributes her own `[16, 24]` sway, Gi his `[30, 30]` hold; Che
+declares no window of his own, so his entries hold on the flourish's
+last frame. The window bytes themselves are never written - `+0x84` is
+the byte `ArtAnimRecord::uses_base_archive` keys on. Entries 4/5 - the
+weak-victory actions (`0x15`/`0x16`), which the sequencer also loops -
+take the idle as a whole cycle (see
 [`audio.md` § Hero victory voices](../subsystems/audio.md#hero-victory-voices---the-tail-clips-of-monstersnd)
 for the action/tier mechanism). Battle **voices** follow as well
 (`delilas_voice`): the party's reaction grunts are SPU one-shots out of
@@ -1416,8 +1438,13 @@ the per-character arts-shout banks (`XA2`/`XA4`/`XA6`) whole; the
 party's channel groups (0-3 / 4-5 / 6-9, anchored on the traced swing
 channels 0/4/6) of the shared short-vocalization bank `XA30.XA` (see `docs/subsystems/battle-action.md` § Battle voice cues);
 the battle-event bark bank `XA21.XA` whole (the sound-command dispatch
-in `FUN_8004E568` resolves the char-keyed victory ids there - Vahn's
-random pair `0x1A2`/`0x1A3` on channels 2/3, siblings on 4/6/7; the
+in `FUN_8004E568` resolves the char-keyed victory ids there. **All eight
+channels are victory-bark arms**, not the subset an earlier reading
+named: `FUN_8004FCC8` decodes a bark id as `a1 = id - 0x100`, channel
+`a1 & 7`, file `a1 >> 3` (slots `1`/`3`/`5` remapping to
+`0x1A`/`0x1B`/`0x1C`), so `0x1A0..=0x1A7` are `XA21` channels 0-7 one
+for one, with `0x19F` = `XA20` channel 7 and `0x1AF` = `XA22` channel 7;
+the `gp+0x9F4` switch at `0x8004FA24` reaches all ten; the
 whole file is short bark reels), plus channel 7 of `XA20.XA` and of
 `XA22.XA` - the jukebox's outlying arms (ids `0x19F`/`0x1AF`; the whole
 `gp+0x9F4`-keyed jukebox is a special-sequence path that ordinary

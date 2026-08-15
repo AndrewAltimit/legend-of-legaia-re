@@ -23,7 +23,9 @@
 //!   from the `XA2`/`XA4`/`XA6` pool, so its fanfare is all it has;
 //! - `XA30` swing-grunt channel (0/4/6): the sibling's swing pick
 //!   ([`swing_vag_pick`], default shortest);
-//! - `XA21` victory barks (channels 2/3, 4/5, 6/7): the longest grunt;
+//! - `XA21` victory barks (channels 2/3, 4/5, 6/7): the sibling's
+//!   captured XA victory line where [`victory_xa_pick`] has one, else
+//!   the longest grunt;
 //! - `XA20`/`XA22` channel 7 (special-sequence barks): the Vahn-slot
 //!   sibling's longest grunt.
 //!
@@ -141,16 +143,51 @@ fn first_utterance(pcm: &[i16], rate: u32) -> Vec<i16> {
     pcm[start..end.min(pcm.len())].to_vec()
 }
 
-/// XA channels carrying a sibling's OWN victory line in retail - found
-/// by ear on the soundboard: the jukebox reel `XA21.XA` channel 6 is
-/// Lu's game-over victory bark (the duel bosses' win lines live in the
-/// same bank as the heroes'). `None` = no line found yet; the victory
-/// voice falls back to the bank sample ([`victory_vag_pick`]).
+/// The bark-reel channel each sibling's victory voice is drawn from.
+///
+/// **No Delilas victory line exists on the disc.** The siblings are
+/// bosses, so their only recorded voice is the combat one-shots of their
+/// `monster.snd` bank - six for Gi, seven for Che, six for Lu, every one
+/// a single-syllable exertion or pain grunt of 0.23-0.54 s. Retail's own
+/// victory-pose voices (the hero clip bands this module writes into,
+/// `0xB8..=0xCB`) are 0.36-1.43 s and often multi-syllable, so a bank
+/// grunt does not sit in that envelope at all: it reads as the character
+/// swinging, which is exactly what it is. Every pick here is therefore a
+/// **borrow** from the battle bark reels, chosen for shape, not a
+/// recovered line - nobody has attributed these channels to a speaker
+/// except by ear.
+///
+/// What IS disc-pinned is that the reels are the victory-bark jukebox.
+/// `FUN_8004FCC8` resolves a bark id by `a1 = id - 0x100`, taking the
+/// **channel** from `a1 & 7` and the **file** from `a1 >> 3` (remapped
+/// `1 -> 0x1A`, `3 -> 0x1B`, `5 -> 0x1C`), so ids `0x1A0..=0x1A7` are
+/// `XA21` channels 0-7 one for one, `0x19F` is `XA20` channel 7 and
+/// `0x1AF` is `XA22` channel 7. The results sequencer's `gp+0x9F4`
+/// switch (`0x8004FA24`) reaches all ten: command `0x4C -> 0x1A0`,
+/// `0xA5 -> 0x1A1`, `0xA9 -> ` a coin flip between `0x1A2`/`0x1A3`,
+/// `0xA2 -> 0x1A4`, `0xA3 -> 0x1A5`, `0xA4 -> 0x1A6`, `0xB4 -> 0x1A7`,
+/// `0x88 -> 0x19F`, `0xA6 -> 0x1AF`. So every `XA21` channel is a
+/// victory-bark arm, not just the five an earlier reading named.
+///
+/// Picks, with the measurement each rests on (utterance length after the
+/// capture cut, and the median autocorrelation F0 of the channel's
+/// loudest window):
+///
+/// - **Lu** - channel 6, 0.29 s, F0 300 Hz. By ear, and shipping.
+/// - **Gi** - channel 7, 1.20 s, F0 143 Hz: the lowest-pitched of the
+///   eight arms, which is the register the biggest brother wants, and a
+///   length inside the retail victory envelope where his own bank's best
+///   (0.54 s at 17 kHz) is a bare effort grunt. Distinct from Lu's
+///   channel by more than an octave, so the two do not share a voice.
+/// - **Che** - none yet; she falls back to her own bank
+///   ([`victory_vag_pick`]), whose samples run to 1.15 s and so sit
+///   closer to the envelope than Gi's did.
 fn victory_xa_pick(sibling: crate::delilas_party::Sibling) -> Option<(&'static str, u8)> {
     use crate::delilas_party::Sibling;
     match sibling {
         Sibling::Lu => Some(("XA/XA21.XA", 6)),
-        Sibling::Gi | Sibling::Che => None,
+        Sibling::Gi => Some(("XA/XA21.XA", 7)),
+        Sibling::Che => None,
     }
 }
 
@@ -295,14 +332,17 @@ struct VictoryVoice {
     note: u8,
 }
 
-/// The vag id (1-based, within the sibling's `monster.snd` bank) of each
-/// sibling's victory voice line, picked by ear from the tone-rate-correct
-/// audition set. Lu's tag-`0x22` victory entry fires sound cue `1` and her
-/// bank keys vags 1-2 as the 44100 Hz bark family (the "humph" heard when
-/// the Delilas win their own retail fights - the plasma-strike-tail
-/// sibling take); Gi's victory cue byte is `0` (silent) and Che carries no
-/// tag-`0x22` entry at all, so theirs are the most victory-like lines from
-/// their voice pools.
+/// The vag id (1-based, within the sibling's `monster.snd` bank) each
+/// sibling falls back to when [`victory_xa_pick`] has no channel for
+/// them - today Che alone.
+///
+/// Picked by ear off the tone-rate-correct audition set. It is **not**
+/// derived from the animation entry's `+0x87` byte, whatever an earlier
+/// note here said: that byte's only consumer is `FUN_8004E13C`
+/// (`0x8004BE18`), which writes `gp[0xA0C]+0x243` and a coin flip at
+/// `+0x26D` and never touches the sound API, so it does not name a vag
+/// and cannot be read as a per-action voice cue. Nothing on the disc
+/// currently attributes a bank vag to the win pose.
 fn victory_vag_pick(sibling: crate::delilas_party::Sibling) -> usize {
     use crate::delilas_party::Sibling;
     match sibling {
