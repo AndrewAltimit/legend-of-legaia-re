@@ -45,6 +45,22 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
              verified-dead SCUS regions and are mutually exclusive; enable only one"
         );
     }
+    // --show-super-arts takes the same arena (its three routines) plus the
+    // rodata gap (the name blob), so it is a hard conflict with all three of
+    // the arena features - including the Delilas Challenge, which is never
+    // silently dropped in its favour.
+    for (other, flag) in [
+        (arts_ap, "--arts-ap-grant / --arts-ap-cost"),
+        (args.shiny_seru, "--shiny-seru"),
+        (args.delilas_challenge, "--delilas-challenge"),
+    ] {
+        if args.show_super_arts && other {
+            bail!(
+                "--show-super-arts and {flag} both inject into the same verified-dead SCUS \
+                 regions and are mutually exclusive; enable only one"
+            );
+        }
+    }
 
     let original = load_image(&args.input)?;
     check_usa_disc(&original, args.allow_region_mismatch, "randomize")?;
@@ -534,6 +550,23 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             };
             manifest.push(format!("{key} {who}{combo_s} = {}", spec.mode.amount()));
         }
+    }
+
+    // Show Super Arts: the in-battle Tactical-Arts list gains each character's
+    // five Super Arts (three detours into the SCUS list renderer + a name blob
+    // in dead space, and a replaced list pager in PROT 0898).
+    if args.show_super_arts {
+        let report = apply::inject_super_art_list(&mut patcher)?;
+        println!(
+            "show-super-arts: {} Super Arts added to the in-battle move list \
+             (routines at {:#x}, names at {:#x})",
+            report.names.len(),
+            report.count_va,
+            report.blob_va
+        );
+        manifest.push("show_super_arts = true".to_string());
+    } else {
+        manifest.push("show_super_arts = false".to_string());
     }
 
     // Place renames: the SCUS landmark cell, the world-map label records, and

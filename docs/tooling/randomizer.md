@@ -88,6 +88,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Arts button combos](#arts-button-combos)
   - [Arts damage power](#arts-damage-power)
   - [Super Art damage power](#super-art-damage-power)
+  - [Show Super Arts on the in-battle move list](#show-super-arts-on-the-in-battle-move-list)
   - [Arts AP override](#arts-ap-override)
   - [Spirit AP](#spirit-ap)
   - [Enemy-damage AP](#enemy-damage-ap)
@@ -216,6 +217,7 @@ legaia-patcher randomize --input DISC.bin --earth-egg-price 25000               
 legaia-patcher arts      --input DISC.bin                                                 # read-only: list every art's combo + damage-power tiers
 legaia-patcher randomize --input DISC.bin --seed pow --arts-power RDLDL=0x0C              # power Vahn's Burning Flare down to tier 0x0C
 legaia-patcher randomize --input DISC.bin --super-art-power "Tri-Somersault"=0x1A       # power Vahn's Tri-Somersault Super Art up to tier 0x1A
+legaia-patcher randomize --input DISC.bin --show-super-arts                             # list each character's five Super Arts on the in-battle Triangle menu
 legaia-patcher randomize --input DISC.bin --arts-ap-grant Vahn:RDLDL=10                   # Vahn's Burning Flare GRANTS 10 AP instead of costing it
 legaia-patcher randomize --input DISC.bin --arts-ap-cost Vahn:RDLDL=5                     # ... or costs a flat 5 AP instead of the computed 50
 legaia-patcher randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
@@ -300,6 +302,7 @@ unless asked for:
 | `--earth-egg-price VALUE` | set the casino-coin threshold to obtain the Earth Egg (Sol Tower Prize Counter; retail 100000), gate + debit together | single value | [Earth Egg coin threshold](#earth-egg-coin-threshold) |
 | `--arts-power COMBO=VALUE` | rebalance a Tactical Art's per-strike damage-power bytes, targeted by input combo (`RDLDL=0x16`); `VALUE` is a power tier `0x0C..=0x1F` or `0` to disable | repeatable / comma-separated | [Arts damage power](#arts-damage-power) |
 | `--super-art-power NAME=VALUE` | the same rebalance for a **Super Art**, targeted by name (`"Tri-Somersault"=0x1A`); Super Arts carry no combo, no arts-table row and no AP cost of their own, so name is their only key | repeatable / comma-separated | [Super Art damage power](#super-art-damage-power) |
+| `--show-super-arts` | add each character's five Super Arts to the in-battle Tactical-Arts list, which retail never draws. Shown unconditionally - no Super Art has a learned bit. Mutually exclusive with `--shiny-seru`, `--arts-ap-grant` / `--arts-ap-cost` and `--delilas-challenge` | flag | [Show Super Arts](#show-super-arts-on-the-in-battle-move-list) |
 | `--arts-ap-grant [CHAR:]COMBO=AMOUNT` | make a Tactical Art **grant** `AMOUNT` AP (Spirit, clamped at 100) instead of costing it, admitting it at any AP level; a code hook into the party arts queue-builder. Keyed per (character, arts row). Mutually exclusive with `--shiny-seru` | repeatable / comma-separated | [Arts AP override](#arts-ap-override) |
 | `--arts-ap-cost [CHAR:]COMBO=AMOUNT` | set what a Tactical Art **costs** in AP (`1..=100`), replacing retail's computed cost. Same hook, same keying, same exclusivity; the art's menu AP number is rewritten to match | repeatable / comma-separated | [Arts AP override](#arts-ap-override) |
 | `--spirit-ap AP` | set how much AP the Spirit command charges into the battle gauge (retail 32): `0` = defence boost only, `100` = one press fills the gauge, negative = Spirit drains the gauge | single value -100..=100 | [Spirit AP](#spirit-ap) |
@@ -1992,6 +1995,77 @@ constant-to-row mapping is documented at
 `legaia-patcher arts` now lists each character's Super Arts under its regular
 arts, with the finisher constant, the current power tiers, and the chain of named
 arts that triggers it.
+
+### Show Super Arts on the in-battle move list
+
+`--show-super-arts` adds each character's five Super Arts to the Tactical-Arts
+list the Triangle button opens in battle. Retail lists them nowhere: they behave
+like hidden arts and stay invisible even after you have performed one.
+
+**"Show", not "learned".** No Super Art has a learned bit, and retail
+structurally cannot store one - the per-character id list at `+0x74E..+0x75D`
+holds regular-art ids only, and the SCUS arts-name table `DAT_80075EC4` has 45
+records (fifteen regular arts per character) with no row for a Super Art. So the
+toggle shows all five of the acting character's Super Arts unconditionally.
+Gating them on the chain arts all being present would need a chain table plus a
+per-row scan, which does not fit the dead space this uses.
+
+**What it patches.** The list renderer is `FUN_80034358` (`SCUS_942.54`, one
+caller), a bare `0..count` walk: the learned-art count bounds the loop, each
+row's id is read from the character record, and the row is drawn only if a linear
+scan of `DAT_80075EC4` finds a record whose `+0` character and `+1` id both
+match - otherwise the row is silently consumed. Three same-size detours turn that
+into a list with five more rows:
+
+| Site | VA | Stock word | Role |
+|---|---|---|---|
+| A count | `0x800343C4` | `lbu v0,0x74d(v0)` | return `count + 5` |
+| B id | `0x80034450` | `lbu s2,0x74e(v0)` | synthesise id `0x40 + k` for the added rows |
+| C miss-draw | `0x8003474C` | `addiu s7,s7,1` | draw the Super Art's name on the scan miss |
+| D pager | `0x801D3748` (PROT 0898) | `addiu sp,sp,-0x18` | page `0/5/10/15` instead of stopping at `10` |
+
+Rows per page is the drawable height over the row pitch, `0x90 / 0x1C` = 5, so
+fifteen learned arts plus five Super Arts is exactly four pages. (A) and (B) add
+their rows only for characters `0..=2`; Terra has no arts-name-table rows at all
+and keeps retail's empty list rather than gaining five blank ones. The synthetic
+id base `0x40` sits far above the retail id space (`0x00..=0x10`), and the
+planner re-reads the disc's own table and refuses if any record has landed in
+`0x40..0x45`.
+
+(D) is a **replacement**, not a detour. `FUN_801D3748` is an 81-instruction leaf
+with exactly one caller and no reference to its interior from outside, so the
+whole body is rewritten in place in the overlay and costs no dead space. Retail
+steps the page offset `0 -> 5 -> 10` and then closes the list; the replacement
+steps while another page exists.
+
+**Why the names are carried rather than chased.** The runtime chase is real -
+`0x8004B6FC..0x8004B718` walks `DAT_801C9360[slot]` to the art-block pointer -
+but a `+4` in that chain, plus a row origin that came from a heuristic
+enumeration base, leaves the runtime row index unmeasured. Carrying the fifteen
+names as a NUL-terminated blob plus a 15-byte offset table costs about 220 bytes
+of dead space and removes both that unknown and the actor-slot to record-index
+mapping. Art names are plain ASCII drawn through `FUN_80036888`, so the carried
+blob renders identically to a retail row's.
+
+**Placement + exclusivity.** The three routines go in the verified-dead arena
+`0x8007AE00` and the blob in the rodata gap `0x80077728` - the same regions
+[Shiny Seru](#shiny-seru), the [arts AP override](#arts-ap-override) and the
+Delilas Challenge contend over, so `--show-super-arts` is **mutually exclusive**
+with all three, enforced in the CLI and the web patcher with an error naming the
+conflicting feature.
+
+**Known cosmetic gap.** The Triangle caption's own page thresholds (`< 6`,
+`< 11`, in `FUN_801D3444`) stay retail, so on the added page the prompt can still
+read "View Hyper Arts list" where it should read "View Next page". The list
+contents are correct; only that one caption string is stale.
+
+Seedless toggle, off by default; no Sony bytes (the fifteen names come from
+`legaia_art::SUPER_ARTS`, the repo's own label table). Module
+[`legaia_patcher::super_art_list`](../../crates/patcher/src/super_art_list.rs);
+disc oracle `crates/patcher/tests/super_art_list_real.rs`. **A disc oracle proves
+only where the bytes land, not in-game behaviour** - a live battle playtest
+(open Triangle, page to the added rows, see five correctly-named Super Arts, and
+no blank rows for Terra) is still required.
 
 ### Arts AP override
 

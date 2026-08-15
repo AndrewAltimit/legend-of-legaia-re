@@ -715,6 +715,20 @@ pub(crate) struct RandomizeArgs {
     /// the Honey as the course's full-clear reward.
     #[arg(long, default_value_t = false)]
     pub(crate) custom_items: bool,
+    /// **Show Super Arts on the in-battle move list**: add each character's
+    /// five Super Arts to the Tactical-Arts list the Triangle button opens in
+    /// battle, which retail never draws at all. Shown unconditionally, not
+    /// gated on having performed one - no Super Art has a learned bit and
+    /// retail has nowhere to store one. Three same-size detours into the SCUS
+    /// list renderer plus routines and a name blob in verified-dead SCUS
+    /// regions, and an in-place replacement of the list pager in PROT 0898 so
+    /// the page offset reaches the added rows (`0/5/10/15`). The Triangle
+    /// caption's own page thresholds stay retail, so on the added page it can
+    /// still read "View Hyper Arts list". **Mutually exclusive with
+    /// `--shiny-seru`, `--arts-ap-grant` / `--arts-ap-cost` and
+    /// `--delilas-challenge`** (same arena bytes).
+    #[arg(long, default_value_t = false)]
+    pub(crate) show_super_arts: bool,
     /// Per-battle percentage chance a capturable enemy is shiny (only with
     /// `--shiny-seru`).
     #[arg(long, default_value_t = legaia_patcher::shiny_seru::DEFAULT_PCT)]

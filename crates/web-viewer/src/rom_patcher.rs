@@ -194,7 +194,13 @@ pub fn resolve_seed(seed: &str) -> String {
 /// list of `name=value` pairs (e.g. `Tri-Somersault=0x1A`), rebalancing a Super
 /// Art's own `record0` power bytes; Super Arts carry no combo, no
 /// arts-name-table row and no AP cost of their own, so name is the only key
-/// they have. `arts_ap_grants` and `arts_ap_costs` are
+/// they have. `show_super_arts` adds each character's five Super Arts to the
+/// Tactical-Arts list the Triangle button opens in battle, which retail never
+/// draws; they are shown unconditionally (no Super Art has a learned bit), and
+/// the Triangle caption's own page thresholds stay retail, so on the added page
+/// it can still read "View Hyper Arts list". Mutually exclusive with
+/// `shiny_seru`, the arts AP override and `delilas_challenge` (same SCUS
+/// regions). `arts_ap_grants` and `arts_ap_costs` are
 /// comma/space-separated lists of `[character:]combo=amount` pairs (e.g.
 /// `Vahn:RDLDL=10`; `amount` 1..=100 AP): a grant makes the art castable at any
 /// AP level and *add* that much, a cost charges exactly that much instead of
@@ -298,6 +304,7 @@ pub fn patch_rom(
     exp_scale: &str,
     seru_catch_rate: &str,
     super_art_powers: &str,
+    show_super_arts: bool,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -334,6 +341,22 @@ pub fn patch_rom(
             "the arts AP override and the Delilas Challenge both inject into the same \
              verified-dead SCUS regions and are mutually exclusive; enable only one",
         ));
+    }
+    // The Super Arts move-list rows take that same arena (three routines) plus
+    // the rodata gap (the name blob), so they are a hard conflict with all
+    // three - the Delilas Challenge included, which is never silently dropped
+    // in their favour.
+    for (other, what) in [
+        (arts_ap, "the arts AP override"),
+        (shiny_seru, "shiny-seru"),
+        (delilas_challenge, "the Delilas Challenge"),
+    ] {
+        if show_super_arts && other {
+            return Err(err(format!(
+                "showing Super Arts on the move list and {what} both inject into the same \
+                 verified-dead SCUS regions and are mutually exclusive; enable only one"
+            )));
+        }
     }
 
     let mut patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
@@ -527,6 +550,20 @@ pub fn patch_rom(
         ));
     } else {
         summary.push_str("shiny-seru: untouched\n");
+    }
+
+    // Show Super Arts: the in-battle Tactical-Arts list gains each character's
+    // five Super Arts (three detours into the SCUS list renderer plus a name
+    // blob in dead space, and a replaced list pager in PROT 0898).
+    if show_super_arts {
+        let rep = apply::inject_super_art_list(&mut patcher)
+            .map_err(|e| err(format!("show-super-arts: {e}")))?;
+        summary.push_str(&format!(
+            "show-super-arts: {} Super Arts added to the in-battle move list\n",
+            rep.names.len()
+        ));
+    } else {
+        summary.push_str("show-super-arts: untouched\n");
     }
 
     // Seru trading: a vendor in shops offers to trade a party member's Seru-magic for

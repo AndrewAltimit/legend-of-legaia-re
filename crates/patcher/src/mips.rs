@@ -70,6 +70,8 @@ pub(crate) const S5: u32 = 21;
 pub(crate) const S6: u32 = 22;
 /// `$s7` - callee-saved register.
 pub(crate) const S7: u32 = 23;
+/// `$s8`/`$fp` - callee-saved register (frame pointer when one is used).
+pub(crate) const S8: u32 = 30;
 /// `$t8` - caller-saved temporary.
 pub(crate) const T8: u32 = 24;
 /// `$t9` - caller-saved temporary.
@@ -191,6 +193,10 @@ pub(crate) const fn sw(rt: u32, rs: u32, off: u16) -> u32 {
 /// `addu rd,rs,rt` - add unsigned (no overflow trap).
 pub(crate) const fn addu(rd: u32, rs: u32, rt: u32) -> u32 {
     (rs << 21) | (rt << 16) | (rd << 11) | 0x21
+}
+/// `and rd,rs,rt` - bitwise AND.
+pub(crate) const fn and(rd: u32, rs: u32, rt: u32) -> u32 {
+    (rs << 21) | (rt << 16) | (rd << 11) | 0x24
 }
 /// `or rd,rs,rt` - bitwise OR.
 pub(crate) const fn or(rd: u32, rs: u32, rt: u32) -> u32 {

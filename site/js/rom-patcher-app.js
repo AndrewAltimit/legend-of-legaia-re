@@ -1489,7 +1489,7 @@ const PRESET_BASE = {
   drops: 'none', encounters: 'none', encounter_scope: 'scene', soloStrong: false, fleeExp: false, chests: 'none',
   shops: 'none', casino: 'none', steals: 'none', arts: 'none', doors: 'none',
   door_coupling: 'coupled', houseDoors: false, equipmentDrops: false, seruTrade: false,
-  enemyAlly: false, shinySeru: false, jewelFix: false, approachFix: false, delilasChallenge: false, customItems: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', superArtPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '',
+  enemyAlly: false, shinySeru: false, showSuperArts: false, jewelFix: false, approachFix: false, delilasChallenge: false, customItems: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', superArtPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '',
   startingItems: 0, doorOfWind: false, incense: false,
   speedChain: false, chickenHeart: false, goodLuckBell: false,
   allWarps: false,
@@ -1584,6 +1584,7 @@ function init() {
   const seruTradeChk = $('rom-seru-trade');
   const enemyAllyChk = $('rom-enemy-ally');
   const shinySeruChk = $('rom-shiny-seru');
+  const showSuperArtsChk = $('rom-show-super-arts');
   const jewelFixChk = $('rom-jewel-fix');
   const approachFixChk = $('rom-approach-fix');
   const delilasChallengeChk = $('rom-delilas-challenge');
@@ -1831,6 +1832,7 @@ function init() {
     seruTradeChk.checked = cfg.seruTrade;
     enemyAllyChk.checked = cfg.enemyAlly;
     shinySeruChk.checked = cfg.shinySeru;
+    showSuperArtsChk.checked = !!cfg.showSuperArts;
     jewelFixChk.checked = cfg.jewelFix;
     approachFixChk.checked = cfg.approachFix;
     delilasChallengeChk.checked = cfg.delilasChallenge;
@@ -1992,6 +1994,7 @@ function init() {
     const seruTrade = seruTradeChk.checked;
     const enemyAlly = enemyAllyChk.checked;
     const shinySeru = shinySeruChk.checked;
+    const showSuperArts = showSuperArtsChk.checked;
     const jewelFix = jewelFixChk.checked;
     const approachFix = approachFixChk.checked;
     const delilasChallenge = delilasChallengeChk.checked;
@@ -2119,7 +2122,7 @@ function init() {
       speedChain === 0 && chickenHeart === 0 && goodLuckBell === 0 && !allWarps &&
       monsterStats === 'none' && movePower === 'none' && elementAffinity === 'none' &&
       spellCost === 'none' && equipBonus === 'none' && !weaponSpecialty &&
-      startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !jewelFix && !approachFix && !delilasChallenge && !customItems &&
+      startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !showSuperArts && !jewelFix && !approachFix && !delilasChallenge && !customItems &&
       !fishingPrice && !renameLocation && !earthEggPrice && !artsPower && !superArtPower &&
       !artsApGrant && !artsApCost &&
       !spiritAp && !damageAp && !enemyStatScale && !expScale && !seruCatchRate
@@ -2130,6 +2133,10 @@ function init() {
     }
     if (shinySeru && (artsApGrant || artsApCost)) {
       setStatus('Shiny Seru and per-art AP overrides cannot be combined (they use the same injected-code arena) - turn one of them off.', 'err');
+      return;
+    }
+    if (showSuperArts && (shinySeru || artsApGrant || artsApCost || delilasChallenge)) {
+      setStatus('Showing Super Arts on the move list cannot be combined with Shiny Seru, per-art AP overrides or the Delilas Challenge (they use the same injected-code arena) - turn one of them off.', 'err');
       return;
     }
     const seed = (seedInput.value || '').trim() || String(Date.now());
@@ -2153,7 +2160,7 @@ function init() {
       let summaryText = '';
       let langReport = null;
       if (baseActive) {
-        const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate, superArtPower);
+        const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate, superArtPower, showSuperArts);
         data = result.data;
         usedSeed = result.seed;
         summaryText = result.summary || '';
