@@ -1668,15 +1668,46 @@ What actually blocks it, in order of severity:
   there needs a detour in the hottest per-actor path in the battle loop.
 
 The cheap part of what the module provides is separable and is what the
-swap ships instead: the camera above, and the effect script. A future
-route for the effects, not yet taken: the module's five part prototypes
-contain **no absolute pointers** (measured over its whole data region), so
-they can be copied verbatim into a resident cave and named by a spare
-`0x801F6324` prototype id, which the art's own effect script can then
-reference - no capture path, no hook. Two things would have to be settled
-first: whether any `0x801F6324` slot is genuinely spare, and whether the
-prototypes' move-VM bytecode names model slots that only a capture-cast
-load installs.
+swap ships instead: the camera above, and the effect script.
+
+The effects go further than borrowing, via a **transplant**
+(`delilas_effects`). A cast module's part prototypes are ordinary
+move-VM records in the same format the `0x801F6324` prototype table
+holds, they contain **no absolute pointers** (measured over each
+module's whole data region), and retail ids 50-60 - the Super Arts'
+own bursts - are the identical shape (`model_sel = -1`, submode 2, the
+same opcode set) and are already reached from a player art's effect
+script. So this is the Super Arts' mechanism pointed at different data,
+not a new one: copy the record into a spare prototype slot and the
+art's one-byte effect id names it.
+
+Six ids are unreferenced, and the argument is structural rather than a
+byte scan. `0x801F6324` is materialised at six `lui` sites, all in PROT
+0898, and every index is a byte lifted straight out of data with **no
+computed index anywhere** - so censusing the carriers closes the set:
+1811 monster action entries over 186 blocks, 286 player action entries,
+all 44 move-power records, all 13 cue groups. Of the six, only `37`,
+`38` and `47` own their record outright; the rest have a free table slot
+aliasing a live record.
+
+**The cave is 88 bytes and that is the entire budget** - the battle
+overlay is packed to the byte. Records 37+38 are contiguous and bounded
+by live id 39; every other inter-record slack in the prototype region is
+2 bytes, and the 530 bytes that look free after id 44 are two burst-arm
+triggers, their 130-byte stager records and three further live records.
+So exactly one sibling gets the transplant - the first hero slot claims
+it - and the other two keep the borrowed cast projectile. Records using
+op `0x20` (an unidentified `gp[0x714]` hook) or naming a `DAT_8007C018`
+mesh are rejected outright, so the worst case for a picked record is a
+differently-coloured burst, never a missing resource.
+
+Safety: the id can only draw a different retail effect (nothing else
+reads 37/38, and 38 is parked on id 0's record so the cave's middle is
+never decoded as a header); a clobbered cave ends at the move VM's own
+`>= 0x47` bound check; and the stager takes no pointer out of record
+data. One knob left for a listener: `0x801F6418[37]` is sound cue 208,
+so the transplant fires that cue - a one-byte edit if it is wrong for
+the move.
 
 Still retail: menu
 portraits, battle HUD faces. Composes with

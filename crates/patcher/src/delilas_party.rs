@@ -505,17 +505,22 @@ pub fn apply_delilas_party(
         // combo + the sibling's own clip as the staged animation + the
         // fanfare duration to cover the soundtrack the fills above
         // wrote).
+        // The transplanted-burst cave holds exactly ONE record (88 bytes
+        // between prototype ids 37 and 39 - the battle overlay is packed
+        // to the byte), so the first hero slot claims it and the other
+        // two keep the borrowed cast projectile.
+        let mut cave_taken = false;
         for (_, rig, slot, who, sibling) in mapping.pairs() {
-            let notes = reskin_signature_art(
-                patcher,
+            let ctx = SignatureCtx {
                 slot,
                 sibling,
                 rig,
-                &retail_players[slot],
-                &archive,
-                &victory_lines,
-            )
-            .with_context(|| format!("reskin the {who}-slot signature art"))?;
+                retail_player: &retail_players[slot],
+                archive: &archive,
+                lines: &victory_lines,
+            };
+            let notes = reskin_signature_art(patcher, &ctx, &mut cave_taken)
+                .with_context(|| format!("reskin the {who}-slot signature art"))?;
             report.notes.extend(notes);
         }
     }
@@ -700,6 +705,20 @@ fn slot_character(slot: usize) -> legaia_art::queue::Character {
     }
 }
 
+/// Everything one hero slot's signature-art reskin reads.
+#[derive(Clone, Copy)]
+struct SignatureCtx<'a> {
+    /// 0 Vahn / 1 Noa / 2 Gala.
+    slot: usize,
+    /// The sibling mapped onto that slot.
+    sibling: Sibling,
+    rig: &'a party_swap::PlayerRig,
+    /// The hero's RETAIL player file, captured before the model loop.
+    retail_player: &'a [u8],
+    archive: &'a [u8],
+    lines: &'a crate::delilas_xa_voice::VictoryLines,
+}
+
 /// Reskin one hero slot's Hyper art as the sibling mapped onto it.
 ///
 /// Four coordinated edits: a same-length name swap in the SCUS
@@ -717,15 +736,19 @@ fn slot_character(slot: usize) -> legaia_art::queue::Character {
 /// fine).
 fn reskin_signature_art(
     patcher: &mut DiscPatcher,
-    slot: usize,
-    sibling: Sibling,
-    rig: &party_swap::PlayerRig,
-    retail_player: &[u8],
-    archive: &[u8],
-    lines: &crate::delilas_xa_voice::VictoryLines,
+    ctx: &SignatureCtx<'_>,
+    cave_taken: &mut bool,
 ) -> Result<Vec<String>> {
     use legaia_art::arts_table;
     use legaia_art::queue::Command;
+    let &SignatureCtx {
+        slot,
+        sibling,
+        rig,
+        retail_player,
+        archive,
+        lines,
+    } = ctx;
     let who = ["Vahn", "Noa", "Gala"][slot];
     let character = slot_character(slot);
     let Some(art) = host_art(slot) else {
@@ -945,7 +968,31 @@ fn reskin_signature_art(
             r.frames
         ));
         offset_edits.extend(retimed_hit_frames(h, r));
-        let (fx, why) = effect_script_edits(h, c, &sibling_clips, r);
+
+        // The real enemy-side burst, when the cave is still free: one of
+        // the signature cast module's own effect records, transplanted
+        // into a spare prototype slot so the art's one-byte effect id can
+        // name it. Non-fatal - without it the borrowed cast projectile
+        // stands.
+        let burst = match crate::delilas_effects::plan(patcher, sibling, *cave_taken) {
+            Ok(Some(p)) => {
+                let note = crate::delilas_effects::apply(patcher, &p)
+                    .context("install the transplanted burst record")?;
+                *cave_taken = true;
+                notes.push(format!("{} burst: {note}", String::from_utf8_lossy(new)));
+                Some(p.effect_id)
+            }
+            Ok(None) => None,
+            Err(e) => {
+                notes.push(format!(
+                    "{} burst: not transplanted ({e:#})",
+                    String::from_utf8_lossy(new)
+                ));
+                None
+            }
+        };
+
+        let (fx, why) = effect_script_edits(h, c, &sibling_clips, r, burst);
         offset_edits.extend(fx);
         notes.push(format!("{} effects: {why}", String::from_utf8_lossy(new)));
 
@@ -1129,11 +1176,20 @@ fn fx_live_count(script: &[u8]) -> usize {
 /// past a gate it has not reached, so nothing spawns and no terminator
 /// arm runs. That leaves the art quiet but honest - the body still
 /// swings and the hits still land, with no borrowed fire.
+///
+/// `burst` is the prototype id of a record transplanted out of the
+/// sibling's own cast module ([`crate::delilas_effects`]) - the genuine
+/// enemy-side spectacle rather than an approximation of it. It replaces
+/// the spawning records' effect id while keeping the donor's frame gates
+/// and offsets, because both spawn paths apply the record's own XYZ. The
+/// gate must stay non-zero: the walker terminates on `record[0] == 0`,
+/// not on the id.
 fn effect_script_edits(
     host: &legaia_asset::battle_char_assembly::ArtAnimRecord,
     clip: &legaia_asset::monster_archive::MonsterAnimation,
     siblings_clips: &[legaia_asset::monster_archive::MonsterAnimation],
     rebuilt: &legaia_asset::party_swap::winpose::RebuiltArtSlot,
+    burst: Option<u8>,
 ) -> (Vec<(usize, u8)>, String) {
     // The clip's own script first; failing that, the sibling's richest
     // other one (their casts spawn the projectile art they own).
@@ -1174,21 +1230,30 @@ fn effect_script_edits(
         };
         edits.push((dst, gate));
         for (k, &b) in rec.iter().enumerate().skip(1) {
-            edits.push((dst + k, b));
+            // A spawning record hands its slot to the transplanted burst;
+            // its own gate and offsets stand, since both spawn paths read
+            // the record's XYZ.
+            let byte = match burst {
+                Some(id) if k == 1 && fx_record_spawns(src, i) => id,
+                _ => b,
+            };
+            edits.push((dst + k, byte));
         }
     }
-    let ids: Vec<String> = (0..FX_RECORDS)
-        .filter(|&i| fx_record_spawns(src, i))
-        .map(|i| format!("0x{:02X}", src[FX_BASE + i * FX_RECORD + 1]))
-        .collect();
-    (
-        edits,
-        format!(
-            "{} spawn(s) {origin} ({})",
-            fx_live_count(src),
-            ids.join(", ")
-        ),
-    )
+    let live = fx_live_count(src);
+    let why = match burst {
+        Some(id) => {
+            format!("{live} spawn(s) of the sibling's own cast-module burst (transplanted id {id})")
+        }
+        None => {
+            let ids: Vec<String> = (0..FX_RECORDS)
+                .filter(|&i| fx_record_spawns(src, i))
+                .map(|i| format!("0x{:02X}", src[FX_BASE + i * FX_RECORD + 1]))
+                .collect();
+            format!("{live} spawn(s) {origin} ({})", ids.join(", "))
+        }
+    };
+    (edits, why)
 }
 
 /// A combo as the game prints it: `L R L R D`.

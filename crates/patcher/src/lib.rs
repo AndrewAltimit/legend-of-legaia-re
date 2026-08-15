@@ -66,6 +66,7 @@ pub mod custom_items;
 pub mod damage_ap;
 pub mod delilas_challenge;
 pub mod delilas_dome;
+pub mod delilas_effects;
 pub mod delilas_party;
 pub mod delilas_voice;
 pub mod delilas_voice_fx;
