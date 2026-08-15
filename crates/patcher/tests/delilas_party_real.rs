@@ -793,6 +793,41 @@ fn every_slot_gets_its_siblings_signature_art() {
             );
         }
 
+        // The battle idle carries the sibling's own combat stance, at
+        // exactly its retail byte length (the stream is inline in a
+        // record[0] whose every later offset would otherwise move), and
+        // anchored so frame 0 still puts the body where the host's rest
+        // pose does - every clip the swap does NOT rebuild (walk,
+        // flinch, block, get-up) still starts from there, so an
+        // un-anchored idle pops the whole body at every transition.
+        {
+            let retail_idle = bca::idle_battle_animation(
+                &retail.read_entry(863 + slot).expect("retail player file"),
+            )
+            .expect("retail idle")
+            .expect("retail has an idle");
+            let new_idle = bca::idle_battle_animation(
+                &patched.read_entry(863 + slot).expect("patched player file"),
+            )
+            .expect("patched idle")
+            .expect("patched has an idle");
+            assert_eq!(
+                (retail_idle.part_count, retail_idle.frame_count),
+                (new_idle.part_count, new_idle.frame_count),
+                "slot {slot}: idle shape moved - the stream is inline, so its length is fixed"
+            );
+            assert_ne!(
+                retail_idle.frames, new_idle.frames,
+                "slot {slot}: idle is byte-identical to retail - the sibling stance did not land"
+            );
+            let (was, now) = (retail_idle.frames[0][0], new_idle.frames[0][0]);
+            assert_eq!(
+                (was.tx, was.ty, was.tz),
+                (now.tx, now.ty, now.tz),
+                "slot {slot}: idle frame 0 moved the torso off the host rest pose"
+            );
+        }
+
         // The attack camera is re-timed to the swing it now films: the
         // arm this art dispatches to must be reachable from exactly one
         // live table slot (or re-timing it would mistune another art),

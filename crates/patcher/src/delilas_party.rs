@@ -1041,10 +1041,43 @@ fn reskin_signature_art(
             offset_edits.push((h.entry_offset + k, 0));
         }
     }
-    if (!char_edits.is_empty() || !offset_edits.is_empty())
-        && let Some((lzs_off, recompressed)) =
-            crate::arts::patch_player_record0_full(&entry, &char_edits, &offset_edits)
-    {
+    // The battle idle rides the SAME record0 write - it is the only
+    // record0 edit that adds bytes, so batching it means one LZS re-fit
+    // instead of two that each have to clear the footprint alone.
+    match winpose::rebuild_idle_stream(retail_player, rig, archive, source_id) {
+        Ok(idle) => {
+            offset_edits.extend(
+                idle.bytes
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &b)| (idle.offset + i, b)),
+            );
+            notes.push(format!(
+                "{who} idle: {}'s own combat stance over {} frames, cycling {:.2}x its authored speed",
+                sibling.display_name(),
+                idle.frames,
+                idle.pace
+            ));
+        }
+        Err(e) => notes.push(format!("{who} idle: stays the host's ({e:#})")),
+    }
+
+    if !char_edits.is_empty() || !offset_edits.is_empty() {
+        // `None` here is indistinguishable from "nothing needed
+        // changing", and the combo needle was proven present above, so
+        // at this point it can only mean the recompressed block missed
+        // its LZS footprint. Failing loudly matters more than usual:
+        // a silent skip would leave the art displaying its new combo in
+        // the menu while still answering to the old one in battle.
+        let (lzs_off, recompressed) =
+            crate::arts::patch_player_record0_full(&entry, &char_edits, &offset_edits).ok_or_else(
+                || {
+                    anyhow::anyhow!(
+                        "{who}'s record0 will not fit its LZS footprint with the \
+                         signature-art and idle edits applied"
+                    )
+                },
+            )?;
         patcher
             .patch_prot_entry(index, lzs_off as u64, &recompressed)
             .context("write player record0 combo matcher + anim rate")?;

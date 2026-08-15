@@ -1118,6 +1118,139 @@ fn assemble_slot(
     Ok(out)
 }
 
+/// One rebuilt battle-idle stream: the packed bytes and where they go in
+/// the player file's decoded `record0`.
+pub struct RebuiltIdle {
+    /// `record0`-image byte offset of the stream body (past the
+    /// `[parts][frames]` head, which is left exactly as retail wrote it).
+    pub offset: usize,
+    /// Packed 9-byte-per-part records, the same length as the bytes they
+    /// replace.
+    pub bytes: Vec<u8>,
+    /// Frames the host idle carries - unchanged, because the length is
+    /// the budget.
+    pub frames: usize,
+    /// Speed multiplier against the sibling's authored cycle: `1.0` is
+    /// its own tempo, `2.0` twice as fast. Always `> 1` in practice - the
+    /// host idles are 8-9 frames against the siblings' 13-35, and the
+    /// rate byte floors at `1` where all three hosts already sit, so a
+    /// stream that has to fit in fewer frames cannot be slowed back down.
+    pub pace: f32,
+}
+
+/// Rebuild a character's battle idle from the mapped sibling's own idle.
+///
+/// This is a **stance** change more than a motion one. Retail authors each
+/// character's combat stance in idle frame 0, and the siblings' stances
+/// suit their own proportions - Che stands wider than Gala's staggered
+/// guard - so a swapped character holding the host's stance reads as the
+/// wrong body wearing the right model.
+///
+/// The stream is rewritten **in place at its exact retail length**: the
+/// player idle is raw packed (`2 + frames * parts * 9`) inline in
+/// `record0`, so keeping the frame and part counts keeps every offset in
+/// the block valid and needs no relocation. The sibling's cycle is
+/// resampled to the host's frame count, which is the whole cost of the
+/// approach: the rate byte is already 1 on all three host idles and
+/// cannot go lower, so a 35-frame sibling cycle resampled to 9 frames
+/// breathes faster. Stance is worth more than tempo here.
+///
+/// The torso translation is re-anchored to the host's own rest. The
+/// retarget rebuilds translations by forward kinematics, so its frame 0
+/// does not land where the host's does, and every clip we do NOT rebuild
+/// (walk, flinch, block, get-up) still starts from the host's rest - an
+/// un-anchored idle would pop the whole body on every transition into and
+/// out of it. Subtracting the constant frame-0 torso delta keeps the
+/// sibling's authored sway while putting it back where the rest of the
+/// skeleton's clips expect the body to be.
+pub fn rebuild_idle_stream(
+    player_file: &[u8],
+    rig: &PlayerRig,
+    archive_entry: &[u8],
+    source_id: u16,
+) -> Result<RebuiltIdle> {
+    let block = battle_char_assembly::decode_record0(player_file)?;
+    let entry_off = u32::from_le_bytes(
+        block
+            .get(0..4)
+            .ok_or_else(|| anyhow::anyhow!("record0 too short for the action table"))?
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let head = entry_off + battle_char_assembly::PLAYER_ANIM_STREAM_OFFSET;
+    let (parts, frames) = match block.get(head..head + 2) {
+        Some([p, f]) if *p > 0 && *f > 0 => (*p as usize, *f as usize),
+        _ => bail!("player idle stream head is empty"),
+    };
+    let body = head + 2;
+    let want = parts * frames * 9;
+    if body + want > block.len() {
+        bail!("player idle stream runs past record0");
+    }
+
+    let src = monster_archive::idle_animation(archive_entry, source_id)?
+        .ok_or_else(|| anyhow::anyhow!("monster id {source_id} has no idle"))?;
+    let mut rows = retarget_clip(
+        &src,
+        rig,
+        player_file,
+        archive_entry,
+        source_id,
+        parts,
+        frames,
+    )?;
+
+    // Re-anchor: the constant torso offset that puts frame 0 back on the
+    // host's rest, applied to every frame so the sway survives.
+    let host_rest = battle_char_assembly::idle_battle_animation(player_file)?
+        .ok_or_else(|| anyhow::anyhow!("player file has no idle"))?
+        .frames
+        .first()
+        .and_then(|f| f.first().copied())
+        .ok_or_else(|| anyhow::anyhow!("player idle is empty"))?;
+    if let Some(first) = rows.first().and_then(|f| f.first()).copied() {
+        let (dx, dy, dz) = (
+            host_rest.tx - first.tx,
+            host_rest.ty - first.ty,
+            host_rest.tz - first.tz,
+        );
+        for row in &mut rows {
+            if let Some(t) = row.first_mut() {
+                t.tx = t.tx.wrapping_add(dx);
+                t.ty = t.ty.wrapping_add(dy);
+                t.tz = t.tz.wrapping_add(dz);
+            }
+        }
+    }
+
+    let mut bytes = Vec::with_capacity(want);
+    for row in &rows {
+        for p in row {
+            bytes.extend_from_slice(&pack_part(p));
+        }
+    }
+    if bytes.len() != want {
+        bail!(
+            "rebuilt idle is {} bytes against the retail {want}",
+            bytes.len()
+        );
+    }
+    let host_rate = block
+        .get(entry_off + monster_archive::ANIM_RATE_OFFSET)
+        .copied()
+        .unwrap_or(1)
+        .max(1) as f32;
+    let src_rate = src.rate.max(1) as f32;
+    Ok(RebuiltIdle {
+        offset: body,
+        bytes,
+        frames,
+        // Duration is `frames / rate`; the multiplier is the ratio the
+        // other way round, so a shorter stream reads as faster.
+        pace: (src.frame_count as f32 / src_rate) / (frames as f32 / host_rate),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -395,7 +395,18 @@ pub fn patch_player_record0_full(
     if changed == 0 {
         return None;
     }
-    let recompressed = legaia_lzs::compress(&decoded);
+    let mut recompressed = legaia_lzs::compress(&decoded);
+    if recompressed.len() > avail {
+        // The greedy encoder overshot the footprint. Retry with the
+        // optimal one before giving up: it is slower but never larger,
+        // and the alternative is this function returning `None` - which
+        // callers cannot tell apart from "nothing needed changing", so
+        // an overflow silently drops EVERY edit in the batch rather than
+        // failing. Edits that grow the block (a rebuilt animation stream
+        // is far less compressible than the one it replaces) sit close
+        // enough to the ceiling for this to matter.
+        recompressed = legaia_lzs::compress_optimal(&decoded);
+    }
     if recompressed.len() > avail {
         return None;
     }

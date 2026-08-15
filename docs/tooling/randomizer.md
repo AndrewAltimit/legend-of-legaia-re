@@ -1629,6 +1629,39 @@ Four coordinated edits per slot (`delilas_party::reskin_signature_art`):
   every gate to `0xFF` - the walker never advances past a gate it has not
   reached, so nothing spawns and no terminator arm runs.
 
+The **battle idle** is rebuilt too, and it is a stance change more than a
+motion one. Retail authors each character's combat stance in idle frame 0,
+and the siblings' stances suit their own proportions - Che stands wider
+than Gala's staggered guard - so a swapped character holding the host's
+stance reads as the wrong body wearing the right model.
+
+The player idle is raw packed (`2 + frames * parts * 9`) **inline in
+`record0`**, not channel-delta like the readef "ME" bodies, so it is
+rewritten at its exact retail length: keeping the frame and part counts
+keeps every later offset in the block valid and needs no relocation. Two
+consequences follow from that budget. The sibling's cycle is resampled to
+the host's 8-9 frames from its own 13-35, and the rate byte floors at `1`
+where all three hosts already sit, so the rebuilt idle cycles 1.3x to 1.9x
+its authored speed and cannot be slowed back down. And the torso
+translation is **re-anchored to the host's rest**: the retarget rebuilds
+translations by forward kinematics, so its frame 0 does not land where the
+host's does, while every clip the swap does not rebuild - walk, flinch,
+block, get-up - still starts from the host's rest. Un-anchored, the whole
+body pops on each transition into and out of idle. Subtracting the
+constant frame-0 torso delta keeps the sibling's authored sway and puts it
+back where the rest of the skeleton's clips expect the body to be.
+
+The idle rides the **same** `record0` write as the signature-art edits,
+because it is the only one of them that adds bytes and batching means one
+LZS re-fit rather than two that must each clear the footprint alone. That
+write is also where `patch_player_record0_full`'s `None` return stops
+being safe to ignore: it means "nothing changed" and "did not fit"
+equally, so an overflow silently drops every edit in the batch - leaving
+the art displaying its new combo in the menu while still answering to the
+old one in battle. It now falls back to `legaia_lzs::compress_optimal`
+before giving up, and the caller treats a `None` it cannot explain as a
+hard error.
+
 The **run-in** stays the host's: it is a separate queue action (constant
 `0x19`, `Starter`) shared by every one of that character's arts, so
 retargeting it would change all of them.
