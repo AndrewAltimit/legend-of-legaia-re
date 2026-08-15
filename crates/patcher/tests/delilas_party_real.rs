@@ -583,4 +583,34 @@ fn arts_voice_modes_shape_the_shout_banks() {
         .read_xa_channel_pcm("XA/XA2.XA", probe)
         .expect("read");
     assert_eq!(adj, adj2, "adjusted mode must be byte-deterministic");
+
+    // The Super / Hyper / Miracle FANFARE bank. A Hyper Art fires no
+    // shout from the pool above, so this cue bed is its only audio -
+    // and the bank once took a quarter-second grunt over a 3-7 second
+    // channel, which is silence for 90%+ of every cue. Coverage, not
+    // mere "differs from retail", is what catches that: a lossy
+    // re-encode of a grunt also differs.
+    let fan_chans = retail.xa_channels("XA/XA1.XA").expect("xa1 channels");
+    for &c in fan_chans.iter().take(8) {
+        let Ok((r, _)) = retail.read_xa_channel_pcm("XA/XA1.XA", c) else {
+            continue;
+        };
+        if !r.iter().any(|&s| s.unsigned_abs() > 1000) {
+            continue; // never voiced in retail
+        }
+        let (a, _) = p_adj
+            .read_xa_channel_pcm("XA/XA1.XA", c)
+            .expect("read patched fanfare");
+        let audible = |p: &[i16]| p.iter().filter(|s| s.unsigned_abs() > 200).count();
+        let (ra, aa) = (audible(&r), audible(&a));
+        assert!(
+            aa * 5 >= ra * 4,
+            "adjusted fanfare channel {c} covers {aa} of retail's {ra} audible samples \
+             - a Hyper Art would play near-silence"
+        );
+        let (o, _) = p_orig
+            .read_xa_channel_pcm("XA/XA1.XA", c)
+            .expect("read original fanfare");
+        assert_eq!(o, r, "original mode must not touch the fanfare bank");
+    }
 }

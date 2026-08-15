@@ -12,8 +12,15 @@
 //!
 //! - arts-shout bank (`XA2`/`XA4`/`XA6`): every channel, cycling the
 //!   sibling's attack-voice pool ([`art_voice_vags`]);
-//! - staged-event banks (`XA1`+`XA27` / `XA3`+`XA28` / `XA5`+`XA29`):
-//!   every channel (item use, Spirit, cut-ins, KO, victory lines);
+//! - fanfare banks (`XA1`+`XA27` / `XA3`+`XA28` / `XA5`+`XA29`): these
+//!   are the Hyper / Super / Miracle cue beds and the Seru-magic
+//!   fanfare streams - 3-7 second stereo music-plus-voice, NOT one-shot
+//!   lines. They follow the arts-voice mode: retail when `Original`,
+//!   silent when `Removed`, and transposed toward the sibling
+//!   (pitch/formant only, see [`crate::delilas_voice_fx::fanfare_fx`])
+//!   when `Adjusted`. Pasting a quarter-second grunt over one is what
+//!   made every Super and Hyper Art silent - a Hyper fires no shout
+//!   from the `XA2`/`XA4`/`XA6` pool, so its fanfare is all it has;
 //! - `XA30` swing-grunt channel (0/4/6): the sibling's swing pick
 //!   ([`swing_vag_pick`], default shortest);
 //! - `XA21` victory barks (channels 2/3, 4/5, 6/7): the longest grunt;
@@ -149,7 +156,7 @@ fn victory_xa_pick(sibling: crate::delilas_party::Sibling) -> Option<(&'static s
 
 /// The sibling's Spirit cue audio, when an XA line beats their own
 /// bank. `None` (all siblings today) = the cast-cue channel falls back
-/// to the sibling's own bark grunt via `voice_cast` - the user found a
+/// to the sibling's own bark grunt from the pool - the user found a
 /// borrowed sting (Lu wearing Noa's Spirit) odder than her own voice.
 fn spirit_xa_pick(sibling: crate::delilas_party::Sibling) -> Option<(&'static str, u8)> {
     use crate::delilas_party::Sibling;
@@ -600,25 +607,38 @@ fn write_grunt(
 /// BEFORE the whole-file mutes wipe them - the `adjusted` arts-voice
 /// mode re-voices exactly this audio.
 pub struct HeroShoutCapture {
+    /// Per-art SHOUT banks (XA2/4/6).
     /// `[hero slot][..] = (channel, mono pcm, sample rate)`.
     pub banks: [Vec<(u8, Vec<i16>, u32)>; 3],
+    /// Hyper / Super / Miracle **fanfare** banks (XA1/3/5). These are
+    /// 3-7 second stereo cue beds, not one-shot voice lines.
+    pub fanfare: [Vec<(u8, Vec<i16>, u32)>; 3],
+    /// Seru-magic fanfare streams (XA27/28/29).
+    pub staged2: [Vec<(u8, Vec<i16>, u32)>; 3],
 }
 
-/// Best-effort capture of the three retail shout banks (a channel that
-/// fails to demux is skipped - it was never voiced).
+/// Best-effort capture of every retail bank the swap overwrites (a
+/// channel that fails to demux is skipped - it was never voiced).
 pub fn capture_hero_shouts(patcher: &DiscPatcher) -> HeroShoutCapture {
-    let mut banks: [Vec<(u8, Vec<i16>, u32)>; 3] = Default::default();
-    for (slot, file) in ["XA/XA2.XA", "XA/XA4.XA", "XA/XA6.XA"].iter().enumerate() {
-        let Ok(chans) = patcher.xa_channels(file) else {
-            continue;
-        };
-        for chan in chans {
-            if let Ok((pcm, rate)) = patcher.read_xa_channel_pcm(file, chan) {
-                banks[slot].push((chan, pcm, rate));
+    let grab = |files: [&str; 3]| -> [Vec<(u8, Vec<i16>, u32)>; 3] {
+        let mut out: [Vec<(u8, Vec<i16>, u32)>; 3] = Default::default();
+        for (slot, file) in files.iter().enumerate() {
+            let Ok(chans) = patcher.xa_channels(file) else {
+                continue;
+            };
+            for chan in chans {
+                if let Ok((pcm, rate)) = patcher.read_xa_channel_pcm(file, chan) {
+                    out[slot].push((chan, pcm, rate));
+                }
             }
         }
+        out
+    };
+    HeroShoutCapture {
+        banks: grab(["XA/XA2.XA", "XA/XA4.XA", "XA/XA6.XA"]),
+        fanfare: grab(["XA/XA1.XA", "XA/XA3.XA", "XA/XA5.XA"]),
+        staged2: grab(["XA/XA27.XA", "XA/XA28.XA", "XA/XA29.XA"]),
     }
-    HeroShoutCapture { banks }
 }
 
 /// Fill every muted hero voice slot with the mapped siblings' grunts.
@@ -685,23 +705,6 @@ pub fn fill_hero_xa_voices(
             .unwrap_or(shortest);
         let mut filled = 0usize;
 
-        // Voice casting. When the sibling's samples are ear-labeled
-        // ([`voice_cast`]), the channels the battle engine is KNOWN to
-        // key get role-matched samples instead of a blind cycle
-        // (`docs/subsystems/battle-action.md` § battle voice cues):
-        //
-        // - arts-shout bank: live in-battle arts observe channels
-        //   14/15 (the `(0,0)` pool variant's members) - those carry
-        //   the LINE (her long attack call);
-        // - fanfare/staged bank 1 (`XA1`-family): channel 1 is the
-        //   Super/Miracle cue -> the line; channels 2..=7 are the
-        //   Hyper fanfare pairs {2,5} {3,6} {4,7} -> each pair carries
-        //   one consistent voice (line / effort / effort); channel 0
-        //   (id 0x100, the cast-cue dispatcher's band - Spirit lives
-        //   here) -> a composed bark, the focus "hmph";
-        // - staged bank 2: minor-event lines (cut-ins, KO, item) ->
-        //   barks + efforts cycled, never the big line.
-        let cast = voice_cast(*sibling);
         // Arts-shout bank: what plays when the character calls an art.
         match arts_voice {
             crate::delilas_voice_fx::ArtsVoiceMode::Original => {
@@ -755,71 +758,79 @@ pub fn fill_hero_xa_voices(
             pcm: pcm.clone(),
             rate: *rate,
         });
-        let fanfare_pick = |i: usize, chan: u8| -> &Grunt {
-            // Spirit fires through the cast-cue band (channel 0); the
-            // sibling's ear-picked Spirit sting lands there.
-            if chan == 0
-                && let Some(g) = &spirit_line
-            {
-                return g;
+        // XA1/3/5 are the Hyper / Super / Miracle FANFARE banks and
+        // XA27/28/29 the Seru-magic fanfare streams: 3-7 second stereo
+        // CUE BEDS, not one-shot voice lines (`legaia_art::arts_voice`
+        // warns that mis-ID by name). Pasting a quarter-second monster
+        // grunt over one leaves 90%+ of the cue window in hard silence -
+        // which is exactly what made every Super and Hyper Art silent,
+        // and a Hyper has no other audio at all (it fires no shout from
+        // the XA2/4/6 pool). So these banks follow the same three-way
+        // contract the shout banks do.
+        match arts_voice {
+            crate::delilas_voice_fx::ArtsVoiceMode::Original => {
+                notes.push(format!(
+                    "{}: Super/Hyper fanfare left retail (original mode)",
+                    ["Vahn", "Noa", "Gala"][slot]
+                ));
             }
-            // The reskinned "Plasma Strike" Hyper (Burning Flare's pair
-            // {4, 7}) carries the sibling's special-attack soundtrack.
-            if (chan == 4 || chan == 7)
-                && let Some(g) = &special_line
-            {
-                return g;
+            crate::delilas_voice_fx::ArtsVoiceMode::Removed => {
+                notes.push(format!(
+                    "{}: Super/Hyper fanfare removed (banks stay silent)",
+                    ["Vahn", "Noa", "Gala"][slot]
+                ));
             }
-            if let Some(c) = &cast {
-                let vag = match chan {
-                    0 => Some(c.barks[0]),
-                    1 => Some(c.line),
-                    2..=7 => Some([c.line, c.efforts[0], c.efforts[1]][(chan as usize - 2) % 3]),
-                    _ => None,
-                };
-                if let Some(g) = vag.and_then(by_vag) {
-                    return g;
+            crate::delilas_voice_fx::ArtsVoiceMode::Adjusted => {
+                // A cue bed is music with a voice over it, so it gets
+                // transposed - pitch and formant only - rather than run
+                // through the timbre/carrier/graft stages that shape a
+                // bare shout into someone else's voice.
+                let fx = crate::delilas_voice_fx::fanfare_fx(slot, *sibling);
+                let mut done = 0usize;
+                for (bank, captured) in [
+                    (staged_banks[slot][0], &shouts.fanfare[slot]),
+                    (staged_banks[slot][1], &shouts.staged2[slot]),
+                ] {
+                    for (chan, pcm, rate) in captured {
+                        // The ear-picked one-shots keep their channels:
+                        // Spirit fires through the cast-cue band, and the
+                        // reskinned special's soundtrack owns the pair
+                        // {4, 7} of the fanfare bank.
+                        let picked = if bank != staged_banks[slot][0] {
+                            None
+                        } else if *chan == 0 {
+                            spirit_line.as_ref()
+                        } else if *chan == 4 || *chan == 7 {
+                            special_line.as_ref()
+                        } else {
+                            None
+                        };
+                        if let Some(g) = picked {
+                            if write_grunt(patcher, bank, *chan, g, &mut notes)? {
+                                filled += 1;
+                            }
+                            continue;
+                        }
+                        let out = crate::delilas_voice_fx::process_channel(pcm, *rate, &fx, None);
+                        if out.iter().all(|&s| s == 0) {
+                            continue;
+                        }
+                        let g = Grunt {
+                            vag: 0,
+                            pcm: out,
+                            rate: *rate,
+                        };
+                        if write_grunt(patcher, bank, *chan, &g, &mut notes)? {
+                            done += 1;
+                            filled += 1;
+                        }
+                    }
                 }
-            }
-            pool[i % pool.len()]
-        };
-        for (i, chan) in patcher
-            .xa_channels(staged_banks[slot][0])?
-            .into_iter()
-            .enumerate()
-        {
-            if write_grunt(
-                patcher,
-                staged_banks[slot][0],
-                chan,
-                fanfare_pick(i, chan),
-                &mut notes,
-            )? {
-                filled += 1;
-            }
-        }
-        let staged2_pick = |i: usize| -> &Grunt {
-            if let Some(c) = &cast {
-                let ids = [c.barks[0], c.barks[1], c.efforts[0], c.efforts[1]];
-                if let Some(g) = by_vag(ids[i % ids.len()]) {
-                    return g;
-                }
-            }
-            pool[i % pool.len()]
-        };
-        for (i, chan) in patcher
-            .xa_channels(staged_banks[slot][1])?
-            .into_iter()
-            .enumerate()
-        {
-            if write_grunt(
-                patcher,
-                staged_banks[slot][1],
-                chan,
-                staged2_pick(i),
-                &mut notes,
-            )? {
-                filled += 1;
+                notes.push(format!(
+                    "{}: {done} Super/Hyper fanfare channels re-pitched toward {} (adjusted mode)",
+                    ["Vahn", "Noa", "Gala"][slot],
+                    sibling.display_name()
+                ));
             }
         }
         // XA30 short vocals: the anchor channel takes the swing grunt
@@ -897,30 +908,6 @@ fn swing_vag_pick(sibling: crate::delilas_party::Sibling) -> Option<usize> {
     use crate::delilas_party::Sibling;
     match sibling {
         Sibling::Lu => Some(4),
-        Sibling::Gi | Sibling::Che => None,
-    }
-}
-
-/// Ear-labeled voice roles (bank vag ids) driving the semantic channel
-/// casting in [`fill_hero_xa_voices`]. `line` = the long attack call
-/// (arts / Super / Hyper material), `barks` = the short composed
-/// 44100 Hz vocalizations (Spirit focus, minor events), `efforts` =
-/// the mid-length attack efforts. `None` = no labels yet; those
-/// siblings keep the generic cycle.
-struct VoiceCast {
-    line: usize,
-    barks: [usize; 2],
-    efforts: [usize; 2],
-}
-
-fn voice_cast(sibling: crate::delilas_party::Sibling) -> Option<VoiceCast> {
-    use crate::delilas_party::Sibling;
-    match sibling {
-        Sibling::Lu => Some(VoiceCast {
-            line: 3,
-            barks: [1, 2],
-            efforts: [4, 5],
-        }),
         Sibling::Gi | Sibling::Che => None,
     }
 }

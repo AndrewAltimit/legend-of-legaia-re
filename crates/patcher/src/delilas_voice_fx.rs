@@ -199,6 +199,22 @@ pub fn voice_map(hero: usize, sibling: Sibling) -> &'static VoiceFx {
     &DEFAULT_VOICE_MAP[hero.min(2)][s]
 }
 
+/// The cell to use on a Super / Hyper / Miracle **fanfare** channel.
+///
+/// Those banks are 3-7 second stereo cue beds - a jingle with the hero's
+/// voice mixed into it - not the bare shouts the tuned map was voiced
+/// against. Timbre transfer, the carrier transplant and the attack graft
+/// all assume a lone voice and smear a music bed, so the fanfare keeps
+/// only the two knobs that transpose: pitch and formant.
+pub fn fanfare_fx(hero: usize, sibling: Sibling) -> VoiceFx {
+    let tuned = voice_map(hero, sibling);
+    VoiceFx {
+        pitch: tuned.pitch,
+        formant_st: tuned.formant_st,
+        ..VOICE_FX_BASE
+    }
+}
+
 // ---------------------------------------------------------------- DSP
 
 const SPEC_N: usize = 1024;

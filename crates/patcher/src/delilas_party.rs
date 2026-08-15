@@ -354,6 +354,8 @@ pub fn apply_delilas_party(
         } else {
             crate::delilas_xa_voice::HeroShoutCapture {
                 banks: Default::default(),
+                fanfare: Default::default(),
+                staged2: Default::default(),
             }
         };
 
@@ -422,28 +424,35 @@ pub fn apply_delilas_party(
                 .push(format!("party: {file} bark channel 7 muted ({n} sectors)"));
         }
 
-        // The FOURTH voice tier: the staged-event voice-id space (id >=
-        // 0x100 through `FUN_8004FCC8`; the anim materialiser
-        // `FUN_8004AD80` picks the id from an inline char-keyed table -
-        // Vahn 0x101, Noa 0x111, Gala 0x121). Sixteen ids per hero,
-        // split across two 8-channel banks each: Vahn = XA1 + XA27,
-        // Noa = XA3 + XA28, Gala = XA5 + XA29. These fire on item use,
-        // Spirit, cut-ins, KO and victory - whole files, all channels
-        // hero-owned, so they mute whole.
-        for (who, file) in [
-            ("Vahn", "XA/XA1.XA"),
-            ("Vahn", "XA/XA27.XA"),
-            ("Noa", "XA/XA3.XA"),
-            ("Noa", "XA/XA28.XA"),
-            ("Gala", "XA/XA5.XA"),
-            ("Gala", "XA/XA29.XA"),
-        ] {
-            let n = patcher
-                .silence_xa_file(file)
-                .with_context(|| format!("mute {who} staged-event voice bank {file}"))?;
-            report
-                .notes
-                .push(format!("{who}: {file} voice bank muted ({n} sectors)"));
+        // The FOURTH voice tier: the staged-event id space (id >= 0x100
+        // through `FUN_8004FCC8`; the anim materialiser `FUN_8004AD80`
+        // picks the id from an inline char-keyed table - Vahn 0x101,
+        // Noa 0x111, Gala 0x121). Two 8-channel banks per hero:
+        // Vahn = XA1 + XA27, Noa = XA3 + XA28, Gala = XA5 + XA29.
+        //
+        // These are NOT bare voice lines: XA1/3/5 are the Hyper / Super
+        // / Miracle **fanfare** banks and XA27/28/29 the Seru-magic
+        // fanfare streams - stereo cue beds carrying the hero's voice
+        // over a jingle. They follow `arts_voice` for the same reason
+        // the shout banks do, and `Original` leaves them alone entirely:
+        // a Hyper Art fires no shout from the XA2/4/6 pool, so muting
+        // its fanfare is the whole difference between a cue and silence.
+        if arts_voice != crate::delilas_voice_fx::ArtsVoiceMode::Original {
+            for (who, file) in [
+                ("Vahn", "XA/XA1.XA"),
+                ("Vahn", "XA/XA27.XA"),
+                ("Noa", "XA/XA3.XA"),
+                ("Noa", "XA/XA28.XA"),
+                ("Gala", "XA/XA5.XA"),
+                ("Gala", "XA/XA29.XA"),
+            ] {
+                let n = patcher
+                    .silence_xa_file(file)
+                    .with_context(|| format!("mute {who} staged-event bank {file}"))?;
+                report
+                    .notes
+                    .push(format!("{who}: {file} fanfare bank muted ({n} sectors)"));
+            }
         }
 
         // Then give the silenced slots the siblings' REAL voices: their
@@ -662,12 +671,16 @@ fn reskin_plasma_strike(
     }
 
     // 4. Fanfare duration: the cue's read span must cover the excerpt
-    // the fills wrote into XA1 ch 4/7 or the audio cuts early (dur =
-    // entry * 0.6 sectors, 75 sectors/s -> entry = ceil(secs * 125)).
+    // the fills wrote into XA1 ch 4/7 or the audio cuts early. Measured
+    // against retail (every id's table entry vs its channel's own
+    // length, across 24 ids): the entry is CENTISECONDS of that
+    // channel's audio - `entry ~= secs * 100`, so `dur = entry * 0.6`
+    // is a 60 Hz tick budget, not the 75-sectors/s physical span an
+    // earlier reading assumed (which over-ran every write by 25%).
     if let Some(secs) = lines.special_secs(0) {
         let toff = legaia_art::hyper_fanfare::dur_table_file_offset(&scus)
             .ok_or_else(|| anyhow::anyhow!("fanfare duration table not found in SCUS"))?;
-        let entry_val = ((secs * 125.0).ceil() as u16).to_le_bytes();
+        let entry_val = ((secs * 100.0).ceil() as u16).to_le_bytes();
         for n in [4usize, 7] {
             patcher
                 .patch_named_file(crate::arts::SCUS_NAME, (toff + n * 2) as u64, &entry_val)

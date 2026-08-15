@@ -295,7 +295,7 @@ unless asked for:
 | `--approach-softlock-fix` | a monster whose approach animation dies mid-walk is re-staged and resumes walking instead of parking the battle forever (the "endless camera orbit") | - | [Approach-softlock fix](#approach-softlock-fix) |
 | `--delilas-challenge` | a fourth Muscle Dome enrollment option: a new 2-round arena course (Che & Lu double-team, then Gi; a clear pays 5000 coins + a Honey); unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
 | `--delilas-party V,N,G` | play as the Delilas siblings: the party wears Gi / Lu / Che battle models (any permutation over Vahn, Noa, Gala) while the ravine duels + dome Master legs field Vahn / Noa / Gala models | - | [Delilas party swap](#delilas-party-swap) |
-| `--delilas-arts-voice MODE` | with the swap: what the arts shout banks carry - `adjusted` (default; hero shouts re-voiced toward the siblings), `original`, `removed` | `adjusted` | [Delilas party swap](#delilas-party-swap) |
+| `--delilas-arts-voice MODE` | with the swap: what the arts shout AND Super/Hyper fanfare banks carry - `adjusted` (default; re-voiced toward the siblings), `original`, `removed` | `adjusted` | [Delilas party swap](#delilas-party-swap) |
 | `--custom-items` | inject three brand-new items (Nature's Elixir / Ra-Seru Tear / Fury Bloom) into cut item slots; `random` drop/chest/steal modes add them to the fill pool, and with `--delilas-challenge` they replace the Honey clear reward | - | [Custom items](#completion-reward---a-honey-or-three-custom-items) |
 | `--fishing-price ITEM=POINTS` | set the fishing-exchange point cost of a prize (e.g. the Buma Water Egg); the price also gates when the prize appears | repeatable / comma-separated | [Fishing prize prices](#fishing-prize-prices) |
 | `--rename-location INDEX=NAME` | rename a world-map location (save / load / pause + quick-travel menu), e.g. an element cave to match a re-elemented party | repeatable | [Location names](#location-names) |
@@ -1418,9 +1418,20 @@ NB the old reading of XA3/XA5 as "stereo Miracle fanfares" is falsified
 - those captured fires were the heroes' voice lines through the same
 dispatcher.
 
-What the **Tactical Arts shout banks** (`XA2`/`XA4`/`XA6`) carry is a
-separate three-way pick, `--delilas-arts-voice MODE` (browser: the
-"Arts voices" sub-option under the swap):
+What the **Tactical Arts voice banks** carry is a separate three-way
+pick, `--delilas-arts-voice MODE` (browser: the "Arts voices"
+sub-option under the swap). It governs two bank families: the per-art
+**shout** banks (`XA2`/`XA4`/`XA6`) and the Hyper / Super / Miracle
+**fanfare** banks (`XA1`/`XA3`/`XA5` plus the Seru-magic fanfare
+streams `XA27`/`XA28`/`XA29`).
+
+The fanfare banks are the reason a Super or Hyper Art can go silent.
+They are not one-shot voice lines but 3-7 second stereo cue beds
+carrying the hero's voice over a jingle, and a Hyper Art fires **no**
+shout from the `XA2`/`XA4`/`XA6` pool at all - the fanfare is its only
+audio. Filling one with a quarter-second grunt therefore leaves the
+cue silent for over 90% of its window. They follow the same three-way
+contract as the shouts:
 
 - `adjusted` (default) - the retail hero shouts are captured before the
   mute and **re-voiced toward each mapped sibling** through the tuned
@@ -1430,8 +1441,12 @@ separate three-way pick, `--delilas-arts-voice MODE` (browser: the
   cepstral spectral pass doing the formant warp and the timbre
   transfer toward the sibling's longest grunt, pitch-contour bend,
   and an RBJ biquad tone chain; each voiced clip is processed alone
-  and laid back at its original start so arts cue timing holds.
-- `original` - the shout banks are left retail (never muted): Vahn /
+  and laid back at its original start so arts cue timing holds. A
+  fanfare channel takes a reduced cell (`fanfare_fx`: pitch and
+  formant only) - the timbre, carrier and attack-graft stages assume a
+  lone voice and smear a music bed - and keeps its full retail length,
+  so the cue plays end to end.
+- `original` - both bank families are left retail (never muted): Vahn /
   Noa / Gala call their own arts out of the siblings' bodies.
 - `removed` - the banks stay silent; the spliced SPU grunts remain the
   audible attack voice.
