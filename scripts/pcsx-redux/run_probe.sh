@@ -285,6 +285,18 @@ if [[ "$ISOLATE_CONFIG" == "1" ]]; then
     elif [[ $TIMING -eq 1 ]]; then _dynarec=false; _debug=false
     else _dynarec=false; _debug=true; fi
     mkdir -p "$LEGAIA_PCSX_PROFILE_DIR" "$LEGAIA_PCSX_REAL_CONFIG"
+    # A capture that loads a real MEMORY CARD (rather than a save state, whose
+    # stale RAM would hide the disc-data change under test) needs to pick the
+    # card per run. LEGAIA_MCD1/2 override the default pair; point them at a
+    # staged copy so a run can never dirty the originals. Paths MUST be
+    # absolute (memorycard.cc only prepends the persistent dir to relative
+    # names) - and note -memcard2 is broken in this build (main.cc assigns
+    # argPath1 to slot 2), so the card choice belongs here, not on the CLI.
+    _mcd1="${LEGAIA_MCD1:-$LEGAIA_PCSX_REAL_CONFIG/memcard1.mcd}"
+    _mcd2="${LEGAIA_MCD2:-$LEGAIA_PCSX_REAL_CONFIG/memcard2.mcd}"
+    for _m in "$_mcd1" "$_mcd2"; do
+        [[ "$_m" = /* ]] || { echo "ERROR: memory-card path must be absolute: $_m" >&2; exit 2; }
+    done
     # Minimal, deterministic fast profile. Only the keys we care about are
     # pinned; every other setting falls back to the emulator's compile-time
     # ship default (src/core/psxemulator.h), so this can't drift from a
@@ -302,8 +314,8 @@ if [[ "$ISOLATE_CONFIG" == "1" ]]; then
     "FastBoot": true,
     "Scaler": ${LEGAIA_SCALER:-100},
     "AutoUpdate": false,
-    "Mcd1": "$LEGAIA_PCSX_REAL_CONFIG/memcard1.mcd",
-    "Mcd2": "$LEGAIA_PCSX_REAL_CONFIG/memcard2.mcd",
+    "Mcd1": "$_mcd1",
+    "Mcd2": "$_mcd2",
     "Mcd1Inserted": true,
     "Mcd2Inserted": true,
     "Debug": { "Debug": $_debug, "GdbServer": false, "WebServer": false }
