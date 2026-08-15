@@ -229,8 +229,11 @@ readers; each is in the battle overlay (PROT 0898).
   `+2/+4/+6` XYZ offsets), places each cue in world space from the actor's
   position (`+0x34/+0x38`) rotated by its facing (`+0x46`) through the shared
   sin/cos tables, and dispatches on the cue code. A code with the high bit set
-  is a floating-number spawn (masked `& 0x7f`, via `FUN_801dfdf0`); a plain code
-  is an SFX + effect-sprite pair (see [the cue tables](#the-cue-tables)). On the
+  spawns an `efect.dat` billboard (masked `& 0x7f`, via `FUN_801dfdf0`, which
+  resolves the id through the `pack1` descriptor table - see
+  [effect.md](effect.md)); a plain code selects a 3D move-VM prototype from
+  `0x801F6324` and pairs it with an SFX (see [the cue tables](#the-cue-tables)).
+  On the
   terminator entry it materializes the move-power record for the move id
   `actor[+0x1DF]` (`0x801F4F5C`, 26-byte stride; see [move-power.md](move-power.md))
   and lays down that move's own per-hit cue list plus the multi-target markers.
@@ -257,6 +260,32 @@ readers; each is in the battle overlay (PROT 0898).
   words `DAT_800773AA` / `DAT_800773B2`. The battle-action SM raises the plan
   at the tail of its `ActionSeed` state - see
   [`battle-action.md`](../subsystems/battle-action.md#actor-pool-leaf-helpers).
+
+### Impact-effect class (entry `+0x7A`)
+
+The cue script above is not the only thing that draws during an art. Entry
+`+0x7A` carries a `1..=5` selector (`0` = none), bounded by `FUN_801ec3e4`'s
+`sltiu v0,v0,6`. That routine stores the selector at `actor[+0x21F]` and the
+row it indexes out of `0x801F53D4` at `actor[+0x04]`, and two renderers read
+those - neither of which consults the entry's cue records:
+
+| reader | what it draws |
+|---|---|
+| `FUN_8004998c` | An element spark streamed along the swing path at random cadence: `efect.dat` sprite `0x0B` for selector `1`, `0x10` for selector `2`. Gated on `actor[+0x21F]` being non-zero. |
+| `FUN_80049348` | Fading afterimage copies of the character mesh, tinted from the per-**character** table at `0x80076908` (3 entries + a non-party row, 4 bytes each). Reached from `FUN_800480d8` only when `actor[+0x04]` left a colour word on the node. |
+
+So this byte, and not the cue script, is what makes an art read as its owner's
+element. On the three 50-AP Hyper Arts it is set only on Vahn's Burning Flare
+(`1`); Noa's Vulture Blade and Gala's Explosive Fist are `0`, and Gala's
+Thunder Punch is `2`. A reskin that rewrites the cue records but leaves `+0x7A`
+alone still shows the host character's sparks and ghost trail - see
+[randomizer.md](../tooling/randomizer.md).
+
+The afterimage table's channel order is **not** settled: `+0x74` is a GP0
+colour word, and the byte order that reads correctly for move-VM op `0x0C`
+disagrees with the one that reads correctly for `FUN_8005112c`'s ribbon
+literals. Treat the per-character colours as unresolved until a frame capture
+settles it.
 
 ### The cue tables
 

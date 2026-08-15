@@ -782,6 +782,31 @@ fn every_slot_gets_its_siblings_signature_art() {
             now.len(),
             "slot {slot}: hit count moved {was:?} -> {now:?}"
         );
+
+        // The host's impact-effect class is off. Entry `+0x7A` drives two
+        // renderers that live outside the 8-record effect script - the
+        // swing-path element spark (`FUN_8004998C`) and the character-
+        // tinted afterimages (`FUN_80049348`) - so a non-zero value here
+        // paints the sibling's move in the HOST's element no matter what
+        // the effect script says. Vahn's Burning Flare ships `1`; that is
+        // what put fire on Lu.
+        assert_eq!(
+            patched_rec.impact_class, 0,
+            "slot {slot}: the host art's impact-effect class survived \
+             (retail {}) - the sibling wears the host's element sparks \
+             and afterimage tint",
+            host_rec.impact_class
+        );
+        if slot == 0 {
+            // Keeps the check above honest: Vahn's Burning Flare is the
+            // one host art of the three that sets a class at all, so if
+            // retail ever read 0 here the zeroing would assert nothing.
+            assert_ne!(
+                host_rec.impact_class, 0,
+                "retail Burning Flare no longer sets an impact-effect \
+                 class - the assertion above has gone vacuous"
+            );
+        }
         for h in &now {
             assert!(
                 (*h as usize) >= payoff_start,

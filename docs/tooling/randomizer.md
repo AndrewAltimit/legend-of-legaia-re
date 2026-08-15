@@ -1629,6 +1629,23 @@ Four coordinated edits per slot (`delilas_party::reskin_signature_art`):
   every gate to `0xFF` - the walker never advances past a gate it has not
   reached, so nothing spawns and no terminator arm runs.
 
+  Rewriting the script is **not sufficient on its own**, which is the trap
+  here: entry `+0x7A` carries an impact-effect class that two further
+  renderers read straight off the actor, neither of them through the cue
+  records. `FUN_8004998c` streams an element spark along the swing path
+  and `FUN_80049348` draws afterimage copies tinted from a per-*character*
+  table - so a slot whose host art sets that byte keeps showing the host's
+  element however completely the script is replaced. Of the three hosts
+  only Vahn's Burning Flare sets it, which is why a sibling in Vahn's slot
+  wore his fire through every other edit the swap makes. It is zeroed per
+  slot. Re-pointing it at the sibling's own element instead is tempting -
+  class `2` is the lightning-class spark, which is Lu's - but the same
+  byte switches the afterimages on and those take their colour from the
+  character, not the art, so it would trade the host's sparks for the
+  host's ghosts. Removing what is wrong is measured; adding what is right
+  needs the colour word's channel order settled first (see
+  [art-data.md](../formats/art-data.md#impact-effect-class-entry-0x7a)).
+
 The rename has an **enemy half**, and it is what makes the Nivora duel
 read correctly. The mod already reskins each sibling's monster block with
 the mapped hero's model and name, so that fight already puts Vahn, Noa and

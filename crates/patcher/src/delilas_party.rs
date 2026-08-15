@@ -1041,6 +1041,34 @@ fn reskin_signature_art(
         for k in [0x84usize, 0x85, 0x86] {
             offset_edits.push((h.entry_offset + k, 0));
         }
+
+        // Drop the host's impact-effect class. Entry `+0x7A` is a 1..5
+        // selector that `FUN_801EC3E4` copies into `actor[+0x21F]` (and
+        // whose config row it copies into `actor[+0x04]`), and it drives
+        // TWO renderers that both sit OUTSIDE the art's 8-record effect
+        // script - which is why rewriting that script does not silence
+        // them:
+        //
+        //   - `FUN_8004998C` streams an element spark along the swing
+        //     path at random cadence, `efect.dat` sprite 0x0B for
+        //     selector 1 and 0x10 for selector 2;
+        //   - `FUN_80049348` draws afterimage copies of the mesh tinted
+        //     from a per-CHARACTER table (`0x80076908 + (char-1)*4`),
+        //     fading per copy.
+        //
+        // Vahn's Burning Flare is the only host art of the three that
+        // sets it (`1`; Vulture Blade and Explosive Fist are both `0`),
+        // so a sibling in Vahn's slot wore his fire sparks and his
+        // afterimage tint through every rewrite the swap makes. That is
+        // the "Vahn's fire took over" report.
+        //
+        // Zeroed rather than re-pointed at the sibling's own element:
+        // selector 2 would give Lu the lightning-class spark, but it
+        // also switches the afterimages on, and those take their colour
+        // from the character table, not the art - so it would trade the
+        // host's sparks for the host's ghosts. Removing what is wrong is
+        // measured; adding what is right needs a frame capture first.
+        offset_edits.push((h.entry_offset + IMPACT_CLASS_OFFSET, 0));
     }
     // The battle idle rides the SAME record0 write - it is the only
     // record0 edit that adds bytes, so batching it means one LZS re-fit
@@ -1160,6 +1188,14 @@ fn reskin_signature_art(
 const FX_RECORD: usize = 8;
 const FX_BASE: usize = 0x14;
 const FX_RECORDS: usize = 8;
+
+/// Action-entry offset of the impact-effect class byte: a 1..5 selector
+/// (`0` = none) read by `FUN_801EC3E4`, which stores it at
+/// `actor[+0x21F]` and its config row at `actor[+0x04]`. Both of the
+/// renderers it drives - the swing-path element spark in `FUN_8004998C`
+/// and the tinted afterimages in `FUN_80049348` - draw independently of
+/// the art's effect script.
+const IMPACT_CLASS_OFFSET: usize = 0x7A;
 
 /// Spell id of a sibling's signature cast.
 ///

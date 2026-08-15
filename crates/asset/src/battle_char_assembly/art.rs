@@ -45,8 +45,20 @@ pub struct ArtAnimRecord {
     /// Inline art-name string (record `+0x10`, NUL-terminated ASCII, up to
     /// 20 bytes; empty on the base / un-named records).
     pub name: String,
-    /// Action tag byte (entry `+0x00`; presentation-class id space
-    /// `0x16..0x1F` on named arts, `0` on base records).
+    /// First of the art's four **power bytes**, not a tag - the name is a
+    /// misnomer kept for source compatibility.
+    ///
+    /// The entry begins at record `+0x24` ([`ART_ENTRY_OFFSET`]), which
+    /// `docs/formats/art-data.md` already pins as the power run, so
+    /// `entry[0x00..0x04]` IS that run and this is its first byte. The
+    /// old "presentation-class id space `0x16..0x1F`" reading
+    /// survived because a first power byte often lands in that range by
+    /// coincidence, and the disc contradicts it: Vahn's Burning Flare
+    /// reads `1D 19 1F 1A` - four ascending Hyper power bytes, not one
+    /// tag and three unknowns - Gala's two-hit Thunder Punch reads
+    /// `19 1A 00 00`, and the no-damage Regular Art Starter reads
+    /// `00 00 00 00`, which is a sensible power run and a nonsensical
+    /// tag. Entry `+0x10..+0x13` carries the matching damage-timing run.
     pub entry_tag: u8,
     /// Attach key (entry `+0x77` = record `+0x9B`): the id the equipment
     /// sections' attach-object records match against (`FUN_80052FA0`'s
@@ -82,6 +94,23 @@ pub struct ArtAnimRecord {
     /// art-strike faces. Sibling of
     /// [`SwingAnimation::face`]; `None` only for a truncated record.
     pub face: Option<crate::face_anim::FaceTracks>,
+    /// Entry `+0x7A` - the action's **impact-effect class**, a `1..=5`
+    /// selector (`0` = none) bounded by `FUN_801EC3E4`'s `sltiu v0,v0,6`.
+    /// That routine stores the selector at `actor[+0x21F]` and the row it
+    /// indexes out of `0x801F53D4` at `actor[+0x04]`, and two renderers
+    /// then read those, both of them **outside** the entry's own
+    /// [`Self::effect_script`]:
+    ///
+    /// - `FUN_8004998C` streams an element spark along the swing path at
+    ///   random cadence, `efect.dat` sprite `0x0B` for selector `1` and
+    ///   `0x10` for selector `2`;
+    /// - `FUN_80049348` draws fading afterimage copies of the mesh,
+    ///   tinted from the per-CHARACTER table at `0x80076908`.
+    ///
+    /// So this byte, not the effect script, is what makes an art read as
+    /// its owner's element: a reskin that rewrites only the script still
+    /// shows the host character's sparks and ghost trail.
+    pub impact_class: u8,
     /// record[0]-image byte offset of the record's action-entry header.
     pub entry_offset: usize,
     /// The embedded entry's head bytes (`+0x00..+0x54` of the entry = record
@@ -162,6 +191,7 @@ pub fn art_animation_bank(record0: &[u8]) -> Result<Vec<ArtAnimRecord>> {
             rate: entry[0x78],
             rate_alt: entry[0x84],
             face: crate::face_anim::FaceTracks::from_entry(rec, ART_ENTRY_OFFSET),
+            impact_class: entry[0x7A],
             entry_offset: base + ART_ENTRY_OFFSET,
             effect_script: crate::monster_archive::effect_script_head(rec, ART_ENTRY_OFFSET),
         });
