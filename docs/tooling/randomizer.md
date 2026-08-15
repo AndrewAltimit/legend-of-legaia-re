@@ -1322,8 +1322,9 @@ permutation (players order bones `torso, pelvis, head, arms, legs`; every
 Delilas mesh orders parts `head, torso, pelvis, arms, legs`; Noa's extra
 hair bone merges into the head part), a **pivot-anchored rest-pose
 bake** per part (`v' = R_t^T S(R_align (R_s v))` - each part anchors at
-its rest **pivot**, the joint the engine rotates it about; the rest bone
-frames align source onto target, pinning the twist; the part scales
+its rest **pivot**, the joint the engine rotates it about; `R_align`
+turns the whole rig onto the host's facing and then swings each part
+minimally onto its own host bone, pinning the twist; the part scales
 axially onto the target's joint-to-joint span and radially by the
 uniform height ratio, so the chains stay closed under every clip while
 the sibling's shapes survive), and a bit-exact texel re-layout (islands
@@ -1359,13 +1360,42 @@ unavailable. The rebuilt container keeps the entry's first four header
 words byte-exact - the battle loader registers them as battle-VDF
 pointers (see [`character-mesh.md` § Dual
 consumer](../formats/character-mesh.md#dual-consumer---the-battle-loader-registers-the-header-words-as-vdf-pointers)).
+`R_align` reads the rig as a whole rather than joint by joint, and that
+is a correction, not a stylistic choice. Building each part's frame from
+a per-joint bend-plane reference makes the alignment depend on **which
+kind** of reference each side happened to find - child bone, parent bone,
+or a world axis - and the two sides do not always find the same kind. Che
+is the only rig with a measurable pelvis-to-torso bone, so his torso took
+its bend plane from real anatomy while every player torso (whose pelvis
+pivot sits on its torso pivot) fell through to world Z; the two are
+incomparable, and the alignment came out as a **167.9-degree roll about
+his own spine** - he wore his torso backwards, and the shoulder tuck then
+seated his arms through it, flattening each upper arm to a quarter of its
+width. Gi's case is milder and has the same shape: both sides picked real
+anatomy, but the rigs flex their elbows in unrelated directions (122
+degrees apart), so his upper arm rolled 166 degrees about its own axis.
+Refacing the whole rig first (up = pelvis-to-head, lateral = the two
+shoulders - landmarks all six rigs carry) and then swinging each part
+onto its own host bone leaves no excess roll on any non-terminal part of
+any pairing. Terminals - head, hands, feet - deliberately keep their
+inherited frame, because the feet normalisation pre-cancels that one.
+
+Note this is **not** a joint-gap defect: no chain edge was ever flagged,
+before or after, which is why the gap-based probes were structurally
+blind to it. It shows up only in a per-part affine fit against the
+sibling's own mesh.
+
 The **victory poses** follow too (`party_swap::winpose`): each
 character's eight win-pose streams (the base "ME" archive, `readef.DAT`
 slot `3*char+2` - [`battle-data-pack.md` § "ME" stream
 archives](../formats/battle-data-pack.md#me-stream-archives-readefdat))
 rebuild from the mapped sibling's own victory clip (monster action tag
 `0x22`; Che ships none, so his last `0x23` flourish stands in),
-retargeted onto the player rig with the bake's per-part conjugation,
+retargeted onto the player rig with the bake's per-part conjugation
+(which must be built from the **bake's own** frames via
+`playerize::bake_frames` - the played pose cancels the bake's `R_align`, so any
+change to how the mesh is oriented is a change the win pose has to
+mirror or every converted pose inherits the difference),
 nearest-frame resampled to each retail entry's frame count, and
 re-encoded with the retail channel-delta codec (encoder
 `winpose::encode_channel_delta`, round-trip self-checked through the

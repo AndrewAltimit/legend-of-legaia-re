@@ -868,6 +868,24 @@ fn reskin_signature_art(
         let (fx, why) = effect_script_edits(h, c, &sibling_clips, r);
         offset_edits.extend(fx);
         notes.push(format!("{} effects: {why}", String::from_utf8_lossy(new)));
+
+        // Drop the mid-clip loop hold. Entry +0x84 seeds a hold counter
+        // and +0x85/+0x86 bound the window it replays: Vahn's Burning
+        // Flare holds frames 9-10 five times, which is its multi-hit
+        // flurry and is nonsense over someone else's choreography (and
+        // meaningless anyway once the frame count moves).
+        //
+        // Safe because +0x84 is a hold, not the rate the sibling doc
+        // comment on `ArtAnimRecord::rate_alt` reads it as. Census over
+        // all three player files: it is 0 on every playable art record
+        // but five, including records whose clips run at rate 3, 4 and
+        // 7 - a rate field of 0 would freeze them. The rate is +0x78,
+        // and each of the five holds bounds a window strictly inside
+        // its own clip. 0xFF stays the base-archive marker; the hosts
+        // are 5 / 0 / 0, so none of them is one.
+        for k in [0x84usize, 0x85, 0x86] {
+            offset_edits.push((h.entry_offset + k, 0));
+        }
     }
     if (!char_edits.is_empty() || !offset_edits.is_empty())
         && let Some((lzs_off, recompressed)) =

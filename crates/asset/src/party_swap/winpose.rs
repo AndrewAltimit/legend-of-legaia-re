@@ -290,8 +290,17 @@ pub fn retarget_clip(
     let dst_pivots: Vec<[f32; 3]> = (0..CANONICAL_PARTS)
         .map(|c| pivot_of(&dst_rest[rig.channel_for_canonical[c] as usize]))
         .collect();
-    let src_frames = bone_frames(&src_pivots, &CANONICAL_CHILD, &CANONICAL_PARENT);
-    let dst_frames = bone_frames(&dst_pivots, &CANONICAL_CHILD, &CANONICAL_PARENT);
+    // MUST be the bake's own frames, not raw `bone_frames`: the played
+    // pose cancels the bake's `R_align`, so the two have to be built the
+    // same way or the conjugation stops cancelling and every converted
+    // pose inherits the difference (measured: up to 152 degrees on Gi's
+    // shin, 114 on Che's torso).
+    let (src_frames, dst_frames) = playerize::bake_frames(
+        &src_pivots,
+        &dst_pivots,
+        &CANONICAL_CHILD,
+        &CANONICAL_PARENT,
+    );
 
     // Per-part constant conjugation A = R_src_rest^T * R_align^T * R_dst_rest.
     let conj: Vec<[[f32; 3]; 3]> = (0..CANONICAL_PARTS)
