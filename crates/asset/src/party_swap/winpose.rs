@@ -876,6 +876,11 @@ pub struct RebuiltArtSlot {
     pub frames: usize,
     /// Frames the retail entry carried.
     pub retail_frames: usize,
+    /// How many chain stages made it in (the front is dropped first when
+    /// the slot is tight).
+    pub stages: usize,
+    /// The rate byte the concatenated stream wants.
+    pub rate: u8,
 }
 
 /// Rebuild one entry of a readef art slot around a monster clip.
@@ -889,7 +894,7 @@ pub struct RebuiltArtSlot {
 pub fn rebuild_art_slot_entry(
     slot: &[u8],
     entry_index: usize,
-    clip: &crate::monster_archive::MonsterAnimation,
+    chain: &[&crate::monster_archive::MonsterAnimation],
     rig: &PlayerRig,
     player_file: &[u8],
     archive_entry: &[u8],
@@ -897,6 +902,9 @@ pub fn rebuild_art_slot_entry(
 ) -> Result<RebuiltArtSlot> {
     if slot.len() != READEF_SLOT {
         bail!("art slot is {} bytes, expected {READEF_SLOT}", slot.len());
+    }
+    if chain.is_empty() {
+        bail!("no clip to retarget");
     }
     let ar = me_archive::parse(slot).context("parse art ME archive")?;
     let n = ar.len();
@@ -914,19 +922,104 @@ pub fn rebuild_art_slot_entry(
         .map(|i| ar.raw_body(i).map_or(0, |b| b.len()))
         .sum();
     let headroom = READEF_SLOT.saturating_sub(3 + 2 * n + others);
-    let mut frames = clip.frame_count.min(u8::MAX as usize).max(1);
-    let mut built = build_entry(
-        clip,
+
+    // Try the whole chain, then drop stages from the FRONT until it fits
+    // (the last stage is the payoff - a move that loses its wind-up still
+    // reads; one that loses its strike does not), and only then fall back
+    // to the retail shape.
+    for start in 0..chain.len() {
+        let stages = &chain[start..];
+        let Some((frames, per_stage)) = chain_frames(stages) else {
+            continue;
+        };
+        let built = build_chain(
+            stages,
+            &per_stage,
+            rig,
+            player_file,
+            archive_entry,
+            source_id,
+            parts,
+        )?;
+        if built.len() <= headroom {
+            return Ok(RebuiltArtSlot {
+                bytes: assemble_slot(&ar, n, entry_index, &built)?,
+                frames,
+                retail_frames,
+                stages: stages.len(),
+                rate: chain_rate(stages),
+            });
+        }
+    }
+    // Last resort: the final stage squeezed into the retail frame count.
+    let last = chain[chain.len() - 1];
+    let built = build_chain(
+        &[last],
+        &[retail_frames],
         rig,
         player_file,
         archive_entry,
         source_id,
         parts,
-        frames,
     )?;
-    if built.len() > headroom && frames != retail_frames {
-        frames = retail_frames;
-        built = build_entry(
+    Ok(RebuiltArtSlot {
+        bytes: assemble_slot(&ar, n, entry_index, &built)?,
+        frames: retail_frames,
+        retail_frames,
+        stages: 1,
+        rate: winpose_rate(last),
+    })
+}
+
+/// The playback rate a concatenated chain runs at: the fastest stage's,
+/// so every slower stage can be stretched up to it rather than any stage
+/// being decimated down.
+fn chain_rate(stages: &[&crate::monster_archive::MonsterAnimation]) -> u8 {
+    stages.iter().map(|c| winpose_rate(c)).max().unwrap_or(1)
+}
+
+fn winpose_rate(clip: &crate::monster_archive::MonsterAnimation) -> u8 {
+    clip.rate.max(1)
+}
+
+/// Per-stage frame counts that preserve each stage's authored duration
+/// once the whole chain plays at one rate, and their total.
+///
+/// A clip runs for `frames * 8 / rate` ticks, so a stage authored at
+/// `rate_i` needs `frames_i * R / rate_i` frames to last as long at the
+/// common rate `R`. `None` when the total will not fit the stream head's
+/// `u8` frame count.
+fn chain_frames(
+    stages: &[&crate::monster_archive::MonsterAnimation],
+) -> Option<(usize, Vec<usize>)> {
+    let r = chain_rate(stages) as usize;
+    let per: Vec<usize> = stages
+        .iter()
+        .map(|c| {
+            (c.frame_count * r)
+                .div_ceil(winpose_rate(c) as usize)
+                .max(1)
+        })
+        .collect();
+    let total: usize = per.iter().sum();
+    (total <= u8::MAX as usize).then_some((total, per))
+}
+
+/// Retarget each stage at its own resampled length and concatenate them
+/// into one stream.
+#[allow(clippy::too_many_arguments)]
+fn build_chain(
+    stages: &[&crate::monster_archive::MonsterAnimation],
+    per_stage: &[usize],
+    rig: &PlayerRig,
+    player_file: &[u8],
+    archive_entry: &[u8],
+    source_id: u16,
+    parts: usize,
+) -> Result<Vec<u8>> {
+    let mut rows: Vec<Vec<PartPose>> = Vec::new();
+    for (clip, &frames) in stages.iter().zip(per_stage) {
+        rows.extend(retarget_clip(
             clip,
             rig,
             player_file,
@@ -934,40 +1027,13 @@ pub fn rebuild_art_slot_entry(
             source_id,
             parts,
             frames,
-        )?;
+        )?);
     }
-    let encoded = built;
-    let bytes = assemble_slot(&ar, n, entry_index, &encoded)?;
-    Ok(RebuiltArtSlot {
-        bytes,
-        frames,
-        retail_frames,
-    })
-}
-
-/// Retarget + encode one entry body at a chosen `(parts, frames)` shape.
-fn build_entry(
-    clip: &crate::monster_archive::MonsterAnimation,
-    rig: &PlayerRig,
-    player_file: &[u8],
-    archive_entry: &[u8],
-    source_id: u16,
-    parts: usize,
-    frames: usize,
-) -> Result<Vec<u8>> {
-    let frames_out = retarget_clip(
-        clip,
-        rig,
-        player_file,
-        archive_entry,
-        source_id,
-        parts,
-        frames,
-    )?;
+    let frames = rows.len();
     let mut decoded = Vec::with_capacity(2 + parts * frames * 9);
     decoded.push(parts as u8);
     decoded.push(frames as u8);
-    for row in &frames_out {
+    for row in &rows {
         for p in row {
             decoded.extend_from_slice(&pack_part(p));
         }

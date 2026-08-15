@@ -1566,14 +1566,30 @@ Four coordinated edits per slot (`delilas_party::reskin_signature_art`):
 - **Animation** - the sibling's own choreography retargeted onto the player
   rig into the host art's "ME" stream, addressed by monster-archive **entry
   index**, not action tag: Gi's and Che's signature clips are both tagged
-  `0x23`, so no tag band reaches them. The entry is written at the clip's
-  **own** length whenever the slot has room (Lu 39 frames, Gi 23, Che 50,
-  against host streams of 21/58/20), because resampling throws poses away
-  and forces a compensating rate edit; the rate byte then only moves when
-  the fallback shape was used, by `rate' = frames' * rate / frames`
-  (`winpose::retimed_rate` - retail rates are not all 2, Noa's stream is
-  authored at 6). Every frame-indexed field of the art record rescales with
-  it: the hit events at entry `+0x10`, and the effect script's gates.
+  `0x23`, so no tag band reaches them.
+
+  A signature move is a **chain of stages**, not one clip. The enemy-side
+  modules stage several entries in sequence (`delilas_dome` records Lu's
+  action `0x7B` as `14 -> 12 -> 13` and Che's `0x7A` as `10 -> 11`), so
+  shipping only the final stage shows the payoff swing with no wind-up -
+  Megaton Press without its lift, Blazing Slash missing two of its three
+  beats. The stages are retargeted individually and concatenated: Lu 90
+  frames, Gi 75, Che 100, against host streams of 21/58/20. Gi's chain
+  `10 -> 11 -> 12` is the one no static evidence pinned; it was inferred
+  from clip shape and later corroborated by a player independently
+  reporting three distinct beats in the move.
+
+  Stages do not share a rate (Gi's first is authored at 1, the rest at 2),
+  and a concatenated stream has only one. Each stage is therefore
+  resampled to hold its authored duration at the chain's fastest rate -
+  `frames_i * R / rate_i`, since a clip runs `frames * 8 / rate` ticks -
+  so a slower stage stretches rather than any stage being decimated. If
+  the slot cannot hold the whole chain, stages are dropped from the
+  **front** (a move that loses its wind-up still reads; one that loses its
+  strike does not), and only then does it fall back to the retail frame
+  count with `winpose::retimed_rate`. Every frame-indexed field of the art
+  record rescales against the result: the hit events at entry `+0x10`, and
+  the effect script's gates.
 - **Effects** - the host's script is eight `[frame_gate, effect_id, x, y,
   z]` records, and for Burning Flare all eight spawn flame `0x96` across
   the swing. That flame is why a reskinned art keeps reading as the host's

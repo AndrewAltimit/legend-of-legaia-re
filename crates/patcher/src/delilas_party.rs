@@ -657,23 +657,23 @@ fn host_art(slot: usize) -> Option<HostArt> {
 /// not reach either of them (it returned a generic castable for Gi, and
 /// only found Che's by landing on a byte-identical duplicate).
 ///
-/// Lu's and Che's rows are the last stage of the chains
-/// `delilas_dome` stages for their enemy actions (`0x7B`: `14 -> 12 ->
-/// 13`; `0x7A`: `10 -> 11`). Gi's chain is not statically determined.
+/// A signature move is a **chain**, not a clip. The enemy-side modules
+/// stage several archive entries in sequence - `delilas_dome` records
+/// Lu's action `0x7B` as `14 -> 12 -> 13` and Che's `0x7A` as
+/// `10 -> 11` - and shipping only the last stage is why the reskinned
+/// arts showed the payoff swing with no wind-up: Megaton Press skipped
+/// the lift, Blazing Slash skipped two thirds of itself.
 ///
-/// Gi's row is entry **11**, his one `0x23` clip with no duplicate
-/// anywhere in his archive. Entry 12 was tried first, on the reasoning
-/// that it is byte-identical to his costliest castable the way Che's
-/// staged entry is - but that identity is the argument against it: a
-/// signature move whose pose stream is byte-for-byte one of his ordinary
-/// casts reads on screen as an ordinary cast. Che's pick (50 frames) and
-/// Lu's (39) are the longest and most distinctive clips those siblings
-/// own; entry 11 (30 frames) is the same choice for Gi.
-fn signature_clip_entry(sibling: Sibling) -> usize {
+/// Gi's chain is the one no static evidence pinned. `10 -> 11 -> 12` was
+/// inferred from clip shape (an 11-frame crouch, a 30-frame leap with
+/// the largest torso rise in his archive, a 23-frame slash), and a
+/// player watching Blazing Slash independently reported "3 different
+/// mini animations", which is the count that inference predicts.
+fn signature_clip_chain(sibling: Sibling) -> &'static [usize] {
     match sibling {
-        Sibling::Gi => 11,
-        Sibling::Che => 11,
-        Sibling::Lu => 13,
+        Sibling::Gi => &[10, 11, 12],
+        Sibling::Che => &[10, 11],
+        Sibling::Lu => &[14, 12, 13],
     }
 }
 
@@ -886,11 +886,17 @@ fn reskin_signature_art(
     // both needed before the record0 write, because the re-timed rate is
     // a function of the two.
     let source_id = sibling.monster_id();
-    let clip_entry = signature_clip_entry(sibling);
+    let chain_entries = signature_clip_chain(sibling);
     let sibling_clips = monster_archive::animations(archive, source_id)
         .with_context(|| format!("read monster {source_id} animations"))?
         .unwrap_or_default();
-    let clip = sibling_clips.get(clip_entry).cloned();
+    let chain: Vec<&monster_archive::MonsterAnimation> = chain_entries
+        .iter()
+        .filter_map(|&i| sibling_clips.get(i))
+        .collect();
+    // The payoff stage - what the art record's hit timing has to line up
+    // with, and the shape check's subject.
+    let clip = chain.last().map(|c| (*c).clone());
     let readef = patcher
         .read_entry_footprint(READEF_ENTRY)
         .context("read readef.DAT")?;
@@ -905,15 +911,17 @@ fn reskin_signature_art(
         let h = host
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("host art bank record not found by vanilla combo"))?;
-        let c = clip.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("monster {source_id} has no animation entry {clip_entry}")
-        })?;
-        if c.part_count != party_swap::CANONICAL_PARTS {
-            bail!(
-                "monster {source_id} entry {clip_entry} has {} parts, expected {}",
-                c.part_count,
-                party_swap::CANONICAL_PARTS
-            );
+        if chain.len() != chain_entries.len() {
+            bail!("monster {source_id} is missing a stage of {chain_entries:?}");
+        }
+        for (i, c) in chain_entries.iter().zip(&chain) {
+            if c.part_count != party_swap::CANONICAL_PARTS {
+                bail!(
+                    "monster {source_id} entry {i} has {} parts, expected {}",
+                    c.part_count,
+                    party_swap::CANONICAL_PARTS
+                );
+            }
         }
         let me = readef
             .get(me_off..me_off + winpose::READEF_SLOT)
@@ -921,7 +929,7 @@ fn reskin_signature_art(
         winpose::rebuild_art_slot_entry(
             me,
             h.stream_source as usize,
-            c,
+            &chain,
             rig,
             retail_player,
             archive,
@@ -933,12 +941,19 @@ fn reskin_signature_art(
             patcher
                 .patch_prot_entry(READEF_ENTRY, me_off as u64, &r.bytes)
                 .context("write the retargeted art stream")?;
-            let tag = clip.as_ref().map_or(0, |c| c.action_id);
+            let dropped = chain_entries.len() - r.stages;
             notes.push(format!(
-                "{} animation: {}'s own clip (entry {clip_entry}, tag 0x{tag:02X}), \
-                 {} frames (host stream carried {})",
+                "{} animation: {}'s own {}-stage chain {:?}{}, {} frames \
+                 (host stream carried {})",
                 String::from_utf8_lossy(new),
                 sibling.display_name(),
+                r.stages,
+                &chain_entries[dropped..],
+                if dropped > 0 {
+                    format!(" ({dropped} wind-up stage(s) dropped - slot too tight)")
+                } else {
+                    String::new()
+                },
                 r.frames,
                 r.retail_frames
             ));
@@ -958,14 +973,20 @@ fn reskin_signature_art(
     // field is rescaled by the same ratio.
     let mut offset_edits = Vec::new();
     if let (Some(h), Some(c), Some(r)) = (&host, &clip, &rebuilt) {
-        let rate = winpose::retimed_rate(r.frames, c.frame_count, c.rate);
+        // The chain is written at the rate its stages were stretched to,
+        // except on the retail-shape fallback, where it has to be
+        // re-timed the old way.
+        let rate = if r.frames == r.retail_frames && r.stages == 1 {
+            winpose::retimed_rate(r.frames, c.frame_count, c.rate)
+        } else {
+            r.rate
+        };
         offset_edits.push((h.entry_offset + 0x78, rate));
         notes.push(format!(
-            "{} pace: {} frames at rate {} -> {} at rate {rate}",
+            "{} pace: {} frames at rate {}",
             String::from_utf8_lossy(new),
-            c.frame_count,
-            c.rate,
-            r.frames
+            r.frames,
+            rate
         ));
         offset_edits.extend(retimed_hit_frames(h, r));
 

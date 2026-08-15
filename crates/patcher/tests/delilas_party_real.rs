@@ -537,8 +537,9 @@ fn every_slot_gets_its_siblings_signature_art() {
         /// The signature name replacing it, which must gain exactly one.
         sig_name: &'static str,
         monster_id: u16,
-        /// Monster-archive entry index of the sibling's signature clip.
-        clip_entry: usize,
+        /// Monster-archive entry indices of the sibling's signature
+        /// chain, in play order; the last is the payoff stage.
+        chain: &'static [usize],
         /// The host art's retail combo - how its bank record is addressed.
         host_combo: &'static [u8],
     }
@@ -548,7 +549,7 @@ fn every_slot_gets_its_siblings_signature_art() {
             host_name: "Burning Flare",
             sig_name: "Plasma Strike",
             monster_id: 164,
-            clip_entry: 13,
+            chain: &[14, 12, 13],
             host_combo: &[2, 3, 1, 3, 1],
         },
         Expect {
@@ -556,7 +557,7 @@ fn every_slot_gets_its_siblings_signature_art() {
             host_name: "Vulture Blade",
             sig_name: "Blazing Slash",
             monster_id: 162,
-            clip_entry: 11,
+            chain: &[10, 11, 12],
             host_combo: &[1, 1, 2, 1, 2],
         },
         Expect {
@@ -564,7 +565,7 @@ fn every_slot_gets_its_siblings_signature_art() {
             host_name: "Explosive Fist",
             sig_name: "Megaton Press",
             monster_id: 163,
-            clip_entry: 11,
+            chain: &[10, 11],
             host_combo: &[2, 2, 1, 1, 1],
         },
     ];
@@ -600,7 +601,7 @@ fn every_slot_gets_its_siblings_signature_art() {
         host_name,
         sig_name,
         monster_id,
-        clip_entry,
+        chain,
         host_combo,
     } in expect
     {
@@ -691,12 +692,14 @@ fn every_slot_gets_its_siblings_signature_art() {
             }
         }
 
-        let clip = legaia_asset::monster_archive::animations(&archive, monster_id)
+        let anims = legaia_asset::monster_archive::animations(&archive, monster_id)
             .expect("animations")
-            .expect("archive slot")
-            .into_iter()
-            .nth(clip_entry)
-            .expect("signature clip");
+            .expect("archive slot");
+        let stages: Vec<usize> = chain
+            .iter()
+            .map(|&i| anims.get(i).expect("chain stage").frame_count)
+            .collect();
+        let payoff = *stages.last().expect("a payoff stage");
 
         let off = bca::art_me_slot(slot, false) * winpose::READEF_SLOT;
         let src = host_rec.stream_source as usize;
@@ -705,15 +708,19 @@ fn every_slot_gets_its_siblings_signature_art() {
         let after = winpose::art_entry_shape(&readef[off..off + winpose::READEF_SLOT], src)
             .expect("patched shape");
         assert_eq!(before.0, after.0, "slot {slot}: part count must not move");
-        assert_eq!(
-            after.1, clip.frame_count,
-            "slot {slot}: the stream should carry the clip's own {} frames \
-             (retail carried {})",
-            clip.frame_count, before.1
-        );
         assert_ne!(
             after.1, before.1,
             "slot {slot}: frame count identical to retail - the retarget did not land"
+        );
+        // The whole chain, not just the payoff. Shipping only the final
+        // stage is what made these moves appear to start halfway through,
+        // and the stream is longer than any one stage exactly when more
+        // than one landed - which no single-clip build can fake.
+        assert!(
+            after.1 > payoff,
+            "slot {slot}: stream is {} frames, no longer than the payoff stage's {payoff} \
+             - the wind-up stages {chain:?} did not land (stage lengths {stages:?})",
+            after.1
         );
     }
 }
