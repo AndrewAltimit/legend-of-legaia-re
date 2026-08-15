@@ -28,7 +28,10 @@ Three patching families share that machinery:
   `--fishing-price` / `--rename-location` retune fishing-exchange prices and
   world-map names; `--arts-power COMBO=VALUE` rebalances a Tactical Art's
   per-strike damage-power bytes (`record0 +0x24`, targeted by input combo -
-  [`arts_power`](src/arts_power.rs)); `--arts-ap-grant` / `--arts-ap-cost`
+  [`arts_power`](src/arts_power.rs)); `--super-art-power NAME=VALUE` does the
+  same for a **Super Art**, which has no combo and no arts-table row and so is
+  keyed by name ([`super_art_power`](src/super_art_power.rs));
+  `--arts-ap-grant` / `--arts-ap-cost`
   `[CHAR:]COMBO=AMOUNT` set what one character's art does to the AP gauge - grant
   AP instead of costing it, or charge a chosen flat cost (a battle-overlay code
   hook - [`arts_ap_grant`](src/arts_ap_grant.rs), mutually exclusive with
@@ -78,6 +81,7 @@ full design.
   - [Weapon specialty](#weapon-specialty)
   - [Arts](#arts)
   - [Arts damage power](#arts-damage-power-arts_power-module)
+  - [Super Art damage power](#super-art-damage-power-super_art_power-module)
   - [Arts AP override](#arts-ap-override-arts_ap_grant-module)
   - [Spirit AP](#spirit-ap-spirit_ap-module)
   - [Enemy-damage AP](#enemy-damage-ap-damage_ap-module)
@@ -765,6 +769,28 @@ no-damage-byte art like Gala's spirit Miracle is skipped), and recompresses
 `record0` to fit. `VALUE` is a tier `0x0C..=0x1F` (lower = weaker) or `0` to
 disable. No display copy to sync (the power is not shown in the menu).
 `legaia-patcher arts` lists every art's combo, AP, and power tiers.
+
+## Super Art damage power (`super_art_power` module)
+
+`--super-art-power NAME=VALUE` is the same rebalance for the five per-character
+**Super Arts**. They need their own knob because every other arts knob keys on
+something a Super Art lacks: `--arts-power` / `--arts` key on the **input combo**
+(a Super Art is triggered by a find/replace over the finished action queue,
+`FUN_801EF9E4`, and its record carries no combo run at `+0`), and
+`--arts-ap-grant` / `--arts-ap-cost` key on the **arts-name-table row**
+(`DAT_80075EC4` holds 45 records - 15 per character - and none is a Super Art).
+Nor is there an AP cost to override: retail charges the chain arts and the Super
+itself is free.
+
+The record it edits is addressed by **action constant**: the `0xD0`-stride array
+places constant `c` at `base + (c - 0x10) * 0xD0`, and a Super Art's finisher
+constant is `legaia_art::SuperArt::finisher`. The derivation validates itself -
+the landed record's `+0x10` name is the Super Art's own English name for all
+fifteen, and a row is returned only on a match, so an unrecognized build produces
+no edit rather than a wild write. See
+[`docs/formats/art-data.md`](../../docs/formats/art-data.md#art-records-are-indexed-by-action-constant).
+Names match ignoring case, spaces and punctuation. `legaia-patcher arts` lists
+each character's Super Arts with their finisher, tiers and trigger chain.
 
 ## Arts AP override (`arts_ap_grant` module)
 

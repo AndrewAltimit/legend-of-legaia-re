@@ -10,7 +10,7 @@
  * element_affinity, spell_cost, equip_bonus, weapon_specialty, starting_level,
  * solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru,
  * jewel_fix, approach_softlock_fix, delilas_challenge, custom_items, fishing_prices, location_renames,
- * earth_egg_price, arts_powers,
+ * earth_egg_price, arts_powers, super_art_powers,
  * arts_ap_grants, arts_ap_costs, spirit_ap, damage_ap, enemy_stat_scale,
  * exp_scale, seru_catch_rate)
  * -> { data, summary, seed, lang }`, `resolve_seed(str)`,
@@ -1375,7 +1375,7 @@ const PRESET_BASE = {
   drops: 'none', encounters: 'none', encounter_scope: 'scene', soloStrong: false, fleeExp: false, chests: 'none',
   shops: 'none', casino: 'none', steals: 'none', arts: 'none', doors: 'none',
   door_coupling: 'coupled', houseDoors: false, equipmentDrops: false, seruTrade: false,
-  enemyAlly: false, shinySeru: false, jewelFix: false, approachFix: false, delilasChallenge: false, customItems: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '',
+  enemyAlly: false, shinySeru: false, jewelFix: false, approachFix: false, delilasChallenge: false, customItems: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', superArtPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '',
   startingItems: 0, doorOfWind: false, incense: false,
   speedChain: false, chickenHeart: false, goodLuckBell: false,
   allWarps: false,
@@ -1548,6 +1548,7 @@ function init() {
     });
   }
   const artsPowerInput = $('rom-arts-power');
+  const superArtPowerInput = $('rom-super-art-power');
   const artsApGrantInput = $('rom-arts-ap-grant');
   const artBuilder = setupArtBuilder($('rom-art-rows'), $('rom-art-add'), () => markCustom());
   const weaponSpecialtyChk = $('rom-weapon-specialty');
@@ -1777,6 +1778,7 @@ function init() {
       setScaleFields(group, (key) => named.get(key) ?? fallback);
     }
     artsPowerInput.value = cfg.artsPower || '';
+    superArtPowerInput.value = cfg.superArtPower || '';
     artsApGrantInput.value = cfg.artsApGrant || '';
     artBuilder.clear();
     manualTables.clear();
@@ -1948,6 +1950,9 @@ function init() {
     }
     const artsPower = [artOv.power, (artsPowerInput.value || '').trim()]
       .filter(Boolean).join(', ');
+    // Super Art names contain spaces, so this list is comma-separated only -
+    // it is never merged with the combo-keyed power list above.
+    const superArtPower = (superArtPowerInput.value || '').trim();
     const artsApGrant = [artOv.grant, (artsApGrantInput.value || '').trim()]
       .filter(Boolean).join(', ');
     const artsApCost = artOv.cost;
@@ -1999,7 +2004,8 @@ function init() {
       monsterStats === 'none' && movePower === 'none' && elementAffinity === 'none' &&
       spellCost === 'none' && equipBonus === 'none' && !weaponSpecialty &&
       startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !jewelFix && !approachFix && !delilasChallenge && !customItems &&
-      !fishingPrice && !renameLocation && !earthEggPrice && !artsPower && !artsApGrant && !artsApCost &&
+      !fishingPrice && !renameLocation && !earthEggPrice && !artsPower && !superArtPower &&
+      !artsApGrant && !artsApCost &&
       !spiritAp && !damageAp && !enemyStatScale && !expScale && !seruCatchRate
     );
     if (!baseActive && texSpecs.length === 0) {
@@ -2031,7 +2037,7 @@ function init() {
       let summaryText = '';
       let langReport = null;
       if (baseActive) {
-        const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate);
+        const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate, superArtPower);
         data = result.data;
         usedSeed = result.seed;
         summaryText = result.summary || '';

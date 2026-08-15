@@ -105,6 +105,7 @@ pub mod starting_bag;
 pub mod starting_items;
 pub mod starting_level;
 pub mod steal;
+pub mod super_art_power;
 pub mod texture;
 pub mod translation;
 pub mod unused;

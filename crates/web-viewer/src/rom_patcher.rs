@@ -189,7 +189,12 @@ pub fn resolve_seed(seed: &str) -> String {
 /// 100000); the game debits exactly that many coins on purchase. `arts_powers`
 /// is a comma/space-separated list of `combo=value` pairs that rebalance a
 /// Tactical Art's damage-power bytes (e.g. `RDLDL=0x16`; `value` a power byte
-/// `0x0C..=0x1F` or `0`). `arts_ap_grants` and `arts_ap_costs` are
+/// `0x0C..=0x1F` or `0`). `super_art_powers` is the Super Art sibling - a
+/// comma/newline-separated (never space-separated, the names contain spaces)
+/// list of `name=value` pairs (e.g. `Tri-Somersault=0x1A`), rebalancing a Super
+/// Art's own `record0` power bytes; Super Arts carry no combo, no
+/// arts-name-table row and no AP cost of their own, so name is the only key
+/// they have. `arts_ap_grants` and `arts_ap_costs` are
 /// comma/space-separated lists of `[character:]combo=amount` pairs (e.g.
 /// `Vahn:RDLDL=10`; `amount` 1..=100 AP): a grant makes the art castable at any
 /// AP level and *add* that much, a cost charges exactly that much instead of
@@ -292,6 +297,7 @@ pub fn patch_rom(
     enemy_stat_scale: &str,
     exp_scale: &str,
     seru_catch_rate: &str,
+    super_art_powers: &str,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -809,6 +815,57 @@ pub fn patch_rom(
                     }
                 }
                 None => summary.push_str(&format!("arts-power: skipped malformed entry {tok:?}\n")),
+            }
+        }
+    }
+
+    // Super Art damage-power edits: `NAME=VALUE` tokens
+    // (`Tri-Somersault=0x1A`). Super Art names contain spaces, so this field
+    // splits on commas / semicolons / newlines only - never on a space. A Super
+    // Art has no combo and no arts-name-table row, so it is addressed by name
+    // and located through its finisher action constant in the character's own
+    // `record0` art block. A bad entry is reported and skipped.
+    let super_art_powers = super_art_powers.trim();
+    if super_art_powers.is_empty() {
+        summary.push_str("super-art-power: untouched\n");
+    } else {
+        for tok in super_art_powers
+            .split([',', ';', '\n'])
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+        {
+            let parsed = tok.split_once('=').and_then(|(n, v)| {
+                let hits = legaia_patcher::super_art_power::find_super_art(n.trim(), None);
+                let art = (hits.len() == 1).then_some(hits[0])?;
+                let vs = v.trim();
+                let value = vs
+                    .strip_prefix("0x")
+                    .or_else(|| vs.strip_prefix("0X"))
+                    .map(|h| u8::from_str_radix(h, 16))
+                    .unwrap_or_else(|| vs.parse::<u8>())
+                    .ok()?;
+                legaia_patcher::super_art_power::is_accepted_power(value).then_some((art, value))
+            });
+            match parsed {
+                Some((art, value)) => {
+                    match apply::set_super_art_power(&mut patcher, &[(art, value)]) {
+                        Ok(rep) if rep.edits.is_empty() => {
+                            summary.push_str(&format!("super-art-power: {} unchanged\n", art.name))
+                        }
+                        Ok(rep) => {
+                            for e in &rep.edits {
+                                summary.push_str(&format!(
+                                    "super-art-power: {} ({:?}) -> {value:#04X}\n",
+                                    e.name, e.character
+                                ));
+                            }
+                        }
+                        Err(e) => summary.push_str(&format!("super-art-power: {e}\n")),
+                    }
+                }
+                None => summary.push_str(&format!(
+                    "super-art-power: skipped malformed entry {tok:?}\n"
+                )),
             }
         }
     }

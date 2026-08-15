@@ -13,6 +13,7 @@ use legaia_patcher::drops::DropMode;
 use crate::util::{
     parse_arts_ap_cost, parse_arts_ap_grant, parse_arts_power, parse_exp_scale, parse_item_spec,
     parse_location_rename, parse_prize_price, parse_seru_catch_rate, parse_stat_scale,
+    parse_super_art_power,
 };
 
 #[derive(Parser)]
@@ -796,6 +797,19 @@ pub(crate) struct RandomizeArgs {
     /// `legaia-patcher arts` lists every art's combo and current power tiers.
     #[arg(long, value_name = "COMBO=VALUE", value_delimiter = ',', value_parser = parse_arts_power)]
     pub(crate) arts_power: Vec<(Vec<legaia_art::queue::Command>, u8)>,
+    /// **Rebalance a Super Art's damage.** Comma- or repeat-separated
+    /// `NAME=VALUE` entries, targeting one of the fifteen Super Arts by name
+    /// (case / spacing / punctuation insensitive, e.g.
+    /// `--super-art-power "Tri-Somersault"=0x1A`). `VALUE` is the same
+    /// power-encoding byte `--arts-power` takes (`0x0C..=0x1F`, or `0` to
+    /// disable the hits), applied to every active per-strike byte of the Super
+    /// Art's own `record0` art record (hit count preserved). A Super Art has no
+    /// input combo and no arts-name-table row - and costs no AP of its own, the
+    /// chain arts pay - so power is the knob it has; `--arts-power` and
+    /// `--arts-ap-grant` structurally cannot reach it.
+    /// `legaia-patcher arts` lists each Super Art with its trigger chain.
+    #[arg(long, value_name = "NAME=VALUE", value_delimiter = ',', value_parser = parse_super_art_power)]
+    pub(crate) super_art_power: Vec<(&'static legaia_art::SuperArt, u8)>,
     /// **Make a Tactical Art grant AP instead of costing it** ("arts AP-grant").
     /// Comma- or repeat-separated `[CHARACTER:]COMBO=AMOUNT` entries, targeting
     /// an art by its input combo (`L/R/D/U`, e.g. `--arts-ap-grant RDLDL=10` or

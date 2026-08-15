@@ -87,6 +87,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Weapon specialty](#weapon-specialty)
   - [Arts button combos](#arts-button-combos)
   - [Arts damage power](#arts-damage-power)
+  - [Super Art damage power](#super-art-damage-power)
   - [Arts AP override](#arts-ap-override)
   - [Spirit AP](#spirit-ap)
   - [Enemy-damage AP](#enemy-damage-ap)
@@ -214,6 +215,7 @@ legaia-patcher earth-egg --input DISC.bin                                       
 legaia-patcher randomize --input DISC.bin --earth-egg-price 25000                         # Earth Egg costs 25000 casino coins
 legaia-patcher arts      --input DISC.bin                                                 # read-only: list every art's combo + damage-power tiers
 legaia-patcher randomize --input DISC.bin --seed pow --arts-power RDLDL=0x0C              # power Vahn's Burning Flare down to tier 0x0C
+legaia-patcher randomize --input DISC.bin --super-art-power "Tri-Somersault"=0x1A       # power Vahn's Tri-Somersault Super Art up to tier 0x1A
 legaia-patcher randomize --input DISC.bin --arts-ap-grant Vahn:RDLDL=10                   # Vahn's Burning Flare GRANTS 10 AP instead of costing it
 legaia-patcher randomize --input DISC.bin --arts-ap-cost Vahn:RDLDL=5                     # ... or costs a flat 5 AP instead of the computed 50
 legaia-patcher randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
@@ -297,6 +299,7 @@ unless asked for:
 | `--rename-location INDEX=NAME` | rename a world-map location (save / load / pause + quick-travel menu), e.g. an element cave to match a re-elemented party | repeatable | [Location names](#location-names) |
 | `--earth-egg-price VALUE` | set the casino-coin threshold to obtain the Earth Egg (Sol Tower Prize Counter; retail 100000), gate + debit together | single value | [Earth Egg coin threshold](#earth-egg-coin-threshold) |
 | `--arts-power COMBO=VALUE` | rebalance a Tactical Art's per-strike damage-power bytes, targeted by input combo (`RDLDL=0x16`); `VALUE` is a power tier `0x0C..=0x1F` or `0` to disable | repeatable / comma-separated | [Arts damage power](#arts-damage-power) |
+| `--super-art-power NAME=VALUE` | the same rebalance for a **Super Art**, targeted by name (`"Tri-Somersault"=0x1A`); Super Arts carry no combo, no arts-table row and no AP cost of their own, so name is their only key | repeatable / comma-separated | [Super Art damage power](#super-art-damage-power) |
 | `--arts-ap-grant [CHAR:]COMBO=AMOUNT` | make a Tactical Art **grant** `AMOUNT` AP (Spirit, clamped at 100) instead of costing it, admitting it at any AP level; a code hook into the party arts queue-builder. Keyed per (character, arts row). Mutually exclusive with `--shiny-seru` | repeatable / comma-separated | [Arts AP override](#arts-ap-override) |
 | `--arts-ap-cost [CHAR:]COMBO=AMOUNT` | set what a Tactical Art **costs** in AP (`1..=100`), replacing retail's computed cost. Same hook, same keying, same exclusivity; the art's menu AP number is rewritten to match | repeatable / comma-separated | [Arts AP override](#arts-ap-override) |
 | `--spirit-ap AP` | set how much AP the Spirit command charges into the battle gauge (retail 32): `0` = defence boost only, `100` = one press fills the gauge, negative = Spirit drains the gauge | single value -100..=100 | [Spirit AP](#spirit-ap) |
@@ -1948,6 +1951,42 @@ AP override below) as a per-art picker - "Tactical-Art overrides": choose the ar
 by name, pick a per-hit damage tier or "no damage", and a note under the row
 spells out any combo-sharing art the edit also reaches; the raw
 `combo=value` syntax stays available on the same page as an advanced input.
+
+### Super Art damage power
+
+`--super-art-power NAME=VALUE` is the Super Art sibling of the knob above -
+`--super-art-power "Tri-Somersault"=0x1A`. It takes the same power tier
+(`0x0C..=0x1F`, or `0` to disable the hits), sets every active per-strike byte of
+the named Super Art (hit count preserved), and is a same-size `record0` edit with
+no display copy to sync. Module
+[`legaia_patcher::super_art_power`](../../crates/patcher/src/super_art_power.rs);
+disc oracle `crates/patcher/tests/super_art_power_real.rs`. Browser: an advanced
+`name=value` field inside "Tactical-Art overrides".
+
+**Why a Super Art needs its own knob.** Every other arts knob keys on something a
+Super Art does not have. `--arts-power` and `--arts` address an art by its
+**input combo**, and a Super Art is not entered as a combo at all - it is a
+find/replace over the finished action queue (`FUN_801EF9E4`), so its record
+carries no combo run at `+0`. `--arts-ap-grant` / `--arts-ap-cost` address an art
+by its **row in the SCUS arts-name table** `DAT_80075EC4`, and that table holds
+exactly 45 records - 15 per character - none of them a Super Art. And there is no
+AP cost to override: retail charges the chain arts and the Super itself is free
+(see [arts-command-gauge.md](../subsystems/arts-command-gauge.md#what-an-art-costs-in-ap)).
+Damage is the knob a Super Art has.
+
+**How its record is addressed.** The `0xD0`-stride art array in a decoded
+`record0` is indexed by **action constant**: the record for constant `c` is at
+`base + (c - 0x10) * 0xD0`. Each Super Art's finisher constant is the `finisher`
+field of `legaia_art::SuperArt`, so the address is derived rather than searched -
+and it is self-checking, because the landed record's `+0x10` name field is the
+Super Art's own English name for all fifteen. The editor returns a row only on a
+name match, so an unrecognized build yields nothing instead of a wild write. The
+constant-to-row mapping is documented at
+[art-data.md § Art records are indexed by action constant](../formats/art-data.md#art-records-are-indexed-by-action-constant).
+
+`legaia-patcher arts` now lists each character's Super Arts under its regular
+arts, with the finisher constant, the current power tiers, and the chain of named
+arts that triggers it.
 
 ### Arts AP override
 

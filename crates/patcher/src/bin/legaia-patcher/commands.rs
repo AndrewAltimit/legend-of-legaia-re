@@ -596,13 +596,67 @@ pub(crate) fn cmd_arts(input: &Path) -> Result<()> {
                 regular += 1;
             }
         }
+        // Super Arts. They carry no combo and no arts-name-table row, so they
+        // are listed from their own record0 records (located by finisher
+        // constant, name-validated) with the chain that triggers them.
+        let supers = patcher
+            .read_entry(legaia_patcher::super_art_power::player_entry_index(ch))
+            .ok()
+            .and_then(|entry| legaia_patcher::super_art_power::super_art_powers(&scus, &entry, ch))
+            .unwrap_or_default();
+        if !supers.is_empty() {
+            println!("  -- Super Arts (no combo, no AP; the chain arts pay) --");
+        }
+        for s in &supers {
+            let tiers = if s.power.is_empty() {
+                "-".to_string()
+            } else {
+                s.power
+                    .iter()
+                    .map(|&b| {
+                        legaia_patcher::arts_power::power_tier(b)
+                            .map(|(u, m)| format!("{}x{m}", if u { "U" } else { "L" }))
+                            .unwrap_or_else(|| format!("{b:02X}"))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",")
+            };
+            // Project the trigger pattern onto the named arts it chains.
+            let chain: Vec<String> = legaia_patcher::super_art_power::super_arts_for(ch)
+                .into_iter()
+                .find(|t| t.finisher == s.finisher)
+                .map(|t| {
+                    t.art_sequence()
+                        .into_iter()
+                        .map(|c| {
+                            entries
+                                .iter()
+                                .find(|e| {
+                                    e.character == ch && u16::from(e.index) + 0x1B == u16::from(c)
+                                })
+                                .map(|e| e.name.clone())
+                                .unwrap_or_else(|| format!("{c:#04X}"))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            println!(
+                "  {:02X}  ap  -  {:<11}  power [{:<12}]  {}",
+                s.finisher, "-", tiers, s.name
+            );
+            if !chain.is_empty() {
+                println!("            chain: {}", chain.join(" > "));
+            }
+        }
     }
     println!(
         "\n{} arts total. `--arts-power COMBO=VALUE` rebalances an art's damage \
          (power byte 0x0C..=0x1F = tier, or 0 to disable). `--arts-ap-grant \
          COMBO=AMOUNT` makes an art grant AP (Spirit) instead of costing it; the \
          leftmost number is the arts-table index, which is the shared config row \
-         - AP-grant applies to every character's art at that same index.",
+         - AP-grant applies to every character's art at that same index. Super \
+         Arts have no combo and no AP cost of their own, so they are addressed \
+         by name: `--super-art-power \"Tri-Somersault\"=0x1A`.",
         entries.len()
     );
     let _ = regular;

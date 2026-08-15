@@ -118,6 +118,63 @@ pub(crate) fn parse_arts_power(s: &str) -> Result<(Vec<legaia_art::queue::Comman
     Ok((combo, value))
 }
 
+/// Parse a `--super-art-power` entry: `[CHARACTER:]NAME=VALUE`
+/// (`Tri-Somersault=0x1A`, `Vahn:tri somersault=0x1A`). The name match ignores
+/// case, spaces and punctuation. `VALUE` is a power-encoding byte
+/// (`0x0C..=0x1F`) or `0` to disable the Super Art's hits.
+pub(crate) fn parse_super_art_power(s: &str) -> Result<(&'static legaia_art::SuperArt, u8)> {
+    use legaia_art::queue::Character;
+    let s = s.trim();
+    let (name_str, val_str) = s.split_once('=').with_context(|| {
+        format!(
+            "invalid super-art power {s:?} \
+             (expected [CHARACTER:]NAME=VALUE, e.g. \"Tri-Somersault\"=0x1A)"
+        )
+    })?;
+    let (character, name_str) = match name_str.split_once(':') {
+        Some((c, rest)) => {
+            let ch = match c.trim().to_ascii_lowercase().as_str() {
+                "vahn" => Character::Vahn,
+                "noa" => Character::Noa,
+                "gala" => Character::Gala,
+                other => anyhow::bail!("unknown character {other:?} (use Vahn, Noa or Gala)"),
+            };
+            (Some(ch), rest)
+        }
+        None => (None, name_str),
+    };
+    let matches = legaia_patcher::super_art_power::find_super_art(name_str.trim(), character);
+    let art = match matches.len() {
+        1 => matches[0],
+        0 => anyhow::bail!(
+            "no Super Art named {:?} (the fifteen are: {})",
+            name_str.trim(),
+            legaia_art::SUPER_ARTS
+                .iter()
+                .map(|s| s.name)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        n => anyhow::bail!(
+            "{:?} matches {n} Super Arts - add a CHARACTER: prefix",
+            name_str.trim()
+        ),
+    };
+    let vs = val_str.trim();
+    let value = if let Some(hex) = vs.strip_prefix("0x").or_else(|| vs.strip_prefix("0X")) {
+        u8::from_str_radix(hex, 16)
+    } else {
+        vs.parse::<u8>()
+    }
+    .with_context(|| format!("invalid power value in {s:?} (expected 0 or 0x0C..=0x1F)"))?;
+    if !legaia_patcher::super_art_power::is_accepted_power(value) {
+        anyhow::bail!(
+            "power value {value:#04x} is not a damage tier: use 0 (disable) or 0x0C..=0x1F"
+        );
+    }
+    Ok((art, value))
+}
+
 /// Parse an arts-AP entry: `[CHARACTER:]COMBO=AMOUNT` (`RDLDL=10`,
 /// `Vahn:RDLDL=10`). The optional character prefix (`Vahn`/`Noa`/`Gala`,
 /// case-insensitive) narrows the override to that character's art; without it

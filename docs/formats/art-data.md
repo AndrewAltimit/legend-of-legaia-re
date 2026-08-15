@@ -12,6 +12,7 @@ Implementation: [`crates/art`](../../crates/art/README.md).
   - [Fixed prefix](#fixed-prefix)
   - [Variable fields](#variable-fields-positions-documented-exact-byte-offsets-per-art-specific)
   - [Power encoding](#power-encoding)
+  - [Art records are indexed by action constant](#art-records-are-indexed-by-action-constant)
 - [Runtime cue playout](#runtime-cue-playout)
   - [The cue tables](#the-cue-tables)
   - [Target-group encoding](#target-group-encoding)
@@ -197,6 +198,42 @@ is `legaia_patcher::arts_power` (CLI `legaia-patcher arts` /
 `--arts-power COMBO=VALUE`; see [randomizer.md](../tooling/randomizer.md)); this
 supersedes the earlier "exact byte offsets per art-specific / UNPINNED" note.
 
+### Art records are indexed by action constant
+
+The `0xD0`-stride array is not a packed list of the arts a character can input -
+it is indexed by **action constant**. The record for constant `c` sits at
+
+```text
+record_off = art_block_base + (c - 0x10) * 0xD0
+```
+
+so constants `0x19` / `0x1A` (the two [Art Starters](#action-constants)) land on
+the two records whose `+0x10` name field reads `"Starter"`, constant `0x1B` on
+each character's Miracle Art (the record carrying that character's Miracle
+command string at `+0`), and the regular arts follow at `0x1B + display index`.
+The mapping comes off the queue-builder `FUN_801EED1C`, which emits a matched
+art's constant as its row `+ 0x18` (`addiu v1,t3,0x18` then `sb v1,0x1df(v0)` at
+`0x801EF6F0`/`0x801EF6F8`), with the array as enumerated from its first parseable
+record starting eight records ahead of row 0.
+
+Three consequences the arts tooling depends on:
+
+- **Super Art finishers have records here too**, at `0x2B..0x2F` (Vahn, Gala) and
+  `0x2E..0x32` (Noa) - the same constants `super_art.rs` carries as each Super's
+  `finisher`. Each one's `+0x10` name is the Super Art's English name
+  (*Tri-Somersault*, *Neo Static Raising*, …), byte-identical to the modeled
+  table for all fifteen, and its `+0x24` run holds real power tiers. So a Super
+  Art's damage is ordinary art-record data.
+- **A Super Art record has no combo.** Its `+0` field is a one-byte stub, shorter
+  than the three-direction minimum any real art input uses, which is why a
+  combo-keyed lookup can never land on one.
+- **Some records are reachable by neither route**: Vahn's and Gala's constant
+  `0x2A` and Noa's `0x2C`/`0x2D` carry named records with power bytes but have no
+  arts-name-table row and no combo, so nothing in the display path names them.
+
+Parsers: `legaia_patcher::super_art_power` (locate + edit, name-validated),
+`legaia_patcher::arts_power` (the combo-keyed sibling).
+
 ## Runtime cue playout
 
 The art record's [Special / Hit Effect Cues and Damage Timing](#variable-fields-positions-documented-exact-byte-offsets-per-art-specific)
@@ -372,6 +409,8 @@ Triggers:
 3. Super Arts themselves do not consume AP - the chain arts pay it.
 
 Full per-character tables (5 entries each for Vahn / Noa / Gala = 15 total) are in [`crates/art/src/super_art.rs`](../../crates/art/src/super_art.rs).
+
+Each Super Art also has its **own art record** in the per-character `0xD0`-stride array, addressed by its finisher constant (see [Art records are indexed by action constant](#art-records-are-indexed-by-action-constant)): the record's `+0x10` name field is the Super Art's English name and its `+0x24` run its per-strike power bytes. What it does **not** have is an input combo or a row in the [arts-name table](#arts-name-table-dat_80075ec4) - so a Super Art carries no AP number, no menu command string, and no entry in either display list the game draws. Patcher knob: `--super-art-power` ([randomizer.md](../tooling/randomizer.md#super-art-damage-power)).
 
 The interleaved connector direction after each art (the `0F` / `0E` above) is **combo-specific**, not derivable from each art's own command string:
 

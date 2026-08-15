@@ -455,6 +455,45 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         }
     }
 
+    // Super Art damage-power edits: rewrite a Super Art's per-strike power bytes
+    // (record+0x24) in its own record0 art record, addressed by the finisher
+    // action constant and validated against the record's own name field. Seedless
+    // targeted edits keyed by Super Art name - a Super Art has no input combo and
+    // no arts-name-table row, so neither `--arts-power` nor `--arts-ap-*` can
+    // reach it.
+    if !args.super_art_power.is_empty() {
+        let report = apply::set_super_art_power(&mut patcher, &args.super_art_power)?;
+        let mut changed: std::collections::BTreeSet<u8> = std::collections::BTreeSet::new();
+        for e in &report.edits {
+            let old: String = e
+                .old_power
+                .iter()
+                .map(|b| format!("{b:02X}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let new: String = e
+                .new_power
+                .iter()
+                .map(|b| format!("{b:02X}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            println!(
+                "super-art-power: {} ({:?}) [{old}] -> [{new}]",
+                e.name, e.character
+            );
+            changed.insert(e.finisher);
+        }
+        for (art, value) in &args.super_art_power {
+            if !changed.contains(&art.finisher) {
+                println!(
+                    "super-art-power: {} already at {value:#04X} (or has no damage byte)",
+                    art.name
+                );
+            }
+            manifest.push(format!("super_art_power {} = {value:#04X}", art.name));
+        }
+    }
+
     // Arts AP override: three same-size detours into the party arts queue-builder
     // (PROT 0898) + routines and a per-(character, row) config table in
     // verified-dead SCUS regions, so a targeted art either grants AP (clamped at
