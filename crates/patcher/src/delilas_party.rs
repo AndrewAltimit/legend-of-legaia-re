@@ -183,12 +183,18 @@ pub fn apply_delilas_party(
     let archive = patcher
         .read_entry_footprint(MONSTER_ARCHIVE_ENTRY)
         .context("read monster archive")?;
-    // Retail Vahn player file, captured before the model loop patches
-    // it: the Plasma Strike art-anim retarget must run against the same
-    // retail rest/mesh statistics the win-pose conversion uses.
-    let retail_vahn = patcher
-        .read_entry_footprint(863)
-        .context("read retail Vahn player file")?;
+    // Retail player files for all three heroes, captured before the
+    // model loop patches them: the signature-art anim retarget must run
+    // against the same retail rest/mesh statistics the win-pose
+    // conversion uses.
+    let mut retail_players: Vec<Vec<u8>> = Vec::with_capacity(3);
+    for (entry, _, _, who, _) in mapping.pairs() {
+        retail_players.push(
+            patcher
+                .read_entry_footprint(entry)
+                .with_context(|| format!("read retail {who} player file"))?,
+        );
+    }
 
     // Baseline pass before any write: every target block's name must be
     // its retail sibling name (fresh) or its mapped character's (already
@@ -491,52 +497,145 @@ pub fn apply_delilas_party(
             .context("splice party battle voices")?;
         report.notes.extend(notes);
 
-        // The signature-special reskin (name + combo + her own clip as
-        // the staged animation + the fanfare duration to cover the
-        // soundtrack the fills above wrote).
-        let notes = reskin_plasma_strike(patcher, mapping, &archive, &retail_vahn, &victory_lines)
-            .context("reskin the Plasma Strike art")?;
-        report.notes.extend(notes);
+        // The signature-special reskin, once per hero slot (name +
+        // combo + the sibling's own clip as the staged animation + the
+        // fanfare duration to cover the soundtrack the fills above
+        // wrote).
+        for (_, rig, slot, who, sibling) in mapping.pairs() {
+            let notes = reskin_signature_art(
+                patcher,
+                slot,
+                sibling,
+                rig,
+                &retail_players[slot],
+                &archive,
+                &victory_lines,
+            )
+            .with_context(|| format!("reskin the {who}-slot signature art"))?;
+            report.notes.extend(notes);
+        }
     }
     Ok(report)
 }
 
-/// Reskin a hero Hyper art as the mapped sibling's signature special.
-/// v2, covering Lu on the Vahn slot: **Burning Flare becomes "Plasma
-/// Strike"** - same-length name swap (13 = 13 chars) in the SCUS
+/// The sibling's signature special, as the disc spells it. All three
+/// are 13 characters, which is what lets the rename be an in-place
+/// same-length write over a host art of the same width.
+fn signature_name(sibling: Sibling) -> &'static [u8] {
+    match sibling {
+        Sibling::Gi => b"Blazing Slash",
+        Sibling::Che => b"Megaton Press",
+        Sibling::Lu => b"Plasma Strike",
+    }
+}
+
+/// The host Hyper art a hero slot gives up to carry the sibling's
+/// signature special.
+struct HostArt {
+    /// Retail name - must be the same byte length as [`signature_name`],
+    /// and the rename hits every occurrence in SCUS.
+    retail_name: &'static [u8],
+    /// Index among the character's non-Miracle arts.
+    index: u8,
+    /// The art's action constant - the key its fanfare cue is selected
+    /// by ([`legaia_art::hyper_fanfare::HYPER_FANFARES`]).
+    action_constant: u8,
+    /// The replacement 5-input combo, checked unique against the
+    /// character's other arts before anything is written.
+    combo: [legaia_art::queue::Command; 5],
+}
+
+/// Which art each hero slot (0 Vahn / 1 Noa / 2 Gala) gives up.
+fn host_art(slot: usize) -> Option<HostArt> {
+    use legaia_art::queue::Command::{Down, Left, Right};
+    match slot {
+        0 => Some(HostArt {
+            retail_name: b"Burning Flare",
+            index: 1,
+            action_constant: 0x1C,
+            combo: [Left, Right, Left, Right, Down],
+        }),
+        _ => None,
+    }
+}
+
+/// The fanfare row the slot's host art fires through. The cue is a coin
+/// flip between a PAIR of channels of the character's own fanfare bank
+/// (`XA1`/`XA3`/`XA5`), and which pair is per-art - so the sibling's
+/// special soundtrack has to be written to that art's pair, not to a
+/// fixed one.
+fn signature_fanfare(slot: usize) -> Option<legaia_art::hyper_fanfare::HyperFanfare> {
+    let art = host_art(slot)?;
+    legaia_art::hyper_fanfare::HYPER_FANFARES
+        .iter()
+        .find(|f| f.cslot as usize == slot && f.action_constant == art.action_constant)
+        .copied()
+}
+
+/// The two fanfare-bank channels the slot's signature art plays through.
+pub(crate) fn signature_fanfare_channels(slot: usize) -> Option<(u8, u8)> {
+    signature_fanfare(slot).map(|f| f.channel_pair())
+}
+
+/// The [`legaia_art::queue::Character`] a hero slot names.
+fn slot_character(slot: usize) -> legaia_art::queue::Character {
+    use legaia_art::queue::Character;
+    match slot {
+        0 => Character::Vahn,
+        1 => Character::Noa,
+        _ => Character::Gala,
+    }
+}
+
+/// Reskin one hero slot's Hyper art as the sibling mapped onto it.
+///
+/// Four coordinated edits: a same-length name swap in the SCUS
 /// arts-name table (menu + battle banner), a fresh 5-input combo
-/// `L R L R D` written to both copies retail keeps in sync (the SCUS
-/// display glyphs and the player-file record0 matcher), **her own
-/// monster Plasma Strike clip as the staged animation** (retargeted
-/// onto the player rig into the host art's "ME" stream, host rate byte
-/// halved so the 39-frame clip resampled to the host's 21 keeps her
-/// authored pace), and the fanfare duration table extended so her
-/// soundtrack (XA1 ch 4/7, written by the fills) plays to completion.
+/// written to both copies retail keeps in sync (the SCUS display glyphs
+/// and the player-file record0 matcher), the sibling's own monster clip
+/// retargeted onto the player rig into the host art's "ME" stream (host
+/// rate byte halved so a clip resampled into the host's shorter stream
+/// keeps its authored pace), and the fanfare duration table extended so
+/// the sibling's soundtrack - where one was captured - plays to
+/// completion.
+///
 /// Must run while record0 still holds the VANILLA combo bytes (the
 /// playerize rebuild keeps record0 verbatim, so ordering after it is
 /// fine).
-fn reskin_plasma_strike(
+fn reskin_signature_art(
     patcher: &mut DiscPatcher,
-    mapping: &PartyMapping,
+    slot: usize,
+    sibling: Sibling,
+    rig: &party_swap::PlayerRig,
+    retail_player: &[u8],
     archive: &[u8],
-    retail_vahn: &[u8],
     lines: &crate::delilas_xa_voice::VictoryLines,
 ) -> Result<Vec<String>> {
     use legaia_art::arts_table;
-    use legaia_art::queue::{Character, Command};
-    if mapping.vahn != Sibling::Lu {
-        return Ok(vec![
-            "Plasma Strike reskin: only wired for Lu on the Vahn slot (skipped)".into(),
-        ]);
-    }
+    use legaia_art::queue::Command;
+    let who = ["Vahn", "Noa", "Gala"][slot];
+    let character = slot_character(slot);
+    let Some(art) = host_art(slot) else {
+        return Ok(vec![format!(
+            "{}'s signature art: no {who}-slot host art wired yet (skipped)",
+            sibling.display_name()
+        )]);
+    };
     let mut notes = Vec::new();
 
     // 1. Name: same-length swap everywhere the string appears.
     let scus = patcher
         .read_named_file(crate::arts::SCUS_NAME)
         .context("read SCUS for the art rename")?;
-    let old = b"Burning Flare";
-    let new = b"Plasma Strike";
+    let old = art.retail_name;
+    let new = signature_name(sibling);
+    if old.len() != new.len() {
+        bail!(
+            "{who}-slot rename is not same-length: {} -> {}",
+            String::from_utf8_lossy(old),
+            String::from_utf8_lossy(new)
+        );
+    }
     let mut hits = Vec::new();
     let mut at = 0usize;
     while let Some(pos) = scus[at..].windows(old.len()).position(|w| w == old) {
@@ -544,7 +643,10 @@ fn reskin_plasma_strike(
         at += pos + 1;
     }
     if hits.is_empty() {
-        bail!("SCUS carries no 'Burning Flare' string to rename");
+        bail!(
+            "SCUS carries no '{}' string to rename",
+            String::from_utf8_lossy(old)
+        );
     }
     for &off in &hits {
         patcher
@@ -552,34 +654,39 @@ fn reskin_plasma_strike(
             .context("write art name")?;
     }
     notes.push(format!(
-        "art renamed: Burning Flare -> Plasma Strike ({}x)",
+        "art renamed: {} -> {} ({}x)",
+        String::from_utf8_lossy(old),
+        String::from_utf8_lossy(new),
         hits.len()
     ));
 
-    // 2. Combo: L R L R D, checked unique among Vahn's arts.
+    // 2. Combo: fresh 5-input sequence, checked unique among the
+    // character's own arts.
     let edits =
         crate::arts::ArtsEdits::locate(patcher.image()).context("locate arts-name table")?;
     let target = edits
         .records()
         .iter()
-        .find(|r| r.character == Character::Vahn && r.index == 1 && !r.is_miracle)
+        .find(|r| r.character == character && r.index == art.index && !r.is_miracle)
         .cloned()
-        .context("Vahn art index 1 (Burning Flare) not found")?;
-    let new_combo = vec![
-        Command::Left,
-        Command::Right,
-        Command::Left,
-        Command::Right,
-        Command::Down,
-    ];
+        .with_context(|| {
+            format!(
+                "{who} art index {} ({}) not found",
+                art.index,
+                String::from_utf8_lossy(old)
+            )
+        })?;
+    let new_combo: Vec<Command> = art.combo.to_vec();
     for r in edits.records() {
-        if r.character == Character::Vahn && r.cmd_ptr != target.cmd_ptr && r.commands == new_combo
-        {
-            bail!("combo L R L R D collides with Vahn art index {}", r.index);
+        if r.character == character && r.cmd_ptr != target.cmd_ptr && r.commands == new_combo {
+            bail!(
+                "the {who}-slot combo collides with {who} art index {}",
+                r.index
+            );
         }
     }
     let layout = arts_table::combo_string_layout(&scus, target.cmd_ptr)
-        .context("decode Burning Flare combo layout")?;
+        .with_context(|| format!("decode {} combo layout", String::from_utf8_lossy(old)))?;
     let plan = vec![crate::arts::ComboEdit {
         cmd_ptr: target.cmd_ptr,
         direction_slots: layout.direction_slots.clone(),
@@ -589,16 +696,18 @@ fn reskin_plasma_strike(
     // Matcher first (player record0), then the display glyphs. The
     // host bank record is found by its VANILLA combo bytes; its rate
     // byte (entry +0x78) halves 2 -> 1 in the SAME record0 rewrite, so
-    // the 21-frame host stream carrying Lu's 39-frame clip plays at
-    // her authored pace (~2.8 s) instead of double speed.
+    // the shorter host stream carrying the sibling's longer clip plays
+    // at her authored pace instead of double speed.
     use legaia_asset::battle_char_assembly;
-    let char_edits = edits.player_edits(&plan, Character::Vahn);
-    let index = crate::arts::player_entry_index(Character::Vahn);
+    let char_edits = edits.player_edits(&plan, character);
+    let index = crate::arts::player_entry_index(character);
     let entry = patcher
         .read_entry(index)
         .with_context(|| format!("read player file PROT {index}"))?;
-    let rec0 = battle_char_assembly::decode_record0(&entry).context("decode Vahn record0")?;
-    let bank = battle_char_assembly::art_animation_bank(&rec0).context("Vahn art bank")?;
+    let rec0 = battle_char_assembly::decode_record0(&entry)
+        .with_context(|| format!("decode {who} record0"))?;
+    let bank = battle_char_assembly::art_animation_bank(&rec0)
+        .with_context(|| format!("{who} art bank"))?;
     let host = char_edits
         .first()
         .and_then(|(vanilla, _)| {
@@ -623,14 +732,20 @@ fn reskin_plasma_strike(
             .patch_named_file(crate::arts::SCUS_NAME, off, &bytes)
             .context("write combo display glyph")?;
     }
-    notes.push("Plasma Strike combo: L R L R D (was R D L D L)".into());
+    notes.push(format!(
+        "{} combo: {} (was {})",
+        String::from_utf8_lossy(new),
+        combo_str(&new_combo),
+        combo_str(&target.commands)
+    ));
 
-    // 3. Her own animation: the highest-energy command-band clip of her
-    // monster archive, retargeted onto the player rig into the host
-    // art's "ME" stream at its retail (parts, frames) shape - the art
-    // record's timing/effect/cue fields stay valid. Non-fatal: a failed
-    // rebuild leaves the host animation (with a note).
-    let source_id = Sibling::Lu.monster_id();
+    // 3. The sibling's own animation: the highest-energy command-band
+    // clip of their monster archive, retargeted onto the player rig
+    // into the host art's "ME" stream at its retail (parts, frames)
+    // shape - the art record's timing/effect/cue fields stay valid.
+    // Non-fatal: a failed rebuild leaves the host animation (with a
+    // note).
+    let source_id = sibling.monster_id();
     match host
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("host art bank record not found by vanilla combo"))
@@ -647,7 +762,7 @@ fn reskin_plasma_strike(
             let readef = patcher
                 .read_entry_footprint(READEF_ENTRY)
                 .context("read readef.DAT")?;
-            let slot_idx = battle_char_assembly::art_me_slot(0, false);
+            let slot_idx = battle_char_assembly::art_me_slot(slot, false);
             let off = slot_idx * winpose::READEF_SLOT;
             let slot = readef
                 .get(off..off + winpose::READEF_SLOT)
@@ -656,8 +771,8 @@ fn reskin_plasma_strike(
                 slot,
                 h.stream_source as usize,
                 &clip,
-                &party_swap::RIG_VAHN_GALA,
-                retail_vahn,
+                rig,
+                retail_player,
                 archive,
                 source_id,
             )?;
@@ -665,28 +780,57 @@ fn reskin_plasma_strike(
             Ok(clip.action_id)
         }) {
         Ok(tag) => notes.push(format!(
-            "Plasma Strike animation: Lu's own clip (tag 0x{tag:02X}) on the player rig"
+            "{} animation: {}'s own clip (tag 0x{tag:02X}) on the player rig",
+            String::from_utf8_lossy(new),
+            sibling.display_name()
         )),
-        Err(e) => notes.push(format!("Plasma Strike animation stays the host's ({e:#})")),
+        Err(e) => notes.push(format!(
+            "{} animation stays the host's ({e:#})",
+            String::from_utf8_lossy(new)
+        )),
     }
 
     // 4. Fanfare duration: the cue's read span must cover the excerpt
-    // the fills wrote into XA1 ch 4/7 or the audio cuts early. Measured
+    // the fills wrote into the host art's own channel pair or the audio
+    // cuts early. The table is indexed by jingle id - 0x100, so the two
+    // rows to widen are the art's `base_id` pair, NOT a fixed {4, 7}
+    // (that pair is Burning Flare's; every art has its own). Measured
     // against retail (every id's table entry vs its channel's own
     // length, across 24 ids): the entry is CENTISECONDS of that
     // channel's audio - `entry ~= secs * 100`, so `dur = entry * 0.6`
     // is a 60 Hz tick budget, not the 75-sectors/s physical span an
     // earlier reading assumed (which over-ran every write by 25%).
-    if let Some(secs) = lines.special_secs(0) {
+    // Skipped for a sibling with no captured soundtrack.
+    if let Some(secs) = lines.special_secs(slot)
+        && let Some(fanfare) = signature_fanfare(slot)
+    {
         let toff = legaia_art::hyper_fanfare::dur_table_file_offset(&scus)
             .ok_or_else(|| anyhow::anyhow!("fanfare duration table not found in SCUS"))?;
         let entry_val = ((secs * 100.0).ceil() as u16).to_le_bytes();
-        for n in [4usize, 7] {
+        let base = (fanfare.base_id - 0x100) as usize;
+        for n in [base, base + 3] {
             patcher
                 .patch_named_file(crate::arts::SCUS_NAME, (toff + n * 2) as u64, &entry_val)
                 .context("write fanfare duration")?;
         }
-        notes.push(format!("Plasma Strike fanfare duration: {secs:.1} s"));
+        notes.push(format!(
+            "{} fanfare duration: {secs:.1} s",
+            String::from_utf8_lossy(new)
+        ));
     }
     Ok(notes)
+}
+
+/// A combo as the game prints it: `L R L R D`.
+fn combo_str(cmds: &[legaia_art::queue::Command]) -> String {
+    use legaia_art::queue::Command;
+    cmds.iter()
+        .map(|c| match c {
+            Command::Up => "U",
+            Command::Down => "D",
+            Command::Left => "L",
+            Command::Right => "R",
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }

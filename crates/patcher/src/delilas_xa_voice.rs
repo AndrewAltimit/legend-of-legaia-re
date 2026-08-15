@@ -791,16 +791,21 @@ pub fn fill_hero_xa_voices(
                     (staged_banks[slot][0], &shouts.fanfare[slot]),
                     (staged_banks[slot][1], &shouts.staged2[slot]),
                 ] {
+                    // The reskinned special's soundtrack owns the
+                    // channel PAIR its host art coin-flips between -
+                    // per-art, from the `FUN_8004AD80` selector, not a
+                    // fixed {4, 7} (that pair belongs to Vahn's Burning
+                    // Flare alone).
+                    let special_pair =
+                        crate::delilas_party::signature_fanfare_channels(slot).unwrap_or((4, 7));
                     for (chan, pcm, rate) in captured {
                         // The ear-picked one-shots keep their channels:
-                        // Spirit fires through the cast-cue band, and the
-                        // reskinned special's soundtrack owns the pair
-                        // {4, 7} of the fanfare bank.
+                        // Spirit fires through the cast-cue band.
                         let picked = if bank != staged_banks[slot][0] {
                             None
                         } else if *chan == 0 {
                             spirit_line.as_ref()
-                        } else if *chan == 4 || *chan == 7 {
+                        } else if *chan == special_pair.0 || *chan == special_pair.1 {
                             special_line.as_ref()
                         } else {
                             None
