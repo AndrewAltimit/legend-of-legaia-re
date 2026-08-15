@@ -1094,6 +1094,21 @@ fn reskin_signature_art(
         combo_str(&target.commands)
     ));
 
+    // 3a2. The other half of the same rename, on the enemy side. The
+    // sibling's own block now wears this character's model and name, so
+    // the Nivora duel already fights the heroes - but the cast it
+    // announces is still the sibling's, which reads as Vahn casting
+    // Blazing Slash. The enemy AI resolves that name through the spell
+    // table (`FUN_801E9FD4` sets `actor+0x1DF = monster_id - 0x29` on
+    // every third round), so pointing the sibling's row at the host
+    // art's retail name completes the exchange: the party art gave up
+    // "Burning Flare" to become "Blazing Slash", and the enemy row gives
+    // up "Blazing Slash" to become "Burning Flare".
+    match rename_enemy_signature_spell(patcher, sibling, art.retail_name) {
+        Ok(why) => notes.push(format!("{who} enemy cast: {why}")),
+        Err(e) => notes.push(format!("{who} enemy cast: left retail ({e:#})")),
+    }
+
     // 3b. The swing camera. Not a retarget - a re-time. See
     // [`retime_camera_arm`] for why the arm the art already dispatches to
     // is the right one to edit and the wrong one to replace.
@@ -1144,6 +1159,60 @@ fn reskin_signature_art(
 const FX_RECORD: usize = 8;
 const FX_BASE: usize = 0x14;
 const FX_RECORDS: usize = 8;
+
+/// Spell id of a sibling's signature cast.
+///
+/// `FUN_801E9FD4`'s `0xA2`/`0xA3`/`0xA4` arms fire on the round counter
+/// (`% 3 == 2`) and write `actor[+0x1DF] = monster_id - 0x29`, so Gi's
+/// `162` becomes `0x79`, Che's `163` `0x7A` and Lu's `164` `0x7B`. The
+/// subtraction is a literal in the raw battle overlay at file `0x1CFFC`
+/// (`0x2442FFD7` = `addiu v0,v0,-0x29`).
+fn signature_spell_id(sibling: Sibling) -> u8 {
+    (sibling.monster_id() - 0x29) as u8
+}
+
+/// Rename the sibling's signature cast to the host art's retail name.
+///
+/// The spell-name table is the same one the party path uses, so this is
+/// the enemy half of the art rename and not a second mechanism. Written
+/// through the record's own `+8` pointer into the measured NUL padding -
+/// never grown, never found by searching the image for the old text,
+/// which is how the `Hurricane` / `Hurricane Kick` class of neighbour
+/// corruption happens.
+fn rename_enemy_signature_spell(
+    patcher: &mut DiscPatcher,
+    sibling: Sibling,
+    host_name: &[u8],
+) -> Result<String> {
+    let id = signature_spell_id(sibling);
+    let scus = patcher
+        .read_named_file(crate::arts::SCUS_NAME)
+        .ok_or_else(|| anyhow::anyhow!("SCUS_942.54 not found"))?;
+    let field = legaia_asset::spell_names::name_field(&scus, id)
+        .ok_or_else(|| anyhow::anyhow!("spell {id:#04X} has no reachable name field"))?;
+    let current = &scus[field.file_offset..field.file_offset + field.len];
+    if current == host_name {
+        return Ok(format!("spell {id:#04X} already renamed"));
+    }
+    if host_name.len() + 1 > field.budget {
+        bail!(
+            "spell {id:#04X}'s name slot holds {} bytes, {} needs {}",
+            field.budget,
+            String::from_utf8_lossy(host_name),
+            host_name.len() + 1
+        );
+    }
+    let was = String::from_utf8_lossy(current).into_owned();
+    let mut bytes = vec![0u8; field.budget];
+    bytes[..host_name.len()].copy_from_slice(host_name);
+    patcher
+        .patch_named_file(crate::arts::SCUS_NAME, field.file_offset as u64, &bytes)
+        .context("write the enemy signature cast name")?;
+    Ok(format!(
+        "spell {id:#04X} {was:?} -> {:?}",
+        String::from_utf8_lossy(host_name)
+    ))
+}
 
 /// PROT 0898 file offset of each character's attack-camera jump table
 /// (`0x801CEA88` / `0x801CEAD0` / `0x801CEB20` less the overlay base) and

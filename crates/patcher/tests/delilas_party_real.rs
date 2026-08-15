@@ -611,20 +611,22 @@ fn every_slot_gets_its_siblings_signature_art() {
         action_constant,
     } in expect
     {
-        // The name moved, and it is the ONLY thing that moved: the host
-        // name is gone and the signature name gained exactly one site.
-        // (The signature names already exist once each as spell-table
-        // rows, which is why this is a delta and not a count.)
-        assert_eq!(
-            occurrences(&scus, host_name),
-            occurrences(&retail_scus, host_name) - 1,
-            "slot {slot}: {host_name} should have lost exactly one site"
-        );
-        assert_eq!(
-            occurrences(&scus, sig_name),
-            occurrences(&retail_scus, sig_name) + 1,
-            "slot {slot}: {sig_name} should have gained exactly one site"
-        );
+        // The two names EXCHANGE places, so neither count moves: the
+        // arts-table record gives up the host name to carry the
+        // signature, and the sibling's spell row gives up the signature
+        // to carry the host name. Holding the counts still is what
+        // catches collateral damage - these strings nest (searching for
+        // `Hurricane` finds `Hurricane Kick`), so a rename that went
+        // through the image as text rather than through each table's own
+        // pointer would show up here as a count that drifted.
+        for name in [host_name, sig_name] {
+            assert_eq!(
+                occurrences(&scus, name),
+                occurrences(&retail_scus, name),
+                "slot {slot}: {name} site count moved - the rename is an exchange, \
+                 so every name should end up somewhere exactly once"
+            );
+        }
 
         // The host art's stream now carries the sibling's clip at the
         // clip's OWN length - not the host stream's retail length.
@@ -790,6 +792,22 @@ fn every_slot_gets_its_siblings_signature_art() {
                 (*h as usize) < after.1,
                 "slot {slot}: hit at frame {h} is past the {}-frame stream",
                 after.1
+            );
+        }
+
+        // The enemy half of the same rename. The sibling's block already
+        // wears this character's model and name, so the Nivora duel
+        // fights the heroes - and the cast it announces must be the
+        // host's art, not the sibling's, or Vahn casts Blazing Slash.
+        // `FUN_801E9FD4` resolves it as `monster_id - 0x29`.
+        {
+            let table = legaia_asset::spell_names::SpellNameTable::from_scus(&scus)
+                .expect("patched spell table");
+            let id = (monster_id - 0x29) as u8;
+            assert_eq!(
+                table.name(id),
+                Some(host_name),
+                "slot {slot}: enemy cast {id:#04X} should announce the host art"
             );
         }
 

@@ -64,6 +64,48 @@ impl ExeMap {
 /// `SCUS_942.54` isn't a parseable PSX-EXE. Mirrors
 /// [`crate::steal_table::table_file_offset`]; the MP-cost randomizer uses it to
 /// turn a spell id into a same-size SCUS patch offset.
+/// The writable extent of one spell's display-name string in SCUS.
+///
+/// Sibling of `legaia_art::arts_table::NameField`, and for the same
+/// reason: the enemy-cast name and the party art name are two different
+/// tables that a swap has to keep consistent, and both are NUL-padded
+/// strings a rename must fit rather than grow into.
+pub struct SpellNameField {
+    /// File offset of the first name byte.
+    pub file_offset: usize,
+    /// Bytes of the current string, terminator excluded.
+    pub len: usize,
+    /// Writable bytes before the next object: the string plus the NUL
+    /// padding run after it. A replacement needs one of them for its own
+    /// terminator, so it may be at most `budget - 1` long.
+    pub budget: usize,
+}
+
+/// Locate spell `id`'s display-name field, with its padding measured
+/// rather than assumed - the next pointed-at object starts at the first
+/// non-zero byte after the padding, so that run is exactly the slack.
+pub fn name_field(scus: &[u8], id: u8) -> Option<SpellNameField> {
+    let map = ExeMap::parse(scus)?;
+    let stat = map.off(STATS_VA + (id as usize * RECORD_STRIDE) as u32)?;
+    let name_ptr = u32::from_le_bytes(scus.get(stat + 8..stat + 12)?.try_into().ok()?);
+    let file_offset = map.off(name_ptr)?;
+    let len = scus
+        .get(file_offset..)?
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(0);
+    let pad = scus
+        .get(file_offset + len..)?
+        .iter()
+        .position(|&b| b != 0)
+        .unwrap_or(0);
+    Some(SpellNameField {
+        file_offset,
+        len,
+        budget: len + pad,
+    })
+}
+
 pub fn stats_file_offset(scus: &[u8]) -> Option<usize> {
     ExeMap::parse(scus)?.off(STATS_VA)
 }

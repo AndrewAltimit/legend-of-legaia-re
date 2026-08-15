@@ -1629,6 +1629,31 @@ Four coordinated edits per slot (`delilas_party::reskin_signature_art`):
   every gate to `0xFF` - the walker never advances past a gate it has not
   reached, so nothing spawns and no terminator arm runs.
 
+The rename has an **enemy half**, and it is what makes the Nivora duel
+read correctly. The mod already reskins each sibling's monster block with
+the mapped hero's model and name, so that fight already puts Vahn, Noa and
+Gala on the enemy side - but the cast it announces came from the spell
+table, which is the same table the party path uses. `FUN_801E9FD4`'s
+`0xA2`/`0xA3`/`0xA4` arms fire on the round counter (`% 3 == 2`) and write
+`actor[+0x1DF] = monster_id - 0x29` (the subtraction is a literal at file
+`0x1CFFC` of the raw battle overlay, `0x2442FFD7`), so Gi's `162` resolves
+to spell `0x79`, Che's to `0x7A` and Lu's to `0x7B`. Left alone, the enemy
+wearing Vahn's model announces *Blazing Slash*. Pointing the sibling's row
+at the host art's retail name completes an exchange rather than a
+one-way rename: the party art gives up `Burning Flare` to become
+`Blazing Slash`, and the enemy row gives up `Blazing Slash` to become
+`Burning Flare`. Written through the record's own `+8` pointer into
+padding measured by `spell_names::name_field`, never grown - the retail
+slots hold 16 bytes against 13-14 byte names.
+
+Still missing from that mirror, and both larger jobs: the Delilas **field
+forms** in `nilboa` (scene-resident, `model = 106/107/108` of PROT entry
+639, which the three hero meshes overshoot by about 3 KB against 4 bytes
+of pack slack), and the enemy special's **choreography** - the body motion
+is size-neutral to retarget, but the fire, lift and camera are compiled
+MIPS spawn sites in the cast modules with no data channel a player art's
+8-slot effect list can drive.
+
 The **battle idle** is rebuilt too, and it is a stance change more than a
 motion one. Retail authors each character's combat stance in idle frame 0,
 and the siblings' stances suit their own proportions - Che stands wider
