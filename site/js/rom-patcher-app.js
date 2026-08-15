@@ -511,11 +511,15 @@ const ARROW = { L: '←', R: '→', D: '↓', U: '↑' };
 //    player battle file (addressed by its finisher action constant `f`), with
 //    the same per-strike power bytes every regular art has. That is what
 //    `--super-art-power NAME=VALUE` edits, keyed by name.
-//  * **AP does not apply at all.** Retail charges the *chain* arts and the
-//    Super itself is free, and the injected AP config table is keyed by a row
-//    in the game's arts-name table - which holds 45 records, fifteen per
-//    character, none of them a Super Art. So there is no AP number to edit,
-//    and the row's AP controls are disabled rather than left inert.
+//  * **AP belongs to the chain, not to the Super.** A Super Art does cost the
+//    player AP - that is the chain arts being paid for, which is condition 2
+//    of the trigger (every art in the chain must already be known and paid).
+//    The Super itself is free: retail computes an art's cost as
+//    `multiplier x command_count` keyed on its position in the character's
+//    arts list, and a Super Art has no position in that list, so there is no
+//    per-Super number anywhere to edit. The lever is real but it lives on the
+//    chain arts, which are rows in this same picker - so the row's AP control
+//    is disabled and names them instead of just refusing.
 //
 // `chain` is the ordered list of named arts whose combination fires it - what a
 // regular row shows as a button combo. `h` is the retail per-hit multiplier for
@@ -541,6 +545,19 @@ const SUPER_ART_TABLE = [
 /// A picker option value for a Super Art. Names carry no colon, so this stays
 /// unambiguous against the regular rows' `Character:COMBO`.
 const SUPER_PICK_PREFIX = 'super:';
+
+// The chain arts of `sup` as ART_TABLE rows, in trigger order and deduplicated
+// (Tri-Somersault fires on Somersault > Cyclone > Somersault, and Somersault is
+// one adjustable art, not two). Every one of the fifteen chains resolves.
+function superChainArts(sup) {
+  const out = [];
+  for (const name of sup.chain) {
+    if (out.some((a) => a.n === name)) continue;
+    const art = ART_TABLE.find((a) => a.c === sup.c && a.n === name);
+    if (art) out.push(art);
+  }
+  return out;
+}
 
 function superArtByPick(value) {
   if (!value || !value.startsWith(SUPER_PICK_PREFIX)) return null;
@@ -571,7 +588,7 @@ function artByCombo(combo) {
 }
 
 // Build one override row's DOM. `onChange` re-renders the row's effect note.
-function makeArtRow(onRemove) {
+function makeArtRow(onRemove, onAddChain) {
   const row = document.createElement('div');
   row.className = 'art-row';
 
@@ -625,12 +642,13 @@ function makeArtRow(onRemove) {
     o.textContent = t;
     apMode.appendChild(o);
   }
-  // A Super Art has no AP number to edit at all, so its rows select this and
-  // the control is disabled - an enabled-looking control that does nothing is
-  // worse than one that says why it cannot be used.
+  // A Super Art carries no AP number of its own, so its rows select this and
+  // the control is disabled. It reads as a pointer rather than a refusal: the
+  // AP a player spends to fire a Super IS real, it is the chain arts' AP, and
+  // those are rows in this same picker.
   const apNa = document.createElement('option');
   apNa.value = 'na';
-  apNa.textContent = 'Not applicable';
+  apNa.textContent = 'Paid by the chain arts';
   apNa.hidden = true;
   apMode.appendChild(apNa);
 
@@ -671,11 +689,25 @@ function makeArtRow(onRemove) {
   remove.textContent = '✕ Remove';
   remove.addEventListener('click', onRemove);
 
+  // Super Art rows only: turn the named chain arts into rows you can actually
+  // edit, so the note's "adjust the AP of X, Y" is one click rather than a
+  // scavenger hunt through the picker.
+  const chainBtn = document.createElement('button');
+  chainBtn.type = 'button';
+  chainBtn.className = 'art-chain-add';
+  chainBtn.textContent = '+ Add rows for those arts';
+  chainBtn.hidden = true;
+  chainBtn.addEventListener('click', () => {
+    const sup = superArtByPick(pick.value);
+    if (sup && onAddChain) onAddChain(sup, row);
+  });
+
   const apField = mkField('AP', apMode);
   main.appendChild(mkField('Art', pick));
   main.appendChild(apField);
   main.appendChild(mkField('Amount', amtWrap));
   main.appendChild(mkField('Damage', dmg));
+  main.appendChild(chainBtn);
   main.appendChild(remove);
 
   const note = document.createElement('div');
@@ -692,11 +724,24 @@ function makeArtRow(onRemove) {
       if (apMode.value !== 'na') apMode.value = 'na';
       apMode.disabled = true;
       apField.classList.add('art-field-na');
-      apField.title = 'Super Arts have no AP cost of their own.';
+      const chainArts = superChainArts(sup);
+      const chainNames = chainArts.map((a) => a.n).join(', ');
+      apField.title = `A Super Art costs no AP of its own - the chain arts pay it. Adjust ${chainNames} instead.`;
       amtWrap.parentElement.hidden = true;
+      // The button is only useful while some chain art is still missing a row.
+      // The row is still detached on its first refresh (makeArtRow calls this
+      // before the caller appends it), so scope the lookup defensively.
+      const siblings = row.parentElement ? [...row.parentElement.querySelectorAll('.art-row')] : [];
+      const have = new Set(siblings.filter((r) => r.artControls).map((r) => r.artControls.pick.value));
+      const wanted = chainArts.filter((a) => !have.has(`${a.c}:${a.k}`));
+      chainBtn.hidden = !onAddChain;
+      chainBtn.disabled = wanted.length === 0;
+      chainBtn.title = wanted.length
+        ? `Add a row for ${wanted.map((a) => a.n).join(', ')} so you can set the AP you pay to set this up.`
+        : `${chainNames} already have rows above.`;
       const parts = [
         `${sup.c}'s ${sup.n} is a Super Art: it fires when ${sup.chain.join(' > ')} are chained in that order, so it has no button combo of its own.`,
-        'AP is not editable here - retail charges the chain arts and the Super itself is free, so there is no AP number to change (edit the chain arts above to move what it costs).',
+        `A Super Art costs no AP of its own - the chain arts pay it. To change what this costs to set up, adjust the AP of ${chainNames}.`,
       ];
       if (dmg.value !== '') {
         const tier = DMG_TIERS.find((t) => t.v === dmg.value);
@@ -708,6 +753,7 @@ function makeArtRow(onRemove) {
       return;
     }
     apMode.disabled = false;
+    chainBtn.hidden = true;
     apField.classList.remove('art-field-na');
     apField.removeAttribute('title');
     if (apMode.value === 'na') apMode.value = 'keep';
@@ -768,14 +814,49 @@ function setupArtBuilder(container, addBtn, onEdit) {
     };
   }
 
-  const addRow = () => {
+  // Append a row, or insert it just after `anchor` so a Super Art and the
+  // chain arts it points at read as one block. `prefill` is a picker value.
+  const addRow = (prefill, anchor) => {
     const row = makeArtRow(() => {
       row.remove();
       onEdit();
-    });
-    container.appendChild(row);
+    }, addChainRows);
+    if (anchor && anchor.parentElement === container) {
+      container.insertBefore(row, anchor.nextSibling);
+    } else {
+      container.appendChild(row);
+    }
+    if (prefill) {
+      row.artControls.pick.value = prefill;
+      // Land on "Costs AP" - the reason the user came here is to change what
+      // setting the Super up costs, and "Keep original" would write nothing.
+      row.artControls.apMode.value = 'cost';
+      row.dispatchEvent(new Event('change', { bubbles: true }));
+    }
     return row;
   };
+
+  // "+ Add rows for those arts" on a Super Art row: one row per chain art that
+  // does not have one yet, inserted under the Super in trigger order.
+  const addChainRows = (sup, anchor) => {
+    const have = new Set(
+      [...container.querySelectorAll('.art-row')].map((r) => r.artControls.pick.value),
+    );
+    let after = anchor;
+    for (const art of superChainArts(sup)) {
+      const value = `${art.c}:${art.k}`;
+      if (have.has(value)) continue;
+      have.add(value);
+      after = addRow(value, after);
+    }
+    // Every row's note names the chain arts that now have rows, so refresh the
+    // ones that were already on screen too.
+    for (const r of container.querySelectorAll('.art-row')) {
+      if (r.artControls) r.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    onEdit();
+  };
+
   addBtn.addEventListener('click', () => {
     addRow();
     onEdit();

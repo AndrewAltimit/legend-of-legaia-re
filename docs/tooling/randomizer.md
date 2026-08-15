@@ -1966,10 +1966,12 @@ no display copy to sync. Module
 disc oracle `crates/patcher/tests/super_art_power_real.rs`. Browser: the fifteen
 Super Arts are options in the "Tactical-Art overrides" **picker**, in a per-
 character `... - Super Arts` group beside that character's regular arts. A Super
-Art row's damage control behaves exactly like a regular row's; its AP controls
-are **disabled** and the row states the reason, because there is no AP number to
-edit. The advanced `name=value` text field remains as the CLI-syntax route and
-merges with the picker rows.
+Art row's damage control behaves exactly like a regular row's; its AP control is
+**disabled** and reads "Paid by the chain arts", and the row names that Super
+Art's own chain arts with a button that adds a picker row for each - see
+[Where a Super Art's AP actually lives](#where-a-super-arts-ap-actually-lives).
+The advanced `name=value` text field remains as the CLI-syntax route and merges
+with the picker rows.
 
 **Why a Super Art needs its own knob.** Every other arts knob keys on something a
 Super Art does not have. `--arts-power` and `--arts` address an art by its
@@ -1981,6 +1983,39 @@ exactly 45 records - 15 per character - none of them a Super Art. And there is n
 AP cost to override: retail charges the chain arts and the Super itself is free
 (see [arts-command-gauge.md](../subsystems/arts-command-gauge.md#what-an-art-costs-in-ap)).
 Damage is the knob a Super Art has.
+
+#### Where a Super Art's AP actually lives
+
+"A Super Art has no AP cost" is true of the *record* and false of the
+*experience*, and the tooling says both. Firing a Super does spend AP - all of
+it charged to the **chain arts** that trigger it, which is exactly trigger
+condition 2 in [art-data.md](../formats/art-data.md): every art in the Find
+string must already be known and paid for. Condition 3 is the other half - the
+Super itself consumes nothing.
+
+That split is structural, not an oversight. Retail computes an art's cost as
+`multiplier x command_count` with the multiplier keyed on the art's position in
+its character's arts list, and a Super Art has no position in that list. The
+`+2` AP byte in the 45-record arts-name table is a display mirror with a single
+reader (the status-panel renderer `FUN_801D33D8`), and no Super Art has a row
+there either. So there is no per-Super number on the disc for `--arts-ap-grant`
+/ `--arts-ap-cost` to key on - but the lever the player feels is real and is
+already reachable: it is the chain arts, each of which *is* an arts-table row.
+
+To make a Super Art cheaper or dearer to set up, target its chain arts by
+combo. Tri-Somersault fires on Somersault > Cyclone > Somersault - `UDU` at 18
+AP and `DUUU` at 24 AP on the retail disc - so:
+
+```bash
+legaia-patcher randomize --input DISC.bin \
+  --arts-ap-cost Vahn:UDU=6 --arts-ap-cost Vahn:DUUU=6   # cheaper Tri-Somersault setup
+```
+
+(`legaia-patcher arts` prints each Super Art's trigger chain and each regular
+art's combo.) The browser picker does this for you: a Super Art row names its
+chain arts and its **+ Add rows for those arts** button drops a row for each,
+pre-set to "Costs AP". No per-Super AP field is injected - making a Super Art
+charge AP of its own would be a new mechanic, not a fix.
 
 **How its record is addressed.** The `0xD0`-stride art array in a decoded
 `record0` is indexed by **action constant**: the record for constant `c` is at

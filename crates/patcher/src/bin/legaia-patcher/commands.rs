@@ -655,8 +655,10 @@ pub(crate) fn cmd_arts(input: &Path) -> Result<()> {
          COMBO=AMOUNT` makes an art grant AP (Spirit) instead of costing it; the \
          leftmost number is the arts-table index, which is the shared config row \
          - AP-grant applies to every character's art at that same index. Super \
-         Arts have no combo and no AP cost of their own, so they are addressed \
-         by name: `--super-art-power \"Tri-Somersault\"=0x1A`.",
+         Arts have no combo, so they are addressed by name: \
+         `--super-art-power \"Tri-Somersault\"=0x1A`. A Super Art also costs no \
+         AP of its own - the chain arts printed under it pay it, so set the AP \
+         of a Super Art's setup on those arts' own combos.",
         entries.len()
     );
     let _ = regular;

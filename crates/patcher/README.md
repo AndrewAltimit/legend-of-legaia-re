@@ -783,7 +783,10 @@ something a Super Art lacks: `--arts-power` / `--arts` key on the **input combo*
 `--arts-ap-grant` / `--arts-ap-cost` key on the **arts-name-table row**
 (`DAT_80075EC4` holds 45 records - 15 per character - and none is a Super Art).
 Nor is there an AP cost to override: retail charges the chain arts and the Super
-itself is free.
+itself is free. The AP a player spends to fire one is therefore real but lives
+on the chain - `--arts-ap-cost` / `--arts-ap-grant` on the chain arts' own
+combos is how that is retuned, and `legaia-patcher arts` prints each Super
+Art's chain right under it.
 
 The record it edits is addressed by **action constant**: the `0xD0`-stride array
 places constant `c` at `base + (c - 0x10) * 0xD0`, and a Super Art's finisher
