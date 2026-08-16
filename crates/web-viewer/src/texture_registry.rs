@@ -1102,12 +1102,19 @@ mod tests {
     fn every_tier_declares_whether_it_can_be_written() {
         // A family that claims `replaceable` must resolve a coordinate to a
         // write op, and one that does not must refuse. Nothing may be
-        // silently half-wired.
+        // silently half-wired. Each family is probed with the coordinate
+        // shape its own scan emits - the monster family's `section` is a
+        // 1-based monster id, so a shared `section: 0` probe would read a
+        // rejected id as a read-only family.
         for t in tiers() {
+            let (entry, section) = match t.id {
+                TIER_MONSTER => (MONSTER_ARCHIVE_ENTRY, 1),
+                _ => (1, 0),
+            };
             let c = TexCoord {
                 tier: t.id,
-                entry: 1,
-                section: 0,
+                entry,
+                section,
                 offset: 0,
             };
             assert_eq!(
