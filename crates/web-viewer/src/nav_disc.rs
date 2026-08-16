@@ -10,7 +10,23 @@ impl LegaiaViewer {
         // though we re-resolve on every render. This catches the common
         // typo case immediately instead of silently no-oping later.
         let _ = resolve_canvas(canvas_id)?;
-        Ok(Self {
+        Ok(Self::empty(canvas_id))
+    }
+}
+
+impl LegaiaViewer {
+    /// A viewer with no canvas bound - the seam the **native** disc-gated
+    /// tests drive the disc-decoding half of this type through. The browser
+    /// path always goes via [`LegaiaViewer::new`], which validates its canvas
+    /// id; this constructor is compiled out of the wasm bundle entirely, so
+    /// it cannot become a second page-facing entry point.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn new_headless() -> Self {
+        Self::empty("")
+    }
+
+    fn empty(canvas_id: &str) -> Self {
+        Self {
             canvas_id: canvas_id.to_string(),
             disc: Vec::new(),
             viewable: Vec::new(),
@@ -34,9 +50,14 @@ impl LegaiaViewer {
             prot_index: None,
             cdname_text: None,
             scene_export: None,
-        })
+            equip_stats: None,
+            equipped: None,
+        }
     }
+}
 
+#[wasm_bindgen]
+impl LegaiaViewer {
     /// Load a disc image. Auto-detects: full Mode2/2352 .bin, raw PROT.DAT,
     /// or single TIM. Returns the count of viewable entries (entries with at
     /// least one decodable TIM) for the JS UI.
@@ -58,6 +79,8 @@ impl LegaiaViewer {
         self.field_npcs = None;
         self.prot_index = None;
         self.cdname_text = None;
+        self.equip_stats = None;
+        self.equipped = None;
         let prot_bytes = if let Some(extracted) = extract_prot_dat(&bytes) {
             // Keep the CDNAME text: `self.disc` only retains the extracted
             // PROT.DAT, but the full-scene assembler needs the scene-name ->
@@ -112,6 +135,15 @@ impl LegaiaViewer {
                 }
                 // Decode the spell-name table so the enemy table can show the
                 // monster's magic attacks by name instead of raw ids.
+                // Decode the equipment stat-bonus table so the equipment
+                // viewer can label each player file's five sections by the
+                // slot its ids belong to (the section order differs per
+                // character - Vahn's weapon section is Noa's Ra-Seru one).
+                if let Some(table) = legaia_asset::equip_stats::EquipStatTable::from_scus(&scus) {
+                    self.equip_stats = Some(table);
+                } else {
+                    console_log("equip_stats::from_scus skipped: table not found in SCUS");
+                }
                 if let Some(table) = legaia_asset::spell_names::SpellNameTable::from_scus(&scus) {
                     self.spell_names = Some(table);
                 } else {

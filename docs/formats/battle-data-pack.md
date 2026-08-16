@@ -194,6 +194,94 @@ mesh's vertex pools byte-match exactly the `id = 0x43`, `0x22`, and `0x01`
 sections (and the defaults for the unequipped slots) - see
 [`character-mesh.md` § Battle form](character-mesh.md#battle-form---assembled-from-the-player-files).
 
+### Every section is bone geometry - the item is not its own object
+
+The thing to know before building anything on top of the descriptor table:
+**equipment is not modelled as a separate object that gets attached.** A
+section's slot carries whole **skeleton bone objects**, and selecting it
+replaces the bare object outright with a re-authored one that happens to
+include the gear. Vahn's right-hand bone (tag 5) measured across three of
+his weapon ids:
+
+| section 2 id | hand object | vertices | primitives |
+|---|---|---|---|
+| `0` (default) | bare fist | 40 | 52 |
+| `0x22` Survival Knife | fist + blade | 71 | 80 |
+| `0x33` Great Axe | fist + axe | 73 | 95 |
+| `0xBA` Astral Sword | fist + sword | 109 | 157 |
+
+Armour behaves the same way and can make an object *smaller*: Hunter
+Clothes (`0x43`) takes Vahn's torso from 79 vertices to 64. It is a
+re-sculpt, not a layer stacked on the bare body, and a full endgame set
+re-authors ten of his fifteen bone objects.
+
+Two readings that look right and are not:
+
+- **A positional set-difference does not find the added geometry.** The
+  equipped hand shares as few as **one** vertex position with the bare hand,
+  so a set-difference calls essentially the whole object new. What does
+  answer "what did this change" is a **radius envelope**: the centroid of the
+  bare object's vertices plus its reach, with equipped primitives classified
+  by whether their corners fall outside it. That leaves 4-31 primitives
+  straddling the boundary per weapon - the honest answer, since those
+  primitives really do belong to both hand and weapon. Presentation aid
+  [`battle_char_assembly::equip_diff`](../../crates/asset/src/battle_char_assembly/equip_diff.rs).
+- **The `200+` extras are not weapon meshes.** They are usually
+  byte-identical **duplicates** of the bone object they attach to, reached
+  only through the equipment-variant track at entry `+0xA4`, so drawing one
+  alongside its host z-fights a limb. Usually, not always - see
+  [The `200+` surplus](#the-200-surplus-is-a-duplicate-except-when-it-is-not)
+  below. The `100+` extras are ordinary geometry and do draw, on the
+  preceding bone's channel.
+
+### The item is still separable - by palette, not by geometry
+
+"Not its own object" is not the same as "inseparable". The separator is the
+primitive's **CLUT word** (`cba`): a weapon is drawn from its own palette
+column, and across all **81** section-2 / section-3 records **no primitive
+mixes the two**. The item is an exact primitive subset of the bone object,
+selected by material.
+
+Geometry alone would have missed this. **Connectivity** splits Gala's and
+most of Noa's weapons off cleanly but not Vahn's, which weld to the fist at
+the grip aperture; the CLUT partition is exact in every case. What tells the
+two buckets apart is the **joint**: a TMD object is authored about its own
+bone origin, so the flesh half always reaches the origin and the held item
+never does.
+
+Three classes over the 81 records ([`equip_item`](../../crates/asset/src/battle_char_assembly/equip_item.rs)):
+
+| Class | Records | Shape |
+|---|---:|---|
+| `own-object` | 6 | The item is already its own `0xFE` object - retail shipped the split. |
+| `separate` | 21 | Own connected component, **zero** shared vertices. Lossless. |
+| `welded` | 53 | Palette subset joined at the grip rim; 3-64 shared welded vertices. |
+| (none) | 1 | Noa's first Ra-Seru armband: one palette across the object, so no boundary. |
+
+A `welded` cut is exact at primitive level but the exported item has an
+**open grip**: the shaft inside the closed fist was never modelled. Vahn's
+Great Axe comes out with a visibly interrupted haft. That is a property of
+the disc - no cutting strategy recovers it, and a consumer must say so
+rather than cap it silently.
+
+Sections 0 / 1 / 4 (body, head, feet) are **not** separable and the parser
+refuses them: they carry no surplus object at all (`nobj == attach_count` in
+all 51 records), and their palette buckets split body from trim, not garment
+from body. There is no "body without armour" to subtract.
+
+### The `200+` surplus is a duplicate, except when it is not
+
+Across the four player files' single-section assemblies, most `0xFF` (tag
+`200+`) surplus objects are byte-copies of their attach bone - same vertex
+pool, same primitive block. **Sixteen are not**: all of Noa's section-2
+records, four of her section-3 ones, and three of Gala's section-3 ones. In
+six of those the `0xFF` surplus is the *bare hand* while a `0xFE` extra
+holds the weapon alone.
+
+So "skip every `200+` object" drops real geometry, and "draw every `200+`
+object" z-fights a limb. The test is a byte comparison against the attach
+bone: `AssembledCharacter::duplicate_objects`.
+
 ## Slot region
 
 At `data_base + entry.offset`:
@@ -999,6 +1087,18 @@ Two parsers read these files:
   relocation (`relocate_tsb_cba`), and the texture-pool uploads at the
   pinned placement (`character_texture_uploads` and friends - see
   [Texture-pool VRAM placement](#texture-pool-vram-placement)).
+- [`legaia_asset::battle_char_assembly::equip_diff`](../../crates/asset/src/battle_char_assembly/equip_diff.rs)
+  is the presentation-side sibling: it classifies what one loadout changed
+  against the all-defaults assembly by the radius-envelope test described in
+  [Every section is bone geometry](#every-section-is-bone-geometry---the-item-is-not-its-own-object).
+  Approximate by construction, and not a port of anything - retail never
+  compares two assemblies.
+- [`legaia_asset::battle_char_assembly::equip_item`](../../crates/asset/src/battle_char_assembly/equip_item.rs)
+  is the exact cut: `item_partition` splits an equipped weapon / Ra-Seru
+  section's objects into the held item and the limb by palette column, and
+  grades the result (see
+  [The item is still separable](#the-item-is-still-separable---by-palette-not-by-geometry)).
+  Swept over all 81 records by `crates/asset/tests/equip_item_real.rs`.
 - [`legaia_asset::battle_texture_catalog`](../../crates/asset/src/battle_texture_catalog.rs)
   catalogs the same files' texture-pool blocks as a texture tier -
   see [The catalog tier](#the-catalog-tier) - and `resolve_block` /

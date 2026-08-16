@@ -107,6 +107,58 @@ pub struct AssembledCharacter {
     pub sections: [Record; SECTION_COUNT],
 }
 
+impl AssembledCharacter {
+    /// Per-object flag: this object is a **byte-copy of the bone it attaches
+    /// to** and must not be drawn alongside it.
+    ///
+    /// The `0xFF` surplus of a section (tag `200+`) is usually a duplicate of
+    /// its attach bone - same vertex pool, same primitive block - so drawing
+    /// both z-fights one limb against itself; retail only reaches the copy
+    /// through the actor's `+0xA4` equipment-variant window. But **it is not
+    /// always a copy**: across the four player files' 87 single-section
+    /// assemblies, 16 carry a `200+` surplus that differs from its host (all
+    /// of Noa's section-2 records, four of her section-3 ones, three of
+    /// Gala's section-3 ones), and in six of those the surplus is the *bare
+    /// hand* while a `0xFE` extra holds the weapon. Skipping every `200+`
+    /// object would drop real geometry in exactly those cases, so this is a
+    /// measurement rather than a rule of thumb.
+    pub fn duplicate_objects(&self, tmd: &legaia_tmd::Tmd) -> Vec<bool> {
+        self.bone_tags
+            .iter()
+            .enumerate()
+            .map(|(i, &tag)| {
+                if tag < 200 {
+                    return false;
+                }
+                let Some(&attach) = self.attach_bones.get((tag - 200) as usize) else {
+                    return false;
+                };
+                let Some(host) = self.bone_tags.iter().position(|&t| t == attach) else {
+                    return false;
+                };
+                let (Some(a), Some(b)) = (tmd.objects.get(host), tmd.objects.get(i)) else {
+                    return false;
+                };
+                a.claimed_n_primitive == b.claimed_n_primitive
+                    && a.vertices.len() == b.vertices.len()
+                    && a.vertices
+                        .iter()
+                        .zip(b.vertices.iter())
+                        .all(|(x, y)| x.x == y.x && x.y == y.y && x.z == y.z)
+                    && self
+                        .tmd
+                        .get(a.primitives_byte_offset..)
+                        .zip(self.tmd.get(b.primitives_byte_offset..))
+                        .is_some_and(|(pa, pb)| {
+                            let n = a.primitives_byte_size.min(b.primitives_byte_size);
+                            a.primitives_byte_size == b.primitives_byte_size
+                                && pa[..n.min(pa.len())] == pb[..n.min(pb.len())]
+                        })
+            })
+            .collect()
+    }
+}
+
 /// Assemble a character's battle TMD from their player file (`buf` +
 /// parsed `pack`) and equipped item ids.
 // PORT: FUN_80052FA0 (mesh half) - decodes the five selected sections and

@@ -51,6 +51,8 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   padding: 0.35rem 0.6rem; font-family: var(--font-mono); font-size: 0.78rem; cursor: pointer;
 }
 .char-controls button:hover { border-color: var(--accent); }
+.char-controls button[disabled] { opacity: 0.4; cursor: not-allowed; }
+.char-controls button[disabled]:hover { border-color: var(--border); }
 .char-section-label {
   color: var(--text-dim); font-size: 0.7rem; text-transform: uppercase;
   letter-spacing: 0.05em; margin-top: 0.2rem;
@@ -67,6 +69,50 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
 .char-equip-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
 
 .char-info-note { color: var(--text-dim); font-size: 0.74rem; line-height: 1.55; }
+
+.char-loadout { display: flex; flex-direction: column; gap: 0.35rem; }
+.char-loadout-row { display: flex; flex-direction: column; gap: 0.15rem; }
+.char-loadout-row > span {
+  color: var(--text-dim); font-size: 0.7rem; text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.char-loadout select {
+  background: var(--bg-code); color: var(--text); border: 1px solid var(--border);
+  padding: 0.25rem 0.4rem; font: inherit; font-size: 0.78rem; border-radius: 3px;
+  max-width: 100%;
+}
+.char-loadout select:disabled { opacity: 0.45; }
+.char-loadout-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.char-loadout-actions label {
+  display: flex; align-items: center; gap: 0.3rem;
+  color: var(--text-muted); font-size: 0.76rem;
+}
+
+.char-diff-panel {
+  font-family: var(--font-mono); font-size: 0.74rem; line-height: 1.5;
+  background: var(--bg-code); border: 1px solid var(--border);
+  padding: 0.45rem 0.55rem; display: flex; flex-direction: column; gap: 0.3rem;
+}
+.char-diff-key { display: flex; gap: 0.7rem; flex-wrap: wrap; }
+.char-diff-key span { display: flex; align-items: center; gap: 0.28rem; color: var(--text-muted); }
+.char-diff-swatch {
+  width: 0.7rem; height: 0.7rem; border: 1px solid var(--border); display: inline-block;
+}
+.char-diff-swatch.is-shared { background: #4a4f5a; }
+.char-diff-swatch.is-added { background: #ffc048; }
+.char-diff-swatch.is-bare { background: #3078e0; }
+.char-item-block { display: flex; flex-direction: column; gap: 0.3rem; }
+.char-item-row { display: flex; flex-direction: column; gap: 0.15rem; }
+.char-item-row button { align-self: flex-start; }
+.char-item-row span { color: var(--text-dim); }
+.char-diff-scroll { overflow-x: auto; }
+table.char-diff-table { width: 100%; border-collapse: collapse; }
+table.char-diff-table th, table.char-diff-table td {
+  border-bottom: 1px solid var(--border); padding: 0.15rem 0.3rem; text-align: right;
+  white-space: nowrap;
+}
+table.char-diff-table th { color: var(--text-dim); font-weight: normal; }
+table.char-diff-table td:first-child, table.char-diff-table th:first-child { text-align: left; }
 .char-fun {
   color: var(--text-dim); font-size: 0.74rem; font-family: var(--font-mono);
   background: var(--bg-code); border: 1px solid var(--border);
@@ -121,7 +167,7 @@ table.arts-list .cmd-tag {
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> · characters</div>
   <h1>Characters</h1>
-  <p class="lede"><strong>Vahn</strong>, <strong>Noa</strong>, and <strong>Gala</strong> in 3D from your own disc image - field and battle models, textured and playing their real in-game animations. Click a character to spin it, swap forms, and try the equipment toggle; nothing is uploaded, the disc never leaves your machine.</p>
+  <p class="lede"><strong>Vahn</strong>, <strong>Noa</strong>, and <strong>Gala</strong> in 3D from your own disc image - field and battle models, textured and playing their real in-game animations. Click a character to spin it, swap forms, and under <strong>equipment loadout</strong> dress it in any gear the disc offers and watch the battle model re-assemble. Nothing is uploaded; the disc never leaves your machine.</p>
 </header>
 
 <div class="disc-bar">
@@ -160,14 +206,16 @@ table.arts-list .cmd-tag {
         <div class="char-section-label">Form</div>
         <div class="char-equip-toggle" id="char-form-toggle"></div>
         <div class="char-info-note" id="char-form-note">
-          <strong>Field form</strong> is the low-poly model loaded in every town and dungeon; <strong>battle form</strong> is the higher-detail model a real battle assembles from the character's equipment data, shown with the true in-battle colours; <strong>Baka Fighter</strong> is the same battle model in the fist-fight minigame's colours. Full story: <a href="formats/character-mesh.html">character-mesh format</a>.
+          <strong>Field form</strong> is the low-poly model loaded in every town and dungeon; <strong>battle form</strong> is the disc's pre-baked default-gear copy of the battle model, shown with the true in-battle colours; <strong>Baka Fighter</strong> is that same model in the fist-fight minigame's colours; <strong>equipment loadout</strong> runs the real assembly, splicing the model out of whichever equipment sections you pick. Full story: <a href="formats/character-mesh.html">character-mesh format</a>.
         </div>
 
-        <div class="char-section-label">Equipment swap</div>
+        <div class="char-section-label" id="char-equip-section-label">Equipment swap</div>
         <div class="char-equip-toggle" id="char-equip-toggle"></div>
+        <div class="char-loadout" id="char-loadout" style="display: none;"></div>
         <div class="char-info-note" id="char-equip-note">
           Retail flips each character's weapon-bearing mesh group between two pre-baked variants based on one byte in the character record; specific weapons are conveyed by texture, not new geometry.
         </div>
+        <div class="char-diff-panel" id="char-diff-panel" style="display: none;"></div>
 
         <div class="char-section-label">View</div>
         <div class="char-controls">
@@ -220,6 +268,21 @@ table.arts-list .cmd-tag {
     <a href="formats/battle-data-pack.html">Player battle files</a>
   </div>
 
+  <h3 id="equipment-loadout">Equipment is bone geometry, not a prop</h3>
+  <p>The <strong>equipment loadout</strong> form runs the assembly a real battle runs. Each hero's <code>data\battle\PLAYERn</code> file carries a five-section table - body, head, weapon, Ra-Seru, feet, though <em>not in the same order for every character</em> - and each section lists one entry per equippable item. At battle load the game matches those entries against the equip bytes in the save record and splices the winning sections' 3D objects into a single model. Picking gear above does exactly that, on your disc, in the browser.</p>
+  <p>What comes out is the finding worth stating plainly: <strong>there is no item object</strong>. Equipping a Survival Knife does not attach a knife - it swaps in a re-authored right-hand object that has a blade built into it (Vahn's hand goes from 40 vertices to 71; a two-hander takes it to 109). Body armour is the same trick and can make an object <em>smaller</em>: it is a re-sculpt, not a layer. A full endgame set re-authors most of the body. So the main <code>.glb</code> download is always the whole character, named for what it is wearing.</p>
+
+  <h3 id="item-cut">The weapon can still be cut out - by palette, not by geometry</h3>
+  <p>"No separate object" does not mean "inseparable". A weapon is drawn from its <strong>own palette column</strong>, and across all 81 weapon and Ra-Seru records on the disc <strong>no primitive mixes the two</strong> - the item is an exact primitive subset of the hand object, selected by material. So when you equip a weapon or a Ra-Seru, the panel offers a second download: that subset, plus the limb it was cut from, as two named nodes in one file. The limb is ground truth, so it is always included.</p>
+  <p>Each item is labelled by how cleanly it came away. Three cases occur: it <strong>ships as its own piece</strong> already (6 records - retail did the split); it <strong>comes away whole</strong>, sharing no vertex with the hand (21 records, all Gala's and most of Noa's); or it is <strong>welded to the hand at the grip</strong> (53 records, all of Vahn's). A welded item exports with an <strong>open grip</strong>: the part of the shaft inside the closed fist was never modelled, so no cutting strategy can recover it - Vahn's Great Axe comes out with a visible gap in the haft. The panel says so per item rather than quietly capping the hole.</p>
+  <p>Two readings that look right and are not, in case you try them: <strong>connectivity</strong> alone misses the case (the weapon is a separate component for Gala and Noa but welded for Vahn), and <strong>"geometry the bare hand lacks"</strong> misses it too, because equipping re-textures the whole object - Vahn's bare fist draws from one palette column and his knife-holding fist from two entirely different ones. Armour sections have no item to cut at all: they carry no surplus piece, and their palette split is body-versus-trim, so the page refuses rather than guessing.</p>
+  <p>The <strong>diff highlight</strong> toggle answers the other question - what the loadout <em>changed</em>. It dims the geometry the equipped part shares with the unequipped one, brightens what reaches beyond it, and draws the bare geometry the section replaced alongside in blue. That boundary is an approximate radius-envelope test rather than the exact palette cut, and the table underneath reports the per-object counts it is derived from.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="formats/battle-data-pack.html">Player battle files (section table + assembly)</a>
+    <a href="formats/character-mesh.html">Character mesh format</a>
+  </div>
+
   <h3>The one-byte equipment swap</h3>
   <p>Each hero's field model carries two pre-baked variants of its weapon-holding part, flipped by a single byte in the save record - that is the entire field-side equipment mechanism, and the toggle above performs exactly that swap. Details: <a href="formats/character-mesh.html#10-group-cap--equipment-conditional-swap">equipment-conditional swap</a>.</p>
   <div class="cli"><code>asset character-pack &hellip; --slot 0 --equip 1 --out vahn_equipped.tmd</code></div>
@@ -262,6 +325,10 @@ table.arts-list .cmd-tag {
   const anmFrameSlider = document.getElementById('char-anm-frame');
   const anmFrameLabel = document.getElementById('char-anm-frame-label');
   if (!fileInput) return;
+  // The animation panel's default blurb, so a form that rewrites it (the
+  // equipment loadout, whose clips come from a different file) can put it
+  // back on the way out.
+  const anmInfoDefault = anmInfo ? anmInfo.innerHTML : '';
 
   let viewer = null;     // WASM LegaiaViewer
   let pack = null;       // parsed FIELD-form character pack JSON
@@ -269,7 +336,20 @@ table.arts-list .cmd-tag {
   let anmCorpus = null;  // parsed player_anm_corpus_json (cached after disc load)
   let selectedSlot = null;
   let curEquip = -1;     // -1 = disc form, 0 = unequipped template, 1 = equipped template
-  let curForm = 'field'; // 'field' | 'battle' | 'baka'
+  let curForm = 'field'; // 'field' | 'battle' | 'baka' | 'equipped'
+
+  // ----- Equipment-loadout form state -----
+  // The 'equipped' form is the only view in the project that assembles a
+  // battle model from a NON-default loadout: it walks the player battle
+  // file's five-section descriptor table, matches the ids picked below the
+  // way retail matches the character record's +0x196 equip bytes, and
+  // splices the selected sections' TMD objects into one mesh.
+  let equipPack = null;         // equipment_pack_json(): per-file section catalogs
+  let equipIds = [0, 0, 0, 0, 0];  // chosen id per section (0 = section default)
+  let equipDiff = false;        // diff-highlight toggle (off by default)
+  let equipSummary = null;      // last set_equipped_character() summary
+  let curEquipClip = 0;         // index into equipSummary.clips
+  const isEquipLoadoutForm = (f) => f === 'equipped';
   // 'battle' and 'baka' render the same PROT 1204 meshes but against different
   // palette VRAM: 'battle' overlays the true per-battle palettes decoded from
   // the player battle files (battle_char_vram_bytes_battle), 'baka' keeps the
@@ -356,9 +436,26 @@ table.arts-list .cmd-tag {
   }
 
   // Active pack for whichever form is selected. Battle + Baka Fighter forms
-  // use PROT 1204 (no equipment-swap templates); field form uses PROT 0874 §0.
+  // use PROT 1204 (no equipment-swap templates); field form uses PROT 0874 §0;
+  // the equipment-loadout form uses the four player battle files (PROT 863+).
   function activePack() {
+    if (isEquipLoadoutForm(curForm)) return equipPack;
     return isBattlePackForm(curForm) ? battlePack : pack;
+  }
+
+  // The 'equipped' form's slot cards carry different provenance from the two
+  // pre-baked packs: a player battle file has no single disc nobj, because
+  // the mesh does not exist until a loadout selects its five sections.
+  function renderEquipGrid() {
+    gridEl.innerHTML = equipPack.slots.map(s => {
+      const items = (s.sections || []).reduce((n, sec) => n + sec.items.length, 0);
+      return `
+        <div class="char-card${s.slot === selectedSlot ? ' is-active' : ''}" data-slot="${s.slot}">
+          <div class="char-card-name">${escapeHtml(s.label)}</div>
+          <div class="char-card-meta">PROT ${String(s.prot).padStart(4, '0')} · ${s.records} records · ${items} equippable</div>
+          <span class="char-card-tag">${items ? 'assembled per loadout' : 'defaults only'}</span>
+        </div>`;
+    }).join('');
   }
 
   // Render the slot picker (5 cards). Each card shows the role label + the
@@ -367,6 +464,7 @@ table.arts-list .cmd-tag {
   function renderGrid() {
     const p = activePack();
     if (!p) { gridEl.innerHTML = ''; return; }
+    if (isEquipLoadoutForm(curForm)) { renderEquipGrid(); return; }
     gridEl.innerHTML = p.slots.map(s => {
       const tag = s.patch
         ? `<span class="char-card-tag">equipment swap</span>`
@@ -389,6 +487,7 @@ table.arts-list .cmd-tag {
       { val: 'field',  label: 'field form',  hint: 'The low-poly model the game keeps loaded across every town and dungeon', enabled: !!pack },
       { val: 'battle', label: 'battle form', hint: 'The higher-detail model used in turn-based battles - in a real battle it is assembled from the character\'s equipment sections; shown here with the true in-battle colours decoded from your disc', enabled: haveBattle },
       { val: 'baka',   label: 'Baka Fighter', hint: 'The same battle model rendered with the colours the Baka Fighter fist-fight minigame uses (the minigame reuses the battle models; only the palette differs)', enabled: haveBattle },
+      { val: 'equipped', label: 'equipment loadout', hint: 'Pick what the character is wearing and see the battle model a real battle would assemble from those exact equipment sections - the only view here that is not the default-gear copy', enabled: !!equipPack },
     ];
     formToggle.innerHTML = buttons.map(b => `
       <button class="char-equip-btn${b.val === curForm ? ' is-active' : ''}"
@@ -436,7 +535,37 @@ table.arts-list .cmd-tag {
   // locomotion bank and keeps the per-scene NPC pools browsable as a
   // secondary optgroup; battle / Baka forms list only the PROT 1203 battle
   // bank. The "browse all" escape hatch reveals everything everywhere.
+  // The equipment-loadout form animates from the player battle file's OWN
+  // record[0] action bank plus the four equipment-spliced weapon swings -
+  // the clips retail poses an assembled party member with. (The PROT 1203
+  // bundle the battle/Baka forms use is authored against the pre-baked
+  // PROT 1204 object order, which the assembled blob does not share.)
+  function renderEquipClipButtons() {
+    if (!anmClipsEl) return;
+    const clips = (equipSummary && equipSummary.clips) || [];
+    anmClipsEl.innerHTML = clips.map((c, i) => `
+      <button class="char-arts-kind${i === curEquipClip ? ' is-active' : ''}"
+        data-clip="${i}" title="${c.frames} frames">${escapeHtml(c.label)}</button>`).join('');
+  }
+
   function renderAnmPanel() {
+    if (isEquipLoadoutForm(curForm)) {
+      if (anmBundleSel) anmBundleSel.style.display = 'none';
+      if (anmRecordRow) anmRecordRow.style.display = 'none';
+      if (anmClipsEl) anmClipsEl.style.display = '';
+      const showAll = document.getElementById('char-anm-show-all');
+      if (showAll && showAll.parentElement) showAll.parentElement.style.display = 'none';
+      if (anmInfo) {
+        anmInfo.innerHTML = 'The assembled model\'s own clips, read out of the same player battle file: the <strong>record[0] action bank</strong> (idle, the flinches, knockdown, block&hellip;) plus the four <strong>weapon swings</strong>, which are spliced from the equipped weapon\'s section and therefore change with it. Encoding: <a href="formats/anm.html">ANM format</a>.';
+      }
+      renderEquipClipButtons();
+      return;
+    }
+    {
+      const showAll = document.getElementById('char-anm-show-all');
+      if (showAll && showAll.parentElement) showAll.parentElement.style.display = '';
+      if (anmInfo && anmInfoDefault) anmInfo.innerHTML = anmInfoDefault;
+    }
     if (!anmCorpus || !anmBundleSel) return;
     const opt = (i) => {
       const b = anmCorpus.bundles[i];
@@ -572,7 +701,127 @@ table.arts-list .cmd-tag {
   // meaningful toggle. Battle form has no equipment-swap templates baked into
   // the disc TMDs (the battle character mesh is monolithic; equipment
   // visibility is conveyed via the per-character texture atlas page).
+  // ----- The equipment-loadout picker -----
+  // One <select> per descriptor section, listing exactly the ids that
+  // section's table carries. Section order is NOT the same for every
+  // character (Vahn's weapons are section 2, Noa's are section 3), so each
+  // label comes from the WASM side, derived from the equipment stat table.
+  const loadoutEl = document.getElementById('char-loadout');
+  const diffPanelEl = document.getElementById('char-diff-panel');
+  const equipSectionLabel = document.getElementById('char-equip-section-label');
+
+  function equipSlotMeta() {
+    if (!equipPack || selectedSlot === null) return null;
+    return equipPack.slots.find(s => s.slot === selectedSlot) || null;
+  }
+
+  function renderLoadoutPicker() {
+    const meta = equipSlotMeta();
+    if (!meta) { loadoutEl.innerHTML = ''; return; }
+    const rows = meta.sections.map(sec => {
+      const opts = [`<option value="0"${equipIds[sec.index] === 0 ? ' selected' : ''}>(unequipped default)</option>`]
+        .concat(sec.items.map(it => {
+          const name = it.name || `id ${it.id}`;
+          return `<option value="${it.id}"${equipIds[sec.index] === it.id ? ' selected' : ''}>${escapeHtml(name)}</option>`;
+        }));
+      const empty = sec.items.length === 0;
+      return `<div class="char-loadout-row">
+        <span>${escapeHtml(sec.label)}</span>
+        <select data-section="${sec.index}"${empty ? ' disabled' : ''}>${opts.join('')}</select>
+      </div>`;
+    }).join('');
+    loadoutEl.innerHTML = rows + `
+      <div class="char-loadout-actions">
+        <button class="char-equip-btn" id="char-loadout-reset" type="button">strip all</button>
+        <label title="Approximate viewing aid: tints what the loadout adds beyond the unequipped part, and draws the bare geometry it replaced alongside. Not a separation of item from body - no such separation exists in the data.">
+          <input type="checkbox" id="char-loadout-diff"${equipDiff ? ' checked' : ''}> diff highlight
+        </label>
+      </div>`;
+  }
+
+  // What the loadout changed, as the geometry counts the assembly reports.
+  // This panel is the honest answer to "show me the item": there is none -
+  // the numbers show a bone object being re-authored, not a prop appearing.
+  function renderDiffPanel() {
+    if (!isEquipLoadoutForm(curForm) || !equipSummary || !equipSummary.ok) {
+      diffPanelEl.style.display = 'none';
+      return;
+    }
+    const changed = equipSummary.changed_objects || [];
+    diffPanelEl.style.display = '';
+    if (!changed.length) {
+      diffPanelEl.innerHTML = `<div>Nothing equipped - this is the unequipped assembly, the model every other view on this site shows.</div>`;
+      return;
+    }
+    const key = equipDiff ? `<div class="char-diff-key">
+        <span><i class="char-diff-swatch is-shared"></i>shared with the bare part</span>
+        <span><i class="char-diff-swatch is-added"></i>beyond the bare part</span>
+        <span><i class="char-diff-swatch is-bare"></i>bare geometry replaced</span>
+      </div>` : '';
+    const rows = changed.map(d => `<tr>
+        <td>bone ${d.bone}</td>
+        <td>${d.bare_vertices} &rarr; ${d.equipped_vertices}</td>
+        <td>${d.bare_primitives} &rarr; ${d.equipped_primitives}</td>
+        <td>${d.added_primitives}</td>
+        <td>${d.straddling_primitives}</td>
+      </tr>`).join('');
+    diffPanelEl.innerHTML = renderItemBlock() + key + `
+      <div class="char-diff-scroll"><table class="char-diff-table">
+        <thead><tr><th>object</th><th>vertices</th><th>prims</th><th>beyond</th><th>straddling</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+      <div>${changed.length} bone object${changed.length === 1 ? '' : 's'} re-authored. Equipment is not a separate object bolted on - the section replaces the whole bone object - so the &ldquo;beyond&rdquo; and &ldquo;straddling&rdquo; columns are an approximate envelope boundary, not the item cut.</div>`;
+  }
+
+  // The item cut. A weapon has no object of its own, but it IS an exact set
+  // of primitives inside the hand object, picked out by its palette: the
+  // download below is that subset plus the limb it came from, labelled by
+  // how cleanly the two came apart.
+  const ITEM_CLASS_NOTE = {
+    'own-object': 'ships as its own piece on the disc - nothing was cut',
+    'separate': 'came away whole: it shares no vertex with the hand',
+    'welded': 'is welded to the hand at the grip, so the exported item has an OPEN GRIP - the part inside the closed fist was never modelled',
+  };
+  function renderItemBlock() {
+    const items = (equipSummary && equipSummary.items) || [];
+    if (!items.length) return '';
+    return `<div class="char-item-block">` + items.map(it => {
+      const note = ITEM_CLASS_NOTE[it.class] || '';
+      return `<div class="char-item-row">
+        <button class="char-equip-btn" data-item-section="${it.section}" title="Download this item plus the limb it was cut from, as two named nodes in one glTF file">⬇ .glb ${escapeHtml(it.name || ('id ' + it.id))}</button>
+        <span>${it.item_primitives} prims / ${it.item_vertices} verts &middot; ${escapeHtml(note)}</span>
+      </div>`;
+    }).join('') + `</div>`;
+  }
+
+  // The raw `.tmd` download hands back the model's **on-disc** blob, and the
+  // loadout form's model has none: it is spliced out of five separate
+  // sections at battle load and exists only in RAM. Both of that form's
+  // downloads are therefore glTF - the whole posed character, and (for a
+  // weapon or Ra-Seru) the item cut out of it.
+  function syncTmdButton() {
+    if (!tmdBtn) return;
+    const off = isEquipLoadoutForm(curForm);
+    tmdBtn.disabled = off;
+    tmdBtn.title = off
+      ? 'No on-disc TMD for this form - the loadout model is spliced from five equipment sections at battle load, so the downloads here are glTF instead'
+      : 'Download the (possibly equipment-patched) Legaia TMD body';
+  }
+
   function renderEquipToggle() {
+    syncTmdButton();
+    if (isEquipLoadoutForm(curForm)) {
+      equipToggle.innerHTML = '';
+      equipSectionLabel.textContent = 'Equipment loadout';
+      loadoutEl.style.display = selectedSlot === null ? 'none' : '';
+      equipNote.innerHTML = 'Retail assembles a party member\'s battle model out of five equipment sections in <code>data\\battle\\PLAYER1..4</code>, matched against the equip bytes in the save record. Pick a set and the model is re-spliced exactly that way.';
+      renderLoadoutPicker();
+      renderDiffPanel();
+      return;
+    }
+    loadoutEl.style.display = 'none';
+    diffPanelEl.style.display = 'none';
+    equipSectionLabel.textContent = 'Equipment swap';
     if (selectedSlot === null) { equipToggle.innerHTML = ''; return; }
     if (isBattlePackForm(curForm)) {
       const lbl = curForm === 'baka' ? 'n/a (Baka Fighter)' : 'n/a (battle form)';
@@ -649,6 +898,7 @@ table.arts-list .cmd-tag {
   function selectForm(form) {
     if (form === curForm) return;
     if (isBattlePackForm(form) && (!battlePack || !battlePack.slots || battlePack.slots.length === 0)) return;
+    if (isEquipLoadoutForm(form) && !equipPack) return;
     const prevForm = curForm;
     curForm = form;
     // Destroy any current viewer so we can re-instantiate with the right class.
@@ -665,7 +915,8 @@ table.arts-list .cmd-tag {
     // doesn't have to manually find PROT 1203 every time they swap forms.
     // Remember the bundle they were on per-form so toggling field↔battle
     // doesn't reset their scrubber position.
-    if (anmCorpus && anmCorpus.bundles && anmCorpus.bundles.length > 0) {
+    if (!isEquipLoadoutForm(form) && !isEquipLoadoutForm(prevForm)
+        && anmCorpus && anmCorpus.bundles && anmCorpus.bundles.length > 0) {
       _bundleIdxByForm[prevForm] = curAnmBundleIdx;
       const cached = _bundleIdxByForm[form] | 0;
       let targetIdx = cached >= 0 && cached < anmCorpus.bundles.length ? cached : -1;
@@ -690,10 +941,17 @@ table.arts-list .cmd-tag {
         const meta = p.slots[selectedSlot];
         nameEl.textContent = `${meta.label} - slot ${meta.slot}`;
       }
-      // Pick a slot-appropriate default record for the newly-active bundle.
-      const p2 = activePack();
-      if (p2) curAnmRecordIdx = pickDefaultRecordFor(selectedSlot, p2);
-      syncAnmSlider();
+      if (isEquipLoadoutForm(form)) {
+        // The loadout form's clips come from the player battle file itself,
+        // not the PROT 1203 corpus - re-select from scratch.
+        equipIds = [0, 0, 0, 0, 0];
+        curEquipClip = 0;
+      } else {
+        // Pick a slot-appropriate default record for the newly-active bundle.
+        const p2 = activePack();
+        if (p2) curAnmRecordIdx = pickDefaultRecordFor(selectedSlot, p2);
+        syncAnmSlider();
+      }
     }
     renderGrid();
     renderEquipToggle();
@@ -881,6 +1139,17 @@ table.arts-list .cmd-tag {
     viewerWrap.style.display = 'grid';
     const meta = p.slots[slot];
     nameEl.textContent = `${meta.label} - slot ${meta.slot}`;
+    if (isEquipLoadoutForm(curForm)) {
+      // A loadout is per-character (the ids in one file's sections mean
+      // nothing in another's), so switching character strips the picker.
+      equipIds = [0, 0, 0, 0, 0];
+      curEquipClip = 0;
+      renderGrid();
+      renderEquipToggle();
+      loadMesh();
+      ensureArts().then(() => renderArts(slot));
+      return;
+    }
     renderGrid();
     renderEquipToggle();
     // Auto-pick a record matching the slot's bone count before loading
@@ -900,10 +1169,81 @@ table.arts-list .cmd-tag {
     loadMesh();
   }
 
+  // The equipment-loadout form: assemble the battle model this exact set of
+  // equipment ids produces, then render it against the band VRAM the same
+  // loadout uploads. Both halves take the SAME ids - the mesh comes from the
+  // selected sections' TMD objects, the textures from the whole band those
+  // sections write (both record[0] blocks plus every flagged section pool).
+  function loadEquippedMesh(canvasEl) {
+    const raw = viewer.set_equipped_character(
+      selectedSlot, Uint8Array.from(equipIds), equipDiff);
+    let summary = null;
+    try { summary = JSON.parse(raw); } catch (e) { summary = null; }
+    equipSummary = summary;
+    if (!summary || !summary.ok) {
+      statsEl.innerHTML = `<span style="color:var(--text-dim)">This loadout did not assemble: ${escapeHtml(summary ? String(summary.why) : 'unknown')}</span>`;
+      renderDiffPanel();
+      return;
+    }
+    const positions = viewer.equipped_mesh_positions();
+    const uvsI32 = viewer.equipped_mesh_uvs();
+    const cbaTsb = viewer.equipped_mesh_cba_tsb();
+    const indices = viewer.equipped_mesh_indices();
+    const bounds = viewer.equipped_mesh_bounds();
+    const objectIds = viewer.equipped_mesh_object_ids();
+    if (!positions.length || !indices.length) {
+      statsEl.innerHTML = '<span style="color:var(--text-dim)">Assembled mesh has no drawable primitives.</span>';
+      return;
+    }
+    try {
+      if (!meshView || !(meshView instanceof window.MeshView)) {
+        if (meshView && typeof meshView.dispose === 'function') meshView.dispose();
+        meshView = new window.MeshView(canvasEl, { onSpin: updateSpinLabel });
+        _loadedBattleVramForm = null;
+      }
+      // The band VRAM changes with the loadout (an equipped section uploads
+      // its own texture pool + CLUT run), so it is re-uploaded every time.
+      const vramBytes = viewer.equipped_vram_bytes();
+      if (vramBytes && vramBytes.length) meshView.uploadVram(vramBytes);
+      _loadedBattleVramForm = 'equipped';
+      const uvs8 = new Uint8Array(uvsI32.length);
+      for (let i = 0; i < uvsI32.length; i++) uvs8[i] = uvsI32[i] & 0xFF;
+      meshView.setMesh(
+        Float32Array.from(positions),
+        uvs8,
+        Uint16Array.from(cbaTsb),
+        Uint32Array.from(indices),
+        bounds,
+        objectIds && objectIds.length ? Uint32Array.from(objectIds) : null,
+        viewer.equipped_mesh_flat_rgba(),
+      );
+      meshView.onFrame = (f) => {
+        if (!anmFrameSlider || anmFrameSlider.disabled) return;
+        anmFrameSlider.value = String(f);
+        if (anmFrameLabel) anmFrameLabel.textContent = `f ${f}/${meshView.anim.frameCount - 1}`;
+      };
+      meshView.resetView();
+      const worn = (summary.sections || []).filter(s => !s.default);
+      statsEl.innerHTML =
+        `<b>${summary.triangles}</b> triangles · <b>${summary.vertices}</b> vertices · ` +
+        `${worn.length ? escapeHtml(worn.map(s => s.name || `id ${s.resolved}`).join(', ')) : 'nothing equipped'}`;
+      funEl.textContent = worn.length
+        ? `${summary.part_count} body parts · assembled from ${worn.length} equipped section${worn.length === 1 ? '' : 's'} on your disc`
+        : `${summary.part_count} body parts · every section at its unequipped default`;
+      if (curEquipClip >= (summary.clips || []).length) curEquipClip = 0;
+      renderEquipClipButtons();
+      renderDiffPanel();
+      maybeLoadCurrentAnim();
+    } catch (err) {
+      statsEl.innerHTML = `<span style="color:var(--text-dim)">WebGL2 unavailable: ${escapeHtml(String(err))}</span>`;
+    }
+  }
+
   function loadMesh() {
     if (selectedSlot === null) return;
     const slot = selectedSlot;
     const canvasEl = document.getElementById('char-viewer-canvas');
+    if (isEquipLoadoutForm(curForm)) { loadEquippedMesh(canvasEl); return; }
     if (isBattlePackForm(curForm)) {
       // Battle / Baka Fighter forms - the SAME PROT 1204 meshes, rendered with
       // TmdRenderer against a virtual 1024×512 PSX VRAM. A real turn-based
@@ -1057,8 +1397,10 @@ table.arts-list .cmd-tag {
   //   - viewer isn't ready / disc isn't loaded
   //   - selected record has bone_count == 0
   function maybeLoadCurrentAnim() {
-    if (!viewer || !anmCorpus) return;
+    if (!viewer) return;
     if (!meshView || typeof meshView.setAnimation !== 'function') return;
+    if (isEquipLoadoutForm(curForm)) { loadEquipClip(); return; }
+    if (!anmCorpus) return;
     const bundle = anmCorpus.bundles[curAnmBundleIdx];
     if (!bundle) return;
     const rec = bundle.records[curAnmRecordIdx];
@@ -1109,6 +1451,40 @@ table.arts-list .cmd-tag {
     anmPlayBtn.textContent = '▶ play';
   }
 
+  // Push the selected loadout clip into the mesh view. Frame 0 is the
+  // assembled rest stance; without it every TMD object sits at its own local
+  // origin and the figure collapses into a heap.
+  function loadEquipClip() {
+    const clips = (equipSummary && equipSummary.clips) || [];
+    const clip = clips[curEquipClip];
+    if (!clip || !clip.frames) {
+      meshView.setAnimation(null);
+      anmFrameSlider.disabled = true;
+      anmPlayBtn.disabled = true;
+      anmStopBtn.disabled = true;
+      if (anmFrameLabel) anmFrameLabel.textContent = '-';
+      return;
+    }
+    const frames = viewer.equipped_pose_frames(curEquipClip);
+    if (!frames || !frames.length) { meshView.setAnimation(null); return; }
+    meshView.setAnimation({
+      partCount: equipSummary.part_count | 0,
+      frameCount: clip.frames | 0,
+      frames: Int32Array.from(frames),
+      // The record's own retail rate byte (FUN_80047430 advances rate/8
+      // keyframes per 60 Hz tick).
+      fps: clip.rate ? 7.5 * clip.rate : 15,
+    });
+    anmFrameSlider.disabled = false;
+    anmFrameSlider.min = '0';
+    anmFrameSlider.max = String(Math.max(0, (clip.frames | 0) - 1));
+    anmFrameSlider.value = '0';
+    if (anmFrameLabel) anmFrameLabel.textContent = `f 0/${(clip.frames | 0) - 1}`;
+    anmPlayBtn.disabled = false;
+    anmStopBtn.disabled = false;
+    anmPlayBtn.textContent = '▶ play';
+  }
+
   function updateSpinLabel(on) {
     spinBtn.textContent = on ? '⏸ stop spin' : '▶ start spin';
   }
@@ -1131,7 +1507,65 @@ table.arts-list .cmd-tag {
     const btn = e.target.closest('.char-equip-btn');
     if (!btn || btn.disabled) return;
     const val = btn.dataset.val;
-    if (val === 'field' || val === 'battle' || val === 'baka') selectForm(val);
+    if (val === 'field' || val === 'battle' || val === 'baka' || val === 'equipped') selectForm(val);
+  });
+
+  // ----- Loadout picker events -----
+  loadoutEl.addEventListener('change', (e) => {
+    const sel = e.target.closest('select[data-section]');
+    if (sel) {
+      const idx = Number(sel.dataset.section);
+      const id = Number(sel.value);
+      if (Number.isFinite(idx) && Number.isFinite(id)) {
+        equipIds[idx] = id & 0xFF;
+        loadMesh();
+      }
+      return;
+    }
+    if (e.target && e.target.id === 'char-loadout-diff') {
+      equipDiff = !!e.target.checked;
+      loadMesh();
+    }
+  });
+  loadoutEl.addEventListener('click', (e) => {
+    if (!e.target.closest('#char-loadout-reset')) return;
+    equipIds = [0, 0, 0, 0, 0];
+    renderLoadoutPicker();
+    loadMesh();
+  });
+
+  // Per-item .glb: the separated weapon / Ra-Seru plus its host limb.
+  diffPanelEl.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-item-section]');
+    if (!btn || !viewer || typeof viewer.equipped_item_glb !== 'function') return;
+    const section = Number(btn.dataset.itemSection);
+    if (!Number.isFinite(section)) return;
+    const item = ((equipSummary && equipSummary.items) || [])
+      .find(i => i.section === section);
+    const prev = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'baking…';
+    await new Promise(r => setTimeout(r, 20));
+    try {
+      const glb = viewer.equipped_item_glb(section);
+      if (!glb || !glb.length) {
+        btn.textContent = 'no item';
+      } else {
+        const who = (equipSummary && equipSummary.character) || 'legaia';
+        const tag = item ? `_${item.class}` : '';
+        const base = `legaia-${who}_${(item && item.name ? item.name : 'item').replace(/[^A-Za-z0-9]+/g, '_')}${tag}`;
+        const url = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' }));
+        const a = document.createElement('a');
+        a.href = url; a.download = `${base}.glb`; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        btn.textContent = prev;
+      }
+    } catch (err) {
+      console.warn('item glb export failed:', err);
+      btn.textContent = 'export failed';
+    }
+    btn.disabled = false;
+    if (btn.textContent !== prev) setTimeout(() => { btn.textContent = prev; }, 1800);
   });
 
   if (anmBundleSel) {
@@ -1161,6 +1595,19 @@ table.arts-list .cmd-tag {
     // A clip button both selects and PLAYS - the arts-page interaction: one
     // click, the character performs it.
     anmClipsEl.addEventListener('click', (e) => {
+      const clipBtn = e.target.closest('button[data-clip]');
+      if (clipBtn) {
+        const idx = Number(clipBtn.dataset.clip);
+        if (!Number.isFinite(idx)) return;
+        curEquipClip = idx;
+        renderEquipClipButtons();
+        loadEquipClip();
+        if (meshView && meshView.anim) {
+          meshView.setPlaying(true);
+          anmPlayBtn.textContent = '⏸ pause';
+        }
+        return;
+      }
       const btn = e.target.closest('button[data-rec]');
       if (!btn) return;
       const idx = Number(btn.dataset.rec);
@@ -1226,6 +1673,9 @@ table.arts-list .cmd-tag {
     if (!viewer || selectedSlot === null) return;
     const p = activePack();
     if (!p) return;
+    // Belt and braces: `syncTmdButton` already disables the control in the
+    // loadout form, where there is no on-disc TMD to hand back.
+    if (isEquipLoadoutForm(curForm)) return;
     const bytes = isBattlePackForm(curForm)
       ? viewer.battle_char_tmd_bytes(selectedSlot)
       : viewer.character_tmd_bytes(selectedSlot);
@@ -1253,6 +1703,15 @@ table.arts-list .cmd-tag {
   const glbName = () => {
     const p = activePack();
     if (!p || selectedSlot === null) return 'legaia-character';
+    if (isEquipLoadoutForm(curForm)) {
+      // Named for the WHOLE character and what it is wearing - never for the
+      // item, which has no mesh of its own to export.
+      const worn = ((equipSummary && equipSummary.sections) || [])
+        .filter(s => !s.default)
+        .map(s => (s.name || `id${s.resolved}`).replace(/[^A-Za-z0-9]+/g, '_'));
+      const who = (equipSummary && equipSummary.character) || p.slots[selectedSlot].label;
+      return `legaia-${who}_battle_${worn.length ? worn.join('-') : 'unequipped'}`;
+    }
     const meta = p.slots[selectedSlot];
     const formTag = isBattlePackForm(curForm)
       ? (curForm === 'baka' ? 'baka' : 'battle')
@@ -1271,7 +1730,11 @@ table.arts-list .cmd-tag {
       try {
         const name = glbName();
         let glb = null;
-        if (typeof viewer.character_glb === 'function') {
+        if (isEquipLoadoutForm(curForm)) {
+          if (typeof viewer.equipped_character_glb === 'function') {
+            glb = viewer.equipped_character_glb();
+          }
+        } else if (typeof viewer.character_glb === 'function') {
           const formCode = curForm === 'field' ? 0 : (curForm === 'battle' ? 1 : 2);
           const equip = curForm === 'field' ? curEquip : -1;
           glb = viewer.character_glb(selectedSlot, equip, formCode);
@@ -1375,6 +1838,17 @@ table.arts-list .cmd-tag {
       } catch (e) {
         console.debug('[characters] battle pack absent or unparseable:', e);
       }
+      // The four player battle files (PROT 863..866) and every equipment id
+      // their five descriptor sections carry. Drives the equipment-loadout
+      // form; absent on a stale wasm bundle, which just hides that form.
+      try {
+        if (typeof viewer.equipment_pack_json === 'function') {
+          const ep = JSON.parse(viewer.equipment_pack_json());
+          if (ep && Array.isArray(ep.slots) && ep.slots.length > 0) equipPack = ep;
+        }
+      } catch (e) {
+        console.debug('[characters] equipment pack absent or unparseable:', e);
+      }
       // Player-ANM corpus (87 bundles across the disc, one per scene that
       // ships the per-scene anim section). Lazily decoded; if anything throws
       // we leave anmCorpus null and hide the scrubber.
@@ -1397,7 +1871,10 @@ table.arts-list .cmd-tag {
       const anmNote = anmCorpus
         ? ` · player ANM (${anmCorpus.bundles.length} bundles)`
         : '';
-      status.textContent = `Loaded: ${f.name} - decoded ${pack.slots.length} field-form slots${battleNote}${anmNote}.`;
+      const equipNoteText = equipPack
+        ? ` · equipment loadout (${equipPack.slots.reduce((n, s) => n + (s.sections || []).reduce((m, x) => m + x.items.length, 0), 0)} equippable ids)`
+        : '';
+      status.textContent = `Loaded: ${f.name} - decoded ${pack.slots.length} field-form slots${battleNote}${anmNote}${equipNoteText}.`;
       renderFormToggle();
       renderGrid();
       // Fire-and-forget scenes.json fetch + re-render so the dropdown gets

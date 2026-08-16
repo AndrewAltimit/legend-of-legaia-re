@@ -623,6 +623,51 @@ tint) is a JS-side re-draw (`MeshView.setTrail` -> the renderer's
 Disc-gated oracle: `tests/arts_view_real.rs` (bank coverage, arts-table
 resolution, voice pools, and the `.glb` export's animation bank).
 
+## Equipment loadout viewer (`equipment_view`)
+
+The `equipment loadout` form on `site/characters.html`, and the only surface
+in the project that assembles a party member's battle model from a
+**non-default** loadout - every other call site passes all-zero equip ids.
+`equipment_pack_json` enumerates each player file's five descriptor sections
+(labelled from the SCUS equipment stat table, because the section order
+differs per character: Vahn's weapons are section 2, Noa's are section 3);
+`set_equipped_character(slot, ids, diff)` runs `assemble_character` +
+`relocate_tsb_cba` on the chosen ids and paints it from
+`character_texture_uploads` for the *same* ids. That upload set is the whole
+band - both `record[0]` blocks plus every flagged section pool - which
+matters because two blocks ship `clut_n == 0` and sample a palette a sibling
+block put on the shared row.
+
+Objects tagged `200+` are dropped: they are duplicates of the bone they
+attach to, and retail only reaches them through the actor's `+0xA4` window.
+Clips come from the file's own `record[0]` action bank plus the
+equipment-spliced weapon swings, so they change with the weapon.
+`equipped_character_glb` bakes the whole posed character with that bank,
+named for the character and what it wears.
+
+Objects tagged `200+` are dropped **when they are byte-copies of their
+attach bone** (`AssembledCharacter::duplicate_objects`) - drawing a copy
+alongside its host z-fights a limb, but sixteen of the disc's assemblies
+carry a non-copy surplus that is real geometry, so the tag alone is not the
+test.
+
+`diff = true` adds the **diff highlight**: a per-vertex tint stream that dims
+geometry shared with the unequipped part, brightens what reaches beyond its
+radius envelope, and draws the bare geometry the section replaced alongside
+in a third colour. It is a viewing aid over an approximate boundary
+(`battle_char_assembly::equip_diff`), and deliberately *not* the item cut.
+
+`equipped_item_glb(section)` is the exact cut, for the two weapon-bearing
+sections only: the held item is a primitive subset of the bone object
+selected by palette column (`battle_char_assembly::equip_item`), and the
+export ships it beside the limb it came from as two named nodes, with the
+class (`own-object` / `separate` / `welded`) and a `complete` flag in the
+summary - a `welded` item's grip is open, because the shaft inside the closed
+fist was never modelled. Armour sections yield nothing and say so. Background:
+[`docs/formats/battle-data-pack.md`](../../docs/formats/battle-data-pack.md#the-item-is-still-separable---by-palette-not-by-geometry).
+Disc-gated oracles: `tests/equipment_view_real.rs` plus the 81-record sweep
+in `crates/asset/tests/equip_item_real.rs`.
+
 ## Playable minigames (`minigames`)
 
 `LegaiaMinigames` is a standalone `#[wasm_bindgen]` class (its own

@@ -92,6 +92,35 @@ pub fn build_character_glb_hybrid(
     clips: &[CharacterClip<'_>],
     shading: Option<&legaia_tmd::mesh::VertexShading>,
 ) -> Option<Vec<u8>> {
+    build_character_glb_named(
+        name,
+        mesh,
+        object_ids,
+        vram,
+        clips,
+        shading,
+        &BTreeMap::new(),
+    )
+}
+
+/// [`build_character_glb_hybrid`] with **per-object node names**.
+///
+/// The default naming (`object_0`, `object_1`, …) is right for a whole
+/// character, where the objects are anonymous body parts. It is not right
+/// when the export deliberately separates two meaningful halves - the
+/// equipment viewer's item cut ships the held item and its host limb as two
+/// nodes in one file, and a reader opening the `.glb` must be able to tell
+/// which is which without consulting the page that produced it. `names` maps
+/// object id -> node name; ids it omits keep the default.
+pub fn build_character_glb_named(
+    name: &str,
+    mesh: &legaia_tmd::mesh::VramMesh,
+    object_ids: &[u32],
+    vram: &Vram,
+    clips: &[CharacterClip<'_>],
+    shading: Option<&legaia_tmd::mesh::VertexShading>,
+    names: &BTreeMap<u32, String>,
+) -> Option<Vec<u8>> {
     if mesh.indices.is_empty() || mesh.positions.len() < 3 {
         return None;
     }
@@ -229,7 +258,10 @@ pub fn build_character_glb_hybrid(
         }
         meshes.push(json!({ "primitives": prims }));
         let mut node = json!({
-            "name": format!("object_{}", geom.object_id),
+            "name": names
+                .get(&geom.object_id)
+                .cloned()
+                .unwrap_or_else(|| format!("object_{}", geom.object_id)),
             "mesh": meshes.len() - 1
         });
         if let Some(rest) = rest

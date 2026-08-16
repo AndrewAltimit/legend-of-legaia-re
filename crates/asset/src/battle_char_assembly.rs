@@ -30,6 +30,8 @@
 mod animation;
 mod art;
 mod assembly;
+pub mod equip_diff;
+pub mod equip_item;
 mod swing;
 mod texture;
 
