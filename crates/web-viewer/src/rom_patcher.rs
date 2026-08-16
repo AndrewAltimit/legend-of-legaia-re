@@ -223,7 +223,14 @@ pub fn resolve_seed(seed: &str) -> String {
 /// overrides every capturable Seru monster's catch chance with one flat
 /// percent (`0`..`100`) - the odds that a killing blow absorbs its magic;
 /// only the 63 capturable records are touched, so a non-Seru monster can
-/// never become capturable. These are all manual, seedless edits.
+/// never become capturable. `enemy_attack_count` (empty or `1` = untouched)
+/// scales how many hits enemies land with their standard physical attacks
+/// (`0.1`..`5`): retail prices each attack in AGL against a per-round AGL
+/// gauge, so this divides each attack entry's AGL-cost byte by the
+/// multiplier while leaving AGL itself (and every spell cast) alone; costs
+/// round half up and clamp so a retail attacker always lands at least one
+/// hit per attack turn, never zero, and the engine's own 15-action queue
+/// bounds the top end. These are all manual, seedless edits.
 /// `starting_level`
 /// begins the new game at that character level instead of 1 (`0` or `1` =
 /// vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -292,6 +299,7 @@ pub fn patch_rom(
     enemy_stat_scale: &str,
     exp_scale: &str,
     seru_catch_rate: &str,
+    enemy_attack_count: &str,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -989,6 +997,28 @@ pub fn patch_rom(
                 Err(e) => summary.push_str(&format!("seru-catch-rate: {e}\n")),
             },
             Err(e) => summary.push_str(&format!("seru-catch-rate: skipped - {e}\n")),
+        }
+    }
+
+    // Enemy attack-count multiplier: divides each attack entry's AGL-cost
+    // byte so the per-round AGL budget affords more (or fewer) strikes
+    // (empty or 1 = retail). Seedless, same shape as the scales above.
+    let enemy_attack_count = enemy_attack_count.trim();
+    if enemy_attack_count.is_empty() {
+        summary.push_str("enemy-attack-count: 1x (retail)\n");
+    } else {
+        match legaia_patcher::monster_stats::ScalePermille::parse(enemy_attack_count) {
+            Ok(scale) if scale.is_retail() => {
+                summary.push_str("enemy-attack-count: 1x (retail)\n");
+            }
+            Ok(scale) => match apply::scale_enemy_attack_count(&mut patcher, scale) {
+                Ok(rep) => summary.push_str(&format!(
+                    "enemy-attack-count: {scale} ({} monsters changed, {} attack entries)\n",
+                    rep.monsters_changed, rep.entries_changed
+                )),
+                Err(e) => summary.push_str(&format!("enemy-attack-count: {e}\n")),
+            },
+            Err(e) => summary.push_str(&format!("enemy-attack-count: skipped - {e}\n")),
         }
     }
 
