@@ -71,6 +71,7 @@ pub(crate) const S6: u32 = 22;
 /// `$s7` - callee-saved register.
 pub(crate) const S7: u32 = 23;
 /// `$s8`/`$fp` - callee-saved register (frame pointer when one is used).
+#[allow(dead_code)]
 pub(crate) const S8: u32 = 30;
 /// `$t8` - caller-saved temporary.
 pub(crate) const T8: u32 = 24;
@@ -226,6 +227,12 @@ pub(crate) const fn srl(rd: u32, rt: u32, sa: u32) -> u32 {
 /// `srlv rd,rt,rs` - shift right logical by a variable amount (`rs`).
 pub(crate) const fn srlv(rd: u32, rt: u32, rs: u32) -> u32 {
     (rs << 21) | (rt << 16) | (rd << 11) | 0x06
+}
+/// `sllv rd,rt,rs` - shift left logical by a variable amount (`rs`). The R3000
+/// takes only the low five bits of `rs`, so a shift count of 32 or more wraps
+/// rather than clearing the register.
+pub(crate) const fn sllv(rd: u32, rt: u32, rs: u32) -> u32 {
+    (rs << 21) | (rt << 16) | (rd << 11) | 0x04
 }
 /// `multu rs,rt` - unsigned multiply into `hi`/`lo`.
 pub(crate) const fn multu(rs: u32, rt: u32) -> u32 {

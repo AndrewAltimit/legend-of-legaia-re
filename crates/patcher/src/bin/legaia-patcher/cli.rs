@@ -715,18 +715,22 @@ pub(crate) struct RandomizeArgs {
     /// the Honey as the course's full-clear reward.
     #[arg(long, default_value_t = false)]
     pub(crate) custom_items: bool,
-    /// **Show Super Arts on the in-battle move list**: add each character's
-    /// five Super Arts to the Tactical-Arts list the Triangle button opens in
-    /// battle, which retail never draws at all. Shown unconditionally, not
-    /// gated on having performed one - no Super Art has a learned bit and
-    /// retail has nowhere to store one. Three same-size detours into the SCUS
-    /// list renderer plus routines and a name blob in verified-dead SCUS
-    /// regions, and an in-place replacement of the list pager in PROT 0898 so
-    /// the page offset reaches the added rows (`0/5/10/15`). The Triangle
-    /// caption's own page thresholds stay retail, so on the added page it can
-    /// still read "View Hyper Arts list". **Mutually exclusive with
-    /// `--shiny-seru`, `--arts-ap-grant` / `--arts-ap-cost` and
-    /// `--delilas-challenge`** (same arena bytes).
+    /// **Show Super Arts on the in-battle move list**: put a character's Super
+    /// Arts at the HEAD of the Tactical-Arts list the Triangle button opens in
+    /// battle, which retail never draws at all. A Super Art appears only once
+    /// **every art in its trigger chain is learned** - which is exactly when
+    /// you can perform it - and its row shows the Super Art's name and the
+    /// chain's summed AP cost. It is an availability gate, not a "you have
+    /// performed this" flag: retail records nothing about a Super Art ever
+    /// having fired. No arrow line is drawn (a chain's concatenated glyph
+    /// string does not fit the dead space the feature lives in). Three
+    /// same-size detours into the SCUS list renderer plus a shared unlock
+    /// routine and four small tables in verified-dead SCUS regions, and an
+    /// in-place replacement of the list pager in PROT 0898 so the page offset
+    /// reaches the added rows. The Triangle caption's own page thresholds stay
+    /// retail, so on a later page it can still read "View Hyper Arts list".
+    /// **Mutually exclusive with `--shiny-seru`, `--arts-ap-grant` /
+    /// `--arts-ap-cost` and `--delilas-challenge`** (same dead-space bytes).
     #[arg(long, default_value_t = false)]
     pub(crate) show_super_arts: bool,
     /// Per-battle percentage chance a capturable enemy is shiny (only with

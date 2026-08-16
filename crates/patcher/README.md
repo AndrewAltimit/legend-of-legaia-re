@@ -31,9 +31,10 @@ Three patching families share that machinery:
   [`arts_power`](src/arts_power.rs)); `--super-art-power NAME=VALUE` does the
   same for a **Super Art**, which has no combo and no arts-table row and so is
   keyed by name ([`super_art_power`](src/super_art_power.rs));
-  `--show-super-arts` lists each character's five Super Arts on the in-battle
-  move list, which retail never draws ([`super_art_list`](src/super_art_list.rs),
-  mutually exclusive with `--shiny-seru`); `--arts-ap-grant` / `--arts-ap-cost`
+  `--show-super-arts` puts a character's Super Arts at the head of the in-battle
+  move list, which retail never draws, once every art in a Super Art's trigger
+  chain is learned ([`super_art_list`](src/super_art_list.rs), mutually exclusive
+  with `--shiny-seru`); `--arts-ap-grant` / `--arts-ap-cost`
   `[CHAR:]COMBO=AMOUNT` set what one character's art does to the AP gauge - grant
   AP instead of costing it, or charge a chosen flat cost (a battle-overlay code
   hook - [`arts_ap_grant`](src/arts_ap_grant.rs), mutually exclusive with
@@ -800,32 +801,46 @@ each character's Super Arts with their finisher, tiers and trigger chain.
 
 ## Show Super Arts on the move list (`super_art_list` module)
 
-`--show-super-arts` adds each character's five Super Arts to the Tactical-Arts
-list the Triangle button opens in battle, which retail draws not at all. The
-label is deliberate: **"show", not "learned"**. No Super Art has a learned bit
-and retail structurally cannot store one - the per-character id list at
-`+0x74E..+0x75D` holds regular-art ids only - so all five are shown
-unconditionally.
+`--show-super-arts` puts a character's Super Arts at the **head** of the
+Tactical-Arts list the Triangle button opens in battle, which retail draws not at
+all. A row appears only once **every art in that Super Art's trigger chain is in
+the learned-art list**, and carries the Super Art's **name** plus the chain's
+**summed AP cost**.
 
-The list renderer `FUN_80034358` is a bare `0..count` walk that draws a row only
-when a linear scan of `DAT_80075EC4` matches the row's `(character, id)`, and
-silently consumes it otherwise. Three same-size detours ride that shape: (A)
-`0x800343C4` returns `count + 5`, (B) `0x80034450` synthesises id `0x40 + k` for
-the added rows, and (C) `0x8003474C` draws the Super Art's name on the scan miss.
-(C) is a **one-word** detour: the next word is itself a jump target from the hit
-path, so it must stay put, and the hook returns to it. A fourth edit replaces the
-list pager `FUN_801D3748` - an 81-instruction leaf with one caller and no
-external reference to its interior - wholesale in place inside PROT 0898, so the
-page offset steps `0/5/10/15` rather than stopping at `10`; that costs no dead
-space at all.
+That gate is availability, not history: retail records nothing about a Super Art
+ever having fired (the applier `FUN_801EF9E4` rewrites the finished queue and
+calls nothing), but you cannot perform one without its chain, so the row appears
+exactly when the move becomes possible. Chain entries are **action constants**
+and the learned list stores **display ids**; display row `n` is constant
+`0x1B + n`, and the planner refuses if a converted id misses this disc's own
+arts-name table.
 
-The fifteen names ride as a NUL-terminated blob plus a 15-byte offset table
-rather than being chased through RAM, which removes an unmeasured runtime row
-index. Routines go in the verified-dead arena `0x8007AE00` and the blob in the
-rodata gap `0x80077728`, so the toggle is **mutually exclusive** with
+The list renderer `FUN_80034358` draws a row out of a 20-byte `DAT_80075EC4`
+record found by a linear scan on `(character, id)`. Rather than re-implement that
+draw, the feature **synthesises a record** in dead space - `+2` AP, `+0xC` name
+pointer filled per row, `+8` aimed at a zero byte so no arrows are drawn - and
+jumps past the scan into its own hit arm. Three same-size detours: (A)
+`0x800343C4` returns `count + unlocked`, (B) `0x80034450` resolves each head row
+to a Super Art and fills the record, (E) `0x80034460` swaps the record cursor. A
+shared leaf answers "which are unlocked" for (A), (B) and the pager, and gates
+the whole feature on `_DAT_8007B83C == 0x15` so it can never fire while the
+battle overlay is unloaded. (E) is a **one-word** detour: the next word is the
+scan's loop head, branched to from its own tail, so it must stay put.
+
+A fourth edit replaces the list pager `FUN_801D3748` - an 81-instruction leaf
+with one caller and no external reference to its interior - wholesale in place
+inside PROT 0898, so the page offset steps while another page exists rather than
+stopping at `10`; it calls the same shared leaf, so its row total cannot disagree
+with the list's. That costs no dead space at all.
+
+The name is chased in RAM rather than carried, through the same
+`DAT_801C9360[char] -> +0x58 -> +4 -> (constant - 0x10) * 0xD0 -> +0x10` chain
+retail itself indexes with in `FUN_8004AD80` - which is what freed the ~206 bytes
+the gate and the AP column needed. Code goes in arena 1 and arena 2, tables in
+the rodata gap and slot 6, so the toggle is **mutually exclusive** with
 `--shiny-seru`, `--arts-ap-grant` / `--arts-ap-cost` and `--delilas-challenge`.
-The Triangle caption's own page thresholds stay retail, so on the added page it
-can still read "View Hyper Arts list" - a known cosmetic gap. Full design:
+The Triangle caption's own page thresholds stay retail, so on a later page it can
+still read "View Hyper Arts list" - a known cosmetic gap. Full design:
 [`docs/tooling/randomizer.md`](../../docs/tooling/randomizer.md#show-super-arts-on-the-in-battle-move-list).
 
 ## Arts AP override (`arts_ap_grant` module)

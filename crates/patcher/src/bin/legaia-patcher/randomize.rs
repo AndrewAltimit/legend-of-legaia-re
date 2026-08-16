@@ -45,9 +45,10 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
              verified-dead SCUS regions and are mutually exclusive; enable only one"
         );
     }
-    // --show-super-arts takes the same arena (its three routines) plus the
-    // rodata gap (the name blob), so it is a hard conflict with all three of
-    // the arena features - including the Delilas Challenge, which is never
+    // --show-super-arts spans all four verified-dead SCUS regions (its shared
+    // unlock leaf and three hook routines, plus the chain / AP / finisher
+    // tables and the scratch record), so it is a hard conflict with all three
+    // of the arena features - including the Delilas Challenge, which is never
     // silently dropped in its favour.
     for (other, flag) in [
         (arts_ap, "--arts-ap-grant / --arts-ap-cost"),
@@ -552,18 +553,31 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         }
     }
 
-    // Show Super Arts: the in-battle Tactical-Arts list gains each character's
-    // five Super Arts (three detours into the SCUS list renderer + a name blob
-    // in dead space, and a replaced list pager in PROT 0898).
+    // Show Super Arts: the in-battle Tactical-Arts list gains, at its head, the
+    // Super Arts whose whole trigger chain the character has learned - name and
+    // chain AP cost per row (three detours into the SCUS list renderer plus a
+    // shared unlock routine and four small tables in dead space, and a replaced
+    // list pager in PROT 0898).
     if args.show_super_arts {
         let report = apply::inject_super_art_list(&mut patcher)?;
         println!(
-            "show-super-arts: {} Super Arts added to the in-battle move list \
-             (routines at {:#x}, names at {:#x})",
-            report.names.len(),
+            "show-super-arts: {} Super Arts join the in-battle move list once their chain \
+             arts are learned (unlock routine at {:#x}, hooks at {:#x}/{:#x}/{:#x})",
+            report.rows.len(),
+            report.sub_va,
             report.count_va,
-            report.blob_va
+            report.id_va,
+            report.rec_va
         );
+        for row in &report.rows {
+            println!(
+                "  {:?}: {} - {} AP, needs {}",
+                row.character,
+                row.name,
+                row.ap,
+                row.chain.join(" + ")
+            );
+        }
         manifest.push("show_super_arts = true".to_string());
     } else {
         manifest.push("show_super_arts = false".to_string());

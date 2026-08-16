@@ -194,11 +194,14 @@ pub fn resolve_seed(seed: &str) -> String {
 /// list of `name=value` pairs (e.g. `Tri-Somersault=0x1A`), rebalancing a Super
 /// Art's own `record0` power bytes; Super Arts carry no combo, no
 /// arts-name-table row and no AP cost of their own, so name is the only key
-/// they have. `show_super_arts` adds each character's five Super Arts to the
-/// Tactical-Arts list the Triangle button opens in battle, which retail never
-/// draws; they are shown unconditionally (no Super Art has a learned bit), and
-/// the Triangle caption's own page thresholds stay retail, so on the added page
-/// it can still read "View Hyper Arts list". Mutually exclusive with
+/// they have. `show_super_arts` puts a character's Super Arts at the **head** of
+/// the Tactical-Arts list the Triangle button opens in battle, which retail
+/// never draws at all; a row appears only once **every art in that Super Art's
+/// trigger chain is learned** (retail records nothing about having *performed*
+/// one, so this is availability, not a "you have done this" flag) and shows the
+/// Super Art's name plus the chain's summed AP cost, with no arrow line. The
+/// Triangle caption's own page thresholds stay retail, so on a later page it can
+/// still read "View Hyper Arts list". Mutually exclusive with
 /// `shiny_seru`, the arts AP override and `delilas_challenge` (same SCUS
 /// regions). `arts_ap_grants` and `arts_ap_costs` are
 /// comma/space-separated lists of `[character:]combo=amount` pairs (e.g.
@@ -342,10 +345,10 @@ pub fn patch_rom(
              verified-dead SCUS regions and are mutually exclusive; enable only one",
         ));
     }
-    // The Super Arts move-list rows take that same arena (three routines) plus
-    // the rodata gap (the name blob), so they are a hard conflict with all
-    // three - the Delilas Challenge included, which is never silently dropped
-    // in their favour.
+    // The Super Arts move-list rows span all four verified-dead SCUS regions
+    // (a shared unlock leaf, three hook routines and four small tables), so
+    // they are a hard conflict with all three - the Delilas Challenge included,
+    // which is never silently dropped in their favour.
     for (other, what) in [
         (arts_ap, "the arts AP override"),
         (shiny_seru, "shiny-seru"),
@@ -552,15 +555,18 @@ pub fn patch_rom(
         summary.push_str("shiny-seru: untouched\n");
     }
 
-    // Show Super Arts: the in-battle Tactical-Arts list gains each character's
-    // five Super Arts (three detours into the SCUS list renderer plus a name
-    // blob in dead space, and a replaced list pager in PROT 0898).
+    // Show Super Arts: the in-battle Tactical-Arts list gains, at its head, the
+    // Super Arts whose whole trigger chain the character has learned - name and
+    // chain AP cost per row (three detours into the SCUS list renderer plus a
+    // shared unlock routine and four small tables in dead space, and a replaced
+    // list pager in PROT 0898). Spoiler-safe: the count, never the roster.
     if show_super_arts {
         let rep = apply::inject_super_art_list(&mut patcher)
             .map_err(|e| err(format!("show-super-arts: {e}")))?;
         summary.push_str(&format!(
-            "show-super-arts: {} Super Arts added to the in-battle move list\n",
-            rep.names.len()
+            "show-super-arts: {} Super Arts join the in-battle move list once their chain \
+             arts are learned\n",
+            rep.rows.len()
         ));
     } else {
         summary.push_str("show-super-arts: untouched\n");

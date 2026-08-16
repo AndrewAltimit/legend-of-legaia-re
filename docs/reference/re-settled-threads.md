@@ -591,6 +591,33 @@ controls). One post-applier library state per character is re-checked by
 `crates/pcsxr/tests/super_art_queue_replace.rs`. Full chain + port:
 [battle-action.md](../subsystems/battle-action.md#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4).
 
+### The runtime art-record chase - the `+4` and the `- 0x10` grid origin
+
+*Status:* resolved - `record(c) = *(*(DAT_801C9360[char]) + 0x58) + 4 + (c - 0x10) * 0xD0`,
+with `+0x10` the name field and `+0x24` the power bytes
+
+Both halves used to be soft. The `+4` came from reading the chase in isolation
+(`0x8004B6FC..0x8004B718`: `lui/addiu` builds `DAT_801C9360`, `lw` the per-character block,
+`lw +0x58` the array pointer, `addiu s0,v0,0x4`) with nothing pinning what `s0` was the base *of*;
+the `- 0x10` grid origin came from an enumeration base solved by voting rather than read off
+retail. `FUN_8004AD80`'s own three uses of `s0`, all in the same function, settle both at once -
+each multiplies the action constant by `0xD0` with the identical `sll 1 / addu / sll 2 / addu /
+sll 4` chain and then subtracts a constant:
+
+| Site | Expression | Resolves to | Consumed as |
+|---|---|---|---|
+| `0x8004BBE8..0x8004BC10` | `s0 + 0xD0*c - 0xCF0` | `record + 0x10` | the art's display-name pointer (`sw` into `0x8007634C`/`0x80076344`) |
+| `0x8004BC60..0x8004BC80` | `s0 + 0xD0*c - 0xCDC` | `record + 0x24` | the per-strike power bytes |
+| `0x8004BCA0..0x8004BCC4` | `s0 + 0xD0*c - 0xCF6` | `record + 0x0A` | a byte handed to `FUN_8002B28C` |
+
+`0xD0 * 0x10 = 0xD00`, so each constant is `0xD00 - field_offset`: the array is indexed from
+constant `0x10` and `s0` is the base of record `0x10` itself, which is what the `+4` produces. The
+two field offsets are the same `+0x10` name and `+0x24` power `super_art_power` edits off the
+decoded `record0`, independently confirming that the runtime base and the file-side
+`art_block_base` are the same address in two spaces. `--show-super-arts` chases the name through
+this chain, and its planner re-proves it per disc by requiring all fifteen Super Art records to
+carry their own names at `+0x10` before writing anything.
+
 ### Character-record HP/MP/AP pair order
 
 *Status:* resolved - `+0x104/+0x108/+0x10C` are the effective **maxima**,

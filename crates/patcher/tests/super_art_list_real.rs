@@ -1,43 +1,50 @@
 //! Disc-gated oracle for **show Super Arts on the in-battle move list**
 //! (`legaia_patcher::super_art_list` + `apply::inject_super_art_list`).
 //!
-//! The feature adds each character's five Super Arts to the Tactical-Arts list
-//! `FUN_80034358` draws, through three same-size detours into that renderer
-//! (`0x800343C4` count / `0x80034450` id / `0x8003474C` miss-draw), routines +
-//! a name blob in the verified-dead SCUS regions `shiny_seru::ARENA1_VA` and
-//! `SCUS_GAP_VA`, and a wholesale in-place replacement of the list pager
-//! `FUN_801D3748` inside PROT 0898.
+//! The feature puts a character's *unlocked* Super Arts at the head of the
+//! Tactical-Arts list `FUN_80034358` draws, through three same-size detours into
+//! that renderer (`0x800343C4` count / `0x80034450` id / `0x80034460` record),
+//! a shared unlock routine and four small tables spread over the four
+//! verified-dead SCUS regions, and a wholesale in-place replacement of the list
+//! pager `FUN_801D3748` inside PROT 0898.
 //!
 //! These apply it to a scratch copy of the real disc and assert, off the patched
 //! image, that every hosted region was all-zero pre-patch; each detour became
-//! exactly the planned `j routine` (and that the **one-word** draw detour left
-//! `0x80034750` - a live jump target - untouched); the routines, offset table
-//! and name blob land exactly where the plan says and every name reads back
-//! through its own offset; the replacement pager fits inside the original
-//! 81-instruction body, is nop-padded to it, and its one caller still targets
-//! its entry; the synthetic id space is free in the disc's own arts-name table;
-//! **every byte that changed in `SCUS_942.54` and PROT 0898 is inside a planned
-//! edit, and no other file on the disc moved at all** (which is what makes the
-//! toggle byte-inert when off); every touched sector stays EDC/ECC-valid; the
-//! run is byte-deterministic; and an unrecognized build, a dirty arena or a
-//! prior arena feature is refused without writing anything.
+//! exactly the planned `j routine` (and that the **one-word** record detour left
+//! the scan head `0x80034464` - a live jump target - untouched); the routines
+//! and tables land exactly where the plan says; every Super Art's trigger chain
+//! resolves against the disc's own arts-name table and its AP total is the sum
+//! of those rows' AP bytes; the runtime name chase lands on a record that
+//! carries that Super Art's own name; the replacement pager fits inside the
+//! original 81-instruction body, is nop-padded to it, and its one caller still
+//! targets its entry; the synthetic id space is free in the disc's own arts-name
+//! table; **every byte that changed in `SCUS_942.54` and PROT 0898 is inside a
+//! planned edit, and no other file on the disc moved at all** (which is what
+//! makes the toggle byte-inert when off); every touched sector stays EDC/ECC
+//! valid; the run is byte-deterministic; and an unrecognized build, a dirty
+//! region or a prior dead-space feature is refused without writing anything.
 //!
 //! Gates on `LEGAIA_DISC_BIN`; skips and passes when unset.
 //!
-//! HONESTY GATE: this proves only WHERE the bytes land, never in-game
-//! behaviour. A live battle playtest - open Triangle, page to the added rows,
-//! see five correctly-named Super Arts and no blank rows for Terra - is still
-//! required before calling the feature done.
+//! HONESTY GATE: this proves only WHERE the bytes land and what the tables say,
+//! never in-game behaviour. A live battle playtest - open Triangle with a party
+//! that knows no full chain and see an unchanged list, learn one and see exactly
+//! that Super Art appear as the FIRST row with its name and AP, and see Terra's
+//! list stay empty - is still required before calling the feature done.
 
 use legaia_asset::item_names::file_offset_for_va;
 use legaia_iso::iso9660::{find_file_in_image, read_file_in_image};
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_patcher::apply;
 use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::shiny_seru::{ARENA1_END_VA, ARENA1_VA, SCUS_GAP_END_VA, SCUS_GAP_VA};
+use legaia_patcher::shiny_seru::{
+    ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, SCUS_GAP_END_VA, SCUS_GAP_VA, SLOT6_END_VA,
+    SLOT6_VA,
+};
 use legaia_patcher::super_art_list::{
-    HOOK_COUNT_VA, HOOK_DRAW_VA, HOOK_ID_VA, OVERLAY_BASE_VA, OVERLAY_PROT_INDEX, PAGER_VA,
-    PAGER_WORDS, SUPER_ARTS_PER_CHAR, SYN_ID_BASE, SuperArtListInjection, super_art_names,
+    ART_CONSTANT_BIAS, ARTS_CHARACTERS, HOOK_COUNT_VA, HOOK_ID_VA, HOOK_REC_VA, OVERLAY_BASE_VA,
+    OVERLAY_PROT_INDEX, PAGER_VA, PAGER_WORDS, SCAN_HEAD_VA, SCAN_HIT_VA, SCRATCH_BYTES,
+    SUPER_ARTS_PER_CHAR, SYN_ID_BASE, SuperArtListInjection, super_art_rows,
 };
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -52,6 +59,11 @@ fn scus_of(img: &[u8]) -> Vec<u8> {
 fn word_at_va(scus: &[u8], va: u32) -> u32 {
     let off = file_offset_for_va(scus, va).expect("VA in SCUS");
     u32::from_le_bytes(scus[off..off + 4].try_into().unwrap())
+}
+
+fn bytes_at_va(scus: &[u8], va: u32, len: usize) -> Vec<u8> {
+    let off = file_offset_for_va(scus, va).expect("VA in SCUS");
+    scus[off..off + len].to_vec()
 }
 
 fn overlay_word(entry: &[u8], va: u32) -> u32 {
@@ -74,6 +86,14 @@ fn patched(original: &[u8]) -> (Vec<u8>, SuperArtListInjection) {
     (patcher.into_image(), plan)
 }
 
+/// The four verified-dead regions this feature spans.
+const REGIONS: [(u32, u32, &str); 4] = [
+    (SCUS_GAP_VA, SCUS_GAP_END_VA, "gap 1"),
+    (ARENA1_VA, ARENA1_END_VA, "arena 1"),
+    (ARENA2_VA, ARENA2_END_VA, "arena 2"),
+    (SLOT6_VA, SLOT6_END_VA, "slot 6"),
+];
+
 #[test]
 fn hosted_regions_are_all_zero_before_patch() {
     let Some(disc) = load_disc() else {
@@ -81,15 +101,15 @@ fn hosted_regions_are_all_zero_before_patch() {
         return;
     };
     let scus = scus_of(&disc);
-    for (va, end) in [(ARENA1_VA, ARENA1_END_VA), (SCUS_GAP_VA, SCUS_GAP_END_VA)] {
+    for (va, end, what) in REGIONS {
         let off = file_offset_for_va(&scus, va).expect("VA");
         let len = (end - va) as usize;
         assert!(
             scus[off..off + len].iter().all(|&b| b == 0),
-            "{va:#x}..{end:#x} must be dead space"
+            "{what} {va:#x}..{end:#x} must be dead space"
         );
     }
-    eprintln!("arena 1 + rodata gap are all-zero on the real disc");
+    eprintln!("all four dead-space regions are all-zero on the real disc");
 }
 
 #[test]
@@ -106,17 +126,102 @@ fn synthetic_id_space_is_free_in_the_discs_own_arts_table() {
         max < SYN_ID_BASE,
         "real art ids stop at {max:#x}, below the synthetic base {SYN_ID_BASE:#x}"
     );
+    // The unlock test is a 32-bit mask over the same id space.
+    assert!(max < 32, "art ids must fit the chain bitmask");
     eprintln!("real art ids run 0x00..={max:#x}; {SYN_ID_BASE:#x}.. is free");
 }
 
 #[test]
-fn detours_land_and_the_shared_jump_target_survives() {
+fn every_trigger_chain_resolves_against_this_discs_arts_table() {
+    let Some(disc) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let scus = scus_of(&disc);
+    let table = legaia_art::arts_table::raw_records_from_scus(&scus).expect("arts table");
+    let rows = super_art_rows(&scus).expect("derive rows");
+    assert_eq!(rows.len(), ARTS_CHARACTERS * SUPER_ARTS_PER_CHAR);
+
+    for r in &rows {
+        // The chain is stored as action constants; the learned list stores
+        // display ids, and display row n is constant 0x1B + n. Every converted
+        // id has to be a real row of this disc's table for the same character.
+        let source = legaia_art::SUPER_ARTS
+            .iter()
+            .find(|s| s.character == r.character && s.finisher == r.finisher)
+            .expect("source entry");
+        let want: Vec<u8> = source
+            .art_sequence()
+            .iter()
+            .map(|c| c - ART_CONSTANT_BIAS)
+            .collect();
+        assert_eq!(r.chain_ids, want, "{} chain ids", r.name);
+        assert!(want.len() >= 2, "{} would unlock on one art", r.name);
+
+        // AP is the sum of the chain arts' own AP bytes, duplicates included.
+        let mut ap = 0u32;
+        let mut mask = 0u32;
+        for &id in &r.chain_ids {
+            let rec = table
+                .iter()
+                .find(|t| t.character == r.character && t.index == id)
+                .unwrap_or_else(|| panic!("{}: chain id {id} has no row", r.name));
+            ap += u32::from(rec.ap);
+            mask |= 1u32 << id;
+        }
+        assert_eq!(u32::from(r.ap), ap, "{} AP total", r.name);
+        assert_eq!(r.chain_mask, mask, "{} chain mask", r.name);
+        assert!(r.ap > 0, "{} would advertise a free move", r.name);
+        eprintln!(
+            "{:?} {:<20} {:>3} AP  needs {}",
+            r.character,
+            r.name,
+            r.ap,
+            r.chain_names.join(" + ")
+        );
+    }
+}
+
+#[test]
+fn the_runtime_name_chase_lands_on_the_super_arts_own_record() {
+    let Some(disc) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // The injected routine resolves a row's name as
+    // `DAT_801C9360[char] -> +0x58 -> +4 -> (finisher - 0x10) * 0xD0 -> +0x10`.
+    // The same arithmetic off the decoded `record0` is what `super_art_power`
+    // locates a Super Art's record with, and it only yields a row when that
+    // record's `+0x10` field IS the Super Art's name - so all fifteen resolving
+    // is the disc-side proof that the chase's constants are right.
+    let scus = scus_of(&disc);
+    let patcher = DiscPatcher::open(disc.clone()).expect("open");
+    let mut found = 0usize;
+    for ch in legaia_art::queue::Character::all() {
+        let idx = legaia_patcher::super_art_power::player_entry_index(ch);
+        let entry = patcher.read_entry(idx).expect("player battle file");
+        let rows = legaia_patcher::super_art_power::super_art_powers(&scus, &entry, ch)
+            .expect("decode record0");
+        assert_eq!(
+            rows.len(),
+            SUPER_ARTS_PER_CHAR,
+            "{ch:?}: every Super Art record must carry its own name at +0x10"
+        );
+        found += rows.len();
+    }
+    assert_eq!(found, ARTS_CHARACTERS * SUPER_ARTS_PER_CHAR);
+    eprintln!("{found} Super Art records resolve by name through the chase's offsets");
+}
+
+#[test]
+fn detours_land_and_the_scan_head_survives() {
     let Some(disc) = load_disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
     let before = scus_of(&disc);
-    let stock_next = word_at_va(&before, HOOK_DRAW_VA + 4);
+    let stock_head = word_at_va(&before, SCAN_HEAD_VA);
+    let stock_hit = word_at_va(&before, SCAN_HIT_VA);
     let (img, plan) = patched(&disc);
     let after = scus_of(&img);
 
@@ -124,62 +229,101 @@ fn detours_land_and_the_shared_jump_target_survives() {
     assert_eq!(word_at_va(&after, HOOK_COUNT_VA + 4), 0, "nop");
     assert_eq!(word_at_va(&after, HOOK_ID_VA), j_word(plan.id_va));
     assert_eq!(word_at_va(&after, HOOK_ID_VA + 4), 0, "nop");
-    assert_eq!(word_at_va(&after, HOOK_DRAW_VA), j_word(plan.draw_va));
-    // The word after the draw detour is `lw t0,0x2c(sp)` and is ALSO reached by
-    // `j 0x80034750` from the hit path, so overwriting it would break the loop
-    // bound for every drawn row. It must be byte-identical to retail.
+    assert_eq!(word_at_va(&after, HOOK_REC_VA), j_word(plan.rec_va));
+    // The word after the record detour is the arts-table scan's loop head, and
+    // is ALSO reached by `bne v0,zero,0x80034464` from the scan's own tail, so
+    // overwriting it would break the scan for every drawn row. Likewise the
+    // scan's hit arm, which a Super Art row jumps straight into.
     assert_eq!(
-        word_at_va(&after, HOOK_DRAW_VA + 4),
-        stock_next,
-        "the draw detour is one word; 0x80034750 stays retail"
+        word_at_va(&after, SCAN_HEAD_VA),
+        stock_head,
+        "the record detour is one word; the scan head stays retail"
+    );
+    assert_eq!(
+        word_at_va(&after, SCAN_HIT_VA),
+        stock_hit,
+        "the scan's hit arm stays retail"
     );
     eprintln!(
-        "detours: count -> {:#x}, id -> {:#x}, draw -> {:#x}",
-        plan.count_va, plan.id_va, plan.draw_va
+        "detours: count -> {:#x}, id -> {:#x}, record -> {:#x}",
+        plan.count_va, plan.id_va, plan.rec_va
     );
 }
 
 #[test]
-fn names_read_back_through_their_own_offsets() {
+fn the_tables_read_back_exactly_as_planned() {
     let Some(disc) = load_disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
     let (img, plan) = patched(&disc);
     let scus = scus_of(&img);
-    let offtab = file_offset_for_va(&scus, plan.offtab_va).expect("offtab VA");
-    let blob = file_offset_for_va(&scus, plan.blob_va).expect("blob VA");
-    let want = super_art_names();
-    assert_eq!(want.len(), 15);
-    for (i, name) in want.iter().enumerate() {
-        let off = scus[offtab + i] as usize;
-        let start = blob + off;
-        let end = start + scus[start..].iter().position(|&b| b == 0).expect("NUL");
-        assert_eq!(
-            std::str::from_utf8(&scus[start..end]).unwrap(),
-            name,
-            "name {i} reads back through its offset"
-        );
+    let n = ARTS_CHARACTERS * SUPER_ARTS_PER_CHAR;
+
+    // Chain bitmasks, AP totals and finisher constants, all in the
+    // `character * 5 + k` order the routines index them by.
+    let masks = bytes_at_va(&scus, plan.masktab_va, n * 4);
+    let aps = bytes_at_va(&scus, plan.aptab_va, n);
+    let fins = bytes_at_va(&scus, plan.fintab_va, n);
+    for (i, r) in plan.rows.iter().enumerate() {
+        let m = u32::from_le_bytes(masks[i * 4..i * 4 + 4].try_into().unwrap());
+        assert_eq!(m, r.chain_mask, "chain mask {i} ({})", r.name);
+        assert_eq!(aps[i], r.ap, "AP {i} ({})", r.name);
+        assert_eq!(fins[i], r.finisher, "finisher {i} ({})", r.name);
     }
-    // The routine indexes the table as `character * 5 + k`, so the fifteen
-    // entries have to be grouped by character in `Character::all()` order.
+    // Grouped by character in `Character::all()` order, five each.
     for (c, ch) in legaia_art::queue::Character::all().into_iter().enumerate() {
         for (k, s) in legaia_art::SUPER_ARTS
             .iter()
             .filter(|s| s.character == ch)
             .enumerate()
         {
-            assert_eq!(
-                want[c * SUPER_ARTS_PER_CHAR + k],
-                s.name,
-                "slot {c}*5+{k} is {ch:?}'s Super Art {k}"
-            );
+            let row = &plan.rows[c * SUPER_ARTS_PER_CHAR + k];
+            assert_eq!(row.name, s.name, "slot {c}*5+{k} is {ch:?}'s Super Art {k}");
+            assert_eq!(row.character, ch);
         }
     }
+
+    // The scratch record: `+8` points at its own `+0`, which stays zero, so the
+    // glyph count reads 0 and the row draws no arrows.
+    let scratch = bytes_at_va(&scus, plan.scratch_va, SCRATCH_BYTES);
+    let arrows = u32::from_le_bytes(scratch[8..12].try_into().unwrap());
+    assert_eq!(arrows, plan.scratch_va, "the glyph pointer aims at +0");
+    assert_eq!(scratch[0], 0, "and that byte is a zero glyph count");
+    assert_eq!(&scratch[2..8], &[0u8; 6], "AP + padding start clear");
+    assert_eq!(&scratch[12..16], &[0u8; 4], "the name pointer starts clear");
+
+    // The cache the per-row hook reads starts at zero: before the first draw
+    // there is no character, so no Super Art row.
+    assert_eq!(bytes_at_va(&scus, plan.cache_va, 2), vec![0, 0]);
     eprintln!(
-        "15 names at {:#x}, table at {:#x}",
-        plan.blob_va, plan.offtab_va
+        "tables: masks {:#x}, AP {:#x}, finishers {:#x}, scratch {:#x}",
+        plan.masktab_va, plan.aptab_va, plan.fintab_va, plan.scratch_va
     );
+}
+
+#[test]
+fn every_region_still_has_slack_after_the_injection() {
+    let Some(disc) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let (img, plan) = patched(&disc);
+    let scus = scus_of(&img);
+    let mut total = 0usize;
+    for (va, end, what) in REGIONS {
+        let len = (end - va) as usize;
+        let region = bytes_at_va(&scus, va, len);
+        let used = region.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
+        total += used;
+        assert!(used <= len, "{what} overran");
+        eprintln!("{what}: {used} of {len} B used");
+    }
+    // Every planned SCUS edit is inside one of the four regions or is a detour.
+    for e in plan.edits.iter().filter(|e| e.prot_index.is_none()) {
+        assert!(!e.bytes.is_empty());
+    }
+    eprintln!("{total} B of 652 B of verified-dead SCUS space used");
 }
 
 #[test]
@@ -225,14 +369,19 @@ fn pager_is_replaced_whole_and_its_caller_still_reaches_it() {
         overlay_word(&before, PAGER_VA + (PAGER_WORDS as u32) * 4),
         "the next function is untouched"
     );
-    // The replacement must be shorter than the body it replaces: the padding is
-    // real, not an artifact of a same-length rewrite.
-    let live = planned
+    // The replacement calls the same shared unlock routine the renderer's count
+    // hook does, so the pager's row total can never disagree with the list's.
+    let words: Vec<u32> = planned
         .chunks_exact(4)
         .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
-        .rposition(|w| w != 0)
-        .unwrap()
-        + 1;
+        .collect();
+    let jal_sub = (0x03 << 26) | ((plan.sub_va >> 2) & 0x03ff_ffff);
+    assert!(
+        words.contains(&jal_sub),
+        "the pager must call the unlock routine at {:#x}",
+        plan.sub_va
+    );
+    let live = words.iter().rposition(|&w| w != 0).unwrap() + 1;
     assert!(
         live < PAGER_WORDS,
         "replacement is {live} words in an {PAGER_WORDS}-word body"
@@ -320,6 +469,66 @@ fn only_the_planned_bytes_move_and_no_other_file_does() {
 }
 
 #[test]
+fn with_the_toggle_off_nothing_this_feature_touches_moves() {
+    let Some(disc) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // Patch a disc with an unrelated feature (the drop shuffle, which writes
+    // both SCUS-adjacent tables and PROT entries) and leave show-super-arts off.
+    // Every byte this feature would touch has to come back byte-identical, which
+    // is what makes the toggle inert when it is not asked for.
+    let mut patcher = DiscPatcher::open(disc.clone()).expect("open");
+    apply::randomize_drops(
+        &mut patcher,
+        &[],
+        0xC0FFEE,
+        legaia_patcher::drops::DropMode::Shuffle,
+    )
+    .expect("drop shuffle");
+    let img = patcher.into_image();
+
+    let (before, after) = (scus_of(&disc), scus_of(&img));
+    for va in [
+        HOOK_COUNT_VA,
+        HOOK_COUNT_VA + 4,
+        HOOK_ID_VA,
+        HOOK_ID_VA + 4,
+        HOOK_REC_VA,
+        SCAN_HEAD_VA,
+        SCAN_HIT_VA,
+    ] {
+        assert_eq!(
+            word_at_va(&after, va),
+            word_at_va(&before, va),
+            "renderer word {va:#x} must not move with the toggle off"
+        );
+    }
+    for (va, end, what) in REGIONS {
+        let len = (end - va) as usize;
+        assert!(
+            bytes_at_va(&after, va, len).iter().all(|&b| b == 0),
+            "{what} must still be dead space with the toggle off"
+        );
+    }
+    let ov_before = DiscPatcher::open(disc)
+        .unwrap()
+        .read_entry(OVERLAY_PROT_INDEX)
+        .unwrap();
+    let ov_after = DiscPatcher::open(img)
+        .unwrap()
+        .read_entry(OVERLAY_PROT_INDEX)
+        .unwrap();
+    let base = (PAGER_VA - OVERLAY_BASE_VA) as usize;
+    assert_eq!(
+        &ov_after[base..base + PAGER_WORDS * 4],
+        &ov_before[base..base + PAGER_WORDS * 4],
+        "the pager must stay retail with the toggle off"
+    );
+    eprintln!("toggle off: every hook site, region and the pager are byte-identical");
+}
+
+#[test]
 fn a_fixed_input_is_byte_deterministic() {
     let Some(disc) = load_disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -332,12 +541,12 @@ fn a_fixed_input_is_byte_deterministic() {
 }
 
 #[test]
-fn re_applying_or_stacking_an_arena_feature_is_refused() {
+fn re_applying_or_stacking_a_dead_space_feature_is_refused() {
     let Some(disc) = load_disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
-    // Re-apply: the arena is no longer dead space.
+    // Re-apply: the regions are no longer dead space.
     let (once, _) = patched(&disc);
     let mut patcher = DiscPatcher::open(once).expect("open patched");
     let err = apply::inject_super_art_list(&mut patcher).expect_err("second apply must fail");
@@ -347,8 +556,8 @@ fn re_applying_or_stacking_an_arena_feature_is_refused() {
         "unexpected error: {msg}"
     );
 
-    // Stacking on shiny-Seru: the arena bytes are already taken, so the plan
-    // refuses rather than silently writing over another feature's routine.
+    // Stacking on shiny-Seru: the bytes are already taken, so the plan refuses
+    // rather than silently writing over another feature's routine.
     let mut patcher = DiscPatcher::open(disc).expect("open");
     apply::inject_shiny_seru(&mut patcher, legaia_patcher::shiny_seru::DEFAULT_PCT)
         .expect("shiny-seru");
@@ -357,7 +566,7 @@ fn re_applying_or_stacking_an_arena_feature_is_refused() {
         format!("{err:#}").contains("dead space"),
         "unexpected error: {err:#}"
     );
-    eprintln!("re-apply and arena stacking both refused");
+    eprintln!("re-apply and dead-space stacking both refused");
 }
 
 #[test]
@@ -372,7 +581,13 @@ fn an_unrecognized_build_is_refused_before_anything_is_written() {
 
     // Every renderer fingerprint has to be load-bearing: corrupting any one of
     // them refuses the plan.
-    for va in [HOOK_COUNT_VA, HOOK_ID_VA, HOOK_DRAW_VA, HOOK_DRAW_VA + 4] {
+    for va in [
+        HOOK_COUNT_VA,
+        HOOK_ID_VA,
+        HOOK_REC_VA,
+        SCAN_HEAD_VA,
+        SCAN_HIT_VA,
+    ] {
         let mut bad = scus.clone();
         let off = file_offset_for_va(&scus, va).unwrap();
         bad[off] ^= 0xFF;
@@ -386,12 +601,18 @@ fn an_unrecognized_build_is_refused_before_anything_is_written() {
     bad_ov[(PAGER_VA - OVERLAY_BASE_VA) as usize] ^= 0xFF;
     assert!(SuperArtListInjection::plan(&scus, &bad_ov).is_err());
 
-    // A dirty arena is refused even though every fingerprint matches.
-    let mut dirty = scus.clone();
-    dirty[file_offset_for_va(&scus, ARENA1_VA).unwrap()] = 1;
-    assert!(SuperArtListInjection::plan(&dirty, &ov).is_err());
+    // A dirty region is refused even though every fingerprint matches - all
+    // four of them, since the feature spans all four.
+    for (va, _, what) in REGIONS {
+        let mut dirty = scus.clone();
+        dirty[file_offset_for_va(&scus, va).unwrap()] = 1;
+        assert!(
+            SuperArtListInjection::plan(&dirty, &ov).is_err(),
+            "a dirty {what} must be refused"
+        );
+    }
 
     // And none of that touched the disc.
     assert_eq!(patcher.image(), &disc[..], "a refused plan writes nothing");
-    eprintln!("every fingerprint + the arena guard are load-bearing");
+    eprintln!("every fingerprint + all four region guards are load-bearing");
 }
