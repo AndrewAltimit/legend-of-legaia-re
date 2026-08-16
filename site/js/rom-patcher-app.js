@@ -1072,13 +1072,43 @@ function texDesc(t) {
   return `${t.tier} ${where}`;
 }
 
+// Spellings of a label a person is as likely to type as the disc's own. The
+// disc writes the armband "Ra-Seru", and someone hunting it types "raseru"
+// about as often - so the haystack carries the label twice more, once with
+// its punctuation turned into spaces and once with the punctuation simply
+// removed (that second copy is what makes "raseru" reach "Ra-Seru").
+//
+// The `$N` suffix retail puts on an upgradeable weapon ("Ra-Seru Ozma $1") is
+// its upgrade tier, and measurably so: within each family the equipment
+// table's attack bonus rises strictly with N (Ozma 24, 36, 48, 60, 72, 89,
+// 106 across `$1..$7`). So `tier N` is a synonym here, not a guess.
+//
+// Search vocabulary only. Nothing here reaches the label the cell displays,
+// which stays exactly what the disc says.
+function texAliases(t) {
+  if (!t.label) return '';
+  const spaced = t.label.replace(/[^0-9a-z]+/gi, ' ');
+  // Punctuation dropped, spaces kept - so words never fuse across a gap.
+  const joined = t.label.replace(/[^0-9a-z\s]+/gi, '');
+  const tiers = [...t.label.matchAll(/\$(\d+)/g)].map((m) => `tier ${m[1]}`).join(' ');
+  return `${spaced} ${joined} ${tiers}`;
+}
+
 // The string a filter query is matched against. This IS the search
 // vocabulary, so anything a person might reasonably type has to be in here -
 // which is why the tier id, the CDNAME block and the curated label are all
 // folded in even though only some of them are displayed on the cell.
+//
+// The whole thing is parenthesised before it is folded, and that is the point
+// rather than a style choice: `.toLowerCase()` binds to the operand it is
+// written on, so `a + b.toLowerCase()` folds only `b`. Written that way this
+// function returned a haystack whose label half kept its capitals while the
+// query arrived lowercased, and every disc-cased word became unsearchable -
+// typing `ra-seru` matched nothing while "Ra-Seru Ozma $1" sat in the grid.
 function texHaystack(t) {
-  return `${t.tier} ${texDesc(t)} ${t.width}x${t.height} ${t.bpp}bpp ${t.label || ''} ` +
-    `${t.block || ''} ${t.replaceable ? 'replaceable' : 'read-only'}`.toLowerCase();
+  return (`${t.tier} ${texDesc(t)} ${t.width}x${t.height} ${t.bpp}bpp ${t.label || ''} ` +
+    `${t.block || ''} ${t.replaceable ? 'replaceable' : 'read-only'} ${texAliases(t)}`)
+    .toLowerCase();
 }
 
 // Stable identity of one queued edit. One edit per texture: re-adding one

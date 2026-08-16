@@ -455,6 +455,100 @@ fn battle_equipment_labels_carry_the_equipment_name() {
     );
 }
 
+/// The sibling of the test above, run through the reader the **browser**
+/// actually uses.
+///
+/// [`battle_equipment_labels_carry_the_equipment_name`] hands the scan an
+/// executable it read with `legaia_iso` - the CLI's ISO walker. The WASM
+/// binding cannot use that path: `scan_textures` reads the disc with this
+/// crate's own in-memory walker (`disc::extract_scus`) and hands the result
+/// to `ScanCtx::with_scus`. Two walkers, one claim, and only one of them was
+/// measured - so a browser that silently found no executable would have shown
+/// `Gala - equip 0x13` with the whole suite green. This is the missing half:
+/// the same anchor, joined through the browser's own reader.
+#[test]
+fn the_browsers_own_disc_reader_reaches_the_equipment_name_table() {
+    let Some(image) = disc() else {
+        eprintln!("LEGAIA_DISC_BIN unset - skipping");
+        return;
+    };
+    let (prot, spans) = prot_and_spans(&image);
+    // The two readers, side by side. They must agree byte for byte: the page
+    // and the CLI label the same block from the same table or they are two
+    // catalogs wearing one name.
+    let browser = legaia_web_viewer::disc::extract_scus(&image).expect("browser ISO walk");
+    let cli = legaia_iso::iso9660::read_file_in_image(&image, "SCUS_942.54").expect("CLI ISO walk");
+    drop(image);
+    assert_eq!(browser, cli, "the two hosts must read the same executable");
+
+    // The anchor, at the id the descriptor table carries: item `0x13` is
+    // Gala's first-tier Ra-Seru weapon.
+    let names = legaia_asset::item_names::ItemNameTable::from_scus(&browser)
+        .expect("item-name table from the browser's bytes");
+    assert_eq!(names.name(0x13), Some("Ra-Seru Ozma $1"));
+
+    // And it reaches a grid row, through the browser's scan.
+    let rows = registry_rows_with_scus(&prot, &spans, Some(&browser));
+    let battle: Vec<&Row> = rows
+        .iter()
+        .filter(|r| r.tier == TIER_BATTLE_EQUIP)
+        .collect();
+    assert!(
+        battle
+            .iter()
+            .any(|r| r.label.as_deref() == Some("Gala - Ra-Seru Ozma $1")),
+        "the browser scan must label Gala's Ra-Seru Ozma block by name"
+    );
+
+    // The blocks the page's filter box has to be able to find. The query
+    // arrives lowercased, so the invariant is on the folded label - which is
+    // exactly the join the page got wrong: it folded its haystack's tail only,
+    // and every disc-cased word in a label became unsearchable.
+    for word in ["ra-seru", "meta", "terra", "ozma"] {
+        let n = battle
+            .iter()
+            .filter(|r| {
+                r.label
+                    .as_deref()
+                    .is_some_and(|l| l.to_lowercase().contains(word))
+            })
+            .count();
+        assert!(
+            n > 0,
+            "typing `{word}` must reach at least one battle block"
+        );
+    }
+
+    // The catalog's own view of the same anchor: the block labelled from
+    // descriptor id `0x13` is in Gala's player file, not somewhere the label
+    // merely happens to read that way.
+    let file = entry_bytes(&prot, &spans, 865);
+    let mut id = 0u32;
+    let blocks = legaia_asset::battle_texture_catalog::build_from_file_with_names(
+        865,
+        &file,
+        &mut id,
+        Some(&names),
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|b| b.record_id == 0x13 && b.label == "Gala - Ra-Seru Ozma $1"),
+        "descriptor id 0x13 in PROT 865 is the block that carries the name"
+    );
+}
+
+/// One TOC entry's bytes out of the `PROT.DAT` payload.
+fn entry_bytes(prot: &[u8], spans: &[(u64, u64, u32)], entry: u32) -> Vec<u8> {
+    let &(off, size, _) = spans
+        .iter()
+        .find(|&&(_, _, idx)| idx == entry)
+        .unwrap_or_else(|| panic!("no PROT entry {entry}"));
+    let start = off as usize;
+    let stop = (off + size).min(prot.len() as u64) as usize;
+    prot[start..stop].to_vec()
+}
+
 #[test]
 fn the_summon_family_reaches_textures_no_tim_scan_can() {
     let Some(image) = disc() else {
