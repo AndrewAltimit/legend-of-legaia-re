@@ -657,7 +657,15 @@ radius envelope, and draws the bare geometry the section replaced alongside
 in a third colour. It is a viewing aid over an approximate boundary
 (`battle_char_assembly::equip_diff`), and deliberately *not* the item cut.
 
-`equipped_item_glb(section)` exports **every** equipped section. For the
+`equipped_item_glb(section)` exports **every** equipped section. It ships one
+node per *source object* on each side of the cut, and passes the character's
+clip bank through so the builder can write each node's rest transform: a
+battle pose is flat (absolute `R.v + T` per object, nothing parented), so a
+node with no transform draws at the model origin and several of them stack.
+That is what made a multi-object export - Vahn's weapon spans forearm and
+hand, a fused armour spans the torso chain - come out as two limbs on top of
+one another. Synthetic item ids inherit their host object's pose and channels
+via `character_gltf::CharacterGlbLayout::pose_source`. For the
 two weapon-bearing sections it is the exact cut: the held item is a primitive
 subset of the bone object selected by palette column
 (`battle_char_assembly::equip_item`), shipped beside the limb it came from as

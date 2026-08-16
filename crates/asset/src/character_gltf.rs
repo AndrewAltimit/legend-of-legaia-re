@@ -99,19 +99,46 @@ pub fn build_character_glb_hybrid(
         vram,
         clips,
         shading,
-        &BTreeMap::new(),
+        &CharacterGlbLayout::default(),
     )
 }
 
-/// [`build_character_glb_hybrid`] with **per-object node names**.
-///
-/// The default naming (`object_0`, `object_1`, …) is right for a whole
-/// character, where the objects are anonymous body parts. It is not right
-/// when the export deliberately separates two meaningful halves - the
-/// equipment viewer's item cut ships the held item and its host limb as two
-/// nodes in one file, and a reader opening the `.glb` must be able to tell
-/// which is which without consulting the page that produced it. `names` maps
-/// object id -> node name; ids it omits keep the default.
+/// How a caller wants the per-object nodes of a character `.glb` labelled and
+/// posed. Both maps are empty for a plain whole-character export.
+#[derive(Default)]
+pub struct CharacterGlbLayout {
+    /// Object id -> node name. The default naming (`object_0`, `object_1`, …)
+    /// is right for a whole character, where the objects are anonymous body
+    /// parts. It is not right when the export deliberately separates
+    /// meaningful halves - the equipment viewer's item cut ships the held
+    /// item and its host limb in one file, and a reader opening the `.glb`
+    /// must be able to tell which is which without consulting the page that
+    /// produced it. Ids omitted here keep the default.
+    pub names: BTreeMap<u32, String>,
+    /// **Synthetic** object id -> the real object whose frame-0 rest pose and
+    /// animation channels that node follows.
+    ///
+    /// A battle pose is flat: every object is placed by its own absolute
+    /// `R·v + T` about the object origin, with nothing hanging off a parent.
+    /// A node carrying no transform therefore sits at the model origin, and
+    /// several such nodes pile up on each other. A split export (item / host
+    /// limb) invents node ids that no animation channel addresses, and this
+    /// map is how they inherit the placement of the object they were cut
+    /// from - without it the item and its limb are drawn on top of one
+    /// another.
+    pub pose_source: BTreeMap<u32, u32>,
+}
+
+impl CharacterGlbLayout {
+    /// The object whose pose drives node object `id` (itself, unless the id
+    /// is a synthetic one this layout redirects).
+    fn pose_of(&self, id: u32) -> u32 {
+        self.pose_source.get(&id).copied().unwrap_or(id)
+    }
+}
+
+/// [`build_character_glb_hybrid`] with a caller-supplied node
+/// [`CharacterGlbLayout`] (names + synthetic-node pose inheritance).
 pub fn build_character_glb_named(
     name: &str,
     mesh: &legaia_tmd::mesh::VramMesh,
@@ -119,7 +146,7 @@ pub fn build_character_glb_named(
     vram: &Vram,
     clips: &[CharacterClip<'_>],
     shading: Option<&legaia_tmd::mesh::VertexShading>,
-    names: &BTreeMap<u32, String>,
+    layout: &CharacterGlbLayout,
 ) -> Option<Vec<u8>> {
     if mesh.indices.is_empty() || mesh.positions.len() < 3 {
         return None;
@@ -225,7 +252,10 @@ pub fn build_character_glb_named(
     let rest = clips.first().map(|c| c.anim);
     let mut nodes: Vec<Value> = Vec::new();
     let mut meshes: Vec<Value> = Vec::new();
-    let mut object_node_for: BTreeMap<u32, usize> = BTreeMap::new();
+    // Several nodes can follow one animation channel: a split export draws
+    // the item and the limb it was cut from as separate nodes riding the
+    // same bone, and both must be posed (and animated) by it.
+    let mut object_node_for: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
     let mut child_nodes: Vec<usize> = Vec::new();
     let mut any_flat = false;
     for geom in &objects {
@@ -257,8 +287,10 @@ pub fn build_character_glb_named(
             }));
         }
         meshes.push(json!({ "primitives": prims }));
+        let posed_by = layout.pose_of(geom.object_id);
         let mut node = json!({
-            "name": names
+            "name": layout
+                .names
                 .get(&geom.object_id)
                 .cloned()
                 .unwrap_or_else(|| format!("object_{}", geom.object_id)),
@@ -266,14 +298,17 @@ pub fn build_character_glb_named(
         });
         if let Some(rest) = rest
             && let Some(frame0) = rest.frame(0)
-            && let Some(pose) = frame0.get(geom.object_id as usize)
+            && let Some(pose) = frame0.get(posed_by as usize)
         {
             node["translation"] = json!([pose.tx as f32, pose.ty as f32, pose.tz as f32]);
             node["rotation"] = json!(euler_zyx_quat(pose.rx, pose.ry, pose.rz));
         }
         let node_index = nodes.len();
         nodes.push(node);
-        object_node_for.insert(geom.object_id, node_index);
+        object_node_for
+            .entry(posed_by)
+            .or_default()
+            .push(node_index);
         child_nodes.push(node_index);
     }
 
@@ -298,7 +333,7 @@ pub fn build_character_glb_named(
         let mut samplers: Vec<Value> = Vec::new();
         let mut channels: Vec<Value> = Vec::new();
         for part in 0..anim.part_count {
-            let Some(&node) = object_node_for.get(&(part as u32)) else {
+            let Some(part_nodes) = object_node_for.get(&(part as u32)) else {
                 continue; // this channel's object emitted no geometry
             };
             let mut trans: Vec<[f32; 3]> = Vec::with_capacity(anim.frame_count);
@@ -328,15 +363,18 @@ pub fn build_character_glb_named(
             let t_sampler = samplers.len();
             samplers
                 .push(json!({ "input": time_acc, "output": trans_acc, "interpolation": "LINEAR" }));
-            channels.push(
-                json!({ "sampler": t_sampler, "target": { "node": node, "path": "translation" } }),
-            );
             let r_sampler = samplers.len();
             samplers
                 .push(json!({ "input": time_acc, "output": rot_acc, "interpolation": "LINEAR" }));
-            channels.push(
-                json!({ "sampler": r_sampler, "target": { "node": node, "path": "rotation" } }),
-            );
+            // Every node riding this bone gets the same pair of samplers.
+            for &node in part_nodes {
+                channels.push(json!({
+                    "sampler": t_sampler, "target": { "node": node, "path": "translation" }
+                }));
+                channels.push(json!({
+                    "sampler": r_sampler, "target": { "node": node, "path": "rotation" }
+                }));
+            }
         }
         if channels.is_empty() {
             continue;

@@ -898,9 +898,11 @@ impl LegaiaViewer {
     /// palette column rather than attached as a prop - see
     /// [`equip_item`] for why that is still an exact cut, and why the two
     /// naive readings (connectivity, "geometry the bare hand lacks") are not.
-    /// The file carries **two named nodes**: the item, and the limb the cut
-    /// left behind. The limb is ground truth and is always present, so a
-    /// reader can see exactly what was and was not taken.
+    /// The file carries the item and the limb the cut left behind as
+    /// separate named nodes - one item node per source object, each posed by
+    /// the object it came from, plus the character's clip bank so the piece
+    /// moves with the limb it rides. The limb is ground truth and is always
+    /// present, so a reader can see exactly what was and was not taken.
     ///
     /// For a [`equip_item::ItemClass::WeldedSubset`] record the item's grip
     /// is **open** - the shaft inside the closed fist was never modelled, and
@@ -924,9 +926,20 @@ impl LegaiaViewer {
             return Vec::new();
         };
         let (full, ids) = legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, &c.tmd_bytes);
-        // One synthetic object id for the item so it lands in its own glTF
-        // node; the limb halves keep their real object ids.
-        let item_id = tmd.objects.len() as u32;
+        // A synthetic object id per **source object** the item occupies, so
+        // each piece lands in its own glTF node and can take that object's
+        // pose. One shared id would collapse a multi-object item (Vahn's
+        // sword spans forearm and hand; a fused armour spans the whole
+        // torso chain) into a single node, and a single node has a single
+        // transform - the pieces would stack at the model origin.
+        let item_id_base = tmd.objects.len() as u32;
+        let item_id_of: std::collections::BTreeMap<u32, u32> = it
+            .partition
+            .parts
+            .iter()
+            .enumerate()
+            .map(|(k, p)| (p.object as u32, item_id_base + k as u32))
+            .collect();
         let mut keep: std::collections::BTreeSet<u32> =
             it.partition.parts.iter().map(|p| p.object as u32).collect();
         // A standalone (`own-object`) item's partition names only the item's
@@ -971,7 +984,7 @@ impl LegaiaViewer {
             mesh.colors
                 .push(full.colors.get(v).copied().unwrap_or([0x80; 3]));
             out_ids.push(if it.partition.claims(obj as usize, full.cba_tsb[v][0]) {
-                item_id
+                item_id_of.get(&obj).copied().unwrap_or(obj)
             } else {
                 obj
             });
@@ -991,13 +1004,26 @@ impl LegaiaViewer {
             .and_then(|i| self.item_names.as_ref()?.name(i))
             .map(str::to_string)
             .unwrap_or_else(|| format!("id {}", it.id));
-        let mut names: std::collections::BTreeMap<u32, String> = std::collections::BTreeMap::new();
-        names.insert(item_id, item_name.clone());
+        let mut layout = legaia_asset::character_gltf::CharacterGlbLayout::default();
+        // Each item piece is named for the item, and inherits the rest pose
+        // and animation channels of the object it was cut from.
+        let multi = item_id_of.len() > 1;
+        for (&src, &synth) in &item_id_of {
+            layout.names.insert(
+                synth,
+                if multi {
+                    format!("{item_name} (object {src})")
+                } else {
+                    item_name.clone()
+                },
+            );
+            layout.pose_source.insert(synth, src);
+        }
         for obj in &keep {
-            if names.contains_key(obj) {
-                continue;
-            }
-            names.insert(*obj, format!("{who} - host limb (object {obj})"));
+            layout
+                .names
+                .entry(*obj)
+                .or_insert_with(|| format!("{who} - host limb (object {obj})"));
         }
         let root = format!(
             "{item_name} - {} {who}'s battle model ({})",
@@ -1008,14 +1034,30 @@ impl LegaiaViewer {
             },
             it.partition.class.describe()
         );
+        // The clip bank is what supplies the **rest pose**: the builder reads
+        // clip 0 frame 0 into each node's TRS. Passing none leaves every node
+        // at the model origin, which is what made a two-object export read as
+        // two hands stacked on each other.
+        let fps_for_rate = |rate: u8| {
+            if rate > 0 {
+                7.5 * f32::from(rate)
+            } else {
+                15.0
+            }
+        };
+        let clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = c
+            .clips
+            .iter()
+            .map(
+                |(label, anim)| legaia_asset::character_gltf::CharacterClip {
+                    name: label.clone(),
+                    fps: fps_for_rate(anim.rate),
+                    anim,
+                },
+            )
+            .collect();
         legaia_asset::character_gltf::build_character_glb_named(
-            &root,
-            &mesh,
-            &out_ids,
-            &c.vram,
-            &[],
-            None,
-            &names,
+            &root, &mesh, &out_ids, &c.vram, &clips, None, &layout,
         )
         .unwrap_or_default()
     }

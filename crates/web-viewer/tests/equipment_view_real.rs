@@ -532,3 +532,259 @@ fn the_glb_is_the_whole_character_and_says_so() {
         "root node names the loadout"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Item-export placement
+//
+// A battle pose is flat: each object is placed by its own absolute `R.v + T`
+// about the object origin, nothing hangs off a parent. So a glTF node with no
+// transform sits at the model origin, and every such node piles onto every
+// other. The item export used to pass no clips, and the builder takes its
+// per-node rest transform from clip 0 frame 0 - so every node came out
+// untransformed and a two-object export (Vahn's weapon spans forearm and
+// hand; a fused armour spans the torso chain) read as two limbs stacked on
+// each other.
+// ---------------------------------------------------------------------------
+
+/// The glTF JSON chunk of a `.glb`.
+fn gltf_json(glb: &[u8]) -> serde_json::Value {
+    assert_eq!(&glb[0..4], b"glTF", "glb magic");
+    let n = u32::from_le_bytes(glb[12..16].try_into().unwrap()) as usize;
+    let text = std::str::from_utf8(&glb[20..20 + n]).expect("glTF JSON chunk");
+    serde_json::from_str(text.trim_end()).expect("parse glTF JSON")
+}
+
+/// Every node that draws geometry, as `(name, translation, rotation, local
+/// POSITION bounds)`. The bounds come from the accessor's own `min`/`max`,
+/// which the builder always writes for POSITION.
+type MeshNode = (String, [f32; 3], [f32; 4], [f32; 3], [f32; 3]);
+
+fn mesh_nodes(doc: &serde_json::Value) -> Vec<MeshNode> {
+    let arr = |v: &serde_json::Value| -> Vec<f32> {
+        v.as_array()
+            .map(|a| a.iter().map(|x| x.as_f64().unwrap() as f32).collect())
+            .unwrap_or_default()
+    };
+    let mut out = Vec::new();
+    for node in doc["nodes"].as_array().unwrap() {
+        let Some(mesh) = node["mesh"].as_u64() else {
+            continue;
+        };
+        let t = arr(&node["translation"]);
+        let r = arr(&node["rotation"]);
+        let prim = &doc["meshes"][mesh as usize]["primitives"][0];
+        let acc = prim["attributes"]["POSITION"].as_u64().unwrap() as usize;
+        let lo = arr(&doc["accessors"][acc]["min"]);
+        let hi = arr(&doc["accessors"][acc]["max"]);
+        assert_eq!(lo.len(), 3, "POSITION accessor carries no bounds");
+        out.push((
+            node["name"].as_str().unwrap_or("?").to_string(),
+            [
+                *t.first().unwrap_or(&0.0),
+                *t.get(1).unwrap_or(&0.0),
+                *t.get(2).unwrap_or(&0.0),
+            ],
+            [
+                *r.first().unwrap_or(&0.0),
+                *r.get(1).unwrap_or(&0.0),
+                *r.get(2).unwrap_or(&0.0),
+                *r.get(3).unwrap_or(&1.0),
+            ],
+            [lo[0], lo[1], lo[2]],
+            [hi[0], hi[1], hi[2]],
+        ));
+    }
+    out
+}
+
+/// Rotate `v` by quaternion `q` (`[x, y, z, w]`).
+fn rotate(q: [f32; 4], v: [f32; 3]) -> [f32; 3] {
+    let (x, y, z, w) = (q[0], q[1], q[2], q[3]);
+    let uv = [
+        y * v[2] - z * v[1],
+        z * v[0] - x * v[2],
+        x * v[1] - y * v[0],
+    ];
+    let uuv = [
+        y * uv[2] - z * uv[1],
+        z * uv[0] - x * uv[2],
+        x * uv[1] - y * uv[0],
+    ];
+    std::array::from_fn(|i| v[i] + 2.0 * (w * uv[i] + uuv[i]))
+}
+
+/// World-space AABB of a mesh node: its local bounds' eight corners through
+/// `R` then `T`. `posed = false` drops the transform, which is exactly the
+/// state the bug left every node in.
+fn node_aabb(n: &MeshNode, posed: bool) -> ([f32; 3], [f32; 3]) {
+    let (_, t, r, lo, hi) = n;
+    let mut out_lo = [f32::MAX; 3];
+    let mut out_hi = [f32::MIN; 3];
+    for cx in 0..8 {
+        let c = [
+            if cx & 1 == 0 { lo[0] } else { hi[0] },
+            if cx & 2 == 0 { lo[1] } else { hi[1] },
+            if cx & 4 == 0 { lo[2] } else { hi[2] },
+        ];
+        let p = if posed {
+            let rc = rotate(*r, c);
+            [rc[0] + t[0], rc[1] + t[1], rc[2] + t[2]]
+        } else {
+            c
+        };
+        for k in 0..3 {
+            out_lo[k] = out_lo[k].min(p[k]);
+            out_hi[k] = out_hi[k].max(p[k]);
+        }
+    }
+    (out_lo, out_hi)
+}
+
+fn volume(b: ([f32; 3], [f32; 3])) -> f32 {
+    (0..3).map(|k| (b.1[k] - b.0[k]).max(0.0)).product()
+}
+
+/// Overlap volume of two AABBs as a fraction of the smaller one's volume.
+fn overlap_fraction(a: ([f32; 3], [f32; 3]), b: ([f32; 3], [f32; 3])) -> f32 {
+    let inter: f32 = (0..3)
+        .map(|k| (a.1[k].min(b.1[k]) - a.0[k].max(b.0[k])).max(0.0))
+        .product();
+    let smaller = volume(a).min(volume(b));
+    if smaller <= 0.0 { 0.0 } else { inter / smaller }
+}
+
+/// Every drawable node in an item export carries the rest transform of the
+/// object it came from - including the synthetic item nodes, which no
+/// animation channel addresses by id and which therefore have to inherit it.
+#[test]
+fn every_item_node_is_posed_by_its_source_object() {
+    let Some(mut v) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // One loadout per class, so the guard covers all four.
+    let cases: [(u32, u32, [u8; 5], &str); 4] = [
+        (0, 2, [0, 0, 0x22, 0, 0], "welded"),
+        (2, 2, [0, 0, 0x27, 0, 0], "separate"),
+        (1, 3, [0, 0, 0, 0x1e, 0], "own-object"),
+        (0, 0, [0x43, 0, 0, 0, 0], "fused"),
+    ];
+    for (slot, section, ids, class) in cases {
+        let s: serde_json::Value =
+            serde_json::from_str(&v.set_equipped_character(slot, &ids, false)).unwrap();
+        assert_eq!(s["ok"], serde_json::json!(true), "{class}: {s}");
+        assert_eq!(s["items"][0]["class"], serde_json::json!(class), "{s}");
+        let glb = v.equipped_item_glb(section);
+        assert!(!glb.is_empty(), "{class}: no export");
+        let doc = gltf_json(&glb);
+        let nodes = mesh_nodes(&doc);
+        assert!(
+            nodes.len() >= 2,
+            "{class}: {} drawable node(s)",
+            nodes.len()
+        );
+        for n in &nodes {
+            // The regression: every node used to come out with neither.
+            assert_ne!(
+                n.1,
+                [0.0, 0.0, 0.0],
+                "{class}: node {:?} has no translation - it will draw at the model origin",
+                n.0
+            );
+            assert_ne!(
+                n.2,
+                [0.0, 0.0, 0.0, 1.0],
+                "{class}: node {:?} has an identity rotation",
+                n.0
+            );
+        }
+        // An item piece rides its host object, so where both are present they
+        // must sit at the same place - that is what "cut from" means.
+        for item in nodes.iter().filter(|n| !n.0.contains("host limb")) {
+            let Some(obj) = item
+                .0
+                .rsplit_once("(object ")
+                .and_then(|(_, tail)| tail.trim_end_matches(')').parse::<u32>().ok())
+            else {
+                continue;
+            };
+            if let Some(host) = nodes
+                .iter()
+                .find(|n| n.0 == format!("Vahn - host limb (object {obj})"))
+            {
+                assert_eq!(item.1, host.1, "{class}: item piece adrift from its host");
+                assert_eq!(item.2, host.2, "{class}: item piece unrotated vs its host");
+            }
+        }
+        // Animation channels reach every node, including the synthetic ones.
+        let anims = doc["animations"].as_array().expect("clips baked");
+        assert!(!anims.is_empty(), "{class}: item export carries no clips");
+        let targets: std::collections::BTreeSet<u64> = anims[0]["channels"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["target"]["node"].as_u64().unwrap())
+            .collect();
+        assert_eq!(
+            targets.len(),
+            nodes.len(),
+            "{class}: {} node(s) but {} animated",
+            nodes.len(),
+            targets.len()
+        );
+    }
+}
+
+/// The user-visible symptom: "two copies of the hand". Vahn's weapon section
+/// re-authors his whole right-arm chain, so the export carries two limb
+/// objects; unposed they occupy the same space, posed they do not.
+#[test]
+fn a_multi_object_weapon_export_does_not_stack_its_pieces() {
+    let Some(mut v) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let s: serde_json::Value =
+        serde_json::from_str(&v.set_equipped_character(0, &[0, 0, 0x22, 0, 0], false)).unwrap();
+    assert_eq!(s["ok"], serde_json::json!(true), "{s}");
+    let doc = gltf_json(&v.equipped_item_glb(2));
+    let nodes = mesh_nodes(&doc);
+    let limbs: Vec<&MeshNode> = nodes.iter().filter(|n| n.0.contains("host limb")).collect();
+    assert_eq!(
+        limbs.len(),
+        2,
+        "Vahn's knife spans two limb objects: {nodes:?}"
+    );
+
+    // Unposed - the state the bug shipped - the two arm objects sit on top of
+    // one another, which is what read as a second hand.
+    let unposed = overlap_fraction(node_aabb(limbs[0], false), node_aabb(limbs[1], false));
+    assert!(
+        unposed > 0.5,
+        "unposed overlap {unposed:.2} - the contrast this test rests on is gone"
+    );
+
+    // Posed, what is left is the wrist. Forearm and hand meet at a joint and
+    // both are elongated and rotated, so an axis-aligned box around each
+    // overstates its footprint - a fraction of a limb's volume is expected to
+    // remain. The claim is the *relationship*: posed overlap is a small
+    // fraction of the unposed one, and nowhere near "one part on top of
+    // another". Measured on the retail disc: 0.78 -> 0.13.
+    let posed = overlap_fraction(node_aabb(limbs[0], true), node_aabb(limbs[1], true));
+    eprintln!("[placement] Vahn knife limb overlap: unposed {unposed:.2} -> posed {posed:.2}");
+    assert!(
+        posed < unposed / 3.0,
+        "posing barely moved the arm objects apart: {unposed:.2} -> {posed:.2}"
+    );
+    assert!(
+        posed < 0.25,
+        "posed overlap {posed:.2} is still limb-on-limb (unposed was {unposed:.2})"
+    );
+
+    // And the two nodes are genuinely far apart, not merely rotated apart.
+    let d: f32 = (0..3)
+        .map(|k| (limbs[0].1[k] - limbs[1].1[k]).powi(2))
+        .sum::<f32>()
+        .sqrt();
+    assert!(d > 40.0, "limb translations only {d:.1} apart");
+}
