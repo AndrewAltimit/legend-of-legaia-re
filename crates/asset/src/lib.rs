@@ -68,6 +68,7 @@ pub mod man_section;
 pub mod me_archive;
 pub mod menu_glyph_atlas;
 pub mod menu_windows;
+pub mod mesh_raster;
 pub mod minigame_art;
 pub mod minigame_sfx;
 pub mod minigame_slot_scene;

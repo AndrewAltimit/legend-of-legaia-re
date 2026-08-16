@@ -629,6 +629,98 @@ tint) is a JS-side re-draw (`MeshView.setTrail` -> the renderer's
 Disc-gated oracle: `tests/arts_view_real.rs` (bank coverage, arts-table
 resolution, voice pools, and the `.glb` export's animation bank).
 
+## Equipment loadout viewer (`equipment_view`)
+
+The `equipment loadout` form on `site/characters.html`, and the only surface
+in the project that assembles a party member's battle model from a
+**non-default** loadout - every other call site passes all-zero equip ids.
+`equipment_pack_json` enumerates each player file's five descriptor sections
+(labelled from the SCUS equipment stat table, because the section order
+differs per character: Vahn's weapons are section 2, Noa's are section 3);
+`set_equipped_character(slot, ids, diff)` runs `assemble_character` +
+`relocate_tsb_cba` on the chosen ids and paints it from
+`character_texture_uploads` for the *same* ids. That upload set is the whole
+band - both `record[0]` blocks plus every flagged section pool - which
+matters because two blocks ship `clut_n == 0` and sample a palette a sibling
+block put on the shared row.
+
+Objects tagged `200+` are dropped: they are duplicates of the bone they
+attach to, and retail only reaches them through the actor's `+0xA4` window.
+Clips come from the file's own `record[0]` action bank plus the
+equipment-spliced weapon swings, so they change with the weapon.
+`equipped_character_glb` bakes the whole posed character with that bank,
+named for the character and what it wears.
+
+Objects tagged `200+` are dropped **when they are byte-copies of their
+attach bone** (`AssembledCharacter::duplicate_objects`) - drawing a copy
+alongside its host z-fights a limb, but sixteen of the disc's assemblies
+carry a non-copy surplus that is real geometry, so the tag alone is not the
+test.
+
+`diff = true` adds the **diff highlight**: a per-vertex tint stream that dims
+geometry shared with the unequipped part, brightens what reaches beyond its
+radius envelope, and draws the bare geometry the section replaced alongside
+in a third colour. It is a viewing aid over an approximate boundary
+(`battle_char_assembly::equip_diff`), and deliberately *not* the item cut.
+
+`equipped_item_glb(section)` exports **every** equipped section. It ships one
+node per *source object* on each side of the cut, and passes the character's
+clip bank through so the builder can write each node's rest transform: a
+battle pose is flat (absolute `R.v + T` per object, nothing parented), so a
+node with no transform draws at the model origin and several of them stack.
+That is what made a multi-object export - Vahn's weapon spans forearm and
+hand, a fused armour spans the torso chain - come out as two limbs on top of
+one another. Synthetic item ids inherit their host object's pose and channels
+via `character_gltf::CharacterGlbLayout::pose_source`. For the
+two weapon-bearing sections it is the exact cut: the held item is a primitive
+subset of the bone object selected by palette column
+(`battle_char_assembly::equip_item`), shipped beside the limb it came from as
+two named nodes. Anything with no material boundary - armour, headgear,
+footwear, one single-palette Ra-Seru - comes back `fused`: the section's
+whole contribution, item and host together. The class (`own-object` /
+`separate` / `welded` / `fused`), its one-line `describe`, and `complete` /
+`pure` flags ride in the summary and the glTF root name - a `welded` item's
+grip is open, a `fused` one carries its limb. Completeness over purity: no
+equipped section yields nothing. Background:
+[`docs/formats/battle-data-pack.md`](../../docs/formats/battle-data-pack.md#the-item-is-still-separable---by-palette-not-by-geometry).
+Disc-gated oracles: `tests/equipment_view_real.rs` plus the 81-record sweep
+in `crates/asset/tests/equip_item_real.rs`.
+
+`equipped_item_only_glb(section)` is the second download beside it: the
+**item alone** - no host limb, no skin, no unchanged default geometry - the
+opinionated cut of `battle_char_assembly::equip_isolate` under the section's
+default reading (colour diff against the bare limb for held items and
+headgear, geometry-and-colour identity for body and footwear) or the
+record's committed rule in `crates/asset/data/equip-isolation.toml`. The
+summary's per-item `isolation` object and the glTF root name carry the mode,
+the kept / dropped primitive counts and whether a rule hand-checked the
+record, and the grip repair's `bridges` / `bridged_triangles`
+(`equip_repair` lofts a tube between the two shaft rims a welded weapon
+leaves where the fist hid the haft; the root name says `grip inferred`).
+The `equipped_item_only_{positions,uvs,cba_tsb,indices,object_ids,flat_rgba,bounds}(section)`
+family is that same repaired geometry as mesh streams, parallel to the
+`equipped_mesh_*` set, so the page's preview toggle draws exactly what the
+file holds; `equipped_mesh_item_mask(section)` (per-vertex `0 / 1 / 2`:
+outside the section / left behind / item) is the pre-repair view of the
+same cut. Background:
+[`docs/formats/battle-data-pack.md`](../../docs/formats/battle-data-pack.md#the-item-alone---an-opinionated-cut-with-a-committed-rule-table);
+sweep + table integrity in `crates/asset/tests/equip_isolate_real.rs`, the
+grip sweep in `crates/asset/tests/equip_repair_real.rs`.
+
+The characters page's **equipment panel** - every slot, every piece as its
+own card - runs on `equipment_item_card_json(slot, section, id)` /
+`equipment_item_card_pixels(size)` / `equipment_item_card_glb(alone)`: one
+single-item build per `(character, section, id)`, cached on the viewer so the
+three calls share it. The JSON carries the name, the palette-cut class, the
+item-alone decision (`mode` / `curated` / `note`), what it kept and what the
+grip repair added; the pixels are the item alone at the character's rest
+stance, drawn by `legaia_asset::mesh_raster` (software, so forty cards do
+not need forty GL contexts) - a stick-shaped piece stood on its long axis
+with the rest-pose-higher end up, a compact one left as worn and yawed to
+show its wide side - over a transparent background; the glb is the alone / with-limb
+download without equipping the piece first. The page builds cards through a
+queue that yields to the orbit view between items.
+
 ## Playable minigames (`minigames`)
 
 `LegaiaMinigames` is a standalone `#[wasm_bindgen]` class (its own

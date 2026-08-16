@@ -466,7 +466,19 @@ the *assembled* mesh from 1203 - or the 1204 mesh from a player-file stream -
 mis-sockets the rig.
 
 The site `/characters.html` viewer poses the 1204 meshes from the 1203 banks
-(the `BattleMeshView` path). The clean-room engine assembles the real thing:
+(the `BattleMeshView` path) for its *battle* and *Baka Fighter* forms. Its
+fourth form, **equipment loadout**, runs the real assembly instead: pick an
+item per section and the page splices that model from the player file, paints
+it from the same band VRAM those sections upload, and poses it from the
+file's own `record[0]` action bank plus the equipment-spliced weapon swings
+([`web-viewer::equipment_view`](../../crates/web-viewer/src/equipment_view.rs)).
+Its main `.glb` download is the whole posed character named for what it
+wears; every equipped section gets a **second** download - the piece cut out
+by palette column where there is a boundary, shipped with the limb it came
+from as separately named and separately posed nodes, and graded by how
+cleanly the two parted
+([`battle-data-pack.md`](battle-data-pack.md#the-item-is-still-separable---by-palette-not-by-geometry)).
+The clean-room engine assembles the real thing:
 `legaia-engine play-window` splices each party member from their player file
 (`battle_char_assembly`, equipped ids from the roster record), applies the
 registration-time TSB/CBA relocation (`relocate_tsb_cba`), decodes the same

@@ -143,12 +143,25 @@ pub fn tmd_to_vram_mesh(tmd: &Tmd, buf: &[u8]) -> VramMesh {
 /// transform per frame (see [`legaia_asset::monster_archive::MonsterAnimation`]).
 /// `tmd_to_vram_mesh` is this function's mesh half, so the two never drift.
 pub fn tmd_to_vram_mesh_with_object_ids(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec<u32>) {
+    let (mesh, object_ids, _) = tmd_to_vram_mesh_with_prim_ids(tmd, buf);
+    (mesh, object_ids)
+}
+
+/// Same as [`tmd_to_vram_mesh_with_object_ids`] plus a per-vertex **prim
+/// ordinal**: the emitting prim's position in its object's flat group walk
+/// (every prim the walk visits counts, including the ones this builder then
+/// skips), so a caller that re-walks the object with
+/// [`legaia_prims::iter_groups_lenient`] and counts the same way can name any
+/// emitted triangle's source prim. Per-prim selections (the equipment item
+/// isolation) key on `(object id, prim ordinal)`.
+pub fn tmd_to_vram_mesh_with_prim_ids(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec<u32>, Vec<u32>) {
     let mut positions = Vec::new();
     let mut uvs = Vec::new();
     let mut cba_tsb = Vec::new();
     let mut colors = Vec::new();
     let mut indices = Vec::new();
     let mut object_ids = Vec::new();
+    let mut prim_ids = Vec::new();
 
     for (o_idx, o) in tmd.objects.iter().enumerate() {
         let object_vert_count = o.header.n_vert;
@@ -158,8 +171,11 @@ pub fn tmd_to_vram_mesh_with_object_ids(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec
             o.primitives_byte_size,
         );
 
+        let mut ordinal: u32 = 0;
         for g in &groups {
             for prim in &g.prims {
+                let this = ordinal;
+                ordinal += 1;
                 let raw_idx = prim.vertex_indices();
                 if raw_idx.is_empty() || raw_idx.iter().any(|&i| (i as u32) >= object_vert_count) {
                     continue;
@@ -177,6 +193,7 @@ pub fn tmd_to_vram_mesh_with_object_ids(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec
                     cba_tsb.push(ct);
                     colors.push(prim_color(prim, uv_idx));
                     object_ids.push(o_idx as u32);
+                    prim_ids.push(this);
                     i
                 };
                 match raw_idx.len() {
@@ -210,6 +227,7 @@ pub fn tmd_to_vram_mesh_with_object_ids(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec
             colors,
         },
         object_ids,
+        prim_ids,
     )
 }
 
