@@ -386,6 +386,172 @@ fn the_item_glb_carries_the_item_and_its_host_limb() {
     );
 }
 
+/// The item-**alone** download is the opinionated second cut: no host limb
+/// node, fewer triangles than the record-keeping export, its root says how
+/// it was decided, and the per-vertex mask the page previews it with agrees
+/// with it triangle for triangle.
+#[test]
+fn the_item_alone_glb_drops_the_limb_and_matches_the_preview_mask() {
+    let Some(mut v) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let gltf_nodes = |glb: &[u8]| -> (serde_json::Value, Vec<String>) {
+        assert_eq!(&glb[0..4], b"glTF");
+        let json_len = u32::from_le_bytes(glb[12..16].try_into().unwrap()) as usize;
+        let json = std::str::from_utf8(&glb[20..20 + json_len]).expect("glTF JSON");
+        let doc: serde_json::Value = serde_json::from_str(json.trim_end()).expect("parse glTF");
+        let names = doc["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|n| n["name"].as_str().map(str::to_string))
+            .collect();
+        (doc, names)
+    };
+    let tri_count = |doc: &serde_json::Value| -> u64 {
+        doc["meshes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|m| m["primitives"].as_array().unwrap().iter())
+            .map(|p| {
+                let acc = p["indices"].as_u64().unwrap() as usize;
+                doc["accessors"][acc]["count"].as_u64().unwrap() / 3
+            })
+            .sum()
+    };
+
+    // Vahn's Great Axe: welded to the fist, and the palette cut also claims
+    // the wrist band. The item-alone file has the axe and nothing else.
+    let s: serde_json::Value =
+        serde_json::from_str(&v.set_equipped_character(0, &[0, 0, 0x33, 0, 0], false)).unwrap();
+    assert_eq!(s["ok"], serde_json::json!(true), "{s}");
+    let it = s["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["section"] == 2)
+        .expect("weapon item");
+    let iso = &it["isolation"];
+    assert_eq!(iso["mode"], "colour-diff", "held-item default reading");
+    assert!(iso["kept_primitives"].as_u64().unwrap() > 0, "{iso}");
+    assert!(iso["dropped_primitives"].as_u64().unwrap() > 0, "{iso}");
+    // Fewer than the palette cut: the wrist band it claimed is body here.
+    assert!(
+        iso["kept_primitives"].as_u64().unwrap() < it["item_primitives"].as_u64().unwrap(),
+        "axe: item-alone {} vs palette item {}",
+        iso["kept_primitives"],
+        it["item_primitives"]
+    );
+
+    let with_limb = v.equipped_item_glb(2);
+    let alone = v.equipped_item_only_glb(2);
+    assert!(
+        alone.len() > 512,
+        "item-alone glb baked ({} bytes)",
+        alone.len()
+    );
+    let (doc_limb, names_limb) = gltf_nodes(&with_limb);
+    let (doc_alone, names_alone) = gltf_nodes(&alone);
+    assert!(names_limb.iter().any(|n| n.contains("host limb")));
+    assert!(
+        !names_alone.iter().any(|n| n.contains("host limb")),
+        "item-alone file carries a limb node: {names_alone:?}"
+    );
+    assert!(
+        names_alone.iter().any(|n| n == "Great Axe"),
+        "item node missing: {names_alone:?}"
+    );
+    assert!(
+        names_alone
+            .iter()
+            .any(|n| n.starts_with("Great Axe - item alone") && n.contains("colour-diff")),
+        "root does not say how it was decided: {names_alone:?}"
+    );
+    assert!(
+        tri_count(&doc_alone) < tri_count(&doc_limb),
+        "item-alone ({}) not smaller than item+limb ({})",
+        tri_count(&doc_alone),
+        tri_count(&doc_limb)
+    );
+    // The clip bank rides along, so the axe still swings.
+    assert!(!doc_alone["animations"].as_array().unwrap().is_empty());
+
+    // The preview mask: one byte per cached vertex, and its `2` triangles
+    // are exactly the item-alone triangle count.
+    let mask = v.equipped_mesh_item_mask(2);
+    let positions = v.equipped_mesh_positions();
+    assert_eq!(mask.len(), positions.len() / 3, "mask is per vertex");
+    let indices = v.equipped_mesh_indices();
+    let kept_tris = indices
+        .chunks_exact(3)
+        .filter(|t| t.iter().all(|&i| mask[i as usize] == 2))
+        .count() as u64;
+    assert_eq!(kept_tris, tri_count(&doc_alone), "mask vs item-alone glb");
+    assert!(
+        mask.contains(&1),
+        "the limb the cut left behind is masked 1"
+    );
+    assert!(
+        mask.contains(&0),
+        "objects outside the section are masked 0"
+    );
+    assert!(
+        v.equipped_mesh_item_mask(0).is_empty(),
+        "unequipped section has no mask"
+    );
+    assert!(v.equipped_item_only_glb(0).is_empty());
+
+    // A curated record says so, in the summary and in the file: Vahn's
+    // Warrior Seal is four dark circlet primitives the colour diff would
+    // call hair, and the rule table keeps its palette column.
+    let s: serde_json::Value =
+        serde_json::from_str(&v.set_equipped_character(0, &[0, 0x34, 0, 0, 0], false)).unwrap();
+    let it = s["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["section"] == 1)
+        .expect("head item");
+    assert_eq!(it["isolation"]["curated"], serde_json::json!(true), "{it}");
+    assert_eq!(
+        it["isolation"]["kept_primitives"],
+        serde_json::json!(4),
+        "{it}"
+    );
+    assert!(
+        it["isolation"]["note"]
+            .as_str()
+            .unwrap()
+            .contains("circlet"),
+        "{it}"
+    );
+    let (_, names) = gltf_nodes(&v.equipped_item_only_glb(1));
+    assert!(
+        names.iter().any(|n| n.contains("curated")),
+        "curated record not marked in the file: {names:?}"
+    );
+
+    // Body armour reads by identity: Hunter Clothes keeps most of the torso
+    // (a re-sculpt) but leaves the neck skin behind.
+    let s: serde_json::Value =
+        serde_json::from_str(&v.set_equipped_character(0, &[0x43, 0, 0, 0, 0], false)).unwrap();
+    let it = s["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["section"] == 0)
+        .expect("body item");
+    assert_eq!(it["isolation"]["mode"], "identity");
+    let kept = it["isolation"]["kept_primitives"].as_u64().unwrap();
+    let dropped = it["isolation"]["dropped_primitives"].as_u64().unwrap();
+    assert!(
+        kept > dropped && dropped > 0,
+        "Hunter Clothes: kept {kept} dropped {dropped}"
+    );
+}
+
 /// The diff highlight must classify something on a weapon swap, and the
 /// per-object summary must show the weapon bone growing rather than a new
 /// object appearing - there is no separable item mesh.

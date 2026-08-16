@@ -282,6 +282,64 @@ still what that equipment *is*.
 Over all 132 equipment records: `own-object` 6, `separate` 21, `welded` 53,
 `fused` 52. Nothing yields nothing.
 
+### The item alone - an opinionated cut with a committed rule table
+
+The palette cut above answers an exact question and stops. The question a
+downloader usually asks - "give me just the great axe" - has **no exact
+answer on the disc**: the section re-authors the whole hand object, and
+nothing in it says which primitives are the axe and which are Vahn's wrist
+strap (which the palette cut, being about *material*, claims as item). So
+the item-alone export is a stated **policy** plus a committed per-record
+override table, and every result says whether a rule touched it
+([`equip_isolate`](../../crates/asset/src/battle_char_assembly/equip_isolate.rs),
+table `crates/asset/data/equip-isolation.toml`).
+
+The policy: **the item is everything the section spliced in that is not the
+character's own flesh or an unchanged piece of them.** "Unchanged" is read
+two ways, chosen per section:
+
+| Sections | Reading | Body = |
+|---|---|---|
+| headgear (1), held items (2 / 3) | **colour diff** | a primitive whose sampled texels mostly (`>= 0.5`) reappear, within one 5-bit step per channel, in what the *bare* counterpart object samples. The bare hand and head are exactly "no item", so what they show (skin, hair, wrist band, sleeve) is what the item is not. |
+| body (0), footwear (4) | **identity** | a primitive the bare object also carries with the **same corner positions and colours**. The bare torso and legs are the default *outfit*, not "nothing" - by colour alone a dark robe would be body because the default robe is dark. |
+
+Both readings are backed by a skin test on the primitive's texels: the
+generic peach band (`>= 0.6` of texels: `r > g > b`, `r >= 17/31`, hue
+8-45 degrees, saturation 0.2-0.68 - narrow enough that wood, leather and
+gold stay out) *or* the character's **own** face colours (`>= 0.45` of
+texels within two 5-bit steps of a warm texel of the bare head object -
+Gala's skin is too dark for the generic band). The Ra-Seru forms need it:
+Meta $7-$9 and Terra $4-$6 re-texture the fist they leave bare with a
+palette the bare hand never used. A `200+` surplus that is not a byte copy
+(the alternate pose of the same hand, see below) is a second copy of the
+limb, not a second piece of the item, and stays out.
+
+What the heuristic cannot know, the table says, per `(character, id)`: a
+mode override (`colour-diff` / `identity` / `whole` / `palette`), palette
+columns or whole bone-tag objects forced in or out, and explicit
+`"tag:ordinal"` primitives (ordinal = the primitive's position in the
+object's flat group walk, the numbering
+`legaia_tmd::mesh::tmd_to_vram_mesh_with_prim_ids` reports). Each rule
+carries a note saying what the visual pass saw. The cases the table exists
+for: Vahn's five Seals are a circlet on palette column 9 whose plainest two
+are four dark-metal primitives in the hair's shadow colours; Noa's robes are
+authored with two hair strands in the torso object's flesh column; Gala's
+plates cap the neck with quads half skin, half collar interior, and his
+Power Plate is a scatter of re-textured primitives over the default plate;
+Gala's Ra-Seru Club and Mace re-author the arm with a plate gauntlet in the
+same navy as his bare wrist band; his two headbands are dark leather that
+the colour diff loses and the identity reading finds. Every rule must name a
+record, a column, an object and primitives that exist -
+`crates/asset/tests/equip_isolate_real.rs` checks that, and that every one of
+the 132 records still keeps something and (for a held item) leaves the hand
+behind.
+
+Two things a consumer must not read into it. It is **not** the disc's
+answer - the exact cut above is, and it stays the record-keeping export. And
+"opinionated" is meant literally: whether a full-arm gauntlet, the elbow
+segment a Ra-Seru grows over, or the shorts an armour record re-authors are
+"the item" is a call, and the table is where a different call goes.
+
 ### The `200+` surplus is a duplicate, except when it is not
 
 Across the four player files' single-section assemblies, most `0xFF` (tag
@@ -1113,6 +1171,12 @@ Two parsers read these files:
   boundary, and grades the result (see
   [The item is still separable](#the-item-is-still-separable---by-palette-not-by-geometry)).
   Swept over all 132 records by `crates/asset/tests/equip_item_real.rs`.
+- [`legaia_asset::battle_char_assembly::equip_isolate`](../../crates/asset/src/battle_char_assembly/equip_isolate.rs)
+  is the opinionated cut on top of it: `isolate_item` keeps the item alone
+  (no limb, no skin, no unchanged default) under a per-section reading plus
+  the committed override table `crates/asset/data/equip-isolation.toml`
+  (see [The item alone](#the-item-alone---an-opinionated-cut-with-a-committed-rule-table)).
+  Swept, with the table's integrity, by `crates/asset/tests/equip_isolate_real.rs`.
 - [`legaia_asset::battle_texture_catalog`](../../crates/asset/src/battle_texture_catalog.rs)
   catalogs the same files' texture-pool blocks as a texture tier -
   see [The catalog tier](#the-catalog-tier) - and `resolve_block` /

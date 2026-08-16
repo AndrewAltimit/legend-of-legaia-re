@@ -105,6 +105,11 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
 .char-item-row { display: flex; flex-direction: column; gap: 0.15rem; }
 .char-item-row button { align-self: flex-start; }
 .char-item-row span { color: var(--text-dim); }
+/* The item-alone row hangs under its record-keeping sibling: indented, and
+   its two buttons (download / preview) sit side by side. */
+.char-item-row-alone { padding-left: 1rem; margin-bottom: 0.35rem; }
+.char-item-row-alone .char-item-btns { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.char-item-row-alone .char-item-btns button { align-self: auto; }
 .char-diff-scroll { overflow-x: auto; }
 table.char-diff-table { width: 100%; border-collapse: collapse; }
 table.char-diff-table th, table.char-diff-table td {
@@ -275,6 +280,7 @@ table.arts-list .cmd-tag {
   <h3 id="item-cut">The weapon can still be cut out - by palette, not by geometry</h3>
   <p>"No separate object" does not mean "inseparable". A weapon is drawn from its <strong>own palette column</strong>, and across all 81 weapon and Ra-Seru records on the disc <strong>no primitive mixes the two</strong> - the item is an exact primitive subset of the hand object, selected by material. So every equipped section gets its own download in the panel: for a weapon, that subset plus the limb it was cut from as two named nodes in one file; for anything with no such boundary, the piece as spliced in. The host limb is ground truth, so it is always included.</p>
   <p>Each piece is labelled by how cleanly it came away, in the same words the glTF root node carries. Four cases occur across the disc's 132 equipment records: it <strong>ships as its own piece</strong> already (6 - retail did the split); it <strong>comes away whole</strong>, sharing no vertex with the hand (21, all Gala's and most of Noa's); it is <strong>welded to the hand at the grip</strong> (53, all of Vahn's); or it is <strong>fused with the host limb</strong> (52 - every armour, headgear and footwear record, plus one Ra-Seru armband). A welded item exports with an <strong>open grip</strong>: the part of the shaft inside the closed fist was never modelled, so no cutting strategy can recover it - Vahn's Great Axe comes out with a visible gap in the haft. A fused piece exports <em>with</em> the body part it is sculpted onto, because there is no material boundary between them - armour has no surplus object and its palette split is body-versus-trim. The panel says which you got per piece rather than quietly capping a hole or quietly leaving a slot empty; <strong>every equipped section gets a download</strong>, and completeness beats purity.</p>
+  <p>Next to it sits a second, deliberately <em>opinionated</em> download: <strong>the item alone</strong> - the great axe with no hand, the helmet with no face, the robe with no neck. That cut has no exact answer on the disc (nothing in a re-authored hand object says which primitives are the axe), so it is a policy plus a committed per-record rule table: a primitive stays only if it is not the character's own flesh and not an unchanged piece of them - read as <em>colour</em> against the bare limb for held items and headgear (skin, hair and the wrist band are what the bare hand shows), and as <em>geometry-and-colour identity</em> for body and footwear (the default outfit is a real garment, so a dark robe is not "body" just because the default robe is dark). Every row says which reading decided it, how many primitives it kept and left behind, and whether the rule table has <strong>hand-checked</strong> that record; the <em>preview</em> toggle draws exactly what the file will contain. The record-keeping export above is unaffected - it stays the exact palette cut with its ground-truth limb.</p>
   <p>Two readings that look right and are not, in case you try them: <strong>connectivity</strong> alone misses the case (the weapon is a separate component for Gala and Noa but welded for Vahn), and <strong>"geometry the bare hand lacks"</strong> misses it too, because equipping re-textures the whole object - Vahn's bare fist draws from one palette column and his knife-holding fist from two entirely different ones.</p>
   <p>The <strong>diff highlight</strong> toggle answers the other question - what the loadout <em>changed</em>. It dims the geometry the equipped part shares with the unequipped one, brightens what reaches beyond it, and draws the bare geometry the section replaced alongside in blue. That boundary is an approximate radius-envelope test rather than the exact palette cut, and the table underneath reports the per-object counts it is derived from.</p>
   <div class="see-also">
@@ -785,6 +791,18 @@ table.arts-list .cmd-tag {
     'welded': 'welded, grip open - the part inside the closed fist was never modelled, no cut recovers it',
     'fused': 'fused with the host limb - no material boundary separates this piece from the body part it is sculpted onto, so you get both',
   };
+  // The item-ALONE download is a second, opinionated cut: the piece with no
+  // limb, no skin and no unchanged default geometry. It has no exact answer
+  // on the disc, so each row says how it was decided and whether the
+  // committed rule table checked this record by hand.
+  const ISOLATION_MODE_NOTE = {
+    'colour-diff': 'kept what is not coloured like the bare limb (skin, hair, wrist band)',
+    'identity': 'kept what is not an unchanged piece of the default outfit',
+    'whole': 'kept the whole section',
+    'palette': 'kept exactly the palette-cut item',
+  };
+  // Section index whose item-alone cut the viewer is previewing, or null.
+  let equipItemPreview = null;
   function renderItemBlock() {
     const meta = equipSlotMeta();
     const items = (equipSummary && equipSummary.items) || [];
@@ -802,9 +820,21 @@ table.arts-list .cmd-tag {
         </div>`;
       }
       const note = ITEM_CLASS_NOTE[it.class] || it.describe || '';
+      const iso = it.isolation || null;
+      const isoNote = iso
+        ? `${iso.kept_primitives} prims kept, ${iso.dropped_primitives} left behind &middot; ${escapeHtml(ISOLATION_MODE_NOTE[iso.mode] || iso.mode)}${iso.curated ? ' &middot; <b>hand-checked</b>' + (iso.note ? ': ' + escapeHtml(iso.note) : '') : ' &middot; heuristic only'}`
+        : '';
+      const previewing = equipItemPreview === it.section;
       return `<div class="char-item-row">
         <button class="char-equip-btn" data-item-section="${it.section}" title="Download this piece plus the limb it sits on, as named nodes in one glTF file (${escapeHtml(it.describe || it.class)})">⬇ .glb ${escapeHtml(it.name || ('id ' + it.id))}</button>
         <span>${it.item_primitives} prims / ${it.item_vertices} verts &middot; ${escapeHtml(note)}</span>
+      </div>
+      <div class="char-item-row char-item-row-alone">
+        <div class="char-item-btns">
+          <button class="char-equip-btn" data-item-only-section="${it.section}" ${iso && iso.kept_primitives ? '' : 'disabled'} title="Download just this piece - no limb, no skin, no unchanged default geometry. An opinionated cut, not a disc fact: see the note">⬇ .glb ${escapeHtml(it.name || ('id ' + it.id))} <em>alone</em></button>
+          <button class="char-equip-btn${previewing ? ' is-active' : ''}" data-item-preview-section="${it.section}" ${iso && iso.kept_primitives ? '' : 'disabled'} title="Show only what the item-alone download will contain">${previewing ? '● previewing' : '○ preview'}</button>
+        </div>
+        <span>${isoNote}</span>
       </div>`;
     });
     return `<div class="char-item-block">${rows.join('')}</div>`;
@@ -1147,6 +1177,7 @@ table.arts-list .cmd-tag {
 
   function selectSlot(slot) {
     if (!viewer) return;
+    equipItemPreview = null;
     const p = activePack();
     if (!p) return;
     if (slot === selectedSlot) { /* allow re-click to re-load */ }
@@ -1179,6 +1210,7 @@ table.arts-list .cmd-tag {
   }
 
   function selectEquip(val) {
+    equipItemPreview = null;
     if (curEquip === val) return;
     curEquip = val;
     renderEquipToggle();
@@ -1204,9 +1236,26 @@ table.arts-list .cmd-tag {
     const positions = viewer.equipped_mesh_positions();
     const uvsI32 = viewer.equipped_mesh_uvs();
     const cbaTsb = viewer.equipped_mesh_cba_tsb();
-    const indices = viewer.equipped_mesh_indices();
+    let indices = viewer.equipped_mesh_indices();
     const bounds = viewer.equipped_mesh_bounds();
     const objectIds = viewer.equipped_mesh_object_ids();
+    // Item-alone preview: draw only the triangles whose three corners the
+    // cut keeps (mask 2). Same vertex streams, filtered index list - what
+    // the "alone" download will contain, nothing else.
+    if (equipItemPreview !== null && typeof viewer.equipped_mesh_item_mask === 'function') {
+      const mask = viewer.equipped_mesh_item_mask(equipItemPreview);
+      if (mask && mask.length === positions.length / 3) {
+        const kept = [];
+        for (let i = 0; i + 2 < indices.length; i += 3) {
+          if (mask[indices[i]] === 2 && mask[indices[i + 1]] === 2 && mask[indices[i + 2]] === 2) {
+            kept.push(indices[i], indices[i + 1], indices[i + 2]);
+          }
+        }
+        indices = kept;
+      } else {
+        equipItemPreview = null;
+      }
+    }
     if (!positions.length || !indices.length) {
       statsEl.innerHTML = '<span style="color:var(--text-dim)">Assembled mesh has no drawable primitives.</span>';
       return;
@@ -1550,11 +1599,23 @@ table.arts-list .cmd-tag {
     loadMesh();
   });
 
-  // Per-item .glb: the separated weapon / Ra-Seru plus its host limb.
+  // Item-alone preview toggle: re-filter the drawn triangles to the cut.
+  diffPanelEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-item-preview-section]');
+    if (!btn) return;
+    const section = Number(btn.dataset.itemPreviewSection);
+    if (!Number.isFinite(section)) return;
+    equipItemPreview = equipItemPreview === section ? null : section;
+    loadMesh();
+  });
+
+  // Per-item .glb: the separated weapon / Ra-Seru plus its host limb
+  // (`data-item-section`), or the item alone (`data-item-only-section`).
   diffPanelEl.addEventListener('click', async (e) => {
-    const btn = e.target.closest('button[data-item-section]');
+    const btn = e.target.closest('button[data-item-section], button[data-item-only-section]');
     if (!btn || !viewer || typeof viewer.equipped_item_glb !== 'function') return;
-    const section = Number(btn.dataset.itemSection);
+    const alone = btn.dataset.itemOnlySection !== undefined;
+    const section = Number(alone ? btn.dataset.itemOnlySection : btn.dataset.itemSection);
     if (!Number.isFinite(section)) return;
     const item = ((equipSummary && equipSummary.items) || [])
       .find(i => i.section === section);
@@ -1563,12 +1624,14 @@ table.arts-list .cmd-tag {
     btn.textContent = 'baking…';
     await new Promise(r => setTimeout(r, 20));
     try {
-      const glb = viewer.equipped_item_glb(section);
+      const glb = alone && typeof viewer.equipped_item_only_glb === 'function'
+        ? viewer.equipped_item_only_glb(section)
+        : viewer.equipped_item_glb(section);
       if (!glb || !glb.length) {
         btn.textContent = 'no item';
       } else {
         const who = (equipSummary && equipSummary.character) || 'legaia';
-        const tag = item ? `_${item.class}` : '';
+        const tag = alone ? '_alone' : (item ? `_${item.class}` : '');
         const base = `legaia-${who}_${(item && item.name ? item.name : 'item').replace(/[^A-Za-z0-9]+/g, '_')}${tag}`;
         const url = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' }));
         const a = document.createElement('a');

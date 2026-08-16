@@ -680,6 +680,21 @@ equipped section yields nothing. Background:
 Disc-gated oracles: `tests/equipment_view_real.rs` plus the 81-record sweep
 in `crates/asset/tests/equip_item_real.rs`.
 
+`equipped_item_only_glb(section)` is the second download beside it: the
+**item alone** - no host limb, no skin, no unchanged default geometry - the
+opinionated cut of `battle_char_assembly::equip_isolate` under the section's
+default reading (colour diff against the bare limb for held items and
+headgear, geometry-and-colour identity for body and footwear) or the
+record's committed rule in `crates/asset/data/equip-isolation.toml`. The
+summary's per-item `isolation` object and the glTF root name carry the mode,
+the kept / dropped primitive counts and whether a rule hand-checked the
+record; `equipped_mesh_item_mask(section)` is the per-vertex `0 / 1 / 2`
+(outside the section / left behind / item) the page's preview toggle
+filters the drawn triangles with, so what is shown is what the file holds.
+Background:
+[`docs/formats/battle-data-pack.md`](../../docs/formats/battle-data-pack.md#the-item-alone---an-opinionated-cut-with-a-committed-rule-table);
+sweep + table integrity in `crates/asset/tests/equip_isolate_real.rs`.
+
 ## Playable minigames (`minigames`)
 
 `LegaiaMinigames` is a standalone `#[wasm_bindgen]` class (its own

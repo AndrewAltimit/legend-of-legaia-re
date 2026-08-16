@@ -51,7 +51,7 @@
 use super::*;
 
 use legaia_asset::battle_char_assembly as bca;
-use legaia_asset::battle_char_assembly::{equip_diff, equip_item};
+use legaia_asset::battle_char_assembly::{equip_diff, equip_isolate, equip_item};
 use legaia_asset::battle_data_pack::BattleDataPack;
 use legaia_asset::monster_archive::MonsterAnimation;
 
@@ -84,6 +84,11 @@ pub(crate) struct EquippedCharacter {
     /// Bare-only vertices carry the index of the equipped object they replace,
     /// so they pose on the same bone.
     object_ids: Vec<u32>,
+    /// Per-vertex source-primitive ordinal within its object (the mesh
+    /// builder's flat group-walk numbering), parallel to `mesh.positions`.
+    /// `u32::MAX` on bare-only (diff) vertices. The item-alone mask keys on
+    /// `(object id, ordinal)`.
+    prim_ids: Vec<u32>,
     /// Per-vertex [`equip_diff`] class, parallel to `mesh.positions`.
     diff_class: Vec<u8>,
     /// Whether the cached mesh was built with the diff highlight on.
@@ -114,6 +119,8 @@ struct EquippedItem {
     section: usize,
     id: u32,
     partition: equip_item::ItemPartition,
+    /// The opinionated item-alone cut (see [`equip_isolate`]).
+    isolation: equip_isolate::IsolatedItem,
 }
 
 /// One equipment section of a player file: the ids it offers, in table order.
@@ -234,8 +241,9 @@ fn entry_bytes<'a>(prot: &'a [u8], entries: &[disc::EntryMeta], index: u32) -> O
 fn drop_duplicate_objects(
     mesh: &legaia_tmd::mesh::VramMesh,
     object_ids: &[u32],
+    prim_ids: &[u32],
     duplicate: &[bool],
-) -> (legaia_tmd::mesh::VramMesh, Vec<u32>) {
+) -> (legaia_tmd::mesh::VramMesh, Vec<u32>, Vec<u32>) {
     let keep = |v: usize| -> bool {
         object_ids
             .get(v)
@@ -252,6 +260,7 @@ fn drop_duplicate_objects(
         colors: Vec::new(),
     };
     let mut ids = Vec::new();
+    let mut prims = Vec::new();
     for v in 0..mesh.positions.len() {
         if !keep(v) {
             continue;
@@ -265,6 +274,7 @@ fn drop_duplicate_objects(
         out.colors
             .push(mesh.colors.get(v).copied().unwrap_or([0x80; 3]));
         ids.push(object_ids[v]);
+        prims.push(prim_ids.get(v).copied().unwrap_or(u32::MAX));
     }
     for tri in mesh.indices.chunks_exact(3) {
         let m: Vec<u32> = tri.iter().map(|&i| remap[i as usize]).collect();
@@ -272,7 +282,7 @@ fn drop_duplicate_objects(
             out.indices.extend_from_slice(&m);
         }
     }
-    (out, ids)
+    (out, ids, prims)
 }
 
 /// Append `src` (with per-vertex object ids `src_ids`) onto `dst`.
@@ -351,12 +361,14 @@ fn build(
         .map_err(|e| format!("battle-mesh assembly: {e}"))?;
     bca::relocate_tsb_cba(&mut asm.tmd, VIEW_BAND).map_err(|e| format!("TSB/CBA: {e}"))?;
     let tmd = legaia_tmd::parse(&asm.tmd).map_err(|e| format!("assembled TMD parse: {e}"))?;
-    let (full_mesh, full_ids) = legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, &asm.tmd);
+    let (full_mesh, full_ids, full_prims) =
+        legaia_tmd::mesh::tmd_to_vram_mesh_with_prim_ids(&tmd, &asm.tmd);
     if full_mesh.indices.is_empty() {
         return Err("assembled mesh has no textured primitives".to_string());
     }
     let duplicate = asm.duplicate_objects(&tmd);
-    let (mut mesh, mut object_ids) = drop_duplicate_objects(&full_mesh, &full_ids, &duplicate);
+    let (mut mesh, mut object_ids, mut prim_ids) =
+        drop_duplicate_objects(&full_mesh, &full_ids, &full_prims, &duplicate);
 
     // ---- Diff against the unequipped default assembly ----
     let mut diffs: Vec<equip_diff::ObjectDiff> = Vec::new();
@@ -407,6 +419,7 @@ fn build(
                     equip_diff::CLASS_BARE_ONLY,
                     bare_mesh.positions.len(),
                 ));
+                prim_ids.extend(std::iter::repeat_n(u32::MAX, bare_mesh.positions.len()));
                 append_mesh(&mut mesh, &mut object_ids, &bare_mesh, &bare_ids);
             }
         }
@@ -476,10 +489,39 @@ fn build(
             continue;
         };
         if let Some(partition) = equip_item::item_partition(s, &w, &w_tmd, &asm, &tmd) {
+            // The item-alone cut compares texels, so it needs the stripped
+            // loadout's VRAM band too (its own texture pool + CLUT run).
+            let mut w_vram = legaia_tim::Vram::new();
+            match bca::character_texture_uploads(raw, &pack, &without, VIEW_BAND) {
+                Ok(uploads) => {
+                    for u in &uploads {
+                        w_vram.write_block(u.fb_x(), u.fb_y(), u.rect.w, u.rect.h, &u.pixels);
+                        if !u.clut.is_empty() {
+                            w_vram.write_clut_row(u.clut_x, u.clut_row(), &u.clut_bytes());
+                        }
+                    }
+                }
+                Err(e) => log_equip(&format!("equipment: char {cslot} stripped pool: {e}")),
+            }
+            let id = asm.sections[s].id;
+            let isolation = equip_isolate::isolate_item(
+                &equip_isolate::IsolationInputs {
+                    section: s,
+                    bare: &w,
+                    bare_tmd: &w_tmd,
+                    bare_vram: &w_vram,
+                    equipped: &asm,
+                    equipped_tmd: &tmd,
+                    vram: &vram,
+                    partition: &partition,
+                },
+                equip_isolate::rules().rule_for(cslot, id),
+            );
             items.push(EquippedItem {
                 section: s,
-                id: asm.sections[s].id,
+                id,
                 partition,
+                isolation,
             });
         }
     }
@@ -491,6 +533,7 @@ fn build(
         part_count: asm.anm_bones.len(),
         mesh,
         object_ids,
+        prim_ids,
         diff_class,
         diff,
         vram,
@@ -704,6 +747,15 @@ impl LegaiaViewer {
                     "item_vertices": it.partition.item_vertices,
                     "limb_primitives": it.partition.limb_primitives,
                     "seam_vertices": it.partition.seam_vertices,
+                    // The item-alone cut: how it was decided, what it kept,
+                    // and whether a committed rule touched this record.
+                    "isolation": {
+                        "mode": it.isolation.mode.tag(),
+                        "kept_primitives": it.isolation.kept_primitives,
+                        "dropped_primitives": it.isolation.dropped_primitives,
+                        "curated": it.isolation.curated,
+                        "note": it.isolation.note,
+                    },
                 })
             })
             .collect();
@@ -1038,6 +1090,156 @@ impl LegaiaViewer {
         // clip 0 frame 0 into each node's TRS. Passing none leaves every node
         // at the model origin, which is what made a two-object export read as
         // two hands stacked on each other.
+        let fps_for_rate = |rate: u8| {
+            if rate > 0 {
+                7.5 * f32::from(rate)
+            } else {
+                15.0
+            }
+        };
+        let clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = c
+            .clips
+            .iter()
+            .map(
+                |(label, anim)| legaia_asset::character_gltf::CharacterClip {
+                    name: label.clone(),
+                    fps: fps_for_rate(anim.rate),
+                    anim,
+                },
+            )
+            .collect();
+        legaia_asset::character_gltf::build_character_glb_named(
+            &root, &mesh, &out_ids, &c.vram, &clips, None, &layout,
+        )
+        .unwrap_or_default()
+    }
+
+    /// Per-vertex item-alone mask for the cached loadout's mesh (parallel to
+    /// [`Self::equipped_mesh_positions`]): `0` = not part of this section's
+    /// contribution, `1` = the section's geometry the item-alone cut leaves
+    /// behind (host limb, skin, unchanged default), `2` = the item alone.
+    /// Lets the page preview exactly what [`Self::equipped_item_only_glb`]
+    /// will export. Empty when nothing is cached or the section is at its
+    /// default.
+    pub fn equipped_mesh_item_mask(&self, section: u32) -> Vec<u8> {
+        let Some(c) = &self.equipped else {
+            return Vec::new();
+        };
+        let Some(it) = c.items.iter().find(|i| i.section == section as usize) else {
+            return Vec::new();
+        };
+        c.object_ids
+            .iter()
+            .zip(c.prim_ids.iter())
+            .map(|(&obj, &prim)| {
+                if prim == u32::MAX || !it.isolation.objects.contains(&(obj as usize)) {
+                    0
+                } else if it.isolation.claims(obj as usize, prim) {
+                    2
+                } else {
+                    1
+                }
+            })
+            .collect()
+    }
+
+    /// The **item alone** of one equipped section as a binary glTF: no host
+    /// limb, no skin, no unchanged default geometry - the opinionated cut of
+    /// [`equip_isolate`], under the section's default reading or the
+    /// record's committed rule. The root name says how it was decided
+    /// (`colour-diff` / `identity` / `whole` / `palette`) and whether a rule
+    /// touched it (`curated`), so a downloader can tell a heuristic result
+    /// from a checked one. One node per source object, each posed by the
+    /// object it came from, plus the character's clip bank so the piece
+    /// still swings. Empty when the section is at its default, nothing is
+    /// cached, or the cut kept nothing.
+    ///
+    /// This is the second download next to [`Self::equipped_item_glb`], not
+    /// a replacement: that one is the record-keeping export (the exact
+    /// palette cut with its ground-truth limb), this one is what most people
+    /// asking for "just the great axe" want.
+    pub fn equipped_item_only_glb(&self, section: u32) -> Vec<u8> {
+        let Some(c) = &self.equipped else {
+            return Vec::new();
+        };
+        let section = section as usize;
+        let Some(it) = c.items.iter().find(|i| i.section == section) else {
+            return Vec::new();
+        };
+        if it.isolation.kept_primitives == 0 {
+            return Vec::new();
+        }
+        let Ok(tmd) = legaia_tmd::parse(&c.tmd_bytes) else {
+            return Vec::new();
+        };
+        let (full, ids, prims) =
+            legaia_tmd::mesh::tmd_to_vram_mesh_with_prim_ids(&tmd, &c.tmd_bytes);
+        let mut mesh = legaia_tmd::mesh::VramMesh {
+            positions: Vec::new(),
+            uvs: Vec::new(),
+            cba_tsb: Vec::new(),
+            indices: Vec::new(),
+            normals: Vec::new(),
+            colors: Vec::new(),
+        };
+        let mut out_ids: Vec<u32> = Vec::new();
+        let mut remap = vec![u32::MAX; full.positions.len()];
+        for v in 0..full.positions.len() {
+            let obj = ids[v] as usize;
+            if !it.isolation.claims(obj, prims[v]) {
+                continue;
+            }
+            remap[v] = mesh.positions.len() as u32;
+            mesh.positions.push(full.positions[v]);
+            mesh.uvs.push(full.uvs[v]);
+            mesh.cba_tsb.push(full.cba_tsb[v]);
+            mesh.normals
+                .push(full.normals.get(v).copied().unwrap_or([0.0; 3]));
+            mesh.colors
+                .push(full.colors.get(v).copied().unwrap_or([0x80; 3]));
+            out_ids.push(ids[v]);
+        }
+        for tri in full.indices.chunks_exact(3) {
+            let m: Vec<u32> = tri.iter().map(|&i| remap[i as usize]).collect();
+            if m.iter().all(|&i| i != u32::MAX) {
+                mesh.indices.extend_from_slice(&m);
+            }
+        }
+        if mesh.indices.is_empty() {
+            return Vec::new();
+        }
+        let who = CHARACTER_LABELS[c.cslot];
+        let item_name = u8::try_from(it.id)
+            .ok()
+            .and_then(|i| self.item_names.as_ref()?.name(i))
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("id {}", it.id));
+        let mut layout = legaia_asset::character_gltf::CharacterGlbLayout::default();
+        let objects: Vec<u32> = out_ids
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<u32>>()
+            .into_iter()
+            .collect();
+        for &obj in &objects {
+            layout.names.insert(
+                obj,
+                if objects.len() > 1 {
+                    format!("{item_name} (object {obj})")
+                } else {
+                    item_name.clone()
+                },
+            );
+        }
+        let root = format!(
+            "{item_name} - item alone, cut from {who}'s battle model ({}{})",
+            it.isolation.mode.tag(),
+            if it.isolation.curated {
+                ", curated"
+            } else {
+                ""
+            }
+        );
         let fps_for_rate = |rate: u8| {
             if rate > 0 {
                 7.5 * f32::from(rate)
