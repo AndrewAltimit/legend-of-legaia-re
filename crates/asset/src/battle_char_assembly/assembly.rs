@@ -103,8 +103,65 @@ pub struct AssembledCharacter {
     /// context points at record[0]'s idle stream (parts = skeleton bone
     /// count) inside the loaded player file.
     pub anm_bones: Vec<u8>,
+    /// Per-object **source section** (0..5), post-sort: which of the five
+    /// selected equipment sections spliced this object in. The item exporter
+    /// uses it to name a section's whole contribution when there is no
+    /// material boundary to cut on.
+    pub section_of: Vec<u8>,
     /// The descriptor entries the five sections came from.
     pub sections: [Record; SECTION_COUNT],
+}
+
+impl AssembledCharacter {
+    /// Per-object flag: this object is a **byte-copy of the bone it attaches
+    /// to** and must not be drawn alongside it.
+    ///
+    /// The `0xFF` surplus of a section (tag `200+`) is usually a duplicate of
+    /// its attach bone - same vertex pool, same primitive block - so drawing
+    /// both z-fights one limb against itself; retail only reaches the copy
+    /// through the actor's `+0xA4` equipment-variant window. But **it is not
+    /// always a copy**: across the four player files' 87 single-section
+    /// assemblies, 16 carry a `200+` surplus that differs from its host (all
+    /// of Noa's section-2 records, four of her section-3 ones, three of
+    /// Gala's section-3 ones), and in six of those the surplus is the *bare
+    /// hand* while a `0xFE` extra holds the weapon. Skipping every `200+`
+    /// object would drop real geometry in exactly those cases, so this is a
+    /// measurement rather than a rule of thumb.
+    pub fn duplicate_objects(&self, tmd: &legaia_tmd::Tmd) -> Vec<bool> {
+        self.bone_tags
+            .iter()
+            .enumerate()
+            .map(|(i, &tag)| {
+                if tag < 200 {
+                    return false;
+                }
+                let Some(&attach) = self.attach_bones.get((tag - 200) as usize) else {
+                    return false;
+                };
+                let Some(host) = self.bone_tags.iter().position(|&t| t == attach) else {
+                    return false;
+                };
+                let (Some(a), Some(b)) = (tmd.objects.get(host), tmd.objects.get(i)) else {
+                    return false;
+                };
+                a.claimed_n_primitive == b.claimed_n_primitive
+                    && a.vertices.len() == b.vertices.len()
+                    && a.vertices
+                        .iter()
+                        .zip(b.vertices.iter())
+                        .all(|(x, y)| x.x == y.x && x.y == y.y && x.z == y.z)
+                    && self
+                        .tmd
+                        .get(a.primitives_byte_offset..)
+                        .zip(self.tmd.get(b.primitives_byte_offset..))
+                        .is_some_and(|(pa, pb)| {
+                            let n = a.primitives_byte_size.min(b.primitives_byte_size);
+                            a.primitives_byte_size == b.primitives_byte_size
+                                && pa[..n.min(pa.len())] == pb[..n.min(pb.len())]
+                        })
+            })
+            .collect()
+    }
 }
 
 /// Assemble a character's battle TMD from their player file (`buf` +
@@ -146,13 +203,14 @@ pub fn assemble_character(
     // its own bone channel; a section's surplus (equipment-visual) objects
     // ride the channel of the bone object that precedes them.
     let mut anm_bones: Vec<u8> = Vec::with_capacity(total_nobj);
+    let mut section_of: Vec<u8> = Vec::with_capacity(total_nobj);
     let mut last_bone: u8 = 0;
     // PORT: FUN_800536BC - the object splice. Per section: append the
     // 7-word object entries with vert/normal/prim offsets relocated into
     // the merged pool, copy the data words, accumulate nobj, and write one
     // bone-id byte per object from the attach list (surplus objects get
     // the 0xFF-first / 0xFE-rest tags = the equipment visual meshes).
-    for s in &sections {
+    for (si, s) in sections.iter().enumerate() {
         // Offsets in a section entry are relative to the section's
         // object-table start; its data begins right after that table. In
         // the merged TMD the section's data lands at
@@ -180,6 +238,7 @@ pub fn assemble_character(
                 tags.push(if k == s.bone_ids.len() { 0xFF } else { 0xFE });
                 anm_bones.push(last_bone);
             }
+            section_of.push(si as u8);
         }
         data.extend_from_slice(&s.data);
     }
@@ -219,6 +278,7 @@ pub fn assemble_character(
         if min != i {
             tags.swap(i, min);
             anm_bones.swap(i, min);
+            section_of.swap(i, min);
             for w in 0..7 {
                 let a = i * OBJ_ENTRY_BYTES + w * 4;
                 let b = min * OBJ_ENTRY_BYTES + w * 4;
@@ -244,6 +304,7 @@ pub fn assemble_character(
         bone_tags: tags,
         attach_bones,
         anm_bones,
+        section_of,
         sections: records,
     })
 }

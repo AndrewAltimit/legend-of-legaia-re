@@ -30,6 +30,10 @@
 mod animation;
 mod art;
 mod assembly;
+pub mod equip_diff;
+pub mod equip_isolate;
+pub mod equip_item;
+pub mod equip_repair;
 mod swing;
 mod texture;
 

@@ -13,6 +13,7 @@ pub mod cards;
 mod catalog;
 mod character;
 pub mod disc;
+pub mod equipment_view;
 pub mod field_npc;
 pub mod field_scene;
 pub mod fog_lut;
@@ -61,8 +62,18 @@ use wasm_bindgen::Clamped;
 use wasm_bindgen::prelude::*;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 
+/// Log a line to the browser console.
+///
+/// Natively this writes to stderr instead: `web_sys::console` is a
+/// wasm-bindgen import and calling it off-wasm aborts the process, which is
+/// what kept the whole of [`LegaiaViewer`] out of reach of the native
+/// disc-gated tests (they had to re-implement each accessor against the
+/// crate APIs instead of driving the page's real surface).
 fn console_log(s: &str) {
+    #[cfg(target_arch = "wasm32")]
     web_sys::console::log_1(&JsValue::from_str(s));
+    #[cfg(not(target_arch = "wasm32"))]
+    eprintln!("{s}");
 }
 
 /// Render a catalog TIM's curated label as a JSON value for the info panel: a
@@ -289,6 +300,19 @@ pub struct LegaiaViewer {
     /// render, then `scene_export_finish` bakes the textured glTF. `None`
     /// when no export is being assembled.
     scene_export: Option<scene_export::SceneExportState>,
+    /// Equipment stat-bonus table (`DAT_80074F68`) decoded from
+    /// `SCUS_942.54` at load time. The equipment viewer reads each record's
+    /// slot byte to label a player file's five sections, which are **not** in
+    /// the same order for every character. `None` on raw PROT.DAT loads.
+    equip_stats: Option<legaia_asset::equip_stats::EquipStatTable>,
+    /// The battle model the equipment viewer currently shows: one character
+    /// assembled at one loadout, with its band VRAM, clip bank and diff
+    /// against the unequipped default. See [`equipment_view`].
+    equipped: Option<equipment_view::EquippedCharacter>,
+    /// One item **card** of the equipment panel: a single-item loadout built
+    /// for its thumbnail / metadata / download, cached under its
+    /// `(character, section, id)` so the three calls share one assembly.
+    item_card: Option<equipment_view::ItemCard>,
 }
 
 /// VRAM rectangles a single primitive's CBA / TSB lookup will touch.

@@ -1,0 +1,154 @@
+# Item-alone isolation overrides for the equipment viewer's "just the item"
+# export - see `crates/asset/src/battle_char_assembly/equip_isolate.rs` for
+# the heuristic these correct, and `docs/formats/character-mesh.md`
+# (Item isolation) for the vocabulary.
+#
+# One [[record]] per (character, equipment id). Every field but `character`,
+# `id` and `note` is optional:
+#   mode          colour-diff | identity | whole | palette   (section default otherwise)
+#   keep_columns  palette columns (cba & 0x3F) forced INTO the item
+#   drop_columns  palette columns forced OUT of the item
+#   keep_objects  bone tags whose whole object is the item
+#   drop_objects  bone tags whose whole object is body
+#   keep / drop   "tag:ordinal" primitives (ordinal = flat group-walk index)
+#   note          what the visual pass saw - required
+#
+# Precedence: explicit primitive > whole object > palette column > mode.
+
+# ---- Vahn ----------------------------------------------------------------
+
+# The five Seals are one circlet on the forehead drawn from palette column 9,
+# a column the bare head never uses. On the two plainest (Warrior / Ironman)
+# it is four dark-metal primitives whose texels sit inside the hair's shadow
+# colours, so the colour diff calls them body and the item comes out empty.
+[[record]]
+character = "vahn"
+id = 0x34
+keep_columns = [9]
+note = "Warrior Seal: the four circlet prims sample hair-shadow greys; column 9 is the circlet"
+
+[[record]]
+character = "vahn"
+id = 0x35
+keep_columns = [9]
+note = "Ironman Seal: same as Warrior Seal"
+
+[[record]]
+character = "vahn"
+id = 0x36
+keep_columns = [9]
+note = "Expert Seal: column 9 is the circlet, keep it whole"
+
+[[record]]
+character = "vahn"
+id = 0x37
+keep_columns = [9]
+note = "Hero Seal: column 9 is the circlet, keep it whole"
+
+[[record]]
+character = "vahn"
+id = 0x38
+keep_columns = [9]
+note = "Ra-Seru Seal: column 9 is the circlet, keep it whole"
+
+# ---- Noa -----------------------------------------------------------------
+
+# Noa's robes are authored with two hair strands hanging over the collar,
+# drawn (with the neck skin) from the torso object's palette column 0 - the
+# flesh column, which the head shares. They are her hair, not the robe.
+[[record]]
+character = "noa"
+id = 0x51
+drop_columns = [0]
+note = "Ra-Seru Robe: hair strands + neck skin are the torso object's column 0"
+
+[[record]]
+character = "noa"
+id = 0x50
+drop_columns = [0]
+note = "Battle Robe: hair strands + neck skin are the torso object's column 0"
+
+[[record]]
+character = "noa"
+id = 0x4F
+drop_columns = [0]
+note = "Tempest Robe: hair strands + neck skin are the torso object's column 0"
+
+[[record]]
+character = "noa"
+id = 0x4E
+drop_columns = [0]
+note = "Scarlet Robe: hair strands + neck skin are the torso object's column 0"
+
+# ---- Gala ----------------------------------------------------------------
+
+# Gala's plates cap the neck opening with quads that straddle his (dark) neck
+# skin and the collar's black interior, so no colour rule owns them cleanly.
+# The primitives named here are the neck cap - the torso object (tag 0) is
+# authored the same way in every plate, only the ordinals differ per record.
+[[record]]
+character = "gala"
+id = 0x57
+drop = ["0:38", "0:41"]
+note = "Ra-Seru Plate: neck-cap quads, half skin half collar interior"
+
+[[record]]
+character = "gala"
+id = 0x56
+drop = ["0:2", "0:4", "0:7", "0:10", "0:12", "0:17", "0:24", "0:25"]
+note = "War God Plate: neck-cap quads, half skin half collar interior"
+
+[[record]]
+character = "gala"
+id = 0x55
+drop = ["0:2", "0:4", "0:7", "0:10", "0:12", "0:17", "0:24", "0:25"]
+note = "Valor Plate: neck-cap quads (same torso topology as War God Plate)"
+
+[[record]]
+character = "gala"
+id = 0x54
+drop = ["0:4", "0:7", "0:9", "0:10", "0:16", "0:23", "0:24"]
+note = "Fighting Plate: neck-cap quads, half skin half collar interior"
+
+# Power Plate differs from Gala's default plate by a re-texture of scattered
+# primitives, so the identity cut leaves a fragmentary shell. Export the
+# section whole (minus the neck cap) and say so.
+[[record]]
+character = "gala"
+id = 0x53
+mode = "whole"
+drop = ["0:2", "0:4", "0:7", "0:9", "0:10", "0:16", "0:23", "0:24"]
+note = "Power Plate: near-identical to the default plate; whole section, neck cap dropped"
+
+# The Ra-Seru Club and the Mace re-author Gala's arm with a dark-blue plate
+# gauntlet (palette column 14 on the arm objects) in the same navy as his
+# bare wrist band, so the colour diff reads the gauntlet as body. Column 14
+# is the gauntlet; the club / mace head is column 13.
+[[record]]
+character = "gala"
+id = 0x21
+keep_columns = [14]
+note = "Ra-Seru Club: column 14 is the arm gauntlet, navy like the bare wrist band"
+
+[[record]]
+character = "gala"
+id = 0x20
+keep_columns = [14]
+note = "Mace: column 14 is the arm gauntlet, navy like the bare wrist band"
+
+# The two headbands are dark leather in the hair's shadow colours, so the
+# colour diff loses their front. The head object keeps its face and hair
+# primitives in place around them, so the identity reading finds the band.
+[[record]]
+character = "gala"
+id = 0x41
+mode = "identity"
+drop = ["2:3", "2:4", "2:43", "2:44", "2:57", "2:62", "2:64", "2:76", "2:77"]
+note = "War God Band: dark band in hair-shadow colours; identity finds it, colour diff does not; the nine dropped prims are the fringe the band re-positions"
+
+[[record]]
+character = "gala"
+id = 0x40
+mode = "identity"
+drop = ["2:3", "2:4", "2:43", "2:44", "2:57", "2:62", "2:64", "2:76", "2:77"]
+note = "Fighter's Band: same as War God Band, same head topology"

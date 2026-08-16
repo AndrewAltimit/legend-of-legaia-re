@@ -53,6 +53,37 @@ u32 size     ; slot allocation in bytes (sector-aligned)</code></pre>
 2b 2a 29 28 33 32 31 30 2f 2e | 00 | 19 18 17 16 15 14 13 | 00 |
 69 68 67 66 | 00</code></pre>
   <p>Terra (0866) carries only five <code>id = 0</code> entries - no variant slots. <strong>The slot ids are equippable item ids</strong> (the item-name table id space): the five sections are the character's five equipment slots, and <code>FUN_80052770</code> case 4 walks the table matching each entry's <code>id</code> against the character record's equipped-item bytes (<code>+0x196..+0x19A</code>), taking the <code>id = 0</code> default when nothing matches. Vahn's file carries body (<code>0x43</code> Hunter Clothes &hellip;), head, weapon (<code>0x22</code> Survival Knife &hellip;), Ra-Seru weapon (<code>0x01..0x09</code> Meta tiers) and footwear sections. Live proof: the assembled battle mesh's vertex pools byte-match exactly the equipped sections - see <a href="character-mesh.html">character mesh packs</a>.</p>
+  <p>The sections are <strong>not</strong> in the same order for every character: Vahn's section 2 is his weapon and section 3 his Ra-Seru, Noa's are the other way round. Both take the equipment table's <code>Weapon</code> slot, because a character's Ra-Seru <em>is</em> their weapon arm.</p>
+
+  <h3 id="bone-geometry">Every section is bone geometry - the item is not its own object</h3>
+  <p>Equipment is not modelled as a separate object that gets attached. A section's slot carries whole <strong>skeleton bone objects</strong>, and selecting it replaces the bare object outright with a re-authored one that happens to include the gear. Vahn's right-hand bone across three of his weapon ids:</p>
+  <table class="doc-table">
+    <thead><tr><th>section 2 id</th><th>hand object</th><th>vertices</th><th>primitives</th></tr></thead>
+    <tbody>
+      <tr><td><code>0</code> (default)</td><td>bare fist</td><td>40</td><td>52</td></tr>
+      <tr><td><code>0x22</code> Survival Knife</td><td>fist + blade</td><td>71</td><td>80</td></tr>
+      <tr><td><code>0x33</code> Great Axe</td><td>fist + axe</td><td>73</td><td>95</td></tr>
+      <tr><td><code>0xBA</code> Astral Sword</td><td>fist + sword</td><td>109</td><td>157</td></tr>
+    </tbody>
+  </table>
+  <p>Armour works the same way and can make an object <em>smaller</em>: Hunter Clothes takes Vahn's torso from 79 vertices to 64. It is a re-sculpt, not a layer, and a full endgame set re-authors ten of his fifteen bone objects.</p>
+  <p>A positional set-difference does not find the added geometry: the equipped hand shares as few as <em>one</em> vertex position with the bare hand, so a set-difference calls the whole object new. What answers &ldquo;what did this change&rdquo; is a <strong>radius envelope</strong> (the bare object's centroid plus its reach), which still leaves 4-31 primitives straddling the boundary per weapon - and those really do belong to both hand and weapon. The <a href="../characters.html#equipment-loadout">characters page</a>'s diff highlight uses exactly that, and says so.</p>
+
+  <h3 id="item-cut">The item is still separable - by palette, not by geometry</h3>
+  <p>&ldquo;Not its own object&rdquo; is not &ldquo;inseparable&rdquo;. The separator is the primitive's <strong>CLUT word</strong>: a weapon is drawn from its own palette column, and across all <strong>81</strong> weapon / Ra-Seru records <strong>no primitive mixes the two</strong>. The item is an exact primitive subset selected by material. Geometry alone would have missed it - connectivity splits Gala's and most of Noa's weapons off cleanly but not Vahn's, which weld to the fist at the grip. What tells the buckets apart is the <strong>joint</strong>: a TMD object is authored about its own bone origin, so the flesh half always reaches the origin and the held item never does.</p>
+  <table class="doc-table">
+    <thead><tr><th>class</th><th>records</th><th>shape</th></tr></thead>
+    <tbody>
+      <tr><td><code>own-object</code></td><td>6</td><td>Already its own <code>0xFE</code> object - retail shipped the split.</td></tr>
+      <tr><td><code>separate</code></td><td>21</td><td>Own connected component, zero shared vertices. Lossless.</td></tr>
+      <tr><td><code>welded</code></td><td>53</td><td>Palette subset joined at the grip rim; 3-64 shared welded vertices.</td></tr>
+      <tr><td><code>fused</code></td><td>1 (+51 armour)</td><td>No material boundary: the section's whole contribution, item and host together. The one held-item case is Noa's first Ra-Seru armband.</td></tr>
+    </tbody>
+  </table>
+  <p>A <code>welded</code> cut is exact at primitive level, but the exported item has an <strong>open grip</strong>: the shaft inside the closed fist was never modelled, and Vahn's Great Axe comes out with a visibly interrupted haft. No cutting strategy recovers it. Sections 0/1/4 have no boundary to cut on - no surplus object, and a body-versus-trim palette split - so every one of their 51 records exports <code>fused</code>: the whole piece with the body part it is sculpted onto, labelled as such. Completeness over purity: over all 132 equipment records the split is 6 / 21 / 53 / 52 and nothing yields nothing.</p>
+
+  <h3 id="surplus-duplicates">The <code>200+</code> surplus is a duplicate, except when it is not</h3>
+  <p>Most <code>0xFF</code> (tag <code>200+</code>) surplus objects are byte-copies of their attach bone, reached only through the equipment-variant track at <code>+0xA4</code>, so drawing one alongside its host z-fights a limb. <strong>Sixteen are not copies</strong>: all of Noa's section-2 records, four of her section-3 ones and three of Gala's section-3 ones - and in six of those the surplus is the <em>bare hand</em> while a <code>0xFE</code> extra holds the weapon alone. So neither &ldquo;always skip&rdquo; nor &ldquo;always draw&rdquo; is right; the test is a byte comparison against the attach bone.</p>
 </section>
 
 <section class="doc-section" id="slot-region">
