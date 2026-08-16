@@ -266,19 +266,29 @@ fn a_weapon_separates_from_the_hand_by_palette() {
     assert_eq!(it["class"], serde_json::json!("own-object"), "{it}");
     assert_eq!(it["complete"], serde_json::json!(true), "{it}");
 
-    // Armour sections never offer an item: there is no body-without-armour
-    // to subtract, so the summary must stay empty rather than guess.
+    // Armour has no body-without-armour to subtract - so it exports FUSED
+    // with its host geometry, and says so. Never nothing: every equipped
+    // section yields an item, by policy.
     let s: serde_json::Value =
         serde_json::from_str(&v.set_equipped_character(0, &[0x43, 0x38, 0, 0, 0x5f], false))
             .unwrap();
-    assert!(
-        s["items"].as_array().unwrap().is_empty(),
-        "armour offered a separable item: {s}"
-    );
-    assert!(
-        !s["changed_objects"].as_array().unwrap().is_empty(),
-        "but it did change geometry: {s}"
-    );
+    let items = s["items"].as_array().unwrap();
+    assert_eq!(items.len(), 3, "one item per equipped section: {s}");
+    for it in items {
+        assert_eq!(it["class"], serde_json::json!("fused"), "{it}");
+        assert_eq!(it["pure"], serde_json::json!(false), "{it}");
+        assert_eq!(it["complete"], serde_json::json!(true), "{it}");
+        assert!(it["item_primitives"].as_u64().unwrap() > 0, "{it}");
+        assert!(
+            it["describe"].as_str().unwrap().contains("fused"),
+            "caption vocabulary: {it}"
+        );
+    }
+    let sections: Vec<u64> = items
+        .iter()
+        .map(|i| i["section"].as_u64().unwrap())
+        .collect();
+    assert_eq!(sections, vec![0, 1, 4]);
 }
 
 /// The per-item `.glb` ships the item **and** the limb it was cut from, as
@@ -351,10 +361,29 @@ fn the_item_glb_carries_the_item_and_its_host_limb() {
     let json = std::str::from_utf8(&glb[20..20 + json_len]).expect("glTF JSON");
     assert!(json.contains("grip open"), "welded glb hides the open grip");
 
-    // An armour section has no item glb at all.
+    // An armour section exports too - fused, and the file says so. A section
+    // at its default has nothing to export, and that is the only empty case.
     let _: serde_json::Value =
         serde_json::from_str(&v.set_equipped_character(0, &[0x43, 0, 0, 0, 0], false)).unwrap();
-    assert!(v.equipped_item_glb(0).is_empty(), "armour exported an item");
+    let glb = v.equipped_item_glb(0);
+    assert!(
+        glb.len() > 512,
+        "armour item glb baked ({} bytes)",
+        glb.len()
+    );
+    assert_eq!(&glb[0..4], b"glTF");
+    let json_len = u32::from_le_bytes(glb[12..16].try_into().unwrap()) as usize;
+    let json = std::str::from_utf8(&glb[20..20 + json_len]).expect("glTF JSON");
+    assert!(json.contains("Hunter Clothes"), "armour glb names its item");
+    assert!(
+        json.contains("fused with the host limb"),
+        "armour glb does not say it is fused"
+    );
+    assert!(json.contains("as spliced into"), "fused root name wording");
+    assert!(
+        v.equipped_item_glb(2).is_empty(),
+        "an unequipped section exported"
+    );
 }
 
 /// The diff highlight must classify something on a weapon swap, and the

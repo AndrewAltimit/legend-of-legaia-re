@@ -1,11 +1,15 @@
 //! Disc-gated sweep of [`battle_char_assembly::equip_item`] over **every**
-//! weapon / Ra-Seru record on the disc (81 of them), not a sample.
+//! equipment record on the disc (132: 81 weapon / Ra-Seru + 51 armour), not
+//! a sample.
 //!
-//! The claim under test is that a held item is an exact primitive subset of
-//! the bone object, selected by palette column - so the sweep asserts the
-//! properties that would break if the cut were a heuristic over geometry:
-//! every record separates, no primitive is claimed twice, the limb keeps
-//! geometry of its own, and the three classes land where the disc puts them.
+//! Two claims under test. For a held item, the cut is an exact primitive
+//! subset of the bone object selected by palette column, so the sweep asserts
+//! the properties that would break if it were a geometry heuristic: no
+//! primitive claimed twice, the limb keeps geometry of its own, and the
+//! classes land where the disc puts them. For everything else, **every**
+//! record still yields an export - fused with its host limb and labelled so -
+//! because the policy is completeness over purity: no equipment id may come
+//! back with nothing.
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
@@ -118,8 +122,9 @@ fn every_weapon_record_separates() {
                     );
                 }
                 // A cut that took the whole object is not a cut. (Except for
-                // class A, where retail itself shipped the item standalone.)
-                if p.class != ItemClass::OwnObject {
+                // class A, where retail itself shipped the item standalone,
+                // and `fused`, which is whole objects by definition.)
+                if !matches!(p.class, ItemClass::OwnObject | ItemClass::Fused) {
                     assert!(
                         p.limb_primitives > 0,
                         "{who} {id:#x}: the cut swallowed the limb"
@@ -136,33 +141,39 @@ fn every_weapon_record_separates() {
                     p.seam_vertices == 0,
                     "{who} {id:#x}: completeness must follow the seam"
                 );
+                // A fused export is whole objects, so every part says so.
+                if p.class == ItemClass::Fused {
+                    assert!(p.parts.iter().all(|x| x.whole_object), "{who} {id:#x}");
+                }
             }
         }
     }
     assert_eq!(total, 81, "weapon + Ra-Seru records on the disc");
-    // The one record with nothing to cut: Noa's first Ra-Seru armband draws
-    // its whole object from a single palette column, so there is no material
-    // boundary to separate on. Asserted exact so a change is visible.
-    assert_eq!(
-        unseparated,
-        vec!["Noa s2 0x0a".to_string()],
-        "records with no separable item"
+    // No weapon record may come back empty. Noa's first Ra-Seru armband draws
+    // its whole object from a single palette column, so it has no boundary
+    // to cut on - it must fall through to `fused`, not to nothing.
+    assert!(
+        unseparated.is_empty(),
+        "records with no export: {unseparated:?}"
     );
-    // All three classes occur, and none dominates by accident.
-    for class in ["own-object", "separate", "welded"] {
-        assert!(
-            by_class.get(class).copied().unwrap_or(0) > 0,
-            "class {class} never occurred: {by_class:?}"
-        );
-    }
-    assert_eq!(by_class.values().sum::<usize>(), 80, "{by_class:?}");
+    // The distribution, asserted exact so a change is visible.
+    let want: BTreeMap<&str, usize> = [
+        ("own-object", 6),
+        ("separate", 21),
+        ("welded", 53),
+        ("fused", 1),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(by_class, want, "held-item class distribution");
 }
 
-/// Armour sections are refused rather than answered. There is no
-/// body-without-armour to subtract: sections 0 / 1 / 4 carry no surplus
-/// object at all, and their palette buckets split body from trim.
+/// Armour sections have no body-without-armour to subtract (no surplus
+/// object, and their palette split is body-versus-trim) - so every one of
+/// them exports **fused**: the replaced bone objects, whole, labelled as
+/// such. Never a refusal.
 #[test]
-fn armour_sections_never_yield_an_item() {
+fn armour_sections_export_fused_never_nothing() {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -190,10 +201,17 @@ fn armour_sections_never_yield_an_item() {
                 load[section] = id as u8;
                 let eq = bca::assemble_character(&raw, &pack, &load).unwrap();
                 let eq_tmd = legaia_tmd::parse(&eq.tmd).unwrap();
+                let p = equip_item::item_partition(section, &bare, &bare_tmd, &eq, &eq_tmd)
+                    .unwrap_or_else(|| panic!("section {section} id {id:#x} exported nothing"));
+                assert_eq!(p.class, ItemClass::Fused, "section {section} id {id:#x}");
+                assert!(!p.class.is_pure() && p.class.is_complete());
+                assert!(p.item_primitives > 0, "section {section} id {id:#x}");
                 assert!(
-                    equip_item::item_partition(section, &bare, &bare_tmd, &eq, &eq_tmd).is_none(),
-                    "section {section} id {id:#x} offered an item"
+                    p.parts.iter().all(|x| x.whole_object),
+                    "section {section} id {id:#x}: fused parts are whole objects"
                 );
+                assert_eq!(p.limb_primitives, 0);
+                assert_eq!(p.seam_vertices, 0);
             }
         }
     }

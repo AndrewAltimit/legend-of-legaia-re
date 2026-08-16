@@ -657,13 +657,17 @@ radius envelope, and draws the bare geometry the section replaced alongside
 in a third colour. It is a viewing aid over an approximate boundary
 (`battle_char_assembly::equip_diff`), and deliberately *not* the item cut.
 
-`equipped_item_glb(section)` is the exact cut, for the two weapon-bearing
-sections only: the held item is a primitive subset of the bone object
-selected by palette column (`battle_char_assembly::equip_item`), and the
-export ships it beside the limb it came from as two named nodes, with the
-class (`own-object` / `separate` / `welded`) and a `complete` flag in the
-summary - a `welded` item's grip is open, because the shaft inside the closed
-fist was never modelled. Armour sections yield nothing and say so. Background:
+`equipped_item_glb(section)` exports **every** equipped section. For the
+two weapon-bearing sections it is the exact cut: the held item is a primitive
+subset of the bone object selected by palette column
+(`battle_char_assembly::equip_item`), shipped beside the limb it came from as
+two named nodes. Anything with no material boundary - armour, headgear,
+footwear, one single-palette Ra-Seru - comes back `fused`: the section's
+whole contribution, item and host together. The class (`own-object` /
+`separate` / `welded` / `fused`), its one-line `describe`, and `complete` /
+`pure` flags ride in the summary and the glTF root name - a `welded` item's
+grip is open, a `fused` one carries its limb. Completeness over purity: no
+equipped section yields nothing. Background:
 [`docs/formats/battle-data-pack.md`](../../docs/formats/battle-data-pack.md#the-item-is-still-separable---by-palette-not-by-geometry).
 Disc-gated oracles: `tests/equipment_view_real.rs` plus the 81-record sweep
 in `crates/asset/tests/equip_item_real.rs`.

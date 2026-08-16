@@ -103,6 +103,11 @@ pub struct AssembledCharacter {
     /// context points at record[0]'s idle stream (parts = skeleton bone
     /// count) inside the loaded player file.
     pub anm_bones: Vec<u8>,
+    /// Per-object **source section** (0..5), post-sort: which of the five
+    /// selected equipment sections spliced this object in. The item exporter
+    /// uses it to name a section's whole contribution when there is no
+    /// material boundary to cut on.
+    pub section_of: Vec<u8>,
     /// The descriptor entries the five sections came from.
     pub sections: [Record; SECTION_COUNT],
 }
@@ -198,13 +203,14 @@ pub fn assemble_character(
     // its own bone channel; a section's surplus (equipment-visual) objects
     // ride the channel of the bone object that precedes them.
     let mut anm_bones: Vec<u8> = Vec::with_capacity(total_nobj);
+    let mut section_of: Vec<u8> = Vec::with_capacity(total_nobj);
     let mut last_bone: u8 = 0;
     // PORT: FUN_800536BC - the object splice. Per section: append the
     // 7-word object entries with vert/normal/prim offsets relocated into
     // the merged pool, copy the data words, accumulate nobj, and write one
     // bone-id byte per object from the attach list (surplus objects get
     // the 0xFF-first / 0xFE-rest tags = the equipment visual meshes).
-    for s in &sections {
+    for (si, s) in sections.iter().enumerate() {
         // Offsets in a section entry are relative to the section's
         // object-table start; its data begins right after that table. In
         // the merged TMD the section's data lands at
@@ -232,6 +238,7 @@ pub fn assemble_character(
                 tags.push(if k == s.bone_ids.len() { 0xFF } else { 0xFE });
                 anm_bones.push(last_bone);
             }
+            section_of.push(si as u8);
         }
         data.extend_from_slice(&s.data);
     }
@@ -271,6 +278,7 @@ pub fn assemble_character(
         if min != i {
             tags.swap(i, min);
             anm_bones.swap(i, min);
+            section_of.swap(i, min);
             for w in 0..7 {
                 let a = i * OBJ_ENTRY_BYTES + w * 4;
                 let b = min * OBJ_ENTRY_BYTES + w * 4;
@@ -296,6 +304,7 @@ pub fn assemble_character(
         bone_tags: tags,
         attach_bones,
         anm_bones,
+        section_of,
         sections: records,
     })
 }

@@ -26,13 +26,19 @@
 //! owning the vertex nearest the object origin as the limb and everything
 //! else as the item.
 //!
-//! Sections 0 / 1 / 4 (body, head, feet) are **not** separable and this
-//! module refuses them: they carry no surplus object at all
-//! (`nobj == attach_count` in all 51 records), and their palette buckets
-//! split body from trim, not garment from body. There is no "body without
-//! armour" to subtract.
+//! Sections 0 / 1 / 4 (body, head, feet) have **no clean boundary**: they
+//! carry no surplus object at all (`nobj == attach_count` in all 51
+//! records), and their palette buckets split body from trim, not garment
+//! from body. There is no "body without armour" to subtract. The same is
+//! true of the one weapon record whose object draws from a single palette
+//! (Noa's Ra-Seru Terra $1). Those records are **not refused**: they come
+//! back as [`ItemClass::Fused`] - every bone object the section replaced,
+//! whole, with the host geometry it was authored into. That is a policy
+//! choice, completeness over purity: an export of "the armour" that carries
+//! the torso it is sculpted onto beats no export at all, provided the file
+//! says so - which the class does.
 //!
-//! What the cut cannot recover: on a welded record the shaft inside a closed
+//! What no cut can recover: on a welded record the shaft inside a closed
 //! fist **was never modelled**, so the exported item has an open grip (and,
 //! on Vahn's Great Axe, a visibly interrupted haft). That is a property of
 //! the disc. Callers must say so rather than cap it silently.
@@ -43,8 +49,9 @@ use legaia_tmd::{Tmd, legaia_prims};
 
 use super::assembly::AssembledCharacter;
 
-/// The two player-file sections whose slots carry a held item. Sections 0 /
-/// 1 / 4 (body / head / feet) have nothing separable in them.
+/// The two player-file sections whose slots carry a **held** item, and are
+/// therefore candidates for the palette cut. Every other section still
+/// exports - as [`ItemClass::Fused`].
 pub const ITEM_SECTIONS: [usize; 2] = [2, 3];
 
 /// How cleanly the item comes away from the bone object.
@@ -60,6 +67,11 @@ pub enum ItemClass {
     /// **the grip is left open** - the geometry inside the closed fist does
     /// not exist on the disc.
     WeldedSubset,
+    /// No material boundary separates item from limb (armour, and the one
+    /// single-palette weapon record). The export is every bone object the
+    /// section replaced, **whole** - the item with the host geometry it was
+    /// sculpted onto. Complete, but not pure.
+    Fused,
 }
 
 impl ItemClass {
@@ -69,6 +81,18 @@ impl ItemClass {
             ItemClass::OwnObject => "own-object",
             ItemClass::SeparateComponent => "separate",
             ItemClass::WeldedSubset => "welded",
+            ItemClass::Fused => "fused",
+        }
+    }
+
+    /// The honest one-line description a downloader should see, in the file
+    /// and in the UI: what they got, and what they did not.
+    pub fn describe(self) -> &'static str {
+        match self {
+            ItemClass::OwnObject => "own object",
+            ItemClass::SeparateComponent => "separate",
+            ItemClass::WeldedSubset => "welded, grip open",
+            ItemClass::Fused => "fused with the host limb",
         }
     }
 
@@ -76,6 +100,12 @@ impl ItemClass {
     /// the grip is open and the caller must say so.
     pub fn is_complete(self) -> bool {
         !matches!(self, ItemClass::WeldedSubset)
+    }
+
+    /// Whether the export carries **only** item geometry. `false` for
+    /// [`ItemClass::Fused`], where the host limb rides along.
+    pub fn is_pure(self) -> bool {
+        !matches!(self, ItemClass::Fused)
     }
 }
 
@@ -162,11 +192,12 @@ fn weld(tmd: &Tmd, obj: usize) -> Vec<usize> {
 
 /// Split the objects an equipped section changed into limb and item.
 ///
-/// `section` must be one of [`ITEM_SECTIONS`]; anything else returns `None`,
-/// because there is nothing to separate there. `None` also comes back when
-/// the changed objects carry a single palette column - the section re-sculpts
-/// the limb without adding a distinguishable held item (Noa's lower Ra-Seru
-/// armbands are the case that hits).
+/// For a section in [`ITEM_SECTIONS`] this is the palette cut. For every
+/// other section - and for a held-item section whose changed objects carry a
+/// single palette column - it falls through to [`ItemClass::Fused`]: every
+/// changed object, whole. `None` only when the section changed **no**
+/// geometry at all, in which case there is nothing to export and the caller
+/// should say that rather than ship an empty file.
 pub fn item_partition(
     section: usize,
     bare: &AssembledCharacter,
@@ -174,9 +205,68 @@ pub fn item_partition(
     equipped: &AssembledCharacter,
     equipped_tmd: &Tmd,
 ) -> Option<ItemPartition> {
-    if !ITEM_SECTIONS.contains(&section) {
+    if ITEM_SECTIONS.contains(&section)
+        && let Some(p) = held_item_partition(bare, bare_tmd, equipped, equipped_tmd)
+    {
+        return Some(p);
+    }
+    fused_partition(section, equipped, equipped_tmd)
+}
+
+/// [`ItemClass::Fused`]: the section's **whole contribution** to the
+/// assembly - every object it spliced in (`section_of`), minus byte-copy
+/// duplicates. Keyed on the section rather than on a diff against the bare
+/// model, because a section can be geometrically identical to the default
+/// and differ only in its texture pool (Noa's Green Robe is her starting
+/// robe, and its body section is byte-for-byte the default's); the objects
+/// are still what that equipment *is*, and the export must carry them.
+fn fused_partition(
+    section: usize,
+    equipped: &AssembledCharacter,
+    equipped_tmd: &Tmd,
+) -> Option<ItemPartition> {
+    let duplicate = equipped.duplicate_objects(equipped_tmd);
+    let mut parts = Vec::new();
+    let mut item_primitives = 0usize;
+    let mut positions: BTreeSet<(i16, i16, i16)> = BTreeSet::new();
+    for (ei, &dup) in duplicate.iter().enumerate() {
+        if dup || equipped.section_of.get(ei).copied() != Some(section as u8) {
+            continue;
+        }
+        let prims = object_prims(equipped_tmd, &equipped.tmd, ei);
+        if prims.is_empty() {
+            continue;
+        }
+        item_primitives += prims.len();
+        collect_positions(equipped_tmd, ei, &prims, None, &mut positions);
+        parts.push(ItemPart {
+            object: ei,
+            columns: BTreeSet::new(),
+            whole_object: true,
+        });
+    }
+    if parts.is_empty() {
         return None;
     }
+    Some(ItemPartition {
+        class: ItemClass::Fused,
+        parts,
+        item_primitives,
+        item_vertices: positions.len(),
+        limb_primitives: 0,
+        seam_vertices: 0,
+    })
+}
+
+/// The palette cut for a held-item section. `None` when no changed object
+/// carries a second palette column - the caller falls back to
+/// [`fused_partition`].
+fn held_item_partition(
+    bare: &AssembledCharacter,
+    bare_tmd: &Tmd,
+    equipped: &AssembledCharacter,
+    equipped_tmd: &Tmd,
+) -> Option<ItemPartition> {
     let mut parts: Vec<ItemPart> = Vec::new();
     let mut item_primitives = 0usize;
     let mut limb_primitives = 0usize;
@@ -204,10 +294,17 @@ pub fn item_partition(
         for ei in standalone {
             // A section may ship the same extra twice (Gala's Ra-Seru Ozma $7
             // carries two identical `0xFE` objects); export it once.
-            if parts
-                .iter()
-                .any(|p| p.whole_object && same_geometry(equipped_tmd, p.object, equipped_tmd, ei))
-            {
+            if parts.iter().any(|p| {
+                p.whole_object
+                    && same_object(
+                        equipped_tmd,
+                        &equipped.tmd,
+                        p.object,
+                        equipped_tmd,
+                        &equipped.tmd,
+                        ei,
+                    )
+            }) {
                 continue;
             }
             let prims = object_prims(equipped_tmd, &equipped.tmd, ei);
@@ -239,7 +336,9 @@ pub fn item_partition(
         }
         let bare_idx = bare.bone_tags.iter().position(|&t| t == tag);
         // Unchanged objects belong to neither half.
-        if bare_idx.is_some_and(|bi| same_geometry(bare_tmd, bi, equipped_tmd, ei)) {
+        if bare_idx
+            .is_some_and(|bi| same_object(bare_tmd, &bare.tmd, bi, equipped_tmd, &equipped.tmd, ei))
+        {
             continue;
         }
 
@@ -360,18 +459,29 @@ fn collect_positions(
     }
 }
 
-/// Whether two objects carry the same vertex pool and primitive count.
-fn same_geometry(a_tmd: &Tmd, a: usize, b_tmd: &Tmd, b: usize) -> bool {
+/// Whether two objects carry the same vertex pool **and the same primitive
+/// block**. The block matters: a section can re-texture a limb without
+/// touching a single vertex (Vahn's Ironman Boots do exactly that to his
+/// feet), and that is still a replaced object the export must carry.
+fn same_object(a_tmd: &Tmd, a_blob: &[u8], a: usize, b_tmd: &Tmd, b_blob: &[u8], b: usize) -> bool {
     let (Some(ao), Some(bo)) = (a_tmd.objects.get(a), b_tmd.objects.get(b)) else {
         return false;
     };
-    ao.claimed_n_primitive == bo.claimed_n_primitive
+    let same_verts = ao.claimed_n_primitive == bo.claimed_n_primitive
         && ao.vertices.len() == bo.vertices.len()
         && ao
             .vertices
             .iter()
             .zip(bo.vertices.iter())
-            .all(|(x, y)| x.x == y.x && x.y == y.y && x.z == y.z)
+            .all(|(x, y)| x.x == y.x && x.y == y.y && x.z == y.z);
+    if !same_verts || ao.primitives_byte_size != bo.primitives_byte_size {
+        return false;
+    }
+    let pa =
+        a_blob.get(ao.primitives_byte_offset..ao.primitives_byte_offset + ao.primitives_byte_size);
+    let pb =
+        b_blob.get(bo.primitives_byte_offset..bo.primitives_byte_offset + bo.primitives_byte_size);
+    matches!((pa, pb), (Some(x), Some(y)) if x == y)
 }
 
 #[cfg(test)]
@@ -379,9 +489,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn armour_sections_are_refused_outright() {
-        // A body / head / feet section has no held item to find, and the
-        // entry point must say so rather than return a plausible answer.
+    fn only_the_held_item_sections_are_cut_candidates() {
         for s in [0usize, 1, 4] {
             assert!(!ITEM_SECTIONS.contains(&s), "section {s}");
         }
@@ -391,9 +499,15 @@ mod tests {
     }
 
     #[test]
-    fn a_welded_cut_is_not_advertised_as_complete() {
+    fn the_class_flags_say_what_the_downloader_got() {
         assert!(!ItemClass::WeldedSubset.is_complete());
         assert!(ItemClass::OwnObject.is_complete());
         assert!(ItemClass::SeparateComponent.is_complete());
+        // Fused is complete (nothing missing) but not pure (limb rides along).
+        assert!(ItemClass::Fused.is_complete());
+        assert!(!ItemClass::Fused.is_pure());
+        assert!(ItemClass::WeldedSubset.is_pure());
+        assert!(ItemClass::Fused.describe().contains("fused"));
+        assert!(ItemClass::WeldedSubset.describe().contains("grip open"));
     }
 }

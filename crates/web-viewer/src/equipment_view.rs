@@ -38,11 +38,12 @@
 //! * objects tagged `100+` are ordinary extra geometry and do draw, on the
 //!   preceding bone's channel (`anm_bones`).
 //!
-//! The page also offers a **per-item** export for the two weapon-bearing
-//! sections. That is not a contradiction of "equipment is bone geometry":
-//! the item is not a separate object, but it *is* an exact primitive subset
-//! selected by palette column, which [`equip_item`] cuts and labels by how
-//! cleanly it came away.
+//! The page also offers a **per-item** export for every equipped section.
+//! That is not a contradiction of "equipment is bone geometry": a held item
+//! is not a separate object, but it *is* an exact primitive subset selected
+//! by palette column, which [`equip_item`] cuts and labels by how cleanly it
+//! came away; a piece with no such boundary (armour) exports **fused** with
+//! the limb it was sculpted onto, and says so. Completeness over purity.
 //!
 //! Everything decodes from the visitor's own disc in the browser; no Sony
 //! bytes ship with the site.
@@ -452,11 +453,14 @@ fn build(
         Err(e) => log_equip(&format!("equipment: char {cslot} swings: {e}")),
     }
 
-    // ---- Item cut: where each equipped weapon / Ra-Seru actually lives ----
-    // Each item section is diffed against *the same loadout with that one
-    // section stripped*, so the cut is exact regardless of what else is worn.
+    // ---- Item cut: where each equipped piece actually lives ----
+    // Every equipped section gets one. A held item (sections 2/3) is diffed
+    // against *the same loadout with that one section stripped*, so the
+    // palette cut is exact regardless of what else is worn; anything with no
+    // material boundary comes back `fused` - the section's whole contribution
+    // - rather than nothing. Completeness over purity, by policy.
     let mut items = Vec::new();
-    for s in equip_item::ITEM_SECTIONS {
+    for s in 0..bca::SECTION_COUNT {
         if equipped[s] == 0 {
             continue;
         }
@@ -689,9 +693,13 @@ impl LegaiaViewer {
                     "id": it.id,
                     "name": name_of(it.id),
                     "class": it.partition.class.tag(),
+                    // The one-line label the file and the UI both carry.
+                    "describe": it.partition.class.describe(),
                     // `false` = the grip is open: the shaft inside the closed
                     // fist was never modelled, and no cut recovers it.
                     "complete": it.partition.class.is_complete(),
+                    // `false` = the host limb rides along (fused).
+                    "pure": it.partition.class.is_pure(),
                     "item_primitives": it.partition.item_primitives,
                     "item_vertices": it.partition.item_vertices,
                     "limb_primitives": it.partition.limb_primitives,
@@ -711,9 +719,9 @@ impl LegaiaViewer {
             // Per-bone-object geometry change vs the unequipped assembly.
             // Empty for an all-defaults loadout.
             "changed_objects": diffs,
-            // The held items this loadout carries, one per equipped weapon /
-            // Ra-Seru section, each with how cleanly it separates. Empty for
-            // armour-only loadouts - sections 0/1/4 have no item to cut.
+            // One entry per equipped section, each with how cleanly it
+            // separates (`class` / `describe`). Armour comes back `fused`,
+            // never missing.
             "items": items,
             "clips": clips,
         })
@@ -899,8 +907,11 @@ impl LegaiaViewer {
     /// no cutting strategy recovers it. The summary's `complete` flag says
     /// so, and callers must pass that on.
     ///
-    /// Empty when the section carries no separable item (armour sections
-    /// never do) or nothing is cached.
+    /// Every equipped section exports. A section with no material boundary
+    /// (armour, and the one single-palette weapon) comes back
+    /// [`equip_item::ItemClass::Fused`] - its whole contribution, item and
+    /// host geometry together, labelled as such in the root name. Empty only
+    /// when the section is at its unequipped default or nothing is cached.
     pub fn equipped_item_glb(&self, section: u32) -> Vec<u8> {
         let Some(c) = &self.equipped else {
             return Vec::new();
@@ -989,13 +1000,13 @@ impl LegaiaViewer {
             names.insert(*obj, format!("{who} - host limb (object {obj})"));
         }
         let root = format!(
-            "{item_name} - cut from {who}'s battle model ({}{})",
-            it.partition.class.tag(),
-            if it.partition.class.is_complete() {
-                ""
+            "{item_name} - {} {who}'s battle model ({})",
+            if it.partition.class.is_pure() {
+                "cut from"
             } else {
-                ", grip open"
-            }
+                "as spliced into"
+            },
+            it.partition.class.describe()
         );
         legaia_asset::character_gltf::build_character_glb_named(
             &root,

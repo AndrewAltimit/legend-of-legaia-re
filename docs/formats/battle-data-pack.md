@@ -256,7 +256,7 @@ Three classes over the 81 records ([`equip_item`](../../crates/asset/src/battle_
 | `own-object` | 6 | The item is already its own `0xFE` object - retail shipped the split. |
 | `separate` | 21 | Own connected component, **zero** shared vertices. Lossless. |
 | `welded` | 53 | Palette subset joined at the grip rim; 3-64 shared welded vertices. |
-| (none) | 1 | Noa's first Ra-Seru armband: one palette across the object, so no boundary. |
+| `fused` | 1 (+51 armour) | No material boundary: the section's whole contribution, item and host together. The one held-item case is Noa's first Ra-Seru armband (single palette across the object). |
 
 A `welded` cut is exact at primitive level but the exported item has an
 **open grip**: the shaft inside the closed fist was never modelled. Vahn's
@@ -264,10 +264,23 @@ Great Axe comes out with a visibly interrupted haft. That is a property of
 the disc - no cutting strategy recovers it, and a consumer must say so
 rather than cap it silently.
 
-Sections 0 / 1 / 4 (body, head, feet) are **not** separable and the parser
-refuses them: they carry no surplus object at all (`nobj == attach_count` in
-all 51 records), and their palette buckets split body from trim, not garment
-from body. There is no "body without armour" to subtract.
+Sections 0 / 1 / 4 (body, head, feet) have **no boundary to cut on**: they
+carry no surplus object at all (`nobj == attach_count` in all 51 records),
+and their palette buckets split body from trim, not garment from body. There
+is no "body without armour" to subtract. They are **not refused**. Every one
+of the 51 - and the single-palette Ra-Seru armband above - exports as a
+fifth class, `fused`: the section's whole contribution to the assembly
+(`AssembledCharacter::section_of`), item and host geometry together, with
+the class in the file's root name. That is a policy choice, completeness
+over purity: an armour export that carries the torso it is sculpted onto is
+more useful than no armour export, provided the file says which it is. Keyed
+on the section rather than on a diff against the bare model, because a
+section can be geometrically identical to the default and differ only in its
+texture pool (Noa's Green Robe is her starting robe) - and its objects are
+still what that equipment *is*.
+
+Over all 132 equipment records: `own-object` 6, `separate` 21, `welded` 53,
+`fused` 52. Nothing yields nothing.
 
 ### The `200+` surplus is a duplicate, except when it is not
 
@@ -1095,10 +1108,11 @@ Two parsers read these files:
   compares two assemblies.
 - [`legaia_asset::battle_char_assembly::equip_item`](../../crates/asset/src/battle_char_assembly/equip_item.rs)
   is the exact cut: `item_partition` splits an equipped weapon / Ra-Seru
-  section's objects into the held item and the limb by palette column, and
-  grades the result (see
+  section's objects into the held item and the limb by palette column, falls
+  through to `fused` (the section's whole contribution) where there is no
+  boundary, and grades the result (see
   [The item is still separable](#the-item-is-still-separable---by-palette-not-by-geometry)).
-  Swept over all 81 records by `crates/asset/tests/equip_item_real.rs`.
+  Swept over all 132 records by `crates/asset/tests/equip_item_real.rs`.
 - [`legaia_asset::battle_texture_catalog`](../../crates/asset/src/battle_texture_catalog.rs)
   catalogs the same files' texture-pool blocks as a texture tier -
   see [The catalog tier](#the-catalog-tier) - and `resolve_block` /
