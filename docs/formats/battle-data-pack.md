@@ -194,6 +194,208 @@ mesh's vertex pools byte-match exactly the `id = 0x43`, `0x22`, and `0x01`
 sections (and the defaults for the unequipped slots) - see
 [`character-mesh.md` § Battle form](character-mesh.md#battle-form---assembled-from-the-player-files).
 
+### Every section is bone geometry - the item is not its own object
+
+The thing to know before building anything on top of the descriptor table:
+**equipment is not modelled as a separate object that gets attached.** A
+section's slot carries whole **skeleton bone objects**, and selecting it
+replaces the bare object outright with a re-authored one that happens to
+include the gear. Vahn's right-hand bone (tag 5) measured across three of
+his weapon ids:
+
+| section 2 id | hand object | vertices | primitives |
+|---|---|---|---|
+| `0` (default) | bare fist | 40 | 52 |
+| `0x22` Survival Knife | fist + blade | 71 | 80 |
+| `0x33` Great Axe | fist + axe | 73 | 95 |
+| `0xBA` Astral Sword | fist + sword | 109 | 157 |
+
+Armour behaves the same way and can make an object *smaller*: Hunter
+Clothes (`0x43`) takes Vahn's torso from 79 vertices to 64. It is a
+re-sculpt, not a layer stacked on the bare body, and a full endgame set
+re-authors ten of his fifteen bone objects.
+
+Two readings that look right and are not:
+
+- **A positional set-difference does not find the added geometry.** The
+  equipped hand shares as few as **one** vertex position with the bare hand,
+  so a set-difference calls essentially the whole object new. What does
+  answer "what did this change" is a **radius envelope**: the centroid of the
+  bare object's vertices plus its reach, with equipped primitives classified
+  by whether their corners fall outside it. That leaves 4-31 primitives
+  straddling the boundary per weapon - the honest answer, since those
+  primitives really do belong to both hand and weapon. Presentation aid
+  [`battle_char_assembly::equip_diff`](../../crates/asset/src/battle_char_assembly/equip_diff.rs).
+- **The `200+` extras are not weapon meshes.** They are usually
+  byte-identical **duplicates** of the bone object they attach to, reached
+  only through the equipment-variant track at entry `+0xA4`, so drawing one
+  alongside its host z-fights a limb. Usually, not always - see
+  [The `200+` surplus](#the-200-surplus-is-a-duplicate-except-when-it-is-not)
+  below. The `100+` extras are ordinary geometry and do draw, on the
+  preceding bone's channel.
+
+### The item is still separable - by palette, not by geometry
+
+"Not its own object" is not the same as "inseparable". The separator is the
+primitive's **CLUT word** (`cba`): a weapon is drawn from its own palette
+column, and across all **81** section-2 / section-3 records **no primitive
+mixes the two**. The item is an exact primitive subset of the bone object,
+selected by material.
+
+Geometry alone would have missed this. **Connectivity** splits Gala's and
+most of Noa's weapons off cleanly but not Vahn's, which weld to the fist at
+the grip aperture; the CLUT partition is exact in every case. What tells the
+two buckets apart is the **joint**: a TMD object is authored about its own
+bone origin, so the flesh half always reaches the origin and the held item
+never does.
+
+Three classes over the 81 records ([`equip_item`](../../crates/asset/src/battle_char_assembly/equip_item.rs)):
+
+| Class | Records | Shape |
+|---|---:|---|
+| `own-object` | 6 | The item is already its own `0xFE` object - retail shipped the split. |
+| `separate` | 21 | Own connected component, **zero** shared vertices. Lossless. |
+| `welded` | 53 | Palette subset joined at the grip rim; 3-64 shared welded vertices. |
+| `fused` | 1 (+51 armour) | No material boundary: the section's whole contribution, item and host together. The one held-item case is Noa's first Ra-Seru armband (single palette across the object). |
+
+A `welded` cut is exact at primitive level but the exported item has an
+**open grip**: the shaft inside the closed fist was never modelled. Vahn's
+Great Axe comes out with a visibly interrupted haft. That is a property of
+the disc - no cutting strategy recovers it, and a consumer must say so
+rather than cap it silently.
+
+Sections 0 / 1 / 4 (body, head, feet) have **no boundary to cut on**: they
+carry no surplus object at all (`nobj == attach_count` in all 51 records),
+and their palette buckets split body from trim, not garment from body. There
+is no "body without armour" to subtract. They are **not refused**. Every one
+of the 51 - and the single-palette Ra-Seru armband above - exports as a
+fifth class, `fused`: the section's whole contribution to the assembly
+(`AssembledCharacter::section_of`), item and host geometry together, with
+the class in the file's root name. That is a policy choice, completeness
+over purity: an armour export that carries the torso it is sculpted onto is
+more useful than no armour export, provided the file says which it is. Keyed
+on the section rather than on a diff against the bare model, because a
+section can be geometrically identical to the default and differ only in its
+texture pool (Noa's Green Robe is her starting robe) - and its objects are
+still what that equipment *is*.
+
+Over all 132 equipment records: `own-object` 6, `separate` 21, `welded` 53,
+`fused` 52. Nothing yields nothing.
+
+### The item alone - an opinionated cut with a committed rule table
+
+The palette cut above answers an exact question and stops. The question a
+downloader usually asks - "give me just the great axe" - has **no exact
+answer on the disc**: the section re-authors the whole hand object, and
+nothing in it says which primitives are the axe and which are Vahn's wrist
+strap (which the palette cut, being about *material*, claims as item). So
+the item-alone export is a stated **policy** plus a committed per-record
+override table, and every result says whether a rule touched it
+([`equip_isolate`](../../crates/asset/src/battle_char_assembly/equip_isolate.rs),
+table `crates/asset/data/equip-isolation.toml`).
+
+The policy: **the item is everything the section spliced in that is not the
+character's own flesh or an unchanged piece of them.** "Unchanged" is read
+two ways, chosen per section:
+
+| Sections | Reading | Body = |
+|---|---|---|
+| headgear (1), held items (2 / 3) | **colour diff** | a primitive whose sampled texels mostly (`>= 0.5`) reappear, within one 5-bit step per channel, in what the *bare* counterpart object samples. The bare hand and head are exactly "no item", so what they show (skin, hair, wrist band, sleeve) is what the item is not. |
+| body (0), footwear (4) | **identity** | a primitive the bare object also carries with the **same corner positions and colours**. The bare torso and legs are the default *outfit*, not "nothing" - by colour alone a dark robe would be body because the default robe is dark. |
+
+Both readings are backed by a skin test on the primitive's texels: the
+generic peach band (`>= 0.6` of texels: `r > g > b`, `r >= 17/31`, hue
+8-45 degrees, saturation 0.2-0.68 - narrow enough that wood, leather and
+gold stay out) *or* the character's **own** face colours (`>= 0.45` of
+texels within two 5-bit steps of a warm texel of the bare head object -
+Gala's skin is too dark for the generic band). The Ra-Seru forms need it:
+Meta $7-$9 and Terra $4-$6 re-texture the fist they leave bare with a
+palette the bare hand never used. A `200+` surplus that is not a byte copy
+(the alternate pose of the same hand, see below) is a second copy of the
+limb, not a second piece of the item, and stays out.
+
+What the heuristic cannot know, the table says, per `(character, id)`: a
+mode override (`colour-diff` / `identity` / `whole` / `palette`), palette
+columns or whole bone-tag objects forced in or out, and explicit
+`"tag:ordinal"` primitives (ordinal = the primitive's position in the
+object's flat group walk, the numbering
+`legaia_tmd::mesh::tmd_to_vram_mesh_with_prim_ids` reports). Each rule
+carries a note saying what the visual pass saw. The cases the table exists
+for: Vahn's five Seals are a circlet on palette column 9 whose plainest two
+are four dark-metal primitives in the hair's shadow colours; Noa's robes are
+authored with two hair strands in the torso object's flesh column; Gala's
+plates cap the neck with quads half skin, half collar interior, and his
+Power Plate is a scatter of re-textured primitives over the default plate;
+Gala's Ra-Seru Club and Mace re-author the arm with a plate gauntlet in the
+same navy as his bare wrist band; his two headbands are dark leather that
+the colour diff loses and the identity reading finds. Every rule must name a
+record, a column, an object and primitives that exist -
+`crates/asset/tests/equip_isolate_real.rs` checks that, and that every one of
+the 132 records still keeps something and (for a held item) leaves the hand
+behind.
+
+Two things a consumer must not read into it. It is **not** the disc's
+answer - the exact cut above is, and it stays the record-keeping export. And
+"opinionated" is meant literally: whether a full-arm gauntlet, the elbow
+segment a Ra-Seru grows over, or the shorts an armour record re-authors are
+"the item" is a call, and the table is where a different call goes.
+
+### The grip is inferred: bridging the shaft the fist hid
+
+A welded item leaves the item-alone cut with an **open grip**. The stretch of
+haft inside the closed fist was never modelled - the fingers covered it - so
+Vahn's Great Axe comes away as an axe head on a stub of shaft plus a pommel
+end, each terminating in an open ring of vertices where it met the fingers.
+No cut recovers what was never drawn, but the two rings say what was there,
+and [`equip_repair`](../../crates/asset/src/battle_char_assembly/equip_repair.rs)
+infers it: weld the item-alone mesh by `(object, position)`, walk its
+boundary edges into closed loops, and pair loops that are the two ends of one
+straight shaft - **same object**, opening directions (taken from the
+geometry *behind* each rim, which for a prism runs along its axis; the rim
+itself may be oblique, a fist grips diagonally) within ~40 degrees of the
+line joining the centroids and pointing at each other, mean radii within
+2x, centroid gap at most 6 mean radii, lateral offset under 0.9 mean radii.
+Each pair is lofted into a tube by zipping the two rims by angle about the
+axis; the rim with more vertices donates UV / CBA-TSB / colour to every tube
+vertex, so the bridge reads as the shaft continuing rather than a smear
+between two texture spots. The result is marked `grip inferred` (with the
+bridge count and triangle count) in the summary, on the page and in the glTF
+root name, and only ever touches the item-alone export - the palette cut is
+never repaired.
+
+Measured over all 81 held-item records, nine take a bridge, all Vahn's
+(`0x22`-`0x24`, `0x2E`-`0x33`: the axes, maces and the shorter blades);
+Noa's and Gala's shafts are modelled through the fist. What the rule
+deliberately refuses: rims that face **away** from each other (a Ra-Seru
+armband cut from the forearm is open at both ends; a helmet's neck and crown
+holes) are never joined; a lone rim is never capped (a lid would be a guess
+about the silhouette, where a bridge is a guess only about a stretch between
+two ends that both exist); and rims on **different** objects are never
+paired - a cross-object variant compared in rest-pose world space was built,
+found no real grip (Vahn's swords put the blade on the hand object and the
+pommel block on the forearm, both *closed* at the fist, so there is nothing
+to bridge), and paired the elbow-facing rims of two Ra-Seru arm plates into
+a tube through the joint, which is why the same-bone rule is data rather
+than caution. `crates/asset/tests/equip_repair_real.rs` sweeps the 81
+records (only ever additive, every bridge inside the section's objects, the
+Great Axe closes) and, with `LEGAIA_EQUIP_SHEETS=<dir>`, writes a
+before / after contact sheet per character through the software rasteriser
+in `legaia_asset::mesh_raster` - the same renderer that draws the site's
+per-item cards.
+
+### The `200+` surplus is a duplicate, except when it is not
+
+Across the four player files' single-section assemblies, most `0xFF` (tag
+`200+`) surplus objects are byte-copies of their attach bone - same vertex
+pool, same primitive block. **Sixteen are not**: all of Noa's section-2
+records, four of her section-3 ones, and three of Gala's section-3 ones. In
+six of those the `0xFF` surplus is the *bare hand* while a `0xFE` extra
+holds the weapon alone.
+
+So "skip every `200+` object" drops real geometry, and "draw every `200+`
+object" z-fights a limb. The test is a byte comparison against the attach
+bone: `AssembledCharacter::duplicate_objects`.
+
 ## Slot region
 
 At `data_base + entry.offset`:
@@ -999,6 +1201,25 @@ Two parsers read these files:
   relocation (`relocate_tsb_cba`), and the texture-pool uploads at the
   pinned placement (`character_texture_uploads` and friends - see
   [Texture-pool VRAM placement](#texture-pool-vram-placement)).
+- [`legaia_asset::battle_char_assembly::equip_diff`](../../crates/asset/src/battle_char_assembly/equip_diff.rs)
+  is the presentation-side sibling: it classifies what one loadout changed
+  against the all-defaults assembly by the radius-envelope test described in
+  [Every section is bone geometry](#every-section-is-bone-geometry---the-item-is-not-its-own-object).
+  Approximate by construction, and not a port of anything - retail never
+  compares two assemblies.
+- [`legaia_asset::battle_char_assembly::equip_item`](../../crates/asset/src/battle_char_assembly/equip_item.rs)
+  is the exact cut: `item_partition` splits an equipped weapon / Ra-Seru
+  section's objects into the held item and the limb by palette column, falls
+  through to `fused` (the section's whole contribution) where there is no
+  boundary, and grades the result (see
+  [The item is still separable](#the-item-is-still-separable---by-palette-not-by-geometry)).
+  Swept over all 132 records by `crates/asset/tests/equip_item_real.rs`.
+- [`legaia_asset::battle_char_assembly::equip_isolate`](../../crates/asset/src/battle_char_assembly/equip_isolate.rs)
+  is the opinionated cut on top of it: `isolate_item` keeps the item alone
+  (no limb, no skin, no unchanged default) under a per-section reading plus
+  the committed override table `crates/asset/data/equip-isolation.toml`
+  (see [The item alone](#the-item-alone---an-opinionated-cut-with-a-committed-rule-table)).
+  Swept, with the table's integrity, by `crates/asset/tests/equip_isolate_real.rs`.
 - [`legaia_asset::battle_texture_catalog`](../../crates/asset/src/battle_texture_catalog.rs)
   catalogs the same files' texture-pool blocks as a texture tier -
   see [The catalog tier](#the-catalog-tier) - and `resolve_block` /
