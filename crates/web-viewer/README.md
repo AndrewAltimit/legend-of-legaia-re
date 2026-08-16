@@ -819,9 +819,13 @@ this build has a decoder for that format and no encoder. The battle character
 art (PROT 863..866, `legaia_asset::battle_texture_catalog`) is likewise
 headerless and likewise invisible to a TIM scan, but does have an encoder, so
 it is replaceable - against its record's own slot allocation rather than a
-stream length, which is a budget that can genuinely be missed. A `Tier` says
-which it is, and a family that declares itself read-only cannot resolve a
-write.
+stream length, which is a budget that can genuinely be missed. The monster
+battle skins (PROT 867, `legaia_asset::monster_archive::MonsterPage`) are a
+third headerless family, one page per enemy inside its own compressed archive
+slot, and they carry the registry's only per-texel decode: a monster page has
+no single colouring, so each texel renders through the palette of the polygon
+that samples it. A `Tier` says which it is, and a family that declares itself
+read-only cannot resolve a write.
 
 A row carries derived metadata only: coordinates, dimensions, palette count,
 byte length, VRAM placement, a label, and an FNV-1a-64 fingerprint of the
@@ -830,7 +834,9 @@ keyed by fingerprint - or composed per row from disc data, which is why it is a
 `Cow`: the battle-art tier joins each block to the equipment it dresses, so
 `ScanCtx` carries the disc's `SCUS_942.54` item-name table alongside
 `PROT.DAT`. That join is what makes the family searchable by the word a person
-would actually type. The scan is a streaming pass into a caller sink -
+would actually type. The monster tier composes its label the same way and adds
+the id - `"Songi #179"` - because retail reuses monster names freely, so the
+name alone would produce rows a person cannot tell apart. The scan is a streaming pass into a caller sink -
 full-size pixels for every texture on the disc would not fit in 32-bit WASM
 memory - and `ScanCtx` keeps exactly one decompressed entry, which is enough
 because the compressed tier's rows arrive grouped by entry.

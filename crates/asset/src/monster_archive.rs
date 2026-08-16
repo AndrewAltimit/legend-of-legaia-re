@@ -192,11 +192,13 @@ mod animation;
 mod mesh;
 mod record;
 mod slim;
+mod texture_page;
 
 pub use animation::*;
 pub use mesh::*;
 pub use record::*;
 pub use slim::*;
+pub use texture_page::*;
 
 pub(crate) use animation::{ANIM_RATE_OFFSET, effect_script_head, parse_animation_stream};
 

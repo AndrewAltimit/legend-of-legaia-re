@@ -2921,6 +2921,47 @@ are labelled from the disc's own item-name table, so the search box reaches
 them by the equipment's name rather than by coordinate - typing `terra` finds
 Noa's Ra-Seru armband.
 
+**The monster tier is not TIMs either.** Every enemy and boss wears one 4bpp
+page inside its own LZS-compressed slot of the monster archive (PROT 867), as a
+bare `[15 x 16 BGR555][w*h/2 bytes]` pool - no magic word, and the page rect
+comes from the loader's `StoreImage` call. The TIM catalogs report a handful of
+rows in that entry and every one of them sits in the unused tail slots past the
+last monster, so before this family the whole bestiary was unreachable from any
+texture tool. 186 pages enumerate: 149 are 128x256 and 37 are 256x256. The
+browser grid lists them under the family id `monster`, addressed
+`(entry 867, section = 1-based monster id, offset = pool offset)`, and labels
+each row `"<name> #<id>"` - the id belongs in the label because retail reuses
+names freely (three monsters are called Songi, six are called Cort), so
+`songi` reaches all three fights and `songi #179` reaches the transformed form.
+
+Two rules of its own, both consequences of the format:
+
+- **No page has one colouring.** A primitive picks a palette with its CBA
+  column, so a texel's colour is a property of the polygon that samples it.
+  The grid decodes through a per-texel ownership map built by walking the
+  embedded TMD: a texel goes to the polygon whose UV *polygon* contains it
+  (lowest palette id wins a contested texel, one texel of dilation covers
+  nearest-texel sampling at an island's edge), and a texel no polygon claims
+  decodes transparent. Containment rather than the UV bounding box, because a
+  page is art islands with filler between them and a box around a diagonal
+  face swallows the filler beside it. Decoding a whole page through palette 0
+  instead - the obvious convention - paints the 44% of Songi #179's page that
+  lives on indices 14 and 15 pure red and pure green: that green/red
+  checkerboard is retail's own filler seen through a palette nothing reads it
+  with, not a decode fault and not a marker the exporter adds. (Songi #76's
+  filler is neutral, which is why it never showed one.) The composite leaves
+  ~2.8% of #179's page reading lurid where a box-based cover left ~6.8%.
+- **The palettes are never rewritten.** A monster's CLUT region uploads to
+  VRAM verbatim, so the `0x8000` bit in an entry is live semi-transparency
+  state the GPU samples - and an RGBA image cannot express it. (Measured
+  across the retail archive: 996 of 27,097 non-zero entries carry bit 15, 151
+  of them exactly `0x8000`, opaque black.) A replacement therefore re-indexes
+  each texel within the colours its own region already holds, exactly or -
+  with `--quantize` - through the nearest one. The fit budget is the fixed
+  `0x14000` archive slot; an overage is reported with its byte count and
+  nothing is written. Port `legaia_patcher::monster_texture`; page decode
+  `legaia_asset::monster_archive::MonsterPage`.
+
 ### Re-pack slack
 
 A scene MAN is packed with **no compressed slack** (the next asset starts right

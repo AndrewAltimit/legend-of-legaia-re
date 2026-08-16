@@ -39,6 +39,7 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 
 use legaia_patcher::battle_texture::BattleTextureTarget;
+use legaia_patcher::monster_texture::MonsterTextureTarget;
 use legaia_patcher::texture::TextureTarget;
 
 /// A VRAM rectangle: `(x, y, width in framebuffer units, height)`.
@@ -133,6 +134,11 @@ pub enum ReplaceOp {
     /// allocation is pinned by the descriptor chain, so the whole record is
     /// re-compressed into that allocation or the write is refused.
     BattleEquip(BattleTextureTarget),
+    /// A monster's 4bpp battle-skin page, written through
+    /// `legaia_patcher::monster_texture`. The whole monster block is
+    /// re-compressed into its fixed `0x14000` archive slot, and the pool's
+    /// palettes are never rewritten - see that module for why.
+    MonsterPage(MonsterTextureTarget),
 }
 
 /// A texture family.
@@ -254,6 +260,13 @@ pub const TIER_SAVE_ICON: &str = "save-icon";
 pub const TIER_SUMMON: &str = "summon";
 /// `tier` id of the battle-equipment character art (PROT 863..866).
 pub const TIER_BATTLE_EQUIP: &str = "battle-equip";
+/// `tier` id of the monster battle-skin pages (PROT 867).
+pub const TIER_MONSTER: &str = "monster";
+
+/// PROT entry holding the monster archive. Every row of the monster family
+/// lives here, so the coordinate's `entry` is this and its `section` is the
+/// monster id.
+pub const MONSTER_ARCHIVE_ENTRY: i64 = 867;
 
 /// Sub-palette used to preview a summon texture page. The page is 4bpp
 /// against a 256-entry CLUT row, so a viewer must pick one 16-colour window;
@@ -328,6 +341,18 @@ pub fn tiers() -> &'static [Tier] {
             scan: scan_battle_equip,
             read: read_battle_equip,
             op: op_battle_equip,
+        },
+        Tier {
+            id: TIER_MONSTER,
+            title: "Monster battle skins",
+            about: "Every enemy's and boss's 4bpp page, one per monster \
+                    inside its own compressed archive slot (PROT 867). Named \
+                    after the monster. Replaceable when the edit recompresses \
+                    into that slot; the page's palettes are never rewritten.",
+            replaceable: true,
+            scan: scan_monster,
+            read: read_monster,
+            op: op_monster,
         },
     ]
 }
@@ -811,6 +836,121 @@ fn op_battle_equip(c: &TexCoord) -> Result<ReplaceOp, String> {
     Ok(ReplaceOp::BattleEquip(BattleTextureTarget {
         entry,
         slot: battle_slot(c.section)?,
+    }))
+}
+
+// --- Monster battle skins ----------------------------------------------------
+//
+// The family behind "I searched for Songi and got nothing". A monster's
+// pixels sit inside its LZS-compressed archive slot as a bare
+//
+//     [15 x 16 BGR555][w*h/2 bytes of 4bpp]
+//
+// with no magic word and no geometry - the page rect comes from the loader's
+// StoreImage call. So the raw TIM catalog reports nothing for PROT 867 and
+// the compressed one reports a single 64x64 effect texture: every enemy,
+// boss and their Ra-Seru was invisible to this grid.
+//
+// Two things this family does differently from the others:
+//
+//   * A row is named after the monster, and monster names repeat - "Songi"
+//     is ids 76, 136 and 179 (the fight at Rim Elm, the one at Sol, and the
+//     transformed form). So the label carries the id as well, and both are
+//     searchable.
+//   * There is no single palette to decode a page through. A prim picks one
+//     with its CBA column, so the page decodes through a per-texel ownership
+//     map instead (`legaia_asset::monster_archive::MonsterPage`). Decoding
+//     id 179 through palette 0 instead paints 44% of its page pure red and
+//     green - a plausible-looking wrong image.
+
+/// The monster id a coordinate's `section` names.
+fn monster_id(section: i64) -> Result<u16, String> {
+    u16::try_from(section)
+        .ok()
+        .filter(|&id| id > 0)
+        .ok_or_else(|| format!("{section} is not a monster id"))
+}
+
+/// One monster's page, loaded from the archive entry.
+fn monster_page(ctx: &ScanCtx<'_>, id: u16) -> Option<legaia_asset::monster_archive::MonsterPage> {
+    let entry = ctx.entry_bytes(MONSTER_ARCHIVE_ENTRY as u32)?;
+    legaia_asset::monster_archive::page(entry, id)
+        .ok()
+        .flatten()
+}
+
+/// The row one page emits. Split out so the scan and the single-row read
+/// agree about coordinates and dimensions by construction.
+fn monster_row(page: &legaia_asset::monster_archive::MonsterPage) -> TexRow {
+    TexRow {
+        coord: TexCoord {
+            tier: TIER_MONSTER,
+            entry: MONSTER_ARCHIVE_ENTRY,
+            section: page.id as i64,
+            offset: page.pool_offset as u64,
+        },
+        width: page.width() as u32,
+        height: page.height() as u32,
+        bpp: 4,
+        cluts: page.palettes_populated(),
+        bytes: page.byte_len(),
+        // The id is part of the name, not decoration: six monsters are
+        // called "Cort" and three are called "Songi", and a person picking
+        // a row out of the grid has to be able to tell them apart.
+        label: Some(Cow::Owned(format!("{} #{}", page.name, page.id))),
+        fnv1a: fnv1a64(page.pool_bytes()),
+        // Where a monster's page lands in VRAM is a function of its battle
+        // slot, decided at battle load, so there is no one rect to report.
+        vram: None,
+        clut_vram: None,
+    }
+}
+
+fn scan_monster(ctx: &ScanCtx<'_>, want_pixels: bool, sink: &mut Sink<'_>) -> Result<(), String> {
+    use legaia_asset::monster_archive as ma;
+    let Some(entry) = ctx.entry_bytes(MONSTER_ARCHIVE_ENTRY as u32) else {
+        return Ok(());
+    };
+    for id in 1..=ma::slot_count(entry) as u16 {
+        // A filler slot, a slot with no mesh, or a slot with no pool
+        // contributes nothing - and a genuine LZS failure on one monster
+        // must not take the whole grid down with it.
+        let Ok(Some(page)) = ma::page(entry, id) else {
+            continue;
+        };
+        let rgba = want_pixels.then(|| {
+            let owner = page.ownership();
+            Rgba {
+                w: page.width(),
+                h: page.height(),
+                data: page.rgba(&owner),
+            }
+        });
+        sink(monster_row(&page), rgba)?;
+    }
+    Ok(())
+}
+
+fn read_monster(ctx: &ScanCtx<'_>, c: &TexCoord) -> Result<Rgba, String> {
+    let id = monster_id(c.section)?;
+    let page = monster_page(ctx, id).ok_or_else(|| format!("monster id {id} has no page"))?;
+    if page.pool_offset as u64 != c.offset {
+        return Err(format!(
+            "monster id {id}'s pool is at +0x{:X}, not +0x{:X}",
+            page.pool_offset, c.offset
+        ));
+    }
+    let owner = page.ownership();
+    Ok(Rgba {
+        w: page.width(),
+        h: page.height(),
+        data: page.rgba(&owner),
+    })
+}
+
+fn op_monster(c: &TexCoord) -> Result<ReplaceOp, String> {
+    Ok(ReplaceOp::MonsterPage(MonsterTextureTarget {
+        id: monster_id(c.section)?,
     }))
 }
 

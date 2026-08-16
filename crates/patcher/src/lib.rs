@@ -90,6 +90,7 @@ pub(crate) mod mips;
 pub mod monster;
 pub mod monster_class;
 pub mod monster_stats;
+pub mod monster_texture;
 pub mod move_power;
 pub mod ppf;
 pub mod rewards;

@@ -209,6 +209,18 @@ pub fn identify(patcher: &DiscPatcher, coord: &TexCoord) -> Result<Ident, String
                 bpp: 4,
             })
         }
+        ReplaceOp::MonsterPage(target) => {
+            let page = legaia_patcher::monster_texture::read_page(patcher, &target)
+                .map_err(|e| format!("{e:#}"))?;
+            // The same window the scan fingerprints: the pool as stored,
+            // palettes then pixels.
+            Ok(Ident {
+                fnv1a: fnv1a64(page.pool_bytes()),
+                width: page.width() as u32,
+                height: page.height() as u32,
+                bpp: 4,
+            })
+        }
     }
 }
 

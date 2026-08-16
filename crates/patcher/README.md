@@ -46,8 +46,9 @@ Three patching families share that machinery:
   the knob into an AP *drain*. The `tim-list` / `tim-export` / `tim-replace`
   subcommands replace any texture on the disc with a user-authored PNG
   ([`texture`](#texture-replacement-texture-module)), including the party's
-  in-battle character art, which is not a TIM at all
-  ([`battle_texture`](#battle-character-art-battle_texture-module)).
+  in-battle character art and every monster's battle skin, neither of which
+  is a TIM at all ([`battle_texture`](#battle-character-art-battle_texture-module),
+  [`monster_texture`](#monster-battle-skins-monster_texture-module)).
 
 It is Track-1-adjacent tooling - it does **not** touch the clean-room engine -
 and it ships only code: no game bytes are embedded or committed, and every
@@ -101,6 +102,7 @@ full design.
   - [Name injection](#name-injection)
 - [Texture replacement](#texture-replacement-texture-module)
 - [Battle character art](#battle-character-art-battle_texture-module)
+- [Monster battle skins](#monster-battle-skins-monster_texture-module)
 - [Save-slot portraits](#save-slot-portraits-save_icon-module)
 - [Translation packs](#translation-packs)
 - [Orchestration (`apply`)](#orchestration-apply)
@@ -1233,6 +1235,29 @@ The CLI loop is `tim-list --tier battle` -> `tim-export --battle-slot`
 -> edit -> `tim-replace --battle-slot` (`--clut N` picks the palette).
 Format reference:
 [`docs/formats/battle-data-pack.md`](../../docs/formats/battle-data-pack.md#the-upload-block-is-not-a-tim).
+
+## Monster battle skins (`monster_texture` module)
+
+Every enemy and boss wears one 4bpp page inside its own LZS-compressed slot
+of the monster archive (PROT 867), stored as a bare `[15 x 16 BGR555][w*h/2
+bytes]` pool with the page rect coming from the loader's `StoreImage` call.
+186 pages: 149 are 128x256, 37 are 256x256. No magic word again, so neither
+TIM catalog reaches one - the rows they do report in that entry all sit in
+the archive's unused tail slots.
+
+Two rules are this family's own. **The palettes are never rewritten.** A
+monster's CLUT region uploads to VRAM verbatim, so the `0x8000` bit in an
+entry is live semi-transparency state the GPU samples, and an RGBA image
+cannot express it (996 of the archive's 27,097 non-zero entries carry it).
+A replacement re-indexes each texel within the colours its own region
+already holds - exactly, or through the nearest one with `quantize` - so it
+can never break the colouring of a region it did not touch. And **a page has
+no single colouring**: a primitive picks its palette with its CBA column, so
+`export_page` decodes through
+[`MonsterPage::ownership`](../asset/README.md#monster_archive) and leaves
+texels no primitive samples transparent. The fit budget is the fixed
+`0x14000` archive slot; an overage is reported with its byte count and
+nothing is written.
 
 ## Save-slot portraits (`save_icon` module)
 

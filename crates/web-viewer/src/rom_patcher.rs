@@ -1699,7 +1699,7 @@ pub fn export_lang_pack(image: Vec<u8>, language: &str) -> Result<String, JsValu
 // family does not touch this file.
 
 use legaia_patcher::texture::replace_texture;
-use legaia_patcher::{battle_texture, save_icon};
+use legaia_patcher::{battle_texture, monster_texture, save_icon};
 use legaia_tim::encode::{EncodeOptions, decode_png_rgba};
 
 use crate::texture_pack::{self, PackEntry, PackMeta};
@@ -2162,6 +2162,55 @@ pub fn preview_texture_replace(
                 Err(e) => return fail(&out, format!("{e:#}")),
             }
         }
+        ReplaceOp::MonsterPage(target) => {
+            let orig = monster_texture::export_page(&patcher, &target)
+                .map_err(|e| err(format!("read monster texture: {e:#}")))?;
+            Reflect::set(
+                &out,
+                &"original".into(),
+                &rgba_js(orig.width, orig.height, &orig.rgba)?,
+            )?;
+            Reflect::set(&out, &"width".into(), &num(orig.width as f64))?;
+            Reflect::set(&out, &"height".into(), &num(orig.height as f64))?;
+            Reflect::set(&out, &"bpp".into(), &num(4.0))?;
+            Reflect::set(&out, &"cluts".into(), &num(orig.palettes_populated as f64))?;
+
+            let (pw, ph, rgba) = match decode_png_rgba(png) {
+                Ok(v) => v,
+                Err(e) => return fail(&out, format!("read PNG: {e}")),
+            };
+            match monster_texture::preview_page(&patcher, &target, &rgba, pw, ph, quantize) {
+                Ok(p) => {
+                    Reflect::set(&out, &"preview".into(), &rgba_js(pw, ph, &p.rgba)?)?;
+                    // This family never rewrites a palette (a monster's CLUTs
+                    // upload verbatim, so their blend bits are live state), so
+                    // the page's own counter is texels re-indexed instead.
+                    Reflect::set(&out, &"new_palette_entries".into(), &num(0.0))?;
+                    Reflect::set(
+                        &out,
+                        &"quantized_pixels".into(),
+                        &num(p.quantized_texels as f64),
+                    )?;
+                    Reflect::set(
+                        &out,
+                        &"texels_changed".into(),
+                        &num(p.texels_changed as f64),
+                    )?;
+                    Reflect::set(
+                        &out,
+                        &"dead_texels_ignored".into(),
+                        &num(p.dead_texels_ignored as f64),
+                    )?;
+                    let f = Object::new();
+                    Reflect::set(&f, &"capacity".into(), &num(p.fit.capacity as f64))?;
+                    Reflect::set(&f, &"recompressed".into(), &num(p.fit.recompressed as f64))?;
+                    Reflect::set(&out, &"fit".into(), &f)?;
+                    Reflect::set(&out, &"ok".into(), &JsValue::from_bool(true))?;
+                    Reflect::set(&out, &"error".into(), &"".into())?;
+                }
+                Err(e) => return fail(&out, format!("{e:#}")),
+            }
+        }
     }
     Ok(out.into())
 }
@@ -2294,6 +2343,47 @@ pub fn apply_texture_replacements(image: Vec<u8>, specs: JsValue) -> Result<JsVa
                     outcome.palette,
                     if outcome.quantized_pixels > 0 {
                         format!(", {} pixel(s) quantized", outcome.quantized_pixels)
+                    } else {
+                        String::new()
+                    },
+                    if outcome.unchanged {
+                        " - identical to retail, nothing written".to_string()
+                    } else {
+                        format!(
+                            ", recompressed {}B into the {}B slot",
+                            outcome.fit.recompressed, outcome.fit.capacity
+                        )
+                    },
+                ));
+            }
+            ReplaceOp::MonsterPage(target) => {
+                let outcome = monster_texture::replace_page(
+                    &mut patcher,
+                    &target,
+                    &rgba,
+                    w,
+                    h,
+                    spec.quantize,
+                    false,
+                )
+                .map_err(|e| err(format!("monster texture {i} ({target}): {e:#}")))?;
+                summary.push_str(&format!(
+                    "monster skin: {} #{} repainted ({}x{} 4 bpp, {} texel(s) changed{}{}{})\n",
+                    outcome.name,
+                    outcome.id,
+                    outcome.width,
+                    outcome.height,
+                    outcome.texels_changed,
+                    if outcome.quantized_texels > 0 {
+                        format!(", {} folded onto a nearer colour", outcome.quantized_texels)
+                    } else {
+                        String::new()
+                    },
+                    if outcome.dead_texels_ignored > 0 {
+                        format!(
+                            ", {} painted where nothing samples the page (ignored)",
+                            outcome.dead_texels_ignored
+                        )
                     } else {
                         String::new()
                     },

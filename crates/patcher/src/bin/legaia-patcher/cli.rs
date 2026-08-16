@@ -305,7 +305,13 @@ pub(crate) enum Cmd {
         /// prints both columns.
         #[arg(long, value_parser = parse_battle_slot)]
         battle_slot: Option<BattleTextureSlot>,
-        /// Palette index to decode with (multi-palette textures only).
+        /// Monster-tier selector: the 1-based monster id `tim-list --tier
+        /// monster` prints. Needs no --entry; the archive is always 867.
+        #[arg(long)]
+        monster_id: Option<u16>,
+        /// Palette index to decode with (multi-palette textures only). The
+        /// monster tier ignores it - each texel is decoded through the
+        /// palette the model reads it with.
         #[arg(long, default_value_t = 0)]
         clut: usize,
         /// Where to write the PNG.
@@ -338,6 +344,11 @@ pub(crate) enum Cmd {
         /// `header1`. Needs --entry (863..866).
         #[arg(long, value_parser = parse_battle_slot)]
         battle_slot: Option<BattleTextureSlot>,
+        /// Monster-tier selector: the 1-based monster id. This tier never
+        /// rewrites a palette, so the replacement may only use colors the
+        /// monster's own palettes already hold (or pass --quantize).
+        #[arg(long)]
+        monster_id: Option<u16>,
         /// Battle tier only: which palette of the block to encode against.
         /// The other palettes of the same block stay byte-identical.
         #[arg(long, default_value_t = 0)]
@@ -433,6 +444,10 @@ pub(crate) enum TimTierArg {
     /// (PROT 863..866). Not TIMs at all - no magic, no header - so no
     /// magic scan can reach them.
     Battle,
+    /// The headerless 4bpp battle skin every enemy and boss wears, one page
+    /// per monster inside its own compressed archive slot (PROT 867). Also
+    /// not TIMs, and listed by monster name + id.
+    Monster,
     /// Every tier.
     All,
 }

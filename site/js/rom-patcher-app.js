@@ -1066,6 +1066,9 @@ function texDesc(t) {
       : `shared header block ${-1 - t.section}`;
     return `battle art · entry ${t.entry} ${slot} +${off}`;
   }
+  // A monster sheet is addressed by the archive slot the monster occupies,
+  // and that slot number IS the monster id every other tool prints.
+  if (t.tier === 'monster') return `monster skin · id ${t.section} +${off}`;
   const where = t.entry < 0 ? `gap +${off}`
     : t.section >= 0 ? `entry ${t.entry} sec ${t.section} +${off}`
       : `entry ${t.entry} +${off}`;
@@ -1322,10 +1325,16 @@ function setupTextureReplacer(wasm, discBytes) {
     // "no palette of its own" is not "no palette" on the battle-art family:
     // such a block is still 4bpp and samples one a sibling block installed
     // on the shared row, so calling it direct colour would be wrong.
+    // A monster sheet has no single colouring: each polygon picks a palette
+    // with its CBA column, so the grid shows every texel through the palette
+    // that actually reads it. Saying "1 of N" here would be a claim the
+    // bytes do not make.
     add('Palettes', t.cluts > 0
       ? `${t.cluts}` + (t.tier === 'battle-equip' && t.cluts > 1
         ? ' - shown and replaced through the first; the others recolour the same pixels'
-        : '')
+        : t.tier === 'monster'
+          ? ' populated - each part of the model reads its own, and the preview uses them all'
+          : '')
       : t.tier === 'battle-equip'
         ? 'none of its own - it borrows one another block installs'
         : 'none (direct colour)');
@@ -1344,6 +1353,13 @@ function setupTextureReplacer(wasm, discBytes) {
       // one, so "it did not fit" is a normal answer here.
       add('Replaceable', 'yes, if your edit re-compresses into this record\'s own ' +
         'slot (some are within a few bytes of full - the preview measures it exactly)');
+    } else if (t.tier === 'monster') {
+      // The palettes are off-limits here, and that is not a shortcut: a
+      // monster's CLUTs upload to VRAM verbatim, so the bit that marks a
+      // colour semi-transparent is live state a PNG cannot carry.
+      add('Replaceable', 'yes, if your edit re-compresses into this monster\'s own ' +
+        'archive slot. The palettes are never rewritten - repaint with the colors already ' +
+        'in the exported sheet, or tick "fold" to snap strays onto the nearest one');
     } else {
       add('Replaceable', `yes - written in place, same ${t.bytes} bytes`);
     }
@@ -1402,6 +1418,13 @@ function setupTextureReplacer(wasm, discBytes) {
         const bits = ['Valid - ready to add.'];
         if (r.new_palette_entries) bits.push(`${r.new_palette_entries} new palette color(s).`);
         if (r.quantized_pixels) bits.push(`${r.quantized_pixels} pixel(s) folded to a nearest color.`);
+        // Monster pages only: the parts of the sheet no polygon samples are
+        // dead bytes, so paint there is reported rather than written. Saying
+        // nothing would look like the edit landed and did nothing.
+        if (r.dead_texels_ignored) {
+          bits.push(`${r.dead_texels_ignored} pixel(s) fall where nothing on the model reads the ` +
+            'sheet - those are left as they are.');
+        }
         if (r.fit) bits.push(`Re-compresses to ${r.fit.recompressed} of the ${r.fit.capacity} available bytes.`);
         setVerdict(bits.join(' '), 'ok');
         addBtn.disabled = false;
