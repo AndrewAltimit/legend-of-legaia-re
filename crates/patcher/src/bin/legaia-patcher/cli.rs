@@ -11,9 +11,9 @@ use legaia_patcher::apply;
 use legaia_patcher::drops::DropMode;
 
 use crate::util::{
-    parse_arts_ap_cost, parse_arts_ap_grant, parse_arts_power, parse_delilas_party,
-    parse_exp_scale, parse_item_spec, parse_location_rename, parse_prize_price,
-    parse_seru_catch_rate, parse_stat_scale,
+    parse_arts_ap_cost, parse_arts_ap_grant, parse_arts_power, parse_attack_count_scale,
+    parse_delilas_party, parse_exp_scale, parse_item_spec, parse_location_rename,
+    parse_prize_price, parse_seru_catch_rate, parse_stat_scale,
 };
 
 #[derive(Parser)]
@@ -1018,6 +1018,21 @@ pub(crate) struct RandomizeArgs {
     /// still applies on top (capped by the roll's own d100).
     #[arg(long, value_name = "PCT", value_parser = parse_seru_catch_rate)]
     pub(crate) seru_catch_rate: Option<u8>,
+    /// **Scale how many hits enemies land with their standard attacks** by a
+    /// multiplier (`0.1x..=5x`, retail `1`): `--enemy-attack-count 2` roughly
+    /// doubles every enemy's physical strikes per turn, `0.5` halves them.
+    /// Retail prices each attack in AGL and lets the per-round AGL gauge
+    /// afford as many strikes as fit, so this divides each attack entry's
+    /// AGL-cost byte by the multiplier while leaving AGL itself alone -
+    /// composing cleanly with `--enemy-stat-scale`, which never touches AGL.
+    /// Scaled costs round half up and clamp so an enemy that attacks in
+    /// retail always lands **at least one** hit per attack turn (never zero),
+    /// and the engine's own 15-action queue bounds the top end. Unavailable
+    /// (`0xFF`) and deliberately overpriced entries are left alone, so
+    /// movesets never change - only counts. Spell casts are untouched. Only
+    /// the unwinnable-by-design Rim Elm sparring partner is pinned. Seedless.
+    #[arg(long, value_name = "MULT", value_parser = parse_attack_count_scale)]
+    pub(crate) enemy_attack_count: Option<legaia_patcher::monster_stats::ScalePermille>,
     /// How special-attack power is reassigned (the battle-action move-power
     /// table - enemy specials + Seru-magic, NOT party Tactical Arts). `shuffle`
     /// permutes the 44 power values (multiset preserved); `random` draws each

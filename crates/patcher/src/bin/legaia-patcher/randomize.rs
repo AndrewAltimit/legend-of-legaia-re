@@ -869,6 +869,33 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("seru_catch_rate = \"retail\"".to_string());
     }
 
+    // Enemy attack-count multiplier: divides each attack entry's AGL-cost
+    // byte so the per-round AGL budget affords more (or fewer) strikes.
+    // Seedless, like the difficulty scale.
+    if let Some(scale) = args.enemy_attack_count {
+        let report = apply::scale_enemy_attack_count(&mut patcher, scale)?;
+        println!(
+            "enemy attack count: {scale} ({} monsters changed, {} attack entries)",
+            report.monsters_changed, report.entries_changed
+        );
+        if !report.skipped.is_empty() {
+            println!(
+                "  note: {} monster slot(s) too tight to re-pack, left unchanged: {:?}",
+                report.skipped.len(),
+                report.skipped
+            );
+            manifest.push(format!("enemy_attack_count_skipped = {:?}", report.skipped));
+        }
+        manifest.push(format!("enemy_attack_count = {:?}", scale.to_string()));
+        manifest.push(format!(
+            "enemy_attack_count_monsters_changed = {}",
+            report.monsters_changed
+        ));
+    } else {
+        println!("enemy attack count: 1x (retail)");
+        manifest.push("enemy_attack_count = \"retail\"".to_string());
+    }
+
     if let Some(move_power_mode) = move_power_mode {
         let changed = apply::randomize_move_powers(&mut patcher, seed, move_power_mode)?;
         println!("move power: {changed} special-attack power(s) changed ({move_power_mode:?})");

@@ -231,6 +231,17 @@ status = "shipped"
 test = "monster_stats_real.rs"
 
 [[mod]]
+key = "enemy_attack_count"
+name = "Enemy attack count"
+flag = "--enemy-attack-count"
+tier = "B"
+target = "Monster archive (PROT 867) slot, each affordable attack entry's AGL-cost byte at entry +0x74, divided by the multiplier so the AGL gauge affords more (or fewer) strikes"
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "attack_count_real.rs"
+
+[[mod]]
 key = "weapon_specialty"
 name = "Weapon specialty"
 flag = "--weapon-specialty"

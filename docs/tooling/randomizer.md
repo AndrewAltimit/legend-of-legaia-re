@@ -83,6 +83,7 @@ disc-gated, so CI runs without a disc. There is also a
     - [Which enemies count as bosses](#which-enemies-count-as-bosses)
   - [Experience multiplier](#experience-multiplier)
   - [Seru catch rate](#seru-catch-rate)
+  - [Enemy attack count](#enemy-attack-count)
   - [Special-attack power](#special-attack-power)
   - [Element-affinity matrix](#element-affinity-matrix)
   - [Spell MP costs](#spell-mp-costs)
@@ -203,6 +204,7 @@ legaia-patcher randomize --input DISC.bin --enemy-stat-scale 2                  
 legaia-patcher randomize --input DISC.bin --enemy-stat-scale 0.5                          # a relaxed run: half-strength enemies
 legaia-patcher randomize --input DISC.bin --enemy-stat-scale hp=3                         # spongy, not lethal: only enemy HP is scaled
 legaia-patcher randomize --input DISC.bin --enemy-stat-scale attack=2,defense=0.5         # glass cannons: hit hard, fold fast
+legaia-patcher randomize --input DISC.bin --enemy-attack-count 2                          # enemies land ~twice as many standard-attack hits per turn
 legaia-patcher randomize --input DISC.bin --seed gear --drops shuffle --equipment-drops   # +low-chance bonus gear drop
 legaia-patcher randomize --input DISC.bin --seed flee --encounters shuffle --flee-exp     # +5% experience on a successful escape
 legaia-patcher randomize --input DISC.bin --seed pal --enemy-ally                         # 20% chance an enemy fights on your side
@@ -312,6 +314,7 @@ unless asked for:
 | `--enemy-stat-scale MULT`, `STAT=MULT,...` or `GROUP:SCALE\|...` | scale enemy combat stats (HP / MP / ATK / UDF / LDF / INT / SPD), story bosses included; one number scales all seven, a `stat=mult` list scales only what it names, and a `regular:`/`boss:` split gives random encounters and set-pieces their own scale. Nothing moves between monsters, and EXP / gold / drops are untouched | each value 0.1..=5 | [Enemy difficulty scale](#enemy-difficulty-scale) |
 | `--exp-scale MULT` | scale every monster's base EXP reward - the victory payout, its party split and the `--flee-exp` grant all read the scaled field; gold and drops stay retail | 0.1..=5 | [Experience multiplier](#experience-multiplier) |
 | `--seru-catch-rate PCT` | override every capturable Seru's catch chance with one flat percent (the odds a killing blow absorbs its magic; retail 1..=80% per monster); only the 63 capturable records are touched | 0..=100 | [Seru catch rate](#seru-catch-rate) |
+| `--enemy-attack-count MULT` | scale how many hits enemies land with their standard attacks - divides each attack entry's AGL price so the per-round AGL gauge affords proportionally more (or fewer) strikes; a retail attacker always keeps at least one hit per turn | 0.1..=5 | [Enemy attack count](#enemy-attack-count) |
 
 **Tuning the encounter and door passes:**
 
@@ -2607,6 +2610,36 @@ un-touched sibling byte means it composes with `--drops` / `--monster-stats` /
 `--exp-scale` on the same records. Module `rewards`; apply
 `apply::set_seru_catch_rate`; disc oracle `tests/rewards_real.rs`.
 
+### Enemy attack count
+
+`--enemy-attack-count` scales how many hits an enemy's **standard (physical)
+attack turn** lands, `0.1x`..`5x` (retail `1`). A hit count is not a stored
+number: the monster AI picker `FUN_801E9FD4` (overlay 0898) fills the actor's
+action stream `+0x1DF..` by rolling candidates out of the monster record's
+`+0x4C` action entries (tag byte in the `0x0C..=0x1F` command band, AGL cost
+at entry `+0x74`) and appending each pick while the per-round **AGL gauge**
+(`actor[+0x154]`, reset each round to the record's AGL `+0x0E` by
+`FUN_801D88CC`) covers its cost - bounded at 15 queued actions - and the
+attack-chain strike loop then resolves one hit per queued entry. Retail tunes
+hit counts exactly this way: a one-hit-per-turn enemy prices its attack at its
+whole AGL, a three-hit boss at a third of it. Full mechanism:
+[battle-action.md § Enemy AGL action-budget](../subsystems/battle-action.md#enemy-agl-action-budget-fun_801e9fd4).
+
+The knob divides each **retail-affordable** attack entry's cost byte by the
+multiplier (round half up), so the unchanged AGL budget affords proportionally
+more (or fewer) strikes; AGL itself never moves, so it composes with
+`--enemy-stat-scale` (which deliberately excludes AGL). The scaled cost clamps
+to `1..=min(AGL, 0xFE)`: the AGL ceiling guarantees an enemy that attacks in
+retail still lands **at least one** hit per attack turn - a slow setting can
+never zero an attacker out - and the engine's own 15-action fill bound caps
+the fast end. Three entry kinds are left byte-identical so movesets never
+change, only counts: the `0xFF` "AI never picks this" sentinel, entries retail
+already prices above the AGL budget (deliberate lockouts), and zero-cost
+entries. Spell casts (the `+0x21..=+0x23` global ids) are untouched. Only the
+unwinnable-by-design Rim Elm sparring partner is pinned, as in the difficulty
+scale. Seedless, same-size slot re-pack. Module `attack_count`; apply
+`apply::scale_enemy_attack_count`; disc oracle `tests/attack_count_real.rs`.
+
 ### Special-attack power
 
 `--move-power` redistributes the per-move power values in the battle-action
@@ -3613,6 +3646,7 @@ bit-for-bit.
 | `crates/patcher` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
 | `crates/patcher` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |
 | `crates/patcher` `monster_stats_real` | disc-gated | whole-archive monster-stat shuffle: re-decode every patched `battle_data` record off the disc, assert each stat column's multiset is preserved, every non-randomized field (the AGL gauge, drop, exp, gold, name, element) byte-identical, every protected monster's (tutorial enemies + story bosses) combat stats unchanged, slot footprints fixed, deterministic. A second test covers the difficulty scale: patched stats equal each monster's own disc values times the multiplier (both directions), bosses among them, the pinned tutorial fight untouched, rewards unmoved, `1x` a true no-op, and the scale multiplying a prior shuffle. Per-stat scales get the same assertions plus an independent check that a stat left at `1x` stays byte-identical |
+| `crates/patcher` `attack_count_real` | disc-gated | enemy attack-count scale: re-decode every patched `battle_data` record, assert each command-band attack entry's AGL cost equals the exact per-entry expectation (round-half-up, floor 1, AGL affordability cap), every retail attacker still affords at least one attack at the slowest setting, sentinel / overpriced entries and every non-cost field byte-identical, the pinned tutorial fight untouched, slot footprints fixed, `1x` a true no-op, deterministic, and composed with the difficulty scale on one image |
 | `crates/patcher` `move_power_real` | disc-gated | special-attack power shuffle: re-parse the patched PROT 0898 move-power table, assert the power multiset preserved + every non-power record byte byte-identical (only `+0x00` moves) + deterministic |
 | `crates/patcher` `element_affinity_real` | disc-gated | element-affinity shuffle: re-parse the patched PROT 0898 matrix, assert the scale-percent multiset preserved + the per-character element + summon-power sibling tables untouched + deterministic |
 | `crates/patcher` `spell_cost_real` | disc-gated | spell MP-cost shuffle: re-read the patched `SCUS_942.54` spell table, assert the MP-cost multiset + the named/costed-spell id set preserved + the table sector EDC/ECC-valid + deterministic |

@@ -74,6 +74,7 @@ full design.
   - [Monster stats](#monster-stats)
   - [Enemy difficulty scale](#enemy-difficulty-scale)
   - [Experience multiplier + Seru catch rate](#experience-multiplier--seru-catch-rate-rewards-module)
+  - [Enemy attack count](#enemy-attack-count-attack_count-module)
   - [Move power](#move-power)
   - [Element affinity](#element-affinity)
   - [Spell cost](#spell-cost)
@@ -631,6 +632,28 @@ Both are seedless and idempotent, compose with `--drops` / `--monster-stats` /
 `--enemy-stat-scale` on the same slots, and carry the usual disc oracles
 (`tests/rewards_real.rs`: exact per-record expectation, untouched-sibling
 sweep, footprint + determinism).
+
+## Enemy attack count (`attack_count` module)
+
+`--enemy-attack-count MULT` scales how many hits an enemy's standard physical
+attack turn lands (`0.1x..=5x`, `ScalePermille` again). The hit count is not a
+stored field - retail's AI picker (overlay-0898 `FUN_801E9FD4`) fills the
+actor's `+0x1DF` action stream out of a per-round AGL budget (record `+0x0E`),
+paying each attack entry's `+0x74` AGL-cost byte per strike - so the knob
+divides each **retail-affordable** command-band entry's cost byte instead,
+leaving AGL itself (and every spell cast) untouched.
+
+- Round-half-up permille division, clamped to `1..=min(AGL, 0xFE)`: the AGL
+  ceiling keeps at least one attack affordable at any setting (a retail
+  attacker can never be zeroed out), and the picker's own 15-action fill bound
+  caps the fast end.
+- Sentinel (`0xFF`), retail-unaffordable (deliberately overpriced) and
+  zero-cost entries stay byte-identical - counts change, movesets never do.
+- Seedless, composes with `--enemy-stat-scale` (which deliberately excludes
+  AGL); only the unwinnable Rim Elm sparring partner is pinned. Disc oracle
+  `tests/attack_count_real.rs`. Full mechanism:
+  `docs/tooling/randomizer.md` § *Enemy attack count* and
+  `docs/subsystems/battle-action.md` § *Enemy AGL action-budget*.
 
 ## Move power
 
@@ -1425,6 +1448,10 @@ legaia-patcher verify --input DISC.bin --patch run.ppf
   `lh`/`lhu` loaded from `+0x68`, with a threshold in the keyframe range.
   Format side:
   [`docs/formats/battle-attack-camera-table.md`](../../docs/formats/battle-attack-camera-table.md).
+- `--enemy-attack-count` scales how many hits enemies land with their standard
+  attacks (`0.1`..`5`, retail `1`) by rescaling the attack entries' AGL prices;
+  a retail attacker always keeps at least one hit per turn - see
+  [Enemy attack count](#enemy-attack-count-attack_count-module).
 - `--equipment-drops` injects a low-chance bonus equipment drop into the
   battle-end reward routine - granted on top of `--drops`, never disturbing it.
   `--equipment-drop-chance N` sets the per-battle percent (default 5).

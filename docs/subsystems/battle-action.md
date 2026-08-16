@@ -1551,6 +1551,13 @@ So an agile enemy takes several strikes per turn, the same "wide gauge = more
 commands" mechanic the party's arm width drives ([arts-command-gauge.md
 § How the gauge consumes it](arts-command-gauge.md#how-the-gauge-consumes-it)).
 
+Because both sides of the budget are *disc data* - the AGL seed is the record's
+`+0x0E` halfword and each candidate's price is its entry's `+0x74` byte in the
+monster archive (PROT 867) - the per-turn hit count is a randomizer target: the
+patcher's `--enemy-attack-count` multiplier rescales the affordable attack
+entries' cost bytes in place
+([randomizer.md § Enemy attack count](../tooling/randomizer.md#enemy-attack-count)).
+
 ### `FUN_801DFDF8` - effect-bundle public spawn API
 
 `FUN_801E295C` does **not** call `FUN_801DFDF8` directly. Effect spawning happens through one of two indirections:
