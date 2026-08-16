@@ -1265,7 +1265,7 @@ fn signature_fanfare(slot: usize) -> Option<legaia_art::hyper_fanfare::HyperFanf
 }
 
 /// The two fanfare-bank channels the slot's signature art plays through.
-pub(crate) fn signature_fanfare_channels(slot: usize) -> Option<(u8, u8)> {
+pub fn signature_fanfare_channels(slot: usize) -> Option<(u8, u8)> {
     signature_fanfare(slot).map(|f| f.channel_pair())
 }
 

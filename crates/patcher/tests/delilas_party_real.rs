@@ -1179,7 +1179,26 @@ fn arts_voice_modes_shape_the_shout_banks() {
         let (o, _) = p_orig
             .read_xa_channel_pcm("XA/XA1.XA", c)
             .expect("read original fanfare");
-        assert_eq!(o, r, "original mode must not touch the fanfare bank");
+        // ...except the signature special's own channel pair. That cue is
+        // the sibling's attack soundtrack lifted whole from the sectors
+        // their enemy-side cast module plays, not a treatment of the
+        // host's bed, so it lands in every arts-voice mode - `original`
+        // describes what happens to the HERO's voice. Asserted both ways
+        // so neither half can rot: the pair must move, the rest must not.
+        let sig = legaia_patcher::delilas_party::signature_fanfare_channels(0)
+            .expect("Vahn's slot has a signature fanfare pair");
+        if c == sig.0 || c == sig.1 {
+            assert_ne!(
+                o, r,
+                "original mode must still install the signature special's own cue \
+                 on channel {c}"
+            );
+        } else {
+            assert_eq!(
+                o, r,
+                "original mode must not touch the rest of the fanfare bank (channel {c})"
+            );
+        }
     }
 }
 

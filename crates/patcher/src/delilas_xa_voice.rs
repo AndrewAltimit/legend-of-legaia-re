@@ -823,6 +823,39 @@ pub fn fill_hero_xa_voices(
             pcm: pcm.clone(),
             rate: *rate,
         });
+        // The signature special's cue lands in EVERY arts-voice mode, so
+        // it is written here rather than inside the `Adjusted` arm below.
+        //
+        // The three modes describe what happens to the HERO's voice -
+        // keep it, mute it, or re-time it toward the sibling - and this
+        // cue is none of those. It is the sibling's own attack
+        // soundtrack, lifted whole from the sectors their enemy-side
+        // cast module plays (see `special_xa_pick`), so it is no more a
+        // "treatment" of Vulture Blade's bed than their mesh is a
+        // treatment of Noa's. Gated on the mode, Gi's Blazing Slash
+        // played Noa's cue under two of the three settings.
+        //
+        // Consequence worth stating: under `removed` this pair is the
+        // one fanfare channel deliberately left non-silent. That mode
+        // removes the hero's voice, not the move's audio.
+        let mut special_written = false;
+        if let Some(g) = special_line.as_ref() {
+            let (a, b) = crate::delilas_party::signature_fanfare_channels(slot).unwrap_or((4, 7));
+            let bank = staged_banks[slot][0];
+            for chan in [a, b] {
+                if write_grunt(patcher, bank, chan, g, &mut notes)? {
+                    filled += 1;
+                    special_written = true;
+                }
+            }
+            if special_written {
+                notes.push(format!(
+                    "{}: signature special keeps {}'s own cue in every arts-voice mode",
+                    ["Vahn", "Noa", "Gala"][slot],
+                    sibling.display_name()
+                ));
+            }
+        }
         // XA1/3/5 are the Hyper / Super / Miracle FANFARE banks and
         // XA27/28/29 the Seru-magic fanfare streams: 3-7 second stereo
         // CUE BEDS, not one-shot voice lines (`legaia_art::arts_voice`
@@ -864,6 +897,15 @@ pub fn fill_hero_xa_voices(
                     let special_pair =
                         crate::delilas_party::signature_fanfare_channels(slot).unwrap_or((4, 7));
                     for (chan, pcm, rate) in captured {
+                        // The signature cue was written above, in every
+                        // mode, so its pair is already done - re-pitching
+                        // the host's bed over it here would undo it.
+                        if special_written
+                            && bank == staged_banks[slot][0]
+                            && (*chan == special_pair.0 || *chan == special_pair.1)
+                        {
+                            continue;
+                        }
                         // The ear-picked one-shots keep their channels:
                         // Spirit fires through the cast-cue band.
                         let picked = if bank != staged_banks[slot][0] {
