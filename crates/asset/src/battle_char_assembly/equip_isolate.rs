@@ -48,6 +48,7 @@ use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
 use legaia_tim::Vram;
+use legaia_tmd::mesh::VramMesh;
 use legaia_tmd::{Tmd, legaia_prims};
 use serde::Deserialize;
 
@@ -226,24 +227,7 @@ pub fn object_prim_refs(tmd: &Tmd, blob: &[u8], object: usize) -> Vec<PrimRef> {
 /// Decode one texel word (BGR555, `0` = transparent) the way the character
 /// shader samples it: page from `tsb`, 4/8bpp CLUT indirection via `cba`.
 pub fn texel_word(vram: &Vram, cba: u16, tsb: u16, u: usize, v: usize) -> u16 {
-    let tpage_x = ((tsb & 0xF) as usize) * 64;
-    let tpage_y = (((tsb >> 4) & 1) as usize) * 256;
-    let depth = (tsb >> 7) & 3;
-    let clut_x = ((cba & 0x3F) as usize) * 16;
-    let clut_y = ((cba >> 6) & 0x1FF) as usize;
-    match depth {
-        0 => {
-            let w = vram.pixel(tpage_x + (u >> 2), tpage_y + v);
-            let idx = (w >> ((u & 3) * 4)) & 0xF;
-            vram.pixel(clut_x + idx as usize, clut_y)
-        }
-        1 => {
-            let w = vram.pixel(tpage_x + (u >> 1), tpage_y + v);
-            let idx = (w >> ((u & 1) * 8)) & 0xFF;
-            vram.pixel(clut_x + idx as usize, clut_y)
-        }
-        _ => vram.pixel(tpage_x + u, tpage_y + v),
-    }
+    crate::mesh_raster::texel_word(vram, cba, tsb, u, v)
 }
 
 /// Every opaque texel word a primitive samples: the texel centres inside its
@@ -452,6 +436,52 @@ impl IsolatedItem {
     pub fn claims(&self, object: usize, ordinal: u32) -> bool {
         self.keep.contains(&(object, ordinal))
     }
+}
+
+/// The item alone as geometry: the primitives `item` keeps, in the
+/// assembled TMD's **object-local** space, with a per-vertex object id
+/// parallel to the mesh (the bone each vertex poses on). Empty when the cut
+/// kept nothing. The record-keeping palette cut and the whole-character
+/// exports do not go through here; this is the mesh the item-alone export,
+/// its preview and its thumbnail all share - and the one
+/// [`equip_repair`](super::equip_repair) fills the grip of.
+pub fn item_mesh(tmd: &Tmd, blob: &[u8], item: &IsolatedItem) -> (VramMesh, Vec<u32>) {
+    let (full, ids, prims) = legaia_tmd::mesh::tmd_to_vram_mesh_with_prim_ids(tmd, blob);
+    let mut mesh = VramMesh {
+        positions: Vec::new(),
+        uvs: Vec::new(),
+        cba_tsb: Vec::new(),
+        indices: Vec::new(),
+        normals: Vec::new(),
+        colors: Vec::new(),
+    };
+    let mut out_ids: Vec<u32> = Vec::new();
+    let mut remap = vec![u32::MAX; full.positions.len()];
+    for v in 0..full.positions.len() {
+        if !item.claims(ids[v] as usize, prims[v]) {
+            continue;
+        }
+        remap[v] = mesh.positions.len() as u32;
+        mesh.positions.push(full.positions[v]);
+        mesh.uvs.push(full.uvs[v]);
+        mesh.cba_tsb.push(full.cba_tsb[v]);
+        mesh.normals
+            .push(full.normals.get(v).copied().unwrap_or([0.0; 3]));
+        mesh.colors
+            .push(full.colors.get(v).copied().unwrap_or([0x80; 3]));
+        out_ids.push(ids[v]);
+    }
+    for tri in full.indices.chunks_exact(3) {
+        let m = [
+            remap[tri[0] as usize],
+            remap[tri[1] as usize],
+            remap[tri[2] as usize],
+        ];
+        if m.iter().all(|&i| i != u32::MAX) {
+            mesh.indices.extend_from_slice(&m);
+        }
+    }
+    (mesh, out_ids)
 }
 
 /// Everything the isolation needs about the two assemblies.

@@ -688,12 +688,31 @@ headgear, geometry-and-colour identity for body and footwear) or the
 record's committed rule in `crates/asset/data/equip-isolation.toml`. The
 summary's per-item `isolation` object and the glTF root name carry the mode,
 the kept / dropped primitive counts and whether a rule hand-checked the
-record; `equipped_mesh_item_mask(section)` is the per-vertex `0 / 1 / 2`
-(outside the section / left behind / item) the page's preview toggle
-filters the drawn triangles with, so what is shown is what the file holds.
-Background:
+record, and the grip repair's `bridges` / `bridged_triangles`
+(`equip_repair` lofts a tube between the two shaft rims a welded weapon
+leaves where the fist hid the haft; the root name says `grip inferred`).
+The `equipped_item_only_{positions,uvs,cba_tsb,indices,object_ids,flat_rgba,bounds}(section)`
+family is that same repaired geometry as mesh streams, parallel to the
+`equipped_mesh_*` set, so the page's preview toggle draws exactly what the
+file holds; `equipped_mesh_item_mask(section)` (per-vertex `0 / 1 / 2`:
+outside the section / left behind / item) is the pre-repair view of the
+same cut. Background:
 [`docs/formats/battle-data-pack.md`](../../docs/formats/battle-data-pack.md#the-item-alone---an-opinionated-cut-with-a-committed-rule-table);
-sweep + table integrity in `crates/asset/tests/equip_isolate_real.rs`.
+sweep + table integrity in `crates/asset/tests/equip_isolate_real.rs`, the
+grip sweep in `crates/asset/tests/equip_repair_real.rs`.
+
+The characters page's **equipment panel** - every slot, every piece as its
+own card - runs on `equipment_item_card_json(slot, section, id)` /
+`equipment_item_card_pixels(size)` / `equipment_item_card_glb(alone)`: one
+single-item build per `(character, section, id)`, cached on the viewer so the
+three calls share it. The JSON carries the name, the palette-cut class, the
+item-alone decision (`mode` / `curated` / `note`), what it kept and what the
+grip repair added; the pixels are the item alone at the character's rest
+stance, drawn by `legaia_asset::mesh_raster` (software, so forty cards do
+not need forty GL contexts) re-framed on the item's principal axes - blade
+up, flat-on - over a transparent background; the glb is the alone / with-limb
+download without equipping the piece first. The page builds cards through a
+queue that yields to the orbit view between items.
 
 ## Playable minigames (`minigames`)
 

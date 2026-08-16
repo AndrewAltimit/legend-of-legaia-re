@@ -51,8 +51,9 @@
 use super::*;
 
 use legaia_asset::battle_char_assembly as bca;
-use legaia_asset::battle_char_assembly::{equip_diff, equip_isolate, equip_item};
+use legaia_asset::battle_char_assembly::{equip_diff, equip_isolate, equip_item, equip_repair};
 use legaia_asset::battle_data_pack::BattleDataPack;
+use legaia_asset::mesh_raster;
 use legaia_asset::monster_archive::MonsterAnimation;
 
 /// Player battle files start at extraction PROT entry 863 (Vahn).
@@ -121,6 +122,42 @@ struct EquippedItem {
     partition: equip_item::ItemPartition,
     /// The opinionated item-alone cut (see [`equip_isolate`]).
     isolation: equip_isolate::IsolatedItem,
+    /// The item-alone geometry, object-local, with its grip repaired
+    /// ([`equip_repair`]) - what the alone export, its preview and its
+    /// thumbnail all draw. Built once per loadout.
+    alone: ItemAloneMesh,
+}
+
+/// The item-alone mesh plus what the repair added to it.
+pub(crate) struct ItemAloneMesh {
+    mesh: legaia_tmd::mesh::VramMesh,
+    object_ids: Vec<u32>,
+    bridges: Vec<equip_repair::Bridge>,
+}
+
+impl ItemAloneMesh {
+    fn build(tmd: &legaia_tmd::Tmd, blob: &[u8], iso: &equip_isolate::IsolatedItem) -> Self {
+        let (mut mesh, mut object_ids) = equip_isolate::item_mesh(tmd, blob, iso);
+        let bridges = equip_repair::bridge_open_loops(&mut mesh, &mut object_ids);
+        ItemAloneMesh {
+            mesh,
+            object_ids,
+            bridges,
+        }
+    }
+    fn bridged_triangles(&self) -> usize {
+        self.bridges.iter().map(|b| b.triangles).sum()
+    }
+}
+
+/// A cached single-item build for the equipment panel's card grid: the
+/// character wearing exactly one item, so the card's thumbnail, metadata and
+/// downloads come off one assembly. See [`LegaiaViewer::equipment_item_card_json`].
+pub(crate) struct ItemCard {
+    cslot: usize,
+    section: usize,
+    id: u32,
+    character: EquippedCharacter,
 }
 
 /// One equipment section of a player file: the ids it offers, in table order.
@@ -517,11 +554,13 @@ fn build(
                 },
                 equip_isolate::rules().rule_for(cslot, id),
             );
+            let alone = ItemAloneMesh::build(&tmd, &asm.tmd, &isolation);
             items.push(EquippedItem {
                 section: s,
                 id,
                 partition,
                 isolation,
+                alone,
             });
         }
     }
@@ -755,6 +794,12 @@ impl LegaiaViewer {
                         "dropped_primitives": it.isolation.dropped_primitives,
                         "curated": it.isolation.curated,
                         "note": it.isolation.note,
+                        // The grip repair: how many shaft gaps were bridged
+                        // and how many triangles that inferred (0 = the
+                        // cut needed none, or had no two rims facing each
+                        // other to bridge).
+                        "bridges": it.alone.bridges.len(),
+                        "bridged_triangles": it.alone.bridged_triangles(),
                     },
                 })
             })
@@ -970,148 +1015,7 @@ impl LegaiaViewer {
         let Some(c) = &self.equipped else {
             return Vec::new();
         };
-        let section = section as usize;
-        let Some(it) = c.items.iter().find(|i| i.section == section) else {
-            return Vec::new();
-        };
-        let Ok(tmd) = legaia_tmd::parse(&c.tmd_bytes) else {
-            return Vec::new();
-        };
-        let (full, ids) = legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, &c.tmd_bytes);
-        // A synthetic object id per **source object** the item occupies, so
-        // each piece lands in its own glTF node and can take that object's
-        // pose. One shared id would collapse a multi-object item (Vahn's
-        // sword spans forearm and hand; a fused armour spans the whole
-        // torso chain) into a single node, and a single node has a single
-        // transform - the pieces would stack at the model origin.
-        let item_id_base = tmd.objects.len() as u32;
-        let item_id_of: std::collections::BTreeMap<u32, u32> = it
-            .partition
-            .parts
-            .iter()
-            .enumerate()
-            .map(|(k, p)| (p.object as u32, item_id_base + k as u32))
-            .collect();
-        let mut keep: std::collections::BTreeSet<u32> =
-            it.partition.parts.iter().map(|p| p.object as u32).collect();
-        // A standalone (`own-object`) item's partition names only the item's
-        // own object, so the file would ship the weapon with nothing to place
-        // it against. Pull in the bone it rides, so every item export carries
-        // its ground-truth limb.
-        let host_of: std::collections::BTreeSet<u32> = it
-            .partition
-            .parts
-            .iter()
-            .filter(|p| p.whole_object)
-            .filter_map(|p| {
-                let bone = *c.anm_bones.get(p.object)?;
-                c.bone_tags
-                    .iter()
-                    .position(|&t| t == bone)
-                    .map(|i| i as u32)
-            })
-            .collect();
-        keep.extend(host_of);
-        let mut mesh = legaia_tmd::mesh::VramMesh {
-            positions: Vec::new(),
-            uvs: Vec::new(),
-            cba_tsb: Vec::new(),
-            indices: Vec::new(),
-            normals: Vec::new(),
-            colors: Vec::new(),
-        };
-        let mut out_ids: Vec<u32> = Vec::new();
-        let mut remap = vec![u32::MAX; full.positions.len()];
-        for v in 0..full.positions.len() {
-            let obj = ids[v];
-            if !keep.contains(&obj) {
-                continue;
-            }
-            remap[v] = mesh.positions.len() as u32;
-            mesh.positions.push(full.positions[v]);
-            mesh.uvs.push(full.uvs[v]);
-            mesh.cba_tsb.push(full.cba_tsb[v]);
-            mesh.normals
-                .push(full.normals.get(v).copied().unwrap_or([0.0; 3]));
-            mesh.colors
-                .push(full.colors.get(v).copied().unwrap_or([0x80; 3]));
-            out_ids.push(if it.partition.claims(obj as usize, full.cba_tsb[v][0]) {
-                item_id_of.get(&obj).copied().unwrap_or(obj)
-            } else {
-                obj
-            });
-        }
-        for tri in full.indices.chunks_exact(3) {
-            let m: Vec<u32> = tri.iter().map(|&i| remap[i as usize]).collect();
-            if m.iter().all(|&i| i != u32::MAX) {
-                mesh.indices.extend_from_slice(&m);
-            }
-        }
-        if mesh.indices.is_empty() {
-            return Vec::new();
-        }
-        let who = CHARACTER_LABELS[c.cslot];
-        let item_name = u8::try_from(it.id)
-            .ok()
-            .and_then(|i| self.item_names.as_ref()?.name(i))
-            .map(str::to_string)
-            .unwrap_or_else(|| format!("id {}", it.id));
-        let mut layout = legaia_asset::character_gltf::CharacterGlbLayout::default();
-        // Each item piece is named for the item, and inherits the rest pose
-        // and animation channels of the object it was cut from.
-        let multi = item_id_of.len() > 1;
-        for (&src, &synth) in &item_id_of {
-            layout.names.insert(
-                synth,
-                if multi {
-                    format!("{item_name} (object {src})")
-                } else {
-                    item_name.clone()
-                },
-            );
-            layout.pose_source.insert(synth, src);
-        }
-        for obj in &keep {
-            layout
-                .names
-                .entry(*obj)
-                .or_insert_with(|| format!("{who} - host limb (object {obj})"));
-        }
-        let root = format!(
-            "{item_name} - {} {who}'s battle model ({})",
-            if it.partition.class.is_pure() {
-                "cut from"
-            } else {
-                "as spliced into"
-            },
-            it.partition.class.describe()
-        );
-        // The clip bank is what supplies the **rest pose**: the builder reads
-        // clip 0 frame 0 into each node's TRS. Passing none leaves every node
-        // at the model origin, which is what made a two-object export read as
-        // two hands stacked on each other.
-        let fps_for_rate = |rate: u8| {
-            if rate > 0 {
-                7.5 * f32::from(rate)
-            } else {
-                15.0
-            }
-        };
-        let clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = c
-            .clips
-            .iter()
-            .map(
-                |(label, anim)| legaia_asset::character_gltf::CharacterClip {
-                    name: label.clone(),
-                    fps: fps_for_rate(anim.rate),
-                    anim,
-                },
-            )
-            .collect();
-        legaia_asset::character_gltf::build_character_glb_named(
-            &root, &mesh, &out_ids, &c.vram, &clips, None, &layout,
-        )
-        .unwrap_or_default()
+        item_glb(c, section as usize, self.item_names.as_ref())
     }
 
     /// Per-vertex item-alone mask for the cached loadout's mesh (parallel to
@@ -1162,106 +1066,208 @@ impl LegaiaViewer {
         let Some(c) = &self.equipped else {
             return Vec::new();
         };
+        item_only_glb(c, section as usize, self.item_names.as_ref())
+    }
+
+    /// The item-alone preview mesh of equipped section `section` - the same
+    /// geometry [`Self::equipped_item_only_glb`] exports, grip repair
+    /// included, object-local and posed by the loadout's clips through the
+    /// same per-object channels as the whole model. The seven accessors are
+    /// parallel to the `equipped_mesh_*` family so the page can swap one for
+    /// the other. Empty when the section is at its default or nothing is
+    /// cached.
+    pub fn equipped_item_only_positions(&self, section: u32) -> Vec<f32> {
+        self.item_alone(section)
+            .map(|a| a.mesh.positions.iter().flat_map(|p| *p).collect())
+            .unwrap_or_default()
+    }
+
+    /// See [`Self::equipped_item_only_positions`].
+    pub fn equipped_item_only_uvs(&self, section: u32) -> Vec<i32> {
+        self.item_alone(section)
+            .map(|a| {
+                a.mesh
+                    .uvs
+                    .iter()
+                    .flat_map(|uv| [i32::from(uv[0]), i32::from(uv[1])])
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// See [`Self::equipped_item_only_positions`].
+    pub fn equipped_item_only_cba_tsb(&self, section: u32) -> Vec<u32> {
+        self.item_alone(section)
+            .map(|a| {
+                a.mesh
+                    .cba_tsb
+                    .iter()
+                    .flat_map(|ct| [u32::from(ct[0]), u32::from(ct[1])])
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// See [`Self::equipped_item_only_positions`].
+    pub fn equipped_item_only_indices(&self, section: u32) -> Vec<u32> {
+        self.item_alone(section)
+            .map(|a| a.mesh.indices.clone())
+            .unwrap_or_default()
+    }
+
+    /// See [`Self::equipped_item_only_positions`].
+    pub fn equipped_item_only_object_ids(&self, section: u32) -> Vec<u32> {
+        self.item_alone(section)
+            .map(|a| a.object_ids.clone())
+            .unwrap_or_default()
+    }
+
+    /// See [`Self::equipped_item_only_positions`].
+    pub fn equipped_item_only_flat_rgba(&self, section: u32) -> Vec<u8> {
+        self.item_alone(section)
+            .map(|a| crate::packet_color::textured(&a.mesh))
+            .unwrap_or_default()
+    }
+
+    /// Bounding sphere `[cx, cy, cz, r]` of the item-alone mesh (object-local
+    /// centroid + max distance; the page refits on the posed clip anyway).
+    pub fn equipped_item_only_bounds(&self, section: u32) -> Vec<f32> {
+        self.item_alone(section)
+            .filter(|a| !a.mesh.positions.is_empty())
+            .map(|a| centroid_bounds(&a.mesh.positions))
+            .unwrap_or_else(|| vec![0.0; 4])
+    }
+
+    fn item_alone(&self, section: u32) -> Option<&ItemAloneMesh> {
+        let c = self.equipped.as_ref()?;
+        c.items
+            .iter()
+            .find(|i| i.section == section as usize)
+            .map(|i| &i.alone)
+    }
+
+    /// Build (or reuse) the **item card** for `(slot, section, id)` - the
+    /// character wearing exactly that one item - and return its metadata as
+    /// JSON: name, how the palette cut classed it, how the item-alone cut
+    /// decided (`mode` / `curated` / `note`), what it kept, and what the grip
+    /// repair added. `{"ok":false,"why":...}` when it does not assemble.
+    /// The build is cached, so [`Self::equipment_item_card_pixels`] and
+    /// [`Self::equipment_item_card_glb`] for the same triple cost nothing
+    /// extra.
+    pub fn equipment_item_card_json(&mut self, slot: u32, section: u32, id: u32) -> String {
+        let cslot = slot as usize;
         let section = section as usize;
-        let Some(it) = c.items.iter().find(|i| i.section == section) else {
-            return Vec::new();
-        };
-        if it.isolation.kept_primitives == 0 {
-            return Vec::new();
+        if cslot >= CHARACTER_LABELS.len() || section >= bca::SECTION_COUNT || id == 0 || id > 255 {
+            return r#"{"ok":false,"why":"card out of range"}"#.to_string();
         }
-        let Ok(tmd) = legaia_tmd::parse(&c.tmd_bytes) else {
-            return Vec::new();
-        };
-        let (full, ids, prims) =
-            legaia_tmd::mesh::tmd_to_vram_mesh_with_prim_ids(&tmd, &c.tmd_bytes);
-        let mut mesh = legaia_tmd::mesh::VramMesh {
-            positions: Vec::new(),
-            uvs: Vec::new(),
-            cba_tsb: Vec::new(),
-            indices: Vec::new(),
-            normals: Vec::new(),
-            colors: Vec::new(),
-        };
-        let mut out_ids: Vec<u32> = Vec::new();
-        let mut remap = vec![u32::MAX; full.positions.len()];
-        for v in 0..full.positions.len() {
-            let obj = ids[v] as usize;
-            if !it.isolation.claims(obj, prims[v]) {
-                continue;
-            }
-            remap[v] = mesh.positions.len() as u32;
-            mesh.positions.push(full.positions[v]);
-            mesh.uvs.push(full.uvs[v]);
-            mesh.cba_tsb.push(full.cba_tsb[v]);
-            mesh.normals
-                .push(full.normals.get(v).copied().unwrap_or([0.0; 3]));
-            mesh.colors
-                .push(full.colors.get(v).copied().unwrap_or([0x80; 3]));
-            out_ids.push(ids[v]);
-        }
-        for tri in full.indices.chunks_exact(3) {
-            let m: Vec<u32> = tri.iter().map(|&i| remap[i as usize]).collect();
-            if m.iter().all(|&i| i != u32::MAX) {
-                mesh.indices.extend_from_slice(&m);
+        let hit = self
+            .item_card
+            .as_ref()
+            .is_some_and(|c| c.cslot == cslot && c.section == section && c.id == id);
+        if !hit {
+            let Some(entries) = parse_prot_toc(&self.disc) else {
+                return r#"{"ok":false,"why":"PROT.DAT TOC parse failed"}"#.to_string();
+            };
+            let mut equipped = [0u8; bca::SECTION_COUNT];
+            equipped[section] = id as u8;
+            match build(&self.disc, &entries, cslot, equipped, false) {
+                Ok(character) => {
+                    self.item_card = Some(ItemCard {
+                        cslot,
+                        section,
+                        id,
+                        character,
+                    });
+                }
+                Err(why) => {
+                    self.item_card = None;
+                    return serde_json::json!({ "ok": false, "why": why }).to_string();
+                }
             }
         }
-        if mesh.indices.is_empty() {
-            return Vec::new();
-        }
-        let who = CHARACTER_LABELS[c.cslot];
-        let item_name = u8::try_from(it.id)
+        let card = self.item_card.as_ref().expect("just built");
+        let Some(it) = card.character.items.iter().find(|i| i.section == section) else {
+            return r#"{"ok":false,"why":"the section contributed no geometry"}"#.to_string();
+        };
+        let name = u8::try_from(id)
             .ok()
             .and_then(|i| self.item_names.as_ref()?.name(i))
-            .map(str::to_string)
-            .unwrap_or_else(|| format!("id {}", it.id));
-        let mut layout = legaia_asset::character_gltf::CharacterGlbLayout::default();
-        let objects: Vec<u32> = out_ids
-            .iter()
-            .copied()
-            .collect::<std::collections::BTreeSet<u32>>()
-            .into_iter()
-            .collect();
-        for &obj in &objects {
-            layout.names.insert(
-                obj,
-                if objects.len() > 1 {
-                    format!("{item_name} (object {obj})")
-                } else {
-                    item_name.clone()
-                },
-            );
-        }
-        let root = format!(
-            "{item_name} - item alone, cut from {who}'s battle model ({}{})",
-            it.isolation.mode.tag(),
-            if it.isolation.curated {
-                ", curated"
-            } else {
-                ""
-            }
-        );
-        let fps_for_rate = |rate: u8| {
-            if rate > 0 {
-                7.5 * f32::from(rate)
-            } else {
-                15.0
-            }
+            .map(str::to_string);
+        serde_json::json!({
+            "ok": true,
+            "character": CHARACTER_LABELS[cslot],
+            "slot": cslot,
+            "section": section,
+            "id": id,
+            "name": name,
+            "class": it.partition.class.tag(),
+            "describe": it.partition.class.describe(),
+            "item_primitives": it.partition.item_primitives,
+            "item_vertices": it.partition.item_vertices,
+            "isolation": {
+                "mode": it.isolation.mode.tag(),
+                "kept_primitives": it.isolation.kept_primitives,
+                "dropped_primitives": it.isolation.dropped_primitives,
+                "curated": it.isolation.curated,
+                "note": it.isolation.note,
+                "bridges": it.alone.bridges.len(),
+                "bridged_triangles": it.alone.bridged_triangles(),
+            },
+            "alone_triangles": it.alone.mesh.indices.len() / 3,
+        })
+        .to_string()
+    }
+
+    /// The cached card's item-alone thumbnail: `size * size` RGBA8, drawn by
+    /// the software rasteriser at the character's rest stance, re-framed on
+    /// the item's own principal axes (blade up, flat-on) with a slight
+    /// three-quarter tilt, over a transparent background. Empty until
+    /// [`Self::equipment_item_card_json`] succeeded.
+    pub fn equipment_item_card_pixels(&self, size: u32) -> Vec<u8> {
+        let Some(card) = &self.item_card else {
+            return Vec::new();
         };
-        let clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = c
-            .clips
+        let Some(it) = card
+            .character
+            .items
             .iter()
-            .map(
-                |(label, anim)| legaia_asset::character_gltf::CharacterClip {
-                    name: label.clone(),
-                    fps: fps_for_rate(anim.rate),
-                    anim,
-                },
-            )
-            .collect();
-        legaia_asset::character_gltf::build_character_glb_named(
-            &root, &mesh, &out_ids, &c.vram, &clips, None, &layout,
+            .find(|i| i.section == card.section)
+        else {
+            return Vec::new();
+        };
+        let poses = rest_poses(&card.character);
+        let opts = mesh_raster::RasterOptions {
+            width: size as usize,
+            height: size as usize,
+            yaw: 28f32.to_radians(),
+            pitch: -14f32.to_radians(),
+            margin: 0.08,
+            background: [0, 0, 0, 0],
+            shade: 0.4,
+            auto_orient: true,
+        };
+        mesh_raster::render_posed(
+            &it.alone.mesh,
+            &it.alone.object_ids,
+            &poses,
+            &card.character.vram,
+            &opts,
         )
-        .unwrap_or_default()
+    }
+
+    /// The cached card's download: the item alone (`alone = true`, grip
+    /// repaired) or the record-keeping palette cut with its host limb
+    /// (`alone = false`), as binary glTF with the character's clip bank.
+    /// Empty until [`Self::equipment_item_card_json`] succeeded.
+    pub fn equipment_item_card_glb(&self, alone: bool) -> Vec<u8> {
+        let Some(card) = &self.item_card else {
+            return Vec::new();
+        };
+        if alone {
+            item_only_glb(&card.character, card.section, self.item_names.as_ref())
+        } else {
+            item_glb(&card.character, card.section, self.item_names.as_ref())
+        }
     }
 
     /// The honest name for the cached loadout's `.glb` root node: the
@@ -1289,4 +1295,256 @@ impl LegaiaViewer {
             format!("{who} - battle model wearing {}", worn.join(", "))
         }
     }
+}
+
+/// The record-keeping per-item export (see [`LegaiaViewer::equipped_item_glb`]).
+fn item_glb(
+    c: &EquippedCharacter,
+    section: usize,
+    names: Option<&legaia_asset::item_names::ItemNameTable>,
+) -> Vec<u8> {
+    let Some(it) = c.items.iter().find(|i| i.section == section) else {
+        return Vec::new();
+    };
+    let Ok(tmd) = legaia_tmd::parse(&c.tmd_bytes) else {
+        return Vec::new();
+    };
+    let (full, ids) = legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, &c.tmd_bytes);
+    // A synthetic object id per **source object** the item occupies, so
+    // each piece lands in its own glTF node and can take that object's
+    // pose. One shared id would collapse a multi-object item (Vahn's
+    // sword spans forearm and hand; a fused armour spans the whole
+    // torso chain) into a single node, and a single node has a single
+    // transform - the pieces would stack at the model origin.
+    let item_id_base = tmd.objects.len() as u32;
+    let item_id_of: std::collections::BTreeMap<u32, u32> = it
+        .partition
+        .parts
+        .iter()
+        .enumerate()
+        .map(|(k, p)| (p.object as u32, item_id_base + k as u32))
+        .collect();
+    let mut keep: std::collections::BTreeSet<u32> =
+        it.partition.parts.iter().map(|p| p.object as u32).collect();
+    // A standalone (`own-object`) item's partition names only the item's
+    // own object, so the file would ship the weapon with nothing to place
+    // it against. Pull in the bone it rides, so every item export carries
+    // its ground-truth limb.
+    let host_of: std::collections::BTreeSet<u32> = it
+        .partition
+        .parts
+        .iter()
+        .filter(|p| p.whole_object)
+        .filter_map(|p| {
+            let bone = *c.anm_bones.get(p.object)?;
+            c.bone_tags
+                .iter()
+                .position(|&t| t == bone)
+                .map(|i| i as u32)
+        })
+        .collect();
+    keep.extend(host_of);
+    let mut mesh = legaia_tmd::mesh::VramMesh {
+        positions: Vec::new(),
+        uvs: Vec::new(),
+        cba_tsb: Vec::new(),
+        indices: Vec::new(),
+        normals: Vec::new(),
+        colors: Vec::new(),
+    };
+    let mut out_ids: Vec<u32> = Vec::new();
+    let mut remap = vec![u32::MAX; full.positions.len()];
+    for v in 0..full.positions.len() {
+        let obj = ids[v];
+        if !keep.contains(&obj) {
+            continue;
+        }
+        remap[v] = mesh.positions.len() as u32;
+        mesh.positions.push(full.positions[v]);
+        mesh.uvs.push(full.uvs[v]);
+        mesh.cba_tsb.push(full.cba_tsb[v]);
+        mesh.normals
+            .push(full.normals.get(v).copied().unwrap_or([0.0; 3]));
+        mesh.colors
+            .push(full.colors.get(v).copied().unwrap_or([0x80; 3]));
+        out_ids.push(if it.partition.claims(obj as usize, full.cba_tsb[v][0]) {
+            item_id_of.get(&obj).copied().unwrap_or(obj)
+        } else {
+            obj
+        });
+    }
+    for tri in full.indices.chunks_exact(3) {
+        let m: Vec<u32> = tri.iter().map(|&i| remap[i as usize]).collect();
+        if m.iter().all(|&i| i != u32::MAX) {
+            mesh.indices.extend_from_slice(&m);
+        }
+    }
+    if mesh.indices.is_empty() {
+        return Vec::new();
+    }
+    let who = CHARACTER_LABELS[c.cslot];
+    let item_name = u8::try_from(it.id)
+        .ok()
+        .and_then(|i| names?.name(i))
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("id {}", it.id));
+    let mut layout = legaia_asset::character_gltf::CharacterGlbLayout::default();
+    // Each item piece is named for the item, and inherits the rest pose
+    // and animation channels of the object it was cut from.
+    let multi = item_id_of.len() > 1;
+    for (&src, &synth) in &item_id_of {
+        layout.names.insert(
+            synth,
+            if multi {
+                format!("{item_name} (object {src})")
+            } else {
+                item_name.clone()
+            },
+        );
+        layout.pose_source.insert(synth, src);
+    }
+    for obj in &keep {
+        layout
+            .names
+            .entry(*obj)
+            .or_insert_with(|| format!("{who} - host limb (object {obj})"));
+    }
+    let root = format!(
+        "{item_name} - {} {who}'s battle model ({})",
+        if it.partition.class.is_pure() {
+            "cut from"
+        } else {
+            "as spliced into"
+        },
+        it.partition.class.describe()
+    );
+    // The clip bank is what supplies the **rest pose**: the builder reads
+    // clip 0 frame 0 into each node's TRS. Passing none leaves every node
+    // at the model origin, which is what made a two-object export read as
+    // two hands stacked on each other.
+    let fps_for_rate = |rate: u8| {
+        if rate > 0 {
+            7.5 * f32::from(rate)
+        } else {
+            15.0
+        }
+    };
+    let clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = c
+        .clips
+        .iter()
+        .map(
+            |(label, anim)| legaia_asset::character_gltf::CharacterClip {
+                name: label.clone(),
+                fps: fps_for_rate(anim.rate),
+                anim,
+            },
+        )
+        .collect();
+    legaia_asset::character_gltf::build_character_glb_named(
+        &root, &mesh, &out_ids, &c.vram, &clips, None, &layout,
+    )
+    .unwrap_or_default()
+}
+
+/// The **item alone** export (see [`LegaiaViewer::equipped_item_only_glb`]):
+/// the repaired item-alone mesh as one node per source object, each posed
+/// by the object it came from, plus the clip bank. The root name says how
+/// the cut was decided (`colour-diff` / `identity` / `whole` / `palette`),
+/// whether a rule touched it (`curated`), and whether the grip was
+/// inferred (`grip inferred`), so a downloader can tell a heuristic result
+/// from a checked one and a disc fact from a repair.
+fn item_only_glb(
+    c: &EquippedCharacter,
+    section: usize,
+    names: Option<&legaia_asset::item_names::ItemNameTable>,
+) -> Vec<u8> {
+    let Some(it) = c.items.iter().find(|i| i.section == section) else {
+        return Vec::new();
+    };
+    if it.isolation.kept_primitives == 0 || it.alone.mesh.indices.is_empty() {
+        return Vec::new();
+    }
+    let who = CHARACTER_LABELS[c.cslot];
+    let item_name = u8::try_from(it.id)
+        .ok()
+        .and_then(|i| names?.name(i))
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("id {}", it.id));
+    let mut layout = legaia_asset::character_gltf::CharacterGlbLayout::default();
+    let objects: Vec<u32> = it
+        .alone
+        .object_ids
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<u32>>()
+        .into_iter()
+        .collect();
+    for &obj in &objects {
+        layout.names.insert(
+            obj,
+            if objects.len() > 1 {
+                format!("{item_name} (object {obj})")
+            } else {
+                item_name.clone()
+            },
+        );
+    }
+    let root = format!(
+        "{item_name} - item alone, cut from {who}'s battle model ({}{}{})",
+        it.isolation.mode.tag(),
+        if it.isolation.curated {
+            ", curated"
+        } else {
+            ""
+        },
+        if it.alone.bridges.is_empty() {
+            String::new()
+        } else {
+            format!(", grip inferred: {} bridge(s)", it.alone.bridges.len())
+        }
+    );
+    let fps_for_rate = |rate: u8| {
+        if rate > 0 {
+            7.5 * f32::from(rate)
+        } else {
+            15.0
+        }
+    };
+    let clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = c
+        .clips
+        .iter()
+        .map(
+            |(label, anim)| legaia_asset::character_gltf::CharacterClip {
+                name: label.clone(),
+                fps: fps_for_rate(anim.rate),
+                anim,
+            },
+        )
+        .collect();
+    legaia_asset::character_gltf::build_character_glb_named(
+        &root,
+        &it.alone.mesh,
+        &it.alone.object_ids,
+        &c.vram,
+        &clips,
+        None,
+        &layout,
+    )
+    .unwrap_or_default()
+}
+
+/// The character's rest stance - clip 0 (the action bank's first record)
+/// at frame 0 - as one rigid placement per assembled object. Identity for
+/// every object when the bank is missing.
+fn rest_poses(c: &EquippedCharacter) -> Vec<mesh_raster::Pose> {
+    let Some((_, anim)) = c.clips.first() else {
+        return vec![mesh_raster::Pose::IDENTITY; c.part_count];
+    };
+    let Some(frame) = anim.frames.first() else {
+        return vec![mesh_raster::Pose::IDENTITY; c.part_count];
+    };
+    frame
+        .iter()
+        .map(|p| mesh_raster::Pose::from_keyframe([p.tx, p.ty, p.tz], [p.rx, p.ry, p.rz]))
+        .collect()
 }

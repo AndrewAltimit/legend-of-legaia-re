@@ -309,6 +309,10 @@ pub struct LegaiaViewer {
     /// assembled at one loadout, with its band VRAM, clip bank and diff
     /// against the unequipped default. See [`equipment_view`].
     equipped: Option<equipment_view::EquippedCharacter>,
+    /// One item **card** of the equipment panel: a single-item loadout built
+    /// for its thumbnail / metadata / download, cached under its
+    /// `(character, section, id)` so the three calls share one assembly.
+    item_card: Option<equipment_view::ItemCard>,
 }
 
 /// VRAM rectangles a single primitive's CBA / TSB lookup will touch.

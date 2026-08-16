@@ -340,6 +340,49 @@ answer - the exact cut above is, and it stays the record-keeping export. And
 segment a Ra-Seru grows over, or the shorts an armour record re-authors are
 "the item" is a call, and the table is where a different call goes.
 
+### The grip is inferred: bridging the shaft the fist hid
+
+A welded item leaves the item-alone cut with an **open grip**. The stretch of
+haft inside the closed fist was never modelled - the fingers covered it - so
+Vahn's Great Axe comes away as an axe head on a stub of shaft plus a pommel
+end, each terminating in an open ring of vertices where it met the fingers.
+No cut recovers what was never drawn, but the two rings say what was there,
+and [`equip_repair`](../../crates/asset/src/battle_char_assembly/equip_repair.rs)
+infers it: weld the item-alone mesh by `(object, position)`, walk its
+boundary edges into closed loops, and pair loops that are the two ends of one
+straight shaft - **same object**, opening directions (taken from the
+geometry *behind* each rim, which for a prism runs along its axis; the rim
+itself may be oblique, a fist grips diagonally) within ~40 degrees of the
+line joining the centroids and pointing at each other, mean radii within
+2x, centroid gap at most 6 mean radii, lateral offset under 0.9 mean radii.
+Each pair is lofted into a tube by zipping the two rims by angle about the
+axis; the rim with more vertices donates UV / CBA-TSB / colour to every tube
+vertex, so the bridge reads as the shaft continuing rather than a smear
+between two texture spots. The result is marked `grip inferred` (with the
+bridge count and triangle count) in the summary, on the page and in the glTF
+root name, and only ever touches the item-alone export - the palette cut is
+never repaired.
+
+Measured over all 81 held-item records, nine take a bridge, all Vahn's
+(`0x22`-`0x24`, `0x2E`-`0x33`: the axes, maces and the shorter blades);
+Noa's and Gala's shafts are modelled through the fist. What the rule
+deliberately refuses: rims that face **away** from each other (a Ra-Seru
+armband cut from the forearm is open at both ends; a helmet's neck and crown
+holes) are never joined; a lone rim is never capped (a lid would be a guess
+about the silhouette, where a bridge is a guess only about a stretch between
+two ends that both exist); and rims on **different** objects are never
+paired - a cross-object variant compared in rest-pose world space was built,
+found no real grip (Vahn's swords put the blade on the hand object and the
+pommel block on the forearm, both *closed* at the fist, so there is nothing
+to bridge), and paired the elbow-facing rims of two Ra-Seru arm plates into
+a tube through the joint, which is why the same-bone rule is data rather
+than caution. `crates/asset/tests/equip_repair_real.rs` sweeps the 81
+records (only ever additive, every bridge inside the section's objects, the
+Great Axe closes) and, with `LEGAIA_EQUIP_SHEETS=<dir>`, writes a
+before / after contact sheet per character through the software rasteriser
+in `legaia_asset::mesh_raster` - the same renderer that draws the site's
+per-item cards.
+
 ### The `200+` surplus is a duplicate, except when it is not
 
 Across the four player files' single-section assemblies, most `0xFF` (tag

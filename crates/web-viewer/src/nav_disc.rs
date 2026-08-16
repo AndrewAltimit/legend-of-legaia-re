@@ -52,6 +52,7 @@ impl LegaiaViewer {
             scene_export: None,
             equip_stats: None,
             equipped: None,
+            item_card: None,
         }
     }
 }

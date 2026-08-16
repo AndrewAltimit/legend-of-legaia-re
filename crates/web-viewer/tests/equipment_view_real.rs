@@ -477,9 +477,18 @@ fn the_item_alone_glb_drops_the_limb_and_matches_the_preview_mask() {
     );
     // The clip bank rides along, so the axe still swings.
     assert!(!doc_alone["animations"].as_array().unwrap().is_empty());
+    // The haft leaves the cut in two pieces (the fist covered the middle);
+    // the grip repair bridges them, and the file says so.
+    let bridges = iso["bridges"].as_u64().unwrap();
+    let bridged_tris = iso["bridged_triangles"].as_u64().unwrap();
+    assert!(bridges >= 1 && bridged_tris >= 6, "Great Axe grip: {iso}");
+    assert!(
+        names_alone.iter().any(|n| n.contains("grip inferred")),
+        "root does not say the grip was inferred: {names_alone:?}"
+    );
 
     // The preview mask: one byte per cached vertex, and its `2` triangles
-    // are exactly the item-alone triangle count.
+    // are exactly the item-alone triangle count before the repair.
     let mask = v.equipped_mesh_item_mask(2);
     let positions = v.equipped_mesh_positions();
     assert_eq!(mask.len(), positions.len() / 3, "mask is per vertex");
@@ -488,7 +497,25 @@ fn the_item_alone_glb_drops_the_limb_and_matches_the_preview_mask() {
         .chunks_exact(3)
         .filter(|t| t.iter().all(|&i| mask[i as usize] == 2))
         .count() as u64;
-    assert_eq!(kept_tris, tri_count(&doc_alone), "mask vs item-alone glb");
+    assert_eq!(
+        kept_tris + bridged_tris,
+        tri_count(&doc_alone),
+        "mask + bridge vs item-alone glb"
+    );
+    // The item-only preview mesh IS the exported geometry: parallel streams,
+    // the same triangle count as the file, object ids inside the rig.
+    let ipos = v.equipped_item_only_positions(2);
+    let iidx = v.equipped_item_only_indices(2);
+    let iobj = v.equipped_item_only_object_ids(2);
+    assert_eq!(iidx.len() as u64 / 3, tri_count(&doc_alone));
+    assert_eq!(ipos.len() / 3, iobj.len());
+    assert_eq!(v.equipped_item_only_uvs(2).len() / 2, iobj.len());
+    assert_eq!(v.equipped_item_only_cba_tsb(2).len() / 2, iobj.len());
+    assert_eq!(v.equipped_item_only_flat_rgba(2).len() / 4, iobj.len());
+    let parts = s["part_count"].as_u64().unwrap() as u32;
+    assert!(iobj.iter().all(|&o| o < parts), "object ids inside the rig");
+    assert!(v.equipped_item_only_bounds(2)[3] > 0.0);
+    assert!(v.equipped_item_only_positions(0).is_empty());
     assert!(
         mask.contains(&1),
         "the limb the cut left behind is masked 1"
@@ -550,6 +577,116 @@ fn the_item_alone_glb_drops_the_limb_and_matches_the_preview_mask() {
         kept > dropped && dropped > 0,
         "Hunter Clothes: kept {kept} dropped {dropped}"
     );
+}
+
+/// The equipment panel's item cards: one single-item build per
+/// `(character, section, id)`, cached across the metadata / thumbnail /
+/// download calls, thumbnail drawn by the software rasteriser.
+#[test]
+fn item_cards_carry_metadata_a_thumbnail_and_downloads() {
+    let Some(mut v) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // Vahn's Great Axe as a card.
+    let card: serde_json::Value =
+        serde_json::from_str(&v.equipment_item_card_json(0, 2, 0x33)).unwrap();
+    assert_eq!(card["ok"], serde_json::json!(true), "{card}");
+    assert_eq!(card["name"], "Great Axe");
+    assert_eq!(card["class"], "welded");
+    assert_eq!(card["isolation"]["mode"], "colour-diff");
+    assert!(
+        card["isolation"]["bridges"].as_u64().unwrap() >= 1,
+        "{card}"
+    );
+    assert!(card["alone_triangles"].as_u64().unwrap() > 20, "{card}");
+    let px = v.equipment_item_card_pixels(96);
+    assert_eq!(px.len(), 96 * 96 * 4);
+    let opaque = px.chunks_exact(4).filter(|p| p[3] == 255).count();
+    // Something drew, and the background stayed transparent.
+    assert!(
+        opaque > 96 * 96 / 40 && opaque < 96 * 96 * 9 / 10,
+        "opaque {opaque}"
+    );
+    let alone = v.equipment_item_card_glb(true);
+    let with_limb = v.equipment_item_card_glb(false);
+    assert!(alone.len() > 512 && with_limb.len() > alone.len());
+    // The card is independent of the main loadout: nothing was equipped.
+    assert!(v.equipped_item_only_glb(2).is_empty());
+    // A curated head item and a body item card too.
+    let seal: serde_json::Value =
+        serde_json::from_str(&v.equipment_item_card_json(0, 1, 0x34)).unwrap();
+    assert_eq!(
+        seal["isolation"]["curated"],
+        serde_json::json!(true),
+        "{seal}"
+    );
+    assert_eq!(
+        seal["isolation"]["bridges"],
+        serde_json::json!(0),
+        "a circlet has no grip"
+    );
+    let px = v.equipment_item_card_pixels(64);
+    assert!(px.chunks_exact(4).any(|p| p[3] == 255));
+    // Out of range / default id refuse cleanly.
+    let bad: serde_json::Value =
+        serde_json::from_str(&v.equipment_item_card_json(0, 2, 0)).unwrap();
+    assert_eq!(bad["ok"], serde_json::json!(false));
+    let bad: serde_json::Value =
+        serde_json::from_str(&v.equipment_item_card_json(7, 2, 0x33)).unwrap();
+    assert_eq!(bad["ok"], serde_json::json!(false));
+
+    // Visual pass: `LEGAIA_EQUIP_SHEETS=<dir>` writes one card sheet per
+    // character - every item's thumbnail exactly as the page will show it.
+    let Some(dir) = std::env::var_os("LEGAIA_EQUIP_SHEETS").map(std::path::PathBuf::from) else {
+        return;
+    };
+    std::fs::create_dir_all(&dir).unwrap();
+    let pack: serde_json::Value = serde_json::from_str(&v.equipment_pack_json()).unwrap();
+    let size = 96usize;
+    let cols = 8usize;
+    for slot in pack["slots"].as_array().unwrap() {
+        let cslot = slot["slot"].as_u64().unwrap() as u32;
+        let mut cards: Vec<(u32, u32)> = Vec::new();
+        for sec in slot["sections"].as_array().unwrap() {
+            let si = sec["index"].as_u64().unwrap() as u32;
+            for it in sec["items"].as_array().unwrap() {
+                cards.push((si, it["id"].as_u64().unwrap() as u32));
+            }
+        }
+        if cards.is_empty() {
+            continue;
+        }
+        let rows = cards.len().div_ceil(cols);
+        let (w, h) = (cols * (size + 4), rows * (size + 4));
+        let mut img = vec![0u8; w * h * 4];
+        for px in img.chunks_exact_mut(4) {
+            px.copy_from_slice(&[24, 26, 32, 255]);
+        }
+        for (k, (si, id)) in cards.iter().enumerate() {
+            let c: serde_json::Value =
+                serde_json::from_str(&v.equipment_item_card_json(cslot, *si, *id)).unwrap();
+            if c["ok"] != serde_json::json!(true) {
+                continue;
+            }
+            let px = v.equipment_item_card_pixels(size as u32);
+            let panel = legaia_asset::mesh_raster::Rgba {
+                pixels: &px,
+                width: size,
+                height: size,
+            };
+            legaia_asset::mesh_raster::blit(
+                &mut img,
+                w,
+                h,
+                &panel,
+                (k % cols) * (size + 4),
+                (k / cols) * (size + 4),
+            );
+        }
+        let who = slot["label"].as_str().unwrap().to_ascii_lowercase();
+        legaia_tim::write_png(&dir.join(format!("{who}_cards.png")), w, h, &img).unwrap();
+    }
 }
 
 /// The diff highlight must classify something on a weapon swap, and the
