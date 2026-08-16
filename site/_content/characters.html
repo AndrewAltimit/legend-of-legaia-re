@@ -145,33 +145,17 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
 .char-diff-swatch.is-shared { background: #4a4f5a; }
 .char-diff-swatch.is-added { background: #ffc048; }
 .char-diff-swatch.is-bare { background: #3078e0; }
-.char-item-block { display: flex; flex-direction: column; gap: 0.3rem; }
-.char-item-row { display: flex; flex-direction: column; gap: 0.15rem; }
-.char-item-row button { align-self: flex-start; }
-.char-item-row span { color: var(--text-dim); }
-/* The item-alone row hangs under its record-keeping sibling: indented, and
-   its two buttons (download / preview) sit side by side. */
-.char-item-row-alone { padding-left: 1rem; margin-bottom: 0.35rem; }
-.char-item-row-alone .char-item-btns { display: flex; flex-wrap: wrap; gap: 0.3rem; }
-.char-item-row-alone .char-item-btns button { align-self: auto; }
-.char-diff-scroll { overflow-x: auto; }
-table.char-diff-table { width: 100%; border-collapse: collapse; }
-table.char-diff-table th, table.char-diff-table td {
-  border-bottom: 1px solid var(--border); padding: 0.15rem 0.3rem; text-align: right;
-  white-space: nowrap;
-}
-table.char-diff-table th { color: var(--text-dim); font-weight: normal; }
-table.char-diff-table td:first-child, table.char-diff-table th:first-child { text-align: left; }
-.char-fun {
-  color: var(--text-dim); font-size: 0.74rem; font-family: var(--font-mono);
-  background: var(--bg-code); border: 1px solid var(--border);
-  padding: 0.4rem 0.55rem;
-}
+.char-item-block { display: flex; flex-direction: column; gap: 0.35rem; }
+/* One compact row per worn piece: its name, then the three actions. */
+.char-item-row { display: flex; flex-direction: column; gap: 0.2rem; }
+.char-item-row > b { color: var(--text); font-weight: normal; }
+.char-item-row > b i { color: var(--text-dim); font-style: normal; font-size: 0.7rem; }
+.char-item-btns { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 
-.char-clip-row { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.char-clip-row { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.25rem; }
 .char-clip-btn {
-  background: var(--bg-card); color: var(--text-muted); border: 1px solid var(--border);
-  padding: 0.25rem 0.55rem; font-family: var(--font-mono); font-size: 0.74rem;
+  background: var(--bg-card); color: var(--text); border: 1px solid var(--border);
+  padding: 0.38rem 0.7rem; font-family: var(--font-mono); font-size: 0.82rem;
   border-radius: 3px; cursor: pointer;
 }
 .char-clip-btn:hover { border-color: var(--accent); color: var(--text); }
@@ -224,23 +208,6 @@ table.char-diff-table td:first-child, table.char-diff-table th:first-child { tex
       <div class="char-viewer-side">
         <h3 id="char-name">-</h3>
         <div class="char-stat" id="char-stats"></div>
-        <div class="char-info-note" id="char-form-note"></div>
-        <div class="char-info-note">Tactical Arts, AP and command strings for every hero live on the <a href="arts.html">arts page</a>.</div>
-
-        <div class="char-section-label" id="char-equip-section-label">Equipment swap</div>
-        <div class="char-equip-toggle" id="char-equip-toggle"></div>
-        <div class="char-loadout" id="char-loadout" style="display: none;"></div>
-        <div class="char-info-note" id="char-equip-note"></div>
-        <div class="char-diff-panel" id="char-diff-panel" style="display: none;"></div>
-
-        <div class="char-section-label">View</div>
-        <div class="char-controls">
-          <button id="char-spin-btn" type="button">⏸ stop spin</button>
-          <button id="char-reset-btn" type="button">↺ reset view</button>
-          <button id="char-tmd-btn" type="button" title="Download the (possibly equipment-patched) Legaia TMD body">⬇ .tmd</button>
-          <button id="char-glb-btn" type="button" title="Download this character as a textured glTF model with the form's real animation clips baked in (field: the party walk/idle locomotion bank; battle: the character's action bank + weapon swings; Baka Fighter: the 9-record battle bank)">⬇ .glb</button>
-        </div>
-        <div class="char-fun" id="char-fun"></div>
 
         <div class="char-section-label" id="char-anm-section-label">Animation</div>
         <div class="char-anm-wrap" id="char-anm-wrap">
@@ -262,16 +229,31 @@ table.char-diff-table td:first-child, table.char-diff-table th:first-child { tex
             <input type="checkbox" id="char-anm-show-all"> browse all bundles / records
           </label>
           <div class="char-info-note" id="char-anm-info">
-            The real animation clips shipped on the disc, filtered to the ones that apply to the shown model: in field form the party's own <strong>walk / idle locomotion bank</strong>, in Baka Fighter form the character's labeled 9-record battle bank. Click a clip to play it; the per-scene NPC pools and every other bundle are under &ldquo;browse all&rdquo;. Encoding: <a href="formats/anm.html">ANM format</a>.
+            Real in-game clips off your disc, scoped to the shown model: the party's <strong>walk / idle</strong> bank in field form, the character's 9-record battle bank in Baka Fighter form. Every other bundle is under &ldquo;browse all&rdquo;. Encoding: <a href="formats/anm.html">ANM format</a>.
           </div>
         </div>
+
+        <div class="char-section-label" id="char-equip-section-label">Equipment swap</div>
+        <div class="char-equip-toggle" id="char-equip-toggle"></div>
+        <div class="char-loadout" id="char-loadout" style="display: none;"></div>
+        <div class="char-info-note" id="char-equip-note"></div>
+        <div class="char-diff-panel" id="char-diff-panel" style="display: none;"></div>
+
+        <div class="char-section-label">View</div>
+        <div class="char-controls">
+          <button id="char-spin-btn" type="button">⏸ stop spin</button>
+          <button id="char-reset-btn" type="button">↺ reset view</button>
+          <button id="char-tmd-btn" type="button" title="Download the (possibly equipment-patched) Legaia TMD body">⬇ .tmd</button>
+          <button id="char-glb-btn" type="button" title="Download this character as a textured glTF model with the form's real animation clips baked in (field: the party walk/idle locomotion bank; battle: the character's action bank + weapon swings; Baka Fighter: the 9-record battle bank)">⬇ .glb</button>
+        </div>
+        <div class="char-info-note">Tactical Arts, AP and command strings for every hero live on the <a href="arts.html">arts page</a>. Forms, the equipment cut and the grip repair are explained under <a href="#about-data">About this data</a>.</div>
       </div>
     </div>
   </div>
 
 </section>
 
-<details class="about-data">
+<details class="about-data" id="about-data">
   <summary>About this data — forms, the equipment cut, the grip repair, animation provenance</summary>
   <div class="about-body">
   <h3 id="baka-fighter-meshes">Field form, battle form, Baka Fighter</h3>
@@ -332,14 +314,12 @@ table.char-diff-table td:first-child, table.char-diff-table th:first-child { tex
   const canvas = document.getElementById('char-viewer-canvas');
   const nameEl = document.getElementById('char-name');
   const statsEl = document.getElementById('char-stats');
-  const formNoteEl = document.getElementById('char-form-note');
   const equipToggle = document.getElementById('char-equip-toggle');
   const equipNote = document.getElementById('char-equip-note');
   const equipPanelEl = document.getElementById('char-equip-panel');
   const spinBtn = document.getElementById('char-spin-btn');
   const resetBtn = document.getElementById('char-reset-btn');
   const tmdBtn = document.getElementById('char-tmd-btn');
-  const funEl = document.getElementById('char-fun');
   const anmBundleSel = document.getElementById('char-anm-bundle');
   const anmRecordSlider = document.getElementById('char-anm-record');
   const anmRecordLabel = document.getElementById('char-anm-record-label');
@@ -491,17 +471,6 @@ table.char-diff-table td:first-child, table.char-diff-table th:first-child { tex
     }
   }
 
-  function renderFormNote() {
-    if (!formNoteEl) return;
-    if (isEquipLoadoutForm(curForm)) {
-      formNoteEl.innerHTML = '<strong>Battle form</strong>: the real assembly - the model is spliced out of whichever equipment sections are worn, exactly as a battle does it. Put pieces on in the <strong>equipment</strong> panel under the viewer; each card is that piece drawn on its own. Full story: <a href="formats/character-mesh.html">character-mesh format</a>.';
-    } else if (isBattlePackForm(curForm)) {
-      formNoteEl.innerHTML = '<strong>Baka Fighter</strong>: the disc\'s pre-baked default-gear copy of the battle model (PROT 1204), which the fist-fight minigame reuses. Same mesh either palette; only the colours differ.';
-    } else {
-      formNoteEl.innerHTML = '<strong>Field form</strong>: the low-poly model loaded in every town and dungeon, textured from the field character atlas. Its only equipment mechanism is a one-byte swap of the weapon-holding part.';
-    }
-  }
-
   // ----- Player ANM scrubber -----
   let scenesData = null;
   async function ensureScenes() {
@@ -547,7 +516,7 @@ table.char-diff-table td:first-child, table.char-diff-table th:first-child { tex
       const showAll = document.getElementById('char-anm-show-all');
       if (showAll && showAll.parentElement) showAll.parentElement.style.display = 'none';
       if (anmInfo) {
-        anmInfo.innerHTML = 'The assembled model\'s own clips, read out of the same player battle file: the <strong>record[0] action bank</strong> (idle, the flinches, knockdown, block&hellip;) plus the four <strong>weapon swings</strong>, which are spliced from the equipped weapon\'s section and therefore change with it. Encoding: <a href="formats/anm.html">ANM format</a>.';
+        anmInfo.innerHTML = 'The model\'s own clips from the same player battle file: the <strong>action bank</strong> plus the four <strong>weapon swings</strong>, which change with the equipped weapon. Encoding: <a href="formats/anm.html">ANM format</a>.';
       }
       renderEquipClipButtons();
       return;
@@ -710,46 +679,30 @@ table.char-diff-table td:first-child, table.char-diff-table th:first-child { tex
       </div>`;
   }
 
-  // What the loadout changed, as the geometry counts the assembly reports.
+  // The side panel's per-item block (downloads + preview) and, with the
+  // diff highlight on, its colour key. The per-bone geometry counts stay in
+  // the summary JSON for anyone who wants them; the page keeps its space.
   function renderDiffPanel() {
     if (!isEquipLoadoutForm(curForm) || !equipSummary || !equipSummary.ok) {
       diffPanelEl.style.display = 'none';
       return;
     }
-    const changed = equipSummary.changed_objects || [];
-    diffPanelEl.style.display = '';
-    if (!changed.length && !(equipSummary.items || []).length) {
-      diffPanelEl.innerHTML = renderItemBlock() + `<div>Nothing equipped - this is the unequipped assembly, the model every other view on this site shows. Put something on in the equipment panel under the viewer.</div>`;
+    const items = equipSummary.items || [];
+    if (!items.length) {
+      diffPanelEl.style.display = 'none';
       return;
     }
+    diffPanelEl.style.display = '';
     const key = equipDiff ? `<div class="char-diff-key">
         <span><i class="char-diff-swatch is-shared"></i>shared with the bare part</span>
         <span><i class="char-diff-swatch is-added"></i>beyond the bare part</span>
         <span><i class="char-diff-swatch is-bare"></i>bare geometry replaced</span>
       </div>` : '';
-    const rows = changed.map(d => `<tr>
-        <td>bone ${d.bone}</td>
-        <td>${d.bare_vertices} &rarr; ${d.equipped_vertices}</td>
-        <td>${d.bare_primitives} &rarr; ${d.equipped_primitives}</td>
-        <td>${d.added_primitives}</td>
-        <td>${d.straddling_primitives}</td>
-      </tr>`).join('');
-    diffPanelEl.innerHTML = renderItemBlock() + key + `
-      <div class="char-diff-scroll"><table class="char-diff-table">
-        <thead><tr><th>object</th><th>vertices</th><th>prims</th><th>beyond</th><th>straddling</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table></div>
-      <div>${changed.length} bone object${changed.length === 1 ? '' : 's'} re-authored. Equipment is not a separate object bolted on - the section replaces the whole bone object - so the &ldquo;beyond&rdquo; and &ldquo;straddling&rdquo; columns are an approximate envelope boundary, not the item cut.</div>`;
+    diffPanelEl.innerHTML = renderItemBlock() + key;
   }
 
   // Per-item downloads for the pieces currently worn. Every equipped
   // section gets one - by policy, completeness over purity.
-  const ITEM_CLASS_NOTE = {
-    'own-object': 'own object - ships as its own piece on the disc, nothing was cut',
-    'separate': 'separate - came away whole, it shares no vertex with the hand',
-    'welded': 'welded at the grip - the part inside the closed fist was never modelled',
-    'fused': 'fused with the host limb - no material boundary separates this piece from the body part it is sculpted onto, so you get both',
-  };
   const ISOLATION_MODE_NOTE = {
     'colour-diff': 'kept what is not coloured like the bare limb (skin, hair, wrist band)',
     'identity': 'kept what is not an unchanged piece of the default outfit',
@@ -766,35 +719,20 @@ table.char-diff-table td:first-child, table.char-diff-table th:first-child { tex
   // Section index whose item-alone cut the viewer is previewing, or null.
   let equipItemPreview = null;
   function renderItemBlock() {
-    const meta = equipSlotMeta();
     const items = (equipSummary && equipSummary.items) || [];
-    if (!meta) return '';
-    const rows = meta.sections.map(sec => {
-      const it = items.find(i => i.section === sec.index);
-      if (!it) {
-        const why = equipIds[sec.index] === 0
-          ? 'nothing equipped in this section - pick a piece in the equipment panel to get its download'
-          : 'this section contributed no geometry';
-        return `<div class="char-item-row">
-          <button class="char-equip-btn" disabled title="${escapeHtml(why)}">⬇ .glb ${escapeHtml(sectionShort(sec.label))}: none</button>
-        </div>`;
-      }
-      const note = ITEM_CLASS_NOTE[it.class] || it.describe || '';
+    const rows = items.map(it => {
       const iso = it.isolation || null;
-      const isoNote = iso
-        ? `${iso.kept_primitives} prims kept, ${iso.dropped_primitives} left behind${iso.bridged_triangles ? `, ${iso.bridged_triangles} tris bridged` : ''} &middot; ${escapeHtml(ISOLATION_MODE_NOTE[iso.mode] || iso.mode)}${iso.curated ? ' &middot; <b>hand-checked</b>' + (iso.note ? ': ' + escapeHtml(iso.note) : '') : ' &middot; heuristic only'}${iso.bridges ? ' &middot; <b>grip inferred</b>: ' + iso.bridges + ' bridge' + (iso.bridges === 1 ? '' : 's') : ''}`
-        : '';
       const previewing = equipItemPreview === it.section;
+      const name = it.name || ('id ' + it.id);
+      const tags = isoTags(iso);
+      const canAlone = iso && iso.kept_primitives;
       return `<div class="char-item-row">
-        <button class="char-equip-btn" data-item-section="${it.section}" title="Download this piece plus the limb it sits on, as named nodes in one glTF file (${escapeHtml(it.describe || it.class)})">⬇ .glb ${escapeHtml(it.name || ('id ' + it.id))} + limb</button>
-        <span>${it.item_primitives} prims / ${it.item_vertices} verts &middot; ${escapeHtml(note)}</span>
-      </div>
-      <div class="char-item-row char-item-row-alone">
+        <b>${escapeHtml(name)}${tags ? ' <i>' + tags + '</i>' : ''}</b>
         <div class="char-item-btns">
-          <button class="char-equip-btn" data-item-only-section="${it.section}" ${iso && iso.kept_primitives ? '' : 'disabled'} title="Download just this piece - no limb, no skin, no unchanged default geometry, grip repaired where two shaft ends faced each other. An opinionated cut, not a disc fact: see the note">⬇ .glb ${escapeHtml(it.name || ('id ' + it.id))} <em>alone</em></button>
-          <button class="char-equip-btn${previewing ? ' is-active' : ''}" data-item-preview-section="${it.section}" ${iso && iso.kept_primitives ? '' : 'disabled'} title="Show only what the item-alone download will contain, grip repair included">${previewing ? '● previewing' : '○ preview'}</button>
+          <button class="char-equip-btn" data-item-only-section="${it.section}" ${canAlone ? '' : 'disabled'} title="Download just this piece - no limb, no skin, no unchanged default geometry; the grip is bridged where two shaft ends face each other. An opinionated cut, not a disc fact (${escapeHtml(ISOLATION_MODE_NOTE[iso ? iso.mode : ''] || '')})">⬇ alone</button>
+          <button class="char-equip-btn" data-item-section="${it.section}" title="Download this piece plus the limb it sits on, as named nodes in one glTF file - the exact palette cut, for the record (${escapeHtml(it.describe || it.class)})">⬇ + limb</button>
+          <button class="char-equip-btn${previewing ? ' is-active' : ''}" data-item-preview-section="${it.section}" ${canAlone ? '' : 'disabled'} title="Show only what the alone download will contain">${previewing ? '● previewing' : '○ preview'}</button>
         </div>
-        <span>${isoNote}</span>
       </div>`;
     });
     return `<div class="char-item-block">${rows.join('')}</div>`;
@@ -933,9 +871,9 @@ table.char-diff-table td:first-child, table.char-diff-table th:first-child { tex
     syncTmdButton();
     if (isEquipLoadoutForm(curForm)) {
       equipToggle.innerHTML = '';
-      equipSectionLabel.textContent = 'Wearing';
+      equipSectionLabel.textContent = 'Wearing · downloads';
       loadoutEl.style.display = selectedSlot === null ? 'none' : '';
-      equipNote.innerHTML = 'Retail assembles a party member\'s battle model out of five equipment sections in <code>data\\battle\\PLAYER1..4</code>, matched against the equip bytes in the save record. The panel under the viewer re-splices the model exactly that way.';
+      equipNote.innerHTML = 'Pick pieces in the <strong>equipment</strong> panel under the viewer; each worn piece gets its downloads here.';
       renderLoadoutSummary();
       renderDiffPanel();
       renderEquipPanel();
@@ -1051,7 +989,6 @@ table.char-diff-table td:first-child, table.char-diff-table th:first-child { tex
       }
     }
     renderFormToggle();
-    renderFormNote();
     updateAnmVisibility();
     renderAnmPanel();
     if (selectedSlot !== null) {
@@ -1363,9 +1300,6 @@ table.char-diff-table td:first-child, table.char-diff-table th:first-child { tex
         (equipItemPreview !== null
           ? `previewing the item alone`
           : (worn.length ? escapeHtml(worn.map(s => s.name || `id ${s.resolved}`).join(', ')) : 'nothing equipped'));
-      funEl.textContent = worn.length
-        ? `${summary.part_count} body parts · assembled from ${worn.length} equipped section${worn.length === 1 ? '' : 's'} on your disc`
-        : `${summary.part_count} body parts · every section at its unequipped default`;
       if (curEquipClip >= (summary.clips || []).length) curEquipClip = 0;
       renderEquipClipButtons();
       renderDiffPanel();
@@ -1407,10 +1341,7 @@ table.char-diff-table td:first-child, table.char-diff-table th:first-child { tex
         const meta = battlePack.slots[slot];
         statsEl.innerHTML =
           `<b>${tri}</b> triangles · <b>${vert}</b> vertices · ${curForm === 'battle' ? 'in-battle colours' : 'Baka Fighter colours'}`;
-        funEl.textContent = curForm === 'battle'
-          ? `${meta.disc_nobj} body parts · true in-battle colours decoded from the character's battle file on your disc`
-          : `${meta.disc_nobj} body parts · Baka Fighter minigame colours (the pack's bundled palette)`;
-        maybeLoadCurrentAnim();
+          maybeLoadCurrentAnim();
       } catch (err) {
         statsEl.innerHTML = `<span style="color:var(--text-dim)">WebGL2 unavailable: ${escapeHtml(String(err))}</span>`;
       }
@@ -1442,8 +1373,6 @@ table.char-diff-table td:first-child, table.char-diff-table th:first-child { tex
       const equipLabel = equip < 0 ? 'disc form' : (equip === 0 ? 'unequipped' : 'equipped');
       statsEl.innerHTML =
         `<b>${tri}</b> triangles · <b>${vert}</b> vertices · ${escapeHtml(equipLabel)}`;
-      funEl.textContent =
-        `${pack.slots[slot].disc_nobj} body parts · textured from the field character atlas on your disc`;
       maybeLoadCurrentAnim();
     } catch (err) {
       statsEl.innerHTML = `<span style="color:var(--text-dim)">WebGL2 unavailable: ${escapeHtml(String(err))}</span>`;
@@ -1947,7 +1876,6 @@ table.char-diff-table td:first-child, table.char-diff-table th:first-child { tex
       status.textContent = `Loaded: ${f.name} - decoded ${pack.slots.length} field-form slots${battleNote}${anmNote}${equipNoteText}.`;
       renderCharacterPicker();
       renderFormToggle();
-      renderFormNote();
       ensureScenes().then(() => renderAnmPanel());
       renderAnmPanel();
       // Auto-select Vahn so the user sees a model right away.

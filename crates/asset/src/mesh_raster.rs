@@ -73,11 +73,11 @@ pub struct RasterOptions {
     /// Head-on shading strength: `0.0` = the raw texel (retail), `1.0` = full
     /// `|n_z|` falloff. Thumbnails want a little.
     pub shade: f32,
-    /// Re-frame the posed model on its own principal axes before the orbit
-    /// angles apply: longest extent up the image, second widest across it,
-    /// thinnest toward the viewer - so a sword stands blade-up and flat-on
-    /// no matter how the hand holds it. What a card grid wants; a single
-    /// orbit view wants it off.
+    /// Re-frame the posed model before the orbit angles apply (see
+    /// [`card_frame`]): an elongated piece stands on its long axis with the
+    /// rest-pose-higher end up, a compact one stays as worn and is only
+    /// yawed to show its wide side. What a card grid wants; a single orbit
+    /// view wants it off.
     pub auto_orient: bool,
 }
 
@@ -130,7 +130,7 @@ pub fn render_posed(
         })
         .collect();
     if opts.auto_orient
-        && let Some(basis) = principal_frame(&world, &mesh.indices)
+        && let Some(basis) = card_frame(&world, &mesh.indices)
     {
         for p in &mut world {
             *p = apply3(basis, *p);
@@ -340,38 +340,97 @@ pub fn blit(dst: &mut [u8], dw: usize, dh: usize, src: &Rgba<'_>, x: usize, y: u
     }
 }
 
-/// The rotation that takes a vertex cloud onto its principal axes: rows are
-/// (second axis, -first axis, third axis), so the longest extent runs up the
-/// image (PSX `y` is down), the second across, the thinnest toward the
-/// viewer. Only referenced vertices count. The first axis is signed so the
-/// end farther from the centroid points up (a blade is long and sparse, a
-/// hilt short and dense, so the tip is the far end). `None` for a
+/// How long a piece is relative to its next widest extent before it counts
+/// as a *stick* and stands on that axis: `sqrt(lambda1 / lambda2)` of its
+/// covariance. Blades, hafts and legs clear it; a fist-sized gauntlet, an
+/// arm plate, a circlet and a cuirass do not.
+const STICK_ELONGATION: f32 = 1.8;
+
+/// The card framing of a posed vertex cloud: [`long_axis_frame`] for a
+/// stick-shaped piece (a sword held at a tilt still reads best blade-up),
+/// [`upright_frame`] for a compact one (a boot on its sole, a plate along
+/// the arm, armour as worn). Only referenced vertices count. `None` for a
 /// degenerate cloud.
-pub fn principal_frame(points: &[[f32; 3]], indices: &[u32]) -> Option<[[f32; 3]; 3]> {
+pub fn card_frame(points: &[[f32; 3]], indices: &[u32]) -> Option<[[f32; 3]; 3]> {
+    let pts = referenced(points, indices);
+    if pts.len() < 3 {
+        return None;
+    }
+    let (c, cov) = covariance(&pts);
+    let axes = principal_axes(cov)?;
+    let elong = (axes.1[0] / axes.1[1].max(1e-9)).sqrt();
+    // A stick that lies level in the rest pose (a circlet across the brow,
+    // a belt) is worn that way; only a very long one is stood up regardless.
+    let tilted = axes.0[0][1].abs() >= 0.35;
+    if elong >= STICK_ELONGATION && (tilted || elong >= 3.0) {
+        long_axis_frame(&pts, c, axes.0)
+    } else {
+        upright_frame(points, indices)
+    }
+}
+
+/// The rotation that stands the cloud on its longest axis: rows are (second
+/// axis, -first axis, third axis), so the long axis runs up the image (PSX
+/// `y` is down), the second across, the thinnest toward the viewer. The
+/// long axis is signed so the end that sits **higher in the rest pose**
+/// points up - a blade held at a tilt has its tip above its pommel - and,
+/// when the axis is level, so the end farther from the centroid does.
+pub fn long_axis_frame(
+    pts: &[[f32; 3]],
+    centroid: [f32; 3],
+    axes: [[f32; 3]; 2],
+) -> Option<[[f32; 3]; 3]> {
+    let (mut e1, e2) = (axes[0], axes[1]);
+    // World up is -y. Sign the long axis so its projection on up is
+    // positive; a level axis falls back to the far-end rule.
+    if e1[1] > 0.05 {
+        e1 = [-e1[0], -e1[1], -e1[2]];
+    } else if e1[1].abs() <= 0.05 {
+        let (mut hi, mut lo) = (f32::NEG_INFINITY, f32::INFINITY);
+        for p in pts {
+            let d = (p[0] - centroid[0]) * e1[0]
+                + (p[1] - centroid[1]) * e1[1]
+                + (p[2] - centroid[2]) * e1[2];
+            hi = hi.max(d);
+            lo = lo.min(d);
+        }
+        if -lo > hi {
+            e1 = [-e1[0], -e1[1], -e1[2]];
+        }
+    }
+    let e3 = [
+        e1[1] * e2[2] - e1[2] * e2[1],
+        e1[2] * e2[0] - e1[0] * e2[2],
+        e1[0] * e2[1] - e1[1] * e2[0],
+    ];
+    Some([e2, [-e1[0], -e1[1], -e1[2]], e3])
+}
+
+fn referenced(points: &[[f32; 3]], indices: &[u32]) -> Vec<[f32; 3]> {
     let mut used = vec![false; points.len()];
     for &i in indices {
         if let Some(u) = used.get_mut(i as usize) {
             *u = true;
         }
     }
-    let pts: Vec<[f32; 3]> = points
+    points
         .iter()
         .zip(&used)
         .filter(|(_, u)| **u)
         .map(|(p, _)| *p)
-        .collect();
-    if pts.len() < 3 {
-        return None;
-    }
+        .collect()
+}
+
+fn covariance(pts: &[[f32; 3]]) -> ([f32; 3], [[f32; 3]; 3]) {
     let n = pts.len() as f32;
     let mut c = [0.0f32; 3];
-    for p in &pts {
+    for p in pts {
         for k in 0..3 {
             c[k] += p[k] / n;
         }
     }
     let mut cov = [[0.0f32; 3]; 3];
-    for p in &pts {
+    for p in pts {
         let d = [p[0] - c[0], p[1] - c[1], p[2] - c[2]];
         for (i, row) in cov.iter_mut().enumerate() {
             for (j, cell) in row.iter_mut().enumerate() {
@@ -379,8 +438,14 @@ pub fn principal_frame(points: &[[f32; 3]], indices: &[u32]) -> Option<[[f32; 3]
             }
         }
     }
-    // Power iteration for the leading eigenvector, deflate, repeat.
+    (c, cov)
+}
+
+/// The two leading eigenvectors of a 3x3 covariance (power iteration +
+/// deflation) with their eigenvalues. `None` when the cloud is degenerate.
+fn principal_axes(cov: [[f32; 3]; 3]) -> Option<([[f32; 3]; 2], [f32; 2])> {
     let mut axes: Vec<[f32; 3]> = Vec::new();
+    let mut vals: Vec<f32> = Vec::new();
     let mut m = cov;
     for _ in 0..2 {
         let mut v = [0.577f32, 0.577, 0.577];
@@ -402,24 +467,65 @@ pub fn principal_frame(points: &[[f32; 3]], indices: &[u32]) -> Option<[[f32; 3]
             }
         }
         axes.push(v);
+        vals.push(lambda.max(0.0));
     }
-    let (mut e1, e2) = (axes[0], axes[1]);
-    // Sign: the far end up.
-    let (mut hi, mut lo) = (f32::NEG_INFINITY, f32::INFINITY);
+    Some(([axes[0], axes[1]], [vals[0], vals[1]]))
+}
+
+/// The yaw (a rotation about the vertical axis) that turns a posed vertex
+/// cloud so its widest **horizontal** extent runs across the image - the
+/// item stays exactly as upright as the rest stance holds or wears it (a
+/// blade up, a boot on its sole, an arm plate along the arm), and only the
+/// side it shows is chosen. Only referenced vertices count. `None` for a
+/// degenerate cloud (everything on one vertical line).
+///
+/// This deliberately does *not* stand the cloud on its longest axis: a boot
+/// is longest toe-to-heel and would be put on its toe, and a fist-sized
+/// gauntlet has no long axis to speak of. Upright-as-worn is the reading a
+/// card grid wants.
+pub fn upright_frame(points: &[[f32; 3]], indices: &[u32]) -> Option<[[f32; 3]; 3]> {
+    let pts = referenced(points, indices);
+    if pts.len() < 3 {
+        return None;
+    }
+    let n = pts.len() as f32;
+    let (mut cx, mut cz) = (0.0f32, 0.0f32);
     for p in &pts {
-        let d = (p[0] - c[0]) * e1[0] + (p[1] - c[1]) * e1[1] + (p[2] - c[2]) * e1[2];
-        hi = hi.max(d);
-        lo = lo.min(d);
+        cx += p[0] / n;
+        cz += p[2] / n;
     }
-    if -lo > hi {
-        e1 = [-e1[0], -e1[1], -e1[2]];
+    // 2x2 covariance of the ground-plane footprint.
+    let (mut sxx, mut sxz, mut szz) = (0.0f32, 0.0f32, 0.0f32);
+    for p in &pts {
+        let (dx, dz) = (p[0] - cx, p[2] - cz);
+        sxx += dx * dx / n;
+        sxz += dx * dz / n;
+        szz += dz * dz / n;
     }
-    let e3 = [
-        e1[1] * e2[2] - e1[2] * e2[1],
-        e1[2] * e2[0] - e1[0] * e2[2],
-        e1[0] * e2[1] - e1[1] * e2[0],
-    ];
-    Some([e2, [-e1[0], -e1[1], -e1[2]], e3])
+    if sxx + szz < 1e-9 {
+        return None;
+    }
+    // Leading eigenvector of [[sxx, sxz], [sxz, szz]].
+    let tr = sxx + szz;
+    let det = sxx * szz - sxz * sxz;
+    let l1 = tr * 0.5 + (tr * tr * 0.25 - det).max(0.0).sqrt();
+    let (mut hx, mut hz) = if sxz.abs() > 1e-9 {
+        (l1 - szz, sxz)
+    } else if sxx >= szz {
+        (1.0, 0.0)
+    } else {
+        (0.0, 1.0)
+    };
+    // Face the character's front hemisphere: keep the yaw within a quarter
+    // turn either way.
+    if hx < 0.0 {
+        hx = -hx;
+        hz = -hz;
+    }
+    let a = hz.atan2(hx);
+    let (sa, ca) = a.sin_cos();
+    // Rotation about Y taking (hx, hz) onto +X.
+    Some([[ca, 0.0, sa], [0.0, 1.0, 0.0], [-sa, 0.0, ca]])
 }
 
 fn mul3(a: [[f32; 3]; 3], b: [[f32; 3]; 3]) -> [[f32; 3]; 3] {
@@ -456,22 +562,61 @@ mod tests {
     }
 
     #[test]
-    fn principal_frame_stands_the_long_axis_up_with_the_far_end_on_top() {
-        // A rod along +X, dense at the -X end (the "hilt"), sparse toward +X
-        // (the "tip"): the frame turns X into image-up (negative y) with the
-        // tip end up.
+    fn upright_frame_turns_the_wide_side_to_the_camera_and_keeps_up_up() {
+        // A tall plank lying along Z (wide in Z, thin in X): the frame yaws
+        // it so its width runs along X, and leaves Y alone.
+        let mut pts: Vec<[f32; 3]> = Vec::new();
+        for i in 0..20 {
+            pts.push([0.0, -50.0, i as f32 * 5.0]);
+            pts.push([1.0, 50.0, i as f32 * 5.0]);
+        }
+        let idx: Vec<u32> = (0..pts.len() as u32).collect();
+        let f = upright_frame(&pts, &idx).unwrap();
+        let a = apply3(f, pts[0]);
+        let b = apply3(f, pts[38]);
+        assert!(
+            (a[2] - b[2]).abs() < 1e-3,
+            "width now across X: {a:?} {b:?}"
+        );
+        assert!((a[0] - b[0]).abs() > 90.0);
+        assert!((a[1] - pts[0][1]).abs() < 1e-4, "vertical untouched");
+        assert!(upright_frame(&[[0.0, 0.0, 0.0]; 3], &[0, 1, 2]).is_none());
+    }
+
+    #[test]
+    fn card_frame_stands_a_tilted_stick_up_and_leaves_a_block_as_worn() {
+        // A rod held at 45 degrees (x = -y, PSX y down so the tip at
+        // negative y is the high end): the card frame stands it up, tip up.
         let mut pts: Vec<[f32; 3]> = Vec::new();
         for i in 0..40 {
-            pts.push([i as f32 * 0.5, (i % 2) as f32, 0.0]);
+            let t = i as f32 * 2.0;
+            pts.push([t, -t, 0.0]);
+            pts.push([t + 0.5, -t, 0.7]);
         }
-        pts.push([100.0, 0.5, 0.0]);
-        pts.push([100.0, 0.0, 0.5]);
         let idx: Vec<u32> = (0..pts.len() as u32).collect();
-        let f = principal_frame(&pts, &idx).unwrap();
-        let tip = apply3(f, [100.0, 0.5, 0.0]);
-        let hilt = apply3(f, [0.0, 0.0, 0.0]);
-        assert!(tip[1] < hilt[1], "tip {tip:?} hilt {hilt:?}");
-        assert!((tip[1] - hilt[1]).abs() > 90.0);
+        let f = card_frame(&pts, &idx).unwrap();
+        let tip = apply3(f, [78.0, -78.0, 0.0]);
+        let butt = apply3(f, [0.0, 0.0, 0.0]);
+        assert!(
+            (tip[0] - butt[0]).abs() < 1.0,
+            "vertical now: {tip:?} {butt:?}"
+        );
+        assert!(tip[1] < butt[1] - 100.0, "tip up: {tip:?} {butt:?}");
+        // A near-cube block keeps its vertical.
+        let mut blk: Vec<[f32; 3]> = Vec::new();
+        for x in 0..4 {
+            for y in 0..4 {
+                for z in 0..3 {
+                    blk.push([x as f32 * 10.0, y as f32 * 9.0, z as f32 * 8.0]);
+                }
+            }
+        }
+        let bidx: Vec<u32> = (0..blk.len() as u32).collect();
+        let g = card_frame(&blk, &bidx).unwrap();
+        assert!(
+            (g[1][1] - 1.0).abs() < 1e-6 && g[1][0].abs() < 1e-6,
+            "{g:?}"
+        );
     }
 
     #[test]

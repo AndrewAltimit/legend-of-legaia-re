@@ -709,8 +709,9 @@ three calls share it. The JSON carries the name, the palette-cut class, the
 item-alone decision (`mode` / `curated` / `note`), what it kept and what the
 grip repair added; the pixels are the item alone at the character's rest
 stance, drawn by `legaia_asset::mesh_raster` (software, so forty cards do
-not need forty GL contexts) re-framed on the item's principal axes - blade
-up, flat-on - over a transparent background; the glb is the alone / with-limb
+not need forty GL contexts) - a stick-shaped piece stood on its long axis
+with the rest-pose-higher end up, a compact one left as worn and yawed to
+show its wide side - over a transparent background; the glb is the alone / with-limb
 download without equipping the piece first. The page builds cards through a
 queue that yields to the orbit view between items.
 
