@@ -26,7 +26,8 @@ use legaia_asset::party_swap::{self, PlayerRig, fieldize, playerize, winpose};
 pub const READEF_ENTRY: usize = 894;
 
 /// PROT entry of the raw battle-action overlay (base VA `0x801CE818`) -
-/// where the per-character attack-camera jump tables live.
+/// where the per-character attack-camera jump tables and the
+/// per-character element table live.
 const BATTLE_OVERLAY_ENTRY: usize = 898;
 
 use crate::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
@@ -349,6 +350,14 @@ pub fn apply_delilas_party(
     // battle side, so both forms match). Runs only alongside a fresh
     // apply - an already-swapped 0874 must not re-convert.
     if report.changed {
+        // The element each slot now fights in. First of the post-model
+        // passes because it is pure identity - it decides what every
+        // attack of that slot deals and takes, not just the signature
+        // art's, and nothing below reads it.
+        report
+            .notes
+            .extend(retarget_character_elements(patcher, mapping, &archive)?);
+
         let field_entry = fieldize::PROT_ENTRY_INDEX;
         let prot_0874 = patcher
             .read_entry_footprint(field_entry)
@@ -580,6 +589,68 @@ pub fn apply_delilas_party(
         }
     }
     Ok(report)
+}
+
+/// Give each hero slot the mapped sibling's own **element**.
+///
+/// The battle overlay's per-character element table
+/// (`0x801F5480`, one byte per 1-based character id;
+/// `legaia_asset::element_affinity::CHARACTER_ELEMENTS_FILE_OFFSET`) is the
+/// only per-character element on the disc, and retail seeds it Vahn = fire,
+/// Noa = wind, Gala = thunder. Two routines index it, both with
+/// `DAT_8007BD10[actor] - 1` (the slot's active member id), and both use the
+/// result as a row/column of the affinity matrix `0x801F53E8`:
+/// `FUN_801DD864` (`0x801dd8ac` / `0x801dd900`) and the hit kernel
+/// `FUN_801EC3E4` (`0x801ecf38` attacker, `0x801ecf94` defender). So the
+/// table decides what element every one of that slot's attacks *deals* and
+/// what it *takes* - and until this runs, a swapped party fights in the
+/// hero's element: Lu's Plasma Strike lands as fire out of Vahn's slot and
+/// Che's Megaton Press as thunder out of Gala's.
+///
+/// The replacement is not a choice - each sibling's monster record already
+/// carries their own element at `+0x1D` (the same byte `FUN_801EC3E4` reads
+/// for an enemy attacker at `0x801ecf68`), and the three read Gi = fire,
+/// Che = earth, Lu = thunder. Taken from the archive image captured
+/// **before** the model loop, so a re-skinned block cannot feed it back.
+///
+/// This is the whole character, not just the signature art: retail has no
+/// per-art element, so a Ra-Seru cast and a basic swing scale through the
+/// same byte.
+fn retarget_character_elements(
+    patcher: &mut DiscPatcher,
+    mapping: &PartyMapping,
+    archive: &[u8],
+) -> Result<Vec<String>> {
+    use legaia_asset::element_affinity as ea;
+    let mut notes = Vec::new();
+    for (_, _, slot, who, sibling) in mapping.pairs() {
+        let id = sibling.monster_id();
+        let element = monster_archive::record(archive, id)
+            .with_context(|| format!("read monster {id} for its element"))?
+            .ok_or_else(|| anyhow::anyhow!("monster id {id}: empty slot"))?
+            .element;
+        let name = ea::Element::from_id(element)
+            .map(|e| e.name())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{} carries element id {element}, outside the {}-element space",
+                    sibling.display_name(),
+                    ea::ELEMENT_COUNT
+                )
+            })?;
+        // The table is 1-based on character id and the party slots are
+        // characters 1..=3, so the slot index IS the table index.
+        let off = ea::CHARACTER_ELEMENTS_FILE_OFFSET + slot;
+        patcher
+            .patch_prot_entry(BATTLE_OVERLAY_ENTRY, off as u64, &[element])
+            .with_context(|| format!("write the {who}-slot element"))?;
+        notes.push(format!(
+            "{who} element: {} ({}'s own)",
+            name,
+            sibling.display_name()
+        ));
+    }
+    Ok(notes)
 }
 
 // ---------------------------------------------------------------------------

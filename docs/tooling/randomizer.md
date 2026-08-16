@@ -68,6 +68,8 @@ disc-gated, so CI runs without a disc. There is also a
   - [Approach-softlock fix](#approach-softlock-fix)
   - [Delilas Challenge](#delilas-challenge)
   - [Delilas party swap](#delilas-party-swap)
+    - [Each slot fights in its sibling's element](#each-slot-fights-in-its-siblings-element)
+    - [The bank the runtime walks](#the-bank-the-runtime-walks)
     - [The Delilas move set](#the-delilas-move-set)
   - [Fishing prize prices](#fishing-prize-prices)
   - [Location names](#location-names)
@@ -1821,6 +1823,65 @@ two bands that do not write `TR.y` themselves.
 `actor+0x21D` on every party Tactical Art strike, and a SpecialStarter
 adds a freeze-frame plus quarter speed, both from `FUN_8004AD80` and both
 gated party-only.
+
+#### Each slot fights in its sibling's element
+
+The swap also moves the slot's **element**
+(`delilas_party::retarget_character_elements`). The battle overlay's
+per-character element table (`0x801F5480`, PROT 0898 file `0x26C68`, one
+byte per 1-based character id) is the only per-character element the disc
+carries, and retail seeds it Vahn = fire, Noa = wind, Gala = thunder. Both
+affinity readers index it with `DAT_8007BD10[actor] - 1` and use the result
+as a row/column of the matrix at `0x801F53E8` - `FUN_801DD864`
+(`0x801dd8ac`, `0x801dd900`) and the hit kernel `FUN_801EC3E4`
+(`0x801ecf38` attacker, `0x801ecf94` defender) - so the byte decides what
+element every one of that slot's attacks deals and what it takes.
+
+Each sibling's own element is already on the disc at monster record `+0x1D`
+(the byte `FUN_801EC3E4` reads at `0x801ecf68` for an enemy attacker):
+**Gi = fire, Che = earth, Lu = thunder**. The pass copies it into the
+slot's table row, taken from the archive image captured before the model
+loop so a re-skinned block cannot feed itself back. Nothing else moves -
+the affinity matrix and the five characters outside the party keep retail
+values.
+
+Until this ran, a swapped party fought in the host's element however
+faithful the rest of the identity swap got: Lu's Plasma Strike landed as
+**fire** out of Vahn's slot and Che's Megaton Press as **thunder** out of
+Gala's. That is per character, not per art - retail has no per-art element,
+so a Ra-Seru cast and a basic swing scale through the same byte.
+
+Two earlier readings of that report were wrong and are worth keeping: the
+art record's 8-record effect script (`+0x14`) and the impact-effect class
+(`+0x7A`) both looked like the culprit and neither is. The effect script is
+genuinely live - a mid-battle RAM capture shows the art bank the runtime
+walks is a verbatim image of the player file's decoded `record[0]` (see
+[the bank the runtime walks](#the-bank-the-runtime-walks)) - and `+0x7A`
+writes the **target's** hit-flash (`FUN_801EC3E4` `0x801ee3d4` stores it at
+`actor[+0x21F]` of `attacker[+0x1DD]`), not the attacker's move colour.
+
+#### The bank the runtime walks
+
+The art-record edits the reskin makes reach the runtime through one chain,
+worth stating because it has been doubted twice:
+
+```text
+DAT_801C9360[char]  ->  the decoded record[0] image
+record0[+0x58]      ->  art bank (u32 count, then 0xD0-stride records)
+bank + 4 + row*0xD0 ->  the bank record
+record + 0x24       ->  the action entry
+```
+
+`FUN_8004AD80` materialises a staged anim id `q >= 0x10` by writing
+`bank + 4 + (q-0x10)*0xD0 + 0x24` into `record0[q*4]` (`0x8004b708`
+loads `record0[+0x58]`, `0x8004bc84` stores the entry pointer), and
+`FUN_80047430` hands that pointer to `FUN_801DEA50` as `node[+0x4C]`
+(`0x800478b8`). Measured against the mednafen `party_battle_gobu_gobu`
+capture: Vahn's 33-row and Gala's 32-row live banks are **byte-identical**
+to this crate's decode of the disc `record[0]`, and Noa's differs in 4
+bytes of 7284 - all four inside row 0's entry `+0x04..+0x07`, a field the
+tick writes and the patcher never touches. So a same-size edit inside a
+bank record is an edit the runtime sees.
 
 #### Casting a sibling signature attack from a party slot
 

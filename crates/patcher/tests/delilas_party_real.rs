@@ -1464,3 +1464,188 @@ fn move_mode_parses_both_ways() {
     }
     assert!("purist".parse::<MoveMode>().is_err());
 }
+
+/// Each hero slot fights in the **mapped sibling's** element, not the
+/// host character's.
+///
+/// The battle overlay's per-character element table (`0x801F5480`) is the
+/// only per-character element on the disc and the one both affinity
+/// readers index (`FUN_801DD864` at `0x801dd8ac`/`0x801dd900`,
+/// `FUN_801EC3E4` at `0x801ecf38`/`0x801ecf94`), so until it moves a
+/// swapped party deals and takes the *host's* element - Lu's Plasma
+/// Strike landing as fire out of Vahn's slot, Che's Megaton Press as
+/// thunder out of Gala's.
+///
+/// Proved by contrast against retail rather than against a literal table:
+/// every slot must read the sibling's own `+0x1D` byte, at least one must
+/// have MOVED off retail (the assertion is vacuous if the two agree
+/// everywhere), and the five characters the swap does not touch must be
+/// byte-identical to retail.
+///
+/// Run on a rearranged mapping as well as the default: the table is
+/// indexed by slot and the value comes from the sibling, so a pass that
+/// wrote the right element to the wrong slot would still satisfy the
+/// default if the default happened to be the identity permutation.
+#[test]
+fn every_slot_fights_in_its_siblings_element() {
+    use legaia_asset::element_affinity as ea;
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let retail = DiscPatcher::open(original.clone()).expect("open retail");
+    let retail_ov = retail.read_entry(898).expect("retail battle overlay");
+    let archive = retail
+        .read_entry_footprint(MONSTER_ARCHIVE_ENTRY)
+        .expect("archive");
+    let sibling_element = |s: Sibling| -> u8 {
+        legaia_asset::monster_archive::record(&archive, s.monster_id())
+            .expect("record")
+            .expect("populated")
+            .element
+    };
+
+    for mapping in [
+        PartyMapping::default(),
+        PartyMapping {
+            vahn: Sibling::Lu,
+            noa: Sibling::Gi,
+            gala: Sibling::Che,
+        },
+    ] {
+        let (patched, notes) = run_mapped(&original, MoveMode::Hybrid, mapping);
+        let ov = patched.read_entry(898).expect("patched battle overlay");
+        let want = [mapping.vahn, mapping.noa, mapping.gala];
+        let mut moved = 0;
+        for (slot, sibling) in want.iter().copied().enumerate() {
+            let at = ea::CHARACTER_ELEMENTS_FILE_OFFSET + slot;
+            let got = ov[at];
+            let expect = sibling_element(sibling);
+            assert_eq!(
+                got,
+                expect,
+                "slot {slot}: element {got} ({:?}), expected {}'s own {expect} ({:?})",
+                ea::Element::from_id(got).map(|e| e.name()),
+                sibling.display_name(),
+                ea::Element::from_id(expect).map(|e| e.name()),
+            );
+            if got != retail_ov[at] {
+                moved += 1;
+            }
+        }
+        assert!(
+            moved > 0,
+            "no slot's element moved off retail - the assertion is vacuous"
+        );
+        // The characters outside the party swap keep retail's elements:
+        // the table has eight rows and the pass owns exactly three.
+        for i in 3..ea::CHARACTER_ELEMENTS_LEN {
+            let at = ea::CHARACTER_ELEMENTS_FILE_OFFSET + i;
+            assert_eq!(
+                ov[at],
+                retail_ov[at],
+                "character {} element moved, and the swap owns only slots 0..3",
+                i + 1
+            );
+        }
+        // The affinity matrix itself is untouched - this pass moves who
+        // is what element, never what an element does.
+        let m = ea::AFFINITY_MATRIX_FILE_OFFSET;
+        let n = ea::ELEMENT_COUNT * ea::ELEMENT_COUNT;
+        assert_eq!(
+            &ov[m..m + n],
+            &retail_ov[m..m + n],
+            "the element-affinity matrix moved"
+        );
+        assert_eq!(
+            notes.iter().filter(|n| n.contains(" element: ")).count(),
+            3,
+            "the report should name one element per slot: {notes:?}"
+        );
+    }
+}
+
+/// The runtime reads the signature art's effect script out of exactly the
+/// bytes the reskin edits.
+///
+/// The chain is `DAT_801C9360[char]` -> the decoded `record[0]` image ->
+/// `record0[+0x58]` -> `bank + 4 + row*0xD0` -> `+0x24` -> `+0x14`
+/// (`FUN_8004AD80` at `0x8004b708`/`0x8004bc84`, handed to `FUN_801DEA50`
+/// as `node[+0x4C]` by `FUN_80047430`). This asserts the *disc* half of
+/// that chain: the whole art bank the runtime walks is a verbatim image of
+/// the player file's `record[0]`, so a same-size edit inside a bank record
+/// is an edit the runtime sees.
+///
+/// Cross-checked against a live mid-battle RAM capture (mednafen scenario
+/// `party_battle_gobu_gobu`): every one of Vahn's 33 bank rows in RAM
+/// matches this decode byte for byte, effect scripts included.
+#[test]
+fn the_signature_effect_script_lives_in_the_bank_the_runtime_walks() {
+    use legaia_asset::battle_char_assembly as bca;
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let retail = DiscPatcher::open(original.clone()).expect("open retail");
+    let (patched, _) = run_mapped(&original, MoveMode::Hybrid, PartyMapping::default());
+    // Glyphs 1 L, 2 R, 3 D, 4 U - the combo the reskin writes.
+    const SIGNATURE_COMBO: [u8; 5] = [1, 2, 4, 4, 3];
+    for (slot, ch) in SLOTS {
+        let entry = patched
+            .read_entry(legaia_patcher::arts::player_entry_index(ch))
+            .expect("player file");
+        let rec0 = bca::decode_record0(&entry).expect("record0");
+        let bank = bca::art_animation_bank(&rec0).expect("art bank");
+        let row = bank
+            .iter()
+            .find(|r| !r.uses_base_archive() && r.combo == SIGNATURE_COMBO)
+            .expect("the signature row");
+        // The bank record is addressed off record[0] by the same
+        // expression the runtime uses, so read the script straight out of
+        // the image and require the parser's view to agree with it.
+        let at = row.entry_offset + 0x14;
+        let live: Vec<u8> = rec0[at..at + 8 * 8].to_vec();
+        assert_eq!(
+            &live[..],
+            &row.effect_script[0x14..0x14 + 8 * 8],
+            "slot {slot}: the parsed script is not the bytes at record0 +{at:#x}"
+        );
+        // Exactly one record spawns, and it is not a retail id: the host
+        // scripts are 8 x 0x96 (Vahn), 2 x 0x93 (Noa), 4 x 0x93 (Gala).
+        let spawns: Vec<u8> = (0..8)
+            .map(|i| live[i * 8 + 1])
+            .filter(|&id| id != 0 && id & 0x7F != 0x7F)
+            .collect();
+        assert_eq!(
+            spawns.len(),
+            1,
+            "slot {slot}: {} spawning record(s), expected the sibling's single burst",
+            spawns.len()
+        );
+        assert!(
+            !matches!(spawns[0], 0x96 | 0x93),
+            "slot {slot}: the burst is still a host-element id {:#04X}",
+            spawns[0]
+        );
+        // And the retail row it replaced really did carry those ids, so
+        // the check above cannot go vacuous on a future disc.
+        let retail_entry = retail
+            .read_entry(legaia_patcher::arts::player_entry_index(ch))
+            .expect("retail player file");
+        let retail_rec0 = bca::decode_record0(&retail_entry).expect("retail record0");
+        let retail_bank = bca::art_animation_bank(&retail_rec0).expect("retail art bank");
+        let retail_row = retail_bank
+            .iter()
+            .find(|r| r.entry_offset == row.entry_offset)
+            .expect("the retail row at the same offset");
+        let retail_spawns: Vec<u8> = (0..8)
+            .map(|i| retail_row.effect_script[0x14 + i * 8 + 1])
+            .filter(|&id| id != 0 && id & 0x7F != 0x7F)
+            .collect();
+        assert!(
+            retail_spawns.iter().all(|&id| matches!(id, 0x96 | 0x93)),
+            "slot {slot}: retail host script is {retail_spawns:02X?}, not the \
+             hand-authored flame/spark this test contrasts against"
+        );
+    }
+}
