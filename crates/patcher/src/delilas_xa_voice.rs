@@ -202,18 +202,42 @@ fn spirit_xa_pick(sibling: crate::delilas_party::Sibling) -> Option<(&'static st
     }
 }
 
-/// The sibling's signature special-attack soundtrack: `XA20.XA` holds
-/// the Delilas attack-sequence reels (ear-mapped); channel 2 is Lu's
-/// Plasma Strike. It becomes the fanfare audio of the Hyper art the
-/// party swap reskins as "Plasma Strike" (Vahn slot: Burning Flare's
-/// channel pair 4/7). Capped at 12 s - the fanfare channel span and the
-/// cue's duration table bound playback anyway.
+/// The sibling's signature special-attack soundtrack, as their own
+/// enemy-side cast module fires it. `XA20.XA` holds the three Delilas
+/// attack-sequence reels on consecutive channels, one per sibling.
+///
+/// Each module names its cue as a compile-time immediate in the delay
+/// slot of a `jal FUN_8004FCC8` - Gi `li a0,0x198` at PROT 958 file
+/// `0x4C8`, Che `0x199` at PROT 959 `0x1AC`, Lu `0x19A` at PROT 960
+/// `0xC84`. `FUN_8004FCC8` (`0x8004FD04..0x8004FD74`) resolves an id to
+/// `n = id - 0x100`, clip slot `n >> 3` (slot `i` = `XA<i+1>`; slots
+/// 1/3/5 remap to `0x1A`/`0x1B`/`0x1C`) and channel `n & 7`, with the
+/// playback duration from `0x800788B8 + n*2`. Slot 19 is `XA20.XA`.
+///
+/// Lu's row is the check on the other two: it was first picked BY EAR,
+/// and deriving it from her module's immediate lands on the identical
+/// channel.
+///
+/// The module itself cannot be run from a party slot - its choreography
+/// is compiled `jal` sites, the standing wall on this branch - but the
+/// patcher copies sectors rather than calls, so the audio is reachable
+/// even though the code path is not. The cue becomes the fanfare audio
+/// of the Hyper art the swap reskins (Vahn slot: Burning Flare's channel
+/// pair 4/7). Capped at 12 s - the fanfare channel span and the cue's
+/// duration table bound playback anyway.
+///
+/// Re-pointing `FUN_8004AD80`'s per-character fanfare immediate at the
+/// module's id instead would play the cue at full length from the
+/// original sectors, and is WRONG: that fire is `rand() % 2 * 3 + base`,
+/// so the pair would become `0x198`/`0x19B` and half the rolls would
+/// land on `XA20` channel 3, which is a different clip.
 fn special_xa_pick(sibling: crate::delilas_party::Sibling) -> Option<(&'static str, u8)> {
     use crate::delilas_party::Sibling;
-    match sibling {
-        Sibling::Lu => Some(("XA/XA20.XA", 2)),
-        Sibling::Gi | Sibling::Che => None,
-    }
+    Some(match sibling {
+        Sibling::Gi => ("XA/XA20.XA", 0),
+        Sibling::Che => ("XA/XA20.XA", 1),
+        Sibling::Lu => ("XA/XA20.XA", 2),
+    })
 }
 
 /// Per-slot sibling voice lines, captured from the XA reels BEFORE the

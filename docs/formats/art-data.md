@@ -294,9 +294,27 @@ overlay tables; `FUN_801e22c8` uses the third:
 
 | Table VA | Indexed by | Role |
 |---|---|---|
-| `0x801F6418` | cue code (1-byte stride) | SFX id; nonzero entry issues a `0x1DC` sound packet |
+| `0x801F6418` | cue code (1-byte stride) | CLUT **source x** (not an SFX id - see below); nonzero entry copies a palette row |
 | `0x801F6324` | cue code (`code*4`) | pointer to the effect-sprite descriptor spawned via `FUN_80050ed4` |
 | `0x801F6470` | art/anim id (5-byte stride) | per-art cue list (`+0` count, then codes) read by `FUN_801e22c8` |
+
+**No battle effect id plays a sound.** `0x801F6418` was long documented here
+as an SFX id issuing a "`0x1DC` sound packet". It is not: the routine the six
+readers end in is `FUN_80058490`, whose materialised string at `0x800156EC` is
+literally `MoveImage`, and the 8-byte "packet" is a PsyQ `RECT` -
+`x = 0x801F6418[code]`, `y = 0x1DC`, `w = 0x10`, `h = 1` - copied to
+`(0xE0, 0x1DC)`. That is a 16-entry CLUT row copy at VRAM `y = 476`, i.e. the
+effect's palette. The table holds only `0xB0` / `0xC0` / `0xD0`, which are VRAM
+x coordinates and are outside the `0x00..=0x63` id space of the
+[sound-effect descriptor table](sfx-table.md). A `jal 0x80058490` sweep of the
+battle overlay returns exactly the six `0x801F6418` readers, each paired with
+its `0x801F6324` prototype spawn, and no SPU-cue call
+(`FUN_8004FCC8`/`FUN_8004FE5C`/`FUN_80035B50`/`FUN_8003D53C`/`FUN_800250D4`)
+appears anywhere inside `FUN_801DEA50` or `FUN_801E22C8`.
+
+A party Tactical Art's audio is therefore entirely the **CD-XA** layer: the
+per-swing cue, the shout pool, and - for a Hyper - the per-`(character,
+action constant)` fanfare fired by `FUN_8004AD80`.
 
 A cue code's high bit (`0x80`) is not an index into these tables - it is the
 "spawn a digit" flag, and the low 7 bits select the glyph, matching the

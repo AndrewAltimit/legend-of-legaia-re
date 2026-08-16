@@ -296,7 +296,7 @@ per `FUN_801e09f8` (the `+0x16` walk entered at the load `0x801e0f54`, the `+0x1
 | entry | meaning |
 |---|---|
 | `0x00` | terminator (ends the scan) |
-| `0x01..=0x63` | **move-FX space** (bit 7 clear): spawn the 3D effect prototype `0x801f6324[id]` via `FUN_80050ED4` → `FUN_80021B04` + play SFX `0x801f6418[id]` (when non-zero) |
+| `0x01..=0x63` | **move-FX space** (bit 7 clear): spawn the 3D effect prototype `0x801f6324[id]` via `FUN_80050ED4` → `FUN_80021B04`, and copy the effect's CLUT row from `0x801f6418[id]` (when non-zero). That second table is a palette source-x, **not** an SFX id - see [art-data.md](art-data.md#the-cue-tables) |
 | `0x64` (`100`) | fixed screen-flash effect (no table lookup) |
 | `0x80`-bit set, `!= 0xFF` | **2D-sprite space** (bit 7 set): route id `& 0x7F` to `FUN_801dfdf0` → the `efect.dat` `pack1[id & 0x7F]` billboard (see [effect.md](effect.md)); `FUN_801DFDF8` special-cases pack1 `0x04` → `0x801F5D90` and `0x13` → `0x801F5CF8`, whose bytes are the two burst-arm move-VM trigger programs rather than pack1 scripts (see [effect.md](effect.md)) |
 | `0xFF` (and unused `0x65..=0x7F`) | no effect, scan continues |
@@ -319,7 +319,7 @@ both). The tables live in the same PROT 0898 overlay after the power table:
   byte struct" reading was a coincidence (record `0x27` is 0x20 bytes; `0x28`
   begins where it ends - packed variable-length records, not a fixed stride). See
   Open for the decoded layout.
-- `0x801f6418` (file `0x27C00`) - per-effect **SFX id** (`u8`, `0` = silent).
+- `0x801f6418` (file `0x27C00`) - per-effect **CLUT source x** (`u8`, `0` = no palette copy). Not a sound id; the readers end in `MoveImage`.
 - `0x801f6470` (file `0x27C58`) - the **cue-group table**, described below.
 
 The prototype table is exactly `(0x6418 - 0x6324) / 4 = 61` entries; the same
@@ -342,7 +342,7 @@ effect id. The battle overlay's cue expander `FUN_801E22C8` reads it at
 Stride is therefore `5`. A cue id with bit `0x80` set is an **actor** cue -
 `FUN_801DFDF0(id & 0x7F, pos, yaw)`, the strike pose - and the low seven bits do
 not index either effect table. Any other id indexes **both** tables above with
-the same value: `0x801F6418[id]` is the sound to play (skipped when zero) and
+the same value: `0x801F6418[id]` is the CLUT row to copy (skipped when zero) and
 `0x801F6324[id]` is the prototype to spawn.
 
 The table holds **13 records**. Two independent bounds agree: on the disc the
@@ -399,7 +399,7 @@ parser has to say which one it is modelling.
   party arms.
 
 Per entry, bit 7 clear routes the id through the effect prototype table at
-`0x801F6324` (with the SFX byte at `0x801F6418 + id`); bit 7 set routes
+`0x801F6324` (with the CLUT source-x byte at `0x801F6418 + id`); bit 7 set routes
 `id & 0x7F` to the 2D sprite path. Ids `0x0A`, `0x2D` and `0x2E` additionally
 latch the spawned handle into `ctx+0x1028` and seed the per-frame delta triple
 at `ctx+0x1184`, which is what makes their effect follow the actor.
