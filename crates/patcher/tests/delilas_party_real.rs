@@ -837,16 +837,96 @@ fn every_slot_gets_its_siblings_signature_art() {
                  class - the assertion above has gone vacuous"
             );
         }
-        for h in &now {
+        // The hits sit on the frames the rebuilt stream actually
+        // CONNECTS on, measured off that stream rather than off the
+        // patcher's own chain arithmetic. Anchoring them on the payoff
+        // stage's start - the assertion this replaces - was satisfied by
+        // exactly the frames that were too late: the payoff stage opens
+        // with its own approach, so the first application landed
+        // 1.1-3.0 s after the body connected in every pairing.
+        //
+        // A connect is where the whole body arrests: the per-frame mean
+        // part translation delta falls. So every hit must be a frame the
+        // stream decelerates INTO, and the first one must land in the
+        // stream's first two thirds (the "all four crammed on the tail"
+        // signature the old anchor produced).
+        {
+            let speed = stream_speed(&readef, slot, src);
             assert!(
-                (*h as usize) >= payoff_start,
-                "slot {slot}: hit at frame {h} is before the payoff stage starts \
-                 ({payoff_start}) - the damage fires during the wind-up. hits {now:?}"
-            );
-            assert!(
-                (*h as usize) < after.1,
-                "slot {slot}: hit at frame {h} is past the {}-frame stream",
+                speed.len() + 1 >= after.1,
+                "slot {slot}: decoded {} speed samples for a {}-frame stream",
+                speed.len(),
                 after.1
+            );
+            let mean = speed.iter().sum::<f64>() / speed.len().max(1) as f64;
+            let first = *now.first().expect("a first hit") as usize;
+            assert!(
+                first * 3 < after.1 * 2,
+                "slot {slot}: first damage at frame {first} of {} - the whole \
+                 pattern sits on the tail. hits {now:?}",
+                after.1
+            );
+            // What a hit must sit on depends on what the chain knows
+            // about itself. A stage in the damaging tag band carries its
+            // own contact beats on disc (Lu's strike stages do), and those
+            // are authority - they need not be deceleration frames, since
+            // a lunge connects at speed. A stage retail gave no beats to
+            // (Gi's and Che's signature stages are tag 0x23, damaged by
+            // their cast modules instead) has only its motion to go on, so
+            // there the hit must be a frame the body arrests into.
+            let rate = patched_rec.rate.max(1) as usize;
+            let mut authored: Vec<usize> = Vec::new();
+            let mut start = 0usize;
+            for st in &stages {
+                let len = (st.frame_count * rate)
+                    .div_ceil(st.rate.max(1) as usize)
+                    .max(1);
+                if (0x0C..=0x1F).contains(&st.action_id) {
+                    for i in 0..4 {
+                        let f = st.effect_script.get(0x10 + i).copied().unwrap_or(0);
+                        if f != 0 {
+                            authored
+                                .push(start + (f as usize * len).div_ceil(st.frame_count.max(1)));
+                        }
+                    }
+                }
+                start += len;
+            }
+            let mut on_impact = 0;
+            for (i, h) in now.iter().enumerate() {
+                let h = *h as usize;
+                assert!(
+                    h >= 1 && h < after.1,
+                    "slot {slot}: hit at frame {h} is outside the {}-frame stream",
+                    after.1
+                );
+                let rides_previous = i > 0 && h == now[i - 1] as usize + 1;
+                let lands = if authored.is_empty() {
+                    h >= 2 && speed[h - 1] < speed[h - 2]
+                } else {
+                    authored.contains(&h)
+                };
+                if lands {
+                    on_impact += 1;
+                }
+                assert!(
+                    lands || rides_previous,
+                    "slot {slot}: hit {i} at frame {h} is not on a connect - \
+                     {}. hits {now:?}, stream mean speed {mean:.1}",
+                    if authored.is_empty() {
+                        format!(
+                            "the body is still accelerating there ({:.1} -> {:.1})",
+                            speed[h.saturating_sub(2)],
+                            speed[h - 1]
+                        )
+                    } else {
+                        format!("the chain's authored beats are {authored:?}")
+                    }
+                );
+            }
+            assert!(
+                on_impact > 0,
+                "slot {slot}: no hit lands on a deceleration at all. hits {now:?}"
             );
         }
 
@@ -1648,4 +1728,49 @@ fn the_signature_effect_script_lives_in_the_bank_the_runtime_walks() {
              hand-authored flame/spark this test contrasts against"
         );
     }
+}
+
+/// The whole-body speed profile of a rebuilt art stream, measured off the
+/// readef slot itself: `speed[j]` is the mean per-part translation delta
+/// between keyframes `j` and `j + 1`.
+///
+/// An ME entry decodes to `[u8 parts][u8 frames]` then `frames * parts`
+/// nine-byte part records, six 12-bit fields each (low bytes at
+/// `[0,1,3,4,6,7]`, high nibbles packed into `[2,5,8]` - the layout
+/// `FUN_8004998C` unpacks). Only the three translations are read here, and
+/// they are unpacked locally rather than through the crate's own decoder so
+/// the assertion does not measure the patcher with the patcher's tools.
+fn stream_speed(readef: &[u8], slot: usize, entry_index: usize) -> Vec<f64> {
+    use legaia_asset::party_swap::winpose::READEF_SLOT;
+    let off = legaia_asset::battle_char_assembly::art_me_slot(slot, false) * READEF_SLOT;
+    let ar = legaia_asset::me_archive::parse(&readef[off..off + READEF_SLOT]).expect("ME archive");
+    let body = ar.entry(entry_index).expect("art entry");
+    let (parts, frames) = (body[0] as usize, body[1] as usize);
+    let sx12 = |v: u16| -> i32 {
+        if v & 0x800 != 0 {
+            (v | 0xF000) as i16 as i32
+        } else {
+            v as i32
+        }
+    };
+    let pose = |f: usize, p: usize| -> [i32; 3] {
+        let b = &body[2 + (f * parts + p) * 9..][..9];
+        [
+            sx12(b[0] as u16 | ((b[2] as u16 & 0x0F) << 8)),
+            sx12(b[1] as u16 | ((b[2] as u16 & 0xF0) << 4)),
+            sx12(b[3] as u16 | ((b[5] as u16 & 0x0F) << 8)),
+        ]
+    };
+    (1..frames)
+        .map(|f| {
+            let sum: f64 = (0..parts)
+                .map(|p| {
+                    let (a, b) = (pose(f - 1, p), pose(f, p));
+                    let d: Vec<f64> = (0..3).map(|k| (b[k] - a[k]) as f64).collect();
+                    (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+                })
+                .sum();
+            sum / parts.max(1) as f64
+        })
+        .collect()
 }

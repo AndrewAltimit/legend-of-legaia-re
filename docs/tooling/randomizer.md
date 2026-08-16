@@ -1611,14 +1611,51 @@ Four coordinated edits per slot (`delilas_party::reskin_signature_art`):
   whose strike does not begin until frame 52, and the damage fires while
   the character is still winding up.
 
-  Every hit therefore lands inside the **payoff stage**, and the payoff's
-  own event frames are preferred where the clip carries them - Lu's strike
-  stage is authored with its contacts, and authored beats interpolated;
-  Gi's and Che's payoff stages carry none, so the host's rhythm is
-  compressed into the payoff span instead. Only the placement moves. The
-  number of non-zero slots is always the host's, because that count is how
-  many times the action applies damage, so changing it would change the
-  move rather than its timing.
+  Anchoring them on the payoff stage's **start** is the wrong correction
+  too, and it is the one that shipped first: the payoff stage opens with
+  its own approach, so the first application landed 1.1-3.0 seconds after
+  the body connected in all nine sibling/host pairings. The anchor has to
+  be the connect itself.
+
+  `delilas_party::chain_contacts` derives that connect set, per stage, in
+  the rebuilt stream's coordinates. A stage in the damaging tag band
+  (`0x0C..=0x1F`) carries its own contact beats on disc and those are
+  authority - Lu's three strike stages are authored, and they need not be
+  deceleration frames because a lunge connects at speed. A stage retail
+  gave no beats to has only its motion to go on: Gi's and Che's signature
+  stages are tag `0x23`, damaged by their PROT 958 / 959 cast modules
+  rather than by beats, so their connect is **measured** as the frame the
+  whole body arrests hardest (the largest single-frame fall in the mean
+  per-part translation delta). A measured stage under 40% of the chain's
+  hardest stop is a wind-up settling, not a connect, and is dropped.
+  Measured connects are good to about a frame; authored ones are exact.
+
+  The hits then sample that set: with more connects than hits, evenly with
+  both endpoints included, so the first application lands on the first
+  connect and the last (biggest) power byte on the finisher; with fewer,
+  the extras ride the same impact on consecutive frames - retail's own
+  multi-hit idiom (Burning Flare is `11 12 13 14` on one swing). The
+  **effect-script gates take the same set**, so the burst, the damage and
+  the body all run off one clock; rescaling the donor cast's own beats
+  (which is what shipped) puts the burst on a third timeline entirely.
+
+  The number of non-zero slots is always the host's. `entry[+0x00 + i]`
+  (power) and `entry[+0x10 + i]` (frame) are parallel arrays walked by one
+  cursor (`actor[+0x1F4]`), so moving the count would re-pair the power
+  bytes, and a zero slot ends the walk outright (`0x801EC47C`) - nothing
+  here may write `0`. Two things make editing these bytes safe: the damage
+  gate tests `0x0C <= entry[+0x00] <= 0x1F` on the **host art's** power
+  byte 0 (`0x1D` / `0x17` / `0x18`, untouched by the swap), and the
+  mid-clip early-commit at `0x80047918` needs `entry[+0x76] == 0` while all
+  three host arts read `1`, so moving a hit earlier cannot truncate the
+  clip.
+
+  The firing rule itself (`FUN_801EC3E4`, `0x801ec440`-`0x801ec480`): a hit
+  fires on the first tick where `frame >= hit_frame - 1`, `frame` being
+  `node[+0x68] >> 4`, the integer keyframe index of the stream playing. So
+  landing damage on visual contact `C` means writing `C + 1`, and `rate`
+  only sets wall-clock - one keyframe is `8 / rate` ticks - so no units
+  mismatch exists between the two.
 - **Effects** - the host's script is eight `[frame_gate, effect_id, x, y,
   z]` records, and for Burning Flare all eight spawn flame `0x96` across
   the swing. That flame is why a reskinned art keeps reading as the host's
@@ -1628,10 +1665,17 @@ Four coordinated edits per slot (`delilas_party::reskin_signature_art`):
   for Lu's), which spawns from module-resident parameter blocks that a
   one-byte art id cannot name. What the siblings do have is their ordinary
   casts, whose entries carry real scripts in exactly this format, so the
-  spawn comes from there (all three land on direct-form `0x84`). With
-  nothing to borrow the host's script is suppressed instead, by deferring
-  every gate to `0xFF` - the walker never advances past a gate it has not
-  reached, so nothing spawns and no terminator arm runs.
+  spawn comes from there (direct-form `0x84`, unless the slot claimed the
+  transplant cave). With nothing to borrow the host's script is suppressed
+  instead, by deferring every gate to `0xFF` - the walker never advances
+  past a gate it has not reached, so nothing spawns and no terminator arm
+  runs.
+
+  The **gates** come from the same connect set the hit list is scheduled
+  on, not from the donor's own beats, so one clock drives the burst, the
+  damage and the body. The walker's gate rule is the hit rule
+  (`frame + 1 >= gate`, `0x801decb4`), so a gate equal to a hit value fires
+  on the same frame.
 
   Rewriting the script is **not sufficient on its own**, which is the trap
   here: entry `+0x7A` carries an impact-effect class that two further
