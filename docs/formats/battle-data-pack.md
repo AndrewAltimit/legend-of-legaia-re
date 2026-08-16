@@ -845,6 +845,20 @@ tiers (16/17-part swings vs 15 bones). Decomps `8004ccd4.txt`,
 `80047430.txt`, `80049348.txt`, `800536bc.txt`, `80053898.txt`,
 `800513f0.txt`, `80048a08.txt`.
 
+**What this costs anything that rewrites a section's objects.** The `0xFF`
+variant is not spare decoration hanging off the hand - it replaces the hand,
+in the hand's own channel, for the frames a window covers. So a rebuild that
+leaves the surplus objects empty (the natural thing to do when the equipment
+visuals are being dropped) deletes the attach bone's whole part whenever a
+window opens, and retail's own variant is that bone's mesh again: byte-equal
+vertices and prims on Vahn / Gala / Terra, same topology with alternate
+vertices on Noa. The two tags need opposite treatment - a `0xFE` extra has a
+pose channel of its own and draws *alongside* the bone, so emptying that one
+is correct. `legaia_asset::party_swap::playerize` mirrors the attach bone's
+geometry into the variant by aliasing its object-table entry, which costs
+nothing because both the retail splice and the port address the data purely
+through that entry.
+
 ## Texture-pool VRAM placement
 
 The battle-init texture upload is fully pinned. `FUN_80052FA0` runs once per
