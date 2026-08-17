@@ -32,6 +32,11 @@ pub struct SuperArtListReport {
     pub performed_va: u32,
     pub sup_va: u32,
     pub scratch_va: u32,
+    /// Where the menu-side (status screen Moves page) routines landed in PROT
+    /// 0899, and how much of its two dead runs they take.
+    pub menu_row_va: u32,
+    pub menu_run_used: u32,
+    pub menu_desc_used: u32,
 }
 
 impl SuperArtListReport {
@@ -51,8 +56,11 @@ impl SuperArtListReport {
 /// Two same-size detours into the SCUS list renderer `FUN_80034358` plus their
 /// routines and tables in verified-dead SCUS regions, a wholesale in-place
 /// replacement of the list pager `FUN_801D3748` in the battle-action overlay
-/// (PROT 0898) whose tail hosts the performed-byte writer, and a two-word detour
-/// from the Super applier's match arm into that writer.
+/// (PROT 0898) whose tail hosts the performed-byte writer, a two-word detour
+/// from the Super applier's match arm into that writer - and, for the pause
+/// menu's status screen Moves page, four detours into the menu overlay (PROT
+/// 0899) with their routines, names and descriptions in that overlay's own dead
+/// space ([`crate::super_art_menu`]).
 ///
 /// **Mutually exclusive with `--shiny-seru`, `--arts-ap-grant` / `--arts-ap-cost`
 /// and `--delilas-challenge`** - they all reuse the same dead-space bytes. Fails
@@ -68,6 +76,16 @@ pub fn inject_super_art_list(patcher: &mut DiscPatcher) -> Result<SuperArtListRe
         .read_entry(crate::super_art_list::OVERLAY_PROT_INDEX)
         .context("read battle-action overlay (0898) for show-super-arts injection")?;
     let plan = crate::super_art_list::SuperArtListInjection::plan(&scus, &ov0898)?;
+    // The menu half: the status screen's Moves page, hosted in PROT 0899.
+    let ov0899 = patcher
+        .read_entry(crate::super_art_menu::MENU_PROT_INDEX)
+        .context("read menu overlay (0899) for show-super-arts injection")?;
+    let menu = crate::super_art_menu::SuperArtMenuInjection::plan(
+        &ov0899,
+        &plan.rows,
+        plan.sup_va,
+        plan.arrows_va,
+    )?;
 
     // The row's name is chased at runtime through
     // `DAT_801C9360[char] -> +0x58 -> +4 -> (finisher - 0x10) * 0xD0 -> +0x10`.
@@ -97,7 +115,7 @@ pub fn inject_super_art_list(patcher: &mut DiscPatcher) -> Result<SuperArtListRe
         }
     }
 
-    for edit in &plan.edits {
+    for edit in plan.edits.iter().chain(menu.edits.iter()) {
         match edit.prot_index {
             None => patcher
                 .patch_named_file(SCUS_NAME, edit.file_off as u64, &edit.bytes)
@@ -133,5 +151,8 @@ pub fn inject_super_art_list(patcher: &mut DiscPatcher) -> Result<SuperArtListRe
         performed_va: plan.performed_va,
         sup_va: plan.sup_va,
         scratch_va: plan.scratch_va,
+        menu_row_va: menu.row_va,
+        menu_run_used: menu.run_used,
+        menu_desc_used: menu.desc_used,
     })
 }

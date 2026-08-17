@@ -199,7 +199,8 @@ pub fn resolve_seed(seed: &str) -> String {
 /// draws at all: a row appears once the player has **performed** that Super Art
 /// (a per-character byte the Super applier's detour records, saved with the
 /// character), sits among the regular arts **by AP**, and shows the Super Art's
-/// name, the chain's summed AP cost and the arrows the player types. The
+/// name, the chain's summed AP cost and the arrows the player types; the pause
+/// menu's Status screen (Left = Moves) lists them the same way. The
 /// Triangle caption's own page thresholds stay retail, so on a later page it can
 /// still read "View Hyper Arts list". Mutually exclusive with
 /// `shiny_seru`, the arts AP override and `delilas_challenge` (same SCUS
@@ -573,7 +574,8 @@ pub fn patch_rom(
         let rep = apply::inject_super_art_list(&mut patcher)
             .map_err(|e| err(format!("show-super-arts: {e}")))?;
         summary.push_str(&format!(
-            "show-super-arts: {} Super Arts join the in-battle move list once performed\n",
+            "show-super-arts: {} Super Arts join the in-battle move list and the status \
+             screen's Moves page once performed\n",
             rep.rows.len()
         ));
     } else {

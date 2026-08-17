@@ -88,6 +88,8 @@ pub mod kingdom;
 pub mod location_name;
 pub mod map_door;
 pub(crate) mod mips;
+#[cfg(test)]
+pub(crate) mod mips_sim;
 pub mod monster;
 pub mod monster_class;
 pub mod monster_stats;
@@ -108,6 +110,7 @@ pub mod starting_items;
 pub mod starting_level;
 pub mod steal;
 pub mod super_art_list;
+pub mod super_art_menu;
 pub mod super_art_power;
 pub mod texture;
 pub mod translation;

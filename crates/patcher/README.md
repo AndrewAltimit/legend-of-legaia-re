@@ -881,6 +881,18 @@ with one caller and no external reference to its interior - is replaced
 wholesale in place inside PROT 0898 so the page offset steps while another page
 exists, reading the same record byte.
 
+**The status screen too.** The pause menu's Status page (Left = Moves) lists the
+same performed Super Arts, in the same AP order, with name, chain AP, the
+coloured arrows for the selected row and a retail-style description
+(`Super Arts. Somersault,|Cyclone, Somersault.`) - four detours into the menu
+overlay's own row loop, count reads and cursor bound
+([`super_art_menu`](src/super_art_menu.rs)), with routines, names and
+descriptions in 0899's own reference-free dead space (read/write-watched across
+a pause-menu tour; the run `--seru-trade` shares, past its highest blob, plus a
+second one for the text), so that half costs no SCUS bytes and composes with
+everything. Names are carried because the battle art records the in-battle chase
+reads are not resident in the menu.
+
 Code and tables spread over the four verified-dead SCUS regions (~600 of 652 B),
 so the toggle is **mutually exclusive** with `--shiny-seru`, `--arts-ap-grant` /
 `--arts-ap-cost` and `--delilas-challenge`. The Triangle caption's own page

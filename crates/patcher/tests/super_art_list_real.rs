@@ -53,6 +53,10 @@ use legaia_patcher::super_art_list::{
     PERFORMED_COUNT_SHIFT, PERFORMED_MASK, PERFORMED_RET_VA, SCAN_HEAD_VA, SCAN_HIT_VA,
     SCRATCH_BYTES, SUP_STRIDE, SUPER_ARTS_PER_CHAR, SuperArtListInjection, super_art_rows,
 };
+use legaia_patcher::super_art_menu::{
+    HOOK_BOUND_VA, HOOK_CURSOR_VA, HOOK_MARK_VA, HOOK_ROW_VA, MENU_BASE_VA, MENU_DESC_END_VA,
+    MENU_DESC_VA, MENU_PROT_INDEX, MENU_RUN_END_VA, MENU_RUN_VA, SuperArtMenuInjection,
+};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -85,12 +89,21 @@ fn j_word(target: u32) -> u32 {
 
 /// Patch a scratch copy and hand back `(patched image, plan)`.
 fn patched(original: &[u8]) -> (Vec<u8>, SuperArtListInjection) {
+    let (img, plan, _) = patched_with_menu(original);
+    (img, plan)
+}
+
+/// The same, keeping the menu-side plan too.
+fn patched_with_menu(original: &[u8]) -> (Vec<u8>, SuperArtListInjection, SuperArtMenuInjection) {
     let scus = scus_of(original);
     let mut patcher = DiscPatcher::open(original.to_vec()).expect("open disc");
     let ov = patcher.read_entry(OVERLAY_PROT_INDEX).expect("read 0898");
     let plan = SuperArtListInjection::plan(&scus, &ov).expect("plan");
+    let ov9 = patcher.read_entry(MENU_PROT_INDEX).expect("read 0899");
+    let menu = SuperArtMenuInjection::plan(&ov9, &plan.rows, plan.sup_va, plan.arrows_va)
+        .expect("menu plan");
     apply::inject_super_art_list(&mut patcher).expect("inject");
-    (patcher.into_image(), plan)
+    (patcher.into_image(), plan, menu)
 }
 
 /// The four verified-dead regions this feature spans.
@@ -564,6 +577,105 @@ fn pager_is_replaced_whole_and_its_caller_still_reaches_it() {
 }
 
 #[test]
+fn the_menu_side_lands_in_0899_and_reads_back() {
+    let Some(disc) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let before = DiscPatcher::open(disc.clone())
+        .unwrap()
+        .read_entry(MENU_PROT_INDEX)
+        .unwrap();
+    let (img, plan, menu) = patched_with_menu(&disc);
+    let after = DiscPatcher::open(img)
+        .unwrap()
+        .read_entry(MENU_PROT_INDEX)
+        .unwrap();
+    let w = |ov: &[u8], va: u32| {
+        let o = (va - MENU_BASE_VA) as usize;
+        u32::from_le_bytes(ov[o..o + 4].try_into().unwrap())
+    };
+    // The four detours, and the words they return to / around them untouched.
+    assert_eq!(w(&after, HOOK_BOUND_VA), j_word(menu.bound_va));
+    assert_eq!(w(&after, HOOK_BOUND_VA + 4), 0);
+    assert_eq!(w(&after, HOOK_BOUND_VA + 8), w(&before, HOOK_BOUND_VA + 8));
+    assert_eq!(w(&after, HOOK_MARK_VA), j_word(menu.mark_va));
+    assert_eq!(w(&after, HOOK_MARK_VA + 8), w(&before, HOOK_MARK_VA + 8));
+    assert_eq!(w(&after, HOOK_ROW_VA), j_word(menu.row_va));
+    assert_eq!(
+        w(&after, HOOK_ROW_VA + 4),
+        w(&before, HOOK_ROW_VA + 4),
+        "the scan head is a branch target and stays"
+    );
+    assert_eq!(w(&after, HOOK_CURSOR_VA), j_word(menu.cursor_va));
+    assert_eq!(
+        w(&after, HOOK_CURSOR_VA + 4),
+        w(&before, HOOK_CURSOR_VA + 4),
+        "the nop after the cursor hook is a branch target and stays"
+    );
+    // Every menu edit landed, and both runs were dead space before.
+    for e in menu
+        .edits
+        .iter()
+        .filter(|e| e.prot_index == Some(MENU_PROT_INDEX))
+    {
+        assert_eq!(
+            &after[e.file_off..e.file_off + e.bytes.len()],
+            e.bytes.as_slice(),
+            "menu edit at {:#x}",
+            e.file_off
+        );
+    }
+    for (lo, hi) in [
+        (MENU_RUN_VA, MENU_RUN_END_VA),
+        (MENU_DESC_VA, MENU_DESC_END_VA),
+    ] {
+        let (a, b) = ((lo - MENU_BASE_VA) as usize, (hi - MENU_BASE_VA) as usize);
+        assert!(
+            before[a..b].iter().all(|&x| x == 0),
+            "0899 run {lo:#x} was dead space"
+        );
+    }
+    // Names and descriptions read back as text, one per row in table order.
+    let scratch_off = (menu.scratch_va - MENU_BASE_VA) as usize;
+    assert_eq!(
+        &after[scratch_off + 8..scratch_off + 12],
+        &menu.buf_va.to_le_bytes(),
+        "scratch +8 -> the glyph buffer"
+    );
+    for (i, r) in plan.rows.iter().enumerate() {
+        let np = w(&after, menu.names_va + i as u32 * 4);
+        let dp = w(&after, menu.descs_va + i as u32 * 4);
+        let cstr = |va: u32| {
+            let mut o = (va - MENU_BASE_VA) as usize;
+            let mut v = Vec::new();
+            while after[o] != 0 {
+                v.push(after[o]);
+                o += 1;
+            }
+            String::from_utf8(v).unwrap()
+        };
+        assert_eq!(cstr(np), r.name, "row {i} name");
+        let d = cstr(dp);
+        assert!(d.starts_with("Super Arts."), "row {i} description {d:?}");
+        for chain in &r.chain_names {
+            assert!(
+                d.contains(chain.as_str()),
+                "row {i} description names {chain}: {d:?}"
+            );
+        }
+        assert!(
+            (MENU_DESC_VA..MENU_DESC_END_VA).contains(&dp),
+            "descriptions live in the second run"
+        );
+    }
+    eprintln!(
+        "menu: {} B of the 0899 code run, {} B of descriptions",
+        menu.run_used, menu.desc_used
+    );
+}
+
+#[test]
 fn only_the_planned_bytes_move_and_no_other_file_does() {
     let Some(disc) = load_disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -616,6 +728,9 @@ fn only_the_planned_bytes_move_and_no_other_file_does() {
     let ov = &archive.entries[OVERLAY_PROT_INDEX];
     let ov_first = prot_lba as usize + ov.start_lba as usize;
     let ov_last = ov_first + ov.size_sectors as usize;
+    let ov9 = &archive.entries[MENU_PROT_INDEX];
+    let ov9_first = prot_lba as usize + ov9.start_lba as usize;
+    let ov9_last = ov9_first + ov9.size_sectors as usize;
     let scus_first = scus_lba as usize;
     let scus_last = scus_first + scus_sectors;
 
@@ -627,8 +742,10 @@ fn only_the_planned_bytes_move_and_no_other_file_does() {
         }
         touched += 1;
         assert!(
-            (scus_first..scus_last).contains(&s) || (ov_first..ov_last).contains(&s),
-            "sector {s} changed but belongs to neither SCUS nor PROT {OVERLAY_PROT_INDEX}"
+            (scus_first..scus_last).contains(&s)
+                || (ov_first..ov_last).contains(&s)
+                || (ov9_first..ov9_last).contains(&s),
+            "sector {s} changed but belongs to none of SCUS, PROT {OVERLAY_PROT_INDEX}, PROT {MENU_PROT_INDEX}"
         );
         // 3. Every touched sector is still EDC/ECC-valid.
         assert!(
@@ -638,7 +755,7 @@ fn only_the_planned_bytes_move_and_no_other_file_does() {
     }
     assert!(touched > 0);
     eprintln!(
-        "{touched} sectors changed, all inside SCUS / PROT {OVERLAY_PROT_INDEX}, all EDC/ECC-valid"
+        "{touched} sectors changed, all inside SCUS / PROT {OVERLAY_PROT_INDEX} / PROT {MENU_PROT_INDEX}, all EDC/ECC-valid"
     );
 }
 
@@ -684,11 +801,15 @@ fn with_the_toggle_off_nothing_this_feature_touches_moves() {
             "{what} must still be dead space with the toggle off"
         );
     }
+    let ov9_before = DiscPatcher::open(disc.clone())
+        .unwrap()
+        .read_entry(MENU_PROT_INDEX)
+        .unwrap();
     let ov_before = DiscPatcher::open(disc)
         .unwrap()
         .read_entry(OVERLAY_PROT_INDEX)
         .unwrap();
-    let ov_after = DiscPatcher::open(img)
+    let ov_after = DiscPatcher::open(img.clone())
         .unwrap()
         .read_entry(OVERLAY_PROT_INDEX)
         .unwrap();
@@ -704,7 +825,31 @@ fn with_the_toggle_off_nothing_this_feature_touches_moves() {
         &ov_before[a..a + 536],
         "the applier must stay retail with the toggle off"
     );
-    eprintln!("toggle off: every hook site, region, the pager and the applier are byte-identical");
+    let m_after = DiscPatcher::open(img)
+        .unwrap()
+        .read_entry(MENU_PROT_INDEX)
+        .unwrap();
+    for va in [HOOK_BOUND_VA, HOOK_MARK_VA, HOOK_ROW_VA, HOOK_CURSOR_VA] {
+        let o = (va - MENU_BASE_VA) as usize;
+        assert_eq!(
+            &m_after[o..o + 8],
+            &ov9_before[o..o + 8],
+            "menu hook {va:#x} stays retail with the toggle off"
+        );
+    }
+    for (lo, hi) in [
+        (MENU_RUN_VA, MENU_RUN_END_VA),
+        (MENU_DESC_VA, MENU_DESC_END_VA),
+    ] {
+        let (a, b) = ((lo - MENU_BASE_VA) as usize, (hi - MENU_BASE_VA) as usize);
+        assert!(
+            m_after[a..b].iter().all(|&x| x == 0),
+            "0899 run {lo:#x} must stay dead space with the toggle off"
+        );
+    }
+    eprintln!(
+        "toggle off: every hook site, region, the pager, the applier and the menu overlay are byte-identical"
+    );
 }
 
 #[test]

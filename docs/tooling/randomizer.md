@@ -2185,6 +2185,31 @@ paged four times with all five performed in AP order, and closed. A second probe
 drove the retail applier itself over Tri-Somersault (row 0) and Rolling Combo
 (row 4) and read the record byte back as `0x21` and `0x30`.
 
+#### The status screen's Moves page
+
+The pause menu's Status page (Left from the condition page) lists a
+character's arts too - up to seven rows with name and AP, the selected row's
+command arrows and a two-line description - drawn by the menu overlay's own
+panel renderer `FUN_801D33D8` (submenu 3), not by the battle widget. The same
+toggle lists the performed Super Arts there, in the same AP order: four detours
+into PROT 0899 - the two learned-count reads (`0x801D4454`, `0x801D4440`) gain
+the performed count, the per-row scan entry `0x801D4480` becomes the same merge
+hook (B) runs in battle (a learned row re-enters the scan at its merged index, a
+Super row fills a menu scratch record - character, AP, glyph buffer, name,
+description - and enters the found arm at `0x801D44C8`), and the cursor bound
+`0x801DA64C` gains the performed count. Routines, names, the scratch record and
+the glyph buffer sit in the dead run `--seru-trade` shares (`0x801E7FB0..`,
+past its highest blob); the descriptions (`Super Arts. Somersault,|Cyclone,
+Somersault.`) in a second run (`0x801E65F4..`). Both are all-zero in the file,
+referenced by nothing in the overlay or SCUS, and read/write-watched untouched
+across a pause-menu tour (Items, Magic, Equip, Status incl. Moves with its
+cursor, Options, Save; the only writes are the loader's own copy at menu open).
+No SCUS bytes, so this half composes with everything. Verified live: Carl's
+Moves page opens with Tri-Somersault first, its coloured arrows and description
+on the selected row, the cursor and scroll walk all fifteen rows, and Noa's page
+slots Triple Lizard between Hurricane Kick and Vulture Blade. Module
+[`legaia_patcher::super_art_menu`](../../crates/patcher/src/super_art_menu.rs).
+
 #### Placement + exclusivity
 
 | Region | Holds | Used |

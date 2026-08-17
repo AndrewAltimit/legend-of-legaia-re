@@ -562,13 +562,15 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     if args.show_super_arts {
         let report = apply::inject_super_art_list(&mut patcher)?;
         println!(
-            "show-super-arts: {} Super Arts join the in-battle move list once performed \
-             (hooks at {:#x}/{:#x}, fill {:#x}, performed-byte writer {:#x})",
+            "show-super-arts: {} Super Arts join the in-battle move list and the status \
+             screen's Moves page once performed (hooks at {:#x}/{:#x}, fill {:#x}, \
+             performed-byte writer {:#x}, menu row routine {:#x})",
             report.rows.len(),
             report.count_va,
             report.id_va,
             report.fill_va,
-            report.performed_va
+            report.performed_va,
+            report.menu_row_va
         );
         for row in &report.rows {
             println!(
