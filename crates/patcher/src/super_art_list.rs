@@ -101,8 +101,9 @@
 //!   `↑↓↑↑↑↓↑`). They are carried two bits per arrow (`[count][3 bytes]` per
 //!   Super) and expanded per row into a `[count][0x81 0xA8+dir]*` glyph string in
 //!   the same layout retail's own strings use, which the scratch record's `+8`
-//!   points at. All arrows are drawn in the default glyph style - the `0xFF06`
-//!   style marker regular rows carry did not fit.
+//!   points at - including the `0xFF06` style marker before the last arrow, so a
+//!   Super Art row reads like a regular one: leading arrows in the default
+//!   style, the last one highlighted.
 //!
 //! ## Where the row sits
 //!
@@ -144,9 +145,9 @@
 //!
 //! | Region | Holds |
 //! |---|---|
-//! | [`SCUS_GAP_VA`] (256 B) | routine (B) and the scratch record |
+//! | [`SCUS_GAP_VA`] (256 B) | routine (B), the scratch record and the glyph buffer |
 //! | [`ARENA1_VA`] (256 B) | the row-fill routine (F) and the packed arrows |
-//! | [`ARENA2_VA`] (72 B) | routine (A) and the glyph buffer |
+//! | [`ARENA2_VA`] (72 B) | routine (A) |
 //! | [`SLOT6_VA`] (68 B) | the fifteen 4-byte Super Art records |
 //!
 //! ## Known cosmetic gap
@@ -302,8 +303,14 @@ const SCRATCH_NAME_OFF: u16 = 0xC;
 /// Bytes of scratch record reserved (the record's own stride is `0x14`, but only
 /// `+0..+0x10` is ever read through `s5 = record + 8`).
 pub const SCRATCH_BYTES: usize = 0x10;
-/// The glyph buffer: `[count][0x81 lo]*` for up to [`MAX_INPUT_ARROWS`] arrows.
-pub const GLYPH_BUF_BYTES: usize = 1 + 2 * MAX_INPUT_ARROWS;
+/// The glyph buffer: `[count][0x81 lo]* [0xFF 0x06] [0x81 lo]` for up to
+/// [`MAX_INPUT_ARROWS`] arrows plus the style marker before the last one.
+pub const GLYPH_BUF_BYTES: usize = 1 + 2 * (MAX_INPUT_ARROWS + 1);
+/// The style-marker glyph regular rows carry before their last arrow: the
+/// renderer switches to glyph style `6` (the highlighted arrow) for every glyph
+/// after it and gives it no width, so a Super Art row reads like a regular one -
+/// leading arrows in the default style, the last one highlighted.
+pub const GLYPH_MARKER: [u8; 2] = [0xFF, 0x06];
 /// High byte of every arrow glyph, and the low byte of the first (Right); the
 /// four arrows are `0xA8..=0xAB` = Right / Left / Up / Down.
 pub const GLYPH_HI: u8 = 0x81;
@@ -378,10 +385,10 @@ pub(crate) fn assemble_id(
 ) -> Vec<u32> {
     const LOOP: i32 = 20;
     const PICKSUP: i32 = 39;
-    const NEXTK: i32 = 42;
-    const PICKLRN: i32 = 44;
-    const PLAIN0: i32 = 49;
-    const PLAINI: i32 = 50;
+    const NEXTK: i32 = 41;
+    const PICKLRN: i32 = 43;
+    const PLAIN0: i32 = 47;
+    const PLAINI: i32 = 48;
     let at = |i: i32| base_va + (i as u32) * 4;
     let body = vec![
         subu(V0, V0, A2),                              // 0  v0 = the character record
@@ -426,17 +433,15 @@ pub(crate) fn assemble_id(
         nop(),                                     // 38
         // PICKSUP: the Super Art at k is the next row.
         beq(T7, ZERO, br(at(PICKSUP), fill_va)), // 39 r == 0 -> fill and draw it
-        nop(),                                   // 40
-        addiu(T7, T7, 0xFFFF),                   // 41 r -= 1
+        addiu(T7, T7, 0xFFFF),                   // 40 delay: r -= 1 (F ignores t7)
         // NEXTK:
-        j(at(LOOP)),      // 42
-        addiu(T6, T6, 1), // 43 delay: k += 1
+        j(at(LOOP)),      // 41
+        addiu(T6, T6, 1), // 42 delay: k += 1
         // PICKLRN: the learned art at i is the next row.
-        beq(T7, ZERO, (PLAINI - 45) as i16), // 44 r == 0 -> it is this row
-        nop(),                               // 45
-        addiu(T4, T4, 1),                    // 46 i += 1
-        j(at(LOOP)),                         // 47
-        addiu(T7, T7, 0xFFFF),               // 48 delay: r -= 1
+        beq(T7, ZERO, (PLAINI - 44) as i16), // 43 r == 0 -> it is this row
+        addiu(T7, T7, 0xFFFF),               // 44 delay: r -= 1 (PLAINI ignores t7)
+        j(at(LOOP)),                         // 45
+        addiu(T4, T4, 1),                    // 46 delay: i += 1
         // PLAIN0: no Super Art rows at all - the learned index is the entry.
         or(T4, A2, ZERO), // 49
         // PLAINI: learned index i -> the stock load, re-based.
@@ -455,66 +460,75 @@ pub(crate) fn assemble_id(
 /// Entered from (B) with `t5` = `&SUP[character*5]`, `t6` = the Super's sorted
 /// index `k`, `t8` = the character. Writes the scratch record's `+2` AP and
 /// `+0xC` name pointer (chased through `DAT_801C9360[character] -> +0x58 ->
-/// + name offset`), expands the Super's packed arrows into the glyph buffer,
-/// then jumps to the scan's hit arm with `s5` = scratch + 8.
+/// + name offset`), expands the Super's packed arrows into the glyph buffer the
+/// scratch record's own `+8` points at - `[n+1]`, the first `n-1` glyphs, the
+/// [`GLYPH_MARKER`], the last glyph - then jumps to the scan's hit arm with
+/// `s5` = scratch + 8.
+///
+/// The packed arrows are addressed **relative to the SUP record**: both tables
+/// share the `character*5 + k` order and the 4-byte stride, so
+/// `&arrows[row] = &SUP[row] + (arrows_va - sup_va)` - which is what keeps a
+/// Noa or Gala row from reading Vahn's arrows.
 pub(crate) fn assemble_fill(
     base_va: u32,
     sup_va: u32,
     arrows_va: u32,
     scratch_va: u32,
-    buf_va: u32,
 ) -> Vec<u32> {
-    let _ = sup_va; // the SUP base arrives in t5; kept in the signature for symmetry
-    const LOOP: i32 = 27;
-    let cursor = scratch_va + u32::from(SCRATCH_ARROWS_OFF);
+    const LOOP: i32 = 23;
+    let delta = arrows_va.wrapping_sub(sup_va);
     let body = vec![
-        sll(T3, T6, 2),                  // 0
-        addu(T3, T3, T5),                // 1  t3 = &SUP[k]
-        lbu(T1, T3, 0),                  // 2  t1 = chain AP
-        lhu(T7, T3, 2),                  // 3  t7 = name offset
-        sll(T2, T8, 2),                  // 4  character * 4
-        lui(T9, hi(CMD_TABLE_VA)),       // 5
-        addiu(T9, T9, lo(CMD_TABLE_VA)), // 6
-        addu(T9, T9, T2),                // 7
-        lw(T9, T9, 0),                   // 8  the command-data block
-        nop(),                           // 9
-        lw(T9, T9, ART_BLOCK_PTR_OFF),   // 10 the art-record array
-        lui(T2, hi(scratch_va)),         // 11 (delay filler)
-        addiu(T2, T2, lo(scratch_va)),   // 12
-        addu(T9, T9, T7),                // 13 t9 = the name
-        sb(T1, T2, SCRATCH_AP_OFF),      // 14 scratch[+2]   = AP
-        sw(T9, T2, SCRATCH_NAME_OFF),    // 15 scratch[+0xC] = name
-        sll(T3, T6, 2),                  // 16 k * ARROWS_STRIDE
-        lui(T5, hi(arrows_va)),          // 17
-        addiu(T5, T5, lo(arrows_va)),    // 18
-        addu(T3, T3, T5),                // 19 t3 = &arrows[k]
-        lbu(T4, T3, 0),                  // 20 t4 = arrow count
-        lui(T9, hi(buf_va)),             // 21
-        addiu(T9, T9, lo(buf_va)),       // 22 t9 = the glyph buffer
-        addiu(T3, T3, 1),                // 23 the packed dirs
-        sb(T4, T9, 0),                   // 24 buf[0] = count
-        addiu(T9, T9, 1),                // 25
-        or(T8, ZERO, ZERO),              // 26 n = 0
+        sll(T3, T6, 2),                           // 0
+        addu(T3, T3, T5),                         // 1  t3 = &SUP[k]
+        lbu(T1, T3, 0),                           // 2  t1 = chain AP
+        lhu(T7, T3, 2),                           // 3  t7 = name offset
+        sll(T2, T8, 2),                           // 4  character * 4
+        lui(T9, hi(CMD_TABLE_VA)),                // 5
+        addu(T9, T9, T2),                         // 6
+        lw(T9, T9, lo(CMD_TABLE_VA)),             // 7  the command-data block
+        lui(T5, hi(scratch_va)),                  // 8  (delay filler)
+        lw(T9, T9, ART_BLOCK_PTR_OFF),            // 9  the art-record array
+        addiu(T5, T5, lo(scratch_va)),            // 10 t5 = scratch (filler)
+        addu(T9, T9, T7),                         // 11 t9 = the name
+        sb(T1, T5, SCRATCH_AP_OFF),               // 12 scratch[+2]   = AP
+        sw(T9, T5, SCRATCH_NAME_OFF),             // 13 scratch[+0xC] = name
+        lui(T2, hi(delta)),                       // 14
+        addu(T3, T3, T2),                         // 15 &SUP[k] + hi(delta)
+        lbu(T4, T3, lo(delta)),                   // 16 t4 = arrow count n
+        lw(T9, T5, SCRATCH_ARROWS_OFF),           // 17 t9 = the glyph buffer
+        addiu(T3, T3, lo(delta).wrapping_add(1)), // 18 t3 = the packed dirs
+        addiu(T1, T4, 1),                         // 19 n + 1 (the marker)
+        sb(T1, T9, 0),                            // 20 buf[0] = glyph count
+        addiu(T9, T9, 1),                         // 21
+        or(T8, ZERO, ZERO),                       // 22 n = 0
         // LOOP: one glyph per arrow.
-        srl(T1, T8, 2),                          // 27
-        addu(T1, T1, T3),                        // 28
-        lbu(T1, T1, 0),                          // 29 the packed byte
-        andi(T2, T8, 3),                         // 30
-        sll(T2, T2, 1),                          // 31 shift = (n & 3) * 2
-        srlv(T1, T1, T2),                        // 32
-        andi(T1, T1, 3),                         // 33 dir 0..3
-        addiu(T1, T1, u16::from(GLYPH_LO_BASE)), // 34 low byte
-        ori(T2, ZERO, u16::from(GLYPH_HI)),      // 35
-        sb(T2, T9, 0),                           // 36
-        sb(T1, T9, 1),                           // 37
-        addiu(T8, T8, 1),                        // 38
-        sltu(T2, T8, T4),                        // 39 n < count ?
-        bne(T2, ZERO, (LOOP - 41) as i16),       // 40
-        addiu(T9, T9, 2),                        // 41 delay
-        lui(T3, hi(cursor)),                     // 42
-        addiu(S5, T3, lo(cursor)),               // 43 s5 = scratch + 8
-        j(SCAN_HIT_VA),                          // 44 draw it
-        nop(),                                   // 45
+        srl(T1, T8, 2),                          // 23
+        addu(T1, T1, T3),                        // 24
+        lbu(T1, T1, 0),                          // 25 the packed byte
+        andi(T2, T8, 3),                         // 26
+        sll(T2, T2, 1),                          // 27 shift = (n & 3) * 2
+        srlv(T1, T1, T2),                        // 28
+        andi(T1, T1, 3),                         // 29 dir 0..3
+        addiu(T1, T1, u16::from(GLYPH_LO_BASE)), // 30 low byte
+        ori(T2, ZERO, u16::from(GLYPH_HI)),      // 31
+        sb(T2, T9, 0),                           // 32
+        sb(T1, T9, 1),                           // 33
+        addiu(T8, T8, 1),                        // 34
+        sltu(T2, T8, T4),                        // 35 n < count ?
+        bne(T2, ZERO, (LOOP - 37) as i16),       // 36
+        addiu(T9, T9, 2),                        // 37 delay
+        // The style marker goes before the LAST glyph: move it right by two
+        // and write the marker where it was.
+        lbu(T1, T9, 0xFFFF),                       // 38 last glyph's low byte
+        lbu(T2, T9, 0xFFFE),                       // 39 last glyph's high byte
+        sb(T1, T9, 1),                             // 40
+        sb(T2, T9, 0),                             // 41
+        ori(T1, ZERO, u16::from(GLYPH_MARKER[0])), // 42
+        sb(T1, T9, 0xFFFE),                        // 43
+        ori(T1, ZERO, u16::from(GLYPH_MARKER[1])), // 44
+        sb(T1, T9, 0xFFFF),                        // 45
+        j(SCAN_HIT_VA),                            // 46 draw it
+        addiu(S5, T5, SCRATCH_ARROWS_OFF),         // 47 delay: s5 = scratch + 8
     ];
     debug_assert_eq!(base_va % 4, 0);
     body
@@ -1040,14 +1054,14 @@ impl SuperArtListInjection {
         let id_len = (assemble_id(id_disp, 0, 0, 0, 0).len() * 4) as u32;
         let id_va = gap.take(id_len, 4, "the id routine")?;
         let scratch_va = gap.take(SCRATCH_BYTES as u32, 4, "the scratch record")?;
+        let buf_va = gap.take(GLYPH_BUF_BYTES as u32, 1, "the glyph buffer")?;
 
-        let fill_len = (assemble_fill(0, 0, 0, 0, 0).len() * 4) as u32;
+        let fill_len = (assemble_fill(0, 0, 0, 0).len() * 4) as u32;
         let fill_va = arena1.take(fill_len, 4, "the fill routine")?;
         let arrows_va = arena1.take(want as u32 * ARROWS_STRIDE, 4, "the packed arrows")?;
 
         let count_len = (assemble_count(count_disp, 0).len() * 4) as u32;
         let count_va = arena2.take(count_len, 4, "the count routine")?;
-        let buf_va = arena2.take(GLYPH_BUF_BYTES as u32, 1, "the glyph buffer")?;
 
         let sup_va = slot6.take(want as u32 * SUP_STRIDE, 4, "the Super Art records")?;
 
@@ -1065,7 +1079,7 @@ impl SuperArtListInjection {
         // --- Assembly --------------------------------------------------------
         let count = assemble_count(count_disp, COUNT_RET_VA);
         let id = assemble_id(id_disp, id_va, sup_va, fill_va, ID_RET_VA);
-        let fill = assemble_fill(fill_va, sup_va, arrows_va, scratch_va, buf_va);
+        let fill = assemble_fill(fill_va, sup_va, arrows_va, scratch_va);
         debug_assert_eq!((id.len() * 4) as u32, id_len);
         debug_assert_eq!((fill.len() * 4) as u32, fill_len);
 
@@ -1165,11 +1179,11 @@ mod tests {
     }
 
     const ID_VA: u32 = SCUS_GAP_VA;
-    const SCRATCH_VA: u32 = SCUS_GAP_VA + 0xE0;
+    const SCRATCH_VA: u32 = SCUS_GAP_VA + 0xD0;
+    const BUF_VA: u32 = SCRATCH_VA + 0x10;
     const FILL_VA: u32 = ARENA1_VA;
     const ARROWS_VA: u32 = ARENA1_VA + 0xC0;
     const COUNT_VA: u32 = ARENA2_VA;
-    const BUF_VA: u32 = ARENA2_VA + 0x2C;
     const SUP_VA: u32 = SLOT6_VA;
 
     fn id_routine() -> Vec<u32> {
@@ -1177,7 +1191,7 @@ mod tests {
     }
 
     fn fill_routine() -> Vec<u32> {
-        assemble_fill(FILL_VA, SUP_VA, ARROWS_VA, SCRATCH_VA, BUF_VA)
+        assemble_fill(FILL_VA, SUP_VA, ARROWS_VA, SCRATCH_VA)
     }
 
     // --- (A) the count hook --------------------------------------------------
@@ -1260,17 +1274,20 @@ mod tests {
     #[test]
     fn id_routine_branches_land_where_the_comments_say() {
         let r = id_routine();
-        assert_eq!(r[42], j(ID_VA + 20 * 4), "NEXTK closes on LOOP");
-        assert_eq!(r[47], j(ID_VA + 20 * 4), "PICKLRN's advance closes on LOOP");
-        assert_eq!(21 + 1 + br_off(r[21]), 44, "no Super left -> PICKLRN");
-        assert_eq!(29 + 1 + br_off(r[29]), 42, "not performed -> NEXTK");
+        assert_eq!(r[41], j(ID_VA + 20 * 4), "NEXTK closes on LOOP");
+        assert_eq!(r[45], j(ID_VA + 20 * 4), "PICKLRN's advance closes on LOOP");
+        assert_eq!(21 + 1 + br_off(r[21]), 43, "no Super left -> PICKLRN");
+        assert_eq!(29 + 1 + br_off(r[29]), 41, "not performed -> NEXTK");
         assert_eq!(31 + 1 + br_off(r[31]), 39, "learned exhausted -> PICKSUP");
-        assert_eq!(37 + 1 + br_off(r[37]), 44, "learned first -> PICKLRN");
-        assert_eq!(44 + 1 + br_off(r[44]), 50, "this learned row -> PLAINI");
-        // The Super Art hit is a cross-region branch straight into (F).
+        assert_eq!(37 + 1 + br_off(r[37]), 43, "learned first -> PICKLRN");
+        assert_eq!(43 + 1 + br_off(r[43]), 48, "this learned row -> PLAINI");
+        // The Super Art hit is a cross-region branch straight into (F); its delay
+        // slot decrements r, which (F) never reads.
         let target = ID_VA as i64 + 39 * 4 + 4 + i64::from(br_off(r[39])) * 4;
         assert_eq!(target, FILL_VA as i64, "this Super row -> FILL");
-        assert_eq!(r.len(), 54);
+        assert_eq!(r[40], addiu(T7, T7, 0xFFFF));
+        assert_eq!(r[44], addiu(T7, T7, 0xFFFF), "PLAINI never reads t7 either");
+        assert_eq!(r.len(), 52);
     }
 
     #[test]
@@ -1408,29 +1425,65 @@ mod tests {
         assert_eq!(r[2], lbu(T1, T3, 0), "chain AP");
         assert_eq!(r[3], lhu(T7, T3, 2), "name offset");
         assert_eq!(r[5], lui(T9, hi(CMD_TABLE_VA)));
-        assert_eq!(r[8], lw(T9, T9, 0), "the command-data block");
-        assert_eq!(r[10], lw(T9, T9, ART_BLOCK_PTR_OFF), "the art-record array");
-        assert_eq!(r[13], addu(T9, T9, T7), "+ name offset");
+        assert_eq!(r[7], lw(T9, T9, lo(CMD_TABLE_VA)), "the command-data block");
+        assert_eq!(r[9], lw(T9, T9, ART_BLOCK_PTR_OFF), "the art-record array");
+        assert_eq!(r[11], addu(T9, T9, T7), "+ name offset");
+        // The arrows are addressed relative to the SUP record (same order and
+        // stride), so a Noa/Gala row never reads Vahn's arrows.
+        let delta = ARROWS_VA.wrapping_sub(SUP_VA);
+        assert_eq!(r[14], lui(T2, hi(delta)));
+        assert_eq!(r[15], addu(T3, T3, T2));
+        assert_eq!(
+            r[16],
+            lbu(T4, T3, lo(delta)),
+            "arrow count from &SUP[k] + delta"
+        );
+        assert_eq!(
+            r[17],
+            lw(T9, T5, SCRATCH_ARROWS_OFF),
+            "the buffer is the scratch's own +8"
+        );
+        assert_eq!(r[19], addiu(T1, T4, 1), "glyph count = arrows + the marker");
         let stores: Vec<u32> = r.iter().copied().filter(|&w| is_store(w)).collect();
-        assert_eq!(stores[0], sb(T1, T2, SCRATCH_AP_OFF));
-        assert_eq!(stores[1], sw(T9, T2, SCRATCH_NAME_OFF));
-        assert_eq!(stores[2], sb(T4, T9, 0), "glyph count");
+        assert_eq!(stores[0], sb(T1, T5, SCRATCH_AP_OFF));
+        assert_eq!(stores[1], sw(T9, T5, SCRATCH_NAME_OFF));
+        assert_eq!(stores[2], sb(T1, T9, 0), "glyph count");
         assert_eq!(stores[3], sb(T2, T9, 0), "glyph high byte");
         assert_eq!(stores[4], sb(T1, T9, 1), "glyph low byte");
-        assert_eq!(stores.len(), 5);
-        assert_eq!(r[43], addiu(S5, T3, lo(SCRATCH_VA + 8)), "s5 = scratch + 8");
-        assert_eq!(r[44], j(SCAN_HIT_VA), "then the hit arm");
-        assert_eq!(40 + 1 + br_off(r[40]), 27, "the glyph loop closes");
-        assert_eq!(r.len(), 46);
-        // Load delays: lbu t1 (2) -> 14; lhu t7 (3) -> 13; lw t9 (8) -> 10;
-        // lw t9 (10) -> 13; lbu t4 (20) -> 24; lbu t1 (29) -> 32.
+        assert_eq!(
+            stores[5..],
+            [
+                sb(T1, T9, 1),
+                sb(T2, T9, 0),
+                sb(T1, T9, 0xFFFE),
+                sb(T1, T9, 0xFFFF)
+            ],
+            "the marker shuffle"
+        );
+        assert_eq!(stores.len(), 9);
+        assert_eq!(r[42], ori(T1, ZERO, 0xFF), "marker high byte");
+        assert_eq!(r[44], ori(T1, ZERO, 6), "marker low byte = style 6");
+        assert_eq!(r[46], j(SCAN_HIT_VA), "then the hit arm");
+        assert_eq!(
+            r[47],
+            addiu(S5, T5, SCRATCH_ARROWS_OFF),
+            "s5 = scratch + 8 in the delay slot"
+        );
+        assert_eq!(36 + 1 + br_off(r[36]), 23, "the glyph loop closes");
+        assert_eq!(r.len(), 48);
+        // Load delays: lbu t1 (2) -> 12; lhu t7 (3) -> 11; lw t9 (7) -> 9;
+        // lw t9 (9) -> 11; lbu t4 (16) -> 19; lw t9 (17) -> 20; lbu t1 (25) -> 28;
+        // lbu t1 (38) -> 40; lbu t2 (39) -> 41.
         for (load, first_use) in [
-            (2usize, 14usize),
-            (3, 13),
-            (8, 10),
-            (10, 13),
-            (20, 24),
-            (29, 32),
+            (2usize, 12usize),
+            (3, 11),
+            (7, 9),
+            (9, 11),
+            (16, 19),
+            (17, 20),
+            (25, 28),
+            (38, 40),
+            (39, 41),
         ] {
             let dest = (r[load] >> 16) & 0x1f;
             let filler = r[load + 1];
@@ -1474,6 +1527,11 @@ mod tests {
             let dir = (p[1 + n / 4] >> ((n % 4) * 2)) & 3;
             glyphs.push((GLYPH_HI, GLYPH_LO_BASE + dir));
         }
+        assert_eq!(
+            expected_glyph_string(&row.input).len(),
+            1 + 2 * 8,
+            "7 arrows + marker"
+        );
         // Retail's glyph codes: 0x81A8 Right / A9 Left / AA Up / AB Down.
         let want: Vec<(u8, u8)> = "UDUUUDU"
             .chars()
@@ -1657,7 +1715,21 @@ mod tests {
         );
         // The two-bit packing carries the longest input.
         assert!(MAX_INPUT_ARROWS * 2 <= (ARROWS_STRIDE as usize - 1) * 8);
-        assert_eq!(GLYPH_BUF_BYTES, 25);
+        assert_eq!(GLYPH_BUF_BYTES, 27, "twelve arrows + the marker");
+    }
+
+    /// The glyph string (F) builds for an input: `[n+1]`, the first `n-1`
+    /// glyphs, the style marker, the last glyph - the layout regular arts use.
+    fn expected_glyph_string(input: &[Command]) -> Vec<u8> {
+        let mut out = vec![input.len() as u8 + 1];
+        for (i, c) in input.iter().enumerate() {
+            if i + 1 == input.len() {
+                out.extend_from_slice(&GLYPH_MARKER);
+            }
+            out.push(GLYPH_HI);
+            out.push(GLYPH_LO_BASE + arrow_code(*c));
+        }
+        out
     }
 
     // --- Execution ------------------------------------------------------------
@@ -1904,29 +1976,33 @@ mod tests {
                                     + ART_NAME_FIELD_OFF
                     })
                     .expect("scratch AP + name pair names one SUP record");
-                let want = &scene.arrows[k];
-                assert_eq!(cpu.rd8(BUF_VA), want.len() as u8, "glyph count");
-                for (n, &c) in want.iter().enumerate() {
-                    let at = BUF_VA + 1 + 2 * n as u32;
-                    assert_eq!(cpu.rd8(at), GLYPH_HI, "glyph {n} high byte");
-                    assert_eq!(
-                        cpu.rd8(at + 1),
-                        GLYPH_LO_BASE + arrow_code(c),
-                        "glyph {n} low byte"
-                    );
-                }
+                let want = expected_glyph_string(&scene.arrows[k]);
+                let got: Vec<u8> = (0..want.len() as u32)
+                    .map(|i| cpu.rd8(BUF_VA + i))
+                    .collect();
+                assert_eq!(
+                    got, want,
+                    "glyph string for Super {k} of character {}",
+                    scene.character
+                );
                 Row::Super(k)
             }
         }
     }
 
     fn vahn_scene(learned: &[u8], performed: u8) -> Scene {
+        scene_for(0, learned, performed)
+    }
+
+    /// The same five Supers under any character index (arrows differ per
+    /// character so cross-character addressing is exercised, not just Vahn's).
+    fn scene_for(character: u32, learned: &[u8], performed: u8) -> Scene {
         // AP-sorted: Rolling Combo (66, row 4), Tri-Somersault (60, row 0),
         // Maximum Blow / Fire Tackle / Power Slash (54, rows 1..3). thr = 1 for
         // all (Vahn's first sub-66 art is Burning Flare, id 1, 50 AP).
         use Command::*;
-        Scene {
-            character: 0,
+        let mut sc = Scene {
+            character,
             learned: learned.to_vec(),
             performed,
             sup: vec![(66, 1, 4), (60, 1, 0), (54, 1, 1), (54, 1, 2), (54, 1, 3)],
@@ -1937,7 +2013,12 @@ mod tests {
                 vec![Left, Right, Left, Left, Down, Right, Up],
                 vec![Down, Right, Up, Down, Up, Down, Left],
             ],
+        };
+        // Rotate the arrows per character so a wrong table base is visible.
+        for _ in 0..character {
+            sc.arrows.rotate_left(1);
         }
+        sc
     }
 
     #[test]
@@ -2049,9 +2130,9 @@ mod tests {
     fn every_routine_and_table_fits_its_region() {
         let count = assemble_count([HOOK_COUNT_W0, HOOK_COUNT_W1], 0).len() * 4;
         let id = assemble_id([HOOK_ID_W0, HOOK_ID_W1], 0, 0, 0, 0).len() * 4;
-        let fill = assemble_fill(0, 0, 0, 0, 0).len() * 4;
+        let fill = assemble_fill(0, 0, 0, 0).len() * 4;
         let n = ARTS_CHARACTERS * SUPER_ARTS_PER_CHAR;
-        let gap = id + SCRATCH_BYTES;
+        let gap = id + SCRATCH_BYTES + GLYPH_BUF_BYTES;
         assert!(
             gap <= (SCUS_GAP_END_VA - SCUS_GAP_VA) as usize,
             "{gap} B in the gap"
@@ -2061,10 +2142,9 @@ mod tests {
             a1 <= (ARENA1_END_VA - ARENA1_VA) as usize,
             "{a1} B in arena 1"
         );
-        let a2 = count + GLYPH_BUF_BYTES;
         assert!(
-            a2 <= (ARENA2_END_VA - ARENA2_VA) as usize,
-            "{a2} B in arena 2"
+            count <= (ARENA2_END_VA - ARENA2_VA) as usize,
+            "{count} B in arena 2"
         );
         assert!(n * SUP_STRIDE as usize <= (SLOT6_END_VA - SLOT6_VA) as usize);
         eprintln!(

@@ -853,7 +853,9 @@ and walks tail-first with restarts, so arts **overlap** - Tri-Somersault is
 `↑↓↑↑↑↓↑`, seven arrows, and every retail Super derives to a unique 7..=9-arrow
 string that agrees with the walkthrough tables (one of which had dropped an
 arrow). They ride two bits per arrow and are expanded per row into the
-`[count][0x81 0xA8+dir]*` glyph layout retail's own strings use.
+`[count][0x81 0xA8+dir]*` glyph layout retail's own strings use, `0xFF06` style
+marker before the last arrow included, so the row reads like a regular art's:
+leading arrows in the default style, the last one highlighted.
 
 **Where a row sits.** Retail keeps the learned list id-sorted (`FUN_801EFBFC`
 inserts with an ascending shift) and the table's ids run in descending AP, so
@@ -877,7 +879,7 @@ with one caller and no external reference to its interior - is replaced
 wholesale in place inside PROT 0898 so the page offset steps while another page
 exists, reading the same record byte.
 
-Code and tables spread over the four verified-dead SCUS regions (574 of 652 B),
+Code and tables spread over the four verified-dead SCUS regions (~600 of 652 B),
 so the toggle is **mutually exclusive** with `--shiny-seru`, `--arts-ap-grant` /
 `--arts-ap-cost` and `--delilas-challenge`. The Triangle caption's own page
 thresholds stay retail, so on a later page it can still read "View Hyper Arts

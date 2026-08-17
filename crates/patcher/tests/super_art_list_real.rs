@@ -408,7 +408,7 @@ fn the_tables_read_back_exactly_as_planned() {
     assert_eq!(&scratch[0..8], &[0u8; 8], "AP + padding start clear");
     assert_eq!(&scratch[12..16], &[0u8; 4], "the name pointer starts clear");
     // The buffer itself is dead space at patch time (filled at runtime).
-    assert!(bytes_at_va(&scus, plan.buf_va, 25).iter().all(|&b| b == 0));
+    assert!(bytes_at_va(&scus, plan.buf_va, 27).iter().all(|&b| b == 0));
     eprintln!(
         "tables: records {:#x}, arrows {:#x}, scratch {:#x}, buffer {:#x}",
         plan.sup_va, plan.arrows_va, plan.scratch_va, plan.buf_va

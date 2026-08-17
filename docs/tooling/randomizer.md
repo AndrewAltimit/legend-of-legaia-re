@@ -2121,8 +2121,11 @@ Super Arts and no writer ever sets her byte, so her list stays retail's.
   a unique 7..=9-arrow string, and fourteen of the fifteen agree with the
   independent walkthrough table (Dragon Fangs' printed input had dropped an
   arrow). The strings ride two bits per arrow and are expanded per row into the
-  `[count][0x81 0xA8+dir]*` glyph layout retail's own strings use, drawn in the
-  default glyph style (the `0xFF06` style marker regular rows carry did not fit).
+  `[count][0x81 0xA8+dir]*` glyph layout retail's own strings use, `0xFF06`
+  style marker before the last arrow included - so a Super Art row reads like a
+  regular art's: leading arrows in the default style, the last one highlighted
+  (Hyper Arts carry the marker first and draw all-highlighted; Miracle Arts use
+  `0xFF09`).
 
 #### Where a row sits
 
@@ -2180,9 +2183,9 @@ drove the retail applier itself over Tri-Somersault (row 0) and Rolling Combo
 
 | Region | Holds | Used |
 |---|---|---|
-| `SCUS_GAP` `0x80077728` | routine (B) and the scratch record | 228 of 256 B |
-| `ARENA1` `0x8007AE00` | routine (F) and the packed arrows | 243 of 256 B |
-| `ARENA2` `0x8007AFF8` | routine (A) and the glyph buffer | 43 of 72 B |
+| `SCUS_GAP` `0x80077728` | routine (B), the scratch record and the glyph buffer | 251 of 256 B |
+| `ARENA1` `0x8007AE00` | routine (F) and the packed arrows | 252 of 256 B |
+| `ARENA2` `0x8007AFF8` | routine (A) | 44 of 72 B |
 | `SLOT6` `0x80078A88` | the fifteen 4-byte Super Art records | 60 of 68 B |
 
 Those are exactly the four regions `--shiny-seru`, `--arts-ap-grant` /
@@ -2202,7 +2205,7 @@ and they add up to **652 bytes**:
 | `SLOT6` | `0x80078A88..0x80078ACC` | 68 B | 56 B |
 
 Shiny Seru alone occupies **618 of the 652 bytes**, leaving 34 bytes split into
-fragments of 4, 5, 8 and 12. `--show-super-arts` needs 574 (~430 B of code, the
+fragments of 4, 5, 8 and 12. `--show-super-arts` needs 607 (~440 B of code, the
 rest tables), so no allocator and no packing makes that pair fit; the exclusion
 is not a hard-coded region clash that a smarter allocator would dissolve. A
 sweep of every zero run in the whole `SCUS_942.54` image outside the known live
