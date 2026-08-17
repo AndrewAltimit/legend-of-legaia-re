@@ -194,12 +194,12 @@ pub fn resolve_seed(seed: &str) -> String {
 /// list of `name=value` pairs (e.g. `Tri-Somersault=0x1A`), rebalancing a Super
 /// Art's own `record0` power bytes; Super Arts carry no combo, no
 /// arts-name-table row and no AP cost of their own, so name is the only key
-/// they have. `show_super_arts` puts a character's Super Arts at the **head** of
-/// the Tactical-Arts list the Triangle button opens in battle, which retail
-/// never draws at all; a row appears only once **every art in that Super Art's
-/// trigger chain is learned** (retail records nothing about having *performed*
-/// one, so this is availability, not a "you have done this" flag) and shows the
-/// Super Art's name plus the chain's summed AP cost, with no arrow line. The
+/// they have. `show_super_arts` lists a character's Super Arts on the
+/// Tactical-Arts list the Triangle button opens in battle, which retail never
+/// draws at all: a row appears once the player has **performed** that Super Art
+/// (a per-character byte the Super applier's detour records, saved with the
+/// character), sits among the regular arts **by AP**, and shows the Super Art's
+/// name, the chain's summed AP cost and the arrows the player types. The
 /// Triangle caption's own page thresholds stay retail, so on a later page it can
 /// still read "View Hyper Arts list". Mutually exclusive with
 /// `shiny_seru`, the arts AP override and `delilas_challenge` (same SCUS
@@ -563,17 +563,17 @@ pub fn patch_rom(
         summary.push_str("shiny-seru: untouched\n");
     }
 
-    // Show Super Arts: the in-battle Tactical-Arts list gains, at its head, the
-    // Super Arts whose whole trigger chain the character has learned - name and
-    // chain AP cost per row (three detours into the SCUS list renderer plus a
-    // shared unlock routine and four small tables in dead space, and a replaced
-    // list pager in PROT 0898). Spoiler-safe: the count, never the roster.
+    // Show Super Arts: the in-battle Tactical-Arts list gains, sorted in by AP,
+    // the Super Arts the character has performed - name, chain AP cost and the
+    // arrows the player types per row (two detours into the SCUS list renderer
+    // plus their routines and tables in dead space, a replaced list pager in
+    // PROT 0898 whose tail records a performed Super Art, and a detour from the
+    // Super applier into it). Spoiler-safe: the count, never the roster.
     if show_super_arts {
         let rep = apply::inject_super_art_list(&mut patcher)
             .map_err(|e| err(format!("show-super-arts: {e}")))?;
         summary.push_str(&format!(
-            "show-super-arts: {} Super Arts join the in-battle move list once their chain \
-             arts are learned\n",
+            "show-super-arts: {} Super Arts join the in-battle move list once performed\n",
             rep.rows.len()
         ));
     } else {

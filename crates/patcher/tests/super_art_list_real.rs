@@ -1,36 +1,41 @@
 //! Disc-gated oracle for **show Super Arts on the in-battle move list**
 //! (`legaia_patcher::super_art_list` + `apply::inject_super_art_list`).
 //!
-//! The feature puts a character's *unlocked* Super Arts at the head of the
-//! Tactical-Arts list `FUN_80034358` draws, through three same-size detours into
-//! that renderer (`0x800343C4` count / `0x80034450` id / `0x80034460` record),
-//! a shared unlock routine and four small tables spread over the four
-//! verified-dead SCUS regions, and a wholesale in-place replacement of the list
-//! pager `FUN_801D3748` inside PROT 0898.
+//! The feature lists a character's *performed* Super Arts on the Tactical-Arts
+//! list `FUN_80034358` draws, sorted in by AP, through two same-size detours into
+//! that renderer (`0x800343C4` count / `0x80034450` id), a row-fill routine and
+//! three small tables spread over the four verified-dead SCUS regions, a
+//! wholesale in-place replacement of the list pager `FUN_801D3748` inside PROT
+//! 0898 whose tail hosts the performed-byte writer, and a two-word detour from
+//! the Super applier's match arm (`0x801EFBCC`) into that writer.
 //!
 //! These apply it to a scratch copy of the real disc and assert, off the patched
 //! image, that every hosted region was all-zero pre-patch; each detour became
-//! exactly the planned `j routine` (and that the **one-word** record detour left
-//! the scan head `0x80034464` - a live jump target - untouched); the routines
-//! and tables land exactly where the plan says; every Super Art's trigger chain
-//! resolves against the disc's own arts-name table and its AP total is the sum
-//! of those rows' AP bytes; the runtime name chase lands on a record that
-//! carries that Super Art's own name; the replacement pager fits inside the
-//! original 81-instruction body, is nop-padded to it, and its one caller still
-//! targets its entry; the synthetic id space is free in the disc's own arts-name
-//! table; **every byte that changed in `SCUS_942.54` and PROT 0898 is inside a
-//! planned edit, and no other file on the disc moved at all** (which is what
-//! makes the toggle byte-inert when off); every touched sector stays EDC/ECC
-//! valid; the run is byte-deterministic; and an unrecognized build, a dirty
-//! region or a prior dead-space feature is refused without writing anything.
+//! exactly the planned `j routine` and the scan head / hit arm the hooks return
+//! into stay retail; the routines and tables land exactly where the plan says;
+//! every Super Art's trigger chain resolves against the disc's own arts-name
+//! table, its AP total is the sum of those rows' AP bytes, its threshold id is
+//! the first row at or below that AP, and its derived physical input tokenizes
+//! back to its trigger pattern; the packed arrows and the 4-byte records read
+//! back as planned; the runtime name chase lands on a record that carries that
+//! Super Art's own name; the replacement pager plus writer fit inside the
+//! original 81-instruction body, are nop-padded to it, and the pager's one
+//! caller still targets its entry; the applier detour lands and everything else
+//! in the applier stays retail; **every byte that changed in `SCUS_942.54` and
+//! PROT 0898 is inside a planned edit, and no other file on the disc moved at
+//! all** (which is what makes the toggle byte-inert when off); every touched
+//! sector stays EDC/ECC valid; the run is byte-deterministic; and an
+//! unrecognized build, a dirty region or a prior dead-space feature is refused
+//! without writing anything.
 //!
 //! Gates on `LEGAIA_DISC_BIN`; skips and passes when unset.
 //!
 //! HONESTY GATE: this proves only WHERE the bytes land and what the tables say,
-//! never in-game behaviour. A live battle playtest - open Triangle with a party
-//! that knows no full chain and see an unchanged list, learn one and see exactly
-//! that Super Art appear as the FIRST row with its name and AP, and see Terra's
-//! list stay empty - is still required before calling the feature done.
+//! never in-game behaviour. A live battle playtest - open Triangle before any
+//! Super Art was performed and see an unchanged list, perform one and see
+//! exactly that Super Art appear from the next battle on, in AP order, with its
+//! name, AP and arrows, and see Terra's list stay empty - is still required
+//! before calling the feature done.
 
 use legaia_asset::item_names::file_offset_for_va;
 use legaia_iso::iso9660::{find_file_in_image, read_file_in_image};
@@ -42,9 +47,11 @@ use legaia_patcher::shiny_seru::{
     SLOT6_VA,
 };
 use legaia_patcher::super_art_list::{
-    ART_CONSTANT_BIAS, ARTS_CHARACTERS, HOOK_COUNT_VA, HOOK_ID_VA, HOOK_REC_VA, OVERLAY_BASE_VA,
-    OVERLAY_PROT_INDEX, PAGER_VA, PAGER_WORDS, SCAN_HEAD_VA, SCAN_HIT_VA, SCRATCH_BYTES,
-    SUPER_ARTS_PER_CHAR, SYN_ID_BASE, SuperArtListInjection, super_art_rows,
+    APPLIER_VA, ARROWS_STRIDE, ART_CONSTANT_BIAS, ARTS_CHARACTERS, FIRST_NORMAL_ORDINAL,
+    HOOK_COUNT_VA, HOOK_ID_VA, HOOK_PERFORMED_VA, OVERLAY_BASE_VA, OVERLAY_PROT_INDEX, PAGER_VA,
+    PAGER_WORDS, PERFORMED_COUNT_SHIFT, PERFORMED_MASK, PERFORMED_RET_VA, SCAN_HEAD_VA,
+    SCAN_HIT_VA, SCRATCH_BYTES, SUP_STRIDE, SUPER_ARTS_PER_CHAR, SuperArtListInjection,
+    super_art_rows,
 };
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -113,7 +120,7 @@ fn hosted_regions_are_all_zero_before_patch() {
 }
 
 #[test]
-fn synthetic_id_space_is_free_in_the_discs_own_arts_table() {
+fn the_performed_byte_is_the_unreachable_sixteenth_id_slot() {
     let Some(disc) = load_disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -121,14 +128,28 @@ fn synthetic_id_space_is_free_in_the_discs_own_arts_table() {
     let scus = scus_of(&disc);
     let rows = legaia_art::arts_table::raw_records_from_scus(&scus).expect("arts table");
     assert_eq!(rows.len(), 45, "fifteen regular arts per character");
-    let max = rows.iter().map(|r| r.index).max().unwrap();
-    assert!(
-        max < SYN_ID_BASE,
-        "real art ids stop at {max:#x}, below the synthetic base {SYN_ID_BASE:#x}"
+    for ch in legaia_art::queue::Character::all() {
+        let n = rows.iter().filter(|r| r.character == ch).count();
+        assert_eq!(
+            n, 15,
+            "{ch:?}: the learned list can hold at most fifteen ids"
+        );
+        let max = rows
+            .iter()
+            .filter(|r| r.character == ch)
+            .map(|r| r.index)
+            .max()
+            .unwrap();
+        assert!(
+            max <= PERFORMED_MASK,
+            "{ch:?}: ids fit the five-bit threshold field"
+        );
+    }
+    // Sixteen slots at +0x74E..+0x75D; fifteen arts fill +0x74E..+0x75C.
+    assert_eq!(0x74E + 15, 0x75D);
+    eprintln!(
+        "record +0x75D is the sixteenth id slot: unreachable with fifteen arts per character"
     );
-    // The unlock test is a 32-bit mask over the same id space.
-    assert!(max < 32, "art ids must fit the chain bitmask");
-    eprintln!("real art ids run 0x00..={max:#x}; {SYN_ID_BASE:#x}.. is free");
 }
 
 #[test]
@@ -156,29 +177,117 @@ fn every_trigger_chain_resolves_against_this_discs_arts_table() {
             .map(|c| c - ART_CONSTANT_BIAS)
             .collect();
         assert_eq!(r.chain_ids, want, "{} chain ids", r.name);
-        assert!(want.len() >= 2, "{} would unlock on one art", r.name);
+        assert!(want.len() >= 2, "{} would trigger on one art", r.name);
 
         // AP is the sum of the chain arts' own AP bytes, duplicates included.
         let mut ap = 0u32;
-        let mut mask = 0u32;
         for &id in &r.chain_ids {
             let rec = table
                 .iter()
                 .find(|t| t.character == r.character && t.index == id)
                 .unwrap_or_else(|| panic!("{}: chain id {id} has no row", r.name));
             ap += u32::from(rec.ap);
-            mask |= 1u32 << id;
         }
         assert_eq!(u32::from(r.ap), ap, "{} AP total", r.name);
-        assert_eq!(r.chain_mask, mask, "{} chain mask", r.name);
         assert!(r.ap > 0, "{} would advertise a free move", r.name);
+
+        // The threshold: the lowest id whose AP is at or below the Super's,
+        // in this character's table - the id the merge puts the row before.
+        let mut mine: Vec<_> = table
+            .iter()
+            .filter(|t| t.character == r.character)
+            .collect();
+        mine.sort_by_key(|t| t.index);
+        let thr = mine
+            .iter()
+            .find(|t| t.ap <= r.ap)
+            .map(|t| t.index)
+            .expect("threshold");
+        assert_eq!(r.thr, thr, "{} threshold", r.name);
+        for t in &mine {
+            let before = t.index >= r.thr;
+            assert_eq!(
+                before,
+                t.ap <= r.ap,
+                "{} vs id {} ({} AP)",
+                r.name,
+                t.index,
+                t.ap
+            );
+        }
+
+        // The physical input tokenizes back to the trigger pattern through the
+        // retail tokenizer, over this character's normal arts in grid order.
+        let catalog: Vec<(legaia_art::ActionConstant, &[legaia_art::Command])> = mine
+            .iter()
+            .enumerate()
+            .filter(|(o, _)| *o >= FIRST_NORMAL_ORDINAL)
+            .map(|(_, t)| {
+                (
+                    legaia_art::ActionConstant::from_byte(t.index + ART_CONSTANT_BIAS).unwrap(),
+                    t.commands.as_slice(),
+                )
+            })
+            .collect();
+        let q = legaia_art::tokenize(&catalog, &r.input);
+        let p = legaia_art::tokenize::populated(&q);
+        assert_eq!(
+            &p[p.len() - source.find.len()..],
+            source.find,
+            "{}: input {} does not tokenize to its trigger",
+            r.name,
+            r.input_letters()
+        );
+        assert!(
+            (7..=9).contains(&r.input.len()),
+            "{}: {} arrows",
+            r.name,
+            r.input.len()
+        );
+        // ...and it matches the curated walkthrough input, direction for
+        // direction (the two sources are independent).
+        let curated = legaia_gamedata::Database::load();
+        let art = curated
+            .find_art_by_name(r.name)
+            .unwrap_or_else(|| panic!("{}: not in the curated arts table", r.name));
+        let curated_dirs: Vec<u8> = art.directions.clone();
+        let mine_dirs: Vec<u8> = r.input.iter().map(|c| c.as_byte()).collect();
+        assert_eq!(
+            mine_dirs, curated_dirs,
+            "{}: derived input vs walkthrough",
+            r.name
+        );
+        assert_eq!(
+            u32::from(r.ap),
+            art.ap,
+            "{}: chain AP vs walkthrough",
+            r.name
+        );
         eprintln!(
-            "{:?} {:<20} {:>3} AP  needs {}",
+            "{:?} {:<20} {:>3} AP  thr {:>2}  {}  ({})",
             r.character,
             r.name,
             r.ap,
+            r.thr,
+            r.input_letters(),
             r.chain_names.join(" + ")
         );
+    }
+    // Per character: five rows, sorted AP-descending, sorted_index 0..5.
+    for (c, ch) in legaia_art::queue::Character::all().into_iter().enumerate() {
+        let mine = &rows[c * SUPER_ARTS_PER_CHAR..(c + 1) * SUPER_ARTS_PER_CHAR];
+        assert!(mine.iter().all(|r| r.character == ch));
+        assert!(
+            mine.windows(2).all(|w| w[0].ap >= w[1].ap),
+            "{ch:?} AP-descending"
+        );
+        assert_eq!(
+            mine.iter().map(|r| r.sorted_index).collect::<Vec<_>>(),
+            [0, 1, 2, 3, 4]
+        );
+        let mut trig: Vec<u8> = mine.iter().map(|r| r.trigger_row).collect();
+        trig.sort_unstable();
+        assert_eq!(trig, [0, 1, 2, 3, 4], "{ch:?} every trigger row once");
     }
 }
 
@@ -222,6 +331,7 @@ fn detours_land_and_the_scan_head_survives() {
     let before = scus_of(&disc);
     let stock_head = word_at_va(&before, SCAN_HEAD_VA);
     let stock_hit = word_at_va(&before, SCAN_HIT_VA);
+    let stock_between = word_at_va(&before, HOOK_ID_VA + 8);
     let (img, plan) = patched(&disc);
     let after = scus_of(&img);
 
@@ -229,15 +339,18 @@ fn detours_land_and_the_scan_head_survives() {
     assert_eq!(word_at_va(&after, HOOK_COUNT_VA + 4), 0, "nop");
     assert_eq!(word_at_va(&after, HOOK_ID_VA), j_word(plan.id_va));
     assert_eq!(word_at_va(&after, HOOK_ID_VA + 4), 0, "nop");
-    assert_eq!(word_at_va(&after, HOOK_REC_VA), j_word(plan.rec_va));
-    // The word after the record detour is the arts-table scan's loop head, and
-    // is ALSO reached by `bne v0,zero,0x80034464` from the scan's own tail, so
-    // overwriting it would break the scan for every drawn row. Likewise the
-    // scan's hit arm, which a Super Art row jumps straight into.
+    // A learned row returns to the word after the id detour, a Super Art row
+    // enters the scan's hit arm, and the scan head is reached by the scan's own
+    // tail - all three must stay retail.
+    assert_eq!(
+        word_at_va(&after, HOOK_ID_VA + 8),
+        stock_between,
+        "the id hook's return word"
+    );
     assert_eq!(
         word_at_va(&after, SCAN_HEAD_VA),
         stock_head,
-        "the record detour is one word; the scan head stays retail"
+        "the scan head stays retail"
     );
     assert_eq!(
         word_at_va(&after, SCAN_HIT_VA),
@@ -245,8 +358,8 @@ fn detours_land_and_the_scan_head_survives() {
         "the scan's hit arm stays retail"
     );
     eprintln!(
-        "detours: count -> {:#x}, id -> {:#x}, record -> {:#x}",
-        plan.count_va, plan.id_va, plan.rec_va
+        "detours: count -> {:#x}, id -> {:#x}; fill at {:#x}",
+        plan.count_va, plan.id_va, plan.fill_va
     );
 }
 
@@ -260,45 +373,45 @@ fn the_tables_read_back_exactly_as_planned() {
     let scus = scus_of(&img);
     let n = ARTS_CHARACTERS * SUPER_ARTS_PER_CHAR;
 
-    // Chain bitmasks, AP totals and finisher constants, all in the
-    // `character * 5 + k` order the routines index them by.
-    let masks = bytes_at_va(&scus, plan.masktab_va, n * 4);
-    let aps = bytes_at_va(&scus, plan.aptab_va, n);
-    let fins = bytes_at_va(&scus, plan.fintab_va, n);
+    // The 4-byte records and the packed arrows, both in the
+    // `character * 5 + sorted_index` order the routines index them by.
+    let sup = bytes_at_va(&scus, plan.sup_va, n * SUP_STRIDE as usize);
+    let arrows = bytes_at_va(&scus, plan.arrows_va, n * ARROWS_STRIDE as usize);
     for (i, r) in plan.rows.iter().enumerate() {
-        let m = u32::from_le_bytes(masks[i * 4..i * 4 + 4].try_into().unwrap());
-        assert_eq!(m, r.chain_mask, "chain mask {i} ({})", r.name);
-        assert_eq!(aps[i], r.ap, "AP {i} ({})", r.name);
-        assert_eq!(fins[i], r.finisher, "finisher {i} ({})", r.name);
-    }
-    // Grouped by character in `Character::all()` order, five each.
-    for (c, ch) in legaia_art::queue::Character::all().into_iter().enumerate() {
-        for (k, s) in legaia_art::SUPER_ARTS
-            .iter()
-            .filter(|s| s.character == ch)
-            .enumerate()
-        {
-            let row = &plan.rows[c * SUPER_ARTS_PER_CHAR + k];
-            assert_eq!(row.name, s.name, "slot {c}*5+{k} is {ch:?}'s Super Art {k}");
-            assert_eq!(row.character, ch);
+        let rec = &sup[i * 4..i * 4 + 4];
+        assert_eq!(rec, r.sup_record(), "record {i} ({})", r.name);
+        assert_eq!(rec[0], r.ap);
+        assert_eq!(rec[1] & PERFORMED_MASK, r.thr);
+        assert_eq!(rec[1] >> PERFORMED_COUNT_SHIFT, r.trigger_row);
+        assert_eq!(u16::from_le_bytes([rec[2], rec[3]]), r.name_offset);
+        let a = &arrows[i * 4..i * 4 + 4];
+        assert_eq!(a, r.packed_arrows(), "arrows {i} ({})", r.name);
+        assert_eq!(a[0] as usize, r.input.len());
+        // Unpack them the way the fill routine does and get the input back.
+        for (k, c) in r.input.iter().enumerate() {
+            let dir = (a[1 + k / 4] >> ((k % 4) * 2)) & 3;
+            assert_eq!(
+                dir,
+                legaia_patcher::super_art_list::arrow_code(*c),
+                "{} arrow {k}",
+                r.name
+            );
         }
+        assert_eq!(r.sorted_index as usize, i % SUPER_ARTS_PER_CHAR);
     }
 
-    // The scratch record: `+8` points at its own `+0`, which stays zero, so the
-    // glyph count reads 0 and the row draws no arrows.
+    // The scratch record: `+8` points at the glyph buffer; `+2` and `+0xC`
+    // start clear and are filled per row.
     let scratch = bytes_at_va(&scus, plan.scratch_va, SCRATCH_BYTES);
-    let arrows = u32::from_le_bytes(scratch[8..12].try_into().unwrap());
-    assert_eq!(arrows, plan.scratch_va, "the glyph pointer aims at +0");
-    assert_eq!(scratch[0], 0, "and that byte is a zero glyph count");
-    assert_eq!(&scratch[2..8], &[0u8; 6], "AP + padding start clear");
+    let glyphs = u32::from_le_bytes(scratch[8..12].try_into().unwrap());
+    assert_eq!(glyphs, plan.buf_va, "the glyph pointer aims at the buffer");
+    assert_eq!(&scratch[0..8], &[0u8; 8], "AP + padding start clear");
     assert_eq!(&scratch[12..16], &[0u8; 4], "the name pointer starts clear");
-
-    // The cache the per-row hook reads starts at zero: before the first draw
-    // there is no character, so no Super Art row.
-    assert_eq!(bytes_at_va(&scus, plan.cache_va, 2), vec![0, 0]);
+    // The buffer itself is dead space at patch time (filled at runtime).
+    assert!(bytes_at_va(&scus, plan.buf_va, 25).iter().all(|&b| b == 0));
     eprintln!(
-        "tables: masks {:#x}, AP {:#x}, finishers {:#x}, scratch {:#x}",
-        plan.masktab_va, plan.aptab_va, plan.fintab_va, plan.scratch_va
+        "tables: records {:#x}, arrows {:#x}, scratch {:#x}, buffer {:#x}",
+        plan.sup_va, plan.arrows_va, plan.scratch_va, plan.buf_va
     );
 }
 
@@ -359,7 +472,7 @@ fn pager_is_replaced_whole_and_its_caller_still_reaches_it() {
     let planned = &plan
         .edits
         .iter()
-        .find(|e| e.prot_index == Some(OVERLAY_PROT_INDEX))
+        .find(|e| e.prot_index == Some(OVERLAY_PROT_INDEX) && e.bytes.len() == PAGER_WORDS * 4)
         .expect("pager edit")
         .bytes;
     assert_eq!(planned.len(), PAGER_WORDS * 4, "same size as retail's body");
@@ -369,18 +482,44 @@ fn pager_is_replaced_whole_and_its_caller_still_reaches_it() {
         overlay_word(&before, PAGER_VA + (PAGER_WORDS as u32) * 4),
         "the next function is untouched"
     );
-    // The replacement calls the same shared unlock routine the renderer's count
-    // hook does, so the pager's row total can never disagree with the list's.
+    // The pager's tail hosts the performed-byte writer, at the VA the plan says,
+    // and the applier's match arm detours into it - two words, with the flag
+    // store after them and the applier's entry untouched.
     let words: Vec<u32> = planned
         .chunks_exact(4)
         .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
         .collect();
-    let jal_sub = (0x03 << 26) | ((plan.sub_va >> 2) & 0x03ff_ffff);
     assert!(
-        words.contains(&jal_sub),
-        "the pager must call the unlock routine at {:#x}",
-        plan.sub_va
+        plan.performed_va > PAGER_VA && plan.performed_va < PAGER_VA + (PAGER_WORDS as u32) * 4
     );
+    let w_idx = ((plan.performed_va - PAGER_VA) / 4) as usize;
+    assert_eq!(words[w_idx], 0x3C03_801F, "W replays lui v1,0x801f");
+    assert_eq!(words[w_idx + 1], 0x2402_0001, "W replays addiu v0,zero,1");
+    assert_eq!(
+        overlay_word(&after, HOOK_PERFORMED_VA),
+        j_word(plan.performed_va)
+    );
+    assert_eq!(overlay_word(&after, HOOK_PERFORMED_VA + 4), 0, "nop");
+    assert_eq!(
+        overlay_word(&after, PERFORMED_RET_VA),
+        overlay_word(&before, PERFORMED_RET_VA),
+        "the flag store W returns to stays retail"
+    );
+    assert_eq!(
+        overlay_word(&after, APPLIER_VA),
+        overlay_word(&before, APPLIER_VA)
+    );
+    // Nothing else in the applier moved.
+    for va in (APPLIER_VA..APPLIER_VA + 536).step_by(4) {
+        if va == HOOK_PERFORMED_VA || va == HOOK_PERFORMED_VA + 4 {
+            continue;
+        }
+        assert_eq!(
+            overlay_word(&after, va),
+            overlay_word(&before, va),
+            "applier word {va:#x}"
+        );
+    }
     let live = words.iter().rposition(|&w| w != 0).unwrap() + 1;
     assert!(
         live < PAGER_WORDS,
@@ -494,7 +633,6 @@ fn with_the_toggle_off_nothing_this_feature_touches_moves() {
         HOOK_COUNT_VA + 4,
         HOOK_ID_VA,
         HOOK_ID_VA + 4,
-        HOOK_REC_VA,
         SCAN_HEAD_VA,
         SCAN_HIT_VA,
     ] {
@@ -525,7 +663,13 @@ fn with_the_toggle_off_nothing_this_feature_touches_moves() {
         &ov_before[base..base + PAGER_WORDS * 4],
         "the pager must stay retail with the toggle off"
     );
-    eprintln!("toggle off: every hook site, region and the pager are byte-identical");
+    let a = (APPLIER_VA - OVERLAY_BASE_VA) as usize;
+    assert_eq!(
+        &ov_after[a..a + 536],
+        &ov_before[a..a + 536],
+        "the applier must stay retail with the toggle off"
+    );
+    eprintln!("toggle off: every hook site, region, the pager and the applier are byte-identical");
 }
 
 #[test]
@@ -581,13 +725,7 @@ fn an_unrecognized_build_is_refused_before_anything_is_written() {
 
     // Every renderer fingerprint has to be load-bearing: corrupting any one of
     // them refuses the plan.
-    for va in [
-        HOOK_COUNT_VA,
-        HOOK_ID_VA,
-        HOOK_REC_VA,
-        SCAN_HEAD_VA,
-        SCAN_HIT_VA,
-    ] {
+    for va in [HOOK_COUNT_VA, HOOK_ID_VA, SCAN_HEAD_VA, SCAN_HIT_VA] {
         let mut bad = scus.clone();
         let off = file_offset_for_va(&scus, va).unwrap();
         bad[off] ^= 0xFF;
@@ -596,10 +734,21 @@ fn an_unrecognized_build_is_refused_before_anything_is_written() {
             "a corrupt word at {va:#x} must be refused"
         );
     }
-    // Same for the pager's entry word in the overlay.
-    let mut bad_ov = ov.clone();
-    bad_ov[(PAGER_VA - OVERLAY_BASE_VA) as usize] ^= 0xFF;
-    assert!(SuperArtListInjection::plan(&scus, &bad_ov).is_err());
+    // Same for the pager's entry word and the applier's match arm in the overlay.
+    for va in [
+        PAGER_VA,
+        HOOK_PERFORMED_VA,
+        HOOK_PERFORMED_VA + 4,
+        PERFORMED_RET_VA,
+        APPLIER_VA,
+    ] {
+        let mut bad_ov = ov.clone();
+        bad_ov[(va - OVERLAY_BASE_VA) as usize] ^= 0xFF;
+        assert!(
+            SuperArtListInjection::plan(&scus, &bad_ov).is_err(),
+            "overlay {va:#x}"
+        );
+    }
 
     // A dirty region is refused even though every fingerprint matches - all
     // four of them, since the feature spans all four.

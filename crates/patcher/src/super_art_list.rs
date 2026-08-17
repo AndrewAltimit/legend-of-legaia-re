@@ -1,8 +1,8 @@
 //! **Show Super Arts on the in-battle move list**: add a character's Super Arts
 //! to the Tactical-Arts list the Triangle button opens in battle - which retail
-//! never draws at all - at the **head** of the list, each row carrying its
-//! **name** and its **AP cost**, and only once the chain that triggers it is
-//! learned.
+//! never draws at all - each row carrying its **name**, its **AP cost** and its
+//! **arrow string**, sorted into the list by AP, and only once the player has
+//! **performed** it.
 //!
 //! ## What retail does
 //!
@@ -17,7 +17,7 @@
 //! 8003440c  lw    v0,0x140(gp)   ; scroll     (the page offset the pager sets)
 //! 80034414  addu  a2,s7,v0       ; entry = row + scroll
 //! 80034450  lbu   s2,0x74e(v0)   ; id         (B)  -> the id list at +0x74E..
-//! 80034460  addiu s5,a1,0x8      ; (E)  a1 = table base, s5 = record + 8
+//! 80034460  addiu s5,a1,0x8      ;      a1 = table base, s5 = record + 8
 //! 80034464  lbu   v1,0x0(a1)     ;   require rec[+0] == character   <- scan head
 //! 80034480  bne   v0,s2,...      ;   require rec[+1] == id
 //! 80034488  clear a1             ;   HIT: draw the row                <- scan hit
@@ -27,111 +27,114 @@
 //! 8003474c  addiu s7,s7,0x1      ;   MISS: the row is silently consumed
 //! ```
 //!
-//! `v0` at (A) is `0x80084140 + character*0x414`; the character index itself is
-//! `gp+0x874` (`0` Vahn / `1` Noa / `2` Gala / `3` Terra), the same 0-based space
-//! the arts-name table's `rec[+0]` byte uses. Rows per page is the drawable
-//! height over the row pitch, `0x90 / 0x1C` = **5**.
+//! `v0` at (A) is `0x80084140 + character*0x414` - the character record - and
+//! at (B) it is that record plus `entry`. The character index itself is
+//! `gp+0x874` (`0` Vahn / `1` Noa / `2` Gala / `3` Terra), the same 0-based
+//! space the arts-name table's `rec[+0]` byte uses. Rows per page is the
+//! drawable height over the row pitch, `0x90 / 0x1C` = **5**.
+//!
+//! The learned list is kept **sorted by id** (`FUN_801EFBFC` inserts with an
+//! ascending shift, `0x801EFD64..0x801EFDB0`), and the table's ids run in
+//! **descending AP** (Miracle 99, then the Hyper Arts, then the normal arts) -
+//! so the list the player sees is AP-descending, and "sorted by AP" for an added
+//! row means **interleaving** it, not putting it at either end.
 //!
 //! ## The shape of the injection
 //!
 //! A Super Art has no row in `DAT_80075EC4` (45 records, fifteen regular arts
 //! per character) and no learned-art id. So the feature **synthesises a record**:
-//! a 16-byte scratch record in dead SCUS space whose `+2` AP byte and `+0xC`
-//! name pointer are filled per row, and whose `+8` arrow pointer is a fixed
-//! pointer to a zero byte. Hook (E) then jumps the routine **past the scan**
-//! straight to the hit path with `s5` pointing at that scratch record, so every
-//! field is drawn by retail's own code - no re-implemented renderer, and the
-//! synthetic row cannot be confused with a real one.
+//! a 16-byte scratch record in dead SCUS space whose `+2` AP byte, `+8` glyph
+//! pointer and `+0xC` name pointer are filled per row. Hook (B) then jumps
+//! **past the scan** straight to the hit arm with `s5` pointing at that scratch
+//! record, so every field is drawn by retail's own code - no re-implemented
+//! renderer, and the synthetic row cannot be confused with a real one.
 //!
-//! | Site | VA | Stock word | Role |
+//! | Site | VA | Stock words | Role |
 //! |---|---|---|---|
-//! | A count | `0x800343C4` | `0x9042074D` (`lbu v0,0x74d(v0)`) | `count + unlocked` |
-//! | B id | `0x80034450` | `0x9052074E` (`lbu s2,0x74e(v0)`) | head rows get a synthetic id; learned rows shift down |
-//! | E record | `0x80034460` | `0x24B50008` (`addiu s5,a1,0x8`) | point `s5` at the scratch record and skip the scan |
+//! | A count | `0x800343C4` | `lbu v0,0x74d(v0)` + `sra a2,a2,0x1f` | `count + performed` |
+//! | B id | `0x80034450` | `lbu s2,0x74e(v0)` + `sltiu v1,v1,0x63` | merge the row; a Super Art row is filled and drawn |
+//! | W performed | `0x801EFBCC` (PROT 0898) | `lui v1,0x801f` + `addiu v0,zero,1` | record the Super Art the applier just fired |
 //! | D pager | `0x801D3748` (PROT 0898) | `0x27BDFFE8` | page while another page exists |
 //!
-//! A shared leaf routine [`assemble_sub`] answers the one question all four ask:
-//! **which** Super Arts this character may see, as a five-bit mask plus its
-//! population count. (A) and (D) call it; (B) reads the two bytes it caches.
+//! ## What "performed" means here, and where it lives
 //!
-//! ## What "unlocked" means here
+//! Retail has nowhere to record that a Super Art was performed: the learned
+//! list holds regular-art ids only, and the Super applier `FUN_801EF9E4` marks
+//! nothing. But its match arm at `0x801EFBCC` - the `sw 1 -> 0x801F696C` "a Super
+//! fired" flag - runs with `t5` = the character (0-based) and `t2` = sixteen
+//! times the index of the Super it matched (the replace-row offset from
+//! `0x801EFB04`; `a1`, the loop index, is reused by the copy loop for the bytes
+//! it copies and reads as the finisher constant there - the runtime probe
+//! caught exactly that), and the character record has one **free,
+//! save-persistent byte**: `+0x75D` (save-record `+0x195`), the sixteenth
+//! learned-id slot, which a fifteen-art character can never reach and which
+//! nothing in the corpus references. Routine (W) is a two-word detour from that
+//! arm that sets bit `t2 >> 4` there and keeps a population count in the top
+//! three bits:
 //!
-//! Retail has nowhere to record that a Super Art was *performed*: the id list at
-//! `+0x74E..+0x75D` holds regular-art ids only, and the Super applier
-//! `FUN_801EF9E4` contains no call at all - it is a find/replace over the
-//! finished action queue and marks nothing. A true "performed at least once"
-//! flag would need a new persistent per-character bit plus a writer inside the
-//! battle overlay.
+//! ```text
+//! record + 0x75D  =  count << 5  |  performed mask (bit i = trigger-table row i)
+//! ```
 //!
-//! So the gate is the **availability** one instead: a Super Art is listed once
-//! **every art in its trigger chain is in the character's learned-art list**.
-//! That is exact for whether you can perform it - the trigger is a find/replace
-//! over a queue you can only build out of arts you know - so a row appears on
-//! the same battle the move itself becomes possible, and the list is empty until
-//! then. It is *not* a "you have done this" flag, and the CLI, the page and the
-//! docs all say so.
+//! The byte rides in the SC block like the rest of the record, so the rows
+//! survive a save/load, an old save starts at zero, and a Super Art appears on
+//! the list from the battle after the one it was first performed in (the list is
+//! rebuilt every time it opens). It is exactly the "you have done this" flag
+//! retail lacks. (W) lives in the tail of the replaced pager - battle-only code
+//! in battle-only space - so it costs no SCUS bytes.
 //!
-//! Each Super Art's chain is [`legaia_art::SuperArt::art_sequence`] - its `find`
-//! pattern with the `0x19` starters and connector directions stripped. Chain
-//! entries are **action constants**; the learned list stores **display ids**, and
-//! the two differ by a constant: display row `n` is action constant
-//! `0x1B + n` ([`ART_CONSTANT_BIAS`], the same relation
-//! [`crate::super_art_power::art_block_base`] already solves the art block with).
-//! [`super_art_rows`] converts every chain entry back and **refuses** if any one
-//! of them fails to land on a real row of the disc's own arts-name table.
-//!
-//! ## Where the row's AP and name come from
+//! ## What the row shows
 //!
 //! - **AP** is the chain's: the sum of the chain arts' `rec[+2]` AP costs, read
-//!   off the disc's arts-name table at patch time into a 15-byte table. A Super
-//!   Art has no AP of its own - the chain arts pay it - so the chain's total is
-//!   the truthful number, and it is what the row shows. Retail's own halving for
-//!   the `+0x6C0 & 0x800` flag still applies on top, because the value is drawn
-//!   by retail's own digit loop.
+//!   off the disc's arts-name table at patch time. A Super Art has no AP of its
+//!   own - the chain arts pay it - so the chain's total is the truthful number.
 //! - **Name** is chased in RAM. Retail resolves an art record at
 //!   `*(*(DAT_801C9360[character]) + 0x58) + 4 + (constant - 0x10) * 0xD0`, and
-//!   the display name is that record's `+0x10` field. All three constants are
-//!   measured from retail's own indexing in `FUN_8004AD80`
-//!   (`0x8004B6FC..0x8004B718` builds the base; `0x8004BBE8..0x8004BC10` reads
-//!   `... - 0xCF0` = the `+0x10` **name**, `0x8004BC60..0x8004BC80` reads
-//!   `... - 0xCDC` = the `+0x24` **power**), and the same offsets are what
-//!   [`crate::super_art_power`] edits through. Only the finisher constant needs
-//!   carrying (15 bytes), so no name blob is embedded at all.
+//!   the display name is that record's `+0x10` field (all measured from retail's
+//!   own indexing in `FUN_8004AD80`, the same offsets [`crate::super_art_power`]
+//!   edits through). Only the per-Super **byte offset from the record array**
+//!   is carried (`4 + (finisher - 0x10) * 0xD0 + 0x10`, one `u16`).
+//! - **Arrows** are the Super Art's **physical input** - the seven-to-nine
+//!   arrows the player actually types, derived from the trigger pattern with the
+//!   retail tokenizer ([`legaia_art::tokenize`]: arts overlap, so a Super's
+//!   input is shorter than its chain arts laid end to end; Tri-Somersault is
+//!   `↑↓↑↑↑↓↑`). They are carried two bits per arrow (`[count][3 bytes]` per
+//!   Super) and expanded per row into a `[count][0x81 0xA8+dir]*` glyph string in
+//!   the same layout retail's own strings use, which the scratch record's `+8`
+//!   points at. All arrows are drawn in the default glyph style - the `0xFF06`
+//!   style marker regular rows carry did not fit.
 //!
-//! ## What a row does not show
+//! ## Where the row sits
 //!
-//! **No arrows.** A regular row draws `rec[+8]`, a `[count][2-byte glyph]*`
-//! string, and a Super Art's truthful string is its chain arts' glyph strings
-//! concatenated with the per-combo connector directions between them. Carrying
-//! the fifteen concatenations costs roughly 330 bytes and building them at
-//! runtime costs a copy loop plus an ordered chain table, and the whole feature
-//! has 652 bytes of verified-dead SCUS to live in. The scratch record's `+8`
-//! therefore points at a zero byte: the glyph count is `0`, retail's own
-//! `beq v0,zero,0x8003474c` at `0x80034650` takes the row-consumed exit, and the
-//! row draws its name and AP with a blank command line.
+//! Hook (B) merges two sorted sequences on the fly. The learned list is
+//! id-sorted (= AP-descending); the character's five Super Arts are carried
+//! **sorted by chain AP**, each with a **threshold id** `thr` = the lowest id of
+//! that character whose AP is at or below the Super's - so a Super Art precedes
+//! every learned id `>= thr` and follows the rest. For row `entry` the routine
+//! walks both sequences, skipping Super Arts not yet performed, until it has
+//! passed `entry` rows; a learned row replays the stock `lbu` at the merged
+//! index, a Super Art row fills the scratch record and enters the hit arm.
 //!
 //! ## Battle-only by construction
 //!
 //! `FUN_80034358` is reached only through the shared window-content dispatcher
 //! `FUN_80031D00`, which also runs from the field and menu overlays. The name
 //! chase dereferences `DAT_801C9360`, which is meaningful only while the battle
-//! overlay is resident, so [`assemble_sub`] gates the whole feature on the
-//! master game-mode selector `_DAT_8007B83C == 0x15` ([`BATTLE_MODE`], the same
-//! word `FUN_80031D00` itself compares against `0x15` at its entry). Outside
-//! battle the unlocked count is zero, (B) never synthesises an id and (E) never
-//! fires.
+//! overlay is resident, so both (A) and (B) gate on the master game-mode selector
+//! `_DAT_8007B83C == 0x15` ([`BATTLE_MODE`], the same word `FUN_80031D00` itself
+//! compares against `0x15` at its entry). Outside battle neither adds a row.
+//! Terra has no Super Arts and no writer ever sets her byte, so her list stays
+//! retail's.
 //!
 //! ## (D) is a replacement, not a detour
 //!
 //! `FUN_801D3748` is an 81-instruction leaf with exactly one caller
 //! (`jal` at `0x801D21BC`) and no reference to its interior from anywhere -
 //! every branch into its body comes from inside itself. So the whole body is
-//! rewritten in place in the overlay, which costs no dead space at all. Retail
-//! steps the page offset `0 -> 5 -> 10` and then closes the list; the
-//! replacement steps while `scroll + 5 < effective count` (capped at
-//! [`MAX_SCROLL`]). It also drops retail's "no arts at all -> do nothing" early
-//! exit, so a character who has learned nothing but has an unlocked Super Art
-//! can still open the list.
+//! rewritten in place in the overlay. Retail steps the page offset
+//! `0 -> 5 -> 10` and then closes the list; the replacement steps while
+//! `scroll + 5 < learned + performed` (capped at [`MAX_SCROLL`]), reading the
+//! same record byte (B) does. Its spare tail hosts (W).
 //!
 //! ## Placement
 //!
@@ -141,12 +144,10 @@
 //!
 //! | Region | Holds |
 //! |---|---|
-//! | [`SCUS_GAP_VA`] (256 B) | routine (B), the cache, the AP + finisher tables, the scratch record |
-//! | [`ARENA1_VA`] (256 B) | the shared leaf and routine (A) |
-//! | [`ARENA2_VA`] (72 B) | routine (E) |
-//! | [`SLOT6_VA`] (68 B) | the fifteen chain bitmasks |
-//!
-//! The pager replacement lands in the overlay itself and takes no dead space.
+//! | [`SCUS_GAP_VA`] (256 B) | routine (B) and the scratch record |
+//! | [`ARENA1_VA`] (256 B) | the row-fill routine (F) and the packed arrows |
+//! | [`ARENA2_VA`] (72 B) | routine (A) and the glyph buffer |
+//! | [`SLOT6_VA`] (68 B) | the fifteen 4-byte Super Art records |
 //!
 //! ## Known cosmetic gap
 //!
@@ -156,13 +157,13 @@
 //! string is stale.
 //!
 //! No Sony bytes are embedded: the routines are the patcher's own code, and
-//! every table entry is derived from the user's own disc (AP costs and chain
-//! membership out of `SCUS_942.54`'s arts-name table) or from
+//! every table entry is derived from the user's own disc (AP costs, thresholds
+//! and inputs out of `SCUS_942.54`'s arts-name table) or from
 //! [`legaia_art::SUPER_ARTS`], the repo's own capture-validated trigger table.
 
 use anyhow::{Result, bail};
 
-use legaia_art::queue::Character;
+use legaia_art::queue::{ActionConstant, Character, Command};
 
 use crate::mips::*;
 use crate::shiny_seru::{
@@ -171,7 +172,7 @@ use crate::shiny_seru::{
 };
 use crate::super_art_power::{GRID_BIAS, super_arts_for};
 
-/// PROT entry of the battle-action overlay that hosts the list pager.
+/// PROT entry of the battle-action overlay that hosts the pager and the applier.
 pub const OVERLAY_PROT_INDEX: usize = legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX;
 /// Load base of that overlay: a VA maps to raw-entry file offset `va - base`.
 pub const OVERLAY_BASE_VA: u32 = legaia_asset::move_power::BATTLE_OVERLAY_BASE;
@@ -181,10 +182,6 @@ pub const SUPER_ARTS_PER_CHAR: usize = 5;
 /// Characters with an arts list (`0` Vahn / `1` Noa / `2` Gala). Terra (`3`) has
 /// no arts-name-table rows and is left at retail.
 pub const ARTS_CHARACTERS: usize = 3;
-/// Synthetic art id of the first Super Art row. Retail's table uses `0x00..=0x10`
-/// only, so `0x40..=0x44` cannot collide; [`SuperArtListInjection::plan`]
-/// re-checks that against the disc's own table.
-pub const SYN_ID_BASE: u8 = 0x40;
 /// Rows drawn per page (`drawable height 0x90 / row pitch 0x1C`).
 pub const PAGE_ROWS: u32 = 5;
 /// Highest page offset the replacement pager will step to. The id list holds 16
@@ -195,8 +192,14 @@ pub const MAX_SCROLL: u16 = 20;
 /// which is also what the learned list stores) and its **action constant** (what
 /// a Super Art's trigger chain is written in): constant = id + `0x1B`.
 pub const ART_CONSTANT_BIAS: u8 = 0x1B;
-/// Widest display id the chain bitmask can represent (one `u32` per Super Art).
-pub const MAX_ART_ID: u8 = 31;
+/// Position in a character's table from which an art is a **normal** art
+/// (`FUN_801EED1C`'s `t5 == 0` arm; ordinals `0..4` are the Miracle Art and the
+/// three Hyper Arts). Only normal arts feed the tokenizer the input derivation
+/// runs, exactly as retail's normal-art arm is the one that writes tokens.
+pub const FIRST_NORMAL_ORDINAL: usize = 4;
+/// Longest Super Art input the two-bit packing carries (`3 bytes = 12 arrows`);
+/// every retail Super is typed in 7..=9.
+pub const MAX_INPUT_ARROWS: usize = 12;
 
 // --- Hook sites (all byte-verified against the US build) ---------------------
 
@@ -215,15 +218,8 @@ pub(crate) const HOOK_ID_W0: u32 = 0x9052_074E;
 pub(crate) const HOOK_ID_W1: u32 = 0x2C63_0063;
 const ID_RET_VA: u32 = HOOK_ID_VA + 8;
 
-/// (E) `addiu s5,a1,0x8` - where the record cursor is set up, one instruction
-/// ahead of the arts-name-table scan. **One word only**: the next word
-/// [`SCAN_HEAD_VA`] is the scan's loop head and is branched to from
-/// `0x80034744`, so it must stay put. The hook's own delay slot re-executes it
-/// harmlessly and the routine returns to it.
-pub const HOOK_REC_VA: u32 = 0x8003_4460;
-pub(crate) const HOOK_REC_W0: u32 = 0x24B5_0008;
-/// `lbu v1,0x0(a1)` - the scan loop head, fingerprinted, never written. A row
-/// that is not a Super Art returns here, exactly as retail falls through.
+/// `lbu v1,0x0(a1)` - the scan loop head, fingerprinted, never written: a
+/// plain row returns to the stock words in front of it.
 pub const SCAN_HEAD_VA: u32 = 0x8003_4464;
 pub(crate) const SCAN_HEAD_W: u32 = 0x90A3_0000;
 /// `clear a1` - the first instruction of the scan's **hit** arm. A Super Art row
@@ -239,7 +235,7 @@ pub(crate) const GLYPH_FN_W0: u32 = 0x27BD_FFC0;
 
 /// (D) `FUN_801D3748`, the Triangle list pager, in the battle-action overlay.
 pub const PAGER_VA: u32 = 0x801D_3748;
-/// Original body length in words - the replacement must fit inside it.
+/// Original body length in words - the replacement plus routine (W) must fit.
 pub const PAGER_WORDS: usize = 81;
 pub(crate) const PAGER_W0: u32 = 0x27BD_FFE8;
 /// `lw v0,0x598(a1)` - the pad-mask read that gates the whole routine.
@@ -251,6 +247,20 @@ pub(crate) const PAGER_LAST_W: u32 = 0x27BD_0018;
 /// The list-open sound cue the pager tails into.
 const PAGER_SOUND_FN_VA: u32 = 0x8003_19A8;
 
+/// (W) the Super applier's match arm: `lui v1,0x801f` / `addiu v0,zero,1` /
+/// `sw v0,0x696c(v1)` (the "a Super fired" flag) / `addiu a1,zero,5`. Entered
+/// both by fall-through and by the `beq v0,zero` at `0x801EFB24`, with `t5` =
+/// the character (0-based) and `t2` = the matched trigger-table row `* 16`.
+pub const HOOK_PERFORMED_VA: u32 = 0x801E_FBCC;
+pub(crate) const HOOK_PERFORMED_W0: u32 = 0x3C03_801F;
+pub(crate) const HOOK_PERFORMED_W1: u32 = 0x2402_0001;
+/// The flag store the routine returns to (`sw v0,0x696c(v1)`), fingerprinted.
+pub const PERFORMED_RET_VA: u32 = HOOK_PERFORMED_VA + 8;
+pub(crate) const PERFORMED_RET_W: u32 = 0xAC62_696C;
+/// The applier's entry word, fingerprinted so a re-based overlay is refused.
+pub const APPLIER_VA: u32 = 0x801E_F9E4;
+pub(crate) const APPLIER_W0: u32 = 0x27BD_FFF8;
+
 // Globals the routines touch, all read straight out of the retail code above.
 /// `gp+0x874` - the acting character index (0-based).
 const GP_CHARACTER: u16 = 0x874;
@@ -260,6 +270,13 @@ const CHAR_RECORD_BASE: u32 = 0x8008_4140;
 const LEARNED_COUNT_OFF: u16 = 0x74D;
 /// `record + 0x74E` - the first of sixteen learned-art id slots.
 const LEARNED_LIST_OFF: u16 = 0x74E;
+/// `record + 0x75D` - the sixteenth id slot, never reachable (fifteen arts per
+/// character) and referenced by nothing: the performed byte.
+pub const PERFORMED_OFF: u16 = 0x75D;
+/// The performed byte's mask bits (`bit i` = trigger-table row `i`).
+pub const PERFORMED_MASK: u8 = 0x1F;
+/// The performed byte's count field starts at this bit.
+pub const PERFORMED_COUNT_SHIFT: u32 = 5;
 /// Master game-mode selector `_DAT_8007B83C` (`sh`-stored `u16`).
 const GAME_MODE_VA: u32 = 0x8007_B83C;
 /// The game mode the arts list is meaningful in.
@@ -270,9 +287,7 @@ const CMD_TABLE_VA: u32 = 0x801C_9360;
 const ART_BLOCK_PTR_OFF: u16 = 0x58;
 /// The `+4` retail adds to that pointer to reach art-record grid index `0`.
 const ART_BLOCK_BIAS: u32 = 4;
-/// Per-art-record stride inside that array. Routine (B) spells the multiply out
-/// as retail does (`sll 1, addu, sll 2, addu, sll 4`); the test
-/// `id_routine_chases_the_name_the_way_retail_does` pins that chain to this.
+/// Per-art-record stride inside that array.
 pub const ART_RECORD_STRIDE: u32 = 0xD0;
 /// `record + 0x10` - the record's display-name field.
 const ART_NAME_FIELD_OFF: u32 = 0x10;
@@ -280,234 +295,275 @@ const ART_NAME_FIELD_OFF: u32 = 0x10;
 // Scratch-record field offsets, in the arts-name-table record's own layout.
 /// `+2` - the AP cost the digit loop draws.
 const SCRATCH_AP_OFF: u16 = 0x2;
-/// `+8` - the command-glyph string pointer (aimed at a zero byte: no arrows).
-const SCRATCH_ARROWS_OFF: usize = 0x8;
+/// `+8` - the command-glyph string pointer (aimed at the glyph buffer).
+const SCRATCH_ARROWS_OFF: u16 = 0x8;
 /// `+0xC` - the display-name pointer.
 const SCRATCH_NAME_OFF: u16 = 0xC;
 /// Bytes of scratch record reserved (the record's own stride is `0x14`, but only
 /// `+0..+0x10` is ever read through `s5 = record + 8`).
 pub const SCRATCH_BYTES: usize = 0x10;
+/// The glyph buffer: `[count][0x81 lo]*` for up to [`MAX_INPUT_ARROWS`] arrows.
+pub const GLYPH_BUF_BYTES: usize = 1 + 2 * MAX_INPUT_ARROWS;
+/// High byte of every arrow glyph, and the low byte of the first (Right); the
+/// four arrows are `0xA8..=0xAB` = Right / Left / Up / Down.
+pub const GLYPH_HI: u8 = 0x81;
+pub const GLYPH_LO_BASE: u8 = 0xA8;
+
+/// One Super Art's 4-byte record in the injected table (`SUP`), in per-character
+/// **AP-sorted** order: `+0` chain AP, `+1` `thr | bit << 5`, `+2` name offset
+/// (`u16`, from the art-record array).
+pub const SUP_STRIDE: u32 = 4;
+/// Per-Super packed arrows: `[count][2-bit dirs x 12]`.
+pub const ARROWS_STRIDE: u32 = 4;
+/// Two-bit arrow codes = glyph low byte minus [`GLYPH_LO_BASE`].
+pub fn arrow_code(c: Command) -> u8 {
+    match c {
+        Command::Right => 0,
+        Command::Left => 1,
+        Command::Up => 2,
+        Command::Down => 3,
+    }
+}
 
 // --- Routine assembly --------------------------------------------------------
 
-/// The shared leaf: work out which of the acting character's Super Arts are
-/// unlocked. Returns the five-bit mask in `t9` and its population count in `t8`,
-/// and caches both as two bytes at `cache_va` (`+0` mask, `+1` count) for the
-/// per-row hook to read. Clobbers `t0`-`t9` and nothing else - in particular it
-/// uses no `mult`/`div`, because `hi`/`lo` are live across hook (A).
-///
-/// The answer is zero outside battle (`_DAT_8007B83C != 0x15`) and zero for
-/// Terra, which is what keeps hooks (B) and (E) inert in both cases.
-pub(crate) fn assemble_sub(base_va: u32, masktab_va: u32, cache_va: u32) -> Vec<u32> {
-    const L1: i32 = 20;
-    const D1: i32 = 28;
-    const L2: i32 = 35;
-    const SKIP: i32 = 42;
-    const STORE: i32 = 44;
-    let cache_lo = lo(cache_va);
-    let body = vec![
-        or(T8, ZERO, ZERO),                            // 0  n = 0
-        or(T9, ZERO, ZERO),                            // 1  mask = 0
-        lui(T3, hi(GAME_MODE_VA)),                     // 2
-        lh(T3, T3, lo(GAME_MODE_VA)),                  // 3  t3 = game mode
-        lw(T0, GP, GP_CHARACTER),                      // 4  t0 = character (t3 delay)
-        addiu(T3, T3, (-(BATTLE_MODE as i32)) as u16), // 5  mode - 0x15
-        bne(T3, ZERO, (STORE - 7) as i16),             // 6  not in battle -> nothing
-        sltiu(T1, T0, ARTS_CHARACTERS as u16),         // 7  delay: character < 3 ?
-        beq(T1, ZERO, (STORE - 9) as i16),             // 8  Terra -> nothing
-        sll(T1, T0, 6),                                // 9  delay: character * 64
-        addu(T1, T1, T0),                              // 10 * 65
-        sll(T1, T1, 2),                                // 11 * 260
-        addu(T1, T1, T0),                              // 12 * 261
-        sll(T1, T1, 2),                                // 13 * 0x414
-        lui(T2, hi(CHAR_RECORD_BASE)),                 // 14
-        addiu(T2, T2, lo(CHAR_RECORD_BASE)),           // 15
-        addu(T1, T1, T2),                              // 16 t1 = the character record
-        lbu(T4, T1, LEARNED_COUNT_OFF),                // 17 t4 = learned-art count
-        addiu(T1, T1, LEARNED_LIST_OFF),               // 18 t1 = the id list
-        or(T2, ZERO, ZERO),                            // 19 t2 = learned bitmask
-        // L1: fold every learned id into a bitmask.
-        beq(T4, ZERO, (D1 - 21) as i16), // 20
-        ori(T3, ZERO, 1),                // 21 delay
-        lbu(T5, T1, 0),                  // 22 t5 = one learned id
-        addiu(T1, T1, 1),                // 23
-        addiu(T4, T4, 0xFFFF),           // 24 count -= 1
-        sllv(T3, T3, T5),                // 25 1 << id
-        j(base_va + (L1 as u32) * 4),    // 26
-        or(T2, T2, T3),                  // 27 delay
-        // D1: a Super Art is unlocked when its whole chain is in that mask.
-        sll(T6, T0, 2),                // 28
-        addu(T6, T6, T0),              // 29 character * 5
-        sll(T6, T6, 2),                // 30 * 4 (u32 entries)
-        lui(T5, hi(masktab_va)),       // 31
-        addiu(T5, T5, lo(masktab_va)), // 32
-        addu(T6, T6, T5),              // 33 t6 = &chain_mask[char*5]
-        ori(T7, ZERO, 1),              // 34 t7 = the row's bit
-        // L2:
-        lw(T5, T6, 0),                                 // 35 t5 = the chain mask
-        addiu(T6, T6, 4),                              // 36
-        and(T3, T5, T2),                               // 37
-        bne(T3, T5, (SKIP - 39) as i16),               // 38 a chain art is missing
-        sltiu(T4, T7, 1 << (SUPER_ARTS_PER_CHAR - 1)), // 39 delay: more rows?
-        or(T9, T9, T7),                                // 40 unlocked
-        addiu(T8, T8, 1),                              // 41
-        // SKIP:
-        bne(T4, ZERO, (L2 - 43) as i16), // 42
-        sll(T7, T7, 1),                  // 43 delay: next row's bit
-        // STORE:
-        lui(T3, hi(cache_va)),    // 44
-        sb(T9, T3, cache_lo),     // 45 cache[+0] = mask
-        sb(T8, T3, cache_lo + 1), // 46 cache[+1] = count
-        jr(RA),                   // 47
-        nop(),                    // 48
-    ];
-    debug_assert_eq!(body.len(), STORE as usize + 5);
-    body
+/// Word offset of a PC-relative branch from `from` (the branch's own address)
+/// to `to`. Branches reach ±128 KB, so every dead-space region can be a target.
+fn br(from: u32, to: u32) -> i16 {
+    let d = (to as i64 - (from as i64 + 4)) / 4;
+    i16::try_from(d).expect("branch target in range")
 }
 
-/// (A) `count -> count + unlocked`. `ra` is dead here (`FUN_80034358` spilled it
-/// at `0x54(sp)` in its prologue), so the routine simply calls the shared leaf.
-/// `disp = [lbu v0,0x74d(v0), sra a2,a2,0x1f]`.
-pub(crate) fn assemble_count(disp: [u32; 2], sub_va: u32, ret: u32) -> Vec<u32> {
+/// (A) `count -> count + performed`. `v0` is the character record when the hook
+/// fires, so the performed byte is read **before** the displaced `lbu`
+/// replaces it with the learned count; the count field is its top three bits.
+/// Gated on battle mode. `disp = [lbu v0,0x74d(v0), sra a2,a2,0x1f]`.
+pub(crate) fn assemble_count(disp: [u32; 2], ret: u32) -> Vec<u32> {
     vec![
-        disp[0],          // 0 v0 = learned count
-        jal(sub_va),      // 1 t8 = unlocked Super Arts
-        nop(),            // 2 delay (also v0's load delay)
-        addu(V0, V0, T8), // 3 the walk runs that many more rows
-        j(ret),           // 4
-        disp[1],          // 5 delay: sra a2,a2,0x1f (replay)
+        lbu(T1, V0, PERFORMED_OFF),                    // 0  t1 = performed byte
+        disp[0],                                       // 1  v0 = learned count
+        lui(T3, hi(GAME_MODE_VA)),                     // 2
+        lh(T3, T3, lo(GAME_MODE_VA)),                  // 3
+        srl(T1, T1, PERFORMED_COUNT_SHIFT),            // 4  performed count
+        addiu(T3, T3, (-(BATTLE_MODE as i32)) as u16), // 5  mode - 0x15
+        bne(T3, ZERO, 2),                              // 6  not in battle -> skip
+        nop(),                                         // 7  delay
+        addu(V0, V0, T1),                              // 8  count += performed
+        j(ret),                                        // 9
+        disp[1],                                       // 10 delay: sra a2,a2,0x1f
     ]
 }
 
-/// (B) resolve the row's art id, and stage a Super Art row's record fields.
+/// (B) resolve the row's art id by merging the id-sorted learned list with the
+/// character's AP-sorted, performed Super Arts.
 ///
-/// The Super Arts sit at the **head** of the list: row `entry < unlocked` is the
-/// `entry`-th set bit of the cached mask and gets synthetic id `SYN_ID_BASE + j`,
-/// while every later row reads the learned id at `entry - unlocked` - so the
-/// learned half is shifted *down*, and unlike retail-plus-tail the read never
-/// runs past the sixteen id slots. The stock `lbu` is replayed verbatim on that
-/// path with the cursor moved back; the Super Art path skips it entirely, so the
-/// character record is never even read out of range, let alone written.
+/// Entered with `v0` = record + `entry`, `a2` = `entry`, `a0` = `0x80070000`
+/// (the table-base `lui`, read again by the word after the hook - preserved) and
+/// `v1` = the table's first byte (the displaced `sltiu` tests it - preserved).
+/// Clobbers `t0`-`t9` and `s2`/`s5`, all dead or about to be written by retail
+/// at this point; `ra` is dead (spilled in the prologue). Uses no `mult`/`div`.
 ///
-/// On the Super Art path the routine also writes the two per-row fields of the
-/// scratch record: `+2` = the chain's summed AP, `+0xC` = the runtime name
-/// pointer chased through `DAT_801C9360[character] -> +0x58 -> +4 ->
-/// (finisher - 0x10) * 0xD0 -> +0x10`.
+/// A learned row lands on `PLAIN` with `t4` = its index into the id list and
+/// replays the stock `lbu` there; a Super Art row branches (cross-region) to the
+/// fill routine `fill_va` with `t5` = the character's `SUP` base, `t6` = the
+/// Super's sorted index and `t8` = the character.
 ///
 /// `disp = [lbu s2,0x74e(v0), sltiu v1,v1,0x63]`.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn assemble_id(
     disp: [u32; 2],
     base_va: u32,
-    cache_va: u32,
-    aptab_va: u32,
-    fintab_va: u32,
-    scratch_va: u32,
+    sup_va: u32,
+    fill_va: u32,
     ret: u32,
 ) -> Vec<u32> {
-    const LOOP: i32 = 8;
-    const NEXT: i32 = 13;
-    const FOUND: i32 = 15;
-    const PLAIN: i32 = 46;
-    let cache_lo = lo(cache_va);
+    const LOOP: i32 = 20;
+    const PICKSUP: i32 = 39;
+    const NEXTK: i32 = 42;
+    const PICKLRN: i32 = 44;
+    const PLAIN0: i32 = 49;
+    const PLAINI: i32 = 50;
+    let at = |i: i32| base_va + (i as u32) * 4;
     let body = vec![
-        lui(T3, hi(cache_va)),             // 0
-        lbu(T0, T3, cache_lo),             // 1  t0 = unlocked mask
-        lbu(T1, T3, cache_lo + 1),         // 2  t1 = unlocked count
-        nop(),                             // 3  load delay
-        sltu(T2, A2, T1),                  // 4  entry < unlocked ?
-        beq(T2, ZERO, (PLAIN - 6) as i16), // 5  no -> a learned art
-        or(T4, ZERO, ZERO),                // 6  delay: j = 0
-        or(T5, A2, ZERO),                  // 7  c = entry
-        // LOOP: walk to the entry-th set bit of the mask.
-        andi(T6, T0, 1),                    // 8
-        beq(T6, ZERO, (NEXT - 10) as i16),  // 9  bit clear -> next j
-        srl(T0, T0, 1),                     // 10 delay: consume the bit
-        beq(T5, ZERO, (FOUND - 12) as i16), // 11 this is the row
-        addiu(T5, T5, 0xFFFF),              // 12 delay: c -= 1
-        // NEXT:
-        j(base_va + (LOOP as u32) * 4), // 13
-        addiu(T4, T4, 1),               // 14 delay: j += 1
-        // FOUND: t4 = the Super Art's index within the character's five.
-        lw(T1, GP, GP_CHARACTER),                                    // 15
-        addiu(S2, T4, u16::from(SYN_ID_BASE)),                       // 16 s2 = the synthetic id
-        sll(T2, T1, 2),                                              // 17
-        addu(T2, T2, T1),                                            // 18 character * 5
-        addu(T4, T4, T2),                                            // 19 t4 = the table index
-        lui(T3, hi(aptab_va)),                                       // 20
-        addu(T3, T3, T4),                                            // 21
-        lbu(T6, T3, lo(aptab_va)),       // 22 t6 = the chain's summed AP
-        lui(T5, hi(fintab_va)),          // 23
-        addu(T5, T5, T4),                // 24
-        lbu(T7, T5, lo(fintab_va)),      // 25 t7 = the finisher constant
-        sll(T2, T1, 2),                  // 26 character * 4
-        lui(T8, hi(CMD_TABLE_VA)),       // 27
-        addiu(T8, T8, lo(CMD_TABLE_VA)), // 28
-        addu(T8, T8, T2),                // 29
-        lw(T8, T8, 0),                   // 30 the command-data block
-        addiu(T7, T7, (-(GRID_BIAS as i32)) as u16), // 31 delay filler: grid index
-        lw(T8, T8, ART_BLOCK_PTR_OFF),   // 32 the art-record array
-        sll(T2, T7, 1),                  // 33 delay filler
-        addu(T2, T2, T7),                // 34 * 3
-        sll(T2, T2, 2),                  // 35 * 12
-        addu(T2, T2, T7),                // 36 * 13
-        sll(T2, T2, 4),                  // 37 * 0xD0
-        addu(T8, T8, T2),                // 38
-        addiu(T8, T8, (ART_BLOCK_BIAS + ART_NAME_FIELD_OFF) as u16), // 39
-        lui(T3, hi(scratch_va)),         // 40
-        addiu(T3, T3, lo(scratch_va)),   // 41
-        sb(T6, T3, SCRATCH_AP_OFF),      // 42 scratch[+2]   = AP
-        sw(T8, T3, SCRATCH_NAME_OFF),    // 43 scratch[+0xC] = name
-        j(ret),                          // 44
-        disp[1],                         // 45 delay: sltiu v1,v1,0x63
-        // PLAIN: a learned art, shifted down past the Super Art rows.
-        subu(V0, V0, T1),              // 46
-        lbu(S2, V0, LEARNED_LIST_OFF), // 47 == disp[0], re-based
-        j(ret),                        // 48
-        disp[1],                       // 49 delay: sltiu v1,v1,0x63
+        subu(V0, V0, A2),                              // 0  v0 = the character record
+        lui(T3, hi(GAME_MODE_VA)),                     // 1
+        lh(T3, T3, lo(GAME_MODE_VA)),                  // 2
+        lbu(T0, V0, PERFORMED_OFF),                    // 3  t0 = performed byte
+        addiu(T3, T3, (-(BATTLE_MODE as i32)) as u16), // 4  mode - 0x15
+        bne(T3, ZERO, (PLAIN0 - 6) as i16),            // 5  not in battle -> plain
+        andi(T0, T0, u16::from(PERFORMED_MASK)),       // 6  delay: the mask
+        beq(T0, ZERO, (PLAIN0 - 8) as i16),            // 7  nothing performed -> plain
+        lw(T8, GP, GP_CHARACTER),                      // 8  delay: character
+        lbu(T2, V0, LEARNED_COUNT_OFF),                // 9  t2 = learned count
+        addiu(T9, V0, LEARNED_LIST_OFF),               // 10 t9 = the id list
+        sll(T7, T8, 2),                                // 11
+        addu(T7, T7, T8),                              // 12 character * 5
+        sll(T7, T7, 2),                                // 13 * SUP_STRIDE
+        lui(T5, hi(sup_va)),                           // 14
+        addiu(T5, T5, lo(sup_va)),                     // 15
+        addu(T5, T5, T7),                              // 16 t5 = &SUP[character*5]
+        or(T4, ZERO, ZERO),                            // 17 i = 0 (learned cursor)
+        or(T6, ZERO, ZERO),                            // 18 k = 0 (Super cursor)
+        or(T7, A2, ZERO),                              // 19 r = entry (rows to pass)
+        // LOOP: pick the next merged row.
+        sltiu(T3, T6, SUPER_ARTS_PER_CHAR as u16), // 20 k < 5 ?
+        beq(T3, ZERO, (PICKLRN - 22) as i16),      // 21 no Super left -> learned
+        sll(T3, T6, 2),                            // 22 delay: k * 4
+        addu(T3, T3, T5),                          // 23 t3 = &SUP[k]
+        lbu(T1, T3, 1),                            // 24 thr | bit << 5
+        nop(),                                     // 25
+        srl(T1, T1, PERFORMED_COUNT_SHIFT),        // 26 the Super's bit
+        srlv(T1, T0, T1),                          // 27 mask >> bit
+        andi(T1, T1, 1),                           // 28
+        beq(T1, ZERO, (NEXTK - 30) as i16),        // 29 not performed -> next k
+        sltu(T1, T4, T2),                          // 30 delay: i < learned count ?
+        beq(T1, ZERO, (PICKSUP - 32) as i16),      // 31 learned exhausted -> Super
+        lbu(T1, T3, 1),                            // 32 delay: thr | bit << 5
+        addu(T3, T9, T4),                          // 33
+        lbu(T3, T3, 0),                            // 34 t3 = list[i]
+        andi(T1, T1, u16::from(PERFORMED_MASK)),   // 35 t1 = thr
+        sltu(T1, T3, T1),                          // 36 list[i] < thr -> learned first
+        bne(T1, ZERO, (PICKLRN - 38) as i16),      // 37
+        nop(),                                     // 38
+        // PICKSUP: the Super Art at k is the next row.
+        beq(T7, ZERO, br(at(PICKSUP), fill_va)), // 39 r == 0 -> fill and draw it
+        nop(),                                   // 40
+        addiu(T7, T7, 0xFFFF),                   // 41 r -= 1
+        // NEXTK:
+        j(at(LOOP)),      // 42
+        addiu(T6, T6, 1), // 43 delay: k += 1
+        // PICKLRN: the learned art at i is the next row.
+        beq(T7, ZERO, (PLAINI - 45) as i16), // 44 r == 0 -> it is this row
+        nop(),                               // 45
+        addiu(T4, T4, 1),                    // 46 i += 1
+        j(at(LOOP)),                         // 47
+        addiu(T7, T7, 0xFFFF),               // 48 delay: r -= 1
+        // PLAIN0: no Super Art rows at all - the learned index is the entry.
+        or(T4, A2, ZERO), // 49
+        // PLAINI: learned index i -> the stock load, re-based.
+        addu(V0, V0, T4),              // 50
+        lbu(S2, V0, LEARNED_LIST_OFF), // 51 == disp[0]
+        j(ret),                        // 52
+        disp[1],                       // 53 delay: sltiu v1,v1,0x63
     ];
-    debug_assert_eq!(body[47], disp[0], "the learned path replays the stock load");
-    debug_assert_eq!(body.len(), PLAIN as usize + 4);
+    debug_assert_eq!(body[51], disp[0], "the learned path replays the stock load");
+    debug_assert_eq!(body.len(), PLAINI as usize + 4);
     body
 }
 
-/// (E) point the record cursor at the scratch record for a Super Art row.
+/// (F) fill the scratch record for the Super Art (B) picked and enter the draw.
 ///
-/// Entered one instruction before the arts-name-table scan with `a1` = the table
-/// base and `s2` = the row's id. A Super Art row jumps past the whole scan to
-/// its **hit** arm ([`SCAN_HIT_VA`]) with `s5` = `scratch + 8`, which is exactly
-/// the cursor retail's hit arm expects; every other row gets retail's own
-/// `s5 = a1 + 8` and returns to the scan head.
-pub(crate) fn assemble_rec(scratch_va: u32) -> Vec<u32> {
-    const PLAIN: i32 = 7;
-    let cursor = scratch_va + SCRATCH_ARROWS_OFF as u32;
+/// Entered from (B) with `t5` = `&SUP[character*5]`, `t6` = the Super's sorted
+/// index `k`, `t8` = the character. Writes the scratch record's `+2` AP and
+/// `+0xC` name pointer (chased through `DAT_801C9360[character] -> +0x58 ->
+/// + name offset`), expands the Super's packed arrows into the glyph buffer,
+/// then jumps to the scan's hit arm with `s5` = scratch + 8.
+pub(crate) fn assemble_fill(
+    base_va: u32,
+    sup_va: u32,
+    arrows_va: u32,
+    scratch_va: u32,
+    buf_va: u32,
+) -> Vec<u32> {
+    let _ = sup_va; // the SUP base arrives in t5; kept in the signature for symmetry
+    const LOOP: i32 = 27;
+    let cursor = scratch_va + u32::from(SCRATCH_ARROWS_OFF);
     let body = vec![
-        addiu(T0, S2, (-(SYN_ID_BASE as i32)) as u16), // 0 k = id - SYN_ID_BASE
-        sltiu(T1, T0, SUPER_ARTS_PER_CHAR as u16),     // 1 k < 5 ? (k < 0 wraps)
-        lui(T3, hi(cursor)),                           // 2
-        beq(T1, ZERO, (PLAIN - 4) as i16),             // 3 not a Super Art row
-        addiu(T3, T3, lo(cursor)),                     // 4 delay
-        j(SCAN_HIT_VA),                                // 5 skip the scan entirely
-        or(S5, T3, ZERO),                              // 6 delay: the scratch cursor
-        // PLAIN:
-        j(SCAN_HEAD_VA),  // 7
-        addiu(S5, A1, 8), // 8 delay: retail's own s5
+        sll(T3, T6, 2),                  // 0
+        addu(T3, T3, T5),                // 1  t3 = &SUP[k]
+        lbu(T1, T3, 0),                  // 2  t1 = chain AP
+        lhu(T7, T3, 2),                  // 3  t7 = name offset
+        sll(T2, T8, 2),                  // 4  character * 4
+        lui(T9, hi(CMD_TABLE_VA)),       // 5
+        addiu(T9, T9, lo(CMD_TABLE_VA)), // 6
+        addu(T9, T9, T2),                // 7
+        lw(T9, T9, 0),                   // 8  the command-data block
+        nop(),                           // 9
+        lw(T9, T9, ART_BLOCK_PTR_OFF),   // 10 the art-record array
+        lui(T2, hi(scratch_va)),         // 11 (delay filler)
+        addiu(T2, T2, lo(scratch_va)),   // 12
+        addu(T9, T9, T7),                // 13 t9 = the name
+        sb(T1, T2, SCRATCH_AP_OFF),      // 14 scratch[+2]   = AP
+        sw(T9, T2, SCRATCH_NAME_OFF),    // 15 scratch[+0xC] = name
+        sll(T3, T6, 2),                  // 16 k * ARROWS_STRIDE
+        lui(T5, hi(arrows_va)),          // 17
+        addiu(T5, T5, lo(arrows_va)),    // 18
+        addu(T3, T3, T5),                // 19 t3 = &arrows[k]
+        lbu(T4, T3, 0),                  // 20 t4 = arrow count
+        lui(T9, hi(buf_va)),             // 21
+        addiu(T9, T9, lo(buf_va)),       // 22 t9 = the glyph buffer
+        addiu(T3, T3, 1),                // 23 the packed dirs
+        sb(T4, T9, 0),                   // 24 buf[0] = count
+        addiu(T9, T9, 1),                // 25
+        or(T8, ZERO, ZERO),              // 26 n = 0
+        // LOOP: one glyph per arrow.
+        srl(T1, T8, 2),                          // 27
+        addu(T1, T1, T3),                        // 28
+        lbu(T1, T1, 0),                          // 29 the packed byte
+        andi(T2, T8, 3),                         // 30
+        sll(T2, T2, 1),                          // 31 shift = (n & 3) * 2
+        srlv(T1, T1, T2),                        // 32
+        andi(T1, T1, 3),                         // 33 dir 0..3
+        addiu(T1, T1, u16::from(GLYPH_LO_BASE)), // 34 low byte
+        ori(T2, ZERO, u16::from(GLYPH_HI)),      // 35
+        sb(T2, T9, 0),                           // 36
+        sb(T1, T9, 1),                           // 37
+        addiu(T8, T8, 1),                        // 38
+        sltu(T2, T8, T4),                        // 39 n < count ?
+        bne(T2, ZERO, (LOOP - 41) as i16),       // 40
+        addiu(T9, T9, 2),                        // 41 delay
+        lui(T3, hi(cursor)),                     // 42
+        addiu(S5, T3, lo(cursor)),               // 43 s5 = scratch + 8
+        j(SCAN_HIT_VA),                          // 44 draw it
+        nop(),                                   // 45
     ];
-    debug_assert_eq!(
-        body[8], HOOK_REC_W0,
-        "the plain path replays the stock word"
-    );
-    debug_assert_eq!(body.len(), PLAIN as usize + 2);
+    debug_assert_eq!(base_va % 4, 0);
+    body
+}
+
+/// (W) record the Super Art the applier just matched, in place of the match
+/// arm's first two words. `t5` = the character; the matched trigger-table row
+/// arrives as `t2 = row * 16` (the replace-row offset `sll t2,a1,0x4` at
+/// `0x801EFB04`, which the copy loop never writes - `a1` itself is reused by
+/// that loop for the bytes it copies, so at the arm it is the last replacement
+/// byte, not the row). Sets the row's bit in the record's performed byte and
+/// bumps its count field once, then returns to the flag store with `v0`/`v1`
+/// as retail left them.
+pub(crate) fn assemble_performed(ret: u32) -> Vec<u32> {
+    let body = vec![
+        lui(V1, 0x801F),                           // 0  replay
+        addiu(V0, ZERO, 1),                        // 1  replay
+        srl(T3, T2, 4),                            // 2  row = t2 >> 4
+        ori(T4, ZERO, 1),                          // 3
+        sllv(T3, T4, T3),                          // 4  t3 = the row's bit
+        sll(T0, T5, 6),                            // 5
+        addu(T0, T0, T5),                          // 6  * 65
+        sll(T0, T0, 2),                            // 7  * 260
+        addu(T0, T0, T5),                          // 8  * 261
+        sll(T0, T0, 2),                            // 9  * 0x414
+        lui(T1, hi(CHAR_RECORD_BASE)),             // 10
+        addiu(T1, T1, lo(CHAR_RECORD_BASE)),       // 11
+        addu(T0, T0, T1),                          // 12 t0 = the character record
+        lbu(T2, T0, PERFORMED_OFF),                // 13 t2 = performed byte
+        nop(),                                     // 14 load delay
+        and(T4, T2, T3),                           // 15 already set ?
+        bne(T4, ZERO, 3),                          // 16 yes -> nothing to do
+        or(T2, T2, T3),                            // 17 delay: set the bit
+        addiu(T2, T2, 1 << PERFORMED_COUNT_SHIFT), // 18 count += 1
+        sb(T2, T0, PERFORMED_OFF),                 // 19
+        j(ret),                                    // 20
+        nop(),                                     // 21
+    ];
+    debug_assert_eq!(body[0], HOOK_PERFORMED_W0);
+    debug_assert_eq!(body[1], HOOK_PERFORMED_W1);
     body
 }
 
 /// (D) the whole replacement pager, assembled at [`PAGER_VA`]. Same prologue,
 /// pad gate, character-record walk and open/close tail as retail; the page step
 /// becomes "advance while another page exists", and the row count it compares
-/// against is the same `learned + unlocked` the renderer sees - taken from the
-/// same shared leaf, not from the cache, so it is right even on the frame the
-/// list first opens.
-pub(crate) fn assemble_pager(base_va: u32, sub_va: u32) -> Vec<u32> {
+/// against is `learned + performed`, read from the same record byte the
+/// renderer's hooks read.
+pub(crate) fn assemble_pager(base_va: u32) -> Vec<u32> {
     const TOGGLE: i32 = 38;
     const EXIT: i32 = 52;
     let exit_va = base_va + (EXIT as u32) * 4;
@@ -529,10 +585,10 @@ pub(crate) fn assemble_pager(base_va: u32, sub_va: u32) -> Vec<u32> {
         addu(V0, V0, V1),                    // 14
         sll(V0, V0, 2),                      // 15 v0 = character * 0x414
         addu(V0, V0, A1),                    // 16 + 0x80084140
-        lbu(A0, V0, LEARNED_COUNT_OFF),      // 17 a0 = learned count
-        jal(sub_va),                         // 18 t8 = unlocked Super Arts
-        nop(),                               // 19 delay (also a0's load delay)
-        addu(A0, A0, T8),                    // 20 a0 = rows the list will draw
+        lbu(V1, V0, PERFORMED_OFF),          // 17 v1 = performed byte
+        lbu(A0, V0, LEARNED_COUNT_OFF),      // 18 a0 = learned count
+        srl(V1, V1, PERFORMED_COUNT_SHIFT),  // 19 performed count
+        addu(A0, A0, V1),                    // 20 a0 = rows the list will draw
         beq(A0, ZERO, (EXIT - 22) as i16),   // 21 nothing to show -> return
         lui(V0, 0x801F),                     // 22 delay
         lbu(V0, V0, 0x4E09),                 // 23 v0 = the list-state flag
@@ -586,19 +642,70 @@ pub struct SuperArtRow {
     pub name: &'static str,
     /// Action constant of the finisher, and therefore the art record's grid key.
     pub finisher: u8,
+    /// Row of the character's five in the resident trigger table = the bit the
+    /// applier detour sets in the performed byte.
+    pub trigger_row: u8,
+    /// Position among the character's five once sorted by AP (descending; ties
+    /// keep trigger-table order) - the row's index in the injected `SUP` table.
+    pub sorted_index: u8,
     /// Trigger-chain arts as **display ids**, in trigger order (duplicates kept).
     pub chain_ids: Vec<u8>,
     /// The chain arts' names as the disc's own arts-name table spells them.
     pub chain_names: Vec<String>,
-    /// Sum of the chain arts' AP costs - what the row displays.
+    /// Sum of the chain arts' AP costs - what the row displays and sorts by.
     pub ap: u8,
-    /// `1 << id` over the chain, deduplicated: the "is it unlocked" test.
-    pub chain_mask: u32,
+    /// Lowest display id of this character whose AP is at or below `ap`: the
+    /// Super Art is listed before every learned id `>= thr`.
+    pub thr: u8,
+    /// Byte offset of the record's `+0x10` name from the art-record array
+    /// (`4 + (finisher - 0x10) * 0xD0 + 0x10`).
+    pub name_offset: u16,
+    /// The physical input - what the player types - derived with the retail
+    /// tokenizer from the trigger pattern.
+    pub input: Vec<Command>,
 }
 
-/// Derive all fifteen rows from `scus`. Every chain entry has to land on a real
-/// arts-name-table row of the same character or the whole thing is refused: that
-/// is the check that keeps the `constant - 0x1B` conversion honest against the
+impl SuperArtRow {
+    /// The input as `L`/`R`/`D`/`U` letters, for reports.
+    pub fn input_letters(&self) -> String {
+        self.input
+            .iter()
+            .map(|c| match c {
+                Command::Left => 'L',
+                Command::Right => 'R',
+                Command::Down => 'D',
+                Command::Up => 'U',
+            })
+            .collect()
+    }
+
+    /// The `[count][2-bit dirs]` packing routine (F) expands.
+    pub fn packed_arrows(&self) -> [u8; ARROWS_STRIDE as usize] {
+        let mut out = [0u8; ARROWS_STRIDE as usize];
+        out[0] = self.input.len() as u8;
+        for (n, &c) in self.input.iter().enumerate() {
+            out[1 + n / 4] |= arrow_code(c) << ((n % 4) * 2);
+        }
+        out
+    }
+
+    /// The 4-byte `SUP` record: AP, `thr | trigger_row << 5`, name offset.
+    pub fn sup_record(&self) -> [u8; SUP_STRIDE as usize] {
+        let [lo_, hi_] = self.name_offset.to_le_bytes();
+        [
+            self.ap,
+            self.thr | (self.trigger_row << PERFORMED_COUNT_SHIFT),
+            lo_,
+            hi_,
+        ]
+    }
+}
+
+/// Derive all fifteen rows from `scus`, in `character * 5 + sorted_index`
+/// order. Every chain entry has to land on a real arts-name-table row of the
+/// same character, every trigger pattern has to derive a unique physical input
+/// through the retail tokenizer, and every threshold has to resolve, or the
+/// whole thing is refused - the checks that keep the tables honest against the
 /// disc rather than against the curated table.
 pub fn super_art_rows(scus: &[u8]) -> Result<Vec<SuperArtRow>> {
     let table = legaia_art::arts_table::raw_records_from_scus(scus)
@@ -614,7 +721,25 @@ pub fn super_art_rows(scus: &[u8]) -> Result<Vec<SuperArtRow>> {
                 supers.len()
             );
         }
-        for s in supers {
+        // This character's rows, in table order (= ascending id = descending AP).
+        let mut mine: Vec<_> = table.iter().filter(|r| r.character == ch).collect();
+        mine.sort_by_key(|r| r.index);
+        if mine.is_empty() {
+            bail!("show-super-arts: {ch:?} has no arts-name-table rows");
+        }
+        // The tokenizer catalog: normal arts only, grid order.
+        let catalog: Vec<(ActionConstant, &[Command])> = mine
+            .iter()
+            .enumerate()
+            .filter(|(ordinal, _)| *ordinal >= FIRST_NORMAL_ORDINAL)
+            .filter_map(|(_, r)| {
+                let c = ActionConstant::from_byte(r.index.checked_add(ART_CONSTANT_BIAS)?)?;
+                Some((c, r.commands.as_slice()))
+            })
+            .collect();
+
+        let mut rows: Vec<SuperArtRow> = Vec::with_capacity(SUPER_ARTS_PER_CHAR);
+        for (trigger_row, s) in supers.iter().enumerate() {
             let chain = s.art_sequence();
             if chain.is_empty() {
                 bail!(
@@ -623,7 +748,6 @@ pub fn super_art_rows(scus: &[u8]) -> Result<Vec<SuperArtRow>> {
                 );
             }
             let mut ap: u32 = 0;
-            let mut chain_mask = 0u32;
             let mut chain_ids = Vec::with_capacity(chain.len());
             let mut chain_names = Vec::with_capacity(chain.len());
             for c in chain {
@@ -634,25 +758,14 @@ pub fn super_art_rows(scus: &[u8]) -> Result<Vec<SuperArtRow>> {
                         s.name
                     )
                 })?;
-                if id > MAX_ART_ID {
-                    bail!(
-                        "show-super-arts: {}'s chain art id {id} exceeds the {MAX_ART_ID}-bit \
-                         mask the unlock test uses - refusing",
+                let rec = mine.iter().find(|r| r.index == id).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "show-super-arts: {}'s chain art (constant {c:#x} -> id {id}) has no \
+                         row in this disc's arts-name table - refusing",
                         s.name
-                    );
-                }
-                let rec = table
-                    .iter()
-                    .find(|r| r.character == ch && r.index == id)
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "show-super-arts: {}'s chain art (constant {c:#x} -> id {id}) has no \
-                             row in this disc's arts-name table - refusing",
-                            s.name
-                        )
-                    })?;
+                    )
+                })?;
                 ap += u32::from(rec.ap);
-                chain_mask |= 1u32 << id;
                 chain_ids.push(id);
                 chain_names.push(
                     names
@@ -677,16 +790,65 @@ pub fn super_art_rows(scus: &[u8]) -> Result<Vec<SuperArtRow>> {
                     s.finisher
                 );
             }
-            out.push(SuperArtRow {
+            let name_offset = ART_BLOCK_BIAS
+                + u32::from(s.finisher - GRID_BIAS) * ART_RECORD_STRIDE
+                + ART_NAME_FIELD_OFF;
+            let name_offset = u16::try_from(name_offset).map_err(|_| {
+                anyhow::anyhow!("show-super-arts: {}'s name offset overflows u16", s.name)
+            })?;
+            // The Super sits before every id whose AP is at or below its own.
+            let thr = mine
+                .iter()
+                .find(|r| r.ap <= ap)
+                .map(|r| r.index)
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "show-super-arts: no art of {ch:?} costs {ap} AP or less - the \
+                         threshold cannot resolve",
+                    )
+                })?;
+            if thr > PERFORMED_MASK {
+                bail!(
+                    "show-super-arts: {}'s threshold id {thr} does not fit the five bits the \
+                     record packs it into - refusing",
+                    s.name
+                );
+            }
+            let input = legaia_art::derive_super_input(&catalog, s.find).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "show-super-arts: {}'s trigger pattern derives no unique physical input \
+                     against this disc's arts-name table - refusing",
+                    s.name
+                )
+            })?;
+            if input.len() > MAX_INPUT_ARROWS {
+                bail!(
+                    "show-super-arts: {}'s input is {} arrows, past the {MAX_INPUT_ARROWS} \
+                     the packing carries - refusing",
+                    s.name,
+                    input.len()
+                );
+            }
+            rows.push(SuperArtRow {
                 character: ch,
                 name: s.name,
                 finisher: s.finisher,
+                trigger_row: trigger_row as u8,
+                sorted_index: 0,
                 chain_ids,
                 chain_names,
                 ap,
-                chain_mask,
+                thr,
+                name_offset,
+                input,
             });
         }
+        // AP-descending, ties in trigger-table order (stable sort).
+        rows.sort_by_key(|r| std::cmp::Reverse(r.ap));
+        for (k, r) in rows.iter_mut().enumerate() {
+            r.sorted_index = k as u8;
+        }
+        out.extend(rows);
     }
     Ok(out)
 }
@@ -698,17 +860,16 @@ pub fn super_art_rows(scus: &[u8]) -> Result<Vec<SuperArtRow>> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SuperArtListInjection {
     pub edits: Vec<Edit>,
-    /// The fifteen derived rows, in `character * 5 + k` order.
+    /// The fifteen derived rows, in `character * 5 + sorted_index` order.
     pub rows: Vec<SuperArtRow>,
-    pub sub_va: u32,
     pub count_va: u32,
     pub id_va: u32,
-    pub rec_va: u32,
-    pub masktab_va: u32,
-    pub aptab_va: u32,
-    pub fintab_va: u32,
-    pub cache_va: u32,
+    pub fill_va: u32,
+    pub performed_va: u32,
+    pub sup_va: u32,
+    pub arrows_va: u32,
     pub scratch_va: u32,
+    pub buf_va: u32,
 }
 
 fn words_to_bytes(w: &[u32]) -> Vec<u8> {
@@ -819,11 +980,11 @@ impl Region {
 
 impl SuperArtListInjection {
     /// Plan every edit. Needs the `SCUS_942.54` image (hook sites, arts-name
-    /// table, dead-space hosts) and the raw PROT 0898 entry (the pager).
-    /// Refuses, without touching anything, if the build isn't the recognized US
-    /// layout, a hosted region isn't dead space, a Super Art's chain doesn't
-    /// resolve against this disc's arts-name table, the synthetic id space
-    /// collides with a real art row, or a routine overruns its region.
+    /// table, dead-space hosts) and the raw PROT 0898 entry (the pager and the
+    /// applier). Refuses, without touching anything, if the build isn't the
+    /// recognized US layout, a hosted region isn't dead space, a Super Art's
+    /// chain or input doesn't resolve against this disc's arts-name table, or a
+    /// routine overruns its region.
     pub fn plan(scus: &[u8], ov0898: &[u8]) -> Result<Self> {
         // Fingerprint every site first; capture the words the routines replay.
         let count_disp = [
@@ -834,10 +995,9 @@ impl SuperArtListInjection {
             expect_scus(scus, HOOK_ID_VA, HOOK_ID_W0)?,
             expect_scus(scus, HOOK_ID_VA + 4, HOOK_ID_W1)?,
         ];
-        expect_scus(scus, HOOK_REC_VA, HOOK_REC_W0)?;
         // Never written, but the hooks' correctness depends on both staying put:
-        // a plain row returns to the scan head and a Super Art row enters the
-        // scan's hit arm.
+        // a plain row returns in front of the scan and a Super Art row enters
+        // the scan's hit arm.
         expect_scus(scus, SCAN_HEAD_VA, SCAN_HEAD_W)?;
         expect_scus(scus, SCAN_HIT_VA, SCAN_HIT_W)?;
         expect_scus(scus, GLYPH_FN_VA, GLYPH_FN_W0)?;
@@ -850,28 +1010,16 @@ impl SuperArtListInjection {
             PAGER_VA + (PAGER_WORDS as u32 - 1) * 4,
             PAGER_LAST_W,
         )?;
+        expect_overlay(ov0898, APPLIER_VA, APPLIER_W0)?;
+        expect_overlay(ov0898, HOOK_PERFORMED_VA, HOOK_PERFORMED_W0)?;
+        expect_overlay(ov0898, HOOK_PERFORMED_VA + 4, HOOK_PERFORMED_W1)?;
+        expect_overlay(ov0898, PERFORMED_RET_VA, PERFORMED_RET_W)?;
         assert_not_in_tables(
             PAGER_VA,
             (PAGER_WORDS * 4) as u32,
             OVERLAY_TABLE_RANGES,
             "pager",
         )?;
-
-        // The synthetic ids must be unreachable by any real arts-table row, or a
-        // Super Art row could collide with a regular art's id.
-        let rows_raw = legaia_art::arts_table::raw_records_from_scus(scus)
-            .ok_or_else(|| anyhow::anyhow!("show-super-arts: parse the SCUS arts-name table"))?;
-        let syn = SYN_ID_BASE..SYN_ID_BASE.saturating_add(SUPER_ARTS_PER_CHAR as u8);
-        if let Some(bad) = rows_raw.iter().find(|r| syn.contains(&r.index)) {
-            bail!(
-                "show-super-arts: arts-name table row (character {:?}, id {:#x}) lands in the \
-                 synthetic id range {:#x}..{:#x} - refusing",
-                bad.character,
-                bad.index,
-                syn.start,
-                syn.end
-            );
-        }
 
         // The fifteen rows, derived from this disc's own tables.
         let rows = super_art_rows(scus)?;
@@ -884,35 +1032,24 @@ impl SuperArtListInjection {
         }
 
         // --- Placement -------------------------------------------------------
-        // Gap 1 hosts routine (B) plus every small table; arena 1 the shared
-        // leaf and (A); arena 2 the record hook; slot 6 the chain bitmasks.
         let mut gap = Region::new(SCUS_GAP_VA, SCUS_GAP_END_VA, "the SCUS rodata gap");
         let mut arena1 = Region::new(ARENA1_VA, ARENA1_END_VA, "arena 1");
         let mut arena2 = Region::new(ARENA2_VA, ARENA2_END_VA, "arena 2");
         let mut slot6 = Region::new(SLOT6_VA, SLOT6_END_VA, "slot 6");
 
-        let id_len = (assemble_id(id_disp, 0, 0, 0, 0, 0, 0).len() * 4) as u32;
+        let id_len = (assemble_id(id_disp, 0, 0, 0, 0).len() * 4) as u32;
         let id_va = gap.take(id_len, 4, "the id routine")?;
-        let cache_va = gap.take(2, 1, "the unlocked cache")?;
-        let aptab_va = gap.take(want as u32, 1, "the AP table")?;
-        let fintab_va = gap.take(want as u32, 1, "the finisher table")?;
         let scratch_va = gap.take(SCRATCH_BYTES as u32, 4, "the scratch record")?;
 
-        let sub_len = (assemble_sub(0, 0, 0).len() * 4) as u32;
-        let sub_va = arena1.take(sub_len, 4, "the shared unlock routine")?;
-        let count_len = (assemble_count(count_disp, 0, 0).len() * 4) as u32;
-        let count_va = arena1.take(count_len, 4, "the count routine")?;
+        let fill_len = (assemble_fill(0, 0, 0, 0, 0).len() * 4) as u32;
+        let fill_va = arena1.take(fill_len, 4, "the fill routine")?;
+        let arrows_va = arena1.take(want as u32 * ARROWS_STRIDE, 4, "the packed arrows")?;
 
-        let rec_len = (assemble_rec(0).len() * 4) as u32;
-        let rec_va = arena2.take(rec_len, 4, "the record routine")?;
+        let count_len = (assemble_count(count_disp, 0).len() * 4) as u32;
+        let count_va = arena2.take(count_len, 4, "the count routine")?;
+        let buf_va = arena2.take(GLYPH_BUF_BYTES as u32, 1, "the glyph buffer")?;
 
-        let masktab_va = slot6.take((want * 4) as u32, 4, "the chain bitmasks")?;
-
-        // `sb rt,lo+1(base)` shares one `lui`, so the cache must not straddle a
-        // low-half sign boundary.
-        if hi(cache_va) != hi(cache_va + 1) {
-            bail!("show-super-arts: the cache at {cache_va:#x} straddles a lui boundary");
-        }
+        let sup_va = slot6.take(want as u32 * SUP_STRIDE, 4, "the Super Art records")?;
 
         // Every hosted span has to be dead space and outside every live table.
         for (r, what) in [
@@ -926,35 +1063,30 @@ impl SuperArtListInjection {
         }
 
         // --- Assembly --------------------------------------------------------
-        let sub = assemble_sub(sub_va, masktab_va, cache_va);
-        let count = assemble_count(count_disp, sub_va, COUNT_RET_VA);
-        let id = assemble_id(
-            id_disp, id_va, cache_va, aptab_va, fintab_va, scratch_va, ID_RET_VA,
-        );
-        let rec = assemble_rec(scratch_va);
-        debug_assert_eq!((sub.len() * 4) as u32, sub_len);
+        let count = assemble_count(count_disp, COUNT_RET_VA);
+        let id = assemble_id(id_disp, id_va, sup_va, fill_va, ID_RET_VA);
+        let fill = assemble_fill(fill_va, sup_va, arrows_va, scratch_va, buf_va);
         debug_assert_eq!((id.len() * 4) as u32, id_len);
+        debug_assert_eq!((fill.len() * 4) as u32, fill_len);
 
-        let masktab: Vec<u8> = rows
-            .iter()
-            .flat_map(|r| r.chain_mask.to_le_bytes())
-            .collect();
-        let aptab: Vec<u8> = rows.iter().map(|r| r.ap).collect();
-        let fintab: Vec<u8> = rows.iter().map(|r| r.finisher).collect();
-        // The scratch record: only `+8` is fixed, and it points at the record's
-        // own `+0` byte, which nothing ever writes - so the glyph count reads 0
-        // and no arrows are drawn.
+        let sup: Vec<u8> = rows.iter().flat_map(|r| r.sup_record()).collect();
+        let arrows: Vec<u8> = rows.iter().flat_map(|r| r.packed_arrows()).collect();
+        // The scratch record: `+8` is fixed at the glyph buffer; `+2` and `+0xC`
+        // are filled per row by (F).
         let mut scratch = vec![0u8; SCRATCH_BYTES];
-        scratch[SCRATCH_ARROWS_OFF..SCRATCH_ARROWS_OFF + 4]
-            .copy_from_slice(&scratch_va.to_le_bytes());
+        let a = SCRATCH_ARROWS_OFF as usize;
+        scratch[a..a + 4].copy_from_slice(&buf_va.to_le_bytes());
 
-        // The pager replacement, nop-padded out to the original body length so
-        // no stale retail instruction survives behind it.
-        let mut pager = assemble_pager(PAGER_VA, sub_va);
+        // The pager replacement plus routine (W) in its tail, nop-padded out to
+        // the original body length so no stale retail instruction survives.
+        let mut pager = assemble_pager(PAGER_VA);
+        let performed_va = PAGER_VA + (pager.len() as u32) * 4;
+        let performed = assemble_performed(PERFORMED_RET_VA);
+        pager.extend_from_slice(&performed);
         if pager.len() > PAGER_WORDS {
             bail!(
-                "show-super-arts: the replacement pager ({} words) does not fit \
-                 FUN_801D3748 ({PAGER_WORDS} words)",
+                "show-super-arts: the replacement pager + performed routine ({} words) does \
+                 not fit FUN_801D3748 ({PAGER_WORDS} words)",
                 pager.len()
             );
         }
@@ -966,41 +1098,39 @@ impl SuperArtListInjection {
             file_off: off,
             bytes,
         };
+        let ov_edit = |va: u32, bytes: Vec<u8>| Edit {
+            prot_index: Some(OVERLAY_PROT_INDEX),
+            file_off: (va - OVERLAY_BASE_VA) as usize,
+            bytes,
+        };
         let edits = vec![
-            // Detours over the renderer's three sites. (A) and (B) take two
-            // words; (E) takes exactly one - see HOOK_REC_VA.
+            // Detours over the renderer's two sites (two words each).
             scus_edit(scus_off(scus, HOOK_COUNT_VA)?, detour(count_va)),
             scus_edit(scus_off(scus, HOOK_ID_VA)?, detour(id_va)),
-            scus_edit(scus_off(scus, HOOK_REC_VA)?, words_to_bytes(&[j(rec_va)])),
             // Routines + tables into the verified-dead SCUS regions.
-            scus_edit(scus_off(scus, sub_va)?, words_to_bytes(&sub)),
             scus_edit(scus_off(scus, count_va)?, words_to_bytes(&count)),
             scus_edit(scus_off(scus, id_va)?, words_to_bytes(&id)),
-            scus_edit(scus_off(scus, rec_va)?, words_to_bytes(&rec)),
-            scus_edit(scus_off(scus, masktab_va)?, masktab),
-            scus_edit(scus_off(scus, aptab_va)?, aptab),
-            scus_edit(scus_off(scus, fintab_va)?, fintab),
+            scus_edit(scus_off(scus, fill_va)?, words_to_bytes(&fill)),
+            scus_edit(scus_off(scus, sup_va)?, sup),
+            scus_edit(scus_off(scus, arrows_va)?, arrows),
             scus_edit(scus_off(scus, scratch_va)?, scratch),
-            // The pager, replaced whole inside the overlay.
-            Edit {
-                prot_index: Some(OVERLAY_PROT_INDEX),
-                file_off: (PAGER_VA - OVERLAY_BASE_VA) as usize,
-                bytes: words_to_bytes(&pager),
-            },
+            // The pager (with W in its tail), replaced whole inside the overlay,
+            // and the applier's two-word detour into W.
+            ov_edit(PAGER_VA, words_to_bytes(&pager)),
+            ov_edit(HOOK_PERFORMED_VA, detour(performed_va)),
         ];
 
         Ok(Self {
             edits,
             rows,
-            sub_va,
             count_va,
             id_va,
-            rec_va,
-            masktab_va,
-            aptab_va,
-            fintab_va,
-            cache_va,
+            fill_va,
+            performed_va,
+            sup_va,
+            arrows_va,
             scratch_va,
+            buf_va,
         })
     }
 }
@@ -1014,357 +1144,445 @@ mod tests {
         ((w & 0xffff) as u16 as i16) as i32
     }
 
-    /// Every store opcode, so a test can assert a routine writes no memory.
+    /// Every store opcode, so a test can assert what a routine writes.
     fn is_store(w: u32) -> bool {
         (0x28..=0x2b).contains(&(w >> 26))
-    }
-
-    const SUB_VA: u32 = ARENA1_VA;
-    const MASK_VA: u32 = SLOT6_VA;
-    const CACHE_VA: u32 = SCUS_GAP_VA + 0xC8;
-    const AP_VA: u32 = CACHE_VA + 2;
-    const FIN_VA: u32 = AP_VA + 15;
-    const SCRATCH_VA: u32 = SCUS_GAP_VA + 0xE8;
-
-    // --- (SUB) the shared unlock routine ------------------------------------
-
-    #[test]
-    fn sub_gates_on_battle_mode_and_on_having_an_arts_list() {
-        let r = assemble_sub(SUB_VA, MASK_VA, CACHE_VA);
-        assert_eq!(r[0], or(T8, ZERO, ZERO), "count starts at zero");
-        assert_eq!(r[1], or(T9, ZERO, ZERO), "mask starts at zero");
-        assert_eq!(r[3], lh(T3, T3, lo(GAME_MODE_VA)), "reads the game mode");
-        assert_eq!(r[4], lw(T0, GP, GP_CHARACTER), "covers the mode load delay");
-        assert_eq!(r[5], addiu(T3, T3, 0xFFEB), "mode - 0x15");
-        assert_eq!(r[7], sltiu(T1, T0, 3), "character < 3");
-        // Both guards leave t8/t9 at zero and fall through to the cache store.
-        let store = r.len() - 5;
-        for i in [6usize, 8] {
-            let target = i as i32 + 1 + br_off(r[i]);
-            assert_eq!(target as usize, store, "guard at {i} skips to the store");
-        }
-        assert_eq!(r[store], lui(T3, hi(CACHE_VA)));
-        assert_eq!(r[store + 3], jr(RA), "the leaf returns");
-    }
-
-    #[test]
-    fn sub_uses_no_multiplier_because_hi_lo_are_live_at_the_count_hook() {
-        // `mult v1,v0` at 0x800343A0 is read by `mfhi t0` at 0x800343D4, which
-        // is AFTER hook (A) - so anything (A) calls must leave hi/lo alone.
-        for w in assemble_sub(SUB_VA, MASK_VA, CACHE_VA) {
-            let special = (w >> 26) == 0 && (w & 0x3f) != 0;
-            let funct = w & 0x3f;
-            assert!(
-                !(special && (0x18..=0x1b).contains(&funct)),
-                "no mult/div in the shared leaf"
-            );
-        }
     }
 
     /// The register an instruction writes, for the ones these routines use.
     fn dest_reg(w: u32) -> Option<u32> {
         let op = w >> 26;
         match op {
-            // SPECIAL: `rd`, except jr/jalr/branch-likes, which write nothing
-            // interesting here (the leaf only uses jr).
             0 => match w & 0x3f {
                 0x08 => None, // jr
                 _ if w == 0 => None,
                 _ => Some((w >> 11) & 0x1f),
             },
-            // j / branches / stores write no register.
             0x02 | 0x04 | 0x05 | 0x06 | 0x07 | 0x28 | 0x29 | 0x2b => None,
             0x03 => Some(RA), // jal
             _ => Some((w >> 16) & 0x1f),
         }
     }
 
-    #[test]
-    fn sub_clobbers_only_the_temporaries_hook_a_can_spare() {
-        // Hook (A) calls this leaf with v0 (the learned count), v1, a0 and a2
-        // all live across the call, and `hi`/`lo` mid-`mult`. Everything the
-        // leaf writes must therefore be a caller-saved temporary.
-        for (i, w) in assemble_sub(SUB_VA, MASK_VA, CACHE_VA)
-            .into_iter()
-            .enumerate()
-        {
-            let Some(d) = dest_reg(w) else { continue };
-            assert!(
-                (T0..=T7).contains(&d) || d == T8 || d == T9,
-                "instruction {i} writes r{d}, which hook (A) still needs"
-            );
-        }
+    const ID_VA: u32 = SCUS_GAP_VA;
+    const SCRATCH_VA: u32 = SCUS_GAP_VA + 0xE0;
+    const FILL_VA: u32 = ARENA1_VA;
+    const ARROWS_VA: u32 = ARENA1_VA + 0xC0;
+    const COUNT_VA: u32 = ARENA2_VA;
+    const BUF_VA: u32 = ARENA2_VA + 0x2C;
+    const SUP_VA: u32 = SLOT6_VA;
+
+    fn id_routine() -> Vec<u32> {
+        assemble_id([HOOK_ID_W0, HOOK_ID_W1], ID_VA, SUP_VA, FILL_VA, ID_RET_VA)
     }
 
-    #[test]
-    fn sub_only_writes_the_two_cache_bytes() {
-        let r = assemble_sub(SUB_VA, MASK_VA, CACHE_VA);
-        let stores: Vec<u32> = r.iter().copied().filter(|&w| is_store(w)).collect();
-        assert_eq!(stores.len(), 2, "mask + count, and nothing else");
-        assert_eq!(stores[0], sb(T9, T3, lo(CACHE_VA)));
-        assert_eq!(stores[1], sb(T8, T3, lo(CACHE_VA) + 1));
-    }
-
-    #[test]
-    fn sub_loops_close_on_themselves() {
-        let r = assemble_sub(SUB_VA, MASK_VA, CACHE_VA);
-        // The learned-id fold runs `count` times and jumps back to its head.
-        assert_eq!(r[26], j(SUB_VA + 20 * 4), "learned-id loop head");
-        assert_eq!(r[25], sllv(T3, T3, T5), "1 << id");
-        let exit = 20 + 1 + br_off(r[20]);
-        assert_eq!(exit, 28, "empty learned list falls straight through");
-        // The per-Super test runs exactly five times: the row bit walks
-        // 1,2,4,8,0x10 and the continue test is `bit < 0x10`.
-        assert_eq!(r[39], sltiu(T4, T7, 0x10));
-        assert_eq!(r[43], sll(T7, T7, 1));
-        let back = 42 + 1 + br_off(r[42]);
-        assert_eq!(back, 35, "the per-Super loop closes on its head");
-        let skip = 38 + 1 + br_off(r[38]);
-        assert_eq!(skip, 42, "a missing chain art skips the unlock");
-    }
-
-    #[test]
-    fn sub_load_delay_slots_are_covered() {
-        let r = assemble_sub(SUB_VA, MASK_VA, CACHE_VA);
-        // Every load's delay slot must not read the register being loaded:
-        // lh t3 (3), lbu t4 (17), lbu t5 (22), lw t5 (35).
-        for load in [3usize, 17, 22, 35] {
-            let dest = (r[load] >> 16) & 0x1f;
-            let filler = r[load + 1];
-            let (rs, rt) = ((filler >> 21) & 0x1f, (filler >> 16) & 0x1f);
-            assert_ne!(rs, dest, "delay slot after the load at {load} reads it");
-            assert_ne!(rt, dest, "delay slot after the load at {load} reads it");
-        }
-        // ...and the first real use is at least two instructions later.
-        for (load, first_use) in [(17usize, 20usize), (22, 25), (35, 37)] {
-            assert!(first_use > load + 1, "load at {load} used inside its delay");
-        }
-    }
-
-    #[test]
-    fn unlock_model_matches_what_the_routine_encodes() {
-        // Model of the mask fold + per-Super test the routine performs.
-        let unlocked = |learned: &[u8], chains: &[u32]| -> (u32, u32) {
-            let mut lm = 0u32;
-            for &id in learned {
-                lm |= 1u32 << (id & 31);
-            }
-            let (mut mask, mut n) = (0u32, 0u32);
-            for (j, &c) in chains.iter().enumerate() {
-                if c & lm == c {
-                    mask |= 1 << j;
-                    n += 1;
-                }
-            }
-            (mask, n)
-        };
-        let chains = [0b0011, 0b0101, 0b1001, 0b0110, 0b1100];
-        // Nothing learned: nothing unlocked, so the list is empty.
-        assert_eq!(unlocked(&[], &chains), (0, 0));
-        // Knowing one art of a two-art chain is not enough.
-        assert_eq!(unlocked(&[0], &chains), (0, 0));
-        assert_eq!(unlocked(&[0, 1], &chains), (0b00001, 1));
-        assert_eq!(unlocked(&[0, 1, 2], &chains), (0b01011, 3));
-        assert_eq!(unlocked(&[0, 1, 2, 3], &chains), (0b11111, 5));
+    fn fill_routine() -> Vec<u32> {
+        assemble_fill(FILL_VA, SUP_VA, ARROWS_VA, SCRATCH_VA, BUF_VA)
     }
 
     // --- (A) the count hook --------------------------------------------------
 
     #[test]
-    fn count_routine_adds_the_unlocked_rows() {
-        let disp = [HOOK_COUNT_W0, HOOK_COUNT_W1];
-        let r = assemble_count(disp, SUB_VA, COUNT_RET_VA);
-        assert_eq!(r[0], HOOK_COUNT_W0, "replays the displaced count load");
-        assert_eq!(r[1], jal(SUB_VA), "ra is dead here, so a call is free");
-        assert_eq!(r[2], nop(), "delay slot, and v0's load delay");
-        assert_eq!(r[3], addu(V0, V0, T8), "count += unlocked Super Arts");
-        assert_eq!(r[4], j(COUNT_RET_VA));
-        assert_eq!(r[5], HOOK_COUNT_W1, "replays sra a2,a2,0x1f");
-        assert_eq!(r.len(), 6);
+    fn count_routine_reads_the_performed_byte_before_the_stock_load_clobbers_v0() {
+        let r = assemble_count([HOOK_COUNT_W0, HOOK_COUNT_W1], COUNT_RET_VA);
+        assert_eq!(r[0], lbu(T1, V0, PERFORMED_OFF), "v0 is still the record");
+        assert_eq!(r[1], HOOK_COUNT_W0, "then the displaced count load");
+        assert_eq!(r[3], lh(T3, T3, lo(GAME_MODE_VA)), "reads the game mode");
+        assert_eq!(r[4], srl(T1, T1, 5), "count field = top three bits");
+        assert_eq!(r[5], addiu(T3, T3, 0xFFEB), "mode - 0x15");
+        let skip = 6 + 1 + br_off(r[6]);
+        assert_eq!(skip, 9, "outside battle the add is skipped");
+        assert_eq!(r[8], addu(V0, V0, T1), "count += performed");
+        assert_eq!(r[9], j(COUNT_RET_VA));
+        assert_eq!(r[10], HOOK_COUNT_W1, "replays sra a2,a2,0x1f");
+        assert_eq!(r.len(), 11);
         assert!(
             !r.iter().copied().any(is_store),
             "no store in the count hook"
         );
+        // hi/lo are live across (A) (`mult` at 0x800343A0, `mfhi` at
+        // 0x800343D4): no mult/div, and only temporaries + v0 written.
+        for (i, w) in r.iter().enumerate() {
+            let special = (w >> 26) == 0 && (w & 0x3f) != 0;
+            assert!(
+                !(special && (0x18..=0x1b).contains(&(w & 0x3f))),
+                "mult at {i}"
+            );
+            if let Some(d) = dest_reg(*w) {
+                assert!(
+                    (T0..=T7).contains(&d) || d == V0 || d == A2,
+                    "instruction {i} writes r{d}"
+                );
+            }
+        }
     }
 
     // --- (B) the id hook -----------------------------------------------------
 
-    fn id_routine() -> Vec<u32> {
-        assemble_id(
-            [HOOK_ID_W0, HOOK_ID_W1],
-            SCUS_GAP_VA,
-            CACHE_VA,
-            AP_VA,
-            FIN_VA,
-            SCRATCH_VA,
-            ID_RET_VA,
-        )
-    }
-
     #[test]
-    fn id_routine_puts_the_super_arts_at_the_head() {
+    fn id_routine_gates_and_falls_back_to_the_stock_load() {
         let r = id_routine();
-        assert_eq!(r[1], lbu(T0, T3, lo(CACHE_VA)), "reads the cached mask");
-        assert_eq!(r[2], lbu(T1, T3, lo(CACHE_VA) + 1), "and the cached count");
-        assert_eq!(r[3], nop(), "load-delay slot before the compare");
-        assert_eq!(
-            r[4],
-            sltu(T2, A2, T1),
-            "entry < unlocked -> a Super Art row"
-        );
-        assert_eq!(
-            r[16],
-            addiu(S2, T4, u16::from(SYN_ID_BASE)),
-            "the head rows carry synthetic ids"
-        );
-        // The learned half is shifted DOWN by the number of head rows, so the
-        // read stays inside the sixteen id slots instead of running past them.
-        let plain = r.len() - 4;
-        assert_eq!(r[plain], subu(V0, V0, T1), "cursor moves back by unlocked");
-        assert_eq!(r[plain + 1], HOOK_ID_W0, "then replays the stock load");
-        assert_eq!(r[plain + 2], j(ID_RET_VA));
-        assert_eq!(r[plain + 3], HOOK_ID_W1);
-        let target = 5 + 1 + br_off(r[5]);
-        assert_eq!(target as usize, plain, "the miss branch lands on the shift");
+        assert_eq!(r[0], subu(V0, V0, A2), "v0 becomes the record base");
+        assert_eq!(r[3], lbu(T0, V0, PERFORMED_OFF), "reads the performed byte");
+        assert_eq!(r[6], andi(T0, T0, 0x1F), "keeps the mask bits");
+        let plain0 = r.len() - 5;
+        for i in [5usize, 7] {
+            let target = i as i32 + 1 + br_off(r[i]);
+            assert_eq!(target as usize, plain0, "guard at {i} lands on PLAIN0");
+        }
+        assert_eq!(r[plain0], or(T4, A2, ZERO), "PLAIN0: index = entry");
+        assert_eq!(r[plain0 + 1], addu(V0, V0, T4));
+        assert_eq!(r[plain0 + 2], HOOK_ID_W0, "then replays the stock load");
+        assert_eq!(r[plain0 + 3], j(ID_RET_VA));
+        assert_eq!(r[plain0 + 4], HOOK_ID_W1);
     }
 
     #[test]
-    fn id_routine_selects_the_nth_unlocked_super_art() {
-        // Model of the "walk to the entry-th set bit" loop.
-        let nth = |mask: u32, entry: u32| -> u32 {
-            let (mut m, mut c, mut j) = (mask, entry, 0u32);
-            loop {
-                let bit = m & 1;
-                m >>= 1;
-                if bit != 0 {
-                    if c == 0 {
-                        return j;
-                    }
-                    c -= 1;
-                }
-                j += 1;
+    fn id_routine_preserves_what_the_stock_words_after_it_read() {
+        // 0x80034458 `beq v1,zero` tests the displaced sltiu's v1 (loaded at
+        // 0x8003444c), and 0x8003445c `addiu a1,a0,0x5ec4` reads a0. Neither
+        // may be written on the learned path.
+        for (i, w) in id_routine().iter().enumerate() {
+            if *w == HOOK_ID_W1 {
+                continue; // the replayed sltiu itself writes v1
             }
-        };
-        assert_eq!(nth(0b11111, 0), 0);
-        assert_eq!(nth(0b11111, 4), 4);
-        // Holes: only Super Arts 1 and 3 are unlocked, so rows 0 and 1 are them.
-        assert_eq!(nth(0b01010, 0), 1);
-        assert_eq!(nth(0b01010, 1), 3);
-        assert_eq!(nth(0b10000, 0), 4);
+            if let Some(d) = dest_reg(*w) {
+                assert_ne!(d, A0, "instruction {i} writes a0");
+                assert_ne!(d, V1, "instruction {i} writes v1");
+                assert!(
+                    (T0..=T9).contains(&d) || d == V0 || d == S2,
+                    "instruction {i} writes r{d}"
+                );
+            }
+        }
     }
 
     #[test]
     fn id_routine_branches_land_where_the_comments_say() {
         let r = id_routine();
-        assert_eq!(
-            r[13],
-            j(SCUS_GAP_VA + 8 * 4),
-            "the bit walk closes on itself"
-        );
-        let next = 9 + 1 + br_off(r[9]);
-        assert_eq!(next, 13, "a clear bit steps to the next Super Art");
-        let found = 11 + 1 + br_off(r[11]);
-        assert_eq!(found, 15, "the entry-th set bit falls into the fill");
+        assert_eq!(r[42], j(ID_VA + 20 * 4), "NEXTK closes on LOOP");
+        assert_eq!(r[47], j(ID_VA + 20 * 4), "PICKLRN's advance closes on LOOP");
+        assert_eq!(21 + 1 + br_off(r[21]), 44, "no Super left -> PICKLRN");
+        assert_eq!(29 + 1 + br_off(r[29]), 42, "not performed -> NEXTK");
+        assert_eq!(31 + 1 + br_off(r[31]), 39, "learned exhausted -> PICKSUP");
+        assert_eq!(37 + 1 + br_off(r[37]), 44, "learned first -> PICKLRN");
+        assert_eq!(44 + 1 + br_off(r[44]), 50, "this learned row -> PLAINI");
+        // The Super Art hit is a cross-region branch straight into (F).
+        let target = ID_VA as i64 + 39 * 4 + 4 + i64::from(br_off(r[39])) * 4;
+        assert_eq!(target, FILL_VA as i64, "this Super row -> FILL");
+        assert_eq!(r.len(), 54);
     }
 
     #[test]
-    fn id_routine_chases_the_name_the_way_retail_does() {
+    fn id_routine_load_delays_are_covered() {
         let r = id_routine();
-        // DAT_801C9360[character] -> +0x58 -> +4 -> (fin - 0x10) * 0xD0 -> +0x10.
-        assert_eq!(r[27], lui(T8, hi(CMD_TABLE_VA)));
-        assert_eq!(r[28], addiu(T8, T8, lo(CMD_TABLE_VA)));
-        assert_eq!(r[30], lw(T8, T8, 0), "the command-data block");
-        assert_eq!(r[31], addiu(T7, T7, 0xFFF0), "grid index = finisher - 0x10");
-        assert_eq!(r[32], lw(T8, T8, ART_BLOCK_PTR_OFF), "the art-record array");
-        // *0xD0 the same way retail spells it at 0x8004BBF0..0x8004BC00.
-        assert_eq!(r[33], sll(T2, T7, 1));
-        assert_eq!(r[34], addu(T2, T2, T7));
-        assert_eq!(r[35], sll(T2, T2, 2));
-        assert_eq!(r[36], addu(T2, T2, T7));
-        assert_eq!(r[37], sll(T2, T2, 4));
-        // That shift chain is x -> 2x+x -> *4 -> +x -> *16 = 208x. Run it on a
-        // real value so the constants, not a folded literal, are what is pinned.
-        let mul_by_stride = |x: u32| (((x << 1) + x) << 2).wrapping_add(x) << 4;
-        assert_eq!(mul_by_stride(1), ART_RECORD_STRIDE);
-        assert_eq!(mul_by_stride(7), 7 * ART_RECORD_STRIDE);
-        assert_eq!(r[39], addiu(T8, T8, 0x14), "+4 art block, +0x10 name field");
-        // Both pointer loads have their delay slot filled with real work, and
-        // neither filler reads the register being loaded.
-        for (load, filler) in [(30usize, 31usize), (32, 33)] {
+        // lh t3 (2) -> used at 4; lbu t0 (3) -> 6; lw t8 (8) -> 11; lbu t2 (9)
+        // -> 30; lbu t1 (24) -> 26; lbu t1 (32) -> 35; lbu t3 (34) -> 36.
+        for (load, first_use) in [
+            (2usize, 4usize),
+            (3, 6),
+            (8, 11),
+            (9, 30),
+            (24, 26),
+            (32, 35),
+            (34, 36),
+        ] {
             let dest = (r[load] >> 16) & 0x1f;
-            assert_ne!(r[filler], nop(), "delay slot after the load at {load}");
-            let (rs, rt) = ((r[filler] >> 21) & 0x1f, (r[filler] >> 16) & 0x1f);
-            assert_ne!(rs, dest, "filler at {filler} reads the loading register");
-            assert_ne!(rt, dest, "filler at {filler} reads the loading register");
+            let filler = r[load + 1];
+            let (rs, rt) = ((filler >> 21) & 0x1f, (filler >> 16) & 0x1f);
+            let is_branch = matches!(filler >> 26, 0x04 | 0x05);
+            assert!(
+                is_branch || (rs != dest && rt != dest),
+                "delay slot after the load at {load} reads it"
+            );
+            assert!(first_use >= load + 2, "load at {load} used too early");
         }
     }
 
     #[test]
-    fn id_routine_writes_only_the_scratch_record() {
-        let r = id_routine();
-        let stores: Vec<u32> = r.iter().copied().filter(|&w| is_store(w)).collect();
-        assert_eq!(stores.len(), 2, "AP + name pointer, and nothing else");
-        assert_eq!(stores[0], sb(T6, T3, SCRATCH_AP_OFF));
-        assert_eq!(stores[1], sw(T8, T3, SCRATCH_NAME_OFF));
-        // Structural restatement of the rule the hook must not break: the only
-        // memory op touching the character record is the stock `lbu`, a load.
-        assert_eq!(HOOK_ID_W0 >> 26, 0x24, "stock word is lbu (a load)");
-    }
-
-    #[test]
-    fn id_routine_never_moves_the_stack_pointer() {
+    fn id_routine_never_moves_the_stack_pointer_or_stores() {
         for w in id_routine() {
             let is_addiu_sp = (w >> 26) == 0x09 && ((w >> 21) & 0x1f) == SP;
             assert!(!is_addiu_sp, "the id hook borrows retail's frame");
+            assert!(!is_store(w), "the merge writes no memory");
         }
     }
 
-    // --- (E) the record hook -------------------------------------------------
+    /// Model of the merge (B) encodes: the row at `entry` given the id-sorted
+    /// learned list, the performed mask (bits = trigger rows) and the
+    /// AP-sorted Super records `(thr, trigger_row)`.
+    fn merged_row(learned: &[u8], mask: u8, sup: &[(u8, u8)], entry: usize) -> Result<Row, ()> {
+        let (mut i, mut k, mut r) = (0usize, 0usize, entry);
+        loop {
+            let sup_next = loop {
+                if k >= sup.len() {
+                    break None;
+                }
+                if mask >> sup[k].1 & 1 == 1 {
+                    break Some(k);
+                }
+                k += 1;
+            };
+            let take_super = match sup_next {
+                None => false,
+                Some(k) => i >= learned.len() || learned[i] >= sup[k].0,
+            };
+            if take_super {
+                if r == 0 {
+                    return Ok(Row::Super(k));
+                }
+                r -= 1;
+                k += 1;
+            } else {
+                if i >= learned.len() {
+                    return Err(());
+                }
+                if r == 0 {
+                    return Ok(Row::Learned(learned[i]));
+                }
+                r -= 1;
+                i += 1;
+            }
+        }
+    }
 
-    #[test]
-    fn rec_routine_skips_the_scan_only_for_a_super_art_row() {
-        let r = assemble_rec(SCRATCH_VA);
-        assert_eq!(r[0], addiu(T0, S2, 0xFFC0), "k = id - SYN_ID_BASE");
-        assert_eq!(r[1], sltiu(T1, T0, 5), "unsigned, so a negative k fails");
-        assert_eq!(r[5], j(SCAN_HIT_VA), "a Super Art row enters the hit arm");
-        assert_eq!(
-            r[6],
-            or(S5, T3, ZERO),
-            "with s5 already at scratch + 8, the cursor the hit arm expects"
-        );
-        assert_eq!(r[7], j(SCAN_HEAD_VA), "every other row returns to the scan");
-        assert_eq!(r[8], HOOK_REC_W0, "replaying the displaced addiu s5,a1,0x8");
-        let plain = 3 + 1 + br_off(r[3]);
-        assert_eq!(plain, 7, "the guard lands on the plain return");
-        assert_eq!(r.len(), 9);
-        assert!(
-            !r.iter().copied().any(is_store),
-            "no store in the record hook"
-        );
-        assert_eq!(SCAN_HEAD_VA, HOOK_REC_VA + 4, "one-word detour only");
+    #[derive(Debug, PartialEq, Eq)]
+    enum Row {
+        Learned(u8),
+        Super(usize),
     }
 
     #[test]
-    fn scratch_cursor_lines_up_with_the_fields_retail_reads() {
-        // Retail's hit arm reads rec[+0xC] as `lw a0,0x4(s5)`, rec[+2] as
-        // `lbu s0,-0x6(s5)` and rec[+8] as `lw v1,0x0(s5)` - all off s5 = rec+8.
-        let s5 = SCRATCH_ARROWS_OFF as i32;
-        assert_eq!(s5 + 4, SCRATCH_NAME_OFF as i32, "name at s5+4");
-        assert_eq!(s5 - 6, SCRATCH_AP_OFF as i32, "AP at s5-6");
-        assert_eq!(s5, SCRATCH_ARROWS_OFF as i32, "glyph string at s5+0");
+    fn merge_model_interleaves_by_threshold() {
+        // Vahn: learned Miracle(0), Burning Flare(1), Cyclone(4), Somersault(12);
+        // Supers sorted by AP: k0 thr=1 (66 AP: before every hyper),
+        // k1 thr=1 (60), k2 thr=1 (54), k3 thr=1 (54), k4 thr=1 (54).
+        let learned = [0u8, 1, 4, 12];
+        let sup = [(1u8, 4u8), (1, 0), (1, 1), (1, 2), (1, 3)];
+        // Only Tri-Somersault (trigger row 0 = sorted k1) performed.
+        let mask = 1 << 0;
+        let rows: Vec<Row> = (0..5)
+            .map(|e| merged_row(&learned, mask, &sup, e).unwrap())
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                Row::Learned(0),
+                Row::Super(1),
+                Row::Learned(1),
+                Row::Learned(4),
+                Row::Learned(12)
+            ]
+        );
+        // Everything performed: Miracle, then all five Supers, then the rest.
+        let rows: Vec<Row> = (0..9)
+            .map(|e| merged_row(&learned, 0x1F, &sup, e).unwrap())
+            .collect();
+        assert_eq!(rows[0], Row::Learned(0));
+        assert_eq!(
+            rows[1..6],
+            [
+                Row::Super(0),
+                Row::Super(1),
+                Row::Super(2),
+                Row::Super(3),
+                Row::Super(4)
+            ]
+        );
+        assert_eq!(
+            rows[6..],
+            [Row::Learned(1), Row::Learned(4), Row::Learned(12)]
+        );
+        // Nothing learned, one performed: the Super is row 0.
+        // (sorted k0 carries trigger row 4, so mask bit 4 lights k0.)
+        assert_eq!(merged_row(&[], 0x10, &sup, 0), Ok(Row::Super(0)));
+        // Nothing performed: pure learned list.
+        assert_eq!(merged_row(&learned, 0, &sup, 2), Ok(Row::Learned(4)));
+    }
+
+    // --- (F) the fill routine ------------------------------------------------
+
+    #[test]
+    fn fill_routine_chases_the_name_and_writes_only_scratch_and_buffer() {
+        let r = fill_routine();
+        assert_eq!(r[2], lbu(T1, T3, 0), "chain AP");
+        assert_eq!(r[3], lhu(T7, T3, 2), "name offset");
+        assert_eq!(r[5], lui(T9, hi(CMD_TABLE_VA)));
+        assert_eq!(r[8], lw(T9, T9, 0), "the command-data block");
+        assert_eq!(r[10], lw(T9, T9, ART_BLOCK_PTR_OFF), "the art-record array");
+        assert_eq!(r[13], addu(T9, T9, T7), "+ name offset");
+        let stores: Vec<u32> = r.iter().copied().filter(|&w| is_store(w)).collect();
+        assert_eq!(stores[0], sb(T1, T2, SCRATCH_AP_OFF));
+        assert_eq!(stores[1], sw(T9, T2, SCRATCH_NAME_OFF));
+        assert_eq!(stores[2], sb(T4, T9, 0), "glyph count");
+        assert_eq!(stores[3], sb(T2, T9, 0), "glyph high byte");
+        assert_eq!(stores[4], sb(T1, T9, 1), "glyph low byte");
+        assert_eq!(stores.len(), 5);
+        assert_eq!(r[43], addiu(S5, T3, lo(SCRATCH_VA + 8)), "s5 = scratch + 8");
+        assert_eq!(r[44], j(SCAN_HIT_VA), "then the hit arm");
+        assert_eq!(40 + 1 + br_off(r[40]), 27, "the glyph loop closes");
+        assert_eq!(r.len(), 46);
+        // Load delays: lbu t1 (2) -> 14; lhu t7 (3) -> 13; lw t9 (8) -> 10;
+        // lw t9 (10) -> 13; lbu t4 (20) -> 24; lbu t1 (29) -> 32.
+        for (load, first_use) in [
+            (2usize, 14usize),
+            (3, 13),
+            (8, 10),
+            (10, 13),
+            (20, 24),
+            (29, 32),
+        ] {
+            let dest = (r[load] >> 16) & 0x1f;
+            let filler = r[load + 1];
+            let (rs, rt) = ((filler >> 21) & 0x1f, (filler >> 16) & 0x1f);
+            assert!(
+                rs != dest && rt != dest,
+                "delay slot after the load at {load} reads it"
+            );
+            assert!(first_use >= load + 2);
+        }
+    }
+
+    #[test]
+    fn packed_arrows_round_trip_through_the_expander_model() {
+        // The expander: dir = (packed[1 + n/4] >> ((n%4)*2)) & 3; lo = 0xA8 + dir.
+        let row = SuperArtRow {
+            character: Character::Vahn,
+            name: "Tri-Somersault",
+            finisher: 0x2B,
+            trigger_row: 0,
+            sorted_index: 1,
+            chain_ids: vec![12, 4, 12],
+            chain_names: vec![],
+            ap: 60,
+            thr: 1,
+            name_offset: 0x1614,
+            input: vec![
+                Command::Up,
+                Command::Down,
+                Command::Up,
+                Command::Up,
+                Command::Up,
+                Command::Down,
+                Command::Up,
+            ],
+        };
+        let p = row.packed_arrows();
+        assert_eq!(p[0], 7);
+        let mut glyphs = Vec::new();
+        for n in 0..p[0] as usize {
+            let dir = (p[1 + n / 4] >> ((n % 4) * 2)) & 3;
+            glyphs.push((GLYPH_HI, GLYPH_LO_BASE + dir));
+        }
+        // Retail's glyph codes: 0x81A8 Right / A9 Left / AA Up / AB Down.
+        let want: Vec<(u8, u8)> = "UDUUUDU"
+            .chars()
+            .map(|c| match c {
+                'U' => (0x81, 0xAA),
+                'D' => (0x81, 0xAB),
+                'L' => (0x81, 0xA9),
+                _ => (0x81, 0xA8),
+            })
+            .collect();
+        assert_eq!(glyphs, want);
+        assert_eq!(
+            row.sup_record(),
+            [60, 1, 0x14, 0x16],
+            "trigger row 0 leaves the top bits clear"
+        );
+        assert_eq!(row.input_letters(), "UDUUUDU");
+    }
+
+    #[test]
+    fn arrow_codes_are_the_glyph_low_byte_offsets() {
+        for (c, lo_) in [
+            (Command::Right, 0xA8u8),
+            (Command::Left, 0xA9),
+            (Command::Up, 0xAA),
+            (Command::Down, 0xAB),
+        ] {
+            assert_eq!(GLYPH_LO_BASE + arrow_code(c), lo_);
+            let [hi_, lo2] = legaia_art::arts_table::command_to_glyph(c);
+            assert_eq!(
+                (hi_, lo2),
+                (GLYPH_HI, lo_),
+                "matches the arts-table decoder"
+            );
+        }
+    }
+
+    // --- (W) the performed hook -----------------------------------------------
+
+    #[test]
+    fn performed_routine_sets_one_bit_and_counts_it_once() {
+        let r = assemble_performed(PERFORMED_RET_VA);
+        assert_eq!(r[0], HOOK_PERFORMED_W0, "replays lui v1,0x801f");
+        assert_eq!(r[1], HOOK_PERFORMED_W1, "replays addiu v0,zero,1");
+        assert_eq!(
+            r[2],
+            srl(T3, T2, 4),
+            "row = t2 >> 4, NOT a1 (the copy loop clobbers a1)"
+        );
+        assert_eq!(r[4], sllv(T3, T4, T3), "bit = 1 << row");
+        assert_eq!(r[13], lbu(T2, T0, PERFORMED_OFF));
+        assert_eq!(r[15], and(T4, T2, T3), "already performed?");
+        assert_eq!(16 + 1 + br_off(r[16]), 20, "then straight to the return");
+        assert_eq!(r[18], addiu(T2, T2, 0x20), "count field += 1");
+        assert_eq!(r[19], sb(T2, T0, PERFORMED_OFF), "the only store");
+        assert_eq!(r[20], j(PERFORMED_RET_VA), "back to the flag store");
+        assert_eq!(r.len(), 22);
+        let stores: Vec<u32> = r.iter().copied().filter(|&w| is_store(w)).collect();
+        assert_eq!(stores.len(), 1);
+        // Clobbers only t0-t4 besides the two replayed retail writes, and reads
+        // t2 before it overwrites it.
+        for (i, w) in r.iter().enumerate().skip(2) {
+            if let Some(d) = dest_reg(*w) {
+                assert!((T0..=T4).contains(&d), "instruction {i} writes r{d}");
+            }
+        }
+        // Model: bit set once, count bumps once.
+        let apply = |byte: u8, row: u8| -> u8 {
+            let bit = 1u8 << row;
+            if byte & bit != 0 {
+                byte
+            } else {
+                (byte | bit) + 0x20
+            }
+        };
+        let b = apply(0, 0);
+        assert_eq!(b, 0x21);
+        assert_eq!(apply(b, 0), 0x21, "performing it again changes nothing");
+        assert_eq!(apply(b, 4), 0x51);
+        assert_eq!(apply(0x51, 1) >> 5, 3);
     }
 
     // --- (D) the pager -------------------------------------------------------
 
     #[test]
-    fn pager_fits_the_original_body_and_its_branches_land() {
-        let r = assemble_pager(PAGER_VA, SUB_VA);
-        assert!(r.len() <= PAGER_WORDS, "{} words", r.len());
+    fn pager_fits_the_original_body_with_the_performed_routine_and_its_branches_land() {
+        let r = assemble_pager(PAGER_VA);
+        let w = assemble_performed(PERFORMED_RET_VA);
+        assert!(
+            r.len() + w.len() <= PAGER_WORDS,
+            "{} + {} words",
+            r.len(),
+            w.len()
+        );
         assert_eq!(r[0], addiu(SP, SP, 0xFFE8), "same frame as retail");
         assert_eq!(r[r.len() - 2], jr(RA));
         assert_eq!(r[r.len() - 1], addiu(SP, SP, 0x18));
-        assert_eq!(r[18], jal(SUB_VA), "the pager asks the same leaf");
-        assert_eq!(r[20], addu(A0, A0, T8), "rows = learned + unlocked");
+        assert_eq!(
+            r[17],
+            lbu(V1, V0, PERFORMED_OFF),
+            "reads the performed byte"
+        );
+        assert_eq!(
+            r[18],
+            lbu(A0, V0, LEARNED_COUNT_OFF),
+            "and the learned count"
+        );
+        assert_eq!(r[19], srl(V1, V1, 5));
+        assert_eq!(r[20], addu(A0, A0, V1), "rows = learned + performed");
         let exit = r.len() - 4;
         let toggle = 38usize;
         assert_eq!(r[toggle], lui(V0, 0x801F), "toggle arm starts at 38");
@@ -1385,8 +1603,6 @@ mod tests {
 
     #[test]
     fn pager_steps_pages_while_another_page_exists() {
-        // The comparison the routine encodes: advance iff offset < MAX_SCROLL
-        // and offset + PAGE_ROWS < rows.
         let step = |offset: u16, rows: u32| -> Option<u16> {
             if offset < MAX_SCROLL && u32::from(offset) + PAGE_ROWS < rows {
                 Some(offset + PAGE_ROWS as u16)
@@ -1394,43 +1610,19 @@ mod tests {
                 None
             }
         };
-        // Sixteen learned arts + five unlocked Super Arts = five pages.
         assert_eq!(step(0, 21), Some(5));
         assert_eq!(step(15, 21), Some(20));
         assert_eq!(step(20, 21), None, "closes after the last page");
-        // Nothing learned, two Super Arts unlocked: one page.
         assert_eq!(step(0, 2), None);
-        // One learned art plus five Super Arts: two pages.
         assert_eq!(step(0, 6), Some(5));
         assert_eq!(step(5, 6), None);
-        // Terra, and any character before the first Super Art unlocks with an
-        // empty learned list: retail's empty list.
         assert_eq!(step(0, 0), None);
-    }
-
-    #[test]
-    fn pager_delay_slots_are_harmless_when_the_branch_is_taken() {
-        let r = assemble_pager(PAGER_VA, SUB_VA);
-        // Each conditional branch's delay slot writes a register the taken arm
-        // re-initialises before use (v0 at TOGGLE, v1 at TOGGLE, a1 unused).
-        assert_eq!(r[8], lui(V0, 0x8008));
-        assert_eq!(r[22], lui(V0, 0x801F));
-        assert_eq!(r[27], lui(A1, 0x8008));
-        assert_eq!(r[32], addiu(V0, V1, 5));
-        assert_eq!(r[35], addiu(V1, V1, 5));
-        assert_eq!(
-            r[45],
-            sb(A0, V0, 0x4E09),
-            "the store is unconditional in retail too"
-        );
     }
 
     // --- Table derivation ----------------------------------------------------
 
     #[test]
     fn chain_conversion_is_the_documented_constant_offset() {
-        // Display row n is action constant 0x1B + n - the same relation
-        // `super_art_power::art_block_base` already solves the art block with.
         for s in legaia_art::SUPER_ARTS {
             for c in s.art_sequence() {
                 assert!(
@@ -1438,22 +1630,10 @@ mod tests {
                     "{}: chain constant {c:#x} is below the base",
                     s.name
                 );
-                assert!(
-                    c - ART_CONSTANT_BIAS <= MAX_ART_ID,
-                    "{}: chain id {} needs more than 32 mask bits",
-                    s.name,
-                    c - ART_CONSTANT_BIAS
-                );
             }
-        }
-    }
-
-    #[test]
-    fn every_super_art_has_a_multi_art_chain_so_the_gate_can_never_be_vacuous() {
-        for s in legaia_art::SUPER_ARTS {
             assert!(
                 s.art_sequence().len() >= 2,
-                "{} would unlock on a single art",
+                "{} would trigger on a single art",
                 s.name
             );
             assert!(
@@ -1465,50 +1645,442 @@ mod tests {
         assert_eq!(legaia_art::SUPER_ARTS.len(), 15);
     }
 
+    #[test]
+    fn performed_byte_layout_holds_five_bits_and_a_count() {
+        assert_eq!(PERFORMED_MASK, (1 << SUPER_ARTS_PER_CHAR) - 1);
+        assert_eq!(PERFORMED_COUNT_SHIFT, SUPER_ARTS_PER_CHAR as u32);
+        const { assert!(SUPER_ARTS_PER_CHAR < 1 << (8 - PERFORMED_COUNT_SHIFT)) };
+        assert_eq!(
+            PERFORMED_OFF,
+            LEARNED_LIST_OFF + 15,
+            "the sixteenth id slot"
+        );
+        // The two-bit packing carries the longest input.
+        assert!(MAX_INPUT_ARROWS * 2 <= (ARROWS_STRIDE as usize - 1) * 8);
+        assert_eq!(GLYPH_BUF_BYTES, 25);
+    }
+
+    // --- Execution ------------------------------------------------------------
+    //
+    // A tiny R3000 subset - exactly the instructions these routines use, delay
+    // slots included - so the assembled words run against the model instead of
+    // being read. Memory is a sparse byte map; anything unmapped reads as zero.
+
+    use std::collections::HashMap;
+
+    struct Cpu {
+        r: [u32; 32],
+        pc: u32,
+        mem: HashMap<u32, u8>,
+        steps: usize,
+    }
+
+    impl Cpu {
+        fn new() -> Self {
+            Self {
+                r: [0; 32],
+                pc: 0,
+                mem: HashMap::new(),
+                steps: 0,
+            }
+        }
+        fn load(&mut self, va: u32, bytes: &[u8]) {
+            for (i, b) in bytes.iter().enumerate() {
+                self.mem.insert(va + i as u32, *b);
+            }
+        }
+        fn load_words(&mut self, va: u32, w: &[u32]) {
+            self.load(va, &words_to_bytes(w));
+        }
+        fn rd8(&self, a: u32) -> u8 {
+            *self.mem.get(&a).unwrap_or(&0)
+        }
+        fn rd16(&self, a: u32) -> u16 {
+            u16::from_le_bytes([self.rd8(a), self.rd8(a + 1)])
+        }
+        fn rd32(&self, a: u32) -> u32 {
+            u32::from_le_bytes([
+                self.rd8(a),
+                self.rd8(a + 1),
+                self.rd8(a + 2),
+                self.rd8(a + 3),
+            ])
+        }
+        fn wr8(&mut self, a: u32, v: u8) {
+            self.mem.insert(a, v);
+        }
+        fn wr32(&mut self, a: u32, v: u32) {
+            self.load(a, &v.to_le_bytes());
+        }
+        /// Execute one instruction (with its delay slot for control flow).
+        fn exec(&mut self, w: u32) {
+            let op = w >> 26;
+            let rs = ((w >> 21) & 31) as usize;
+            let rt = ((w >> 16) & 31) as usize;
+            let rd = ((w >> 11) & 31) as usize;
+            let sa = (w >> 6) & 31;
+            let imm = (w & 0xffff) as u16;
+            let simm = imm as i16 as i32 as u32;
+            let mut next = self.pc + 4;
+            let mut branch: Option<u32> = None;
+            match op {
+                0 => match w & 0x3f {
+                    0x00 => self.r[rd] = self.r[rt] << sa,
+                    0x02 => self.r[rd] = self.r[rt] >> sa,
+                    0x03 => self.r[rd] = ((self.r[rt] as i32) >> sa) as u32,
+                    0x04 => self.r[rd] = self.r[rt] << (self.r[rs] & 31),
+                    0x06 => self.r[rd] = self.r[rt] >> (self.r[rs] & 31),
+                    0x08 => branch = Some(self.r[rs]),
+                    0x21 => self.r[rd] = self.r[rs].wrapping_add(self.r[rt]),
+                    0x23 => self.r[rd] = self.r[rs].wrapping_sub(self.r[rt]),
+                    0x24 => self.r[rd] = self.r[rs] & self.r[rt],
+                    0x25 => self.r[rd] = self.r[rs] | self.r[rt],
+                    0x2b => self.r[rd] = u32::from(self.r[rs] < self.r[rt]),
+                    f => panic!("unsupported SPECIAL funct {f:#x} at {:#x}", self.pc),
+                },
+                0x02 => branch = Some((self.pc & 0xF000_0000) | ((w & 0x03ff_ffff) << 2)),
+                0x03 => {
+                    self.r[31] = self.pc + 8;
+                    branch = Some((self.pc & 0xF000_0000) | ((w & 0x03ff_ffff) << 2));
+                }
+                0x04 => {
+                    if self.r[rs] == self.r[rt] {
+                        branch = Some(self.pc.wrapping_add(4).wrapping_add(simm << 2));
+                    }
+                }
+                0x05 => {
+                    if self.r[rs] != self.r[rt] {
+                        branch = Some(self.pc.wrapping_add(4).wrapping_add(simm << 2));
+                    }
+                }
+                0x09 => self.r[rt] = self.r[rs].wrapping_add(simm),
+                0x0b => self.r[rt] = u32::from(self.r[rs] < simm),
+                0x0c => self.r[rt] = self.r[rs] & u32::from(imm),
+                0x0d => self.r[rt] = self.r[rs] | u32::from(imm),
+                0x0f => self.r[rt] = u32::from(imm) << 16,
+                0x21 => self.r[rt] = self.rd16(self.r[rs].wrapping_add(simm)) as i16 as i32 as u32,
+                0x23 => self.r[rt] = self.rd32(self.r[rs].wrapping_add(simm)),
+                0x24 => self.r[rt] = u32::from(self.rd8(self.r[rs].wrapping_add(simm))),
+                0x25 => self.r[rt] = u32::from(self.rd16(self.r[rs].wrapping_add(simm))),
+                0x28 => self.wr8(self.r[rs].wrapping_add(simm), self.r[rt] as u8),
+                0x2b => self.wr32(self.r[rs].wrapping_add(simm), self.r[rt]),
+                o => panic!("unsupported opcode {o:#x} at {:#x}", self.pc),
+            }
+            self.r[0] = 0;
+            if let Some(target) = branch {
+                // Delay slot, then the jump. Load delays are not modelled - the
+                // routines are asserted delay-safe by the static tests above.
+                let slot = self.rd32(self.pc + 4);
+                self.pc += 4;
+                self.exec_plain(slot);
+                next = target;
+            }
+            self.pc = next;
+            self.steps += 1;
+        }
+        /// A delay-slot instruction (never itself a branch in these routines).
+        fn exec_plain(&mut self, w: u32) {
+            let saved = self.pc;
+            self.exec(w);
+            assert_eq!(self.pc, saved + 4, "branch in a delay slot");
+        }
+        /// Run until the PC reaches one of `stops`, or give up.
+        fn run_until(&mut self, stops: &[u32]) -> u32 {
+            while !stops.contains(&self.pc) {
+                assert!(self.steps < 10_000, "runaway at {:#x}", self.pc);
+                let w = self.rd32(self.pc);
+                self.exec(w);
+            }
+            self.pc
+        }
+    }
+
+    /// One simulated character: which arts are learned, which Supers performed
+    /// (bits = trigger rows), and the AP-sorted SUP records `(ap, thr, row)`.
+    struct Scene {
+        character: u32,
+        learned: Vec<u8>,
+        performed: u8,
+        sup: Vec<(u8, u8, u8)>,
+        arrows: Vec<Vec<Command>>,
+    }
+
+    fn cmd_va() -> u32 {
+        0x8010_0000
+    }
+    fn art_array_va() -> u32 {
+        0x8010_1000
+    }
+
+    /// Lay the scene out in a fresh CPU with every routine loaded at its test VA.
+    fn cpu_for(scene: &Scene, in_battle: bool) -> Cpu {
+        let mut cpu = Cpu::new();
+        cpu.load_words(ID_VA, &id_routine());
+        cpu.load_words(FILL_VA, &fill_routine());
+        cpu.load_words(
+            COUNT_VA,
+            &assemble_count([HOOK_COUNT_W0, HOOK_COUNT_W1], COUNT_RET_VA),
+        );
+        // The character record.
+        let rec = CHAR_RECORD_BASE + scene.character * 0x414;
+        cpu.wr8(
+            rec + u32::from(LEARNED_COUNT_OFF),
+            scene.learned.len() as u8,
+        );
+        for (i, id) in scene.learned.iter().enumerate() {
+            cpu.wr8(rec + u32::from(LEARNED_LIST_OFF) + i as u32, *id);
+        }
+        let count = scene.performed.count_ones() as u8;
+        cpu.wr8(
+            rec + u32::from(PERFORMED_OFF),
+            scene.performed | (count << PERFORMED_COUNT_SHIFT),
+        );
+        // Globals: game mode, character, command table -> art array.
+        cpu.load(
+            GAME_MODE_VA,
+            &(if in_battle { BATTLE_MODE } else { 0x0C }).to_le_bytes(),
+        );
+        cpu.r[GP as usize] = 0x8007_0000;
+        cpu.wr32(0x8007_0000 + u32::from(GP_CHARACTER), scene.character);
+        cpu.wr32(CMD_TABLE_VA + scene.character * 4, cmd_va());
+        cpu.wr32(cmd_va() + u32::from(ART_BLOCK_PTR_OFF), art_array_va());
+        // The SUP records for every character (only this one's matter) and the
+        // packed arrows, in AP-sorted order.
+        for (k, &(ap, thr, row)) in scene.sup.iter().enumerate() {
+            let name_offset = ART_BLOCK_BIAS
+                + u32::from(0x2B + row - GRID_BIAS) * ART_RECORD_STRIDE
+                + ART_NAME_FIELD_OFF;
+            let at = SUP_VA + (scene.character * 5 + k as u32) * SUP_STRIDE;
+            let [lo_, hi_] = (name_offset as u16).to_le_bytes();
+            cpu.load(at, &[ap, thr | (row << PERFORMED_COUNT_SHIFT), lo_, hi_]);
+            let mut packed = [0u8; 4];
+            packed[0] = scene.arrows[k].len() as u8;
+            for (n, &c) in scene.arrows[k].iter().enumerate() {
+                packed[1 + n / 4] |= arrow_code(c) << ((n % 4) * 2);
+            }
+            cpu.load(
+                ARROWS_VA + (scene.character * 5 + k as u32) * ARROWS_STRIDE,
+                &packed,
+            );
+        }
+        // Scratch record: +8 -> the glyph buffer.
+        cpu.wr32(SCRATCH_VA + u32::from(SCRATCH_ARROWS_OFF), BUF_VA);
+        cpu
+    }
+
+    /// Run hook (B) for `entry`; returns what the row resolved to.
+    fn run_row(scene: &Scene, entry: u32, in_battle: bool) -> Row {
+        let mut cpu = cpu_for(scene, in_battle);
+        let rec = CHAR_RECORD_BASE + scene.character * 0x414;
+        cpu.r[V0 as usize] = rec + entry;
+        cpu.r[A2 as usize] = entry;
+        cpu.r[A0 as usize] = 0x8007_0000;
+        cpu.r[V1 as usize] = 0; // rec[+0] of the table's first record (Vahn)
+        cpu.pc = ID_VA;
+        match cpu.run_until(&[ID_RET_VA, SCAN_HIT_VA]) {
+            pc if pc == ID_RET_VA => {
+                assert_eq!(
+                    cpu.r[V1 as usize], 1,
+                    "the replayed sltiu v1,v1,0x63 saw v1 = 0"
+                );
+                assert_eq!(cpu.r[A0 as usize], 0x8007_0000, "a0 preserved");
+                Row::Learned(cpu.r[S2 as usize] as u8)
+            }
+            _ => {
+                assert_eq!(cpu.r[S5 as usize], SCRATCH_VA + 8, "s5 = scratch + 8");
+                // Which Super did the fill routine draw? Recover it from what it
+                // wrote and check every field against the scene.
+                let ap = cpu.rd8(SCRATCH_VA + u32::from(SCRATCH_AP_OFF));
+                let name = cpu.rd32(SCRATCH_VA + u32::from(SCRATCH_NAME_OFF));
+                let k = scene
+                    .sup
+                    .iter()
+                    .position(|&(a, _, row)| {
+                        a == ap
+                            && name
+                                == art_array_va()
+                                    + ART_BLOCK_BIAS
+                                    + u32::from(0x2B + row - GRID_BIAS) * ART_RECORD_STRIDE
+                                    + ART_NAME_FIELD_OFF
+                    })
+                    .expect("scratch AP + name pair names one SUP record");
+                let want = &scene.arrows[k];
+                assert_eq!(cpu.rd8(BUF_VA), want.len() as u8, "glyph count");
+                for (n, &c) in want.iter().enumerate() {
+                    let at = BUF_VA + 1 + 2 * n as u32;
+                    assert_eq!(cpu.rd8(at), GLYPH_HI, "glyph {n} high byte");
+                    assert_eq!(
+                        cpu.rd8(at + 1),
+                        GLYPH_LO_BASE + arrow_code(c),
+                        "glyph {n} low byte"
+                    );
+                }
+                Row::Super(k)
+            }
+        }
+    }
+
+    fn vahn_scene(learned: &[u8], performed: u8) -> Scene {
+        // AP-sorted: Rolling Combo (66, row 4), Tri-Somersault (60, row 0),
+        // Maximum Blow / Fire Tackle / Power Slash (54, rows 1..3). thr = 1 for
+        // all (Vahn's first sub-66 art is Burning Flare, id 1, 50 AP).
+        use Command::*;
+        Scene {
+            character: 0,
+            learned: learned.to_vec(),
+            performed,
+            sup: vec![(66, 1, 4), (60, 1, 0), (54, 1, 1), (54, 1, 2), (54, 1, 3)],
+            arrows: vec![
+                vec![Up, Down, Right, Left, Left, Down, Up, Up, Left],
+                vec![Up, Down, Up, Up, Up, Down, Up],
+                vec![Down, Right, Up, Down, Left, Left, Down],
+                vec![Left, Right, Left, Left, Down, Right, Up],
+                vec![Down, Right, Up, Down, Up, Down, Left],
+            ],
+        }
+    }
+
+    #[test]
+    fn executed_id_routine_agrees_with_the_merge_model_everywhere() {
+        // Every subset of a five-art learned list x every performed mask x every
+        // row: the assembled routine and the Rust model must resolve identically.
+        let pool = [0u8, 1, 4, 12, 14];
+        for lm in 0u8..32 {
+            let learned: Vec<u8> = pool
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| lm >> i & 1 == 1)
+                .map(|(_, &id)| id)
+                .collect();
+            for performed in 0u8..32 {
+                let scene = vahn_scene(&learned, performed);
+                let sup: Vec<(u8, u8)> =
+                    scene.sup.iter().map(|&(_, thr, row)| (thr, row)).collect();
+                let total = learned.len() + performed.count_ones() as usize;
+                for entry in 0..total {
+                    let want = merged_row(&learned, performed, &sup, entry).expect("model");
+                    let got = run_row(&scene, entry as u32, true);
+                    assert_eq!(
+                        got, want,
+                        "learned {learned:?} performed {performed:#07b} entry {entry}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn executed_id_routine_is_plain_outside_battle_and_with_nothing_performed() {
+        let learned = [0u8, 4, 12];
+        for entry in 0..3u32 {
+            let scene = vahn_scene(&learned, 0x1F);
+            assert_eq!(
+                run_row(&scene, entry, false),
+                Row::Learned(learned[entry as usize]),
+                "field / menu"
+            );
+            let scene = vahn_scene(&learned, 0);
+            assert_eq!(
+                run_row(&scene, entry, true),
+                Row::Learned(learned[entry as usize]),
+                "none performed"
+            );
+        }
+    }
+
+    #[test]
+    fn executed_count_routine_adds_the_performed_count_only_in_battle() {
+        for (performed, in_battle, want) in [
+            (0x1Fu8, true, 3 + 5u32),
+            (0x05, true, 3 + 2),
+            (0x1F, false, 3),
+        ] {
+            let scene = vahn_scene(&[0, 4, 12], performed);
+            let mut cpu = cpu_for(&scene, in_battle);
+            let rec = CHAR_RECORD_BASE;
+            cpu.r[V0 as usize] = rec;
+            cpu.r[A2 as usize] = 0xFFFF_FFF0; // sra a2,a2,0x1f replays on it
+            cpu.pc = COUNT_VA;
+            // The stock word inside the routine reads the count out of the record.
+            cpu.run_until(&[COUNT_RET_VA]);
+            assert_eq!(
+                cpu.r[V0 as usize], want,
+                "performed {performed:#x} battle {in_battle}"
+            );
+            assert_eq!(cpu.r[A2 as usize], 0xFFFF_FFFF, "sra a2,a2,0x1f replayed");
+        }
+    }
+
+    #[test]
+    fn executed_performed_routine_records_each_super_once() {
+        let mut cpu = Cpu::new();
+        let w = assemble_performed(PERFORMED_RET_VA);
+        const W_VA: u32 = 0x801D_3828;
+        cpu.load_words(W_VA, &w);
+        let rec = CHAR_RECORD_BASE + 2 * 0x414; // Gala
+        let byte = |cpu: &Cpu| cpu.rd8(rec + u32::from(PERFORMED_OFF));
+        for (row, want) in [
+            (3u32, 0x28u8),
+            (3, 0x28),
+            (0, 0x49),
+            (4, 0x79),
+            (1, 0x9B),
+            (2, 0xBF),
+        ] {
+            cpu.r[T5 as usize] = 2;
+            cpu.r[T2 as usize] = row * 16; // sll t2,a1,0x4 at 0x801EFB04
+            cpu.r[A1 as usize] = 0x2B; // what the copy loop leaves in a1: the finisher
+            cpu.pc = W_VA;
+            cpu.run_until(&[PERFORMED_RET_VA]);
+            assert_eq!(byte(&cpu), want, "after performing row {row}");
+            assert_eq!(
+                cpu.r[V1 as usize], 0x801F_0000,
+                "v1 as retail's lui left it"
+            );
+            assert_eq!(cpu.r[V0 as usize], 1, "v0 as retail's li left it");
+        }
+        // Another character's byte is untouched.
+        assert_eq!(cpu.rd8(CHAR_RECORD_BASE + u32::from(PERFORMED_OFF)), 0);
+    }
+
     // --- Placement -----------------------------------------------------------
 
     #[test]
     fn every_routine_and_table_fits_its_region() {
-        let sub = assemble_sub(0, 0, 0).len() * 4;
-        let count = assemble_count([HOOK_COUNT_W0, HOOK_COUNT_W1], 0, 0).len() * 4;
-        let id = assemble_id([HOOK_ID_W0, HOOK_ID_W1], 0, 0, 0, 0, 0, 0).len() * 4;
-        let rec = assemble_rec(0).len() * 4;
+        let count = assemble_count([HOOK_COUNT_W0, HOOK_COUNT_W1], 0).len() * 4;
+        let id = assemble_id([HOOK_ID_W0, HOOK_ID_W1], 0, 0, 0, 0).len() * 4;
+        let fill = assemble_fill(0, 0, 0, 0, 0).len() * 4;
         let n = ARTS_CHARACTERS * SUPER_ARTS_PER_CHAR;
-        // Gap 1: routine (B), the cache, two byte tables and the scratch record.
-        let gap = id + 2 + n + n + SCRATCH_BYTES + 4; // + worst-case alignment
+        let gap = id + SCRATCH_BYTES;
         assert!(
             gap <= (SCUS_GAP_END_VA - SCUS_GAP_VA) as usize,
-            "{gap} B in a {} B gap",
-            SCUS_GAP_END_VA - SCUS_GAP_VA
+            "{gap} B in the gap"
         );
+        let a1 = fill + n * ARROWS_STRIDE as usize;
         assert!(
-            sub + count <= (ARENA1_END_VA - ARENA1_VA) as usize,
-            "{} B in a {} B arena",
-            sub + count,
-            ARENA1_END_VA - ARENA1_VA
+            a1 <= (ARENA1_END_VA - ARENA1_VA) as usize,
+            "{a1} B in arena 1"
         );
-        assert!(rec <= (ARENA2_END_VA - ARENA2_VA) as usize);
-        assert!(n * 4 <= (SLOT6_END_VA - SLOT6_VA) as usize);
-        // The whole feature still leaves nothing over for a second arena
-        // feature, which is why the toggle is mutually exclusive with them.
+        let a2 = count + GLYPH_BUF_BYTES;
+        assert!(
+            a2 <= (ARENA2_END_VA - ARENA2_VA) as usize,
+            "{a2} B in arena 2"
+        );
+        assert!(n * SUP_STRIDE as usize <= (SLOT6_END_VA - SLOT6_VA) as usize);
         eprintln!(
-            "sub {sub} + count {count} + id {id} + rec {rec} = {} B of code, {} B of tables",
-            sub + count + id + rec,
-            2 + n + n + n * 4 + SCRATCH_BYTES
+            "count {count} + id {id} + fill {fill} = {} B of code, {} B of tables",
+            count + id + fill,
+            n * (SUP_STRIDE + ARROWS_STRIDE) as usize + SCRATCH_BYTES + GLYPH_BUF_BYTES
         );
     }
 
     #[test]
-    fn the_scratch_glyph_pointer_aims_at_a_byte_that_is_never_written() {
-        // rec[+8] points at the record's own +0, and the only fields the id
-        // routine writes are +2 and +0xC - so byte 0 stays the zero glyph count.
-        let written: Vec<u16> = id_routine()
-            .iter()
-            .filter(|&&w| is_store(w))
-            .map(|w| (w & 0xffff) as u16)
-            .collect();
-        assert_eq!(written, vec![SCRATCH_AP_OFF, SCRATCH_NAME_OFF]);
-        assert!(!written.contains(&0), "nothing writes the glyph-count byte");
-        const { assert!(SCRATCH_ARROWS_OFF + 4 <= SCRATCH_BYTES) };
+    fn scratch_cursor_lines_up_with_the_fields_retail_reads() {
+        // Retail's hit arm reads rec[+0xC] as `lw a0,0x4(s5)`, rec[+2] as
+        // `lbu s0,-0x6(s5)` and rec[+8] as `lw v1,0x0(s5)` - all off s5 = rec+8.
+        let s5 = SCRATCH_ARROWS_OFF as i32;
+        assert_eq!(s5 + 4, SCRATCH_NAME_OFF as i32, "name at s5+4");
+        assert_eq!(s5 - 6, SCRATCH_AP_OFF as i32, "AP at s5-6");
+        assert!(SCRATCH_NAME_OFF as usize + 4 <= SCRATCH_BYTES);
     }
 }

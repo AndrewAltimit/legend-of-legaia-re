@@ -553,28 +553,30 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         }
     }
 
-    // Show Super Arts: the in-battle Tactical-Arts list gains, at its head, the
-    // Super Arts whose whole trigger chain the character has learned - name and
-    // chain AP cost per row (three detours into the SCUS list renderer plus a
-    // shared unlock routine and four small tables in dead space, and a replaced
-    // list pager in PROT 0898).
+    // Show Super Arts: the in-battle Tactical-Arts list gains, sorted in by AP,
+    // the Super Arts the character has performed - name, chain AP cost and the
+    // arrows the player types per row (two detours into the SCUS list renderer
+    // plus their routines and tables in dead space, a replaced list pager in
+    // PROT 0898 whose tail records a performed Super Art, and a detour from the
+    // Super applier into it).
     if args.show_super_arts {
         let report = apply::inject_super_art_list(&mut patcher)?;
         println!(
-            "show-super-arts: {} Super Arts join the in-battle move list once their chain \
-             arts are learned (unlock routine at {:#x}, hooks at {:#x}/{:#x}/{:#x})",
+            "show-super-arts: {} Super Arts join the in-battle move list once performed \
+             (hooks at {:#x}/{:#x}, fill {:#x}, performed-byte writer {:#x})",
             report.rows.len(),
-            report.sub_va,
             report.count_va,
             report.id_va,
-            report.rec_va
+            report.fill_va,
+            report.performed_va
         );
         for row in &report.rows {
             println!(
-                "  {:?}: {} - {} AP, needs {}",
+                "  {:?}: {} - {} AP, {} ({})",
                 row.character,
                 row.name,
                 row.ap,
+                row.input,
                 row.chain.join(" + ")
             );
         }

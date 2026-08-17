@@ -219,7 +219,7 @@ legaia-patcher randomize --input DISC.bin --earth-egg-price 25000               
 legaia-patcher arts      --input DISC.bin                                                 # read-only: list every art's combo + damage-power tiers
 legaia-patcher randomize --input DISC.bin --seed pow --arts-power RDLDL=0x0C              # power Vahn's Burning Flare down to tier 0x0C
 legaia-patcher randomize --input DISC.bin --super-art-power "Tri-Somersault"=0x1A       # power Vahn's Tri-Somersault Super Art up to tier 0x1A
-legaia-patcher randomize --input DISC.bin --show-super-arts                             # list a character's learned-chain Super Arts atop the in-battle Triangle menu
+legaia-patcher randomize --input DISC.bin --show-super-arts                             # list a character's performed Super Arts on the in-battle Triangle menu, in AP order
 legaia-patcher randomize --input DISC.bin --arts-ap-grant Vahn:RDLDL=10                   # Vahn's Burning Flare GRANTS 10 AP instead of costing it
 legaia-patcher randomize --input DISC.bin --arts-ap-cost Vahn:RDLDL=5                     # ... or costs a flat 5 AP instead of the computed 50
 legaia-patcher randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
@@ -304,7 +304,7 @@ unless asked for:
 | `--earth-egg-price VALUE` | set the casino-coin threshold to obtain the Earth Egg (Sol Tower Prize Counter; retail 100000), gate + debit together | single value | [Earth Egg coin threshold](#earth-egg-coin-threshold) |
 | `--arts-power COMBO=VALUE` | rebalance a Tactical Art's per-strike damage-power bytes, targeted by input combo (`RDLDL=0x16`); `VALUE` is a power tier `0x0C..=0x1F` or `0` to disable | repeatable / comma-separated | [Arts damage power](#arts-damage-power) |
 | `--super-art-power NAME=VALUE` | the same rebalance for a **Super Art**, targeted by name (`"Tri-Somersault"=0x1A`); Super Arts carry no combo, no arts-table row and no AP cost of their own, so name is their only key | repeatable / comma-separated | [Super Art damage power](#super-art-damage-power) |
-| `--show-super-arts` | put a character's Super Arts at the head of the in-battle Tactical-Arts list, which retail never draws - each once its whole trigger chain is learned, showing the Super Art's name and the chain's AP cost. Mutually exclusive with `--shiny-seru`, `--arts-ap-grant` / `--arts-ap-cost` and `--delilas-challenge` | flag | [Show Super Arts](#show-super-arts-on-the-in-battle-move-list) |
+| `--show-super-arts` | list a character's Super Arts on the in-battle Tactical-Arts list, which retail never draws: once performed, sorted in by AP, with name, chain AP and the arrows you type; mutually exclusive with `--shiny-seru`, the arts AP overrides and `--delilas-challenge` |
 | `--arts-ap-grant [CHAR:]COMBO=AMOUNT` | make a Tactical Art **grant** `AMOUNT` AP (Spirit, clamped at 100) instead of costing it, admitting it at any AP level; a code hook into the party arts queue-builder. Keyed per (character, arts row). Mutually exclusive with `--shiny-seru` | repeatable / comma-separated | [Arts AP override](#arts-ap-override) |
 | `--arts-ap-cost [CHAR:]COMBO=AMOUNT` | set what a Tactical Art **costs** in AP (`1..=100`), replacing retail's computed cost. Same hook, same keying, same exclusivity; the art's menu AP number is rewritten to match | repeatable / comma-separated | [Arts AP override](#arts-ap-override) |
 | `--spirit-ap AP` | set how much AP the Spirit command charges into the battle gauge (retail 32): `0` = defence boost only, `100` = one press fills the gauge, negative = Spirit drains the gauge | single value -100..=100 | [Spirit AP](#spirit-ap) |
@@ -2066,125 +2066,128 @@ arts that triggers it.
 
 ### Show Super Arts on the in-battle move list
 
-`--show-super-arts` puts a character's Super Arts at the **head** of the
-Tactical-Arts list the Triangle button opens in battle. Retail lists them
-nowhere: they behave like hidden arts and stay invisible even after you have
-performed one. A row appears only once its whole trigger chain is learned, and
-carries the Super Art's **name** and the chain's **AP cost**.
+`--show-super-arts` lists a character's Super Arts on the Tactical-Arts list the
+Triangle button opens in battle. Retail lists them nowhere: they behave like
+hidden arts and stay invisible even after you have performed one. A row appears
+once you have **performed** that Super Art, sits **in AP order** among the
+regular arts, and carries the Super Art's **name**, the chain's **AP cost** and
+the **arrows you type**.
 
-#### What "unlocked" means
+#### What "performed" means, and where it lives
 
-The gate is availability, not history. A Super Art is listed once **every art in
-its trigger chain is in the character's learned-art list** - which is exactly
-when the move becomes performable, because the trigger is a find/replace over an
-action queue you can only build out of arts you know. Before then the list is
-unchanged from retail.
+Retail has nowhere to record that a Super Art was performed: the learned list at
+record `+0x74E..` holds regular-art ids only, and the Super applier
+`FUN_801EF9E4` is a find/replace over the finished action queue that marks
+nothing. But its match arm at `0x801EFBCC` - the `sw 1 -> 0x801F696C` "a Super
+fired" flag - runs with `t5` = the character (0-based) and `t2` = sixteen times
+the matched trigger-table row (the replace-row offset from `0x801EFB04`, which
+the copy loop never writes; `a1`, the loop index, is reused by that loop for the
+bytes it copies and reads as the finisher constant there - the runtime probe
+caught exactly that). And the character record has one free, save-persistent
+byte: `+0x75D` (save-record `+0x195`), the **sixteenth learned-id slot**, which a
+fifteen-art character can never reach and which nothing in the corpus
+references. A two-word detour from that arm sets bit `row` there and keeps a
+population count in the top three bits:
 
-It is deliberately **not** "you have performed this one". Retail has nowhere to
-record that: the per-character id list at `+0x74E..+0x75D` holds regular-art ids
-only, the SCUS arts-name table `DAT_80075EC4` has no row for a Super Art, and the
-applier `FUN_801EF9E4` contains no call at all - it rewrites the finished queue
-and marks nothing. A true "performed" flag would need a new persistent
-per-character bit plus a writer inside the battle overlay, and neither fits the
-dead space below.
+```text
+record + 0x75D  =  count << 5  |  performed mask   (bit i = trigger-table row i)
+```
 
-Each chain is [`SuperArt::art_sequence`] - the `find` pattern with its `0x19`
-starters and connector directions stripped. Chain entries are **action
-constants** and the learned list stores **display ids**; display row `n` is
-constant `0x1B + n`, the same relation `super_art_power::art_block_base` solves
-the art block with. The planner converts every chain entry back and **refuses**
-if one fails to land on a real row of the disc's own arts-name table.
-
-[`SuperArt::art_sequence`]: ../../crates/art/src/super_art.rs
+The byte rides in the SC block like the rest of the record: the rows survive a
+save/load, an older save starts with none, and a Super Art appears from the next
+time the list opens after the battle it was first performed in. Terra has no
+Super Arts and no writer ever sets her byte, so her list stays retail's.
 
 #### What a row shows
 
-- **Name**, chased in RAM. Retail resolves an art record at
-  `*(*(DAT_801C9360[character]) + 0x58) + 4 + (constant - 0x10) * 0xD0`, and the
-  display name is that record's `+0x10`. All three constants are measured from
-  retail's own indexing in `FUN_8004AD80`: `0x8004B6FC..0x8004B718` builds the
-  base, `0x8004BBE8..0x8004BC10` reads `base + 0xD0*c - 0xCF0` (the `+0x10`
-  **name**) and `0x8004BC60..0x8004BC80` reads `- 0xCDC` (the `+0x24` **power**
-  `--super-art-power` edits). Only the finisher constant needs carrying, so no
-  name blob is embedded.
-- **AP cost**: the sum of the chain arts' `rec[+2]` AP bytes, read off the disc's
-  arts-name table at patch time. A Super Art has no AP of its own - the chain
-  arts pay it - so the chain's total is the truthful number. Retail's own halving
-  for the `+0x6C0 & 0x800` flag still applies, because the digits are drawn by
-  retail's own loop.
-- **No arrows.** A regular row draws `rec[+8]`, a `[count][2-byte glyph]*`
-  string; a Super Art's truthful string is its chain arts' glyph strings
-  concatenated with the per-combo connectors between them. Carrying the fifteen
-  concatenations costs about 330 bytes and building them at runtime costs a copy
-  loop plus an ordered chain table - neither fits. The scratch record's `+8`
-  points at a zero byte instead, so the glyph count is `0`, retail's own
-  `beq v0,zero,0x8003474c` takes the row-consumed exit, and the row draws with a
-  blank command line.
+- **AP** is the chain's - the sum of the chain arts' `rec[+2]` AP bytes, read
+  off the disc's arts-name table at patch time. A Super Art has no AP of its own
+  (the chain arts pay it), so the chain's total is the truthful number, and it is
+  also what the row sorts by. Retail's `+0x6C0 & 0x800` halving still applies,
+  because the value is drawn by retail's own digit loop.
+- **Name** is chased in RAM through the same
+  `DAT_801C9360[char] -> +0x58 -> +4 -> (constant - 0x10) * 0xD0 -> +0x10` chain
+  retail indexes with in `FUN_8004AD80`; only the per-Super byte offset from the
+  record array is carried (one `u16`).
+- **Arrows** are the Super Art's **physical input**. A Super's `find` pattern
+  (`19 27 0F 19 1F 0E 19 27` for Tri-Somersault) is what the input *tokenizes*
+  to, not what the player types: retail's builder writes `0x19` over the last
+  arrow of a matched art, inserts the constant after it, keeps the leading
+  arrows, and walks tail-first with restarts, so arts **overlap** - the seven
+  arrows `↑↓↑↑↑↓↑` are Somersault, Cyclone and Somersault sharing arrows, and the
+  "connectors" in the pattern are their leftovers ([`legaia_art::tokenize`],
+  which reproduces the in-the-wild capture byte-exact; see
+  [art-data.md](../formats/art-data.md#super-arts)). Every retail Super derives to
+  a unique 7..=9-arrow string, and fourteen of the fifteen agree with the
+  independent walkthrough table (Dragon Fangs' printed input had dropped an
+  arrow). The strings ride two bits per arrow and are expanded per row into the
+  `[count][0x81 0xA8+dir]*` glyph layout retail's own strings use, drawn in the
+  default glyph style (the `0xFF06` style marker regular rows carry did not fit).
+
+#### Where a row sits
+
+Retail keeps the learned list **sorted by id** (`FUN_801EFBFC` inserts with an
+ascending shift, `0x801EFD64..0x801EFDB0`), and the arts-name table's ids run in
+**descending AP** (Miracle 99, then the Hyper Arts, then the normal arts) - so
+the list the player sees is AP-descending, and "sorted by AP" means interleaving.
+The five Super Arts are carried per character in AP-descending order, each with
+a **threshold id** `thr` = the lowest id of that character whose AP is at or
+below the Super's; the id hook merges the two sequences on the fly, skipping
+Super Arts not yet performed, so e.g. Vahn with everything performed reads
+Miracle 99, Rolling Combo 66, Tri-Somersault 60, Maximum Blow / Fire Tackle /
+Power Slash 54, Burning Flare 50, ... Ties keep trigger-table order and put the
+Super first.
 
 #### What it patches
 
-The list renderer is `FUN_80034358` (`SCUS_942.54`, one caller), a bare
-`0..count` walk: the learned-art count bounds the loop, each row's id is read
-from the character record, and the row is drawn out of a 20-byte
-`DAT_80075EC4` record found by a linear scan on `(character, id)`. Rather than
-re-implement that draw, the feature **synthesises a record** - a 16-byte scratch
-record in dead space whose `+2` AP and `+0xC` name pointer are filled per row -
-and jumps the routine past the scan into its own hit arm:
+The list renderer `FUN_80034358` (SCUS, one caller at `0x8003238C`) walks
+`0..count` over the acting character's learned ids and draws each row out of a
+20-byte record of the static arts-name table `DAT_80075EC4`, found by a linear
+scan on `(character, id)`. Rather than re-implement that draw, the feature
+**synthesises a record** in dead space - `+2` AP, `+0x8` glyph pointer, `+0xC`
+name pointer filled per row - and jumps past the scan straight into its hit arm
+with `s5` already pointing at it, so name, AP, arrows and the row's whole layout
+are drawn by retail's own code.
 
-| Site | VA | Stock word | Role |
+| Site | VA | Stock words | Role |
 |---|---|---|---|
-| A count | `0x800343C4` | `lbu v0,0x74d(v0)` | return `count + unlocked` |
-| B id | `0x80034450` | `lbu s2,0x74e(v0)` | head rows get id `0x40 + j`; learned rows shift down |
-| E record | `0x80034460` | `addiu s5,a1,0x8` | point `s5` at the scratch record, skip the scan |
+| A count | `0x800343C4` | `lbu v0,0x74d(v0)` + `sra a2,a2,0x1f` | reads the performed byte off `v0` (still the record there) before the stock load replaces it; returns `count + performed` |
+| B id | `0x80034450` | `lbu s2,0x74e(v0)` + `sltiu v1,v1,0x63` | merges; a learned row replays the stock load at the merged index, a Super row branches into (F) |
+| F fill | dead space | - | fills the scratch record, chases the name, expands the arrows, enters the hit arm |
+| W performed | `0x801EFBCC` (PROT 0898) | `lui v1,0x801f` + `addiu v0,zero,1` | records the Super Art the applier just matched |
 | D pager | `0x801D3748` (PROT 0898) | `addiu sp,sp,-0x18` | page while another page exists |
 
-A shared leaf routine answers the one question all four ask: which Super Arts
-this character may see, as a five-bit mask plus its population count. (A) and (D)
-call it; (B) reads the two bytes it caches. It folds the learned id list into a
-32-bit bitmask, then tests each Super Art's precomputed chain mask against it.
+(A) and (B) gate on the master game-mode selector `_DAT_8007B83C == 0x15`, so
+nothing fires while the battle overlay is unloaded (the renderer also serves the
+field and menu overlays' windows). (D) replaces the whole 81-instruction pager
+in place - it has one caller and no external reference to its interior - so the
+page offset steps while `scroll + 5 < learned + performed`, reading the same
+record byte; its spare tail hosts (W), battle-only code in battle-only space.
 
-(E) is a **one-word** detour: the next word `0x80034464` is the scan's own loop
-head, branched to from `0x80034744`. A plain row returns there with retail's own
-`s5 = a1 + 8`; a Super Art row jumps to `0x80034488`, the scan's hit arm, with
-`s5 = scratch + 8` - so the `(character, id)` compares never run and every field
-is drawn by retail's code.
+**Byte-inert when off:** the toggle writes nothing unless asked for, and the
+oracle patches an unrelated feature and requires every hook word, all four
+regions, the pager body and the applier back byte-identical.
 
-Rows per page is the drawable height over the row pitch, `0x90 / 0x1C` = 5. The
-synthetic id base `0x40` sits far above the retail id space (`0x00..=0x10`), and
-the planner refuses if any record has landed in `0x40..0x45`. Because the Super
-Arts sit at the head, the learned half is read at `entry - unlocked`, so unlike a
-tail placement the read never runs past the sixteen id slots.
-
-**Battle-only by construction.** `FUN_80034358` is reached only through the
-shared window-content dispatcher `FUN_80031D00`, which also runs from the field
-and menu overlays, and the name chase dereferences `DAT_801C9360` - meaningful
-only while the battle overlay is resident. So the shared leaf gates on the master
-game-mode selector `_DAT_8007B83C == 0x15`, the same word `FUN_80031D00` itself
-compares against `0x15` at its entry. Outside battle the unlocked count is zero
-and both per-row hooks are inert.
-
-(D) is a **replacement**, not a detour. `FUN_801D3748` is an 81-instruction leaf
-with exactly one caller and no reference to its interior from outside, so the
-whole body is rewritten in place in the overlay and costs no dead space. Retail
-steps the page offset `0 -> 5 -> 10` and then closes the list; the replacement
-calls the same shared leaf the renderer does - so its row total can never
-disagree with the list's - and steps while another page exists.
+**Verified live, not only on disc.** A PCSX-Redux probe injected the planned
+edits into a real arts-input battle state, marked Super Arts performed, and
+pressed Triangle: the list opened with Tri-Somersault first (`60`,
+`↑↓↑↑↑↓↑`, name chased out of RAM), the fourteen learned arts shifted below it,
+paged four times with all five performed in AP order, and closed. A second probe
+drove the retail applier itself over Tri-Somersault (row 0) and Rolling Combo
+(row 4) and read the record byte back as `0x21` and `0x30`.
 
 #### Placement + exclusivity
 
 | Region | Holds | Used |
 |---|---|---|
-| `SCUS_GAP` `0x80077728` | routine (B), the cache, the AP + finisher tables, the scratch record | 248 of 256 B |
-| `ARENA1` `0x8007AE00` | the shared unlock leaf and routine (A) | 220 of 256 B |
-| `ARENA2` `0x8007AFF8` | routine (E) | 36 of 72 B |
-| `SLOT6` `0x80078A88` | the fifteen chain bitmasks | 60 of 68 B |
+| `SCUS_GAP` `0x80077728` | routine (B) and the scratch record | 228 of 256 B |
+| `ARENA1` `0x8007AE00` | routine (F) and the packed arrows | 243 of 256 B |
+| `ARENA2` `0x8007AFF8` | routine (A) and the glyph buffer | 43 of 72 B |
+| `SLOT6` `0x80078A88` | the fifteen 4-byte Super Art records | 60 of 68 B |
 
-That is **564 of the 652 bytes**, spread over the same four regions
-[Shiny Seru](#shiny-seru), the [arts AP override](#arts-ap-override) and the
-Delilas Challenge contend over, so `--show-super-arts` is **mutually exclusive**
-with all three, enforced in the CLI and the web patcher with an error naming the
-conflicting feature. That exclusion is arithmetic, not policy - see
-[The injected-code arena budget](#the-injected-code-arena-budget).
+Those are exactly the four regions `--shiny-seru`, `--arts-ap-grant` /
+`--arts-ap-cost` and the Delilas Challenge contend over, so `--show-super-arts`
+is **mutually exclusive** with them - enforced in the CLI and the web patcher.
 
 #### The injected-code arena budget
 
@@ -2199,24 +2202,24 @@ and they add up to **652 bytes**:
 | `SLOT6` | `0x80078A88..0x80078ACC` | 68 B | 56 B |
 
 Shiny Seru alone occupies **618 of the 652 bytes**, leaving 34 bytes split into
-fragments of 4, 5, 8 and 12. `--show-super-arts` needs 564 (456 B of code, 108 B
-of tables), and its irreducible core - the four routines alone - is still 456 B.
-`618 + 456 > 652`, so no allocator and no packing makes that pair fit; the
-exclusion is not a hard-coded region clash that a smarter allocator would
-dissolve. A sweep of every zero run in the whole `SCUS_942.54` image outside the
-known live tables finds **53 further candidate bytes** in total, so there is no
-fifth region to grow into either. (The 4208-byte run at `0x800797D0` is inside
-the live SsAPI cluster - see
-["zero is not dead"](../../crates/patcher/README.md).)
+fragments of 4, 5, 8 and 12. `--show-super-arts` needs 574 (~430 B of code, the
+rest tables), so no allocator and no packing makes that pair fit; the exclusion
+is not a hard-coded region clash that a smarter allocator would dissolve. A
+sweep of every zero run in the whole `SCUS_942.54` image outside the known live
+tables finds **53 further candidate bytes** in total, so there is no fifth region
+to grow into either. (The 4208-byte run at `0x800797D0` is inside the live SsAPI
+cluster - see ["zero is not dead"](../../crates/patcher/README.md).)
 
-Dropping the name blob is what bought the gate, the AP column and the head
-placement: chasing the name in RAM instead of carrying fifteen strings turned
-222 B of data into a 15-byte finisher table plus the arithmetic already in
-routine (B), and the reclaimed ~206 B is most of what the three asks needed. The
-`+4` and the `constant - 0x10` origin that chase rests on are no longer inferred:
-both are read off retail's own indexing, and the plan re-proves them on the
-user's disc by requiring all fifteen Super Art records to carry their own names
-at `+0x10` before it writes anything.
+What paid for the arrows, the sort and the performed gate inside that budget:
+folding the shared unlock leaf into hook (A) (which can read the performed byte
+before the stock load clobbers `v0`), letting (B) read the byte itself, dropping
+the record-cursor hook (E) - (B) can enter the hit arm directly with `s5` set -
+packing the arrows two bits each, and carrying a `u16` name offset instead of a
+finisher constant to chase from. Every table entry is derived from the user's own
+disc (AP costs, thresholds, inputs out of `SCUS_942.54`'s arts-name table) or
+from `legaia_art::SUPER_ARTS`, and the plan re-proves on the user's disc that
+all fifteen Super Art records carry their own names at `+0x10` before it writes
+anything.
 
 **Moving the payload into the battle overlay does not work either**, and the
 reason is a measured reference fact rather than a judgement call. The list
@@ -2228,7 +2231,9 @@ window widget, so the renderer runs with PROT 0898 *not* resident, and a hook
 inside it that jumped into 0898's address space would execute whatever the field
 or menu overlay has paged there. Scan:
 `scripts/ghidra-analysis/find-address-word-refs.py 80034358 --prot` and the same
-for `80031d00` (see [address-reference-scan.md](address-reference-scan.md)).
+for `80031d00` (see [address-reference-scan.md](address-reference-scan.md)). The
+one piece that *does* live in 0898 - the performed-byte writer - is reached only
+from the applier, which is 0898 code itself.
 
 A Super Art's **damage** row carries no AP override and never claims the arena,
 so `--super-art-power` composes with everything.
@@ -2238,15 +2243,12 @@ so `--super-art-power` composes with everything.
 read "View Hyper Arts list" where it should read "View Next page". The list
 contents are correct; only that one caption string is stale.
 
-Seedless toggle, off by default; no Sony bytes (chain membership and AP costs
-come out of the user's own `SCUS_942.54`, the trigger table from
-`legaia_art::SUPER_ARTS`). Module
+Seedless toggle, off by default; no Sony bytes (chain membership, AP costs,
+thresholds and inputs come out of the user's own `SCUS_942.54`, the trigger
+table from `legaia_art::SUPER_ARTS`). Module
 [`legaia_patcher::super_art_list`](../../crates/patcher/src/super_art_list.rs);
-disc oracle `crates/patcher/tests/super_art_list_real.rs`. **A disc oracle proves
-only where the bytes land, not in-game behaviour** - a live battle playtest is
-still required: open Triangle with a party that knows no full chain and see an
-unchanged list, learn one and see exactly that Super Art appear as the first row
-with its name and AP, and see Terra's list stay empty.
+disc oracle `crates/patcher/tests/super_art_list_real.rs`, which also checks
+every derived input against the curated walkthrough table.
 
 ### Arts AP override
 

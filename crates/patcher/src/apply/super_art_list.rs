@@ -1,6 +1,6 @@
 //! Show Super Arts on the in-battle Tactical-Arts list. See
-//! [`crate::super_art_list`] for the four hook sites, what "unlocked" means, and
-//! why a row draws a name and an AP cost but no arrows.
+//! [`crate::super_art_list`] for the hook sites, what "performed" means and
+//! where it is stored, and how a row's name, AP, arrows and position are made.
 
 use super::*;
 
@@ -11,24 +11,26 @@ use legaia_art::queue::Character;
 pub struct SuperArtListRow {
     pub character: Character,
     pub name: String,
-    /// The chain arts that have to be learned before the row appears, named as
-    /// this disc's own arts-name table spells them.
+    /// The chain arts the Super Art is triggered from, named as this disc's own
+    /// arts-name table spells them.
     pub chain: Vec<String>,
-    /// The chain's summed AP cost - what the row displays.
+    /// The chain's summed AP cost - what the row displays and sorts by.
     pub ap: u8,
+    /// The physical input the row's arrows spell, as `L`/`R`/`D`/`U` letters.
+    pub input: String,
 }
 
 /// Outcome of enabling the Super Arts list rows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SuperArtListReport {
-    /// The fifteen rows, in `character * 5 + k` order.
+    /// The fifteen rows, in `character * 5 + sorted_index` (AP-descending) order.
     pub rows: Vec<SuperArtListRow>,
     /// Where the injected code and tables landed (for the oracle / manifest).
-    pub sub_va: u32,
     pub count_va: u32,
     pub id_va: u32,
-    pub rec_va: u32,
-    pub masktab_va: u32,
+    pub fill_va: u32,
+    pub performed_va: u32,
+    pub sup_va: u32,
     pub scratch_va: u32,
 }
 
@@ -39,17 +41,18 @@ impl SuperArtListReport {
     }
 }
 
-/// Inject the **show Super Arts** feature: put each of Vahn's, Noa's and Gala's
-/// unlocked Super Arts at the head of the arts list the Triangle button opens in
-/// battle, which retail draws not at all. A row appears only once every art in
-/// that Super Art's trigger chain is in the character's learned-art list, and it
-/// carries the Super Art's name plus the chain's summed AP cost.
+/// Inject the **show Super Arts** feature: list each of Vahn's, Noa's and Gala's
+/// Super Arts on the arts list the Triangle button opens in battle, which retail
+/// draws not at all. A row appears once the player has **performed** that Super
+/// Art (a per-character byte the Super applier's detour maintains, saved with
+/// the record), sits among the regular arts by AP, and carries the Super Art's
+/// name, the chain's summed AP cost and the arrows the player types.
 ///
-/// Three same-size detours into the SCUS list renderer `FUN_80034358` plus their
-/// routines, four small tables and a scratch record in verified-dead SCUS
-/// regions, and a wholesale in-place replacement of the list pager
-/// `FUN_801D3748` in the battle-action overlay (PROT 0898) so the page offset
-/// can reach the added rows.
+/// Two same-size detours into the SCUS list renderer `FUN_80034358` plus their
+/// routines and tables in verified-dead SCUS regions, a wholesale in-place
+/// replacement of the list pager `FUN_801D3748` in the battle-action overlay
+/// (PROT 0898) whose tail hosts the performed-byte writer, and a two-word detour
+/// from the Super applier's match arm into that writer.
 ///
 /// **Mutually exclusive with `--shiny-seru`, `--arts-ap-grant` / `--arts-ap-cost`
 /// and `--delilas-challenge`** - they all reuse the same dead-space bytes. Fails
@@ -121,13 +124,14 @@ pub fn inject_super_art_list(patcher: &mut DiscPatcher) -> Result<SuperArtListRe
                 name: r.name.to_string(),
                 chain: r.chain_names.clone(),
                 ap: r.ap,
+                input: r.input_letters(),
             })
             .collect(),
-        sub_va: plan.sub_va,
         count_va: plan.count_va,
         id_va: plan.id_va,
-        rec_va: plan.rec_va,
-        masktab_va: plan.masktab_va,
+        fill_va: plan.fill_va,
+        performed_va: plan.performed_va,
+        sup_va: plan.sup_va,
         scratch_va: plan.scratch_va,
     })
 }

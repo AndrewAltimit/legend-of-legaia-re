@@ -730,22 +730,25 @@ pub(crate) struct RandomizeArgs {
     /// the Honey as the course's full-clear reward.
     #[arg(long, default_value_t = false)]
     pub(crate) custom_items: bool,
-    /// **Show Super Arts on the in-battle move list**: put a character's Super
-    /// Arts at the HEAD of the Tactical-Arts list the Triangle button opens in
-    /// battle, which retail never draws at all. A Super Art appears only once
-    /// **every art in its trigger chain is learned** - which is exactly when
-    /// you can perform it - and its row shows the Super Art's name and the
-    /// chain's summed AP cost. It is an availability gate, not a "you have
-    /// performed this" flag: retail records nothing about a Super Art ever
-    /// having fired. No arrow line is drawn (a chain's concatenated glyph
-    /// string does not fit the dead space the feature lives in). Three
-    /// same-size detours into the SCUS list renderer plus a shared unlock
-    /// routine and four small tables in verified-dead SCUS regions, and an
-    /// in-place replacement of the list pager in PROT 0898 so the page offset
-    /// reaches the added rows. The Triangle caption's own page thresholds stay
-    /// retail, so on a later page it can still read "View Hyper Arts list".
-    /// **Mutually exclusive with `--shiny-seru`, `--arts-ap-grant` /
-    /// `--arts-ap-cost` and `--delilas-challenge`** (same dead-space bytes).
+    /// **Show Super Arts on the in-battle move list**: list a character's
+    /// Super Arts on the Tactical-Arts list the Triangle button opens in
+    /// battle, which retail never draws at all. A Super Art appears once you
+    /// have **performed** it (retail records nothing about a Super Art ever
+    /// firing, so the patch keeps a per-character flag byte in a spare slot of
+    /// the character record - it saves with the rest, an older save starts
+    /// with none), sits among the regular arts **in AP order**, and its row
+    /// shows the Super Art's name, the chain's summed AP cost (a Super Art
+    /// charges nothing of its own) and the arrows you actually type - the
+    /// seven-to-nine inputs the game's own arts recogniser resolves to the
+    /// trigger (Tri-Somersault: up down up up up down up). Two same-size
+    /// detours into the SCUS list renderer plus their routines and tables in
+    /// verified-dead SCUS regions, an in-place replacement of the list pager
+    /// in PROT 0898 whose tail records a performed Super Art, and a detour
+    /// from the Super applier into it. The Triangle caption's own page
+    /// thresholds stay retail, so on a later page it can still read "View
+    /// Hyper Arts list". **Mutually exclusive with `--shiny-seru`,
+    /// `--arts-ap-grant` / `--arts-ap-cost` and `--delilas-challenge`** (same
+    /// dead-space bytes).
     #[arg(long, default_value_t = false)]
     pub(crate) show_super_arts: bool,
     /// Per-battle percentage chance a capturable enemy is shiny (only with

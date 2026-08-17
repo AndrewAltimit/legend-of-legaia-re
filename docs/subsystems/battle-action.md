@@ -2703,7 +2703,8 @@ Both matchers run against a flat **directional command string** with no connecto
   1. **Recognize the named-art sequence.** `legaia_art::recognize_art_sequence` tokenizes a saved chain's flat directional `Command` string into the ordered named arts it performs, identifying each by its own `ArtRecord::commands` (greedy longest-match). `battle_arts::super_for_chain` runs this over the caster's loaded art catalog.
   2. **Tail-match the pinned art ordering.** `SuperMatcher::trigger_by_art_sequence` compares the recognized ordering against each Super's `SuperArt::art_sequence()` - the `find` pattern projected to its art constants only (`[0x27, 0x1F, 0x27]` for Tri-Somersault), with the `0x19` starters and the interleaved connector directions stripped. A tail match flags the menu row (`ArtRow::super_art = Some(name)`), and `World::build_battle_arts_rows` resolves the per-strike profile from the Super's finisher-replacement queue (`SuperArt::replace`) through the same `art_actions_strike_profile` helper the Miracle path uses. The `play-window` HUD shows the Super name on the row. Super is checked *after* Miracle, matching the retail "Miracle replacement runs before Super tail expansion" order.
 
-  The match is deliberately **connector-abstracted**. The connector direction after each art is *combo-specific* - the same art appears with different connectors across Supers (Vahn's `0x27` is followed by `0F` in Tri-Somersault but `0E` in Power Slash), so it can't be derived from each art's own commands. The connectors are per-combo *data* in the resident trigger table (below); the live submenu matches the named-art ordering because a saved chain carries no connector bytes, not because the byte-exact strings are unknown.
+  The match is deliberately **connector-abstracted**. The connector direction after each art is *combo-specific* - the same art appears with different connectors across Supers (Vahn's `0x27` is followed by `0F` in Tri-Somersault but `0E` in Power Slash) - because it is a **leftover of the physical input**, not something typed between arts: the retail tokenizer keeps a matched art's leading arrows and lets arts overlap, so the connector is whatever arrow the previous match left standing (`legaia_art::tokenize`; see [art-data.md](../formats/art-data.md#super-arts) - the byte-exact queue is derivable from the input, and every Super's input from its pattern).
+  The live submenu matches the named-art ordering because a saved chain carries no connector bytes, not because the byte-exact strings are unknown.
 
   **The queue location is now pinned by capture:** it is the per-actor action-parameter byte stream at `actor[+0x1DF..+0x1F2]` - **not** `ctx[+0x274]`, which a capture showed is the turn-order active-actor index written by `recompute_battle_order` (`FUN_801DABA4`: `lbu v0,0x11(v1); sb v0,0x274`).
   Direction/connector bytes encode as `0x0C/0x0D/0x0E/0x0F` = Left/Right/Down/Up and `0x1A` = `SpecialStarter`; a Noa Miracle Art capture read that stream and it matched the engine's modeled replacement string byte-exact (probe `autorun_super_art_action_queue.lua`; runbook [`super-art-queue-capture.md`](../tooling/super-art-queue-capture.md)). A Vahn **Tri-Somersault** capture likewise confirmed the Super path: its resident queue tail `19 27 0F 19 1F 0E 1A 2B 2B 2B` is byte-identical to `super_art.rs`'s `Tri-Somersault` `replace`, validating the combo-specific connectors (`0x27 → 0F`, `0x1F → 0E`) and the finisher tail; the dequeue site is pc `0x801D89D8`.
@@ -2752,11 +2753,18 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
 2. **Normalize arrows into art constants.** `FUN_801EED1C`'s player path walks the queue,
    matches each token run against the character's art command table (token compare via
    `addiu v1,v1,-0xb` at `0x801EF3E8` - the queue's `0x0C..0x0F` arrows against the art table's
-   `0x01..0x04` direction bytes), and rewrites a fully-matched run to its art action constant:
-   `addiu v1,t3,0x18; sb v1,0x1df(v0)` at `0x801EF6F0`/`0x801EF6F8` (art row index + `0x18` →
-   the `0x1B..` constant band), compacting the remaining bytes down and keeping the 16-entry
-   per-token side array at `0x801F6990` in sync (shift loops `0x801EF69C..0x801EF6B0` and
-   `0x801EF730..0x801EF744`). Each accepted art is validated against the character's learned
+   `0x01..0x04` direction bytes), and on a full match writes the starter over the run's **last**
+   arrow and inserts the art constant after it: `addiu v1,t3,0x18; sb v1,0x1df(v0)` at
+   `0x801EF6F0`/`0x801EF6F8` (`t3` = `FUN_801EFBFC`'s verdict, `1` known → `0x19`, `2` newly
+   learned → `0x1A`), the shift-up loop `0x801EF708..0x801EF750` opening the slot (the 16-entry
+   per-token side array at `0x801F6990` shifts with it, `0x801EF730..0x801EF744`), then
+   `addiu v0,s3,0x10; sb v0,0x1df(v1)` at `0x801EF794`/`0x801EF7A0` (grid index + `0x10` → the
+   `0x1B..` constant band). **The run's leading arrows stay in the queue** - it is not compacted -
+   and the walk is tail-first (`s8` from 15 down, `0x801EF848`) restarting at `s8 + 1` after each
+   match, so runs **overlap**: `↑↓↑` alone becomes `0F 0E 19 27`, and Tri-Somersault's whole
+   input is seven arrows. Byte-level port + the Super-input derivation:
+   [`legaia_art::tokenize`](../../crates/art/src/tokenize.rs) (see
+   [art-data.md](../formats/art-data.md#super-arts)). Each accepted art is validated against the character's learned
    list by `FUN_801EFBFC` (`jal` at `0x801EF44C`; count at char record `+0x74D`, ids at
    `+0x74E..`), pays its AP (`lhu/subu/sh +0x170` at `0x801EF490..0x801EF49C`) and accrues the
    spent counter `+0x224` (`0x801EF4B4`). `FUN_801EFBFC` is more than a membership check - it is

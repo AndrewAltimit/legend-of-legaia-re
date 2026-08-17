@@ -45,6 +45,7 @@ pub mod recognize;
 pub mod record;
 pub mod super_art;
 pub mod tables;
+pub mod tokenize;
 
 pub use arts_table::{
     ArtTableEntry, ArtsOracle, ComboStringLayout, RawArtRecord, combo_string_layout,
@@ -61,6 +62,7 @@ pub use tables::{
     art_anim_max_slot, art_anim_name, art_name, is_art, learned_art_action, learned_art_count,
     learned_art_max_slot,
 };
+pub use tokenize::{derive_super_input, tokenize};
 
 #[cfg(test)]
 mod integration_tests {

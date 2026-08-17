@@ -213,7 +213,7 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 | [`crates/vab`](crates/vab/README.md) | `vab` | VAB sound bank extractor + SPU-ADPCM decoder. |
 | [`crates/seq`](crates/seq/README.md) | `seq` | PsyQ SEQ parser + CLI inspector. |
 | [`crates/mdt`](crates/mdt/README.md) | `mdt` | Move table (Tactical Arts) parser. |
-| [`crates/art`](crates/art/README.md) | `art` | Tactical Arts data: ActionConstants, per-character art tables, Miracle/Super Art trigger matchers, art-record parser, the SCUS arts-name table decoder (`arts_table`), and the arts-**voice** cue tables (`arts_voice` - the shout is CD-XA, per-character file + candidate-channel pool). |
+| [`crates/art`](crates/art/README.md) | `art` | Tactical Arts data: ActionConstants, per-character art tables, Miracle/Super Art trigger matchers, art-record parser, the SCUS arts-name table decoder (`arts_table`), the arts-**voice** cue tables (`arts_voice` - the shout is CD-XA, per-character file + candidate-channel pool), and the byte-exact retail arts **tokenizer** (`tokenize` - a matched art keeps its leading arrows and arts overlap; derives every Super Art's physical input from its trigger pattern). |
 | [`crates/mes`](crates/mes/README.md) | `mes` | MES dialog container parser (Compact + Records). |
 | [`crates/anm`](crates/anm/README.md) | `anm` | ANM animation container parser. |
 | [`crates/save`](crates/save/README.md) | `save-tool` | Per-character record schema (typed accessors + round-trip parse/write for the 0x414-byte record) plus a PSX memory-card walker. `Party::from_retail_sc_block` lifts a real SC block into a typed `Party`; `SaveExt` / `SaveFile` (LGSF) cover full engine save round-trips. |
