@@ -222,7 +222,7 @@ pub fn record(entry: &[u8], id: u16) -> Result<Option<MonsterRecord>> {
 
 /// Parse a decoded monster block into a [`MonsterRecord`]. Returns `None`
 /// when the block fails the record sanity checks (empty / filler slot).
-fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
+pub(super) fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
     if block.len() < MIN_RECORD_BYTES {
         return None;
     }

@@ -125,6 +125,14 @@ slot.
 - `MonsterMesh::texture()` → the decoded texture pool (record `+0x08`: fifteen
   16-colour CLUTs at `[0..0x1E0]` + a 4bpp page, layout from the loader
   `FUN_80055468`; palette = `cba & 0x3F`).
+- `page(entry, id)` / `pages(entry)` → the same pool as an addressable,
+  nameable texture row (`MonsterPage`): one LZS decode for the name, the mesh
+  pointer and the pool together. `MonsterPage::ownership()` walks the embedded
+  TMD and answers *which palette each texel is read through*, and
+  `MonsterPage::rgba()` decodes the page through that map - a texel no
+  primitive samples is transparent, because no palette is the truth about a
+  texel nothing reads. Decoding a whole page through one palette instead is a
+  plausible-looking wrong image; see [`docs/tooling/randomizer.md`](../../docs/tooling/randomizer.md#texture-replacement).
 - `animations(entry, id)` / `idle_animation(entry, id)` decode the per-action
   transform-keyframe streams (one `MonsterAnimation` per action entry: `part_count`
   objects × `frame_count` `PartPose` translation+rotation keyframes; action 0 =

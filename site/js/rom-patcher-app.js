@@ -10,7 +10,7 @@
  * element_affinity, spell_cost, equip_bonus, weapon_specialty, starting_level,
  * solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru,
  * jewel_fix, approach_softlock_fix, delilas_challenge, custom_items, fishing_prices, location_renames,
- * earth_egg_price, arts_powers,
+ * earth_egg_price, arts_powers, super_art_powers,
  * arts_ap_grants, arts_ap_costs, spirit_ap, damage_ap, enemy_stat_scale,
  * exp_scale, seru_catch_rate, enemy_attack_count)
  * -> { data, summary, seed, lang }`, `resolve_seed(str)`,
@@ -502,6 +502,161 @@ const ART_TABLE = [
 
 const ARROW = { L: '←', R: '→', D: '↓', U: '↑' };
 
+// The fifteen Super Arts - the per-character finishers a chain of ordinary arts
+// triggers. They sit in the same picker as the regular arts, but they are a
+// different kind of thing and only one of the two override features can reach
+// them:
+//
+//  * **Damage works.** A Super Art has its own art record in the character's
+//    player battle file (addressed by its finisher action constant `f`), with
+//    the same per-strike power bytes every regular art has. That is what
+//    `--super-art-power NAME=VALUE` edits, keyed by name.
+//  * **AP belongs to the chain, not to the Super.** A Super Art does cost the
+//    player AP - that is the chain arts being paid for, which is condition 2
+//    of the trigger (every art in the chain must already be known and paid).
+//    The Super itself is free: retail computes an art's cost as
+//    `multiplier x command_count` keyed on its position in the character's
+//    arts list, and a Super Art has no position in that list, so there is no
+//    per-Super number anywhere to edit. The lever is real but it lives on the
+//    chain arts, which are rows in this same picker - so the row's AP control
+//    is disabled and names them instead of just refusing.
+//
+// `chain` is the ordered list of named arts whose combination fires it - what a
+// regular row shows as a button combo. `h` is the retail per-hit multiplier for
+// context, same column the regular table carries.
+const SUPER_ART_TABLE = [
+  { c: 'Vahn', f: 0x2B, n: 'Tri-Somersault', chain: ['Somersault', 'Cyclone', 'Somersault'], h: '12' },
+  { c: 'Vahn', f: 0x2C, n: 'Maximum Blow', chain: ['Charging Scorch', 'Slash Kick', 'Power Punch'], h: '28' },
+  { c: 'Vahn', f: 0x2D, n: 'Fire Tackle', chain: ['Hyper Elbow', 'Power Punch', 'Charging Scorch'], h: '28' },
+  { c: 'Vahn', f: 0x2E, n: 'Power Slash', chain: ['Charging Scorch', 'Somersault', 'Slash Kick'], h: '28' },
+  { c: 'Vahn', f: 0x2F, n: 'Rolling Combo', chain: ['Spin Combo', 'Power Punch', 'PK Combo'], h: '12/12' },
+  { c: 'Noa', f: 0x2E, n: 'Triple Lizard', chain: ['Bird Step', 'Swan Driver', 'Lizard Tail'], h: '12' },
+  { c: 'Noa', f: 0x2F, n: 'Super Javelin', chain: ['Rushing Gale', 'Sonic Javelin'], h: '28' },
+  { c: 'Noa', f: 0x30, n: 'Super Tempest', chain: ['Dolphin Attack', 'Tempest Break'], h: '12/12/12/12' },
+  { c: 'Noa', f: 0x31, n: 'Love You', chain: ['Mirage Lancer', 'Lizard Tail', 'Tough Love'], h: '12/12/12/12' },
+  { c: 'Noa', f: 0x32, n: 'Dragon Fangs', chain: ['Lizard Tail', 'Swan Driver', 'Acrobatic Blitz'], h: '12/12/12/12' },
+  { c: 'Gala', f: 0x2B, n: 'Back Punch x3', chain: ['Ironhead', 'Flying Knee Attack', 'Back Punch'], h: '12' },
+  { c: 'Gala', f: 0x2C, n: 'Super Ironhead', chain: ['Flying Knee Attack', 'Head-Splitter', 'Ironhead'], h: '28' },
+  { c: 'Gala', f: 0x2D, n: 'Rushing Crush', chain: ['Battering Ram', 'Flying Knee Attack', 'Head-Splitter'], h: '28' },
+  { c: 'Gala', f: 0x2E, n: "Heaven's Drop", chain: ['Flying Knee Attack', 'Head-Splitter', 'Black Rain'], h: '12/12/12/12' },
+  { c: 'Gala', f: 0x2F, n: 'Neo Static Raising', chain: ['Back Punch', 'Guillotine', 'Neo Raising'], h: '12/12/12' },
+];
+
+// --- Injected-code arena conflicts ------------------------------------------
+//
+// Four features hand-assemble MIPS into the same 652 bytes of verified-dead
+// space in SCUS_942.54, so at most one of them can be enabled at a time. The
+// guard for that used to fire only at submit time and only named the *features*
+// - useless when the "feature" is two picker rows the user added seconds ago
+// via the Super Art row's own "add rows for those arts" button, which nobody
+// reads as a mod toggle. These helpers describe the conflict in terms of the
+// controls that actually cause it, so the same sentence can be shown live next
+// to the control and again at submit.
+
+// Every Tactical-Art picker row currently carrying an AP override, named.
+function apOverrideRows() {
+  return [...document.querySelectorAll('#rom-art-rows .art-row')]
+    .filter((r) => r.artControls && r.artControls.pick.value)
+    .filter((r) => !superArtByPick(r.artControls.pick.value))
+    .filter((r) => r.artControls.apMode.value === 'cost' || r.artControls.apMode.value === 'grant')
+    .map((r) => {
+      const [c, k] = r.artControls.pick.value.split(':');
+      const art = ART_TABLE.find((a) => a.c === c && a.k === k);
+      return { row: r, name: art ? art.n : k, character: c, mode: r.artControls.apMode.value };
+    });
+}
+
+// Everything claiming the arena right now, each as { key, label, where }.
+// `label` names the control the way the page labels it; `where` says how to
+// turn it off, because "turn one of them off" is not actionable on its own.
+function arenaClaims() {
+  const out = [];
+  const chk = (id) => document.getElementById(id);
+  if (chk('rom-show-super-arts') && chk('rom-show-super-arts').checked) {
+    out.push({
+      key: 'showSuperArts',
+      label: 'Show Super Arts on the in-battle move list',
+      where: 'the checkbox in Gameplay',
+    });
+  }
+  if (chk('rom-shiny-seru') && chk('rom-shiny-seru').checked) {
+    out.push({ key: 'shinySeru', label: 'Shiny Seru', where: 'the checkbox in Gameplay' });
+  }
+  if (chk('rom-delilas-challenge') && chk('rom-delilas-challenge').checked) {
+    out.push({
+      key: 'delilasChallenge',
+      label: 'the Delilas Challenge',
+      where: 'the checkbox in Gameplay',
+    });
+  }
+  const rows = apOverrideRows();
+  const raw = [chk('rom-arts-ap-grant'), chk('rom-arts-ap-cost')]
+    .some((el) => el && (el.value || '').trim());
+  if (rows.length || raw) {
+    const names = [...new Set(rows.map((r) => r.name))];
+    const label = rows.length
+      ? `${rows.length} Tactical-Art ${rows.length === 1 ? 'row' : 'rows'} set to change AP (${names.join(', ')})`
+      : 'the advanced AP-override field';
+    out.push({
+      key: 'artsAp',
+      label,
+      where: rows.length
+        ? 'set their AP back to "Keep original", or remove those rows'
+        : 'clear the AP-override text field',
+      rows,
+    });
+  }
+  return out;
+}
+
+// The one sentence shown both live and at submit, or '' when there is no
+// conflict. Only the pairs the patcher refuses outright are reported: shiny
+// Seru vs the Delilas Challenge is resolved in the patcher's favour (the
+// challenge wins, shiny is skipped with a note) and is not an error.
+function arenaConflictMessage() {
+  const claims = arenaClaims();
+  const hard =
+    claims.some((c) => c.key === 'showSuperArts') && claims.length > 1
+      ? claims
+      : claims.some((c) => c.key === 'shinySeru') && claims.some((c) => c.key === 'artsAp')
+        ? claims.filter((c) => c.key === 'shinySeru' || c.key === 'artsAp')
+        : null;
+  if (!hard) return '';
+  const [first, ...rest] = hard;
+  const others = rest.map((c) => c.label).join(', and ');
+  return (
+    `\u201c${first.label}\u201d cannot be combined with ${others}. ` +
+    'They inject hand-written code into the same 652 bytes of unused space on the disc, ' +
+    'and only one of them can have it. To fix, either ' +
+    rest.map((c) => c.where).join(', or ') +
+    `; or turn off \u201c${first.label}\u201d (${first.where}).`
+  );
+}
+
+/// A picker option value for a Super Art. Names carry no colon, so this stays
+/// unambiguous against the regular rows' `Character:COMBO`.
+const SUPER_PICK_PREFIX = 'super:';
+
+// The chain arts of `sup` as ART_TABLE rows, in trigger order and deduplicated
+// (Tri-Somersault fires on Somersault > Cyclone > Somersault, and Somersault is
+// one adjustable art, not two). Every one of the fifteen chains resolves.
+function superChainArts(sup) {
+  const out = [];
+  for (const name of sup.chain) {
+    if (out.some((a) => a.n === name)) continue;
+    const art = ART_TABLE.find((a) => a.c === sup.c && a.n === name);
+    if (art) out.push(art);
+  }
+  return out;
+}
+
+function superArtByPick(value) {
+  if (!value || !value.startsWith(SUPER_PICK_PREFIX)) return null;
+  const name = value.slice(SUPER_PICK_PREFIX.length);
+  return SUPER_ART_TABLE.find((a) => a.n === name) || null;
+}
+
+
 function comboArrows(k) {
   return k.split('').map((ch) => ARROW[ch] || ch).join('');
 }
@@ -524,7 +679,7 @@ function artByCombo(combo) {
 }
 
 // Build one override row's DOM. `onChange` re-renders the row's effect note.
-function makeArtRow(onRemove) {
+function makeArtRow(onRemove, onAddChain) {
   const row = document.createElement('div');
   row.className = 'art-row';
 
@@ -557,6 +712,17 @@ function makeArtRow(onRemove) {
       g.appendChild(o);
     }
     pick.appendChild(g);
+    // The character's five Super Arts, as their own visibly-separate group so
+    // the fifteen read as a set rather than as more entries in the arts list.
+    const sg = document.createElement('optgroup');
+    sg.label = `${ch} - Super Arts`;
+    for (const a of SUPER_ART_TABLE.filter((x) => x.c === ch)) {
+      const o = document.createElement('option');
+      o.value = `${SUPER_PICK_PREFIX}${a.n}`;
+      o.textContent = `${a.n}  (Super Art - damage only)`;
+      sg.appendChild(o);
+    }
+    pick.appendChild(sg);
   }
 
   const apMode = document.createElement('select');
@@ -567,6 +733,15 @@ function makeArtRow(onRemove) {
     o.textContent = t;
     apMode.appendChild(o);
   }
+  // A Super Art carries no AP number of its own, so its rows select this and
+  // the control is disabled. It reads as a pointer rather than a refusal: the
+  // AP a player spends to fire a Super IS real, it is the chain arts' AP, and
+  // those are rows in this same picker.
+  const apNa = document.createElement('option');
+  apNa.value = 'na';
+  apNa.textContent = 'Paid by the chain arts';
+  apNa.hidden = true;
+  apMode.appendChild(apNa);
 
   // One amount box for both modes. The encoded range is the same either way:
   // the injected config table stores a signed byte per (character, art row) and
@@ -605,10 +780,25 @@ function makeArtRow(onRemove) {
   remove.textContent = '✕ Remove';
   remove.addEventListener('click', onRemove);
 
+  // Super Art rows only: turn the named chain arts into rows you can actually
+  // edit, so the note's "adjust the AP of X, Y" is one click rather than a
+  // scavenger hunt through the picker.
+  const chainBtn = document.createElement('button');
+  chainBtn.type = 'button';
+  chainBtn.className = 'art-chain-add';
+  chainBtn.textContent = '+ Add rows for those arts';
+  chainBtn.hidden = true;
+  chainBtn.addEventListener('click', () => {
+    const sup = superArtByPick(pick.value);
+    if (sup && onAddChain) onAddChain(sup, row);
+  });
+
+  const apField = mkField('AP', apMode);
   main.appendChild(mkField('Art', pick));
-  main.appendChild(mkField('AP', apMode));
+  main.appendChild(apField);
   main.appendChild(mkField('Amount', amtWrap));
   main.appendChild(mkField('Damage', dmg));
+  main.appendChild(chainBtn);
   main.appendChild(remove);
 
   const note = document.createElement('div');
@@ -618,6 +808,56 @@ function makeArtRow(onRemove) {
   row.appendChild(note);
 
   const refresh = () => {
+    const sup = superArtByPick(pick.value);
+    // A Super Art row: damage behaves exactly as a regular row's, the AP
+    // controls are switched off, and the note says why.
+    if (sup) {
+      if (apMode.value !== 'na') apMode.value = 'na';
+      apMode.disabled = true;
+      apField.classList.add('art-field-na');
+      const chainArts = superChainArts(sup);
+      const chainNames = chainArts.map((a) => a.n).join(', ');
+      apField.title = `A Super Art costs no AP of its own - the chain arts pay it. Adjust ${chainNames} instead.`;
+      amtWrap.parentElement.hidden = true;
+      // The button is only useful while some chain art is still missing a row.
+      // The row is still detached on its first refresh (makeArtRow calls this
+      // before the caller appends it), so scope the lookup defensively.
+      const siblings = row.parentElement ? [...row.parentElement.querySelectorAll('.art-row')] : [];
+      const have = new Set(siblings.filter((r) => r.artControls).map((r) => r.artControls.pick.value));
+      const wanted = chainArts.filter((a) => !have.has(`${a.c}:${a.k}`));
+      // Adding AP rows for the chain is exactly what collides with the
+      // move-list toggle, so say it here rather than only at submit.
+      const listOn = !!(document.getElementById('rom-show-super-arts') || {}).checked;
+      chainBtn.hidden = !onAddChain;
+      chainBtn.disabled = wanted.length === 0;
+      chainBtn.title = wanted.length
+        ? (listOn
+          ? `Adds a row for ${wanted.map((a) => a.n).join(', ')}. An AP override cannot be combined with "Show Super Arts on the in-battle move list" - untick that first, or leave these rows on "Keep original".`
+          : `Add a row for ${wanted.map((a) => a.n).join(', ')} so you can set the AP you pay to set this up.`)
+        : `${chainNames} already have rows above.`;
+      const parts = [
+        `${sup.c}'s ${sup.n} is a Super Art: it fires when ${sup.chain.join(' > ')} are chained in that order, so it has no button combo of its own.`,
+        `A Super Art costs no AP of its own - the chain arts pay it. To change what this costs to set up, adjust the AP of ${chainNames}.`,
+      ];
+      if (listOn) {
+        parts.push(
+          'Note: changing their AP cannot be combined with "Show Super Arts on the in-battle move list" - both inject code into the same unused bytes on the disc. Damage on this row is fine either way.',
+        );
+      }
+      if (dmg.value !== '') {
+        const tier = DMG_TIERS.find((t) => t.v === dmg.value);
+        parts.push(`Damage: ${tier.label.toLowerCase()} (was \u00d7${sup.h}). This one is per Super Art - no other art changes.`);
+      } else {
+        parts.push('No change yet - pick a damage tier.');
+      }
+      note.textContent = parts.join(' ');
+      return;
+    }
+    apMode.disabled = false;
+    chainBtn.hidden = true;
+    apField.classList.remove('art-field-na');
+    apField.removeAttribute('title');
+    if (apMode.value === 'na') apMode.value = 'keep';
     const sel = pick.value ? pick.value.split(':') : null;
     const art = sel ? ART_TABLE.find((a) => a.c === sel[0] && a.k === sel[1]) : null;
     const grant = apMode.value === 'grant';
@@ -625,7 +865,7 @@ function makeArtRow(onRemove) {
     amtSign.textContent = grant ? '+' : '';
     amtUnit.textContent = 'AP each use';
     if (!art) {
-      note.textContent = 'Pick an art to change what it does.';
+      note.textContent = 'Pick an art or a Super Art to change what it does.';
       return;
     }
     const parts = [];
@@ -667,17 +907,61 @@ function makeArtRow(onRemove) {
 // entries stay combo-only because that feature edits the shared art record.
 function setupArtBuilder(container, addBtn, onEdit) {
   if (!container || !addBtn) {
-    return { clear() {}, collect() { return { power: '', grant: '', cost: '', error: '' }; } };
+    return {
+      clear() {},
+      collect() {
+        return { power: '', grant: '', cost: '', superPower: '', error: '' };
+      },
+    };
   }
 
-  const addRow = () => {
+  // Append a row, or insert it just after `anchor` so a Super Art and the
+  // chain arts it points at read as one block. `prefill` is a picker value.
+  const addRow = (prefill, anchor) => {
     const row = makeArtRow(() => {
       row.remove();
       onEdit();
-    });
-    container.appendChild(row);
+    }, addChainRows);
+    if (anchor && anchor.parentElement === container) {
+      container.insertBefore(row, anchor.nextSibling);
+    } else {
+      container.appendChild(row);
+    }
+    if (prefill) {
+      row.artControls.pick.value = prefill;
+      // Land on "Costs AP" - the reason the user came here is to change what
+      // setting the Super up costs, and "Keep original" would write nothing.
+      // EXCEPT while the move-list toggle is on: an AP override cannot be
+      // combined with it, and one click that silently creates a blocking
+      // conflict is worse than a row the user has to arm deliberately.
+      const listOn = !!(document.getElementById('rom-show-super-arts') || {}).checked;
+      row.artControls.apMode.value = listOn ? 'keep' : 'cost';
+      row.dispatchEvent(new Event('change', { bubbles: true }));
+    }
     return row;
   };
+
+  // "+ Add rows for those arts" on a Super Art row: one row per chain art that
+  // does not have one yet, inserted under the Super in trigger order.
+  const addChainRows = (sup, anchor) => {
+    const have = new Set(
+      [...container.querySelectorAll('.art-row')].map((r) => r.artControls.pick.value),
+    );
+    let after = anchor;
+    for (const art of superChainArts(sup)) {
+      const value = `${art.c}:${art.k}`;
+      if (have.has(value)) continue;
+      have.add(value);
+      after = addRow(value, after);
+    }
+    // Every row's note names the chain arts that now have rows, so refresh the
+    // ones that were already on screen too.
+    for (const r of container.querySelectorAll('.art-row')) {
+      if (r.artControls) r.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    onEdit();
+  };
+
   addBtn.addEventListener('click', () => {
     addRow();
     onEdit();
@@ -691,12 +975,27 @@ function setupArtBuilder(container, addBtn, onEdit) {
       const power = [];
       const grant = [];
       const cost = [];
+      const superPower = [];
       const seenPower = new Set();
       const seenAp = new Set();
-      const fail = (error) => ({ power: '', grant: '', cost: '', error });
+      const seenSuper = new Set();
+      const fail = (error) => ({ power: '', grant: '', cost: '', superPower: '', error });
       for (const row of container.querySelectorAll('.art-row')) {
         const { pick, apMode, amt, dmg } = row.artControls;
         if (!pick.value) continue;
+        // Super Art rows carry damage only - they have no AP cell to read, and
+        // they serialize by name into `super_art_powers` rather than by combo.
+        const sup = superArtByPick(pick.value);
+        if (sup) {
+          if (dmg.value !== '') {
+            if (seenSuper.has(sup.n)) {
+              return fail(`${sup.n} has two damage rows - remove the duplicate.`);
+            }
+            seenSuper.add(sup.n);
+            superPower.push(`${sup.n}=${dmg.value}`);
+          }
+          continue;
+        }
         const [chName, combo] = pick.value.split(':');
         const art = ART_TABLE.find((a) => a.c === chName && a.k === combo);
         if (apMode.value !== 'keep') {
@@ -722,6 +1021,7 @@ function setupArtBuilder(container, addBtn, onEdit) {
         power: power.join(', '),
         grant: grant.join(', '),
         cost: cost.join(', '),
+        superPower: superPower.join(', '),
         error: '',
       };
     },
@@ -766,19 +1066,52 @@ function texDesc(t) {
       : `shared header block ${-1 - t.section}`;
     return `battle art · entry ${t.entry} ${slot} +${off}`;
   }
+  // A monster sheet is addressed by the archive slot the monster occupies,
+  // and that slot number IS the monster id every other tool prints.
+  if (t.tier === 'monster') return `monster skin · id ${t.section} +${off}`;
   const where = t.entry < 0 ? `gap +${off}`
     : t.section >= 0 ? `entry ${t.entry} sec ${t.section} +${off}`
       : `entry ${t.entry} +${off}`;
   return `${t.tier} ${where}`;
 }
 
+// Spellings of a label a person is as likely to type as the disc's own. The
+// disc writes the armband "Ra-Seru", and someone hunting it types "raseru"
+// about as often - so the haystack carries the label twice more, once with
+// its punctuation turned into spaces and once with the punctuation simply
+// removed (that second copy is what makes "raseru" reach "Ra-Seru").
+//
+// The `$N` suffix retail puts on an upgradeable weapon ("Ra-Seru Ozma $1") is
+// its upgrade tier, and measurably so: within each family the equipment
+// table's attack bonus rises strictly with N (Ozma 24, 36, 48, 60, 72, 89,
+// 106 across `$1..$7`). So `tier N` is a synonym here, not a guess.
+//
+// Search vocabulary only. Nothing here reaches the label the cell displays,
+// which stays exactly what the disc says.
+function texAliases(t) {
+  if (!t.label) return '';
+  const spaced = t.label.replace(/[^0-9a-z]+/gi, ' ');
+  // Punctuation dropped, spaces kept - so words never fuse across a gap.
+  const joined = t.label.replace(/[^0-9a-z\s]+/gi, '');
+  const tiers = [...t.label.matchAll(/\$(\d+)/g)].map((m) => `tier ${m[1]}`).join(' ');
+  return `${spaced} ${joined} ${tiers}`;
+}
+
 // The string a filter query is matched against. This IS the search
 // vocabulary, so anything a person might reasonably type has to be in here -
 // which is why the tier id, the CDNAME block and the curated label are all
 // folded in even though only some of them are displayed on the cell.
+//
+// The whole thing is parenthesised before it is folded, and that is the point
+// rather than a style choice: `.toLowerCase()` binds to the operand it is
+// written on, so `a + b.toLowerCase()` folds only `b`. Written that way this
+// function returned a haystack whose label half kept its capitals while the
+// query arrived lowercased, and every disc-cased word became unsearchable -
+// typing `ra-seru` matched nothing while "Ra-Seru Ozma $1" sat in the grid.
 function texHaystack(t) {
-  return `${t.tier} ${texDesc(t)} ${t.width}x${t.height} ${t.bpp}bpp ${t.label || ''} ` +
-    `${t.block || ''} ${t.replaceable ? 'replaceable' : 'read-only'}`.toLowerCase();
+  return (`${t.tier} ${texDesc(t)} ${t.width}x${t.height} ${t.bpp}bpp ${t.label || ''} ` +
+    `${t.block || ''} ${t.replaceable ? 'replaceable' : 'read-only'} ${texAliases(t)}`)
+    .toLowerCase();
 }
 
 // Stable identity of one queued edit. One edit per texture: re-adding one
@@ -992,10 +1325,16 @@ function setupTextureReplacer(wasm, discBytes) {
     // "no palette of its own" is not "no palette" on the battle-art family:
     // such a block is still 4bpp and samples one a sibling block installed
     // on the shared row, so calling it direct colour would be wrong.
+    // A monster sheet has no single colouring: each polygon picks a palette
+    // with its CBA column, so the grid shows every texel through the palette
+    // that actually reads it. Saying "1 of N" here would be a claim the
+    // bytes do not make.
     add('Palettes', t.cluts > 0
       ? `${t.cluts}` + (t.tier === 'battle-equip' && t.cluts > 1
         ? ' - shown and replaced through the first; the others recolour the same pixels'
-        : '')
+        : t.tier === 'monster'
+          ? ' populated - each part of the model reads its own, and the preview uses them all'
+          : '')
       : t.tier === 'battle-equip'
         ? 'none of its own - it borrows one another block installs'
         : 'none (direct colour)');
@@ -1014,6 +1353,13 @@ function setupTextureReplacer(wasm, discBytes) {
       // one, so "it did not fit" is a normal answer here.
       add('Replaceable', 'yes, if your edit re-compresses into this record\'s own ' +
         'slot (some are within a few bytes of full - the preview measures it exactly)');
+    } else if (t.tier === 'monster') {
+      // The palettes are off-limits here, and that is not a shortcut: a
+      // monster's CLUTs upload to VRAM verbatim, so the bit that marks a
+      // colour semi-transparent is live state a PNG cannot carry.
+      add('Replaceable', 'yes, if your edit re-compresses into this monster\'s own ' +
+        'archive slot. The palettes are never rewritten - repaint with the colors already ' +
+        'in the exported sheet, or tick "fold" to snap strays onto the nearest one');
     } else {
       add('Replaceable', `yes - written in place, same ${t.bytes} bytes`);
     }
@@ -1072,6 +1418,13 @@ function setupTextureReplacer(wasm, discBytes) {
         const bits = ['Valid - ready to add.'];
         if (r.new_palette_entries) bits.push(`${r.new_palette_entries} new palette color(s).`);
         if (r.quantized_pixels) bits.push(`${r.quantized_pixels} pixel(s) folded to a nearest color.`);
+        // Monster pages only: the parts of the sheet no polygon samples are
+        // dead bytes, so paint there is reported rather than written. Saying
+        // nothing would look like the edit landed and did nothing.
+        if (r.dead_texels_ignored) {
+          bits.push(`${r.dead_texels_ignored} pixel(s) fall where nothing on the model reads the ` +
+            'sheet - those are left as they are.');
+        }
         if (r.fit) bits.push(`Re-compresses to ${r.fit.recompressed} of the ${r.fit.capacity} available bytes.`);
         setVerdict(bits.join(' '), 'ok');
         addBtn.disabled = false;
@@ -1375,7 +1728,7 @@ const PRESET_BASE = {
   drops: 'none', encounters: 'none', encounter_scope: 'scene', soloStrong: false, fleeExp: false, chests: 'none',
   shops: 'none', casino: 'none', steals: 'none', arts: 'none', doors: 'none',
   door_coupling: 'coupled', houseDoors: false, equipmentDrops: false, seruTrade: false,
-  enemyAlly: false, shinySeru: false, jewelFix: false, approachFix: false, delilasChallenge: false, customItems: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '', attackCount: '',
+  enemyAlly: false, shinySeru: false, showSuperArts: false, jewelFix: false, approachFix: false, delilasChallenge: false, customItems: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', superArtPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '', attackCount: '',
   startingItems: 0, doorOfWind: false, incense: false,
   speedChain: false, chickenHeart: false, goodLuckBell: false,
   allWarps: false,
@@ -1470,6 +1823,7 @@ function init() {
   const seruTradeChk = $('rom-seru-trade');
   const enemyAllyChk = $('rom-enemy-ally');
   const shinySeruChk = $('rom-shiny-seru');
+  const showSuperArtsChk = $('rom-show-super-arts');
   const jewelFixChk = $('rom-jewel-fix');
   const approachFixChk = $('rom-approach-fix');
   const delilasChallengeChk = $('rom-delilas-challenge');
@@ -1555,6 +1909,7 @@ function init() {
     });
   }
   const artsPowerInput = $('rom-arts-power');
+  const superArtPowerInput = $('rom-super-art-power');
   const artsApGrantInput = $('rom-arts-ap-grant');
   const artBuilder = setupArtBuilder($('rom-art-rows'), $('rom-art-add'), () => markCustom());
   const weaponSpecialtyChk = $('rom-weapon-specialty');
@@ -1723,6 +2078,7 @@ function init() {
     seruTradeChk.checked = cfg.seruTrade;
     enemyAllyChk.checked = cfg.enemyAlly;
     shinySeruChk.checked = cfg.shinySeru;
+    showSuperArtsChk.checked = !!cfg.showSuperArts;
     jewelFixChk.checked = cfg.jewelFix;
     approachFixChk.checked = cfg.approachFix;
     delilasChallengeChk.checked = cfg.delilasChallenge;
@@ -1787,6 +2143,7 @@ function init() {
       setScaleFields(group, (key) => named.get(key) ?? fallback);
     }
     artsPowerInput.value = cfg.artsPower || '';
+    superArtPowerInput.value = cfg.superArtPower || '';
     artsApGrantInput.value = cfg.artsApGrant || '';
     artBuilder.clear();
     manualTables.clear();
@@ -1815,8 +2172,42 @@ function init() {
     if (customChip) customChip.hidden = false;
   }
 
+  // Show the arena conflict the moment it exists, next to the control that
+  // causes it. Submit time is the worst moment to learn that two settings are
+  // incompatible - by then everything else has been configured.
+  function syncArenaConflict() {
+    const box = $('rom-arena-conflict');
+    if (!box) return '';
+    const msg = arenaConflictMessage();
+    box.textContent = msg;
+    box.hidden = !msg;
+    const claims = msg ? arenaClaims() : [];
+    const apClaim = claims.find((c) => c.key === 'artsAp');
+    // Mark the exact rows, so "2 Tactical-Art rows" is something you can see.
+    for (const r of document.querySelectorAll('#rom-art-rows .art-row')) {
+      r.classList.remove('art-row-conflict');
+    }
+    if (msg && apClaim && apClaim.rows) {
+      for (const { row } of apClaim.rows) row.classList.add('art-row-conflict');
+    }
+    // ...and the checkboxes, so every side of the conflict is visibly marked.
+    const BOX = {
+      showSuperArts: 'rom-show-super-arts',
+      shinySeru: 'rom-shiny-seru',
+      delilasChallenge: 'rom-delilas-challenge',
+    };
+    const lit = new Set(claims.map((c) => BOX[c.key]).filter(Boolean));
+    for (const id of Object.values(BOX)) {
+      const el = $(id);
+      const rowEl = el && el.closest('.rom-check-row');
+      if (rowEl) rowEl.classList.toggle('rom-check-conflict', lit.has(id));
+    }
+    return msg;
+  }
+
   // Grey out controls that have no effect given the current state.
   function syncDependents() {
+    syncArenaConflict();
     const encOn = segVal('encounters', 'none') !== 'none';
     const doorsOn = segVal('doors', 'none') !== 'none';
     const scopeRow = $('rom-scope-row');
@@ -1888,6 +2279,7 @@ function init() {
     const seruTrade = seruTradeChk.checked;
     const enemyAlly = enemyAllyChk.checked;
     const shinySeru = shinySeruChk.checked;
+    const showSuperArts = showSuperArtsChk.checked;
     const jewelFix = jewelFixChk.checked;
     const approachFix = approachFixChk.checked;
     const delilasChallenge = delilasChallengeChk.checked;
@@ -1964,6 +2356,11 @@ function init() {
     }
     const artsPower = [artOv.power, (artsPowerInput.value || '').trim()]
       .filter(Boolean).join(', ');
+    // Super Art names contain spaces, so this list is comma-separated only -
+    // it is never merged with the combo-keyed power list above. Picker rows
+    // first, then anything typed into the raw (advanced) input.
+    const superArtPower = [artOv.superPower, (superArtPowerInput.value || '').trim()]
+      .filter(Boolean).join(', ');
     const artsApGrant = [artOv.grant, (artsApGrantInput.value || '').trim()]
       .filter(Boolean).join(', ');
     const artsApCost = artOv.cost;
@@ -2014,16 +2411,21 @@ function init() {
       speedChain === 0 && chickenHeart === 0 && goodLuckBell === 0 && !allWarps &&
       monsterStats === 'none' && movePower === 'none' && elementAffinity === 'none' &&
       spellCost === 'none' && equipBonus === 'none' && !weaponSpecialty &&
-      startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !jewelFix && !approachFix && !delilasChallenge && !customItems &&
-      !fishingPrice && !renameLocation && !earthEggPrice && !artsPower && !artsApGrant && !artsApCost &&
+      startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !showSuperArts && !jewelFix && !approachFix && !delilasChallenge && !customItems &&
+      !fishingPrice && !renameLocation && !earthEggPrice && !artsPower && !superArtPower &&
+      !artsApGrant && !artsApCost &&
       !spiritAp && !damageAp && !enemyStatScale && !expScale && !seruCatchRate && !attackCount
     );
     if (!baseActive && texSpecs.length === 0) {
       setStatus('Enable at least one option (pick a preset, a language, a texture, or flip a toggle).', 'err');
       return;
     }
-    if (shinySeru && (artsApGrant || artsApCost)) {
-      setStatus('Shiny Seru and per-art AP overrides cannot be combined (they use the same injected-code arena) - turn one of them off.', 'err');
+    // The arena conflicts, described in terms of the controls that cause them
+    // (see arenaConflictMessage). The banner already says this live; repeating
+    // it verbatim here means the submit error is never a new sentence to parse.
+    const arenaMsg = syncArenaConflict();
+    if (arenaMsg) {
+      setStatus(arenaMsg, 'err');
       return;
     }
     const seed = (seedInput.value || '').trim() || String(Date.now());
@@ -2047,7 +2449,7 @@ function init() {
       let summaryText = '';
       let langReport = null;
       if (baseActive) {
-        const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate, attackCount);
+        const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate, superArtPower, showSuperArts, attackCount);
         data = result.data;
         usedSeed = result.seed;
         summaryText = result.summary || '';

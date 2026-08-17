@@ -13,7 +13,7 @@ use legaia_patcher::drops::DropMode;
 use crate::util::{
     parse_arts_ap_cost, parse_arts_ap_grant, parse_arts_power, parse_attack_count_scale,
     parse_exp_scale, parse_item_spec, parse_location_rename, parse_prize_price,
-    parse_seru_catch_rate, parse_stat_scale,
+    parse_seru_catch_rate, parse_stat_scale, parse_super_art_power,
 };
 
 #[derive(Parser)]
@@ -305,7 +305,13 @@ pub(crate) enum Cmd {
         /// prints both columns.
         #[arg(long, value_parser = parse_battle_slot)]
         battle_slot: Option<BattleTextureSlot>,
-        /// Palette index to decode with (multi-palette textures only).
+        /// Monster-tier selector: the 1-based monster id `tim-list --tier
+        /// monster` prints. Needs no --entry; the archive is always 867.
+        #[arg(long)]
+        monster_id: Option<u16>,
+        /// Palette index to decode with (multi-palette textures only). The
+        /// monster tier ignores it - each texel is decoded through the
+        /// palette the model reads it with.
         #[arg(long, default_value_t = 0)]
         clut: usize,
         /// Where to write the PNG.
@@ -338,6 +344,11 @@ pub(crate) enum Cmd {
         /// `header1`. Needs --entry (863..866).
         #[arg(long, value_parser = parse_battle_slot)]
         battle_slot: Option<BattleTextureSlot>,
+        /// Monster-tier selector: the 1-based monster id. This tier never
+        /// rewrites a palette, so the replacement may only use colors the
+        /// monster's own palettes already hold (or pass --quantize).
+        #[arg(long)]
+        monster_id: Option<u16>,
         /// Battle tier only: which palette of the block to encode against.
         /// The other palettes of the same block stay byte-identical.
         #[arg(long, default_value_t = 0)]
@@ -433,6 +444,10 @@ pub(crate) enum TimTierArg {
     /// (PROT 863..866). Not TIMs at all - no magic, no header - so no
     /// magic scan can reach them.
     Battle,
+    /// The headerless 4bpp battle skin every enemy and boss wears, one page
+    /// per monster inside its own compressed archive slot (PROT 867). Also
+    /// not TIMs, and listed by monster name + id.
+    Monster,
     /// Every tier.
     All,
 }
@@ -715,6 +730,30 @@ pub(crate) struct RandomizeArgs {
     /// the Honey as the course's full-clear reward.
     #[arg(long, default_value_t = false)]
     pub(crate) custom_items: bool,
+    /// **Show Super Arts on the in-battle move list**: list a character's
+    /// Super Arts on the Tactical-Arts list the Triangle button opens in
+    /// battle, which retail never draws at all. A Super Art appears once you
+    /// have **performed** it (retail records nothing about a Super Art ever
+    /// firing, so the patch keeps a per-character flag byte in a spare slot of
+    /// the character record - it saves with the rest, an older save starts
+    /// with none), sits among the regular arts **in AP order**, and its row
+    /// shows the Super Art's name, the chain's summed AP cost (a Super Art
+    /// charges nothing of its own) and the arrows you actually type - the
+    /// seven-to-nine inputs the game's own arts recogniser resolves to the
+    /// trigger (Tri-Somersault: up down up up up down up), blue with each
+    /// sub-art's last arrow yellow and the Super's final arrow orange; the pause
+    /// menu's Status screen (Left = Moves) lists them the same way, with a
+    /// description naming the chain. Two same-size
+    /// detours into the SCUS list renderer plus their routines and tables in
+    /// verified-dead SCUS regions, an in-place replacement of the list pager
+    /// in PROT 0898 whose tail records a performed Super Art, and a detour
+    /// from the Super applier into it. The Triangle caption's own page
+    /// thresholds stay retail, so on a later page it can still read "View
+    /// Hyper Arts list". **Mutually exclusive with `--shiny-seru`,
+    /// `--arts-ap-grant` / `--arts-ap-cost` and `--delilas-challenge`** (same
+    /// dead-space bytes).
+    #[arg(long, default_value_t = false)]
+    pub(crate) show_super_arts: bool,
     /// Per-battle percentage chance a capturable enemy is shiny (only with
     /// `--shiny-seru`).
     #[arg(long, default_value_t = legaia_patcher::shiny_seru::DEFAULT_PCT)]
@@ -797,6 +836,19 @@ pub(crate) struct RandomizeArgs {
     /// `legaia-patcher arts` lists every art's combo and current power tiers.
     #[arg(long, value_name = "COMBO=VALUE", value_delimiter = ',', value_parser = parse_arts_power)]
     pub(crate) arts_power: Vec<(Vec<legaia_art::queue::Command>, u8)>,
+    /// **Rebalance a Super Art's damage.** Comma- or repeat-separated
+    /// `NAME=VALUE` entries, targeting one of the fifteen Super Arts by name
+    /// (case / spacing / punctuation insensitive, e.g.
+    /// `--super-art-power "Tri-Somersault"=0x1A`). `VALUE` is the same
+    /// power-encoding byte `--arts-power` takes (`0x0C..=0x1F`, or `0` to
+    /// disable the hits), applied to every active per-strike byte of the Super
+    /// Art's own `record0` art record (hit count preserved). A Super Art has no
+    /// input combo and no arts-name-table row - and costs no AP of its own, the
+    /// chain arts pay - so power is the knob it has; `--arts-power` and
+    /// `--arts-ap-grant` structurally cannot reach it.
+    /// `legaia-patcher arts` lists each Super Art with its trigger chain.
+    #[arg(long, value_name = "NAME=VALUE", value_delimiter = ',', value_parser = parse_super_art_power)]
+    pub(crate) super_art_power: Vec<(&'static legaia_art::SuperArt, u8)>,
     /// **Make a Tactical Art grant AP instead of costing it** ("arts AP-grant").
     /// Comma- or repeat-separated `[CHARACTER:]COMBO=AMOUNT` entries, targeting
     /// an art by its input combo (`L/R/D/U`, e.g. `--arts-ap-grant RDLDL=10` or

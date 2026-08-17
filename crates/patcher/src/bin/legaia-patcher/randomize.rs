@@ -45,6 +45,23 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
              verified-dead SCUS regions and are mutually exclusive; enable only one"
         );
     }
+    // --show-super-arts spans all four verified-dead SCUS regions (its shared
+    // unlock leaf and three hook routines, plus the chain / AP / finisher
+    // tables and the scratch record), so it is a hard conflict with all three
+    // of the arena features - including the Delilas Challenge, which is never
+    // silently dropped in its favour.
+    for (other, flag) in [
+        (arts_ap, "--arts-ap-grant / --arts-ap-cost"),
+        (args.shiny_seru, "--shiny-seru"),
+        (args.delilas_challenge, "--delilas-challenge"),
+    ] {
+        if args.show_super_arts && other {
+            bail!(
+                "--show-super-arts and {flag} both inject into the same verified-dead SCUS \
+                 regions and are mutually exclusive; enable only one"
+            );
+        }
+    }
 
     let original = load_image(&args.input)?;
     check_usa_disc(&original, args.allow_region_mismatch, "randomize")?;
@@ -455,6 +472,45 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         }
     }
 
+    // Super Art damage-power edits: rewrite a Super Art's per-strike power bytes
+    // (record+0x24) in its own record0 art record, addressed by the finisher
+    // action constant and validated against the record's own name field. Seedless
+    // targeted edits keyed by Super Art name - a Super Art has no input combo and
+    // no arts-name-table row, so neither `--arts-power` nor `--arts-ap-*` can
+    // reach it.
+    if !args.super_art_power.is_empty() {
+        let report = apply::set_super_art_power(&mut patcher, &args.super_art_power)?;
+        let mut changed: std::collections::BTreeSet<u8> = std::collections::BTreeSet::new();
+        for e in &report.edits {
+            let old: String = e
+                .old_power
+                .iter()
+                .map(|b| format!("{b:02X}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let new: String = e
+                .new_power
+                .iter()
+                .map(|b| format!("{b:02X}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            println!(
+                "super-art-power: {} ({:?}) [{old}] -> [{new}]",
+                e.name, e.character
+            );
+            changed.insert(e.finisher);
+        }
+        for (art, value) in &args.super_art_power {
+            if !changed.contains(&art.finisher) {
+                println!(
+                    "super-art-power: {} already at {value:#04X} (or has no damage byte)",
+                    art.name
+                );
+            }
+            manifest.push(format!("super_art_power {} = {value:#04X}", art.name));
+        }
+    }
+
     // Arts AP override: three same-size detours into the party arts queue-builder
     // (PROT 0898) + routines and a per-(character, row) config table in
     // verified-dead SCUS regions, so a targeted art either grants AP (clamped at
@@ -495,6 +551,40 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             };
             manifest.push(format!("{key} {who}{combo_s} = {}", spec.mode.amount()));
         }
+    }
+
+    // Show Super Arts: the in-battle Tactical-Arts list gains, sorted in by AP,
+    // the Super Arts the character has performed - name, chain AP cost and the
+    // arrows the player types per row (two detours into the SCUS list renderer
+    // plus their routines and tables in dead space, a replaced list pager in
+    // PROT 0898 whose tail records a performed Super Art, and a detour from the
+    // Super applier into it).
+    if args.show_super_arts {
+        let report = apply::inject_super_art_list(&mut patcher)?;
+        println!(
+            "show-super-arts: {} Super Arts join the in-battle move list and the status \
+             screen's Moves page once performed (hooks at {:#x}/{:#x}, fill {:#x}, \
+             performed-byte writer {:#x}, menu row routine {:#x})",
+            report.rows.len(),
+            report.count_va,
+            report.id_va,
+            report.fill_va,
+            report.performed_va,
+            report.menu_row_va
+        );
+        for row in &report.rows {
+            println!(
+                "  {:?}: {} - {} AP, {} ({})",
+                row.character,
+                row.name,
+                row.ap,
+                row.input,
+                row.chain.join(" + ")
+            );
+        }
+        manifest.push("show_super_arts = true".to_string());
+    } else {
+        manifest.push("show_super_arts = false".to_string());
     }
 
     // Place renames: the SCUS landmark cell, the world-map label records, and

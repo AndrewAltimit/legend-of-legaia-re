@@ -23,8 +23,8 @@ use std::env;
 use std::fs;
 
 use legaia_web_viewer::texture_registry::{
-    self as reg, Rgba, ScanCtx, TIER_BATTLE_EQUIP, TIER_LZS, TIER_RAW, TIER_SAVE_ICON, TIER_SUMMON,
-    TexRow,
+    self as reg, Rgba, ScanCtx, TIER_BATTLE_EQUIP, TIER_LZS, TIER_MONSTER, TIER_RAW,
+    TIER_SAVE_ICON, TIER_SUMMON, TexRow,
 };
 
 /// The comparable shape of one grid row.
@@ -455,6 +455,100 @@ fn battle_equipment_labels_carry_the_equipment_name() {
     );
 }
 
+/// The sibling of the test above, run through the reader the **browser**
+/// actually uses.
+///
+/// [`battle_equipment_labels_carry_the_equipment_name`] hands the scan an
+/// executable it read with `legaia_iso` - the CLI's ISO walker. The WASM
+/// binding cannot use that path: `scan_textures` reads the disc with this
+/// crate's own in-memory walker (`disc::extract_scus`) and hands the result
+/// to `ScanCtx::with_scus`. Two walkers, one claim, and only one of them was
+/// measured - so a browser that silently found no executable would have shown
+/// `Gala - equip 0x13` with the whole suite green. This is the missing half:
+/// the same anchor, joined through the browser's own reader.
+#[test]
+fn the_browsers_own_disc_reader_reaches_the_equipment_name_table() {
+    let Some(image) = disc() else {
+        eprintln!("LEGAIA_DISC_BIN unset - skipping");
+        return;
+    };
+    let (prot, spans) = prot_and_spans(&image);
+    // The two readers, side by side. They must agree byte for byte: the page
+    // and the CLI label the same block from the same table or they are two
+    // catalogs wearing one name.
+    let browser = legaia_web_viewer::disc::extract_scus(&image).expect("browser ISO walk");
+    let cli = legaia_iso::iso9660::read_file_in_image(&image, "SCUS_942.54").expect("CLI ISO walk");
+    drop(image);
+    assert_eq!(browser, cli, "the two hosts must read the same executable");
+
+    // The anchor, at the id the descriptor table carries: item `0x13` is
+    // Gala's first-tier Ra-Seru weapon.
+    let names = legaia_asset::item_names::ItemNameTable::from_scus(&browser)
+        .expect("item-name table from the browser's bytes");
+    assert_eq!(names.name(0x13), Some("Ra-Seru Ozma $1"));
+
+    // And it reaches a grid row, through the browser's scan.
+    let rows = registry_rows_with_scus(&prot, &spans, Some(&browser));
+    let battle: Vec<&Row> = rows
+        .iter()
+        .filter(|r| r.tier == TIER_BATTLE_EQUIP)
+        .collect();
+    assert!(
+        battle
+            .iter()
+            .any(|r| r.label.as_deref() == Some("Gala - Ra-Seru Ozma $1")),
+        "the browser scan must label Gala's Ra-Seru Ozma block by name"
+    );
+
+    // The blocks the page's filter box has to be able to find. The query
+    // arrives lowercased, so the invariant is on the folded label - which is
+    // exactly the join the page got wrong: it folded its haystack's tail only,
+    // and every disc-cased word in a label became unsearchable.
+    for word in ["ra-seru", "meta", "terra", "ozma"] {
+        let n = battle
+            .iter()
+            .filter(|r| {
+                r.label
+                    .as_deref()
+                    .is_some_and(|l| l.to_lowercase().contains(word))
+            })
+            .count();
+        assert!(
+            n > 0,
+            "typing `{word}` must reach at least one battle block"
+        );
+    }
+
+    // The catalog's own view of the same anchor: the block labelled from
+    // descriptor id `0x13` is in Gala's player file, not somewhere the label
+    // merely happens to read that way.
+    let file = entry_bytes(&prot, &spans, 865);
+    let mut id = 0u32;
+    let blocks = legaia_asset::battle_texture_catalog::build_from_file_with_names(
+        865,
+        &file,
+        &mut id,
+        Some(&names),
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|b| b.record_id == 0x13 && b.label == "Gala - Ra-Seru Ozma $1"),
+        "descriptor id 0x13 in PROT 865 is the block that carries the name"
+    );
+}
+
+/// One TOC entry's bytes out of the `PROT.DAT` payload.
+fn entry_bytes(prot: &[u8], spans: &[(u64, u64, u32)], entry: u32) -> Vec<u8> {
+    let &(off, size, _) = spans
+        .iter()
+        .find(|&&(_, _, idx)| idx == entry)
+        .unwrap_or_else(|| panic!("no PROT entry {entry}"));
+    let start = off as usize;
+    let stop = (off + size).min(prot.len() as u64) as usize;
+    prot[start..stop].to_vec()
+}
+
 #[test]
 fn the_summon_family_reaches_textures_no_tim_scan_can() {
     let Some(image) = disc() else {
@@ -493,4 +587,108 @@ fn the_summon_family_reaches_textures_no_tim_scan_can() {
         assert_eq!(r.height, 256);
         assert!(r.width == 256 || r.width == 512, "width {}", r.width);
     }
+}
+
+/// The monster family, and the gap it closes.
+///
+/// Every enemy and boss wears a 4bpp page inside its own LZS-compressed
+/// archive slot, with no TIM header anywhere near it: the raw catalog finds
+/// nothing in PROT 867 and the compressed catalog finds one 64x64 effect
+/// texture. So before this tier, searching the grid for a monster - by any
+/// string at all - returned nothing, and the whole bestiary was unreachable.
+#[test]
+fn the_monster_family_reaches_pages_no_tim_scan_can() {
+    let Some(image) = disc() else {
+        eprintln!("LEGAIA_DISC_BIN unset - skipping");
+        return;
+    };
+    let (prot, spans) = prot_and_spans(&image);
+    drop(image);
+    let (rows, _) = registry_rows(&prot, &spans, false);
+
+    let monster: Vec<&Row> = rows.iter().filter(|r| r.tier == TIER_MONSTER).collect();
+    assert_eq!(monster.len(), 186, "one row per populated monster");
+    // The measurement that keeps the tier honest. The TIM tiers do report a
+    // handful of rows in this entry - but every one of them sits in the
+    // archive's unused tail slots, past the last populated monster, so not
+    // one of the 186 pages was ever reachable through them and this tier
+    // duplicates nothing.
+    const SLOT_STRIDE: u64 = 0x14000;
+    let live: Vec<u64> = monster
+        .iter()
+        .map(|r| (r.section as u64 - 1) * SLOT_STRIDE)
+        .collect();
+    for r in rows
+        .iter()
+        .filter(|r| matches!(r.tier, TIER_RAW | TIER_LZS) && r.entry == 867)
+    {
+        assert!(
+            !live
+                .iter()
+                .any(|&s| r.offset >= s && r.offset < s + SLOT_STRIDE),
+            "a TIM row at +0x{:X} lands inside a populated monster's slot - \
+             the two families would be showing one texture twice",
+            r.offset
+        );
+    }
+
+    for r in &monster {
+        assert_eq!(r.entry, 867);
+        assert_eq!(r.bpp, 4);
+        assert_eq!(r.height, 256);
+        assert!(r.width == 128 || r.width == 256, "width {}", r.width);
+        assert!(r.section > 0, "section is the 1-based monster id");
+        assert!(
+            r.cluts > 0,
+            "a page with no palette would decode to nothing"
+        );
+    }
+    // Every row is uniquely addressable, which is what a queued edit pins.
+    let coords: std::collections::HashSet<(i64, u64)> =
+        monster.iter().map(|r| (r.section, r.offset)).collect();
+    assert_eq!(coords.len(), monster.len(), "one coordinate per page");
+}
+
+/// The labels are the search vocabulary, and a monster's name is not enough
+/// on its own: retail gives three monsters the name "Songi" (ids 76, 136 and
+/// 179) and six the name "Cort". A row that said only "Songi" would be three
+/// rows a person cannot tell apart.
+#[test]
+fn monster_rows_are_searchable_by_name_and_by_id() {
+    let Some(image) = disc() else {
+        eprintln!("LEGAIA_DISC_BIN unset - skipping");
+        return;
+    };
+    let (prot, spans) = prot_and_spans(&image);
+    drop(image);
+    let (rows, _) = registry_rows(&prot, &spans, false);
+    let monster: Vec<&Row> = rows.iter().filter(|r| r.tier == TIER_MONSTER).collect();
+
+    let label_of = |r: &Row| r.label.clone().unwrap_or_default().to_lowercase();
+    assert!(
+        monster.iter().all(|r| !label_of(r).is_empty()),
+        "an unlabelled row cannot be found by any query"
+    );
+
+    // What the user types.
+    let songi: Vec<&&Row> = monster
+        .iter()
+        .filter(|r| label_of(r).contains("songi"))
+        .collect();
+    assert_eq!(songi.len(), 3, "typing `songi` reaches all three");
+    let ids: std::collections::BTreeSet<i64> = songi.iter().map(|r| r.section).collect();
+    assert_eq!(
+        ids,
+        [76i64, 136, 179].into_iter().collect(),
+        "and they are the three fights"
+    );
+    // And the id separates them, because the label carries it.
+    assert_eq!(
+        songi
+            .iter()
+            .filter(|r| label_of(r).contains("#179"))
+            .count(),
+        1,
+        "typing `songi #179` reaches exactly the transformed form"
+    );
 }

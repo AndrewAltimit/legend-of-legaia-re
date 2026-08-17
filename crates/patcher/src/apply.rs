@@ -45,6 +45,8 @@ mod shops_casino;
 mod starting;
 mod stats;
 mod steals_arts;
+mod super_art_list;
+mod super_art_power;
 
 /// Apply a language pack. **Run this first**, before any randomizer pass.
 ///
@@ -81,3 +83,5 @@ pub use shops_casino::*;
 pub use starting::*;
 pub use stats::*;
 pub use steals_arts::*;
+pub use super_art_list::*;
+pub use super_art_power::*;

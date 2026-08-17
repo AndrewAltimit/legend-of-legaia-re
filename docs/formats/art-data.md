@@ -12,6 +12,7 @@ Implementation: [`crates/art`](../../crates/art/README.md).
   - [Fixed prefix](#fixed-prefix)
   - [Variable fields](#variable-fields-positions-documented-exact-byte-offsets-per-art-specific)
   - [Power encoding](#power-encoding)
+  - [Art records are indexed by action constant](#art-records-are-indexed-by-action-constant)
 - [Runtime cue playout](#runtime-cue-playout)
   - [The cue tables](#the-cue-tables)
   - [Target-group encoding](#target-group-encoding)
@@ -197,6 +198,42 @@ is `legaia_patcher::arts_power` (CLI `legaia-patcher arts` /
 `--arts-power COMBO=VALUE`; see [randomizer.md](../tooling/randomizer.md)); this
 supersedes the earlier "exact byte offsets per art-specific / UNPINNED" note.
 
+### Art records are indexed by action constant
+
+The `0xD0`-stride array is not a packed list of the arts a character can input -
+it is indexed by **action constant**. The record for constant `c` sits at
+
+```text
+record_off = art_block_base + (c - 0x10) * 0xD0
+```
+
+so constants `0x19` / `0x1A` (the two [Art Starters](#action-constants)) land on
+the two records whose `+0x10` name field reads `"Starter"`, constant `0x1B` on
+each character's Miracle Art (the record carrying that character's Miracle
+command string at `+0`), and the regular arts follow at `0x1B + display index`.
+The mapping comes off the queue-builder `FUN_801EED1C`, which emits a matched
+art's constant as its row `+ 0x18` (`addiu v1,t3,0x18` then `sb v1,0x1df(v0)` at
+`0x801EF6F0`/`0x801EF6F8`), with the array as enumerated from its first parseable
+record starting eight records ahead of row 0.
+
+Three consequences the arts tooling depends on:
+
+- **Super Art finishers have records here too**, at `0x2B..0x2F` (Vahn, Gala) and
+  `0x2E..0x32` (Noa) - the same constants `super_art.rs` carries as each Super's
+  `finisher`. Each one's `+0x10` name is the Super Art's English name
+  (*Tri-Somersault*, *Neo Static Raising*, …), byte-identical to the modeled
+  table for all fifteen, and its `+0x24` run holds real power tiers. So a Super
+  Art's damage is ordinary art-record data.
+- **A Super Art record has no combo.** Its `+0` field is a one-byte stub, shorter
+  than the three-direction minimum any real art input uses, which is why a
+  combo-keyed lookup can never land on one.
+- **Some records are reachable by neither route**: Vahn's and Gala's constant
+  `0x2A` and Noa's `0x2C`/`0x2D` carry named records with power bytes but have no
+  arts-name-table row and no combo, so nothing in the display path names them.
+
+Parsers: `legaia_patcher::super_art_power` (locate + edit, name-validated),
+`legaia_patcher::arts_power` (the combo-keyed sibling).
+
 ## Runtime cue playout
 
 The art record's [Special / Hit Effect Cues and Damage Timing](#variable-fields-positions-documented-exact-byte-offsets-per-art-specific)
@@ -373,11 +410,56 @@ Triggers:
 
 Full per-character tables (5 entries each for Vahn / Noa / Gala = 15 total) are in [`crates/art/src/super_art.rs`](../../crates/art/src/super_art.rs).
 
-The interleaved connector direction after each art (the `0F` / `0E` above) is **combo-specific**, not derivable from each art's own command string:
+Each Super Art also has its **own art record** in the per-character `0xD0`-stride array, addressed by its finisher constant (see [Art records are indexed by action constant](#art-records-are-indexed-by-action-constant)): the record's `+0x10` name field is the Super Art's English name and its `+0x24` run its per-strike power bytes. What it does **not** have is an input combo or a row in the [arts-name table](#arts-name-table-dat_80075ec4) - so a Super Art carries no AP number, no menu command string, and no entry in either display list the game draws. Patcher knob: `--super-art-power` ([randomizer.md](../tooling/randomizer.md#super-art-damage-power)).
 
-- The same art appears with different connectors across Supers (Vahn's `0x27` is followed by `0F` in Tri-Somersault but `0E` in Power Slash).
-- Those connectors are **resident table data**, not derived: the battle overlay keeps the full replace-string table at `0x801F65E8` (15 entries, 16-byte stride), read byte-exact for all 15 Supers from a battle-RAM capture, so `super_art.rs`'s `replace` strings are runtime-validated. (`ctx[+0x274]`, once suspected as the queue-builder, is the turn-order active-actor index; the live action queue is `actor[+0x1DF]`.)
-- The live player-driven Arts submenu therefore matches a recognized art *ordering* against `SuperArt::art_sequence()` - the Find pattern projected to its art constants only (`[0x27, 0x1F, 0x27]` for Tri-Somersault) - via `legaia_art::recognize_art_sequence` + `SuperMatcher::trigger_by_art_sequence`, which is faithful to *which* combination triggers *which* Super without reproducing the byte-exact queue. See [`subsystems/battle-action.md`](../subsystems/battle-action.md#miracle--super-in-the-live-player-driven-arts-submenu).
+The interleaved connector direction after each art (the `0F` / `0E` above) is
+**not typed between the arts** - it is what the retail tokenizer leaves behind:
+
+- `FUN_801EED1C`'s normalisation loop (`0x801EF2EC..0x801EF858`, read off the
+  disassembly) writes `0x19` over the **last** arrow of a matched art, inserts
+  the art constant after it, and **keeps the leading arrows in place**; it walks
+  tail-first (`s8` counts down from 15) and restarts at `s8 + 1` after every
+  match, so an arrow can belong to two arts. `↑↓↑` alone becomes `0F 0E 19 27`.
+  Port + derivation: [`legaia_art::tokenize`](../../crates/art/src/tokenize.rs).
+- So a Super's `find` pattern is what its **physical input** tokenizes to.
+  Tri-Somersault's `19 27 0F 19 1F 0E 19 27` is `↑↓↑↑↑↓↑` - seven arrows,
+  Somersault (0..2), Cyclone (1..4) and Somersault (4..6) **overlapping** - and
+  the in-the-wild capture's resident queue `0F 0E 19 27 0F 19 1F 0E 1A 2B 2B 2B`
+  is exactly that input tokenized then tail-replaced (the leading `0F 0E` are
+  Somersault's own first two arrows). Laying the three arts end to end
+  (`↑↓↑ ↓↑↑↑ ↑↓↑`) tokenizes to four arts and does **not** trigger.
+- Every retail Super derives to a unique shortest input, all 7..=9 arrows,
+  and fourteen of the fifteen agree with the independent walkthrough table
+  (Dragon Fangs' printed six-arrow input drops one and never performs Swan
+  Driver; the derived `↑↓↑↑↑↓↓` does):
+
+| Character | Super Art | Chain | Input | AP |
+|---|---|---|---|---|
+| Vahn | Tri-Somersault | Somersault, Cyclone, Somersault | `↑↓↑↑↑↓↑` | 60 |
+| Vahn | Maximum Blow | Charging Scorch, Slash Kick, Power Punch | `↓→↑↓←←↓` | 54 |
+| Vahn | Fire Tackle | Hyper Elbow, Power Punch, Charging Scorch | `←→←←↓→↑` | 54 |
+| Vahn | Power Slash | Charging Scorch, Somersault, Slash Kick | `↓→↑↓↑↓←` | 54 |
+| Vahn | Rolling Combo | Spin Combo, Power Punch, PK Combo | `↑↓→←←↓↑↑←` | 66 |
+| Noa | Triple Lizard | Bird Step, Swan Driver, Lizard Tail | `↓↓↓↑↑↑↓↑` | 66 |
+| Noa | Super Javelin | Rushing Gale, Sonic Javelin | `↑↑←↓→↓→` | 48 |
+| Noa | Super Tempest | Dolphin Attack, Tempest Break | `→→←→→←↑↑↑` | 60 |
+| Noa | Love You | Mirage Lancer, Lizard Tail, Tough Love | `→→↑↑↓↑↓←→` | 72 |
+| Noa | Dragon Fangs | Lizard Tail, Swan Driver, Acrobatic Blitz | `↑↓↑↑↑↓↓` | 60 |
+| Gala | Back Punch x3 | Ironhead, Flying Knee Attack, Back Punch | `↑↓↓↑←→←` | 54 |
+| Gala | Super Ironhead | Flying Knee Attack, Head-Splitter, Ironhead | `↓↑←↑↑↓↓` | 54 |
+| Gala | Rushing Crush | Battering Ram, Flying Knee Attack, Head-Splitter | `←→↓↑←↑↑` | 54 |
+| Gala | Heaven's Drop | Flying Knee Attack, Head-Splitter, Black Rain | `↓↑←↑↑←↓↓` | 60 |
+| Gala | Neo Static Raising | Back Punch, Guillotine, Neo Raising | `←→←↑←←→↑←` | 66 |
+
+AP is the chain's sum; a Super Art charges nothing of its own. The connectors are
+still resident table data (find `0x801F6524` / replace `0x801F65E8`, 15 entries,
+capture-validated), and the live player-driven Arts submenu still matches a
+recognized art *ordering* against `SuperArt::art_sequence()` (`legaia_art::recognize_art_sequence`
++ `SuperMatcher::trigger_by_art_sequence`, see
+[`subsystems/battle-action.md`](../subsystems/battle-action.md#miracle--super-in-the-live-player-driven-arts-submenu)) -
+what changed is that the byte-exact queue is now derivable from the input.
+(`ctx[+0x274]`, once suspected as the queue-builder, is the turn-order
+active-actor index; the live action queue is `actor[+0x1DF]`.)
 
 ## Arts-name table (`DAT_80075EC4`)
 

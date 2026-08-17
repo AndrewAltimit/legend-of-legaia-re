@@ -189,7 +189,22 @@ pub fn resolve_seed(seed: &str) -> String {
 /// 100000); the game debits exactly that many coins on purchase. `arts_powers`
 /// is a comma/space-separated list of `combo=value` pairs that rebalance a
 /// Tactical Art's damage-power bytes (e.g. `RDLDL=0x16`; `value` a power byte
-/// `0x0C..=0x1F` or `0`). `arts_ap_grants` and `arts_ap_costs` are
+/// `0x0C..=0x1F` or `0`). `super_art_powers` is the Super Art sibling - a
+/// comma/newline-separated (never space-separated, the names contain spaces)
+/// list of `name=value` pairs (e.g. `Tri-Somersault=0x1A`), rebalancing a Super
+/// Art's own `record0` power bytes; Super Arts carry no combo, no
+/// arts-name-table row and no AP cost of their own, so name is the only key
+/// they have. `show_super_arts` lists a character's Super Arts on the
+/// Tactical-Arts list the Triangle button opens in battle, which retail never
+/// draws at all: a row appears once the player has **performed** that Super Art
+/// (a per-character byte the Super applier's detour records, saved with the
+/// character), sits among the regular arts **by AP**, and shows the Super Art's
+/// name, the chain's summed AP cost and the arrows the player types; the pause
+/// menu's Status screen (Left = Moves) lists them the same way. The
+/// Triangle caption's own page thresholds stay retail, so on a later page it can
+/// still read "View Hyper Arts list". Mutually exclusive with
+/// `shiny_seru`, the arts AP override and `delilas_challenge` (same SCUS
+/// regions). `arts_ap_grants` and `arts_ap_costs` are
 /// comma/space-separated lists of `[character:]combo=amount` pairs (e.g.
 /// `Vahn:RDLDL=10`; `amount` 1..=100 AP): a grant makes the art castable at any
 /// AP level and *add* that much, a cost charges exactly that much instead of
@@ -299,6 +314,8 @@ pub fn patch_rom(
     enemy_stat_scale: &str,
     exp_scale: &str,
     seru_catch_rate: &str,
+    super_art_powers: &str,
+    show_super_arts: bool,
     enemy_attack_count: &str,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
@@ -336,6 +353,22 @@ pub fn patch_rom(
             "the arts AP override and the Delilas Challenge both inject into the same \
              verified-dead SCUS regions and are mutually exclusive; enable only one",
         ));
+    }
+    // The Super Arts move-list rows span all four verified-dead SCUS regions
+    // (a shared unlock leaf, three hook routines and four small tables), so
+    // they are a hard conflict with all three - the Delilas Challenge included,
+    // which is never silently dropped in their favour.
+    for (other, what) in [
+        (arts_ap, "the arts AP override"),
+        (shiny_seru, "shiny-seru"),
+        (delilas_challenge, "the Delilas Challenge"),
+    ] {
+        if show_super_arts && other {
+            return Err(err(format!(
+                "showing Super Arts on the move list and {what} both inject into the same \
+                 verified-dead SCUS regions and are mutually exclusive; enable only one"
+            )));
+        }
     }
 
     let mut patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
@@ -529,6 +562,24 @@ pub fn patch_rom(
         ));
     } else {
         summary.push_str("shiny-seru: untouched\n");
+    }
+
+    // Show Super Arts: the in-battle Tactical-Arts list gains, sorted in by AP,
+    // the Super Arts the character has performed - name, chain AP cost and the
+    // arrows the player types per row (two detours into the SCUS list renderer
+    // plus their routines and tables in dead space, a replaced list pager in
+    // PROT 0898 whose tail records a performed Super Art, and a detour from the
+    // Super applier into it). Spoiler-safe: the count, never the roster.
+    if show_super_arts {
+        let rep = apply::inject_super_art_list(&mut patcher)
+            .map_err(|e| err(format!("show-super-arts: {e}")))?;
+        summary.push_str(&format!(
+            "show-super-arts: {} Super Arts join the in-battle move list and the status \
+             screen's Moves page once performed\n",
+            rep.rows.len()
+        ));
+    } else {
+        summary.push_str("show-super-arts: untouched\n");
     }
 
     // Seru trading: a vendor in shops offers to trade a party member's Seru-magic for
@@ -817,6 +868,57 @@ pub fn patch_rom(
                     }
                 }
                 None => summary.push_str(&format!("arts-power: skipped malformed entry {tok:?}\n")),
+            }
+        }
+    }
+
+    // Super Art damage-power edits: `NAME=VALUE` tokens
+    // (`Tri-Somersault=0x1A`). Super Art names contain spaces, so this field
+    // splits on commas / semicolons / newlines only - never on a space. A Super
+    // Art has no combo and no arts-name-table row, so it is addressed by name
+    // and located through its finisher action constant in the character's own
+    // `record0` art block. A bad entry is reported and skipped.
+    let super_art_powers = super_art_powers.trim();
+    if super_art_powers.is_empty() {
+        summary.push_str("super-art-power: untouched\n");
+    } else {
+        for tok in super_art_powers
+            .split([',', ';', '\n'])
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+        {
+            let parsed = tok.split_once('=').and_then(|(n, v)| {
+                let hits = legaia_patcher::super_art_power::find_super_art(n.trim(), None);
+                let art = (hits.len() == 1).then_some(hits[0])?;
+                let vs = v.trim();
+                let value = vs
+                    .strip_prefix("0x")
+                    .or_else(|| vs.strip_prefix("0X"))
+                    .map(|h| u8::from_str_radix(h, 16))
+                    .unwrap_or_else(|| vs.parse::<u8>())
+                    .ok()?;
+                legaia_patcher::super_art_power::is_accepted_power(value).then_some((art, value))
+            });
+            match parsed {
+                Some((art, value)) => {
+                    match apply::set_super_art_power(&mut patcher, &[(art, value)]) {
+                        Ok(rep) if rep.edits.is_empty() => {
+                            summary.push_str(&format!("super-art-power: {} unchanged\n", art.name))
+                        }
+                        Ok(rep) => {
+                            for e in &rep.edits {
+                                summary.push_str(&format!(
+                                    "super-art-power: {} ({:?}) -> {value:#04X}\n",
+                                    e.name, e.character
+                                ));
+                            }
+                        }
+                        Err(e) => summary.push_str(&format!("super-art-power: {e}\n")),
+                    }
+                }
+                None => summary.push_str(&format!(
+                    "super-art-power: skipped malformed entry {tok:?}\n"
+                )),
             }
         }
     }
@@ -1629,7 +1731,7 @@ pub fn export_lang_pack(image: Vec<u8>, language: &str) -> Result<String, JsValu
 // family does not touch this file.
 
 use legaia_patcher::texture::replace_texture;
-use legaia_patcher::{battle_texture, save_icon};
+use legaia_patcher::{battle_texture, monster_texture, save_icon};
 use legaia_tim::encode::{EncodeOptions, decode_png_rgba};
 
 use crate::texture_pack::{self, PackEntry, PackMeta};
@@ -2092,6 +2194,55 @@ pub fn preview_texture_replace(
                 Err(e) => return fail(&out, format!("{e:#}")),
             }
         }
+        ReplaceOp::MonsterPage(target) => {
+            let orig = monster_texture::export_page(&patcher, &target)
+                .map_err(|e| err(format!("read monster texture: {e:#}")))?;
+            Reflect::set(
+                &out,
+                &"original".into(),
+                &rgba_js(orig.width, orig.height, &orig.rgba)?,
+            )?;
+            Reflect::set(&out, &"width".into(), &num(orig.width as f64))?;
+            Reflect::set(&out, &"height".into(), &num(orig.height as f64))?;
+            Reflect::set(&out, &"bpp".into(), &num(4.0))?;
+            Reflect::set(&out, &"cluts".into(), &num(orig.palettes_populated as f64))?;
+
+            let (pw, ph, rgba) = match decode_png_rgba(png) {
+                Ok(v) => v,
+                Err(e) => return fail(&out, format!("read PNG: {e}")),
+            };
+            match monster_texture::preview_page(&patcher, &target, &rgba, pw, ph, quantize) {
+                Ok(p) => {
+                    Reflect::set(&out, &"preview".into(), &rgba_js(pw, ph, &p.rgba)?)?;
+                    // This family never rewrites a palette (a monster's CLUTs
+                    // upload verbatim, so their blend bits are live state), so
+                    // the page's own counter is texels re-indexed instead.
+                    Reflect::set(&out, &"new_palette_entries".into(), &num(0.0))?;
+                    Reflect::set(
+                        &out,
+                        &"quantized_pixels".into(),
+                        &num(p.quantized_texels as f64),
+                    )?;
+                    Reflect::set(
+                        &out,
+                        &"texels_changed".into(),
+                        &num(p.texels_changed as f64),
+                    )?;
+                    Reflect::set(
+                        &out,
+                        &"dead_texels_ignored".into(),
+                        &num(p.dead_texels_ignored as f64),
+                    )?;
+                    let f = Object::new();
+                    Reflect::set(&f, &"capacity".into(), &num(p.fit.capacity as f64))?;
+                    Reflect::set(&f, &"recompressed".into(), &num(p.fit.recompressed as f64))?;
+                    Reflect::set(&out, &"fit".into(), &f)?;
+                    Reflect::set(&out, &"ok".into(), &JsValue::from_bool(true))?;
+                    Reflect::set(&out, &"error".into(), &"".into())?;
+                }
+                Err(e) => return fail(&out, format!("{e:#}")),
+            }
+        }
     }
     Ok(out.into())
 }
@@ -2224,6 +2375,47 @@ pub fn apply_texture_replacements(image: Vec<u8>, specs: JsValue) -> Result<JsVa
                     outcome.palette,
                     if outcome.quantized_pixels > 0 {
                         format!(", {} pixel(s) quantized", outcome.quantized_pixels)
+                    } else {
+                        String::new()
+                    },
+                    if outcome.unchanged {
+                        " - identical to retail, nothing written".to_string()
+                    } else {
+                        format!(
+                            ", recompressed {}B into the {}B slot",
+                            outcome.fit.recompressed, outcome.fit.capacity
+                        )
+                    },
+                ));
+            }
+            ReplaceOp::MonsterPage(target) => {
+                let outcome = monster_texture::replace_page(
+                    &mut patcher,
+                    &target,
+                    &rgba,
+                    w,
+                    h,
+                    spec.quantize,
+                    false,
+                )
+                .map_err(|e| err(format!("monster texture {i} ({target}): {e:#}")))?;
+                summary.push_str(&format!(
+                    "monster skin: {} #{} repainted ({}x{} 4 bpp, {} texel(s) changed{}{}{})\n",
+                    outcome.name,
+                    outcome.id,
+                    outcome.width,
+                    outcome.height,
+                    outcome.texels_changed,
+                    if outcome.quantized_texels > 0 {
+                        format!(", {} folded onto a nearer colour", outcome.quantized_texels)
+                    } else {
+                        String::new()
+                    },
+                    if outcome.dead_texels_ignored > 0 {
+                        format!(
+                            ", {} painted where nothing samples the page (ignored)",
+                            outcome.dead_texels_ignored
+                        )
                     } else {
                         String::new()
                     },

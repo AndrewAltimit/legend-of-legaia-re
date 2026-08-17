@@ -18,6 +18,7 @@ use anyhow::{Context, Result, bail};
 use legaia_asset::battle_texture_catalog::BattleTextureSlot;
 use legaia_patcher::battle_texture::{self, BattleTextureTarget};
 use legaia_patcher::disc::DiscPatcher;
+use legaia_patcher::monster_texture::{self, MonsterTextureTarget};
 use legaia_patcher::ppf;
 use legaia_patcher::texture::{TextureTarget, read_texture, replace_texture, texture_catalogs};
 use legaia_tim::encode::{EncodeOptions, decode_png_rgba};
@@ -110,11 +111,33 @@ pub(crate) fn cmd_tim_list(input: &Path, entry: Option<u32>, tier: TimTierArg) -
             );
         }
     }
+    let mut monster_n = 0usize;
+    if matches!(tier, TimTierArg::Monster | TimTierArg::All)
+        && entry.is_none_or(|e| e == legaia_patcher::disc::MONSTER_ARCHIVE_ENTRY as u32)
+    {
+        for m in &monster_texture::catalog(&patcher)? {
+            monster_n += 1;
+            println!(
+                "monst{:>5}  {:>7}  {:>10}  {:>4}x{:<4}  {:>3}  {:>5}  {:>7}  {} #{}",
+                legaia_patcher::disc::MONSTER_ARCHIVE_ENTRY,
+                m.id,
+                m.id,
+                m.width(),
+                m.height(),
+                4,
+                m.palettes_populated(),
+                m.byte_len(),
+                m.name,
+                m.id,
+            );
+        }
+    }
     println!(
         "\n{raw_n} raw texture(s) (always replaceable in place) + {deep_n} LZS-compressed \
          (replaceable when the edited section recompresses into its footprint) + {battle_n} \
          battle block(s) (party character art; not TIMs, replaceable within the record's \
-         slot footprint)."
+         slot footprint) + {monster_n} monster skin(s) (one page per enemy; not TIMs, \
+         replaceable within the monster's own archive slot)."
     );
     println!(
         "Export one:  legaia-patcher tim-export --input DISC.bin --entry N --offset 0xHEX \
@@ -127,6 +150,9 @@ pub(crate) fn cmd_tim_list(input: &Path, entry: Option<u32>, tier: TimTierArg) -
     println!(
         "Battle art:  legaia-patcher tim-export --input DISC.bin --entry 864 \
          --battle-slot 14 -o armband.png"
+    );
+    println!(
+        "Monster:     legaia-patcher tim-export --input DISC.bin --monster-id 179 -o songi.png"
     );
     Ok(())
 }
@@ -148,14 +174,19 @@ pub(crate) fn cmd_tim_export(
     offset: Option<u64>,
     lzs_section: Option<u32>,
     battle_slot: Option<BattleTextureSlot>,
+    monster_id: Option<u16>,
     clut: usize,
     output: &Path,
 ) -> Result<()> {
     if let Some(slot) = battle_slot {
         return cmd_battle_export(input, battle_target(entry, slot)?, clut, output);
     }
+    if let Some(id) = monster_id {
+        return cmd_monster_export(input, MonsterTextureTarget { id }, output);
+    }
     let offset = offset.context(
-        "pass --offset (the byte offset tim-list prints), or --battle-slot for the battle tier",
+        "pass --offset (the byte offset tim-list prints), --battle-slot for the battle tier, \
+         or --monster-id for a monster skin",
     )?;
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
@@ -192,6 +223,7 @@ pub(crate) fn cmd_tim_replace(
     offset: Option<u64>,
     lzs_section: Option<u32>,
     battle_slot: Option<BattleTextureSlot>,
+    monster_id: Option<u16>,
     clut: usize,
     png: &Path,
     quantize: bool,
@@ -202,6 +234,17 @@ pub(crate) fn cmd_tim_replace(
     if !dry_run && output.is_none() && patch.is_none() {
         bail!(
             "pass --output <patched.bin> and/or --patch <out.ppf> (or --dry-run to only validate)"
+        );
+    }
+    if let Some(id) = monster_id {
+        return cmd_monster_replace(
+            input,
+            MonsterTextureTarget { id },
+            png,
+            quantize,
+            output,
+            patch,
+            dry_run,
         );
     }
     if let Some(slot) = battle_slot {
@@ -217,7 +260,8 @@ pub(crate) fn cmd_tim_replace(
         );
     }
     let offset = offset.context(
-        "pass --offset (the byte offset tim-list prints), or --battle-slot for the battle tier",
+        "pass --offset (the byte offset tim-list prints), --battle-slot for the battle tier, \
+         or --monster-id for a monster skin",
     )?;
     let original = load_image(input)?;
     let mut patcher = DiscPatcher::open(original.clone()).context("parse disc image")?;
@@ -468,6 +512,150 @@ fn cmd_battle_replace(
         let bytes = ppf::write_ppf3(&desc, &runs);
         note_overwrite(ppf_path);
         std::fs::write(ppf_path, &bytes)
+            .with_context(|| format!("write {}", ppf_path.display()))?;
+        println!(
+            "wrote {} ({} change run(s)) - safe to share, carries only your edit",
+            ppf_path.display(),
+            runs.len()
+        );
+    }
+    if let Some(out) = output {
+        note_overwrite(out);
+        std::fs::write(out, &patched).with_context(|| format!("write {}", out.display()))?;
+        let bin_name = out
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "patched.bin".into());
+        let cue_path = out.with_extension("cue");
+        std::fs::write(&cue_path, cue_contents(&bin_name))
+            .with_context(|| format!("write {}", cue_path.display()))?;
+        println!(
+            "wrote {} + {} (contains Sony bytes - local play only, never redistribute)",
+            out.display(),
+            cue_path.display()
+        );
+    }
+    Ok(())
+}
+
+// --- Monster battle skins ----------------------------------------------------
+
+/// `tim-export --monster-id` - decode one monster's page.
+///
+/// The decode is a composite: every texel through the palette of the polygon
+/// that samples it, and a texel no polygon samples transparent. There is no
+/// `--clut` here on purpose - a monster page has no single colouring, so a
+/// page-wide palette choice would be a claim the bytes do not make.
+fn cmd_monster_export(input: &Path, target: MonsterTextureTarget, output: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let ex = monster_texture::export_page(&patcher, &target)?;
+    legaia_tim::write_png(output, ex.width, ex.height, &ex.rgba)?;
+    println!(
+        "wrote {} - {} #{} ({}x{}, 4 bpp, {} populated palette(s))",
+        output.display(),
+        ex.name,
+        ex.id,
+        ex.width,
+        ex.height,
+        ex.palettes_populated,
+    );
+    println!("Blank areas are texels no polygon samples - dead bytes; painting there is ignored.");
+    println!(
+        "Edit it (same dimensions, and only with colours already in the sheet) and feed it \
+         back through tim-replace --monster-id."
+    );
+    Ok(())
+}
+
+/// `tim-replace --monster-id` - write an edited page back, recompressing the
+/// monster's whole block into its own `0x14000` archive slot.
+fn cmd_monster_replace(
+    input: &Path,
+    target: MonsterTextureTarget,
+    png: &Path,
+    quantize: bool,
+    output: Option<&Path>,
+    patch: Option<&Path>,
+    dry_run: bool,
+) -> Result<()> {
+    let original = load_image(input)?;
+    let mut patcher = DiscPatcher::open(original.clone()).context("parse disc image")?;
+
+    let png_bytes = std::fs::read(png).with_context(|| format!("read {}", png.display()))?;
+    let (w, h, rgba) = decode_png_rgba(&png_bytes)?;
+
+    let outcome =
+        monster_texture::replace_page(&mut patcher, &target, &rgba, w, h, quantize, dry_run)?;
+    println!(
+        "{} #{}: {}x{} 4 bpp - {} texel(s) re-indexed",
+        outcome.name, outcome.id, outcome.width, outcome.height, outcome.texels_changed,
+    );
+    if outcome.unchanged {
+        println!(
+            "  the image is already what is on disc - nothing written (re-encoding an \
+             unchanged block would still move disc bytes, since our LZS encoder is not \
+             the one the mastering used)"
+        );
+    } else {
+        println!(
+            "  slot fit: recompressed {} bytes into the {}-byte allocation (retail used {})",
+            outcome.fit.recompressed, outcome.fit.capacity, outcome.fit.retail,
+        );
+    }
+    if outcome.quantized_texels > 0 {
+        println!(
+            "  {} texel(s) folded onto the nearest colour their own palette holds",
+            outcome.quantized_texels
+        );
+    }
+    if outcome.dead_texels_ignored > 0 {
+        println!(
+            "  {} painted texel(s) fall where nothing samples the page - left as retail wrote them",
+            outcome.dead_texels_ignored
+        );
+    }
+    if dry_run {
+        println!("dry run: validated only, nothing written");
+        return Ok(());
+    }
+
+    // Verify off the patched image: the page reads back as the write said it
+    // would, and no other monster moved.
+    let before = monster_texture::catalog(&DiscPatcher::open(original.clone())?)?;
+    let after = monster_texture::catalog(&patcher).context("re-read patched catalog")?;
+    if before.len() != after.len() {
+        bail!(
+            "verification failed: the archive held {} monsters before and {} after",
+            before.len(),
+            after.len()
+        );
+    }
+    for (b, a) in before.iter().zip(&after) {
+        if b.id != a.id || b.name != a.name {
+            bail!("verification failed: monster {} changed identity", b.id);
+        }
+        if b.id != target.id && b.pool_bytes() != a.pool_bytes() {
+            bail!(
+                "verification failed: monster {}'s page changed, and it was not the target",
+                b.id
+            );
+        }
+    }
+    println!(
+        "verified: only {} #{}'s page changed",
+        outcome.name, outcome.id
+    );
+
+    let patched = patcher.into_image();
+    if let Some(ppf_path) = patch {
+        let runs = ppf::diff_runs(&original, &patched);
+        let desc = format!(
+            "Legaia monster skin replace ({} #{})",
+            outcome.name, outcome.id
+        );
+        note_overwrite(ppf_path);
+        std::fs::write(ppf_path, ppf::write_ppf3(&desc, &runs))
             .with_context(|| format!("write {}", ppf_path.display()))?;
         println!(
             "wrote {} ({} change run(s)) - safe to share, carries only your edit",
