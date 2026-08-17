@@ -47,11 +47,11 @@ use legaia_patcher::shiny_seru::{
     SLOT6_VA,
 };
 use legaia_patcher::super_art_list::{
-    APPLIER_VA, ARROWS_STRIDE, ART_CONSTANT_BIAS, ARTS_CHARACTERS, FIRST_NORMAL_ORDINAL,
-    HOOK_COUNT_VA, HOOK_ID_VA, HOOK_PERFORMED_VA, OVERLAY_BASE_VA, OVERLAY_PROT_INDEX, PAGER_VA,
-    PAGER_WORDS, PERFORMED_COUNT_SHIFT, PERFORMED_MASK, PERFORMED_RET_VA, SCAN_HEAD_VA,
-    SCAN_HIT_VA, SCRATCH_BYTES, SUP_STRIDE, SUPER_ARTS_PER_CHAR, SuperArtListInjection,
-    super_art_rows,
+    APPLIER_VA, ARROW_BITS, ARROWS_COUNT_SHIFT, ARROWS_STRIDE, ART_CONSTANT_BIAS, ARTS_CHARACTERS,
+    FIRST_NORMAL_ORDINAL, GLYPH_BUF_BYTES, HOOK_COUNT_VA, HOOK_ID_VA, HOOK_PERFORMED_VA,
+    MARKERS_SHIFT, MAX_MARKERS, OVERLAY_BASE_VA, OVERLAY_PROT_INDEX, PAGER_VA, PAGER_WORDS,
+    PERFORMED_COUNT_SHIFT, PERFORMED_MASK, PERFORMED_RET_VA, SCAN_HEAD_VA, SCAN_HIT_VA,
+    SCRATCH_BYTES, SUP_STRIDE, SUPER_ARTS_PER_CHAR, SuperArtListInjection, super_art_rows,
 };
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -244,6 +244,22 @@ fn every_trigger_chain_resolves_against_this_discs_arts_table() {
             r.name,
             r.input.len()
         );
+        // The art ends the row colours: one per chain art, the last on the
+        // final arrow, all recomputed here off the disc's own catalog.
+        let ends = legaia_art::art_ends(&catalog, &r.input);
+        assert_eq!(ends, r.ends, "{}: art ends", r.name);
+        assert_eq!(
+            ends.len(),
+            source.art_sequence().len(),
+            "{}: one end per chain art",
+            r.name
+        );
+        assert_eq!(
+            *ends.last().unwrap(),
+            r.input.len() - 1,
+            "{}: the last art ends on the last arrow",
+            r.name
+        );
         // ...and it matches the curated walkthrough input, direction for
         // direction (the two sources are independent).
         let curated = legaia_gamedata::Database::load();
@@ -383,19 +399,34 @@ fn the_tables_read_back_exactly_as_planned() {
         assert_eq!(rec[0], r.ap);
         assert_eq!(rec[1] & PERFORMED_MASK, r.thr);
         assert_eq!(rec[1] >> PERFORMED_COUNT_SHIFT, r.trigger_row);
-        assert_eq!(u16::from_le_bytes([rec[2], rec[3]]), r.name_offset);
+        assert_eq!(u16::from_le_bytes([rec[2], rec[3]]) & 0x1FFF, r.name_offset);
+        assert_eq!(
+            u16::from_le_bytes([rec[2], rec[3]]) >> MARKERS_SHIFT,
+            r.marker_count() as u16,
+            "{} marker count",
+            r.name
+        );
+        assert!(r.marker_count() <= MAX_MARKERS);
         let a = &arrows[i * 4..i * 4 + 4];
         assert_eq!(a, r.packed_arrows(), "arrows {i} ({})", r.name);
-        assert_eq!(a[0] as usize, r.input.len());
-        // Unpack them the way the fill routine does and get the input back.
+        // Unpack the word the way the fill routine does and get the input, the
+        // art ends and the count back.
+        let w = u32::from_le_bytes(a.try_into().unwrap());
+        assert_eq!(
+            (w >> ARROWS_COUNT_SHIFT) as usize,
+            r.input.len(),
+            "{} count",
+            r.name
+        );
         for (k, c) in r.input.iter().enumerate() {
-            let dir = (a[1 + k / 4] >> ((k % 4) * 2)) & 3;
+            let f = (w >> (k as u32 * ARROW_BITS)) & 7;
             assert_eq!(
-                dir,
+                (f & 3) as u8,
                 legaia_patcher::super_art_list::arrow_code(*c),
                 "{} arrow {k}",
                 r.name
             );
+            assert_eq!(f & 4 != 0, r.ends.contains(&k), "{} end bit {k}", r.name);
         }
         assert_eq!(r.sorted_index as usize, i % SUPER_ARTS_PER_CHAR);
     }
@@ -408,7 +439,11 @@ fn the_tables_read_back_exactly_as_planned() {
     assert_eq!(&scratch[0..8], &[0u8; 8], "AP + padding start clear");
     assert_eq!(&scratch[12..16], &[0u8; 4], "the name pointer starts clear");
     // The buffer itself is dead space at patch time (filled at runtime).
-    assert!(bytes_at_va(&scus, plan.buf_va, 27).iter().all(|&b| b == 0));
+    assert!(
+        bytes_at_va(&scus, plan.buf_va, GLYPH_BUF_BYTES)
+            .iter()
+            .all(|&b| b == 0)
+    );
     eprintln!(
         "tables: records {:#x}, arrows {:#x}, scratch {:#x}, buffer {:#x}",
         plan.sup_va, plan.arrows_va, plan.scratch_va, plan.buf_va

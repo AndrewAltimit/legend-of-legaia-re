@@ -740,7 +740,8 @@ pub(crate) struct RandomizeArgs {
     /// shows the Super Art's name, the chain's summed AP cost (a Super Art
     /// charges nothing of its own) and the arrows you actually type - the
     /// seven-to-nine inputs the game's own arts recogniser resolves to the
-    /// trigger (Tri-Somersault: up down up up up down up). Two same-size
+    /// trigger (Tri-Somersault: up down up up up down up), blue with each
+    /// sub-art's last arrow yellow and the Super's final arrow red. Two same-size
     /// detours into the SCUS list renderer plus their routines and tables in
     /// verified-dead SCUS regions, an in-place replacement of the list pager
     /// in PROT 0898 whose tail records a performed Super Art, and a detour

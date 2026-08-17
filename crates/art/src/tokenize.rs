@@ -106,6 +106,62 @@ pub fn tokenize(arts: &[ArtEntry<'_>], input: &[Command]) -> [u8; QUEUE_LEN] {
     q
 }
 
+/// The input positions at which an art **ends** - the arrows the tokenizer wrote
+/// the `0x19` starter over - in ascending order. With arts overlapping, this is
+/// what marks the boundary of each sub-art inside a Super Art's input:
+/// Tri-Somersault's `↑↓↑↑↑↓↑` ends arts at positions 2 (Somersault), 4
+/// (Cyclone) and 6 (Somersault). The tokenizer is re-run with each queue slot
+/// carrying the input index it came from, so inserted constants never shift the
+/// bookkeeping.
+pub fn art_ends(arts: &[ArtEntry<'_>], input: &[Command]) -> Vec<usize> {
+    let mut q = [0u8; QUEUE_LEN];
+    let mut origin = [usize::MAX; QUEUE_LEN];
+    for (i, c) in input.iter().take(QUEUE_LEN).enumerate() {
+        q[i] = c.as_action().as_byte();
+        origin[i] = i;
+    }
+    let mut ends = Vec::new();
+    for start in (0..QUEUE_LEN).rev() {
+        for &(action, cmds) in arts {
+            if cmds.is_empty() {
+                continue;
+            }
+            let mut pos = start;
+            let mut matched = 0usize;
+            while pos < QUEUE_LEN && q[pos] != 0 {
+                if q[pos].wrapping_sub(0xB) == cmds[matched].as_byte() {
+                    matched += 1;
+                    if matched == cmds.len() {
+                        if origin[pos] != usize::MAX && !ends.contains(&origin[pos]) {
+                            ends.push(origin[pos]);
+                        }
+                        q[pos] = STARTER;
+                        origin[pos] = usize::MAX;
+                        if pos < QUEUE_LEN - 2 {
+                            for k in (pos + 1..QUEUE_LEN - 1).rev() {
+                                q[k + 1] = q[k];
+                                origin[k + 1] = origin[k];
+                            }
+                        }
+                        if pos + 1 < QUEUE_LEN {
+                            q[pos + 1] = action.as_byte();
+                            origin[pos + 1] = usize::MAX;
+                        }
+                        matched = 0;
+                        pos = start;
+                    }
+                } else {
+                    pos -= matched;
+                    matched = 0;
+                }
+                pos += 1;
+            }
+        }
+    }
+    ends.sort_unstable();
+    ends
+}
+
 /// The queue's populated prefix (up to the first zero byte).
 pub fn populated(q: &[u8; QUEUE_LEN]) -> &[u8] {
     let n = q.iter().position(|&b| b == 0).unwrap_or(QUEUE_LEN);
@@ -263,6 +319,22 @@ mod tests {
             let got = derive_super_input(&arts, find).unwrap_or_else(|| panic!("{name}"));
             assert_eq!(&got[..], *want, "{name}");
         }
+    }
+
+    #[test]
+    fn art_ends_mark_each_overlapping_arts_last_arrow() {
+        let arts = vahn();
+        assert_eq!(
+            art_ends(&arts, &[Up, Down, Up, Up, Up, Down, Up]),
+            vec![2, 4, 6]
+        );
+        // Rolling Combo: Spin Combo (0..3), Power Punch (3..5), PK Combo (5..8).
+        assert_eq!(
+            art_ends(&arts, &[Up, Down, Right, Left, Left, Down, Up, Up, Left]),
+            vec![3, 5, 8]
+        );
+        assert_eq!(art_ends(&arts, &[Up, Down, Up]), vec![2]);
+        assert!(art_ends(&arts, &[Left, Left]).is_empty());
     }
 
     #[test]

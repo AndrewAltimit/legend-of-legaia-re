@@ -62,7 +62,7 @@ pub use tables::{
     art_anim_max_slot, art_anim_name, art_name, is_art, learned_art_action, learned_art_count,
     learned_art_max_slot,
 };
-pub use tokenize::{derive_super_input, tokenize};
+pub use tokenize::{art_ends, derive_super_input, tokenize};
 
 #[cfg(test)]
 mod integration_tests {

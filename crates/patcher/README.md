@@ -852,10 +852,12 @@ arrow of a matched art, inserts the constant after it, keeps the leading arrows,
 and walks tail-first with restarts, so arts **overlap** - Tri-Somersault is
 `↑↓↑↑↑↓↑`, seven arrows, and every retail Super derives to a unique 7..=9-arrow
 string that agrees with the walkthrough tables (one of which had dropped an
-arrow). They ride two bits per arrow and are expanded per row into the
-`[count][0x81 0xA8+dir]*` glyph layout retail's own strings use, `0xFF06` style
-marker before the last arrow included, so the row reads like a regular art's:
-leading arrows in the default style, the last one highlighted.
+arrow). They ride three bits per arrow (direction + "a sub-art ends here", from
+`legaia_art::art_ends`) and are expanded per row into the `[count][0x81 0xA8+dir]*`
+glyph layout retail's own strings use, with a `0xFF style` marker wherever the
+colour changes: blue by default, the regular art-end yellow on an arrow a sub-art
+ends on, red (style 2, a CLUT retail keeps on VRAM row 510) on the Super's final
+arrow - Tri-Somersault reads blue blue yellow blue yellow blue red.
 
 **Where a row sits.** Retail keeps the learned list id-sorted (`FUN_801EFBFC`
 inserts with an ascending shift) and the table's ids run in descending AP, so

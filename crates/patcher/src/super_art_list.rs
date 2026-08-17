@@ -99,11 +99,14 @@
 //!   retail tokenizer ([`legaia_art::tokenize`]: arts overlap, so a Super's
 //!   input is shorter than its chain arts laid end to end; Tri-Somersault is
 //!   `↑↓↑↑↑↓↑`). They are carried two bits per arrow (`[count][3 bytes]` per
-//!   Super) and expanded per row into a `[count][0x81 0xA8+dir]*` glyph string in
+//!   Super, three bits per arrow: its direction and whether a sub-art ends on
+//!   it) and expanded per row into a `[count][0x81 0xA8+dir]*` glyph string in
 //!   the same layout retail's own strings use, which the scratch record's `+8`
-//!   points at - including the `0xFF06` style marker before the last arrow, so a
-//!   Super Art row reads like a regular one: leading arrows in the default
-//!   style, the last one highlighted.
+//!   points at, with `0xFF style` markers wherever the colour changes: the
+//!   default (blue) style, the regular art-end style (yellow) on an arrow a
+//!   sub-art ends on, and the red style on the Super Art's final arrow - so
+//!   Tri-Somersault reads blue blue yellow blue yellow blue red: the ends of
+//!   Somersault and Cyclone, then the Super's own trigger.
 //!
 //! ## Where the row sits
 //!
@@ -198,9 +201,14 @@ pub const ART_CONSTANT_BIAS: u8 = 0x1B;
 /// three Hyper Arts). Only normal arts feed the tokenizer the input derivation
 /// runs, exactly as retail's normal-art arm is the one that writes tokens.
 pub const FIRST_NORMAL_ORDINAL: usize = 4;
-/// Longest Super Art input the two-bit packing carries (`3 bytes = 12 arrows`);
-/// every retail Super is typed in 7..=9.
-pub const MAX_INPUT_ARROWS: usize = 12;
+/// Longest Super Art input the packing carries: nine three-bit arrows plus a
+/// four-bit count fill the 32-bit word (`9 * 3 + 4 = 31`); every retail Super
+/// is typed in 7..=9.
+pub const MAX_INPUT_ARROWS: usize = 9;
+/// Most style markers a row can carry: the style changes at most twice around
+/// each non-final art end and once before the final arrow (`2 * 2 + 1` for a
+/// three-art chain).
+pub const MAX_MARKERS: usize = 5;
 
 // --- Hook sites (all byte-verified against the US build) ---------------------
 
@@ -303,14 +311,20 @@ const SCRATCH_NAME_OFF: u16 = 0xC;
 /// Bytes of scratch record reserved (the record's own stride is `0x14`, but only
 /// `+0..+0x10` is ever read through `s5 = record + 8`).
 pub const SCRATCH_BYTES: usize = 0x10;
-/// The glyph buffer: `[count][0x81 lo]* [0xFF 0x06] [0x81 lo]` for up to
-/// [`MAX_INPUT_ARROWS`] arrows plus the style marker before the last one.
-pub const GLYPH_BUF_BYTES: usize = 1 + 2 * (MAX_INPUT_ARROWS + 1);
-/// The style-marker glyph regular rows carry before their last arrow: the
-/// renderer switches to glyph style `6` (the highlighted arrow) for every glyph
-/// after it and gives it no width, so a Super Art row reads like a regular one -
-/// leading arrows in the default style, the last one highlighted.
-pub const GLYPH_MARKER: [u8; 2] = [0xFF, 0x06];
+/// The glyph buffer: `[count]` then up to [`MAX_INPUT_ARROWS`] arrow glyphs and
+/// [`MAX_MARKERS`] style markers, two bytes each.
+pub const GLYPH_BUF_BYTES: usize = 1 + 2 * (MAX_INPUT_ARROWS + MAX_MARKERS);
+/// High byte of a style-marker glyph. The renderer takes `0xFF lo` as "draw
+/// every following glyph in style `lo`" and gives it no width; the style is the
+/// arrow sprite's CLUT (`gp+0x13c` -> CLUT id `0x7F86 + style`, VRAM row 510).
+pub const MARKER_HI: u8 = 0xFF;
+/// The default arrow style every row starts in - blue.
+pub const STYLE_DEFAULT: u8 = 1;
+/// The style regular rows switch to before their last arrow - yellow.
+pub const STYLE_ART_END: u8 = 6;
+/// The style a Super Art row switches to before its final arrow - red (the
+/// CLUT at `(128, 510)`; Hyper Arts are all-yellow, Miracle Arts style 9 orange).
+pub const STYLE_SUPER_END: u8 = 2;
 /// High byte of every arrow glyph, and the low byte of the first (Right); the
 /// four arrows are `0xA8..=0xAB` = Right / Left / Up / Down.
 pub const GLYPH_HI: u8 = 0x81;
@@ -320,8 +334,17 @@ pub const GLYPH_LO_BASE: u8 = 0xA8;
 /// **AP-sorted** order: `+0` chain AP, `+1` `thr | bit << 5`, `+2` name offset
 /// (`u16`, from the art-record array).
 pub const SUP_STRIDE: u32 = 4;
-/// Per-Super packed arrows: `[count][2-bit dirs x 12]`.
+/// Per-Super packed arrows, one little-endian `u32`: bits `3k..3k+1` = arrow
+/// `k`'s direction code, bit `3k+2` = "an art ends on this arrow", bits
+/// `27..30` = the arrow count.
 pub const ARROWS_STRIDE: u32 = 4;
+/// Bits per packed arrow (`dir dir end`).
+pub const ARROW_BITS: u32 = 3;
+/// Bit position of the arrow count inside the packed word.
+pub const ARROWS_COUNT_SHIFT: u32 = 27;
+/// Bit position of the marker count inside the `SUP` record's name-offset
+/// halfword (name offsets stay under `0x2000`).
+pub const MARKERS_SHIFT: u32 = 13;
 /// Two-bit arrow codes = glyph low byte minus [`GLYPH_LO_BASE`].
 pub fn arrow_code(c: Command) -> u8 {
     match c {
@@ -373,7 +396,7 @@ pub(crate) fn assemble_count(disp: [u32; 2], ret: u32) -> Vec<u32> {
 /// A learned row lands on `PLAIN` with `t4` = its index into the id list and
 /// replays the stock `lbu` there; a Super Art row branches (cross-region) to the
 /// fill routine `fill_va` with `t5` = the character's `SUP` base, `t6` = the
-/// Super's sorted index and `t8` = the character.
+/// Super's sorted index and `t8` = the character `* 4`.
 ///
 /// `disp = [lbu s2,0x74e(v0), sltiu v1,v1,0x63]`.
 pub(crate) fn assemble_id(
@@ -402,15 +425,15 @@ pub(crate) fn assemble_id(
         lw(T8, GP, GP_CHARACTER),                      // 8  delay: character
         lbu(T2, V0, LEARNED_COUNT_OFF),                // 9  t2 = learned count
         addiu(T9, V0, LEARNED_LIST_OFF),               // 10 t9 = the id list
-        sll(T7, T8, 2),                                // 11
-        addu(T7, T7, T8),                              // 12 character * 5
-        sll(T7, T7, 2),                                // 13 * SUP_STRIDE
-        lui(T5, hi(sup_va)),                           // 14
-        addiu(T5, T5, lo(sup_va)),                     // 15
-        addu(T5, T5, T7),                              // 16 t5 = &SUP[character*5]
-        or(T4, ZERO, ZERO),                            // 17 i = 0 (learned cursor)
-        or(T6, ZERO, ZERO),                            // 18 k = 0 (Super cursor)
-        or(T7, A2, ZERO),                              // 19 r = entry (rows to pass)
+        sll(T8, T8, 2),   // 11 t8 = character * 4 (F keys the command table with it)
+        sll(T7, T8, 2),   // 12
+        addu(T7, T7, T8), // 13 character * 20 = * 5 * SUP_STRIDE
+        lui(T5, hi(sup_va)), // 14
+        addiu(T5, T5, lo(sup_va)), // 15
+        addu(T5, T5, T7), // 16 t5 = &SUP[character*5]
+        or(T4, ZERO, ZERO), // 17 i = 0 (learned cursor)
+        or(T6, ZERO, ZERO), // 18 k = 0 (Super cursor)
+        or(T7, A2, ZERO), // 19 r = entry (rows to pass)
         // LOOP: pick the next merged row.
         sltiu(T3, T6, SUPER_ARTS_PER_CHAR as u16), // 20 k < 5 ?
         beq(T3, ZERO, (PICKLRN - 22) as i16),      // 21 no Super left -> learned
@@ -458,12 +481,18 @@ pub(crate) fn assemble_id(
 /// (F) fill the scratch record for the Super Art (B) picked and enter the draw.
 ///
 /// Entered from (B) with `t5` = `&SUP[character*5]`, `t6` = the Super's sorted
-/// index `k`, `t8` = the character. Writes the scratch record's `+2` AP and
-/// `+0xC` name pointer (chased through `DAT_801C9360[character] -> +0x58 ->
+/// index `k`, `t8` = the character `* 4`. Writes the scratch record's `+2` AP
+/// and `+0xC` name pointer (chased through `DAT_801C9360[character] -> +0x58 ->
 /// + name offset`), expands the Super's packed arrows into the glyph buffer the
-/// scratch record's own `+8` points at - `[n+1]`, the first `n-1` glyphs, the
-/// [`GLYPH_MARKER`], the last glyph - then jumps to the scan's hit arm with
+/// scratch record's own `+8` points at, then jumps to the scan's hit arm with
 /// `s5` = scratch + 8.
+///
+/// The glyph string is `[n + markers]` then, per arrow, a `0xFF style` marker
+/// whenever the style changes and the arrow glyph: default style, the
+/// art-end style on an arrow a sub-art ends on, the Super-end style on the
+/// final arrow - so Tri-Somersault reads blue blue yellow blue yellow blue red.
+/// The packed word is consumed three bits at a time (`dir dir end`), the count
+/// having been read off its top bits first.
 ///
 /// The packed arrows are addressed **relative to the SUP record**: both tables
 /// share the `character*5 + k` order and the 4-byte stride, so
@@ -475,60 +504,63 @@ pub(crate) fn assemble_fill(
     arrows_va: u32,
     scratch_va: u32,
 ) -> Vec<u32> {
-    const LOOP: i32 = 23;
+    const LOOP: i32 = 25;
+    const CMP: i32 = 32;
+    const GLYPH: i32 = 38;
     let delta = arrows_va.wrapping_sub(sup_va);
     let body = vec![
-        sll(T3, T6, 2),                           // 0
-        addu(T3, T3, T5),                         // 1  t3 = &SUP[k]
-        lbu(T1, T3, 0),                           // 2  t1 = chain AP
-        lhu(T7, T3, 2),                           // 3  t7 = name offset
-        sll(T2, T8, 2),                           // 4  character * 4
-        lui(T9, hi(CMD_TABLE_VA)),                // 5
-        addu(T9, T9, T2),                         // 6
-        lw(T9, T9, lo(CMD_TABLE_VA)),             // 7  the command-data block
-        lui(T5, hi(scratch_va)),                  // 8  (delay filler)
-        lw(T9, T9, ART_BLOCK_PTR_OFF),            // 9  the art-record array
-        addiu(T5, T5, lo(scratch_va)),            // 10 t5 = scratch (filler)
-        addu(T9, T9, T7),                         // 11 t9 = the name
-        sb(T1, T5, SCRATCH_AP_OFF),               // 12 scratch[+2]   = AP
-        sw(T9, T5, SCRATCH_NAME_OFF),             // 13 scratch[+0xC] = name
-        lui(T2, hi(delta)),                       // 14
-        addu(T3, T3, T2),                         // 15 &SUP[k] + hi(delta)
-        lbu(T4, T3, lo(delta)),                   // 16 t4 = arrow count n
-        lw(T9, T5, SCRATCH_ARROWS_OFF),           // 17 t9 = the glyph buffer
-        addiu(T3, T3, lo(delta).wrapping_add(1)), // 18 t3 = the packed dirs
-        addiu(T1, T4, 1),                         // 19 n + 1 (the marker)
-        sb(T1, T9, 0),                            // 20 buf[0] = glyph count
-        addiu(T9, T9, 1),                         // 21
-        or(T8, ZERO, ZERO),                       // 22 n = 0
-        // LOOP: one glyph per arrow.
-        srl(T1, T8, 2),                          // 23
-        addu(T1, T1, T3),                        // 24
-        lbu(T1, T1, 0),                          // 25 the packed byte
-        andi(T2, T8, 3),                         // 26
-        sll(T2, T2, 1),                          // 27 shift = (n & 3) * 2
-        srlv(T1, T1, T2),                        // 28
-        andi(T1, T1, 3),                         // 29 dir 0..3
-        addiu(T1, T1, u16::from(GLYPH_LO_BASE)), // 30 low byte
-        ori(T2, ZERO, u16::from(GLYPH_HI)),      // 31
-        sb(T2, T9, 0),                           // 32
-        sb(T1, T9, 1),                           // 33
-        addiu(T8, T8, 1),                        // 34
-        sltu(T2, T8, T4),                        // 35 n < count ?
-        bne(T2, ZERO, (LOOP - 37) as i16),       // 36
-        addiu(T9, T9, 2),                        // 37 delay
-        // The style marker goes before the LAST glyph: move it right by two
-        // and write the marker where it was.
-        lbu(T1, T9, 0xFFFF),                       // 38 last glyph's low byte
-        lbu(T2, T9, 0xFFFE),                       // 39 last glyph's high byte
-        sb(T1, T9, 1),                             // 40
-        sb(T2, T9, 0),                             // 41
-        ori(T1, ZERO, u16::from(GLYPH_MARKER[0])), // 42
-        sb(T1, T9, 0xFFFE),                        // 43
-        ori(T1, ZERO, u16::from(GLYPH_MARKER[1])), // 44
-        sb(T1, T9, 0xFFFF),                        // 45
-        j(SCAN_HIT_VA),                            // 46 draw it
-        addiu(S5, T5, SCRATCH_ARROWS_OFF),         // 47 delay: s5 = scratch + 8
+        sll(T3, T6, 2),                          // 0
+        addu(T3, T3, T5),                        // 1  t3 = &SUP[k]
+        lbu(T1, T3, 0),                          // 2  t1 = chain AP
+        lhu(T7, T3, 2),                          // 3  t7 = name offset | markers << 13
+        lui(T9, hi(CMD_TABLE_VA)),               // 4
+        addu(T9, T9, T8),                        // 5  + character * 4
+        lw(T9, T9, lo(CMD_TABLE_VA)),            // 6  the command-data block
+        lui(T5, hi(scratch_va)),                 // 7  (delay filler)
+        lw(T9, T9, ART_BLOCK_PTR_OFF),           // 8  the art-record array
+        addiu(T5, T5, lo(scratch_va)),           // 9  t5 = scratch (filler)
+        srl(T6, T7, MARKERS_SHIFT),              // 10 t6 = marker count
+        andi(T7, T7, (1 << MARKERS_SHIFT) - 1),  // 11 t7 = name offset
+        addu(T9, T9, T7),                        // 12 t9 = the name
+        sb(T1, T5, SCRATCH_AP_OFF),              // 13 scratch[+2]   = AP
+        sw(T9, T5, SCRATCH_NAME_OFF),            // 14 scratch[+0xC] = name
+        lui(T2, hi(delta)),                      // 15
+        addu(T3, T3, T2),                        // 16 &SUP[k] + hi(delta)
+        lw(T3, T3, lo(delta)),                   // 17 t3 = the packed arrows word
+        lw(T9, T5, SCRATCH_ARROWS_OFF),          // 18 t9 = the glyph buffer
+        srl(T4, T3, ARROWS_COUNT_SHIFT),         // 19 t4 = arrow count n
+        addu(T6, T6, T4),                        // 20 glyph count = markers + n
+        sb(T6, T9, 0),                           // 21 buf[0]
+        addiu(T9, T9, 1),                        // 22
+        or(T8, ZERO, ZERO),                      // 23 k = 0
+        ori(T6, ZERO, u16::from(STYLE_DEFAULT)), // 24 current style
+        // LOOP: k counts the arrow being drawn, one-based, from here on.
+        addiu(T8, T8, 1),                          // 25 k += 1
+        andi(T7, T3, 4),                           // 26 an art ends here ?
+        beq(T7, ZERO, (CMP - 28) as i16),          // 27 no -> default style
+        ori(T1, ZERO, u16::from(STYLE_DEFAULT)),   // 28 delay: want = default
+        bne(T8, T4, (CMP - 30) as i16),            // 29 not the last arrow ->
+        ori(T1, ZERO, u16::from(STYLE_ART_END)),   // 30 delay: want = art end
+        ori(T1, ZERO, u16::from(STYLE_SUPER_END)), // 31 the final arrow
+        // CMP: emit a marker only when the style changes.
+        beq(T1, T6, (GLYPH - 33) as i16), // 32 same style -> no marker
+        ori(T2, ZERO, u16::from(MARKER_HI)), // 33 delay
+        sb(T2, T9, 0),                    // 34
+        sb(T1, T9, 1),                    // 35
+        addiu(T9, T9, 2),                 // 36
+        or(T6, T1, ZERO),                 // 37 current = want
+        // GLYPH: the arrow itself.
+        andi(T1, T3, 3),                         // 38 dir 0..3
+        addiu(T1, T1, u16::from(GLYPH_LO_BASE)), // 39 low byte
+        ori(T2, ZERO, u16::from(GLYPH_HI)),      // 40
+        sb(T2, T9, 0),                           // 41
+        sb(T1, T9, 1),                           // 42
+        srl(T3, T3, ARROW_BITS),                 // 43 next packed arrow
+        sltu(T2, T8, T4),                        // 44 k < n ?
+        bne(T2, ZERO, (LOOP - 46) as i16),       // 45
+        addiu(T9, T9, 2),                        // 46 delay
+        j(SCAN_HIT_VA),                          // 47 draw it
+        addiu(S5, T5, SCRATCH_ARROWS_OFF),       // 48 delay: s5 = scratch + 8
     ];
     debug_assert_eq!(base_va % 4, 0);
     body
@@ -677,6 +709,9 @@ pub struct SuperArtRow {
     /// The physical input - what the player types - derived with the retail
     /// tokenizer from the trigger pattern.
     pub input: Vec<Command>,
+    /// Input positions the chain's arts end on (the arrows the tokenizer wrote
+    /// the starter over), ascending; the last is always the final arrow.
+    pub ends: Vec<usize>,
 }
 
 impl SuperArtRow {
@@ -693,19 +728,68 @@ impl SuperArtRow {
             .collect()
     }
 
-    /// The `[count][2-bit dirs]` packing routine (F) expands.
-    pub fn packed_arrows(&self) -> [u8; ARROWS_STRIDE as usize] {
-        let mut out = [0u8; ARROWS_STRIDE as usize];
-        out[0] = self.input.len() as u8;
-        for (n, &c) in self.input.iter().enumerate() {
-            out[1 + n / 4] |= arrow_code(c) << ((n % 4) * 2);
+    /// The style each arrow is drawn in: default, [`STYLE_ART_END`] where a
+    /// sub-art ends, [`STYLE_SUPER_END`] on the final arrow.
+    pub fn styles(&self) -> Vec<u8> {
+        let n = self.input.len();
+        (0..n)
+            .map(|k| {
+                if k + 1 == n {
+                    STYLE_SUPER_END
+                } else if self.ends.contains(&k) {
+                    STYLE_ART_END
+                } else {
+                    STYLE_DEFAULT
+                }
+            })
+            .collect()
+    }
+
+    /// How many style markers the row's glyph string carries: one per change
+    /// of style, starting from the default.
+    pub fn marker_count(&self) -> usize {
+        let mut cur = STYLE_DEFAULT;
+        let mut n = 0;
+        for st in self.styles() {
+            if st != cur {
+                n += 1;
+                cur = st;
+            }
+        }
+        n
+    }
+
+    /// The glyph string routine (F) builds: `[glyphs]`, then per arrow a style
+    /// marker whenever the style changes and the arrow glyph itself.
+    pub fn glyph_string(&self) -> Vec<u8> {
+        let mut out = vec![(self.input.len() + self.marker_count()) as u8];
+        let mut cur = STYLE_DEFAULT;
+        for (c, st) in self.input.iter().zip(self.styles()) {
+            if st != cur {
+                out.extend_from_slice(&[MARKER_HI, st]);
+                cur = st;
+            }
+            out.push(GLYPH_HI);
+            out.push(GLYPH_LO_BASE + arrow_code(*c));
         }
         out
     }
 
-    /// The 4-byte `SUP` record: AP, `thr | trigger_row << 5`, name offset.
+    /// The packed arrows word (F) expands.
+    pub fn packed_arrows(&self) -> [u8; ARROWS_STRIDE as usize] {
+        let mut w: u32 = (self.input.len() as u32) << ARROWS_COUNT_SHIFT;
+        for (k, &c) in self.input.iter().enumerate() {
+            let end = u32::from(self.ends.contains(&k));
+            w |= (u32::from(arrow_code(c)) | (end << 2)) << (k as u32 * ARROW_BITS);
+        }
+        w.to_le_bytes()
+    }
+
+    /// The 4-byte `SUP` record: AP, `thr | trigger_row << 5`, and the name
+    /// offset with the marker count in its top three bits.
     pub fn sup_record(&self) -> [u8; SUP_STRIDE as usize] {
-        let [lo_, hi_] = self.name_offset.to_le_bytes();
+        let word = self.name_offset | ((self.marker_count() as u16) << MARKERS_SHIFT);
+        let [lo_, hi_] = word.to_le_bytes();
         [
             self.ap,
             self.thr | (self.trigger_row << PERFORMED_COUNT_SHIFT),
@@ -764,7 +848,7 @@ pub fn super_art_rows(scus: &[u8]) -> Result<Vec<SuperArtRow>> {
             let mut ap: u32 = 0;
             let mut chain_ids = Vec::with_capacity(chain.len());
             let mut chain_names = Vec::with_capacity(chain.len());
-            for c in chain {
+            for c in chain.iter().copied() {
                 let id = c.checked_sub(ART_CONSTANT_BIAS).ok_or_else(|| {
                     anyhow::anyhow!(
                         "show-super-arts: {}'s chain entry {c:#x} is below the art-constant \
@@ -843,6 +927,25 @@ pub fn super_art_rows(scus: &[u8]) -> Result<Vec<SuperArtRow>> {
                     input.len()
                 );
             }
+            let ends = legaia_art::art_ends(&catalog, &input);
+            if ends.len() != chain.len() || ends.last() != Some(&(input.len() - 1)) {
+                bail!(
+                    "show-super-arts: {}'s input {:?} ends {} arts at {:?}, but its chain has \
+                     {} - refusing",
+                    s.name,
+                    input,
+                    ends.len(),
+                    ends,
+                    chain.len()
+                );
+            }
+            if name_offset >= 1 << MARKERS_SHIFT {
+                bail!(
+                    "show-super-arts: {}'s name offset {name_offset:#x} collides with the marker \
+                     count field - refusing",
+                    s.name
+                );
+            }
             rows.push(SuperArtRow {
                 character: ch,
                 name: s.name,
@@ -855,7 +958,18 @@ pub fn super_art_rows(scus: &[u8]) -> Result<Vec<SuperArtRow>> {
                 thr,
                 name_offset,
                 input,
+                ends,
             });
+        }
+        for r in &rows {
+            if r.marker_count() > MAX_MARKERS {
+                bail!(
+                    "show-super-arts: {}'s row needs {} style markers, past the {MAX_MARKERS} \
+                     the buffer holds - refusing",
+                    r.name,
+                    r.marker_count()
+                );
+            }
         }
         // AP-descending, ties in trigger-table order (stable sort).
         rows.sort_by_key(|r| std::cmp::Reverse(r.ap));
@@ -1182,7 +1296,7 @@ mod tests {
     const SCRATCH_VA: u32 = SCUS_GAP_VA + 0xD0;
     const BUF_VA: u32 = SCRATCH_VA + 0x10;
     const FILL_VA: u32 = ARENA1_VA;
-    const ARROWS_VA: u32 = ARENA1_VA + 0xC0;
+    const ARROWS_VA: u32 = ARENA1_VA + 0xC8; // past the 49-word fill routine
     const COUNT_VA: u32 = ARENA2_VA;
     const SUP_VA: u32 = SLOT6_VA;
 
@@ -1423,67 +1537,73 @@ mod tests {
     fn fill_routine_chases_the_name_and_writes_only_scratch_and_buffer() {
         let r = fill_routine();
         assert_eq!(r[2], lbu(T1, T3, 0), "chain AP");
-        assert_eq!(r[3], lhu(T7, T3, 2), "name offset");
-        assert_eq!(r[5], lui(T9, hi(CMD_TABLE_VA)));
-        assert_eq!(r[7], lw(T9, T9, lo(CMD_TABLE_VA)), "the command-data block");
-        assert_eq!(r[9], lw(T9, T9, ART_BLOCK_PTR_OFF), "the art-record array");
-        assert_eq!(r[11], addu(T9, T9, T7), "+ name offset");
+        assert_eq!(r[3], lhu(T7, T3, 2), "name offset | markers");
+        assert_eq!(r[4], lui(T9, hi(CMD_TABLE_VA)));
+        assert_eq!(r[5], addu(T9, T9, T8), "t8 = character * 4 from (B)");
+        assert_eq!(r[6], lw(T9, T9, lo(CMD_TABLE_VA)), "the command-data block");
+        assert_eq!(r[8], lw(T9, T9, ART_BLOCK_PTR_OFF), "the art-record array");
+        assert_eq!(
+            r[10],
+            srl(T6, T7, MARKERS_SHIFT),
+            "marker count off the top bits"
+        );
+        assert_eq!(r[11], andi(T7, T7, 0x1FFF), "name offset off the low bits");
+        assert_eq!(r[12], addu(T9, T9, T7), "+ name offset");
         // The arrows are addressed relative to the SUP record (same order and
         // stride), so a Noa/Gala row never reads Vahn's arrows.
         let delta = ARROWS_VA.wrapping_sub(SUP_VA);
-        assert_eq!(r[14], lui(T2, hi(delta)));
-        assert_eq!(r[15], addu(T3, T3, T2));
-        assert_eq!(
-            r[16],
-            lbu(T4, T3, lo(delta)),
-            "arrow count from &SUP[k] + delta"
-        );
+        assert_eq!(r[15], lui(T2, hi(delta)));
+        assert_eq!(r[16], addu(T3, T3, T2));
         assert_eq!(
             r[17],
+            lw(T3, T3, lo(delta)),
+            "the packed word from &SUP[k] + delta"
+        );
+        assert_eq!(
+            r[18],
             lw(T9, T5, SCRATCH_ARROWS_OFF),
             "the buffer is the scratch's own +8"
         );
-        assert_eq!(r[19], addiu(T1, T4, 1), "glyph count = arrows + the marker");
-        let stores: Vec<u32> = r.iter().copied().filter(|&w| is_store(w)).collect();
-        assert_eq!(stores[0], sb(T1, T5, SCRATCH_AP_OFF));
-        assert_eq!(stores[1], sw(T9, T5, SCRATCH_NAME_OFF));
-        assert_eq!(stores[2], sb(T1, T9, 0), "glyph count");
-        assert_eq!(stores[3], sb(T2, T9, 0), "glyph high byte");
-        assert_eq!(stores[4], sb(T1, T9, 1), "glyph low byte");
+        assert_eq!(r[19], srl(T4, T3, ARROWS_COUNT_SHIFT), "n off the top bits");
+        assert_eq!(r[20], addu(T6, T6, T4), "glyph count = markers + n");
+        assert_eq!(r[24], ori(T6, ZERO, 1), "rows start in the default style");
+        // Style selection: default, art-end on an end bit, Super-end on the last.
+        assert_eq!(r[26], andi(T7, T3, 4), "the end bit of the current arrow");
+        assert_eq!(r[28], ori(T1, ZERO, 1));
+        assert_eq!(r[30], ori(T1, ZERO, 6));
+        assert_eq!(r[31], ori(T1, ZERO, 2), "red on the final arrow");
+        assert_eq!(27 + 1 + br_off(r[27]), 32, "not an end -> CMP");
+        assert_eq!(29 + 1 + br_off(r[29]), 32, "an end, not last -> CMP");
+        assert_eq!(32 + 1 + br_off(r[32]), 38, "same style -> GLYPH");
+        assert_eq!(r[43], srl(T3, T3, 3), "three bits per arrow");
+        assert_eq!(45 + 1 + br_off(r[45]), 25, "the glyph loop closes");
+        assert_eq!(r[47], j(SCAN_HIT_VA), "then the hit arm");
         assert_eq!(
-            stores[5..],
-            [
-                sb(T1, T9, 1),
-                sb(T2, T9, 0),
-                sb(T1, T9, 0xFFFE),
-                sb(T1, T9, 0xFFFF)
-            ],
-            "the marker shuffle"
-        );
-        assert_eq!(stores.len(), 9);
-        assert_eq!(r[42], ori(T1, ZERO, 0xFF), "marker high byte");
-        assert_eq!(r[44], ori(T1, ZERO, 6), "marker low byte = style 6");
-        assert_eq!(r[46], j(SCAN_HIT_VA), "then the hit arm");
-        assert_eq!(
-            r[47],
+            r[48],
             addiu(S5, T5, SCRATCH_ARROWS_OFF),
             "s5 = scratch + 8 in the delay slot"
         );
-        assert_eq!(36 + 1 + br_off(r[36]), 23, "the glyph loop closes");
-        assert_eq!(r.len(), 48);
-        // Load delays: lbu t1 (2) -> 12; lhu t7 (3) -> 11; lw t9 (7) -> 9;
-        // lw t9 (9) -> 11; lbu t4 (16) -> 19; lw t9 (17) -> 20; lbu t1 (25) -> 28;
-        // lbu t1 (38) -> 40; lbu t2 (39) -> 41.
+        assert_eq!(r.len(), 49);
+        let stores: Vec<u32> = r.iter().copied().filter(|&w| is_store(w)).collect();
+        assert_eq!(stores[0], sb(T1, T5, SCRATCH_AP_OFF));
+        assert_eq!(stores[1], sw(T9, T5, SCRATCH_NAME_OFF));
+        assert_eq!(stores[2], sb(T6, T9, 0), "glyph count");
+        assert_eq!(stores[3..5], [sb(T2, T9, 0), sb(T1, T9, 1)], "a marker");
+        assert_eq!(
+            stores[5..],
+            [sb(T2, T9, 0), sb(T1, T9, 1)],
+            "an arrow glyph"
+        );
+        assert_eq!(stores.len(), 7);
+        // Load delays: lbu t1 (2) -> 13; lhu t7 (3) -> 10; lw t9 (6) -> 8;
+        // lw t9 (8) -> 12; lw t3 (17) -> 19; lw t9 (18) -> 21.
         for (load, first_use) in [
-            (2usize, 12usize),
-            (3, 11),
-            (7, 9),
-            (9, 11),
-            (16, 19),
-            (17, 20),
-            (25, 28),
-            (38, 40),
-            (39, 41),
+            (2usize, 13usize),
+            (3, 10),
+            (6, 8),
+            (8, 12),
+            (17, 19),
+            (18, 21),
         ] {
             let dest = (r[load] >> 16) & 0x1f;
             let filler = r[load + 1];
@@ -1498,7 +1618,8 @@ mod tests {
 
     #[test]
     fn packed_arrows_round_trip_through_the_expander_model() {
-        // The expander: dir = (packed[1 + n/4] >> ((n%4)*2)) & 3; lo = 0xA8 + dir.
+        // The expander: per arrow k, dir = word >> 3k & 3, end = word >> 3k & 4,
+        // n = word >> 27; a marker whenever the style changes.
         let row = SuperArtRow {
             character: Character::Vahn,
             name: "Tri-Somersault",
@@ -1519,34 +1640,45 @@ mod tests {
                 Command::Down,
                 Command::Up,
             ],
+            ends: vec![2, 4, 6],
         };
-        let p = row.packed_arrows();
-        assert_eq!(p[0], 7);
-        let mut glyphs = Vec::new();
-        for n in 0..p[0] as usize {
-            let dir = (p[1 + n / 4] >> ((n % 4) * 2)) & 3;
-            glyphs.push((GLYPH_HI, GLYPH_LO_BASE + dir));
+        let w = u32::from_le_bytes(row.packed_arrows());
+        assert_eq!(w >> ARROWS_COUNT_SHIFT, 7);
+        let mut dirs = Vec::new();
+        let mut ends = Vec::new();
+        for k in 0..7 {
+            let f = (w >> (3 * k)) & 7;
+            dirs.push(GLYPH_LO_BASE + (f & 3) as u8);
+            if f & 4 != 0 {
+                ends.push(k);
+            }
         }
-        assert_eq!(
-            expected_glyph_string(&row.input).len(),
-            1 + 2 * 8,
-            "7 arrows + marker"
-        );
         // Retail's glyph codes: 0x81A8 Right / A9 Left / AA Up / AB Down.
-        let want: Vec<(u8, u8)> = "UDUUUDU"
+        let want: Vec<u8> = "UDUUUDU"
             .chars()
             .map(|c| match c {
-                'U' => (0x81, 0xAA),
-                'D' => (0x81, 0xAB),
-                'L' => (0x81, 0xA9),
-                _ => (0x81, 0xA8),
+                'U' => 0xAA,
+                'D' => 0xAB,
+                'L' => 0xA9,
+                _ => 0xA8,
             })
             .collect();
-        assert_eq!(glyphs, want);
+        assert_eq!(dirs, want);
+        assert_eq!(ends, vec![2, 4, 6]);
+        // blue blue yellow blue yellow blue red: five style changes.
+        assert_eq!(row.styles(), vec![1, 1, 6, 1, 6, 1, 2]);
+        assert_eq!(row.marker_count(), 5);
+        assert_eq!(
+            row.glyph_string(),
+            vec![
+                12, 0x81, 0xAA, 0x81, 0xAB, 0xFF, 6, 0x81, 0xAA, 0xFF, 1, 0x81, 0xAA, 0xFF, 6,
+                0x81, 0xAA, 0xFF, 1, 0x81, 0xAB, 0xFF, 2, 0x81, 0xAA
+            ]
+        );
         assert_eq!(
             row.sup_record(),
-            [60, 1, 0x14, 0x16],
-            "trigger row 0 leaves the top bits clear"
+            [60, 1, 0x14, 0x16 | (5 << 5)],
+            "markers ride the name offset's top bits"
         );
         assert_eq!(row.input_letters(), "UDUUUDU");
     }
@@ -1713,23 +1845,31 @@ mod tests {
             LEARNED_LIST_OFF + 15,
             "the sixteenth id slot"
         );
-        // The two-bit packing carries the longest input.
-        assert!(MAX_INPUT_ARROWS * 2 <= (ARROWS_STRIDE as usize - 1) * 8);
-        assert_eq!(GLYPH_BUF_BYTES, 27, "twelve arrows + the marker");
+        // The packing carries the longest input plus its count in one word.
+        const { assert!(MAX_INPUT_ARROWS as u32 * ARROW_BITS + 4 <= 32) };
+        const { assert!(MAX_INPUT_ARROWS < 1 << (32 - ARROWS_COUNT_SHIFT)) };
+        const { assert!(MAX_MARKERS < 1 << (16 - MARKERS_SHIFT)) };
+        assert_eq!(GLYPH_BUF_BYTES, 29, "nine arrows + five markers");
     }
 
-    /// The glyph string (F) builds for an input: `[n+1]`, the first `n-1`
-    /// glyphs, the style marker, the last glyph - the layout regular arts use.
-    fn expected_glyph_string(input: &[Command]) -> Vec<u8> {
-        let mut out = vec![input.len() as u8 + 1];
-        for (i, c) in input.iter().enumerate() {
-            if i + 1 == input.len() {
-                out.extend_from_slice(&GLYPH_MARKER);
-            }
-            out.push(GLYPH_HI);
-            out.push(GLYPH_LO_BASE + arrow_code(*c));
-        }
-        out
+    /// The glyph string (F) builds for an input with the given art ends: the
+    /// same model `SuperArtRow::glyph_string` encodes.
+    fn expected_glyph_string(input: &[Command], ends: &[usize]) -> Vec<u8> {
+        let row = SuperArtRow {
+            character: Character::Vahn,
+            name: "",
+            finisher: 0x2B,
+            trigger_row: 0,
+            sorted_index: 0,
+            chain_ids: vec![],
+            chain_names: vec![],
+            ap: 0,
+            thr: 0,
+            name_offset: 0,
+            input: input.to_vec(),
+            ends: ends.to_vec(),
+        };
+        row.glyph_string()
     }
 
     // --- Execution ------------------------------------------------------------
@@ -1875,6 +2015,7 @@ mod tests {
         performed: u8,
         sup: Vec<(u8, u8, u8)>,
         arrows: Vec<Vec<Command>>,
+        ends: Vec<Vec<usize>>,
     }
 
     fn cmd_va() -> u32 {
@@ -1923,16 +2064,19 @@ mod tests {
                 + u32::from(0x2B + row - GRID_BIAS) * ART_RECORD_STRIDE
                 + ART_NAME_FIELD_OFF;
             let at = SUP_VA + (scene.character * 5 + k as u32) * SUP_STRIDE;
-            let [lo_, hi_] = (name_offset as u16).to_le_bytes();
+            let arrows = &scene.arrows[k];
+            let markers =
+                expected_glyph_string(arrows, &scene.ends[k])[0] as u16 - arrows.len() as u16;
+            let [lo_, hi_] = ((name_offset as u16) | (markers << MARKERS_SHIFT)).to_le_bytes();
             cpu.load(at, &[ap, thr | (row << PERFORMED_COUNT_SHIFT), lo_, hi_]);
-            let mut packed = [0u8; 4];
-            packed[0] = scene.arrows[k].len() as u8;
-            for (n, &c) in scene.arrows[k].iter().enumerate() {
-                packed[1 + n / 4] |= arrow_code(c) << ((n % 4) * 2);
+            let mut w: u32 = (arrows.len() as u32) << ARROWS_COUNT_SHIFT;
+            for (n, &c) in arrows.iter().enumerate() {
+                let end = u32::from(scene.ends[k].contains(&n));
+                w |= (u32::from(arrow_code(c)) | (end << 2)) << (n as u32 * ARROW_BITS);
             }
             cpu.load(
                 ARROWS_VA + (scene.character * 5 + k as u32) * ARROWS_STRIDE,
-                &packed,
+                &w.to_le_bytes(),
             );
         }
         // Scratch record: +8 -> the glyph buffer.
@@ -1976,7 +2120,7 @@ mod tests {
                                     + ART_NAME_FIELD_OFF
                     })
                     .expect("scratch AP + name pair names one SUP record");
-                let want = expected_glyph_string(&scene.arrows[k]);
+                let want = expected_glyph_string(&scene.arrows[k], &scene.ends[k]);
                 let got: Vec<u8> = (0..want.len() as u32)
                     .map(|i| cpu.rd8(BUF_VA + i))
                     .collect();
@@ -2013,10 +2157,20 @@ mod tests {
                 vec![Left, Right, Left, Left, Down, Right, Up],
                 vec![Down, Right, Up, Down, Up, Down, Left],
             ],
+            // Where each chain's arts end (`legaia_art::art_ends`): Rolling
+            // Combo 3/5/8, the three-art seven-arrow chains 2/4/6.
+            ends: vec![
+                vec![3, 5, 8],
+                vec![2, 4, 6],
+                vec![2, 4, 6],
+                vec![2, 4, 6],
+                vec![2, 4, 6],
+            ],
         };
         // Rotate the arrows per character so a wrong table base is visible.
         for _ in 0..character {
             sc.arrows.rotate_left(1);
+            sc.ends.rotate_left(1);
         }
         sc
     }
