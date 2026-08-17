@@ -113,6 +113,20 @@ if [[ "$SITE_TOUCHED" == "1" ]] && command -v python3 >/dev/null 2>&1 \
     fi
 fi
 
+# Split case folds. `.toLowerCase()` binds to the operand it is written on, so
+# `a + `b`.toLowerCase()` folds only `b` while reading like it folds the pair.
+# The texture filter's haystack shipped that way: its label half kept the disc's
+# capitals, the query arrived lowercased, and typing `ra-seru` found nothing
+# while "Gala - Ra-Seru Ozma $1" sat in the grid.
+if [[ "$SITE_TOUCHED" == "1" ]] && command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ci/check-js-case-fold-chains.py" ]]; then
+    printf '[pre-commit] js split case folds\n'
+    if ! python3 scripts/ci/check-js-case-fold-chains.py --quiet; then
+        printf '[pre-commit] split case fold(s) above -- parenthesise the whole concatenation before folding (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
 # Generated-page staleness. The link gate above proves every reference RESOLVES;
 # it cannot see a reference that is absent. Editing a _content fragment to pull
 # in a new asset and not re-running site/_gen.py leaves the served page loading

@@ -119,8 +119,12 @@ during a counterattack) closes the Super side. Vahn's resident queue at
 The matched/replaced tail `19 27 0F 19 1F 0E 1A 2B 2B 2B` is **byte-identical to
 `super_art.rs`'s `Tri-Somersault` `replace` field** - runtime-validating the
 combo-specific connectors the thread flagged (`Somersault 0x27 → 0F`,
-`Cyclone 0x1F → 0E`) and the finisher tail. The leading `0F 0E` is the residual
-direction input the tail-replace ran behind. The `find_writer` trace shows the
+`Cyclone 0x1F → 0E`) and the finisher tail. The leading `0F 0E` are Somersault's
+own first two arrows: the tokenizer keeps a matched art's leading arrows and
+overwrites only the last one with the `0x19` starter, so this whole queue is the
+seven-arrow input `↑↓↑↑↑↓↑` tokenized then tail-replaced
+(`legaia_art::tokenize`, which reproduces it byte-exact - see
+[art-data.md](../formats/art-data.md#super-arts)). The `find_writer` trace shows the
 dequeue at pc `0x801D89D8` (the action SM consuming the queue head-first, one
 entry per executed action).
 

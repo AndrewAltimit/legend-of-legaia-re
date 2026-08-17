@@ -1,10 +1,11 @@
-# Static-site app shell + the CSS cascade-order gate
+# Static-site app shell + its silent-shadowing gates
 
 The pages under `site/` share one chrome, injected at runtime by
 `site/js/layout.js` and styled by `site/css/styles.css`. This page covers what
 that chrome is at each viewport width, the navigation invariant the narrow
-layout has to preserve, and the gate that keeps a breakpoint from silently
-losing to a later rule.
+layout has to preserve, and two gates against code that keeps reading like a
+working feature after it has stopped being one: a breakpoint that loses to a
+later rule, and a case fold that covers one operand instead of the string.
 
 ## The four chrome pieces
 
@@ -218,6 +219,54 @@ the glue is a half-fix. Both would have to be handled together, via a loader
 that passes an explicit versioned URL into the wasm-bindgen `init`. What the
 skew actually costs today is measured in
 [`shipped-bundle-freshness.md`](shipped-bundle-freshness.md#what-a-stale-engine-against-fresh-pages-costs).
+
+## A case fold binds to one operand, not to the concatenation
+
+A filter box has two halves that must agree on case: the query, and the
+haystack it is matched against. JavaScript makes it easy to write a fold that
+covers only part of the second one, because `.toLowerCase()` binds to the
+operand it is written on:
+
+```js
+// Wrong: only the SECOND literal is folded.
+return `${t.tier} ${t.label} ` +
+  `${t.block} ${t.replaceable}`.toLowerCase();
+
+// Right: fold the finished string.
+return (`${t.tier} ${t.label} ` +
+  `${t.block} ${t.replaceable}`).toLowerCase();
+```
+
+The ROM patcher's texture grid shipped the first form. Its query was
+lowercased, its haystack's label half kept the disc's own capitals, and so
+every capitalised word in a label was unsearchable: typing `ra-seru` returned
+nothing while `Gala - Ra-Seru Ozma $1` sat in the grid, and the label preset
+chips - whose text is a label's lead segment - filtered to zero when clicked.
+
+Nothing else catches this. The page loads, the scan runs, the grid fills and
+the filter filters; the only symptom is that a search misses rows that are
+present, which is indistinguishable from "the disc does not have that
+texture". The row data was correct the whole time - the defect lived entirely
+in the join between query and haystack.
+
+## Gate: `check-js-case-fold-chains.py`
+
+```bash
+python3 scripts/ci/check-js-case-fold-chains.py            # scan site/
+python3 scripts/ci/check-js-case-fold-chains.py --selftest # controls only
+python3 scripts/ci/check-js-case-fold-chains.py a.js       # explicit paths
+```
+
+It reports a `.toLowerCase()` / `.toUpperCase()` whose receiver is a string or
+template **literal** that is an operand of a `+` - `FOLD_TAIL_ONLY` when the
+`+` precedes it, `FOLD_HEAD_ONLY` when it follows. A fold on an identifier, on
+a call result, or on a parenthesised expression is not reported: those fold
+what they say they fold. Waive in place with `// case-fold-ok: <reason>`; a
+reason-less waiver is itself a finding.
+
+Ten positive/negative controls ship inside the file and the positive ones run
+on every invocation. Wired into CI and into the pre-commit hook when staged
+changes touch `site/`.
 
 ## A `_content` mirror of a `docs/` page rots silently
 

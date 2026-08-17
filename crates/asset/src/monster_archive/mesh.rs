@@ -5,7 +5,7 @@ use anyhow::Result;
 use super::decode_block;
 
 /// TMD magic of the Legaia variant the monster meshes use (custom PSX TMD).
-const TMD_MAGIC: u32 = 0x8000_0002;
+pub(super) const TMD_MAGIC: u32 = 0x8000_0002;
 
 /// A monster's embedded 3D model, located inside its decoded archive block.
 ///

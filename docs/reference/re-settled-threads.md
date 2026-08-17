@@ -594,6 +594,60 @@ controls). One post-applier library state per character is re-checked by
 `crates/pcsxr/tests/super_art_queue_replace.rs`. Full chain + port:
 [battle-action.md](../subsystems/battle-action.md#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4).
 
+### Super Art connectors and physical inputs - the tokenizer keeps the leading arrows
+
+*Status:* resolved - disassembly (`FUN_801EED1C` `0x801EF2EC..0x801EF858`) + capture
+(reproduces the in-the-wild Tri-Somersault queue byte-exact) + an independent table
+(fourteen of fifteen walkthrough inputs agree)
+
+The `0F` / `0E` "connector" directions in a Super's `find` pattern were held to be combo-specific
+data no rule could derive, and the queue-builder was described as *compacting* a matched arrow run
+down to `19 <art>`. Read off the disassembly, the normalisation loop does something else: on a
+full match it writes the starter over the run's **last** arrow (`sb v1,0x1df(v0)` at `0x801EF6F8`,
+`v1` = `FUN_801EFBFC`'s verdict `+ 0x18`), shifts the tail up one slot (`0x801EF708..0x801EF750`)
+and inserts the constant after it (`0x801EF7A0`) - **the leading arrows stay** - and the outer walk
+runs tail-first (`s8` from 15 down, `0x801EF848`) restarting at `s8 + 1` after every match, so
+runs overlap. `↑↓↑` alone tokenizes to `0F 0E 19 27`; Tri-Somersault's `19 27 0F 19 1F 0E 19 27`
+is what the seven-arrow input `↑↓↑↑↑↓↑` tokenizes to (Somersault 0..2, Cyclone 1..4, Somersault
+4..6), and the capture's leading `0F 0E` are Somersault's own first two arrows, not "residual
+input". Laying the three arts end to end tokenizes to four arts and never triggers.
+
+Every retail Super's pattern derives to a unique shortest input, all 7..=9 arrows
+(`legaia_art::tokenize::derive_super_input`, searched over the chain arts' directions), and the
+curated walkthrough table agrees on fourteen; the fifteenth (Dragon Fangs, printed as six arrows)
+drops one and never performs Swan Driver, so the curated entry was corrected to the seven-arrow
+form. Port [`legaia_art::tokenize`](../../crates/art/src/tokenize.rs); table + citations in
+[art-data.md](../formats/art-data.md#super-arts). What this bought downstream: `--show-super-arts`
+draws each Super Art's real arrow string, sixty bytes for all fifteen instead of the ~330 a
+concatenation of chain strings would have cost.
+
+### The runtime art-record chase - the `+4` and the `- 0x10` grid origin
+
+*Status:* resolved - `record(c) = *(*(DAT_801C9360[char]) + 0x58) + 4 + (c - 0x10) * 0xD0`,
+with `+0x10` the name field and `+0x24` the power bytes
+
+Both halves used to be soft. The `+4` came from reading the chase in isolation
+(`0x8004B6FC..0x8004B718`: `lui/addiu` builds `DAT_801C9360`, `lw` the per-character block,
+`lw +0x58` the array pointer, `addiu s0,v0,0x4`) with nothing pinning what `s0` was the base *of*;
+the `- 0x10` grid origin came from an enumeration base solved by voting rather than read off
+retail. `FUN_8004AD80`'s own three uses of `s0`, all in the same function, settle both at once -
+each multiplies the action constant by `0xD0` with the identical `sll 1 / addu / sll 2 / addu /
+sll 4` chain and then subtracts a constant:
+
+| Site | Expression | Resolves to | Consumed as |
+|---|---|---|---|
+| `0x8004BBE8..0x8004BC10` | `s0 + 0xD0*c - 0xCF0` | `record + 0x10` | the art's display-name pointer (`sw` into `0x8007634C`/`0x80076344`) |
+| `0x8004BC60..0x8004BC80` | `s0 + 0xD0*c - 0xCDC` | `record + 0x24` | the per-strike power bytes |
+| `0x8004BCA0..0x8004BCC4` | `s0 + 0xD0*c - 0xCF6` | `record + 0x0A` | a byte handed to `FUN_8002B28C` |
+
+`0xD0 * 0x10 = 0xD00`, so each constant is `0xD00 - field_offset`: the array is indexed from
+constant `0x10` and `s0` is the base of record `0x10` itself, which is what the `+4` produces. The
+two field offsets are the same `+0x10` name and `+0x24` power `super_art_power` edits off the
+decoded `record0`, independently confirming that the runtime base and the file-side
+`art_block_base` are the same address in two spaces. `--show-super-arts` chases the name through
+this chain, and its planner re-proves it per disc by requiring all fifteen Super Art records to
+carry their own names at `+0x10` before writing anything.
+
 ### Character-record HP/MP/AP pair order
 
 *Status:* resolved - `+0x104/+0x108/+0x10C` are the effective **maxima**,

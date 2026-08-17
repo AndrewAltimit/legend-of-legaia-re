@@ -32,7 +32,13 @@ Three patching families share that machinery:
   `--fishing-price` / `--rename-location` retune fishing-exchange prices and
   world-map names; `--arts-power COMBO=VALUE` rebalances a Tactical Art's
   per-strike damage-power bytes (`record0 +0x24`, targeted by input combo -
-  [`arts_power`](src/arts_power.rs)); `--arts-ap-grant` / `--arts-ap-cost`
+  [`arts_power`](src/arts_power.rs)); `--super-art-power NAME=VALUE` does the
+  same for a **Super Art**, which has no combo and no arts-table row and so is
+  keyed by name ([`super_art_power`](src/super_art_power.rs));
+  `--show-super-arts` lists a character's Super Arts on the in-battle move list,
+  which retail never draws - once performed, sorted in by AP, with name, chain AP
+  and the arrows you type ([`super_art_list`](src/super_art_list.rs), mutually
+  exclusive with `--shiny-seru`); `--arts-ap-grant` / `--arts-ap-cost`
   `[CHAR:]COMBO=AMOUNT` set what one character's art does to the AP gauge - grant
   AP instead of costing it, or charge a chosen flat cost (a battle-overlay code
   hook - [`arts_ap_grant`](src/arts_ap_grant.rs), mutually exclusive with
@@ -44,8 +50,9 @@ Three patching families share that machinery:
   the knob into an AP *drain*. The `tim-list` / `tim-export` / `tim-replace`
   subcommands replace any texture on the disc with a user-authored PNG
   ([`texture`](#texture-replacement-texture-module)), including the party's
-  in-battle character art, which is not a TIM at all
-  ([`battle_texture`](#battle-character-art-battle_texture-module)).
+  in-battle character art and every monster's battle skin, neither of which
+  is a TIM at all ([`battle_texture`](#battle-character-art-battle_texture-module),
+  [`monster_texture`](#monster-battle-skins-monster_texture-module)).
 
 It is Track-1-adjacent tooling - it does **not** touch the clean-room engine -
 and it ships only code: no game bytes are embedded or committed, and every
@@ -83,6 +90,8 @@ full design.
   - [Weapon specialty](#weapon-specialty)
   - [Arts](#arts)
   - [Arts damage power](#arts-damage-power-arts_power-module)
+  - [Super Art damage power](#super-art-damage-power-super_art_power-module)
+  - [Show Super Arts on the move list](#show-super-arts-on-the-move-list-super_art_list-module)
   - [Arts AP override](#arts-ap-override-arts_ap_grant-module)
   - [Spirit AP](#spirit-ap-spirit_ap-module)
   - [Enemy-damage AP](#enemy-damage-ap-damage_ap-module)
@@ -98,6 +107,7 @@ full design.
   - [Name injection](#name-injection)
 - [Texture replacement](#texture-replacement-texture-module)
 - [Battle character art](#battle-character-art-battle_texture-module)
+- [Monster battle skins](#monster-battle-skins-monster_texture-module)
 - [Save-slot portraits](#save-slot-portraits-save_icon-module)
 - [Translation packs](#translation-packs)
 - [Orchestration (`apply`)](#orchestration-apply)
@@ -793,6 +803,107 @@ no-damage-byte art like Gala's spirit Miracle is skipped), and recompresses
 disable. No display copy to sync (the power is not shown in the menu).
 `legaia-patcher arts` lists every art's combo, AP, and power tiers.
 
+## Super Art damage power (`super_art_power` module)
+
+`--super-art-power NAME=VALUE` is the same rebalance for the five per-character
+**Super Arts**. They need their own knob because every other arts knob keys on
+something a Super Art lacks: `--arts-power` / `--arts` key on the **input combo**
+(a Super Art is triggered by a find/replace over the finished action queue,
+`FUN_801EF9E4`, and its record carries no combo run at `+0`), and
+`--arts-ap-grant` / `--arts-ap-cost` key on the **arts-name-table row**
+(`DAT_80075EC4` holds 45 records - 15 per character - and none is a Super Art).
+Nor is there an AP cost to override: retail charges the chain arts and the Super
+itself is free. The AP a player spends to fire one is therefore real but lives
+on the chain - `--arts-ap-cost` / `--arts-ap-grant` on the chain arts' own
+combos is how that is retuned, and `legaia-patcher arts` prints each Super
+Art's chain right under it.
+
+The record it edits is addressed by **action constant**: the `0xD0`-stride array
+places constant `c` at `base + (c - 0x10) * 0xD0`, and a Super Art's finisher
+constant is `legaia_art::SuperArt::finisher`. The derivation validates itself -
+the landed record's `+0x10` name is the Super Art's own English name for all
+fifteen, and a row is returned only on a match, so an unrecognized build produces
+no edit rather than a wild write. See
+[`docs/formats/art-data.md`](../../docs/formats/art-data.md#art-records-are-indexed-by-action-constant).
+Names match ignoring case, spaces and punctuation. `legaia-patcher arts` lists
+each character's Super Arts with their finisher, tiers and trigger chain.
+
+## Show Super Arts on the move list (`super_art_list` module)
+
+`--show-super-arts` lists a character's Super Arts on the Tactical-Arts list the
+Triangle button opens in battle, which retail draws not at all. A row appears
+once the player has **performed** that Super Art, sits **in AP order** among the
+regular arts, and carries the Super Art's **name**, the chain's **summed AP
+cost** and the **arrows the player types**.
+
+**Performed, stored where retail has no field.** The Super applier
+`FUN_801EF9E4` rewrites the finished queue and records nothing, but its match
+arm at `0x801EFBCC` (the `sw 1 -> 0x801F696C` "a Super fired" flag) runs with
+`t5` = the character and `t2` = the matched trigger-table row `* 16` - **not**
+`a1`, which the replace-copy loop reuses for the bytes it copies and which reads
+as the finisher constant there (the runtime probe caught exactly that). A
+two-word detour there sets bit `row` in the character record's `+0x75D` byte
+(save-record `+0x195`) and keeps a population count in its top three bits. That
+byte is the sixteenth learned-id slot: unreachable with fifteen arts per
+character, referenced by nothing in the corpus, and saved with the record - so
+the rows survive save/load and an old save starts with none. The writer lives in
+the tail of the replaced pager, battle-only code in battle-only space.
+
+**The arrows are the physical input.** A Super's `find` pattern is what its
+input *tokenizes* to, not what the player types: retail's builder
+(`legaia_art::tokenize`, read off `FUN_801EED1C`) writes `0x19` over the last
+arrow of a matched art, inserts the constant after it, keeps the leading arrows,
+and walks tail-first with restarts, so arts **overlap** - Tri-Somersault is
+`↑↓↑↑↑↓↑`, seven arrows, and every retail Super derives to a unique 7..=9-arrow
+string that agrees with the walkthrough tables (one of which had dropped an
+arrow). They ride three bits per arrow (direction + "a sub-art ends here", from
+`legaia_art::art_ends`) and are expanded per row into the `[count][0x81 0xA8+dir]*`
+glyph layout retail's own strings use, with a `0xFF style` marker wherever the
+colour changes: blue by default, the regular art-end yellow on an arrow a sub-art
+ends on, the Miracle-Art orange (style 9) on the Super's final arrow -
+Tri-Somersault reads blue blue yellow blue yellow blue orange.
+
+**Where a row sits.** Retail keeps the learned list id-sorted (`FUN_801EFBFC`
+inserts with an ascending shift) and the table's ids run in descending AP, so
+the list is AP-descending; hook (B) merges it on the fly with the character's
+five Supers (carried AP-sorted, each with a threshold id = the lowest id at or
+below its AP), skipping the unperformed ones.
+
+The list renderer `FUN_80034358` draws a row out of a 20-byte `DAT_80075EC4`
+record found by a linear scan on `(character, id)`. Rather than re-implement that
+draw, the feature **synthesises a record** in dead space - `+2` AP, `+0xC` name
+pointer, `+8` glyph pointer filled per row - and jumps past the scan into its own
+hit arm with the cursor already set. Two same-size detours: (A) `0x800343C4`
+reads the performed byte off `v0` (still the record there) before the stock
+`lbu` replaces it and returns `count + performed`; (B) `0x80034450` merges,
+replays the stock `lbu` for a learned row, and for a Super row branches
+cross-region into the fill routine (F), which chases the name
+(`DAT_801C9360[char] -> +0x58 -> + name offset`), expands the arrows and enters
+the hit arm. Both gate on `_DAT_8007B83C == 0x15`, so nothing fires while the
+battle overlay is unloaded. The pager `FUN_801D3748` - an 81-instruction leaf
+with one caller and no external reference to its interior - is replaced
+wholesale in place inside PROT 0898 so the page offset steps while another page
+exists, reading the same record byte.
+
+**The status screen too.** The pause menu's Status page (Left = Moves) lists the
+same performed Super Arts, in the same AP order, with name, chain AP, the
+coloured arrows for the selected row and a retail-style description
+(`Super Arts. Somersault,|Cyclone, Somersault.`) - four detours into the menu
+overlay's own row loop, count reads and cursor bound
+([`super_art_menu`](src/super_art_menu.rs)), with routines, names and
+descriptions in 0899's own reference-free dead space (read/write-watched across
+a pause-menu tour; the run `--seru-trade` shares, past its highest blob, plus a
+second one for the text), so that half costs no SCUS bytes and composes with
+everything. Names are carried because the battle art records the in-battle chase
+reads are not resident in the menu.
+
+Code and tables spread over the four verified-dead SCUS regions (~600 of 652 B),
+so the toggle is **mutually exclusive** with `--shiny-seru`, `--arts-ap-grant` /
+`--arts-ap-cost` and `--delilas-challenge`. The Triangle caption's own page
+thresholds stay retail, so on a later page it can still read "View Hyper Arts
+list" - a known cosmetic gap. Full design:
+[`docs/tooling/randomizer.md`](../../docs/tooling/randomizer.md#show-super-arts-on-the-in-battle-move-list).
+
 ## Arts AP override (`arts_ap_grant` module)
 
 `--arts-ap-grant [CHAR:]COMBO=AMOUNT` makes a targeted art **grant** `AMOUNT` AP
@@ -1183,6 +1294,29 @@ The CLI loop is `tim-list --tier battle` -> `tim-export --battle-slot`
 -> edit -> `tim-replace --battle-slot` (`--clut N` picks the palette).
 Format reference:
 [`docs/formats/battle-data-pack.md`](../../docs/formats/battle-data-pack.md#the-upload-block-is-not-a-tim).
+
+## Monster battle skins (`monster_texture` module)
+
+Every enemy and boss wears one 4bpp page inside its own LZS-compressed slot
+of the monster archive (PROT 867), stored as a bare `[15 x 16 BGR555][w*h/2
+bytes]` pool with the page rect coming from the loader's `StoreImage` call.
+186 pages: 149 are 128x256, 37 are 256x256. No magic word again, so neither
+TIM catalog reaches one - the rows they do report in that entry all sit in
+the archive's unused tail slots.
+
+Two rules are this family's own. **The palettes are never rewritten.** A
+monster's CLUT region uploads to VRAM verbatim, so the `0x8000` bit in an
+entry is live semi-transparency state the GPU samples, and an RGBA image
+cannot express it (996 of the archive's 27,097 non-zero entries carry it).
+A replacement re-indexes each texel within the colours its own region
+already holds - exactly, or through the nearest one with `quantize` - so it
+can never break the colouring of a region it did not touch. And **a page has
+no single colouring**: a primitive picks its palette with its CBA column, so
+`export_page` decodes through
+[`MonsterPage::ownership`](../asset/README.md#monster_archive) and leaves
+texels no primitive samples transparent. The fit budget is the fixed
+`0x14000` archive slot; an overage is reported with its byte count and
+nothing is written.
 
 ## Save-slot portraits (`save_icon` module)
 

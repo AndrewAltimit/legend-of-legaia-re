@@ -80,6 +80,14 @@ jobs:
       - name: CSS cascade order
         run: python3 scripts/ci/check-css-cascade-order.py
 
+      # `.toLowerCase()` binds to the operand it is written on, so folding the
+      # last literal of a `+` chain leaves every earlier one cased - while the
+      # expression still reads as "this is lowercase". The texture filter's
+      # search vocabulary shipped half-folded that way, and a disc-cased word
+      # like "Ra-Seru" was unsearchable with the whole suite green.
+      - name: JS split case folds
+        run: python3 scripts/ci/check-js-case-fold-chains.py
+
       # `_gen.py` never reads `docs/`, so a `site/_content/` mirror of a docs
       # page drifts silently: it keeps building and keeps passing the link
       # checker while whole areas of its source stop appearing on the public

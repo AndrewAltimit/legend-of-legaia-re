@@ -11,13 +11,13 @@
 //!
 //! It is the prerequisite the Super-Art live wiring needs: a Super fires when a
 //! recognized art *sequence* ends on a known combination (see
-//! [`crate::super_art::SuperMatcher::trigger_by_art_sequence`]). The exact
-//! byte-level queue the retail builder emits - including the interleaved
-//! connector directions between arts - is unpinned (`ctx[+0x274]`), so this
-//! recognizer **abstracts** those connectors: a direction that begins no art is
-//! skipped (treated as a connector), rather than aborting recognition. That
-//! keeps the recovered art ordering faithful even though the literal queue bytes
-//! aren't reproduced.
+//! [`crate::super_art::SuperMatcher::trigger_by_art_sequence`]). This recognizer
+//! **abstracts** the connector directions retail's queue carries between arts: a
+//! direction that begins no art is skipped, rather than aborting recognition. It
+//! is the ordering-level model; the byte-exact retail normalisation - the one
+//! that keeps a matched art's leading arrows, lets arts overlap, and so produces
+//! those connectors - is [`crate::tokenize`], which also derives each Super
+//! Art's physical input from its trigger pattern.
 
 use crate::queue::{ActionConstant, Command};
 

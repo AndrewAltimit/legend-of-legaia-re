@@ -110,7 +110,12 @@ Field offsets are pinned by a fusion of three sources:
 +0x179  u8[12]   post_summon_unmapped
 +0x185  u8       displayed_skill_count    ; menu-overlay skill roster count
 +0x186  u8[16]   displayed_skill_ids      ; "Has all Arts" target. Head insert
-                                           ; on item-use spell-learn.
+                                           ; on item-use spell-learn. Fifteen
+                                           ; arts per character, so +0x195 (the
+                                           ; sixteenth slot) is never reached
+                                           ; and nothing references it; the
+                                           ; patcher's --show-super-arts keeps
+                                           ; its performed-Super mask there.
 +0x196  u8       armor_id                 ; "Armor Modifier" / "Best Equipment"
 +0x197  u8       head_gear_id             ; "Head Gear Modifier"
 +0x198  u8       weapon_id                ; "Weapon Modifier"

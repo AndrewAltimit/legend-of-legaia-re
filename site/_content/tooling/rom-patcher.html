@@ -354,6 +354,14 @@
           <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">A 2% chance per battle that a capturable enemy spawns as a rare shiny variant with +35% stats. The Seru you capture from it keeps a +35% damage boost on every future cast, in addition to its normal abilities; the flag persists in the save and the Seru still levels up normally.</span></span></span>
       </label>
 
+      <label class="rom-check-row" id="rom-show-super-arts-row">
+        <input type="checkbox" id="rom-show-super-arts">
+        <span>Show Super Arts on the in-battle move list <span class="rom-opt-note">- once you have performed one; retail never lists them at all</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Lists a character's Super Arts on the Tactical-Arts list the Triangle button opens in battle. One appears once you have <strong>performed it</strong> - retail records nothing about a Super Art ever firing, so the patch keeps its own per-character flag byte in a spare slot of the character record (it saves and loads with the rest, and an older save starts with none) - and it shows from the next time the list opens. Each row sits <strong>in AP order</strong> among the regular arts (the list runs highest AP first, like retail's) and carries the Super Art's name, the <strong>AP the chain costs</strong> (a Super Art charges nothing of its own) and the <strong>arrows you actually type</strong> - the seven-to-nine inputs the game's own arts recogniser resolves to the trigger, e.g. Tri-Somersault's up-down-up-up-up-down-up, coloured the way a chain reads: blue, yellow where each sub-art ends (as regular arts mark their last arrow), Miracle-Art orange on the Super Art's own trigger. The pause menu's Status screen (Left = Moves) lists them the same way, with a description that names the chain. The Triangle prompt's own page thresholds are unchanged, so on a later page the caption can still read "View Hyper Arts list". Uses the same injected-code arena as Shiny Seru, the per-art AP overrides and the Delilas Challenge, so only one of those can be enabled at a time - Shiny Seru alone fills 618 of the arena's 652 bytes, so this is an arithmetic limit rather than a policy. A Super Art <em>damage</em> row claims none of it and always composes.</span></span></span>
+      </label>
+
+      <p id="rom-arena-conflict" class="rom-conflict" role="status" hidden></p>
+
       <div class="rom-opt">
         <span class="rom-opt-label">Arts button combos <span class="rom-opt-note">- input count kept; Miracle Arts left alone</span></span>
         <div class="seg" role="group" aria-label="Arts button combos">
@@ -606,8 +614,8 @@
     <details class="rom-group" id="rom-art-overrides" open>
       <summary>Tactical-Art overrides <span class="rom-summary-note">AP cost, AP refund, damage per art</span></summary>
       <div class="rom-group-body">
-        <p class="rom-art-intro">Pick any Tactical Art and change what it costs in AP, make it <em>give</em> AP back, or change its damage.
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><strong>AP</strong>: set what an art <em>costs</em> in AP (Spirit), or flip it to <em>give AP back</em> - a giving art becomes usable at any AP level and adds the amount you choose, up to the 100 cap, every time it lands in a combo. Either way the amount is 1..100: the injected setting is one signed byte per art and <code>0</code> is its &ldquo;leave alone&rdquo; value, so a completely free art is not offered - use 1. AP changes are <strong>per character</strong>, and the pause-menu arts list is rewritten to match; a giving art shows as <strong>0 AP</strong> there - the in-game marker for &ldquo;this one pays you&rdquo;. <strong>Damage</strong>: pick a per-hit damage tier, or turn its damage off; damage is keyed by the button combo rather than by character, so another character with the same combo changes too (each row's note says which). AP overrides are <strong>mutually exclusive with Shiny Seru</strong> (both use the same injected-code arena).</span></span></p>
+        <p class="rom-art-intro">Pick any Tactical Art and change what it costs in AP, make it <em>give</em> AP back, or change its damage. <strong>Super Arts</strong> - the five per-character finishers a chain of arts triggers - are in the same picker, under their own <em>&hellip; &ndash; Super Arts</em> group. A Super Art takes the damage change directly; its <strong>AP is the chain arts' AP</strong>, so the row names them and offers to add their rows for you.
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><strong>AP</strong>: set what an art <em>costs</em> in AP (Spirit), or flip it to <em>give AP back</em> - a giving art becomes usable at any AP level and adds the amount you choose, up to the 100 cap, every time it lands in a combo. Either way the amount is 1..100: the injected setting is one signed byte per art and <code>0</code> is its &ldquo;leave alone&rdquo; value, so a completely free art is not offered - use 1. AP changes are <strong>per character</strong>, and the pause-menu arts list is rewritten to match; a giving art shows as <strong>0 AP</strong> there - the in-game marker for &ldquo;this one pays you&rdquo;. <strong>Damage</strong>: pick a per-hit damage tier, or turn its damage off; damage is keyed by the button combo rather than by character, so another character with the same combo changes too (each row's note says which). <strong>Super Arts and AP</strong>: firing a Super does cost you AP, but none of it is charged to the Super - it is the AP of the chain arts that trigger it, which is why every art in that chain has to be known and paid for first. Retail works an art's cost out from its position in the character's arts list, and a Super Art has no position in that list, so there is no per-Super number to edit anywhere. The Super Art row therefore names its chain arts and can add a row for each, which is where the AP you actually spend is set. Those added rows arrive on <em>Keep original</em> while <strong>Show Super Arts</strong> is ticked, because an AP override and that toggle cannot both be applied - arming one is flagged the moment you do it rather than at the end. AP overrides are <strong>mutually exclusive with Shiny Seru</strong> (both use the same injected-code arena).</span></span></p>
         <div id="rom-art-rows"></div>
         <button type="button" id="rom-art-add" class="rom-button rom-button-ghost rom-art-add">+ Add an art</button>
 
@@ -617,6 +625,12 @@
             <label class="rom-opt-label" for="rom-arts-power">Tactical-Art power</label>
             <span class="rom-opt-note">Rebalance a party Tactical Art's damage ("arts power-down"). One or more <code>combo=value</code> pairs, comma-separated - the combo is the art's input (<code>L/R/D/U</code>, e.g. <code>RDLDL</code> = Vahn's Burning Flare) and <code>value</code> is a power byte: <code>0x0C..0x1F</code> is a damage tier (a defence facet plus one of the multipliers 12/18/20/22/28, so a <em>lower</em> value powers the art down), or <code>0</code> disables its hits. Every per-strike power byte of the matched art is set to <code>value</code>. The CLI <code>legaia-patcher arts</code> lists every art's combo and current power tiers. Merged with the rows above; listing the same art both ways is an error.</span>
             <input type="text" id="rom-arts-power" placeholder="e.g. RDLDL=0x16, UDU=0x0C" spellcheck="false" autocomplete="off">
+          </div>
+          <div class="rom-opt">
+            <label class="rom-opt-label" for="rom-super-art-power">Super Art power</label>
+            <span class="rom-opt-note">The CLI-syntax route to the same thing the <strong>&hellip; &ndash; Super Arts</strong> rows in the picker above do; entries from both are merged. One or more <code>name=value</code> pairs, <strong>comma-separated</strong> (names contain spaces, so spaces do not separate entries); <code>value</code> is the same power byte the field above takes: <code>0x0C..0x1F</code> is a damage tier, <code>0</code> disables the hits. A Super Art is not entered as a button combo and has no row in the game's arts-name table, so it cannot be reached by combo the way a regular art's picker row is - its name is the only key it has. It also costs no AP of its own - the chain arts that trigger it pay that, and their AP is adjustable on their own picker rows - so damage is the knob a Super Art itself carries. Names are matched ignoring case, spaces and punctuation. <code>legaia-patcher arts</code> lists every Super Art with the chain that triggers it.
+              <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">The fifteen names: <strong>Vahn</strong> - Tri-Somersault, Maximum Blow, Fire Tackle, Power Slash, Rolling Combo. <strong>Noa</strong> - Triple Lizard, Super Javelin, Super Tempest, Love You, Dragon Fangs. <strong>Gala</strong> - Back Punch x3, Super Ironhead, Rushing Crush, Heaven's Drop, Neo Static Raising. Every per-strike power byte of the named Super Art is set to your value, keeping its hit count, so a four-hit finisher stays four hits.</span></span></span>
+            <input type="text" id="rom-super-art-power" placeholder="e.g. Tri-Somersault=0x1A, Heaven's Drop=0x0C" spellcheck="false" autocomplete="off">
           </div>
           <div class="rom-opt">
             <label class="rom-opt-label" for="rom-arts-ap-grant">Tactical-Art AP-grant</label>
@@ -735,7 +749,7 @@
     <li><strong>Starting level</strong> - starts the party at the chosen level (up to 14) with stats and XP thresholds recomputed from the disc's own growth curves - real level-N stats, not a relabel.</li>
     <li><strong>Tactical-Art overrides</strong> - pick any art by name and change what it does: set what it costs in AP, make it <em>give</em> AP back instead (your amount, 1..100, up to the native 100 cap), set its per-hit damage tier, or turn its damage off. AP changes are per character and update the pause-menu arts list too; damage is keyed by the button combo, so another character with the same combo changes with it - each row's note lists exactly which.</li>
     <li><strong>Fishing prize prices / location names / Earth Egg threshold</strong> - structured value edits over the disc's own tables: reprice any fishing-exchange prize (the prize list itself is fixed on the disc), rename any of the 16 world-map location slots (31-char ASCII), and set the Sol Tower Earth-Egg coin threshold. Current values are read from your disc, in the browser.</li>
-    <li><strong>Texture replacement</strong> - scan the disc for every texture (the flat TIM catalog, the ones inside LZS-compressed sections, the save-slot portraits, the summon pages, and the party's in-battle character art), download any as a PNG, and patch an edited PNG back: same size / bit depth / palette layout enforced, VRAM placement preserved, alpha mapped to PSX transparency, and compressed textures applied only when the edit re-compresses into the retail footprint. The battle art is searchable by the equipment it dresses - type <em>terra</em> to reach Noa's Ra-Seru armband. Same coordinates and rules as the CLI's <code>tim-list</code> / <code>tim-export</code> / <code>tim-replace</code>.</li>
+    <li><strong>Texture replacement</strong> - scan the disc for every texture (the flat TIM catalog, the ones inside LZS-compressed sections, the save-slot portraits, the summon pages, the party's in-battle character art, and every monster's battle skin), download any as a PNG, and patch an edited PNG back: same size / bit depth / palette layout enforced, VRAM placement preserved, alpha mapped to PSX transparency, and compressed textures applied only when the edit re-compresses into the retail footprint. The battle art is searchable by the equipment it dresses - type <em>terra</em> to reach Noa's Ra-Seru armband - and every enemy and boss is searchable by name: type <em>songi</em> for all three of his fights, or <em>songi #179</em> for the transformed one. A monster sheet has no single colouring (each polygon reads its own palette), so it is shown through the palettes the model actually uses and its palettes are never rewritten - repaint with the colors already in the exported sheet. Same coordinates and rules as the CLI's <code>tim-list</code> / <code>tim-export</code> / <code>tim-replace</code>.</li>
     <li><strong>Unused enemies</strong> - brings back two monsters the shipped game never places, &ldquo;Comm&rdquo; and the Evil Bat; needs <em>Randomize</em> encounters.</li>
     <li><strong>Unused items</strong> - adds &ldquo;Something Good&rdquo; and the no-name accessory the randomizer calls &ldquo;Seru Bell&rdquo; to <em>Randomize</em> fills.</li>
   </ul>
@@ -902,6 +916,11 @@
   .art-field { display: flex; flex-direction: column; gap: 0.15rem; margin: 0; }
   .art-field[hidden] { display: none; }
   .art-field > span { font-size: 0.78em; font-weight: 600; color: var(--text-dim); }
+  /* A Super Art carries no AP number of its own, so the control is disabled
+     and dimmed. It is not a dead end: the AP a Super really costs is its chain
+     arts' AP, and the row names them next to a button that adds their rows. */
+  .art-field-na { opacity: 0.5; }
+  .rom-form .art-row select:disabled { cursor: not-allowed; }
   .rom-form .art-row select { width: auto; max-width: 18rem; }
   .rom-form .art-row input.art-amt { width: 4.5em; padding: 0.3rem 0.4rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
   .art-amt-wrap { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--text-muted); font-size: 0.9em; }
@@ -910,7 +929,19 @@
   .art-amt-sign:empty { display: none; }
   .art-remove { margin-left: auto; align-self: center; background: transparent; border: 1px solid var(--border); color: var(--text-dim); border-radius: 5px; cursor: pointer; padding: 0.25rem 0.55rem; font: inherit; font-size: 0.85em; }
   .art-remove:hover { color: var(--open); border-color: var(--open); }
+  /* A Super Art row's shortcut to the chain arts that actually pay its AP.
+     Sits before the remove button, which keeps its own margin-left: auto. */
+  .art-chain-add { align-self: center; background: transparent; border: 1px solid var(--border); color: var(--text-dim); border-radius: 5px; cursor: pointer; padding: 0.25rem 0.55rem; font: inherit; font-size: 0.85em; }
+  .art-chain-add:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+  .art-chain-add:disabled { opacity: 0.45; cursor: default; }
   .art-row-note { margin-top: 0.45rem; font-size: 0.85em; color: var(--text-dim); }
+  /* Four features hand-assemble code into the same 652 unused bytes on the
+     disc, so at most one can be enabled. The conflict is shown the moment it
+     exists - at submit time everything else is already configured - and every
+     side of it is marked: the banner, the checkboxes, and the exact art rows. */
+  .rom-conflict { margin: 0.5rem 0 0.2rem; padding: 0.5rem 0.7rem; border-left: 3px solid var(--open); border-radius: 4px; background: var(--bg-raised); color: var(--text-dim); font-size: 0.88em; }
+  .rom-check-row.rom-check-conflict { outline: 1px solid var(--open); outline-offset: 3px; border-radius: 4px; }
+  .art-row.art-row-conflict { border-left: 3px solid var(--open); padding-left: 0.5rem; }
   .rom-art-add { margin: 0.2rem 0 0.4rem; }
 
   /* Texture replacement */

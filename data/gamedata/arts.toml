@@ -338,9 +338,13 @@ action_constant = 0x2F
 character = "Noa"
 name = "Dragon Fangs"
 kind = "super"
-ap = 54
-command = ["High", "Low", "High", "High", "Low", "Low"]
-directions = [4, 3, 4, 4, 3, 3]
+# Lizard Tail (18) + Swan Driver (24) + Acrobatic Blitz (18) = 60 AP; the
+# public tables print 54 and drop the middle High. The seven-arrow input is
+# what the retail tokenizer resolves to the trigger pattern (see
+# `legaia_art::tokenize`) - the six-arrow one never performs Swan Driver.
+ap = 60
+command = ["High", "Low", "High", "High", "High", "Low", "Low"]
+directions = [4, 3, 4, 4, 4, 3, 3]
 action_constant = 0x32
 
 [[arts]]
