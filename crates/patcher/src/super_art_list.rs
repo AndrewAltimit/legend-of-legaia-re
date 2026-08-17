@@ -104,8 +104,8 @@
 //!   the same layout retail's own strings use, which the scratch record's `+8`
 //!   points at, with `0xFF style` markers wherever the colour changes: the
 //!   default (blue) style, the regular art-end style (yellow) on an arrow a
-//!   sub-art ends on, and the red style on the Super Art's final arrow - so
-//!   Tri-Somersault reads blue blue yellow blue yellow blue red: the ends of
+//!   sub-art ends on, and the Miracle-Art orange on the Super Art's final arrow -
+//!   so Tri-Somersault reads blue blue yellow blue yellow blue orange: the ends of
 //!   Somersault and Cyclone, then the Super's own trigger.
 //!
 //! ## Where the row sits
@@ -322,9 +322,10 @@ pub const MARKER_HI: u8 = 0xFF;
 pub const STYLE_DEFAULT: u8 = 1;
 /// The style regular rows switch to before their last arrow - yellow.
 pub const STYLE_ART_END: u8 = 6;
-/// The style a Super Art row switches to before its final arrow - red (the
-/// CLUT at `(128, 510)`; Hyper Arts are all-yellow, Miracle Arts style 9 orange).
-pub const STYLE_SUPER_END: u8 = 2;
+/// The style a Super Art row switches to before its final arrow - the Miracle
+/// Art orange (style 9; Hyper Arts are all-yellow; style 2 on the same row is
+/// a red retail never uses here).
+pub const STYLE_SUPER_END: u8 = 9;
 /// High byte of every arrow glyph, and the low byte of the first (Right); the
 /// four arrows are `0xA8..=0xAB` = Right / Left / Up / Down.
 pub const GLYPH_HI: u8 = 0x81;
@@ -490,7 +491,7 @@ pub(crate) fn assemble_id(
 /// The glyph string is `[n + markers]` then, per arrow, a `0xFF style` marker
 /// whenever the style changes and the arrow glyph: default style, the
 /// art-end style on an arrow a sub-art ends on, the Super-end style on the
-/// final arrow - so Tri-Somersault reads blue blue yellow blue yellow blue red.
+/// final arrow - so Tri-Somersault reads blue blue yellow blue yellow blue orange.
 /// The packed word is consumed three bits at a time (`dir dir end`), the count
 /// having been read off its top bits first.
 ///
@@ -1571,7 +1572,7 @@ mod tests {
         assert_eq!(r[26], andi(T7, T3, 4), "the end bit of the current arrow");
         assert_eq!(r[28], ori(T1, ZERO, 1));
         assert_eq!(r[30], ori(T1, ZERO, 6));
-        assert_eq!(r[31], ori(T1, ZERO, 2), "red on the final arrow");
+        assert_eq!(r[31], ori(T1, ZERO, 9), "Miracle orange on the final arrow");
         assert_eq!(27 + 1 + br_off(r[27]), 32, "not an end -> CMP");
         assert_eq!(29 + 1 + br_off(r[29]), 32, "an end, not last -> CMP");
         assert_eq!(32 + 1 + br_off(r[32]), 38, "same style -> GLYPH");
@@ -1665,14 +1666,14 @@ mod tests {
             .collect();
         assert_eq!(dirs, want);
         assert_eq!(ends, vec![2, 4, 6]);
-        // blue blue yellow blue yellow blue red: five style changes.
-        assert_eq!(row.styles(), vec![1, 1, 6, 1, 6, 1, 2]);
+        // blue blue yellow blue yellow blue orange: five style changes.
+        assert_eq!(row.styles(), vec![1, 1, 6, 1, 6, 1, 9]);
         assert_eq!(row.marker_count(), 5);
         assert_eq!(
             row.glyph_string(),
             vec![
                 12, 0x81, 0xAA, 0x81, 0xAB, 0xFF, 6, 0x81, 0xAA, 0xFF, 1, 0x81, 0xAA, 0xFF, 6,
-                0x81, 0xAA, 0xFF, 1, 0x81, 0xAB, 0xFF, 2, 0x81, 0xAA
+                0x81, 0xAA, 0xFF, 1, 0x81, 0xAB, 0xFF, 9, 0x81, 0xAA
             ]
         );
         assert_eq!(

@@ -856,8 +856,8 @@ arrow). They ride three bits per arrow (direction + "a sub-art ends here", from
 `legaia_art::art_ends`) and are expanded per row into the `[count][0x81 0xA8+dir]*`
 glyph layout retail's own strings use, with a `0xFF style` marker wherever the
 colour changes: blue by default, the regular art-end yellow on an arrow a sub-art
-ends on, red (style 2, a CLUT retail keeps on VRAM row 510) on the Super's final
-arrow - Tri-Somersault reads blue blue yellow blue yellow blue red.
+ends on, the Miracle-Art orange (style 9) on the Super's final arrow -
+Tri-Somersault reads blue blue yellow blue yellow blue orange.
 
 **Where a row sits.** Retail keeps the learned list id-sorted (`FUN_801EFBFC`
 inserts with an ascending shift) and the table's ids run in descending AP, so

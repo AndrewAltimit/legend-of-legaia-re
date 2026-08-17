@@ -2126,11 +2126,12 @@ Super Arts and no writer ever sets her byte, so her list stays retail's.
   `gp+0x13c` -> CLUT id `0x7F86 + style` on VRAM row 510) colour the arrows the
   way a chain reads: blue by default, the regular art-end yellow (style 6) on
   every arrow a sub-art ends on (`legaia_art::art_ends`, three bits per packed
-  arrow), and red (style 2) on the Super's final arrow - Tri-Somersault reads
-  blue blue yellow blue yellow blue red: the ends of Somersault and Cyclone, then
-  the Super's own trigger. (Regular rows carry one marker before their last
-  arrow; Hyper Arts carry it first and draw all-yellow; Miracle Arts use style 9,
-  orange.)
+  arrow), and the Miracle-Art orange (style 9) on the Super's final arrow -
+  Tri-Somersault reads blue blue yellow blue yellow blue orange: the ends of
+  Somersault and Cyclone, then the Super's own trigger. (Regular rows carry one
+  marker before their last arrow; Hyper Arts carry it first and draw all-yellow;
+  Miracle Arts are all-orange. Style 2 on the same CLUT row is a red retail
+  never uses in this list.)
 
 #### Where a row sits
 
