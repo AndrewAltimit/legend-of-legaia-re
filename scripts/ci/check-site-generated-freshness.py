@@ -23,6 +23,13 @@ allowed to reference more, because the site template appends its own (`layout.js
 changed", which is the question that bites, and stays silent about the
 template's own additions.
 
+Element ids are checked the same way. A page script does `$('some-id')` and
+reads `.checked` off it; a fragment that grew that control without a
+regeneration leaves the served page's script throwing at init and the page
+"loading" forever - the ROM patcher's `attackCountChk is null` was exactly this,
+on a fragment under `_content/tooling/` that a top-level-only glob never
+visited. Every id a fragment declares must appear in its generated page.
+
     python3 scripts/ci/check-site-generated-freshness.py            # fail (exit 1)
     python3 scripts/ci/check-site-generated-freshness.py --warn     # report only
 
@@ -47,6 +54,14 @@ REF_RE = re.compile(
     r"""<(?:script|link)\b[^>]*?\b(?:src|href)\s*=\s*["']([^"']+)["']""",
     re.IGNORECASE,
 )
+
+
+ID_RE = re.compile(r"""\bid\s*=\s*["']([^"'\s]+)["']""", re.IGNORECASE)
+
+
+def element_ids(html: str) -> set[str]:
+    """Every `id="..."` a page declares."""
+    return set(ID_RE.findall(html))
 
 
 def local_refs(html: str) -> set[str]:
@@ -79,6 +94,10 @@ def fragment_to_output() -> dict[str, str]:
         return {}
     mapping: dict[str, str] = {}
     for out, frag in PAGE_TUPLE_RE.findall(gen_py.read_text(errors="replace")):
+        # Keyed by the fragment's path under `_content/` - `tooling/index.html`
+        # and `formats/index.html` are different pages - with the bare name as
+        # a fallback for tuples that name only the file.
+        mapping.setdefault(frag, out)
         mapping.setdefault(Path(frag).name, out)
     return mapping
 
@@ -95,21 +114,25 @@ def main() -> int:
     mapping = fragment_to_output()
     findings: list[str] = []
     checked = 0
-    for frag in sorted(CONTENT.glob("*.html")):
-        gen = SITE / mapping.get(frag.name, frag.name)
+    for frag in sorted(CONTENT.rglob("*.html")):
+        rel = frag.relative_to(CONTENT).as_posix()
+        gen = SITE / mapping.get(rel, mapping.get(frag.name, rel))
         if not gen.exists():
             findings.append(
-                f"{frag.name}: no generated page at "
+                f"{rel}: no generated page at "
                 f"{gen.relative_to(REPO)} - run site/_gen.py"
             )
             continue
         checked += 1
-        missing = local_refs(frag.read_text(errors="replace")) - local_refs(
-            gen.read_text(errors="replace")
-        )
-        for ref in sorted(missing):
+        frag_html = frag.read_text(errors="replace")
+        gen_html = gen.read_text(errors="replace")
+        for ref in sorted(local_refs(frag_html) - local_refs(gen_html)):
             findings.append(
-                f"site/{frag.name}: references {ref}, but the generated page does not"
+                f"_content/{rel}: references {ref}, but the generated page does not"
+            )
+        for eid in sorted(element_ids(frag_html) - element_ids(gen_html)):
+            findings.append(
+                f"_content/{rel}: declares id={eid!r}, but the generated page does not"
             )
 
     if findings:
@@ -119,7 +142,9 @@ def main() -> int:
         print("[site-freshness] run `python3 site/_gen.py` to regenerate")
         return 0 if args.warn else 1
 
-    print(f"[site-freshness] OK - {checked} generated page(s) carry every _content asset")
+    print(
+        f"[site-freshness] OK - {checked} generated page(s) carry every _content asset and id"
+    )
     return 0
 
 
