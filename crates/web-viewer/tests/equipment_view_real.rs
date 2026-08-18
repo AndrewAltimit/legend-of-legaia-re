@@ -1091,3 +1091,157 @@ fn a_multi_object_weapon_export_does_not_stack_its_pieces() {
         .sqrt();
     assert!(d > 40.0, "limb translations only {d:.1} apart");
 }
+
+/// The loadout's clip bank carries the character's **Tactical Arts** as named
+/// clips after the action bank and the swings - the same resolution the arts
+/// page performs, so every curated art that has a decodable keyframe stream
+/// on this disc is listed once, with its curated kind / AP / input, its pose
+/// buffer is rig-width, and the same clips come back (weapon in hand) for a
+/// non-default loadout. Terra has no curated table and lists none.
+#[test]
+fn loadout_clip_bank_carries_the_tactical_arts() {
+    let Some(mut v) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let db = legaia_gamedata::Database::load();
+    let curated = |c: usize| -> Vec<&legaia_gamedata::Art> {
+        let ch = match c {
+            0 => legaia_gamedata::Character::Vahn,
+            1 => legaia_gamedata::Character::Noa,
+            _ => legaia_gamedata::Character::Gala,
+        };
+        db.arts_for(ch).collect()
+    };
+    for cslot in 0..3usize {
+        let s: serde_json::Value =
+            serde_json::from_str(&v.set_equipped_character(cslot as u32, &[0; 5], false)).unwrap();
+        assert_eq!(s["ok"], serde_json::json!(true), "{s}");
+        let parts = s["part_count"].as_u64().unwrap() as usize;
+        let clips = s["clips"].as_array().unwrap();
+        let kinds: Vec<&str> = clips.iter().map(|c| c["kind"].as_str().unwrap()).collect();
+        // Order: actions, then swings, then arts - the page groups on it.
+        let first_swing = kinds
+            .iter()
+            .position(|k| *k == "swing")
+            .expect("swings listed");
+        let first_art = kinds.iter().position(|k| *k == "art").expect("arts listed");
+        assert!(
+            kinds[..first_swing].iter().all(|k| *k == "action"),
+            "{cslot}: {kinds:?}"
+        );
+        assert!(
+            kinds[first_swing..first_art].iter().all(|k| *k == "swing"),
+            "{cslot}: {kinds:?}"
+        );
+        assert!(
+            kinds[first_art..].iter().all(|k| *k == "art"),
+            "{cslot}: {kinds:?}"
+        );
+        assert_eq!(
+            &kinds[first_swing..first_art],
+            &["swing"; 4],
+            "{cslot}: four swings"
+        );
+
+        let arts: Vec<&serde_json::Value> = clips.iter().filter(|c| c["kind"] == "art").collect();
+        let names: Vec<&str> = arts.iter().map(|a| a["label"].as_str().unwrap()).collect();
+        eprintln!("[arts] char {cslot}: {} clips: {names:?}", names.len());
+        // Every listed art is a curated art of this character, listed once,
+        // in the curated table's order, and its metadata is the table's.
+        let table = curated(cslot);
+        let mut last = 0usize;
+        for a in &arts {
+            let name = a["label"].as_str().unwrap();
+            let pos = table
+                .iter()
+                .position(|t| t.name == name)
+                .unwrap_or_else(|| panic!("{cslot}: {name} is not a curated art"));
+            assert!(pos >= last, "{cslot}: {name} out of curated order");
+            last = pos;
+            let t = table[pos];
+            assert_eq!(a["art"]["ap"].as_u64().unwrap() as u32, t.ap, "{name} AP");
+            let dirs: Vec<u8> = a["art"]["directions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|d| d.as_u64().unwrap() as u8)
+                .collect();
+            assert_eq!(dirs, t.directions, "{name} input");
+            assert!(
+                a["art"]["segments"].as_u64().unwrap() >= 1,
+                "{name} segments"
+            );
+            assert!(a["frames"].as_u64().unwrap() > 0, "{name} frames");
+        }
+        assert_eq!(
+            names.len(),
+            names
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len(),
+            "{cslot}: an art is listed twice: {names:?}"
+        );
+        // Every art kind is represented, and most of the table lands (a
+        // handful of curated rows share a record or have no stream).
+        for kind in ["regular", "hyper", "super", "miracle"] {
+            assert!(
+                arts.iter().any(|a| a["art"]["kind"] == kind),
+                "{cslot}: no {kind} art listed: {names:?}"
+            );
+        }
+        assert!(
+            arts.len() * 10 >= table.len() * 7,
+            "{cslot}: only {} of {} curated arts listed: {names:?}",
+            arts.len(),
+            table.len()
+        );
+        // Multi-strike arts concatenate their consecutive records.
+        if cslot == 1 {
+            let hk = arts
+                .iter()
+                .find(|a| a["label"] == "Hurricane Kick")
+                .expect("Noa's Hurricane Kick");
+            assert!(
+                hk["art"]["segments"].as_u64().unwrap() >= 2,
+                "Hurricane Kick chains its strikes"
+            );
+        }
+        // Rig-width pose buffers for the art clips too.
+        for (i, c) in clips.iter().enumerate() {
+            let frames = c["frames"].as_u64().unwrap() as usize;
+            assert_eq!(
+                v.equipped_pose_frames(i as u32).len(),
+                frames * parts * 6,
+                "clip {i} pose"
+            );
+        }
+        // The same arts come back on a non-default loadout (only the swings
+        // are equipment-spliced).
+        if cslot == 0 {
+            let e: serde_json::Value =
+                serde_json::from_str(&v.set_equipped_character(0, &VAHN_SAVE_LOADOUT, false))
+                    .unwrap();
+            let names2: Vec<&str> = e["clips"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|c| c["kind"] == "art")
+                .map(|c| c["label"].as_str().unwrap())
+                .collect();
+            assert_eq!(names, names2, "arts independent of the loadout");
+        }
+    }
+    // Terra: no curated table, so no art clips (and no failure).
+    let t: serde_json::Value =
+        serde_json::from_str(&v.set_equipped_character(3, &[0; 5], false)).unwrap();
+    assert_eq!(t["ok"], serde_json::json!(true), "{t}");
+    assert!(
+        t["clips"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["kind"] != "art"),
+        "Terra lists no arts"
+    );
+}

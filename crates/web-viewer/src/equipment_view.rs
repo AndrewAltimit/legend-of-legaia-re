@@ -57,7 +57,7 @@ use legaia_asset::mesh_raster;
 use legaia_asset::monster_archive::MonsterAnimation;
 
 /// Player battle files start at extraction PROT entry 863 (Vahn).
-const PLAYER_FILE_BASE: u32 = 863;
+pub(crate) const PLAYER_FILE_BASE: u32 = 863;
 /// Character labels in player-file order.
 const CHARACTER_LABELS: [&str; 4] = ["Vahn", "Noa", "Gala", "Terra"];
 /// Party VRAM band the viewer renders in (Vahn's: texpages `(512,256)` /
@@ -95,9 +95,9 @@ pub(crate) struct EquippedCharacter {
     /// Whether the cached mesh was built with the diff highlight on.
     diff: bool,
     vram: legaia_tim::Vram,
-    /// The character's battle action bank + the equipment-spliced swings,
-    /// labeled and expanded per assembled object.
-    clips: Vec<(String, MonsterAnimation)>,
+    /// The character's battle action bank + the equipment-spliced swings +
+    /// its Tactical Arts, labeled and expanded per assembled object.
+    clips: Vec<EquippedClip>,
     /// Per-bone-object diff against the all-defaults assembly.
     diffs: Vec<equip_diff::ObjectDiff>,
     /// Resolved section ids (what `select_sections` actually picked).
@@ -113,6 +113,50 @@ pub(crate) struct EquippedCharacter {
     /// Per-equipped-**item** section (2 / 3 only), where the held item lives
     /// inside the assembly. See [`equip_item`].
     items: Vec<EquippedItem>,
+}
+
+/// One labelled clip of a loadout's bank, expanded per assembled object.
+pub(crate) struct EquippedClip {
+    /// Display label: the action slot's role, the swing direction, or the
+    /// art's curated name.
+    pub label: String,
+    /// Which bank the clip came from (`action` / `swing` / `art`).
+    pub kind: ClipKind,
+    /// Art-only metadata (curated kind, AP, input, bank record, segments).
+    pub art: Option<ArtClipMeta>,
+    pub anim: MonsterAnimation,
+}
+
+/// Where a loadout clip comes from.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ClipKind {
+    /// `record[0]`'s action bank (idle, walk, flinches, knockdown, ...).
+    Action,
+    /// A loader-spliced direction-command weapon swing (changes with the
+    /// equipped weapon).
+    Swing,
+    /// A Tactical Art out of the character's `readef.DAT` ME archive
+    /// ([`crate::art_clip_bank`]).
+    Art,
+}
+
+impl ClipKind {
+    fn tag(self) -> &'static str {
+        match self {
+            ClipKind::Action => "action",
+            ClipKind::Swing => "swing",
+            ClipKind::Art => "art",
+        }
+    }
+}
+
+/// The curated facts an art clip carries next to its keyframes.
+pub(crate) struct ArtClipMeta {
+    pub kind: &'static str,
+    pub ap: u32,
+    pub directions: Vec<u8>,
+    pub anim_id: u8,
+    pub segments: usize,
 }
 
 /// One separated item of the current loadout.
@@ -387,6 +431,7 @@ fn build(
     cslot: usize,
     equipped: [u8; bca::SECTION_COUNT],
     diff: bool,
+    arts: &[crate::art_clip_bank::ArtClip],
 ) -> Result<EquippedCharacter, String> {
     let prot_index = PLAYER_FILE_BASE + cslot as u32;
     let raw = entry_bytes(prot, entries, prot_index)
@@ -478,15 +523,19 @@ fn build(
         Err(e) => log_equip(&format!("equipment: char {cslot} texture pool: {e}")),
     }
 
-    // ---- Clip bank: record[0] actions + the equipment-spliced swings ----
-    let mut clips: Vec<(String, MonsterAnimation)> = Vec::new();
+    // ---- Clip bank: record[0] actions + the equipment-spliced swings +
+    // the character's Tactical Arts (decoded once per character by the
+    // caller, re-expanded here per assembled object) ----
+    let mut clips: Vec<EquippedClip> = Vec::new();
     match bca::battle_animations(raw) {
         Ok(anims) => {
             for a in &anims {
-                clips.push((
-                    bca::action_slot_label_or_hex(a.action_id as usize),
-                    bca::expand_animation_for_objects(a, &asm.anm_bones),
-                ));
+                clips.push(EquippedClip {
+                    label: bca::action_slot_label_or_hex(a.action_id as usize),
+                    kind: ClipKind::Action,
+                    art: None,
+                    anim: bca::expand_animation_for_objects(a, &asm.anm_bones),
+                });
             }
         }
         Err(e) => log_equip(&format!("equipment: char {cslot} action bank: {e}")),
@@ -494,13 +543,29 @@ fn build(
     match bca::swing_battle_animations(raw, &pack, &equipped) {
         Ok(swings) => {
             for s in &swings {
-                clips.push((
-                    bca::action_slot_label_or_hex(s.slot as usize),
-                    bca::expand_animation_for_objects(&s.anim, &asm.anm_bones),
-                ));
+                clips.push(EquippedClip {
+                    label: bca::action_slot_label_or_hex(s.slot as usize),
+                    kind: ClipKind::Swing,
+                    art: None,
+                    anim: bca::expand_animation_for_objects(&s.anim, &asm.anm_bones),
+                });
             }
         }
         Err(e) => log_equip(&format!("equipment: char {cslot} swings: {e}")),
+    }
+    for art in arts {
+        clips.push(EquippedClip {
+            label: art.name.clone(),
+            kind: ClipKind::Art,
+            art: Some(ArtClipMeta {
+                kind: art.kind,
+                ap: art.ap,
+                directions: art.directions.clone(),
+                anim_id: art.anim_id,
+                segments: art.segments,
+            }),
+            anim: bca::expand_animation_for_objects(&art.anim, &asm.anm_bones),
+        });
     }
 
     // ---- Item cut: where each equipped piece actually lives ----
@@ -705,7 +770,21 @@ impl LegaiaViewer {
             self.equipped = None;
             return r#"{"ok":false,"why":"PROT.DAT TOC parse failed"}"#.to_string();
         };
-        match build(&self.disc, &entries, cslot, equipped, diff) {
+        // The art clips are per character, not per loadout: decode them once
+        // and re-expand per assembly. A bank that does not decode on this
+        // disc leaves the list empty (logged) rather than failing the model.
+        if !self.art_clips.contains_key(&cslot) {
+            let arts = match crate::art_clip_bank::decode_art_clips(&self.disc, &entries, cslot) {
+                Ok(a) => a,
+                Err(why) => {
+                    log_equip(&format!("equipment: char {cslot} art clips: {why}"));
+                    Vec::new()
+                }
+            };
+            self.art_clips.insert(cslot, arts);
+        }
+        let arts = self.art_clips.get(&cslot).cloned().unwrap_or_default();
+        match build(&self.disc, &entries, cslot, equipped, diff, &arts) {
             Ok(c) => {
                 let json = self.equipped_summary(&c);
                 self.equipped = Some(c);
@@ -758,12 +837,23 @@ impl LegaiaViewer {
         let clips: Vec<serde_json::Value> = c
             .clips
             .iter()
-            .map(|(label, a)| {
-                serde_json::json!({
-                    "label": label,
-                    "frames": a.frame_count,
-                    "rate": a.rate,
-                })
+            .map(|clip| {
+                let mut v = serde_json::json!({
+                    "label": clip.label,
+                    "kind": clip.kind.tag(),
+                    "frames": clip.anim.frame_count,
+                    "rate": clip.anim.rate,
+                });
+                if let Some(a) = &clip.art {
+                    v["art"] = serde_json::json!({
+                        "kind": a.kind,
+                        "ap": a.ap,
+                        "directions": a.directions,
+                        "anim_id": a.anim_id,
+                        "segments": a.segments,
+                    });
+                }
+                v
             })
             .collect();
         let items: Vec<serde_json::Value> = c
@@ -943,7 +1033,7 @@ impl LegaiaViewer {
         self.equipped
             .as_ref()
             .and_then(|c| c.clips.get(index as usize))
-            .map(|(_, a)| flatten_pose_frames(a))
+            .map(|clip| flatten_pose_frames(&clip.anim))
             .unwrap_or_default()
     }
 
@@ -970,13 +1060,11 @@ impl LegaiaViewer {
         let clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = c
             .clips
             .iter()
-            .map(
-                |(label, anim)| legaia_asset::character_gltf::CharacterClip {
-                    name: label.clone(),
-                    fps: fps_for_rate(anim.rate),
-                    anim,
-                },
-            )
+            .map(|clip| legaia_asset::character_gltf::CharacterClip {
+                name: clip.label.clone(),
+                fps: fps_for_rate(clip.anim.rate),
+                anim: &clip.anim,
+            })
             .collect();
         legaia_asset::character_gltf::build_character_glb(
             &self.equipped_glb_name(),
@@ -1170,7 +1258,7 @@ impl LegaiaViewer {
             };
             let mut equipped = [0u8; bca::SECTION_COUNT];
             equipped[section] = id as u8;
-            match build(&self.disc, &entries, cslot, equipped, false) {
+            match build(&self.disc, &entries, cslot, equipped, false, &[]) {
                 Ok(character) => {
                     self.item_card = Some(ItemCard {
                         cslot,
@@ -1432,13 +1520,11 @@ fn item_glb(
     let clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = c
         .clips
         .iter()
-        .map(
-            |(label, anim)| legaia_asset::character_gltf::CharacterClip {
-                name: label.clone(),
-                fps: fps_for_rate(anim.rate),
-                anim,
-            },
-        )
+        .map(|clip| legaia_asset::character_gltf::CharacterClip {
+            name: clip.label.clone(),
+            fps: fps_for_rate(clip.anim.rate),
+            anim: &clip.anim,
+        })
         .collect();
     legaia_asset::character_gltf::build_character_glb_named(
         &root, &mesh, &out_ids, &c.vram, &clips, None, &layout,
@@ -1513,13 +1599,11 @@ fn item_only_glb(
     let clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = c
         .clips
         .iter()
-        .map(
-            |(label, anim)| legaia_asset::character_gltf::CharacterClip {
-                name: label.clone(),
-                fps: fps_for_rate(anim.rate),
-                anim,
-            },
-        )
+        .map(|clip| legaia_asset::character_gltf::CharacterClip {
+            name: clip.label.clone(),
+            fps: fps_for_rate(clip.anim.rate),
+            anim: &clip.anim,
+        })
         .collect();
     legaia_asset::character_gltf::build_character_glb_named(
         &root,
@@ -1537,10 +1621,10 @@ fn item_only_glb(
 /// at frame 0 - as one rigid placement per assembled object. Identity for
 /// every object when the bank is missing.
 fn rest_poses(c: &EquippedCharacter) -> Vec<mesh_raster::Pose> {
-    let Some((_, anim)) = c.clips.first() else {
+    let Some(clip) = c.clips.first() else {
         return vec![mesh_raster::Pose::IDENTITY; c.part_count];
     };
-    let Some(frame) = anim.frames.first() else {
+    let Some(frame) = clip.anim.frames.first() else {
         return vec![mesh_raster::Pose::IDENTITY; c.part_count];
     };
     frame

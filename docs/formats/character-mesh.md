@@ -466,11 +466,12 @@ the *assembled* mesh from 1203 - or the 1204 mesh from a player-file stream -
 mis-sockets the rig.
 
 The site `/characters.html` viewer poses the 1204 meshes from the 1203 banks
-(the `BattleMeshView` path) for its *battle* and *Baka Fighter* forms. Its
-fourth form, **equipment loadout**, runs the real assembly instead: pick an
-item per section and the page splices that model from the player file, paints
-it from the same band VRAM those sections upload, and poses it from the
-file's own `record[0]` action bank plus the equipment-spliced weapon swings
+for its *Baka Fighter* form (both palettes). Its default form, **battle
+form**, runs the real assembly instead: pick an item per section and the page
+splices that model from the player file, paints it from the same band VRAM
+those sections upload, and poses it from the file's own `record[0]` action
+bank, the equipment-spliced weapon swings, and every Tactical Art out of the
+character's `readef.DAT` ME archive
 ([`web-viewer::equipment_view`](../../crates/web-viewer/src/equipment_view.rs)).
 Its main `.glb` download is the whole posed character named for what it
 wears; every equipped section gets a **second** download - the piece cut out

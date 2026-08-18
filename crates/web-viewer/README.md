@@ -646,10 +646,18 @@ block put on the shared row.
 
 Objects tagged `200+` are dropped: they are duplicates of the bone they
 attach to, and retail only reaches them through the actor's `+0xA4` window.
-Clips come from the file's own `record[0]` action bank plus the
-equipment-spliced weapon swings, so they change with the weapon.
-`equipped_character_glb` bakes the whole posed character with that bank,
-named for the character and what it wears.
+Clips come from the file's own `record[0]` action bank, the
+equipment-spliced weapon swings (so they change with the weapon), and the
+character's **Tactical Arts** (`art_clip_bank`): every curated art
+resolved to its `readef.DAT` ME-archive record through the arts page's
+ladder (action constant, then name + combo, combo, name), its consecutive
+strike records concatenated into one clip, and curated rows that land on an
+already-claimed record collapsed into it. The art decode is per character
+and cached on the host; each loadout only re-expands the streams per
+assembled object. The summary tags every clip `kind` (`action` / `swing` /
+`art`) and carries the art's curated kind, AP, input and segment count, so
+the page can group them. `equipped_character_glb` bakes the whole posed
+character with that bank, named for the character and what it wears.
 
 Objects tagged `200+` are dropped **when they are byte-copies of their
 attach bone** (`AssembledCharacter::duplicate_objects`) - drawing a copy
