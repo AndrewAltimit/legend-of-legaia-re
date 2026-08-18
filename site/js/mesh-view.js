@@ -68,6 +68,8 @@
       this._ghostBufs = [];   /* per-echo Float32Array scratch poses */
       this._frameOverride = -1;
       this.playing = false;
+      /* Playback-rate multiplier over the clip's own fps (1 = retail rate). */
+      this.speed = 1;
       this._startMs = 0;
       this._lastPosedFrame = -1;
 
@@ -196,13 +198,19 @@
         (hi[0]-lo[0])/2, (hi[1]-lo[1])/2, (hi[2]-lo[2])/2));
     }
 
+    /* Effective clip rate in frames per second (clip fps x speed). */
+    _rate() {
+      return (this.anim && this.anim.fps || ANIM_FPS) * (this.speed || 1);
+    }
+
     setPlaying(on) {
       if (!this.anim) { this.playing = false; return; }
       this.playing = !!on;
       if (this.playing) {
-        this._startMs = performance.now() - (this._frameOverride >= 0
-          ? (this._frameOverride / (this.anim.fps || ANIM_FPS)) * 1000
-          : 0);
+        /* Resume from the scrubbed frame (or the last posed one), not 0. */
+        const from = this._frameOverride >= 0 ? this._frameOverride
+          : (this._lastPosedFrame >= 0 ? this._lastPosedFrame : 0);
+        this._startMs = performance.now() - (from / this._rate()) * 1000;
         this._frameOverride = -1;
       }
     }
@@ -211,7 +219,32 @@
       if (!this.anim) return;
       this._frameOverride = f | 0;
       this.playing = false;
+      this._lastPosedFrame = this._frameOverride;
       this._poseAt(this._frameOverride);
+    }
+
+    /* Current display frame: the scrubbed frame while paused, else the last
+     * frame the loop posed (-1 before any pose). */
+    currentFrame() {
+      return this._frameOverride >= 0 ? this._frameOverride : this._lastPosedFrame;
+    }
+
+    /* Pause and move `delta` frames (wrapping). */
+    step(delta) {
+      if (!this.anim) return;
+      const n = this.anim.frameCount;
+      const cur = Math.max(0, this.currentFrame());
+      this.setFrame((((cur + (delta | 0)) % n) + n) % n);
+    }
+
+    /* Change the playback multiplier without a visible jump: the clock is
+     * rebased so the frame on screen stays where it is. */
+    setSpeed(mult) {
+      const m = Number(mult) > 0 ? Number(mult) : 1;
+      if (m === this.speed) return;
+      const cur = Math.max(0, this.currentFrame());
+      this.speed = m;
+      if (this.playing) this._startMs = performance.now() - (cur / this._rate()) * 1000;
     }
 
     /* Pose frame `frameIdx` into A.out. `upload` (default true) pushes the
@@ -359,8 +392,7 @@
       }
       if (this.cam.autoRotate) this.cam.yaw += 0.006;
       if (this.anim && this.playing && this.anim.frameCount > 1) {
-        const t = (performance.now() - this._startMs) / 1000 *
-          (this.anim.fps || ANIM_FPS);
+        const t = (performance.now() - this._startMs) / 1000 * this._rate();
         const f = Math.floor(t) % this.anim.frameCount;
         if (f !== this._lastPosedFrame) {
           this._poseAt(f);

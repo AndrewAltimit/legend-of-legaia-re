@@ -5,6 +5,7 @@
 //! and pre-scans them for embedded TIMs so the UI shows a filtered, browsable
 //! list of viewable entries instead of every raw entry.
 
+pub(crate) mod art_clip_bank;
 pub mod arts_view;
 pub mod audio;
 mod audio_api;
@@ -313,6 +314,9 @@ pub struct LegaiaViewer {
     /// for its thumbnail / metadata / download, cached under its
     /// `(character, section, id)` so the three calls share one assembly.
     item_card: Option<equipment_view::ItemCard>,
+    /// Each character's Tactical Arts as clips, decoded once per disc load
+    /// and re-expanded per loadout (see [`art_clip_bank`]).
+    art_clips: std::collections::HashMap<usize, Vec<art_clip_bank::ArtClip>>,
 }
 
 /// VRAM rectangles a single primitive's CBA / TSB lookup will touch.

@@ -53,6 +53,7 @@ impl LegaiaViewer {
             equip_stats: None,
             equipped: None,
             item_card: None,
+            art_clips: std::collections::HashMap::new(),
         }
     }
 }
@@ -82,6 +83,8 @@ impl LegaiaViewer {
         self.cdname_text = None;
         self.equip_stats = None;
         self.equipped = None;
+        self.item_card = None;
+        self.art_clips.clear();
         let prot_bytes = if let Some(extracted) = extract_prot_dat(&bytes) {
             // Keep the CDNAME text: `self.disc` only retains the extracted
             // PROT.DAT, but the full-scene assembler needs the scene-name ->
