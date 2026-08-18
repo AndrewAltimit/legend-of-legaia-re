@@ -88,12 +88,11 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
 .char-transport button[disabled] { opacity: 0.4; cursor: not-allowed; }
 .char-transport button[disabled]:hover { border-color: var(--border); }
 .char-transport .char-play-btn { min-width: 5.6em; }
-.char-transport input[type=range] { flex: 1 1 8rem; min-width: 6rem; }
 .char-transport select {
   background: var(--bg-card); color: var(--text); border: 1px solid var(--border);
   padding: 0.25rem 0.35rem; font: inherit; border-radius: 3px;
 }
-.char-anm-clip-name { color: var(--text); flex: 0 1 auto; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.char-anm-clip-name { color: var(--text); flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .char-anm-readout {
   font: 0.78rem/1.0 var(--font-mono, monospace);
   color: var(--text-muted); min-width: 7ch; text-align: right;
@@ -219,7 +218,6 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   .char-viewer-wrap { grid-template-columns: minmax(0, 1fr); }
   .char-clip-group { grid-template-columns: minmax(0, 1fr); gap: 0.15rem; }
   .char-clip-group-label { padding-top: 0.15rem; }
-  .char-anm-clip-name { max-width: 100%; }
 }
 </style>
 <script src="js/rom-cache.js"></script>
@@ -257,13 +255,9 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
         <canvas id="char-viewer-canvas" class="char-viewer-canvas" width="640" height="480"></canvas>
 
         <div class="char-transport" id="char-transport">
-          <button id="char-anm-stop-btn" type="button" title="First frame - the rest stance (Home)" disabled>⏮</button>
-          <button id="char-anm-back-btn" type="button" title="Step one frame back (←)" disabled>−1</button>
           <button id="char-anm-play-btn" type="button" class="char-play-btn" title="Play / pause (Space)" disabled>▶ play</button>
-          <button id="char-anm-fwd-btn" type="button" title="Step one frame forward (→)" disabled>+1</button>
           <span class="char-anm-clip-name" id="char-anm-clip-name">-</span>
-          <input type="range" id="char-anm-frame" min="0" max="0" value="0" disabled title="Scrub the clip">
-          <span id="char-anm-frame-label" class="char-anm-readout">-</span>
+          <span class="char-transport-spacer"></span>
           <select id="char-anm-speed" title="Playback speed - 1x is the record's own retail rate">
             <option value="0.25">¼×</option>
             <option value="0.5">½×</option>
@@ -315,7 +309,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
             <input type="checkbox" id="char-anm-show-all"> browse all bundles / records
           </label>
         </details>
-        <div class="char-info-note">Keys: <kbd>Space</kbd> play / pause · <kbd>←</kbd> <kbd>→</kbd> step · <kbd>[</kbd> <kbd>]</kbd> previous / next clip · <kbd>R</kbd> reset view.</div>
+        <div class="char-info-note">Keys: <kbd>Space</kbd> play / pause · <kbd>[</kbd> <kbd>]</kbd> previous / next clip · <kbd>R</kbd> reset view.</div>
         <div class="char-info-note">Tactical Arts, AP and command strings for every hero live on the <a href="arts.html">arts page</a>. Forms, the equipment cut and the grip repair are explained under <a href="#about-data">About this data</a>.</div>
       </div>
     </div>
@@ -364,7 +358,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   </div>
 
   <h3>The animations are the real in-game clips</h3>
-  <p>Every clip in the Animation panel comes off your disc, and the list is scoped to the shown model. In <strong>field form</strong> the default source is the party's own <strong>locomotion bank</strong> (PROT 0874 §1): the capture-pinned <em>Walk</em> and <em>Idle</em> clips plus the not-yet-pinned rest of each character's 7-clip bank, with the per-scene NPC pools still browsable as a secondary group. In <strong>battle form</strong> the clips come out of the same player battle file as the model - the <em>record[0]</em> action bank plus the four weapon swings, which are spliced from the equipped weapon's section and change with it - and every <strong>Tactical Art</strong> out of the character's <code>readef.DAT</code> keyframe archive, resolved to its record the same way the <a href="arts.html">arts page</a> does (a multi-strike art such as Hurricane Kick plays its consecutive records as one clip). In <strong>Baka Fighter</strong> form it is the character's labeled 9-record battle bank (Idle, the three attacks, Special, the hit reactions, Win). The animation data assembles the character's separate body pieces each frame exactly as the game's renderer does, so playback matches what you see in-game; the transport under the viewer plays at the record's own retail rate (¼× and ½× slow it down), steps single frames, and the keyboard drives it (<kbd>Space</kbd>, <kbd>←</kbd> <kbd>→</kbd>, <kbd>[</kbd> <kbd>]</kbd>). The <strong>.glb</strong> download bakes the same clips as named glTF animations. Encoding: <a href="formats/anm.html">ANM format</a>.</p>
+  <p>Every clip in the Animation panel comes off your disc, and the list is scoped to the shown model. In <strong>field form</strong> the default source is the party's own <strong>locomotion bank</strong> (PROT 0874 §1): the capture-pinned <em>Walk</em> and <em>Idle</em> clips plus the not-yet-pinned rest of each character's 7-clip bank, with the per-scene NPC pools still browsable as a secondary group. In <strong>battle form</strong> the clips come out of the same player battle file as the model - the <em>record[0]</em> action bank plus the four weapon swings, which are spliced from the equipped weapon's section and change with it - and every <strong>Tactical Art</strong> out of the character's <code>readef.DAT</code> keyframe archive, resolved to its record the same way the <a href="arts.html">arts page</a> does (a multi-strike art such as Hurricane Kick plays its consecutive records as one clip). In <strong>Baka Fighter</strong> form it is the character's labeled 9-record battle bank (Idle, the three attacks, Special, the hit reactions, Win). The animation data assembles the character's separate body pieces each frame exactly as the game's renderer does, so playback matches what you see in-game; the transport under the viewer plays at the record's own retail rate (¼× and ½× slow it down), and the keyboard drives it (<kbd>Space</kbd>, <kbd>[</kbd> <kbd>]</kbd>). The <strong>.glb</strong> download bakes the same clips as named glTF animations. Encoding: <a href="formats/anm.html">ANM format</a>.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="formats/anm.html">ANM animation format</a>
@@ -395,11 +389,6 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   const anmRecordLabel = document.getElementById('char-anm-record-label');
   const anmInfo = document.getElementById('char-anm-info');
   const anmPlayBtn = document.getElementById('char-anm-play-btn');
-  const anmStopBtn = document.getElementById('char-anm-stop-btn');
-  const anmFrameSlider = document.getElementById('char-anm-frame');
-  const anmFrameLabel = document.getElementById('char-anm-frame-label');
-  const anmBackBtn = document.getElementById('char-anm-back-btn');
-  const anmFwdBtn = document.getElementById('char-anm-fwd-btn');
   const anmSpeedSel = document.getElementById('char-anm-speed');
   const anmClipName = document.getElementById('char-anm-clip-name');
   const anmBrowseEl = document.getElementById('char-anm-browse');
@@ -1360,11 +1349,6 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
       objectIds && objectIds.length ? Uint32Array.from(objectIds) : null,
       flatRgba && flatRgba.length ? Uint8Array.from(flatRgba) : null,
     );
-    meshView.onFrame = (f) => {
-      if (!anmFrameSlider || anmFrameSlider.disabled) return;
-      anmFrameSlider.value = String(f);
-      if (anmFrameLabel) anmFrameLabel.textContent = `f ${f}/${meshView.anim.frameCount - 1}`;
-    };
     if (anmSpeedSel && typeof meshView.setSpeed === 'function') meshView.setSpeed(Number(anmSpeedSel.value) || 1);
     // A loadout / clip change keeps the camera where the visitor put it; a
     // new character or form starts from the default framing.
@@ -1513,14 +1497,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   // scrubber, the clip name, and - by default - playback.
   function setTransport(name, frameCount) {
     const has = frameCount > 0;
-    for (const b of [anmPlayBtn, anmStopBtn, anmBackBtn, anmFwdBtn]) if (b) b.disabled = !has;
-    if (anmFrameSlider) {
-      anmFrameSlider.disabled = !has;
-      anmFrameSlider.min = '0';
-      anmFrameSlider.max = String(Math.max(0, frameCount - 1));
-      anmFrameSlider.value = '0';
-    }
-    if (anmFrameLabel) anmFrameLabel.textContent = has ? `f 0/${frameCount - 1}` : '-';
+    if (anmPlayBtn) anmPlayBtn.disabled = !has;
     if (anmClipName) anmClipName.textContent = has ? name : (name || '-');
     if (anmPlayBtn) anmPlayBtn.textContent = '▶ play';
     if (has && AUTOPLAY && meshView && meshView.anim && meshView.anim.frameCount > 1) {
@@ -1846,38 +1823,10 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
     meshView.setPlaying(!meshView.playing);
     syncPlayLabel();
   }
-  function showFrame(f) {
-    if (!meshView || !meshView.anim) return;
-    anmFrameSlider.value = String(f);
-    if (anmFrameLabel) anmFrameLabel.textContent = `f ${f}/${meshView.anim.frameCount - 1}`;
-    syncPlayLabel();
-  }
-  function stepFrame(delta) {
-    if (!meshView || !meshView.anim) return;
-    meshView.step(delta);
-    showFrame(meshView.currentFrame());
-  }
   if (anmPlayBtn) anmPlayBtn.addEventListener('click', togglePlay);
-  if (anmStopBtn) {
-    anmStopBtn.addEventListener('click', () => {
-      if (!meshView || !meshView.anim) return;
-      meshView.setFrame(0);
-      showFrame(0);
-    });
-  }
-  if (anmBackBtn) anmBackBtn.addEventListener('click', () => stepFrame(-1));
-  if (anmFwdBtn) anmFwdBtn.addEventListener('click', () => stepFrame(1));
   if (anmSpeedSel) {
     anmSpeedSel.addEventListener('change', () => {
       if (meshView) meshView.setSpeed(Number(anmSpeedSel.value) || 1);
-    });
-  }
-  if (anmFrameSlider) {
-    anmFrameSlider.addEventListener('input', () => {
-      if (!meshView || !meshView.anim) return;
-      const f = Number(anmFrameSlider.value) | 0;
-      meshView.setFrame(f);
-      showFrame(f);
     });
   }
   // Keyboard transport, while the viewer is on screen and no field has focus.
@@ -1889,9 +1838,6 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || (t && t.isContentEditable)) return;
     switch (e.key) {
       case ' ': togglePlay(); break;
-      case 'ArrowLeft': stepFrame(-1); break;
-      case 'ArrowRight': stepFrame(1); break;
-      case 'Home': if (meshView.anim) { meshView.setFrame(0); showFrame(0); } break;
       case '[': stepClip(-1); break;
       case ']': stepClip(1); break;
       case 'r': case 'R': meshView.resetView(); break;
