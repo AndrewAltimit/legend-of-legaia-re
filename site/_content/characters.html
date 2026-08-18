@@ -1,46 +1,38 @@
 <!--HEAD: <style>
-.char-shell { display: flex; flex-direction: column; gap: 1rem; }
+.char-shell { display: flex; flex-direction: column; gap: 0.85rem; }
 .char-status { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.82rem; }
 
-/* Step 1 - the character. Three cards, one per hero. */
-.char-pick {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 0.6rem;
-}
-.char-card {
-  background: var(--bg-card); border: 1px solid var(--border);
-  padding: 0.6rem 0.7rem; cursor: pointer;
-  font-family: var(--font-mono); font-size: 0.82rem;
-  display: flex; flex-direction: column; gap: 0.25rem;
-}
-.char-card:hover { border-color: var(--accent); }
-.char-card.is-active { border-color: var(--accent); background: var(--bg-raised); }
-.char-card-name { color: var(--text); font-weight: bold; font-size: 0.95rem; }
-.char-card-meta { color: var(--text-muted); }
-.char-card-tag {
-  display: inline-block; padding: 0.05rem 0.4rem;
-  background: var(--bg-code); color: var(--text-dim); font-size: 0.72rem;
-  border: 1px solid var(--border);
-}
-
-/* Step 2 - the form. One row of tabs under the character cards. */
-.char-forms {
-  display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;
+/* The stage bar: who, and which form - one row above the viewer. */
+.char-stage {
+  display: flex; align-items: center; gap: 0.6rem 1.1rem; flex-wrap: wrap;
   font-family: var(--font-mono); font-size: 0.82rem;
 }
-.char-forms .char-section-label { margin: 0; }
+.char-stage-group { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
+.char-stage-group .char-section-label { margin: 0; }
+.char-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.char-seg-btn {
+  background: var(--bg-card); color: var(--text-muted); border: 0;
+  border-right: 1px solid var(--border);
+  padding: 0.38rem 0.85rem; font-family: var(--font-mono); font-size: 0.84rem;
+  cursor: pointer;
+}
+.char-seg-btn:last-child { border-right: 0; }
+.char-seg-btn:hover { color: var(--text); background: var(--bg-card-hi); }
+.char-seg-btn.is-active { background: var(--accent); color: var(--bg); }
+.char-seg-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+.char-seg-btn.is-hero { font-weight: bold; }
 .char-forms-extra { color: var(--text-dim); font-size: 0.74rem; display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap; }
 .char-forms-extra .char-equip-btn { font-size: 0.72rem; padding: 0.2rem 0.5rem; }
 
 .char-viewer-wrap {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
   gap: 1rem;
   background: var(--bg-card);
   border: 1px solid var(--border);
   padding: 0.85rem;
 }
+.char-viewer-main { display: flex; flex-direction: column; gap: 0.6rem; min-width: 0; }
 canvas.char-viewer-canvas {
   width: 100%; aspect-ratio: 4 / 3; max-height: 480px;
   background: radial-gradient(circle at 50% 38%, #1c2026 0%, #0c0e12 100%);
@@ -75,11 +67,80 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
 .char-equip-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
 
 .char-info-note { color: var(--text-dim); font-size: 0.74rem; line-height: 1.55; }
+.char-info-note kbd {
+  font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: 3px; padding: 0 0.3rem; background: var(--bg-code);
+}
+
+/* The transport, directly under the canvas: play, step, scrub, speed, view. */
+.char-transport {
+  display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;
+  font-family: var(--font-mono); font-size: 0.78rem;
+  background: var(--bg-code); border: 1px solid var(--border); border-radius: 3px;
+  padding: 0.4rem 0.5rem;
+}
+.char-transport button {
+  background: var(--bg-card); color: var(--text); border: 1px solid var(--border);
+  padding: 0.3rem 0.55rem; font-family: var(--font-mono); font-size: 0.8rem; cursor: pointer;
+  border-radius: 3px; line-height: 1;
+}
+.char-transport button:hover { border-color: var(--accent); }
+.char-transport button[disabled] { opacity: 0.4; cursor: not-allowed; }
+.char-transport button[disabled]:hover { border-color: var(--border); }
+.char-transport .char-play-btn { min-width: 5.6em; }
+.char-transport input[type=range] { flex: 1 1 8rem; min-width: 6rem; }
+.char-transport select {
+  background: var(--bg-card); color: var(--text); border: 1px solid var(--border);
+  padding: 0.25rem 0.35rem; font: inherit; border-radius: 3px;
+}
+.char-anm-clip-name { color: var(--text); flex: 0 1 auto; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.char-anm-readout {
+  font: 0.78rem/1.0 var(--font-mono, monospace);
+  color: var(--text-muted); min-width: 7ch; text-align: right;
+}
+.char-transport-spacer { flex: 1 1 0; }
+.char-transport-view { display: flex; gap: 0.35rem; margin-left: auto; }
+
+/* The clip strip: every clip the shown model has, grouped by what it is. */
+.char-clips { display: flex; flex-direction: column; gap: 0.35rem; font-family: var(--font-mono); }
+.char-clip-group { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: 0.4rem; align-items: baseline; }
+.char-clip-group-label {
+  color: var(--text-dim); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;
+  padding-top: 0.35rem;
+}
+.char-clip-row { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+.char-clip-btn {
+  background: var(--bg-card); color: var(--text); border: 1px solid var(--border);
+  padding: 0.28rem 0.55rem; font-family: var(--font-mono); font-size: 0.76rem;
+  border-radius: 3px; cursor: pointer; display: inline-flex; align-items: center; gap: 0.35rem;
+}
+.char-clip-btn:hover { border-color: var(--accent); color: var(--text); }
+.char-clip-btn.is-active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.char-clip-btn .char-clip-ap { color: var(--text-dim); font-size: 0.66rem; }
+.char-clip-btn.is-active .char-clip-ap { color: var(--bg); opacity: 0.8; }
+.char-clip-btn .char-clip-kind {
+  font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 0 0.3rem; border-radius: 2px; border: 1px solid currentColor; line-height: 1.35;
+}
+.char-clip-btn.kind-hyper .char-clip-kind { color: var(--accent); }
+.char-clip-btn.kind-super .char-clip-kind { color: var(--warn); }
+.char-clip-btn.kind-miracle .char-clip-kind { color: #d08bff; }
+.char-clip-btn.is-active .char-clip-kind { color: var(--bg); }
+.char-anm-browse { display: flex; flex-direction: column; gap: 0.4rem; }
+.char-anm-select {
+  background: var(--bg-code); color: var(--text); border: 1px solid var(--border);
+  padding: 0.25rem 0.5rem; font: inherit; border-radius: 3px; max-width: 100%;
+}
+.char-anm-row { display: flex; align-items: center; gap: 0.55rem; }
+.char-anm-row input[type=range] { flex: 1; }
+.char-anm-row .char-anm-readout { min-width: 13ch; }
+.char-adv summary { cursor: pointer; color: var(--text-dim); font-size: 0.74rem; }
+.char-adv[open] summary { margin-bottom: 0.35rem; }
 
 /* Step 3 (battle form) - the equipment panel: every slot, every piece as a
    card drawn on its own. Sits under the canvas, full column width. */
 .char-equip-panel {
-  margin-top: 0.85rem; border: 1px solid var(--border); background: var(--bg-code);
+  margin-top: 0.25rem; border: 1px solid var(--border); background: var(--bg-code);
   padding: 0.7rem 0.75rem; display: flex; flex-direction: column; gap: 0.7rem;
   font-family: var(--font-mono); font-size: 0.8rem;
 }
@@ -152,24 +213,13 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
 .char-item-row > b i { color: var(--text-dim); font-style: normal; font-size: 0.7rem; }
 .char-item-btns { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 
-.char-clip-row { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.25rem; }
-.char-clip-btn {
-  background: var(--bg-card); color: var(--text); border: 1px solid var(--border);
-  padding: 0.38rem 0.7rem; font-family: var(--font-mono); font-size: 0.82rem;
-  border-radius: 3px; cursor: pointer;
-}
-.char-clip-btn:hover { border-color: var(--accent); color: var(--text); }
-.char-clip-btn.is-active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
-.char-anm-wrap { display: flex; flex-direction: column; gap: 0.45rem; }
-.char-anm-select {
-  background: var(--bg-code); color: var(--text); border: 1px solid var(--border);
-  padding: 0.25rem 0.5rem; font: inherit; border-radius: 3px;
-}
-.char-anm-row { display: flex; align-items: center; gap: 0.55rem; }
-.char-anm-row input[type=range] { flex: 1; }
-.char-anm-readout {
-  font: 0.78rem/1.0 var(--font-mono, monospace);
-  color: var(--text-muted); min-width: 13ch; text-align: right;
+/* Narrow screens: the side panel drops under the viewer, the clip groups
+   stack their label over the row. */
+@media (max-width: 760px) {
+  .char-viewer-wrap { grid-template-columns: minmax(0, 1fr); }
+  .char-clip-group { grid-template-columns: minmax(0, 1fr); gap: 0.15rem; }
+  .char-clip-group-label { padding-top: 0.15rem; }
+  .char-anm-clip-name { max-width: 100%; }
 }
 </style>
 <script src="js/rom-cache.js"></script>
@@ -179,7 +229,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> · characters</div>
   <h1>Characters</h1>
-  <p class="lede"><strong>Vahn</strong>, <strong>Noa</strong>, and <strong>Gala</strong> in 3D from your own disc image. Pick a hero, then a form - the low-poly <strong>field</strong> model, the <strong>battle</strong> model a real battle assembles from what the character is wearing (with every piece of equipment on the disc laid out as its own 3D object, ready to put on or download), or the <strong>Baka Fighter</strong> minigame's copy - each playing its real in-game animations. Nothing is uploaded; the disc never leaves your machine.</p>
+  <p class="lede"><strong>Vahn</strong>, <strong>Noa</strong>, and <strong>Gala</strong> in 3D from your own disc image, performing their real in-game clips: the battle idle, every hit reaction and weapon swing, and all of their <strong>Tactical Arts</strong> - on the <strong>battle</strong> model a real battle assembles from what the character is wearing (dress them from every piece of equipment on the disc, or download any piece as its own 3D object), the low-poly <strong>field</strong> model, or the <strong>Baka Fighter</strong> minigame's copy. Nothing is uploaded; the disc never leaves your machine.</p>
 </header>
 
 <div class="disc-bar">
@@ -190,48 +240,58 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
 
 <section class="doc-section">
   <div class="char-shell">
-    <div id="char-pick" class="char-pick"></div>
-
-    <div class="char-forms" id="char-forms" style="display: none;">
-      <span class="char-section-label">Form</span>
-      <div class="char-equip-toggle" id="char-form-toggle"></div>
+    <div class="char-stage" id="char-stage" style="display: none;">
+      <div class="char-stage-group">
+        <span class="char-section-label">Character</span>
+        <div id="char-pick" class="char-seg"></div>
+      </div>
+      <div class="char-stage-group" id="char-forms">
+        <span class="char-section-label">Form</span>
+        <div class="char-seg" id="char-form-toggle"></div>
+      </div>
       <div class="char-forms-extra" id="char-forms-extra"></div>
     </div>
 
     <div class="char-viewer-wrap" id="char-viewer-wrap" style="display: none;">
-      <div>
+      <div class="char-viewer-main">
         <canvas id="char-viewer-canvas" class="char-viewer-canvas" width="640" height="480"></canvas>
 
-        <div class="char-equip-panel" id="char-equip-panel" style="display: none;"></div>
+        <div class="char-transport" id="char-transport">
+          <button id="char-anm-stop-btn" type="button" title="First frame - the rest stance (Home)" disabled>⏮</button>
+          <button id="char-anm-back-btn" type="button" title="Step one frame back (←)" disabled>−1</button>
+          <button id="char-anm-play-btn" type="button" class="char-play-btn" title="Play / pause (Space)" disabled>▶ play</button>
+          <button id="char-anm-fwd-btn" type="button" title="Step one frame forward (→)" disabled>+1</button>
+          <span class="char-anm-clip-name" id="char-anm-clip-name">-</span>
+          <input type="range" id="char-anm-frame" min="0" max="0" value="0" disabled title="Scrub the clip">
+          <span id="char-anm-frame-label" class="char-anm-readout">-</span>
+          <select id="char-anm-speed" title="Playback speed - 1x is the record's own retail rate">
+            <option value="0.25">¼×</option>
+            <option value="0.5">½×</option>
+            <option value="1" selected>1×</option>
+          </select>
+          <div class="char-transport-view">
+            <button id="char-spin-btn" type="button" title="Auto-rotate the view">⏸ spin</button>
+            <button id="char-reset-btn" type="button" title="Reset the camera (double-click the view does the same)">↺ view</button>
+          </div>
+        </div>
 
+        <div class="char-clips" id="char-clips">
+          <div id="char-anm-clips"></div>
+          <div class="char-anm-browse" id="char-anm-browse" style="display: none;">
+            <select id="char-anm-bundle" class="char-anm-select"></select>
+            <div class="char-anm-row" id="char-anm-record-row">
+              <input type="range" id="char-anm-record" min="0" max="0" value="0">
+              <span id="char-anm-record-label" class="char-anm-readout">-</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="char-equip-panel" id="char-equip-panel" style="display: none;"></div>
       </div>
+
       <div class="char-viewer-side">
         <h3 id="char-name">-</h3>
         <div class="char-stat" id="char-stats"></div>
-
-        <div class="char-section-label" id="char-anm-section-label">Animation</div>
-        <div class="char-anm-wrap" id="char-anm-wrap">
-          <select id="char-anm-bundle" class="char-anm-select"></select>
-          <div class="char-clip-row" id="char-anm-clips"></div>
-          <div class="char-anm-row" id="char-anm-record-row">
-            <input type="range" id="char-anm-record" min="0" max="0" value="0">
-            <span id="char-anm-record-label" class="char-anm-readout">-</span>
-          </div>
-          <div class="char-controls">
-            <button id="char-anm-play-btn" type="button">▶ play</button>
-            <button id="char-anm-stop-btn" type="button" disabled>↺ rest pose</button>
-          </div>
-          <div class="char-anm-row">
-            <input type="range" id="char-anm-frame" min="0" max="0" value="0" disabled>
-            <span id="char-anm-frame-label" class="char-anm-readout">-</span>
-          </div>
-          <label class="char-info-note" title="The default view lists only the clips that apply to the shown model (the party's own locomotion bank in field form, the character's battle bank in Baka Fighter form, bone-count-matching records elsewhere). Tick to browse every bundle and record on the disc - the page doubles as an RE tool.">
-            <input type="checkbox" id="char-anm-show-all"> browse all bundles / records
-          </label>
-          <div class="char-info-note" id="char-anm-info">
-            Real in-game clips off your disc, scoped to the shown model: the party's <strong>walk / idle</strong> bank in field form, the character's 9-record battle bank in Baka Fighter form. Every other bundle is under &ldquo;browse all&rdquo;. Encoding: <a href="formats/anm.html">ANM format</a>.
-          </div>
-        </div>
 
         <div class="char-section-label" id="char-equip-section-label">Equipment swap</div>
         <div class="char-equip-toggle" id="char-equip-toggle"></div>
@@ -239,13 +299,23 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
         <div class="char-info-note" id="char-equip-note"></div>
         <div class="char-diff-panel" id="char-diff-panel" style="display: none;"></div>
 
-        <div class="char-section-label">View</div>
+        <div class="char-section-label">Download</div>
         <div class="char-controls">
-          <button id="char-spin-btn" type="button">⏸ stop spin</button>
-          <button id="char-reset-btn" type="button">↺ reset view</button>
+          <button id="char-glb-btn" type="button" title="Download this character as a textured glTF model with the form's real animation clips baked in (battle: the action bank, the weapon swings and every Tactical Art; field: the party walk/idle locomotion bank; Baka Fighter: the 9-record battle bank)">⬇ .glb</button>
           <button id="char-tmd-btn" type="button" title="Download the (possibly equipment-patched) Legaia TMD body">⬇ .tmd</button>
-          <button id="char-glb-btn" type="button" title="Download this character as a textured glTF model with the form's real animation clips baked in (field: the party walk/idle locomotion bank; battle: the character's action bank + weapon swings; Baka Fighter: the 9-record battle bank)">⬇ .glb</button>
         </div>
+
+        <div class="char-section-label">Animation</div>
+        <div class="char-info-note" id="char-anm-info">
+          Real in-game clips off your disc, scoped to the shown model: the party's <strong>walk / idle</strong> bank in field form, the character's 9-record battle bank in Baka Fighter form. Every other bundle is under &ldquo;browse all&rdquo;. Encoding: <a href="formats/anm.html">ANM format</a>.
+        </div>
+        <details class="char-adv" id="char-anm-adv">
+          <summary title="The default view lists only the clips that apply to the shown model. Open to browse every ANM bundle and record on the disc - the page doubles as an RE tool.">Browse every ANM bundle on the disc</summary>
+          <label class="char-info-note">
+            <input type="checkbox" id="char-anm-show-all"> browse all bundles / records
+          </label>
+        </details>
+        <div class="char-info-note">Keys: <kbd>Space</kbd> play / pause · <kbd>←</kbd> <kbd>→</kbd> step · <kbd>[</kbd> <kbd>]</kbd> previous / next clip · <kbd>R</kbd> reset view.</div>
         <div class="char-info-note">Tactical Arts, AP and command strings for every hero live on the <a href="arts.html">arts page</a>. Forms, the equipment cut and the grip repair are explained under <a href="#about-data">About this data</a>.</div>
       </div>
     </div>
@@ -294,7 +364,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   </div>
 
   <h3>The animations are the real in-game clips</h3>
-  <p>Every clip in the Animation panel comes off your disc, and the list is scoped to the shown model. In <strong>field form</strong> the default source is the party's own <strong>locomotion bank</strong> (PROT 0874 §1): the capture-pinned <em>Walk</em> and <em>Idle</em> clips plus the not-yet-pinned rest of each character's 7-clip bank, with the per-scene NPC pools still browsable as a secondary group. In <strong>battle form</strong> the clips come out of the same player battle file as the model - the <em>record[0]</em> action bank plus the four weapon swings, which are spliced from the equipped weapon's section and change with it. In <strong>Baka Fighter</strong> form it is the character's labeled 9-record battle bank (Idle, the three attacks, Special, the hit reactions, Win). The animation data assembles the character's separate body pieces each frame exactly as the game's renderer does, so playback matches what you see in-game. The <strong>.glb</strong> download bakes the same clips as named glTF animations. Encoding: <a href="formats/anm.html">ANM format</a>.</p>
+  <p>Every clip in the Animation panel comes off your disc, and the list is scoped to the shown model. In <strong>field form</strong> the default source is the party's own <strong>locomotion bank</strong> (PROT 0874 §1): the capture-pinned <em>Walk</em> and <em>Idle</em> clips plus the not-yet-pinned rest of each character's 7-clip bank, with the per-scene NPC pools still browsable as a secondary group. In <strong>battle form</strong> the clips come out of the same player battle file as the model - the <em>record[0]</em> action bank plus the four weapon swings, which are spliced from the equipped weapon's section and change with it - and every <strong>Tactical Art</strong> out of the character's <code>readef.DAT</code> keyframe archive, resolved to its record the same way the <a href="arts.html">arts page</a> does (a multi-strike art such as Hurricane Kick plays its consecutive records as one clip). In <strong>Baka Fighter</strong> form it is the character's labeled 9-record battle bank (Idle, the three attacks, Special, the hit reactions, Win). The animation data assembles the character's separate body pieces each frame exactly as the game's renderer does, so playback matches what you see in-game; the transport under the viewer plays at the record's own retail rate (¼× and ½× slow it down), steps single frames, and the keyboard drives it (<kbd>Space</kbd>, <kbd>←</kbd> <kbd>→</kbd>, <kbd>[</kbd> <kbd>]</kbd>). The <strong>.glb</strong> download bakes the same clips as named glTF animations. Encoding: <a href="formats/anm.html">ANM format</a>.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="formats/anm.html">ANM animation format</a>
@@ -308,7 +378,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   const fileInput = document.getElementById('char-file');
   const status = document.getElementById('char-status');
   const pickEl = document.getElementById('char-pick');
-  const formsEl = document.getElementById('char-forms');
+  const stageEl = document.getElementById('char-stage');
   const formsExtraEl = document.getElementById('char-forms-extra');
   const viewerWrap = document.getElementById('char-viewer-wrap');
   const canvas = document.getElementById('char-viewer-canvas');
@@ -328,7 +398,15 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   const anmStopBtn = document.getElementById('char-anm-stop-btn');
   const anmFrameSlider = document.getElementById('char-anm-frame');
   const anmFrameLabel = document.getElementById('char-anm-frame-label');
+  const anmBackBtn = document.getElementById('char-anm-back-btn');
+  const anmFwdBtn = document.getElementById('char-anm-fwd-btn');
+  const anmSpeedSel = document.getElementById('char-anm-speed');
+  const anmClipName = document.getElementById('char-anm-clip-name');
+  const anmBrowseEl = document.getElementById('char-anm-browse');
   if (!fileInput) return;
+  // A freshly loaded clip starts playing on its own - the character is
+  // alive on screen without a click; the transport pauses / scrubs it.
+  const AUTOPLAY = true;
   // The animation panel's default blurb, so a form that rewrites it (the
   // battle form, whose clips come from a different file) can put it back on
   // the way out.
@@ -351,7 +429,11 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   //   'baka'     - the pre-baked PROT 1204 copy in the Baka Fighter
   //                minigame's colours, and 'battle' the same mesh under the
   //                true in-battle palette - one tab, a palette sub-toggle.
-  let curForm = 'field';
+  // The battle form is the default: it is the model you actually fight with,
+  // dressed from the equipment panel, and it carries the richest clip bank
+  // (actions, swings and every Tactical Art). Falls back to the field form
+  // on a disc / bundle without the equipment surface.
+  let curForm = 'equipped';
   const isEquipLoadoutForm = (f) => f === 'equipped';
   const isBattlePackForm = (f) => f === 'battle' || f === 'baka';
   const tabOf = (f) => isEquipLoadoutForm(f) ? 'battle' : (isBattlePackForm(f) ? 'baka' : 'field');
@@ -363,6 +445,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   let equipDiff = false;        // diff-highlight toggle (off by default)
   let equipSummary = null;      // last set_equipped_character() summary
   let curEquipClip = 0;         // index into equipSummary.clips
+  let wantClipLabel = null;     // the clip to keep across character / loadout changes
   let curAnmBundleIdx = 0;   // index into anmCorpus.bundles
   let curAnmRecordIdx = 0;   // ABSOLUTE record index inside the bundle
   let showAllAnm = false;    // escape hatch: browse every bundle / record
@@ -380,6 +463,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   // side's scrubber state instead of snapping back to the default.
   let _bundleIdxByForm = { field: -1, battle: -1, baka: -1 };
   let meshView = null;   // MeshView (TmdRenderer) for every form
+  let resetCamNext = true; // reset the orbit camera on the next mesh push (new character / form)
   let _loadedBattleVramForm = null; // which palette VRAM is in the MeshView
   // Slot 0/1/2 = Vahn/Noa/Gala in every form.
   const HERO_SLOTS = [0, 1, 2];
@@ -414,9 +498,10 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
       const b = battlePack && battlePack.slots && battlePack.slots[slot];
       const label = f ? f.label : (e ? e.label : `Slot ${slot}`);
       const items = e ? (e.sections || []).reduce((n, sec) => n + sec.items.length, 0) : 0;
+      // The RE provenance for the shown form rides on the tooltip.
       let meta;
       if (isEquipLoadoutForm(curForm) && e) {
-        meta = `PROT ${String(e.prot).padStart(4, '0')} · ${e.records} records · ${items} equippable`;
+        meta = `PROT ${String(e.prot).padStart(4, '0')} · ${e.records} records · ${items} equippable pieces`;
       } else if (isBattlePackForm(curForm) && b) {
         meta = `PROT 1204 slot ${b.slot} · nobj ${b.disc_nobj} · ${b.tmd_bytes} bytes`;
       } else if (f) {
@@ -424,17 +509,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
       } else {
         meta = '';
       }
-      const tags = [
-        f ? 'field' : null,
-        e ? 'battle' : null,
-        b ? 'Baka Fighter' : null,
-      ].filter(Boolean).map(t => `<span class="char-card-tag">${t}</span>`).join(' ');
-      return `
-        <div class="char-card${slot === selectedSlot ? ' is-active' : ''}" data-slot="${slot}">
-          <div class="char-card-name">${escapeHtml(label)}</div>
-          <div class="char-card-meta">${escapeHtml(meta)}</div>
-          <div>${tags}</div>
-        </div>`;
+      return `<button type="button" class="char-seg-btn is-hero${slot === selectedSlot ? ' is-active' : ''}" data-slot="${slot}" title="${escapeHtml(meta)}">${escapeHtml(label)}</button>`;
     }).join('');
   }
 
@@ -446,15 +521,15 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
     const haveBattle = !!battlePack && battlePack.slots && battlePack.slots.length > 0;
     const hero = selectedSlot === null || isHero(selectedSlot);
     const tabs = [
-      { val: 'field',  label: 'field form',  hint: 'The low-poly model the game keeps loaded across every town and dungeon', enabled: !!pack },
-      { val: 'battle', label: 'battle form', hint: 'The higher-detail model a real battle assembles from the character\'s equipment sections - pick what they wear in the equipment panel below the viewer', enabled: !!equipPack && hero },
+      { val: 'battle', label: 'battle form', hint: 'The higher-detail model a real battle assembles from the character\'s equipment sections - pick what they wear in the equipment panel below the viewer; plays the action bank, the weapon swings and every Tactical Art', enabled: !!equipPack && hero },
+      { val: 'field',  label: 'field form',  hint: 'The low-poly model the game keeps loaded across every town and dungeon; plays the party walk / idle locomotion bank', enabled: !!pack },
       { val: 'baka',   label: 'Baka Fighter', hint: 'The disc\'s pre-baked default-gear copy of the battle model, as the Baka Fighter fist-fight minigame draws it (its own palette; the true in-battle colours are one toggle away)', enabled: haveBattle && hero },
     ];
     const cur = tabOf(curForm);
     formToggle.innerHTML = tabs.map(b => `
-      <button class="char-equip-btn${b.val === cur ? ' is-active' : ''}"
+      <button type="button" class="char-seg-btn${b.val === cur ? ' is-active' : ''}"
               data-val="${b.val}" title="${escapeHtml(b.hint)}"${b.enabled ? '' : ' disabled'}>${b.label}</button>`).join('');
-    formsEl.style.display = pack ? '' : 'none';
+    stageEl.style.display = pack ? '' : 'none';
     // Extras: field-pack meshes that are not heroes (savepoint, aux actor)
     // in field form; the palette sub-toggle in Baka Fighter form.
     if (curForm === 'field' && pack && pack.slots.length > HERO_SLOTS.length) {
@@ -500,30 +575,74 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   // retail poses an assembled party member with. (The PROT 1203 bundle the
   // Baka form uses is authored against the pre-baked PROT 1204 object
   // order, which the assembled blob does not share.)
+  // The clip strip is grouped by what a clip is. Battle form: the action
+  // bank splits into the stances and the reactions, then the four weapon
+  // swings, then every Tactical Art (kind badge + AP). The WASM tags each
+  // clip's `kind`; a stale bundle without the tag is grouped by label.
+  const STANCE_LABELS = ['Idle', 'Ready', 'Walk / Approach'];
+  const DIR_ARROW = { 1: '←', 2: '→', 3: '↓', 4: '↑' };
+  function clipKindOf(c) {
+    if (c.kind) return c.kind;
+    return /^Swing /.test(c.label) ? 'swing' : 'action';
+  }
+  function equipClipGroups(clips) {
+    const groups = [
+      { label: 'Stance', items: [] },
+      { label: 'Reactions', items: [] },
+      { label: 'Weapon swings', items: [] },
+      { label: 'Tactical Arts', items: [] },
+    ];
+    clips.forEach((c, i) => {
+      const kind = clipKindOf(c);
+      const g = kind === 'art' ? 3 : kind === 'swing' ? 2 : (STANCE_LABELS.includes(c.label) ? 0 : 1);
+      groups[g].items.push({ c, i });
+    });
+    return groups.filter(g => g.items.length);
+  }
+  const clipDisplayName = (label) => String(label).replace(/\s*\((Hyper|Super|Miracle)\)$/i, '');
+  function clipButtonHtml(c, i, active) {
+    const kind = clipKindOf(c);
+    const art = c.art || null;
+    const dirs = art && art.directions ? art.directions.map(d => DIR_ARROW[d] || '?').join(' ') : '';
+    const hint = [
+      `${c.frames} frames`,
+      c.rate ? `rate ${c.rate}` : null,
+      art ? `${art.kind} art · ${art.ap} AP` : null,
+      dirs ? `input ${dirs}` : null,
+      art && art.segments > 1 ? `${art.segments} chained strikes` : null,
+    ].filter(Boolean).join(' · ');
+    const badge = art && art.kind !== 'regular' ? `<span class="char-clip-kind">${escapeHtml(art.kind)}</span>` : '';
+    const ap = art ? `<span class="char-clip-ap">${art.ap}</span>` : '';
+    return `<button type="button" class="char-clip-btn kind-${escapeHtml(art ? art.kind : kind)}${active ? ' is-active' : ''}"
+      data-clip="${i}" title="${escapeHtml(hint)}">${escapeHtml(clipDisplayName(c.label))}${ap}${badge}</button>`;
+  }
+  function clipGroupsHtml(groups, renderBtn) {
+    return groups.map(g => `<div class="char-clip-group">
+        <span class="char-clip-group-label">${escapeHtml(g.label)}</span>
+        <div class="char-clip-row">${g.items.map(renderBtn).join('')}</div>
+      </div>`).join('');
+  }
   function renderEquipClipButtons() {
     if (!anmClipsEl) return;
     const clips = (equipSummary && equipSummary.clips) || [];
-    anmClipsEl.innerHTML = clips.map((c, i) => `
-      <button class="char-clip-btn${i === curEquipClip ? ' is-active' : ''}"
-        data-clip="${i}" title="${c.frames} frames">${escapeHtml(c.label)}</button>`).join('');
+    anmClipsEl.innerHTML = clipGroupsHtml(equipClipGroups(clips),
+      ({ c, i }) => clipButtonHtml(c, i, i === curEquipClip));
   }
 
+  const anmAdvEl = document.getElementById('char-anm-adv');
   function renderAnmPanel() {
     if (isEquipLoadoutForm(curForm)) {
-      if (anmBundleSel) anmBundleSel.style.display = 'none';
-      if (anmRecordRow) anmRecordRow.style.display = 'none';
+      if (anmBrowseEl) anmBrowseEl.style.display = 'none';
       if (anmClipsEl) anmClipsEl.style.display = '';
-      const showAll = document.getElementById('char-anm-show-all');
-      if (showAll && showAll.parentElement) showAll.parentElement.style.display = 'none';
+      if (anmAdvEl) anmAdvEl.style.display = 'none';
       if (anmInfo) {
-        anmInfo.innerHTML = 'The model\'s own clips from the same player battle file: the <strong>action bank</strong> plus the four <strong>weapon swings</strong>, which change with the equipped weapon. Encoding: <a href="formats/anm.html">ANM format</a>.';
+        anmInfo.innerHTML = 'The model\'s own clips from the same player battle file: the <strong>action bank</strong>, the four <strong>weapon swings</strong> (spliced from the equipped weapon, so they change with it) and every <strong>Tactical Art</strong> out of the character\'s <code>readef.DAT</code> archive - the same clips the <a href="arts.html">arts page</a> plays, here on the model as dressed. Click a clip to play it; the <strong>.glb</strong> bakes them all. Encoding: <a href="formats/anm.html">ANM format</a>.';
       }
       renderEquipClipButtons();
       return;
     }
     {
-      const showAll = document.getElementById('char-anm-show-all');
-      if (showAll && showAll.parentElement) showAll.parentElement.style.display = '';
+      if (anmAdvEl) anmAdvEl.style.display = '';
       if (anmInfo && anmInfoDefault) anmInfo.innerHTML = anmInfoDefault;
     }
     if (!anmCorpus || !anmBundleSel) return;
@@ -610,25 +729,30 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   const anmClipsEl = document.getElementById('char-anm-clips');
   const anmRecordRow = document.getElementById('char-anm-record-row');
   function syncAnmControlsMode() {
-    if (!anmClipsEl || !anmRecordRow) return;
+    if (!anmClipsEl || !anmBrowseEl) return;
     const buttons = !showAllAnm;
-    anmBundleSel.style.display = buttons ? 'none' : '';
-    anmRecordRow.style.display = buttons ? 'none' : '';
+    anmBrowseEl.style.display = buttons ? 'none' : '';
     anmClipsEl.style.display = buttons ? '' : 'none';
     if (buttons) renderAnmClipButtons();
   }
+  // Field / Baka forms: one group of the scoped clips (the party locomotion
+  // bank, or the character's 9-record battle bank).
   function renderAnmClipButtons() {
     const bundle = anmCorpus && anmCorpus.bundles[curAnmBundleIdx];
     if (!bundle || !bundle.records) { anmClipsEl.innerHTML = ''; return; }
-    anmClipsEl.innerHTML = anmFiltered.map((idx, pos) => {
+    const src = bundleSource(bundle);
+    const groupLabel = src === SRC_LOCOMOTION ? 'Locomotion'
+      : (src === SRC_BATTLE_BANK ? 'Battle bank' : 'Clips');
+    const items = anmFiltered.map((idx, pos) => ({ idx, pos }));
+    anmClipsEl.innerHTML = clipGroupsHtml([{ label: groupLabel, items }], ({ idx, pos }) => {
       const rec = bundle.records[idx];
       const name = rec && rec.label
         ? rec.label.replace(/^(Vahn|Noa|Gala) - /, '')
         : `Clip ${pos + 1}`;
       const hint = rec ? `${rec.frame_count} frames` : '';
-      return `<button class="char-clip-btn${idx === curAnmRecordIdx ? ' is-active' : ''}"
+      return `<button type="button" class="char-clip-btn${idx === curAnmRecordIdx ? ' is-active' : ''}"
         data-rec="${idx}" title="${hint}">${escapeHtml(name)}</button>`;
-    }).join('');
+    });
   }
 
   function updateAnmReadout() {
@@ -937,13 +1061,6 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
     return -1;
   }
 
-  function updateAnmVisibility() {
-    const wrap = document.getElementById('char-anm-wrap');
-    const label = document.getElementById('char-anm-section-label');
-    if (wrap) wrap.style.display = '';
-    if (label) label.style.display = '';
-  }
-
   // Tab click -> internal form: the Baka tab keeps whichever palette was
   // last chosen.
   function selectTab(tab) {
@@ -958,6 +1075,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
     if (isEquipLoadoutForm(form) && !equipPack) return;
     const prevForm = curForm;
     curForm = form;
+    resetCamNext = true;
     if (isBattlePackForm(form)) bakaPalette = form;
     // A field-pack extra (savepoint / aux) has no battle-side counterpart.
     if (form !== 'field' && selectedSlot !== null && !isHero(selectedSlot)) selectedSlot = 0;
@@ -975,9 +1093,9 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
     }
     // Route the ANM scrubber to the form-appropriate bundle, remembering
     // the bundle per form so toggling doesn't reset the scrubber.
-    if (!isEquipLoadoutForm(form) && !isEquipLoadoutForm(prevForm)
+    if (!isEquipLoadoutForm(form)
         && anmCorpus && anmCorpus.bundles && anmCorpus.bundles.length > 0) {
-      _bundleIdxByForm[prevForm] = curAnmBundleIdx;
+      if (!isEquipLoadoutForm(prevForm)) _bundleIdxByForm[prevForm] = curAnmBundleIdx;
       const cached = _bundleIdxByForm[form] | 0;
       let targetIdx = cached >= 0 && cached < anmCorpus.bundles.length ? cached : -1;
       if (targetIdx < 0) {
@@ -989,7 +1107,6 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
       }
     }
     renderFormToggle();
-    updateAnmVisibility();
     renderAnmPanel();
     if (selectedSlot !== null) {
       setName();
@@ -1180,6 +1297,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
     }
     selectedSlot = slot;
     curEquip = -1;
+    resetCamNext = true;
     viewerWrap.style.display = 'grid';
     setName();
     renderCharacterPicker();
@@ -1224,7 +1342,10 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   function pushMesh(canvasEl, positions, uvsI32, cbaTsb, indices, bounds, objectIds, flatRgba, vramBytes) {
     if (!meshView || !(meshView instanceof window.MeshView)) {
       if (meshView && typeof meshView.dispose === 'function') meshView.dispose();
-      meshView = new window.MeshView(canvasEl, { onSpin: updateSpinLabel });
+      // The field-form TMDs rest facing the opposite way from the battle
+      // models; the default framing turns to meet the character's face.
+      const yaw = 0.4 + (curForm === 'field' ? Math.PI : 0);
+      meshView = new window.MeshView(canvasEl, { onSpin: updateSpinLabel, cam: { yaw, distance: 2.2 } });
       _loadedBattleVramForm = null;
     }
     if (vramBytes && vramBytes.length) meshView.uploadVram(vramBytes);
@@ -1244,7 +1365,11 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
       anmFrameSlider.value = String(f);
       if (anmFrameLabel) anmFrameLabel.textContent = `f ${f}/${meshView.anim.frameCount - 1}`;
     };
-    meshView.resetView();
+    if (anmSpeedSel && typeof meshView.setSpeed === 'function') meshView.setSpeed(Number(anmSpeedSel.value) || 1);
+    // A loadout / clip change keeps the camera where the visitor put it; a
+    // new character or form starts from the default framing.
+    if (resetCamNext) meshView.resetView();
+    resetCamNext = false;
   }
 
   // The battle form: assemble the model this exact set of equipment ids
@@ -1300,7 +1425,12 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
         (equipItemPreview !== null
           ? `previewing the item alone`
           : (worn.length ? escapeHtml(worn.map(s => s.name || `id ${s.resolved}`).join(', ')) : 'nothing equipped'));
-      if (curEquipClip >= (summary.clips || []).length) curEquipClip = 0;
+      {
+        const clips = summary.clips || [];
+        const byLabel = wantClipLabel ? clips.findIndex(c => c.label === wantClipLabel) : -1;
+        if (byLabel >= 0) curEquipClip = byLabel;
+        else if (curEquipClip >= clips.length) curEquipClip = 0;
+      }
       renderEquipClipButtons();
       renderDiffPanel();
       maybeLoadCurrentAnim();
@@ -1379,6 +1509,29 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
     }
   }
 
+  // Transport state after a clip lands (or fails to): the buttons, the
+  // scrubber, the clip name, and - by default - playback.
+  function setTransport(name, frameCount) {
+    const has = frameCount > 0;
+    for (const b of [anmPlayBtn, anmStopBtn, anmBackBtn, anmFwdBtn]) if (b) b.disabled = !has;
+    if (anmFrameSlider) {
+      anmFrameSlider.disabled = !has;
+      anmFrameSlider.min = '0';
+      anmFrameSlider.max = String(Math.max(0, frameCount - 1));
+      anmFrameSlider.value = '0';
+    }
+    if (anmFrameLabel) anmFrameLabel.textContent = has ? `f 0/${frameCount - 1}` : '-';
+    if (anmClipName) anmClipName.textContent = has ? name : (name || '-');
+    if (anmPlayBtn) anmPlayBtn.textContent = '▶ play';
+    if (has && AUTOPLAY && meshView && meshView.anim && meshView.anim.frameCount > 1) {
+      meshView.setPlaying(true);
+      anmPlayBtn.textContent = '⏸ pause';
+    }
+  }
+  function syncPlayLabel() {
+    if (anmPlayBtn && meshView) anmPlayBtn.textContent = meshView.playing ? '⏸ pause' : '▶ play';
+  }
+
   // Pull the (bundle, record) the scrubber currently points at and push it
   // into the active mesh view.
   function maybeLoadCurrentAnim() {
@@ -1397,14 +1550,10 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
     const targetParts = (dims[0] | 0) || Math.max(1, p.slots[slot].disc_nobj | 0);
     const partCount = dims[0] | 0;
     const frameCount = dims[1] | 0;
+    const clipName = rec.label ? rec.label.replace(/^(Vahn|Noa|Gala) - /, '') : `rec ${curAnmRecordIdx}`;
     if (!frameCount) {
       meshView.setAnimation(null);
-      anmFrameSlider.disabled = true;
-      anmFrameSlider.max = '0';
-      anmFrameSlider.value = '0';
-      if (anmFrameLabel) anmFrameLabel.textContent = '-';
-      anmPlayBtn.disabled = true;
-      anmStopBtn.disabled = true;
+      setTransport(clipName, 0);
       return;
     }
     const frames = viewer.player_anm_record_pose_frames(
@@ -1412,20 +1561,14 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
     );
     if (!frames || !frames.length) {
       meshView.setAnimation(null);
+      setTransport(clipName, 0);
       return;
     }
     meshView.setAnimation({
       partCount, frameCount,
       frames: Int32Array.from(frames),
     });
-    anmFrameSlider.disabled = false;
-    anmFrameSlider.min = '0';
-    anmFrameSlider.max = String(Math.max(0, frameCount - 1));
-    anmFrameSlider.value = '0';
-    if (anmFrameLabel) anmFrameLabel.textContent = `f 0/${frameCount - 1}`;
-    anmPlayBtn.disabled = false;
-    anmStopBtn.disabled = false;
-    anmPlayBtn.textContent = '▶ play';
+    setTransport(clipName, frameCount);
   }
 
   // Push the selected battle-form clip into the mesh view. Frame 0 is the
@@ -1436,14 +1579,11 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
     const clip = clips[curEquipClip];
     if (!clip || !clip.frames) {
       meshView.setAnimation(null);
-      anmFrameSlider.disabled = true;
-      anmPlayBtn.disabled = true;
-      anmStopBtn.disabled = true;
-      if (anmFrameLabel) anmFrameLabel.textContent = '-';
+      setTransport(clip ? clip.label : '', 0);
       return;
     }
     const frames = viewer.equipped_pose_frames(curEquipClip);
-    if (!frames || !frames.length) { meshView.setAnimation(null); return; }
+    if (!frames || !frames.length) { meshView.setAnimation(null); setTransport(clip.label, 0); return; }
     meshView.setAnimation({
       partCount: equipSummary.part_count | 0,
       frameCount: clip.frames | 0,
@@ -1451,31 +1591,59 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
       // The record's own retail rate byte (FUN_80047430 advances rate/8
       // keyframes per 60 Hz tick).
       fps: clip.rate ? 7.5 * clip.rate : 15,
+      // An art translates the actor (flips, lunges): frame the whole clip.
+      fitAll: clipKindOf(clip) === 'art',
     });
-    anmFrameSlider.disabled = false;
-    anmFrameSlider.min = '0';
-    anmFrameSlider.max = String(Math.max(0, (clip.frames | 0) - 1));
-    anmFrameSlider.value = '0';
-    if (anmFrameLabel) anmFrameLabel.textContent = `f 0/${(clip.frames | 0) - 1}`;
-    anmPlayBtn.disabled = false;
-    anmStopBtn.disabled = false;
-    anmPlayBtn.textContent = '▶ play';
+    setTransport(clipDisplayName(clip.label), clip.frames | 0);
   }
 
   function updateSpinLabel(on) {
-    spinBtn.textContent = on ? '⏸ stop spin' : '▶ start spin';
+    spinBtn.textContent = on ? '⏸ spin' : '↻ spin';
+    spinBtn.title = on ? 'Stop the auto-rotation' : 'Auto-rotate the view';
+  }
+
+  // Select + play a battle-form clip / a scoped ANM record. One click, the
+  // character performs it.
+  function selectEquipClip(idx) {
+    const clips = (equipSummary && equipSummary.clips) || [];
+    if (!clips[idx]) return;
+    curEquipClip = idx;
+    wantClipLabel = clips[idx].label;
+    renderEquipClipButtons();
+    loadEquipClip();
+    if (meshView && meshView.anim) { meshView.setPlaying(true); syncPlayLabel(); }
+  }
+  function selectAnmRecord(idx) {
+    curAnmRecordIdx = idx;
+    syncAnmSlider();
+    maybeLoadCurrentAnim();
+    if (meshView && meshView.anim) { meshView.setPlaying(true); syncPlayLabel(); }
+  }
+  // Previous / next clip in the strip's order ([ and ]).
+  function stepClip(delta) {
+    if (isEquipLoadoutForm(curForm)) {
+      const clips = (equipSummary && equipSummary.clips) || [];
+      if (!clips.length) return;
+      const order = equipClipGroups(clips).flatMap(g => g.items.map(it => it.i));
+      const at = Math.max(0, order.indexOf(curEquipClip));
+      selectEquipClip(order[(at + delta + order.length) % order.length]);
+      return;
+    }
+    if (!anmFiltered.length) return;
+    const at = Math.max(0, anmFiltered.indexOf(curAnmRecordIdx));
+    selectAnmRecord(anmFiltered[(at + delta + anmFiltered.length) % anmFiltered.length]);
   }
 
   // ----- Events -----
   pickEl.addEventListener('click', (e) => {
-    const card = e.target.closest('.char-card');
+    const card = e.target.closest('[data-slot]');
     if (!card) return;
     const slot = Number(card.dataset.slot);
     if (Number.isFinite(slot)) selectSlot(slot);
   });
 
   document.getElementById('char-form-toggle').addEventListener('click', (e) => {
-    const btn = e.target.closest('.char-equip-btn');
+    const btn = e.target.closest('.char-seg-btn');
     if (!btn || btn.disabled) return;
     const val = btn.dataset.val;
     if (val === 'field' || val === 'battle' || val === 'baka') selectTab(val);
@@ -1655,26 +1823,14 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
       if (clipBtn) {
         const idx = Number(clipBtn.dataset.clip);
         if (!Number.isFinite(idx)) return;
-        curEquipClip = idx;
-        renderEquipClipButtons();
-        loadEquipClip();
-        if (meshView && meshView.anim) {
-          meshView.setPlaying(true);
-          anmPlayBtn.textContent = '⏸ pause';
-        }
+        selectEquipClip(idx);
         return;
       }
       const btn = e.target.closest('button[data-rec]');
       if (!btn) return;
       const idx = Number(btn.dataset.rec);
       if (!Number.isFinite(idx)) return;
-      curAnmRecordIdx = idx;
-      syncAnmSlider();
-      maybeLoadCurrentAnim();
-      if (meshView && meshView.anim) {
-        meshView.setPlaying(true);
-        anmPlayBtn.textContent = '⏸ pause';
-      }
+      selectAnmRecord(idx);
     });
   }
   const anmShowAll = document.getElementById('char-anm-show-all');
@@ -1685,22 +1841,35 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
       maybeLoadCurrentAnim();
     });
   }
-  if (anmPlayBtn) {
-    anmPlayBtn.addEventListener('click', () => {
-      if (!meshView || !meshView.anim) return;
-      const willPlay = !meshView.playing;
-      meshView.setPlaying(willPlay);
-      anmPlayBtn.textContent = willPlay ? '⏸ pause' : '▶ play';
-    });
+  function togglePlay() {
+    if (!meshView || !meshView.anim) return;
+    meshView.setPlaying(!meshView.playing);
+    syncPlayLabel();
   }
+  function showFrame(f) {
+    if (!meshView || !meshView.anim) return;
+    anmFrameSlider.value = String(f);
+    if (anmFrameLabel) anmFrameLabel.textContent = `f ${f}/${meshView.anim.frameCount - 1}`;
+    syncPlayLabel();
+  }
+  function stepFrame(delta) {
+    if (!meshView || !meshView.anim) return;
+    meshView.step(delta);
+    showFrame(meshView.currentFrame());
+  }
+  if (anmPlayBtn) anmPlayBtn.addEventListener('click', togglePlay);
   if (anmStopBtn) {
     anmStopBtn.addEventListener('click', () => {
       if (!meshView || !meshView.anim) return;
       meshView.setFrame(0);
-      meshView.playing = false;
-      anmPlayBtn.textContent = '▶ play';
-      anmFrameSlider.value = '0';
-      if (anmFrameLabel) anmFrameLabel.textContent = `f 0/${meshView.anim.frameCount - 1}`;
+      showFrame(0);
+    });
+  }
+  if (anmBackBtn) anmBackBtn.addEventListener('click', () => stepFrame(-1));
+  if (anmFwdBtn) anmFwdBtn.addEventListener('click', () => stepFrame(1));
+  if (anmSpeedSel) {
+    anmSpeedSel.addEventListener('change', () => {
+      if (meshView) meshView.setSpeed(Number(anmSpeedSel.value) || 1);
     });
   }
   if (anmFrameSlider) {
@@ -1708,10 +1877,28 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
       if (!meshView || !meshView.anim) return;
       const f = Number(anmFrameSlider.value) | 0;
       meshView.setFrame(f);
-      anmPlayBtn.textContent = '▶ play';
-      if (anmFrameLabel) anmFrameLabel.textContent = `f ${f}/${meshView.anim.frameCount - 1}`;
+      showFrame(f);
     });
   }
+  // Keyboard transport, while the viewer is on screen and no field has focus.
+  document.addEventListener('keydown', (e) => {
+    if (!meshView || viewerWrap.style.display === 'none') return;
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+    const t = e.target;
+    const tag = t && t.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || (t && t.isContentEditable)) return;
+    switch (e.key) {
+      case ' ': togglePlay(); break;
+      case 'ArrowLeft': stepFrame(-1); break;
+      case 'ArrowRight': stepFrame(1); break;
+      case 'Home': if (meshView.anim) { meshView.setFrame(0); showFrame(0); } break;
+      case '[': stepClip(-1); break;
+      case ']': stepClip(1); break;
+      case 'r': case 'R': meshView.resetView(); break;
+      default: return;
+    }
+    e.preventDefault();
+  });
 
   spinBtn.addEventListener('click', () => {
     if (!meshView) return;
@@ -1864,6 +2051,9 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
       } catch (e) {
         console.debug('[characters] ANM corpus walk failed:', e);
       }
+      // The battle form needs the equipment surface; a stale bundle / odd
+      // disc without it opens on the field form instead.
+      if (isEquipLoadoutForm(curForm) && !equipPack) curForm = 'field';
       const battleNote = battlePack
         ? ` · Baka Fighter (${battlePack.slots.length} slots + ${battlePack.atlases ? battlePack.atlases.length : 0} atlases)`
         : '';
