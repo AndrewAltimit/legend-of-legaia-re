@@ -2353,3 +2353,32 @@ topics = ["battle", "boss", "Gaza", "softlock", "state 0x19", "attack approach",
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
+
+[[scenarios]]
+slot = 1
+label = "nivora_cutscene_delilas_intro"
+backup_fingerprint = "542107a89004977b35d47057ed5695c20b47061bd48b7f004b5d6d705a8f89af"
+description = "RETAIL disc: start of the Nivora ravine cutscene with the Delilas siblings (nilboa field-run, x=14400 z=14656) - the walk-in before the duels"
+topics = ["nivora", "nilboa", "Delilas", "cutscene", "retail reference"]
+phase = "field"
+expected_active_scene = "nilboa"
+
+[[scenarios]]
+slot = 2
+label = "nivora_duel_che_vs_gala_start"
+backup_fingerprint = "41471a9dc196ea13b0d909be3a06ee80f32d2511d8e370fb615098d65c234a12"
+description = "RETAIL disc: start of the Che vs Gala Nivora duel battle (nilboa battle mode) - the retail boss-cast reference fight"
+topics = ["nivora", "nilboa", "Delilas", "Che", "duel", "battle", "retail reference"]
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+
+[[scenarios]]
+slot = 3
+label = "nivora_duel_pre_megaton_press"
+backup_fingerprint = "87dd9568e167bdb96ad94cc9a7bc4504073eef2979e87e616d755905bb80ce02"
+description = "RETAIL disc: mid Che vs Gala duel, ~1 second before Che performs Megaton Press unprompted - THE retail reference for the capture-cast module 959 finale (camera pan to caster + face cut-in). Load and wait; the cast fires on its own"
+topics = ["nivora", "Delilas", "Che", "Megaton Press", "cast module 959", "finale", "camera", "face cut-in", "retail reference"]
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
