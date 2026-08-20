@@ -17,7 +17,9 @@ use legaia_asset::party_swap;
 use legaia_asset::party_swap::enemy_anim;
 use legaia_patcher::delilas_party::{PartyMapping, apply_delilas_party};
 use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
-use legaia_patcher::enemy_anim_mirror::{RetailSources, apply_enemy_anim_mirror, staged_entries};
+use legaia_patcher::enemy_anim_mirror::{
+    RetailSources, apply_enemy_anim_mirror, staged_entries, staged_plan,
+};
 
 fn load_disc() -> Option<Vec<u8>> {
     let path = std::env::var("LEGAIA_DISC_BIN").ok()?;
@@ -220,22 +222,40 @@ fn mirrored_duel_blocks_fight_with_the_heroes_clips() {
         }
 
         // Staged entries: streams CHANGED vs the swapped baseline, tags
-        // preserved, and every module-staged entry holds the 23-frame
-        // floor.
+        // preserved, and every module-staged entry holds its plan floor
+        // (the 0960 payoff cursor gate at 23 frames; retail's own
+        // 11-frame smallest staged entry elsewhere).
+        let plan = staged_plan(sibling);
         let swapped_spans = entry_spans(&swapped_block);
         for &i in &staged_all {
             let (off, span, tag, frames) = spans[i];
             let (soff, sspan, stag, _) = swapped_spans[i];
             assert_eq!(tag, stag, "{who} staged entry {i}: tag preserved");
+            let floor = plan
+                .chain
+                .iter()
+                .position(|&c| c == i)
+                .map(|k| plan.chain_floors[k])
+                .unwrap_or(plan.close_floor);
             assert!(
-                frames >= 23,
-                "{who} staged entry {i}: {frames} frames < the 23-keyframe module floor"
+                frames >= floor,
+                "{who} staged entry {i}: {frames} frames < the {floor}-keyframe floor"
             );
             let new_stream = &block[off + 0x8C..off + span];
             let old_stream = &swapped_block[soff + 0x8C..soff + sspan];
             assert_ne!(
                 new_stream, old_stream,
                 "{who} staged entry {i}: stream did not change"
+            );
+        }
+        // The measured cursor gate: Lu's module (0960) damage tick needs
+        // the payoff clip cursor to reach keyframe 22, whichever hero
+        // wears her block.
+        if sibling == legaia_patcher::delilas_party::Sibling::Lu {
+            let payoff = *plan.chain.last().unwrap();
+            assert!(
+                spans[payoff].3 >= 23,
+                "{who}: Lu-block payoff entry {payoff} under the 0960 cursor gate"
             );
         }
         // Duration preserved per staged chain stage: frames * 8 / rate
@@ -387,6 +407,116 @@ fn enemy_bake_holds_the_whole_rig_alignment_bound() {
                     f.part,
                     f.principal_scales
                 );
+            }
+        }
+    }
+}
+
+/// Every legal mapping permutation fits: the mirror must land (no
+/// budget skip) on all six assignments of the three siblings to the
+/// three hero slots. Stages the post-swap state directly (swap, rename,
+/// slot patch - what `apply_delilas_party`'s model loop leaves behind)
+/// without paying for the full apply per permutation.
+#[test]
+fn every_mapping_permutation_fits_the_slot_budget() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let base = DiscPatcher::open(original.clone()).expect("open disc");
+    let retail_archive = base
+        .read_entry_footprint(MONSTER_ARCHIVE_ENTRY)
+        .expect("archive");
+    let players: Vec<Vec<u8>> = (863..=865)
+        .map(|e| base.read_entry_footprint(e).expect("player"))
+        .collect();
+    let readef = base.read_entry_footprint(894).expect("readef");
+    let retail = RetailSources {
+        archive: &retail_archive,
+        players: [&players[0], &players[1], &players[2]],
+        readef: &readef,
+    };
+
+    // The nine (hero slot, block) swapped+renamed slots, cached once.
+    let rigs = [
+        &party_swap::RIG_VAHN_GALA,
+        &party_swap::RIG_NOA,
+        &party_swap::RIG_VAHN_GALA,
+    ];
+    let names = ["Vahn", "Noa", "Gala"];
+    let mut swapped: std::collections::BTreeMap<(usize, u16), Vec<u8>> = Default::default();
+    for (slot, name) in names.iter().enumerate() {
+        for id in [162u16, 163, 164] {
+            let out = party_swap::swap_into_block(&players[slot], rigs[slot], &retail_archive, id)
+                .unwrap_or_else(|e| panic!("{name} -> {id}: {e:#}"));
+            let mut block = out.block;
+            legaia_patcher::delilas_party::rename_block(&mut block, name)
+                .unwrap_or_else(|e| panic!("{name} -> {id}: rename: {e:#}"));
+            let slot_bytes =
+                ma::encode_slot(&block).unwrap_or_else(|e| panic!("{name} -> {id}: encode: {e:#}"));
+            swapped.insert((slot, id), slot_bytes);
+        }
+    }
+
+    let mut patcher = DiscPatcher::open(original).expect("open disc for perms");
+    for perm in [
+        "gi,lu,che",
+        "gi,che,lu",
+        "lu,gi,che",
+        "lu,che,gi",
+        "che,gi,lu",
+        "che,lu,gi",
+    ] {
+        let mapping = PartyMapping::parse(perm).expect("mapping");
+        // Stage the post-swap state for this permutation.
+        for (_, _, slot, _, sibling) in mapping.pairs() {
+            let id = sibling.monster_id();
+            patcher
+                .patch_monster_slot(id, &swapped[&(slot, id)])
+                .expect("stage swapped slot");
+        }
+        let notes = apply_enemy_anim_mirror(&mut patcher, &mapping, &retail)
+            .unwrap_or_else(|e| panic!("{perm}: mirror: {e:#}"));
+        assert!(
+            !notes.iter().any(|n| n.contains("(budget)")),
+            "{perm}: a block kept the sibling's clips: {notes:?}"
+        );
+        // Report the fit per block.
+        let cur = patcher
+            .read_entry_footprint(MONSTER_ARCHIVE_ENTRY)
+            .expect("archive after");
+        for (_, _, _, who, sibling) in mapping.pairs() {
+            let id = sibling.monster_id();
+            let slot_off = (id as usize - 1) * ma::SLOT_STRIDE;
+            let slot = &cur[slot_off..slot_off + ma::SLOT_STRIDE];
+            let used = slot.iter().rposition(|&b| b != 0).unwrap_or(0) + 1;
+            let ladder: Vec<&String> = notes
+                .iter()
+                .filter(|n| n.starts_with(&format!("{who} (monster {id})")))
+                .filter(|n| n.contains("ladder step") || n.contains("density"))
+                .collect();
+            eprintln!(
+                "[fit] {perm}: {who} on monster {id}: slot used {used:#x} \
+                 (headroom {}){}",
+                ma::SLOT_STRIDE - used,
+                if ladder.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ladder: {ladder:?}")
+                }
+            );
+            // Floors hold under every permutation.
+            let block = ma::decode_block(&cur, id).unwrap().unwrap();
+            let spans = entry_spans(&block);
+            let plan = staged_plan(sibling);
+            for (k, &i) in plan.chain.iter().enumerate() {
+                assert!(
+                    spans[i].3 >= plan.chain_floors[k],
+                    "{perm}: {who} on {id} staged entry {i} under floor"
+                );
+            }
+            if let Some(c) = plan.close {
+                assert!(spans[c].3 >= plan.close_floor);
             }
         }
     }

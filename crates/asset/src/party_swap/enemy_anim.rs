@@ -30,10 +30,11 @@
 //!    keyframe stream is replaced. The staged special entries (raw
 //!    indices the per-spell cast module writes into `actor[+0x1DA]` -
 //!    `docs/formats/monster-animation.md` § "A special attack can be a
-//!    chain of entries") keep their indices and stay at or above
-//!    [`MIN_STAGED_FRAMES`] keyframes, stretch-resampled with the rate
-//!    byte adjusted so `frames * 8 / rate` (the retail tick formula)
-//!    preserves each stage's authored duration.
+//!    chain of entries") keep their indices and honour per-entry frame
+//!    floors ([`PAYOFF_FLOOR_FRAMES`] where a cursor gate is measured,
+//!    [`RETAIL_STAGED_FLOOR`] elsewhere), stretch-resampled with the
+//!    rate byte adjusted so `frames * 8 / rate` (the retail tick
+//!    formula) preserves each stage's authored duration.
 //!
 //! The monster stream encoding is the **raw** 9-byte packed record family
 //! (`[u8 parts][u8 frames][frames×parts×9]`, `FUN_8004998C`) - the same
@@ -50,11 +51,18 @@ use crate::monster_archive::MonsterAnimation;
 use std::collections::BTreeSet;
 use winpose::{mmul, to_euler, transpose};
 
-/// Minimum keyframes for any entry a cast module stages by raw index.
-/// One module phase gate is known to require a clip of at least 23
-/// keyframes; until the per-module gate facts are pinned, every staged
-/// entry honours the strongest known bound.
-pub const MIN_STAGED_FRAMES: usize = 23;
+/// Keyframe floor for a staged entry that plays during a measured
+/// cursor gate. Module 0960 (Lu, spell `0x7B`) has a damage tick that
+/// waits for the CASTER's clip cursor to reach `0x160` sixteenths
+/// (keyframe 22), so the payoff stage it binds must carry at least 23
+/// keyframes.
+pub const PAYOFF_FLOOR_FRAMES: usize = 23;
+
+/// Keyframe floor for staged entries with no measured cursor gate:
+/// retail's own smallest module-staged entry (Gi's 11-frame crouch,
+/// block 162 entry 10). Module 0959 carries no `slti` cursor test at
+/// all; 0958 is unmeasured and is held at the retail floor.
+pub const RETAIL_STAGED_FLOOR: usize = 11;
 
 /// The staged anim id of each hero slot's 50-AP Hyper art (the move the
 /// swapped enemy's signature cast is renamed to): bank record index =
@@ -794,6 +802,17 @@ pub struct MirrorOptions {
     /// AI-rollable castable attacks (tags 0x0C..=0x1F with a real AGL
     /// cost) ← the hero's default-equipment weapon swings, round-robin.
     pub attacks: bool,
+    /// Density rung: halve the keyframe count AND the rate byte of
+    /// non-staged rewritten streams where both divide exactly
+    /// (`frames * 8 / rate` - the duration - is invariant; a stream
+    /// with an odd count or rate is left alone).
+    pub halve_non_staged: bool,
+    /// The same exact halving on the staged streams, floors respected.
+    pub halve_staged: bool,
+    /// Close-entry rung: source the closing settle pose from the hero's
+    /// short record0 "Recover" clip (tag 8) instead of the base-ME
+    /// victory flourish (the largest single stream the mirror writes).
+    pub compact_close: bool,
 }
 
 impl MirrorOptions {
@@ -801,12 +820,30 @@ impl MirrorOptions {
         reactions: true,
         walk: true,
         attacks: true,
+        halve_non_staged: false,
+        halve_staged: false,
+        compact_close: false,
     };
     pub const NONE: MirrorOptions = MirrorOptions {
         reactions: false,
         walk: false,
         attacks: false,
+        halve_non_staged: true,
+        halve_staged: true,
+        compact_close: true,
     };
+}
+
+/// The module-staged entries of one block, with per-entry keyframe
+/// floors. `chain` is the caster chain in stage order (the LAST element
+/// is the payoff - the strike the damage window plays over); `floors`
+/// is parallel to it.
+#[derive(Debug, Clone, Copy)]
+pub struct StagedPlan<'a> {
+    pub chain: &'a [usize],
+    pub chain_floors: &'a [usize],
+    pub close: Option<usize>,
+    pub close_floor: usize,
 }
 
 /// A mirrored block plus what happened to it.
@@ -861,6 +898,13 @@ fn hero_victory_clip(
         .ok_or_else(|| anyhow::anyhow!("base ME entry 0 is not a keyframe stream"))
 }
 
+/// The close clip under `compact_close`: the hero's record0 "Recover"
+/// clip (action tag 8) - a short settle pose (7-15 frames across the
+/// three heroes) against the 59-60 frame victory flourish.
+fn hero_recover_clip(hero_anims: &[MonsterAnimation]) -> Option<&MonsterAnimation> {
+    hero_anims.iter().find(|a| a.action_id == 8)
+}
+
 /// Stretch a retargeted clip to at least `min_frames`, preserving its
 /// wall-clock duration: an integer stretch factor `m` multiplies both the
 /// frame count and the rate byte (`frames * 8 / rate` is invariant).
@@ -877,6 +921,40 @@ fn stretch_to_min(
     let stretched = resample_poses(&rows, f * m);
     let rate = (rate.max(1) as usize * m).min(255) as u8;
     (stretched, rate)
+}
+
+/// Exact keyframe-density halving: frames and rate both even (and the
+/// halved count still at or above `floor`) → halve both, which keeps
+/// the duration `frames * 8 / rate` bit-exact. Returns whether it
+/// applied.
+fn halve_exact(rows: &mut Vec<Vec<PartPose>>, rate: &mut u8, floor: usize) -> bool {
+    let f = rows.len();
+    if !f.is_multiple_of(2) || !rate.is_multiple_of(2) || f / 2 < floor.max(4) {
+        return false;
+    }
+    *rows = resample_poses(rows, f / 2);
+    *rate /= 2;
+    true
+}
+
+/// Source-frame count for the payoff stage of an `h`-frame Hyper split
+/// into `n` stages: the uniform share, unless giving the payoff
+/// `payoff_floor` REAL source frames (leaving at least one per earlier
+/// stage) produces a smaller stretched stream - a 58-frame clip split
+/// 3 ways stretches its 20-frame payoff to 40 under a 23 floor, while a
+/// 23-frame payoff needs no stretch at all.
+fn payoff_source_frames(h: usize, n: usize, payoff_floor: usize) -> usize {
+    let uniform = h - (n - 1) * h / n;
+    if uniform >= payoff_floor {
+        return uniform;
+    }
+    let out = |p: usize| p * payoff_floor.div_ceil(p);
+    let widened = payoff_floor.min(h.saturating_sub(n - 1)).max(1);
+    if out(widened) < out(uniform) {
+        widened
+    } else {
+        uniform
+    }
 }
 
 /// Rewrite the swapped monster block's animation entries with the mapped
@@ -896,8 +974,7 @@ pub fn mirror_block_animations(
     readef: &[u8],
     char_index: usize,
     rig: &PlayerRig,
-    staged: &[usize],
-    close: Option<usize>,
+    plan: &StagedPlan<'_>,
     opts: &MirrorOptions,
 ) -> Result<MirroredBlock> {
     let retail_block = monster_archive::decode_block(retail_archive, target_id)?
@@ -925,65 +1002,99 @@ pub fn mirror_block_animations(
         anchor[0], anchor[1], anchor[2]
     ));
 
-    let mut rewrites: BTreeMap<usize, EntryRewrite> = BTreeMap::new();
-    let mut push = |idx: usize, mut rows: Vec<Vec<PartPose>>, rate: u8| {
+    struct Pending {
+        rows: Vec<Vec<PartPose>>,
+        rate: u8,
+        floor: usize,
+        staged: bool,
+    }
+    let mut pending: BTreeMap<usize, Pending> = BTreeMap::new();
+    let mut push = |idx: usize, mut rows: Vec<Vec<PartPose>>, rate: u8, floor: usize, st: bool| {
         apply_anchor(&mut rows, anchor);
-        rewrites.insert(
+        pending.insert(
             idx,
-            EntryRewrite {
+            Pending {
                 rows,
                 rate: rate.max(1),
+                floor,
+                staged: st,
             },
         );
     };
 
     // Idle (entry 0) - always.
-    push(0, idle_rows.clone(), hero_idle.rate);
+    push(0, idle_rows.clone(), hero_idle.rate, 1, false);
 
     // The staged special chain: the hero's Hyper art split across the
     // module's staged entries (early stages = wind-up, the last stage =
-    // the swing), every stage held at >= MIN_STAGED_FRAMES keyframes by a
-    // duration-preserving integer stretch.
+    // the payoff swing), each stage held at or above its plan floor by a
+    // duration-preserving integer stretch. The payoff boundary widens to
+    // its floor when that avoids a stretch (a real 23-frame strike beats
+    // a 20-frame strike doubled to 40).
     let hyper = hero_hyper_clip(player_file, readef, char_index).context("hero Hyper clip")?;
+    let staged = plan.chain;
     if staged.is_empty() {
         bail!("no staged entries for monster id {target_id}");
+    }
+    if plan.chain_floors.len() != staged.len() {
+        bail!("staged plan floors do not match the chain length");
     }
     let n = staged.len();
     let h = hyper.frames.len();
     if h < n {
         bail!("hero Hyper clip has {h} frames for {n} stages");
     }
+    let payoff_floor = *plan.chain_floors.last().expect("chain non-empty");
+    let payoff_src = payoff_source_frames(h, n, payoff_floor);
+    let lead = h - payoff_src;
     for (k, &idx) in staged.iter().enumerate() {
-        let b0 = k * h / n;
-        let b1 = ((k + 1) * h / n).max(b0 + 1);
+        let (b0, b1) = if k + 1 == n {
+            (lead, h)
+        } else {
+            let b0 = k * lead / (n - 1);
+            let b1 = ((k + 1) * lead / (n - 1)).max(b0 + 1);
+            (b0, b1)
+        };
         let seg = &hyper.frames[b0..b1];
-        let (rows, rate) = stretch_to_min(rt.retarget_frames(seg), hyper.rate, MIN_STAGED_FRAMES);
-        push(idx, rows, rate);
+        let (rows, rate) =
+            stretch_to_min(rt.retarget_frames(seg), hyper.rate, plan.chain_floors[k]);
+        push(idx, rows, rate, plan.chain_floors[k], true);
     }
     notes.push(format!(
-        "hyper {}f rate {} split over {n} staged entries {staged:?}",
-        h, hyper.rate
+        "hyper {h}f rate {} split over {n} staged entries {staged:?} (payoff {payoff_src} source frames)",
+        hyper.rate
     ));
 
     // Closing entry: the hero's victory flourish (also the monster's
-    // tag-0x22 victory pose). Staged by the module, so it honours the
-    // same frame floor.
-    if let Some(idx) = close {
-        let clip = hero_victory_clip(player_file, readef, char_index).context("hero victory")?;
+    // tag-0x22 victory pose), or the short record0 Recover settle under
+    // the compact-close budget rung. Staged by the module, so it honours
+    // the plan floor.
+    if let Some(idx) = plan.close {
+        let compact = opts
+            .compact_close
+            .then(|| hero_recover_clip(&hero_anims).cloned())
+            .flatten();
+        let (clip, label) = match compact {
+            Some(c) => (c, "hero recover"),
+            None => (
+                hero_victory_clip(player_file, readef, char_index).context("hero victory")?,
+                "hero victory",
+            ),
+        };
         let (rows, rate) = stretch_to_min(
             rt.retarget_frames(&clip.frames),
             clip.rate,
-            MIN_STAGED_FRAMES,
+            plan.close_floor,
         );
-        push(idx, rows, rate);
+        push(idx, rows, rate, plan.close_floor, true);
         notes.push(format!(
-            "close entry {idx} <- hero victory ({}f)",
+            "close entry {idx} <- {label} ({}f)",
             clip.frame_count
         ));
     }
 
     // Optional families, selected by retail entry tag.
-    let staged_set: Vec<usize> = staged.iter().copied().chain(close).collect();
+    let staged_set: Vec<usize> = staged.iter().copied().chain(plan.close).collect();
     let tag_of = |i: usize| retail_block[ret_entries[i].off];
     let agl_of = |i: usize| retail_block[ret_entries[i].off + 0x74];
     if opts.walk {
@@ -992,7 +1103,7 @@ pub fn mirror_block_animations(
                 && !staged_set.contains(&i)
                 && let Some(clip) = hero_by_tag(1)
             {
-                push(i, rt.retarget_frames(&clip.frames), clip.rate);
+                push(i, rt.retarget_frames(&clip.frames), clip.rate, 1, false);
             }
         }
     }
@@ -1003,7 +1114,7 @@ pub fn mirror_block_animations(
                 && !staged_set.contains(&i)
                 && let Some(clip) = hero_by_tag(tag)
             {
-                push(i, rt.retarget_frames(&clip.frames), clip.rate);
+                push(i, rt.retarget_frames(&clip.frames), clip.rate, 1, false);
             }
         }
     }
@@ -1018,7 +1129,13 @@ pub fn mirror_block_animations(
                     {
                         let sw = &swings[next % swings.len()];
                         next += 1;
-                        push(i, rt.retarget_frames(&sw.anim.frames), sw.anim.rate);
+                        push(
+                            i,
+                            rt.retarget_frames(&sw.anim.frames),
+                            sw.anim.rate,
+                            1,
+                            false,
+                        );
                     }
                 }
                 if next > 0 {
@@ -1030,6 +1147,37 @@ pub fn mirror_block_animations(
         }
     }
 
+    // Density rungs: exact halving (frames and rate both even, floors
+    // respected) - duration-invariant, so module pacing and the look's
+    // tempo are untouched; only pose density drops, to a coarseness
+    // retail itself ships (several retail entries are authored at rate 1).
+    let mut halved = 0usize;
+    for p in pending.values_mut() {
+        let want = if p.staged {
+            opts.halve_staged
+        } else {
+            opts.halve_non_staged
+        };
+        if want && halve_exact(&mut p.rows, &mut p.rate, p.floor) {
+            halved += 1;
+        }
+    }
+    if halved > 0 {
+        notes.push(format!("{halved} streams at halved keyframe density"));
+    }
+
+    let rewrites: BTreeMap<usize, EntryRewrite> = pending
+        .into_iter()
+        .map(|(i, p)| {
+            (
+                i,
+                EntryRewrite {
+                    rows: p.rows,
+                    rate: p.rate,
+                },
+            )
+        })
+        .collect();
     let rewritten: Vec<usize> = rewrites.keys().copied().collect();
     let block = rebuild_block_entries(current_block, &retail_block, &rewrites)?;
     notes.push(format!(
@@ -1406,6 +1554,48 @@ mod tests {
         assert_eq!(rate, 8);
         // frames * 8 / rate invariant: 7*8/2 == 28*8/8.
         assert_eq!(7 * 8 / 2, 28 * 8 / 8);
+    }
+
+    #[test]
+    fn payoff_split_widens_only_when_it_shrinks_the_stream() {
+        // 58f / 3 stages, floor 23: uniform payoff (20f) stretches to 40;
+        // a widened 23f payoff needs none - widen.
+        assert_eq!(payoff_source_frames(58, 3, 23), 23);
+        // 21f / 3 stages, floor 23: widening to 19f still stretches (x2 =
+        // 38) and loses to the uniform 7f x4 = 28 - keep uniform.
+        assert_eq!(payoff_source_frames(21, 3, 23), 7);
+        // 20f / 2 stages, floor 11: widened 11f payoff needs no stretch
+        // (11) vs uniform 10f doubled (20) - widen.
+        assert_eq!(payoff_source_frames(20, 2, 11), 11);
+        // Floor already met by the uniform share: unchanged.
+        assert_eq!(payoff_source_frames(60, 3, 11), 20);
+    }
+
+    #[test]
+    fn halve_exact_is_duration_invariant_and_floor_guarded() {
+        let mk = |n: usize| -> Vec<Vec<PartPose>> {
+            (0..n as i16)
+                .map(|f| {
+                    vec![PartPose {
+                        tx: f,
+                        ..PartPose::default()
+                    }]
+                })
+                .collect()
+        };
+        // 24f rate 4 -> 12f rate 2: duration 24*8/4 == 12*8/2.
+        let mut rows = mk(24);
+        let mut rate = 4u8;
+        assert!(halve_exact(&mut rows, &mut rate, 11));
+        assert_eq!((rows.len(), rate), (12, 2));
+        // Odd rate: refused.
+        let mut rows = mk(24);
+        let mut rate = 1u8;
+        assert!(!halve_exact(&mut rows, &mut rate, 1));
+        // Floor guard: halving 24 under a 13 floor is refused.
+        let mut rows = mk(24);
+        let mut rate = 4u8;
+        assert!(!halve_exact(&mut rows, &mut rate, 13));
     }
 
     #[test]

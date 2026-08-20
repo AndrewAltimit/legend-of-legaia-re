@@ -30,7 +30,9 @@
 use anyhow::{Context, Result, bail};
 
 use legaia_asset::monster_archive;
-use legaia_asset::party_swap::enemy_anim::{self, MirrorOptions};
+use legaia_asset::party_swap::enemy_anim::{
+    self, MirrorOptions, PAYOFF_FLOOR_FRAMES, RETAIL_STAGED_FLOOR, StagedPlan,
+};
 
 use crate::delilas_party::{PartyMapping, Sibling};
 use crate::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
@@ -48,32 +50,93 @@ pub struct RetailSources<'a> {
 
 /// The archive entries each sibling's cast module stages by raw index
 /// (caster chain in stage order, plus the closing entry where the module
-/// stages one). Probe-traced for Che (`10 -> 11`) and Lu
-/// (`14 -> 12 -> 13`, close `15`); Gi's chain (`10 -> 11 -> 12`, close
-/// `13`) is the module-scan + player-corroborated reading recorded in
+/// stages one), with per-entry keyframe floors. Probe-traced for Che
+/// (`10 -> 11`) and Lu (`14 -> 12 -> 13`, close `15`); Gi's chain
+/// (`10 -> 11 -> 12`, close `13`) is the module-scan +
+/// player-corroborated reading recorded in
 /// `docs/formats/monster-animation.md`.
-pub fn staged_entries(sibling: Sibling) -> (&'static [usize], Option<usize>) {
+///
+/// Floors: the only measured cursor gate is module 0960's (Lu, spell
+/// `0x7B`) damage tick, which waits for the CASTER's clip cursor to
+/// reach `0x160` sixteenths (keyframe 22) - that binds the payoff stage
+/// (entry 13) at [`PAYOFF_FLOOR_FRAMES`]. Module 0959 carries no `slti`
+/// cursor test at all, and 0958 is unmeasured; both are held at
+/// [`RETAIL_STAGED_FLOOR`] (retail's own smallest staged entry, Gi's
+/// 11-frame crouch).
+pub fn staged_plan(sibling: Sibling) -> StagedPlan<'static> {
     match sibling {
-        Sibling::Gi => (&[10, 11, 12], Some(13)),
-        Sibling::Che => (&[10, 11], None),
-        Sibling::Lu => (&[14, 12, 13], Some(15)),
+        Sibling::Gi => StagedPlan {
+            chain: &[10, 11, 12],
+            chain_floors: &[
+                RETAIL_STAGED_FLOOR,
+                RETAIL_STAGED_FLOOR,
+                RETAIL_STAGED_FLOOR,
+            ],
+            close: Some(13),
+            close_floor: RETAIL_STAGED_FLOOR,
+        },
+        Sibling::Che => StagedPlan {
+            chain: &[10, 11],
+            chain_floors: &[RETAIL_STAGED_FLOOR, RETAIL_STAGED_FLOOR],
+            close: None,
+            close_floor: RETAIL_STAGED_FLOOR,
+        },
+        Sibling::Lu => StagedPlan {
+            chain: &[14, 12, 13],
+            chain_floors: &[
+                RETAIL_STAGED_FLOOR,
+                RETAIL_STAGED_FLOOR,
+                PAYOFF_FLOOR_FRAMES,
+            ],
+            close: Some(15),
+            close_floor: RETAIL_STAGED_FLOOR,
+        },
     }
 }
 
-/// The drop ladder: when the re-encoded slot misses the fixed `0x14000`
-/// archive budget, optional entry families are given up front-to-back.
-/// The idle and the module-staged special chain are never dropped.
-const LADDER: [MirrorOptions; 4] = [
+/// Compatibility view of [`staged_plan`]: `(chain, close)`.
+pub fn staged_entries(sibling: Sibling) -> (&'static [usize], Option<usize>) {
+    let p = staged_plan(sibling);
+    (p.chain, p.close)
+}
+
+/// The budget ladder: rungs are tried in order and the first slot fit
+/// wins. Density rungs (exact keyframe halving, duration-invariant) and
+/// the compact close come before any content is dropped; the idle and
+/// the module-staged special chain are never dropped. A block that
+/// misses every rung keeps the sibling's clips (graceful skip) - the
+/// bake-parity fix alone already poses the hero mesh correctly.
+const LADDER: [MirrorOptions; 7] = [
     MirrorOptions::ALL,
     MirrorOptions {
+        halve_non_staged: true,
+        ..MirrorOptions::ALL
+    },
+    MirrorOptions {
+        halve_non_staged: true,
+        compact_close: true,
+        ..MirrorOptions::ALL
+    },
+    MirrorOptions {
+        halve_non_staged: true,
+        halve_staged: true,
+        compact_close: true,
+        ..MirrorOptions::ALL
+    },
+    MirrorOptions {
         attacks: false,
-        walk: true,
-        reactions: true,
+        halve_non_staged: true,
+        halve_staged: true,
+        compact_close: true,
+        ..MirrorOptions::ALL
     },
     MirrorOptions {
         attacks: false,
         walk: false,
-        reactions: true,
+        halve_non_staged: true,
+        halve_staged: true,
+        compact_close: true,
+        ..MirrorOptions::ALL
     },
     MirrorOptions::NONE,
 ];
@@ -104,7 +167,7 @@ pub fn apply_enemy_anim_mirror(
         }
         let current_block = monster_archive::decode_block(&current_archive, id)?
             .ok_or_else(|| anyhow::anyhow!("monster id {id}: block does not decode"))?;
-        let (staged, close) = staged_entries(sibling);
+        let plan = staged_plan(sibling);
 
         let mut done = false;
         for (step, opts) in LADDER.iter().enumerate() {
@@ -116,8 +179,7 @@ pub fn apply_enemy_anim_mirror(
                 retail.readef,
                 slot,
                 rig,
-                staged,
-                close,
+                &plan,
                 opts,
             )
             .with_context(|| format!("{who} anim mirror for monster {id}"))?;
@@ -141,21 +203,19 @@ pub fn apply_enemy_anim_mirror(
                     done = true;
                     break;
                 }
-                Err(e) => {
-                    if step + 1 == LADDER.len() {
-                        return Err(e).with_context(|| {
-                            format!("{who} (monster {id}): mirrored block misses the slot budget")
-                        });
-                    }
-                    notes.push(format!(
-                        "{who} (monster {id}): ladder step {step} over budget ({e:#}); \
-                         dropping an entry family"
-                    ));
-                }
+                Err(e) => notes.push(format!(
+                    "{who} (monster {id}): ladder step {step} over budget ({e:#})"
+                )),
             }
         }
+        // Graceful skip: a block that no rung fits keeps the sibling's
+        // clips. The phase-38 bake parity alone already poses the hero
+        // mesh correctly; a hard error inside apply_delilas_party would
+        // cost the whole mod over one block's animations.
         if !done {
-            bail!("{who} (monster {id}): no ladder step fit the archive slot");
+            notes.push(format!(
+                "{who} (monster {id}): block keeps the sibling's clips (budget)"
+            ));
         }
     }
     Ok(notes)
