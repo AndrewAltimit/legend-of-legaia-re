@@ -65,6 +65,17 @@ local function finale_trace(cx, elapsed, ph)
     if ent >= 0x80000000 and ent < 0x80200000 then
         e10, e44 = u32(ent + 0x10), u32(ent + 0x44)
     end
+    if elapsed % 8 == 0 and (_G.__fin_shots or 0) < 90 then
+        _G.__fin_shots = (_G.__fin_shots or 0) + 1
+        local ok, ss = pcall(PCSX.GPU.takeScreenShot)
+        if ok and ss ~= nil then
+            local fh = io.open(probe.out_path(string.format("fin_%04d_ph%d.raw", elapsed, ph)), "wb")
+            if fh then
+                fh:write(tostring(ss.data))
+                fh:close()
+            end
+        end
+    end
     PCSX.log(string.format("[FIN t%d] ph=%d ent=%08X e10=%08X e44=%08X cam=%d,%d,%d",
         elapsed, ph, ent, e10, e44,
         (u32(0x1F800314 + 0x14) + 0x80000000) % 0x100000000 - 0x80000000,
@@ -102,7 +113,7 @@ probe.run({
         -- Settled-frame conversion: the monster's rolled action sits on the
         -- actor while the Begin/Reselect confirm is up; convert it before
         -- Begin is pressed (t=20; presses start t=30).
-        if elapsed == 20 and cat == 3 then
+        if elapsed == 20 and cat == 3 and probe.getenv("LEGAIA_NO_POKE", "") == "" then
             probe.write_u8(a0 + 0x1DE, 2)
             probe.write_u8(a0 + 0x1DF, SPELL)
             probe.write_u8(a0 + 0x1DD, TARGET_SEAT)
@@ -110,7 +121,7 @@ probe.run({
         end
 
         probe.pad_release(probe.BTN.CROSS)
-        if not cast_seen and elapsed < 300 then
+        if not cast_seen and elapsed < 300 and probe.getenv("LEGAIA_NO_POKE", "") == "" then
             local sub = elapsed % 60
             if sub >= 30 and sub < 34 then probe.pad_force(probe.BTN.CROSS) end
         end

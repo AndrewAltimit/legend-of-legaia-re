@@ -74,6 +74,17 @@ local function finale_trace(cx, elapsed, ph)
     if ent >= 0x80000000 and ent < 0x80200000 then
         e10, e44 = u32(ent + 0x10), u32(ent + 0x44)
     end
+    if elapsed % 8 == 0 and (_G.__fin_shots or 0) < 90 then
+        _G.__fin_shots = (_G.__fin_shots or 0) + 1
+        local ok, ss = pcall(PCSX.GPU.takeScreenShot)
+        if ok and ss ~= nil then
+            local fh = io.open(probe.out_path(string.format("fin_%04d_ph%d.raw", elapsed, ph)), "wb")
+            if fh then
+                fh:write(tostring(ss.data))
+                fh:close()
+            end
+        end
+    end
     PCSX.log(string.format("[FIN t%d] ph=%d ent=%08X e10=%08X e44=%08X cam=%d,%d,%d",
         elapsed, ph, ent, e10, e44,
         (u32(0x1F800314 + 0x14) + 0x80000000) % 0x100000000 - 0x80000000,
