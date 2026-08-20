@@ -118,6 +118,10 @@ pub(crate) const fn bne(rs: u32, rt: u32, off: i16) -> u32 {
 pub(crate) const fn bgez(rs: u32, off: i16) -> u32 {
     (0x01 << 26) | (rs << 21) | (0x01 << 16) | (off as u16 as u32)
 }
+/// `bltz rs,off` - branch if `rs < 0` (REGIMM, rt = 0).
+pub(crate) const fn bltz(rs: u32, off: i16) -> u32 {
+    (0x01 << 26) | (rs << 21) | (off as u16 as u32)
+}
 /// `blez rs,off` - branch if `rs <= 0`.
 pub(crate) const fn blez(rs: u32, off: i16) -> u32 {
     (0x06 << 26) | (rs << 21) | (off as u16 as u32)

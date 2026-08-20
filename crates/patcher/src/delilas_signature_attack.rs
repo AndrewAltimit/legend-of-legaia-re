@@ -9,112 +9,170 @@
 //! `+0x4C` spell entry has those ids (their offensive entries are the
 //! ordinary attack band `0x0C..=0x1F`). The signature cast is pure
 //! overlay-0898 code: the AI picker `FUN_801E9FD4` switches on the
-//! monster id (`DAT_8007BD0C[slot]`), and the merged case
-//! `0xA2`/`0xA3`/`0xA4` (= 162/163/164) fires on `round % 3 == 2`,
+//! monster id (`DAT_8007BD0C[slot]`; jump-table slots at
+//! `0x801CF444/448/44C` all dispatch to the merged case body
+//! `0x801EB7C0..0x801EB81C`), and that body fires on `round % 3 == 2`,
 //! writing `actor[+0x1DE] = 2` (Magic) and
-//! `actor[+0x1DF] = monster_id - 0x29` (the case body is
-//! `0x801EB7C0..0x801EB81C`; the id subtraction is the literal
-//! `0x2442FFD7` at PROT 0898 file `0x1CFFC`). The spell ids
+//! `actor[+0x1DF] = monster_id - 0x29` (the id subtraction is the
+//! literal `0x2442FFD7` at PROT 0898 file `0x1CFFC`). The spell ids
 //! `0x79/0x7A/0x7B` are capture-class (`'c'`), which is what pages the
 //! per-spell cast module (PROT 958/959/960) - the pillar / victim lift /
 //! blackout / smash spectacle the mirrored hero should not perform.
 //!
-//! ## The conversion
+//! ## The conversion - fully in place, no injection arena
 //!
-//! Two coordinated edits, both applied from
-//! [`crate::enemy_anim_mirror::apply_enemy_anim_mirror`]:
+//! The whole case body (24 words at file `0x1CFA8`) is rewritten with a
+//! 24-word arm that encodes what the picker's own default physical arm
+//! encodes (`0x801EA1EC..`): `+0x1DE = 3` (Attack) and the strike queue
+//! at `+0x1DF..`, zero-terminated - except the queued bytes are the
+//! module-staged chain entry indices
+//! ([`crate::enemy_anim_mirror::staged_plan`]: Gi `10,11,12`,
+//! Che `10,11`, Lu `14,12,13`), the entries the enemy-anim mirror
+//! already filled with the mapped hero's 50-AP Hyper clips. The strike
+//! loop (state `0x1E` of `FUN_801E295C`) stages each queued byte as an
+//! archive entry index exactly as it does for an ordinary monster
+//! attack; the move-power map rows for the queue heads
+//! (`map[10]`/`map[14]` at `0x801F4E63`) are row 0, the same all-zero
+//! default row most ordinary monster physicals resolve, so the hits
+//! land as plain ATK-driven strikes.
 //!
-//! 1. **The AI arm** ([`plan_ai_patch`]): the case body's cast write
-//!    (last 6 words, file `0x1CF F0..0x1D004`) becomes a `j` into a
-//!    31-word stub in preserved `SCUS_942.54` rodata dead space
-//!    ([`STUB_VA`], verified all-zero before writing). The retail
-//!    cadence gate (`round % 3 == 2`, words `0x1CFA8..0x1CFF0`) is kept
-//!    verbatim. The stub encodes exactly what the picker's own default
-//!    physical arm encodes (`0x801EA1EC..`): `+0x1DE = 3` (Attack),
-//!    `+0x1DD = rand() % party_count` (the picker's common tail then
-//!    applies its usual anti-repeat re-roll), and the strike queue at
-//!    `+0x1DF..` - except the queued bytes are the module-staged chain
-//!    entry indices ([`crate::enemy_anim_mirror::staged_plan`]:
-//!    Gi `10,11,12`, Che `10,11`, Lu `14,12,13`), zero-terminated, the
-//!    entries the enemy-anim mirror already filled with the mapped
-//!    hero's 50-AP Hyper clips. The strike loop (state `0x1E` of
-//!    `FUN_801E295C`) stages each queued byte as an archive entry index,
-//!    exactly as it does for an ordinary monster attack; the move-power
-//!    map rows for the queue heads (`map[10]`/`map[14]` at
-//!    `0x801F4E63`) are row 0, the same all-zero default row most
-//!    ordinary monster physicals resolve, so the hits land as plain
-//!    ATK-driven strikes.
+//! Three deliberate deltas against the retail arm, each bought by the
+//! 24-word budget (measured: the exact `% 3` cadence pushes the arm to
+//! 25 words):
 //!
-//! 2. **The strike graft** ([`graft_signature_strikes`]): the staged
-//!    chain entries carry empty event-frame lists and empty effect
-//!    scripts on the retail disc (the cast module did its own damage
-//!    ticks), so staging them as physical strikes would play choreography
-//!    with no contact. Each chain entry gets the head shape of the
-//!    block's own strongest ordinary attack (the costliest `0x0C..=0x1F`
-//!    entry): its event-frame list (`+0x10..+0x13`), its effect script
-//!    (`+0x14..+0x53`, the `0x84` impact spawn) and its `+0x76` commit
-//!    flag, with every frame value rescaled from the donor's clip length
-//!    to the stage's own. One contact per stage, so the converted
-//!    special lands `chain_len` ordinary-strength hits - the multi-hit
-//!    shape of the hero Hypers it wears.
+//! - **Cadence is `round & 3 == 2`** (rounds 2, 6, 10, ...) instead of
+//!   retail's `round % 3 == 2` (2, 5, 8, ...) - slightly rarer, same
+//!   first firing round.
+//! - **`+0x1DD` (target seat) is left as the previous action set it** -
+//!   exactly what the retail cast arm did (it wrote only
+//!   `+0x1DE`/`+0x1DF`); the picker's common tail still runs its
+//!   anti-repeat seat re-roll when the party has more than one member.
+//! - **The queue tail is stored as one aligned word** (`sw` at
+//!   `+0x1E0`): battle actors are 4-byte aligned (the loaders `lw`/`sw`
+//!   actor `+0x22C`/`+0x230` etc.), so `+0x1E0` is word-aligned and the
+//!   store writes `chain[1], chain[2], 0, 0` - queue bytes plus the
+//!   `0x00` strike-script terminator in one go.
 //!
-//! Idempotent end to end: the arm/stub writes accept the already-patched
+//! The per-id queue select exploits two facts the planner re-verifies
+//! against the staged plans on every run (so plan drift fails loudly
+//! instead of corrupting the encode): Che's queue word is exactly
+//! `gi_word & 0xFFFF` (both chains open on entry 10 and share entry 11),
+//! and each chain has at most 3 stages.
+//!
+//! ## Why in place - the SCUS arena census
+//!
+//! An earlier revision put a stub in "dead" SCUS rodata; the census
+//! below is why that cannot work. Every zero run in `SCUS_942.54` is
+//! either live runtime memory (zero on disc, written at boot - the
+//! "zero is not dead" trap in the crate README) or an already
+//! partitioned injection arena:
+//!
+//! - `0x80077728..0x80077828` (the 256-byte gap): contested by
+//!   `shiny_seru` (layout), `super_art_list`, `arts_ap_grant` and
+//!   `delilas_cast` - and the cast route is co-active with
+//!   `--delilas-party` (the Che-mapped player-side signature), so this
+//!   feature cannot claim it.
+//! - `0x8007AB38..0x8007AF3C` (the 1028-byte gap): Seru-Bell string
+//!   `0x8007AB40` (must survive), `charm_fix` `0x8007AB50..0x8007AB80`,
+//!   `bonus_drop` `0x8007AB80..`, `enemy_ally` `0x8007ACA0..0x8007AD00`,
+//!   `flee_exp` `0x8007AD00..0x8007AE00`, the `delilas_dome` cave
+//!   `0x8007AE00..0x8007AF00` (ROUTINE/TEMPLATE/ROSTER/SEAT/REWARD/
+//!   STREAM/STREAM2 - and the dome composes with `--delilas-party`),
+//!   `seru_overlay`'s stubs also based at `0x8007AE00`,
+//!   `super_art_menu`'s scratch at `0x8007AEC0`, and from `0x8007AF00`
+//!   the SsAPI sound I/O register table (read every frame; also
+//!   `seru_trade::CONFIG_VA`).
+//! - `0x800740E7..0x800742F2`: the dialog number-format scratch buffer
+//!   (`FUN_80036514` formats into `DAT_800740EC`, `FUN_80036888` walks
+//!   it; `DAT_800740E8` is the glyph-pitch flag).
+//! - `0x80079004..0x80079294`: the GTE matrix stack (`FUN_8005B268` =
+//!   PushMatrix: cursor `DAT_80079010` bound `0x27F`, 0x20-byte frames
+//!   at `0x79014 + cursor`), error string at `0x80079294`.
+//! - `0x800797D0..0x8007A840`: a boot-initialized runtime arena
+//!   (`FUN_8005FF20`: `FUN_8006046C(&DAT_800797D8, 0x41A)`,
+//!   `DAT_79814 = &DAT_8007A7F0`).
+//! - `0x8007B6B9..0x8007B800`: the data/BSS boundary tail (live
+//!   `0x8007B8xx` globals follow immediately).
+//!
+//! The in-place arm needs none of it. Reference evidence for the window
+//! itself: a full decode sweep of the 0898 image finds **zero**
+//! branches, jumps or literal words targeting the window interior
+//! (`0x801EB7C4..0x801EB81C`), and exactly the three jump-table slots
+//! above targeting its entry.
+//!
+//! ## The strike graft
+//!
+//! The staged chain entries carry empty event-frame lists and empty
+//! effect scripts on the retail disc (the cast module did its own
+//! damage ticks), so staging them as physical strikes would play
+//! choreography with no contact. [`graft_signature_strikes`] gives each
+//! chain entry the head shape of the block's own strongest ordinary
+//! attack (the costliest `0x0C..=0x1F` entry): its event-frame list
+//! (`+0x10..+0x13`), its effect script (`+0x14..+0x53`, the `0x84`
+//! impact spawn) and its `+0x76` commit flag, with every frame value
+//! rescaled from the donor's clip length to the stage's own. One
+//! contact per stage, so the converted special lands `chain_len`
+//! ordinary-strength hits - the multi-hit shape of the hero Hypers it
+//! wears.
+//!
+//! Idempotent end to end: the arm write accepts the already-patched
 //! state, and the graft is a pure function of the block bytes.
 
 use anyhow::{Context, Result, bail};
 
 use crate::disc::DiscPatcher;
-use crate::mips::{self as m, A1, S4, S7, T0, V0, V1, ZERO};
+use crate::mips::{self as m, A0, A1, A3, S4, S7, T0, V0, V1, ZERO};
 
 /// Battle overlay (PROT entry) hosting the AI picker `FUN_801E9FD4`.
 pub const BATTLE_OVERLAY_PROT: usize = 898;
 /// The overlay maps linearly from this base VA (file offset = VA - base).
 pub const BATTLE_OVERLAY_BASE: u32 = 0x801C_E818;
 
-/// First replaced word of the Delilas case body: the cast write tail
-/// (`sb a0,0x1de(s4)` at `0x801EB808` through `sb v0,0x1df(s4)` at
-/// `0x801EB81C`). The cadence gate above it is untouched.
-pub const ARM_TAIL_VA: u32 = 0x801E_B808;
-/// The retail `bne` closing the `round % 3 == 2` gate - checked as a
-/// build fingerprint before patching.
-const GATE_BNE_VA: u32 = 0x801E_B7F8;
-const GATE_BNE_WORD: u32 = 0x1482_016C;
+/// The merged `0xA2/0xA3/0xA4` case body of `FUN_801E9FD4` - the whole
+/// window this feature rewrites (24 words, file `0x1CFA8..0x1D008`).
+pub const ARM_VA: u32 = 0x801E_B7C0;
+/// Number of instruction words in the case body.
+pub const ARM_WORDS: usize = 24;
 /// The picker's common tail every arm exits through.
 const PICKER_TAIL_VA: u32 = 0x801E_BDAC;
 
-/// The retail cast-write words at [`ARM_TAIL_VA`] (6 words):
-/// `sb a0,0x1de(s4); lbu v0,0x0(v0); nop; addiu v0,v0,-0x29;
-/// j 0x801ebdac; _sb v0,0x1df(s4)`.
-pub const RETAIL_ARM_TAIL: [u32; 6] = [
-    0xA284_01DE,
-    0x9042_0000,
-    0x0000_0000,
-    0x2442_FFD7,
-    0x0807_AF6B,
-    0xA282_01DF,
+/// The retail case body at [`ARM_VA`]: the `round % 3 == 2` gate
+/// followed by the Magic-cast write (`+0x1DE = 2`,
+/// `+0x1DF = monster_id - 0x29`). Verified before patching.
+pub const RETAIL_ARM: [u32; ARM_WORDS] = [
+    0x3C02_8008, // lui   v0,0x8008
+    0x8C42_BD24, // lw    v0,-0x42dc(v0)      ; battle ctx
+    0x0000_0000, // nop
+    0x9044_028A, // lbu   a0,0x28a(v0)        ; round counter
+    0x3C02_AAAA, // lui   v0,0xaaaa           ; % 3 magic multiply
+    0x3442_AAAB, // ori   v0,v0,0xaaab
+    0x0082_0019, // multu a0,v0
+    0x0000_3810, // mfhi  a3
+    0x0007_1842, // srl   v1,a3,0x1
+    0x0003_1040, // sll   v0,v1,0x1
+    0x0043_1021, // addu  v0,v0,v1
+    0x0082_2023, // subu  a0,a0,v0            ; a0 = round % 3
+    0x3084_00FF, // andi  a0,a0,0xff
+    0x2402_0002, // li    v0,0x2
+    0x1482_016C, // bne   a0,v0,0x801ebdac
+    0x3C02_8008, // _lui  v0,0x8008
+    0x2442_BD0C, // addiu v0,v0,-0x42f4       ; &DAT_8007BD0C
+    0x02E2_1021, // addu  v0,s7,v0
+    0xA284_01DE, // sb    a0,0x1de(s4)        ; category = 2 (Magic)
+    0x9042_0000, // lbu   v0,0x0(v0)          ; monster id
+    0x0000_0000, // nop
+    0x2442_FFD7, // addiu v0,v0,-0x29         ; -> 0x79/0x7A/0x7B
+    0x0807_AF6B, // j     0x801ebdac
+    0xA282_01DF, // _sb   v0,0x1df(s4)        ; spell id
 ];
 
-/// SCUS dead-space region for the stub: the unused tail of the preserved
-/// rodata gap the other code hooks partition (`charm_fix` `0x8007AB50`,
-/// `bonus_drop` `0x8007AB80`, `enemy_ally` `0x8007ACA0`, `flee_exp`
-/// `0x8007AD00..0x8007AE00`). `0x8007AE00..0x8007AEC0` is left free as
-/// growth margin for those; this stub owns the last 128 bytes. Verified
-/// all-zero on the user's disc before writing.
-pub const STUB_VA: u32 = 0x8007_AEC0;
-/// First byte past the gap (real rodata resumes at `0x8007AF40`).
-pub const STUB_END_VA: u32 = 0x8007_AF40;
-
-/// The battle context pointer (`_DAT_8007BD24`); `ctx[0]` (u8) is the
-/// party actor count the default physical arm rolls its target seat over.
+/// The battle context pointer (`_DAT_8007BD24`).
 const CTX_PTR_VA: u32 = 0x8007_BD24;
 /// Per-slot monster-id byte table (`DAT_8007BD0C`), indexed by `s7`.
 const MONSTER_ID_TABLE_VA: u32 = 0x8007_BD0C;
-/// The battle RNG (`FUN_80056798`) - same routine every picker arm calls.
-const RAND_VA: u32 = 0x8005_6798;
 
-/// Per-sibling strike queues, low byte first, zero-padded to 4 (the
-/// stub stores byte 3 as the `0x00` strike-script terminator). Built
-/// from the staged chains so the queue and the mirror can never drift.
+/// Per-sibling strike-queue words, low byte = first staged entry,
+/// zero-padded (byte 3 is always the `0x00` strike-script terminator).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StrikeQueues {
     /// Queue word for monster id 162 (Gi's block).
@@ -144,80 +202,74 @@ pub fn queue_word(chain: &[usize]) -> Result<u32> {
     Ok(w)
 }
 
-/// Assemble the 31-word stub at `stub_va`. Register contract at entry
-/// (established by the patched arm): `s4` = the acting monster's battle
-/// actor, `s7` = its slot index, `v0` = 3 (loaded in the `j` delay
-/// slot). The picker's prologue has saved `ra`, so the `jal` to the RNG
-/// is safe, exactly as in every retail arm.
-pub fn assemble_stub(stub_va: u32, queues: &StrikeQueues) -> Vec<u32> {
-    let w: Vec<u32> = vec![
-        // Category = 3 (Attack) - v0 carries 3 from the arm's delay slot.
-        m::sb(V0, S4, 0x01DE),
-        // Target seat = rand() % ctx[0] (party count), the default
-        // physical arm's own roll; the picker tail then applies its
-        // anti-repeat pass.
-        m::jal(RAND_VA),
-        m::nop(),
-        m::lui(V1, m::hi(CTX_PTR_VA)),
-        m::lw(V1, V1, m::lo(CTX_PTR_VA)),
-        m::lui(A1, m::hi(MONSTER_ID_TABLE_VA)), // load-delay filler
-        m::lbu(V1, V1, 0),                      // party count
-        m::addiu(A1, A1, m::lo(MONSTER_ID_TABLE_VA)), // load-delay filler
-        m::divu(V0, V1),
-        m::addu(A1, S7, A1),
-        m::lbu(A1, A1, 0), // monster id (0xA2/0xA3/0xA4)
-        m::mfhi(V1),
-        m::sb(V1, S4, 0x01DD),
-        // Queue select: Gi's word is the default, Che/Lu override on id.
-        m::lui(T0, m::imm_hi(queues.gi)),
-        m::ori(T0, T0, m::imm_lo(queues.gi)),
-        m::addiu(V1, ZERO, 0x00A3),
-        m::bne(A1, V1, 3),          // -> the 0xA4 test
-        m::addiu(V1, ZERO, 0x00A4), // delay slot (both paths)
-        m::lui(T0, m::imm_hi(queues.che)),
-        m::ori(T0, T0, m::imm_lo(queues.che)),
-        m::bne(A1, V1, 3), // -> the queue store
-        m::nop(),
-        m::lui(T0, m::imm_hi(queues.lu)),
-        m::ori(T0, T0, m::imm_lo(queues.lu)),
-        // Strike queue: chain entry indices then the 0x00 terminator.
-        m::sb(T0, S4, 0x01DF),
-        m::srl(T0, T0, 8),
-        m::sb(T0, S4, 0x01E0),
-        m::srl(T0, T0, 8),
-        m::sb(T0, S4, 0x01E1),
-        m::j(PICKER_TAIL_VA),
-        m::sb(ZERO, S4, 0x01E2), // delay slot: the terminator
-    ];
-    debug_assert!(stub_va + (w.len() as u32) * 4 <= STUB_END_VA);
-    w
+/// Build the queue words from the three staged chains
+/// `(162 = Gi, 163 = Che, 164 = Lu)` and verify the invariants the
+/// 24-word arm's select encoding depends on.
+pub fn strike_queues(chains: [&[usize]; 3]) -> Result<StrikeQueues> {
+    let q = StrikeQueues {
+        gi: queue_word(chains[0]).context("Gi staged chain")?,
+        che: queue_word(chains[1]).context("Che staged chain")?,
+        lu: queue_word(chains[2]).context("Lu staged chain")?,
+    };
+    // The arm's Che path masks the Gi word instead of loading its own
+    // constant (`andi t0,t0,0xFFFF`), so Che's queue must be exactly the
+    // low half of Gi's. Holds for the shipped plans (10,11,12 / 10,11);
+    // fails loudly here if a future plan drifts.
+    if q.che != (q.gi & 0xFFFF) {
+        bail!(
+            "Che queue {:#x} is not the low half of Gi's {:#x} - the in-place arm's \
+             mask select cannot encode these plans",
+            q.che,
+            q.gi
+        );
+    }
+    Ok(q)
 }
 
-/// The 6 replacement words at [`ARM_TAIL_VA`]: `j` to the stub with the
-/// category constant loaded in the delay slot; the displaced words are
-/// re-encoded inside the stub, and the dead tail is padded with `nop`.
-pub fn arm_tail_replacement(stub_va: u32) -> [u32; 6] {
+/// Assemble the 24-word replacement case body. Register contract:
+/// `s4` = the acting monster's battle actor, `s7` = its slot index
+/// (both callee-saved across the picker); `v0/v1/a0/a1/a3/t0` are
+/// scratch, and the common tail at [`PICKER_TAIL_VA`] reloads
+/// everything it reads.
+pub fn arm_replacement(queues: &StrikeQueues) -> [u32; ARM_WORDS] {
+    // Branch offsets (words, from the delay slot): the cadence bail to
+    // the picker tail, and the two select exits to the STORE block.
+    let bail_off = ((PICKER_TAIL_VA - (ARM_VA + 8 * 4 + 4)) / 4) as i16;
     [
-        m::j(stub_va),
-        m::addiu(V0, ZERO, 3),
-        m::nop(),
-        m::nop(),
-        m::nop(),
-        m::nop(),
+        m::lui(V0, 0x8008),                           //  0
+        m::lw(V1, V0, m::lo(CTX_PTR_VA)),             //  1: v1 = battle ctx
+        m::addiu(A3, V0, m::lo(MONSTER_ID_TABLE_VA)), //  2: a3 = &id table (reuses hi)
+        m::addu(A3, S7, A3),                          //  3
+        m::lbu(A0, V1, 0x028A),                       //  4: round counter
+        m::lbu(A1, A3, 0),                            //  5: monster id
+        m::andi(A0, A0, 3),                           //  6: cadence: round & 3
+        m::xori(A0, A0, 2),                           //  7: == 2 ?
+        m::bne(A0, ZERO, bail_off),                   //  8: not the round -> tail
+        m::addiu(V0, ZERO, 3),                        //  9: (delay) category value
+        m::sb(V0, S4, 0x01DE),                        // 10: +0x1DE = 3 (Attack)
+        m::addiu(A1, A1, 0xFF5D),                     // 11: id - 0xA3 (-1/0/+1)
+        m::lui(T0, m::imm_hi(queues.gi)),             // 12: Gi/Che base word
+        m::ori(T0, T0, m::imm_lo(queues.gi)),         // 13
+        m::bltz(A1, 6),                               // 14: Gi -> STORE
+        m::sb(T0, S4, 0x01DF),                        // 15: (delay) queue[0]
+        m::beq(A1, ZERO, 4),                          // 16: Che -> STORE
+        m::andi(T0, T0, 0xFFFF),                      // 17: (delay) Che mask
+        m::lui(T0, m::imm_hi(queues.lu)),             // 18: Lu word
+        m::ori(T0, T0, m::imm_lo(queues.lu)),         // 19
+        m::sb(T0, S4, 0x01DF),                        // 20: Lu queue[0]
+        m::srl(T0, T0, 8),                            // 21: STORE
+        m::j(PICKER_TAIL_VA),                         // 22
+        m::sw(T0, S4, 0x01E0),                        // 23: (delay) queue[1..2] + 0x00 terminator
     ]
 }
 
-/// A planned pair of same-size writes (overlay arm + SCUS stub).
+/// A planned same-size arm rewrite.
 pub struct AiPatchPlan {
-    /// File offset of [`ARM_TAIL_VA`] inside PROT entry 898.
+    /// File offset of [`ARM_VA`] inside PROT entry 898.
     pub arm_off: u64,
-    /// The 24 replacement bytes for the arm tail.
+    /// The 96 replacement bytes; empty when already applied.
     pub arm_bytes: Vec<u8>,
-    /// File offset of [`STUB_VA`] inside `SCUS_942.54`.
-    pub stub_off: u64,
-    /// The stub blob.
-    pub stub_bytes: Vec<u8>,
-    /// True when both regions already hold the patched bytes (no-op).
+    /// True when the arm already holds the patched words (no-op).
     pub already_applied: bool,
 }
 
@@ -228,104 +280,53 @@ fn read_word(bytes: &[u8], off: usize) -> Result<u32> {
         .ok_or_else(|| anyhow::anyhow!("read past end at {off:#x}"))
 }
 
-/// Plan the AI conversion against the current overlay + SCUS images.
-/// Refuses (without planning any write) when either region holds
-/// neither the retail bytes nor the already-patched bytes.
-pub fn plan_ai_patch(overlay: &[u8], scus: &[u8], queues: &StrikeQueues) -> Result<AiPatchPlan> {
-    // Build fingerprint: the untouched cadence gate above the arm tail.
-    let gate_off = (GATE_BNE_VA - BATTLE_OVERLAY_BASE) as usize;
-    let gate = read_word(overlay, gate_off)?;
-    if gate != GATE_BNE_WORD {
-        bail!(
-            "Delilas cadence gate at {GATE_BNE_VA:#x} = {gate:#010x}, expected \
-             {GATE_BNE_WORD:#010x} (unrecognized build) - refusing to patch"
-        );
-    }
-
-    let arm_off = (ARM_TAIL_VA - BATTLE_OVERLAY_BASE) as usize;
-    let current: Vec<u32> = (0..6)
+/// Plan the AI conversion against the current overlay image. Refuses
+/// (without planning any write) when the case body holds neither the
+/// retail nor the already-patched words.
+pub fn plan_ai_patch(overlay: &[u8], queues: &StrikeQueues) -> Result<AiPatchPlan> {
+    let arm_off = (ARM_VA - BATTLE_OVERLAY_BASE) as usize;
+    let current: Vec<u32> = (0..ARM_WORDS)
         .map(|i| read_word(overlay, arm_off + i * 4))
         .collect::<Result<_>>()?;
-    let replacement = arm_tail_replacement(STUB_VA);
-    let stub = assemble_stub(STUB_VA, queues);
-    let stub_bytes: Vec<u8> = stub.iter().flat_map(|w| w.to_le_bytes()).collect();
-    if STUB_VA + stub_bytes.len() as u32 > STUB_END_VA {
-        bail!(
-            "signature-attack stub ({} bytes) overruns the gap end {STUB_END_VA:#x}",
-            stub_bytes.len()
-        );
-    }
-    let stub_off = legaia_asset::item_names::file_offset_for_va(scus, STUB_VA)
-        .ok_or_else(|| anyhow::anyhow!("can't resolve stub VA {STUB_VA:#x} in SCUS"))?;
-    let stub_region = scus
-        .get(stub_off..stub_off + stub_bytes.len())
-        .ok_or_else(|| anyhow::anyhow!("stub region past end of SCUS"))?;
-
-    let arm_is_retail = current == RETAIL_ARM_TAIL;
-    let arm_is_patched = current == replacement;
-    let stub_is_zero = stub_region.iter().all(|&b| b == 0);
-    let stub_is_ours = stub_region == stub_bytes.as_slice();
-
-    if arm_is_patched && stub_is_ours {
+    let replacement = arm_replacement(queues);
+    if current == replacement {
         return Ok(AiPatchPlan {
             arm_off: arm_off as u64,
             arm_bytes: Vec::new(),
-            stub_off: stub_off as u64,
-            stub_bytes: Vec::new(),
             already_applied: true,
         });
     }
-    if !arm_is_retail {
+    if current != RETAIL_ARM {
         bail!(
-            "Delilas cast arm at {ARM_TAIL_VA:#x} = {current:#010x?} matches neither the \
-             retail nor the patched encoding - refusing to patch"
-        );
-    }
-    if !stub_is_zero && !stub_is_ours {
-        bail!(
-            "stub region {STUB_VA:#x}..+{} is not all-zero dead space (collides with \
-             another injection) - refusing to patch",
-            stub_bytes.len()
+            "Delilas cast arm at {ARM_VA:#x} matches neither the retail nor the \
+             patched encoding - refusing to patch (got {current:#010x?})"
         );
     }
     Ok(AiPatchPlan {
         arm_off: arm_off as u64,
         arm_bytes: replacement.iter().flat_map(|w| w.to_le_bytes()).collect(),
-        stub_off: stub_off as u64,
-        stub_bytes,
         already_applied: false,
     })
 }
 
 /// Convert the Delilas signature cast into the staged physical attack:
-/// plan against the current disc, then write the stub (first, so the
-/// arm never points at unwritten space) and the arm tail. `chains` are
-/// the per-monster-id staged chains `(162, 163, 164)` in that order.
+/// one same-size in-place rewrite of the case body. `chains` are the
+/// per-monster-id staged chains `(162, 163, 164)` in that order.
 pub fn apply_ai_conversion(patcher: &mut DiscPatcher, chains: [&[usize]; 3]) -> Result<String> {
-    let queues = StrikeQueues {
-        gi: queue_word(chains[0]).context("Gi staged chain")?,
-        che: queue_word(chains[1]).context("Che staged chain")?,
-        lu: queue_word(chains[2]).context("Lu staged chain")?,
-    };
+    let queues = strike_queues(chains)?;
     let overlay = patcher
         .read_entry(BATTLE_OVERLAY_PROT)
         .context("read battle overlay 0898")?;
-    let scus = patcher
-        .read_named_file(crate::arts::SCUS_NAME)
-        .ok_or_else(|| anyhow::anyhow!("SCUS_942.54 not found"))?;
-    let plan = plan_ai_patch(&overlay, &scus, &queues)?;
+    let plan = plan_ai_patch(&overlay, &queues)?;
     if plan.already_applied {
         return Ok("signature special already converted to a physical attack".into());
     }
     patcher
-        .patch_named_file(crate::arts::SCUS_NAME, plan.stub_off, &plan.stub_bytes)
-        .context("write signature-attack stub")?;
-    patcher
         .patch_prot_entry(BATTLE_OVERLAY_PROT, plan.arm_off, &plan.arm_bytes)
-        .context("write Delilas cast-arm redirect")?;
+        .context("rewrite the Delilas cast arm in place")?;
     Ok(format!(
-        "signature special converted to a physical attack (queues Gi {:?} / Che {:?} / Lu {:?}, \
-         stub at {STUB_VA:#x})",
+        "signature special converted to a physical attack, in place at {ARM_VA:#x} \
+         (queues Gi {:?} / Che {:?} / Lu {:?})",
         chains[0], chains[1], chains[2]
     ))
 }
@@ -448,11 +449,7 @@ mod tests {
     use super::*;
 
     fn queues() -> StrikeQueues {
-        StrikeQueues {
-            gi: queue_word(&[10, 11, 12]).unwrap(),
-            che: queue_word(&[10, 11]).unwrap(),
-            lu: queue_word(&[14, 12, 13]).unwrap(),
-        }
+        strike_queues([&[10, 11, 12], &[10, 11], &[14, 12, 13]]).unwrap()
     }
 
     #[test]
@@ -467,35 +464,69 @@ mod tests {
     }
 
     #[test]
-    fn stub_fits_the_gap_and_ends_on_the_picker_tail() {
-        let stub = assemble_stub(STUB_VA, &queues());
-        assert!(STUB_VA + (stub.len() as u32) * 4 <= STUB_END_VA);
-        // Last two words: j 0x801EBDAC + the terminator store in its
-        // delay slot.
-        assert_eq!(stub[stub.len() - 2], 0x0807_AF6B);
-        assert_eq!(stub[stub.len() - 1], m::sb(ZERO, S4, 0x01E2));
-        // Category write first (v0 = 3 arrives via the arm delay slot).
-        assert_eq!(stub[0], m::sb(V0, S4, 0x01DE));
+    fn strike_queues_enforce_the_mask_select_invariant() {
+        // Che == Gi & 0xFFFF holds for the shipped plans...
+        assert!(strike_queues([&[10, 11, 12], &[10, 11], &[14, 12, 13]]).is_ok());
+        // ...and a drifted Che plan is refused instead of mis-encoded.
+        assert!(strike_queues([&[10, 11, 12], &[9, 11], &[14, 12, 13]]).is_err());
+        assert!(strike_queues([&[10, 11, 12], &[10, 12], &[14, 12, 13]]).is_err());
     }
 
     #[test]
-    fn arm_replacement_jumps_to_the_stub_with_the_category_in_the_delay_slot() {
-        let r = arm_tail_replacement(STUB_VA);
-        assert_eq!(r[0], 0x0800_0000 | ((STUB_VA >> 2) & 0x03FF_FFFF));
-        assert_eq!(r[1], 0x2402_0003); // addiu v0,zero,3
-        assert!(r[2..].iter().all(|&w| w == 0));
+    fn arm_replacement_is_exactly_the_case_body_size() {
+        let r = arm_replacement(&queues());
+        assert_eq!(r.len(), ARM_WORDS);
+        assert_eq!(RETAIL_ARM.len(), ARM_WORDS);
+        // The bail branch reaches the picker tail: offset 0x172 words
+        // from the delay slot of instruction 8.
+        assert_eq!(r[8], m::bne(A0, ZERO, 0x172));
+        // The final jump is the same picker-tail jump retail's own arm
+        // ends with (word 22 of the retail body).
+        assert_eq!(r[22], RETAIL_ARM[22]);
+        // Category write is Attack (3), not Magic (2).
+        assert_eq!(r[9], 0x2402_0003); // addiu v0,zero,3
+        assert_eq!(r[10], m::sb(V0, S4, 0x01DE));
+        // The terminator ships in the aligned tail store.
+        assert_eq!(r[23], m::sw(T0, S4, 0x01E0));
     }
 
     #[test]
     fn retail_arm_words_match_their_hand_decoded_encodings() {
-        // sb a0,0x1de(s4) / lbu v0,0x0(v0) / nop / addiu v0,v0,-0x29 /
-        // j 0x801ebdac / sb v0,0x1df(s4)
-        use crate::mips::A0;
-        assert_eq!(RETAIL_ARM_TAIL[0], m::sb(A0, S4, 0x01DE));
-        assert_eq!(RETAIL_ARM_TAIL[1], m::lbu(V0, V0, 0));
-        assert_eq!(RETAIL_ARM_TAIL[3], m::addiu(V0, V0, 0xFFD7));
-        assert_eq!(RETAIL_ARM_TAIL[4], m::j(0x801E_BDAC));
-        assert_eq!(RETAIL_ARM_TAIL[5], m::sb(V0, S4, 0x01DF));
+        use crate::mips::A2;
+        let _ = A2; // (alias check only)
+        assert_eq!(RETAIL_ARM[18], m::sb(A0, S4, 0x01DE));
+        assert_eq!(RETAIL_ARM[19], m::lbu(V0, V0, 0));
+        assert_eq!(RETAIL_ARM[21], m::addiu(V0, V0, 0xFFD7));
+        assert_eq!(RETAIL_ARM[22], m::j(0x801E_BDAC));
+        assert_eq!(RETAIL_ARM[23], m::sb(V0, S4, 0x01DF));
+    }
+
+    /// Simulate the select+store block for each monster id and check
+    /// the queue bytes that land at `+0x1DF..+0x1E3`.
+    #[test]
+    fn arm_select_stores_each_siblings_chain_with_terminator() {
+        let q = queues();
+        for (id, want) in [
+            (0xA2u8, [0x0A, 0x0B, 0x0C, 0x00, 0x00]), // Gi 10,11,12
+            (0xA3, [0x0A, 0x0B, 0x00, 0x00, 0x00]),   // Che 10,11
+            (0xA4, [0x0E, 0x0C, 0x0D, 0x00, 0x00]),   // Lu 14,12,13
+        ] {
+            // Walk the encoding's data flow by hand.
+            let a1 = id as i32 - 0xA3;
+            let mut t0 = q.gi;
+            let mut out = [0u8; 5];
+            out[0] = t0 as u8; // delay-slot sb (provisional for Lu)
+            if a1 >= 0 {
+                t0 &= 0xFFFF; // Che-mask delay slot (Che + Lu paths)
+                if a1 != 0 {
+                    t0 = q.lu;
+                    out[0] = t0 as u8; // Lu's own queue[0]
+                }
+            }
+            let tail = t0 >> 8;
+            out[1..5].copy_from_slice(&tail.to_le_bytes());
+            assert_eq!(out, want, "monster id {id:#04x}");
+        }
     }
 
     /// A synthetic block: record head + two entries (one donor attack,

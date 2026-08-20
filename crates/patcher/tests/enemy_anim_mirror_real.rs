@@ -515,15 +515,16 @@ fn every_mapping_permutation_fits_the_slot_budget() {
 }
 
 /// The signature special runs as a PHYSICAL attack of the staged chain,
-/// not the capture-class cast: the AI picker's Delilas arm (overlay
-/// 0898) no longer writes `+0x1DE = 2` / `+0x1DF = monster_id - 0x29`,
-/// the SCUS stub queues exactly the staged chains as category-3 strikes,
-/// and every chain stage of every mirrored block carries a grafted
-/// contact head (event beat + impact-spawn effect record) where retail
-/// shipped none. Baselines pin where the cast decision really lives:
-/// the RETAIL blocks carry no capture spell id anywhere in their action
-/// data - the id is overlay code - so the retail arm words are the
-/// non-vacuity anchor.
+/// not the capture-class cast: the AI picker's Delilas case body
+/// (overlay 0898) is rewritten IN PLACE - no injection arena - so it no
+/// longer writes `+0x1DE = 2` / `+0x1DF = monster_id - 0x29` but a
+/// category-3 strike queue of exactly the staged chains, and every
+/// chain stage of every mirrored block carries a grafted contact head
+/// (event beat + impact-spawn effect record) where retail shipped none.
+/// Baselines pin where the cast decision really lives: the RETAIL
+/// blocks carry no capture spell id anywhere in their action data - the
+/// id is overlay code - so the retail arm words are the non-vacuity
+/// anchor.
 #[test]
 fn signature_special_becomes_a_physical_attack_of_the_staged_chain() {
     use legaia_patcher::delilas_party::Sibling;
@@ -540,31 +541,24 @@ fn signature_special_becomes_a_physical_attack_of_the_staged_chain() {
         |bytes: &[u8], off: usize| u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap());
 
     // --- Retail baselines -------------------------------------------------
-    // The cast decision lives in the OVERLAY: the retail arm still holds
-    // the cast write, including the `monster_id - 0x29` literal.
+    // The cast decision lives in the OVERLAY: the retail case body still
+    // holds the cast write, including the `monster_id - 0x29` literal.
     let overlay = patcher
         .read_entry(sig::BATTLE_OVERLAY_PROT)
         .expect("battle overlay");
-    let arm_off = (sig::ARM_TAIL_VA - sig::BATTLE_OVERLAY_BASE) as usize;
-    let retail_words: Vec<u32> = (0..6).map(|i| word_at(&overlay, arm_off + i * 4)).collect();
+    let arm_off = (sig::ARM_VA - sig::BATTLE_OVERLAY_BASE) as usize;
+    let retail_words: Vec<u32> = (0..sig::ARM_WORDS)
+        .map(|i| word_at(&overlay, arm_off + i * 4))
+        .collect();
     assert_eq!(
         retail_words,
-        sig::RETAIL_ARM_TAIL.to_vec(),
-        "retail Delilas arm carries the spell-cast write"
+        sig::RETAIL_ARM.to_vec(),
+        "retail Delilas case body carries the spell-cast write"
     );
     assert_eq!(
-        word_at(&overlay, arm_off + 12),
+        word_at(&overlay, arm_off + 21 * 4),
         0x2442_FFD7,
         "the id literal"
-    );
-    // The stub region is dead space on retail.
-    let scus = patcher.read_named_file("SCUS_942.54").expect("SCUS");
-    let stub_off =
-        legaia_asset::item_names::file_offset_for_va(&scus, sig::STUB_VA).expect("stub VA");
-    let gap_len = (sig::STUB_END_VA - sig::STUB_VA) as usize;
-    assert!(
-        scus[stub_off..stub_off + gap_len].iter().all(|&b| b == 0),
-        "stub region must be all-zero dead space on retail"
     );
     // And the BLOCKS carry no capture spell id in their action data:
     // neither a `+0x4C` entry id nor a `+0x21..+0x23` magic-attack slot.
@@ -596,39 +590,28 @@ fn signature_special_becomes_a_physical_attack_of_the_staged_chain() {
     )
     .expect("apply party");
 
-    // --- The arm is redirected, the stub queues the staged chains ---------
+    // --- The case body is the in-place physical-attack arm, queueing
+    // exactly the module-staged chains ------------------------------------
     let overlay2 = patcher
         .read_entry(sig::BATTLE_OVERLAY_PROT)
         .expect("patched overlay");
-    let patched_words: Vec<u32> = (0..6)
+    let patched_words: Vec<u32> = (0..sig::ARM_WORDS)
         .map(|i| word_at(&overlay2, arm_off + i * 4))
         .collect();
+    let queues = sig::strike_queues([
+        staged_plan(Sibling::Gi).chain,
+        staged_plan(Sibling::Che).chain,
+        staged_plan(Sibling::Lu).chain,
+    ])
+    .expect("queues from the staged plans");
     assert_eq!(
         patched_words,
-        sig::arm_tail_replacement(sig::STUB_VA).to_vec(),
-        "the arm tail is the j-to-stub redirect"
+        sig::arm_replacement(&queues).to_vec(),
+        "the case body is the physical-attack arm built from the staged plans"
     );
-    assert_ne!(
-        word_at(&overlay2, arm_off + 12),
-        0x2442_FFD7,
+    assert!(
+        !patched_words.contains(&0x2442_FFD7),
         "the cast id literal is gone"
-    );
-    let scus2 = patcher
-        .read_named_file("SCUS_942.54")
-        .expect("patched SCUS");
-    let queues = sig::StrikeQueues {
-        gi: sig::queue_word(staged_plan(Sibling::Gi).chain).unwrap(),
-        che: sig::queue_word(staged_plan(Sibling::Che).chain).unwrap(),
-        lu: sig::queue_word(staged_plan(Sibling::Lu).chain).unwrap(),
-    };
-    let blob: Vec<u8> = sig::assemble_stub(sig::STUB_VA, &queues)
-        .iter()
-        .flat_map(|w| w.to_le_bytes())
-        .collect();
-    assert_eq!(
-        &scus2[stub_off..stub_off + blob.len()],
-        blob.as_slice(),
-        "the stub queues exactly the module-staged chains"
     );
 
     // --- The mirrored blocks: still no capture ids, and every chain
@@ -686,10 +669,10 @@ fn signature_special_becomes_a_physical_attack_of_the_staged_chain() {
     }
 
     // --- Idempotence + EDC validity ---------------------------------------
-    // A second standalone mirror pass accepts its own overlay / SCUS
-    // writes and reproduces every touched region byte for byte. Its
-    // retail sources come from a fresh retail image (the patcher's own
-    // copies are patched by now).
+    // A second standalone mirror pass accepts its own overlay write and
+    // reproduces every touched region byte for byte. Its retail sources
+    // come from a fresh retail image (the patcher's own copies are
+    // patched by now).
     let fresh = load_disc().expect("disc still readable");
     let retail_patcher = DiscPatcher::open(fresh).expect("open retail");
     let players: Vec<Vec<u8>> = (863..=865)
@@ -708,18 +691,13 @@ fn signature_special_becomes_a_physical_attack_of_the_staged_chain() {
         "overlay idempotence"
     );
     assert_eq!(
-        patcher.read_named_file("SCUS_942.54").unwrap(),
-        scus2,
-        "SCUS idempotence"
-    );
-    assert_eq!(
         patcher.read_entry_footprint(MONSTER_ARCHIVE_ENTRY).unwrap(),
         mirrored,
         "archive idempotence"
     );
 
-    // Every touched sector stays EDC/ECC-valid: the overlay sector under
-    // the arm and the SCUS sector under the stub.
+    // The touched overlay sector stays EDC/ECC-valid (the arm rewrite is
+    // the only code edit this feature makes).
     use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
     let img = patcher.image();
     assert_eq!(img.len() % SECTOR_SIZE, 0);
@@ -730,12 +708,5 @@ fn signature_special_becomes_a_physical_attack_of_the_staged_chain() {
     assert!(
         legaia_iso::write::mode2_form1_sector_is_valid(&img[s..s + SECTOR_SIZE]),
         "overlay arm sector EDC/ECC"
-    );
-    let (scus_lba, _) =
-        legaia_iso::iso9660::find_file_in_image(img, "SCUS_942.54").expect("SCUS lba");
-    let s = (scus_lba as usize + stub_off / USER_DATA_SIZE) * SECTOR_SIZE;
-    assert!(
-        legaia_iso::write::mode2_form1_sector_is_valid(&img[s..s + SECTOR_SIZE]),
-        "SCUS stub sector EDC/ECC"
     );
 }
