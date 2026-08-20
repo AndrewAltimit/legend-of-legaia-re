@@ -1720,27 +1720,47 @@ one-way rename: the party art gives up `Burning Flare` to become
 padding measured by `spell_names::name_field`, never grown - the retail
 slots hold 16 bytes against 13-14 byte names.
 
-Still missing from that mirror, and both larger jobs.
+The mirror's two remaining halves are closed by their own passes.
 
 The Delilas **field forms** in `nilboa` are scene-resident: MAN placements
-carry `model = 106/107/108`, which are pack-member indices into PROT entry
-`0639`, and a byte search over all 1233 entries finds each of those meshes
-exactly once, so that pack is their only carrier. The size problem is that
-the pack's 112 members **tile its declared stream with no internal slack**,
-and the three the heroes would replace hold 30276 bytes between them - a
-budget the hero forms exceed. By how much is the open question: the
-uncompressed field forms in PROT 0874 §0 are 38676 bytes, but the fieldize
-path decimates before writing, so the figure that decides this is the
-post-decimation one and it has not been measured against the pack's real
-tail slack. Treat both the overshoot and the slack as unmeasured until
-something derives them together.
+carry `model = 106/107/108`, pack-member indices into PROT entry `0639`.
+The scene mirror (`legaia_asset::party_swap::nivora_field::heroize_nilboa`
+via `legaia_patcher::nivora_field`) rebuilds those three members as the
+mapped heroes' field rigs, pivot-baked onto the siblings' scene-idle rest
+frames so the scene's own ANM records pose them, and repaints the three
+sibling head TIMs in PROT `0638` with the heroes' faces. It fits at full
+geometric detail - dropping the two unposed equipment-template groups per
+rig and flattening non-head textured prims to the retail field flat-shade
+style brings the three rigs to 29200 bytes against the members' 30276 -
+with non-face head-texture islands packed at half resolution (face fronts
+stay full). The retail hero source is the **pre-fieldize** PROT 0874
+capture: by the time this pass runs, 0874 itself carries the siblings.
+Byte-identical copies of the sibling NPC meshes in `stone` / `taiku2` /
+`conc2` are out of scope for now. Verified by `nivora_field_real`.
 
-The enemy special's **choreography** is the harder half regardless. The
-body motion is size-neutral to retarget - written at each entry's retail
-`(parts, frames)` shape it costs nothing - but the fire, lift and camera
-are hardcoded `jal` sites in the cast modules (15 in PROT `0958`, 41 in
-`0959`, 24 in `0960`), with no data channel a player art's 8-slot effect
-list can drive.
+The enemy special's **body motion** no longer reads as the sibling's
+move: the enemy-side anim mirror (`party_swap::enemy_anim` via
+`legaia_patcher::enemy_anim_mirror`) rewrites each swapped block's
+archive entries with the hero's own clips - idle, walk, reactions and
+swings, plus the hero's 50-AP Hyper split wind-up-to-strike across the
+entries the cast module stages by raw index (and the hero's victory
+flourish in the tag-`0x22` close). Streams are the raw 9-byte packed
+family and re-encode byte-exactly; frame-indexed head fields rescale,
+sound cues / AGL / tags / root motion stay retail. Per-entry frame
+floors respect the one measured module gate (PROT 0960's damage tick
+waits for the caster's clip cursor to reach keyframe 22, so Lu's payoff
+entry holds >= 23 frames; everything else floors at retail's own
+smallest staged entry, 11). A budget ladder (exact keyframe-density
+halving, a compact close, then family drops) covers tight blocks; all
+six mapping permutations fit with no ladder action, and a block that
+missed every rung would keep the sibling's clips with a note rather
+than fail the apply. The fire, lift and camera stay the module's own
+hardcoded `jal` sites (15 in PROT `0958`, 41 in `0959`, 24 in `0960`) -
+on the enemy side that is retail behaviour and stays. Verified by
+`enemy_anim_mirror_real` (bake-parity affine-fit bounds included: the
+enemy-side model bake now runs the same whole-rig alignment as the
+player side, closing the per-part roll defects the old per-joint re-aim
+left in every hero-under-sibling-clip pose).
 
 The **battle idle** is rebuilt too, and it is a stance change more than a
 motion one. Retail authors each character's combat stance in idle frame 0,
