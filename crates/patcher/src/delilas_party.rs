@@ -242,6 +242,12 @@ pub fn apply_delilas_party(
                 .with_context(|| format!("read retail {who} player file"))?,
         );
     }
+    // readef.DAT before any pass rewrites its ME slots: the enemy-side
+    // anim mirror retargets the heroes' own clips (incl. the base-ME
+    // victory flourish) into the swapped monster blocks.
+    let retail_readef = patcher
+        .read_entry_footprint(READEF_ENTRY)
+        .context("read retail readef.DAT")?;
 
     // Baseline pass before any write: every target block's name must be
     // its retail sibling name (fresh) or its mapped character's (already
@@ -395,6 +401,15 @@ pub fn apply_delilas_party(
         for w in &fieldized.warnings {
             report.notes.push(format!("field: {w}"));
         }
+
+        // The nilboa duel scene's own Delilas NPC meshes become the
+        // mapped heroes (PROT 0639 members 106/107/108 + the 0638 head
+        // TIMs), so the ravine no longer shows two Delilas sets. Uses
+        // the pre-fieldize PROT 0874 capture above - load-bearing: the
+        // rewritten 0874 carries siblings, not heroes.
+        let nivora = crate::nivora_field::apply_nivora_field(patcher, mapping, &prot_0874)
+            .context("nilboa field mirror")?;
+        report.notes.extend(nivora.notes);
 
         // Battle-voice passes, in dependency order: every XA mute first,
         // then the XA + victory-clip fills (which SOURCE the siblings'
@@ -587,6 +602,23 @@ pub fn apply_delilas_party(
                 }
             }
         }
+
+        // Enemy-side anim mirror, LAST: the swapped duel blocks fight
+        // with the mapped hero's own clips (idle / walk / reactions /
+        // swings, plus the hero's 50-AP Hyper across the cast module's
+        // staged entries). Runs after every pass that touches the
+        // monster slots, the player files or readef; all its inputs are
+        // the pre-patch captures above.
+        let retail = crate::enemy_anim_mirror::RetailSources {
+            archive: &archive,
+            players: [&retail_players[0], &retail_players[1], &retail_players[2]],
+            readef: &retail_readef,
+        };
+        report
+            .notes
+            .extend(crate::enemy_anim_mirror::apply_enemy_anim_mirror(
+                patcher, mapping, &retail,
+            )?);
     }
     Ok(report)
 }

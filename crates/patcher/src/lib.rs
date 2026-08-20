@@ -65,6 +65,7 @@ pub mod charm_fix;
 pub mod chest;
 pub mod custom_items;
 pub mod damage_ap;
+pub mod delilas_cast;
 pub mod delilas_challenge;
 pub mod delilas_dome;
 pub mod delilas_effects;
