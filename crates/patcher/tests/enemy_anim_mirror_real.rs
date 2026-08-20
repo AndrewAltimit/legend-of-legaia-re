@@ -176,12 +176,17 @@ fn mirrored_duel_blocks_fight_with_the_heroes_clips() {
         Default::default(),
     )
     .expect("apply party");
-    // The swapped-but-unmirrored blocks: the baseline the mirror must
-    // visibly change.
-    let swapped_archive = patcher
-        .read_entry_footprint(MONSTER_ARCHIVE_ENTRY)
-        .expect("swapped archive");
 
+    // `apply_delilas_party` runs the enemy-anim mirror itself, so the
+    // patcher image is already mirrored here - reading it back as a
+    // "swapped but unmirrored" baseline would hand the assertions their
+    // own output (the mirror is a pure function of the retail sources,
+    // so the standalone pass below reproduces it byte for byte). The
+    // true pre-mirror baseline needs no capture at all: the model swap
+    // replaces only the mesh + texture pool and leaves the entry region
+    // byte-identical to retail, so the RETAIL block's entries are the
+    // pre-mirror entries. The standalone pass below is the idempotence
+    // half of the oracle.
     apply_enemy_anim_mirror(&mut patcher, &mapping, &retail).expect("mirror");
     let mirrored_archive = patcher
         .read_entry_footprint(MONSTER_ARCHIVE_ENTRY)
@@ -193,7 +198,6 @@ fn mirrored_duel_blocks_fight_with_the_heroes_clips() {
         let staged_all: Vec<usize> = staged.iter().copied().chain(close).collect();
 
         let retail_block = ma::decode_block(&retail_archive, id).unwrap().unwrap();
-        let swapped_block = ma::decode_block(&swapped_archive, id).unwrap().unwrap();
         let block = ma::decode_block(&mirrored_archive, id).unwrap().unwrap();
 
         // Budget: the mirrored block stays inside the +16K decoded-growth
@@ -221,15 +225,16 @@ fn mirrored_duel_blocks_fight_with_the_heroes_clips() {
             );
         }
 
-        // Staged entries: streams CHANGED vs the swapped baseline, tags
-        // preserved, and every module-staged entry holds its plan floor
-        // (the 0960 payoff cursor gate at 23 frames; retail's own
-        // 11-frame smallest staged entry elsewhere).
+        // Staged entries: streams CHANGED vs the pre-mirror (= retail)
+        // entry region, tags preserved, and every module-staged entry
+        // holds its plan floor (the 0960 payoff cursor gate at 23
+        // frames; retail's own 11-frame smallest staged entry
+        // elsewhere).
         let plan = staged_plan(sibling);
-        let swapped_spans = entry_spans(&swapped_block);
+        let retail_spans = entry_spans(&retail_block);
         for &i in &staged_all {
             let (off, span, tag, frames) = spans[i];
-            let (soff, sspan, stag, _) = swapped_spans[i];
+            let (soff, sspan, stag, _) = retail_spans[i];
             assert_eq!(tag, stag, "{who} staged entry {i}: tag preserved");
             let floor = plan
                 .chain
@@ -242,7 +247,7 @@ fn mirrored_duel_blocks_fight_with_the_heroes_clips() {
                 "{who} staged entry {i}: {frames} frames < the {floor}-keyframe floor"
             );
             let new_stream = &block[off + 0x8C..off + span];
-            let old_stream = &swapped_block[soff + 0x8C..soff + sspan];
+            let old_stream = &retail_block[soff + 0x8C..soff + sspan];
             assert_ne!(
                 new_stream, old_stream,
                 "{who} staged entry {i}: stream did not change"
@@ -297,10 +302,10 @@ fn mirrored_duel_blocks_fight_with_the_heroes_clips() {
         // retail rest torso, and the deepest-ankle floor over the cycle
         // exactly on the retail floor (GTE y-down).
         let (off, span, _, _) = spans[0];
-        let (soff, sspan, ..) = swapped_spans[0];
+        let (soff, sspan, ..) = retail_spans[0];
         assert_ne!(
             &block[off + 0x8C..off + span],
-            &swapped_block[soff + 0x8C..soff + sspan],
+            &retail_block[soff + 0x8C..soff + sspan],
             "{who}: idle stream did not change"
         );
         let retail_idle = ma::idle_animation(&retail_archive, id).unwrap().unwrap();
@@ -321,19 +326,6 @@ fn mirrored_duel_blocks_fight_with_the_heroes_clips() {
             floor(&retail_idle.frames),
             "{who}: idle floor anchored"
         );
-
-        // Non-vacuous against retail too: the staged streams differ from
-        // the retail Delilas choreography.
-        let retail_spans = entry_spans(&retail_block);
-        for &i in &staged_all {
-            let (off, span, ..) = spans[i];
-            let (roff, rspan, ..) = retail_spans[i];
-            assert_ne!(
-                &block[off + 0x8C..off + span],
-                &retail_block[roff + 0x8C..roff + rspan],
-                "{who} staged entry {i}: identical to retail (vacuous)"
-            );
-        }
     }
 
     // Determinism: the whole pipeline from the same image reproduces the
@@ -520,4 +512,230 @@ fn every_mapping_permutation_fits_the_slot_budget() {
             }
         }
     }
+}
+
+/// The signature special runs as a PHYSICAL attack of the staged chain,
+/// not the capture-class cast: the AI picker's Delilas arm (overlay
+/// 0898) no longer writes `+0x1DE = 2` / `+0x1DF = monster_id - 0x29`,
+/// the SCUS stub queues exactly the staged chains as category-3 strikes,
+/// and every chain stage of every mirrored block carries a grafted
+/// contact head (event beat + impact-spawn effect record) where retail
+/// shipped none. Baselines pin where the cast decision really lives:
+/// the RETAIL blocks carry no capture spell id anywhere in their action
+/// data - the id is overlay code - so the retail arm words are the
+/// non-vacuity anchor.
+#[test]
+fn signature_special_becomes_a_physical_attack_of_the_staged_chain() {
+    use legaia_patcher::delilas_party::Sibling;
+    use legaia_patcher::delilas_signature_attack as sig;
+
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mapping = PartyMapping::parse("che,lu,gi").expect("mapping");
+    let mut patcher = DiscPatcher::open(original).expect("open disc");
+
+    let word_at =
+        |bytes: &[u8], off: usize| u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap());
+
+    // --- Retail baselines -------------------------------------------------
+    // The cast decision lives in the OVERLAY: the retail arm still holds
+    // the cast write, including the `monster_id - 0x29` literal.
+    let overlay = patcher
+        .read_entry(sig::BATTLE_OVERLAY_PROT)
+        .expect("battle overlay");
+    let arm_off = (sig::ARM_TAIL_VA - sig::BATTLE_OVERLAY_BASE) as usize;
+    let retail_words: Vec<u32> = (0..6).map(|i| word_at(&overlay, arm_off + i * 4)).collect();
+    assert_eq!(
+        retail_words,
+        sig::RETAIL_ARM_TAIL.to_vec(),
+        "retail Delilas arm carries the spell-cast write"
+    );
+    assert_eq!(
+        word_at(&overlay, arm_off + 12),
+        0x2442_FFD7,
+        "the id literal"
+    );
+    // The stub region is dead space on retail.
+    let scus = patcher.read_named_file("SCUS_942.54").expect("SCUS");
+    let stub_off =
+        legaia_asset::item_names::file_offset_for_va(&scus, sig::STUB_VA).expect("stub VA");
+    let gap_len = (sig::STUB_END_VA - sig::STUB_VA) as usize;
+    assert!(
+        scus[stub_off..stub_off + gap_len].iter().all(|&b| b == 0),
+        "stub region must be all-zero dead space on retail"
+    );
+    // And the BLOCKS carry no capture spell id in their action data:
+    // neither a `+0x4C` entry id nor a `+0x21..+0x23` magic-attack slot.
+    let retail_archive = patcher
+        .read_entry_footprint(MONSTER_ARCHIVE_ENTRY)
+        .expect("archive");
+    let assert_no_capture_ids = |archive: &[u8], label: &str| {
+        for sib in [Sibling::Gi, Sibling::Che, Sibling::Lu] {
+            let id = sib.monster_id();
+            let r = ma::record(archive, id).unwrap().unwrap();
+            assert!(
+                r.spells.iter().all(|s| !(0x79..=0x7B).contains(&s.id)),
+                "{label} block {id}: a spell entry carries a capture id"
+            );
+            assert!(
+                r.magic_attacks.is_empty(),
+                "{label} block {id}: unexpected global magic-attack slots"
+            );
+        }
+    };
+    assert_no_capture_ids(&retail_archive, "retail");
+
+    // --- Apply the full mod ----------------------------------------------
+    apply_delilas_party(
+        &mut patcher,
+        &mapping,
+        Default::default(),
+        Default::default(),
+    )
+    .expect("apply party");
+
+    // --- The arm is redirected, the stub queues the staged chains ---------
+    let overlay2 = patcher
+        .read_entry(sig::BATTLE_OVERLAY_PROT)
+        .expect("patched overlay");
+    let patched_words: Vec<u32> = (0..6)
+        .map(|i| word_at(&overlay2, arm_off + i * 4))
+        .collect();
+    assert_eq!(
+        patched_words,
+        sig::arm_tail_replacement(sig::STUB_VA).to_vec(),
+        "the arm tail is the j-to-stub redirect"
+    );
+    assert_ne!(
+        word_at(&overlay2, arm_off + 12),
+        0x2442_FFD7,
+        "the cast id literal is gone"
+    );
+    let scus2 = patcher
+        .read_named_file("SCUS_942.54")
+        .expect("patched SCUS");
+    let queues = sig::StrikeQueues {
+        gi: sig::queue_word(staged_plan(Sibling::Gi).chain).unwrap(),
+        che: sig::queue_word(staged_plan(Sibling::Che).chain).unwrap(),
+        lu: sig::queue_word(staged_plan(Sibling::Lu).chain).unwrap(),
+    };
+    let blob: Vec<u8> = sig::assemble_stub(sig::STUB_VA, &queues)
+        .iter()
+        .flat_map(|w| w.to_le_bytes())
+        .collect();
+    assert_eq!(
+        &scus2[stub_off..stub_off + blob.len()],
+        blob.as_slice(),
+        "the stub queues exactly the module-staged chains"
+    );
+
+    // --- The mirrored blocks: still no capture ids, and every chain
+    // stage carries a contact head where retail shipped none ---------------
+    let mirrored = patcher
+        .read_entry_footprint(MONSTER_ARCHIVE_ENTRY)
+        .expect("mirrored archive");
+    assert_no_capture_ids(&mirrored, "patched");
+    for (_, _, _, who, sibling) in mapping.pairs() {
+        let id = sibling.monster_id();
+        let block = ma::decode_block(&mirrored, id).unwrap().unwrap();
+        let retail_block = ma::decode_block(&retail_archive, id).unwrap().unwrap();
+        let spans = entry_spans(&block);
+        let retail_spans = entry_spans(&retail_block);
+        let plan = staged_plan(sibling);
+        for &stage in plan.chain {
+            let (off, _, _, frames) = spans[stage];
+            // Baseline: retail gives the tag-0x23 stages no contact beat
+            // at all (the cast module did its own damage ticks; Lu's
+            // tag-0x0C stages carry their own beats but empty effect
+            // scripts), so a populated beat + impact record here can
+            // only be the graft. Every stage's grafted head must differ
+            // from the retail head.
+            let (roff, _, rtag, _) = retail_spans[stage];
+            if rtag == 0x23 {
+                assert_eq!(
+                    retail_block[roff + 0x10],
+                    0,
+                    "{who} stage {stage}: retail tag-0x23 staged entry unexpectedly has a beat"
+                );
+            }
+            assert_eq!(
+                retail_block[roff + 0x15],
+                0,
+                "{who} stage {stage}: retail staged entry unexpectedly has an effect record"
+            );
+            assert_ne!(
+                &block[off + 0x10..off + 0x54],
+                &retail_block[roff + 0x10..roff + 0x54],
+                "{who} stage {stage}: head unchanged from retail (graft vacuous)"
+            );
+            let ev = block[off + 0x10] as usize;
+            assert!(
+                ev >= 1 && ev < frames,
+                "{who} stage {stage}: contact beat {ev} outside 1..{frames}"
+            );
+            let gate = block[off + 0x14] as usize;
+            let effect = block[off + 0x15];
+            assert!(
+                gate >= 1 && gate < frames,
+                "{who} stage {stage}: effect gate {gate} outside 1..{frames}"
+            );
+            assert_ne!(effect, 0, "{who} stage {stage}: impact record missing");
+        }
+    }
+
+    // --- Idempotence + EDC validity ---------------------------------------
+    // A second standalone mirror pass accepts its own overlay / SCUS
+    // writes and reproduces every touched region byte for byte. Its
+    // retail sources come from a fresh retail image (the patcher's own
+    // copies are patched by now).
+    let fresh = load_disc().expect("disc still readable");
+    let retail_patcher = DiscPatcher::open(fresh).expect("open retail");
+    let players: Vec<Vec<u8>> = (863..=865)
+        .map(|e| retail_patcher.read_entry_footprint(e).expect("player"))
+        .collect();
+    let readef = retail_patcher.read_entry_footprint(894).expect("readef");
+    let retail_sources = RetailSources {
+        archive: &retail_archive,
+        players: [&players[0], &players[1], &players[2]],
+        readef: &readef,
+    };
+    apply_enemy_anim_mirror(&mut patcher, &mapping, &retail_sources).expect("mirror rerun");
+    assert_eq!(
+        patcher.read_entry(sig::BATTLE_OVERLAY_PROT).unwrap(),
+        overlay2,
+        "overlay idempotence"
+    );
+    assert_eq!(
+        patcher.read_named_file("SCUS_942.54").unwrap(),
+        scus2,
+        "SCUS idempotence"
+    );
+    assert_eq!(
+        patcher.read_entry_footprint(MONSTER_ARCHIVE_ENTRY).unwrap(),
+        mirrored,
+        "archive idempotence"
+    );
+
+    // Every touched sector stays EDC/ECC-valid: the overlay sector under
+    // the arm and the SCUS sector under the stub.
+    use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
+    let img = patcher.image();
+    assert_eq!(img.len() % SECTOR_SIZE, 0);
+    let ov_lba = patcher
+        .entry_disc_lba(sig::BATTLE_OVERLAY_PROT)
+        .expect("overlay lba") as usize;
+    let s = (ov_lba + arm_off / USER_DATA_SIZE) * SECTOR_SIZE;
+    assert!(
+        legaia_iso::write::mode2_form1_sector_is_valid(&img[s..s + SECTOR_SIZE]),
+        "overlay arm sector EDC/ECC"
+    );
+    let (scus_lba, _) =
+        legaia_iso::iso9660::find_file_in_image(img, "SCUS_942.54").expect("SCUS lba");
+    let s = (scus_lba as usize + stub_off / USER_DATA_SIZE) * SECTOR_SIZE;
+    assert!(
+        legaia_iso::write::mode2_form1_sector_is_valid(&img[s..s + SECTOR_SIZE]),
+        "SCUS stub sector EDC/ECC"
+    );
 }

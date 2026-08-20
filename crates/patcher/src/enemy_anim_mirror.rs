@@ -26,6 +26,17 @@
 //! the CONTENT of the staged entries changes, every rewritten staged
 //! entry keeps at least `MIN_STAGED_FRAMES` keyframes, and the entry
 //! count / index space of each block is preserved.
+//!
+//! With the mirror in place the ENEMY-side special no longer routes
+//! through those modules at all: [`crate::delilas_signature_attack`]
+//! (applied at the end of this pass) rewrites the AI picker's Delilas
+//! arm so the signature action is a **physical attack** whose strike
+//! queue is exactly the staged chain below - the hero-Hyper clips play
+//! as strikes, with a contact head grafted from the block's own
+//! strongest ordinary attack, and the retail pillar / victim-lift /
+//! blackout spectacle never fires. The staged indices therefore remain
+//! load-bearing as the queue constants even though the module MIPS is
+//! no longer the consumer.
 
 use anyhow::{Context, Result, bail};
 
@@ -171,7 +182,7 @@ pub fn apply_enemy_anim_mirror(
 
         let mut done = false;
         for (step, opts) in LADDER.iter().enumerate() {
-            let mirrored = enemy_anim::mirror_block_animations(
+            let mut mirrored = enemy_anim::mirror_block_animations(
                 &current_block,
                 retail.archive,
                 id,
@@ -183,6 +194,16 @@ pub fn apply_enemy_anim_mirror(
                 opts,
             )
             .with_context(|| format!("{who} anim mirror for monster {id}"))?;
+            // The signature runs as a PHYSICAL attack (the AI conversion
+            // below queues the staged chain as strikes), so every chain
+            // stage needs a contact head - the retail staged entries
+            // carry none (the cast module did its own damage ticks).
+            let graft = crate::delilas_signature_attack::graft_signature_strikes(
+                &mut mirrored.block,
+                plan.chain,
+            )
+            .with_context(|| format!("{who} signature strike graft for monster {id}"))?;
+            mirrored.notes.push(graft);
             match monster_archive::encode_slot(&mirrored.block) {
                 Ok(new_slot) => {
                     patcher
@@ -211,12 +232,42 @@ pub fn apply_enemy_anim_mirror(
         // Graceful skip: a block that no rung fits keeps the sibling's
         // clips. The phase-38 bake parity alone already poses the hero
         // mesh correctly; a hard error inside apply_delilas_party would
-        // cost the whole mod over one block's animations.
+        // cost the whole mod over one block's animations. The strike
+        // graft still applies (head-only, size-neutral in decoded bytes)
+        // so the converted physical special lands its hits either way.
         if !done {
-            notes.push(format!(
-                "{who} (monster {id}): block keeps the sibling's clips (budget)"
-            ));
+            let mut kept = current_block.clone();
+            match crate::delilas_signature_attack::graft_signature_strikes(&mut kept, plan.chain)
+                .and_then(|note| Ok((monster_archive::encode_slot(&kept)?, note)))
+            {
+                Ok((new_slot, note)) => {
+                    patcher
+                        .patch_monster_slot(id, &new_slot)
+                        .with_context(|| format!("write monster {id} slot (graft only)"))?;
+                    notes.push(format!(
+                        "{who} (monster {id}): block keeps the sibling's clips (budget); {note}"
+                    ));
+                }
+                Err(e) => notes.push(format!(
+                    "{who} (monster {id}): block keeps the sibling's clips (budget); \
+                     strike graft skipped ({e:#})"
+                )),
+            }
         }
     }
+
+    // The signature action itself: the AI picker's Delilas arm becomes a
+    // physical attack queueing the staged chains (no cast module, no
+    // pillar / lift). Applied once, after every block edit, so a refusal
+    // above never leaves the overlay half-patched.
+    let chains = [
+        staged_plan(Sibling::Gi).chain,
+        staged_plan(Sibling::Che).chain,
+        staged_plan(Sibling::Lu).chain,
+    ];
+    notes.push(
+        crate::delilas_signature_attack::apply_ai_conversion(patcher, chains)
+            .context("convert the Delilas signature cast into a physical attack")?,
+    );
     Ok(notes)
 }

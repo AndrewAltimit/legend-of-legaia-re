@@ -70,6 +70,7 @@ pub mod delilas_challenge;
 pub mod delilas_dome;
 pub mod delilas_effects;
 pub mod delilas_party;
+pub mod delilas_signature_attack;
 pub mod delilas_voice;
 pub mod delilas_voice_fx;
 pub mod delilas_xa_voice;
