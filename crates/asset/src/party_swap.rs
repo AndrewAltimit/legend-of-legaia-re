@@ -49,6 +49,7 @@ use legaia_tmd::encode::{ModelGroup, ModelObject, decode_model, encode};
 pub mod enemy_anim;
 pub mod fieldize;
 pub mod moveset;
+pub mod nivora_field;
 pub mod playerize;
 pub mod winpose;
 

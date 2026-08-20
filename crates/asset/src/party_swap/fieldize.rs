@@ -74,7 +74,7 @@ const FIELD_ROLE_SOURCES: [&[usize]; FIELD_BONES] = [
 /// Field role chain child (role space, see [`FIELD_ROLE_SOURCES`]):
 /// torso -> head, each upper limb -> its lower limb; lowers and the
 /// head are terminal.
-const FIELD_CHILD: [Option<usize>; FIELD_BONES] = [
+pub(super) const FIELD_CHILD: [Option<usize>; FIELD_BONES] = [
     None,
     Some(0),
     Some(3),
@@ -88,7 +88,7 @@ const FIELD_CHILD: [Option<usize>; FIELD_BONES] = [
 ];
 
 /// Field role chain parent (chain-internal edges only).
-const FIELD_PARENT: [Option<usize>; FIELD_BONES] = [
+pub(super) const FIELD_PARENT: [Option<usize>; FIELD_BONES] = [
     Some(1),
     None,
     None,
@@ -106,7 +106,10 @@ const FIELD_PARENT: [Option<usize>; FIELD_BONES] = [
 /// [`FIELD_ROLE_SOURCES`]). Derived from rest-pose world centroids per
 /// slot - the group order differs between characters (Vahn's arm pair
 /// orders upper/lower differently from Noa's).
-fn derive_field_roles(model: &[ModelObject], rest: &[PartPose]) -> Result<[usize; FIELD_BONES]> {
+pub(super) fn derive_field_roles(
+    model: &[ModelObject],
+    rest: &[PartPose],
+) -> Result<[usize; FIELD_BONES]> {
     if model.len() < FIELD_BONES || rest.len() < FIELD_BONES {
         bail!(
             "field rig has {} groups / {} channels, expected at least {FIELD_BONES}",
@@ -198,7 +201,9 @@ fn derive_field_roles(model: &[ModelObject], rest: &[PartPose]) -> Result<[usize
 /// skews) is the anchor: with the per-axis span, the baked part's bbox
 /// coincides with the target part's, so limb chains meet exactly where
 /// retail's do.
-fn group_world_stats(parts: &[(&ModelObject, &PartPose)]) -> ((f32, f32, f32), [f32; 3]) {
+pub(super) fn group_world_stats(
+    parts: &[(&ModelObject, &PartPose)],
+) -> ((f32, f32, f32), [f32; 3]) {
     let mut min = [f32::MAX; 3];
     let mut max = [f32::MIN; 3];
     for (o, p) in parts {
@@ -230,7 +235,7 @@ fn group_world_stats(parts: &[(&ModelObject, &PartPose)]) -> ((f32, f32, f32), [
 
 /// Drop prims whose baked extent falls under `threshold` (invisible at
 /// the chibi field scale) and prune the vertices nothing references.
-fn decimate_object(o: &mut ModelObject, threshold: f32) {
+pub(super) fn decimate_object(o: &mut ModelObject, threshold: f32) {
     if threshold <= 0.0 {
         return;
     }
@@ -286,7 +291,12 @@ fn decimate_object(o: &mut ModelObject, threshold: f32) {
 /// Convert a textured prim into an untextured gouraud prim whose corner
 /// colours sample the source page (colour = texel through its palette,
 /// modulated by the prim's own colour, `0x80` = neutral).
-fn flatten_prim(p: &ModelPrim, cluts: &[[u16; 16]], indices: &[u8], width: usize) -> ModelPrim {
+pub(super) fn flatten_prim(
+    p: &ModelPrim,
+    cluts: &[[u16; 16]],
+    indices: &[u8],
+    width: usize,
+) -> ModelPrim {
     let sample = |uv: (u8, u8), k: usize| -> [u8; 3] {
         let (u, v) = (uv.0 as usize, uv.1 as usize);
         let idx = if u < width && v < PAGE_HEIGHT {
@@ -347,7 +357,7 @@ pub const NPC_BUNDLE_ENTRY: usize = 638;
 /// record)`. The pack members are 10-object field rigs (duel costume,
 /// matching the battle forms); the idle records are the placements'
 /// anim bytes minus one.
-fn npc_coords(monster_id: u16) -> Option<(usize, usize)> {
+pub(super) fn npc_coords(monster_id: u16) -> Option<(usize, usize)> {
     match monster_id {
         162 => Some((106, 55)), // Gi
         163 => Some((107, 68)), // Che
@@ -395,7 +405,7 @@ fn mirror_channel(p: &PartPose) -> PartPose {
 /// is the stance's gaze), so a lateral `rz` term is scene flair - Lu's
 /// taunt cocks her head 4.2 degrees - that would ride into every field
 /// pose.
-fn symmetrize_rest_legs(rest: &mut [PartPose]) {
+pub(super) fn symmetrize_rest_legs(rest: &mut [PartPose]) {
     if rest.len() < FIELD_BONES {
         return;
     }
@@ -609,7 +619,7 @@ fn npc_slot_source(npc_pack: &[u8], npc_bundle: &[u8], monster_id: u16) -> Resul
 
 /// Paint one TIM block (16-bit framebuffer units) into a 1024x512 VRAM
 /// image.
-fn paint_vram(vram: &mut [u16], fb_x: u16, fb_y: u16, w: u16, h: u16, data: &[u8]) {
+pub(super) fn paint_vram(vram: &mut [u16], fb_x: u16, fb_y: u16, w: u16, h: u16, data: &[u8]) {
     for row in 0..h as usize {
         for col in 0..w as usize {
             let src = (row * w as usize + col) * 2;
