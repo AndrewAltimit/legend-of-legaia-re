@@ -373,16 +373,23 @@ pub fn assemble_hook(stub_va: u32, routes: &[CastRoute]) -> Vec<u8> {
     let b_done = w.len();
     w.push(0); // beq zero, zero, DONE
     w.push(m::nop());
-    // HIT:
+    // HIT: (t6 sits one past the matched byte - the taken branch's delay
+    // slot advanced it)
     let hit = w.len();
     w.push(m::addiu(T7, ZERO, 2));
+    w.push(m::sb(ZERO, T6, 0xFFFF)); // consume the matched byte (one-shot) -
+    // BEFORE the spell write: a match at +0x1DF itself is the same cell
     w.push(m::sb(T7, V1, 0x1DE)); // category = Magic
     w.push(m::sb(T3, V1, 0x1DF)); // spell id
     // DONE:
     let done = w.len();
     w.push(m::lw(RA, SP, 0x14));
-    w.push(m::jr(RA));
+    // The sp restore doubles as the load-delay filler: `jr` must not read
+    // `$ra` in the slot right after its `lw` (R3000 load delay - the sim
+    // does not model it, so only this ordering is live-safe).
     w.push(m::addiu(SP, SP, 0x18));
+    w.push(m::jr(RA));
+    w.push(m::nop());
 
     // Fix up branches (offset counts from the delay slot).
     let rel = |from: usize, to: usize| -> i16 { (to as i32 - from as i32 - 1) as i16 };
@@ -520,6 +527,50 @@ mod tests {
         cpu.run_until(&[RET_VA]);
         assert_eq!(cpu.r[29], 0x8010_8000, "sp must balance");
         cpu
+    }
+
+    /// The R3000 load-delay law, as a gate: no assembled stub instruction
+    /// may read a register in the slot right after the load that writes it
+    /// (`mips_sim` does not model the delay, so only this scan catches it -
+    /// the shipped hook once froze every battle's Begin on exactly this).
+    #[test]
+    fn no_load_delay_hazards_in_the_hook() {
+        let bytes = assemble_hook(STUB_VA, &routes());
+        let words: Vec<u32> = bytes
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+            .collect();
+        let loaded_reg = |w: u32| -> Option<u32> {
+            // lb/lh/lwl/lw/lbu/lhu/lwr
+            matches!(w >> 26, 0x20..=0x26).then_some((w >> 16) & 0x1F)
+        };
+        let reads = |w: u32, r: u32| -> bool {
+            if r == 0 || w == 0 {
+                return false;
+            }
+            let op = w >> 26;
+            let rs = (w >> 21) & 0x1F;
+            let rt = (w >> 16) & 0x1F;
+            match op {
+                0 => {
+                    // SPECIAL: jr/jalr read rs; shifts read rt; ALU read both.
+                    rs == r || ((w & 0x3F) > 0x08 && rt == r)
+                }
+                2 | 3 => false,                    // j / jal
+                0x28..=0x2E => rs == r || rt == r, // stores read both
+                _ => rs == r,                      // imm ops + loads read rs
+            }
+        };
+        for (i, pair) in words.windows(2).enumerate() {
+            if let Some(r) = loaded_reg(pair[0]) {
+                assert!(
+                    !reads(pair[1], r),
+                    "load-delay hazard at word {i}: {:#010x} then {:#010x}",
+                    pair[0],
+                    pair[1]
+                );
+            }
+        }
     }
 
     #[test]
