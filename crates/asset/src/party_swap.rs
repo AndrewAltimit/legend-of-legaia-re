@@ -46,6 +46,7 @@ use crate::monster_archive::{self, PartPose};
 use crate::monster_model::{CBA_BASE, CLUT_COUNT, CLUT_REGION_BYTES, PAGE_HEIGHT, UV_SPACE};
 use legaia_tmd::encode::{ModelGroup, ModelObject, decode_model, encode};
 
+pub mod enemy_anim;
 pub mod fieldize;
 pub mod moveset;
 pub mod playerize;
@@ -1068,127 +1069,40 @@ fn monsterize_player_scaled(
             "texture at 1/{texture_downscale} resolution to fit the compressed archive slot"
         ));
     }
-    let pack = battle_data_pack::parse(player_file).context("parse player battle file")?;
-    let equipped = [0u8; SECTION_COUNT];
-    let asm = battle_char_assembly::assemble_character(player_file, &pack, &equipped)
-        .context("assemble default-equipment battle mesh")?;
-    let tmd = legaia_tmd::parse(&asm.tmd).context("parse assembled TMD")?;
-    let mut source = decode_model(&tmd, &asm.tmd).context("decode assembled model")?;
-
-    let idle = battle_char_assembly::idle_battle_animation(player_file)?
-        .ok_or_else(|| anyhow::anyhow!("player file has no idle animation"))?;
-    let rest = idle
-        .frames
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("idle animation has no frames"))?
-        .clone();
-
-    // Per-channel CORE part anchors, snapshotted before the extras merge
-    // so a weapon/shield doesn't skew its carrier bone's bbox (the extras
-    // then ride the hand's anchor + scale instead of squashing into it).
-    let skeleton = rest.len();
-    let mut core_stats: Vec<PartStats> = source
-        .iter()
-        .take(skeleton)
-        .enumerate()
-        .map(|(ch, o)| part_world_stats(o, &rest[ch]))
-        .collect();
-
-    // Merge the equipment extras into their attach bones' objects (same
-    // channel = same local frame; plain concat).
-    let mut merged: Vec<Option<ModelObject>> = source.drain(..).map(Some).collect();
-    for (oi, &ch) in asm.anm_bones.iter().enumerate() {
-        if oi < skeleton {
-            continue; // skeleton object
-        }
-        let Some(extra) = merged[oi].take() else {
-            continue;
-        };
-        if let Some(dst) = merged.get_mut(ch as usize).and_then(|d| d.as_mut()) {
-            merge_object(dst, &extra);
-        }
-    }
-    // Noa's hair: rebase into the head frame. The head anchor then
-    // recomputes over the merged head+hair (one visual unit).
-    if let Some(hair_ch) = rig.hair_channel {
-        let head_ch = rig.channel_for_canonical[0] as usize;
-        if let Some(hair) = merged.get_mut(hair_ch as usize).and_then(|h| h.take()) {
-            let head_pose = rest[head_ch];
-            let hair_pose = rest[hair_ch as usize];
-            if let Some(head) = merged.get_mut(head_ch).and_then(|d| d.as_mut()) {
-                rebase_merge(head, &head_pose, &hair, &hair_pose)?;
-                core_stats[head_ch] = part_world_stats(head, &head_pose);
-            }
-        }
-    }
-
-    // Permute into the canonical (Delilas) part order.
-    let mut objects: Vec<ModelObject> = Vec::with_capacity(CANONICAL_PARTS);
-    for c in 0..CANONICAL_PARTS {
-        let ch = rig.channel_for_canonical[c] as usize;
-        let obj = merged
-            .get_mut(ch)
-            .and_then(|o| o.take())
-            .ok_or_else(|| anyhow::anyhow!("player channel {ch} has no object"))?;
-        objects.push(obj);
-    }
-
-    for o in objects.iter_mut() {
-        compact_object(o);
-    }
-
-    // Scale to the target rig's rest height.
-    let target_mesh = monster_archive::mesh(archive_entry, target_id)?
-        .ok_or_else(|| anyhow::anyhow!("monster id {target_id}: empty slot"))?;
-    let target_tmd = legaia_tmd::parse(target_mesh.tmd_bytes()).context("target monster TMD")?;
-    let target_model = decode_model(&target_tmd, target_mesh.tmd_bytes())?;
-    if target_model.len() != CANONICAL_PARTS {
-        bail!(
-            "monster id {target_id} has {} parts, expected {CANONICAL_PARTS}",
-            target_model.len()
-        );
-    }
-    let target_idle = monster_archive::idle_animation(archive_entry, target_id)?
-        .ok_or_else(|| anyhow::anyhow!("monster id {target_id}: no idle animation"))?;
-    let target_rest = target_idle
-        .frames
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("monster idle has no frames"))?;
+    // The bake context - rest poses (terminals normalized), the whole-rig
+    // `bake_frames` alignment, the radial scale, and the merged canonical
+    // objects - is shared with the enemy-side clip retarget
+    // (`enemy_anim`): the retargeted hero clips cancel this bake's
+    // `R_align` by conjugation, so both sides must read identical data.
+    let ctx = enemy_anim::monster_bake_ctx(player_file, rig, archive_entry, target_id)?;
+    let mut objects = ctx.objects.clone();
     // Bake each part through source-channel rest -> target-part rest,
     // pivot-anchored (see `bake_object_pivot`): the pivot is the joint
     // the engine rotates the part about, and axial length matching puts
     // the part's far end on the target's child joint - so the target's
     // own clips move each baked part exactly like the geometry it
     // replaced, joints staying closed, not just the rest pose.
-    let dst_stats: Vec<PartStats> = target_model
-        .iter()
-        .enumerate()
-        .map(|(c, o)| part_world_stats(o, &target_rest[c]))
-        .collect();
-    let src_stats: Vec<PartStats> = (0..CANONICAL_PARTS)
-        .map(|c| core_stats[rig.channel_for_canonical[c] as usize])
-        .collect();
-    let radial = global_height_scale(&src_stats, &dst_stats)[0];
-    let pivot_of = |p: &PartPose| [p.tx as f32, p.ty as f32, p.tz as f32];
-    let src_pivots: Vec<[f32; 3]> = (0..CANONICAL_PARTS)
-        .map(|c| pivot_of(&rest[rig.channel_for_canonical[c] as usize]))
-        .collect();
-    let dst_pivots: Vec<[f32; 3]> = target_rest.iter().map(pivot_of).collect();
-    let src_frames = bone_frames(&src_pivots, &CANONICAL_CHILD, &CANONICAL_PARENT);
-    let dst_frames = bone_frames(&dst_pivots, &CANONICAL_CHILD, &CANONICAL_PARENT);
     for (c, o) in objects.iter_mut().enumerate() {
         let ch = rig.channel_for_canonical[c] as usize;
-        let pb = pivot_bake_params(&src_frames[c], &dst_frames[c], radial);
-        bake_object_pivot(o, &rest[ch], src_pivots[c], &target_rest[c], &pb)
-            .with_context(|| format!("bake canonical part {c}"))?;
+        let pb = pivot_bake_params(&ctx.src_frames[c], &ctx.dst_frames[c], ctx.radial);
+        bake_object_pivot(
+            o,
+            &ctx.rest[ch],
+            ctx.src_pivots[c],
+            &ctx.target_rest[c],
+            &pb,
+        )
+        .with_context(|| format!("bake canonical part {c}"))?;
         if c == 0 {
             // Seat the head on the neck: its near edge along the bone
             // axis lands where the replaced head's sat.
-            seat_terminal_axial(o, &target_model[0], &target_rest[0], pb.x_dst)?;
+            seat_terminal_axial(o, &ctx.target_model[0], &ctx.target_rest[0], pb.x_dst)?;
         }
     }
 
     // Texture re-layout from the player band into the monster page.
+    let pack = battle_data_pack::parse(player_file).context("parse player battle file")?;
+    let equipped = [0u8; SECTION_COUNT];
     let uploads = battle_char_assembly::character_texture_uploads(player_file, &pack, &equipped, 0)
         .context("decode player texture uploads")?;
     let band = band_texels(&uploads);
