@@ -130,16 +130,21 @@ const MODULE_959_DAMAGE_EDITS: &[WordEdit] = &[
     },
 ];
 
-/// PROT 959 finale (phase 0x11, `0x801F8158`): `bnez <victim hp>, alive`
-/// becomes an unconditional branch to the alive path, so a monster victim
-/// at 0 HP no longer trips the retail party-wipe shortcut (`BD2C = 5`).
-/// The wipe/defeat special-case exists because retail's victim is always a
-/// hero; real deaths on either side are still caught by the end-of-action
-/// liveness sweep (state `0x5A`).
+/// PROT 959 finale (phase 0x11, `0x801F8158`): the dead-victim arm. Retail
+/// branches live victims to the settle path (`bnez hp, 0x801F81A8` - kept)
+/// and falls through to a party-wipe shortcut (`BD2C = 5`) for a dead one,
+/// because its victim is always a hero. A dead MONSTER victim must do
+/// neither: the wipe ends the battle as a loss, and the settle path stages
+/// an idle on the corpse (probe-measured freeze). The wipe body's first
+/// word becomes a branch straight into the settle path's TAIL
+/// (`0x801F81B8`: recover speeds + phase `0xFF`), past the victim staging;
+/// the delay slot executes the following harmless `lui`. Real deaths on
+/// either side are still caught by the end-of-action liveness sweep
+/// (state `0x5A`).
 const MODULE_959_WIPE_EDIT: WordEdit = WordEdit {
-    offset: 0x1780,
-    expect: 0x1460_0013,  // bnez v1, +0x13
-    replace: 0x1000_0013, // b +0x13
+    offset: 0x1788,
+    expect: 0x3C04_8008,  // lui a0, 0x8008 (wipe body head)
+    replace: 0x1000_0015, // b 0x801F81B8
 };
 
 /// Apply the PROT 959 module patches.
