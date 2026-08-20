@@ -603,6 +603,46 @@ pub fn apply_delilas_party(
             }
         }
 
+        // The cast route: the mapped sibling's signature plays the RETAIL
+        // enemy cast module (camera track, pillar, lift, multi-hit
+        // build-up) instead of the art-side approximation. Per-module
+        // gating: only modules whose player-caster defects are patched
+        // and probe-verified route this way - Megaton Press (spell 0x7A,
+        // PROT 959) today; the other siblings keep the art-side reskin
+        // until 958/960 pass the same audit. Claims the SCUS injection
+        // gap, so it composes with neither --shiny-seru nor
+        // --show-super-arts - on a conflict the note says so and the
+        // art-side signature stays.
+        let routes: Vec<crate::delilas_cast::CastRoute> = mapping
+            .pairs()
+            .iter()
+            .filter_map(|&(_, _, slot, _, sibling)| match sibling {
+                Sibling::Che => host_art(slot).map(|art| crate::delilas_cast::CastRoute {
+                    char_index: slot as u8,
+                    art_constant: art.action_constant,
+                    spell_id: 0x7A,
+                }),
+                _ => None,
+            })
+            .collect();
+        if !routes.is_empty() {
+            let installed = crate::delilas_cast::patch_module_959(patcher)
+                .and_then(|_| crate::delilas_cast::install_cast_hook(patcher, &routes));
+            match installed {
+                Ok(_) => {
+                    for r in &routes {
+                        report.notes.push(format!(
+                            "cast route: slot {} signature runs the retail Megaton Press module",
+                            r.char_index
+                        ));
+                    }
+                }
+                Err(e) => report
+                    .notes
+                    .push(format!("cast route: art-side signature kept ({e:#})")),
+            }
+        }
+
         // Enemy-side anim mirror, LAST: the swapped duel blocks fight
         // with the mapped hero's own clips (idle / walk / reactions /
         // swings, plus the hero's 50-AP Hyper across the cast module's

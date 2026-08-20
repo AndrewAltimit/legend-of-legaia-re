@@ -32,23 +32,23 @@
 //!    `jal` at `0x801EF9AC` - and at that site `a0` = actor slot, `a1` (after
 //!    the delay slot) = 0-based character index.
 //!
-//! 2. **The cast modules** (PROT 958/959/960, link base `0x801F69D8`): the
-//!    per-tick damage/HP writes hardcode battle-actor `table[0]`
-//!    (`lw rX, -0x6C90($fp)`, party seat 0) even though the tick prologue
-//!    already derives the true target (`table[caster[+0x1DD]]`) into a saved
-//!    register that is never clobbered. Each such load becomes
-//!    `move rX, <target reg>`. The finale's "victim at 0 HP" arm - which in
-//!    retail declares a party wipe, because the victim of a boss cast is a
-//!    hero - is neutralised to the alive path so killing a monster with the
-//!    special falls through to the ordinary end-of-action liveness sweep.
+//! 2. **The cast modules** (PROT 958/959/960, link base `0x801F69D8`): four
+//!    defect classes separate an enemy cast from a player cast, each with
+//!    its own edit table below - the hardcoded `table[0]` damage/HP sites
+//!    (retarget to the derived victim), the dead-victim party-wipe arm
+//!    (branch to the settle tail), the caster staged-clip step to a row the
+//!    player bank cannot stage (pin the index, keep the restage), and the
+//!    finale teardown corpse-model (neutralise its stream words at the
+//!    settle tail). Only a module whose four classes are patched AND
+//!    probe-verified end-to-end is routed to; PROT 959 (Megaton Press) is.
 //!
-//! Verified live for PROT 959 (Megaton Press): with the five moves applied,
-//! the module damages the chosen monster and leaves party seat 0 untouched.
+//! Verified live for PROT 959: the full choreography - pillar, blackout
+//! lift, rock-shatter with the damage counter, smash - runs on a player
+//! caster against the chosen target, and the battle continues past the
+//! finale.
 //!
 //! No Sony bytes ship here: every patched word is derived from (and verified
 //! against) the user's own disc before writing.
-
-#![allow(dead_code)] // wired behind the delilas-party apply chain
 
 use anyhow::{Context, Result, bail};
 
@@ -67,9 +67,6 @@ const APPLIER_VA: u32 = 0x801E_F9E4;
 const SUPER_FIRED_VA: u32 = 0x801F_696C;
 /// 8-slot battle actor pointer table.
 const ACTOR_TABLE_VA: u32 = 0x801C_9370;
-
-/// Cast-module link base (slot-B overlay window).
-const MODULE_BASE_VA: u32 = 0x801F_69D8;
 
 /// Per-slot signature route: scan the finished queue for `art_constant`;
 /// on a hit the action becomes a Magic cast of `spell_id`.
@@ -147,11 +144,126 @@ const MODULE_959_WIPE_EDIT: WordEdit = WordEdit {
     replace: 0x1000_0015, // b 0x801F81B8
 };
 
+/// PROT 959 lift arm (`0x801F767C`): the staged-index step to entry `0x0B`.
+///
+/// The module stages the caster's clips through `actor+0x1DA` (index) +
+/// `actor+0x1DC` (stage counter - the restage trigger): the cast opens on
+/// staged entry `0x0A` (`li 0xA` at `0x801F6F3C`) and the lift arm
+/// increments both fields to stage entry `0x0B` for the smash. On a
+/// MONSTER caster row `0x0B` of the block is the smash swing; on a PARTY
+/// caster the per-slot pointer-array row `0x0B` resolves to a record the
+/// module's part spawner chokes on (probe-measured hard freeze at the
+/// stage boundary; re-pointing row `0x0B` at row `0x0A`'s record at
+/// runtime carried the whole choreography). Production form of that
+/// experiment: nop the INDEX increment only - the stage counter still
+/// bumps, so the restage fires and delivers row `0x0A`'s record again.
+const MODULE_959_STAGE_EDIT: WordEdit = WordEdit {
+    offset: 0x0CAC,      // 0x801F7684 in the lift arm
+    expect: 0x2442_0001, // addiu v0, v0, 1 (the staged-index step)
+    replace: m::nop(),   // index stays 0x0A; counter bump still restages
+};
+
+/// PROT 959 finale teardown: neutralise the corpse-model the finale leaves
+/// behind, before the end-of-action draw dereferences it.
+///
+/// The phase-0xE arm spawns the finale effect barrage; one spawned entity
+/// (cached at `ctx + 0x102C` - the module's own halt quad targets it) is
+/// installed as **slot 0 of a carrier entity's model table** and drawn as
+/// a model every frame from then on. On a PARTY caster it never gets real
+/// stream words bound: its `+0x10` (colour stream) stays `0`, which the
+/// TMD walk `FUN_80043390` tolerates (address 0 is mapped RAM). When the
+/// entity's script kill-marks it (`+0x10 |= 0x02000000`, on top of the
+/// halt `|8`), the next carrier draw reads colours from `0x02000008` -
+/// unmapped - and the game hard-freezes on the exact frame the
+/// choreography ends (probe-pinned: carrier `0x800835E4`, model table
+/// slot `[0x11, entity]`, fault `lw` at `0x80043580`).
+///
+/// Freeing the entity is WRONG here - the carrier keeps its reference, so
+/// a freed slab would be redrawn as whatever reuses it. The fix writes
+/// the two stream words the walk consumes back to the proven-safe state:
+/// `+0x10 = 0` (colour reads at mapped address 0, exactly the state the
+/// carrier drew safely for the whole cast) and `+0x14 = 0` (the walk's
+/// first gate exits cleanly on a zero prim stream).
+///
+/// Host: the settle tail (`0x801F81B8`) runs exactly once per cast - it is
+/// the site that writes phase `0xFF`, after the kill mark and before the
+/// same frame's draw pass - with the caster in `$s2`, the victim in `$s4`
+/// and the battle ctx in `$s5`. Its exit jump is rerouted through the
+/// dead-victim wipe body (`0x801F81D0..`), which [`MODULE_959_WIPE_EDIT`]
+/// already made unreachable; the stub also clears the `ctx[+0x102C]`
+/// cache and the two probe-observed stale actor chain cells
+/// (`caster+0x44` held a masked `0x08000000` all cast; healthy actors
+/// carry `0`). The phase write stays in the rerouted jump's delay slot.
+const MODULE_959_TEARDOWN_EDITS: &[WordEdit] = &[
+    WordEdit {
+        offset: 0x17F0,             // 0x801F81C8: settle-tail exit
+        expect: 0x0807_E087,        // j 0x801F821C (epilogue)
+        replace: m::j(0x801F_81D0), // j into the dead wipe body
+    },
+    WordEdit {
+        offset: 0x17F8, // 0x801F81D0 (dead: lui v1)
+        expect: 0x3C03_8008,
+        replace: m::lw(A0, m::S5, 0x102C), // a0 = cached finale entity
+    },
+    WordEdit {
+        offset: 0x17FC, // 0x801F81D4 (dead: addiu)
+        expect: 0x2402_00FE,
+        replace: m::sw(ZERO, m::S2, 0x44), // caster chain cell (load delay)
+    },
+    WordEdit {
+        offset: 0x1800, // 0x801F81D8 (dead: lui a2)
+        expect: 0x3C06_8008,
+        replace: m::beq(A0, ZERO, 6), // null guard -> 0x801F81F4
+    },
+    WordEdit {
+        offset: 0x1804, // 0x801F81DC (dead: lui a1)
+        expect: 0x3C05_8008,
+        replace: m::sw(ZERO, m::S4, 0x44), // victim chain cell (branch delay)
+    },
+    WordEdit {
+        offset: 0x1808, // 0x801F81E0 (dead: sb wipe flag)
+        expect: 0xA062_BD71,
+        replace: m::sw(ZERO, A0, 0x10), // colour stream -> mapped null
+    },
+    WordEdit {
+        offset: 0x180C, // 0x801F81E4 (dead: lbu)
+        expect: 0x90A2_BD60,
+        replace: m::sw(ZERO, A0, 0x14), // prim stream -> clean walk exit
+    },
+    WordEdit {
+        offset: 0x1810, // 0x801F81E8 (dead: li 5)
+        expect: 0x2403_0005,
+        replace: m::sw(ZERO, m::S5, 0x102C), // clear the cache
+    },
+    WordEdit {
+        offset: 0x1814, // 0x801F81EC (dead: sw wipe-state)
+        expect: 0xACC3_BD2C,
+        replace: m::j(0x801F_821C), // rejoin the epilogue
+    },
+    WordEdit {
+        offset: 0x1818, // 0x801F81F0 (dead: andi): j delay slot
+        expect: 0x3042_007F,
+        replace: m::nop(),
+    },
+    WordEdit {
+        offset: 0x181C, // 0x801F81F4 (dead: jal jingle): null-guard target
+        expect: 0x0C00_C66A,
+        replace: m::j(0x801F_821C), // rejoin the epilogue
+    },
+    WordEdit {
+        offset: 0x1820, // 0x801F81F8 (dead: sb, jal delay): j delay slot
+        expect: 0xA0A2_BD60,
+        replace: m::nop(),
+    },
+];
+
 /// Apply the PROT 959 module patches.
 pub fn patch_module_959(p: &mut DiscPatcher) -> Result<bool> {
     let entry = p.read_entry(959).context("read PROT 959")?;
     let mut edits: Vec<WordEdit> = MODULE_959_DAMAGE_EDITS.to_vec();
     edits.push(MODULE_959_WIPE_EDIT);
+    edits.push(MODULE_959_STAGE_EDIT);
+    edits.extend_from_slice(MODULE_959_TEARDOWN_EDITS);
 
     let word = |off: u64| -> Result<u32> {
         let off = off as usize;

@@ -39,8 +39,8 @@ local function dump_world(tag)
     for slot = 0, 7 do
         local p = u32(ACTOR_TABLE + slot * 4)
         if p >= 0x80000000 and p < 0x80200000 then
-            PCSX.log(string.format("[%s] actor%d @%08X hdr=%08X chain=%08X mode=%02X anim=%02X/%02X",
-                tag, slot, p, u32(p + 4), u32(p + 0x44), u8(p + 0x56), u8(p + 0x1D9), u8(p + 0x1DA)))
+            PCSX.log(string.format("[%s] actor%d @%08X hdr=%08X att24=%08X chain=%08X c74=%08X mode=%02X anim=%02X/%02X",
+                tag, slot, p, u32(p + 4), u32(p + 0x24), u32(p + 0x44), u32(p + 0x74), u8(p + 0x56), u8(p + 0x1D9), u8(p + 0x1DA)))
         end
     end
     local seated = 0
@@ -57,6 +57,49 @@ local function dump_world(tag)
     PCSX.log(string.format("[%s] parts seated=%d", tag, seated))
 end
 
+local function dump_obj(tag)
+    local obj = 0x8007F84C
+    for row = 0, 15 do
+        local b = obj + row * 0x10
+        PCSX.log(string.format("[%s] obj+%02X: %08X %08X %08X %08X",
+            tag, row * 0x10, u32(b), u32(b + 4), u32(b + 8), u32(b + 0xC)))
+    end
+end
+
+local colour_bp_armed = false
+local colour_logged = 0
+local function arm_colour_bp()
+    local first_hit = false
+    probe.arm_breakpoint(0x80043390, "Exec", 4, "tmd_entry", function()
+        if not first_hit then
+            first_hit = true
+            PCSX.log("[tmd_entry BP live]")
+        end
+        local r = PCSX.getRegisters()
+        local n = r.GPR and r.GPR.n or {}
+        local function tou32(v) v = tonumber(v) or 0 if v < 0 then v = v + 0x100000000 end return v end
+        local a0v = tou32(n.a0)
+        if a0v == 0x8007F84C and colour_logged < 8 then
+            colour_logged = colour_logged + 1
+            local s0 = tou32(n.s0)
+            local v0 = tou32(n.v0)
+            PCSX.log(string.format("[BADCALL] ra=%08X s0=%08X a0=%08X a1=%08X v0=%08X s5=%08X s3=%08X",
+                tou32(n.ra), s0, a0v, tou32(n.a1), v0, tou32(n.s5), tou32(n.s3)))
+            for row = 0, 8 do
+                local b = s0 + row * 0x10
+                PCSX.log(string.format("[BADCALL] s0+%02X: %08X %08X %08X %08X",
+                    row * 0x10, u32(b), u32(b + 4), u32(b + 8), u32(b + 0xC)))
+            end
+            local t44 = u32(s0 + 0x44)
+            for k = 0, 7 do
+                PCSX.log(string.format("[BADCALL] tbl44[%d] @%08X = %08X %08X",
+                    k, t44 + k * 8, u32(t44 + k * 8), u32(t44 + k * 8 + 4)))
+            end
+        end
+    end)
+end
+
+local safe_dumped = false
 local injected, cast_seen, dumped = false, false, false
 local last = ""
 
@@ -74,6 +117,7 @@ probe.run({
                     tou32(r.pc), tou32(n.ra), tou32(n.a0), tou32(n.a1), tou32(n.a2), tou32(n.s0), tou32(n.s1),
                     tou32(n.s2), tou32(n.s3), tou32(n.s4), tou32(n.v0), tou32(n.v1), tou32(n.t0)))
                 dump_world("WILD2")
+                dump_obj("WILD2")
             end
         end)
         probe.arm_breakpoint(WILD, "Read", 4, "wild", function()
@@ -135,6 +179,15 @@ probe.run({
 
         if cast_seen then
             local ph = u8(cx + 0x279)
+            if ph >= 16 and ph < 250 and not colour_bp_armed then
+                colour_bp_armed = true
+                arm_colour_bp()
+                PCSX.log(string.format("[t%d] colour BP armed at ph=%d", elapsed, ph))
+            end
+            if ph >= 15 and ph < 250 and not safe_dumped then
+                safe_dumped = true
+                dump_obj(string.format("safe-ph%d t%d", ph, elapsed))
+            end
             if ph >= 9 then
                 local bank = u32(BANK_TABLE)
                 local line = string.format("ph=%d ptrA=%08X ptrB=%08X cnt=%08X",

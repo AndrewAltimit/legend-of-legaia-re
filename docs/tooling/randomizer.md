@@ -2146,6 +2146,33 @@ of any preset; unaffected by the seed.
 > contrast against retail that pins every coordinate the Delilas pass
 > owns) and the `party_swap_real` conversion oracles over all nine
 > pairings.
+
+#### The retail cast route
+
+A Delilas signature is, in retail, a capture-class spell whose cast pages a
+per-spell module (PROT 958/959/960) into the battle's side overlay window and
+runs the whole boss choreography - camera track, summoning pillar, blackout
+lift, multi-hit damage build-up - from data, keyed only off the spell id. The
+swap uses that: for a slot whose module has passed the player-caster audit,
+performing the signature art routes the finished arts queue into the real
+cast (`delilas_cast` module) instead of playing the art-side reskin. Four
+defect classes separate an enemy cast from a player cast, each a small
+expect-verified word edit inside the module: the hardcoded party-seat-0
+damage/HP sites (retargeted to the derived victim), the dead-victim
+party-wipe arm (a boss cast's victim is a hero, so a dead victim meant game
+over), the caster staged-clip step onto a row a player bank cannot stage,
+and a finale teardown that leaves a model-less effect entity in a carrier's
+draw table (its stream words are neutralised at the settle tail - the
+kill-marked corpse otherwise routes the TMD walk's colour read to unmapped
+memory and hard-freezes the exact frame the choreography ends).
+
+Megaton Press (PROT 959) is audited and probe-verified end-to-end; the
+Che-mapped slot routes to it, and the other two siblings keep the art-side
+reskin until 958/960 pass the same ladder. The hook stub lives in the SCUS
+injection gap, so the route composes with neither `--shiny-seru` nor
+`--show-super-arts`; on a conflict the patch keeps the art-side signature
+and says so in the summary.
+
 ### Fishing prize prices
 
 The fishing minigame's prize counters (the **Buma** and **Vidna** ponds) sell
