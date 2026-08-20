@@ -66,6 +66,20 @@ local function dump_obj(tag)
     end
 end
 
+
+local function finale_trace(cx, elapsed, ph)
+    if ph < 14 or ph > 250 or elapsed % 4 ~= 0 then return end
+    local ent = u32(cx + 0x102C)
+    local e10, e44 = 0, 0
+    if ent >= 0x80000000 and ent < 0x80200000 then
+        e10, e44 = u32(ent + 0x10), u32(ent + 0x44)
+    end
+    PCSX.log(string.format("[FIN t%d] ph=%d ent=%08X e10=%08X e44=%08X cam=%d,%d,%d",
+        elapsed, ph, ent, e10, e44,
+        (u32(0x1F800314 + 0x14) + 0x80000000) % 0x100000000 - 0x80000000,
+        (u32(0x1F800314 + 0x18) + 0x80000000) % 0x100000000 - 0x80000000,
+        (u32(0x1F800314 + 0x1C) + 0x80000000) % 0x100000000 - 0x80000000))
+end
 local colour_bp_armed = false
 local colour_logged = 0
 local function arm_colour_bp()
@@ -140,7 +154,52 @@ probe.run({
         if cx == nil or a0 == nil then return end
         local st7 = u8(cx + 7)
         local cat = u8(a0 + 0x1DE)
-        if elapsed == 10 then
+        if elapsed == 4 and not _G.__injected_blob then
+            _G.__injected_blob = true
+            local bf = probe.getenv("LEGAIA_INJECT_BLOB", "")
+            local bva = tonumber(probe.getenv("LEGAIA_INJECT_VA", "0")) or 0
+            if bf ~= "" and bva ~= 0 then
+                local fh = io.open(bf, "rb")
+                if fh then
+                    local blob = fh:read("*a")
+                    fh:close()
+                    for i = 1, #blob do
+                        probe.write_u8(bva + i - 1, string.byte(blob, i))
+                    end
+                    PCSX.log(string.format("[inject t%d] blob %d bytes @%08X", elapsed, #blob, bva))
+                else
+                    PCSX.log("[inject] FAILED to open " .. bf)
+                end
+            end
+            local pf = probe.getenv("LEGAIA_POKE_FILE", "")
+            if pf ~= "" then
+                local ok, list = pcall(dofile, pf)
+                if ok and type(list) == "table" then
+                    for _, e in ipairs(list) do
+                        local van, wn = e[1], e[2]
+                        probe.write_u8(van + 0, wn % 0x100)
+                        probe.write_u8(van + 1, math.floor(wn / 0x100) % 0x100)
+                        probe.write_u8(van + 2, math.floor(wn / 0x10000) % 0x100)
+                        probe.write_u8(van + 3, math.floor(wn / 0x1000000) % 0x100)
+                    end
+                    PCSX.log(string.format("[inject] poke file: %d words", #list))
+                else
+                    PCSX.log("[inject] poke file FAILED: " .. tostring(list))
+                end
+            end
+            local pokes = probe.getenv("LEGAIA_POKE_WORDS", "")
+            for va, w in string.gmatch(pokes, "(%w+):(%w+)") do
+                local van, wn = tonumber(va, 16), tonumber(w, 16)
+                if van and wn then
+                    probe.write_u8(van + 0, wn % 0x100)
+                    probe.write_u8(van + 1, math.floor(wn / 0x100) % 0x100)
+                    probe.write_u8(van + 2, math.floor(wn / 0x10000) % 0x100)
+                    probe.write_u8(van + 3, math.floor(wn / 0x1000000) % 0x100)
+                    PCSX.log(string.format("[inject] word %08X @%08X", wn, van))
+                end
+            end
+        end
+        if elapsed == 10 and probe.getenv("LEGAIA_NO_ALIAS", "") == "" then
             local bank = u32(BANK_TABLE)
             if bank >= 0x80000000 and bank < 0x80200000 then
                 local good = u32(bank + 0x0A * 4)
@@ -179,6 +238,7 @@ probe.run({
 
         if cast_seen then
             local ph = u8(cx + 0x279)
+            finale_trace(cx, elapsed, ph)
             if ph >= 16 and ph < 250 and not colour_bp_armed then
                 colour_bp_armed = true
                 arm_colour_bp()

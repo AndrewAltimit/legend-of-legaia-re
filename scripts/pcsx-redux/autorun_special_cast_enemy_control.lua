@@ -57,6 +57,20 @@ local function dump_world(tag)
     PCSX.log(string.format("[%s] parts seated=%d", tag, seated))
 end
 
+
+local function finale_trace(cx, elapsed, ph)
+    if ph < 14 or ph > 250 or elapsed % 4 ~= 0 then return end
+    local ent = u32(cx + 0x102C)
+    local e10, e44 = 0, 0
+    if ent >= 0x80000000 and ent < 0x80200000 then
+        e10, e44 = u32(ent + 0x10), u32(ent + 0x44)
+    end
+    PCSX.log(string.format("[FIN t%d] ph=%d ent=%08X e10=%08X e44=%08X cam=%d,%d,%d",
+        elapsed, ph, ent, e10, e44,
+        (u32(0x1F800314 + 0x14) + 0x80000000) % 0x100000000 - 0x80000000,
+        (u32(0x1F800314 + 0x18) + 0x80000000) % 0x100000000 - 0x80000000,
+        (u32(0x1F800314 + 0x1C) + 0x80000000) % 0x100000000 - 0x80000000))
+end
 local injected, cast_seen, dumped = false, false, false
 local last = ""
 
@@ -112,6 +126,7 @@ probe.run({
         end
         if cast_seen then
             local ph = u8(cx + 0x279)
+            finale_trace(cx, elapsed, ph)
             if ph >= 9 then
                 local bank = u32(BANK_TABLE)
                 local line = string.format("ph=%d ptrA=%08X ptrB=%08X cnt=%08X",
