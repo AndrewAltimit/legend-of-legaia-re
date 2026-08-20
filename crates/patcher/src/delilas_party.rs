@@ -626,7 +626,22 @@ pub fn apply_delilas_party(
             })
             .collect();
         if !routes.is_empty() {
-            let installed = crate::delilas_cast::patch_module_959(patcher)
+            // The CASTER's own body animation: author real staged rows
+            // (the sibling's wind-up + payoff on player rows 0x0A/0x0B,
+            // Block re-homed to row 0x06 across every player file) so
+            // the module's retail two-stage step can stay. When the
+            // rewrite cannot land, fall back to the previous behaviour:
+            // pin both stages to the empty row 0x0A (caster holds a
+            // pose; the enemy-side cast also loses its smash stage).
+            let staged = author_staged_cast_rows(patcher, mapping, &retail_players, &archive);
+            let pin_stage = staged.is_err();
+            match staged {
+                Ok(notes) => report.notes.extend(notes),
+                Err(e) => report.notes.push(format!(
+                    "cast route: caster rows stay pinned to the held pose ({e:#})"
+                )),
+            }
+            let installed = crate::delilas_cast::patch_module_959(patcher, pin_stage)
                 .and_then(|_| crate::delilas_cast::install_cast_hook(patcher, &routes));
             match installed {
                 Ok(_) => {
@@ -1321,6 +1336,187 @@ fn signature_clip_chain(sibling: Sibling) -> &'static [usize] {
         Sibling::Che => &[10, 11],
         Sibling::Lu => &[14, 12, 13],
     }
+}
+
+/// PROT entry of Terra's player battle file (`data\battle\PLAYER4`).
+const TERRA_PLAYER_ENTRY: usize = 866;
+
+/// Author the Megaton Press caster rows for the Che-mapped slot, and
+/// re-home the Block reaction across every player file.
+///
+/// What lands, all-or-nothing (every record[0] splice is computed before
+/// the first byte is written, so a failure leaves the disc untouched):
+///
+/// 1. The Che-mapped slot's record[0] gets real staged rows: the
+///    sibling's wind-up on row `0x0A` and smash on row `0x0B`, hosted in
+///    the dead CLUT-A face-pixel payload
+///    ([`party_swap::cast_stage::build_staged_cast_rows`]), with the
+///    retail Block entry re-homed byte-unmoved onto placeholder row
+///    `0x06`.
+/// 2. The other three player files (the two remaining heroes + Terra)
+///    get the same one-word row-`0x06` -> Block re-home.
+/// 3. The party-init Block-reaction literal flips `0x0B` -> `0x06`
+///    ([`crate::delilas_cast::relocate_block_reaction`]) so every slot's
+///    guard keeps its retail clip while the cast module owns row `0x0B`.
+fn author_staged_cast_rows(
+    patcher: &mut DiscPatcher,
+    mapping: &PartyMapping,
+    retail_players: &[Vec<u8>],
+    archive: &[u8],
+) -> Result<Vec<String>> {
+    use legaia_asset::battle_char_assembly;
+    use party_swap::cast_stage;
+
+    let (che_entry, rig, slot, who, sibling) = mapping
+        .pairs()
+        .into_iter()
+        .find(|&(_, _, _, _, s)| s == Sibling::Che)
+        .ok_or_else(|| anyhow::anyhow!("no Che-mapped slot"))?;
+    let source_id = sibling.monster_id();
+    let chain_entries = signature_clip_chain(sibling);
+    let clips = monster_archive::animations(archive, source_id)
+        .with_context(|| format!("read monster {source_id} animations"))?
+        .unwrap_or_default();
+    let chain: Vec<&monster_archive::MonsterAnimation> =
+        chain_entries.iter().filter_map(|&i| clips.get(i)).collect();
+    if chain.len() != chain_entries.len() {
+        bail!(
+            "monster {source_id} carries {} of the {} staged clips",
+            chain.len(),
+            chain_entries.len()
+        );
+    }
+
+    // Expand region writes into the offset-edit form
+    // `patch_player_record0_full` consumes, dropping bytes that already
+    // hold the target value (so an already-applied file reads as "no
+    // change" instead of mistaking the encoder's `None` for an
+    // overflow). The three outcomes are kept apart: an overflow is a
+    // pose-ladder signal, not an error.
+    enum Plan {
+        NoChange,
+        Fit(usize, Vec<u8>),
+        Overflow,
+    }
+    let plan_splice = |entry: &[u8], writes: &[(usize, Vec<u8>)], label: &str| -> Result<Plan> {
+        let decoded = battle_char_assembly::decode_record0(entry)
+            .with_context(|| format!("decode {label} record0"))?;
+        let edits: Vec<(usize, u8)> = writes
+            .iter()
+            .flat_map(|(off, bytes)| bytes.iter().enumerate().map(move |(i, &b)| (off + i, b)))
+            .filter(|&(off, b)| decoded.get(off).copied() != Some(b))
+            .collect();
+        if edits.is_empty() {
+            return Ok(Plan::NoChange);
+        }
+        Ok(
+            match crate::arts::patch_player_record0_full(entry, &[], &edits) {
+                Some((off, bytes)) => Plan::Fit(off, bytes),
+                None => Plan::Overflow,
+            },
+        )
+    };
+
+    // Every write is planned before the first byte lands, so a failure
+    // leaves the disc untouched. `(PROT entry, file offset, bytes)`.
+    let mut commits: Vec<(usize, usize, Vec<u8>)> = Vec::new();
+
+    // The Che host: reclaim the descriptor-table slack up front (free
+    // compressed-stream footprint, transparent to the loader - see
+    // `cast_stage::push_up_desc_table`), then walk the pose ladder
+    // against the real LZS budget.
+    let mut live = patcher
+        .read_entry(che_entry)
+        .with_context(|| format!("read {who} player file"))?;
+    if let Some(writes) = cast_stage::push_up_desc_table(&live)
+        .with_context(|| format!("re-lay {who}'s descriptor table"))?
+    {
+        for (off, bytes) in &writes {
+            live[*off..*off + bytes.len()].copy_from_slice(bytes);
+            commits.push((che_entry, *off, bytes.clone()));
+        }
+    }
+    let mut staged_splice: Option<(usize, Vec<u8>)> = None;
+    let built = {
+        let live = &live;
+        cast_stage::build_staged_cast_rows(
+            live,
+            &retail_players[slot],
+            rig,
+            archive,
+            source_id,
+            &chain,
+            |writes| match plan_splice(live, writes, who)? {
+                Plan::NoChange => Ok(true),
+                Plan::Fit(off, bytes) => {
+                    staged_splice = Some((off, bytes));
+                    Ok(true)
+                }
+                Plan::Overflow => Ok(false),
+            },
+        )
+        .with_context(|| format!("author {who}'s staged cast rows"))?
+    };
+    if let Some((off, bytes)) = staged_splice {
+        commits.push((che_entry, off, bytes));
+    }
+
+    // Row-6 Block re-home in every other player file (Terra included:
+    // the party-init literal is shared by all four slots). The one-word
+    // edit is compression-neutral in practice, but a file already at its
+    // ceiling gets the same descriptor-table reclaim as a fallback.
+    for (other_entry, other_who) in mapping
+        .pairs()
+        .into_iter()
+        .filter(|&(e, _, _, _, _)| e != che_entry)
+        .map(|(e, _, _, w, _)| (e, w))
+        .chain([(TERRA_PLAYER_ENTRY, "Terra")])
+    {
+        let mut f = patcher
+            .read_entry(other_entry)
+            .with_context(|| format!("read {other_who} player file"))?;
+        let write = cast_stage::relocate_block_row(&f)
+            .with_context(|| format!("re-home {other_who}'s Block row"))?;
+        let mut plan = plan_splice(&f, std::slice::from_ref(&write), other_who)?;
+        if matches!(plan, Plan::Overflow)
+            && let Some(writes) = cast_stage::push_up_desc_table(&f)
+                .with_context(|| format!("re-lay {other_who}'s descriptor table"))?
+        {
+            for (off, bytes) in &writes {
+                f[*off..*off + bytes.len()].copy_from_slice(bytes);
+                commits.push((other_entry, *off, bytes.clone()));
+            }
+            plan = plan_splice(&f, std::slice::from_ref(&write), other_who)?;
+        }
+        match plan {
+            Plan::NoChange => {}
+            Plan::Fit(off, bytes) => commits.push((other_entry, off, bytes)),
+            Plan::Overflow => bail!(
+                "{other_who}'s record0 will not fit its LZS footprint with the Block \
+                 row re-homed"
+            ),
+        }
+    }
+
+    // Everything fits - commit, then the SCUS literal.
+    for (entry, off, bytes) in &commits {
+        patcher
+            .patch_prot_entry(*entry, *off as u64, bytes)
+            .with_context(|| format!("write staged-row bytes into PROT {entry}"))?;
+    }
+    crate::delilas_cast::relocate_block_reaction(patcher)
+        .context("re-home the party Block reaction")?;
+
+    Ok(vec![format!(
+        "cast route: {who} caster rows authored - wind-up {}f (of {}) rate {}, \
+         smash {}f (of {}) rate {}; Block re-homed to row 0x06 on all four files",
+        built.frames[0],
+        built.source_frames[0],
+        built.rates[0],
+        built.frames[1],
+        built.source_frames[1],
+        built.rates[1],
+    )])
 }
 
 /// The fanfare row the slot's host art fires through. The cue is a coin

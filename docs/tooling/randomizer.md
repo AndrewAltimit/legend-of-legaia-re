@@ -2156,15 +2156,37 @@ lift, multi-hit damage build-up - from data, keyed only off the spell id. The
 swap uses that: for a slot whose module has passed the player-caster audit,
 performing the signature art routes the finished arts queue into the real
 cast (`delilas_cast` module) instead of playing the art-side reskin. Four
-defect classes separate an enemy cast from a player cast, each a small
-expect-verified word edit inside the module: the hardcoded party-seat-0
+defect classes separate an enemy cast from a player cast. Three are small
+expect-verified word edits inside the module: the hardcoded party-seat-0
 damage/HP sites (retargeted to the derived victim), the dead-victim
 party-wipe arm (a boss cast's victim is a hero, so a dead victim meant game
-over), the caster staged-clip step onto a row a player bank cannot stage,
-and a finale teardown that leaves a model-less effect entity in a carrier's
-draw table (its stream words are neutralised at the settle tail - the
-kill-marked corpse otherwise routes the TMD walk's colour read to unmapped
-memory and hard-freezes the exact frame the choreography ends).
+over), and a finale teardown that leaves a model-less effect entity in a
+carrier's draw table (its stream words are neutralised at the settle tail -
+the kill-marked corpse otherwise routes the TMD walk's colour read to
+unmapped memory and hard-freezes the exact frame the choreography ends).
+
+The fourth is data, not module code: the module stages the CASTER's two
+clips by raw index (`actor+0x1DA` = `0x0A`, then `0x0B` at the lift
+boundary), which on a monster caster are its archive's wind-up/smash
+entries but on a party caster resolve through the record[0] action table -
+where retail row `0x0A` is an empty placeholder and row `0x0B` is the
+character's Block clip (whose record the stage boundary is probe-measured
+to choke on). The swap authors real rows instead
+(`party_swap::cast_stage`): the sibling's wind-up and smash, retargeted
+onto the host rig with the same conjugation as the art-side reskin and
+re-encoded raw-packed, are hosted in the record[0] CLUT-A face-pixel
+payload (dead bytes on a playerized file - nothing samples the two
+record[0] face tiles after the section re-layout) and the table words
+`0x0A`/`0x0B` repointed at them. The Block clip survives: its entry is
+re-homed byte-unmoved onto placeholder row `0x06` in all four player
+files, and the one party-init literal that seeds every actor's Block
+reaction id (`li 0xB` before the `+0x1F3` store in `FUN_80053cb8`, SCUS
+`0x80054008`) becomes `li 6` - every consumer reads the seeded value back,
+none hardcodes `0x0B`. When the rewrite cannot land, the module falls back
+to pinning both stages onto the empty row (`addiu v0,v0,1 -> nop` at the
+staged-index step): the caster holds a pose, and the enemy-side cast also
+loses its smash stage, since the module writes the same index for both
+caster kinds.
 
 Megaton Press (PROT 959) is audited and probe-verified end-to-end; the
 Che-mapped slot routes to it, and the other two siblings keep the art-side

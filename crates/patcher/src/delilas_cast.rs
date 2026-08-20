@@ -33,14 +33,19 @@
 //!    the delay slot) = 0-based character index.
 //!
 //! 2. **The cast modules** (PROT 958/959/960, link base `0x801F69D8`): four
-//!    defect classes separate an enemy cast from a player cast, each with
-//!    its own edit table below - the hardcoded `table[0]` damage/HP sites
+//!    defect classes separate an enemy cast from a player cast. Three have
+//!    edit tables below - the hardcoded `table[0]` damage/HP sites
 //!    (retarget to the derived victim), the dead-victim party-wipe arm
-//!    (branch to the settle tail), the caster staged-clip step to a row the
-//!    player bank cannot stage (pin the index, keep the restage), and the
-//!    finale teardown corpse-model (neutralise its stream words at the
-//!    settle tail). Only a module whose four classes are patched AND
-//!    probe-verified end-to-end is routed to; PROT 959 (Megaton Press) is.
+//!    (branch to the settle tail), and the finale teardown corpse-model
+//!    (neutralise its stream words at the settle tail). The fourth - the
+//!    caster staged-clip rows - is fixed on the DATA side by default:
+//!    `party_swap::cast_stage` authors real wind-up/payoff records on the
+//!    player rows the module stages (Block re-homed to a spare row, see
+//!    [`relocate_block_reaction`]), so the module's retail two-stage step
+//!    survives on both caster kinds; the stage-pin edit remains only as
+//!    the fallback when that rewrite cannot land. Only a module whose
+//!    classes are patched AND probe-verified end-to-end is routed to;
+//!    PROT 959 (Megaton Press) is.
 //!
 //! Verified live for PROT 959: the full choreography - pillar, blackout
 //! lift, rock-shatter with the damage counter, smash - runs on a player
@@ -150,13 +155,26 @@ const MODULE_959_WIPE_EDIT: WordEdit = WordEdit {
 /// `actor+0x1DC` (stage counter - the restage trigger): the cast opens on
 /// staged entry `0x0A` (`li 0xA` at `0x801F6F3C`) and the lift arm
 /// increments both fields to stage entry `0x0B` for the smash. On a
-/// MONSTER caster row `0x0B` of the block is the smash swing; on a PARTY
-/// caster the per-slot pointer-array row `0x0B` resolves to a record the
-/// module's part spawner chokes on (probe-measured hard freeze at the
-/// stage boundary; re-pointing row `0x0B` at row `0x0A`'s record at
-/// runtime carried the whole choreography). Production form of that
-/// experiment: nop the INDEX increment only - the stage counter still
-/// bumps, so the restage fires and delivers row `0x0A`'s record again.
+/// MONSTER caster rows `0x0A`/`0x0B` of the block are the wind-up and
+/// smash swing; on a PARTY caster they resolve through the record[0]
+/// action table, where retail row `0x0A` is an empty placeholder and row
+/// `0x0B` is the Block record the module's stage boundary chokes on
+/// (probe-measured hard freeze; re-pointing row `0x0B` at row `0x0A`'s
+/// record at runtime carried the whole choreography).
+///
+/// Two production forms exist, chosen by `patch_module_959`'s
+/// `pin_stage`:
+///
+/// - **Pinned** (the fallback): nop the INDEX increment only - the stage
+///   counter still bumps, so the restage fires and delivers row `0x0A`'s
+///   record again. Caster holds a pose; also costs the ENEMY-side cast
+///   its smash stage (the module writes the same index for both caster
+///   kinds).
+/// - **Retail** (the default once the staged rows are authored): leave
+///   the increment alone - `party_swap::cast_stage` gives the player
+///   rows `0x0A`/`0x0B` real wind-up/payoff records (Block re-homed to
+///   row `0x06`), and the monster side keeps its retail two-stage
+///   choreography.
 const MODULE_959_STAGE_EDIT: WordEdit = WordEdit {
     offset: 0x0CAC,      // 0x801F7684 in the lift arm
     expect: 0x2442_0001, // addiu v0, v0, 1 (the staged-index step)
@@ -258,11 +276,21 @@ const MODULE_959_TEARDOWN_EDITS: &[WordEdit] = &[
 ];
 
 /// Apply the PROT 959 module patches.
-pub fn patch_module_959(p: &mut DiscPatcher) -> Result<bool> {
+///
+/// `pin_stage` selects the staged-index handling (see
+/// [`MODULE_959_STAGE_EDIT`]): `false` keeps the retail two-stage step
+/// (the caster rows must have been authored by
+/// `party_swap::cast_stage`); `true` pins both stages to row `0x0A`
+/// (the fallback when the staged-row rewrite could not land). A stage
+/// pin left by an earlier build is restored to retail when
+/// `pin_stage` is `false`.
+pub fn patch_module_959(p: &mut DiscPatcher, pin_stage: bool) -> Result<bool> {
     let entry = p.read_entry(959).context("read PROT 959")?;
     let mut edits: Vec<WordEdit> = MODULE_959_DAMAGE_EDITS.to_vec();
     edits.push(MODULE_959_WIPE_EDIT);
-    edits.push(MODULE_959_STAGE_EDIT);
+    if pin_stage {
+        edits.push(MODULE_959_STAGE_EDIT);
+    }
     edits.extend_from_slice(MODULE_959_TEARDOWN_EDITS);
 
     let word = |off: u64| -> Result<u32> {
@@ -274,6 +302,16 @@ pub fn patch_module_959(p: &mut DiscPatcher) -> Result<bool> {
                 .try_into()?,
         ))
     };
+
+    // Upgrade path: an earlier build's stage pin is restored to retail
+    // when this run keeps the two-stage step.
+    if !pin_stage && word(MODULE_959_STAGE_EDIT.offset)? == MODULE_959_STAGE_EDIT.replace {
+        p.patch_prot_entry(
+            959,
+            MODULE_959_STAGE_EDIT.offset,
+            &MODULE_959_STAGE_EDIT.expect.to_le_bytes(),
+        )?;
+    }
 
     // Idempotence: all-already-patched is a clean skip; a mix is an error.
     let already = edits
@@ -474,6 +512,44 @@ pub fn redirect_applier_call(p: &mut DiscPatcher, stub_va: u32) -> Result<bool> 
         );
     }
     p.patch_prot_entry(BATTLE_OVERLAY_PROT, off, &new.to_le_bytes())?;
+    Ok(true)
+}
+
+/// The party-init Block-reaction literal: `li v0, 0xB` at SCUS
+/// `0x80054008` (`FUN_80053cb8` - `sb v0, 0x1F3(actor)` follows). Every
+/// party actor's Block reaction id (`actor+0x1F3`) is seeded from this
+/// one instruction, and every consumer in the corpus reads the seeded
+/// VALUE back (the anim commit `FUN_8004AD80` at `0x8004B004`, the 0898
+/// guard-input arm, the muscle-dome mirror) - no reader hardcodes `0xB`.
+const BLOCK_REACTION_LI_VA: u32 = 0x8005_4008;
+const BLOCK_REACTION_RETAIL: u32 = 0x2402_000B; // li v0, 0xB
+const BLOCK_REACTION_PATCHED: u32 = 0x2402_0006; // li v0, 0x06
+
+/// Re-home the party Block reaction onto action row `0x06`
+/// (`party_swap::cast_stage::BLOCK_ROW_RELOCATED`).
+///
+/// The cast route hands rows `0x0A`/`0x0B` to the Megaton Press module,
+/// and row `0x0B` is retail's Block row - so before the rows are
+/// overwritten, the Block CLIP is re-homed byte-unmoved onto the
+/// placeholder row `0x06` in **all four** player files
+/// (`cast_stage::relocate_block_row`) and this one SCUS literal makes
+/// every party actor's guard stage that row instead. Idempotent;
+/// refuses an unknown word.
+pub fn relocate_block_reaction(p: &mut DiscPatcher) -> Result<bool> {
+    const SCUS_NAME: &str = "SCUS_942.54";
+    let scus = p.read_named_file(SCUS_NAME).context("read SCUS_942.54")?;
+    let off = legaia_asset::item_names::file_offset_for_va(&scus, BLOCK_REACTION_LI_VA)
+        .context("resolve the Block-reaction literal's file offset")?;
+    let cur = u32::from_le_bytes(scus[off..off + 4].try_into()?);
+    if cur == BLOCK_REACTION_PATCHED {
+        return Ok(false);
+    }
+    if cur != BLOCK_REACTION_RETAIL {
+        bail!(
+            "Block-reaction literal at {BLOCK_REACTION_LI_VA:#010x}: expected {BLOCK_REACTION_RETAIL:#010x}, found {cur:#010x}"
+        );
+    }
+    p.patch_named_file(SCUS_NAME, off as u64, &BLOCK_REACTION_PATCHED.to_le_bytes())?;
     Ok(true)
 }
 
