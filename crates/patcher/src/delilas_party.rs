@@ -220,11 +220,29 @@ pub struct DelilasPartyReport {
 /// Idempotent - a block already carrying its mapped character's name is
 /// skipped whole; an unrecognized name (neither retail nor applied)
 /// aborts before any write.
+/// Whether the signature cast route may claim the SCUS injection arena.
+///
+/// The arena is shared with `--shiny-seru`, `--show-super-arts` and
+/// `--arts-ap-grant`/`--arts-ap-cost`; when any of those is enabled the
+/// FRONTEND passes [`CastRoutePolicy::ArenaTaken`] and the route downgrades
+/// to the art-side signature up front - order-independently, leaving the
+/// player files and cast module untouched - instead of racing the other
+/// feature for the bytes (one apply order used to hard-error the whole
+/// patch, the other silently shipped a half-installed route).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CastRoutePolicy {
+    /// No arena-claiming feature is enabled: install the cast route.
+    Install,
+    /// An arena feature is enabled: keep the art-side signature, say so.
+    ArenaTaken,
+}
+
 pub fn apply_delilas_party(
     patcher: &mut DiscPatcher,
     mapping: &PartyMapping,
     arts_voice: crate::delilas_voice_fx::ArtsVoiceMode,
     move_mode: DelilasMoveMode,
+    cast_route: CastRoutePolicy,
 ) -> Result<DelilasPartyReport> {
     let mut report = DelilasPartyReport::default();
     let archive = patcher
@@ -625,7 +643,13 @@ pub fn apply_delilas_party(
                 _ => None,
             })
             .collect();
-        if !routes.is_empty() {
+        if !routes.is_empty() && cast_route == CastRoutePolicy::ArenaTaken {
+            report.notes.push(
+                "cast route: art-side signature kept (shiny-seru / show-super-arts / \
+                 arts-ap own the SCUS injection arena this run; no cast edits applied)"
+                    .to_string(),
+            );
+        } else if !routes.is_empty() {
             // The CASTER's own body animation: author real staged rows
             // (the sibling's wind-up + payoff on player rows 0x0A/0x0B,
             // Block re-homed to row 0x06 across every player file) so

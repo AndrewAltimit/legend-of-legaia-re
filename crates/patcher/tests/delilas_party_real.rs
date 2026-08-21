@@ -4,7 +4,7 @@
 
 use legaia_art::queue::Character;
 use legaia_patcher::delilas_party::{
-    DelilasMoveMode as MoveMode, PartyMapping, Sibling, apply_delilas_party,
+    CastRoutePolicy, DelilasMoveMode as MoveMode, PartyMapping, Sibling, apply_delilas_party,
 };
 use legaia_patcher::delilas_voice_fx::ArtsVoiceMode;
 use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
@@ -46,6 +46,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         &mapping,
         ArtsVoiceMode::default(),
         MoveMode::default(),
+        CastRoutePolicy::Install,
     )
     .expect("apply");
     assert!(report.changed);
@@ -498,6 +499,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         &mapping,
         ArtsVoiceMode::default(),
         MoveMode::default(),
+        CastRoutePolicy::Install,
     )
     .expect("re-apply");
     assert!(!report2.changed, "second apply must be a no-op");
@@ -510,6 +512,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         &mapping,
         ArtsVoiceMode::default(),
         MoveMode::default(),
+        CastRoutePolicy::Install,
     )
     .expect("apply again");
     assert_eq!(third.into_image(), patched, "apply is deterministic");
@@ -530,6 +533,7 @@ fn custom_mapping_rearranges_the_assignment() {
         &mapping,
         ArtsVoiceMode::default(),
         MoveMode::default(),
+        CastRoutePolicy::Install,
     )
     .expect("apply");
     assert!(report.changed);
@@ -624,6 +628,7 @@ fn every_slot_gets_its_siblings_signature_art() {
         &mapping,
         ArtsVoiceMode::default(),
         MoveMode::default(),
+        CastRoutePolicy::Install,
     )
     .expect("apply");
     let patched = DiscPatcher::open(patcher.into_image()).expect("re-open");
@@ -1122,7 +1127,14 @@ fn arts_voice_modes_shape_the_shout_banks() {
 
     let run = |mode: ArtsVoiceMode| -> DiscPatcher {
         let mut p = DiscPatcher::open(original.clone()).expect("open scratch");
-        let rep = apply_delilas_party(&mut p, &mapping, mode, MoveMode::default()).expect("apply");
+        let rep = apply_delilas_party(
+            &mut p,
+            &mapping,
+            mode,
+            MoveMode::default(),
+            CastRoutePolicy::Install,
+        )
+        .expect("apply");
         assert!(rep.changed, "{mode}: apply reported no change");
         p
     };
@@ -1248,8 +1260,14 @@ fn run_mapped(
     mapping: PartyMapping,
 ) -> (DiscPatcher, Vec<String>) {
     let mut p = DiscPatcher::open(original.to_vec()).expect("open");
-    let rep =
-        apply_delilas_party(&mut p, &mapping, ArtsVoiceMode::default(), moves).expect("apply");
+    let rep = apply_delilas_party(
+        &mut p,
+        &mapping,
+        ArtsVoiceMode::default(),
+        moves,
+        CastRoutePolicy::Install,
+    )
+    .expect("apply");
     assert!(rep.changed);
     (p, rep.notes)
 }

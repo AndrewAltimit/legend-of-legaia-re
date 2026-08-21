@@ -1127,11 +1127,21 @@ pub fn patch_rom(
             .unwrap_or_default();
         match legaia_patcher::delilas_party::PartyMapping::parse(delilas_party) {
             Ok(mapping) => {
+                let cast_route = if shiny_seru
+                    || show_super_arts
+                    || !arts_ap_grants.trim().is_empty()
+                    || !arts_ap_costs.trim().is_empty()
+                {
+                    legaia_patcher::delilas_party::CastRoutePolicy::ArenaTaken
+                } else {
+                    legaia_patcher::delilas_party::CastRoutePolicy::Install
+                };
                 match legaia_patcher::delilas_party::apply_delilas_party(
                     &mut patcher,
                     &mapping,
                     arts_voice,
                     move_mode,
+                    cast_route,
                 ) {
                     Ok(rep) if rep.changed => summary.push_str(&format!(
                         "delilas-party: playing as {} / {} / {} (duels field the heroes); \

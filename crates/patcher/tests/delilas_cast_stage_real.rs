@@ -8,7 +8,9 @@
 
 use legaia_asset::battle_char_assembly as bca;
 use legaia_asset::party_swap::cast_stage;
-use legaia_patcher::delilas_party::{DelilasMoveMode, PartyMapping, Sibling, apply_delilas_party};
+use legaia_patcher::delilas_party::{
+    CastRoutePolicy, DelilasMoveMode, PartyMapping, Sibling, apply_delilas_party,
+};
 use legaia_patcher::delilas_voice_fx::ArtsVoiceMode;
 use legaia_patcher::disc::DiscPatcher;
 
@@ -60,6 +62,7 @@ fn staged_cast_rows_carry_ches_clips_and_block_survives() {
         &mapping,
         ArtsVoiceMode::default(),
         DelilasMoveMode::default(),
+        CastRoutePolicy::Install,
     )
     .expect("apply");
     assert!(report.changed);

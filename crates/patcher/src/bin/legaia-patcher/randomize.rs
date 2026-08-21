@@ -329,11 +329,17 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     // 1v2 on the retail sibling data while the ravine duels (1v1, ample
     // headroom) carry the swapped models.
     if let Some(mapping) = &args.delilas_party {
+        let cast_route = if args.shiny_seru || args.show_super_arts || arts_ap {
+            legaia_patcher::delilas_party::CastRoutePolicy::ArenaTaken
+        } else {
+            legaia_patcher::delilas_party::CastRoutePolicy::Install
+        };
         match legaia_patcher::delilas_party::apply_delilas_party(
             &mut patcher,
             mapping,
             args.delilas_arts_voice,
             args.delilas_moves,
+            cast_route,
         ) {
             Ok(report) if report.changed => {
                 println!(

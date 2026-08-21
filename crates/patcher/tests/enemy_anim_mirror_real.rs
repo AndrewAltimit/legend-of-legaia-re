@@ -15,7 +15,7 @@
 use legaia_asset::monster_archive as ma;
 use legaia_asset::party_swap;
 use legaia_asset::party_swap::enemy_anim;
-use legaia_patcher::delilas_party::{PartyMapping, apply_delilas_party};
+use legaia_patcher::delilas_party::{CastRoutePolicy, PartyMapping, apply_delilas_party};
 use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use legaia_patcher::enemy_anim_mirror::{
     RetailSources, apply_enemy_anim_mirror, staged_entries, staged_plan,
@@ -174,6 +174,7 @@ fn mirrored_duel_blocks_fight_with_the_heroes_clips() {
         &mapping,
         Default::default(),
         Default::default(),
+        CastRoutePolicy::Install,
     )
     .expect("apply party");
 
@@ -337,6 +338,7 @@ fn mirrored_duel_blocks_fight_with_the_heroes_clips() {
         &mapping,
         Default::default(),
         Default::default(),
+        CastRoutePolicy::Install,
     )
     .expect("apply party 2");
     apply_enemy_anim_mirror(&mut patcher2, &mapping, &retail).expect("mirror 2");
@@ -587,6 +589,7 @@ fn signature_special_becomes_a_physical_attack_of_the_staged_chain() {
         &mapping,
         Default::default(),
         Default::default(),
+        CastRoutePolicy::Install,
     )
     .expect("apply party");
 
