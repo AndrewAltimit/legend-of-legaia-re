@@ -22,6 +22,18 @@
 --      module word) + screenshots; a hard freeze stops vsync callbacks, so
 --      the log tail names the last live frame.
 --
+-- KNOWN LIMIT - the harness validates BATTLE LOAD, not full cast playout.
+-- A player-side forced cast in this forced-battle context parks at cast
+-- phase 0x70 (modphase 0x00, one open-bus read 0x08044880 = an un-rebased
+-- 0x00044880 effect-object word) and then vblank delivery stops - and it
+-- does so IDENTICALLY on the pure retail disc, where rows 0x0A/0x0B are
+-- 0-part placeholders. So the wedge is a property of the forced context
+-- (something a natural encounter stages for the cast module is missing;
+-- an enemy-side cast on a natural battle state completes in ~1830 frames
+-- in this same setup), not of any disc content and not of the staged
+-- rows. Use this probe for the load-time rebase audit + attack rounds;
+-- cast playout must be judged on a naturally entered battle.
+--
 -- Env:
 --   LEGAIA_SSTATE       field savestate (required)
 --   LEGAIA_FRAMES       capture frames (default 6000)
@@ -48,6 +60,7 @@ local CAST_SLOT = probe.getenv_num("LEGAIA_CAST_SLOT", 2)
 local SPELL = probe.getenv_num("LEGAIA_SPELL", 0x7A)
 local TARGET_SEAT = probe.getenv_num("LEGAIA_TARGET_SEAT", 3)
 local NO_CAST = probe.getenv_num("LEGAIA_NO_CAST", 0)
+local SHOT_EVERY = probe.getenv_num("LEGAIA_SHOT_EVERY", 30)
 
 local GAME_MODE = 0x8007B83C
 local FORMATION_CELL = 0x8007BD0C
@@ -241,7 +254,7 @@ probe.run({
                     elapsed, mode, ph, mph, u32(SLOTB), converted)
                 last_phase = ph
             end
-            if convert_logged and shots < 60 and settle % 30 == 0 then
+            if convert_logged and shots < 60 and settle % SHOT_EVERY == 0 then
                 shots = shots + 1
                 screenshot(string.format("cast_%05d_ph%02X", elapsed, ph))
             end
