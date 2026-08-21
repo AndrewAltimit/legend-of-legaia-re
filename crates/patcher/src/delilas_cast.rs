@@ -421,6 +421,19 @@ const MODULE_958_STAGE_REMAP_EDITS: &[WordEdit] = &[
 /// (each restage restarts the clip - the channel loop), and the burst
 /// lands on the payoff row `0x0B`. Same player-table rationale and
 /// enemy-side trade-off as [`MODULE_958_STAGE_REMAP_EDITS`].
+///
+/// One stage carries a PAIRED CONFIRMATION GATE that must move in
+/// lockstep: the mp5 arm stages id `0x0D` per tick, then holds the
+/// phase until `lbu actor+0x1D9` (the PLAYING id) equals the same
+/// literal (`0x801F7B60..68`) AND a progress halfword reaches `0x90`.
+/// Remapping the stage without the compare stalls mp5 forever
+/// (probe-measured on a slot-4 natural playout: restage/one-loop cycle
+/// repeating past 2000 frames, finale never reached). The compare
+/// literal folds to `0x0A` with the stage; the progress condition
+/// keeps the exit timing. 959 never needed this - its gates compare
+/// `+0x1D9` against `+0x1F2`, register-vs-register - and 958 has no
+/// caster-literal gate at all (its tail gates use the settle id `8`,
+/// which the remap never stages).
 const MODULE_960_STAGE_REMAP_EDITS: &[WordEdit] = &[
     WordEdit {
         // 0x801F7740: opening raise -> windup row.
@@ -445,6 +458,12 @@ const MODULE_960_STAGE_REMAP_EDITS: &[WordEdit] = &[
         offset: 0x1834,
         expect: 0x2402_000F, // li v0, 0xF
         replace: m::addiu(V0, ZERO, 0x000B),
+    },
+    WordEdit {
+        // 0x801F7B64: the mp5 played-id confirmation gate follows its stage.
+        offset: 0x118C,
+        expect: 0x2402_000D, // li v0, 0xD (compared against lbu +0x1D9)
+        replace: m::addiu(V0, ZERO, 0x000A),
     },
 ];
 

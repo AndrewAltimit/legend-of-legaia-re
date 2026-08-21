@@ -40,6 +40,7 @@ const CASES: &[Case] = &[
             (0x1090, 0x2403_000C, 0x2403_000A), // li v1,0xC -> li v1,0xA
             (0x1104, 0x2402_000D, 0x2402_000A), // li v0,0xD -> li v0,0xA
             (0x1834, 0x2402_000F, 0x2402_000B), // li v0,0xF -> li v0,0xB
+            (0x118C, 0x2402_000D, 0x2402_000A), // mp5 played-id gate follows
         ],
     ),
 ];
