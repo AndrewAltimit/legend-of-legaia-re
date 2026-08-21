@@ -1143,15 +1143,30 @@ pub fn patch_rom(
                     move_mode,
                     cast_route,
                 ) {
-                    Ok(rep) if rep.changed => summary.push_str(&format!(
-                        "delilas-party: playing as {} / {} / {} (duels field the heroes); \
-                         moves: {move_mode}; arts voices: {arts_voice}\n",
-                        mapping.vahn.display_name(),
-                        mapping.noa.display_name(),
-                        mapping.gala.display_name()
-                    )),
+                    Ok(rep) if rep.changed => {
+                        summary.push_str(&format!(
+                            "delilas-party: playing as {} / {} / {} (duels field the heroes); \
+                             moves: {move_mode}; arts voices: {arts_voice}\n",
+                            mapping.vahn.display_name(),
+                            mapping.noa.display_name(),
+                            mapping.gala.display_name()
+                        ));
+                        for note in rep.notes.iter().filter(|n| n.contains("cast route")) {
+                            summary.push_str(&format!("  {note}\n"));
+                        }
+                    }
                     Ok(_) => summary.push_str("delilas-party: already applied\n"),
-                    Err(e) => summary.push_str(&format!("delilas-party: skipped - {e}\n")),
+                    // A mid-apply error leaves the image partially
+                    // swapped (the swap touches many entries before the
+                    // failing one) - shipping that as a "skipped" note
+                    // would hand the user a broken hybrid ROM. Fail the
+                    // whole patch instead, like the CLI does.
+                    Err(e) => {
+                        return Err(JsValue::from_str(&format!(
+                            "delilas-party failed mid-apply ({e:#}); no ROM was produced - \
+                             the image would have been a partial hybrid"
+                        )));
+                    }
                 }
             }
             Err(e) => summary.push_str(&format!("delilas-party: skipped - {e}\n")),
