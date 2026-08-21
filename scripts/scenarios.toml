@@ -2382,3 +2382,21 @@ topics = ["nivora", "Delilas", "Che", "Megaton Press", "cast module 959", "final
 phase = "battle"
 expected_game_mode = 0x15
 expected_active_scene = "nilboa"
+
+[[scenarios]]
+label = "nivora_duel_pre_plasma_strike"
+backup_fingerprint = "9f7afd18519ad43c44b764a64c2e25902a9c97756c8886002a9055cd496795a9"
+description = "RETAIL disc: mid Lu vs Noa duel (formation 0xA4, party Noa), captured at phase 0x51 with Lu's queued action already cat=2 spell=0x7B (Plasma Strike) and the cast module NOT yet loaded (slot-B empty) - the retail before-cast reference for porting the capture-cast route to Lu's module. Load and wait; the cast fires on its own"
+topics = ["nivora", "Delilas", "Lu", "Plasma Strike", "spell 0x7B", "cast module", "retail reference"]
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+
+[[scenarios]]
+label = "nivora_duel_mid_blazing_slash"
+backup_fingerprint = "7c7a8d2034ec3e5a164145910cf55a8b34629861209683fc922066b87d1837ff"
+description = "RETAIL disc: mid Gi vs Vahn duel (formation 0xA2, party Vahn), captured INSIDE the cast band (phase 0x6E) with Gi's action cat=2 spell=0x79 (Blazing Slash) and the cast module resident at slot-B 0x801F6E9C - the module bytes are dumpable straight from this state's RAM. Load and the spectacle plays out"
+topics = ["nivora", "Delilas", "Gi", "Blazing Slash", "spell 0x79", "cast module", "slot-B resident", "retail reference"]
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"

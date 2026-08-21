@@ -12,6 +12,7 @@ local probe = require("probe")
 local SSTATE_PATH = probe.getenv("LEGAIA_SSTATE", "")
 local FRAMES = probe.getenv_num("LEGAIA_FRAMES", 1700)
 local SPELL = probe.getenv_num("LEGAIA_SPELL", 0x7A)
+local CAST_SLOT = probe.getenv_num("LEGAIA_CAST_SLOT", 0)
 local TARGET_SEAT = probe.getenv_num("LEGAIA_TARGET_SEAT", 3)
 local WILD = 0x08044880
 
@@ -161,7 +162,7 @@ probe.run({
     end,
     on_capture = function(c, elapsed)
         local cx = ctx()
-        local a0 = actor(0)
+        local a0 = actor(CAST_SLOT)
         if cx == nil or a0 == nil then return end
         local st7 = u8(cx + 7)
         local cat = u8(a0 + 0x1DE)
