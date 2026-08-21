@@ -313,7 +313,28 @@ pub fn patch_module_959(p: &mut DiscPatcher, pin_stage: bool) -> Result<bool> {
         )?;
     }
 
-    // Idempotence: all-already-patched is a clean skip; a mix is an error.
+    apply_word_edits(p, 959, &entry, &edits)
+}
+
+/// Verify-then-apply a word-edit set against one PROT entry, with the
+/// jewel-fix idempotence contract: all-already-patched is a clean skip
+/// (`Ok(false)`), a partial mix or any non-`expect` word refuses before
+/// a single byte is written.
+fn apply_word_edits(
+    p: &mut DiscPatcher,
+    prot: usize,
+    entry: &[u8],
+    edits: &[WordEdit],
+) -> Result<bool> {
+    let word = |off: u64| -> Result<u32> {
+        let off = off as usize;
+        Ok(u32::from_le_bytes(
+            entry
+                .get(off..off + 4)
+                .with_context(|| format!("PROT {prot} short at +{off:#x}"))?
+                .try_into()?,
+        ))
+    };
     let already = edits
         .iter()
         .filter(|e| word(e.offset).map(|w| w == e.replace).unwrap_or(false))
@@ -323,25 +344,127 @@ pub fn patch_module_959(p: &mut DiscPatcher, pin_stage: bool) -> Result<bool> {
     }
     if already != 0 {
         bail!(
-            "PROT 959 is partially patched ({already}/{} sites) - refusing",
+            "PROT {prot} is partially patched ({already}/{} sites) - refusing",
             edits.len()
         );
     }
-    for e in &edits {
+    for e in edits {
         let w = word(e.offset)?;
         if w != e.expect {
             bail!(
-                "PROT 959 +{:#x}: expected {:#010x}, found {:#010x} - not a known retail image",
+                "PROT {prot} +{:#x}: expected {:#010x}, found {:#010x} - not a known retail image",
                 e.offset,
                 e.expect,
                 w
             );
         }
     }
-    for e in &edits {
-        p.patch_prot_entry(959, e.offset, &e.replace.to_le_bytes())?;
+    for e in edits {
+        p.patch_prot_entry(prot, e.offset, &e.replace.to_le_bytes())?;
     }
     Ok(true)
+}
+
+/// PROT 958 (Blazing Slash): consolidate the caster's staged-clip walk
+/// into the two player-representable rows.
+///
+/// The module drives the caster's staged index (`actor+0x1DA`; restage
+/// counter `+0x1DC`) through six stages, in module order: `li 0xA`
+/// (`0x801F6F84`), `+1` (`0x801F72B8`), `+1` (`0x801F7620`), `-2`
+/// (`0x801F839C`), `+1` (`0x801F8544`), `li 0xD` (`0x801F89AC`) - the
+/// probe-measured sequence `0A,0B,0C,0A,0B,0D` (two swings, then the
+/// finale). Every other `+0x1DA` store in the image is victim staging
+/// (`lbu +0x1F1`-fed), an `sb zero` wipe, or already in range.
+///
+/// A PARTY caster resolves staged ids through the player record[0]
+/// action-offset table, which has exactly 12 rows (`0x00..0x0B`) - ids
+/// `>= 0x0C` index past it. The staged-row machinery
+/// (`party_swap::cast_stage`) authors real content on rows `0x0A`/`0x0B`
+/// only, so the walk is folded to stay inside that pair:
+/// `0A,0B,B(restage),A,B,B`. The restage still bumps the `+0x1DC`
+/// counter, so each stage boundary restarts a clip rather than freezing.
+/// The ENEMY-side cast shares the module and plays the folded walk too -
+/// two of six stages replay the windup/smash clips; the effect barrage,
+/// camera track and damage build-up are untouched.
+const MODULE_958_STAGE_REMAP_EDITS: &[WordEdit] = &[
+    WordEdit {
+        // 0x801F7620: the second step (0x0B -> 0x0C) restages 0x0B.
+        offset: 0x0C48,
+        expect: 0x2442_0001, // addiu v0, v0, 1
+        replace: m::nop(),
+    },
+    WordEdit {
+        // 0x801F839C: the swing reset (0x0C -> 0x0A) now steps 0x0B -> 0x0A.
+        offset: 0x19C4,
+        expect: 0x2442_FFFE, // addiu v0, v0, -2
+        replace: m::addiu(V0, V0, 0xFFFF),
+    },
+    WordEdit {
+        // 0x801F89AC: the finale stages the payoff row instead of id 0x0D.
+        offset: 0x1FD4,
+        expect: 0x2402_000D, // li v0, 0xD
+        replace: m::addiu(V0, ZERO, 0x000B),
+    },
+];
+
+/// PROT 960 (Plasma Strike): consolidate the caster's staged-clip walk
+/// into the two player-representable rows.
+///
+/// Unlike 958's increment chain, every 960 stage is literal-fed, in
+/// module order: `li 0xE` (`0x801F7740`), `li 0xC` (`0x801F7A68`, dest
+/// `$v1`), `li 0xD` (`0x801F7ADC`), `li 0xF` (`0x801F820C`) - the
+/// probe-measured sequence `0E,0C,0D,0F` (three build stages, then the
+/// burst). The `li 0xA` opener at `0x801F6B94` is already in range, and
+/// the remaining `+0x1DA` stores are victim staging or wipes.
+///
+/// Mapping: the three build stages fold onto the windup row `0x0A`
+/// (each restage restarts the clip - the channel loop), and the burst
+/// lands on the payoff row `0x0B`. Same player-table rationale and
+/// enemy-side trade-off as [`MODULE_958_STAGE_REMAP_EDITS`].
+const MODULE_960_STAGE_REMAP_EDITS: &[WordEdit] = &[
+    WordEdit {
+        // 0x801F7740: opening raise -> windup row.
+        offset: 0x0D68,
+        expect: 0x2402_000E, // li v0, 0xE
+        replace: m::addiu(V0, ZERO, 0x000A),
+    },
+    WordEdit {
+        // 0x801F7A68: mid channel -> windup restage (NB dest is $v1).
+        offset: 0x1090,
+        expect: 0x2403_000C, // li v1, 0xC
+        replace: m::addiu(V1, ZERO, 0x000A),
+    },
+    WordEdit {
+        // 0x801F7ADC: pre-burst -> windup restage.
+        offset: 0x1104,
+        expect: 0x2402_000D, // li v0, 0xD
+        replace: m::addiu(V0, ZERO, 0x000A),
+    },
+    WordEdit {
+        // 0x801F820C: the burst stages the payoff row.
+        offset: 0x1834,
+        expect: 0x2402_000F, // li v0, 0xF
+        replace: m::addiu(V0, ZERO, 0x000B),
+    },
+];
+
+/// Remap PROT 958's staged caster ids into rows `0x0A`/`0x0B`
+/// ([`MODULE_958_STAGE_REMAP_EDITS`]). Groundwork for the Gi cast route:
+/// NOT yet called by `apply_delilas_party` - wiring lands together with
+/// Gi's staged caster rows and the module's damage retargets, so a
+/// shipped patch never folds the enemy-side choreography without the
+/// player-side route existing.
+pub fn patch_module_958(p: &mut DiscPatcher) -> Result<bool> {
+    let entry = p.read_entry(958).context("read PROT 958")?;
+    apply_word_edits(p, 958, &entry, MODULE_958_STAGE_REMAP_EDITS)
+}
+
+/// Remap PROT 960's staged caster ids into rows `0x0A`/`0x0B`
+/// ([`MODULE_960_STAGE_REMAP_EDITS`]). Groundwork for the Lu cast route;
+/// same wiring status as [`patch_module_958`].
+pub fn patch_module_960(p: &mut DiscPatcher) -> Result<bool> {
+    let entry = p.read_entry(960).context("read PROT 960")?;
+    apply_word_edits(p, 960, &entry, MODULE_960_STAGE_REMAP_EDITS)
 }
 
 /// Assemble the queue-hook stub for `stub_va`, with its 4-row route table
