@@ -2174,10 +2174,18 @@ character's Block clip (whose record the stage boundary is probe-measured
 to choke on). The swap authors real rows instead
 (`party_swap::cast_stage`): the sibling's wind-up and smash, retargeted
 onto the host rig with the same conjugation as the art-side reskin and
-re-encoded raw-packed, are hosted in the record[0] CLUT-A face-pixel
-payload (dead bytes on a playerized file - nothing samples the two
-record[0] face tiles after the section re-layout) and the table words
-`0x0A`/`0x0B` repointed at them. The Block clip survives: its entry is
+re-encoded raw-packed, are **inserted below `clut_a_off`** - the decoded
+record[0] grows by the rows' length, the two image payloads and the
+`clut_a_off`/`clut_b_off`/`budget` header words (plus the paired `+0x5C`
+sibling word) shift up with it, and the table words `0x0A`/`0x0B` point
+at the inserted entries. The placement is load-bearing, not cosmetic:
+everything in the decoded record[0] from `clut_a_off` on is battle-load
+scratch (the member init uploads the CLUT-A/B blocks, then LZS-decodes
+the five equip-section sub-records sequentially into the same region -
+see [`battle-data-pack.md`](../formats/battle-data-pack.md)), so rows
+parked any higher survive every post-load RAM probe yet are destroyed
+before the first turn - the shipped symptom is a cast that freezes the
+screen while its effect/SFX ticks keep looping. The Block clip survives: its entry is
 re-homed byte-unmoved onto placeholder row `0x06` in all four player
 files, and the one party-init literal that seeds every actor's Block
 reaction id (`li 0xB` before the `+0x1F3` store in `FUN_80053cb8`, SCUS

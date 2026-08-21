@@ -70,7 +70,7 @@ fn staged_cast_rows_carry_ches_clips_and_block_survives() {
         report
             .notes
             .iter()
-            .any(|n| n.contains("caster rows authored")),
+            .any(|n| n.contains("caster rows inserted")),
         "staged-row note missing: {:#?}",
         report.notes
     );
@@ -124,6 +124,47 @@ fn staged_cast_rows_carry_ches_clips_and_block_survives() {
             "row {row:#x} carries the duration-exact resample of Che's 50f clip"
         );
     }
+    // The loader-stability law this layout exists for: everything from
+    // `clut_a_off` on is battle-load scratch (CLUT/pixel upload, then
+    // the five equip sub-records decode over it sequentially), so BOTH
+    // staged rows must end at or below the patched `clut_a_off` - rows
+    // any higher are destroyed before the first turn.
+    {
+        let (clut_a, clut_b) = cast_stage::record0_clut_offsets(&live).expect("patched header");
+        let (retail_a, retail_b) =
+            cast_stage::record0_clut_offsets(retail_che).expect("retail header");
+        assert!(clut_a > retail_a, "clut_a_off shifted up by the insertion");
+        assert_eq!(
+            clut_b - clut_a,
+            retail_b - retail_a,
+            "payload A extent kept"
+        );
+        let block = bca::decode_record0(&live).unwrap();
+        for row in [cast_stage::STAGE_ROW_WINDUP, cast_stage::STAGE_ROW_PAYOFF] {
+            let (off, p, f) = row_shape(&live, row);
+            let end = off + bca::PLAYER_ANIM_STREAM_OFFSET + 2 + p * f * 9;
+            assert!(
+                end <= clut_a,
+                "row {row:#x} [{off:#x}..{end:#x}) must sit below the sub-record \
+                 scratch base clut_a_off {clut_a:#x}"
+            );
+        }
+        // The paired +0x5C sibling word follows the shift (retail
+        // invariant: == clut_a_off - 4).
+        let sib = u32::from_le_bytes(block[0x5C..0x60].try_into().unwrap()) as usize;
+        assert_eq!(sib, clut_a - 4, "+0x5C sibling word tracks clut_a_off");
+        assert_eq!(
+            cast_stage::staged_state(&block, clut_a).expect("state"),
+            cast_stage::StagedState::Applied,
+            "patched file classifies as the loader-stable layout"
+        );
+        // The member-init palette walk retail performs at battle load
+        // still parses: CLUT halves survive the shift, and no
+        // sub-record decode overruns the shared allocation.
+        legaia_asset::battle_char_palette::parse_record(&live, 0)
+            .expect("battle-palette chain parses on the grown record0");
+    }
+
     // Block survives byte-identical on row 0x06 of every player file
     // (retail row 0x0B's entry, unmoved). On the Che host, row 0x0B now
     // belongs to the cast module.

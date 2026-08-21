@@ -474,6 +474,21 @@ placement is pinned - see
 
 ## Battle animations (record[0])
 
+**Only the region below `clut_a_off` is battle-persistent.** The member
+init decodes record[0] into a single `0x19000`-byte allocation, uploads
+the CLUT-A/B image blocks, then LZS-decodes the five equip-section
+sub-records *sequentially into the same buffer starting at `clut_a_off`*
+(cursor advancing per section - the walk
+`legaia_asset::battle_char_palette::parse_record` mirrors). Everything
+from `clut_a_off` on is therefore load-time scratch: bytes there are
+addressable right after the record decodes (and in any post-load RAM
+capture the sub-records have already run over), but they do not survive
+into the battle. Anything that must stay readable per-frame - the action
+table, its entries, the art-animation bank - lives below `clut_a_off`,
+and an edit that adds such data must grow that region (shifting
+`clut_a_off`/`clut_b_off`/`budget` and the paired `+0x5C` word up), never
+borrow payload space above it.
+
 `record[0]` (the LZS stream at file `+0x10`, decoded to `budget` bytes) is
 not just the battle-palette chain: its head is a **u32 action-offset table**
 (12 populated disc slots at `+0x00..+0x2C`; the loader widens it at runtime -

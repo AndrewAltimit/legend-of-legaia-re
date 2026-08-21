@@ -29,18 +29,35 @@
 //! [`build_staged_cast_rows`] authors two REAL entries - the sibling's
 //! wind-up and payoff clips retargeted onto the host rig with the same
 //! [`winpose::retarget_clip`] conjugation the signature-art reskin uses -
-//! and re-homes the table around them, all inside the decoded `record[0]`
-//! image at its exact retail size:
+//! and re-homes the table around them by **growing the decoded
+//! `record[0]` image**: the entries are inserted immediately below
+//! `clut_a_off`, and the two image payloads (plus `clut_a_off`,
+//! `clut_b_off`, the `budget` header word and the paired `+0x5C`
+//! sibling word) shift up by the inserted length.
 //!
-//! - The new entries live in the **CLUT-A face-image pixel payload**
-//!   (`clut_a_off + 4 + clut_n*2 .. clut_b_off`, `0x2000` bytes in all
-//!   four retail files). On a playerized file nothing samples the two
-//!   record[0] face tiles - the section re-layout owns every rect the
-//!   swapped model reads - so the upload stamps our stream bytes into a
-//!   dead VRAM rect and the bytes stay addressable in the persistent
-//!   record[0] RAM image, which is exactly where the staged-row pointers
-//!   look. The CLUT half of the block (`clut_x`/`clut_n`/entries) is
-//!   preserved: its palette columns are live (`playerize` reserves them).
+//! **Why insertion, not payload reuse.** Everything in the decoded
+//! record[0] from `clut_a_off` on is load-time scratch: retail's member
+//! init uploads the CLUT-A/B blocks to VRAM, then LZS-decodes the five
+//! equip-section sub-records *sequentially into the same region*
+//! (`cur = clut_a_off`, advancing per section - the exact walk
+//! `legaia_asset::battle_char_palette::parse_record` mirrors). An
+//! earlier revision of this builder parked the entries inside the CLUT-A
+//! pixel payload on the theory that the record[0] RAM image is
+//! persistent; the rows *are* addressable right after decode, and every
+//! post-load RAM-injection probe agreed - but the sub-record scratch
+//! pass overwrites them before the first turn, so the first real cast
+//! walked garbage keyframes (screen frozen, effect/SFX ticks looping).
+//! Rows below `clut_a_off` are the layout retail itself guarantees
+//! stable for the whole battle. The single member-init allocation is
+//! `0x19000` bytes, so the grown budget stays far under the ceiling.
+//!
+//! The face-image **pixel** payloads (dead VRAM rects on a playerized
+//! file - the section re-layout owns every rect the swapped model
+//! reads) are still zeroed for compressibility: the zeros pay for the
+//! inserted streams' entropy in the LZS re-fit. The CLUT halves
+//! (`clut_x`/`clut_n`/entries) are preserved: their palette columns are
+//! live (`playerize` reserves them).
+//!
 //! - Table word `0x0A` -> the wind-up entry, `0x0B` -> the payoff entry.
 //! - Table word `0x06` (a placeholder row in all four retail files) ->
 //!   the RETAIL Block entry, byte-unmoved. With the party-init literal
@@ -78,11 +95,18 @@ pub type FileWrites = Vec<(usize, Vec<u8>)>;
 /// Byte length of a record[0] action-entry head (stream at `+0xAC`).
 const ENTRY_HEAD: usize = bca::PLAYER_ANIM_STREAM_OFFSET;
 
-/// The staged rows rewrite, as byte regions of the decoded record[0]
-/// image (apply with `patch_player_record0_full`-style offset edits).
+/// The staged rows rewrite: a full replacement decoded record[0] image
+/// (grown by `delta` bytes at the retail `clut_a_off`) plus the three
+/// file-header words that must move with it.
 pub struct StagedCastRows {
-    /// `(decoded-image offset, bytes)` writes.
-    pub writes: Vec<(usize, Vec<u8>)>,
+    /// The complete new decoded record[0] image (recompress and splice
+    /// over the old LZS stream; the new stream must fit the footprint).
+    pub decoded: Vec<u8>,
+    /// Bytes inserted at the retail `clut_a_off` (4-aligned).
+    pub delta: usize,
+    /// New FILE-header words: `(clut_a_off, clut_b_off, budget)` for
+    /// record0 header `+0x04 / +0x08 / +0x0C`.
+    pub header: (u32, u32, u32),
     /// Frames each rebuilt stage carries (wind-up, payoff).
     pub frames: [usize; 2],
     /// Rate byte of each rebuilt stage.
@@ -91,11 +115,46 @@ pub struct StagedCastRows {
     pub source_frames: [usize; 2],
 }
 
+/// Whether a decoded record[0] already carries staged cast rows, and in
+/// which layout generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StagedState {
+    /// Row `0x0A` is the retail placeholder - nothing authored yet.
+    Absent,
+    /// Rows sit below `clut_a_off` (the current, loader-stable layout).
+    Applied,
+    /// Rows sit at or above `clut_a_off` - the superseded payload-reuse
+    /// layout, whose rows the loader's sub-record scratch pass destroys.
+    /// Only a clean retail image can be (re)patched.
+    Stale,
+}
+
+/// Classify a live player entry's staged-row state. `clut_a` is the
+/// file-header `clut_a_off` (see [`record0_clut_offsets`]).
+pub fn staged_state(decoded: &[u8], clut_a: usize) -> Result<StagedState> {
+    let off = u32::from_le_bytes(
+        decoded
+            .get(STAGE_ROW_WINDUP * 4..STAGE_ROW_WINDUP * 4 + 4)
+            .ok_or_else(|| anyhow::anyhow!("record[0] table short"))?
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let parts = decoded.get(off + ENTRY_HEAD).copied().unwrap_or(0);
+    if parts == 0 {
+        return Ok(StagedState::Absent);
+    }
+    Ok(if off < clut_a {
+        StagedState::Applied
+    } else {
+        StagedState::Stale
+    })
+}
+
 /// Locate the record[0] header inside a raw player-data entry the same
 /// way [`bca::decode_record0`] does (scan for the first plausible header
 /// whose stream decodes to its budget) and return
 /// `(clut_a_off, clut_b_off)` from it.
-fn record0_clut_offsets(entry: &[u8]) -> Result<(usize, usize)> {
+pub fn record0_clut_offsets(entry: &[u8]) -> Result<(usize, usize)> {
     let mut o = 0;
     while o + 0x10 <= entry.len() {
         let read = |k: usize| -> Result<usize> {
@@ -243,12 +302,11 @@ pub fn push_up_desc_table(entry: &[u8]) -> Result<Option<FileWrites>> {
 ///   pairs with the playerize bake, which was built from retail rests).
 /// * `chain` - the sibling's staged clips, wind-up first, payoff last;
 ///   the module choreography has exactly two stages.
-/// * `fits` - the caller's budget oracle: given a candidate write set,
-///   report whether the whole record[0] still fits its home (for the
-///   patcher, the LZS re-fit against the compressed footprint). The
-///   ladder descends to fewer poses until it does; the streams' entropy
-///   is what moves the compressed size, so the byte area alone cannot
-///   answer this.
+/// * `fits` - the caller's budget oracle: given the candidate FULL new
+///   decoded image, report whether its recompressed stream still fits
+///   the record[0] footprint. The ladder descends to fewer poses until
+///   it does; the streams' entropy is what moves the compressed size,
+///   so the byte area alone cannot answer this.
 pub fn build_staged_cast_rows(
     live_entry: &[u8],
     retail_player: &[u8],
@@ -256,7 +314,7 @@ pub fn build_staged_cast_rows(
     archive: &[u8],
     source_id: u16,
     chain: &[&MonsterAnimation],
-    mut fits: impl FnMut(&[(usize, Vec<u8>)]) -> Result<bool>,
+    mut fits: impl FnMut(&[u8]) -> Result<bool>,
 ) -> Result<StagedCastRows> {
     if chain.len() != 2 {
         bail!(
@@ -317,16 +375,37 @@ pub fn build_staged_cast_rows(
         );
     }
 
-    // Walk the pose-budget ladder until both entries fit the payload AND
-    // the caller's budget oracle accepts the write set.
+    // Everything from `clut_a` on is the loader's sub-record scratch:
+    // the inserted rows must sit strictly below it, and every live
+    // offset word must already do the same or the shift would strand it.
+    for (slot, label) in [(0x16usize, "+0x58 art-bank"), (0x17, "+0x5C sibling")] {
+        let w = u32::from_le_bytes(block[slot * 4..slot * 4 + 4].try_into().unwrap()) as usize;
+        let bound = if slot == 0x17 { clut_a - 4 } else { clut_a };
+        if (slot == 0x17 && w != bound) || (slot != 0x17 && w >= bound) {
+            bail!("record[0] {label} word {w:#x} breaks the retail shape (clut_a {clut_a:#x})");
+        }
+    }
+    for slot in 0..12 {
+        let w = u32::from_le_bytes(block[slot * 4..slot * 4 + 4].try_into().unwrap()) as usize;
+        if w >= clut_a {
+            bail!("head-table row {slot:#x} at {w:#x} is not below clut_a {clut_a:#x}");
+        }
+    }
+
+    // Walk the pose-budget ladder until the grown image passes the
+    // caller's budget oracle. The rows are INSERTED at `clut_a`; the
+    // payloads and every header offset past them shift up by `delta`.
     let ladders = [stage_ladder(chain[0]), stage_ladder(chain[1])];
     for rung in 0..ladders[0].len().max(ladders[1].len()) {
         let (fa, ra) = ladders[0][rung.min(ladders[0].len() - 1)];
         let (fb, rb) = ladders[1][rung.min(ladders[1].len() - 1)];
         let len = |f: usize| ENTRY_HEAD + 2 + parts * f * 9;
-        let a_off = pix;
-        let b_off = (a_off + len(fa) + 3) & !3;
-        if b_off + len(fb) > clut_b {
+        let la = (len(fa) + 3) & !3;
+        let lb = (len(fb) + 3) & !3;
+        let delta = la + lb;
+        // The member-init allocation the image + scratch share is
+        // 0x19000 bytes; keep generous scratch headroom past the tail.
+        if block.len() + delta > 0x10000 {
             continue;
         }
         let entry_a = build_entry(
@@ -351,33 +430,47 @@ pub fn build_staged_cast_rows(
             source_id,
             parts,
         )?;
-        // One region write covering the whole payload: the two entries
-        // over a zero fill (zeros compress better than the face pixels
-        // they replace, which is what pays for the streams' entropy in
-        // the LZS re-fit).
-        let mut region = vec![0u8; area];
-        region[a_off - pix..a_off - pix + entry_a.len()].copy_from_slice(&entry_a);
-        region[b_off - pix..b_off - pix + entry_b.len()].copy_from_slice(&entry_b);
-        let writes = vec![
-            (pix, region),
-            (pix_b, vec![0u8; block.len() - pix_b]),
-            (STAGE_ROW_WINDUP * 4, (a_off as u32).to_le_bytes().to_vec()),
-            (STAGE_ROW_PAYOFF * 4, (b_off as u32).to_le_bytes().to_vec()),
-            (BLOCK_ROW_RELOCATED * 4, block_off.to_le_bytes().to_vec()),
-        ];
-        if !fits(&writes)? {
+        let mut out = Vec::with_capacity(block.len() + delta);
+        out.extend_from_slice(&block[..clut_a]);
+        out.extend_from_slice(&entry_a);
+        out.resize(clut_a + la, 0);
+        out.extend_from_slice(&entry_b);
+        out.resize(clut_a + delta, 0);
+        out.extend_from_slice(&block[clut_a..]);
+        // Zero the (shifted) face pixel payloads - dead VRAM rects on a
+        // playerized file; the zeros pay for the streams' entropy in
+        // the LZS re-fit. CLUT halves stay.
+        out[pix + delta..clut_b + delta].fill(0);
+        let end = out.len();
+        out[pix_b + delta..end].fill(0);
+        // Head-table rewires + the shifted sibling word.
+        let put = |o: &mut Vec<u8>, off: usize, v: u32| {
+            o[off..off + 4].copy_from_slice(&v.to_le_bytes());
+        };
+        put(&mut out, STAGE_ROW_WINDUP * 4, clut_a as u32);
+        put(&mut out, STAGE_ROW_PAYOFF * 4, (clut_a + la) as u32);
+        put(&mut out, BLOCK_ROW_RELOCATED * 4, block_off);
+        put(&mut out, 0x5C, (clut_a + delta - 4) as u32);
+        if !fits(&out)? {
             continue;
         }
         return Ok(StagedCastRows {
-            writes,
+            header: (
+                (clut_a + delta) as u32,
+                (clut_b + delta) as u32,
+                out.len() as u32,
+            ),
+            decoded: out,
+            delta,
             frames: [fa, fb],
             rates: [ra, rb],
             source_frames: [chain[0].frame_count, chain[1].frame_count],
         });
     }
     bail!(
-        "staged cast rows fit neither the CLUT-A payload ({area:#x} bytes, {parts} parts) \
-         nor the record[0] budget at any pose rung"
+        "staged cast rows fit the record[0] LZS budget at no pose rung \
+         ({parts} parts, payloads {area:#x}+{:#x} bytes zeroed)",
+        block.len() - pix_b
     )
 }
 

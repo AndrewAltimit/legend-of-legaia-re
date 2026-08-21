@@ -1460,30 +1460,60 @@ fn author_staged_cast_rows(
             commits.push((che_entry, *off, bytes.clone()));
         }
     }
-    let mut staged_splice: Option<(usize, Vec<u8>)> = None;
-    let built = {
-        let live = &live;
-        cast_stage::build_staged_cast_rows(
-            live,
-            &retail_players[slot],
-            rig,
-            archive,
-            source_id,
-            &chain,
-            |writes| match plan_splice(live, writes, who)? {
-                Plan::NoChange => Ok(true),
-                Plan::Fit(off, bytes) => {
-                    staged_splice = Some((off, bytes));
+    // The staged rows GROW the decoded record[0] (inserted below
+    // `clut_a_off` - everything from that offset on is the loader's
+    // sub-record decode scratch, so rows parked any higher are
+    // destroyed during battle load). The commit is therefore a full
+    // stream replacement plus the three shifted header words, not a
+    // same-size byte splice.
+    let decoded_live = battle_char_assembly::decode_record0(&live)
+        .with_context(|| format!("decode {who} record0"))?;
+    let (clut_a_live, _) = cast_stage::record0_clut_offsets(&live)
+        .with_context(|| format!("read {who} record0 header"))?;
+    let region = crate::arts::record0_lzs_region(&live)
+        .ok_or_else(|| anyhow::anyhow!("{who}'s record0 LZS region not found"))?;
+    let built = match cast_stage::staged_state(&decoded_live, clut_a_live)? {
+        cast_stage::StagedState::Applied => None,
+        cast_stage::StagedState::Stale => bail!(
+            "{who}'s player file carries the superseded payload-reuse staged-row \
+             layout (its rows are destroyed at battle load); patch a clean retail \
+             image instead"
+        ),
+        cast_stage::StagedState::Absent => {
+            let mut packed: Option<Vec<u8>> = None;
+            let built = cast_stage::build_staged_cast_rows(
+                &live,
+                &retail_players[slot],
+                rig,
+                archive,
+                source_id,
+                &chain,
+                |decoded_new| {
+                    let mut c = legaia_lzs::compress(decoded_new);
+                    if c.len() > region.avail {
+                        c = legaia_lzs::compress_optimal(decoded_new);
+                    }
+                    if c.len() > region.avail {
+                        return Ok(false);
+                    }
+                    packed = Some(c);
                     Ok(true)
-                }
-                Plan::Overflow => Ok(false),
-            },
-        )
-        .with_context(|| format!("author {who}'s staged cast rows"))?
+                },
+            )
+            .with_context(|| format!("author {who}'s staged cast rows"))?;
+            let packed = packed.ok_or_else(|| anyhow::anyhow!("fits oracle accepted no stream"))?;
+            let (ca, cb, bud) = built.header;
+            let mut hdr = Vec::with_capacity(12);
+            hdr.extend_from_slice(&ca.to_le_bytes());
+            hdr.extend_from_slice(&cb.to_le_bytes());
+            hdr.extend_from_slice(&bud.to_le_bytes());
+            // Header words +0x04/+0x08/+0x0C sit right before the LZS
+            // stream at header +0x10.
+            commits.push((che_entry, region.lzs_off - 0x10 + 4, hdr));
+            commits.push((che_entry, region.lzs_off, packed));
+            Some(built)
+        }
     };
-    if let Some((off, bytes)) = staged_splice {
-        commits.push((che_entry, off, bytes));
-    }
 
     // Row-6 Block re-home in every other player file (Terra included:
     // the party-init literal is shared by all four slots). The one-word
@@ -1531,16 +1561,24 @@ fn author_staged_cast_rows(
     crate::delilas_cast::relocate_block_reaction(patcher)
         .context("re-home the party Block reaction")?;
 
-    Ok(vec![format!(
-        "cast route: {who} caster rows authored - wind-up {}f (of {}) rate {}, \
-         smash {}f (of {}) rate {}; Block re-homed to row 0x06 on all four files",
-        built.frames[0],
-        built.source_frames[0],
-        built.rates[0],
-        built.frames[1],
-        built.source_frames[1],
-        built.rates[1],
-    )])
+    Ok(vec![match built {
+        Some(b) => format!(
+            "cast route: {who} caster rows inserted below the image payloads \
+             (+{:#x} decoded bytes) - wind-up {}f (of {}) rate {}, smash {}f \
+             (of {}) rate {}; Block re-homed to row 0x06 on all four files",
+            b.delta,
+            b.frames[0],
+            b.source_frames[0],
+            b.rates[0],
+            b.frames[1],
+            b.source_frames[1],
+            b.rates[1],
+        ),
+        None => format!(
+            "cast route: {who} caster rows already present; Block re-homed to \
+             row 0x06 on all four files"
+        ),
+    }])
 }
 
 /// The fanfare row the slot's host art fires through. The cue is a coin
