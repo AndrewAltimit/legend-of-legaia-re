@@ -5,7 +5,7 @@ feature is built on the same foundation: same-size in-place sector edits with
 the EDC/ECC re-encoded (`disc::DiscPatcher` over `legaia_iso::write`), emitted
 as a portable PPF 3.0 patch and/or a patched `.bin` copy for local play.
 
-Three patching families share that machinery:
+Four patching families share that machinery:
 
 - **The randomizer** - seeded reassignment of gameplay data: monster item
   drops, random-encounter formations, treasure-chest contents, steal items,
@@ -19,6 +19,12 @@ Three patching families share that machinery:
   `--jewel-fix` toggle retargets the boss cinematic cast modules' damage
   `jal`s so Xain's, Cort's, and the Delilas trio's signature casts respect
   elemental guards ([`jewel_fix`](#jewel-fix-jewel_fix-module)).
+- **New-content mods** - seedless structural rebuilds shipped as flags,
+  in no preset and untouched by the seed: the
+  [Delilas party swap family](#delilas-party-swap-delilas_party-module-family),
+  the Delilas Challenge dome fight (`delilas_challenge` / `delilas_dome`),
+  custom items (`custom_items`), and the Super-Arts move list
+  (`super_art_list`).
 - **Translation packs** - the `translate` CLI family: disc text out to an
   editable YAML language pack, filled pack back in as a same-size in-place
   reimport ([`docs/tooling/translation.md`](../../docs/tooling/translation.md)).
@@ -105,6 +111,7 @@ full design.
   - [Item prices](#item-prices)
   - [Unused content](#unused-content)
   - [Name injection](#name-injection)
+- [Delilas party swap](#delilas-party-swap-delilas_party-module-family)
 - [Texture replacement](#texture-replacement-texture-module)
 - [Battle character art](#battle-character-art-battle_texture-module)
 - [Monster battle skins](#monster-battle-skins-monster_texture-module)
@@ -1235,6 +1242,30 @@ zero-fill tail, which is `.sbss` scratch the game clobbers, nor an arbitrary
 always-zero region, which can be boot-cleared) and repoint only `0xFD`'s
 `name_ptr_slot`, leaving the other empty-name ids blank.
 
+## Delilas party swap (`delilas_party` module family)
+
+The largest new-content family - play *as* Gi / Lu / Che while the ravine
+duels field Vahn / Noa / Gala. One orchestrator, eight support modules;
+this table is the map, the full mechanism reference is
+[`docs/tooling/randomizer.md` § Delilas party swap](../../docs/tooling/randomizer.md#delilas-party-swap):
+
+| Module | Carries |
+|---|---|
+| `delilas_party` | Orchestrator + `PartyMapping` (any permutation of `gi`/`lu`/`che`); battle + field model swap both directions, names both directions. |
+| `delilas_voice` | Battle grunt voices resampled from the sibling SPU banks in place. |
+| `delilas_voice_fx` | `--delilas-arts-voice` modes (`original` / `removed` / `adjusted`, default `adjusted` - the pitch/formant re-voice). |
+| `delilas_xa_voice` | The XA-sector write path (Form 2 EDC re-encode via `legaia_iso::write`). |
+| `delilas_signature_attack` | Hero Hyper -> sibling signature: stage-chain retarget, event-frame replace, `name_field` renames in both id spaces. |
+| `delilas_effects` | Signature effect-prototype transplant into the spare prototype-table ids (the 88-byte cave). |
+| `delilas_cast` | The retail cast route: SCUS queue-hook stub + expect-verified word edits in PROT 958/959/960 ([cast-module.md](../../docs/subsystems/cast-module.md)). `CastRoutePolicy::Install` wires it; the frontend passes `ArenaTaken` when shiny-Seru / show-super-arts / arts-AP own the SCUS arena, and the route **silently downgrades** to the art-side signature, noted in the apply summary. |
+| `enemy_anim_mirror` | Hero idles + hero Hyper chains written into the swapped monster blocks (the enemy-side animation mirror). |
+| `nivora_field` | The duel field scene rebuilt with the mapped heroes' field rigs (PROT 0639 members 106-108, whole-pack re-emit). |
+| `mips_sim` | In-crate MIPS interpreter the hook stubs execute under in unit tests (load-delay-accurate). |
+
+Disc oracles: `delilas_party_real`, `delilas_cast_stage_real`,
+`delilas_cast_remap_real`, `enemy_anim_mirror_real`, `nivora_field_real`,
+plus `party_swap_real` on the asset side.
+
 ## Texture replacement (`texture` module)
 
 Replaces a TIM on the disc with a user-authored PNG, in both tiers the TIM
@@ -1532,13 +1563,20 @@ legaia-patcher verify --input DISC.bin --patch run.ppf
   under the retail Delilas movesets, and both sides' names follow. Field
   walking models rebuild from the same sibling models, and the party's
   battle grunt voices resample from the siblings' voice banks in place
-  (`delilas_voice`); the replaced characters' XA voice lines are silenced
-  (the XA2/4/6 arts-shout banks whole, plus the party's three channels of
-  the shared `XA30.XA` swing-grunt bank - routing intact, sectors decode
-  to silence). Seedless, not in any
+  (`delilas_voice`); the hero XA arts shouts follow `--delilas-arts-voice`
+  (below). Seedless, not in any
   preset - the swap machinery lives in `legaia_asset::party_swap`, the
   disc apply in `delilas_party`. See `docs/tooling/randomizer.md`
   § Delilas party swap.
+- `--delilas-arts-voice original|removed|adjusted` (default `adjusted`)
+  picks what the swapped party's XA arts shouts become
+  (`delilas_voice_fx`): `adjusted` re-voices the retail Vahn / Noa / Gala
+  takes toward the mapped sibling through the tuned pitch/formant map,
+  `removed` silences them (the XA2/4/6 banks whole plus the party's three
+  channels of the shared `XA30.XA` swing-grunt bank - routing intact,
+  sectors decode to silence), `original` leaves the hero takes untouched.
+  Every mode composes with the swing-grunt resample, which is SPU-side and
+  always on with the swap.
 - With the swap, each hero slot also gives up its 50-AP Hyper to carry the
   mapped sibling's **signature special**, which is where it stops being a
   reskin. That clip is a *chain* of monster-archive entries the enemy cast

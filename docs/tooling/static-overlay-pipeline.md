@@ -201,7 +201,12 @@ and `*DAT_80010390`; see [`prot.md`](../formats/prot.md#overlay-loaders-parallel
   `Damage`/`Recover`/`Both` effect labels, NOT a dance song; correcting an
   earlier `overlay-ptr-table` reading). The **GAME OVER** overlay (0902) is
   **not** slot B - its old slot-B row was the `pointer_resolution` false
-  positive dissected above; it is a slot-A row. See
+  positive dissected above; it is a slot-A row. The Delilas cast modules
+  `0958..0960` are the decoded members of the band: RAM-anchored at the
+  slot-B link base `0x801F69D8` (scenario `nivora_duel_mid_blazing_slash`
+  holds 958 byte-resident there), module anatomy on
+  [`cast-module.md`](../subsystems/cast-module.md); they are not yet rows
+  in `static-overlays.toml`. See
   [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
 ### A small overlay does not clear the slot

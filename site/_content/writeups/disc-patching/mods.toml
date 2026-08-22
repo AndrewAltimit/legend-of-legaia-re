@@ -460,10 +460,58 @@ name = "Delilas party swap"
 flag = "--delilas-party V,N,G"
 tier = "B"
 variant = "structural rebuild"
-target = "monster archive slots 162-164 + player battle files PROT 863-865 + field pack PROT 0874 + battle voice bank PROT 0869 + SCUS new-game template names"
+target = "monster archive slots 162-164 + player battle files PROT 863-865 + field pack PROT 0874 + nilboa NPC pack PROT 0639 + battle voice bank PROT 0869 + readef.DAT art slots + XA arts-voice banks + SCUS arts-name table + new-game template names + PROT 0898 element/camera rows"
 edit = "cross-rig battle-model rebuild both directions (anatomy permutation + rest-pose bake + 4bpp texel re-layout), monster-block renames, template name writes"
-gap = "menu portraits / HUD faces stay retail; arts shouts follow --delilas-arts-voice (default adjusted = pitch/formant re-voice; removed mutes; original keeps the hero take)"
+gap = false
 status = "shipped"
 test = "delilas_party_real + party_swap_real + delilas_cast_stage_real + delilas_cast_remap_real + enemy_anim_mirror_real + nivora_field_real"
-notes = "play as Gi / Lu / Che (any assignment); the ravine duels + dome Master legs field Vahn / Noa / Gala under the retail Delilas movesets"
+notes = "play as Gi / Lu / Che (any assignment); duels + dome Master legs field Vahn / Noa / Gala; arts shouts follow --delilas-arts-voice (default adjusted = pitch/formant re-voice); menu portraits / HUD faces stay retail; the cast route yields the SCUS gap to any hard consumer"
 
+[[mod]]
+key = "super_art_list"
+name = "Super Arts on the move list"
+flag = "--show-super-arts"
+tier = "E"
+target = "pause-menu Moves list: performed-gated Super/Miracle rows with derived arrow inputs, AP-sorted interleave"
+edit = "SCUS injection-gap code + the free 16th learned-id slot (+0x75D performed flag); menu overlay renderer hook"
+gap = true
+status = "shipped"
+test = "super_art_list_real"
+notes = "a Super Art has no AP field but the chain that performs it pays; rows appear once performed"
+
+[[mod]]
+key = "super_art_power"
+name = "Super Art damage power"
+flag = "--super-art-power"
+tier = "B"
+target = "per-strike power run of the Super Arts' replacement rows in the player record[0] art bank"
+edit = "same-size byte edits inside the LZS record, recompressed into the retail footprint"
+gap = false
+status = "shipped"
+test = "super_art_power_real"
+notes = "composes with everything - a damage row claims none of the SCUS arena"
+
+[[mod]]
+key = "monster_texture"
+name = "Monster battle skins"
+flag = "legaia-patcher monster-texture"
+tier = "B"
+target = "4bpp texture pages + CLUTs inside a monster's battle_data block (PROT 867)"
+edit = "PNG in, bit-exact 4bpp re-layout into the block's own page footprint, block recompressed"
+gap = false
+status = "shipped"
+test = "monster_texture_real"
+notes = "browser: the monster tier of the texture-replacement page"
+
+[[mod]]
+key = "monster_model"
+name = "Custom monster models"
+flag = "legaia-patcher monster-model"
+tier = "B"
+variant = "structural rebuild"
+target = "a monster's whole 3D model (mesh + texture) inside its battle_data block"
+edit = "OBJ+PNG out, custom model re-encoded (byte-exact TMD encoder) and re-pooled into the block"
+gap = false
+status = "shipped"
+test = "monster_model_real"
+notes = "the mesh must keep the retail part count - animations pose parts by index, so a same-part-count mesh inherits every retail move"

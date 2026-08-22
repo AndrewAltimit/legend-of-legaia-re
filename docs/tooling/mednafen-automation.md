@@ -456,6 +456,15 @@ diff_against = [2, 3]
 # Optional drift guards (see "Save resolution" below):
 # backup_fingerprint   = "<sha256 of an immutable saves/library copy>"
 # ram_fingerprint_sha256 = "<sha256 of first 64 KiB of main RAM>"
+# Optional context pins + cross-emulator anchors:
+# phase = "battle"                       # coarse game phase the state is parked in
+# expected_game_mode = 0x15              # asserted at load by the validators
+# expected_active_scene = "nilboa"       # CDNAME scene name, ditto
+# pcsx_redux_sstate = "<path>"           # PCSX-Redux anchor for the same moment
+# duckstation_sav = "<path>"             # DuckStation anchor, ditto
+# `slot` may be omitted for scenarios that exist only as library backups
+# (serde default) - the canonical field list is scripts/scenarios.toml's
+# own header comment.
 
 [scenarios.overlay_slice]
 start = 0x801C0000

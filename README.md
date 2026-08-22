@@ -28,7 +28,7 @@ Four things, all usable today. Everything browser-side reads your disc image loc
 
 **Native tools and engine.** Prebuilt binaries for Linux and Windows on the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases), or `cargo build --release`. `legaia-extract` turns a disc into PNG / WAV / OBJ / JSON; `legaia-engine play-window` is the windowed engine (field scenes, the full menu stack, shops, level-ups, a battle harness, and MDEC cutscene playback with synced XA audio); `asset-viewer` browses every format interactively; plus `save-tool`, `legaia-patcher`, and a CLI per format.
 
-**Modding and translation.** [`legaia-patcher`](docs/tooling/randomizer.md) patches your own `.bin` in place or emits a PPF: it shuffles drops, encounters, chests, steals, arts, doors, shops, casino prizes, prices, equipment, starting items and level, and battle tuning - several features are hand-assembled MIPS hooks injected into dead space. Its [`translate`](docs/tooling/translation.md) subcommands export the game's dialog and UI text to editable YAML and reimport it in place, the basis for community language packs; [`translate lift-official`](docs/tooling/pal-localizations.md) re-keys the official PAL French / German / Italian text onto the USA disc where it fits.
+**Modding and translation.** [`legaia-patcher`](docs/tooling/randomizer.md) patches your own `.bin` in place or emits a PPF: it shuffles drops, encounters, chests, steals, arts, doors, shops, casino prizes, prices, equipment, starting items and level, and battle tuning - several features are hand-assembled MIPS hooks injected into dead space - plus content mods: the Delilas party swap, custom monster models and skins, and the Super-Arts move list. Its [`translate`](docs/tooling/translation.md) subcommands export the game's dialog and UI text to editable YAML and reimport it in place, the basis for community language packs; [`translate lift-official`](docs/tooling/pal-localizations.md) re-keys the official PAL French / German / Italian text onto the USA disc where it fits.
 
 **The research itself.** Byte-level [format specs](docs/formats/overview.md) with confidence levels and Ghidra provenance, [subsystem documentation](docs/subsystems/) of how the engine actually works (VMs, battle formulas, audio, renderer, minigames), and the [tooling](docs/tooling/) that produced it all - reproducible from a retail disc.
 
@@ -256,7 +256,7 @@ legend-of-legaia-re/
 │   ├── pcsxr/                    # PCSX-Redux save-state main-RAM reader
 │   ├── gamedata/                 # Curated walkthrough-mined tables (ground-truth labels)
 │   ├── cheats/                   # GameShark / Mednafen cheat-database parser + classifier
-│   ├── patcher/                  # Randomizer / translation / disc patcher for a user-supplied .bin
+│   ├── patcher/                  # Randomizer / translation / content mods (Delilas swap, custom models) for a user-supplied .bin
 │   │   # Track 2 - engine reimplementation (clean-room Rust)
 │   ├── engine-core/              # World, scene host, camera, menu runtime, save round-trip
 │   ├── engine-ui/                # Renderer-agnostic UI draw-list builders

@@ -823,6 +823,17 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_record_inputs.lua`](../../scripts/pcsx-redux/autorun_record_inputs.lua) | **Manual input recorder** (run INTERACTIVELY - real window + keyboard, interpreter+debugger so the field-tick BP fires). Resumes a save and logs the per-frame button mask `0x8007B850` as a `frame,held_hex` CSV (frame 0 = first field tick after load); auto-quits a few seconds after a battle starts. For capturing a sequence that needs human play - e.g. walk to Tetsu, pick the 3rd "training fight" list option, start the spar. |
 | [`autorun_replay_inputs.lua`](../../scripts/pcsx-redux/autorun_replay_inputs.lua) | **Deterministic input replayer.** Resumes the same save headlessly, reconstructs the held mask per frame from the recorder's CSV, and drives the pad via `pad.force`/`pad.release` (NOT RAM writes - `FUN_8001822C` rebuilds `0x8007B850` from the actual pad after the field-tick BP, so writes don't stick), then checkpoints the result. Validated: a synthetic hold-DOWN CSV replays the exact `pad.force(DOWN)` displacement. |
 | [`autorun_btnmap.lua`](../../scripts/pcsx-redux/autorun_btnmap.lua) | Diagnostic: forces each PCSX pad button alone and reads `0x8007B850` to pin the mask layout. Result: the mask is the **byte-swapped PSX controller word** - button index `b` -> bit `1<<(b+8)` for `b<8` else `1<<(b-8)` (UP=`0x1000`, RIGHT=`0x2000`, DOWN=`0x4000`, LEFT=`0x8000`, CROSS=`0x0040`, CIRCLE=`0x0020`). Underpins the input record/replay decode. |
+| [`autorun_delilas_battle_load.lua`](../../scripts/pcsx-redux/autorun_delilas_battle_load.lua) | Can retail's battle loader stage a formation of N **distinct** monster ids? Retail authoring never exceeds 2 per formation; the Delilas Challenge stages 3 (162/163/164, ~345 KB of decoded blocks). Answered the reported battle-load freeze. |
+| [`autorun_delilas_dome_course.lua`](../../scripts/pcsx-redux/autorun_delilas_dome_course.lua) | Drives the real Muscle Dome course on a patched Delilas disc from a plain field save: pokes the arena warp (`_DAT_8007BA34 = 5`, mode `0x18`) and RAM-installs the SCUS cave routines the pre-patch save state lacks. |
+| [`autorun_delilas_gi_trace.lua`](../../scripts/pcsx-redux/autorun_delilas_gi_trace.lua) / [`_reward_trace`](../../scripts/pcsx-redux/autorun_delilas_reward_trace.lua) / [`_special_trace`](../../scripts/pcsx-redux/autorun_delilas_special_trace.lua) / [`_unpark`](../../scripts/pcsx-redux/autorun_delilas_unpark.lua) | Dome-course instrumentation family over the same forced warp: the Gi-round HP-gated lockout arm, the win settlement (one-shot 1-HP weakens - blind mid-battle HP writes wedge the settle bookkeeping), the signature-special softlock (`FUN_80050E2C` tag-search BP), and the parked double-team round's un-stick experiments. |
+| [`autorun_player_special_cast.lua`](../../scripts/pcsx-redux/autorun_player_special_cast.lua) | The original player-cast proof: on a natural battle state, force a PARTY actor's action to a capture-class boss cast (category 2, spell `0x7A`) and watch module PROT 959 run it end to end ([cast-module.md](../subsystems/cast-module.md)). |
+| [`autorun_special_cast_stall.lua`](../../scripts/pcsx-redux/autorun_special_cast_stall.lua) / [`_chain_dump`](../../scripts/pcsx-redux/autorun_special_cast_chain_dump.lua) / [`_row_poke`](../../scripts/pcsx-redux/autorun_special_cast_row_poke.lua) | Player-cast hang attribution family: read-BP the wild `0x08044880` at the phase boundary and log pc/ra; dump every actor's render fields + the effect pool to attribute the garbage chain; discriminate the entry-`0x0B` hang by re-pointing the resident action-bank row before the cast. |
+| [`autorun_special_cast_alias_row.lua`](../../scripts/pcsx-redux/autorun_special_cast_alias_row.lua) | Player-cast experiment rig: forced cast from a chosen party slot (`LEGAIA_CAST_SLOT`), optional row-`0x0B` -> row-`0x0A` alias, optional RAM injection (blob at a VA, or word pokes) before the cast fires, finale trace. |
+| [`autorun_special_cast_enemy_control.lua`](../../scripts/pcsx-redux/autorun_special_cast_enemy_control.lua) | The control side of the player-cast probes: force the first monster-seat actor to the same cast (`+0x1DE/+0x1DF/+0x1DD` pokes) so any player-cast anomaly can be checked against the retail caster kind. |
+| [`autorun_delilas_cast_e2e.lua`](../../scripts/pcsx-redux/autorun_delilas_cast_e2e.lua) | Real-loader battle harness off a FIELD state on the patched ISO - the restructured player battle file goes through retail's actual loader/rebaser instead of a stale savestate RAM image. **KNOWN LIMIT** (in its header): validates battle-load survival only - a forced-context player cast parks at phase `0x70` identically on a retail disc, so cast playout must be judged on a naturally entered battle. |
+| [`autorun_delilas_enemy_cast_watch.lua`](../../scripts/pcsx-redux/autorun_delilas_enemy_cast_watch.lua) | Natural enemy-cast **choreography recorder**: phase (`ctx+7`), module phase (`ctx+0x279`), the slot-B word, and a change-log of the caster's and victim's `+0x1D8..+0x1F4` windows - the change-log IS the staging timeline. Ordered the Delilas walk tables on [monster-animation.md](../formats/monster-animation.md#a-special-attack-can-be-a-chain-of-entries) and exposed 960's paired stage/confirm gate. |
+| [`autorun_cast_hook_live.lua`](../../scripts/pcsx-redux/autorun_cast_hook_live.lua) | Live test of the cast-route queue hook: RAM-injects the SCUS-gap stub + the 0898 applier-call redirect (a savestate restores retail RAM, so the patched-disc bytes are not resident) and watches a queued attack proceed through the hook. |
+| [`autorun_battle_mesh_dump.lua`](../../scripts/pcsx-redux/autorun_battle_mesh_dump.lua) | Cold-boot -> **memory-card** load -> forced battle -> full 2 MiB RAM dump. The card (not a save state) is the point: a state replays a stale RAM image and masks what the loader actually built from the disc under test. See [the card-capture tier](#memory-card-capture-tier) below. |
 
 #### Runtime probe details
 
@@ -962,15 +973,23 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`decode_vram.py`](../../scripts/pcsx-redux/decode_vram.py) | `vram.bin` from `extract_vram_from_sstate.py` | 1024×512 PNG of the BGR555 VRAM. Stdlib-only. Pixel coords map 1:1 to PSX VRAM `(fb_x, fb_y)`, so CLUT rows at `fb_y=480+` and texture pages at `fb_x≥640` are visible at a glance. |
 | [`overlay_residency.py`](../../scripts/pcsx-redux/overlay_residency.py) | A PCSX-Redux `.sstate`, a 2 MiB main-RAM dump, or a window dump (`--window-base`); plus an as-loaded PROT overlay payload + its base VA | Per-chunk byte-match report answering "is this overlay RESIDENT at its base in this state?". Matches over non-zero payload bytes only; `--split <va>` separates an entry's unique head from its over-read tail (a 1.00-matching *suffix* usually means a *different* overlay is resident in the next slot window). Reads main RAM straight out of the sstate protobuf. Established the 0897/0899 slot-A swap across the casino prize-exchange flow + the PROT 0896 pre-transition negative. |
 | [`scan_panel_prims.py`](../../scripts/pcsx-redux/scan_panel_prims.py) | A 2 MiB main-RAM dump (e.g. `load_screen_ram.bin`) + optional `--rect X0 Y0 X1 Y1` framebuffer rect | Lists every GP0 textured-sprite primitive (cmd byte `0x64..0x67`) whose dst falls in the rect, decoded into `(dst_x, dst_y, u, v, clut_x, clut_y, w, h)`. Groups by CLUT so the unique source tiles each CLUT references stand out. Used to pin the 9-slice tile geometry of the load-screen panel (14 prims sampling CLUT row 2 of the system-UI TIM) - see [`subsystems/save-screen.md`](../subsystems/save-screen.md#sprite-asset-sources-continue--load-screen). |
+| [`decode_battle_mesh.py`](../../scripts/pcsx-redux/decode_battle_mesh.py) | The 2 MiB RAM dump from `autorun_battle_mesh_dump.lua` | Decodes the assembled in-RAM battle meshes (per-seat part tables) for the battle-mesh differential - the offline half of the [memory-card capture tier](#memory-card-capture-tier). |
+| [`isolate_card_save.py`](../../scripts/pcsx-redux/isolate_card_save.py) | A `.mcd` memory-card image | Copies one save into an otherwise-blank card, so a card-tier boot loads exactly the intended save regardless of what else the source card carries. |
 
 ### One-shot wrappers
 
 [`run_probe.sh`](../../scripts/pcsx-redux/run_probe.sh) is the single
 canonical shell harness for every probe. It accepts both env vars
-(`LEGAIA_LUA`, `LEGAIA_SSTATE`, `LEGAIA_OUT`, …) and matching `--lua`
-/ `--sstate` / `--out` / `--scenario` / `--fast` flags. Output
-defaults to `captures/<probe-stem>/<iso-timestamp>/` so each run gets
-a fresh per-run subtree.
+(`LEGAIA_LUA`, `LEGAIA_SSTATE`, `LEGAIA_OUT`, `LEGAIA_OUT_DIR`, …) and
+matching `--lua` / `--sstate` / `--out` / `--out-dir` / `--scenario` /
+`--iso` / `--spec` / `--fast` / `--timing` / `--isolate-config` /
+`--log` flags. Output defaults to `captures/<probe-stem>/<iso-timestamp>/`
+so each run gets a fresh per-run subtree; probes write through
+`probe.out_path`, so `--out-dir` redirects every artifact of a run (CSV,
+screenshots, RAM dumps) at once. The memory-card pair is env-only:
+`LEGAIA_MCD1` / `LEGAIA_MCD2` (no flag form - `-memcard2` is broken in
+this PCSX-Redux build, `main.cc` assigns `argPath1` to slot 2, so card
+choice goes through the config the runner writes).
 
 ```bash
 # Default world-map probe (interpreter mode, Lua BPs fire).
@@ -999,6 +1018,27 @@ bash scripts/pcsx-redux/run_probe.sh --fast \
 
 The earlier `run_world_map_probe.sh` / `run_fast_probe.sh` /
 `run_dump_slot4.sh` wrappers were folded into this one runner.
+
+### Memory-card capture tier
+
+[`capture_battle_mesh.sh`](../../scripts/pcsx-redux/capture_battle_mesh.sh)
+is the chain for observing what a **patched disc** actually loads: cold
+boot the patched image, load a save from a **memory card**, force the
+battle under test, dump the full 2 MiB of RAM
+(`autorun_battle_mesh_dump.lua`), then decode offline
+(`decode_battle_mesh.py`). Three rules make the tier what it is:
+
+- **A save state replays stale RAM and masks the disc bytes under test.**
+  Any content the loader builds at load time (battle meshes, staged
+  record rows, rebased modules) arrives from whatever disc the *state*
+  was made against; only a cold path through the loader observes the
+  patched image. This is the savestate RAM-cache trap in probe form.
+- **PCSX-Redux auto-applies a sibling `.ppf`** sitting next to the image
+  it is handed (`cdrom/ppf.cc`), silently - an unstaged disc directory
+  can test a different image than the one named on the command line.
+  Point `--iso` at a scratch copy in a directory you control.
+- **Card selection is env-only** (`LEGAIA_MCD1`/`LEGAIA_MCD2` - see the
+  wrapper section above for why `-memcard2` cannot be used).
 
 ### GDB-stub bridge (`gdb_probe.py`)
 

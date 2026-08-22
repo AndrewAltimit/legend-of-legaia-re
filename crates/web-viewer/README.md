@@ -906,7 +906,11 @@ fixes, and the standalone content toggles. The function is the browser twin of
 `legaia-patcher randomize`, so its argument list tracks that CLI's flags
 rather than being a curated subset; the
 [randomizer reference](../../docs/tooling/randomizer.md) is the per-feature
-page for all of them.
+page for all of them. That includes the Delilas party swap and its two
+sub-selects (arts-voice mode, move-set mode) - with one contract of its
+own: a mid-apply Delilas error **fails the whole patch** ("no ROM was
+produced") instead of the other options' skip-and-report, because the
+swap's half-applied state spans too many carriers to ship.
 
 An optional `lang_pack` YAML argument (default `""` = English, strictly opt-in)
 applies a [language pack](../patcher/README.md#translation-packs) **before** any

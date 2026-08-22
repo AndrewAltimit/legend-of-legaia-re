@@ -70,7 +70,9 @@ disc-gated, so CI runs without a disc. There is also a
   - [Delilas party swap](#delilas-party-swap)
     - [Each slot fights in its sibling's element](#each-slot-fights-in-its-siblings-element)
     - [The bank the runtime walks](#the-bank-the-runtime-walks)
+    - [Casting a sibling signature attack from a party slot](#casting-a-sibling-signature-attack-from-a-party-slot)
     - [The Delilas move set](#the-delilas-move-set)
+    - [The retail cast route](#the-retail-cast-route)
   - [Fishing prize prices](#fishing-prize-prices)
   - [Location names](#location-names)
   - [Earth Egg coin threshold](#earth-egg-coin-threshold)
@@ -4092,6 +4094,14 @@ bit-for-bit.
 | `crates/engine-core` `unused_enemy_randomizer_runtime_e2e` | disc-gated | runtime oracle: run the `--unused-enemies` toggle path until it places an unused Evil Bat id at a formation slot, re-decode off the patched image, force that row into a battle, assert the spawned enemy actor carries an unused-enemy id (baseline spawns the vanilla monster) |
 | `crates/engine-core` `unused_item_randomizer_runtime_e2e` | disc-gated | runtime oracle: apply the "Seru Bell" name injection and assert the item table resolves `0xFD` to it (others stay blank), then patch a monster's drop to `0xFD` and drive `apply_battle_loot`, asserting the bag receives the unused accessory (baseline grants the original) |
 | `crates/engine-core` `shop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch a town-shop slot (scene MAN op `0x49`) and a casino prize (PROT 899 table), re-decode the patched stock, drive `World::buy_from_shop` (shared with the menu `ShopConfirm` commit), assert the runtime sells/grants the patched id (not the original) |
+| `crates/patcher` `delilas_party_real` | disc-gated | Delilas party swap: apply / re-decode both battle directions / idempotence / determinism / mapping rearrangement, plus a hybrid-mode contrast against retail pinning every coordinate the pass owns |
+| `crates/asset` `party_swap_real` | disc-gated | the nine sibling-to-host conversions round-trip: part permutation, rest-pose bake, texel re-layout, on every equipment variant |
+| `crates/patcher` `delilas_cast_stage_real` | disc-gated | staged caster rows: the Che-mapped file's rows `0x0A`/`0x0B` decode as real whole-skeleton streams below `clut_a_off`, Block re-homed on row `0x06` in all four files, the `+0x5C` sibling word tracks, and the palette walk still parses |
+| `crates/patcher` `delilas_cast_remap_real` | disc-gated | the 958/960 staged-id remaps (incl. 960's stage/confirm gate pair): retail expect words match, only the edit words change, second apply is a clean skip, a partial patch refuses, sectors stay EDC/ECC-valid |
+| `crates/patcher` `enemy_anim_mirror_real` | disc-gated | the enemy-side hero animations land in the swapped monster blocks and re-decode |
+| `crates/patcher` `nivora_field_real` | disc-gated | the duel field scene's rebuilt NPC pack re-parses with the hero rigs on members 106-108 and every other member byte-identical |
+| `crates/patcher` `monster_model_real` / `monster_texture_real` | disc-gated | custom model / skin replacement: re-encoded block re-parses, part count preserved, texel pages land in their own footprint |
+| `crates/patcher` `super_art_list_real` / `super_art_power_real` | disc-gated | the Super-Arts move-list injection and the Super power-run edits re-decode off the patched image with the arena accounting intact |
 
 Disc-gated tests read `LEGAIA_DISC_BIN`; with it unset they skip and pass.
 
