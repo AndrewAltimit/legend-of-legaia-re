@@ -115,7 +115,7 @@
 //!
 //! [`parse`] returns the disc form (no preamble).
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
 use crate::{DecodeMode, decode, parse_player_lzs};
@@ -515,6 +515,41 @@ pub fn lerp_angle_12(from: i32, to: i32, frac: i32) -> u16 {
 /// `descriptor_count` (most scene bundles use 3, 5, 6, or 7). For each
 /// type-[`SCENE_ANM_TYPE_BYTE`] descriptor, LZS-decode the section and
 /// validate it parses as a canonical ANM container.
+/// Scale every (bone, frame) translation of record `index` by `r`, in
+/// place inside the decoded bundle bytes. Rotations, headers, trailers
+/// and every other container byte are preserved (byte 4's unread high
+/// nibble included), so the edit is size-neutral by construction.
+///
+/// Translations are the flat per-frame joint positions the field
+/// animator drives through the GTE (`FUN_8001BE80` decode), so a
+/// uniform scale about the actor origin rescales the whole posed
+/// skeleton while keeping it grounded (the origin is the floor plane).
+/// The 12-bit domain clamps at `-2048..=2047`; callers stay well inside
+/// it for any plausible figure scale.
+pub fn scale_record_translations(decoded: &mut [u8], index: usize, r: f32) -> Result<()> {
+    let bundle = parse(decoded).context("parse bundle for translation scale")?;
+    let rec = bundle
+        .record(index)
+        .with_context(|| format!("record {index} for translation scale"))?;
+    let start = bundle.record_offsets[index] as usize + RECORD_HEADER_SIZE;
+    let entries = rec.bone_count as usize * rec.frame_count as usize;
+    let scale = |v: i32| -> i32 { ((v as f32) * r).round().clamp(-2048.0, 2047.0) as i32 };
+    for e in 0..entries {
+        let off = start + e * BONE_FRAME_BYTES;
+        let bytes: &mut [u8] = decoded
+            .get_mut(off..off + BONE_FRAME_BYTES)
+            .ok_or_else(|| anyhow::anyhow!("record {index} entry {e} out of range"))?;
+        let t = BoneTransform::decode(bytes);
+        let (tx, ty, tz) = (scale(t.t_x), scale(t.t_y), scale(t.t_z));
+        bytes[0] = (tx & 0xFF) as u8;
+        bytes[1] = (ty & 0xFF) as u8;
+        bytes[2] = (((tx >> 8) & 0x0F) | (((ty >> 8) & 0x0F) << 4)) as u8;
+        bytes[3] = (tz & 0xFF) as u8;
+        bytes[4] = (bytes[4] & 0xF0) | (((tz >> 8) & 0x0F) as u8);
+    }
+    Ok(())
+}
+
 pub fn find_in_entry(bytes: &[u8], descriptor_count: usize) -> Vec<PlayerAnmBundle> {
     let Ok(container) = parse_player_lzs(bytes, descriptor_count) else {
         return Vec::new();

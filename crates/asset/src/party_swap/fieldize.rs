@@ -1341,6 +1341,45 @@ fn fieldize_pack_laddered(
         .context("rebuilt PROT 0874 does not fit its entry at any detail level")
 }
 
+/// Sibling-native / retail-host posed height ratio for one field slot,
+/// measured over the role-mapped parts on both sides (the same stats the
+/// bake's own radial uses, inverted). Clamped to a sane figure range.
+fn slot_height_ratio(
+    pack: &character_pack::CharacterPack,
+    retail_anm: &crate::player_anm::PlayerAnmBundle,
+    slot: usize,
+    source: &SlotSource,
+) -> Result<f32> {
+    let cs = pack
+        .slot(slot)
+        .ok_or_else(|| anyhow::anyhow!("field slot {slot} missing"))?;
+    let field_tmd = legaia_tmd::parse(&cs.tmd_bytes).context("field TMD")?;
+    let field_model = decode_model(&field_tmd, &cs.tmd_bytes)?;
+    let idle_rec =
+        character_pack::locomotion_record_index(slot, character_pack::LOCOMOTION_IDLE_SLOT);
+    let idle = retail_anm
+        .record_to_monster_animation(idle_rec)
+        .ok_or_else(|| anyhow::anyhow!("field slot {slot}: idle clip missing"))?;
+    let field_rest = idle
+        .frames
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("field idle has no frames"))?;
+    let roles = derive_field_roles(&field_model, field_rest)?;
+    let dst_parts: Vec<(&ModelObject, &PartPose)> = roles
+        .iter()
+        .map(|&b| (&field_model[b], &field_rest[b]))
+        .collect();
+    let src_parts: Vec<(&ModelObject, &PartPose)> = source
+        .role_sources
+        .iter()
+        .flatten()
+        .map(|&c| (&source.model[c], &source.rest[c]))
+        .collect();
+    let (_, e_dst) = group_world_stats(&dst_parts);
+    let (_, e_src) = group_world_stats(&src_parts);
+    Ok((e_src[1] / e_dst[1]).clamp(0.5, 2.0))
+}
+
 fn fieldize_pack_at(
     prot_0874: &[u8],
     entry_len: usize,
@@ -1351,8 +1390,48 @@ fn fieldize_pack_at(
 ) -> Result<FieldizedPack> {
     let mut warnings = Vec::new();
     let pack = character_pack::parse(prot_0874).context("parse PROT 0874")?;
-    let anm = character_pack::field_locomotion_anm(prot_0874).context("locomotion bundle")?;
     let container = parse_player_lzs(prot_0874, character_pack::CONTAINER_DESCRIPTORS)?;
+
+    // Height-preserving locomotion retarget: the shared §1 clips pose
+    // each slot at the retail HERO's joint spacing, so a sibling baked
+    // onto them walks at the hero's stature (Che loses ~40% of his
+    // nilboa height, and the compressed skeleton swallows the head into
+    // the chest). The per-(bone, frame) translations are flat
+    // actor-space joint positions with the origin on the floor plane,
+    // so scaling every translation of a slot's 7-record bank by the
+    // sibling/host height ratio rescales the whole walking skeleton in
+    // place - same byte size, rotations untouched - and the §0 bake
+    // below then anchors on the SCALED rest, keeping the chains closed.
+    // The two shared records (21 savepoint / 22 aux) stay retail: they
+    // already pose three differently-proportioned heroes in retail, and
+    // scaling them for one slot would break the other two.
+    let sec1_desc = &container.descriptors[character_pack::LOCOMOTION_SECTION];
+    let mut sec1_decoded = crate::decode(prot_0874, sec1_desc, crate::DecodeMode::Lzs)
+        .context("LZS-decode PROT 0874 section 1 (party locomotion ANM)")?;
+    let retail_anm =
+        crate::player_anm::parse(&sec1_decoded).context("parse retail locomotion bundle")?;
+    let mut sec1_scaled = false;
+    for (slot, source) in sources.iter().enumerate().take(3) {
+        let r = slot_height_ratio(&pack, &retail_anm, slot, source)
+            .with_context(|| format!("field slot {slot} height ratio"))?;
+        if (r - 1.0).abs() < 0.02 {
+            continue;
+        }
+        for bank in 0..character_pack::LOCOMOTION_BANK_STRIDE {
+            let rec = character_pack::locomotion_record_index(slot, bank);
+            crate::player_anm::scale_record_translations(&mut sec1_decoded, rec, r)
+                .with_context(|| format!("scale slot {slot} locomotion record {rec}"))?;
+        }
+        sec1_scaled = true;
+        warnings.push(format!(
+            "field slot {slot}: walking skeleton scaled x{r:.2} to the sibling's own height"
+        ));
+    }
+    let anm = if sec1_scaled {
+        crate::player_anm::parse(&sec1_decoded).context("re-parse scaled locomotion bundle")?
+    } else {
+        retail_anm
+    };
 
     let mut slots: Vec<FieldSlot> = Vec::with_capacity(3);
     for (slot, source) in sources.iter().enumerate() {
@@ -1425,7 +1504,8 @@ fn fieldize_pack_at(
     let mut sec2_new = crate::decode(prot_0874, sec2, crate::DecodeMode::Lzs)?;
     patch_atlas(&mut sec2_new, &slots)?;
 
-    // §1 (locomotion) survives as its original compressed byte span.
+    // §1 (locomotion): the original compressed byte span when untouched,
+    // a re-compress of the scaled bundle otherwise.
     let sec1 = &container.descriptors[1];
     let spans: Vec<(usize, usize)> = {
         let mut offs: Vec<usize> = container
@@ -1438,19 +1518,27 @@ fn fieldize_pack_at(
             .map(|i| (offs[i], offs[i + 1]))
             .collect()
     };
-    let sec1_raw = prot_0874
-        .get(spans[1].0..spans[1].1.min(prot_0874.len()))
-        .ok_or_else(|| anyhow::anyhow!("section 1 span out of range"))?
-        .to_vec();
+    let sec1_raw = if sec1_scaled {
+        legaia_lzs::compress(&sec1_decoded)
+    } else {
+        prot_0874
+            .get(spans[1].0..spans[1].1.min(prot_0874.len()))
+            .ok_or_else(|| anyhow::anyhow!("section 1 span out of range"))?
+            .to_vec()
+    };
 
     // Reassemble the container: header + pairs + section data. Greedy
     // LZS first; the optimal parse only when the entry budget misses.
     let mut s0 = legaia_lzs::compress(&sec0_new);
     let mut s2 = legaia_lzs::compress(&sec2_new);
+    let mut sec1_raw = sec1_raw;
     let header_and_slack = 0x20 + 8;
     if header_and_slack + s0.len() + sec1_raw.len() + s2.len() > entry_len {
         s0 = legaia_lzs::compress_optimal(&sec0_new);
         s2 = legaia_lzs::compress_optimal(&sec2_new);
+        if sec1_scaled {
+            sec1_raw = legaia_lzs::compress_optimal(&sec1_decoded);
+        }
     }
     if std::env::var("LEGAIA_FIELDIZE_DEBUG").is_ok() {
         eprintln!(
