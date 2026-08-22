@@ -836,23 +836,57 @@ pub fn playerize_player_file(
     source_id: u16,
 ) -> Result<PlayerizedFile> {
     let mut last_err = None;
+    // Fit ladder: texture resolution OUTRANKS hand twins (the quality
+    // oracle holds full-resolution textures for every pairing), and
+    // within one resolution the twins degrade full -> open-boundary
+    // prims only -> none. The reversed twins keep the open-shell fists
+    // visible from every angle; some pairings (Gi/Che -> Gala) miss the
+    // entry by about a sector with the full treatment, and the
+    // boundary-only set is the half-cost fallback that still covers the
+    // faces that read as holes.
     for downscale in [1u32, 2, 4] {
-        match playerize_scaled(
-            player_file,
-            entry_len,
-            rig,
-            archive_entry,
-            source_id,
-            downscale,
-        ) {
-            Ok(out) => return Ok(out),
-            Err(e) => last_err = Some(e),
+        for hand_twins in [HandTwins::Full, HandTwins::WeaponHand, HandTwins::None] {
+            match playerize_scaled(
+                player_file,
+                entry_len,
+                rig,
+                archive_entry,
+                source_id,
+                downscale,
+                hand_twins,
+            ) {
+                Ok(mut out) => {
+                    match hand_twins {
+                        HandTwins::Full => {}
+                        HandTwins::WeaponHand => out.warnings.push(
+                            "hand twins on the armB (weapon) hand only (entry budget)".into(),
+                        ),
+                        HandTwins::None => out.warnings.push(
+                            "hand prims single-sided (entry budget; fists may cull edge-on)".into(),
+                        ),
+                    }
+                    return Ok(out);
+                }
+                Err(e) => last_err = Some(e),
+            }
         }
     }
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("playerize failed")))
         .context("rebuilt player file does not fit its PROT entry at any texture resolution")
 }
 
+/// How much of the hands gets reversed-twin prims (fit-ladder rungs).
+/// `WeaponHand` keeps the full treatment on the armB hand alone - the
+/// sibling weapon-fist (Che's hammer) is the biggest open-visibility
+/// surface, and halving the twin cost is what fits the Gala file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HandTwins {
+    Full,
+    WeaponHand,
+    None,
+}
+
+#[allow(clippy::too_many_arguments)]
 fn playerize_scaled(
     player_file: &[u8],
     entry_len: usize,
@@ -860,6 +894,7 @@ fn playerize_scaled(
     archive_entry: &[u8],
     source_id: u16,
     texture_downscale: u32,
+    hand_twins: HandTwins,
 ) -> Result<PlayerizedFile> {
     let mut warnings = Vec::new();
     if texture_downscale > 1 {
@@ -1006,6 +1041,21 @@ fn playerize_scaled(
                         ];
                     }
                 }
+            }
+            // The sibling fists are OPEN SHELLS authored for the enemy
+            // camera's angles (the body parts survive as closed tubes);
+            // seen from the player side they cull to one visible side -
+            // Gi's hand vanishes edge-on, Che's hammer shows holes. A
+            // winding-reversed twin per prim keeps one of the pair alive
+            // from every angle (same treatment the field bake gives the
+            // NPC meshes). First repair inconsistent winding in place
+            // (free): a topologically closed fist with minority faces
+            // wound inward shows holes no twin budget is needed for.
+            repair_winding(&mut o);
+            match hand_twins {
+                HandTwins::Full => double_side(&mut o),
+                HandTwins::WeaponHand if c == 8 => double_side(&mut o),
+                HandTwins::WeaponHand | HandTwins::None => {}
             }
         }
         compact_object(&mut o);

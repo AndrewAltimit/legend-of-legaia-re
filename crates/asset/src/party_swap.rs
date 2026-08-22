@@ -522,6 +522,145 @@ fn used_verts(o: &ModelObject) -> Vec<bool> {
     used
 }
 
+/// Repair inconsistent face winding in place: faces of one connected
+/// shell must traverse every shared edge in OPPOSITE directions; a face
+/// wound against its neighbours renders inside-out and culls from the
+/// outside - a "hole" in a topologically closed mesh (Che's hammer-fist
+/// shows several). Propagates consistency over the edge-adjacency graph
+/// and flips the MINORITY side of each component (retail authors most
+/// faces correctly, so majority orientation is the shell's outward
+/// side). Zero size cost - nothing is added, only reversed.
+pub(crate) fn repair_winding(o: &mut ModelObject) {
+    use std::collections::BTreeMap;
+    // Directed perimeter edges per prim (tri a-b-c-a; Z-order quad
+    // a-b-d-c-a), flattened across groups.
+    type Face = (usize, usize, Vec<(u16, u16)>); // (group, prim, edges)
+    let mut faces: Vec<Face> = Vec::new();
+    for (gi, g) in o.groups.iter().enumerate() {
+        for (pi, p) in g.prims.iter().enumerate() {
+            let vs = &p.vertices;
+            let cyc: Vec<(usize, usize)> = match vs.len() {
+                3 => vec![(0, 1), (1, 2), (2, 0)],
+                4 => vec![(0, 1), (1, 3), (3, 2), (2, 0)],
+                _ => continue,
+            };
+            let dir: Vec<(u16, u16)> = cyc.into_iter().map(|(i, j)| (vs[i], vs[j])).collect();
+            faces.push((gi, pi, dir));
+        }
+    }
+    // Undirected edge -> faces carrying it (with direction sign).
+    let mut edge_faces: BTreeMap<(u16, u16), Vec<(usize, bool)>> = BTreeMap::new();
+    for (fi, (_, _, dir)) in faces.iter().enumerate() {
+        for &(a, b) in dir {
+            if a == b {
+                continue;
+            }
+            let (key, fwd) = if a < b {
+                ((a, b), true)
+            } else {
+                ((b, a), false)
+            };
+            edge_faces.entry(key).or_default().push((fi, fwd));
+        }
+    }
+    // BFS components with a relative flip flag; consistent neighbours
+    // traverse the shared edge in opposite directions.
+    let n = faces.len();
+    let mut state: Vec<Option<bool>> = vec![None; n]; // Some(flip?)
+    for start in 0..n {
+        if state[start].is_some() {
+            continue;
+        }
+        state[start] = Some(false);
+        let mut queue = vec![start];
+        let mut comp = vec![start];
+        while let Some(f) = queue.pop() {
+            let flipped = state[f].unwrap();
+            for &(a, b) in &faces[f].2 {
+                if a == b {
+                    continue;
+                }
+                let key = if a < b { (a, b) } else { (b, a) };
+                let Some(carriers) = edge_faces.get(&key) else {
+                    continue;
+                };
+                let my_fwd = (a < b) != flipped;
+                for &(nf, nfwd) in carriers {
+                    if nf == f || state[nf].is_some() {
+                        continue;
+                    }
+                    // Consistent when the neighbour's effective direction
+                    // is opposite to ours.
+                    let want_flip = nfwd == my_fwd;
+                    state[nf] = Some(want_flip);
+                    queue.push(nf);
+                    comp.push(nf);
+                }
+            }
+        }
+        // Majority keeps its winding: if most of the component ended up
+        // "flipped", invert the whole component's flags instead.
+        let flips = comp.iter().filter(|&&f| state[f] == Some(true)).count();
+        if flips * 2 > comp.len() {
+            for &f in &comp {
+                state[f] = Some(state[f] != Some(true));
+            }
+        }
+    }
+    for (fi, (gi, pi, _)) in faces.iter().enumerate() {
+        if state[fi] != Some(true) {
+            continue;
+        }
+        let q = &mut o.groups[*gi].prims[*pi];
+        if q.vertices.len() >= 3 {
+            q.vertices.swap(1, 2);
+        }
+        if q.uvs.len() >= 3 {
+            q.uvs.swap(1, 2);
+        }
+        if q.colors.len() >= 3 {
+            q.colors.swap(1, 2);
+        }
+    }
+}
+
+/// Emit a winding-reversed twin of every prim: the retail renderer's
+/// NCLIP winding cull drops screen-clockwise faces, and the NPC source
+/// meshes are authored for fixed-camera scenes - not watertight from
+/// the free angles a walking player model is seen from (culled side
+/// faces read as "missing polygons"). A reversed twin guarantees one
+/// of the pair survives the cull from every angle. Reversal = swap the
+/// middle two entries: tri `[a,b,c] -> [a,c,b]`; quad `[a,b,c,d]`
+/// (Z-order, tris (0,1,2)+(1,3,2)) -> `[a,c,b,d]`.
+pub(crate) fn double_side(o: &mut ModelObject) {
+    // A prim whose exact reversed twin is already authored needs no
+    // duplicate.
+    let existing: std::collections::BTreeSet<Vec<u16>> = o
+        .groups
+        .iter()
+        .flat_map(|g| g.prims.iter().map(|p| p.vertices.clone()))
+        .collect();
+    for g in o.groups.iter_mut() {
+        let mut extra: Vec<legaia_tmd::encode::ModelPrim> = Vec::new();
+        for p in &g.prims {
+            let mut q = p.clone();
+            if q.vertices.len() >= 3 {
+                q.vertices.swap(1, 2);
+            }
+            if q.uvs.len() >= 3 {
+                q.uvs.swap(1, 2);
+            }
+            if q.colors.len() >= 3 {
+                q.colors.swap(1, 2);
+            }
+            if !existing.contains(&q.vertices) {
+                extra.push(q);
+            }
+        }
+        g.prims.append(&mut extra);
+    }
+}
+
 /// Seat a baked TERMINAL part along its bone axis: slide the baked
 /// geometry (already in `dst`'s local space) so its near edge along the
 /// destination bone axis sits where the destination part's own near

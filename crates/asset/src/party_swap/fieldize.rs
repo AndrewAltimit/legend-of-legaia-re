@@ -885,43 +885,6 @@ fn seal_boundaries(o: &mut ModelObject, color: [u8; 3]) {
     }
 }
 
-/// Emit a winding-reversed twin of every prim: the retail renderer's
-/// NCLIP winding cull drops screen-clockwise faces, and the NPC source
-/// meshes are authored for fixed-camera scenes - not watertight from
-/// the free angles a walking player model is seen from (culled side
-/// faces read as "missing polygons"). A reversed twin guarantees one
-/// of the pair survives the cull from every angle. Reversal = swap the
-/// middle two entries: tri `[a,b,c] -> [a,c,b]`; quad `[a,b,c,d]`
-/// (Z-order, tris (0,1,2)+(1,3,2)) -> `[a,c,b,d]`.
-fn double_side(o: &mut ModelObject) {
-    // A prim whose exact reversed twin is already authored needs no
-    // duplicate.
-    let existing: std::collections::BTreeSet<Vec<u16>> = o
-        .groups
-        .iter()
-        .flat_map(|g| g.prims.iter().map(|p| p.vertices.clone()))
-        .collect();
-    for g in o.groups.iter_mut() {
-        let mut extra: Vec<ModelPrim> = Vec::new();
-        for p in &g.prims {
-            let mut q = p.clone();
-            if q.vertices.len() >= 3 {
-                q.vertices.swap(1, 2);
-            }
-            if q.uvs.len() >= 3 {
-                q.uvs.swap(1, 2);
-            }
-            if q.colors.len() >= 3 {
-                q.colors.swap(1, 2);
-            }
-            if !existing.contains(&q.vertices) {
-                extra.push(q);
-            }
-        }
-        g.prims.append(&mut extra);
-    }
-}
-
 /// How much of the rig gets the reversed-twin treatment - the doubled
 /// geometry must still fit the container's pinned decoded budget, so a
 /// ladder tries progressively smaller scopes (the head is where a
