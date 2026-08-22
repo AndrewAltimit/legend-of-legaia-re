@@ -109,6 +109,76 @@ impl MonsterPowerTable {
     }
 }
 
+/// The most **distinct** monster species a random formation may hold: **2**,
+/// retail's own authoring ceiling - and a hard engine invariant, not a style
+/// choice. The battle setup `FUN_80055B6C` (at `0x80055C80..0x80055D2C`)
+/// classifies the formation cells into "the first species" (`cells[0]`, with a
+/// copy count) and "the other species" - held in a **single register** - then,
+/// behind a 50% RNG coin flip (`FUN_80056798() & 1`), rebuilds the cell array
+/// as `[other x other_count, first x first_count]` (the species-order variety
+/// shuffle). With three distinct species the single "other" register is
+/// overwritten by each later species, so `[a, b, c]` rebuilds as `[c, c, a]`:
+/// the middle species silently vanishes and the last is duplicated. The other
+/// half of the flip loads the formation verbatim - all three distinct blocks
+/// stream, which is what makes an over-budget trio a *probabilistic* freeze.
+/// Capping distinct species at 2 keeps every formation inside the invariant
+/// the rebuild was written for (where it is an exact multiset-preserving
+/// species swap). Pinned live: forced installs of `[133,151,94]` /
+/// `[94,133,151]` / `[151,133,94]` / `[32,34,14]` (map03 + rikuroa contexts)
+/// each read back `[c2, c2, c0]` at battle main, with the write PC at
+/// `0x80055D14/18` and the per-seat record pointers showing seat 1 sharing
+/// seat 0's block.
+pub const MAX_DISTINCT_SPECIES: usize = 2;
+
+/// Per-monster **battle-heap cost** lookup, keyed by the formation byte. The
+/// cost is the decoded `battle_data` block's `+0x08` word (the texture-pool
+/// offset): exactly the bytes the battle loader `FUN_800542C8` mallocs for one
+/// distinct species (stats + name + TMD + action/animation streams - the
+/// texture pool itself decodes into the GPU staging area, never the heap; see
+/// `docs/subsystems/battle.md`, heap-budget section). Duplicate seats share
+/// one block, so a formation's heap exposure is the sum over its **distinct**
+/// ids. An id with no archive record costs `0`.
+#[derive(Debug, Clone)]
+pub struct MonsterCostTable {
+    /// `cost[id]` for every byte id `0..=255`, indexed directly by the
+    /// formation byte (1-based archive id).
+    cost: [u32; 256],
+}
+
+impl MonsterCostTable {
+    /// Build from `(monster_id, cost)` pairs (1-based archive ids). Ids outside
+    /// `0..=255` are ignored.
+    pub fn from_costs(pairs: impl IntoIterator<Item = (u16, u32)>) -> Self {
+        let mut cost = [0u32; 256];
+        for (id, c) in pairs {
+            if let Some(slot) = cost.get_mut(id as usize) {
+                *slot = c;
+            }
+        }
+        Self { cost }
+    }
+
+    /// The heap cost of one distinct species `id` (`0` for the empty slot or an
+    /// id with no record).
+    pub fn cost_of(&self, id: u8) -> u32 {
+        self.cost[id as usize]
+    }
+
+    /// A formation's battle-heap exposure: the summed cost of its **distinct**
+    /// non-zero ids (the loader dedupes seats by id, so duplicates are free).
+    pub fn formation_cost(&self, ids: &[u8]) -> u32 {
+        let mut seen = [false; 256];
+        let mut sum = 0u32;
+        for &id in ids {
+            if id != 0 && !seen[id as usize] {
+                seen[id as usize] = true;
+                sum = sum.saturating_add(self.cost_of(id));
+            }
+        }
+        sum
+    }
+}
+
 /// Which formation indices a scene's **random-encounter** roll can produce.
 ///
 /// The encounter section holds a single formation array, but only some of those
@@ -657,6 +727,79 @@ impl SceneEncounters {
         (collapsed, zeroed)
     }
 
+    /// Enforce the two **battle-load safety limits** on every random formation,
+    /// as a post-pass over already-randomized ids (composes with every scope +
+    /// mode, exactly like [`Self::enforce_solo_strong`]):
+    ///
+    /// 1. at most [`MAX_DISTINCT_SPECIES`] distinct species - the retail battle
+    ///    setup's species-order rebuild (`FUN_80055B6C`) holds "the other
+    ///    species" in one register, so a third distinct species is silently
+    ///    dropped-and-duplicated on half of all rolls and streams a third
+    ///    decoded block on the other half;
+    /// 2. a summed distinct-species heap cost of at most `budget` bytes - the
+    ///    battle heap's malloc is unchecked (`FUN_800542C8` stores through a
+    ///    NULL return), so an over-budget formation is a hang at battle load,
+    ///    not an error.
+    ///
+    /// A violating formation is reduced in place: every copy of its costliest
+    /// species is replaced by its cheapest species (both already present in the
+    /// formation, so no new id enters the scene - pool and residency invariants
+    /// hold), repeating until both limits pass. Monster count is preserved; the
+    /// reduction only ever merges species, and a single-species formation
+    /// always passes (no retail block exceeds ~93 KB). Same-size edit, so
+    /// [`Self::repack`] applies. Returns `(formations_fixed, id_bytes_changed)`.
+    pub fn enforce_species_limits(
+        &mut self,
+        table: &MonsterCostTable,
+        budget: u32,
+        max_distinct: usize,
+    ) -> (usize, usize) {
+        let mut fixed = 0;
+        let mut changed = 0;
+        for i in 0..self.formation_count {
+            if !self.is_random_formation(i) {
+                continue;
+            }
+            let (off, len) = self.id_span(i);
+            let mut touched = false;
+            loop {
+                let ids = &self.decoded[off..off + len];
+                let mut distinct: Vec<u8> = ids.iter().copied().filter(|&d| d != 0).collect();
+                distinct.sort_unstable();
+                distinct.dedup();
+                let cost = table.formation_cost(ids);
+                if distinct.len() <= max_distinct.max(1) && cost <= budget {
+                    break;
+                }
+                if distinct.len() < 2 {
+                    // A lone species over budget cannot be reduced further;
+                    // leave it (does not occur with retail archives).
+                    break;
+                }
+                // Merge the costliest species into the cheapest one present.
+                let costliest = *distinct
+                    .iter()
+                    .max_by_key(|&&d| (table.cost_of(d), d))
+                    .unwrap();
+                let cheapest = *distinct
+                    .iter()
+                    .min_by_key(|&&d| (table.cost_of(d), d))
+                    .unwrap();
+                for s in 0..len {
+                    if self.decoded[off + s] == costliest {
+                        self.decoded[off + s] = cheapest;
+                        changed += 1;
+                        touched = true;
+                    }
+                }
+            }
+            if touched {
+                fixed += 1;
+            }
+        }
+        (fixed, changed)
+    }
+
     /// Recompress the (mutated) MAN. Returns the stream if it fits the original
     /// compressed footprint, or `None` if it would overflow (the rare case our
     /// re-packer is a byte or two looser than the retail packer).
@@ -674,6 +817,74 @@ impl SceneEncounters {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn species_limits_cap_distinct_count_and_heap_cost() {
+        // Costs: id 10 -> 100, id 20 -> 60, id 30 -> 50, id 40 -> 10.
+        let table = MonsterCostTable::from_costs([(10u16, 100u32), (20, 60), (30, 50), (40, 10)]);
+        // decoded layout: formation array at offset 0, stride 8, 4 formations.
+        let mut decoded = vec![0u8; 32];
+        // formation 0: 3 DISTINCT species [10, 20, 30] (over the species cap;
+        // cost 210 also over budget).
+        decoded[3] = 3;
+        decoded[4] = 10;
+        decoded[5] = 20;
+        decoded[6] = 30;
+        // formation 1: 2 distinct, over budget: [10, 20] = 160.
+        decoded[8 + 3] = 2;
+        decoded[8 + 4] = 10;
+        decoded[8 + 5] = 20;
+        // formation 2: compliant [40, 40, 30] (2 distinct, cost 60).
+        decoded[16 + 3] = 3;
+        decoded[16 + 4] = 40;
+        decoded[16 + 5] = 40;
+        decoded[16 + 6] = 30;
+        // formation 3: scripted [10, 20, 30] - must never be touched.
+        decoded[24 + 3] = 3;
+        decoded[24 + 4] = 10;
+        decoded[24 + 5] = 20;
+        decoded[24 + 6] = 30;
+        let mut se = SceneEncounters {
+            entry_idx: 7,
+            man_offset: 0,
+            compressed_budget: 9999,
+            raw_in_place: false,
+            decoded,
+            formation_array_off: 0,
+            formation_stride: 8,
+            formation_count: 4,
+            random_mask: vec![true, true, true, false],
+        };
+        let budget = 120;
+        let (fixed, changed) = se.enforce_species_limits(&table, budget, MAX_DISTINCT_SPECIES);
+        assert_eq!(fixed, 2, "formations 0 and 1 violate, 2 is compliant");
+        assert!(changed > 0);
+        // Every random formation now satisfies both limits; counts preserved.
+        for i in 0..3 {
+            let ids = se.formation_ids(i);
+            let mut d: Vec<u8> = ids.iter().copied().filter(|&x| x != 0).collect();
+            d.sort_unstable();
+            d.dedup();
+            assert!(d.len() <= MAX_DISTINCT_SPECIES, "formation {i}: {ids:?}");
+            assert!(
+                table.formation_cost(&ids) <= budget,
+                "formation {i}: {ids:?}"
+            );
+        }
+        assert_eq!(se.count(0), 3, "monster count preserved");
+        // Formation 0: costliest (10) merged into cheapest (30) -> [30,20,30];
+        // still over? cost 110 <= 120, distinct 2 - done in one step.
+        assert_eq!(se.formation_ids(0), vec![30, 20, 30]);
+        // Formation 1: [10,20] -> merge 10 into 20 -> [20,20] cost 60.
+        assert_eq!(se.formation_ids(1), vec![20, 20]);
+        // Compliant formation untouched.
+        assert_eq!(se.formation_ids(2), vec![40, 40, 30]);
+        // Scripted formation untouched.
+        assert_eq!(se.formation_ids(3), vec![10, 20, 30]);
+        // Idempotent.
+        let (fixed2, changed2) = se.enforce_species_limits(&table, budget, MAX_DISTINCT_SPECIES);
+        assert_eq!((fixed2, changed2), (0, 0));
+    }
 
     #[test]
     fn shuffle_preserves_id_multiset_and_counts() {
