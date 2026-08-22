@@ -1586,7 +1586,24 @@ fn fieldize_pack_at(
             entry_len
         );
     }
-    out.resize(entry_len, 0);
+    // Preserve the RETAIL bytes past the rebuilt payload instead of
+    // zero-filling: the band after the compressed streams carries the
+    // battle-VDF effect payload the scene loader registers off this
+    // entry's header words at every battle load (see the battle-VDF
+    // note above sec0). Zero-filling it fed the battle effect system
+    // zeros - measured live as thin garbage streaks over the Spirit
+    // charge (the `delilas_gi_spirit_artifact` catalogue state), and
+    // statically as ~4.5 KB of retail-nonzero bytes at the entry tail
+    // (0x186DB..0x197FF on the USA disc) that the rebuild wiped. The
+    // copy keeps every retained byte at its ORIGINAL offset (the tail
+    // is addressed relative to the raw entry base); the stretch between
+    // the shorter rebuilt streams and retail's stream end is stale
+    // compressed data nothing reads.
+    let payload_end = out.len();
+    let retail_rest = prot_0874
+        .get(payload_end..entry_len)
+        .ok_or_else(|| anyhow::anyhow!("retail entry shorter than its own length"))?;
+    out.extend_from_slice(retail_rest);
     Ok(FieldizedPack {
         entry: out,
         warnings,
