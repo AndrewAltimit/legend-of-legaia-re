@@ -2400,3 +2400,30 @@ topics = ["nivora", "Delilas", "Gi", "Blazing Slash", "spell 0x79", "cast module
 phase = "battle"
 expected_game_mode = 0x15
 expected_active_scene = "nilboa"
+
+[[scenarios]]
+slot = 7
+label = "delilas_gi_move_input_hand_gap"
+backup_fingerprint = "cf06081fa6e864ca2e6c0c2455317a850142fad31d78760d4f732db0c1495a73"
+description = "DELILAS PARTY SWAP MOD savestate - disc patched with --delilas-party lu,gi,che (rom 'Legend of Legaia (USA).legaia-patcher-1787410245104.bin'): battle, Gi (Noa slot) waiting for move input with his hand visibly DISCONNECTED from the arm - a live repro of the playerize hand/variant seam on the current build. Patched-disc state: RAM carries the patched player files, so the defect is dumpable straight from this state"
+topics = ["delilas party", "Gi", "playerize", "hand gap", "mesh seam", "patched disc", "bug repro"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[[scenarios]]
+slot = 8
+label = "delilas_che_move_input_mesh_gaps"
+backup_fingerprint = "7b5060df8c86fea91faaa3095e8cf64a553eef388cac5f49b87c5a85a7b25204"
+description = "DELILAS PARTY SWAP MOD savestate - same lu,gi,che-patched rom as delilas_gi_move_input_hand_gap: battle, Che (Gala slot) waiting for move input with gaps in his mesh (the hammer among them) - live repro of missing/cropped geometry in the playerized battle form on the current build"
+topics = ["delilas party", "Che", "playerize", "mesh gaps", "hammer", "patched disc", "bug repro"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[[scenarios]]
+slot = 9
+label = "delilas_gi_spirit_artifact"
+backup_fingerprint = "75e9f97dd640bfb27a17201b7c28728713898b00b4cdb53d66cf71114e15e61d"
+description = "DELILAS PARTY SWAP MOD savestate - same lu,gi,che-patched rom as delilas_gi_move_input_hand_gap: battle, Gi mid-SPIRIT - load and the stretched-mesh visual artifact shows about one second later. THE repro state for the Spirit stretch (task-60 class): patched RAM, natural battle context, artifact on a timer from load"
+topics = ["delilas party", "Gi", "Spirit", "mesh stretch", "equipment variant window", "patched disc", "bug repro"]
+phase = "battle"
+expected_game_mode = 0x15
