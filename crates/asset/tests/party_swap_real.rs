@@ -160,6 +160,49 @@ fn every_pairing_playerizes_and_reassembles() {
                     ups.len()
                 );
             }
+            // Hand-seat law: each baked HAND's local centroid stays as
+            // close to its own pivot as the retail hand's did (+ slack).
+            // A sibling hand can be authored far from its pivot (Gi's
+            // armA fist 60 units, Che's hammer-fist 150 - their rigs
+            // swing the fist from up the arm), and the player channels
+            // anchor AT the wrist; without the playerize centroid seat
+            // the fist floats a forearm-length off the arm - a defect
+            // every pivot-FK gap probe is blind to, because the pivot
+            // chain stays closed while the GEOMETRY sits off-pivot
+            // (the `delilas_gi_move_input_hand_gap` catalogue state).
+            let centroid_mag = |o: &legaia_tmd::Object| -> f32 {
+                let n = o.vertices.len().max(1) as f32;
+                let s = o.vertices.iter().fold([0f32; 3], |a, v| {
+                    [a[0] + v.x as f32, a[1] + v.y as f32, a[2] + v.z as f32]
+                });
+                (s[0] * s[0] + s[1] * s[1] + s[2] * s[2]).sqrt() / n
+            };
+            let hand_mag = |file: &[u8]| -> [f32; 2] {
+                let pack = battle_data_pack::parse(file).expect("pack");
+                let asm = battle_char_assembly::assemble_character(file, &pack, &[0u8; 5])
+                    .expect("assemble");
+                let tmd = legaia_tmd::parse(&asm.tmd).expect("tmd");
+                [5usize, 8].map(|c| {
+                    let ch = rig.channel_for_canonical[c];
+                    let oi = asm
+                        .bone_tags
+                        .iter()
+                        .position(|&t| t == ch)
+                        .expect("hand object");
+                    centroid_mag(&tmd.objects[oi])
+                })
+            };
+            let retail_mag = hand_mag(&player_file);
+            let baked_mag = hand_mag(&out.file);
+            for k in 0..2 {
+                assert!(
+                    baked_mag[k] <= retail_mag[k] + 12.0,
+                    "{who} <- {source_id}: hand {k} centroid {:.1} vs retail {:.1} - \
+                     the fist is baked off its wrist",
+                    baked_mag[k],
+                    retail_mag[k]
+                );
+            }
         }
     }
 }

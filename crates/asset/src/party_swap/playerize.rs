@@ -968,6 +968,46 @@ fn playerize_scaled(
                 seat_terminal_axial(&mut o, dst_head, &dst_rest[ch], pb.x_dst)?;
             }
         }
+        if c == 5 || c == 8 {
+            // Seat each HAND by centroid match: translate the baked fist
+            // so its local centroid lands where the replaced hand's was.
+            // A sibling's hand can be authored far from its own pivot
+            // (Gi's armA fist sits 60 units out - his rig swings it from
+            // up the arm; Che's hammer-fist 150), and the player channels
+            // anchor the pivot AT the wrist, so an unseated fist floats a
+            // forearm-length off the arm (the move-input floater in the
+            // `delilas_gi_move_input_hand_gap` catalogue state, pinned to
+            // the armA hand object by live bisection). The head's axial
+            // near-edge seat is the wrong instrument here (measured: it
+            // slides Gi's fist further out) - a hand is a closed blob
+            // whose only seam is the wrist, and matching centroids puts
+            // it exactly in the local region the retail hand occupied
+            // under every clip. Feet stay unseated: their ankles go
+            // through `normalize_battle_rest_feet` and re-seating would
+            // fight that alignment.
+            if let Some(dst_part) = dst_model.get(ch) {
+                let cen = |obj: &ModelObject| -> Option<[f32; 3]> {
+                    if obj.vertices.is_empty() {
+                        return None;
+                    }
+                    let n = obj.vertices.len() as f32;
+                    let s = obj.vertices.iter().fold([0f32; 3], |a, v| {
+                        [a[0] + v[0] as f32, a[1] + v[1] as f32, a[2] + v[2] as f32]
+                    });
+                    Some([s[0] / n, s[1] / n, s[2] / n])
+                };
+                if let (Some(cb), Some(cd)) = (cen(&o), cen(dst_part)) {
+                    let shift = [cd[0] - cb[0], cd[1] - cb[1], cd[2] - cb[2]];
+                    for v in o.vertices.iter_mut() {
+                        *v = [
+                            round_coord(v[0] as f32 + shift[0])?,
+                            round_coord(v[1] as f32 + shift[1])?,
+                            round_coord(v[2] as f32 + shift[2])?,
+                        ];
+                    }
+                }
+            }
+        }
         compact_object(&mut o);
         baked.push(o);
     }
