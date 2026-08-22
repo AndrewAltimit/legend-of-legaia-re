@@ -1,11 +1,14 @@
--- autorun_special_cast_chain_dump.lua
+-- autorun_special_cast_enemy_control.lua
 --
--- Pinpoint the renderer hang at the Megaton Press phase-0xA boundary on a
--- player cast: breakpoint the wild read (0x08044880) and, at the hit, dump
--- every battle actor's render fields (+0x4 header, +0x44 mesh chain, +0x56
--- render mode) and every seated part-actor in the 0x60-slot effect pool at
--- DAT_801C90F0, to attribute the garbage chain. Also logs the party slot-0
--- anim pointer table entries 0x0A/0x0B while the module runs.
+-- ENEMY-caster control run for a capture-class cast: load a battle state
+-- and force the first monster-seat actor's action to the cast (writes
+-- +0x1DE = 2 Magic, +0x1DF = spell id, +0x1DD = target seat), then log
+-- the phase walk. The control side of the player-cast probes: whatever
+-- the module does here, it does with its retail caster kind.
+--
+-- Env: LEGAIA_SSTATE (required), LEGAIA_FRAMES (default 1700),
+--      LEGAIA_SPELL (default 0x7A), LEGAIA_TARGET_SEAT (default 0),
+--      LEGAIA_NO_POKE=1 to observe without forcing.
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
 

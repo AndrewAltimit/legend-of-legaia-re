@@ -2198,7 +2198,14 @@ caster kinds.
 
 Megaton Press (PROT 959) is audited and probe-verified end-to-end; the
 Che-mapped slot routes to it, and the other two siblings keep the art-side
-reskin until 958/960 pass the same ladder. The hook stub lives in the SCUS
+reskin until 958/960 pass the same ladder. The first rung of that ladder is
+in `delilas_cast` but not yet wired to the apply: both modules' staged-id
+walks fold into the two authorable rows (`patch_module_958` /
+`patch_module_960`), including 960's **paired stage/confirm gate** - its
+phase-5 arm re-reads the playing id (`lbu +0x1D9`) against the same literal
+it stages, so the compare must move with the stage or the phase stalls
+forever. Module anatomy (image shapes, phase machine, staging ABI, the
+seat-0 damage hardcode): [cast-module.md](../subsystems/cast-module.md). The hook stub lives in the SCUS
 injection gap, so the route composes with neither `--shiny-seru` nor
 `--show-super-arts`; on a conflict the patch keeps the art-side signature
 and says so in the summary.

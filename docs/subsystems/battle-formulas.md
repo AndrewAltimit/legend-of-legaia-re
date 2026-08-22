@@ -852,7 +852,9 @@ sits on that floor and is near-flat against the defender's defence, while a
 respecting hit - whose `>> 4` fold keeps it clear of the arm - drops as defence
 rises. Mirrored in `engine-vm::battle_damage_wrappers`.
 
-The full wrapper census over every capture-class module (byte-scan of the
+The full wrapper census over every capture-class module (module anatomy -
+paging, phase machine, and the seat-0-hardcoded apply sites these wrapper
+calls feed - is on [cast-module.md](cast-module.md); byte-scan of the
 extracted entries for the `jal` words `0x0C0775AD` bypass / `0x0C07752C`
 respect, each module's own extent bounded by the next entry's head - the
 `09xx` extents **tile exactly**, so every offset below names one physical

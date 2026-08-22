@@ -107,7 +107,8 @@ character's skeleton bone count. See
 
 An action id is one entry, but a **move** need not be. The per-spell cast
 modules paged into the slot-B overlay window for a capture-class cast
-([`spell-table.md` § Capture-class module index](spell-table.md#capture-class-module-index-prot-09350966))
+([`spell-table.md` § Capture-class module index](spell-table.md#capture-class-module-index-prot-09350966);
+module anatomy on [cast-module.md](../subsystems/cast-module.md))
 drive the caster's clip themselves, writing `actor[+0x1DA]` directly, and a
 boss signature attack is several archive entries staged in sequence - a
 wind-up, a carry and a strike - rather than one long clip. Nothing in the
@@ -120,27 +121,39 @@ victim's clip, not the caster's, and the ~936-byte tail the modules share -
 including a `sb zero,0x1DA(s0)` at `0x801F96F4` - is a common epilogue rather
 than a per-move stage. For the three Delilas siblings:
 
-| Module | Cast | Caster stages | Closing entry |
+| Module | Cast | Caster stages (entry indices, hex) | Closing entry |
 |---|---|---|---|
-| PROT 958 | Gi, `0x79` | `10 -> 11 -> 12` | `13` |
-| PROT 959 | Che, `0x7A` | `10 -> 11` | none |
-| PROT 960 | Lu, `0x7B` | `14 -> 12 -> 13` | `15` |
+| PROT 958 | Gi, `0x79` | `0x0A -> 0x0B -> 0x0C -> 0x0A -> 0x0B` | `0x0D` |
+| PROT 959 | Che, `0x7A` | `0x0A -> 0x0B` | none |
+| PROT 960 | Lu, `0x7B` | `0x0E -> 0x0C -> 0x0D` | `0x0F` |
 
-Two staging idioms appear. A **literal** seeds or jumps the chain: `li v0,10`
-at `0x801F6F88` (Gi), `li v1,10` at `0x801F6F40` (Che), and Lu's whole chain
-as three of them - `li v0,14` at `0x801F7744`, `li v1,12` at `0x801F7A6C`,
-`li v0,13` at `0x801F7AE0`. A **stepper** advances it in place,
-`lbu +0x1DA; addiu +1; sb`: Gi's at `0x801F72C0` / `0x801F7628` /
-`0x801F854C`, Che's single one at `0x801F768C`. The closing entries are
-literals too - `li v0,13` at `0x801F89B0` and `li v0,15` at `0x801F8214`.
+Two staging idioms appear. A **literal** seeds or jumps the chain:
+`li v0,0xA` at `0x801F6F88` (Gi), `li v1,0xA` at `0x801F6F40` (Che), and
+Lu's whole chain as three of them - `li v0,0xE` at `0x801F7744`,
+`li v1,0xC` at `0x801F7A6C`, `li v0,0xD` at `0x801F7AE0`. A **stepper**
+advances it in place, `lbu +0x1DA; addiu +1; sb`: Gi's at `0x801F72C0` /
+`0x801F7628` / `0x801F854C`, Che's single one at `0x801F768C` - and one
+stepper **rewinds**: Gi's `addiu v0,v0,-2` at `0x801F839C` steps `0x0C`
+back to `0x0A`, replaying the wind-up/smash pair before the close, so his
+walk is not linear. The closing entries are literals too - `li v0,0xD` at
+`0x801F89B0` and `li v0,0xF` at `0x801F8214`.
 
-The archive agrees with the scan. Gi's `10`/`11`/`12` are his three
+The walks are pinned two ways: the staging-site scan above, and per-frame
+capture of natural duel casts (the choreography watcher
+`autorun_delilas_enemy_cast_watch.lua` logs the `+0x1D9..+0x1DB`
+transitions against the module phase byte) - the capture is what exposed
+Gi's rewind. A staging literal can also carry a **paired confirmation
+literal** elsewhere in the module (a phase gate on `lbu +0x1D9`), so no
+staging site may be edited in isolation - see
+[cast-module.md](../subsystems/cast-module.md).
+
+The archive agrees with the scan. Gi's `0x0A`/`0x0B`/`0x0C` are his three
 consecutive tag-`0x23` entries (11 / 30 / 23 frames, rates 1 / 2 / 2) with
-`13` his tag-`0x22` close; Che's `10`/`11` are his only two tag-`0x23`
-entries (50 / 50 frames) and his archive carries no tag-`0x22` entry at all,
-which is why his module stages no closing index; Lu's `14` is her tag-`0x23`
-entry and `12`/`13` her two tag-`0x0C` entries (16 / 19 / 39 frames, rates
-1 / 2 / 2), with `15` her tag-`0x22` close.
+`0x0D` his tag-`0x22` close; Che's `0x0A`/`0x0B` are his only two
+tag-`0x23` entries (50 / 50 frames) and his archive carries no tag-`0x22`
+entry at all, which is why his module stages no closing index; Lu's `0x0E`
+is her tag-`0x23` entry and `0x0C`/`0x0D` her two tag-`0x0C` entries
+(16 / 19 / 39 frames, rates 1 / 2 / 2), with `0x0F` her tag-`0x22` close.
 
 Two consequences for anyone reading a chain out of the archive. **The stages
 are addressed by entry index, not by tag** - Gi's and Che's are all tagged

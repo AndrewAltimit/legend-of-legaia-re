@@ -43,7 +43,7 @@ The class byte selects which battle-action band executes the cast
 |---|---|---|
 | `0x32` (`'2'`) | Player summon | Summon band `0x32..0x38`; pages the per-summon overlay `FUN_8003EC70(id - 0x79)` (PROT 903..); damage attributed to the slot-7 cast body ([battle-formulas.md](../subsystems/battle-formulas.md)). |
 | `0x14` | Plain cast | Ordinary magic band `0x28..0x2E`, caster-anim playout (Tail Fire `0x27`, Astral Wave `0x6A`, ...). |
-| `0x63` (`'c'`) | Capture-class | Routes `0x28 → 0x6E..0x71`; pages the per-spell module `FUN_8003EC70(record[+1] + 0x28)` (→ PROT `935..966`) and starts the XA cue `FUN_8003EAE4(0, record[+1])`. Covers Seru capture, the item-capture Amulet, **and the boss cinematic casts**. The `+1` sub-id names the module - the full sub-id → PROT-entry → spells map is [below](#capture-class-module-index-prot-09350966). The module carries its own baked damage constants and picks the guard-respecting or guard-bypassing finisher wrapper ([battle-formulas.md](../subsystems/battle-formulas.md)). |
+| `0x63` (`'c'`) | Capture-class | Routes `0x28 → 0x6E..0x71`; pages the per-spell module `FUN_8003EC70(record[+1] + 0x28)` (→ PROT `935..966`) and starts the XA cue `FUN_8003EAE4(0, record[+1])`. Covers Seru capture, the item-capture Amulet, **and the boss cinematic casts**. The `+1` sub-id names the module - the full sub-id → PROT-entry → spells map is [below](#capture-class-module-index-prot-09350966). The module carries its own baked damage constants and picks the guard-respecting or guard-bypassing finisher wrapper ([battle-formulas.md](../subsystems/battle-formulas.md)); module anatomy - image shapes, phase machine, staging ABI - on [cast-module.md](../subsystems/cast-module.md). |
 
 ### Capture-class module index (PROT `0935..0966`)
 

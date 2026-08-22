@@ -1326,9 +1326,11 @@ framing question and `LEGAIA_DIAG_POSE` the per-frame mesh one.
 
 ### One staged-anim channel: `actor[+0x1DA]`
 
-Which clip an actor plays is a **single byte**, `actor[+0x1DA]`, with
-`+0x1DB` as its committed mirror. Every producer writes that same byte, and
-the last writer wins:
+Which clip an actor plays is a **single byte**, `actor[+0x1DA]`, with two
+committed mirrors: `+0x1D9` (the *playing* id - what the end-of-clip
+chains and a cast module's confirm gates read back) and `+0x1DB` (what the
+camera-variant dispatch in `FUN_801D5854` keys on). Every producer writes
+that same staged byte, and the last writer wins:
 
 | Producer | Site | What it writes |
 |---|---|---|
@@ -1337,9 +1339,12 @@ the last writer wins:
 | Damage arm, flinch | `FUN_800402F4` `0x80042124` | `actor[+0x1EF]` (tag-2 entry) |
 | Damage arm, knockdown | `FUN_800402F4` `0x80042118` | `actor[+0x1F1]` (tag-4 entry) |
 | Knockdown → get-up chain | `FUN_8004AD80` `0x8004B690` | `actor[+0x1F2]` (tag-5 entry) |
+| Capture-class cast module | slot-B module code ([cast-module.md](cast-module.md)) | caster stage literals / steppers; victim `actor[+0x1F1]` |
 
-The commit `FUN_8004AD80` copies `+0x1DA` into `+0x1DB` unconditionally
-(`0x8004AEB0..0x8004AEB8`); there is no reaction guard anywhere on that path.
+The commit `FUN_8004AD80` snaps `+0x1D9 = +0x1DA` and copies `+0x1DB`
+unconditionally (`0x8004AEB0..0x8004AEB8` for the `+0x1DB` copy; see
+`ghidra/scripts/funcs/8004ad80.txt`); there is no reaction guard anywhere
+on that path.
 So a hit reaction is not a mode an actor is *in* - it is just the current
 value of the staged byte, and the next thing the SM stages replaces it.
 
@@ -1600,7 +1605,7 @@ Combatant struct fields surfaced by helpers analysed so far:
 | `+0x14C..+0x152` / `+0x172..+0x174` / `+0x150..+0x158` | u16 | HP / MP / current / max - three-way mirror layout. |
 | `+0x1BC..+0x1BE` | u8 | "Show damage" overlay byte triplet. |
 | `+0x1DF` | u8 | First byte of the **arts / queued-move command buffer** (`+0x1DF..=+0x1E3`), written by the command commit. The monster size byte is *not* copied here - `FUN_800513F0` stores `size << 5` to `actor+0x58`. |
-| `+0x1EF..+0x1F3` | u8 | Per-element spell-slot index (from the spell ids `2,3,4,5,0xB`). |
+| `+0x1EF..+0x1F3` | u8 | Hit-reaction staged-anim ids - slot indices of the block entries tagged `2/3/4/5/0xB` (flinch / knockdown / get-up / Block at `+0x1F3`), filled by `FUN_80054CB0`; cast modules stage the victim's reaction from `+0x1F1`. Not element data - those tags double as elemental markers only inside the `+0x4C` spell list. |
 | `+0x230` | u32 | Pointer to the monster's **battle-model TMD** (set from record `+0x04`; **not** XP/drop). `FUN_800495C8` walks it as a `0x1C`-stride object table. See [Monster mesh](#monster-mesh-record-0x04). |
 
 ## Stage seats (`FUN_800513F0` placement tables)

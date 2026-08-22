@@ -25,10 +25,17 @@
 #                        (resolved to a per-emulator save-state path;
 #                        overrides --sstate)
 #   --out PATH           probe CSV / output path
+#   --out-dir DIR        directory for all probe outputs (probe.out_path);
+#                        defaults to captures/<lua-stem>/<iso-ts>/ when
+#                        neither --out nor --out-dir is given
 #   --frames N           post-load capture vsyncs (default 600)
 #   --bios PATH          PSX BIOS (default ~/.mednafen/firmware/SCPH1001.BIN)
 #   --iso PATH           disc image (default ~/Downloads/...)
 #   --pcsx PATH          pcsx-redux binary (default ~/Tools/pcsx-redux/pcsx-redux)
+#                        Env LEGAIA_MCD1 / LEGAIA_MCD2 override the memory-card
+#                        pair (no flag form; -memcard2 is broken in this build -
+#                        main.cc assigns argPath1 to slot 2 - so card choice
+#                        must go through the config the runner writes)
 #   --fast               drop -interpreter -debugger (recompiler ~10-50x
 #                        faster; Lua BPs do NOT fire in this mode - use
 #                        only for vsync-event-only probes)

@@ -1,11 +1,16 @@
--- autorun_special_cast_alias_row.lua (derived)
+-- autorun_special_cast_alias_row.lua
 --
--- Pinpoint the renderer hang at the Megaton Press phase-0xA boundary on a
--- player cast: breakpoint the wild read (0x08044880) and, at the hit, dump
--- every battle actor's render fields (+0x4 header, +0x44 mesh chain, +0x56
--- render mode) and every seated part-actor in the 0x60-slot effect pool at
--- DAT_801C90F0, to attribute the garbage chain. Also logs the party slot-0
--- anim pointer table entries 0x0A/0x0B while the module runs.
+-- Player-cast experiment rig for a capture-class cast: force the chosen
+-- party slot's action to the cast, optionally alias the caster's action
+-- table row 0x0B onto row 0x0A's record (ptr[0xB] <- ptr[0xA], the stage
+-- boundary the retail Block record chokes on), optionally inject RAM
+-- (a blob at a VA, or word pokes) before the cast fires, and trace the
+-- phase walk + finale.
+--
+-- Env: LEGAIA_SSTATE (required), LEGAIA_FRAMES, LEGAIA_CAST_SLOT
+--      (party slot, default 0), LEGAIA_NO_ALIAS=1 to skip the row alias,
+--      LEGAIA_INJECT_BLOB=path + LEGAIA_INJECT_VA=addr for a blob,
+--      LEGAIA_POKE_FILE / LEGAIA_POKE_WORDS for word pokes.
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
 

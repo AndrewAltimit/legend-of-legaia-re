@@ -667,8 +667,11 @@ Disc census (every equippable id in every file, disc-gated
 section-2/3/4 slot carries a valid record at `+0x04` (and section 4 at
 `+0x08`), `parts` = the character's skeleton bone count (up to +2 channels
 on slots with attach objects), stream end inside the section footprint.
-The record's `+0x00` tag is a presentation-class id (`0x0E..0x1F`
-observed), **not** the runtime slot. Sections with `attach_obj_count > 0`
+The record's `+0x00` byte is **not** the runtime slot - and not a class
+id: it sits in the entry head the art bank uses for the per-strike
+**power run** (below), and the observed band (`0x0E..0x1F`) lies inside
+that power encoding
+([art-data.md](art-data.md#damage-power-byte---pinned-to-record0-0x24)). Sections with `attach_obj_count > 0`
 additionally carry attach-object records; `FUN_80052FA0` matches each
 attach record's `+0x07` **attach key** against the action entries'
 `+0x77` bytes (then the art bank's `+0x9B` keys) and links the attach copy
@@ -710,8 +713,13 @@ The self-relative word at record[0] `+0x58` locates the bank:
 +0x10  char name[20]      ; inline art-name string (NUL-terminated ASCII;
                           ; empty on the base / un-named records)
 +0x24  action entry       ; 0xAC bytes - the standard entry header:
-       +0x00 u8  tag          ; presentation-class id (0x16..0x1F on named
-                              ; arts, 0 on base records)
+       +0x00 u8  power[]      ; per-strike POWER run (= record +0x24):
+                              ; FUN_801EC3E4 indexes it by the strike
+                              ; cursor (actor +0x1F4); run length = the
+                              ; entry's event-frame strike count; the
+                              ; 0x16..0x1F values on named arts are the
+                              ; UDF/LDF power encoding (art-data.md),
+                              ; 0 on base records
        +0x04/+0x08 u32        ; attach pointers - 0 on disc, written at
                               ; runtime by FUN_80052FA0's attach-key scan
        +0x77 u8  attach_key   ; matched against equipment attach records
