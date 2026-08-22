@@ -12,7 +12,9 @@
 //! reproduces from a memorable string seed).
 
 use js_sys::{Object, Reflect, Uint8Array};
+use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::JsFuture;
 
 use legaia_patcher::apply;
 use legaia_patcher::disc::DiscPatcher;
@@ -41,6 +43,62 @@ fn parse_encounter_scope(s: &str) -> apply::EncounterScope {
 
 fn err(msg: impl AsRef<str>) -> JsValue {
     JsValue::from_str(msg.as_ref())
+}
+
+/// Resolve after one `setTimeout(..., 0)` macrotask, so the browser can
+/// repaint between the synchronous patch stages. A microtask
+/// (`Promise.resolve()`) is not enough - the renderer only paints at a
+/// macrotask boundary. Looked up via the global object so it works in both
+/// window and worker scopes; a scope without `setTimeout` resolves
+/// immediately (no paint, but the patch still completes).
+async fn macrotask_yield() {
+    let promise = js_sys::Promise::new(&mut |resolve, _reject| {
+        let global = js_sys::global();
+        let scheduled = Reflect::get(&global, &JsValue::from_str("setTimeout"))
+            .ok()
+            .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
+            .and_then(|f| f.call2(&global, &resolve, &JsValue::from(0)).ok());
+        if scheduled.is_none() {
+            let _ = resolve.call0(&JsValue::NULL);
+        }
+    });
+    let _ = JsFuture::from(promise).await;
+}
+
+/// Stage-progress reporter for the async patch entry points. Holds the
+/// page-supplied JS callback (when one is passed); each [`Progress::stage`]
+/// invokes it with `(stage_index, stage_count, label)` and then yields one
+/// macrotask so the page's bar actually paints. Stages are the feature
+/// blocks the patch applies sequentially - a couple dozen yields per run,
+/// never one per inner-loop item. Without a callback nothing is reported
+/// and nothing yields.
+struct Progress {
+    callback: Option<js_sys::Function>,
+    index: u32,
+    count: u32,
+}
+
+impl Progress {
+    fn new(callback: Option<js_sys::Function>, count: u32) -> Self {
+        Self {
+            callback,
+            index: 0,
+            count,
+        }
+    }
+
+    async fn stage(&mut self, label: &str) {
+        let idx = self.index;
+        self.index += 1;
+        let Some(cb) = &self.callback else { return };
+        let _ = cb.call3(
+            &JsValue::NULL,
+            &JsValue::from(idx),
+            &JsValue::from(self.count),
+            &JsValue::from_str(label),
+        );
+        macrotask_yield().await;
+    }
 }
 
 /// Parse one arts-AP token: `[CHARACTER:]COMBO=AMOUNT` (`Vahn:RDLDL=10`,
@@ -107,6 +165,10 @@ fn parse_id_eq_u32(tok: &str) -> Option<(u8, u32)> {
 pub fn resolve_seed(seed: &str) -> String {
     seed_from_str(seed).to_string()
 }
+
+/// Number of `prog.stage(..)` boundaries in [`patch_rom`] (the `stage_count`
+/// every progress-callback invocation carries).
+const PATCH_ROM_STAGES: u32 = 35;
 
 /// Patch a user-supplied disc image with the chosen randomizer settings.
 ///
@@ -260,9 +322,15 @@ pub fn resolve_seed(seed: &str) -> String {
 /// moved scenes' lines. Per-entry skips (a line over budget, a wrong-disc
 /// mismatch) are counted in the summary but never abort the patch. Returns
 /// `{ data, summary, seed }`.
+///
+/// Async: the optional trailing `progress` callback is invoked with
+/// `(stage_index, stage_count, label)` at each feature-stage boundary, and
+/// the function yields one macrotask after each call so the page can paint
+/// a progress bar instead of looking hanged for the whole run. Without the
+/// callback no yields happen and the patch runs straight through.
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
-pub fn patch_rom(
+pub async fn patch_rom(
     image: Vec<u8>,
     seed: &str,
     lang_pack: &str,
@@ -317,6 +385,7 @@ pub fn patch_rom(
     super_art_powers: &str,
     show_super_arts: bool,
     enemy_attack_count: &str,
+    progress: Option<js_sys::Function>,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -371,6 +440,8 @@ pub fn patch_rom(
         }
     }
 
+    let mut prog = Progress::new(progress, PATCH_ROM_STAGES);
+    prog.stage("parsing disc image").await;
     let mut patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
 
     // The valid item pool (from SCUS) is needed only by the `random` modes.
@@ -407,6 +478,7 @@ pub fn patch_rom(
     // the `random` drop/chest/steal modes can hand them out. With the Delilas
     // Challenge also on, they become the course's full-clear reward (the grant
     // half is installed with the challenge below).
+    prog.stage("custom items").await;
     if custom_items {
         match apply::inject_custom_item_set(&mut patcher) {
             Ok(true) => summary
@@ -435,6 +507,7 @@ pub fn patch_rom(
     // English names - the equipment-drop gear pool - must still see the
     // retail names; nothing in the randomizer relocates a SCUS string, so
     // translating them at the end is always safe.
+    prog.stage("language pack: dialog text").await;
     let lang_pack = lang_pack.trim();
     let parsed_pack = if lang_pack.is_empty() {
         None
@@ -448,6 +521,7 @@ pub fn patch_rom(
         lang_report.merge(report);
     }
 
+    prog.stage("monster drops").await;
     // Normal drop table first: reassign the monsters that already drop something.
     match drops_mode {
         Some(m) => {
@@ -472,6 +546,7 @@ pub fn patch_rom(
     // Equipment-as-drops layers on top via a code hook into the battle-end
     // reward routine: a low-chance roll grants one extra random equipment piece
     // in addition to the normal drop, which is never disturbed.
+    prog.stage("equipment bonus drops").await;
     if equipment_drops {
         let rep = apply::inject_equipment_bonus_drop(
             &mut patcher,
@@ -484,6 +559,7 @@ pub fn patch_rom(
         ));
     }
 
+    prog.stage("random encounters").await;
     match enc_mode {
         Some(m) => {
             let scope = parse_encounter_scope(encounter_scope);
@@ -519,6 +595,7 @@ pub fn patch_rom(
 
     // Run-away EXP: a code hook in the escape teardown banks a slice of a fled
     // fight's experience into the party (vanilla gives nothing for fleeing).
+    prog.stage("run-away EXP hook").await;
     if flee_exp {
         let rep = apply::inject_flee_exp(&mut patcher, legaia_patcher::flee_exp::DEFAULT_PCT)
             .map_err(|e| err(format!("flee-exp: {e}")))?;
@@ -533,6 +610,7 @@ pub fn patch_rom(
     // Enemy ally ("charm"): a code hook in battle setup flags the frontmost enemy
     // so it fights on the player's side (works on bosses); a one-word widen of the
     // victory check keeps the charmed enemy from being one you must defeat.
+    prog.stage("enemy-ally hook").await;
     if enemy_ally {
         let rep = apply::inject_enemy_ally(&mut patcher, legaia_patcher::enemy_ally::DEFAULT_PCT)
             .map_err(|e| err(format!("enemy-ally: {e}")))?;
@@ -549,6 +627,7 @@ pub fn patch_rom(
     // It shares the verified-dead SCUS arena bytes (0x8007AE00) with the
     // Delilas Challenge's dome-course cave, so the two cannot coexist; the
     // Delilas Challenge takes precedence and shiny-Seru yields with a note.
+    prog.stage("shiny Seru").await;
     if shiny_seru && delilas_challenge {
         summary.push_str(
             "shiny-seru: skipped (shares SCUS arena bytes with the Delilas Challenge, which wins)\n",
@@ -570,6 +649,7 @@ pub fn patch_rom(
     // plus their routines and tables in dead space, a replaced list pager in
     // PROT 0898 whose tail records a performed Super Art, and a detour from the
     // Super applier into it). Spoiler-safe: the count, never the roster.
+    prog.stage("Super Arts move list").await;
     if show_super_arts {
         let rep = apply::inject_super_art_list(&mut patcher)
             .map_err(|e| err(format!("show-super-arts: {e}")))?;
@@ -585,6 +665,7 @@ pub fn patch_rom(
     // Seru trading: a vendor in shops offers to trade a party member's Seru-magic for
     // a different one (time-bucketed, deterministic from the seed). All code + data is
     // hosted in the menu overlay, so it composes with every other feature here.
+    prog.stage("Seru trading").await;
     if seru_trade {
         apply::inject_trade_full(&mut patcher, seed_n)
             .map_err(|e| err(format!("seru-trade: {e}")))?;
@@ -605,6 +686,7 @@ pub fn patch_rom(
     // resist-ladder-bypassing wrapper to the guard-respecting one, so elemental
     // jewels / guards / All Guard apply to Xain's Bloody Horns / Terio Punch,
     // Cort's Guilty Cross, and the Delilas trio's signature moves. Seedless.
+    prog.stage("jewel fix").await;
     if jewel_fix {
         let rep =
             apply::apply_jewel_fix(&mut patcher).map_err(|e| err(format!("jewel-fix: {e}")))?;
@@ -620,6 +702,7 @@ pub fn patch_rom(
     // monster whose approach animation dies mid-approach is re-staged and
     // resumes walking instead of parking the battle in the state-0x19 range
     // poll forever. Seedless.
+    prog.stage("approach-softlock fix").await;
     if approach_softlock_fix {
         let rep = apply::apply_approach_fix(&mut patcher)
             .map_err(|e| err(format!("approach-softlock-fix: {e}")))?;
@@ -641,6 +724,7 @@ pub fn patch_rom(
     // coins. koin1 script edit + a companion arena/SCUS code injection;
     // seedless. A koin1 MAN another edit has already grown past its
     // zero-slack footprint skips with a note instead of failing the run.
+    prog.stage("Delilas Challenge").await;
     if delilas_challenge {
         match apply::apply_delilas_challenge(&mut patcher, custom_items) {
             Ok(rep) if rep.changed => summary.push_str(&format!(
@@ -665,6 +749,7 @@ pub fn patch_rom(
     // point cost of every prize row granting that item; the price also gates
     // when the prize appears. A malformed pair is reported and skipped rather
     // than aborting the whole patch.
+    prog.stage("prices and gauge tuning").await;
     let fishing_prices = fishing_prices.trim();
     if fishing_prices.is_empty() {
         summary.push_str("fishing-price: untouched\n");
@@ -779,6 +864,7 @@ pub fn patch_rom(
     // - the SCUS quick-travel cell, the world-map labels, and the scene-entry
     // banners - so one line changes every place the game shows the name. A bad
     // entry is reported and skipped.
+    prog.stage("location renames").await;
     let location_renames = location_renames.trim();
     if location_renames.is_empty() {
         summary.push_str("rename-location: untouched\n");
@@ -825,6 +911,7 @@ pub fn patch_rom(
     // tokens (`RDLDL=0x16`). `VALUE` is a power-encoding byte (`0` disables, or
     // `0x0C..=0x1F` = a damage tier; lower = weaker). A bad entry is reported
     // and skipped.
+    prog.stage("arts tuning").await;
     let arts_powers = arts_powers.trim();
     if arts_powers.is_empty() {
         summary.push_str("arts-power: untouched\n");
@@ -972,6 +1059,7 @@ pub fn patch_rom(
         }
     }
 
+    prog.stage("treasure chests").await;
     match chest_mode {
         Some(m) => {
             // Protect every quest / key / story item by default (same disc-derived
@@ -999,6 +1087,7 @@ pub fn patch_rom(
         None => summary.push_str("chests: untouched\n"),
     }
 
+    prog.stage("town shops").await;
     match shop_mode {
         Some(m) => {
             let rep = apply::randomize_shops(&mut patcher, seed_n, m)
@@ -1011,6 +1100,7 @@ pub fn patch_rom(
         None => summary.push_str("shops: untouched\n"),
     }
 
+    prog.stage("casino prizes").await;
     match casino_mode {
         Some(m) => {
             let changed = apply::randomize_casino(&mut patcher, seed_n, m)
@@ -1022,6 +1112,7 @@ pub fn patch_rom(
         None => summary.push_str("casino: untouched\n"),
     }
 
+    prog.stage("monster stats").await;
     match monster_stats_mode {
         Some(m) => {
             let rep = apply::randomize_monster_stats(&mut patcher, seed_n, m)
@@ -1040,6 +1131,7 @@ pub fn patch_rom(
     // pass dealt out. The per-group split rides inside this same string - the
     // page emits `regular:...|boss:...` when the two halves differ - so widening
     // the knob needed no new argument on this boundary.
+    prog.stage("enemy tuning scales").await;
     let enemy_stat_scale = enemy_stat_scale.trim();
     if enemy_stat_scale.is_empty() {
         summary.push_str("enemy-stat-scale: 1x (retail)\n");
@@ -1124,6 +1216,7 @@ pub fn patch_rom(
         }
     }
 
+    prog.stage("move powers").await;
     match move_power_mode {
         Some(m) => {
             let changed = apply::randomize_move_powers(&mut patcher, seed_n, m)
@@ -1135,6 +1228,7 @@ pub fn patch_rom(
         None => summary.push_str("move-power: untouched\n"),
     }
 
+    prog.stage("element affinity").await;
     match element_affinity_mode {
         Some(m) => {
             let changed = apply::randomize_element_affinity(&mut patcher, seed_n, m)
@@ -1146,6 +1240,7 @@ pub fn patch_rom(
         None => summary.push_str("element-affinity: untouched\n"),
     }
 
+    prog.stage("spell costs").await;
     match spell_cost_mode {
         Some(m) => {
             let changed = apply::randomize_spell_costs(&mut patcher, seed_n, m)
@@ -1157,6 +1252,7 @@ pub fn patch_rom(
         None => summary.push_str("spell-cost: untouched\n"),
     }
 
+    prog.stage("equipment bonuses").await;
     match equip_bonus_mode {
         Some(m) => {
             let changed = apply::randomize_equip_bonuses(&mut patcher, seed_n, m)
@@ -1168,6 +1264,7 @@ pub fn patch_rom(
         None => summary.push_str("equip-bonus: untouched\n"),
     }
 
+    prog.stage("weapon specialty").await;
     if weapon_specialty {
         let rep = apply::randomize_weapon_specialty(&mut patcher, seed_n)
             .map_err(|e| err(format!("weapon-specialty: {e}")))?;
@@ -1185,6 +1282,7 @@ pub fn patch_rom(
         summary.push_str("weapon-specialty: untouched\n");
     }
 
+    prog.stage("steal items").await;
     match steal_mode {
         Some(m) => {
             let (plan, rep) = apply::randomize_steals(&mut patcher, &pool, seed_n, m)
@@ -1199,6 +1297,7 @@ pub fn patch_rom(
         None => summary.push_str("steals: untouched\n"),
     }
 
+    prog.stage("arts combos").await;
     match arts_mode {
         Some(m) => {
             let (_plan, rep) = apply::randomize_arts(&mut patcher, seed_n, m)
@@ -1211,6 +1310,7 @@ pub fn patch_rom(
         None => summary.push_str("arts: untouched\n"),
     }
 
+    prog.stage("doors").await;
     match door_mode {
         Some(m) => {
             let coupling = match door_coupling {
@@ -1233,6 +1333,7 @@ pub fn patch_rom(
         None => summary.push_str("doors: untouched\n"),
     }
 
+    prog.stage("house doors").await;
     match house_door_mode {
         Some(legaia_patcher::drops::DropMode::Shuffle) => {
             let rep = apply::randomize_house_doors(
@@ -1254,6 +1355,7 @@ pub fn patch_rom(
         None => summary.push_str("house-doors: untouched\n"),
     }
 
+    prog.stage("starting items").await;
     let seed_opts = legaia_patcher::starting_items::StartingSeedOptions {
         random_items: starting_items,
         door_of_wind,
@@ -1328,6 +1430,7 @@ pub fn patch_rom(
         summary.push_str("starting-items: untouched (vanilla Healing Leaf x5)\n");
     }
 
+    prog.stage("starting level").await;
     if legaia_patcher::starting_level::is_active(starting_level) {
         let rep = apply::apply_starting_level(&mut patcher, starting_level)
             .map_err(|e| err(format!("starting-level: {e}")))?;
@@ -1342,6 +1445,7 @@ pub fn patch_rom(
 
     // Language pack, phase 2 of 2: the SCUS name-table sections (see the
     // phase-1 comment above for why they come after every randomizer pass).
+    prog.stage("language pack: name tables").await;
     let mut lang_line = String::from("language: untouched (English)\n");
     let mut lang_json = JsValue::NULL;
     if let Some(pack) = &parsed_pack {
@@ -1368,6 +1472,7 @@ pub fn patch_rom(
     }
     summary.insert_str(0, &lang_line);
 
+    prog.stage("assembling patched image").await;
     let patched = patcher.into_image();
     let data = Uint8Array::new_with_length(patched.len() as u32);
     data.copy_from(&patched);
@@ -2283,12 +2388,24 @@ fn read_spec(spec: &JsValue) -> Result<Spec, JsValue> {
 /// in order; a failing spec aborts with its error (nothing partial is
 /// returned). Returns `{ data, summary }` - the same shape the page consumes
 /// from [`patch_rom`], so texture patches chain after a randomizer run.
+///
+/// Async with the same optional trailing `progress` callback as [`patch_rom`]:
+/// one stage to parse the disc, one per replacement spec, one to assemble the
+/// output image.
 #[wasm_bindgen]
-pub fn apply_texture_replacements(image: Vec<u8>, specs: JsValue) -> Result<JsValue, JsValue> {
+pub async fn apply_texture_replacements(
+    image: Vec<u8>,
+    specs: JsValue,
+    progress: Option<js_sys::Function>,
+) -> Result<JsValue, JsValue> {
     let list = js_sys::Array::from(&specs);
+    let mut prog = Progress::new(progress, list.length() + 2);
+    prog.stage("parsing disc image").await;
     let mut patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
     let mut summary = String::new();
     for (i, raw) in list.iter().enumerate() {
+        prog.stage(&format!("texture {} of {}", i + 1, list.length()))
+            .await;
         let spec = read_spec(&raw)?;
         let at = format!(
             "{} entry {} section {} +0x{:X}",
@@ -2435,6 +2552,7 @@ pub fn apply_texture_replacements(image: Vec<u8>, specs: JsValue) -> Result<JsVa
         summary.push_str("textures: untouched\n");
     }
 
+    prog.stage("assembling patched image").await;
     let patched = patcher.into_image();
     let data = Uint8Array::new_with_length(patched.len() as u32);
     data.copy_from(&patched);

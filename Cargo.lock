@@ -1634,6 +1634,7 @@ dependencies = [
  "sha2",
  "toml",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-sys",
 ]
 
