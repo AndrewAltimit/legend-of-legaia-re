@@ -693,6 +693,16 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
                 report.unused_placed
             ));
         }
+        if report.battle_load_capped > 0 {
+            println!(
+                "  battle-load cap: {} formation(s) reduced (distinct-species / heap-cost limit)",
+                report.battle_load_capped
+            );
+            manifest.push(format!(
+                "encounters_battle_load_capped = {}",
+                report.battle_load_capped
+            ));
+        }
         manifest.push(format!("encounters = {:?}", mode_str(enc_mode)));
         manifest.push(format!(
             "encounters_scenes_changed = {}",

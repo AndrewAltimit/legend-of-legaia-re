@@ -122,6 +122,28 @@ reserved/authoring data with no live consumer.
 
 ## Battle / arts / level-up
 
+### Formation species limit - what the battle setup does with 3 distinct monster ids
+
+*Status:* resolved - `[a,b,c]` loads as `[c,c,a]` on half of all rolls, verbatim (three streamed blocks) on the other half; randomizer capped at 2 distinct species. Grade: **capture** (write watchpoints + cell readback + heap walk; the rebuild loop also read in disassembly).
+
+Retail authoring never puts more than two distinct species in one formation,
+and the battle setup `FUN_80055B6C` (loop at `0x80055C80..0x80055D2C`) is
+written to that invariant: it counts copies of `cells[0]` and holds "the other
+species" in a **single register**, then - behind a 50% coin flip
+(`FUN_80056798() & 1`) - rebuilds the cells as `[other x n, first x m]` (the
+species-order variety shuffle; an exact multiset swap for 2 distinct species).
+A third distinct species overwrites the register: the middle id vanishes and
+the last is duplicated. Pinned by `autorun_formation_cell_writers.lua` (write
+PCs `0x80055D14/18`; installs of `[133,151,94]` / `[94,133,151]` /
+`[151,133,94]` / `[32,34,14]` all read back `[c2,c2,c0]` at battle main, seat
+1 sharing seat 0's record pointer) across both the map03 and rikuroa contexts.
+On the verbatim side of the flip all three distinct blocks stream, which turns
+an over-budget trio into a probabilistic battle-load hang (see the heap-budget
+section of [`battle.md`](../subsystems/battle.md) for the freeze captures).
+Consequence for the encounter randomizer: the unconditional battle-load safety
+pass (`enforce_species_limits`) caps every random formation at 2 distinct
+species and at the disc's authored heap-cost maximum.
+
 | Thread | Status | Evidence | Answer |
 |---|---|---|---|
 | Encounter MAN sub-section layout | resolved (header shape corrected) | `disassembly` | [details ↓](#encounter-man-sub-section-layout) |

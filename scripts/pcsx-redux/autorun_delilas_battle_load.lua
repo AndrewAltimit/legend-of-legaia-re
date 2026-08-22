@@ -128,6 +128,13 @@ local function verdict(note, mode)
     if verdict_written then return end
     verdict_written = true
     CSV:row("0,0x%X,%d,%s", mode, actors_seated(), note)
+    -- Formation-cell readback: shows whether anything rewrote the installed
+    -- ids between install time and the verdict (dedupe/aliasing forensics).
+    local c0 = probe.read_u8(FORMATION_CELL) or 0
+    local c1 = probe.read_u8(FORMATION_CELL + 1) or 0
+    local c2 = probe.read_u8(FORMATION_CELL + 2) or 0
+    local c3 = probe.read_u8(FORMATION_CELL + 3) or 0
+    CSV:row("0,0,0,cells at verdict = %d %d %d %d", c0, c1, c2, c3)
     heap_report("at-verdict")
     CSV:close()
 end
