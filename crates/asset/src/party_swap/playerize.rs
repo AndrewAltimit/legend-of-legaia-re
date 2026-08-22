@@ -600,8 +600,24 @@ fn rewrite_section_record(
     // is emitted in the VARIANT's slot and the bone's own slot goes out
     // empty, its object-table entry aliased onto the variant's below.
     let variant = variant_object(attach_count, nobj);
-    let mut objects: Vec<ModelObject> = Vec::with_capacity(nobj);
-    for k in 0..nobj {
+    // DROP every `0xFE` extra past the variant instead of emitting it
+    // empty. The extras carry the equipment visuals the swap discards,
+    // and their mere PRESENCE is live-dangerous: the runtime retag
+    // records the extra's variant-pair ordinal ("0xFF objects seen so
+    // far", `ctx+0x240+slot`), and with two variant-carrying sections
+    // ahead of the extra that ordinal is 2 - past the TWO-pair
+    // snapshot - so the per-frame variant pass `FUN_8004CCD4` pins an
+    // out-of-range pair, reading the NEIGHBOUR SLOT's pair block and
+    // installing a foreign object pointer into a garbage channel.
+    // Measured live on the `delilas_gi_spirit_streaks_v2` state: during
+    // Noa-slot Spirit (variant window [1,53] active) channel 4 drew a
+    // foreign object as a screen-crossing beam; hiding obj4 alone
+    // removed it. With no extra emitted there is no ordinal to record
+    // and the pin stays on pair 0, whose default is our own alias -
+    // benign by construction.
+    let emit_count = variant.map_or(nobj, |v| v + 1);
+    let mut objects: Vec<ModelObject> = Vec::with_capacity(emit_count);
+    for k in 0..emit_count {
         let bone = match variant {
             Some(v) if k + 1 == v => None,
             Some(v) if k == v => bone_ids.last().copied(),
