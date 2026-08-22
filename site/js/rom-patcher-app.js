@@ -12,8 +12,8 @@
  * jewel_fix, approach_softlock_fix, delilas_challenge, custom_items, fishing_prices, location_renames,
  * earth_egg_price, arts_powers, super_art_powers,
  * arts_ap_grants, arts_ap_costs, spirit_ap, damage_ap, enemy_stat_scale,
- * exp_scale, seru_catch_rate, enemy_attack_count)
- * -> { data, summary, seed, lang }`, `resolve_seed(str)`,
+ * exp_scale, seru_catch_rate, enemy_attack_count, progress?)
+ * -> Promise<{ data, summary, seed, lang }>`, `resolve_seed(str)`,
  * `validate_lang_pack(image, yaml) -> { ok, language, applied, skipped, message, report }`,
  * `export_lang_pack(image, language) -> yaml_string`, and
  * `lift_official_pack(usa_image, pal_image, fold_accents) -> { yaml, language,
@@ -43,13 +43,20 @@
  * offset)` decodes one full-size (the path a view-only family takes);
  * `preview_texture_replace(image, tier, entry, section, offset, png, quantize)`
  * validates one swap and returns the original plus the as-encoded preview;
- * `apply_texture_replacements(image, specs) -> { data, summary }` applies the
- * queue (chained after patch_rom's output, or run alone). Change packs use
+ * `apply_texture_replacements(image, specs, progress?) -> Promise<{ data,
+ * summary }>` applies the queue (chained after patch_rom's output, or run
+ * alone). Change packs use
  * `export_texture_pack(specs, name, author, note) -> String` and
  * `import_texture_pack(image, json, acceptHashMismatch)`.
  * Imports resolve relative to THIS file (site/js/), so the package at
  * site/wasm/ is `../wasm/...`. Shipped language packs are static assets under
  * site/lang/<lang>.yaml, fetched on demand (nothing is bundled into the WASM).
+ *
+ * patch_rom and apply_texture_replacements are async: both take an optional
+ * trailing `progress(stage_index, stage_count, label)` callback and yield one
+ * macrotask after each stage so the page's progress bar actually paints -
+ * without that, the synchronous WASM run freezes the tab and the bar would
+ * never repaint.
  */
 
 let wasmMod = null;
@@ -1930,6 +1937,10 @@ function init() {
   const runBtn = $('rom-run');
   const statusEl = $('rom-status');
   const summaryEl = $('rom-summary');
+  const progressEl = $('rom-progress');
+  const progressTrack = progressEl ? progressEl.querySelector('.rom-progress-track') : null;
+  const progressFill = $('rom-progress-fill');
+  const progressLabel = $('rom-progress-label');
   const formEl = document.querySelector('.rom-form');
   const presetBar = $('rom-presets');
   const customChip = $('rom-preset-custom');
@@ -1938,6 +1949,23 @@ function init() {
   const setStatus = (msg, kind) => {
     statusEl.textContent = msg;
     statusEl.className = 'rom-status' + (kind ? ' rom-status-' + kind : '');
+  };
+  // Stage-progress callback handed to the async WASM patch entry points.
+  // The WASM side yields a macrotask after each invocation, which is what
+  // lets these DOM writes actually paint mid-run.
+  const onPatchProgress = (idx, count, label) => {
+    if (!progressEl) return;
+    progressEl.hidden = false;
+    const pct = count > 0 ? Math.round((idx / count) * 100) : 0;
+    progressFill.style.width = pct + '%';
+    if (progressTrack) progressTrack.setAttribute('aria-valuenow', String(pct));
+    progressLabel.textContent = label + ' (' + (idx + 1) + '/' + count + ')';
+  };
+  const hidePatchProgress = () => {
+    if (!progressEl) return;
+    progressEl.hidden = true;
+    progressFill.style.width = '0%';
+    progressLabel.textContent = '';
   };
   const setLangStatus = (msg, kind) => {
     langStatusEl.textContent = msg;
@@ -2442,14 +2470,15 @@ function init() {
         langPack = await resolveLangPack(langSel, langFile);
       }
       setStatus('Patching (this can take a moment for a full disc) ...');
-      // Yield so the status paints before the synchronous WASM call.
+      // Yield so the status paints before the disc buffer is copied into WASM
+      // memory (that copy happens before the first progress stage fires).
       await new Promise((r) => setTimeout(r, 30));
       let data = buf;
       let usedSeed = null;
       let summaryText = '';
       let langReport = null;
       if (baseActive) {
-        const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate, superArtPower, showSuperArts, attackCount);
+        const result = await mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate, superArtPower, showSuperArts, attackCount, onPatchProgress);
         data = result.data;
         usedSeed = result.seed;
         summaryText = result.summary || '';
@@ -2458,7 +2487,7 @@ function init() {
       if (texSpecs.length) {
         setStatus('Applying texture replacement' + (texSpecs.length > 1 ? 's' : '') + ' ...');
         await new Promise((r) => setTimeout(r, 30));
-        const texResult = mod.apply_texture_replacements(data, texSpecs);
+        const texResult = await mod.apply_texture_replacements(data, texSpecs, onPatchProgress);
         data = texResult.data;
         summaryText += texResult.summary || '';
       }
@@ -2478,6 +2507,7 @@ function init() {
     } catch (e) {
       setStatus('Error: ' + (e && e.message ? e.message : e), 'err');
     } finally {
+      hidePatchProgress();
       runBtn.disabled = false;
     }
   });

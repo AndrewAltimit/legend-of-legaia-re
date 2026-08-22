@@ -892,6 +892,14 @@ the drop / encounter / chest settings, and downloads a patched image. The disc
 bytes never leave the browser and nothing is uploaded - the same "user supplies
 the disc" model as the CLI, so the site ships only code.
 
+`patch_rom` and `apply_texture_replacements` are async and take an optional
+trailing `progress(stage_index, stage_count, label)` JS callback: each feature
+stage reports once and the function then yields one `setTimeout(0)` macrotask,
+so the page's progress bar paints between the synchronous patch stages instead
+of the tab freezing for the whole run (a `Promise.resolve()` microtask would
+not repaint). Yields happen only at stage boundaries, never in inner loops,
+and without the callback nothing yields.
+
 An optional `lang_pack` YAML argument (default `""` = English, strictly opt-in)
 applies a [language pack](../patcher/README.md#translation-packs) **before** any
 randomizer pass (translate-then-randomize composes; the reverse loses relocated
