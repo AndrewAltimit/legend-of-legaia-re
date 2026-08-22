@@ -37,6 +37,12 @@ pub struct EncounterApplyReport {
     /// (an over-strong monster faced alone instead of in a pack). Always `0`
     /// unless [`randomize_encounters_full`] ran with a [`SoloStrongConfig`].
     pub solo_collapsed: usize,
+    /// Random formations reduced by the unconditional **battle-load safety**
+    /// post-pass ([`encounter::SceneEncounters::enforce_species_limits`]): a
+    /// formation held more than [`encounter::MAX_DISTINCT_SPECIES`] distinct
+    /// species, or its summed distinct-species heap cost exceeded the disc's
+    /// authored maximum. See [`battle_load_budget`].
+    pub battle_load_capped: usize,
     /// Scene PROT-entry indices whose recompressed MAN would not fit the
     /// original footprint, so the scene was left untouched.
     pub skipped: Vec<usize>,
@@ -330,6 +336,100 @@ pub fn randomize_encounters_scoped(
     Ok(report)
 }
 
+/// Build the per-id **battle-heap cost** lookup: the `+0x08` word (texture-pool
+/// offset = pre-texture byte count, the exact per-species malloc size) of every
+/// decoded `battle_data` block (PROT entry 867). See
+/// [`crate::encounter::MonsterCostTable`].
+pub fn monster_cost_table(patcher: &DiscPatcher) -> Result<crate::encounter::MonsterCostTable> {
+    let entry = patcher
+        .read_entry(crate::disc::MONSTER_ARCHIVE_ENTRY)
+        .context("read monster battle_data archive")?;
+    let mut pairs: Vec<(u16, u32)> = Vec::new();
+    for id in 1u16..=255 {
+        let Ok(Some(block)) = legaia_asset::monster_archive::decode_block(&entry, id) else {
+            continue;
+        };
+        if block.len() >= 12 {
+            pairs.push((
+                id,
+                u32::from_le_bytes([block[8], block[9], block[10], block[11]]),
+            ));
+        }
+    }
+    Ok(crate::encounter::MonsterCostTable::from_costs(pairs))
+}
+
+/// The **battle-load heap budget** the safety post-pass enforces: the maximum
+/// distinct-species heap cost of any random formation on the disc **as
+/// authored** (read before any encounter edit; both MAN carriers). Retail
+/// authoring is the proof-of-safety envelope - the USA disc's maximum is the
+/// `[108, 40]` / `[108, 3]`-class pair at ~124 KB, comfortably inside the
+/// measured ~145 KB workable budget (`docs/subsystems/battle.md`, heap-budget
+/// section) - so capping randomized formations at the authored maximum
+/// guarantees no formation is heavier than one the retail engine already
+/// loads. Self-calibrating for the PAL discs.
+pub fn battle_load_budget(
+    patcher: &DiscPatcher,
+    table: &crate::encounter::MonsterCostTable,
+) -> Result<u32> {
+    let mut max = 0u32;
+    for idx in 0..patcher.entry_count() {
+        let entry = patcher
+            .read_entry(idx)
+            .with_context(|| format!("read PROT entry {idx}"))?;
+        for scene in scene_carriers(&entry, idx) {
+            for i in 0..scene.formation_count() {
+                if !scene.is_random_formation(i) {
+                    continue;
+                }
+                let cost = table.formation_cost(&scene.formation_ids(i));
+                if cost > max {
+                    max = cost;
+                }
+            }
+        }
+    }
+    Ok(max)
+}
+
+/// The unconditional battle-load safety pass: walk every scene's **both** MAN
+/// carriers (bundle + streaming - the v12-family dungeons only have the
+/// latter) and reduce any random formation that violates the distinct-species
+/// or heap-cost limit ([`encounter::SceneEncounters::enforce_species_limits`]).
+/// Returns `(formations_fixed, id_bytes_changed, skipped_entries)`.
+fn enforce_battle_load_limits(
+    patcher: &mut DiscPatcher,
+    table: &crate::encounter::MonsterCostTable,
+    budget: u32,
+) -> Result<(usize, usize, Vec<usize>)> {
+    let mut fixed = 0;
+    let mut changed = 0;
+    let mut skipped = Vec::new();
+    for idx in 0..patcher.entry_count() {
+        let entry = patcher
+            .read_entry(idx)
+            .with_context(|| format!("read PROT entry {idx}"))?;
+        for mut scene in scene_carriers(&entry, idx) {
+            let (f, c) =
+                scene.enforce_species_limits(table, budget, crate::encounter::MAX_DISTINCT_SPECIES);
+            if f == 0 {
+                continue;
+            }
+            match scene.repack() {
+                Some(stream) => {
+                    patcher
+                        .patch_prot_entry(idx, scene.man_offset as u64, &stream)
+                        .with_context(|| format!("write scene {idx} MAN (battle-load cap)"))?;
+                    fixed += f;
+                    changed += c;
+                }
+                None => skipped.push(idx),
+            }
+        }
+    }
+    Ok((fixed, changed, skipped))
+}
+
 /// Default "strong fight" cut-off for [`SoloStrongConfig`]: a random formation
 /// is forced solo when its strongest monster's combat power is at least **twice**
 /// (`200`%) the area's native average. Twice the local norm reads as "much
@@ -446,9 +546,17 @@ fn enforce_solo_strong_encounters(
 /// (captured before randomizing) and applied as a post-pass over the randomized
 /// scenes, so it composes with every scope (Scene / Kingdom / World) and mode
 /// (Shuffle / Random) without perturbing the multiset bookkeeping of the
-/// underlying scoped randomization. `solo == None` reproduces
-/// [`randomize_encounters_scoped`] byte-for-byte (the archive is not even read),
-/// so existing runs are unchanged.
+/// underlying scoped randomization.
+///
+/// Whatever the options, an **unconditional battle-load safety pass** runs
+/// last: no random formation may exceed [`encounter::MAX_DISTINCT_SPECIES`]
+/// distinct species (retail's battle setup holds "the other species" in one
+/// register, so a third distinct species is dropped-and-duplicated on half of
+/// all rolls) nor the disc's authored heap-cost maximum
+/// ([`battle_load_budget`] - the battle heap's malloc is unchecked, so an
+/// over-budget formation is a silent hang at battle load). Retail authoring
+/// already satisfies both limits everywhere, so the pass is a no-op unless the
+/// randomization itself manufactured a violating formation.
 pub fn randomize_encounters_full(
     patcher: &mut DiscPatcher,
     seed: u64,
@@ -468,6 +576,11 @@ pub fn randomize_encounters_full(
         None => None,
     };
 
+    // The battle-load budget is the disc's own authored maximum, so it too must
+    // be read BEFORE any edit.
+    let cost_table = monster_cost_table(patcher)?;
+    let budget = battle_load_budget(patcher, &cost_table)?;
+
     let mut report = randomize_encounters_scoped(patcher, seed, mode, scope, unused_enemies)?;
 
     if let Some((cfg, table, baselines)) = solo_ctx {
@@ -479,6 +592,18 @@ pub fn randomize_encounters_full(
             if !report.skipped.contains(&idx) {
                 report.skipped.push(idx);
             }
+        }
+    }
+
+    // Unconditional battle-load safety pass (species + heap-cost limits), last
+    // so it sees the final id assignment (the solo-strong collapse only ever
+    // shrinks formations, never grows one past a limit).
+    let (fixed, changed, skipped) = enforce_battle_load_limits(patcher, &cost_table, budget)?;
+    report.battle_load_capped += fixed;
+    report.ids_changed += changed;
+    for idx in skipped {
+        if !report.skipped.contains(&idx) {
+            report.skipped.push(idx);
         }
     }
     Ok(report)

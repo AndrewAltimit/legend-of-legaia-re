@@ -617,6 +617,37 @@ this only ever thins a *random* pack. Validated on a real disc by
 packs without the option and **zero** with it, non-vacuously, deterministically,
 and EDC/ECC-valid. On by default in the web Balanced / Full Chaos presets.
 
+**Battle-load safety cap (unconditional).** Two retail engine limits bound what
+a formation may hold, and retail authoring satisfies both everywhere - a
+kingdom/world-scope pass can violate both (see the
+[heap-budget + species-rebuild sections of `battle.md`](../subsystems/battle.md#the-battle-heap-budget---why-a-formation-of-large-distinct-bosses-cannot-load)):
+
+- **At most 2 distinct species per formation.** The battle setup
+  `FUN_80055B6C` species-order rebuild holds "the other species" in a single
+  register; a third distinct species is silently dropped-and-duplicated
+  (`[a,b,c]` loads as `[c,c,a]`) on half of all rolls, and on the other half
+  all three decoded blocks stream.
+- **A bounded distinct-species heap cost.** The battle heap's malloc is
+  unchecked; a formation whose distinct blocks (each costing its decoded
+  `block[+0x08]` bytes) exceed the workable budget writes the decoded block
+  over kernel RAM - a silent hang at battle load. Reproduced live on a
+  balanced-preset disc: three kingdom-shuffled trios at 169-180 KB each froze
+  or heap-exhausted, where the disc's authored maximum (~124 KB) always loads.
+
+`randomize_encounters_full` therefore always runs
+`SceneEncounters::enforce_species_limits` as its last post-pass, over **both**
+MAN carriers: any random formation with more than 2 distinct species or a
+distinct-species cost above the disc's own authored maximum
+(`apply::battle_load_budget` - self-calibrating, read before any edit) has its
+costliest species merged into its cheapest until both limits pass. Monster
+count is preserved, no new id enters a scene, scripted/boss formations are
+never touched, and the pass is a no-op unless the randomization itself
+manufactured a violating formation. Reported as `battle_load_capped`;
+validated on a real disc by `tests/encounter_battle_load_cap_real.rs`
+(authored tables satisfy both limits; a guard-free kingdom shuffle violates
+them; the full pipeline leaves zero violations, EDC/ECC-valid and
+seed-deterministic).
+
 ### Run-away EXP
 
 `--flee-exp` banks a slice of a fight's experience into the party whenever they

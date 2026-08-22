@@ -2122,6 +2122,42 @@ install + allocator breakpoints + free-ring walk); offline sibling
 `scripts/asset-investigation/battle-heap-walk.py` (free + allocated rings
 from a save-state RAM extract).
 
+### The species-order rebuild - why 2 distinct species is an engine invariant
+
+Before any monster streams, the battle setup `FUN_80055B6C` (loop at
+`0x80055C80..0x80055D2C`) classifies the formation cells `DAT_8007BD0C[0..3]`
+into "the first species" (`cells[0]`, with a copy count in `s1`) and "the
+other species" - held in a **single register** (`s3`, with a count in `s0`) -
+then, behind a 50% coin flip (`FUN_80056798() & 1`), rebuilds the cell array
+as `[other x s0, first x s1]`: the species-order variety shuffle that makes
+the same authored formation open with either species in front. For retail's
+authoring - never more than two distinct species per formation - the rebuild
+is an exact multiset-preserving swap.
+
+With **three** distinct species the single `s3` register is overwritten by
+each later species, so `[a, b, c]` rebuilds as `[c, c, a]`: the middle
+species silently vanishes and the last is duplicated. On the other half of
+the flip the cells load verbatim and all three distinct blocks stream - which
+is what turns an over-budget trio into a *probabilistic* battle-load hang.
+Pinned live (write watchpoints at `0x80055D14/18` + cell readback at battle
+main, `autorun_formation_cell_writers.lua`): forced installs of
+`[133,151,94]`, `[94,133,151]`, `[151,133,94]` (map03 context) and
+`[32,34,14]` (rikuroa context) each read back `[c2, c2, c0]`, with seat 1's
+record pointer sharing seat 0's block; with the flip forced to the verbatim
+side, `[133,151,94]` (180.0 KB of blocks) ran the heap to **0 bytes free**
+with the record table overwritten by non-pointers, and `[14,150,93]`
+(177.2 KB) and `[162,163]` (169.2 KB, two distinct - no rebuild involved)
+each crashed the machine with decoded-block bytes over the exception vector
+at `0x80000080` (the "Deli[las]" name string was the faulting instruction
+word). Passing brackets in the same context: 146.3 KB with 17 KB free,
+137.6 KB with 6 KB free.
+
+Both limits together are why the encounter randomizer's unconditional
+**battle-load safety pass** (`legaia_patcher::encounter::
+SceneEncounters::enforce_species_limits`) caps every random formation at 2
+distinct species and at the disc's own authored heap-cost maximum - see
+[`randomizer.md`](../tooling/randomizer.md).
+
 ## Character record layout
 
 Stride `0x414` bytes per character, base `0x80084708` (so character `n` lives at `0x80084708 + n*0x414`). Surfaced by the inventory/spell helpers (`FUN_80042558`, `FUN_80042DBC`, `FUN_800432BC`, `FUN_800431FC`, `FUN_80043264`):

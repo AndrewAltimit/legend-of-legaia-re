@@ -592,6 +592,12 @@ pub async fn patch_rom(
                     rep.solo_collapsed
                 ));
             }
+            if rep.battle_load_capped > 0 {
+                summary.push_str(&format!(
+                    "  battle-load cap: {} formation(s) reduced to fit the battle heap\n",
+                    rep.battle_load_capped
+                ));
+            }
         }
         None => summary.push_str("encounters: untouched\n"),
     }
