@@ -512,6 +512,42 @@ pub(crate) fn resample_poses(frames: &[Vec<PartPose>], out_frames: usize) -> Vec
 /// feet 11/14; GTE y-down, so the largest `ty` is the floor). Battle
 /// poses are flat absolute transforms, so this MUST be applied rigidly to
 /// every part of every frame.
+/// Scale every TMD vertex of the block's embedded mesh by `s`, in
+/// place. Vertices are pivot-relative SVECTORs, so a uniform vertex
+/// scale paired with the same scale on every clip translation is a
+/// whole-figure uniform scale. Size-neutral: the vertex table is fixed
+/// 8-byte records.
+fn scale_block_tmd_vertices(block: &mut [u8], s: f32) -> Result<()> {
+    let tmd_off = legaia_bytes::u32_le(block, 4).context("tmd offset")? as usize;
+    let tmd = legaia_tmd::parse(
+        block
+            .get(tmd_off..)
+            .ok_or_else(|| anyhow::anyhow!("tmd offset {tmd_off:#x} out of range"))?,
+    )
+    .context("parse block TMD for vertex scale")?;
+    const TMD_HEADER_SIZE: usize = 0xC;
+    const VECTOR_SIZE: usize = 8;
+    for o in &tmd.objects {
+        let base = tmd_off + TMD_HEADER_SIZE + o.header.vert_top as usize;
+        for v in 0..o.header.n_vert as usize {
+            let at = base + v * VECTOR_SIZE;
+            for k in 0..3 {
+                let off = at + k * 2;
+                let raw = i16::from_le_bytes(
+                    block
+                        .get(off..off + 2)
+                        .ok_or_else(|| anyhow::anyhow!("vertex word out of range"))?
+                        .try_into()
+                        .unwrap(),
+                );
+                let scaled = ((raw as f32) * s).round().clamp(-32768.0, 32767.0) as i16;
+                block[off..off + 2].copy_from_slice(&scaled.to_le_bytes());
+            }
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn monster_anchor(rows: &[Vec<PartPose>], host: &[Vec<PartPose>]) -> [i16; 3] {
     let floor = |frames: &[Vec<PartPose>]| -> Option<i16> {
         frames
@@ -996,7 +1032,41 @@ pub fn mirror_block_animations(
     let host_idle = monster_archive::idle_animation(retail_archive, target_id)?
         .ok_or_else(|| anyhow::anyhow!("monster id {target_id}: no idle"))?;
     let idle_rows = rt.retarget_frames(&hero_idle.frames);
-    let anchor = monster_anchor(&idle_rows, &host_idle.frames);
+
+    // Native-stature pass: the bake + retarget work at the MONSTER's
+    // scale (`ctx.radial` = monster/player rest-height ratio), so the
+    // finished figure wears the DELILAS sibling's stature - conspicuous
+    // on Che's block, where hero Gala towers at ~1.5x his own height.
+    // `native = 1/radial` undoes that uniformly: every rewritten row's
+    // translations scale by `native` (rotations untouched), every KEPT
+    // host clip is converted into a rewrite of its own decoded rows at
+    // the same scale, and the block TMD's pivot-relative vertices scale
+    // by the same factor after the rebuild - a whole-figure uniform
+    // scale that keeps every joint relationship intact at every ladder
+    // rung. Feet stay planted: the anchor is computed from the SCALED
+    // idle against the host's own foot plane, and rescaled host clips
+    // are re-planted on that plane explicitly. The graceful-skip path
+    // (no mirror at all) keeps the monster-scale mesh with the retail
+    // clips - coherent, just sibling-statured, as before.
+    let native = 1.0 / ctx.radial;
+    let scale_native = (native - 1.0).abs() > 0.02;
+    let scale_rows = |rows: &mut [Vec<PartPose>], s: f32| {
+        for row in rows.iter_mut() {
+            for p in row.iter_mut() {
+                let t = |v: i16| ((v as f32) * s).round().clamp(-2048.0, 2047.0) as i16;
+                p.tx = t(p.tx);
+                p.ty = t(p.ty);
+                p.tz = t(p.tz);
+            }
+        }
+    };
+    let anchor = {
+        let mut probe = idle_rows.clone();
+        if scale_native {
+            scale_rows(&mut probe, native);
+        }
+        monster_anchor(&probe, &host_idle.frames)
+    };
     notes.push(format!(
         "anchor [{}, {}, {}]",
         anchor[0], anchor[1], anchor[2]
@@ -1010,6 +1080,9 @@ pub fn mirror_block_animations(
     }
     let mut pending: BTreeMap<usize, Pending> = BTreeMap::new();
     let mut push = |idx: usize, mut rows: Vec<Vec<PartPose>>, rate: u8, floor: usize, st: bool| {
+        if scale_native {
+            scale_rows(&mut rows, native);
+        }
         apply_anchor(&mut rows, anchor);
         pending.insert(
             idx,
@@ -1147,6 +1220,61 @@ pub fn mirror_block_animations(
         }
     }
 
+    // Native stature: convert every entry the options KEPT into a
+    // rewrite of its own decoded retail rows at the native scale,
+    // re-planted on the host's foot plane - a kept host clip at raw
+    // monster translations would fling the rescaled mesh apart.
+    if scale_native {
+        let host_floor_y: i16 = host_idle
+            .frames
+            .iter()
+            .filter_map(|f| {
+                [11usize, 14]
+                    .iter()
+                    .filter_map(|&c| f.get(c))
+                    .map(|p| p.ty)
+                    .max()
+            })
+            .max()
+            .unwrap_or(0);
+        let replant = (host_floor_y as f32 * (1.0 - native)).round() as i16;
+        let retail_anims = monster_archive::animations(retail_archive, target_id)?
+            .ok_or_else(|| anyhow::anyhow!("monster id {target_id}: no animations"))?;
+        let mut kept_scaled = 0usize;
+        for (i, a) in retail_anims.iter().enumerate() {
+            if pending.contains_key(&i) || i >= ret_entries.len() {
+                continue;
+            }
+            if a.frames.is_empty()
+                || a.frames.len() > 255
+                || a.frames[0].len() != ret_entries[i].parts
+            {
+                continue;
+            }
+            let mut rows = a.frames.clone();
+            scale_rows(&mut rows, native);
+            apply_anchor(&mut rows, [0, replant, 0]);
+            pending.insert(
+                i,
+                Pending {
+                    rows,
+                    rate: a.rate.max(1),
+                    floor: 1,
+                    staged: false,
+                },
+            );
+            kept_scaled += 1;
+        }
+        notes.push(format!(
+            "figure at native hero stature (x{native:.2}){}",
+            if kept_scaled > 0 {
+                format!("; {kept_scaled} kept host clips rescaled")
+            } else {
+                String::new()
+            }
+        ));
+    }
+
     // Density rungs: exact halving (frames and rate both even, floors
     // respected) - duration-invariant, so module pacing and the look's
     // tempo are untouched; only pose density drops, to a coarseness
@@ -1179,7 +1307,11 @@ pub fn mirror_block_animations(
         })
         .collect();
     let rewritten: Vec<usize> = rewrites.keys().copied().collect();
-    let block = rebuild_block_entries(current_block, &retail_block, &rewrites)?;
+    let mut block = rebuild_block_entries(current_block, &retail_block, &rewrites)?;
+    if scale_native {
+        scale_block_tmd_vertices(&mut block, native)
+            .context("scale block TMD vertices to native stature")?;
+    }
     notes.push(format!(
         "block {} -> {} bytes ({:+})",
         current_block.len(),
