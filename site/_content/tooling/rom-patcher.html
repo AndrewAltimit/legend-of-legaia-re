@@ -709,6 +709,12 @@
     <div class="rom-row rom-actions">
       <button id="rom-run" class="rom-button">Patch &amp; download</button>
     </div>
+    <div id="rom-progress" class="rom-progress" hidden>
+      <div class="rom-progress-track" role="progressbar" aria-labelledby="rom-progress-label" aria-valuemin="0" aria-valuemax="100">
+        <div id="rom-progress-fill" class="rom-progress-fill"></div>
+      </div>
+      <div id="rom-progress-label" class="rom-progress-label"></div>
+    </div>
     <div id="rom-status" class="rom-status">Choose a disc image and a preset (or any toggle), then patch.</div>
     <pre id="rom-summary" class="rom-summary"></pre>
   </div>
@@ -883,6 +889,12 @@
   .rom-button-ghost:hover { background: var(--bg-card-hi); border-color: var(--border-hi); }
   .rom-group-body { padding: 0.7rem 0.85rem; }
   .rom-status { margin-top: 0.8rem; font-family: var(--font-mono, monospace); font-size: 0.9em; }
+  /* Patch progress: shown while the async patch runs, one tick per stage.
+     Theme tokens throughout, so both themes inherit like the neighbours. */
+  .rom-progress { margin-top: 0.8rem; }
+  .rom-progress-track { height: 8px; border-radius: 4px; background: var(--bg-raised); border: 1px solid var(--border); overflow: hidden; }
+  .rom-progress-fill { height: 100%; width: 0%; background: var(--accent); transition: width 0.15s ease; }
+  .rom-progress-label { margin-top: 0.35rem; font-family: var(--font-mono, monospace); font-size: 0.85em; color: var(--text-dim); }
   .rom-status-ok { color: var(--done); }
   .rom-status-err { color: var(--open); }
   .rom-summary { white-space: pre-wrap; margin-top: 0.5rem; color: var(--text-muted); font-size: 0.88em; }

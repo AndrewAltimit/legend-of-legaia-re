@@ -912,6 +912,14 @@ own: a mid-apply Delilas error **fails the whole patch** ("no ROM was
 produced") instead of the other options' skip-and-report, because the
 swap's half-applied state spans too many carriers to ship.
 
+`patch_rom` and `apply_texture_replacements` are async and take an optional
+trailing `progress(stage_index, stage_count, label)` JS callback: each feature
+stage reports once and the function then yields one `setTimeout(0)` macrotask,
+so the page's progress bar paints between the synchronous patch stages instead
+of the tab freezing for the whole run (a `Promise.resolve()` microtask would
+not repaint). Yields happen only at stage boundaries, never in inner loops,
+and without the callback nothing yields.
+
 An optional `lang_pack` YAML argument (default `""` = English, strictly opt-in)
 applies a [language pack](../patcher/README.md#translation-packs) **before** any
 randomizer pass (translate-then-randomize composes; the reverse loses relocated
