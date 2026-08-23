@@ -51,6 +51,15 @@ local MAX_SHOTS = probe.getenv_num("LEGAIA_MAX_SHOTS", 60)
 -- injection arena - a per-frame dynarec fault (seen at 0x8007782C) that
 -- wedges the whole battle.
 local POKES_FILE = probe.getenv("LEGAIA_POKES_FILE", "")
+-- Optional forced encounter for scenes with no natural rolls (towns):
+-- comma monster ids poked into the formation cells + game mode 8 (the
+-- encounter transition), entering battle through the same load path a
+-- walk-rolled encounter takes. Empty = walk for a natural encounter.
+local FORCE_IDS = {}
+for tok in string.gmatch(probe.getenv("LEGAIA_FORCE_IDS", ""), "[^,%s]+") do
+    FORCE_IDS[#FORCE_IDS+1] = tonumber(tok)
+end
+local FORMATION_CELL = 0x8007BD0C
 
 local party = {}
 for tok in string.gmatch(PARTY_RAW, "[^,%s]+") do party[#party+1] = tonumber(tok) end
@@ -108,6 +117,13 @@ probe.run({
             for i = 0, 2 do probe.write_u8(PARTY_TABLE + i, party[i + 1] or 0) end
             staged = true
             CSV:row("%d,0x%X,party staged=%s", elapsed, mode, PARTY_RAW)
+            return
+        end
+        if #FORCE_IDS > 0 and elapsed == 240 and mode == 0x3 then
+            for i = 0, 3 do probe.write_u8(FORMATION_CELL + i, FORCE_IDS[i+1] or 0) end
+            probe.write_u16(GAME_MODE, 8)
+            CSV:row("%d,0x%X,battle forced ids=%s", elapsed, mode,
+                probe.getenv("LEGAIA_FORCE_IDS", ""))
             return
         end
         -- Advance through any dialog / cutscene modes toward the field.
