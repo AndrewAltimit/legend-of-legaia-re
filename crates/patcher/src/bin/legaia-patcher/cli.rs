@@ -157,6 +157,21 @@ pub(crate) enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only: emit RAM pokes (`0xADDR:0xWORD` lines) for every SCUS word
+    /// where a patched disc differs from a baseline disc. A save state carries
+    /// the whole resident SCUS, so a probe that loads a state from one disc
+    /// era onto a newer patched disc runs fresh overlay code against stale
+    /// SCUS injections - a per-frame dynarec fault in the injection arena.
+    /// Applying these pokes after the state load makes the resident SCUS
+    /// byte-match the disc under test (the e2e harness consumes this).
+    ScusPokes {
+        /// The patched disc image under test.
+        #[arg(long)]
+        patched: PathBuf,
+        /// The baseline disc (usually the retail image).
+        #[arg(long)]
+        baseline: PathBuf,
+    },
     /// Read-only: show the Earth Egg coin threshold (the Sol Tower Prize Counter
     /// exchange) - the value the `--earth-egg-price` editor changes.
     EarthEgg {

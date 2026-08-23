@@ -959,3 +959,57 @@ pub(crate) fn cmd_delilas_verify(input: &Path) -> Result<()> {
     println!("delilas-verify PASS: swap present, all invariants hold.");
     Ok(())
 }
+
+/// Emit RAM pokes that bring a resident SCUS in line with a patched disc:
+/// one `0xADDR:0xWORD` line per 32-bit word where the two discs' SCUS
+/// images differ.
+///
+/// Why this exists: a PCSX-Redux save state carries the WHOLE RAM,
+/// including the boot-loaded `SCUS_942.54` - so a probe that loads a
+/// field state from one disc era and then triggers a battle on a NEWER
+/// patched disc runs fresh overlay code (loaded from the disc) against a
+/// STALE resident SCUS. A patched overlay `jal` into the SCUS injection
+/// arena then executes whatever bytes the state was carrying - observed
+/// as a per-frame "Unknown instruction for dynarec" fault at
+/// `0x8007782C` that wedges the whole battle. Applying these pokes right
+/// after the state load makes the resident SCUS byte-match the disc
+/// under test.
+///
+/// The poke set is the patched-vs-baseline DIFF (not the whole SCUS):
+/// the data segment holds live game state a blanket copy would corrupt,
+/// while the differing words are exactly the patcher's own edits - hook
+/// sites in text and dead-region arenas - which are safe to (re)write.
+pub(crate) fn cmd_scus_pokes(patched: &Path, baseline: &Path) -> Result<()> {
+    const SCUS_BASE_VA: u32 = 0x8001_0000;
+    const HEADER: usize = 0x800; // PSX-EXE header before the loaded image
+    let read_scus = |path: &Path| -> Result<Vec<u8>> {
+        let image = load_image(path)?;
+        let (lba, size) = legaia_iso::iso9660::find_file_in_image(&image, "SCUS_942.54")
+            .ok_or_else(|| anyhow::anyhow!("{}: SCUS_942.54 not found", path.display()))?;
+        let mut out = Vec::with_capacity(size as usize);
+        for b in 0..size as usize {
+            let sec = lba as usize + b / 2048;
+            let at = sec * 2352 + 0x18 + b % 2048;
+            out.push(
+                *image
+                    .get(at)
+                    .ok_or_else(|| anyhow::anyhow!("{}: image truncated", path.display()))?,
+            );
+        }
+        Ok(out)
+    };
+    let a = read_scus(patched)?;
+    let b = read_scus(baseline)?;
+    let n = a.len().min(b.len());
+    let mut count = 0usize;
+    for off in (HEADER..n.saturating_sub(3)).step_by(4) {
+        if a[off..off + 4] != b[off..off + 4] {
+            let va = SCUS_BASE_VA + (off - HEADER) as u32;
+            let word = u32::from_le_bytes(a[off..off + 4].try_into().unwrap());
+            println!("0x{va:08X}:0x{word:08X}");
+            count += 1;
+        }
+    }
+    eprintln!("{count} differing SCUS words (patched vs baseline)");
+    Ok(())
+}

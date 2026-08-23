@@ -52,6 +52,7 @@ fn main() -> Result<()> {
         Cmd::Fishing { input } => commands::cmd_fishing(&input),
         Cmd::DelilasPokes { custom_items } => commands::cmd_delilas_pokes(custom_items),
         Cmd::DelilasVerify { input } => commands::cmd_delilas_verify(&input),
+        Cmd::ScusPokes { patched, baseline } => commands::cmd_scus_pokes(&patched, &baseline),
         Cmd::EarthEgg { input } => commands::cmd_earth_egg(&input),
         Cmd::Locations { input } => commands::cmd_locations(&input),
         Cmd::MonsterStats { input } => commands::cmd_monster_stats(&input),
