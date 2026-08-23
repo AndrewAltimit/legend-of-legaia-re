@@ -784,3 +784,178 @@ pub(crate) fn cmd_delilas_pokes(custom_items: bool) -> Result<()> {
     );
     Ok(())
 }
+
+/// Static verdict on a patched image's `--delilas-party` build: is the
+/// swap present, and do the rebuilt player battle files carry the current
+/// invariants? Run this on the exact `.bin` about to be play-tested.
+///
+/// The failure class this exists for: a rom patched by a *stale* build
+/// (browser-cached wasm, an old local server) reproduces bugs that are
+/// already fixed in the tree, and nothing in the play-test distinguishes
+/// "fix does not work" from "fix is not on this disc". Every check here is
+/// a property of the disc bytes alone, so the verdict lands in seconds.
+///
+/// Checks per rebuilt player file (863/864/865):
+/// - **No `0xFE` equipment extras** in any equipment assembly. The swap
+///   emits none by construction; a surviving extra re-enables the
+///   variant-pair ordinal overrun (`ctx+0x240` past the 2-pair snapshot)
+///   whose out-of-range per-frame pin installs a foreign object pointer -
+///   the Spirit-streak / idle-artifact class.
+/// - **Hand seat**: each hand object's local centroid stays near its
+///   wrist pivot (retail hands measure ~21-36 units; the un-seated bake
+///   defect measured 60-150).
+/// - Every skeleton part carries geometry in every assembly.
+pub(crate) fn cmd_delilas_verify(input: &Path) -> Result<()> {
+    use legaia_asset::battle_char_assembly as bca;
+    use legaia_asset::{battle_data_pack, monster_archive, party_swap};
+
+    /// A baked hand's local-centroid magnitude ceiling (units). Retail
+    /// hands sit 21-36 from the wrist pivot; the un-seated sibling fists
+    /// measured 60 (Gi armA) and 150 (Che hammer).
+    const HAND_SEAT_MAX: f32 = 48.0;
+
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let archive = patcher
+        .read_entry_footprint(867)
+        .context("read monster archive (PROT 867)")?;
+
+    // Swap detection: an applied `--delilas-party` renames each sibling's
+    // monster block to the host character it now depicts.
+    let hosts = ["Vahn", "Noa", "Gala"];
+    let mut mapping: Vec<(usize, u16, String)> = Vec::new();
+    for id in [162u16, 163, 164] {
+        let name = monster_archive::record(&archive, id)?
+            .map(|r| r.name)
+            .unwrap_or_default();
+        if let Some(slot) = hosts.iter().position(|h| name == *h) {
+            mapping.push((slot, id, name));
+        } else {
+            println!("monster {id}: named {name:?} (not a swapped block)");
+        }
+    }
+    if mapping.len() != 3 {
+        anyhow::bail!(
+            "delilas party swap NOT detected: {} of 3 sibling blocks are \
+             hero-named. This image was not patched with --delilas-party \
+             (or was patched by a build older than the swap).",
+            mapping.len()
+        );
+    }
+    for (slot, id, name) in &mapping {
+        println!("monster {id} wears {name:?} -> player slot {slot} rebuilt");
+    }
+
+    let rigs = [
+        &party_swap::RIG_VAHN_GALA,
+        &party_swap::RIG_NOA,
+        &party_swap::RIG_VAHN_GALA,
+    ];
+    let mut failures = 0usize;
+    for &(slot, _, _) in &mapping {
+        let who = hosts[slot];
+        let rig = rigs[slot];
+        let file = patcher
+            .read_entry_footprint(863 + slot)
+            .with_context(|| format!("read player file PROT {}", 863 + slot))?;
+        let pack = battle_data_pack::parse(&file)
+            .with_context(|| format!("{who}: parse player battle file"))?;
+
+        // Group section record ids: a record id of 0 closes a section.
+        let mut sections: Vec<Vec<u8>> = vec![Vec::new()];
+        for rec in &pack.records {
+            if rec.index == 0 {
+                continue;
+            }
+            sections.last_mut().unwrap().push(rec.id as u8);
+            if rec.id == 0 && sections.len() < bca::SECTION_COUNT {
+                sections.push(Vec::new());
+            }
+        }
+
+        // Every equipment assembly: default, plus each section id alone.
+        let mut loadouts: Vec<[u8; bca::SECTION_COUNT]> = vec![[0; bca::SECTION_COUNT]];
+        for (sec, ids) in sections.iter().enumerate() {
+            for &id in ids {
+                if id == 0 {
+                    continue;
+                }
+                let mut eq = [0u8; bca::SECTION_COUNT];
+                eq[sec] = id;
+                loadouts.push(eq);
+            }
+        }
+
+        let mut fe_hits = 0usize;
+        let mut seat_worst: f32 = 0.0;
+        let mut empty_bones = 0usize;
+        for eq in &loadouts {
+            let Ok(asm) = bca::assemble_character(&file, &pack, eq) else {
+                continue;
+            };
+            // 0xFE extras assemble with bone tags 100..200.
+            fe_hits += asm
+                .bone_tags
+                .iter()
+                .filter(|&&t| (100..200).contains(&t))
+                .count();
+            let Ok(tmd) = legaia_tmd::parse(&asm.tmd) else {
+                continue;
+            };
+            let skeleton = bca::battle_animations(&file)
+                .ok()
+                .and_then(|a| a.first().map(|s| s.part_count))
+                .unwrap_or(0);
+            for (i, o) in tmd.objects.iter().enumerate() {
+                let tag = asm.bone_tags[i];
+                if (tag as usize) < skeleton
+                    && rig.hair_channel != Some(tag)
+                    && o.vertices.is_empty()
+                {
+                    empty_bones += 1;
+                }
+            }
+            // Hand seat (canonical 5 and 8).
+            for c in [5usize, 8] {
+                let ch = rig.channel_for_canonical[c];
+                let Some(oi) = asm.bone_tags.iter().position(|&t| t == ch) else {
+                    continue;
+                };
+                let o = &tmd.objects[oi];
+                let n = o.vertices.len().max(1) as f32;
+                let s = o.vertices.iter().fold([0f32; 3], |a, v| {
+                    [a[0] + v.x as f32, a[1] + v.y as f32, a[2] + v.z as f32]
+                });
+                let mag = (s[0] * s[0] + s[1] * s[1] + s[2] * s[2]).sqrt() / n;
+                if mag > seat_worst {
+                    seat_worst = mag;
+                }
+            }
+        }
+        let fe_ok = fe_hits == 0;
+        let seat_ok = seat_worst <= HAND_SEAT_MAX;
+        let bones_ok = empty_bones == 0;
+        if !fe_ok || !seat_ok || !bones_ok {
+            failures += 1;
+        }
+        println!(
+            "{who}: {} assemblies | 0xFE extras {} ({fe_hits}) | hand seat {} \
+             (worst {seat_worst:.1} <= {HAND_SEAT_MAX}) | skeleton geometry {} \
+             ({empty_bones} empty)",
+            loadouts.len(),
+            if fe_ok { "OK" } else { "FAIL" },
+            if seat_ok { "OK" } else { "FAIL" },
+            if bones_ok { "OK" } else { "FAIL" },
+        );
+    }
+    if failures > 0 {
+        anyhow::bail!(
+            "delilas-verify FAILED for {failures} player file(s) - this \
+             image was patched by a build missing current fixes. Re-patch \
+             with the current patcher (hard-refresh the web page, or use \
+             this CLI's `randomize --delilas-party`)."
+        );
+    }
+    println!("delilas-verify PASS: swap present, all invariants hold.");
+    Ok(())
+}

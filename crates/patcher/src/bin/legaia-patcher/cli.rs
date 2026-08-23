@@ -142,6 +142,21 @@ pub(crate) enum Cmd {
         #[arg(long)]
         custom_items: bool,
     },
+    /// Read-only: verify a patched image carries the current
+    /// `--delilas-party` build invariants. Detects the swap (hero-named
+    /// sibling monster blocks), then checks every rebuilt player battle
+    /// file: no `0xFE` equipment extras survive in any equipment assembly
+    /// (the Spirit-streak / foreign-pointer class), every hand is seated at
+    /// its wrist, and every skeleton part carries geometry. Use this on the
+    /// exact `.bin` you are about to play-test - it catches a rom built by
+    /// a stale patcher (cached wasm, old server) in seconds, before an
+    /// emulator session is wasted on it.
+    DelilasVerify {
+        /// Path to the patched disc image to verify (`.bin`, Mode 2/2352; a
+        /// `.cue` is accepted and resolved to the `.bin` it references).
+        #[arg(long)]
+        input: PathBuf,
+    },
     /// Read-only: show the Earth Egg coin threshold (the Sol Tower Prize Counter
     /// exchange) - the value the `--earth-egg-price` editor changes.
     EarthEgg {
