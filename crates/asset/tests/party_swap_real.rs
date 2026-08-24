@@ -137,6 +137,7 @@ fn every_pairing_playerizes_and_reassembles() {
                 &archive,
                 source_id,
                 slot,
+                None,
             )
             .unwrap_or_else(|e| panic!("{who} <- {source_id}: {e:#}"));
             assert_eq!(out.file.len(), player_file.len());

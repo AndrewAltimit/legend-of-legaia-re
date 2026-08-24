@@ -1483,13 +1483,19 @@ window at the flourish's own tail, so the last second replays for as
 long as the results panel is up - measured on the rebuilt streams, a
 4.0-164.1 unit / 5.4-122.9 degree snap at every wrap.
 
-So the rebuilt stream is **composed**, not uniformly resampled: the
-sibling's flourish plays over the lead-in `[0, +0x85)` and what the
-sibling itself replays after winning fills `[+0x85, +0x86]`,
-phase-mapped so the frame the wrap lands on is the frame it wraps to.
-Lu contributes her own `[16, 24]` sway, Gi his `[30, 30]` hold; Che
-declares no window of his own, so his entries hold on the flourish's
-last frame. The window bytes themselves are never written - `+0x84` is
+So the rebuilt stream is **composed**, not uniformly resampled - and
+the lead-in `[0, +0x85)` stays **retail, verbatim**. The base streams
+are not victory-only: anim `0x11` (entry 0) is the Spirit / Super
+power-up flourish the battle plays right after every `0x10` charge
+(probe: actor `+0x1D9` steps `0x10 -> 0x11`, retail and swapped alike),
+and an early build that wrote the sibling's victory flourish over the
+lead-in swept the sibling's limbs across the battle closeup as dark
+mesh streaks. Only the loop window `[+0x85, +0x86]` - the frames the
+results screen parks on - carries the sibling's own post-win cycle,
+retargeted alone and phase-picked in host space against the retail
+lead-in's last frame. Lu contributes her `[16, 24]` sway, Gi his
+`[30, 30]` hold; Che declares no window of his own, so his entries hold
+on the flourish's last frame. The window bytes themselves are never written - `+0x84` is
 the byte `ArtAnimRecord::uses_base_archive` keys on. Entries 4/5 - the
 weak-victory actions (`0x15`/`0x16`), which the sequencer also loops -
 take the idle as a whole cycle (see

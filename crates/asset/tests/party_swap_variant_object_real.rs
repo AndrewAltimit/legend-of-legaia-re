@@ -226,6 +226,7 @@ fn every_swapped_variant_object_mirrors_its_attach_bone() {
                 &archive,
                 id,
                 host.slot,
+                None,
             )
             .unwrap_or_else(|e| panic!("{name} -> {}: playerize: {e:#}", host.who));
 

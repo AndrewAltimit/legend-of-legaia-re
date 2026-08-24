@@ -111,6 +111,36 @@ pub(crate) fn pack_part(p: &PartPose) -> [u8; 9] {
     out
 }
 
+/// Inverse of [`pack_part`]: one 9-byte record to a part pose
+/// (12-bit fields, translations sign-extended).
+pub(crate) fn unpack_part(b: &[u8]) -> PartPose {
+    let mut f = [0u16; 6];
+    for pair in 0..3 {
+        let (lo, hi, ext) = (
+            b[pair * 3] as u16,
+            b[pair * 3 + 1] as u16,
+            b[pair * 3 + 2] as u16,
+        );
+        f[pair * 2] = lo | ((ext & 0x0F) << 8);
+        f[pair * 2 + 1] = hi | ((ext & 0xF0) << 4);
+    }
+    let sx = |v: u16| -> i16 {
+        if v & 0x800 != 0 {
+            (v | 0xF000) as i16
+        } else {
+            v as i16
+        }
+    };
+    PartPose {
+        tx: sx(f[0]),
+        ty: sx(f[1]),
+        tz: sx(f[2]),
+        rx: f[3],
+        ry: f[4],
+        rz: f[5],
+    }
+}
+
 /// Encode a decoded stream (`[parts][frames][9-byte records]`) with the
 /// retail channel-delta codec - the exact inverse of
 /// [`me_archive::decode_channel_delta`], choosing the cheapest selector
@@ -759,35 +789,69 @@ pub fn rebuild_base_slot(
     for i in 0..n {
         let retail = ar.entry(i).with_context(|| format!("decode entry {i}"))?;
         let (parts, frames) = (retail[0] as usize, retail[1] as usize);
-        let source = if (4..=5).contains(&i) { &idle } else { clip };
-        // Compose against the retail loop window when the entry has one
-        // (all 24 retail base records do); otherwise the plain resample.
-        let composed = windows.get(&i).filter(|w| w.loops(frames)).map(|&w| {
-            let (lead, cycle) = match (i, &cycle_range) {
-                // Weak-victory entries: idle in and idle round - the
-                // idle is authored as a cycle, so the window closes on
-                // itself and the whole entry stays the near-static
-                // breathing retail gives these two.
-                (4..=5, _) => (&idle.frames[..], &idle.frames[..]),
-                (_, Some(r)) => (&clip.frames[..r.start], &clip.frames[r.clone()]),
-                _ => (&clip.frames[..], &clip.frames[clip.frames.len() - 1..]),
-            };
-            let frames_in = compose_base_stream(lead, cycle, frames, w);
-            crate::monster_archive::MonsterAnimation {
-                frame_count: frames_in.len(),
-                frames: frames_in,
-                ..source.clone()
+        // Retail frames stay VERBATIM outside the loop window. The base
+        // streams are not victory-only: anim 0x11 (entry 0) is the
+        // Spirit / Super power-up flourish the battle plays right after
+        // every 0x10 charge (probe: actor `+0x1D9` steps 0x10 -> 0x11 in
+        // the e2e telemetry, retail and swapped alike), and a
+        // victory-retargeted flourish there swept the sibling's limbs
+        // across the battle closeup as dark mesh streaks - the "Spirit
+        // distortion". Mid-battle playback only reaches the lead-in, so
+        // the sibling's celebration lives ONLY in the loop window the
+        // results screen parks on; the flourish frames every in-battle
+        // context can reach are the host's own.
+        let retail_frames: Vec<Vec<PartPose>> = (0..frames)
+            .map(|h| {
+                (0..parts)
+                    .map(|q| unpack_part(&retail[2 + (h * parts + q) * 9..]))
+                    .collect()
+            })
+            .collect();
+        let frames_out = match windows.get(&i).filter(|w| w.loops(frames)) {
+            Some(&w) => {
+                // What fills the window: the sibling's own post-win
+                // cycle (or its idle for the looped weak-victory
+                // entries), retargeted alone and phase-picked in HOST
+                // space against the retail lead-in's last frame.
+                let cycle_frames: Vec<Vec<PartPose>> = match (i, &cycle_range) {
+                    (4..=5, _) => idle.frames.clone(),
+                    (_, Some(r)) => clip.frames[r.clone()].to_vec(),
+                    _ => vec![clip.frames[clip.frames.len() - 1].clone()],
+                };
+                let cyc_anim = crate::monster_archive::MonsterAnimation {
+                    frame_count: cycle_frames.len(),
+                    frames: cycle_frames,
+                    ..clip.clone()
+                };
+                let cyc_len = cyc_anim.frame_count;
+                let cyc = retarget_clip(
+                    &cyc_anim,
+                    rig,
+                    player_file,
+                    archive_entry,
+                    source_id,
+                    parts,
+                    cyc_len,
+                )?;
+                let hw0 = w.start.min(frames);
+                let mut out: Vec<Vec<PartPose>> = retail_frames[..hw0].to_vec();
+                let k = match out.last() {
+                    Some(tail) => (0..cyc.len())
+                        .min_by(|&a, &b| {
+                            pose_dist(tail, &cyc[a]).total_cmp(&pose_dist(tail, &cyc[b]))
+                        })
+                        .unwrap_or(0),
+                    None => 0,
+                };
+                let span = w.end.saturating_sub(w.start).max(1);
+                for h in hw0..frames {
+                    let j = h - w.start;
+                    out.push(cyc[(k + j * cyc.len() / span) % cyc.len()].clone());
+                }
+                out
             }
-        });
-        let frames_out = retarget_clip(
-            composed.as_ref().unwrap_or(source),
-            rig,
-            player_file,
-            archive_entry,
-            source_id,
-            parts,
-            frames,
-        )?;
+            None => retail_frames,
+        };
         let mut decoded = Vec::with_capacity(2 + parts * frames * 9);
         decoded.push(parts as u8);
         decoded.push(frames as u8);

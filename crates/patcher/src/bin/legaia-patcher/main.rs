@@ -13,6 +13,7 @@
 
 mod cli;
 mod commands;
+mod delilas_audit;
 mod monster_block;
 mod monster_model;
 mod randomize;
@@ -52,6 +53,9 @@ fn main() -> Result<()> {
         Cmd::Fishing { input } => commands::cmd_fishing(&input),
         Cmd::DelilasPokes { custom_items } => commands::cmd_delilas_pokes(custom_items),
         Cmd::DelilasVerify { input } => commands::cmd_delilas_verify(&input),
+        Cmd::DelilasAudit { input, baseline } => {
+            delilas_audit::cmd_delilas_audit(&input, &baseline)
+        }
         Cmd::ScusPokes { patched, baseline } => commands::cmd_scus_pokes(&patched, &baseline),
         Cmd::EarthEgg { input } => commands::cmd_earth_egg(&input),
         Cmd::Locations { input } => commands::cmd_locations(&input),

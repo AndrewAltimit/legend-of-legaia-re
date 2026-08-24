@@ -82,6 +82,20 @@ if ! "$PATCHER" delilas-verify --input "$ROM" | tee "${OUT_DIR}/verify.log"; the
     exit 1
 fi
 
+# --- Stage 1b: baseline-relative audit ---------------------------------------
+# Streams / posed joints / hand radii vs the retail disc's own numbers -
+# the battery that catches the welded-weapon, wrist-seam and
+# clobbered-animation defect classes without an emulator.
+if [[ -n "${LEGAIA_DISC_BIN:-}" ]]; then
+    if ! "$PATCHER" delilas-audit --input "$ROM" --baseline "$LEGAIA_DISC_BIN" \
+        | tee "${OUT_DIR}/audit.log"; then
+        echo "[e2e] AUDIT FAIL - a defect class regressed. Stop." >&2
+        exit 1
+    fi
+else
+    echo "[e2e] WARN: LEGAIA_DISC_BIN unset - baseline audit skipped"
+fi
+
 if [[ "$SKIP_LIVE" == "1" ]]; then
     echo "[e2e] static PASS (live stage skipped)"
     exit 0

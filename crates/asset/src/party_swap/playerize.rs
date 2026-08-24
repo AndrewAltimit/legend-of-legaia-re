@@ -853,7 +853,30 @@ pub fn playerize_player_file(
     archive_entry: &[u8],
     source_id: u16,
     char_slot: usize,
+    readef: Option<&[u8]>,
 ) -> Result<PlayerizedFile> {
+    // Every clip the character can play - record[0]'s battle bank plus,
+    // when readef.DAT is supplied, the full art bank (the Spirit charge,
+    // the Super flourishes, every art). The FK hand inset optimizes the
+    // wrist seam across ALL of them; a record0-only objective left one
+    // art clip's seam a hair past the audit band.
+    let mut host_anims =
+        crate::battle_char_assembly::battle_animations(player_file).unwrap_or_default();
+    if let Some(readef) = readef
+        && let Ok(rec0) = crate::battle_char_assembly::decode_record0(player_file)
+        && let Ok(bank) = crate::battle_char_assembly::art_animation_bank(&rec0)
+    {
+        for rec in &bank {
+            if let Ok(archive) = crate::battle_char_assembly::art_me_archive(
+                readef,
+                char_slot,
+                rec.uses_base_archive(),
+            ) && let Ok(clip) = crate::battle_char_assembly::art_animation(rec, &archive)
+            {
+                host_anims.push(clip);
+            }
+        }
+    }
     // The host's own equipped-weapon geometry, cut once per record and
     // fused back into the swapped hand at record-rewrite time (see
     // `weapon_fuse`). Non-fatal: a failed cut leaves the swap bare-handed
@@ -893,6 +916,7 @@ pub fn playerize_player_file(
                 downscale,
                 hand_twins,
                 &fusions,
+                &host_anims,
             ) {
                 Ok(mut out) => {
                     if let Some(w) = &fuse_warning {
@@ -1171,6 +1195,7 @@ fn playerize_scaled(
     texture_downscale: u32,
     hand_twins: HandTwins,
     fusions: &super::weapon_fuse::WeaponFusion,
+    host_anims: &[crate::monster_archive::MonsterAnimation],
 ) -> Result<PlayerizedFile> {
     let mut warnings = Vec::new();
     if texture_downscale > 1 {
@@ -1268,10 +1293,6 @@ fn playerize_scaled(
         &CANONICAL_CHILD,
         &CANONICAL_PARENT,
     );
-    // The host's own battle clips (record0, preserved verbatim in the
-    // rebuilt file) - the frames the FK hand inset optimizes against.
-    let host_anims =
-        crate::battle_char_assembly::battle_animations(player_file).unwrap_or_default();
     let mut baked: Vec<ModelObject> = Vec::with_capacity(CANONICAL_PARTS);
     for (c, src_obj) in src_model.iter().enumerate() {
         let ch = rig.channel_for_canonical[c] as usize;
@@ -1340,7 +1361,7 @@ fn playerize_scaled(
             if let (Some(fore), Some(dst_f), Some(dst_h)) =
                 (baked.get(c - 1), dst_model.get(cf), dst_model.get(ch))
                 && let Some(d) =
-                    fk_inset_hand(&mut o, fore, dst_f, dst_h, cf, ch, &host_anims, 12.0)?
+                    fk_inset_hand(&mut o, fore, dst_f, dst_h, cf, ch, host_anims, 12.0)?
             {
                 warnings.push(format!(
                     "hand {c}: FK inset ({:+.0},{:+.0},{:+.0}) closes the wrist seam",

@@ -321,6 +321,7 @@ pub fn apply_delilas_party(
             &archive,
             id,
             template_slot,
+            Some(&patcher.read_entry_footprint(READEF_ENTRY)?),
         )
         .with_context(|| format!("{who} <- monster {id}"))?;
         patcher.patch_prot_entry(entry, 0, &playerized.file)?;

@@ -157,6 +157,20 @@ pub(crate) enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only defect battery for a `--delilas-party` image, measured
+    /// against the retail baseline: per-clip FK joint closures + posed
+    /// extents vs the baseline's own numbers, an animation-stream census
+    /// (base-archive lead-ins must stay retail - the battle plays them),
+    /// and welded-weapon hand-radius checks. Two discs in, verdicts out;
+    /// no emulator or save state needed.
+    DelilasAudit {
+        /// Path to the patched disc image (`.bin` / `.cue`).
+        #[arg(long)]
+        input: PathBuf,
+        /// Path to the retail baseline disc image (`.bin` / `.cue`).
+        #[arg(long)]
+        baseline: PathBuf,
+    },
     /// Read-only: emit RAM pokes (`0xADDR:0xWORD` lines) for every SCUS word
     /// where a patched disc differs from a baseline disc. A save state carries
     /// the whole resident SCUS, so a probe that loads a state from one disc
