@@ -2454,3 +2454,33 @@ description = "DELILAS PARTY SWAP MOD savestate - same fixed rom as delilas_gi_m
 topics = ["delilas party", "Gi", "Spirit", "streaks", "residual", "patched disc", "bug repro"]
 phase = "battle"
 expected_game_mode = 0x15
+
+[[scenarios]]
+slot = 1
+label = "delilas_gi_hand_gap_v3"
+backup_fingerprint = "ed830c9db304d50115948fa2b02b7124fcf7fb74f7e7fe0de15a5ea31ebf423d"
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "vozz"
+description = "DELILAS PARTY SWAP MOD savestate - rom 1787575238766 (delilas-verify PASS, all static invariants hold). Gi (Noa slot) at the command ring in a vozz random encounter with his fist visibly DETACHED from the forearm. Decoded runtime assembly is byte-identical to a clean boot-anchored battle (digest e92dfddc..., 18 objects, no 0xFE) - the defect is POSE-TIME, not bake-time: certain idle-cycle frames pose the hand channel where the seated geometry does not follow."
+topics = ["delilas", "battle", "pose-time", "hand gap", "probe state"]
+
+[[scenarios]]
+slot = 2
+label = "delilas_che_hammer_gaps_v3"
+backup_fingerprint = "675336d7d2d3f7ff66671ddce60be30fce0518579fb066d0779dad69616cbf86"
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "vozz"
+description = "DELILAS PARTY SWAP MOD savestate - same rom/session as delilas_gi_hand_gap_v3. Che (Gala slot) at his ring with a separated hammer chunk floating right of the body and gaps in the hammer head. Same pose-time class: assembly bytes match the clean battle."
+topics = ["delilas", "battle", "pose-time", "hammer gap", "probe state"]
+
+[[scenarios]]
+slot = 3
+label = "delilas_gi_spirit_distortion_v3"
+backup_fingerprint = "ccc316d8494386e49ad02b0b38da70e07b06522c7e907972026bada97016ddd4"
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "vozz"
+description = "DELILAS PARTY SWAP MOD savestate - same rom/session. Gi mid-Spirit with distorted/stretched torso mesh on a disc that has NO 0xFE extras (the ordinal-overrun fix is on this rom and the runtime assembly confirms it) - a SECOND streak mechanism, pose-time like the hand/hammer gaps. Streaks flash within ~1s of loading."
+topics = ["delilas", "battle", "pose-time", "spirit streaks", "probe state"]
