@@ -889,6 +889,12 @@ pub(crate) fn cmd_delilas_verify(input: &Path) -> Result<()> {
         let mut fe_hits = 0usize;
         let mut seat_worst: f32 = 0.0;
         let mut empty_bones = 0usize;
+        // Weapon-fusion presence: a single-weapon loadout should carry at
+        // least one flat-colour (untextured) primitive - the fused host
+        // weapon's signature. Zero across every weapon record = a rom
+        // from a build older than the fusion.
+        let mut weapon_loadouts = 0usize;
+        let mut fused_loadouts = 0usize;
         for eq in &loadouts {
             let Ok(asm) = bca::assemble_character(&file, &pack, eq) else {
                 continue;
@@ -948,21 +954,41 @@ pub(crate) fn cmd_delilas_verify(input: &Path) -> Result<()> {
                     seat_worst = mag;
                 }
             }
+            if (2..=3).any(|sec| eq[sec] > 0x18) {
+                weapon_loadouts += 1;
+                let flat = asm
+                    .bone_tags
+                    .iter()
+                    .enumerate()
+                    .filter(|&(_, &tag)| tag < 100)
+                    .map(|(oi, _)| {
+                        bca::equip_isolate::object_prim_refs(&tmd, &asm.tmd, oi)
+                            .iter()
+                            .filter(|pr| pr.uvs.is_empty())
+                            .count()
+                    })
+                    .sum::<usize>();
+                if flat > 0 {
+                    fused_loadouts += 1;
+                }
+            }
         }
         let fe_ok = fe_hits == 0;
         let seat_ok = seat_worst <= HAND_SEAT_MAX;
         let bones_ok = empty_bones == 0;
-        if !fe_ok || !seat_ok || !bones_ok {
+        let fuse_ok = weapon_loadouts == 0 || fused_loadouts > 0;
+        if !fe_ok || !seat_ok || !bones_ok || !fuse_ok {
             failures += 1;
         }
         println!(
             "{who}: {} assemblies | 0xFE extras {} ({fe_hits}) | hand seat {} \
              (worst {seat_worst:.1} <= {HAND_SEAT_MAX}) | skeleton geometry {} \
-             ({empty_bones} empty)",
+             ({empty_bones} empty) | weapon fusion {} ({fused_loadouts}/{weapon_loadouts})",
             loadouts.len(),
             if fe_ok { "OK" } else { "FAIL" },
             if seat_ok { "OK" } else { "FAIL" },
             if bones_ok { "OK" } else { "FAIL" },
+            if fuse_ok { "OK" } else { "FAIL" },
         );
     }
     if failures > 0 {
