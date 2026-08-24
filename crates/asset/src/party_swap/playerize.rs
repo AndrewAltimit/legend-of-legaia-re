@@ -903,6 +903,161 @@ enum HandTwins {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// The FK hand inset: translate a baked fist IN HAND-LOCAL SPACE so its
+/// posed joint overlap with the forearm matches the replaced hand's
+/// across the host's own battle clips.
+///
+/// Why the centroid seat alone is not enough (measured on the v3 defect
+/// states): matching centroid *magnitude* puts the fist in the right
+/// region, but the retail hand's geometry OVERLAPS the forearm at the
+/// wrist - a sibling fist of a different shape merely touches it, and
+/// the joint "breathes" 3-6x wider than retail across the stance clips
+/// (Gi-as-Noa armB closest-pair 2.7..9.9 vs retail's 1.0..3.2; Che's
+/// hammer arm 10..18 vs Gala's steady 3) - a visible seam at the
+/// command-ring closeup, the class every rest-pose metric is blind to.
+///
+/// The inset is a single hand-local shift `d` (posed as `R_h*d` per
+/// frame) grid-searched to minimize the worst posed closest-pair
+/// distance to the forearm across every record0 clip frame, aiming at
+/// the host's own closure and clamped to the hand-seat law's budget.
+fn fk_inset_hand(
+    hand: &mut ModelObject,
+    forearm: &ModelObject,
+    dst_forearm: &ModelObject,
+    dst_hand: &ModelObject,
+    ch_f: usize,
+    ch_h: usize,
+    anims: &[crate::monster_archive::MonsterAnimation],
+    law_budget: f32,
+) -> Result<Option<[f32; 3]>> {
+    use crate::monster_archive::PartPose;
+    if hand.vertices.is_empty() || forearm.vertices.is_empty() {
+        return Ok(None);
+    }
+    let rot = |p: &PartPose| -> [[f32; 3]; 3] {
+        let rad = |r: u16| (r as f32) * std::f32::consts::TAU / 4096.0;
+        let (sx, cx) = rad(p.rx).sin_cos();
+        let (sy, cy) = rad(p.ry).sin_cos();
+        let (sz, cz) = rad(p.rz).sin_cos();
+        [
+            [cy * cz, sx * sy * cz - cx * sz, cx * sy * cz + sx * sz],
+            [cy * sz, sx * sy * sz + cx * cz, cx * sy * sz - sx * cz],
+            [-sy, sx * cy, cx * cy],
+        ]
+    };
+    let pose = |vs: &[[i16; 3]], p: &PartPose, d: &[f32; 3]| -> Vec<[f32; 3]> {
+        let r = rot(p);
+        vs.iter()
+            .map(|v| {
+                let x = v[0] as f32 + d[0];
+                let y = v[1] as f32 + d[1];
+                let z = v[2] as f32 + d[2];
+                [
+                    r[0][0] * x + r[0][1] * y + r[0][2] * z + p.tx as f32,
+                    r[1][0] * x + r[1][1] * y + r[1][2] * z + p.ty as f32,
+                    r[2][0] * x + r[2][1] * y + r[2][2] * z + p.tz as f32,
+                ]
+            })
+            .collect()
+    };
+    let closest = |a: &[[f32; 3]], b: &[[f32; 3]]| -> f32 {
+        let mut best = f32::MAX;
+        for va in a {
+            for vb in b {
+                let d = (va[0] - vb[0]).powi(2) + (va[1] - vb[1]).powi(2) + (va[2] - vb[2]).powi(2);
+                if d < best {
+                    best = d;
+                }
+            }
+        }
+        best.sqrt()
+    };
+    // Sample frames: every 2nd frame of every clip keeps the sweep
+    // representative without an O(everything) budget.
+    let mut frames: Vec<(&PartPose, &PartPose)> = Vec::new();
+    for a in anims {
+        for f in a.frames.iter().step_by(2) {
+            if let (Some(pf), Some(ph)) = (f.get(ch_f), f.get(ch_h)) {
+                frames.push((pf, ph));
+            }
+        }
+    }
+    if frames.is_empty() {
+        return Ok(None);
+    }
+    let worst_closure = |vs: &[[i16; 3]], d: &[f32; 3]| -> f32 {
+        let mut worst = 0f32;
+        for (pf, ph) in &frames {
+            let fa = pose(&forearm.vertices, pf, &[0.0; 3]);
+            let ha = pose(vs, ph, d);
+            let c = closest(&fa, &ha);
+            if c > worst {
+                worst = c;
+            }
+        }
+        worst
+    };
+    // The host's own joint sets the target - never chase below its noise.
+    let target = worst_closure(&dst_hand.vertices, &[0.0; 3]).max({
+        // dst forearm/hand pair measured with the dst forearm.
+        let mut worst = 0f32;
+        for (pf, ph) in &frames {
+            let fa = pose(&dst_forearm.vertices, pf, &[0.0; 3]);
+            let ha = pose(&dst_hand.vertices, ph, &[0.0; 3]);
+            let c = closest(&fa, &ha);
+            if c > worst {
+                worst = c;
+            }
+        }
+        worst
+    });
+    let base = worst_closure(&hand.vertices, &[0.0; 3]);
+    if base <= target + 1.0 {
+        return Ok(None); // already as tight as the host's own joint
+    }
+    // Grid-search the hand-local inset, respecting the seat-law budget.
+    let cen = |vs: &[[i16; 3]]| -> [f32; 3] {
+        let n = vs.len() as f32;
+        let s = vs.iter().fold([0f32; 3], |a, v| {
+            [a[0] + v[0] as f32, a[1] + v[1] as f32, a[2] + v[2] as f32]
+        });
+        [s[0] / n, s[1] / n, s[2] / n]
+    };
+    let ch = cen(&hand.vertices);
+    let dst_mag = {
+        let c = cen(&dst_hand.vertices);
+        (c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt()
+    };
+    let mut best: ([f32; 3], f32) = ([0.0; 3], base);
+    for dx in (-15i32..=15).step_by(3) {
+        for dy in (-15i32..=15).step_by(3) {
+            for dz in (-15i32..=15).step_by(3) {
+                let d = [dx as f32, dy as f32, dz as f32];
+                let nc = [ch[0] + d[0], ch[1] + d[1], ch[2] + d[2]];
+                let mag = (nc[0] * nc[0] + nc[1] * nc[1] + nc[2] * nc[2]).sqrt();
+                if mag > dst_mag + law_budget {
+                    continue;
+                }
+                let w = worst_closure(&hand.vertices, &d);
+                if w < best.1 {
+                    best = (d, w);
+                }
+            }
+        }
+    }
+    if best.1 >= base - 0.5 {
+        return Ok(None); // nothing usefully better in budget
+    }
+    for v in hand.vertices.iter_mut() {
+        *v = [
+            round_coord(v[0] as f32 + best.0[0])?,
+            round_coord(v[1] as f32 + best.0[1])?,
+            round_coord(v[2] as f32 + best.0[2])?,
+        ];
+    }
+    Ok(Some(best.0))
+}
+
 fn playerize_scaled(
     player_file: &[u8],
     entry_len: usize,
@@ -998,6 +1153,10 @@ fn playerize_scaled(
         &CANONICAL_CHILD,
         &CANONICAL_PARENT,
     );
+    // The host's own battle clips (record0, preserved verbatim in the
+    // rebuilt file) - the frames the FK hand inset optimizes against.
+    let host_anims =
+        crate::battle_char_assembly::battle_animations(player_file).unwrap_or_default();
     let mut baked: Vec<ModelObject> = Vec::with_capacity(CANONICAL_PARTS);
     for (c, src_obj) in src_model.iter().enumerate() {
         let ch = rig.channel_for_canonical[c] as usize;
@@ -1057,6 +1216,21 @@ fn playerize_scaled(
                         ];
                     }
                 }
+            }
+            // FK inset on top of the centroid seat: the seat puts the
+            // fist in the right region; this closes the wrist SEAM the
+            // way the host's own hand does, across the host's clips
+            // (see fk_inset_hand).
+            let cf = rig.channel_for_canonical[c - 1] as usize;
+            if let (Some(fore), Some(dst_f), Some(dst_h)) =
+                (baked.get(c - 1), dst_model.get(cf), dst_model.get(ch))
+                && let Some(d) =
+                    fk_inset_hand(&mut o, fore, dst_f, dst_h, cf, ch, &host_anims, 12.0)?
+            {
+                warnings.push(format!(
+                    "hand {c}: FK inset ({:+.0},{:+.0},{:+.0}) closes the wrist seam",
+                    d[0], d[1], d[2]
+                ));
             }
             // The sibling fists are OPEN SHELLS authored for the enemy
             // camera's angles (the body parts survive as closed tubes);
