@@ -843,14 +843,36 @@ pub(crate) fn bake_frames(
 
 /// Rebuild a `PLAYERn` battle file so the character wears the Delilas
 /// model of `source_id` (162/163/164). `entry_len` is the PROT entry's
-/// exact byte length (the output is padded to it).
+/// exact byte length (the output is padded to it). `char_slot` is the
+/// player-file slot (0 Vahn / 1 Noa / 2 Gala) - it keys the committed
+/// item-isolation rules the weapon fusion runs under.
 pub fn playerize_player_file(
     player_file: &[u8],
     entry_len: usize,
     rig: &PlayerRig,
     archive_entry: &[u8],
     source_id: u16,
+    char_slot: usize,
 ) -> Result<PlayerizedFile> {
+    // The host's own equipped-weapon geometry, cut once per record and
+    // fused back into the swapped hand at record-rewrite time (see
+    // `weapon_fuse`). Non-fatal: a failed cut leaves the swap bare-handed
+    // exactly as before, with a note.
+    let (fusions, fuse_warning) = match super::weapon_fuse::weapon_fusions(player_file, char_slot) {
+        Ok(f) => {
+            let n = f.per_record.len();
+            (
+                f,
+                Some(format!("host weapon fused into {n} held-item records")),
+            )
+        }
+        Err(e) => (
+            super::weapon_fuse::WeaponFusion::default(),
+            Some(format!(
+                "weapon fusion unavailable ({e:#}); hands stay bare"
+            )),
+        ),
+    };
     let mut last_err = None;
     // Fit ladder: texture resolution OUTRANKS hand twins (the quality
     // oracle holds full-resolution textures for every pairing), and
@@ -870,8 +892,12 @@ pub fn playerize_player_file(
                 source_id,
                 downscale,
                 hand_twins,
+                &fusions,
             ) {
                 Ok(mut out) => {
+                    if let Some(w) = &fuse_warning {
+                        out.warnings.push(w.clone());
+                    }
                     match hand_twins {
                         HandTwins::Full => {}
                         HandTwins::WeaponHand => out.warnings.push(
@@ -1058,6 +1084,80 @@ fn fk_inset_hand(
     Ok(Some(best.0))
 }
 
+/// Monster fists that are really welded weapons: `(monster id, welded
+/// canonical hand)`. Che's armB hammer-fist (163 part 8: 129 prims at
+/// centroid magnitude 150) and Gi's armA blade-fist (162 part 5: claw
+/// radii to 219 from its own centroid), against <= 38..61 for every real
+/// Delilas fist. A welded weapon never closes the wrist the way a hand
+/// does (Che's was the one joint the FK inset left at 5..7), and under a
+/// host clip whose hand rotations assume a hand-sized part the blade
+/// sweeps wildly - Gi's blade-fist under Noa's Spirit charge swept from
+/// the legs to over the head, the catalogued `delilas_gi_spirit
+/// _distortion_v3` streak. With the host's own weapon fused back in
+/// (`weapon_fuse`) the welded copy is also redundant: the swap replaces
+/// it with the sibling's other fist, mirrored.
+const WELDED_WEAPON_FISTS: [(u16, usize); 2] = [(163, 8), (162, 5)];
+
+/// Replace the welded-weapon fist (canonical `to`) with the sibling's
+/// other fist (canonical `from`) mirrored across the source body's
+/// sagittal plane, re-expressed in the target hand's rest frame:
+/// `v_to = R_to^T * M * R_from * v_from` with `M` the reflection about
+/// the shoulder-span (lateral) axis. Rotation-only on purpose - the
+/// downstream centroid seat + FK inset own the translation, so the mirror
+/// only has to deliver shape + orientation. The reflection flips
+/// chirality, so every primitive's winding reverses (middle-corner swap:
+/// reverses both triangles of a Z-order quad, and a triangle outright).
+fn mirror_fist(src_model: &mut [ModelObject], src_rest: &[PartPose], to: usize) -> Result<()> {
+    let from = if to == 8 { 5 } else { 8 };
+    let pivot = |c: usize| -> [f32; 3] {
+        [
+            src_rest[c].tx as f32,
+            src_rest[c].ty as f32,
+            src_rest[c].tz as f32,
+        ]
+    };
+    let mut lat = vsub(pivot(6), pivot(3)); // shoulder span = lateral axis
+    let n = (lat[0] * lat[0] + lat[1] * lat[1] + lat[2] * lat[2]).sqrt();
+    if n < 1.0 {
+        bail!("degenerate shoulder span");
+    }
+    for v in lat.iter_mut() {
+        *v /= n;
+    }
+    let ra = rot_matrix(&src_rest[from]);
+    let rb = rot_matrix(&src_rest[to]);
+    let mut fist = src_model[from].clone();
+    for v in fist.vertices.iter_mut() {
+        let w = apply(&ra, [v[0] as f32, v[1] as f32, v[2] as f32]);
+        let d = w[0] * lat[0] + w[1] * lat[1] + w[2] * lat[2];
+        let m = [
+            w[0] - 2.0 * d * lat[0],
+            w[1] - 2.0 * d * lat[1],
+            w[2] - 2.0 * d * lat[2],
+        ];
+        let lb = apply_transposed(&rb, m);
+        *v = [
+            round_coord(lb[0])?,
+            round_coord(lb[1])?,
+            round_coord(lb[2])?,
+        ];
+    }
+    for g in fist.groups.iter_mut() {
+        for p in g.prims.iter_mut() {
+            p.vertices.swap(1, 2);
+            if p.uvs.len() >= 3 {
+                p.uvs.swap(1, 2);
+            }
+            if p.colors.len() >= 3 {
+                p.colors.swap(1, 2);
+            }
+        }
+    }
+    src_model[to] = fist;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
 fn playerize_scaled(
     player_file: &[u8],
     entry_len: usize,
@@ -1066,6 +1166,7 @@ fn playerize_scaled(
     source_id: u16,
     texture_downscale: u32,
     hand_twins: HandTwins,
+    fusions: &super::weapon_fuse::WeaponFusion,
 ) -> Result<PlayerizedFile> {
     let mut warnings = Vec::new();
     if texture_downscale > 1 {
@@ -1079,7 +1180,7 @@ fn playerize_scaled(
     let mesh = monster_archive::mesh(archive_entry, source_id)?
         .ok_or_else(|| anyhow::anyhow!("monster id {source_id}: empty slot"))?;
     let src_tmd = legaia_tmd::parse(mesh.tmd_bytes()).context("delilas TMD")?;
-    let src_model = decode_model(&src_tmd, mesh.tmd_bytes())?;
+    let mut src_model = decode_model(&src_tmd, mesh.tmd_bytes())?;
     if src_model.len() != CANONICAL_PARTS {
         bail!("monster id {source_id} has {} parts", src_model.len());
     }
@@ -1094,6 +1195,16 @@ fn playerize_scaled(
         .first()
         .ok_or_else(|| anyhow::anyhow!("monster idle empty"))?
         .clone();
+    // A sibling whose armB "fist" is a welded weapon (Che's hammer-fist,
+    // authored 150 units out and never closing the wrist like a hand)
+    // drops the weapon: the armA fist stands in, mirrored, and the host's
+    // own equipped weapon takes the hammer's role via `weapon_fuse`.
+    if let Some(&(_, welded)) = WELDED_WEAPON_FISTS.iter().find(|(id, _)| *id == source_id) {
+        mirror_fist(&mut src_model, &src_rest, welded)?;
+        warnings.push(format!(
+            "welded weapon fist (canonical {welded}) replaced by the mirrored other fist"
+        ));
+    }
 
     // Player rest pose + the retail per-channel part anchors.
     let idle = battle_char_assembly::idle_battle_animation(player_file)?
@@ -1390,7 +1501,24 @@ fn playerize_scaled(
             .section_pools
             .get(section)
             .ok_or_else(|| anyhow::anyhow!("record {idx}: section {section} out of range"))?;
-        let rewritten = rewrite_section_record(&decoded.bytes, &channel_geom, pool_block)
+        // Held-item records get the host's own weapon fused into the baked
+        // hand geometry (see `weapon_fuse`) - after the seat + FK inset,
+        // so the blade never drags the fist's placement.
+        let fused_geom;
+        let geom = match fusions.per_record.get(&(section, rec.id)) {
+            Some(per_channel) => {
+                let mut g = channel_geom.clone();
+                for (ch, add) in per_channel {
+                    if let Some(dst) = g.get_mut(ch) {
+                        super::weapon_fuse::merge_into(dst, add);
+                    }
+                }
+                fused_geom = g;
+                &fused_geom
+            }
+            None => &channel_geom,
+        };
+        let rewritten = rewrite_section_record(&decoded.bytes, geom, pool_block)
             .with_context(|| format!("rewrite record {idx} (id {:#x})", rec.id))?;
         let stream = legaia_lzs::compress(&rewritten);
         let mut slot = Vec::with_capacity(4 + stream.len());

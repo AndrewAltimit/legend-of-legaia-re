@@ -314,9 +314,15 @@ pub fn apply_delilas_party(
             .read_entry(entry)
             .with_context(|| format!("read PROT entry {entry}"))?
             .len();
-        let playerized =
-            playerize::playerize_player_file(&player_file, entry_len, rig, &archive, id)
-                .with_context(|| format!("{who} <- monster {id}"))?;
+        let playerized = playerize::playerize_player_file(
+            &player_file,
+            entry_len,
+            rig,
+            &archive,
+            id,
+            template_slot,
+        )
+        .with_context(|| format!("{who} <- monster {id}"))?;
         patcher.patch_prot_entry(entry, 0, &playerized.file)?;
 
         // Win poses: the character's eight base "ME" victory streams

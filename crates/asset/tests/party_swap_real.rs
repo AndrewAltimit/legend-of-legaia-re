@@ -27,11 +27,21 @@ fn every_pairing_monsterizes_and_splices() {
     let archive = std::fs::read(dir.join("0867_battle_data.BIN")).expect("read archive");
 
     let pairs = [
-        ("0863_edstati3.BIN", &party_swap::RIG_VAHN_GALA, "Vahn"),
-        ("0864_edstati3.BIN", &party_swap::RIG_NOA, "Noa"),
-        ("0865_battle_data.BIN", &party_swap::RIG_VAHN_GALA, "Gala"),
+        (
+            "0863_edstati3.BIN",
+            &party_swap::RIG_VAHN_GALA,
+            "Vahn",
+            0usize,
+        ),
+        ("0864_edstati3.BIN", &party_swap::RIG_NOA, "Noa", 1),
+        (
+            "0865_battle_data.BIN",
+            &party_swap::RIG_VAHN_GALA,
+            "Gala",
+            2,
+        ),
     ];
-    for (file, rig, who) in pairs {
+    for (file, rig, who, _slot) in pairs {
         let player_file = std::fs::read(dir.join(file)).expect("read player file");
         for target_id in [162u16, 163, 164] {
             let out = party_swap::swap_into_block(&player_file, rig, &archive, target_id)
@@ -100,11 +110,21 @@ fn every_pairing_playerizes_and_reassembles() {
     let archive = std::fs::read(dir.join("0867_battle_data.BIN")).expect("read archive");
 
     let pairs = [
-        ("0863_edstati3.BIN", &party_swap::RIG_VAHN_GALA, "Vahn"),
-        ("0864_edstati3.BIN", &party_swap::RIG_NOA, "Noa"),
-        ("0865_battle_data.BIN", &party_swap::RIG_VAHN_GALA, "Gala"),
+        (
+            "0863_edstati3.BIN",
+            &party_swap::RIG_VAHN_GALA,
+            "Vahn",
+            0usize,
+        ),
+        ("0864_edstati3.BIN", &party_swap::RIG_NOA, "Noa", 1),
+        (
+            "0865_battle_data.BIN",
+            &party_swap::RIG_VAHN_GALA,
+            "Gala",
+            2,
+        ),
     ];
-    for (file, rig, who) in pairs {
+    for (file, rig, who, slot) in pairs {
         let player_file = std::fs::read(dir.join(file)).expect("read player file");
         let retail_pack = battle_data_pack::parse(&player_file).expect("retail pack");
         let retail_anims =
@@ -116,6 +136,7 @@ fn every_pairing_playerizes_and_reassembles() {
                 rig,
                 &archive,
                 source_id,
+                slot,
             )
             .unwrap_or_else(|e| panic!("{who} <- {source_id}: {e:#}"));
             assert_eq!(out.file.len(), player_file.len());

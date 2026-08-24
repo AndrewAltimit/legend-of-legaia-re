@@ -1386,7 +1386,22 @@ chain repacks with sector-aligned slots inside the retail entry footprint.
 New-game template names follow the mapping ("Gi" / "Lu" / "Che"; existing
 saves keep their stored names).
 
-The **field** walking models rebuild too (`party_swap::fieldize`): each
+Two of the sibling "fists" are really **welded weapons** - Che's armB
+hammer-fist and Gi's armA blade-fist, each authored several times the
+radius of a real hand - and a welded weapon posed by a host clip whose
+hand rotations assume a hand-sized part sweeps across the body (Gi's
+blade under Noa's Spirit charge was the catalogued streak). The swap
+replaces each with the sibling's other fist, mirrored across the source
+body's sagittal plane (`playerize::WELDED_WEAPON_FISTS`), and puts the
+**host's own equipped weapon** in the hand instead: per held-item section
+record, the same curated item-alone cut the equipment viewer uses
+(`equip_isolate`) recovers that record's welded weapon geometry, each
+primitive flat-shaded from the mean texel it sampled on the retail band
+(the re-laid band no longer carries the weapon's texels), and the result
+merges into the baked hand at record-rewrite time - after the hand's
+centroid seat + FK inset, so the blade never drags the fist's placement
+(`party_swap::weapon_fuse`). Ra-Seru records (item ids `0x01..=0x18`)
+keep their bare arm - dressing the Ra-Seru arm is a separate cut. each
 character's PROT 0874 field mesh + atlas window rebuilds from the
 sibling's **own field NPC mesh** (the nilboa duel-scene pack, PROT 0639,
 with rest poses + head TIMs from PROT 0638) - retail-authored chibi

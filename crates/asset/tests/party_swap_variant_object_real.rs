@@ -126,19 +126,26 @@ struct Host {
     file: Vec<u8>,
     rig: &'static PlayerRig,
     who: &'static str,
+    slot: usize,
 }
 
 fn hosts(dir: &std::path::Path) -> Vec<Host> {
     [
-        ("0863_edstati3.BIN", &party_swap::RIG_VAHN_GALA, "Vahn"),
-        ("0864_edstati3.BIN", &party_swap::RIG_NOA, "Noa"),
-        ("0865_battle_data.BIN", &party_swap::RIG_VAHN_GALA, "Gala"),
+        ("0863_edstati3.BIN", &party_swap::RIG_VAHN_GALA, "Vahn", 0),
+        ("0864_edstati3.BIN", &party_swap::RIG_NOA, "Noa", 1),
+        (
+            "0865_battle_data.BIN",
+            &party_swap::RIG_VAHN_GALA,
+            "Gala",
+            2,
+        ),
     ]
     .into_iter()
-    .map(|(f, rig, who)| Host {
+    .map(|(f, rig, who, slot)| Host {
         file: std::fs::read(dir.join(f)).expect("read player file"),
         rig,
         who,
+        slot,
     })
     .collect()
 }
@@ -218,6 +225,7 @@ fn every_swapped_variant_object_mirrors_its_attach_bone() {
                 host.rig,
                 &archive,
                 id,
+                host.slot,
             )
             .unwrap_or_else(|e| panic!("{name} -> {}: playerize: {e:#}", host.who));
 

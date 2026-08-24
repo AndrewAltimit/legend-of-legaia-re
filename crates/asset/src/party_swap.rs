@@ -52,6 +52,7 @@ pub mod fieldize;
 pub mod moveset;
 pub mod nivora_field;
 pub mod playerize;
+pub(crate) mod weapon_fuse;
 pub mod winpose;
 
 /// Canonical part order of the swap = the Delilas mesh order shared by all

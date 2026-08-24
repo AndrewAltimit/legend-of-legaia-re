@@ -915,17 +915,34 @@ pub(crate) fn cmd_delilas_verify(input: &Path) -> Result<()> {
                     empty_bones += 1;
                 }
             }
-            // Hand seat (canonical 5 and 8).
+            // Hand seat (canonical 5 and 8), measured over the vertices
+            // the TEXTURED primitives reference: the fist itself. The
+            // host's fused weapon (`weapon_fuse`) is flat-colour geometry
+            // welded into the same object, legitimately authored far from
+            // the wrist (a blade runs 250 units), and must not count
+            // against the fist's seat.
             for c in [5usize, 8] {
                 let ch = rig.channel_for_canonical[c];
                 let Some(oi) = asm.bone_tags.iter().position(|&t| t == ch) else {
                     continue;
                 };
                 let o = &tmd.objects[oi];
-                let n = o.vertices.len().max(1) as f32;
-                let s = o.vertices.iter().fold([0f32; 3], |a, v| {
-                    [a[0] + v.x as f32, a[1] + v.y as f32, a[2] + v.z as f32]
-                });
+                let mut corners = std::collections::BTreeSet::new();
+                for pr in bca::equip_isolate::object_prim_refs(&tmd, &asm.tmd, oi) {
+                    if !pr.uvs.is_empty() {
+                        corners.extend(pr.corners.iter().copied());
+                    }
+                }
+                if corners.is_empty() {
+                    continue;
+                }
+                let n = corners.len() as f32;
+                let s = corners
+                    .iter()
+                    .filter_map(|&ci| o.vertices.get(ci))
+                    .fold([0f32; 3], |a, v| {
+                        [a[0] + v.x as f32, a[1] + v.y as f32, a[2] + v.z as f32]
+                    });
                 let mag = (s[0] * s[0] + s[1] * s[1] + s[2] * s[2]).sqrt() / n;
                 if mag > seat_worst {
                     seat_worst = mag;
