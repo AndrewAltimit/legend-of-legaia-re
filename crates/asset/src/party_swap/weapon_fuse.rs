@@ -12,19 +12,22 @@
 //! section record it runs the same curated item-alone cut the site's
 //! equipment viewer uses ([`equip_isolate`]), takes the claimed primitives
 //! of the **skeleton** objects (the welded weapon - surplus copies stay
-//! dropped, the swap's variant aliasing covers those), flat-shades each
-//! primitive from the mean texel it sampled on the retail band, and hands
+//! dropped, the swap's variant aliasing covers those), colours each
+//! primitive corner from the texels it sampled on the retail band, and hands
 //! the per-channel geometry to the record rewrite to merge into the baked
 //! sibling part. Coordinates copy verbatim: the claimed primitives are
 //! already in the attach bone's local frame, the same frame the baked fist
 //! was seated into, so the weapon rides the host's clips exactly as retail
 //! posed it (the pose-exact merge measured on the enemy-side swap).
 //!
-//! Flat shading is the deliberate v1: the band re-layout repaints every
+//! Untextured shading is deliberate: the band re-layout repaints every
 //! section tile with the sibling's texels, so the weapon's retail texels
-//! are gone from VRAM - per-prim baked colours (`F3`/`F4`) need no texture
-//! space, no palette columns and no UV management, and a club or blade at
-//! PSX resolution reads fine with its painted shading averaged per face.
+//! are gone from VRAM - baked colours need no texture space, no palette
+//! columns and no UV management. Gouraud (`G3`/`G4`) rather than flat:
+//! each corner samples a 3x3 texel window at its own UV, so the weapon
+//! keeps its painted gradients (a per-face flat colour reads as matte
+//! plastic; Heavy Strike's genuinely green blade only reads as metal
+//! with its shading).
 //!
 //! Ra-Seru records (item-table ids `0x01..=0x18`, the three Ra-Serus'
 //! level forms - the living arm the section-3/section-2 sibling slot
@@ -69,7 +72,31 @@ fn c5to8(v: u16) -> u32 {
     (v << 3) | (v >> 2)
 }
 
-/// Mean colour of the texels a primitive sampled, as the F-prim's baked
+/// Per-corner colour: mean of the opaque texels in a 3x3 window around
+/// the corner's own UV - the gouraud vertex colour that keeps the
+/// weapon's painted shading (a single flat colour per face reads as
+/// matte plastic; Heavy Strike's blade really is green, but only the
+/// gradient says "metal").
+fn corner_colour(pr: &equip_isolate::PrimRef, vram: &Vram, k: usize) -> Option<[u8; 3]> {
+    let (u, v) = *pr.uvs.get(k)?;
+    let (mut acc, mut n) = ([0u32; 3], 0u32);
+    for du in -1i32..=1 {
+        for dv in -1i32..=1 {
+            let uu = (u as i32 + du).clamp(0, 255) as usize;
+            let vv = (v as i32 + dv).clamp(0, 255) as usize;
+            let w = equip_isolate::texel_word(vram, pr.cba, pr.tsb, uu, vv) & 0x7FFF;
+            if w != 0 {
+                acc[0] += c5to8(w & 31);
+                acc[1] += c5to8((w >> 5) & 31);
+                acc[2] += c5to8((w >> 10) & 31);
+                n += 1;
+            }
+        }
+    }
+    (n > 0).then(|| [(acc[0] / n) as u8, (acc[1] / n) as u8, (acc[2] / n) as u8])
+}
+
+/// Mean colour of the texels a primitive sampled, as the fallback baked
 /// RGB. Falls back to mid-grey for a primitive with no opaque texels.
 fn mean_colour(words: &[u16]) -> [u8; 3] {
     if words.is_empty() {
@@ -149,13 +176,16 @@ pub(crate) fn weapon_fusions(player_file: &[u8], char_slot: usize) -> Result<Wea
                 }
                 let channel = asm.anm_bones[oi];
                 let obj = &tmd.objects[oi];
-                let mut prims: Vec<(Vec<u16>, [u8; 3])> = Vec::new();
+                let mut prims: Vec<(Vec<u16>, Vec<[u8; 3]>)> = Vec::new();
                 for pr in equip_isolate::object_prim_refs(&tmd, &asm.tmd, oi) {
                     if !iso.claims(oi, pr.ordinal) {
                         continue;
                     }
-                    let colour = mean_colour(&equip_isolate::prim_texels(&pr, &vram));
-                    prims.push((pr.corners.iter().map(|&c| c as u16).collect(), colour));
+                    let fallback = mean_colour(&equip_isolate::prim_texels(&pr, &vram));
+                    let colours: Vec<[u8; 3]> = (0..pr.corners.len())
+                        .map(|k| corner_colour(&pr, &vram, k).unwrap_or(fallback))
+                        .collect();
+                    prims.push((pr.corners.iter().map(|&c| c as u16).collect(), colours));
                 }
                 if prims.is_empty() {
                     continue;
@@ -164,16 +194,16 @@ pub(crate) fn weapon_fusions(player_file: &[u8], char_slot: usize) -> Result<Wea
                 let mut remap: BTreeMap<u16, u16> = BTreeMap::new();
                 let mut vertices: Vec<[i16; 3]> = Vec::new();
                 let mut tris = ModelGroup {
-                    shape: PacketShape::F3,
+                    shape: PacketShape::G3,
                     semi_transparent: false,
                     prims: Vec::new(),
                 };
                 let mut quads = ModelGroup {
-                    shape: PacketShape::F4,
+                    shape: PacketShape::G4,
                     semi_transparent: false,
                     prims: Vec::new(),
                 };
-                for (corners, colour) in prims {
+                for (corners, colours) in prims {
                     let mapped: Vec<u16> = corners
                         .iter()
                         .map(|&c| {
@@ -189,7 +219,7 @@ pub(crate) fn weapon_fusions(player_file: &[u8], char_slot: usize) -> Result<Wea
                         uvs: Vec::new(),
                         cba: 0,
                         tsb: 0,
-                        colors: vec![colour],
+                        colors: colours,
                     };
                     match prim.vertices.len() {
                         3 => tris.prims.push(prim),

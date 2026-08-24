@@ -1098,6 +1098,10 @@ fn fk_inset_hand(
 /// it with the sibling's other fist, mirrored.
 const WELDED_WEAPON_FISTS: [(u16, usize); 2] = [(163, 8), (162, 5)];
 
+/// Monster ids whose swapped form needs the waist curtain (see the block
+/// in `playerize_scaled`): Che's round torso over a narrow loincloth.
+const WAIST_CURTAIN_IDS: [u16; 1] = [163];
+
 /// Replace the welded-weapon fist (canonical `to`) with the sibling's
 /// other fist (canonical `from`) mirrored across the source body's
 /// sagittal plane, re-expressed in the target hand's rest frame:
@@ -1370,6 +1374,147 @@ fn playerize_scaled(
     // neck - in-game (where head channels animate) that read as a
     // DETACHED head with sky through the gap. `seat_terminal_axial`
     // alone owns the neck seam.
+
+    // Waist curtain (round-torso siblings only): raise the pelvis's top
+    // ring up INSIDE the torso so
+    // it forms an inner wall behind the torso's bottom rim. A round
+    // sibling torso's rim curves high at the sides while the baked
+    // pelvis stays narrow and flat-topped, and a low command-ring camera
+    // looking up sees sky through the side wedges (Che's belly hole).
+    // The raised ring is invisible - it climbs into the torso's
+    // interior - and any sight line that passes under the rim now hits
+    // the pelvis wall instead of the sky. Sized from measurement: per
+    // angular sector around the waist axis, the pelvis top must clear
+    // the torso's bottom edge by a tuck margin; the worst deficit sets
+    // one uniform raise (per-sector raises would ripple the loincloth).
+    // Gated by id: the sector metric over-fires on the slim siblings
+    // (sparse side sectors read as huge deficits), and on Gi the cone
+    // showed as a pants-coloured panel over the jacket. Che's round
+    // boulder torso over a narrow loincloth is the construction that
+    // opens sky wedges, and his pelvis texels (belly skin + loincloth)
+    // read naturally where the cone shows.
+    if WAIST_CURTAIN_IDS.contains(&source_id) {
+        const SECTORS: usize = 16;
+        const TUCK: f32 = 10.0;
+        const MIN_RAISE: f32 = 4.0;
+        let ch_t = rig.channel_for_canonical[1] as usize; // torso
+        let ch_p = rig.channel_for_canonical[2] as usize; // pelvis
+        let ch_h = rig.channel_for_canonical[0] as usize; // head
+        let posed = |o: &ModelObject, pose: &PartPose| -> Vec<[f32; 3]> {
+            let m = rot_matrix(pose);
+            o.vertices
+                .iter()
+                .map(|v| {
+                    let w = apply(&m, [v[0] as f32, v[1] as f32, v[2] as f32]);
+                    [
+                        w[0] + pose.tx as f32,
+                        w[1] + pose.ty as f32,
+                        w[2] + pose.tz as f32,
+                    ]
+                })
+                .collect()
+        };
+        let up = {
+            let d = vsub(pivot_of(&dst_rest[ch_h]), pivot_of(&dst_rest[ch_p]));
+            let n = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().max(1.0);
+            [d[0] / n, d[1] / n, d[2] / n]
+        };
+        let center = pivot_of(&dst_rest[ch_t]);
+        let tmp = if up[0].abs() < 0.9 {
+            [1.0, 0.0, 0.0]
+        } else {
+            [0.0, 1.0, 0.0]
+        };
+        let e1 = {
+            let c = [
+                up[1] * tmp[2] - up[2] * tmp[1],
+                up[2] * tmp[0] - up[0] * tmp[2],
+                up[0] * tmp[1] - up[1] * tmp[0],
+            ];
+            let n = (c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt().max(1e-6);
+            [c[0] / n, c[1] / n, c[2] / n]
+        };
+        let e2 = [
+            up[1] * e1[2] - up[2] * e1[1],
+            up[2] * e1[0] - up[0] * e1[2],
+            up[0] * e1[1] - up[1] * e1[0],
+        ];
+        let classify = |v: &[f32; 3]| -> (usize, f32) {
+            let d = vsub(*v, center);
+            let h = d[0] * up[0] + d[1] * up[1] + d[2] * up[2];
+            let ang = (d[0] * e2[0] + d[1] * e2[1] + d[2] * e2[2])
+                .atan2(d[0] * e1[0] + d[1] * e1[1] + d[2] * e1[2]);
+            let sec = (((ang / std::f32::consts::TAU) + 0.5) * SECTORS as f32) as usize % SECTORS;
+            (sec, h)
+        };
+        let torso_posed = posed(&baked[1], &dst_rest[ch_t]);
+        let pelvis_posed = posed(&baked[2], &dst_rest[ch_p]);
+        let mut rim = [f32::MAX; SECTORS];
+        let mut top = [f32::MIN; SECTORS];
+        for v in &torso_posed {
+            let (sec, h) = classify(v);
+            if h < rim[sec] {
+                rim[sec] = h;
+            }
+        }
+        for v in &pelvis_posed {
+            let (sec, h) = classify(v);
+            if h > top[sec] {
+                top[sec] = h;
+            }
+        }
+        let mut deficit = 0f32;
+        for sec in 0..SECTORS {
+            if rim[sec] == f32::MAX || top[sec] == f32::MIN {
+                continue; // sector one part never reaches - no sight line issue
+            }
+            deficit = deficit.max(rim[sec] + TUCK - top[sec]);
+        }
+        let deficit = deficit.min(60.0);
+        if deficit > MIN_RAISE {
+            // Raise the top band of the pelvis (upper 40% along up) by
+            // the deficit, tapered to zero at the band's lower edge -
+            // and CONE IT INWARD as it rises (top ring radius halved):
+            // the torso's surface slopes inward going up, so a straight
+            // vertical wall pokes out of the front; a cone stays inside
+            // the round interior while still blocking every sight line
+            // that slips under the rim. All in pelvis-LOCAL frame.
+            let hs: Vec<f32> = pelvis_posed.iter().map(|v| classify(v).1).collect();
+            let (h_lo, h_hi) = hs
+                .iter()
+                .fold((f32::MAX, f32::MIN), |a, &h| (a.0.min(h), a.1.max(h)));
+            let band0 = h_lo + (h_hi - h_lo) * 0.6;
+            let mp = rot_matrix(&dst_rest[ch_p]);
+            let lup = apply_transposed(&mp, up);
+            let laxis_pt = apply_transposed(&mp, vsub(center, pivot_of(&dst_rest[ch_p])));
+            for (vi, v) in baked[2].vertices.iter_mut().enumerate() {
+                let w = ((hs[vi] - band0) / (h_hi - band0).max(1.0)).clamp(0.0, 1.0);
+                if w <= 0.0 {
+                    continue;
+                }
+                let p0 = [v[0] as f32, v[1] as f32, v[2] as f32];
+                // radial part = offset from the waist axis (local frame),
+                // minus its along-up component.
+                let rel = vsub(p0, laxis_pt);
+                let along = rel[0] * lup[0] + rel[1] * lup[1] + rel[2] * lup[2];
+                let radial = [
+                    rel[0] - lup[0] * along,
+                    rel[1] - lup[1] * along,
+                    rel[2] - lup[2] * along,
+                ];
+                let shrink = 0.5 * w; // top ring pulls halfway to the axis
+                let d = deficit * w;
+                *v = [
+                    round_coord(p0[0] + lup[0] * d - radial[0] * shrink)?,
+                    round_coord(p0[1] + lup[1] * d - radial[1] * shrink)?,
+                    round_coord(p0[2] + lup[2] * d - radial[2] * shrink)?,
+                ];
+            }
+            warnings.push(format!(
+                "waist curtain: pelvis top coned {deficit:.0} up into the torso"
+            ));
+        }
+    }
 
     // Hip-clearance taper: shrink each thigh's radial extent near the
     // hip (12% at the pivot, fading to zero 60% down the bone) so the

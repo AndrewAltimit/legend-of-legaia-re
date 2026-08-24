@@ -1395,13 +1395,18 @@ replaces each with the sibling's other fist, mirrored across the source
 body's sagittal plane (`playerize::WELDED_WEAPON_FISTS`), and puts the
 **host's own equipped weapon** in the hand instead: per held-item section
 record, the same curated item-alone cut the equipment viewer uses
-(`equip_isolate`) recovers that record's welded weapon geometry, each
-primitive flat-shaded from the mean texel it sampled on the retail band
-(the re-laid band no longer carries the weapon's texels), and the result
-merges into the baked hand at record-rewrite time - after the hand's
-centroid seat + FK inset, so the blade never drags the fist's placement
+(`equip_isolate`) recovers that record's welded weapon geometry as
+untextured gouraud prims - each corner coloured from a 3x3 texel window
+at its own UV, keeping the weapon's painted gradients (the re-laid band
+no longer carries its texels) - and the result merges into the baked
+hand at record-rewrite time, after the hand's centroid seat + FK inset,
+so the blade never drags the fist's placement
 (`party_swap::weapon_fuse`). Ra-Seru records (item ids `0x01..=0x18`)
-keep their bare arm - dressing the Ra-Seru arm is a separate cut. each
+keep their bare arm - dressing the Ra-Seru arm is a separate cut. One
+more per-sibling shape aid: Che's round torso over a narrow loincloth
+opens sky wedges at the waist under a low battle camera, so his pelvis
+top ring cones up into the torso interior as a sight-line curtain
+(`playerize::WAIST_CURTAIN_IDS`). each
 character's PROT 0874 field mesh + atlas window rebuilds from the
 sibling's **own field NPC mesh** (the nilboa duel-scene pack, PROT 0639,
 with rest poses + head TIMs from PROT 0638) - retail-authored chibi
