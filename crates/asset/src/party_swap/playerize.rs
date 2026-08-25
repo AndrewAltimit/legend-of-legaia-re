@@ -217,12 +217,14 @@ struct BandLayout {
 /// Re-layout the Delilas page into the five section tiles, rewriting the
 /// baked objects' UV/CBA/TSB in place (player authoring conventions:
 /// CLUT row 480, texpages 0x15/0x16).
+#[allow(clippy::too_many_arguments)]
 fn relayout_to_band(
     objects: &mut [ModelObject],
     cluts: &[[u16; 16]],
     indices: &[u8],
     src_width: usize,
     reserved_cols: &[u16],
+    exclude_section: Option<usize>,
     base_scale: u32,
     warnings: &mut Vec<String>,
 ) -> Result<BandLayout> {
@@ -301,6 +303,12 @@ fn relayout_to_band(
             let w = ((c.bbox.2 - c.bbox.0) as usize + 1).div_ceil(s);
             let h = ((c.bbox.3 - c.bbox.1) as usize + 1).div_ceil(s);
             for (ri, r) in regions.iter().enumerate() {
+                // The weapon section's tile belongs to the per-record
+                // weapon texture (see `weapon_fuse`) - no sibling
+                // islands there.
+                if Some(r.section) == exclude_section {
+                    continue;
+                }
                 let (ref mut x, ref mut y, ref mut shelf) = cursors[ri];
                 if w > r.w || h > r.h {
                     continue;
@@ -846,6 +854,35 @@ pub(crate) fn bake_frames(
 /// exact byte length (the output is padded to it). `char_slot` is the
 /// player-file slot (0 Vahn / 1 Noa / 2 Gala) - it keys the committed
 /// item-isolation rules the weapon fusion runs under.
+/// The band CLUT columns reserved for the fused weapon's palettes: the
+/// [`weapon_fuse::WEAPON_PALETTE_MAX`] highest columns record[0]'s own
+/// uploads do not claim. The relayout keeps sibling palette groups off
+/// them; each weapon-section record's CLUT run installs its weapon's
+/// palettes there (see `weapon_fuse`).
+///
+/// [`weapon_fuse::WEAPON_PALETTE_MAX`]: super::weapon_fuse::WEAPON_PALETTE_MAX
+fn weapon_clut_cols(player_file: &[u8]) -> Result<Vec<u16>> {
+    let reserved: Vec<u16> = record0_texture_uploads(player_file, 0)?
+        .iter()
+        .filter(|u| !u.clut.is_empty())
+        .flat_map(|u| {
+            let first = u.clut_x / 16;
+            let n_cols = (u.clut.len() as u16).div_ceil(16);
+            (first..first + n_cols).collect::<Vec<u16>>()
+        })
+        .collect();
+    let mut cols: Vec<u16> = (0..16u16)
+        .rev()
+        .filter(|c| !reserved.contains(c))
+        .take(super::weapon_fuse::WEAPON_PALETTE_MAX)
+        .collect();
+    cols.reverse();
+    if cols.len() < super::weapon_fuse::WEAPON_PALETTE_MAX {
+        bail!("record[0] claims too many CLUT columns to reserve a weapon palette");
+    }
+    Ok(cols)
+}
+
 pub fn playerize_player_file(
     player_file: &[u8],
     entry_len: usize,
@@ -881,21 +918,23 @@ pub fn playerize_player_file(
     // fused back into the swapped hand at record-rewrite time (see
     // `weapon_fuse`). Non-fatal: a failed cut leaves the swap bare-handed
     // exactly as before, with a note.
-    let (fusions, fuse_warning) = match super::weapon_fuse::weapon_fusions(player_file, char_slot) {
-        Ok(f) => {
-            let n = f.per_record.len();
-            (
-                f,
-                Some(format!("host weapon fused into {n} held-item records")),
-            )
-        }
-        Err(e) => (
-            super::weapon_fuse::WeaponFusion::default(),
-            Some(format!(
-                "weapon fusion unavailable ({e:#}); hands stay bare"
-            )),
-        ),
-    };
+    let weapon_cols = weapon_clut_cols(player_file)?;
+    let (fusions, fuse_warning) =
+        match super::weapon_fuse::weapon_fusions(player_file, char_slot, &weapon_cols) {
+            Ok(f) => {
+                let n = f.per_record.len();
+                (
+                    f,
+                    Some(format!("host weapon fused into {n} held-item records")),
+                )
+            }
+            Err(e) => (
+                super::weapon_fuse::WeaponFusion::default(),
+                Some(format!(
+                    "weapon fusion unavailable ({e:#}); hands stay bare"
+                )),
+            ),
+        };
     let mut last_err = None;
     // Fit ladder: texture resolution OUTRANKS hand twins (the quality
     // oracle holds full-resolution textures for every pairing), and
@@ -916,6 +955,7 @@ pub fn playerize_player_file(
                 downscale,
                 hand_twins,
                 &fusions,
+                &weapon_cols,
                 &host_anims,
             ) {
                 Ok(mut out) => {
@@ -1195,6 +1235,7 @@ fn playerize_scaled(
     texture_downscale: u32,
     hand_twins: HandTwins,
     fusions: &super::weapon_fuse::WeaponFusion,
+    weapon_cols: &[u16],
     host_anims: &[crate::monster_archive::MonsterAnimation],
 ) -> Result<PlayerizedFile> {
     let mut warnings = Vec::new();
@@ -1629,7 +1670,7 @@ fn playerize_scaled(
     }
 
     // Texture re-layout (rewrites the baked objects' UV/CBA/TSB).
-    let reserved: Vec<u16> = record0_texture_uploads(player_file, 0)?
+    let mut reserved: Vec<u16> = record0_texture_uploads(player_file, 0)?
         .iter()
         .filter(|u| !u.clut.is_empty())
         .flat_map(|u| {
@@ -1638,12 +1679,14 @@ fn playerize_scaled(
             (first..first + n_cols).collect::<Vec<u16>>()
         })
         .collect();
+    reserved.extend_from_slice(weapon_cols);
     let layout = relayout_to_band(
         &mut baked,
         &cluts,
         &indices,
         src_width,
         &reserved,
+        fusions.weapon_section,
         texture_downscale,
         &mut warnings,
     )?;
@@ -1663,10 +1706,52 @@ fn playerize_scaled(
     for (idx, rec) in pack.records.iter().enumerate() {
         let decoded = decode_record(player_file, &pack, idx)
             .with_context(|| format!("decode record {idx}"))?;
-        let pool_block = layout
+        let shared_block = layout
             .section_pools
             .get(section)
             .ok_or_else(|| anyhow::anyhow!("record {idx}: section {section} out of range"))?;
+        // Weapon-section records keep their OWN retail tile pixels - each
+        // record's fixed-size upload repaints the tile with its weapon's
+        // texels at the UVs the fused prims already carry - and install
+        // the weapon's palettes at the reserved columns via their own
+        // CLUT run. The sibling never samples this tile (the relayout
+        // excluded it), so per-record content is safe. A record without
+        // a retail upload (some defaults) falls back to the shared
+        // (empty) sibling block.
+        let weapon_block;
+        let pool_block: &[u8] = if Some(section) == fusions.weapon_section
+            && let Some(up) =
+                crate::battle_char_assembly::section_texture_upload(&decoded.bytes, section, 0)
+                    .with_context(|| format!("record {idx}: retail pool"))?
+        {
+            let mut block = Vec::new();
+            match fusions.palettes.get(&(section, rec.id)) {
+                Some(pals) if !weapon_cols.is_empty() => {
+                    let lo = *weapon_cols.iter().min().unwrap();
+                    let hi = *weapon_cols.iter().max().unwrap();
+                    let n = (hi - lo + 1) * 16;
+                    block.extend_from_slice(&(lo * 16).to_le_bytes());
+                    block.extend_from_slice(&n.to_le_bytes());
+                    let mut run = vec![0u16; n as usize];
+                    for (i, pal) in pals.iter().enumerate() {
+                        let base = ((weapon_cols[i] - lo) * 16) as usize;
+                        run[base..base + 16].copy_from_slice(pal);
+                    }
+                    for w in run {
+                        block.extend_from_slice(&w.to_le_bytes());
+                    }
+                }
+                _ => {
+                    block.extend_from_slice(&0u16.to_le_bytes());
+                    block.extend_from_slice(&0u16.to_le_bytes());
+                }
+            }
+            block.extend_from_slice(&up.pixels);
+            weapon_block = block;
+            &weapon_block
+        } else {
+            shared_block
+        };
         // Held-item records get the host's own weapon fused into the baked
         // hand geometry (see `weapon_fuse`) - after the seat + FK inset,
         // so the blade never drags the fist's placement.

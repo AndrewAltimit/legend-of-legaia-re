@@ -1,4 +1,5 @@
-//! Fuse the host character's own equipped **weapon** into the swapped hand.
+//! Fuse the host character's own equipped **weapon** into the swapped hand,
+//! keeping its **real texture**.
 //!
 //! The swap drops every equipment-visual surplus object (see
 //! `playerize::rewrite_section_record`), which also drops the held weapon -
@@ -12,22 +13,26 @@
 //! section record it runs the same curated item-alone cut the site's
 //! equipment viewer uses ([`equip_isolate`]), takes the claimed primitives
 //! of the **skeleton** objects (the welded weapon - surplus copies stay
-//! dropped, the swap's variant aliasing covers those), colours each
-//! primitive corner from the texels it sampled on the retail band, and hands
-//! the per-channel geometry to the record rewrite to merge into the baked
+//! dropped, the swap's variant aliasing covers those), and hands the
+//! per-channel geometry to the record rewrite to merge into the baked
 //! sibling part. Coordinates copy verbatim: the claimed primitives are
 //! already in the attach bone's local frame, the same frame the baked fist
 //! was seated into, so the weapon rides the host's clips exactly as retail
 //! posed it (the pose-exact merge measured on the enemy-side swap).
 //!
-//! Untextured shading is deliberate: the band re-layout repaints every
-//! section tile with the sibling's texels, so the weapon's retail texels
-//! are gone from VRAM - baked colours need no texture space, no palette
-//! columns and no UV management. Gouraud (`G3`/`G4`) rather than flat:
-//! each corner samples a 3x3 texel window at its own UV, so the weapon
-//! keeps its painted gradients (a per-face flat colour reads as matte
-//! plastic; Heavy Strike's genuinely green blade only reads as metal
-//! with its shading).
+//! **Texturing** rides three measured facts (`weapon_tex_census`): every
+//! fusable weapon's UVs stay inside its own section's band tile, every
+//! weapon uses at most [`WEAPON_PALETTE_MAX`] distinct CLUT columns (the
+//! apparent 4-way splits are ABR variants of one palette), and a
+//! held-section record's pool upload is a fixed-size tile no matter what
+//! it contains. So the record rewrite keeps the weapon record's **retail
+//! tile pixels verbatim** (each record repaints the tile with its own
+//! weapon's texels at exactly the UVs its prims already carry -
+//! per-record texture at zero extra pixel cost), the band relayout keeps
+//! the sibling's islands *out* of that one tile, and the weapon's
+//! palettes ride the record's own CLUT run at reserved columns. The fused
+//! prims are the retail prims verbatim - shape, UVs, colour words, ABR
+//! bits - with only the CBA column remapped onto the reserved columns.
 //!
 //! Ra-Seru records (item-table ids `0x01..=0x1A`, the three Ra-Serus'
 //! level forms - the living arm the section-3/section-2 sibling slot
@@ -38,13 +43,13 @@
 
 use std::collections::BTreeMap;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 
 use crate::battle_char_assembly::{self as bca, SECTION_COUNT};
 use bca::{equip_isolate, equip_item};
 use legaia_tim::Vram;
-use legaia_tmd::descriptor::PacketShape;
 use legaia_tmd::encode::{ModelGroup, ModelObject, ModelPrim};
+use legaia_tmd::legaia_prims;
 
 /// Item-table ids `0x01..=0x1A` are the Ra-Seru level forms (`asset
 /// item-tables` on `SCUS_942.54`): Meta `$1..$9` = `0x01..=0x09`, Terra
@@ -65,65 +70,42 @@ const HELD_SECTIONS: [usize; 2] = [2, 3];
 /// only compares texels against the same slot's bare assembly).
 const BAND: u8 = 0;
 
-/// Per-record weapon geometry to merge at record-rewrite time.
+/// Most distinct CLUT columns any fusable weapon samples (census over all
+/// three player files' weapon records: every weapon uses 1 or 2).
+pub(crate) const WEAPON_PALETTE_MAX: usize = 2;
+
+/// Authoring CLUT row of the player band (the loader's CBA relocation
+/// retargets it to `0x1E1 + slot` - see `relocate_tsb_cba`).
+const AUTHORING_CLUT_ROW: u16 = 480;
+
+/// Per-record weapon data to merge at record-rewrite time.
 #[derive(Default)]
 pub(crate) struct WeaponFusion {
-    /// `(section, record id)` -> channel -> flat-shaded weapon geometry in
-    /// that channel's local frame.
+    /// `(section, record id)` -> channel -> textured weapon geometry in
+    /// that channel's local frame (retail prims, CBA column remapped).
     pub per_record: BTreeMap<(usize, u32), BTreeMap<u8, ModelObject>>,
+    /// `(section, record id)` -> the weapon's palettes, index-aligned
+    /// with the reserved columns handed to [`weapon_fusions`]. Disc form
+    /// (STP bit stripped - the loader re-applies it on upload).
+    pub palettes: BTreeMap<(usize, u32), Vec<[u16; 16]>>,
+    /// The held section whose records are real weapons for this slot
+    /// (the other held section is the Ra-Seru arm). `None` when nothing
+    /// fused.
+    pub weapon_section: Option<usize>,
 }
 
-/// 5-bit BGR555 channel to 8-bit.
-fn c5to8(v: u16) -> u32 {
-    let v = v as u32;
-    (v << 3) | (v >> 2)
-}
-
-/// Per-corner colour: mean of the opaque texels in a 3x3 window around
-/// the corner's own UV - the gouraud vertex colour that keeps the
-/// weapon's painted shading (a single flat colour per face reads as
-/// matte plastic; Heavy Strike's blade really is green, but only the
-/// gradient says "metal").
-fn corner_colour(pr: &equip_isolate::PrimRef, vram: &Vram, k: usize) -> Option<[u8; 3]> {
-    let (u, v) = *pr.uvs.get(k)?;
-    let (mut acc, mut n) = ([0u32; 3], 0u32);
-    for du in -1i32..=1 {
-        for dv in -1i32..=1 {
-            let uu = (u as i32 + du).clamp(0, 255) as usize;
-            let vv = (v as i32 + dv).clamp(0, 255) as usize;
-            let w = equip_isolate::texel_word(vram, pr.cba, pr.tsb, uu, vv) & 0x7FFF;
-            if w != 0 {
-                acc[0] += c5to8(w & 31);
-                acc[1] += c5to8((w >> 5) & 31);
-                acc[2] += c5to8((w >> 10) & 31);
-                n += 1;
-            }
-        }
-    }
-    (n > 0).then(|| [(acc[0] / n) as u8, (acc[1] / n) as u8, (acc[2] / n) as u8])
-}
-
-/// Mean colour of the texels a primitive sampled, as the fallback baked
-/// RGB. Falls back to mid-grey for a primitive with no opaque texels.
-fn mean_colour(words: &[u16]) -> [u8; 3] {
-    if words.is_empty() {
-        return [128, 128, 128];
-    }
-    let (mut r, mut g, mut b) = (0u32, 0u32, 0u32);
-    for &w in words {
-        r += c5to8(w & 31);
-        g += c5to8((w >> 5) & 31);
-        b += c5to8((w >> 10) & 31);
-    }
-    let n = words.len() as u32;
-    [(r / n) as u8, (g / n) as u8, (b / n) as u8]
-}
-
-/// Extract every held-section record's weapon as per-channel flat-shaded
-/// geometry. `char_slot` keys the committed isolation-rule table (0 Vahn,
-/// 1 Noa, 2 Gala). Records whose cut claims nothing (defaults, records
-/// identical to bare) simply get no entry.
-pub(crate) fn weapon_fusions(player_file: &[u8], char_slot: usize) -> Result<WeaponFusion> {
+/// Extract every held-section record's weapon as per-channel textured
+/// geometry plus its palettes. `char_slot` keys the committed
+/// isolation-rule table (0 Vahn, 1 Noa, 2 Gala); `weapon_cols` are the
+/// reserved band CLUT columns the prims are remapped onto (the record
+/// rewrite uploads each record's palettes there). Records whose cut
+/// claims nothing (defaults, records identical to bare) simply get no
+/// entry.
+pub(crate) fn weapon_fusions(
+    player_file: &[u8],
+    char_slot: usize,
+    weapon_cols: &[u16],
+) -> Result<WeaponFusion> {
     let pack = crate::battle_data_pack::parse(player_file).context("parse player file")?;
     let mut fusion = WeaponFusion::default();
 
@@ -152,8 +134,16 @@ pub(crate) fn weapon_fusions(player_file: &[u8], char_slot: usize) -> Result<Wea
             if asm.sections[section].id != id {
                 continue;
             }
+            // Two frames of one assembly: the isolation compares texels
+            // in the RELOCATED frame (band VRAM); the harvested prims
+            // keep their AUTHORING words (the frame a stored record
+            // uses). Ordinals are identical - relocation rewrites CBA /
+            // TSB words in place without touching structure.
+            let authoring_tmd_bytes = asm.tmd.clone();
             bca::relocate_tsb_cba(&mut asm.tmd, BAND)?;
             let tmd = legaia_tmd::parse(&asm.tmd).context("equipped TMD")?;
+            let authoring_tmd =
+                legaia_tmd::parse(&authoring_tmd_bytes).context("equipped TMD (authoring)")?;
             let Some(partition) = equip_item::item_partition(section, &bare, &bare_tmd, &asm, &tmd)
             else {
                 continue;
@@ -172,72 +162,117 @@ pub(crate) fn weapon_fusions(player_file: &[u8], char_slot: usize) -> Result<Wea
                 },
                 equip_isolate::rules().rule_for(char_slot, id),
             );
+            // Distinct source columns among claimed textured prims.
+            let mut src_cols: Vec<u16> = Vec::new();
+            for &oi in &iso.objects {
+                if asm.bone_tags.get(oi).copied().unwrap_or(255) >= 100 {
+                    continue;
+                }
+                for pr in equip_isolate::object_prim_refs(&authoring_tmd, &authoring_tmd_bytes, oi)
+                {
+                    if !iso.claims(oi, pr.ordinal) || pr.uvs.is_empty() {
+                        continue;
+                    }
+                    if !src_cols.contains(&pr.column) {
+                        src_cols.push(pr.column);
+                    }
+                }
+            }
+            if src_cols.is_empty() {
+                continue;
+            }
+            if src_cols.len() > weapon_cols.len() {
+                // Outside the measured envelope - leave this record
+                // bare-handed rather than mis-palette it.
+                continue;
+            }
+            src_cols.sort_unstable();
+            // The weapon's palettes, read off the equipped band CLUT row
+            // (whoever installed them - the record's own run or a
+            // sibling block). Stored disc-form: STP bit stripped, the
+            // loader re-applies it on every non-zero entry.
+            let clut_row = 0x1E1usize + BAND as usize;
+            let pals: Vec<[u16; 16]> = src_cols
+                .iter()
+                .map(|&c| {
+                    let mut p = [0u16; 16];
+                    for (i, e) in p.iter_mut().enumerate() {
+                        *e = vram.pixel(c as usize * 16 + i, clut_row) & 0x7FFF;
+                    }
+                    p
+                })
+                .collect();
+            let col_map: BTreeMap<u16, u16> = src_cols
+                .iter()
+                .enumerate()
+                .map(|(i, &c)| (c, weapon_cols[i]))
+                .collect();
+            // Harvest the claimed prims verbatim from the authoring
+            // frame: shape + semi-transparency from the group header,
+            // UVs / TSB / colour words untouched, CBA column remapped.
             let mut per_channel: BTreeMap<u8, ModelObject> = BTreeMap::new();
             for &oi in &iso.objects {
-                // Skeleton objects only: the weapon welded into the drawn
-                // bone. Surplus copies (tags 100+/200+) stay dropped - the
-                // rewrite's variant aliasing already covers the 0xFF slot,
-                // and fusing an extra's copy would double the blade.
                 if asm.bone_tags.get(oi).copied().unwrap_or(255) >= 100 {
                     continue;
                 }
                 let channel = asm.anm_bones[oi];
-                let obj = &tmd.objects[oi];
-                let mut prims: Vec<(Vec<u16>, Vec<[u8; 3]>)> = Vec::new();
-                for pr in equip_isolate::object_prim_refs(&tmd, &asm.tmd, oi) {
-                    if !iso.claims(oi, pr.ordinal) {
-                        continue;
-                    }
-                    let fallback = mean_colour(&equip_isolate::prim_texels(&pr, &vram));
-                    let colours: Vec<[u8; 3]> = (0..pr.corners.len())
-                        .map(|k| corner_colour(&pr, &vram, k).unwrap_or(fallback))
-                        .collect();
-                    prims.push((pr.corners.iter().map(|&c| c as u16).collect(), colours));
-                }
-                if prims.is_empty() {
-                    continue;
-                }
-                // Compact the claimed corners into a fresh vertex list.
-                let mut remap: BTreeMap<u16, u16> = BTreeMap::new();
+                let obj = &authoring_tmd.objects[oi];
+                let mut groups: BTreeMap<(u8, bool), ModelGroup> = BTreeMap::new();
+                let mut remap: BTreeMap<usize, u16> = BTreeMap::new();
                 let mut vertices: Vec<[i16; 3]> = Vec::new();
-                let mut tris = ModelGroup {
-                    shape: PacketShape::G3,
-                    semi_transparent: false,
-                    prims: Vec::new(),
-                };
-                let mut quads = ModelGroup {
-                    shape: PacketShape::G4,
-                    semi_transparent: false,
-                    prims: Vec::new(),
-                };
-                for (corners, colours) in prims {
-                    let mapped: Vec<u16> = corners
-                        .iter()
-                        .map(|&c| {
-                            *remap.entry(c).or_insert_with(|| {
-                                let v = obj.vertices[c as usize];
-                                vertices.push([v.x, v.y, v.z]);
-                                (vertices.len() - 1) as u16
-                            })
-                        })
-                        .collect();
-                    let prim = ModelPrim {
-                        vertices: mapped,
-                        uvs: Vec::new(),
-                        cba: 0,
-                        tsb: 0,
-                        colors: colours,
+                let mut ordinal = 0u32;
+                for g in legaia_prims::iter_groups_lenient(
+                    &authoring_tmd_bytes,
+                    obj.primitives_byte_offset,
+                    obj.primitives_byte_size,
+                ) {
+                    let Some((shape, semi)) = legaia_tmd::encode::shape_for_flags(g.header.flags)
+                    else {
+                        ordinal += g.prims.len() as u32;
+                        continue;
                     };
-                    match prim.vertices.len() {
-                        3 => tris.prims.push(prim),
-                        4 => quads.prims.push(prim),
-                        _ => {}
+                    for p in &g.prims {
+                        let this = ordinal;
+                        ordinal += 1;
+                        if !iso.claims(oi, this) || p.uvs.is_empty() {
+                            continue;
+                        }
+                        let corners = p.vertex_indices();
+                        if corners.len() != shape.n_vertices() {
+                            continue;
+                        }
+                        let mapped: Vec<u16> = corners
+                            .iter()
+                            .map(|&c| {
+                                *remap.entry(c as usize).or_insert_with(|| {
+                                    let v = obj.vertices[c as usize];
+                                    vertices.push([v.x, v.y, v.z]);
+                                    (vertices.len() - 1) as u16
+                                })
+                            })
+                            .collect();
+                        let new_col = col_map[&(p.cba & 0x3F)];
+                        let tex_shape = shape.textured_variant();
+                        let colors = if tex_shape.is_gouraud() {
+                            p.colors.clone()
+                        } else {
+                            vec![*p.colors.first().unwrap_or(&[128, 128, 128])]
+                        };
+                        let e = groups.entry((tex_shape as u8, semi)).or_insert(ModelGroup {
+                            shape: tex_shape,
+                            semi_transparent: semi,
+                            prims: Vec::new(),
+                        });
+                        e.prims.push(ModelPrim {
+                            vertices: mapped,
+                            uvs: p.uvs.clone(),
+                            cba: (AUTHORING_CLUT_ROW << 6) | new_col,
+                            tsb: p.tsb,
+                            colors,
+                        });
                     }
                 }
-                let groups: Vec<ModelGroup> = [tris, quads]
-                    .into_iter()
-                    .filter(|g| !g.prims.is_empty())
-                    .collect();
+                let groups: Vec<ModelGroup> = groups.into_values().collect();
                 if groups.is_empty() {
                     continue;
                 }
@@ -251,7 +286,18 @@ pub(crate) fn weapon_fusions(player_file: &[u8], char_slot: usize) -> Result<Wea
                 );
             }
             if !per_channel.is_empty() {
+                match fusion.weapon_section {
+                    None => fusion.weapon_section = Some(section),
+                    Some(s) if s != section => {
+                        bail!(
+                            "fusable weapon records in both held sections ({s} and {section}) - \
+                             the one-weapon-tile texturing scheme cannot host that"
+                        );
+                    }
+                    Some(_) => {}
+                }
                 fusion.per_record.insert((section, id), per_channel);
+                fusion.palettes.insert((section, id), pals);
             }
         }
     }

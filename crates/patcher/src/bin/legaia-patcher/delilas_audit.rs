@@ -321,18 +321,42 @@ pub(crate) fn cmd_delilas_audit(input: &Path, baseline: &Path) -> Result<()> {
             }
         }
         // 4. Equip-texture invariance. The swap paints the sibling's body
-        //    islands across every section tile and gives EVERY record of a
+        //    islands across the section tiles and gives every record of a
         //    section the identical pool block, so equipping any item must
-        //    be a VRAM no-op. A record still carrying its retail pool
-        //    stomps the sibling's body texels the moment the item is
-        //    equipped (weapon detail on the chest, transparent holes where
-        //    the retail block is blank) - the defect class a bare-handed
-        //    test run never sees. Patched-side only by construction: a
-        //    retail file fails this wholesale, which also makes it a
-        //    mixed/half-applied-swap detector.
+        //    be a VRAM no-op on everything the sibling samples. One
+        //    carve-out: the WEAPON section's tile belongs to the
+        //    per-record weapon texture (`weapon_fuse`) - its records
+        //    legitimately differ in pixels, and their CLUT runs must stay
+        //    inside the reserved weapon columns. A non-weapon record
+        //    still carrying its retail pool stomps the sibling's body
+        //    texels the moment the item is equipped - the defect class a
+        //    bare-handed test run never sees. Patched-side only by
+        //    construction: a retail file fails this wholesale, which also
+        //    makes it a mixed/half-applied-swap detector.
         let mut equip_fails = 0usize;
         {
             let pack = battle_data_pack::parse(&p.file)?;
+            let weapon_cols: Vec<u16> = {
+                let reserved: Vec<u16> = bca::record0_texture_uploads(&p.file, 0)
+                    .map(|ups| {
+                        ups.iter()
+                            .filter(|u| !u.clut.is_empty())
+                            .flat_map(|u| {
+                                let first = u.clut_x / 16;
+                                let n = (u.clut.len() as u16).div_ceil(16);
+                                (first..first + n).collect::<Vec<u16>>()
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let mut cols: Vec<u16> = (0..16u16)
+                    .rev()
+                    .filter(|c| !reserved.contains(c))
+                    .take(2)
+                    .collect();
+                cols.reverse();
+                cols
+            };
             let mut section = 0usize;
             let mut per_section: Vec<Vec<(u32, Option<bca::TextureUpload>)>> =
                 vec![Vec::new(); bca::SECTION_COUNT];
@@ -347,11 +371,37 @@ pub(crate) fn cmd_delilas_audit(input: &Path, baseline: &Path) -> Result<()> {
                     }
                 }
             }
+            // The weapon section: the held section (2/3) carrying real
+            // weapon records (ids past the Ra-Seru range).
+            let weapon_section = [2usize, 3]
+                .into_iter()
+                .find(|&sec| per_section[sec].iter().any(|(id, _)| *id > 0x1A));
             for (sec, recs) in per_section.iter().enumerate() {
                 let Some((_, base)) = recs.iter().find(|(id, _)| *id == 0) else {
                     continue;
                 };
                 for (id, up) in recs.iter().filter(|(id, _)| *id != 0) {
+                    if Some(sec) == weapon_section {
+                        // Pixels are per-record by design; the CLUT run
+                        // must cover reserved weapon columns only.
+                        if let Some(u) = up
+                            && !u.clut.is_empty()
+                        {
+                            let first = u.clut_x / 16;
+                            let n = (u.clut.len() as u16).div_ceil(16);
+                            let inside = (first..first + n).all(|c| weapon_cols.contains(&c));
+                            if !inside {
+                                println!(
+                                    "  FAIL {who} sec{sec} record {id:#04x}: CLUT run at \
+                                     columns {first}..{} leaves the reserved weapon columns \
+                                     {weapon_cols:?}",
+                                    first + n
+                                );
+                                equip_fails += 1;
+                            }
+                        }
+                        continue;
+                    }
                     let same = match (up, base) {
                         (None, None) => true,
                         (Some(a), Some(b)) => {
@@ -369,6 +419,23 @@ pub(crate) fn cmd_delilas_audit(input: &Path, baseline: &Path) -> Result<()> {
                         equip_fails += 1;
                     }
                 }
+            }
+            // The sibling must stay off the reserved columns: no textured
+            // prim of the bare assembly may sample them.
+            let mut off_col = 0usize;
+            for oi in 0..p.tmd.objects.len() {
+                for pr in bca::equip_isolate::object_prim_refs(&p.tmd, &p.tmd_bytes, oi) {
+                    if !pr.uvs.is_empty() && weapon_cols.contains(&(pr.cba & 0x3F)) {
+                        off_col += 1;
+                    }
+                }
+            }
+            if off_col > 0 {
+                println!(
+                    "  FAIL {who}: {off_col} sibling prims sample the reserved weapon \
+                     columns {weapon_cols:?}"
+                );
+                equip_fails += 1;
             }
         }
         // Sanity: the swap is present at all (sibling part counts).

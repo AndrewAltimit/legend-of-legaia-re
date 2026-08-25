@@ -103,7 +103,7 @@ fn shape_row(shape: PacketShape) -> (u16, u8, u8, u8) {
 
 /// Resolve a group's `flags` value back to `(shape, semi_transparent)`.
 /// Returns `None` for the lit rows (0/1) and anything out of range.
-fn shape_for_flags(flags: u16) -> Option<(PacketShape, bool)> {
+pub fn shape_for_flags(flags: u16) -> Option<(PacketShape, bool)> {
     for shape in [
         PacketShape::F3,
         PacketShape::F4,

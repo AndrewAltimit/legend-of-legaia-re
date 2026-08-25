@@ -69,6 +69,19 @@ impl PacketShape {
         matches!(self, Self::Ft3 | Self::Gt3 | Self::Ft4 | Self::Gt4)
     }
 
+    /// The textured sibling of this shape (identity for the `Ft*`/`Gt*`
+    /// family): the shape a prim keeps its shading class under when it
+    /// gains texture coordinates.
+    pub fn textured_variant(self) -> Self {
+        match self {
+            Self::F3 => Self::Ft3,
+            Self::G3 => Self::Gt3,
+            Self::F4 => Self::Ft4,
+            Self::G4 => Self::Gt4,
+            other => other,
+        }
+    }
+
     /// `true` if the shape is gouraud-shaded (per-vertex color, the `G*`
     /// family).
     pub fn is_gouraud(self) -> bool {

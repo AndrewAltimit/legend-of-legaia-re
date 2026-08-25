@@ -1395,14 +1395,23 @@ replaces each with the sibling's other fist, mirrored across the source
 body's sagittal plane (`playerize::WELDED_WEAPON_FISTS`), and puts the
 **host's own equipped weapon** in the hand instead: per held-item section
 record, the same curated item-alone cut the equipment viewer uses
-(`equip_isolate`) recovers that record's welded weapon geometry as
-untextured gouraud prims - each corner coloured from a 3x3 texel window
-at its own UV, keeping the weapon's painted gradients (the re-laid band
-no longer carries its texels) - and the result merges into the baked
-hand at record-rewrite time, after the hand's centroid seat + FK inset,
-so the blade never drags the fist's placement
-(`party_swap::weapon_fuse`). Ra-Seru records (item ids `0x01..=0x18`)
-keep their bare arm - dressing the Ra-Seru arm is a separate cut. One
+(`equip_isolate`) recovers that record's welded weapon geometry as the
+retail prims verbatim - shape, UVs, colour words and ABR bits untouched
+- and the result merges into the baked hand at record-rewrite time,
+after the hand's centroid seat + FK inset, so the blade never drags the
+fist's placement (`party_swap::weapon_fuse`). The weapon keeps its
+**real texture**, riding three measured invariants: every fusable
+weapon's UVs stay inside its own section's band tile, every weapon uses
+at most two CLUT columns, and a held-section record's pool upload is a
+fixed-size tile whatever it contains. So the band relayout keeps the
+sibling's islands out of the weapon section's tile, each weapon-section
+record keeps its **own retail tile pixels** (equipping the weapon
+repaints the tile with exactly the texels its prims sample - per-record
+texture at zero extra pixel cost), and the weapon's palettes ride the
+record's own CLUT run at two reserved band columns (the highest ones
+record[0] does not claim); only the prims' CBA column is remapped.
+Ra-Seru records (item ids `0x01..=0x1A`) keep their bare arm - dressing
+the Ra-Seru arm is a separate cut. One
 more per-sibling shape aid: Che's round torso over a narrow loincloth
 opens sky wedges at the waist under a low battle camera, so his pelvis
 top ring cones up into the torso interior as a sight-line curtain

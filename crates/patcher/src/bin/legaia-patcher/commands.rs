@@ -890,9 +890,32 @@ pub(crate) fn cmd_delilas_verify(input: &Path) -> Result<()> {
         let mut seat_worst: f32 = 0.0;
         let mut empty_bones = 0usize;
         // Weapon-fusion presence: a single-weapon loadout should carry at
-        // least one flat-colour (untextured) primitive - the fused host
-        // weapon's signature. Zero across every weapon record = a rom
-        // from a build older than the fusion.
+        // least one textured primitive sampling the reserved weapon CLUT
+        // columns - the fused host weapon's signature (`weapon_fuse`
+        // keeps the retail texture and remaps only the palette column).
+        // Zero across every weapon record = a rom from a build older
+        // than the fusion.
+        let weapon_cols: Vec<u16> = {
+            let reserved: Vec<u16> = bca::record0_texture_uploads(&file, 0)
+                .map(|ups| {
+                    ups.iter()
+                        .filter(|u| !u.clut.is_empty())
+                        .flat_map(|u| {
+                            let first = u.clut_x / 16;
+                            let n = (u.clut.len() as u16).div_ceil(16);
+                            (first..first + n).collect::<Vec<u16>>()
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let mut cols: Vec<u16> = (0..16u16)
+                .rev()
+                .filter(|c| !reserved.contains(c))
+                .take(2)
+                .collect();
+            cols.reverse();
+            cols
+        };
         let mut weapon_loadouts = 0usize;
         let mut fused_loadouts = 0usize;
         for eq in &loadouts {
@@ -922,11 +945,11 @@ pub(crate) fn cmd_delilas_verify(input: &Path) -> Result<()> {
                 }
             }
             // Hand seat (canonical 5 and 8), measured over the vertices
-            // the TEXTURED primitives reference: the fist itself. The
-            // host's fused weapon (`weapon_fuse`) is flat-colour geometry
-            // welded into the same object, legitimately authored far from
-            // the wrist (a blade runs 250 units), and must not count
-            // against the fist's seat.
+            // the sibling's own textured primitives reference: the fist
+            // itself. The host's fused weapon (`weapon_fuse`) is textured
+            // geometry on the reserved weapon CLUT columns, legitimately
+            // authored far from the wrist (a blade runs 250 units), and
+            // must not count against the fist's seat.
             for c in [5usize, 8] {
                 let ch = rig.channel_for_canonical[c];
                 let Some(oi) = asm.bone_tags.iter().position(|&t| t == ch) else {
@@ -935,7 +958,7 @@ pub(crate) fn cmd_delilas_verify(input: &Path) -> Result<()> {
                 let o = &tmd.objects[oi];
                 let mut corners = std::collections::BTreeSet::new();
                 for pr in bca::equip_isolate::object_prim_refs(&tmd, &asm.tmd, oi) {
-                    if !pr.uvs.is_empty() {
+                    if !pr.uvs.is_empty() && !weapon_cols.contains(&(pr.cba & 0x3F)) {
                         corners.extend(pr.corners.iter().copied());
                     }
                 }
@@ -954,9 +977,9 @@ pub(crate) fn cmd_delilas_verify(input: &Path) -> Result<()> {
                     seat_worst = mag;
                 }
             }
-            if (2..=3).any(|sec| eq[sec] > 0x18) {
+            if (2..=3).any(|sec| eq[sec] > 0x1A) {
                 weapon_loadouts += 1;
-                let flat = asm
+                let fused = asm
                     .bone_tags
                     .iter()
                     .enumerate()
@@ -964,11 +987,13 @@ pub(crate) fn cmd_delilas_verify(input: &Path) -> Result<()> {
                     .map(|(oi, _)| {
                         bca::equip_isolate::object_prim_refs(&tmd, &asm.tmd, oi)
                             .iter()
-                            .filter(|pr| pr.uvs.is_empty())
+                            .filter(|pr| {
+                                !pr.uvs.is_empty() && weapon_cols.contains(&(pr.cba & 0x3F))
+                            })
                             .count()
                     })
                     .sum::<usize>();
-                if flat > 0 {
+                if fused > 0 {
                     fused_loadouts += 1;
                 }
             }
