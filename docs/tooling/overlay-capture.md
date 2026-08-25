@@ -234,6 +234,16 @@ scripts/ghidra-analysis/extract-duckstation-overlay.py SCUS-94254_1.sav --out /t
 scripts/ghidra-analysis/import-overlay-named.sh /tmp/legaia_overlay_fishing.bin fishing
 ```
 
+The decompressed state payload also carries more than main RAM, at fixed
+offsets: the disc's cue path string sits in the (uncompressed) header, the
+first zstd frame is a 256x192 RGBA thumbnail, and in the second frame main
+RAM starts at payload `+0x1A62` with **VRAM (1 MiB) at `RAM_end + 0x396`**
+(payload `+0x201DF8`; a ~0x396-byte GPU-register block sits between). Pin
+the VRAM base against a landmark before reading coordinates out of it: a
+base short by that GPU block makes every located CLUT colour appear at one
+uniform halfword shift, which reads as a "relocation" when it is only an
+extraction error.
+
 The `import-overlay-named.sh` step imports as `overlay_fishing.bin` in the Ghidra project (base `0x801C0000`, MIPS LE) and runs auto-analysis. Run `inventory_overlay.py` afterwards to get the function list, then write a `dump_<label>_overlay.py` for the functions of interest.
 
 ### Minigame hub overlay (six variants from Duckstation saves)

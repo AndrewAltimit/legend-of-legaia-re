@@ -328,6 +328,9 @@ in [`battle-data-pack.md` § "ME" stream
 archives](battle-data-pack.md#me-stream-archives-readefdat). Parser
 `legaia_asset::me_archive`; the side-band classifier reports these as
 `SlotKind::MeArchive`. Slot `3*char` is the group's non-ME (texture) slot.
+On every retail art slot the bytes between the archive's last body and the
+`0x10800` slot boundary are zero padding - the reader walks only the size
+chain, so an archive re-authored in place may grow into that tail freely.
 
 The aux slots of the **higher** readef groups (the enemy-special bands) are
 still unattributed as content; the bytes LZS-decode plausibly but no consumer

@@ -462,6 +462,18 @@ The byte runs the earlier byte-match corpus read as "texture format tags" at
 bone-id bytes (`06 09 0a 0b | 0c 0d 0e 00` = 6 attached objects on bones
 9..14 - a footwear section).
 
+The assembled objects are not only drawn - they are **effect-read**: the
+Spirit charge's streamer effect samples authored **vertex indices** of
+specific objects (on Noa's retail assembly, the hair part's 49 vertices
+and the `0xFE` weapon extra's 56), pinned live by content-diffing the
+charge's GPU display list between a clean and a glitched tick on retail
+and patched discs. A rebuild that ships a zero-vertex object in one of
+those slots feeds the streamer reads from whatever bytes follow the
+empty pool - the effect's trail fan then anchors off-model. A prim-less
+object with a real vertex pool (all vertices at the object origin, so
+the part's pose channel seats them on its socket) satisfies the reads
+while drawing nothing.
+
 The post-TMD pool has no PSX TIM image-block headers: it is one upload block
 in the `FUN_80053B9C` frame -
 `[u16 clut_x][u16 clut_n][clut_n × u16 BGR555][w*h halfwords 4bpp pixels]`
@@ -811,6 +823,24 @@ source = the main archive's `count − 1`) is the consequence of this
 phase split, not a per-record selector. Decomps
 `overlay_battle_action_801daba4.txt`, `overlay_battle_action_801e295c.txt`,
 `overlay_muscle_dome_801f12d0.txt`, `80055b4c.txt`.
+
+Two live-measured consequences of that split. First, the scratch is
+**one shared buffer** (`FUN_8004AD80` passes the same gp-relative pointer
+to every materialize; `0x800E7EA0` in the battle captures), so a later
+commit by any actor overwrites it under a still-playing clip. Second, the
+**Spirit charge** stages the base-archive record `0x11` *mid-battle* -
+outside the battle-end window the base archive is resident in - so its
+commit routinely decodes **main-archive entry 0** under the record's own
+59-frame metadata and `[+0x85, +0x86)` loop window. Retail does this too
+(scratch header read live on a retail disc mid-charge: a stale frame
+count under the playing `0x11`), and tolerates it because the loop rows
+land in the aliased stream's own hold section; rows past the decoded
+body read whatever the scratch last held, and a never-written tail is
+zeros - an all-zero pose row seats every part on the model origin, which
+the charge close-up camera sits on. Consumers that re-author these
+archives must keep every row the loop window can address inside decoded
+data (the party swap clamps `+0x85`/`+0x86` to the aliased stream - see
+[`randomizer.md`](../tooling/randomizer.md)).
 
 Archive layout (reader `FUN_8002B28C`, decomp `8002b28c.txt`):
 
