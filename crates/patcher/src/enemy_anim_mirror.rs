@@ -153,9 +153,17 @@ const LADDER: [MirrorOptions; 7] = [
 ];
 
 /// Rewrite each swapped block's animation entries with the mapped hero's
-/// own clips. Idempotent (entry content is a pure function of the retail
-/// sources). Errors if a target block does not carry the mapped hero's
+/// own clips. Errors if a target block does not carry the mapped hero's
 /// name - i.e. if the party-swap model loop has not run yet.
+///
+/// Idempotent, but not because the whole rewrite is pure: the anim
+/// entries ARE a pure function of the retail sources, while the
+/// native-stature pass scales the block TMD's vertices **in place** - a
+/// second application would shrink the mesh again. So each block carries
+/// a witness: the mirror unconditionally rewrites anim entry 0 (the
+/// idle) on every budget rung, and the model loop never touches anim
+/// entries, so entry 0 differing from the RETAIL sibling's own idle
+/// proves the block is already mirrored - it is skipped whole.
 pub fn apply_enemy_anim_mirror(
     patcher: &mut DiscPatcher,
     mapping: &PartyMapping,
@@ -175,6 +183,21 @@ pub fn apply_enemy_anim_mirror(
                 "monster id {id} is named {name:?}, expected {who:?} - the enemy \
                  anim mirror must run after the party-swap model loop"
             );
+        }
+        // Already-mirrored witness (see the doc comment): a rewritten
+        // idle means a second pass, whose only non-pure step (the
+        // in-place native-stature TMD scale) must not re-apply.
+        let cur_anims = monster_archive::animations(&current_archive, id)?;
+        let ret_anims = monster_archive::animations(retail.archive, id)?;
+        if let (Some(cur), Some(ret)) = (&cur_anims, &ret_anims)
+            && let (Some(c0), Some(r0)) = (cur.first(), ret.first())
+            && (c0.frames != r0.frames || c0.rate != r0.rate)
+        {
+            notes.push(format!(
+                "{who} (monster {id}): already mirrored (idle differs from the \
+                 retail sibling's) - block untouched"
+            ));
+            continue;
         }
         let current_block = monster_archive::decode_block(&current_archive, id)?
             .ok_or_else(|| anyhow::anyhow!("monster id {id}: block does not decode"))?;
