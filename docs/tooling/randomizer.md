@@ -1411,7 +1411,25 @@ texture at zero extra pixel cost), and the weapon's palettes ride the
 record's own CLUT run at two reserved band columns (the highest ones
 record[0] does not claim); only the prims' CBA column is remapped.
 Ra-Seru records (item ids `0x01..=0x1A`) keep their bare arm - dressing
-the Ra-Seru arm is a separate cut. One
+the Ra-Seru arm is a separate cut.
+
+One reservation is about a *writer*, not a reader: the per-frame facial
+animator (`FUN_8004C7B4`) MoveImages the character's eye and mouth
+frames onto fixed rows of **section 1's** band tile every battle frame -
+the neutral face is re-stamped even when no track record is active, and
+the frame strips ride `RECORD0_TEXTURE_RECTS[0]`'s tile, which the swap
+keeps retail. Any sibling texels the relayout parks in that destination
+window are overwritten with the host's face the moment a battle starts -
+on-disc renders look clean while the live game shows the host's face
+palette-mismatched through the sibling's CLUT (a saturated confetti
+patch on whatever body part UV'd there; Gi's chest was the reported
+case). The relayout therefore splits section 1's region around the
+per-character eye+mouth destination union
+(`playerize::FACE_STAMP_WINDOWS`, mirrored from the static SCUS
+face-geometry tables and disc-asserted by
+`party_swap_face_window_real`), leaving the window zero and
+unreferenced; the emitted pool still covers the section's full rect.
+One
 more per-sibling shape aid: Che's round torso over a narrow loincloth
 opens sky wedges at the waist under a low battle camera, so his pelvis
 top ring cones up into the torso interior as a sight-line curtain

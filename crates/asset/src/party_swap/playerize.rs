@@ -53,30 +53,79 @@ struct BandRegion {
     section: usize,
 }
 
-/// The five section tiles in authoring-page space (see
+/// Per-character live-face window inside section 1's rect, in band
+/// texel coordinates `(x0, y0, x1, y1)` (x1/y1 exclusive): the union of
+/// the eye + mouth stamp destination rects from the static
+/// `SCUS_942.54` face-frame tables (`DAT_800768CC` / `DAT_800768E4`,
+/// halfword coords x4 - mirror `legaia_asset::face_anim`, values
+/// asserted against the disc by `face_stamp_windows_match_the_scus_tables`).
+///
+/// The per-frame facial animator (`FUN_8004C7B4`) MoveImages the
+/// character's eye / mouth frames onto these rows EVERY frame - the
+/// neutral frame is re-stamped even when no track record is active - so
+/// any sibling texels the relayout parks here are overwritten with the
+/// host's face the moment a battle starts (the source strips live in
+/// `RECORD0_TEXTURE_RECTS[0]`'s tile, which keeps its retail pixels).
+/// The relayout must therefore keep this window empty and unreferenced.
+///
+/// Vahn: eyes (0,16) 15x17 + mouth (4,42) 7x16; Noa: eyes (2,72) 16x32 +
+/// mouth (8,104) 4x24; Gala: eyes (0,24) 14x24 + mouth (4,48) 6x24.
+pub const FACE_STAMP_WINDOWS: [(usize, usize, usize, usize); 3] = [
+    (0, 16, 15 * 4, 58),      // Vahn: hw 0..15, rows 16..58
+    (2 * 4, 72, 18 * 4, 128), // Noa: hw 2..18, rows 72..128
+    (0, 24, 14 * 4, 72),      // Gala: hw 0..14, rows 24..72
+];
+
+/// The section tiles in authoring-page space (see
 /// `SECTION_TEXTURE_RECTS`: band halfword x < 0x40 = page 0x15, else
-/// 0x16; texels = halfwords * 4).
-fn band_regions() -> Vec<BandRegion> {
-    SECTION_TEXTURE_RECTS
-        .iter()
-        .enumerate()
-        .map(|(section, r)| {
-            let hw_x = r.x0 as usize;
-            let (page, page_hw_x) = if hw_x < 0x40 {
-                (0, hw_x)
-            } else {
-                (1, hw_x - 0x40)
-            };
-            BandRegion {
-                page,
-                x0: page_hw_x * 4,
-                y0: r.y0 as usize,
-                w: r.w as usize * 4,
-                h: r.h as usize,
-                section,
+/// 0x16; texels = halfwords * 4). Section 1's tile is split around the
+/// character's live-face window ([`FACE_STAMP_WINDOWS`]) so no sibling
+/// cluster is placed where the facial animator stamps - the emitted
+/// pool still covers the full rect (window texels stay zero).
+fn band_regions(char_slot: usize) -> Vec<BandRegion> {
+    let mut out = Vec::new();
+    for (section, r) in SECTION_TEXTURE_RECTS.iter().enumerate() {
+        let hw_x = r.x0 as usize;
+        let (page, page_hw_x) = if hw_x < 0x40 {
+            (0, hw_x)
+        } else {
+            (1, hw_x - 0x40)
+        };
+        let base = BandRegion {
+            page,
+            x0: page_hw_x * 4,
+            y0: r.y0 as usize,
+            w: r.w as usize * 4,
+            h: r.h as usize,
+            section,
+        };
+        let window = FACE_STAMP_WINDOWS.get(char_slot).copied();
+        if section != 1 || window.is_none() {
+            out.push(base);
+            continue;
+        }
+        // The face window is authored band-relative and section 1's rect
+        // starts at band (0, 0), so window coords are region-local.
+        let (wx0, wy0, wx1, wy1) = window.unwrap();
+        let (wx1, wy1) = (wx1.min(base.w), wy1.min(base.h));
+        let mut push = |x0: usize, y0: usize, w: usize, h: usize| {
+            if w > 0 && h > 0 {
+                out.push(BandRegion {
+                    page: base.page,
+                    x0: base.x0 + x0,
+                    y0: base.y0 + y0,
+                    w,
+                    h,
+                    section,
+                });
             }
-        })
-        .collect()
+        };
+        push(0, 0, base.w, wy0); // above the window
+        push(0, wy0, wx0, wy1 - wy0); // left of the window
+        push(wx1, wy0, base.w - wx1, wy1 - wy0); // right of the window
+        push(0, wy1, base.w, base.h - wy1); // below the window
+    }
+    out
 }
 
 /// Decode a monster pool into per-texel indices + CLUTs.
@@ -226,6 +275,7 @@ fn relayout_to_band(
     reserved_cols: &[u16],
     exclude_section: Option<usize>,
     base_scale: u32,
+    char_slot: usize,
     warnings: &mut Vec<String>,
 ) -> Result<BandLayout> {
     // Collect textured faces (source page is single: the monster page).
@@ -286,7 +336,7 @@ fn relayout_to_band(
     // (a face samples a single texpage, so a cluster cannot straddle a
     // region boundary). First-fit-decreasing per region; halve the
     // largest cluster and retry on overflow.
-    let regions = band_regions();
+    let regions = band_regions(char_slot);
     // (region, x, y) per cluster.
     let placement: Vec<(usize, usize, usize)> = loop {
         let mut order: Vec<usize> = (0..clusters.len()).collect();
@@ -448,11 +498,31 @@ fn relayout_to_band(
     }
 
     // Build the per-section pool blocks. Section 0 carries the whole
-    // palette run; the others upload pixels only.
-    let mut section_pools: Vec<Vec<u8>> = Vec::with_capacity(regions.len());
-    for (ri, r) in regions.iter().enumerate() {
+    // palette run; the others upload pixels only. A section may be split
+    // into several sub-regions (the live-face window of section 1) - the
+    // emitted pool always covers the section's FULL rect, with each
+    // sub-region's tile blitted at its offset and unplaced texels (the
+    // face window) left zero.
+    let mut section_pools: Vec<Vec<u8>> = Vec::with_capacity(SECTION_TEXTURE_RECTS.len());
+    for (section, rect) in SECTION_TEXTURE_RECTS.iter().enumerate() {
+        let hw_x = rect.x0 as usize;
+        let sec_x0 = if hw_x < 0x40 { hw_x } else { hw_x - 0x40 } * 4;
+        let sec_y0 = rect.y0 as usize;
+        let (sec_w, sec_h) = (rect.w as usize * 4, rect.h as usize);
+        let mut full = vec![0u8; sec_w * sec_h];
+        for (ri, r) in regions.iter().enumerate() {
+            if r.section != section {
+                continue;
+            }
+            let (dx, dy) = (r.x0 - sec_x0, r.y0 - sec_y0);
+            let tile = &tiles[ri];
+            for y in 0..r.h {
+                let dst = (dy + y) * sec_w + dx;
+                full[dst..dst + r.w].copy_from_slice(&tile[y * r.w..(y + 1) * r.w]);
+            }
+        }
         let mut block = Vec::new();
-        if r.section == 0 {
+        if section == 0 {
             // One contiguous run covering our columns is not guaranteed
             // (free columns may be scattered), so emit the run from the
             // lowest to the highest used column, holes zero-filled -
@@ -478,17 +548,15 @@ fn relayout_to_band(
             block.extend_from_slice(&0u16.to_le_bytes());
         }
         // Pixels: pack the tile's texel indices, low nibble first.
-        let tile = &tiles[ri];
-        for y in 0..r.h {
-            for xb in 0..r.w / 2 {
-                let lo = tile[y * r.w + xb * 2] & 0xF;
-                let hi = tile[y * r.w + xb * 2 + 1] & 0xF;
+        for y in 0..sec_h {
+            for xb in 0..sec_w / 2 {
+                let lo = full[y * sec_w + xb * 2] & 0xF;
+                let hi = full[y * sec_w + xb * 2 + 1] & 0xF;
                 block.push(lo | (hi << 4));
             }
         }
         section_pools.push(block);
     }
-    // Regions are listed per section 0..4 in order.
     Ok(BandLayout { section_pools })
 }
 
@@ -957,6 +1025,7 @@ pub fn playerize_player_file(
                 &fusions,
                 &weapon_cols,
                 &host_anims,
+                char_slot,
             ) {
                 Ok(mut out) => {
                     if let Some(w) = &fuse_warning {
@@ -1237,6 +1306,7 @@ fn playerize_scaled(
     fusions: &super::weapon_fuse::WeaponFusion,
     weapon_cols: &[u16],
     host_anims: &[crate::monster_archive::MonsterAnimation],
+    char_slot: usize,
 ) -> Result<PlayerizedFile> {
     let mut warnings = Vec::new();
     if texture_downscale > 1 {
@@ -1688,6 +1758,7 @@ fn playerize_scaled(
         &reserved,
         fusions.weapon_section,
         texture_downscale,
+        char_slot,
         &mut warnings,
     )?;
 
