@@ -1877,6 +1877,21 @@ Che 48 into it on Noa's). The floor is the deepest ankle pivot over the
 whole cycle on both sides, so a lifted foot in either frame 0 cannot bias
 it and no frame plants deeper than the host's own idle does.
 
+Hand orientation in every retargeted sibling clip follows a
+**wrist-attitude law** rather than the conjugation. The retarget maps
+each part's absolute orientation independently, so a played pose
+preserves neither rig's hand-to-forearm relation - measured 85 degrees
+off retail on the weapon hand in Gi's idle, which pointed the welded
+equipped-weapon blade (correct under every host art clip, since those
+keep retail's own wrist relation) straight across the torso, reading in
+game as stray green texture on the chest and back. Hands carry no
+authored detail worth keeping - unlike the head, whose bob is
+deliberately carried across - so `retarget_clip` slaves each hand's
+rotation to its forearm at the host's rest wrist attitude, the same
+terminal law the feet get from `normalize_battle_rest_feet`. Hand
+rotations feed no FK translation term, so the override changes
+orientation only, about the wrist pivot the fist is anchored at.
+
 The idle rides the **same** `record0` write as the signature-art edits,
 because it is the only one of them that adds bytes and batching means one
 LZS re-fit rather than two that must each clear the footprint alone. That

@@ -649,6 +649,29 @@ pub fn retarget_clip(
     })
     .collect();
 
+    // Retail rest wrist attitude per arm: hand rotation relative to its
+    // forearm in the PLAYER's own idle rest. The per-part conjugation
+    // maps each part's ABSOLUTE orientation independently, so a played
+    // sibling pose preserves neither rig's hand-to-forearm relation -
+    // measured 85 degrees off retail on Gi's weapon hand, which points
+    // the welded equipped-weapon blade (correct under every host art
+    // clip) straight across the torso for the whole idle. Hands carry no
+    // authored detail worth keeping (unlike the head bob), so slave each
+    // hand to its forearm at the retail rest attitude - the same
+    // terminal law the feet get via `normalize_battle_rest_feet`. Hand
+    // rotations feed no FK translation term, so this changes orientation
+    // only, about the wrist pivot the fist is anchored at.
+    let wrist_attitude: Vec<(usize, usize, [[f32; 3]; 3])> = [(4usize, 5usize), (7, 8)]
+        .iter()
+        .filter_map(|&(fore_c, hand_c)| {
+            let fch = rig.channel_for_canonical[fore_c] as usize;
+            let hch = rig.channel_for_canonical[hand_c] as usize;
+            let (fr, hr) = (dst_rest.get(fch)?, dst_rest.get(hch)?);
+            let k = mmul(&transpose(&rot_matrix(fr)), &rot_matrix(hr));
+            Some((fch, hch, k))
+        })
+        .collect();
+
     let n_src = clip.frames.len();
     let mut out = Vec::with_capacity(frame_count);
     for f in 0..frame_count {
@@ -671,6 +694,16 @@ pub fn retarget_clip(
                 ry,
                 rz,
             };
+        }
+        for &(fch, hch, k) in &wrist_attitude {
+            if fch >= part_count || hch >= part_count {
+                continue;
+            }
+            let m = mmul(&rot_matrix(&row[fch]), &k);
+            let (rx, ry, rz) = to_euler(&m);
+            row[hch].rx = rx;
+            row[hch].ry = ry;
+            row[hch].rz = rz;
         }
         if torso_ch < part_count {
             let set = |p: &mut PartPose, w: [f32; 3]| {
