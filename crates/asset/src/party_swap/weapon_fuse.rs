@@ -29,10 +29,12 @@
 //! plastic; Heavy Strike's genuinely green blade only reads as metal
 //! with its shading).
 //!
-//! Ra-Seru records (item-table ids `0x01..=0x18`, the three Ra-Serus'
+//! Ra-Seru records (item-table ids `0x01..=0x1A`, the three Ra-Serus'
 //! level forms - the living arm the section-3/section-2 sibling slot
 //! carries) are left alone here: dressing the arm is a separate, larger
-//! cut than "hold your weapon".
+//! cut than "hold your weapon". The ra-seru-flagged held weapons
+//! (`0x1B` Ra-Seru Blade, `0x1F` Ra-Seru Fangs, `0x21` Ra-Seru Club)
+//! sit past the bound and fuse like any other weapon.
 
 use std::collections::BTreeMap;
 
@@ -44,9 +46,14 @@ use legaia_tim::Vram;
 use legaia_tmd::descriptor::PacketShape;
 use legaia_tmd::encode::{ModelGroup, ModelObject, ModelPrim};
 
-/// Item-table ids `0x01..=0x18` are the Ra-Seru level forms (Meta / Terra
-/// / Ozma `$1..$8` - `asset item-tables` on `SCUS_942.54`), not weapons.
-const RA_SERU_MAX_ID: u32 = 0x18;
+/// Item-table ids `0x01..=0x1A` are the Ra-Seru level forms (`asset
+/// item-tables` on `SCUS_942.54`): Meta `$1..$9` = `0x01..=0x09`, Terra
+/// `$1..$9` = `0x0A..=0x12`, Ozma `$1..` = `0x13..` with `Ozma $7` at
+/// `0x19` and the blank-named `0x1A` closing the run - NOT weapons. The
+/// first real weapon id is `0x1B` (Ra-Seru Blade, a held living weapon
+/// that DOES fuse). An earlier `0x18` bound misread `Ozma $7`/`$8` as
+/// weapons.
+const RA_SERU_MAX_ID: u32 = 0x1A;
 
 /// The two held-item descriptor sections. Which one is the real weapon
 /// varies per character (Vahn / Gala: section 2; Noa: section 3 - her

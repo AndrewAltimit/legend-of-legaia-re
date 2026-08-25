@@ -2206,6 +2206,23 @@ of any preset; unaffected by the seed.
 > owns) and the `party_swap_real` conversion oracles over all nine
 > pairings.
 
+Any produced rom can be classified after the fact with `legaia-patcher
+delilas-audit --input patched.bin --baseline retail.bin` - a static
+battery (no emulator) over the three rebuilt player files, four checks
+per slot. Stream census: every base-archive lead-in frame the battle can
+reach mid-fight must be byte-retail (the loop window and ME streams may
+differ). Pose battery: FK arm-closure and extent metrics over every
+battle and art clip, banded against the baseline's own numbers. Hand
+radius: a textured hand whose radius blows past twice the baseline is
+the welded-weapon class. Equip invariance: every record of an equipment
+section must carry the identical texture pool as the section default, so
+equipping any item stays a VRAM no-op - a record still holding its
+retail pool would stomp the sibling's body texels at equip time, the
+class a bare-handed test run never sees (this check also flags a
+half-applied or version-mixed swap). The e2e harness runs the audit as
+its static stage; a rom from an older build fails loudly instead of
+shipping its era's defects silently.
+
 #### The retail cast route
 
 A Delilas signature is, in retail, a capture-class spell whose cast pages a

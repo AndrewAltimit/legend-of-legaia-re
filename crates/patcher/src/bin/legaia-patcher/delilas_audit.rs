@@ -320,16 +320,69 @@ pub(crate) fn cmd_delilas_audit(input: &Path, baseline: &Path) -> Result<()> {
                 hand_fails += 1;
             }
         }
+        // 4. Equip-texture invariance. The swap paints the sibling's body
+        //    islands across every section tile and gives EVERY record of a
+        //    section the identical pool block, so equipping any item must
+        //    be a VRAM no-op. A record still carrying its retail pool
+        //    stomps the sibling's body texels the moment the item is
+        //    equipped (weapon detail on the chest, transparent holes where
+        //    the retail block is blank) - the defect class a bare-handed
+        //    test run never sees. Patched-side only by construction: a
+        //    retail file fails this wholesale, which also makes it a
+        //    mixed/half-applied-swap detector.
+        let mut equip_fails = 0usize;
+        {
+            let pack = battle_data_pack::parse(&p.file)?;
+            let mut section = 0usize;
+            let mut per_section: Vec<Vec<(u32, Option<bca::TextureUpload>)>> =
+                vec![Vec::new(); bca::SECTION_COUNT];
+            for (idx, rec) in pack.records.iter().enumerate() {
+                let entry = battle_data_pack::decode_record(&p.file, &pack, idx)?;
+                let up = bca::section_texture_upload(&entry.bytes, section, 0)?;
+                per_section[section].push((rec.id, up));
+                if rec.id == 0 {
+                    section += 1;
+                    if section == bca::SECTION_COUNT {
+                        break;
+                    }
+                }
+            }
+            for (sec, recs) in per_section.iter().enumerate() {
+                let Some((_, base)) = recs.iter().find(|(id, _)| *id == 0) else {
+                    continue;
+                };
+                for (id, up) in recs.iter().filter(|(id, _)| *id != 0) {
+                    let same = match (up, base) {
+                        (None, None) => true,
+                        (Some(a), Some(b)) => {
+                            a.pixels == b.pixels
+                                && a.clut == b.clut
+                                && (a.clut.is_empty() || a.clut_x == b.clut_x)
+                        }
+                        _ => false,
+                    };
+                    if !same {
+                        println!(
+                            "  FAIL {who} sec{sec} record {id:#04x}: pool differs from the \
+                             section default - equipping it repaints the band"
+                        );
+                        equip_fails += 1;
+                    }
+                }
+            }
+        }
         // Sanity: the swap is present at all (sibling part counts).
         let _ = (&p.bone_tags, &r.bone_tags);
-        let ok = census_fails + pose_fails + hand_fails == 0;
+        let ok = census_fails + pose_fails + hand_fails + equip_fails == 0;
         println!(
             "{who}: {} clips | stream census {} ({census_fails}) | pose battery {} \
-             ({pose_fails}) | hand radius {} ({hand_fails}) | ME streams rewritten: {me_diffs}",
+             ({pose_fails}) | hand radius {} ({hand_fails}) | equip invariance {} \
+             ({equip_fails}) | ME streams rewritten: {me_diffs}",
             clips_p.len(),
             if census_fails == 0 { "OK" } else { "FAIL" },
             if pose_fails == 0 { "OK" } else { "FAIL" },
             if hand_fails == 0 { "OK" } else { "FAIL" },
+            if equip_fails == 0 { "OK" } else { "FAIL" },
         );
         if !ok {
             failures += 1;
@@ -340,6 +393,8 @@ pub(crate) fn cmd_delilas_audit(input: &Path, baseline: &Path) -> Result<()> {
             "delilas-audit FAILED for {failures} player file(s) - see the FAIL lines above."
         );
     }
-    println!("delilas-audit PASS: streams, poses and hand radii all inside the baseline bands.");
+    println!(
+        "delilas-audit PASS: streams, poses, hand radii and equip textures all inside the bands."
+    );
     Ok(())
 }
