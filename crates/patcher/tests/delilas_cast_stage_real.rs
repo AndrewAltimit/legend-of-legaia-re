@@ -158,11 +158,29 @@ fn staged_cast_rows_carry_ches_clips_and_block_survives() {
             cast_stage::StagedState::Applied,
             "patched file classifies as the loader-stable layout"
         );
-        // The member-init palette walk retail performs at battle load
-        // still parses: CLUT halves survive the shift, and no
-        // sub-record decode overruns the shared allocation.
-        legaia_asset::battle_char_palette::parse_record(&live, 0)
-            .expect("battle-palette chain parses on the grown record0");
+        // The battle-load member init reads CLUT A / CLUT B out of
+        // record0's decode at `clut_a_off` / `clut_b_off` before the
+        // sub-records reuse that region as scratch. Both structs must
+        // survive the insertion byte-identical at their shifted homes.
+        // (The full five-sub palette walk of `battle_char_palette` is
+        // NOT asserted here: its sub-offset derivation only models the
+        // retail Vahn layout - retail Noa/Gala and any repacked file sit
+        // outside the model. See the module docs' "Model scope" note.)
+        let retail_block = bca::decode_record0(retail_che).unwrap();
+        let clut_bytes = |b: &[u8], off: usize| -> Vec<u8> {
+            let n = u16::from_le_bytes(b[off + 2..off + 4].try_into().unwrap()) as usize;
+            b[off..off + 4 + n * 2].to_vec()
+        };
+        assert_eq!(
+            clut_bytes(&block, clut_a),
+            clut_bytes(&retail_block, retail_a),
+            "CLUT A survives the shift byte-identical"
+        );
+        assert_eq!(
+            clut_bytes(&block, clut_b),
+            clut_bytes(&retail_block, retail_b),
+            "CLUT B survives the shift byte-identical"
+        );
     }
 
     // Block survives byte-identical on row 0x06 of every player file
