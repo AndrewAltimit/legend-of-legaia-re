@@ -255,16 +255,19 @@ fn every_swapped_variant_object_mirrors_its_attach_bone() {
                                 prim_count(attach),
                             ));
                         }
-                    } else if !obj.vertices.is_empty() {
+                    } else if prim_count(obj) != 0 {
                         // `0xFE`: an extra part with a pose channel of its
-                        // own. Filling it would draw a second copy of the
-                        // bone's mesh at a different pose.
+                        // own. The swap ships it as a PRIM-LESS STUB - a
+                        // samplable vertex pool (the charge streamer reads
+                        // authored vertex indices of it) that draws
+                        // nothing. Primitives here would draw a second
+                        // copy of a mesh at a different pose.
                         failures.push(format!(
-                            "{name} -> {} eq {equipped:?}: extra-part object {k} is not \
-                             empty ({} verts) - it draws alongside bone {bone}, not \
+                            "{name} -> {} eq {equipped:?}: extra-part object {k} carries \
+                             {} primitive(s) - it draws alongside bone {bone}, not \
                              instead of it",
                             host.who,
-                            obj.vertices.len(),
+                            prim_count(obj),
                         ));
                     }
                 }

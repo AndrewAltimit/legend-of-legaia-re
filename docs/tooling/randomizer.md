@@ -1429,6 +1429,33 @@ per-character eye+mouth destination union
 face-geometry tables and disc-asserted by
 `party_swap_face_window_real`), leaving the window zero and
 unreferenced; the emitted pool still covers the section's full rect.
+
+A second reader nobody sees offline is the Spirit charge's streamer
+effect: it samples authored **vertex indices** of specific assembled
+objects (the host's hair part and the `0xFE` weapon extra carry 49 / 56
+vertices on Noa's retail assembly), and a swap slot whose geometry is
+deliberately dropped - the hair channel a sibling has no part for, or
+the discarded weapon extra - answers those reads with whatever bytes sit
+past its empty pool. The effect's trail fan then stretches
+mesh-textured quads from the actor to the same garbage point every run:
+the "Spirit streak", visible for the first ~20 ticks after the trail
+spawns and invariant to every anim-data edit (measured by pinning the
+fan packets in the live display list - position, colour and UV garbage
+together, i.e. a struct read past a pool, not a pose defect). The
+rewrite therefore never emits a truly empty object where retail carried
+geometry: such slots get a **prim-less stub** - the retail slot's
+vertex count of origin-pinned vertices, so a sampled streamer anchors on
+the part's own socket and nothing is ever drawn - and the first
+variant-carrying section re-emits one stub `0xFE` extra (tag `100`,
+ordinal 1, inside the two-pair variant snapshot) so tag-100 lookups
+resolve too. Two sibling hardenings ride along, both measured live: the
+charge-loop record `0x11`'s window (`+0x85/+0x86`) is clamped to the
+frame count of the **main-archive** stream its `stream_source` aliases
+at commit (the side-band buffer routinely holds the main archive when
+the base-archive clip materializes - on retail too - and the scratch
+past the decoded stream is unwritten zeros), and `delilas-verify`'s
+`0xFE` check now passes exactly one prim-less tag-100 anchor and fails
+anything that draws.
 One
 more per-sibling shape aid: Che's round torso over a narrow loincloth
 opens sky wedges at the waist under a low battle camera, so his pelvis

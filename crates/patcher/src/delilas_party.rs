@@ -626,6 +626,15 @@ pub fn apply_delilas_party(
                         .push(format!("{who} moves: stay the host's ({e:#})")),
                 }
             }
+
+            // Always last per slot: the charge-loop aliasing guard reads
+            // the archive as it will ship, whichever move mode built it.
+            match clamp_charge_loop_windows(patcher, slot, who) {
+                Ok(notes) => report.notes.extend(notes),
+                Err(e) => report
+                    .notes
+                    .push(format!("{who} charge-loop guard skipped ({e:#})")),
+            }
         }
 
         // The cast route: the mapped sibling's signature plays the RETAIL
@@ -905,6 +914,101 @@ fn swing_labels(sibling: Sibling) -> &'static [&'static str] {
         Sibling::Che => &["Che Ram", "Che Jab", "Che Hit", "Che Arm"],
         Sibling::Lu => &["Lu Bolt", "Lu Zap", "Lu Jolt", "Lu Volt"],
     }
+}
+
+/// Clamp the base-archive loop windows to the stream the loop actually
+/// addresses at runtime - the "Spirit streak" guard.
+///
+/// The Spirit charge loop is the base-archive record `0x11`: loop count
+/// `+0x84 = 0xFF` over window `[+0x85, +0x86)`, stream source `0`. At
+/// commit the runtime materializes the stream by decoding entry
+/// `stream_source` out of whichever readef archive is RESIDENT in the
+/// side-band streaming buffer (`FUN_8002b28c(_DAT_8007BD74, ..)`), and it
+/// routinely commits with the MAIN archive resident - measured live on
+/// retail and on a patched disc alike. The loop window then addresses rows
+/// of the MAIN archive's entry `stream_source` up to `+0x86 - 1`,
+/// regardless of that stream's real frame count. A row past the decoded
+/// body reads virgin materialize scratch - all zeros - and an all-zero
+/// pose row collapses every part onto the model origin, which the charge
+/// close-up camera sits on: the GTE near-projection smears the hand /
+/// fused-weapon prims across the screen. Retail dodges it only when its
+/// scratch happens to hold sane stale rows there.
+///
+/// The guard clamps `+0x86` to the aliased main entry's frame count (and
+/// `+0x85` under it), so no phantom row is ever addressed; the decoder's
+/// own `frame == +0x86 - 1` arm then routes the interpolation partner to
+/// `+0x85`, so the last in-window frame never reads one-past-the-end
+/// either. The frames clamped away are duplicates of the held charge
+/// pose, so the charge looks identical when the correct base-archive
+/// stream is resident.
+fn clamp_charge_loop_windows(
+    patcher: &mut DiscPatcher,
+    slot: usize,
+    who: &str,
+) -> Result<Vec<String>> {
+    use legaia_asset::battle_char_assembly;
+    use legaia_asset::party_swap::moveset;
+
+    let character = slot_character(slot);
+    let index = crate::arts::player_entry_index(character);
+    let entry = patcher
+        .read_entry(index)
+        .with_context(|| format!("read player file PROT {index}"))?;
+    let rec0 = battle_char_assembly::decode_record0(&entry)
+        .with_context(|| format!("decode {who} record0"))?;
+    let bank = battle_char_assembly::art_animation_bank(&rec0)
+        .with_context(|| format!("{who} art bank"))?;
+    let readef = patcher
+        .read_entry_footprint(READEF_ENTRY)
+        .context("read readef.DAT")?;
+    let me_off = battle_char_assembly::art_me_slot(slot, false) * winpose::READEF_SLOT;
+    let me = readef
+        .get(me_off..me_off + winpose::READEF_SLOT)
+        .ok_or_else(|| anyhow::anyhow!("readef art slot for {who} out of range"))?;
+    let main_frames = moveset::entry_frames(me).context("read the main stream frame counts")?;
+
+    let mut edits: Vec<(usize, u8)> = Vec::new();
+    let mut notes = Vec::new();
+    for rec in &bank {
+        // The Spirit charge loop only. The other base records share the
+        // aliasing exposure in principle, but none has been observed to
+        // materialize mis-resident, and clamping them would degrade their
+        // real loop holds; the charge's clamped-away frames are duplicates
+        // of the held pose, so it alone is free to guard.
+        if !rec.uses_base_archive() || rec.anim_id != 0x11 {
+            continue;
+        }
+        let Some(&aliased) = main_frames.get(rec.stream_source as usize) else {
+            continue;
+        };
+        let cap = aliased.min(u8::MAX as usize) as u8;
+        let e = rec.entry_offset;
+        let (Some(&lo), Some(&hi)) = (rec0.get(e + 0x85), rec0.get(e + 0x86)) else {
+            continue;
+        };
+        if rec.rate_alt == 0 || hi == 0 || cap < 2 || hi <= cap {
+            continue;
+        }
+        let new_lo = lo.min(cap - 1);
+        edits.push((e + 0x85, new_lo));
+        edits.push((e + 0x86, cap));
+        notes.push(format!(
+            "{who} anim {:#04x}: charge-loop window [{lo}, {hi}) clamped to \
+             [{new_lo}, {cap}) - the aliased main stream {} carries {aliased} rows",
+            rec.anim_id, rec.stream_source
+        ));
+    }
+    if edits.is_empty() {
+        return Ok(notes);
+    }
+    let (lzs_off, recompressed) = crate::arts::patch_player_record0_full(&entry, &[], &edits)
+        .ok_or_else(|| {
+            anyhow::anyhow!("{who}'s record0 will not fit with the charge-loop guard applied")
+        })?;
+    patcher
+        .patch_prot_entry(index, lzs_off as u64, &recompressed)
+        .context("write the charge-loop guarded art bank")?;
+    Ok(notes)
 }
 
 /// Rebuild one hero slot's whole art kit around the mapped sibling.

@@ -635,6 +635,8 @@ fn rewrite_section_record(
     decoded: &[u8],
     channel_geom: &BTreeMap<u8, ModelObject>,
     pool_block: &[u8],
+    section: usize,
+    anchor_section: &mut Option<usize>,
 ) -> Result<Vec<u8>> {
     let u32at = |o: usize| -> Result<u32> {
         legaia_bytes::u32_le(decoded, o).ok_or_else(|| anyhow::anyhow!("short record at +{o:#x}"))
@@ -691,7 +693,47 @@ fn rewrite_section_record(
     // removed it. With no extra emitted there is no ordinal to record
     // and the pin stays on pair 0, whose default is our own alias -
     // benign by construction.
-    let emit_count = variant.map_or(nobj, |v| v + 1);
+    //
+    // ... with one exception, discovered live as the SECOND Spirit-streak
+    // class: dropping every extra also deletes the assembled model's
+    // `100+`-tag node, and the charge's late-phase streamer effect anchors
+    // on it - with no such object the anchor resolves to garbage and the
+    // effect's trail fan smears across the screen for the drawn frame at
+    // the aura's ray phase (a fan of semi-transparent quads with 2-3
+    // vertices on the actor and 1-2 at a repeated garbage point, pinned in
+    // the ct124 display list of the transition capture). So the FIRST
+    // VARIANT-CARRYING section (and only it) re-emits exactly one `0xFE`
+    // extra, EMPTY: an empty `0xFE` draws nothing, but its object-table
+    // entry exists, so tag-100 lookups resolve. Variant-ness is a
+    // per-section invariant of the player files (every record of a section
+    // agrees), so the latch below picks the same section for every
+    // equipment layout, and the recorded ordinal is exactly 1 (that
+    // section's own `0xFF` is the only one preceding it in splice order) -
+    // safely inside the two-pair snapshot the old beam bug overflowed,
+    // pinning pair 1, which is an identity alias by construction.
+    let emit_anchor = variant.is_some() && anchor_section.is_none_or(|a| a == section);
+    if emit_anchor {
+        *anchor_section = Some(section);
+    }
+    let emit_count = variant.map_or(nobj, |v| v + 1) + usize::from(emit_anchor);
+    // Prim-less stub for a slot whose geometry the swap leaves out. A
+    // TRULY empty object is live-dangerous: the charge aura's streamer
+    // effect samples authored VERTEX INDICES of specific objects (Noa's
+    // hair part and the weapon extra carry 49 / 56 vertices on the retail
+    // assembly), and against a zero-vertex pool those reads return
+    // whatever bytes sit there - two constant garbage points that the
+    // effect's trail fan then stretches across the whole screen (the
+    // "Spirit streak": mesh-textured quads anchored on the actor with
+    // 1-2 vertices flung to the same far point every run). A stub keeps
+    // the pool real: `n` vertices at the object origin - posed by the
+    // part's own channel they all land on its socket, so a sampled
+    // streamer anchors ON the body - and zero primitives, so nothing is
+    // ever drawn.
+    let stub = |n: usize| ModelObject {
+        vertices: vec![[0i16; 3]; n.max(1)],
+        groups: Vec::new(),
+        scale: legaia_tmd::encode::LEGAIA_OBJECT_SCALE,
+    };
     let mut objects: Vec<ModelObject> = Vec::with_capacity(emit_count);
     for k in 0..emit_count {
         let bone = match variant {
@@ -700,15 +742,23 @@ fn rewrite_section_record(
             _ if k < attach_count => bone_ids.get(k).copied(),
             _ => None,
         };
-        objects.push(
-            bone.and_then(|b| channel_geom.get(&b))
-                .cloned()
-                .unwrap_or_else(|| ModelObject {
-                    vertices: Vec::new(),
-                    groups: Vec::new(),
-                    scale: legaia_tmd::encode::LEGAIA_OBJECT_SCALE,
-                }),
-        );
+        let obj = match bone {
+            Some(b) => channel_geom.get(&b).cloned().unwrap_or_else(|| {
+                // Retail geometry existed in this slot; keep its vertex
+                // count samplable (see `stub` above).
+                stub(tmd.objects.get(k).map_or(0, |o| o.vertices.len()))
+            }),
+            // The variant hole before the alias copies over it, or the
+            // streamer-anchor extra: the extra gets a generous samplable
+            // pool, the hole is overwritten below either way.
+            None if k >= nobj || k + 1 != variant.unwrap_or(usize::MAX) => stub(64),
+            None => ModelObject {
+                vertices: Vec::new(),
+                groups: Vec::new(),
+                scale: legaia_tmd::encode::LEGAIA_OBJECT_SCALE,
+            },
+        };
+        objects.push(obj);
     }
     let mut new_tmd = encode(&objects).context("encode section TMD")?;
     if let Some(v) = variant {
@@ -1774,6 +1824,8 @@ fn playerize_scaled(
     // (id, slot bytes, decoded bytes - kept for the optimal-LZS retry)
     let mut new_records: Vec<(u32, Vec<u8>, Vec<u8>)> = Vec::new();
     let mut section = 0usize;
+    // Streamer-anchor latch: the first variant-carrying section.
+    let mut anchor_section: Option<usize> = None;
     for (idx, rec) in pack.records.iter().enumerate() {
         let decoded = decode_record(player_file, &pack, idx)
             .with_context(|| format!("decode record {idx}"))?;
@@ -1840,8 +1892,14 @@ fn playerize_scaled(
             }
             None => &channel_geom,
         };
-        let rewritten = rewrite_section_record(&decoded.bytes, geom, pool_block)
-            .with_context(|| format!("rewrite record {idx} (id {:#x})", rec.id))?;
+        let rewritten = rewrite_section_record(
+            &decoded.bytes,
+            geom,
+            pool_block,
+            section,
+            &mut anchor_section,
+        )
+        .with_context(|| format!("rewrite record {idx} (id {:#x})", rec.id))?;
         let stream = legaia_lzs::compress(&rewritten);
         let mut slot = Vec::with_capacity(4 + stream.len());
         slot.extend_from_slice(&(rewritten.len() as u32).to_le_bytes());

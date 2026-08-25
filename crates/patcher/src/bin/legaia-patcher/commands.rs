@@ -922,15 +922,28 @@ pub(crate) fn cmd_delilas_verify(input: &Path) -> Result<()> {
             let Ok(asm) = bca::assemble_character(&file, &pack, eq) else {
                 continue;
             };
-            // 0xFE extras assemble with bone tags 100..200.
-            fe_hits += asm
-                .bone_tags
-                .iter()
-                .filter(|&&t| (100..200).contains(&t))
-                .count();
             let Ok(tmd) = legaia_tmd::parse(&asm.tmd) else {
                 continue;
             };
+            // 0xFE extras assemble with bone tags 100..200. The swap
+            // ships exactly ONE per assembly - the prim-less streamer
+            // anchor (tag 100, a samplable stub vertex pool, zero drawn
+            // primitives, ordinal 1) that keeps the charge effect's
+            // vertex sampling and tag-100 lookups resolving; any other
+            // extra, or one that DRAWS, is the ordinal-overflow hazard
+            // the rewrite exists to remove.
+            for (i, &t) in asm.bone_tags.iter().enumerate() {
+                if !(100..200).contains(&t) {
+                    continue;
+                }
+                let primless = tmd
+                    .objects
+                    .get(i)
+                    .is_some_and(|o| o.claimed_n_primitive == 0);
+                if t != 100 || !primless {
+                    fe_hits += 1;
+                }
+            }
             let skeleton = bca::battle_animations(&file)
                 .ok()
                 .and_then(|a| a.first().map(|s| s.part_count))
@@ -1006,7 +1019,7 @@ pub(crate) fn cmd_delilas_verify(input: &Path) -> Result<()> {
             failures += 1;
         }
         println!(
-            "{who}: {} assemblies | 0xFE extras {} ({fe_hits}) | hand seat {} \
+            "{who}: {} assemblies | 0xFE hazards {} ({fe_hits}) | hand seat {} \
              (worst {seat_worst:.1} <= {HAND_SEAT_MAX}) | skeleton geometry {} \
              ({empty_bones} empty) | weapon fusion {} ({fused_loadouts}/{weapon_loadouts})",
             loadouts.len(),
