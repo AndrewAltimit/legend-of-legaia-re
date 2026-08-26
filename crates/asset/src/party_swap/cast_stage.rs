@@ -66,13 +66,17 @@
 //!   owns rows `0x0A`/`0x0B`.
 //!
 //! Entry heads are the **proven-safe placeholder shape** - `0xAC` zero
-//! bytes except the id/tag byte, the attach key and the rate - not a copy
-//! of the Block head: the Block record is the one probe-measured to
-//! freeze the module's stage boundary, and the placeholder head is the
-//! one that carried the full choreography, so the delta from it is kept
-//! to the stream alone. The attach key stays `0x0A` on both entries (the
-//! value the boundary ran with); the effect script, loop window and face
-//! tracks stay zero.
+//! bytes except the id/tag byte, the attach key, the rate and the
+//! rescaled source **loop window** (`+0x84..+0x87`) - not a copy of the
+//! Block head: the Block record is the one probe-measured to freeze the
+//! module's stage boundary, and the placeholder head is the one that
+//! carried the full choreography. The attach key stays `0x0A` on both
+//! entries (the value the boundary ran with); the effect script, the
+//! `+0x87` solo/freeze effect byte and the face tracks stay zero. The
+//! window is NOT optional polish: the shared tick's natural-end arm
+//! re-commits a still-staged clip from frame 0, and the retail cast
+//! clips are authored to park in their windows through each stage's
+//! dwell instead of ever reaching that arm (see [`build_entry`]).
 
 use super::*;
 use crate::battle_char_assembly as bca;
@@ -109,6 +113,10 @@ pub struct StagedCastRows {
     pub header: (u32, u32, u32),
     /// Frames each rebuilt stage carries, in chain order.
     pub frames: Vec<usize>,
+    /// Pose-hold factor of each stage (1 = every frame a unique pose;
+    /// 2 / 4 = each pose written that many times - the LZS-pressure
+    /// fallback that sheds entropy without touching wall time).
+    pub holds: Vec<usize>,
     /// Rate byte of each rebuilt stage, in chain order.
     pub rates: Vec<u8>,
     /// Frames each source clip is authored at, in chain order.
@@ -182,31 +190,35 @@ pub fn record0_clut_offsets(entry: &[u8]) -> Result<(usize, usize)> {
     bail!("no record[0] header found")
 }
 
-/// Duration-preserving `(frames, rate)` ladder for one source clip: the
-/// retail tick formula is `frames * 8 / rate`, so the exact re-timing of
-/// a clip authored at `(src_frames, src_rate)` into a rate-1 stream is
-/// `src_frames * 8 / src_rate / 8` frames; each further rung halves the
-/// pose budget (the clip then finishes early and holds its last frame -
-/// module 959 restages on its own phase clock, not on the clip cursor).
+/// Duration-preserving `(frames, hold, rate)` ladder for one source
+/// clip: the retail tick formula is `frames * 8 / rate`, so the exact
+/// re-timing of a clip authored at `(src_frames, src_rate)` into a
+/// rate-1 stream is `src_frames * 8 / src_rate / 8` frames. **Every rung
+/// keeps that frame count** - what a deeper rung sheds is unique poses:
+/// `hold = 2 / 4` samples the retarget at `frames / hold` poses and
+/// writes each one `hold` times, so the stream's byte area is unchanged
+/// but its LZS entropy roughly halves per rung (a duplicated 9-byte row
+/// is a repeat token, and the whole row set sits inside the 4 KB
+/// window). An earlier ladder halved `frames` instead, which - with the
+/// rate byte already pinned at its floor of 1 - **halved the clip's
+/// wall time**: Gi's 30-frame leap shipped as 11 poses at rate 1, played
+/// 1.4x fast, finished ~90 ticks before its module stage, and the
+/// natural-end re-commit replayed it from frame 0 (the visible
+/// "loops the beginning of Blazing Slash" defect).
 ///
 /// `floor` is a hard keyframe minimum every rung respects, stretching a
 /// short source UP when needed: module 0960's damage tick holds until
 /// the playing clip's cursor reaches keyframe 22
 /// ([`enemy_anim::PAYOFF_FLOOR_FRAMES`]), so the row it rides must
-/// carry at least that many keyframes or the cast stalls. Modules
-/// 958/959 gate on their own phase clocks; their rows keep the soft
-/// [`enemy_anim::RETAIL_STAGED_FLOOR`] behaviour (a shorter source
-/// keeps its own length).
-fn stage_ladder(clip: &MonsterAnimation, floor: usize) -> Vec<(usize, u8)> {
+/// carry at least that many keyframes or the cast stalls.
+fn stage_ladder(clip: &MonsterAnimation, floor: usize) -> Vec<(usize, usize, u8)> {
     let ticks = clip.frame_count * 8 / clip.rate.max(1) as usize;
-    let exact = (ticks / 8).max(1);
-    let soft = enemy_anim::RETAIL_STAGED_FLOOR.min(exact);
+    let f = (ticks / 8).max(1).max(floor).min(u8::MAX as usize);
+    let rate = winpose::retimed_rate(f, clip.frame_count, clip.rate.max(1));
     let mut out = Vec::new();
-    for div in [1usize, 2, 4] {
-        let f = (exact / div).max(soft).max(floor);
-        let rate = winpose::retimed_rate(f, clip.frame_count, clip.rate.max(1));
-        if out.last() != Some(&(f, rate)) {
-            out.push((f, rate));
+    for hold in [1usize, 2, 4] {
+        if out.last() != Some(&(f, hold, rate)) && f.div_ceil(hold) >= 2 {
+            out.push((f, hold, rate));
         }
     }
     out
@@ -214,19 +226,45 @@ fn stage_ladder(clip: &MonsterAnimation, floor: usize) -> Vec<(usize, u8)> {
 
 /// Build one staged entry: the proven-safe placeholder head plus the
 /// retargeted raw packed stream.
+///
+/// `hold` > 1 sheds LZS entropy without touching wall time: the
+/// retarget is sampled at `frames / hold` unique poses and each pose is
+/// written `hold` times (see [`stage_ladder`]).
+///
+/// `window` is the SOURCE clip's authored loop window
+/// ([`crate::monster_archive::animation_loop_windows`]), rescaled into
+/// the hosted frame count and written to head bytes `+0x84..+0x87`.
+/// Without it a clip shorter than its module stage dwell hits the
+/// natural-end re-commit in `FUN_80047430` and replays from frame 0 -
+/// the retail cast clips are AUTHORED against exactly these windows
+/// (Gi's crouch holds `[9, 10]`, Lu's charge parks on its last frame),
+/// so zeroing them was what made the hosted stages visibly loop.
 #[allow(clippy::too_many_arguments)]
 fn build_entry(
     row_id: u8,
     clip: &MonsterAnimation,
     frames: usize,
+    hold: usize,
     rate: u8,
+    window: Option<crate::monster_archive::ActionLoopWindow>,
     rig: &PlayerRig,
     retail_player: &[u8],
     archive: &[u8],
     source_id: u16,
     parts: usize,
+    natural_wrist_hand: Option<usize>,
 ) -> Result<Vec<u8>> {
-    let rows = winpose::retarget_clip(clip, rig, retail_player, archive, source_id, parts, frames)?;
+    let unique = frames.div_ceil(hold.max(1)).max(1);
+    let rows = winpose::retarget_clip_wrist(
+        clip,
+        rig,
+        retail_player,
+        archive,
+        source_id,
+        parts,
+        unique,
+        natural_wrist_hand,
+    )?;
     let mut out = vec![0u8; ENTRY_HEAD];
     out[0] = row_id;
     // The attach key the empty row ran the whole choreography with -
@@ -234,9 +272,28 @@ fn build_entry(
     // is probe-measured to choke on.
     out[0x77] = STAGE_ROW_WINDUP as u8;
     out[0x78] = rate;
+    if let Some((cnt, s, e)) = window {
+        let sf = clip.frame_count.max(1);
+        // Round-nearest rescale into the hosted frame count. A hold
+        // window (start == end) parks strictly inside the stream; a
+        // replay window keeps end > start and may end AT `frames`
+        // (the whole-tail loop form - the tick's window test runs
+        // before its natural-end test, so that end frame is reachable).
+        let r = |x: usize| (x * frames * 2 + sf) / (sf * 2);
+        let hs = r(s).min(frames.saturating_sub(1));
+        let he = if e > s {
+            r(e).clamp(hs + 1, frames)
+        } else {
+            hs
+        };
+        out[0x84] = cnt;
+        out[0x85] = hs as u8;
+        out[0x86] = he as u8;
+    }
     out.push(parts as u8);
     out.push(frames as u8);
-    for row in &rows {
+    for i in 0..frames {
+        let row = &rows[(i * unique / frames).min(unique - 1)];
         for p in row {
             out.extend_from_slice(&winpose::pack_part(p));
         }
@@ -321,6 +378,11 @@ pub fn push_up_desc_table(entry: &[u8]) -> Result<Option<FileWrites>> {
 ///   `0x0A` at.
 /// * `floors` - per-clip hard keyframe minimum (one per chain entry;
 ///   see [`stage_ladder`]).
+/// * `windows` - per-clip SOURCE loop window to rescale into the hosted
+///   entry head (`None` = author no window; a clip whose stage rides a
+///   cursor gate - Lu's strike, whose damage tick waits for keyframe 22 -
+///   must NOT park its cursor inside a window, so its slot passes
+///   `None` even though the source authors one).
 /// * `row_ids` - the id/tag byte each entry is authored with: the table
 ///   row the entry is reached through (`0x0A` for the variable row, the
 ///   static payoff row's id for the entry bound to it).
@@ -342,15 +404,22 @@ pub fn build_staged_cast_rows(
     source_id: u16,
     chain: &[&MonsterAnimation],
     floors: &[usize],
+    windows: &[Option<crate::monster_archive::ActionLoopWindow>],
     row_ids: &[u8],
     binding: &[(usize, usize)],
+    natural_wrist_hand: Option<usize>,
     mut fits: impl FnMut(&[u8]) -> Result<bool>,
 ) -> Result<StagedCastRows> {
-    if chain.is_empty() || chain.len() != floors.len() || chain.len() != row_ids.len() {
+    if chain.is_empty()
+        || chain.len() != floors.len()
+        || chain.len() != row_ids.len()
+        || chain.len() != windows.len()
+    {
         bail!(
-            "staged chain shape mismatch: {} clips / {} floors / {} row ids",
+            "staged chain shape mismatch: {} clips / {} floors / {} windows / {} row ids",
             chain.len(),
             floors.len(),
+            windows.len(),
             row_ids.len()
         );
     }
@@ -439,16 +508,17 @@ pub fn build_staged_cast_rows(
     // caller's budget oracle. The rows are INSERTED at `clut_a` in chain
     // order; the payloads and every header offset past them shift up by
     // `delta`.
-    let ladders: Vec<Vec<(usize, u8)>> = chain
+    let ladders: Vec<Vec<(usize, usize, u8)>> = chain
         .iter()
         .zip(floors)
         .map(|(clip, &floor)| stage_ladder(clip, floor))
         .collect();
     let max_rungs = ladders.iter().map(Vec::len).max().unwrap_or(1);
     for rung in 0..max_rungs {
-        let picks: Vec<(usize, u8)> = ladders.iter().map(|l| l[rung.min(l.len() - 1)]).collect();
+        let picks: Vec<(usize, usize, u8)> =
+            ladders.iter().map(|l| l[rung.min(l.len() - 1)]).collect();
         let len = |f: usize| ENTRY_HEAD + 2 + parts * f * 9;
-        let lens: Vec<usize> = picks.iter().map(|&(f, _)| (len(f) + 3) & !3).collect();
+        let lens: Vec<usize> = picks.iter().map(|&(f, _, _)| (len(f) + 3) & !3).collect();
         let delta: usize = lens.iter().sum();
         // The member-init allocation the image + scratch share is
         // 0x19000 bytes; keep generous scratch headroom past the tail.
@@ -460,17 +530,20 @@ pub fn build_staged_cast_rows(
         let mut out = Vec::with_capacity(block.len() + delta);
         out.extend_from_slice(&block[..clut_a]);
         for (i, clip) in chain.iter().enumerate() {
-            let (f, r) = picks[i];
+            let (f, hold, r) = picks[i];
             let entry = build_entry(
                 row_ids[i],
                 clip,
                 f,
+                hold,
                 r,
+                windows[i],
                 rig,
                 retail_player,
                 archive,
                 source_id,
                 parts,
+                natural_wrist_hand,
             )?;
             offsets.push(cursor);
             out.extend_from_slice(&entry);
@@ -505,8 +578,9 @@ pub fn build_staged_cast_rows(
             ),
             decoded: out,
             delta,
-            frames: picks.iter().map(|&(f, _)| f).collect(),
-            rates: picks.iter().map(|&(_, r)| r).collect(),
+            frames: picks.iter().map(|&(f, _, _)| f).collect(),
+            holds: picks.iter().map(|&(_, h, _)| h).collect(),
+            rates: picks.iter().map(|&(_, _, r)| r).collect(),
             source_frames: chain.iter().map(|c| c.frame_count).collect(),
             entry_offsets: offsets,
         });
@@ -586,26 +660,30 @@ mod tests {
         }
     }
 
-    /// Rung 0 is the duration-exact rate-1 resample (`frames * 8 / rate`
-    /// held constant); deeper rungs shed poses but never sink below the
-    /// retail staged floor.
+    /// Every rung carries the SAME duration-exact frame count
+    /// (`frames * 8 / rate` held constant); what a deeper rung sheds is
+    /// unique poses, via the hold factor.
     #[test]
-    fn ladder_rung_zero_is_duration_exact() {
+    fn every_rung_is_duration_exact() {
         // Che's staged clips: 50 frames at rate 2 = 200 ticks.
         let l = stage_ladder(&clip(50, 2), 0);
-        assert_eq!(l[0], (25, 1), "200 ticks = 25 frames at rate 1");
-        for &(f, r) in &l {
-            assert!(f >= enemy_anim::RETAIL_STAGED_FLOOR.min(25));
+        assert_eq!(l[0], (25, 1, 1), "200 ticks = 25 frames at rate 1");
+        for &(f, hold, r) in &l {
+            assert_eq!(f, 25, "a rung changed the frame count");
             assert!(r >= 1);
+            assert!(f.div_ceil(hold) >= 2, "a rung degenerated to a still");
         }
+        assert_eq!(l.len(), 3, "holds 1/2/4 all viable at 25 frames");
     }
 
     /// A clip shorter than the floor keeps its own length rather than
-    /// being padded up.
+    /// being padded up, and rungs that would leave fewer than two unique
+    /// poses are dropped.
     #[test]
     fn ladder_respects_short_sources() {
         let l = stage_ladder(&clip(8, 1), 0);
-        assert_eq!(l[0].0, 8);
+        assert!(l.iter().all(|&(f, _, _)| f == 8));
+        assert!(l.iter().all(|&(f, hold, _)| f.div_ceil(hold) >= 2));
     }
 
     /// A hard floor (module 0960's keyframe-22 damage-cursor gate)
@@ -613,7 +691,7 @@ mod tests {
     #[test]
     fn ladder_honours_a_hard_floor() {
         for src in [clip(8, 1), clip(50, 2), clip(30, 4)] {
-            for &(f, r) in &stage_ladder(&src, 23) {
+            for &(f, _, r) in &stage_ladder(&src, 23) {
                 assert!(f >= 23, "rung {f}f under the hard floor");
                 assert!(r >= 1);
             }

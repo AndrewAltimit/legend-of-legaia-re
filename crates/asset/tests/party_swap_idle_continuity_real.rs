@@ -358,7 +358,7 @@ fn the_rebuilt_idle_keeps_its_joints_closed() {
             );
             print_table("   sibling edges", &sgaps);
 
-            let built = winpose::rebuild_idle_stream(&host.file, host.rig, &archive, id)
+            let built = winpose::rebuild_idle_stream(&host.file, host.rig, &archive, id, None)
                 .unwrap_or_else(|e| panic!("{name} -> {}: rebuild: {e:#}", host.who));
             let rows = decode_stream(&built.bytes, retail.part_count, built.frames);
             assert_eq!(rows.len(), retail.frame_count, "rebuilt frame count");

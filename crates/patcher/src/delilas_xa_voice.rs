@@ -12,6 +12,11 @@
 //!
 //! - arts-shout bank (`XA2`/`XA4`/`XA6`): every channel, cycling the
 //!   sibling's attack-voice pool ([`art_voice_vags`]);
+//! - the signature special's own cue: the sibling's attack soundtrack
+//!   lands on the slot's Hyper fanfare pair AND the generic Super-chain
+//!   channel 1 (`legaia_art::hyper_fanfare::GENERIC_FANFARE_CHANNEL`)
+//!   in EVERY arts-voice mode - a chained special fires the generic id,
+//!   not the pair;
 //! - fanfare banks (`XA1`+`XA27` / `XA3`+`XA28` / `XA5`+`XA29`): these
 //!   are the Hyper / Super / Miracle cue beds and the Seru-magic
 //!   fanfare streams - 3-7 second stereo music-plus-voice, NOT one-shot
@@ -842,7 +847,20 @@ pub fn fill_hero_xa_voices(
         if let Some(g) = special_line.as_ref() {
             let (a, b) = crate::delilas_party::signature_fanfare_channels(slot).unwrap_or((4, 7));
             let bank = staged_banks[slot][0];
-            for chan in [a, b] {
+            // Channel 1 alongside the per-art pair: a Hyper performed at
+            // the END of a Super chain fires the GENERIC per-character
+            // fanfare id (`0x101`/`0x111`/`0x121` -> channel 1 of the
+            // same bank, `legaia_art::hyper_fanfare`), not the pair - so
+            // a chained signature special reached the one host-derived
+            // channel left uncovered, and under `adjusted` that is the
+            // host's re-pitched bed ("Noa's grunt partway into Blazing
+            // Slash").
+            let generic = legaia_art::hyper_fanfare::GENERIC_FANFARE_CHANNEL;
+            let mut chans = vec![a, b];
+            if !chans.contains(&generic) {
+                chans.push(generic);
+            }
+            for chan in chans {
                 if write_grunt(patcher, bank, chan, g, &mut notes)? {
                     filled += 1;
                     special_written = true;
@@ -896,13 +914,19 @@ pub fn fill_hero_xa_voices(
                     // Flare alone).
                     let special_pair =
                         crate::delilas_party::signature_fanfare_channels(slot).unwrap_or((4, 7));
+                    let generic = legaia_art::hyper_fanfare::GENERIC_FANFARE_CHANNEL;
                     for (chan, pcm, rate) in captured {
                         // The signature cue was written above, in every
-                        // mode, so its pair is already done - re-pitching
-                        // the host's bed over it here would undo it.
+                        // mode, so its channels are already done -
+                        // re-pitching the host's bed over them here
+                        // would undo it. That set is the per-art pair
+                        // PLUS the generic Super-chain channel 1: a
+                        // chained special fires `0x1?1`, not the pair.
                         if special_written
                             && bank == staged_banks[slot][0]
-                            && (*chan == special_pair.0 || *chan == special_pair.1)
+                            && (*chan == special_pair.0
+                                || *chan == special_pair.1
+                                || *chan == generic)
                         {
                             continue;
                         }

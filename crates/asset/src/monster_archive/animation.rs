@@ -243,6 +243,59 @@ pub fn animations(entry: &[u8], id: u16) -> Result<Option<Vec<MonsterAnimation>>
     Ok(Some(out))
 }
 
+/// One per-action entry's authored **loop window**: `(loop_count,
+/// start_frame, end_frame)` from entry `+0x84..+0x87`.
+///
+/// The shared anim tick (`FUN_80047430`) tests the window BEFORE its
+/// natural-end test: while the hold counter at actor `+0x176` (seeded
+/// `loop_count << 4` at install, `FUN_8004AD80`) is non-zero, a cursor
+/// reaching `end` wraps back to `start` (or parks there when
+/// `start == end`), so a windowed clip never hits the natural-end
+/// re-commit that otherwise replays a still-staged clip from frame 0.
+/// The retail Delilas cast clips lean on this: Gi's crouch holds
+/// `[9, 10]`, his finale parks on its last frame, Lu's charge parks on
+/// hers, and Lu's flourish `[16, 24]` loops its tail sway. `end` may
+/// equal the frame count (the whole-tail loop form).
+pub type ActionLoopWindow = (u8, usize, usize);
+
+/// The loop window of every action entry, **index-aligned with
+/// [`animations`]** (same walk, same skip rules - pairing the two by
+/// index is sound by construction). Entries whose window bytes are
+/// zero / degenerate yield `None`. Returns `Ok(None)` for an empty /
+/// filler / non-mesh slot.
+pub fn animation_loop_windows(
+    entry: &[u8],
+    id: u16,
+) -> Result<Option<Vec<Option<ActionLoopWindow>>>> {
+    let Some(block) = decode_block(entry, id)? else {
+        return Ok(None);
+    };
+    if block.len() < MIN_RECORD_BYTES {
+        return Ok(None);
+    }
+    let magic_count = block[0x4a] as usize;
+    let mut out = Vec::with_capacity(magic_count);
+    for i in 0..magic_count {
+        let Some(entry_off) = legaia_bytes::u32_le(&block, 0x4c + i * 4).map(|v| v as usize) else {
+            break;
+        };
+        let Some(&action_id) = block.get(entry_off) else {
+            continue;
+        };
+        // Mirror `animations`: only entries it keeps take an index.
+        let Some(anim) = parse_animation(&block, action_id, entry_off) else {
+            continue;
+        };
+        let w = block
+            .get(entry_off + 0x84..entry_off + 0x87)
+            .map(|b| (b[0], b[1] as usize, b[2] as usize));
+        out.push(w.filter(|&(cnt, s, e)| {
+            cnt != 0 && e >= s && s < anim.frame_count && e <= anim.frame_count
+        }));
+    }
+    Ok(Some(out))
+}
+
 /// The raw action **tag** of every entry in the monster's `+0x4C` action-record
 /// array, in table order.
 ///

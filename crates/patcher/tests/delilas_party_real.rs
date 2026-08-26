@@ -1206,7 +1206,12 @@ fn arts_voice_modes_shape_the_shout_banks() {
         // so neither half can rot: the pair must move, the rest must not.
         let sig = legaia_patcher::delilas_party::signature_fanfare_channels(0)
             .expect("Vahn's slot has a signature fanfare pair");
-        if c == sig.0 || c == sig.1 {
+        // The pair plus the GENERIC Super-chain channel (`0x101` ->
+        // channel 1): a signature special performed at the end of a
+        // Super chain fires the generic id, not the pair, so its cue
+        // covers that channel too - in every mode, same rationale.
+        let generic = legaia_art::hyper_fanfare::GENERIC_FANFARE_CHANNEL;
+        if c == sig.0 || c == sig.1 || c == generic {
             assert_ne!(
                 o, r,
                 "original mode must still install the signature special's own cue \

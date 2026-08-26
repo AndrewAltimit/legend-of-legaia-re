@@ -378,7 +378,15 @@ pub fn apply_delilas_party_with(
             let slot = readef
                 .get(off..off + winpose::READEF_SLOT)
                 .ok_or_else(|| anyhow::anyhow!("readef slot {slot_idx} out of range"))?;
-            let rebuilt = winpose::rebuild_base_slot(slot, &clip, rig, &player_file, &archive, id)?;
+            let rebuilt = winpose::rebuild_base_slot(
+                slot,
+                &clip,
+                rig,
+                &player_file,
+                &archive,
+                id,
+                party_swap::playerize::kept_welded_hand(id, keep_hammer),
+            )?;
             patcher.patch_prot_entry(READEF_ENTRY, off as u64, &rebuilt)?;
             Ok(clip.action_id)
         }) {
@@ -647,6 +655,10 @@ pub fn apply_delilas_party_with(
                 retail_player: &retail_players[slot],
                 archive: &archive,
                 lines: &victory_lines,
+                natural_wrist_hand: party_swap::playerize::kept_welded_hand(
+                    sibling.monster_id(),
+                    options.keep_che_hammer && sibling == Sibling::Che,
+                ),
             };
             let notes = reskin_signature_art(patcher, &ctx, &mut cave_taken)
                 .with_context(|| format!("reskin the {who}-slot signature art"))?;
@@ -715,7 +727,7 @@ pub fn apply_delilas_party_with(
                 0x7A => "Megaton Press (959)",
                 _ => "Plasma Strike (960)",
             };
-            match author_staged_cast_rows(patcher, mapping, &retail_players, &archive) {
+            match author_staged_cast_rows(patcher, mapping, &retail_players, &archive, &options) {
                 Ok(authored) => {
                     report.notes.extend(authored.notes);
                     let gi = authored.gi_unfold.as_deref();
@@ -1122,6 +1134,7 @@ fn apply_delilas_moveset(patcher: &mut DiscPatcher, ctx: &SignatureCtx<'_>) -> R
         rig,
         retail_player,
         archive,
+        natural_wrist_hand,
         ..
     } = ctx;
     let who = ["Vahn", "Noa", "Gala"][slot];
@@ -1185,6 +1198,7 @@ fn apply_delilas_moveset(patcher: &mut DiscPatcher, ctx: &SignatureCtx<'_>) -> R
         retail_player,
         archive,
         source_id,
+        natural_wrist_hand,
     )
     .with_context(|| {
         format!(
@@ -1560,6 +1574,12 @@ struct StagedChain {
     clips: &'static [usize],
     /// Per-clip hard keyframe floor (`cast_stage::stage_ladder`).
     floors: &'static [usize],
+    /// Per-clip: carry the SOURCE entry's authored loop window across
+    /// (`cast_stage::build_entry` rescales it). `false` only where a
+    /// cursor gate rides the stage - Lu's strike, whose damage tick
+    /// waits for keyframe 22 and must not find the cursor parked in a
+    /// hold window before it.
+    windows: &'static [bool],
     /// Per-clip id/tag byte = the table row the clip is reached through.
     row_ids: &'static [u8],
     /// At-rest head-table bindings `(row, chain index)`.
@@ -1589,18 +1609,30 @@ fn staged_chain_full(sibling: Sibling) -> StagedChain {
         Sibling::Gi => StagedChain {
             clips: &[10, 11, 12, 13],
             floors: &[RF, RF, RF, RF],
+            // Retail windows: crouch holds [9, 10], leap holds [8, 9],
+            // the slash authors none (the retail flurry replays), the
+            // finale parks on its last frame.
+            windows: &[true, true, true, true],
             row_ids: &[0x0A, 0x0B, 0x0A, 0x0B],
             binding: &[(0x0A, 0), (0x0B, 1)],
         },
         Sibling::Che => StagedChain {
             clips: &[10, 11],
             floors: &[RF, RF],
+            // Che's lift/smash author no windows - carrying them is a
+            // no-op, kept uniform.
+            windows: &[true, true],
             row_ids: &[0x0A, 0x0B],
             binding: &[(0x0A, 0), (0x0B, 1)],
         },
         Sibling::Lu => StagedChain {
             clips: &[10, 14, 12, 13, 15],
             floors: &[RF, RF, RF, PAYOFF_FLOOR_FRAMES, RF],
+            // The strike (13) authors [15, 15] in the archive but the
+            // hosted stage's damage tick gates on the cursor reaching
+            // keyframe 22 - a hold window before it would stall the
+            // payoff, so that one slot drops the window.
+            windows: &[true, true, true, false, true],
             row_ids: &[0x0A, 0x0A, 0x0A, 0x0A, 0x0B],
             binding: &[(0x0A, 0), (0x0B, 4)],
         },
@@ -1620,12 +1652,18 @@ fn staged_chain_folded(sibling: Sibling) -> StagedChain {
         Sibling::Gi | Sibling::Che => StagedChain {
             clips: &[10, 11],
             floors: &[RF, RF],
+            windows: &[true, true],
             row_ids: &[0x0A, 0x0B],
             binding: &[(0x0A, 0), (0x0B, 1)],
         },
         Sibling::Lu => StagedChain {
             clips: &[14, 13],
+            // The fold's damage build-up rides the restaged charge (row
+            // 0x0A carries the PAYOFF floor), so BOTH slots drop their
+            // windows here: a hold would park the cursor short of the
+            // keyframe-22 damage gate.
             floors: &[PAYOFF_FLOOR_FRAMES, RF],
+            windows: &[false, false],
             row_ids: &[0x0A, 0x0B],
             binding: &[(0x0A, 0), (0x0B, 1)],
         },
@@ -1670,6 +1708,7 @@ fn author_staged_cast_rows(
     mapping: &PartyMapping,
     retail_players: &[Vec<u8>],
     archive: &[u8],
+    options: &DelilasPartyOptions,
 ) -> Result<AuthoredCastRows> {
     use legaia_asset::battle_char_assembly;
     use party_swap::cast_stage;
@@ -1799,8 +1838,25 @@ fn author_staged_cast_rows(
                  image instead"
             ),
             cast_stage::StagedState::Absent => {
+                // The source clips' authored loop windows, index-aligned
+                // with `animations()` (same walk, same skip rules).
+                let src_windows = monster_archive::animation_loop_windows(archive, source_id)
+                    .with_context(|| format!("read monster {source_id} loop windows"))?
+                    .unwrap_or_default();
                 let build = |spec: &StagedChain| -> Result<(cast_stage::StagedCastRows, Vec<u8>)> {
                     let chain = pick(spec)?;
+                    let windows: Vec<Option<monster_archive::ActionLoopWindow>> = spec
+                        .clips
+                        .iter()
+                        .zip(spec.windows)
+                        .map(|(&i, &keep)| {
+                            if keep {
+                                src_windows.get(i).copied().flatten()
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
                     let mut packed: Option<Vec<u8>> = None;
                     let built = cast_stage::build_staged_cast_rows(
                         &live,
@@ -1810,8 +1866,13 @@ fn author_staged_cast_rows(
                         source_id,
                         &chain,
                         spec.floors,
+                        &windows,
                         spec.row_ids,
                         spec.binding,
+                        party_swap::playerize::kept_welded_hand(
+                            source_id,
+                            options.keep_che_hammer && sibling == Sibling::Che,
+                        ),
                         |decoded_new| {
                             let mut c = legaia_lzs::compress(decoded_new);
                             if c.len() > region.avail {
@@ -1863,8 +1924,15 @@ fn author_staged_cast_rows(
                     .frames
                     .iter()
                     .zip(&built.source_frames)
-                    .zip(&built.rates)
-                    .map(|((f, sf), r)| format!("{f}f (of {sf}) rate {r}"))
+                    .zip(built.rates.iter().zip(&built.holds))
+                    .map(|((f, sf), (r, h))| {
+                        let hold = if *h > 1 {
+                            format!(" hold x{h}")
+                        } else {
+                            String::new()
+                        };
+                        format!("{f}f (of {sf}) rate {r}{hold}")
+                    })
                     .collect();
                 notes.push(format!(
                     "cast route: {who} caster rows inserted (+{:#x} decoded bytes, {} stage \
@@ -1973,6 +2041,9 @@ struct SignatureCtx<'a> {
     retail_player: &'a [u8],
     archive: &'a [u8],
     lines: &'a crate::delilas_xa_voice::VictoryLines,
+    /// Canonical hand whose kept welded weapon plays the sibling's own
+    /// wrist relation ([`party_swap::kept_welded_hand`]).
+    natural_wrist_hand: Option<usize>,
 }
 
 /// Reskin one hero slot's Hyper art as the sibling mapped onto it.
@@ -2004,6 +2075,7 @@ fn reskin_signature_art(
         retail_player,
         archive,
         lines,
+        natural_wrist_hand,
     } = ctx;
     let who = ["Vahn", "Noa", "Gala"][slot];
     let character = slot_character(slot);
@@ -2190,6 +2262,7 @@ fn reskin_signature_art(
             retail_player,
             archive,
             source_id,
+            natural_wrist_hand,
         )
     })();
     let rebuilt = match rebuilt {
@@ -2327,7 +2400,7 @@ fn reskin_signature_art(
     // The battle idle rides the SAME record0 write - it is the only
     // record0 edit that adds bytes, so batching it means one LZS re-fit
     // instead of two that each have to clear the footprint alone.
-    match winpose::rebuild_idle_stream(retail_player, rig, archive, source_id) {
+    match winpose::rebuild_idle_stream(retail_player, rig, archive, source_id, natural_wrist_hand) {
         Ok(idle) => {
             offset_edits.extend(
                 idle.bytes

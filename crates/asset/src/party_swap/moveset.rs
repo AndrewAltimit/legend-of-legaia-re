@@ -39,7 +39,7 @@ use anyhow::{Context, Result, bail};
 use crate::me_archive;
 use crate::monster_archive::{self, MonsterAnimation};
 use crate::party_swap::PlayerRig;
-use crate::party_swap::winpose::{self, READEF_SLOT, pack_part, retarget_clip};
+use crate::party_swap::winpose::{self, READEF_SLOT, pack_part, retarget_clip_wrist};
 
 /// Action-tag band the siblings' ordinary attack clips occupy.
 pub const SWING_TAG_LO: u8 = 0x0C;
@@ -125,6 +125,7 @@ pub fn rebuild_moveset_archive(
     player_file: &[u8],
     archive_entry: &[u8],
     source_id: u16,
+    natural_wrist_hand: Option<usize>,
 ) -> Result<RebuiltMoveset> {
     if slot.len() != READEF_SLOT {
         bail!("art slot is {} bytes, expected {READEF_SLOT}", slot.len());
@@ -172,7 +173,7 @@ pub fn rebuild_moveset_archive(
             .get(entry)
             .ok_or_else(|| anyhow::anyhow!("monster {source_id} has no entry {entry}"))?;
         let frames = clip.frame_count.clamp(1, u8::MAX as usize);
-        let rows = retarget_clip(
+        let rows = retarget_clip_wrist(
             clip,
             rig,
             player_file,
@@ -180,6 +181,7 @@ pub fn rebuild_moveset_archive(
             source_id,
             parts,
             frames,
+            natural_wrist_hand,
         )
         .with_context(|| format!("retarget monster {source_id} entry {entry}"))?;
         let mut decoded = Vec::with_capacity(2 + parts * frames * 9);

@@ -2360,7 +2360,23 @@ entry's `+0x88` stream pointer (`entry+0xAC` - the loader writes it
 only for table-bound entries, and a mid-chain entry commits a NULL
 stream without it, a probe-pinned dynarec crash), redoes the staging
 store and returns (`$ra` is dead between calls at every hooked site;
-no hooked word is a branch target). The caves live in three pools that
+no hooked word is a branch target). Each hosted clip is authored
+**duration-true** at every LZS-pressure rung: the pose ladder never
+sheds frames (an earlier ladder halved them, which - with the rate
+byte already at its floor of 1 - halved wall time, so the clip hit the
+shared tick's natural-end re-commit and visibly replayed from frame 0
+mid-stage); instead a deeper rung holds each pose 2 or 4 output frames
+(duplicated 9-byte rows LZS-compress to repeat tokens). And each entry
+carries its SOURCE clip's **loop window** (`+0x84..+0x86`, rescaled to
+the hosted frame count - reader
+`legaia_asset::monster_archive::animation_loop_windows`): the retail
+cast clips are authored to park or cycle inside their windows through
+each stage's dwell (Gi's crouch holds `[9,10]`, his finale parks on
+its last frame; Lu's charge parks, her flourish loops its tail sway),
+and a zeroed window is what made the hosted stages replay whole clips.
+The one exception is Lu's strike, whose stage carries the
+damage-cursor gate below - a hold window before keyframe 22 would
+stall the payoff, so that slot ships windowless. The caves live in three pools that
 are free exactly when the route runs: the SCUS injection-gap tail
 behind the queue hook, shiny-seru's read-watch-verified `ARENA2` +
 `SLOT6` pockets (option-exclusive features), and PROT 958's own dead
@@ -2389,10 +2405,20 @@ the art-side signature and says so in the summary.
 swap: Che's welded giant hammer stays on his mesh (instead of the
 mirrored-fist replacement) and the host's weapon fusion is skipped for
 his file, so he fights with the hammer regardless of the equipped
-weapon. `delilas-verify` detects the state from the disc (a hand
-channel's textured radius far past any real fist) and waives only the
-fusion-presence check; `delilas-audit` reports the welded radius as a
-FAIL unless `--allow-kept-hammer` is passed.
+weapon. The kept hand also switches wrist law: every retargeted clip
+normally slaves each hand to the HOST's retail rest wrist attitude
+(the fix for the fused host weapon pointing across the torso), but
+with the sibling's own weapon in the hand that slaving is exactly
+wrong - a hand-sized fist hides what a 300-unit hammer amplifies, and
+the kept hammer measured 73 degrees of long-axis error against Che's
+own rest. The kept welded hand plays the sibling's natural conjugated
+wrist instead (`winpose::retarget_clip_wrist`,
+`party_swap::playerize::kept_welded_hand`), which pairs with the
+unmodified mesh bake to reproduce Che's model-space attitude exactly
+(re-measured 0.0 degrees). `delilas-verify` detects the state from the
+disc (a hand channel's textured radius far past any real fist) and
+waives only the fusion-presence check; `delilas-audit` reports the
+welded radius as a FAIL unless `--allow-kept-hammer` is passed.
 
 ### Fishing prize prices
 

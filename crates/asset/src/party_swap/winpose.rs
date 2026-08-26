@@ -472,6 +472,44 @@ pub fn retarget_clip(
     part_count: usize,
     frame_count: usize,
 ) -> Result<Vec<Vec<PartPose>>> {
+    retarget_clip_wrist(
+        clip,
+        rig,
+        player_file,
+        archive_entry,
+        source_id,
+        part_count,
+        frame_count,
+        None,
+    )
+}
+
+/// [`retarget_clip`] with an explicit wrist policy: `natural_wrist_hand`
+/// names a canonical hand part (5 / 8) whose played rotations keep the
+/// SIBLING's own hand-to-forearm relation instead of being slaved to the
+/// host's retail rest wrist attitude.
+///
+/// The slaving below exists for the HOST's welded equipped weapon: the
+/// per-part conjugation preserves neither rig's wrist relation, and the
+/// host's blade (correct under every host clip) pointed across the
+/// torso under a played sibling pose. When the swap KEEPS the sibling's
+/// own welded weapon on that hand instead (`--delilas-che-hammer`), the
+/// premise inverts: the geometry in the hand is the SIBLING's, its
+/// authored wrist relation is the retail look (the enemy-table ground
+/// truth), and the natural conjugated rotation is exactly what pairs
+/// with the mesh bake to reproduce it - measured 73 degrees of hammer
+/// long-axis error under the slaved wrist, ~0 by construction here.
+#[allow(clippy::too_many_arguments)]
+pub fn retarget_clip_wrist(
+    clip: &crate::monster_archive::MonsterAnimation,
+    rig: &PlayerRig,
+    player_file: &[u8],
+    archive_entry: &[u8],
+    source_id: u16,
+    part_count: usize,
+    frame_count: usize,
+    natural_wrist_hand: Option<usize>,
+) -> Result<Vec<Vec<PartPose>>> {
     // The same rest data the playerize bake uses.
     let src_idle = monster_archive::idle_animation(archive_entry, source_id)?
         .ok_or_else(|| anyhow::anyhow!("monster id {source_id}: no idle"))?;
@@ -663,6 +701,7 @@ pub fn retarget_clip(
     // only, about the wrist pivot the fist is anchored at.
     let wrist_attitude: Vec<(usize, usize, [[f32; 3]; 3])> = [(4usize, 5usize), (7, 8)]
         .iter()
+        .filter(|&&(_, hand_c)| natural_wrist_hand != Some(hand_c))
         .filter_map(|&(fore_c, hand_c)| {
             let fch = rig.channel_for_canonical[fore_c] as usize;
             let hch = rig.channel_for_canonical[hand_c] as usize;
@@ -790,6 +829,7 @@ pub fn rebuild_base_slot(
     player_file: &[u8],
     archive_entry: &[u8],
     source_id: u16,
+    natural_wrist_hand: Option<usize>,
 ) -> Result<Vec<u8>> {
     if slot.len() != READEF_SLOT {
         bail!("base slot is {} bytes, expected {READEF_SLOT}", slot.len());
@@ -857,7 +897,7 @@ pub fn rebuild_base_slot(
                     ..clip.clone()
                 };
                 let cyc_len = cyc_anim.frame_count;
-                let cyc = retarget_clip(
+                let cyc = retarget_clip_wrist(
                     &cyc_anim,
                     rig,
                     player_file,
@@ -865,6 +905,7 @@ pub fn rebuild_base_slot(
                     source_id,
                     parts,
                     cyc_len,
+                    natural_wrist_hand,
                 )?;
                 let hw0 = w.start.min(frames);
                 let mut out: Vec<Vec<PartPose>> = retail_frames[..hw0].to_vec();
@@ -996,6 +1037,7 @@ pub struct RebuiltArtSlot {
 /// away 18 of its poses and forces a compensating rate edit; keeping the
 /// authored length costs about 2 KB in a slot that has 20 KB free, needs
 /// no rate edit at all, and doubles the pose rate the player sees.
+#[allow(clippy::too_many_arguments)]
 pub fn rebuild_art_slot_entry(
     slot: &[u8],
     entry_index: usize,
@@ -1004,6 +1046,7 @@ pub fn rebuild_art_slot_entry(
     player_file: &[u8],
     archive_entry: &[u8],
     source_id: u16,
+    natural_wrist_hand: Option<usize>,
 ) -> Result<RebuiltArtSlot> {
     if slot.len() != READEF_SLOT {
         bail!("art slot is {} bytes, expected {READEF_SLOT}", slot.len());
@@ -1057,6 +1100,7 @@ pub fn rebuild_art_slot_entry(
                 archive_entry,
                 source_id,
                 parts,
+                natural_wrist_hand,
             )?;
             if built.len() <= headroom {
                 let payoff_frames = *per_stage.last().unwrap_or(&frames);
@@ -1082,6 +1126,7 @@ pub fn rebuild_art_slot_entry(
         archive_entry,
         source_id,
         parts,
+        natural_wrist_hand,
     )?;
     Ok(RebuiltArtSlot {
         bytes: assemble_slot(&ar, n, entry_index, &built)?,
@@ -1141,10 +1186,11 @@ fn build_chain(
     archive_entry: &[u8],
     source_id: u16,
     parts: usize,
+    natural_wrist_hand: Option<usize>,
 ) -> Result<Vec<u8>> {
     let mut rows: Vec<Vec<PartPose>> = Vec::new();
     for (clip, &frames) in stages.iter().zip(per_stage) {
-        rows.extend(retarget_clip(
+        rows.extend(retarget_clip_wrist(
             clip,
             rig,
             player_file,
@@ -1152,6 +1198,7 @@ fn build_chain(
             source_id,
             parts,
             frames,
+            natural_wrist_hand,
         )?);
     }
     let frames = rows.len();
@@ -1322,6 +1369,7 @@ pub fn rebuild_idle_stream(
     rig: &PlayerRig,
     archive_entry: &[u8],
     source_id: u16,
+    natural_wrist_hand: Option<usize>,
 ) -> Result<RebuiltIdle> {
     let block = battle_char_assembly::decode_record0(player_file)?;
     let entry_off = u32::from_le_bytes(
@@ -1344,7 +1392,7 @@ pub fn rebuild_idle_stream(
 
     let src = monster_archive::idle_animation(archive_entry, source_id)?
         .ok_or_else(|| anyhow::anyhow!("monster id {source_id} has no idle"))?;
-    let mut rows = retarget_clip(
+    let mut rows = retarget_clip_wrist(
         &src,
         rig,
         player_file,
@@ -1352,6 +1400,7 @@ pub fn rebuild_idle_stream(
         source_id,
         parts,
         frames,
+        natural_wrist_hand,
     )?;
 
     let host_idle = battle_char_assembly::idle_battle_animation(player_file)?

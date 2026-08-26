@@ -1323,6 +1323,21 @@ fn fk_inset_hand(
 /// it with the sibling's other fist, mirrored.
 const WELDED_WEAPON_FISTS: [(u16, usize); 2] = [(163, 8), (162, 5)];
 
+/// The canonical hand part whose welded weapon the swap KEEPS for this
+/// source, or `None` when nothing is kept. The paired policy switch for
+/// [`super::winpose::retarget_clip_wrist`]: a kept welded weapon's hand
+/// must play the sibling's own wrist relation (its authored attitude is
+/// the retail look), while a mirrored fist stays slaved to the host's.
+pub fn kept_welded_hand(source_id: u16, keep_welded_fist: bool) -> Option<usize> {
+    if !keep_welded_fist {
+        return None;
+    }
+    WELDED_WEAPON_FISTS
+        .iter()
+        .find(|&&(id, _)| id == source_id)
+        .map(|&(_, w)| w)
+}
+
 /// Monster ids whose swapped form needs the waist curtain (see the block
 /// in `playerize_scaled`): Che's round torso over a narrow loincloth.
 const WAIST_CURTAIN_IDS: [u16; 1] = [163];

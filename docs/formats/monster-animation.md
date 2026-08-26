@@ -310,8 +310,16 @@ and converges `+0x1D9 = +0x1DA`. On the last frame of a clip the decoder
 cross-blends toward **frame 0 of the queued entry's stream** (looked up by
 `+0x1DA`), so anim transitions tween rather than snap. Entry `+0x84` seeds a
 loop-hold counter (`actor +0x176`) and `+0x85`/`+0x86` bound a loop window
-(e.g. the player defeat entries hold a 2-frame loop); `+0x87` is a sound
-cue fired at install.
+(e.g. the player defeat entries hold a 2-frame loop; the window test runs
+BEFORE the natural-end test, so a windowed clip parks or replays inside its
+window instead of reaching the re-commit - the Delilas cast clips lean on
+this through their long module stage dwells, reader
+`legaia_asset::monster_archive::animation_loop_windows`). Entry `+0x87` is
+**not a sound cue**: a non-zero value is passed to `FUN_8004E13C`, the
+solo/freeze dispatcher - it writes battle ctx `+0x243` and raises the
+other actors' pause flag `+0x21C` (the "everyone freezes during a
+special" spotlight; value 2 additionally re-rolls a coin into ctx
+`+0x6DA` when a party member is acting).
 
 Three consequences of that commit shape:
 
