@@ -255,13 +255,14 @@ fn mirrored_duel_blocks_fight_with_the_heroes_clips() {
             );
         }
         // The measured cursor gate: Lu's module (0960) damage tick needs
-        // the payoff clip cursor to reach keyframe 22, whichever hero
-        // wears her block.
+        // the playing clip's cursor to reach keyframe 22, whichever hero
+        // wears her block. Under the folded stage walk that tick rides
+        // the restaged wind-up row (chain[0]).
         if sibling == legaia_patcher::delilas_party::Sibling::Lu {
-            let payoff = *plan.chain.last().unwrap();
+            let gated = plan.chain[0];
             assert!(
-                spans[payoff].3 >= 23,
-                "{who}: Lu-block payoff entry {payoff} under the 0960 cursor gate"
+                spans[gated].3 >= 23,
+                "{who}: Lu-block wind-up entry {gated} under the 0960 cursor gate"
             );
         }
         // Duration preserved per staged chain stage: frames * 8 / rate
@@ -633,11 +634,12 @@ fn signature_special_becomes_a_physical_attack_of_the_staged_chain() {
         for &stage in plan.chain {
             let (off, _, _, frames) = spans[stage];
             // Baseline: retail gives the tag-0x23 stages no contact beat
-            // at all (the cast module did its own damage ticks; Lu's
-            // tag-0x0C stages carry their own beats but empty effect
-            // scripts), so a populated beat + impact record here can
-            // only be the graft. Every stage's grafted head must differ
-            // from the retail head.
+            // at all (the cast module did its own damage ticks), so a
+            // populated beat + impact record there can only be the
+            // graft. Non-0x23 staged rows (Lu's folded wind-up row is a
+            // retail tag-0x12 castable) legitimately carry their own
+            // retail beat/effect records - for those the head-changed
+            // assertion below is the graft evidence.
             let (roff, _, rtag, _) = retail_spans[stage];
             if rtag == 0x23 {
                 assert_eq!(
@@ -645,12 +647,12 @@ fn signature_special_becomes_a_physical_attack_of_the_staged_chain() {
                     0,
                     "{who} stage {stage}: retail tag-0x23 staged entry unexpectedly has a beat"
                 );
+                assert_eq!(
+                    retail_block[roff + 0x15],
+                    0,
+                    "{who} stage {stage}: retail staged entry unexpectedly has an effect record"
+                );
             }
-            assert_eq!(
-                retail_block[roff + 0x15],
-                0,
-                "{who} stage {stage}: retail staged entry unexpectedly has an effect record"
-            );
             assert_ne!(
                 &block[off + 0x10..off + 0x54],
                 &retail_block[roff + 0x10..roff + 0x54],

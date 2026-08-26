@@ -638,25 +638,23 @@ pub fn apply_delilas_party(
         }
 
         // The cast route: the mapped sibling's signature plays the RETAIL
-        // enemy cast module (camera track, pillar, lift, multi-hit
-        // build-up) instead of the art-side approximation. Per-module
-        // gating: only modules whose player-caster defects are patched
-        // and probe-verified route this way - Megaton Press (spell 0x7A,
-        // PROT 959) today; the other siblings keep the art-side reskin
-        // until 958/960 pass the same audit. Claims the SCUS injection
-        // gap, so it composes with neither --shiny-seru nor
-        // --show-super-arts - on a conflict the note says so and the
-        // art-side signature stays.
+        // enemy cast module (camera track, effect barrage, multi-hit
+        // build-up) instead of the art-side approximation - Blazing
+        // Slash (spell 0x79, PROT 958), Megaton Press (0x7A, 959) and
+        // Plasma Strike (0x7B, 960), each module carrying its own
+        // damage-retarget + wipe-skip + staged-walk fold edit set in
+        // `crate::delilas_cast`. Claims the SCUS injection gap, so it
+        // composes with neither --shiny-seru nor --show-super-arts - on
+        // a conflict the note says so and the art-side signature stays.
         let routes: Vec<crate::delilas_cast::CastRoute> = mapping
             .pairs()
             .iter()
-            .filter_map(|&(_, _, slot, _, sibling)| match sibling {
-                Sibling::Che => host_art(slot).map(|art| crate::delilas_cast::CastRoute {
+            .filter_map(|&(_, _, slot, _, sibling)| {
+                host_art(slot).map(|art| crate::delilas_cast::CastRoute {
                     char_index: slot as u8,
                     art_constant: art.action_constant,
-                    spell_id: 0x7A,
-                }),
-                _ => None,
+                    spell_id: signature_spell_id(sibling),
+                })
             })
             .collect();
         if !routes.is_empty() && cast_route == CastRoutePolicy::ArenaTaken {
@@ -669,32 +667,65 @@ pub fn apply_delilas_party(
             // The CASTER's own body animation: author real staged rows
             // (the sibling's wind-up + payoff on player rows 0x0A/0x0B,
             // Block re-homed to row 0x06 across every player file) so
-            // the module's retail two-stage step can stay. When the
-            // rewrite cannot land, fall back to the previous behaviour:
-            // pin both stages to the empty row 0x0A (caster holds a
-            // pose; the enemy-side cast also loses its smash stage).
-            let staged = author_staged_cast_rows(patcher, mapping, &retail_players, &archive);
-            let pin_stage = staged.is_err();
-            match staged {
-                Ok(notes) => report.notes.extend(notes),
-                Err(e) => report.notes.push(format!(
-                    "cast route: caster rows stay pinned to the held pose ({e:#})"
-                )),
-            }
-            let installed = crate::delilas_cast::patch_module_959(patcher, pin_stage)
-                .and_then(|_| crate::delilas_cast::install_cast_hook(patcher, &routes));
-            match installed {
-                Ok(_) => {
-                    for r in &routes {
-                        report.notes.push(format!(
-                            "cast route: slot {} signature runs the retail Megaton Press module",
-                            r.char_index
-                        ));
+            // each module's folded stage walk delivers real clips. When
+            // the rewrite cannot land, fall back to the probe-proven
+            // Che-only shape: pin 959's stages to the empty row 0x0A
+            // (caster holds a pose; the enemy-side Megaton also loses
+            // its smash stage) and keep Gi/Lu on the art-side reskin.
+            let module_name = |spell: u8| match spell {
+                0x79 => "Blazing Slash (958)",
+                0x7A => "Megaton Press (959)",
+                _ => "Plasma Strike (960)",
+            };
+            match author_staged_cast_rows(patcher, mapping, &retail_players, &archive) {
+                Ok(notes) => {
+                    report.notes.extend(notes);
+                    let installed = crate::delilas_cast::patch_module_959(patcher, false)
+                        .and_then(|_| crate::delilas_cast::patch_module_958(patcher))
+                        .and_then(|_| crate::delilas_cast::patch_module_960(patcher))
+                        .and_then(|_| crate::delilas_cast::install_cast_hook(patcher, &routes));
+                    match installed {
+                        Ok(_) => {
+                            for r in &routes {
+                                report.notes.push(format!(
+                                    "cast route: slot {} signature runs the retail {} module",
+                                    r.char_index,
+                                    module_name(r.spell_id)
+                                ));
+                            }
+                        }
+                        Err(e) => report
+                            .notes
+                            .push(format!("cast route: art-side signature kept ({e:#})")),
                     }
                 }
-                Err(e) => report
-                    .notes
-                    .push(format!("cast route: art-side signature kept ({e:#})")),
+                Err(e) => {
+                    report.notes.push(format!(
+                        "cast route: caster rows stay pinned to the held pose ({e:#})"
+                    ));
+                    let che_routes: Vec<crate::delilas_cast::CastRoute> = routes
+                        .iter()
+                        .filter(|r| r.spell_id == 0x7A)
+                        .copied()
+                        .collect();
+                    let installed = crate::delilas_cast::patch_module_959(patcher, true)
+                        .and_then(|_| crate::delilas_cast::install_cast_hook(patcher, &che_routes));
+                    match installed {
+                        Ok(_) => {
+                            for r in &che_routes {
+                                report.notes.push(format!(
+                                    "cast route: slot {} signature runs the retail {} module \
+                                     (pinned pose); other slots keep the art-side signature",
+                                    r.char_index,
+                                    module_name(r.spell_id)
+                                ));
+                            }
+                        }
+                        Err(e) => report
+                            .notes
+                            .push(format!("cast route: art-side signature kept ({e:#})")),
+                    }
+                }
             }
         }
 
@@ -1473,26 +1504,68 @@ fn signature_clip_chain(sibling: Sibling) -> &'static [usize] {
     }
 }
 
+/// The two archive clips the folded cast-module walk stages on player
+/// rows `0x0A` (wind-up) / `0x0B` (payoff).
+///
+/// The modules' staged walks are folded onto exactly these two rows
+/// (`MODULE_95x_STAGE_REMAP_EDITS` in [`crate::delilas_cast`]), so a
+/// sibling with a longer retail chain contributes its first stage and
+/// its payoff: Gi's walk `10,11,12,10,11,13` keeps the crouch wind-up +
+/// the leap (retail's own first two stages); Lu's `14,12,13,15` keeps
+/// the charge opener + the strike. Che's two-stage chain maps 1:1.
+///
+/// Lu's payoff row carries her STRIKE clip (entry 13), not the closing
+/// flourish (15): under the fold the damage build-up rides the restaged
+/// wind-up row and the burst stage fires with the payoff row, so entry
+/// 13 there puts her strike pose under the burst effects - the flourish
+/// would leave the strike unplayed.
+fn staged_row_clips(sibling: Sibling) -> [usize; 2] {
+    match sibling {
+        Sibling::Gi => [10, 11],
+        Sibling::Che => [10, 11],
+        Sibling::Lu => [14, 13],
+    }
+}
+
+/// Per-row keyframe floors for [`staged_row_clips`]. Module 0960's
+/// damage tick holds until the playing clip's cursor reaches keyframe 22
+/// (the measured `0x160`-sixteenths gate), and under the folded stage
+/// walk that tick rides the wind-up row - so Lu's row `0x0A` must carry
+/// at least [`enemy_anim::PAYOFF_FLOOR_FRAMES`] keyframes or the cast
+/// stalls. 958/959 gate on their own phase clocks (958's `slti` sites
+/// are progress clamps, not gates); their rows keep the soft retail
+/// floor.
+fn staged_row_floors(sibling: Sibling) -> [usize; 2] {
+    use legaia_asset::party_swap::enemy_anim;
+    match sibling {
+        Sibling::Lu => [
+            enemy_anim::PAYOFF_FLOOR_FRAMES,
+            enemy_anim::RETAIL_STAGED_FLOOR,
+        ],
+        _ => [enemy_anim::RETAIL_STAGED_FLOOR; 2],
+    }
+}
+
 /// PROT entry of Terra's player battle file (`data\battle\PLAYER4`).
 const TERRA_PLAYER_ENTRY: usize = 866;
 
-/// Author the Megaton Press caster rows for the Che-mapped slot, and
-/// re-home the Block reaction across every player file.
+/// Author the signature caster rows for every routed slot, and re-home
+/// the Block reaction across every player file.
 ///
 /// What lands, all-or-nothing (every record[0] splice is computed before
 /// the first byte is written, so a failure leaves the disc untouched):
 ///
-/// 1. The Che-mapped slot's record[0] gets real staged rows: the
-///    sibling's wind-up on row `0x0A` and smash on row `0x0B`, hosted in
-///    the dead CLUT-A face-pixel payload
-///    ([`party_swap::cast_stage::build_staged_cast_rows`]), with the
-///    retail Block entry re-homed byte-unmoved onto placeholder row
+/// 1. Each mapped slot's record[0] gets real staged rows: the sibling's
+///    wind-up on row `0x0A` and payoff on row `0x0B`
+///    ([`staged_row_clips`]), hosted below the loader's sub-record
+///    scratch ([`party_swap::cast_stage::build_staged_cast_rows`]), with
+///    the retail Block entry re-homed byte-unmoved onto placeholder row
 ///    `0x06`.
-/// 2. The other three player files (the two remaining heroes + Terra)
-///    get the same one-word row-`0x06` -> Block re-home.
+/// 2. Files hosting no rows (Terra always) get the same one-word
+///    row-`0x06` -> Block re-home.
 /// 3. The party-init Block-reaction literal flips `0x0B` -> `0x06`
 ///    ([`crate::delilas_cast::relocate_block_reaction`]) so every slot's
-///    guard keeps its retail clip while the cast module owns row `0x0B`.
+///    guard keeps its retail clip while the cast modules own row `0x0B`.
 fn author_staged_cast_rows(
     patcher: &mut DiscPatcher,
     mapping: &PartyMapping,
@@ -1501,26 +1574,6 @@ fn author_staged_cast_rows(
 ) -> Result<Vec<String>> {
     use legaia_asset::battle_char_assembly;
     use party_swap::cast_stage;
-
-    let (che_entry, rig, slot, who, sibling) = mapping
-        .pairs()
-        .into_iter()
-        .find(|&(_, _, _, _, s)| s == Sibling::Che)
-        .ok_or_else(|| anyhow::anyhow!("no Che-mapped slot"))?;
-    let source_id = sibling.monster_id();
-    let chain_entries = signature_clip_chain(sibling);
-    let clips = monster_archive::animations(archive, source_id)
-        .with_context(|| format!("read monster {source_id} animations"))?
-        .unwrap_or_default();
-    let chain: Vec<&monster_archive::MonsterAnimation> =
-        chain_entries.iter().filter_map(|&i| clips.get(i)).collect();
-    if chain.len() != chain_entries.len() {
-        bail!(
-            "monster {source_id} carries {} of the {} staged clips",
-            chain.len(),
-            chain_entries.len()
-        );
-    }
 
     // Expand region writes into the offset-edit form
     // `patch_player_record0_full` consumes, dropping bytes that already
@@ -1555,87 +1608,122 @@ fn author_staged_cast_rows(
     // Every write is planned before the first byte lands, so a failure
     // leaves the disc untouched. `(PROT entry, file offset, bytes)`.
     let mut commits: Vec<(usize, usize, Vec<u8>)> = Vec::new();
+    let mut notes: Vec<String> = Vec::new();
+    let mut row_hosts: Vec<usize> = Vec::new();
 
-    // The Che host: reclaim the descriptor-table slack up front (free
-    // compressed-stream footprint, transparent to the loader - see
-    // `cast_stage::push_up_desc_table`), then walk the pose ladder
-    // against the real LZS budget.
-    let mut live = patcher
-        .read_entry(che_entry)
-        .with_context(|| format!("read {who} player file"))?;
-    if let Some(writes) = cast_stage::push_up_desc_table(&live)
-        .with_context(|| format!("re-lay {who}'s descriptor table"))?
-    {
-        for (off, bytes) in &writes {
-            live[*off..*off + bytes.len()].copy_from_slice(bytes);
-            commits.push((che_entry, *off, bytes.clone()));
+    for (host_entry, rig, slot, who, sibling) in mapping.pairs() {
+        let source_id = sibling.monster_id();
+        let chain_entries = staged_row_clips(sibling);
+        let clips = monster_archive::animations(archive, source_id)
+            .with_context(|| format!("read monster {source_id} animations"))?
+            .unwrap_or_default();
+        let chain: Vec<&monster_archive::MonsterAnimation> =
+            chain_entries.iter().filter_map(|&i| clips.get(i)).collect();
+        if chain.len() != chain_entries.len() {
+            bail!(
+                "monster {source_id} carries {} of the {} staged clips",
+                chain.len(),
+                chain_entries.len()
+            );
         }
+
+        // Reclaim the descriptor-table slack up front (free compressed-
+        // stream footprint, transparent to the loader - see
+        // `cast_stage::push_up_desc_table`), then walk the pose ladder
+        // against the real LZS budget.
+        let mut live = patcher
+            .read_entry(host_entry)
+            .with_context(|| format!("read {who} player file"))?;
+        if let Some(writes) = cast_stage::push_up_desc_table(&live)
+            .with_context(|| format!("re-lay {who}'s descriptor table"))?
+        {
+            for (off, bytes) in &writes {
+                live[*off..*off + bytes.len()].copy_from_slice(bytes);
+                commits.push((host_entry, *off, bytes.clone()));
+            }
+        }
+        // The staged rows GROW the decoded record[0] (inserted below
+        // `clut_a_off` - everything from that offset on is the loader's
+        // sub-record decode scratch, so rows parked any higher are
+        // destroyed during battle load). The commit is therefore a full
+        // stream replacement plus the three shifted header words, not a
+        // same-size byte splice.
+        let decoded_live = battle_char_assembly::decode_record0(&live)
+            .with_context(|| format!("decode {who} record0"))?;
+        let (clut_a_live, _) = cast_stage::record0_clut_offsets(&live)
+            .with_context(|| format!("read {who} record0 header"))?;
+        let region = crate::arts::record0_lzs_region(&live)
+            .ok_or_else(|| anyhow::anyhow!("{who}'s record0 LZS region not found"))?;
+        match cast_stage::staged_state(&decoded_live, clut_a_live)? {
+            cast_stage::StagedState::Applied => {
+                notes.push(format!("cast route: {who} caster rows already present"))
+            }
+            cast_stage::StagedState::Stale => bail!(
+                "{who}'s player file carries the superseded payload-reuse staged-row \
+                 layout (its rows are destroyed at battle load); patch a clean retail \
+                 image instead"
+            ),
+            cast_stage::StagedState::Absent => {
+                let mut packed: Option<Vec<u8>> = None;
+                let built = cast_stage::build_staged_cast_rows(
+                    &live,
+                    &retail_players[slot],
+                    rig,
+                    archive,
+                    source_id,
+                    &chain,
+                    staged_row_floors(sibling),
+                    |decoded_new| {
+                        let mut c = legaia_lzs::compress(decoded_new);
+                        if c.len() > region.avail {
+                            c = legaia_lzs::compress_optimal(decoded_new);
+                        }
+                        if c.len() > region.avail {
+                            return Ok(false);
+                        }
+                        packed = Some(c);
+                        Ok(true)
+                    },
+                )
+                .with_context(|| format!("author {who}'s staged cast rows"))?;
+                let packed =
+                    packed.ok_or_else(|| anyhow::anyhow!("fits oracle accepted no stream"))?;
+                let (ca, cb, bud) = built.header;
+                let mut hdr = Vec::with_capacity(12);
+                hdr.extend_from_slice(&ca.to_le_bytes());
+                hdr.extend_from_slice(&cb.to_le_bytes());
+                hdr.extend_from_slice(&bud.to_le_bytes());
+                // Header words +0x04/+0x08/+0x0C sit right before the LZS
+                // stream at header +0x10.
+                commits.push((host_entry, region.lzs_off - 0x10 + 4, hdr));
+                commits.push((host_entry, region.lzs_off, packed));
+                notes.push(format!(
+                    "cast route: {who} caster rows inserted (+{:#x} decoded bytes) - \
+                     wind-up {}f (of {}) rate {}, payoff {}f (of {}) rate {}",
+                    built.delta,
+                    built.frames[0],
+                    built.source_frames[0],
+                    built.rates[0],
+                    built.frames[1],
+                    built.source_frames[1],
+                    built.rates[1],
+                ));
+            }
+        }
+        row_hosts.push(host_entry);
     }
-    // The staged rows GROW the decoded record[0] (inserted below
-    // `clut_a_off` - everything from that offset on is the loader's
-    // sub-record decode scratch, so rows parked any higher are
-    // destroyed during battle load). The commit is therefore a full
-    // stream replacement plus the three shifted header words, not a
-    // same-size byte splice.
-    let decoded_live = battle_char_assembly::decode_record0(&live)
-        .with_context(|| format!("decode {who} record0"))?;
-    let (clut_a_live, _) = cast_stage::record0_clut_offsets(&live)
-        .with_context(|| format!("read {who} record0 header"))?;
-    let region = crate::arts::record0_lzs_region(&live)
-        .ok_or_else(|| anyhow::anyhow!("{who}'s record0 LZS region not found"))?;
-    let built = match cast_stage::staged_state(&decoded_live, clut_a_live)? {
-        cast_stage::StagedState::Applied => None,
-        cast_stage::StagedState::Stale => bail!(
-            "{who}'s player file carries the superseded payload-reuse staged-row \
-             layout (its rows are destroyed at battle load); patch a clean retail \
-             image instead"
-        ),
-        cast_stage::StagedState::Absent => {
-            let mut packed: Option<Vec<u8>> = None;
-            let built = cast_stage::build_staged_cast_rows(
-                &live,
-                &retail_players[slot],
-                rig,
-                archive,
-                source_id,
-                &chain,
-                |decoded_new| {
-                    let mut c = legaia_lzs::compress(decoded_new);
-                    if c.len() > region.avail {
-                        c = legaia_lzs::compress_optimal(decoded_new);
-                    }
-                    if c.len() > region.avail {
-                        return Ok(false);
-                    }
-                    packed = Some(c);
-                    Ok(true)
-                },
-            )
-            .with_context(|| format!("author {who}'s staged cast rows"))?;
-            let packed = packed.ok_or_else(|| anyhow::anyhow!("fits oracle accepted no stream"))?;
-            let (ca, cb, bud) = built.header;
-            let mut hdr = Vec::with_capacity(12);
-            hdr.extend_from_slice(&ca.to_le_bytes());
-            hdr.extend_from_slice(&cb.to_le_bytes());
-            hdr.extend_from_slice(&bud.to_le_bytes());
-            // Header words +0x04/+0x08/+0x0C sit right before the LZS
-            // stream at header +0x10.
-            commits.push((che_entry, region.lzs_off - 0x10 + 4, hdr));
-            commits.push((che_entry, region.lzs_off, packed));
-            Some(built)
-        }
-    };
 
-    // Row-6 Block re-home in every other player file (Terra included:
-    // the party-init literal is shared by all four slots). The one-word
-    // edit is compression-neutral in practice, but a file already at its
-    // ceiling gets the same descriptor-table reclaim as a fallback.
+    // Row-6 Block re-home in every file that hosts no staged rows
+    // (Terra always: the party-init literal is shared by all four
+    // slots). The one-word edit is compression-neutral in practice, but
+    // a file already at its ceiling gets the same descriptor-table
+    // reclaim as a fallback.
     for (other_entry, other_who) in mapping
         .pairs()
         .into_iter()
-        .filter(|&(e, _, _, _, _)| e != che_entry)
         .map(|(e, _, _, w, _)| (e, w))
         .chain([(TERRA_PLAYER_ENTRY, "Terra")])
+        .filter(|&(e, _)| !row_hosts.contains(&e))
     {
         let mut f = patcher
             .read_entry(other_entry)
@@ -1672,24 +1760,8 @@ fn author_staged_cast_rows(
     crate::delilas_cast::relocate_block_reaction(patcher)
         .context("re-home the party Block reaction")?;
 
-    Ok(vec![match built {
-        Some(b) => format!(
-            "cast route: {who} caster rows inserted below the image payloads \
-             (+{:#x} decoded bytes) - wind-up {}f (of {}) rate {}, smash {}f \
-             (of {}) rate {}; Block re-homed to row 0x06 on all four files",
-            b.delta,
-            b.frames[0],
-            b.source_frames[0],
-            b.rates[0],
-            b.frames[1],
-            b.source_frames[1],
-            b.rates[1],
-        ),
-        None => format!(
-            "cast route: {who} caster rows already present; Block re-homed to \
-             row 0x06 on all four files"
-        ),
-    }])
+    notes.push("cast route: Block re-homed to row 0x06 on all four files".to_string());
+    Ok(notes)
 }
 
 /// The fanfare row the slot's host art fires through. The cue is a coin

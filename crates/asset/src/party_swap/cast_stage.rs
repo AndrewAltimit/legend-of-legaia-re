@@ -183,12 +183,22 @@ pub fn record0_clut_offsets(entry: &[u8]) -> Result<(usize, usize)> {
 /// `src_frames * 8 / src_rate / 8` frames; each further rung halves the
 /// pose budget (the clip then finishes early and holds its last frame -
 /// module 959 restages on its own phase clock, not on the clip cursor).
-fn stage_ladder(clip: &MonsterAnimation) -> Vec<(usize, u8)> {
+///
+/// `floor` is a hard keyframe minimum every rung respects, stretching a
+/// short source UP when needed: module 0960's damage tick holds until
+/// the playing clip's cursor reaches keyframe 22
+/// ([`enemy_anim::PAYOFF_FLOOR_FRAMES`]), so the row it rides must
+/// carry at least that many keyframes or the cast stalls. Modules
+/// 958/959 gate on their own phase clocks; their rows keep the soft
+/// [`enemy_anim::RETAIL_STAGED_FLOOR`] behaviour (a shorter source
+/// keeps its own length).
+fn stage_ladder(clip: &MonsterAnimation, floor: usize) -> Vec<(usize, u8)> {
     let ticks = clip.frame_count * 8 / clip.rate.max(1) as usize;
     let exact = (ticks / 8).max(1);
+    let soft = enemy_anim::RETAIL_STAGED_FLOOR.min(exact);
     let mut out = Vec::new();
     for div in [1usize, 2, 4] {
-        let f = (exact / div).max(enemy_anim::RETAIL_STAGED_FLOOR.min(exact));
+        let f = (exact / div).max(soft).max(floor);
         let rate = winpose::retimed_rate(f, clip.frame_count, clip.rate.max(1));
         if out.last() != Some(&(f, rate)) {
             out.push((f, rate));
@@ -307,6 +317,7 @@ pub fn push_up_desc_table(entry: &[u8]) -> Result<Option<FileWrites>> {
 ///   the record[0] footprint. The ladder descends to fewer poses until
 ///   it does; the streams' entropy is what moves the compressed size,
 ///   so the byte area alone cannot answer this.
+#[allow(clippy::too_many_arguments)]
 pub fn build_staged_cast_rows(
     live_entry: &[u8],
     retail_player: &[u8],
@@ -314,6 +325,7 @@ pub fn build_staged_cast_rows(
     archive: &[u8],
     source_id: u16,
     chain: &[&MonsterAnimation],
+    floors: [usize; 2],
     mut fits: impl FnMut(&[u8]) -> Result<bool>,
 ) -> Result<StagedCastRows> {
     if chain.len() != 2 {
@@ -395,7 +407,10 @@ pub fn build_staged_cast_rows(
     // Walk the pose-budget ladder until the grown image passes the
     // caller's budget oracle. The rows are INSERTED at `clut_a`; the
     // payloads and every header offset past them shift up by `delta`.
-    let ladders = [stage_ladder(chain[0]), stage_ladder(chain[1])];
+    let ladders = [
+        stage_ladder(chain[0], floors[0]),
+        stage_ladder(chain[1], floors[1]),
+    ];
     for rung in 0..ladders[0].len().max(ladders[1].len()) {
         let (fa, ra) = ladders[0][rung.min(ladders[0].len() - 1)];
         let (fb, rb) = ladders[1][rung.min(ladders[1].len() - 1)];
@@ -496,7 +511,7 @@ mod tests {
     #[test]
     fn ladder_rung_zero_is_duration_exact() {
         // Che's staged clips: 50 frames at rate 2 = 200 ticks.
-        let l = stage_ladder(&clip(50, 2));
+        let l = stage_ladder(&clip(50, 2), 0);
         assert_eq!(l[0], (25, 1), "200 ticks = 25 frames at rate 1");
         for &(f, r) in &l {
             assert!(f >= enemy_anim::RETAIL_STAGED_FLOOR.min(25));
@@ -508,7 +523,19 @@ mod tests {
     /// being padded up.
     #[test]
     fn ladder_respects_short_sources() {
-        let l = stage_ladder(&clip(8, 1));
+        let l = stage_ladder(&clip(8, 1), 0);
         assert_eq!(l[0].0, 8);
+    }
+
+    /// A hard floor (module 0960's keyframe-22 damage-cursor gate)
+    /// stretches every rung up to it, even past the source length.
+    #[test]
+    fn ladder_honours_a_hard_floor() {
+        for src in [clip(8, 1), clip(50, 2), clip(30, 4)] {
+            for &(f, r) in &stage_ladder(&src, 23) {
+                assert!(f >= 23, "rung {f}f under the hard floor");
+                assert!(r >= 1);
+            }
+        }
     }
 }

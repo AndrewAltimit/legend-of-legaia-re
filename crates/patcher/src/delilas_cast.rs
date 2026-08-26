@@ -58,7 +58,9 @@
 use anyhow::{Context, Result, bail};
 
 use crate::disc::DiscPatcher;
-use crate::mips::{self as m, A0, A1, RA, SP, T0, T1, T2, T3, T4, T5, T6, T7, V0, V1, ZERO};
+use crate::mips::{
+    self as m, A0, A1, A2, A3, RA, S1, S3, SP, T0, T1, T2, T3, T4, T5, T6, T7, V0, V1, ZERO,
+};
 
 /// Battle-action overlay (hosts the queue builder + applier).
 const BATTLE_OVERLAY_PROT: usize = 898;
@@ -467,23 +469,298 @@ const MODULE_960_STAGE_REMAP_EDITS: &[WordEdit] = &[
     },
 ];
 
-/// Remap PROT 958's staged caster ids into rows `0x0A`/`0x0B`
-/// ([`MODULE_958_STAGE_REMAP_EDITS`]). Groundwork for the Gi cast route:
-/// NOT yet called by `apply_delilas_party` - wiring lands together with
-/// Gi's staged caster rows and the module's damage retargets, so a
-/// shipped patch never folds the enemy-side choreography without the
-/// player-side route existing.
+/// The victim scratch cell for PROT 958's finale damage arms: the LAST
+/// word of the dead party-wipe body ([`MODULE_958_WIPE_EDIT`] makes the
+/// body unreachable). VA `0x801F8BB4`, addressed as
+/// `lui base, 0x8020; lw/sw rX, -0x744C(base)`.
+///
+/// The module keeps the derived victim in `$s1` only per-arm - the
+/// finale arm burns `$s1`/`$s2`/`$s3`/`$s4` as GPU-packet constants
+/// before its two damage pairs (`li $s1, 0x40` at file `+0x1CF4`,
+/// `lui $s2, 0x801d` at `+0x1CD0`) - so the FIRST damage arm (whose
+/// `$s1` is verified intact from arm entry, and whose own body stages
+/// the victim's `+0x1F1` through `$s1` two instructions earlier) stores
+/// the victim pointer here, and the finale pairs load it back. The walk
+/// always runs the first hit before the finale, and the module is
+/// re-read from disc each cast, so the cell is written before every
+/// finale read.
+const CELL_958_HI: u16 = 0x8020;
+const CELL_958_LO: u16 = 0x8BB4; // 0x80200000 - 0x744C = 0x801F8BB4
+
+/// PROT 958 (Blazing Slash): the twelve hardcoded `table[0]` damage/HP
+/// loads - six clamp/write pairs, one per damage arm. Arms 1-4 keep the
+/// derived victim in `$s1` (zero `$s1` writes from each arm's dispatch
+/// entry to its pair - verified over the phase-table entries), so their
+/// loads become plain `move`s; arm 1 additionally banks the victim in
+/// [`CELL_958_LO`] for the two finale arms, whose registers are burned.
+/// Every load sits in the retail `lw; nop; use` shape - no replacement
+/// introduces a load-use hazard (`move`/`sw` are ALU/store ops, and the
+/// cell `lw`s keep the retail delay padding).
+const MODULE_958_DAMAGE_EDITS: &[WordEdit] = &[
+    // Arm 1 (power 0x30, file +0x0B14): bank the victim, then move.
+    WordEdit {
+        offset: 0x0B30,
+        expect: 0x3C05_801D,              // lui a1, 0x801d
+        replace: m::lui(A1, CELL_958_HI), // a1 = cell page
+    },
+    WordEdit {
+        offset: 0x0B34,
+        expect: 0x8CA3_9370,                 // lw v1, -0x6c90(a1)
+        replace: m::sw(S1, A1, CELL_958_LO), // bank the victim
+    },
+    WordEdit {
+        offset: 0x0B38,
+        expect: 0x0000_0000, // nop (retail load-delay padding)
+        replace: move_(V1, S1),
+    },
+    WordEdit {
+        offset: 0x0B64,
+        expect: 0x8CA4_9370, // lw a0, -0x6c90(a1)
+        replace: move_(A0, S1),
+    },
+    // Arm 2 (power 0x38, +0x0E7C).
+    WordEdit {
+        offset: 0x0E9C,
+        expect: 0x8D07_9370, // lw a3, -0x6c90(t0)
+        replace: move_(A3, S1),
+    },
+    WordEdit {
+        offset: 0x0ED4,
+        expect: 0x8D08_9370, // lw t0, -0x6c90(t0)
+        replace: move_(T0, S1),
+    },
+    // Arm 3 (power 0x38, +0x12CC).
+    WordEdit {
+        offset: 0x12EC,
+        expect: 0x8D07_9370,
+        replace: move_(A3, S1),
+    },
+    WordEdit {
+        offset: 0x1324,
+        expect: 0x8D08_9370,
+        replace: move_(T0, S1),
+    },
+    // Arm 4 (power 0x38, +0x170C).
+    WordEdit {
+        offset: 0x172C,
+        expect: 0x8D07_9370,
+        replace: move_(A3, S1),
+    },
+    WordEdit {
+        offset: 0x1764,
+        expect: 0x8D08_9370,
+        replace: move_(T0, S1),
+    },
+    // Finale arm A (power 0x40, +0x1D7C): registers burned - load the cell.
+    WordEdit {
+        offset: 0x1D98,
+        expect: 0x3C05_801D,
+        replace: m::lui(A1, CELL_958_HI),
+    },
+    WordEdit {
+        offset: 0x1D9C,
+        expect: 0x8CA3_9370,
+        replace: m::lw(V1, A1, CELL_958_LO),
+    },
+    WordEdit {
+        offset: 0x1DCC,
+        expect: 0x8CA5_9370, // lw a1, -0x6c90(a1)
+        replace: m::lw(A1, A1, CELL_958_LO),
+    },
+    // Finale arm B (power 0x30 barrage, +0x1F00).
+    WordEdit {
+        offset: 0x1F1C,
+        expect: 0x3C05_801D,
+        replace: m::lui(A1, CELL_958_HI),
+    },
+    WordEdit {
+        offset: 0x1F20,
+        expect: 0x8CA3_9370,
+        replace: m::lw(V1, A1, CELL_958_LO),
+    },
+    WordEdit {
+        offset: 0x1F50,
+        expect: 0x8CA4_9370,
+        replace: m::lw(A0, A1, CELL_958_LO),
+    },
+];
+
+/// PROT 958 finale: the dead-victim arm. Same shape as
+/// [`MODULE_959_WIPE_EDIT`]: a dead victim whose char record lacks bit
+/// `0x80` at `+0x6C0` falls into the party-wipe body
+/// (`0x801F8B8C..0x801F8BB4`: `BD71 = 0xFE`, `BD2C = 5`, jingle call) -
+/// correct only while the victim is a hero. Nop the `beqz` and every
+/// dead victim takes the alive path to the convergence at `0x801F8BB8`
+/// (clear `+0x21D` on both actors, phase++); real deaths on either side
+/// are caught by the end-of-action liveness sweep (state `0x5A` - in the
+/// 1v1 duels the sole hero dying still ends the battle through it). The
+/// single inbound branch is this `beqz` (whole-image scan), so the body
+/// becomes dead words - the victim cell lives in its last one.
+const MODULE_958_WIPE_EDIT: WordEdit = WordEdit {
+    offset: 0x21A4,
+    expect: 0x1040_0003, // beqz v0, 0x801F8B8C (the wipe body)
+    replace: m::nop(),
+};
+
+/// PROT 960 (Plasma Strike): the two hardcoded `table[0]` damage/HP
+/// loads (`$s6` holds `0x801D0000` tick-wide). The tick derives the
+/// victim into `$s3` once (file `+0x0B6C`) and never rewrites it before
+/// the burst pair - the pair's own tail writes the victim's `+0x4`
+/// through `$s3` three instructions later - so plain `move`s are safe.
+const MODULE_960_DAMAGE_EDITS: &[WordEdit] = &[
+    WordEdit {
+        offset: 0x17AC,
+        expect: 0x8EC5_9370, // lw a1, -0x6c90(s6)
+        replace: move_(A1, S3),
+    },
+    WordEdit {
+        offset: 0x17DC,
+        expect: 0x8EC6_9370, // lw a2, -0x6c90(s6)
+        replace: move_(A2, S3),
+    },
+];
+
+/// PROT 960 finale (phase `0x10` of the tick's `beq`-chain dispatcher):
+/// the dead-victim arm, same fix as [`MODULE_958_WIPE_EDIT`]. The HP
+/// check itself reads the derived victim (`lhu +0x14C($s3)`); only the
+/// wipe consequence assumes a hero. Nop'd, a dead victim falls through
+/// the bit-`0x80` fork's delay slot into the alive path (caster settle
+/// staging + phase `0xFF`). Single inbound branch verified.
+const MODULE_960_WIPE_EDIT: WordEdit = WordEdit {
+    offset: 0x1B88,
+    expect: 0x1040_0009, // beqz v0, 0x801F8588 (the wipe body)
+    replace: m::nop(),
+};
+
+/// PROT 960: the two seat-3 monster-record accesses. Both walk
+/// `(0x801C9348)[0]` - the FIRST monster seat's record - to a pointer at
+/// record `+0x80` and toggle the halfword at its `+0xC` (`1` in the
+/// phase-`0xFF` settle arm at `+0x1C20`, back to `0` mid-walk at
+/// `+0x1230`). In the retail duel the sole monster IS the caster, so
+/// this is a caster-record-keyed transient; on a PLAYER cast seat 3
+/// holds an arbitrary monster whose record `+0x80` word is not a
+/// vetted pointer - the store lands wherever it points (the kernel-RAM
+/// hazard). The loads stay (always-mapped reads); the stores are nop'd
+/// for both caster kinds - the toggle's resting state is the value the
+/// second store restores.
+const MODULE_960_HAZARD_EDITS: &[WordEdit] = &[
+    WordEdit {
+        offset: 0x1230,
+        expect: 0xA440_000C, // sh zero, 0xC(v0)
+        replace: m::nop(),
+    },
+    WordEdit {
+        offset: 0x1C20,
+        expect: 0xA445_000C, // sh a1, 0xC(v0)
+        replace: m::nop(),
+    },
+];
+
+/// PROT 960 finale teardown: neutralise the cached finale entity, same
+/// hazard class (and same fix) as [`MODULE_959_TEARDOWN_EDITS`].
+///
+/// 960 carries 959's exact halt-quad pattern (file `+0x19A8..+0x19C4`:
+/// `lw a2, 0x102C(ctx); lw v1, 0x10(a2); ori v1, 8; sw`) - a spawned
+/// finale entity cached at `ctx+0x102C` and halt-marked in the arm that
+/// also arms the white-out fade. On a PARTY caster 959's equivalent
+/// entity never gets stream words bound, and the script's kill mark
+/// (`+0x10 |= 0x02000000`) turns the carrier's colour read into an
+/// unmapped dereference on the exact frame the choreography ends
+/// (see 959's table for the full attribution).
+///
+/// Host: phase `0x10`'s settle exit `j 0x801F85C0` (`+0x1BA8`) runs once
+/// per cast, after the halt quad and before the phase-`0xFF` write it
+/// jumps to; its delay slot (`li v0, 0xFF`) still executes and the stub
+/// preserves `$v0` for the rejoined `sb v0, 0x279(s4)`. The stub lives
+/// in the dead party-wipe body (`0x801F8588..0x801F85B0`,
+/// [`MODULE_960_WIPE_EDIT`] unreached it): null-guarded, it writes the
+/// entity's `+0x10`/`+0x14` back to the walk-safe zero state and clears
+/// the cache word (`$s4` = ctx tick-wide).
+const MODULE_960_TEARDOWN_EDITS: &[WordEdit] = &[
+    WordEdit {
+        offset: 0x1BA8,             // settle exit
+        expect: 0x0807_E170,        // j 0x801F85C0 (phase := 0xFF write)
+        replace: m::j(0x801F_8588), // j into the dead wipe body
+    },
+    WordEdit {
+        offset: 0x1BB0, // 0x801F8588 (dead: lui v1)
+        expect: 0x3C03_8008,
+        replace: m::lw(A2, m::S4, 0x102C), // a2 = cached finale entity
+    },
+    WordEdit {
+        offset: 0x1BB4, // 0x801F858C (dead: li 0xFE)
+        expect: 0x2402_00FE,
+        replace: m::nop(), // load delay
+    },
+    WordEdit {
+        offset: 0x1BB8, // 0x801F8590 (dead: lui a2)
+        expect: 0x3C06_8008,
+        replace: m::beq(A2, ZERO, 5), // null guard -> 0x801F85A8
+    },
+    WordEdit {
+        offset: 0x1BBC, // 0x801F8594 (dead: lui a1): branch delay
+        expect: 0x3C05_8008,
+        replace: m::sw(ZERO, m::S4, 0x102C), // clear the cache (both paths)
+    },
+    WordEdit {
+        offset: 0x1BC0, // 0x801F8598 (dead: sb wipe flag)
+        expect: 0xA062_BD71,
+        replace: m::sw(ZERO, A2, 0x10), // colour stream -> mapped null
+    },
+    WordEdit {
+        offset: 0x1BC4, // 0x801F859C (dead: lbu)
+        expect: 0x90A2_BD60,
+        replace: m::sw(ZERO, A2, 0x14), // prim stream -> clean walk exit
+    },
+    WordEdit {
+        offset: 0x1BC8, // 0x801F85A0 (dead: li 5)
+        expect: 0x2403_0005,
+        replace: m::j(0x801F_85C0), // rejoin the phase-0xFF write
+    },
+    WordEdit {
+        offset: 0x1BCC, // 0x801F85A4 (dead: sw wipe-state): j delay slot
+        expect: 0xACC3_BD2C,
+        replace: m::nop(),
+    },
+    WordEdit {
+        offset: 0x1BD0, // 0x801F85A8 (dead: andi): null-guard target
+        expect: 0x3042_007F,
+        replace: m::j(0x801F_85C0),
+    },
+    WordEdit {
+        offset: 0x1BD4, // 0x801F85AC (dead: jal jingle): j delay slot
+        expect: 0x0C00_C66A,
+        replace: m::nop(),
+    },
+];
+
+/// Apply the full PROT 958 cast-route patch set: the staged-id remap
+/// ([`MODULE_958_STAGE_REMAP_EDITS`]), the twelve-site damage retarget
+/// (+ victim cell) and the dead-victim wipe skip. Wired by
+/// `apply_delilas_party` for a Gi-mapped slot together with Gi's staged
+/// caster rows, so a shipped patch never folds the enemy-side
+/// choreography without the player-side route existing.
 pub fn patch_module_958(p: &mut DiscPatcher) -> Result<bool> {
     let entry = p.read_entry(958).context("read PROT 958")?;
-    apply_word_edits(p, 958, &entry, MODULE_958_STAGE_REMAP_EDITS)
+    let mut edits: Vec<WordEdit> = MODULE_958_STAGE_REMAP_EDITS.to_vec();
+    edits.extend_from_slice(MODULE_958_DAMAGE_EDITS);
+    edits.push(MODULE_958_WIPE_EDIT);
+    apply_word_edits(p, 958, &entry, &edits)
 }
 
-/// Remap PROT 960's staged caster ids into rows `0x0A`/`0x0B`
-/// ([`MODULE_960_STAGE_REMAP_EDITS`]). Groundwork for the Lu cast route;
-/// same wiring status as [`patch_module_958`].
+/// Apply the full PROT 960 cast-route patch set: the staged-id remap +
+/// confirmation gate ([`MODULE_960_STAGE_REMAP_EDITS`]), the two-site
+/// damage retarget, the dead-victim wipe skip and the seat-3
+/// record-toggle neutralisation. Gaza's Neo Star Slash tick (`+0x8A8`)
+/// shares this image and is untouched by every set.
 pub fn patch_module_960(p: &mut DiscPatcher) -> Result<bool> {
     let entry = p.read_entry(960).context("read PROT 960")?;
-    apply_word_edits(p, 960, &entry, MODULE_960_STAGE_REMAP_EDITS)
+    let mut edits: Vec<WordEdit> = MODULE_960_STAGE_REMAP_EDITS.to_vec();
+    edits.extend_from_slice(MODULE_960_DAMAGE_EDITS);
+    edits.push(MODULE_960_WIPE_EDIT);
+    edits.extend_from_slice(MODULE_960_HAZARD_EDITS);
+    edits.extend_from_slice(MODULE_960_TEARDOWN_EDITS);
+    apply_word_edits(p, 960, &entry, &edits)
 }
 
 /// Assemble the queue-hook stub for `stub_va`, with its 4-row route table

@@ -2341,19 +2341,32 @@ staged-index step): the caster holds a pose, and the enemy-side cast also
 loses its smash stage, since the module writes the same index for both
 caster kinds.
 
-Megaton Press (PROT 959) is audited and probe-verified end-to-end; the
-Che-mapped slot routes to it, and the other two siblings keep the art-side
-reskin until 958/960 pass the same ladder. The first rung of that ladder is
-in `delilas_cast` but not yet wired to the apply: both modules' staged-id
-walks fold into the two authorable rows (`patch_module_958` /
-`patch_module_960`), including 960's **paired stage/confirm gate** - its
-phase-5 arm re-reads the playing id (`lbu +0x1D9`) against the same literal
-it stages, so the compare must move with the stage or the phase stalls
-forever. Module anatomy (image shapes, phase machine, staging ABI, the
-seat-0 damage hardcode): [cast-module.md](../subsystems/cast-module.md). The hook stub lives in the SCUS
-injection gap, so the route composes with neither `--shiny-seru` nor
-`--show-super-arts`; on a conflict the patch keeps the art-side signature
-and says so in the summary.
+All three modules are audited and probe-verified: every mapped slot routes
+to its sibling's retail module - Blazing Slash (958), Megaton Press (959),
+Plasma Strike (960) - with per-module edit sets covering the same defect
+classes. The staged-id walks fold into the two authorable rows
+(`patch_module_958` / `patch_module_960`), including 960's **paired
+stage/confirm gate** - its phase-5 arm re-reads the playing id
+(`lbu +0x1D9`) against the same literal it stages, so the compare must
+move with the stage or the phase stalls forever. Two facts shape the
+per-module damage retargets: 958 keeps the victim in `$s1` only per-arm
+(its finale arms burn `$s1`-`$s4` as GPU-packet constants, so the first
+damage arm banks the victim pointer in a dead wipe-body word and the
+finale pairs reload it), while 960's `$s3` holds tick-wide and takes
+plain `move`s. 960 additionally carries 959's cached-finale-entity
+teardown hazard (same `ctx+0x102C` halt-quad pattern; same settle-tail
+neutralise, hosted in its dead wipe body) and two seat-3 monster-record
+toggle stores that are nop'd (an arbitrary victim's record `+0x80` word
+is not a vetted pointer). One data constraint crosses the module edits:
+960's damage tick holds until the playing clip's cursor reaches keyframe
+22, and under the folded walk that tick rides the wind-up row - so Lu's
+row `0x0A` clip (player and mirrored-block alike) is stretch-floored at
+23 keyframes. Module anatomy (image shapes, phase machine, staging ABI,
+the seat-0 damage hardcode):
+[cast-module.md](../subsystems/cast-module.md). The hook stub lives in
+the SCUS injection gap, so the route composes with neither
+`--shiny-seru` nor `--show-super-arts`; on a conflict the patch keeps
+the art-side signature and says so in the summary.
 
 ### Fishing prize prices
 

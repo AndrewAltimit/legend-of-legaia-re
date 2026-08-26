@@ -60,30 +60,35 @@ pub struct RetailSources<'a> {
 }
 
 /// The archive entries each sibling's cast module stages by raw index
-/// (caster chain in stage order, plus the closing entry where the module
-/// stages one), with per-entry keyframe floors. Probe-traced for Che
-/// (`10 -> 11`) and Lu (`14 -> 12 -> 13`, close `15`); Gi's chain
+/// under the swap's FOLDED stage walks, with per-entry keyframe floors.
+///
+/// The retail modules stage longer chains - probe-traced for Che
+/// (`10 -> 11`) and Lu (`14 -> 12 -> 13`, close `15`); Gi's
 /// (`10 -> 11 -> 12`, close `13`) is the module-scan +
-/// player-corroborated reading recorded in
-/// `docs/formats/monster-animation.md`.
+/// player-corroborated reading in `docs/formats/monster-animation.md` -
+/// but `--delilas-party` folds every module's staged ids into the two
+/// player-representable rows `0x0A`/`0x0B`
+/// (`delilas_cast::MODULE_95x_STAGE_REMAP_EDITS`), and the shared
+/// module means the ENEMY-side duel cast stages those two rows too. So
+/// the mirror authors exactly the rows the folded walk plays: entries
+/// `10`/`11` on every block. The retail-chain tails (Gi `12`/`13`, Lu
+/// `14`/`12`/`13`/`15`) are dead under the fold and keep their
+/// rescaled host clips.
 ///
 /// Floors: the only measured cursor gate is module 0960's (Lu, spell
 /// `0x7B`) damage tick, which waits for the CASTER's clip cursor to
-/// reach `0x160` sixteenths (keyframe 22) - that binds the payoff stage
-/// (entry 13) at [`PAYOFF_FLOOR_FRAMES`]. Module 0959 carries no `slti`
-/// cursor test at all, and 0958 is unmeasured; both are held at
-/// [`RETAIL_STAGED_FLOOR`] (retail's own smallest staged entry, Gi's
-/// 11-frame crouch).
+/// reach `0x160` sixteenths (keyframe 22). Under the fold that tick
+/// rides the restaged wind-up row, so Lu's entry `10` is bound at
+/// [`PAYOFF_FLOOR_FRAMES`]. Module 0959 carries no `slti` cursor test
+/// at all, and 958's `slti` sites are progress clamps, not gates; their
+/// rows are held at [`RETAIL_STAGED_FLOOR`] (retail's own smallest
+/// staged entry, Gi's 11-frame crouch).
 pub fn staged_plan(sibling: Sibling) -> StagedPlan<'static> {
     match sibling {
         Sibling::Gi => StagedPlan {
-            chain: &[10, 11, 12],
-            chain_floors: &[
-                RETAIL_STAGED_FLOOR,
-                RETAIL_STAGED_FLOOR,
-                RETAIL_STAGED_FLOOR,
-            ],
-            close: Some(13),
+            chain: &[10, 11],
+            chain_floors: &[RETAIL_STAGED_FLOOR, RETAIL_STAGED_FLOOR],
+            close: None,
             close_floor: RETAIL_STAGED_FLOOR,
         },
         Sibling::Che => StagedPlan {
@@ -92,14 +97,13 @@ pub fn staged_plan(sibling: Sibling) -> StagedPlan<'static> {
             close: None,
             close_floor: RETAIL_STAGED_FLOOR,
         },
+        // Lu's folded walk restages the wind-up row three times (the
+        // damage tick rides the last restage - hence the payoff floor
+        // on entry 10) and lands the burst on row 11.
         Sibling::Lu => StagedPlan {
-            chain: &[14, 12, 13],
-            chain_floors: &[
-                RETAIL_STAGED_FLOOR,
-                RETAIL_STAGED_FLOOR,
-                PAYOFF_FLOOR_FRAMES,
-            ],
-            close: Some(15),
+            chain: &[10, 11],
+            chain_floors: &[PAYOFF_FLOOR_FRAMES, RETAIL_STAGED_FLOOR],
+            close: None,
             close_floor: RETAIL_STAGED_FLOOR,
         },
     }

@@ -1,10 +1,10 @@
 //! Disc oracle for the cast route's staged CASTER rows: after
-//! `--delilas-party`, the Che-mapped slot's record[0] rows `0x0A`/`0x0B`
-//! decode as real packed streams carrying Che's wind-up and smash, the
-//! Block clip survives on row `0x06` in all four player files, the
-//! party-init Block-reaction literal follows it, and the PROT 959 stage
-//! step stays retail (no pin). Skips (and passes) when `LEGAIA_DISC_BIN`
-//! is unset.
+//! `--delilas-party`, every mapped slot's record[0] rows `0x0A`/`0x0B`
+//! decode as real packed streams carrying its sibling's wind-up and
+//! payoff (the Che host asserted duration-exact), the Block clip
+//! survives on row `0x06` in all four player files, the party-init
+//! Block-reaction literal follows it, and the PROT 959 stage step stays
+//! retail (no pin). Skips (and passes) when `LEGAIA_DISC_BIN` is unset.
 
 use legaia_asset::battle_char_assembly as bca;
 use legaia_asset::party_swap::cast_stage;
@@ -208,22 +208,62 @@ fn staged_cast_rows_carry_ches_clips_and_block_survives() {
             "PROT {entry}: Block entry bytes survive unmoved"
         );
     }
-    // The Che host gave rows 0x0A/0x0B to the module; the other files
-    // keep them retail.
-    for (entry, retail_file) in &retail_files {
-        if *entry == che_entry {
-            continue;
+    // Every routed host (all three mapped slots) gave rows 0x0A/0x0B to
+    // its module: real packed streams over the full skeleton, kept
+    // strictly below the sub-record scratch base, and the file
+    // classifies as the loader-stable layout. Terra (no route) keeps
+    // the retail placeholders.
+    for (entry, _, _, _, _) in mapping.pairs() {
+        if entry == che_entry {
+            continue; // asserted in detail above
         }
-        let live = reopened.read_entry(*entry).expect("read patched file");
+        let live = reopened.read_entry(entry).expect("read patched file");
+        let (clut_a, _) = cast_stage::record0_clut_offsets(&live).expect("patched header");
+        let anims = bca::battle_animations(&live).expect("decode patched animations");
+        let bones = anims
+            .iter()
+            .find(|a| a.action_id == 0)
+            .expect("idle")
+            .part_count;
+        for row in [cast_stage::STAGE_ROW_WINDUP, cast_stage::STAGE_ROW_PAYOFF] {
+            let a = anims
+                .iter()
+                .find(|a| a.action_id == row as u8)
+                .unwrap_or_else(|| panic!("PROT {entry} row {row:#x} does not decode"));
+            assert_eq!(
+                a.part_count, bones,
+                "PROT {entry} row {row:#x} poses the whole skeleton"
+            );
+            assert!(
+                a.frame_count >= 1 && a.rate >= 1,
+                "PROT {entry} row {row:#x} carries a real clip"
+            );
+            let (off, p, f) = row_shape(&live, row);
+            let end = off + bca::PLAYER_ANIM_STREAM_OFFSET + 2 + p * f * 9;
+            assert!(
+                end <= clut_a,
+                "PROT {entry} row {row:#x} sits below the scratch base"
+            );
+        }
+        let block = bca::decode_record0(&live).unwrap();
+        assert_eq!(
+            cast_stage::staged_state(&block, clut_a).expect("state"),
+            cast_stage::StagedState::Applied,
+            "PROT {entry} classifies as the loader-stable layout"
+        );
+    }
+    {
+        let live = reopened.read_entry(866).expect("read patched Terra file");
+        let retail_file = &retail_files.iter().find(|(e, _)| *e == 866).unwrap().1;
         assert_eq!(
             row_shape(&live, cast_stage::STAGE_ROW_WINDUP),
             row_shape(retail_file, cast_stage::STAGE_ROW_WINDUP),
-            "PROT {entry}: row 0x0A untouched"
+            "Terra row 0x0A untouched"
         );
         assert_eq!(
             row_shape(&live, cast_stage::BLOCK_ROW_RETAIL),
             row_shape(retail_file, cast_stage::BLOCK_ROW_RETAIL),
-            "PROT {entry}: row 0x0B untouched"
+            "Terra row 0x0B untouched"
         );
     }
 
