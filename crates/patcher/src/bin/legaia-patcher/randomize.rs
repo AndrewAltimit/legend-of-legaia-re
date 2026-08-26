@@ -334,12 +334,15 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         } else {
             legaia_patcher::delilas_party::CastRoutePolicy::Install
         };
-        match legaia_patcher::delilas_party::apply_delilas_party(
+        match legaia_patcher::delilas_party::apply_delilas_party_with(
             &mut patcher,
             mapping,
             args.delilas_arts_voice,
             args.delilas_moves,
             cast_route,
+            legaia_patcher::delilas_party::DelilasPartyOptions {
+                keep_che_hammer: args.delilas_che_hammer,
+            },
         ) {
             Ok(report) if report.changed => {
                 println!(
@@ -360,6 +363,9 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
                 ));
                 manifest.push(format!("delilas_arts_voice = {}", args.delilas_arts_voice));
                 manifest.push(format!("delilas_moves = {}", args.delilas_moves));
+                if args.delilas_che_hammer {
+                    manifest.push("delilas_che_hammer = true".to_string());
+                }
             }
             Ok(_) => {
                 println!("delilas-party: already applied");

@@ -43,7 +43,7 @@ use legaia_tmd::encode::{ModelObject, decode_model};
 use crate::util::load_image;
 
 /// One character's decoded audit inputs.
-struct CharSide {
+pub(crate) struct CharSide {
     file: Vec<u8>,
     readef: Vec<u8>,
     model: Vec<ModelObject>,
@@ -53,7 +53,7 @@ struct CharSide {
     tmd_bytes: Vec<u8>,
 }
 
-fn load_side(patcher: &DiscPatcher, slot: usize) -> Result<CharSide> {
+pub(crate) fn load_side(patcher: &DiscPatcher, slot: usize) -> Result<CharSide> {
     let file = patcher.read_entry_footprint(863 + slot)?;
     let readef = patcher.read_entry_footprint(894)?;
     let pack = battle_data_pack::parse(&file)?;
@@ -112,7 +112,7 @@ fn closest(a: &[[f32; 3]], b: &[[f32; 3]]) -> f32 {
 }
 
 /// The forearm->hand chains per rig (channel pairs).
-fn arm_chains(slot: usize) -> [(u8, u8); 2] {
+pub(crate) fn arm_chains(slot: usize) -> [(u8, u8); 2] {
     if slot == 1 {
         [(5, 6), (8, 9)]
     } else {
@@ -178,7 +178,7 @@ fn clip_metrics(side: &CharSide, slot: usize, frames: &[Vec<PartPose>]) -> [f32;
 
 /// Max radius of a hand object's TEXTURED-prim vertices (the fist; the
 /// fused weapon is untextured and legitimately long).
-fn hand_radius(side: &CharSide, chan: u8) -> Option<f32> {
+pub(crate) fn hand_radius(side: &CharSide, chan: u8) -> Option<f32> {
     let oi = side.anm_bones.iter().position(|&b| b == chan)?;
     let mut corners = std::collections::BTreeSet::new();
     for pr in bca::equip_isolate::object_prim_refs(&side.tmd, &side.tmd_bytes, oi) {
@@ -194,7 +194,11 @@ fn hand_radius(side: &CharSide, chan: u8) -> Option<f32> {
         .fold(None, |a: Option<f32>, r| Some(a.map_or(r, |x| x.max(r))))
 }
 
-pub(crate) fn cmd_delilas_audit(input: &Path, baseline: &Path) -> Result<()> {
+pub(crate) fn cmd_delilas_audit(
+    input: &Path,
+    baseline: &Path,
+    allow_kept_hammer: bool,
+) -> Result<()> {
     let patched = DiscPatcher::open(load_image(input)?).context("open patched image")?;
     let retail = DiscPatcher::open(load_image(baseline)?).context("open baseline image")?;
     let mut failures = 0usize;
@@ -313,11 +317,18 @@ pub(crate) fn cmd_delilas_audit(input: &Path, baseline: &Path) -> Result<()> {
             if let (Some(rp), Some(rr)) = (hand_radius(&p, hc), hand_radius(&r, hc))
                 && rp > rr * 2.0
             {
-                println!(
-                    "  FAIL {who} hand ch{hc}: textured radius {rp:.0} vs baseline {rr:.0} \
-                     (welded-weapon class)"
-                );
-                hand_fails += 1;
+                if allow_kept_hammer {
+                    println!(
+                        "  {who} hand ch{hc}: textured radius {rp:.0} vs baseline {rr:.0} \
+                         (kept welded weapon - allowed by --allow-kept-hammer)"
+                    );
+                } else {
+                    println!(
+                        "  FAIL {who} hand ch{hc}: textured radius {rp:.0} vs baseline {rr:.0} \
+                         (welded-weapon class)"
+                    );
+                    hand_fails += 1;
+                }
             }
         }
         // 4. Equip-texture invariance. The swap paints the sibling's body

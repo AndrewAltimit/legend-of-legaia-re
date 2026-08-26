@@ -1011,22 +1011,43 @@ pub(crate) fn cmd_delilas_verify(input: &Path) -> Result<()> {
                 }
             }
         }
+        // A `--delilas-che-hammer` build keeps the sibling's welded
+        // weapon on the mesh and deliberately fuses nothing - detected
+        // from the disc itself: a bare-assembly hand channel whose
+        // textured radius is far past any real fist (retail hands
+        // measure <= 61; Che's kept hammer ~254). Only the fusion
+        // presence is waived; the hand-SEAT bound stays enforced (the
+        // kept weapon is still baked about the wrist pivot).
+        let kept_welded = crate::delilas_audit::load_side(&patcher, slot)
+            .ok()
+            .map(|side| {
+                crate::delilas_audit::arm_chains(slot)
+                    .iter()
+                    .filter_map(|&(_, hc)| crate::delilas_audit::hand_radius(&side, hc))
+                    .any(|r| r > 120.0)
+            })
+            .unwrap_or(false);
         let fe_ok = fe_hits == 0;
         let seat_ok = seat_worst <= HAND_SEAT_MAX;
         let bones_ok = empty_bones == 0;
-        let fuse_ok = weapon_loadouts == 0 || fused_loadouts > 0;
+        let fuse_ok = weapon_loadouts == 0 || fused_loadouts > 0 || kept_welded;
         if !fe_ok || !seat_ok || !bones_ok || !fuse_ok {
             failures += 1;
         }
         println!(
             "{who}: {} assemblies | 0xFE hazards {} ({fe_hits}) | hand seat {} \
              (worst {seat_worst:.1} <= {HAND_SEAT_MAX}) | skeleton geometry {} \
-             ({empty_bones} empty) | weapon fusion {} ({fused_loadouts}/{weapon_loadouts})",
+             ({empty_bones} empty) | weapon fusion {} ({fused_loadouts}/{weapon_loadouts}){}",
             loadouts.len(),
             if fe_ok { "OK" } else { "FAIL" },
             if seat_ok { "OK" } else { "FAIL" },
             if bones_ok { "OK" } else { "FAIL" },
             if fuse_ok { "OK" } else { "FAIL" },
+            if kept_welded {
+                " | welded weapon kept (comparison build)"
+            } else {
+                ""
+            },
         );
     }
     if failures > 0 {

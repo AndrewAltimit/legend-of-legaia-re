@@ -1010,6 +1010,37 @@ pub fn playerize_player_file(
     char_slot: usize,
     readef: Option<&[u8]>,
 ) -> Result<PlayerizedFile> {
+    playerize_player_file_with(
+        player_file,
+        entry_len,
+        rig,
+        archive_entry,
+        source_id,
+        char_slot,
+        readef,
+        false,
+    )
+}
+
+/// [`playerize_player_file`] with the welded-weapon-fist policy
+/// explicit: `keep_welded_fist = true` keeps a sibling's welded weapon
+/// on the mesh (Che's hammer-fist, Gi's blade-fist -
+/// [`WELDED_WEAPON_FISTS`]) instead of mirroring the other fist in, and
+/// suppresses the host weapon fusion for that file so the hand does not
+/// carry two weapons. The kept weapon rides the host's hand channel
+/// with its authored reach, so clips that assume a hand-sized part
+/// swing it wide - the trade the caller opts into.
+#[allow(clippy::too_many_arguments)]
+pub fn playerize_player_file_with(
+    player_file: &[u8],
+    entry_len: usize,
+    rig: &PlayerRig,
+    archive_entry: &[u8],
+    source_id: u16,
+    char_slot: usize,
+    readef: Option<&[u8]>,
+    keep_welded_fist: bool,
+) -> Result<PlayerizedFile> {
     // Every clip the character can play - record[0]'s battle bank plus,
     // when readef.DAT is supplied, the full art bank (the Spirit charge,
     // the Super flourishes, every art). The FK hand inset optimizes the
@@ -1037,7 +1068,16 @@ pub fn playerize_player_file(
     // `weapon_fuse`). Non-fatal: a failed cut leaves the swap bare-handed
     // exactly as before, with a note.
     let weapon_cols = weapon_clut_cols(player_file)?;
-    let (fusions, fuse_warning) =
+    let keeps_welded =
+        keep_welded_fist && WELDED_WEAPON_FISTS.iter().any(|&(id, _)| id == source_id);
+    let (fusions, fuse_warning) = if keeps_welded {
+        // The sibling's own welded weapon stays in the hand - fusing the
+        // host's weapon on top would put two weapons in one fist.
+        (
+            super::weapon_fuse::WeaponFusion::default(),
+            Some("welded fist kept; host weapon not fused".to_string()),
+        )
+    } else {
         match super::weapon_fuse::weapon_fusions(player_file, char_slot, &weapon_cols) {
             Ok(f) => {
                 let n = f.per_record.len();
@@ -1052,7 +1092,8 @@ pub fn playerize_player_file(
                     "weapon fusion unavailable ({e:#}); hands stay bare"
                 )),
             ),
-        };
+        }
+    };
     let mut last_err = None;
     // Fit ladder: texture resolution OUTRANKS hand twins (the quality
     // oracle holds full-resolution textures for every pairing), and
@@ -1076,6 +1117,7 @@ pub fn playerize_player_file(
                 &weapon_cols,
                 &host_anims,
                 char_slot,
+                keep_welded_fist,
             ) {
                 Ok(mut out) => {
                     if let Some(w) = &fuse_warning {
@@ -1357,6 +1399,7 @@ fn playerize_scaled(
     weapon_cols: &[u16],
     host_anims: &[crate::monster_archive::MonsterAnimation],
     char_slot: usize,
+    keep_welded_fist: bool,
 ) -> Result<PlayerizedFile> {
     let mut warnings = Vec::new();
     if texture_downscale > 1 {
@@ -1389,11 +1432,20 @@ fn playerize_scaled(
     // authored 150 units out and never closing the wrist like a hand)
     // drops the weapon: the armA fist stands in, mirrored, and the host's
     // own equipped weapon takes the hammer's role via `weapon_fuse`.
+    // `keep_welded_fist` opts out (Che's hammer kept on the mesh; the
+    // caller also suppresses the host weapon fusion so the hand does not
+    // carry two weapons).
     if let Some(&(_, welded)) = WELDED_WEAPON_FISTS.iter().find(|(id, _)| *id == source_id) {
-        mirror_fist(&mut src_model, &src_rest, welded)?;
-        warnings.push(format!(
-            "welded weapon fist (canonical {welded}) replaced by the mirrored other fist"
-        ));
+        if keep_welded_fist {
+            warnings.push(format!(
+                "welded weapon fist (canonical {welded}) kept on the mesh"
+            ));
+        } else {
+            mirror_fist(&mut src_model, &src_rest, welded)?;
+            warnings.push(format!(
+                "welded weapon fist (canonical {welded}) replaced by the mirrored other fist"
+            ));
+        }
     }
 
     // Player rest pose + the retail per-channel part anchors.

@@ -734,28 +734,431 @@ const MODULE_960_TEARDOWN_EDITS: &[WordEdit] = &[
     },
 ];
 
-/// Apply the full PROT 958 cast-route patch set: the staged-id remap
-/// ([`MODULE_958_STAGE_REMAP_EDITS`]), the twelve-site damage retarget
-/// (+ victim cell) and the dead-victim wipe skip. Wired by
-/// `apply_delilas_party` for a Gi-mapped slot together with Gi's staged
-/// caster rows, so a shipped patch never folds the enemy-side
-/// choreography without the player-side route existing.
-pub fn patch_module_958(p: &mut DiscPatcher) -> Result<bool> {
+// ---------------------------------------------------------------------------
+// Stage caves: the un-folded retail walks.
+//
+// With only rows `0x0A`/`0x0B` player-representable, the folded walks
+// replay the wind-up/payoff clips where retail staged distinct entries
+// (the "loops some portions, skips others" playout). The un-fold keeps
+// the folded staged IDS - so every gate literal stays valid and the
+// enemy-side caster still resolves its own archive entries 10/11 - and
+// instead REPOINTS the head-table word the id resolves through
+// (`FUN_8004AD80` party arm: `*(DAT_801C9360[slot] + idx*4)`) at a
+// different authored entry per stage. The player file hosts the FULL
+// retail chain below `clut_a` (`cast_stage::build_staged_cast_rows`),
+// and each stage's `sb id, 0x1DA(actor)` word becomes a `jal` into a
+// small SCUS-resident cave that repoints the word, redoes the staging
+// store and returns.
+//
+// Why the hook rides the `sb` word: `$ra` is dead between calls at every
+// site (the module ticks save/reload it on their own frames), the word
+// after each `sb` is an independent store/load that is safe as the
+// `jal`'s delay slot, and no hooked word is a branch target (whole-image
+// scan). `$t5..$t9` are dead across every site (per-arm liveness scan).
+//
+// Where the caves live - three pools, all free exactly when the cast
+// route runs, all SCUS-resident (reachable from module code whenever a
+// cast is in flight):
+//
+// * the SCUS injection-gap tail right after the queue hook
+//   ([`assemble_hook`] is fixed-size, so the tail base is stable);
+// * shiny-seru's read-watch-verified dead pockets `ARENA2`
+//   (`0x8007AFF8..0x8007B040`) and `SLOT6` (`0x80078A88..0x80078ACC`) -
+//   shiny-seru / show-super-arts / arts-ap are option-exclusive with
+//   the cast route (`cmd_randomize` + [`install_cast_hook`]'s free
+//   check), so the pockets cannot be double-claimed;
+// * PROT 958's own dead party-wipe body (`+0x21B4..+0x21D8`, made
+//   unreachable by [`MODULE_958_WIPE_EDIT`]) hosts three of 958's
+//   stubs; its last word stays the finale victim cell.
+//
+// An ENEMY cast through a patched module executes the same caves: the
+// staging store is identical (the caster reg holds the enemy actor),
+// and the repoint touches the HERO slot's head-table word - dirty but
+// harmless, because rows `0x0A`/`0x0B` are exclusively module-staged
+// (Block is re-homed to row 6) and every cast's opener cave restores
+// the word before the first commit reads it.
+
+/// Runtime per-slot record[0] base-pointer table (`FUN_80052FA0` writes
+/// `0x801C9360 + char*4`; party slots are fixed character indices).
+const RECORD0_BASE_TABLE_VA: u32 = 0x801C_9360;
+/// Head-table byte offset of row `0x0A` (the variable stage row).
+const ROW_A_WORD: u16 = 0x28;
+/// Head-table byte offset of row `0x0B` (the payoff/finale row).
+const ROW_B_WORD: u16 = 0x2C;
+
+/// Shared repoint core (9 words): the stub preloads `$t7` with the
+/// entry's decoded-image offset; the core repoints `table_word` of slot
+/// `slot`'s record[0] head at `base + $t7`, writes the entry's `+0x88`
+/// stream pointer (`entry + 0xAC` - the loader only writes it for
+/// TABLE-BOUND entries, so a mid-chain entry commits a NULL stream
+/// without this; idempotent for bound entries), stores staged id `id`
+/// through the caster reg and returns to the hooked site.
+fn assemble_stage_core(slot: u32, table_word: u16, id: u16, actor_reg: u32) -> Vec<u32> {
+    let ptr = RECORD0_BASE_TABLE_VA + slot * 4;
+    vec![
+        m::lui(m::T8, m::hi(ptr)),
+        m::lw(m::T8, m::T8, m::lo(ptr)),
+        m::addiu(m::T6, ZERO, id), // load-delay filler
+        m::addu(m::T9, m::T8, T7),
+        m::addiu(T5, m::T9, 0xAC),
+        m::sw(T5, m::T9, 0x88), // entry stream pointer
+        m::sw(m::T9, m::T8, table_word),
+        m::jr(RA),
+        m::sb(m::T6, actor_reg, 0x1DA), // delay slot
+    ]
+}
+
+/// Standalone cave (8 words) with the entry offset inline - the 960
+/// opener, whose caster lives in `$s4` (every other site uses `$s2`).
+/// No `+0x88` write: the opener always repoints at the TABLE-BOUND
+/// chain head, whose stream pointer the loader wrote at battle load.
+fn assemble_stage_cave(slot: u32, table_word: u16, id: u16, actor_reg: u32, off: u32) -> Vec<u32> {
+    let ptr = RECORD0_BASE_TABLE_VA + slot * 4;
+    vec![
+        m::lui(m::T8, m::hi(ptr)),
+        m::lw(m::T8, m::T8, m::lo(ptr)),
+        m::ori(T7, ZERO, off as u16), // load-delay filler
+        m::addu(m::T9, m::T8, T7),
+        m::addiu(m::T6, ZERO, id),
+        m::sw(m::T9, m::T8, table_word),
+        m::jr(RA),
+        m::sb(m::T6, actor_reg, 0x1DA),
+    ]
+}
+
+/// Per-site stub (3 words): preload the entry offset (`ori` - offsets
+/// can exceed the `addiu` sign bound) and tail into the shared core.
+fn assemble_stage_stub(off: u32, core_va: u32) -> Vec<u32> {
+    vec![m::ori(T7, ZERO, off as u16), m::j(core_va), m::nop()]
+}
+
+/// The fixed cave layout over the three pools. Byte-fit is asserted by
+/// [`stage_cave_layout`]; the unit test pins every VA.
+struct StageCaveLayout {
+    // 960 (slot 0 / Vahn file), SCUS gap tail + SLOT6:
+    shared_960: u32,
+    stub_960_s2: u32,
+    stub_960_s3: u32,
+    stub_960_s4: u32,
+    opener_960: u32,
+    // 958 (slot 1 / Noa file), ARENA2 + SLOT6 + the module wipe body:
+    shared_958_a: u32,
+    shared_958_b: u32,
+    stub_958_opener: u32,
+    stub_958_s2: u32,
+    stub_958_s3: u32,
+    stub_958_s4: u32,
+    stub_958_s6: u32,
+}
+
+/// PROT 958 file offsets of the three wipe-body stubs (9 of the body's
+/// 10 dead words; `+0x21D8` and the `+0x21DC` victim cell stay).
+const STUB_958_BODY_OFFSETS: [u64; 3] = [0x21B4, 0x21C0, 0x21CC];
+
+fn stage_cave_layout() -> Result<StageCaveLayout> {
+    use crate::shiny_seru::{ARENA2_END_VA, ARENA2_VA, SLOT6_END_VA, SLOT6_VA};
+    // The queue hook is fixed-size (its shape does not depend on the
+    // routes), so the tail base is stable across builds.
+    let hook_len = assemble_hook(SCUS_GAP_VA_LOCAL, &[]).len() as u32;
+    let tail = SCUS_GAP_VA_LOCAL + hook_len.div_ceil(4) * 4;
+    let l = StageCaveLayout {
+        // Gap tail (16 words): the 9-word 960 core + two of its stubs.
+        shared_960: tail,
+        stub_960_s3: tail + 9 * 4,
+        stub_960_s4: tail + 12 * 4,
+        // SLOT6 (17 words): the 8-word 960 opener + three 3-word stubs.
+        opener_960: SLOT6_VA,
+        stub_958_opener: SLOT6_VA + 8 * 4,
+        stub_958_s2: SLOT6_VA + 11 * 4,
+        stub_960_s2: SLOT6_VA + 14 * 4,
+        // ARENA2 (18 words): exactly the two 9-word 958 cores.
+        shared_958_a: ARENA2_VA,
+        shared_958_b: ARENA2_VA + 9 * 4,
+        stub_958_s3: MODULE_LINK_BASE + STUB_958_BODY_OFFSETS[0] as u32,
+        stub_958_s4: MODULE_LINK_BASE + STUB_958_BODY_OFFSETS[1] as u32,
+        stub_958_s6: MODULE_LINK_BASE + STUB_958_BODY_OFFSETS[2] as u32,
+    };
+    if l.stub_960_s4 + 3 * 4 > SCUS_GAP_END_VA_LOCAL {
+        bail!("960 stage caves overrun the SCUS gap tail");
+    }
+    if l.shared_958_b + 9 * 4 > ARENA2_END_VA {
+        bail!("958 stage cores overrun ARENA2");
+    }
+    if l.stub_960_s2 + 3 * 4 > SLOT6_END_VA {
+        bail!("stage caves overrun SLOT6");
+    }
+    Ok(l)
+}
+
+/// Link base of the cast modules (slot-B); 958's wipe-body stubs are
+/// addressed as `MODULE_LINK_BASE + file offset`.
+const MODULE_LINK_BASE: u32 = 0x801F_69D8;
+const SCUS_GAP_VA_LOCAL: u32 = crate::shiny_seru::SCUS_GAP_VA;
+const SCUS_GAP_END_VA_LOCAL: u32 = crate::shiny_seru::SCUS_GAP_END_VA;
+
+fn words_to_bytes(words: &[u32]) -> Vec<u8> {
+    words.iter().flat_map(|w| w.to_le_bytes()).collect()
+}
+
+/// Validate an un-fold offset list: the authored entries' decoded-image
+/// offsets, chain order, each within the `ori` zero-extension bound.
+fn check_unfold_offsets(offs: &[usize], want: usize, module: usize) -> Result<()> {
+    if offs.len() != want {
+        bail!(
+            "module {module} un-fold expects {want} entry offsets, got {}",
+            offs.len()
+        );
+    }
+    for &o in offs {
+        if o == 0 || o > 0xFFFF {
+            bail!("module {module} entry offset {o:#x} outside the 16-bit stub bound");
+        }
+    }
+    Ok(())
+}
+
+/// PROT 958's UN-FOLDED stage edit set: the id literals still fold to
+/// rows `0x0A`/`0x0B` (see [`MODULE_958_STAGE_REMAP_EDITS`] for the walk
+/// and the enemy-side reading), but each staging store is hooked into a
+/// stage cave, so the PLAYER walk plays the full retail chain
+/// `10,11,12,10,11,13`: opener resets row `0x0A` -> crouch, s3 repoints
+/// it at the slash, s4 back at the crouch, s6 repoints row `0x0B` at the
+/// finale, and the s2 hook resets `0x0B` -> leap at the next cast.
+fn module_958_unfold_edits(l: &StageCaveLayout, offs: &[usize]) -> Result<Vec<WordEdit>> {
+    check_unfold_offsets(offs, 4, 958)?;
+    let (e10, e11, e12, e13) = (
+        offs[0] as u32,
+        offs[1] as u32,
+        offs[2] as u32,
+        offs[3] as u32,
+    );
+    let mut edits = vec![
+        // Stage-id literals: s3 (retail +1 -> 0x0C) and the swing reset
+        // s4 (retail -2) both stage row 0x0A outright; the finale keeps
+        // the folded li 0x0B.
+        WordEdit {
+            offset: 0x0C48,
+            expect: 0x2442_0001,
+            replace: m::addiu(V0, ZERO, 0x000A),
+        },
+        WordEdit {
+            offset: 0x19C4,
+            expect: 0x2442_FFFE,
+            replace: m::addiu(V0, ZERO, 0x000A),
+        },
+        WordEdit {
+            offset: 0x1FD4,
+            expect: 0x2402_000D,
+            replace: m::addiu(V0, ZERO, 0x000B),
+        },
+        // The five staging stores become cave calls.
+        WordEdit {
+            offset: 0x05B0,
+            expect: 0xA242_01DA,
+            replace: m::jal(l.stub_958_opener),
+        },
+        WordEdit {
+            offset: 0x08E8,
+            expect: 0xA242_01DA,
+            replace: m::jal(l.stub_958_s2),
+        },
+        WordEdit {
+            offset: 0x0C50,
+            expect: 0xA242_01DA,
+            replace: m::jal(l.stub_958_s3),
+        },
+        WordEdit {
+            offset: 0x19C8,
+            expect: 0xA242_01DA,
+            replace: m::jal(l.stub_958_s4),
+        },
+        WordEdit {
+            offset: 0x1FD8,
+            expect: 0xA242_01DA,
+            replace: m::jal(l.stub_958_s6),
+        },
+    ];
+    // The three wipe-body stubs (s3 -> slash, s4 -> crouch, s6 -> finale).
+    let body: [(u64, Vec<u32>); 3] = [
+        (
+            STUB_958_BODY_OFFSETS[0],
+            assemble_stage_stub(e12, l.shared_958_a),
+        ),
+        (
+            STUB_958_BODY_OFFSETS[1],
+            assemble_stage_stub(e10, l.shared_958_a),
+        ),
+        (
+            STUB_958_BODY_OFFSETS[2],
+            assemble_stage_stub(e13, l.shared_958_b),
+        ),
+    ];
+    // Retail bytes of the (unreachable) wipe body the stubs overwrite.
+    const BODY_RETAIL: [u32; 9] = [
+        0x3C03_8008,
+        0x2402_00FE,
+        0x3C06_8008, // +0x21B4..
+        0x3C05_8008,
+        0xA062_BD71,
+        0x90A2_BD60, // +0x21C0..
+        0x2403_0005,
+        0xACC3_BD2C,
+        0x3042_007F, // +0x21CC..
+    ];
+    for (i, (base, words)) in body.iter().enumerate() {
+        for (k, &w) in words.iter().enumerate() {
+            edits.push(WordEdit {
+                offset: base + (k as u64) * 4,
+                expect: BODY_RETAIL[i * 3 + k],
+                replace: w,
+            });
+        }
+    }
+    let _ = e11; // e11 is a SCUS-side stub (s2 reset), not a module word.
+    Ok(edits)
+}
+
+/// PROT 960's UN-FOLDED stage edits: the four staging stores become cave
+/// calls (the id literals of [`MODULE_960_STAGE_REMAP_EDITS`] stay), so
+/// the PLAYER walk plays the full retail chain `10,14,12,13,15`: opener
+/// resets row `0x0A` -> raise, then charge / channel / strike repoints,
+/// with the burst staging the statically-bound flourish row `0x0B`.
+fn module_960_unfold_edits(l: &StageCaveLayout, offs: &[usize]) -> Result<Vec<WordEdit>> {
+    check_unfold_offsets(offs, 5, 960)?;
+    Ok(vec![
+        WordEdit {
+            offset: 0x01C0,
+            expect: 0xA282_01DA,
+            replace: m::jal(l.opener_960),
+        },
+        WordEdit {
+            offset: 0x0D6C,
+            expect: 0xA242_01DA,
+            replace: m::jal(l.stub_960_s2),
+        },
+        WordEdit {
+            offset: 0x1094,
+            expect: 0xA243_01DA,
+            replace: m::jal(l.stub_960_s3),
+        },
+        WordEdit {
+            offset: 0x1108,
+            expect: 0xA242_01DA,
+            replace: m::jal(l.stub_960_s4),
+        },
+    ])
+}
+
+/// Write the SCUS-resident cave code for whichever modules run
+/// un-folded. Every pool byte is required zero (or already exactly ours)
+/// before writing - the same "not free means another feature owns it"
+/// contract as [`install_cast_hook`].
+pub fn install_stage_caves(
+    p: &mut DiscPatcher,
+    offs_958: Option<&[usize]>,
+    offs_960: Option<&[usize]>,
+) -> Result<bool> {
+    const SCUS_NAME: &str = "SCUS_942.54";
+    if offs_958.is_none() && offs_960.is_none() {
+        return Ok(false);
+    }
+    let l = stage_cave_layout()?;
+    // (va, words) pieces, assembled per active module.
+    let mut pieces: Vec<(u32, Vec<u32>)> = Vec::new();
+    if let Some(offs) = offs_960 {
+        check_unfold_offsets(offs, 5, 960)?;
+        let (e10, e14, e12, e13) = (
+            offs[0] as u32,
+            offs[1] as u32,
+            offs[2] as u32,
+            offs[3] as u32,
+        );
+        pieces.push((
+            l.shared_960,
+            assemble_stage_core(0, ROW_A_WORD, 0x0A, S2_REG),
+        ));
+        pieces.push((l.stub_960_s2, assemble_stage_stub(e14, l.shared_960)));
+        pieces.push((l.stub_960_s3, assemble_stage_stub(e12, l.shared_960)));
+        pieces.push((l.stub_960_s4, assemble_stage_stub(e13, l.shared_960)));
+        pieces.push((
+            l.opener_960,
+            assemble_stage_cave(0, ROW_A_WORD, 0x0A, S4, e10),
+        ));
+    }
+    if let Some(offs) = offs_958 {
+        check_unfold_offsets(offs, 4, 958)?;
+        let (e10, e11) = (offs[0] as u32, offs[1] as u32);
+        pieces.push((
+            l.shared_958_a,
+            assemble_stage_core(1, ROW_A_WORD, 0x0A, S2_REG),
+        ));
+        pieces.push((
+            l.shared_958_b,
+            assemble_stage_core(1, ROW_B_WORD, 0x0B, S2_REG),
+        ));
+        pieces.push((l.stub_958_opener, assemble_stage_stub(e10, l.shared_958_a)));
+        pieces.push((l.stub_958_s2, assemble_stage_stub(e11, l.shared_958_b)));
+    }
+    let scus = p.read_named_file(SCUS_NAME).context("read SCUS_942.54")?;
+    let mut writes: Vec<(u64, Vec<u8>)> = Vec::new();
+    let mut changed = false;
+    for (va, words) in &pieces {
+        let bytes = words_to_bytes(words);
+        let off = legaia_asset::item_names::file_offset_for_va(&scus, *va)
+            .with_context(|| format!("resolve SCUS offset of stage cave {va:#010x}"))?;
+        let cur = &scus[off..off + bytes.len()];
+        if cur == bytes.as_slice() {
+            continue;
+        }
+        if cur.iter().any(|&b| b != 0) {
+            bail!(
+                "stage-cave pool at {va:#010x} is not free - another injected feature \
+                 owns the bytes (shiny-seru / show-super-arts / arts-ap must be off)"
+            );
+        }
+        writes.push((off as u64, bytes));
+        changed = true;
+    }
+    for (off, bytes) in writes {
+        p.patch_named_file(SCUS_NAME, off, &bytes)?;
+    }
+    Ok(changed)
+}
+
+/// `$s2` - the caster-actor register at every hooked staging store
+/// except 960's opener (`$s4`).
+const S2_REG: u32 = 18;
+
+/// Apply the full PROT 958 cast-route patch set: the staged-id handling
+/// (un-folded stage caves when `unfold` carries Gi's authored entry
+/// offsets, the folded [`MODULE_958_STAGE_REMAP_EDITS`] otherwise), the
+/// twelve-site damage retarget (+ victim cell) and the dead-victim wipe
+/// skip. Wired by `apply_delilas_party` for a Gi-mapped slot together
+/// with Gi's staged caster rows, so a shipped patch never changes the
+/// walk without the player-side rows existing.
+pub fn patch_module_958(p: &mut DiscPatcher, unfold: Option<&[usize]>) -> Result<bool> {
     let entry = p.read_entry(958).context("read PROT 958")?;
-    let mut edits: Vec<WordEdit> = MODULE_958_STAGE_REMAP_EDITS.to_vec();
+    let mut edits: Vec<WordEdit> = match unfold {
+        Some(offs) => module_958_unfold_edits(&stage_cave_layout()?, offs)?,
+        None => MODULE_958_STAGE_REMAP_EDITS.to_vec(),
+    };
     edits.extend_from_slice(MODULE_958_DAMAGE_EDITS);
     edits.push(MODULE_958_WIPE_EDIT);
     apply_word_edits(p, 958, &entry, &edits)
 }
 
 /// Apply the full PROT 960 cast-route patch set: the staged-id remap +
-/// confirmation gate ([`MODULE_960_STAGE_REMAP_EDITS`]), the two-site
-/// damage retarget, the dead-victim wipe skip and the seat-3
+/// confirmation gate ([`MODULE_960_STAGE_REMAP_EDITS`]), the un-folded
+/// stage caves when `unfold` carries Lu's authored entry offsets, the
+/// two-site damage retarget, the dead-victim wipe skip and the seat-3
 /// record-toggle neutralisation. Gaza's Neo Star Slash tick (`+0x8A8`)
 /// shares this image and is untouched by every set.
-pub fn patch_module_960(p: &mut DiscPatcher) -> Result<bool> {
+pub fn patch_module_960(p: &mut DiscPatcher, unfold: Option<&[usize]>) -> Result<bool> {
     let entry = p.read_entry(960).context("read PROT 960")?;
     let mut edits: Vec<WordEdit> = MODULE_960_STAGE_REMAP_EDITS.to_vec();
+    if let Some(offs) = unfold {
+        edits.extend(module_960_unfold_edits(&stage_cave_layout()?, offs)?);
+    }
     edits.extend_from_slice(MODULE_960_DAMAGE_EDITS);
     edits.push(MODULE_960_WIPE_EDIT);
     edits.extend_from_slice(MODULE_960_HAZARD_EDITS);

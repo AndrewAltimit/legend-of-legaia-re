@@ -1251,13 +1251,13 @@ this table is the map, the full mechanism reference is
 
 | Module | Carries |
 |---|---|
-| `delilas_party` | Orchestrator + `PartyMapping` (any permutation of `gi`/`lu`/`che`); battle + field model swap both directions, names both directions. |
+| `delilas_party` | Orchestrator + `PartyMapping` (any permutation of `gi`/`lu`/`che`); battle + field model swap both directions, names both directions. `DelilasPartyOptions::keep_che_hammer` (`--delilas-che-hammer`) keeps Che's welded hammer on the mesh and skips his weapon fusion - `delilas-verify` detects the state, `delilas-audit` needs `--allow-kept-hammer`. |
 | `delilas_voice` | Battle grunt voices resampled from the sibling SPU banks in place. |
 | `delilas_voice_fx` | `--delilas-arts-voice` modes (`original` / `removed` / `adjusted`, default `adjusted` - the pitch/formant re-voice). |
 | `delilas_xa_voice` | The XA-sector write path (Form 2 EDC re-encode via `legaia_iso::write`). |
 | `delilas_signature_attack` | Hero Hyper -> sibling signature: stage-chain retarget, event-frame replace, `name_field` renames in both id spaces. |
 | `delilas_effects` | Signature effect-prototype transplant into the spare prototype-table ids (the 88-byte cave). |
-| `delilas_cast` | The retail cast route: SCUS queue-hook stub + expect-verified word edits in PROT 958/959/960 ([cast-module.md](../../docs/subsystems/cast-module.md)). `CastRoutePolicy::Install` wires it; the frontend passes `ArenaTaken` when shiny-Seru / show-super-arts / arts-AP own the SCUS arena, and the route **silently downgrades** to the art-side signature, noted in the apply summary. |
+| `delilas_cast` | The retail cast route: SCUS queue-hook stub + expect-verified word edits in PROT 958/959/960 ([cast-module.md](../../docs/subsystems/cast-module.md)), plus the un-folded stage caves (staging stores `jal` into SCUS-resident repoint code so the player caster walks the FULL retail clip chain; folded two-row fallback per module when the LZS budget refuses). `CastRoutePolicy::Install` wires it; the frontend passes `ArenaTaken` when shiny-Seru / show-super-arts / arts-AP own the SCUS arena, and the route **silently downgrades** to the art-side signature, noted in the apply summary. |
 | `enemy_anim_mirror` | Hero idles + hero Hyper chains written into the swapped monster blocks (the enemy-side animation mirror). |
 | `nivora_field` | The duel field scene rebuilt with the mapped heroes' field rigs (PROT 0639 members 106-108, whole-pack re-emit). |
 | `mips_sim` | In-crate MIPS interpreter the hook stubs execute under in unit tests (load-delay-accurate). |

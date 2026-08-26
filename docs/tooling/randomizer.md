@@ -2344,29 +2344,55 @@ caster kinds.
 All three modules are audited and probe-verified: every mapped slot routes
 to its sibling's retail module - Blazing Slash (958), Megaton Press (959),
 Plasma Strike (960) - with per-module edit sets covering the same defect
-classes. The staged-id walks fold into the two authorable rows
-(`patch_module_958` / `patch_module_960`), including 960's **paired
-stage/confirm gate** - its phase-5 arm re-reads the playing id
-(`lbu +0x1D9`) against the same literal it stages, so the compare must
-move with the stage or the phase stalls forever. Two facts shape the
-per-module damage retargets: 958 keeps the victim in `$s1` only per-arm
-(its finale arms burn `$s1`-`$s4` as GPU-packet constants, so the first
-damage arm banks the victim pointer in a dead wipe-body word and the
-finale pairs reload it), while 960's `$s3` holds tick-wide and takes
-plain `move`s. 960 additionally carries 959's cached-finale-entity
-teardown hazard (same `ctx+0x102C` halt-quad pattern; same settle-tail
-neutralise, hosted in its dead wipe body) and two seat-3 monster-record
-toggle stores that are nop'd (an arbitrary victim's record `+0x80` word
-is not a vetted pointer). One data constraint crosses the module edits:
-960's damage tick holds until the playing clip's cursor reaches keyframe
-22, and under the folded walk that tick rides the wind-up row - so Lu's
-row `0x0A` clip (player and mirrored-block alike) is stretch-floored at
-23 keyframes. Module anatomy (image shapes, phase machine, staging ABI,
-the seat-0 damage hardcode):
+classes. The player-side stage walks are **un-folded to the full retail
+chains** when the host file's LZS budget takes them (the shipped
+`lu,gi,che` mapping does; the folded two-row shape stays as the
+per-module budget fallback): the player file hosts every chain clip
+below `clut_a_off` (Gi's crouch/leap/slash/finale, Lu's
+raise/charge/channel/strike/flourish), the staged IDS keep the folded
+`0x0A`/`0x0B` values - so 960's **paired stage/confirm gate** (its
+phase-5 arm re-reads the playing id `lbu +0x1D9` against the same
+literal it stages) stays valid and the enemy-side caster still resolves
+its own archive entries - and each staging store (`sb id,0x1DA`)
+becomes a `jal` into a small SCUS-resident **stage cave** that repoints
+the head-table word (`0x28`/`0x2C`) at the stage's clip, writes the
+entry's `+0x88` stream pointer (`entry+0xAC` - the loader writes it
+only for table-bound entries, and a mid-chain entry commits a NULL
+stream without it, a probe-pinned dynarec crash), redoes the staging
+store and returns (`$ra` is dead between calls at every hooked site;
+no hooked word is a branch target). The caves live in three pools that
+are free exactly when the route runs: the SCUS injection-gap tail
+behind the queue hook, shiny-seru's read-watch-verified `ARENA2` +
+`SLOT6` pockets (option-exclusive features), and PROT 958's own dead
+party-wipe body (three of its stubs; the body's last word stays the
+finale victim cell). Two facts shape the per-module damage retargets:
+958 keeps the victim in `$s1` only per-arm (its finale arms burn
+`$s1`-`$s4` as GPU-packet constants, so the first damage arm banks the
+victim pointer in that same wipe-body cell and the finale pairs reload
+it), while 960's `$s3` holds tick-wide and takes plain `move`s. 960
+additionally carries 959's cached-finale-entity teardown hazard (same
+`ctx+0x102C` halt-quad pattern; same settle-tail neutralise, hosted in
+its dead wipe body) and two seat-3 monster-record toggle stores that
+are nop'd (an arbitrary victim's record `+0x80` word is not a vetted
+pointer). One data constraint crosses the module edits: 960's damage
+tick holds until the playing clip's cursor reaches keyframe 22, and
+that tick rides the strike stage (the wind-up row under the folded
+fallback) - the clip it binds is stretch-floored at 23 keyframes,
+player and mirrored-block alike. Module anatomy (image shapes, phase
+machine, staging ABI, the seat-0 damage hardcode):
 [cast-module.md](../subsystems/cast-module.md). The hook stub lives in
 the SCUS injection gap, so the route composes with neither
 `--shiny-seru` nor `--show-super-arts`; on a conflict the patch keeps
 the art-side signature and says so in the summary.
+
+`--delilas-che-hammer` is a visual comparison option on top of the
+swap: Che's welded giant hammer stays on his mesh (instead of the
+mirrored-fist replacement) and the host's weapon fusion is skipped for
+his file, so he fights with the hammer regardless of the equipped
+weapon. `delilas-verify` detects the state from the disc (a hand
+channel's textured radius far past any real fist) and waives only the
+fusion-presence check; `delilas-audit` reports the welded radius as a
+FAIL unless `--allow-kept-hammer` is passed.
 
 ### Fishing prize prices
 

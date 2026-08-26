@@ -56,7 +56,17 @@ fn staged_cast_rows_carry_ches_clips_and_block_survives() {
     }
 
     let mut patcher = DiscPatcher::open(original.clone()).expect("open disc");
-    let mapping = PartyMapping::default(); // Che on the Gala slot (865)
+    // The shipped mapping (`--delilas-party lu,gi,che`): Lu on the Vahn
+    // file, Gi on Noa's, Che on Gala's. The full retail chains fit
+    // these hosts' LZS budgets; the archetype-default mapping
+    // (`gi,lu,che`) puts Lu's five-clip chain on Noa's tighter file,
+    // where it legitimately degrades to the folded pair - so the hard
+    // full-chain assertions below are pinned to THIS mapping.
+    let mapping = PartyMapping {
+        vahn: Sibling::Lu,
+        noa: Sibling::Gi,
+        gala: Sibling::Che,
+    };
     let report = apply_delilas_party(
         &mut patcher,
         &mapping,
@@ -213,7 +223,7 @@ fn staged_cast_rows_carry_ches_clips_and_block_survives() {
     // strictly below the sub-record scratch base, and the file
     // classifies as the loader-stable layout. Terra (no route) keeps
     // the retail placeholders.
-    for (entry, _, _, _, _) in mapping.pairs() {
+    for (entry, _, _, _, sibling) in mapping.pairs() {
         if entry == che_entry {
             continue; // asserted in detail above
         }
@@ -250,6 +260,45 @@ fn staged_cast_rows_carry_ches_clips_and_block_survives() {
             cast_stage::staged_state(&block, clut_a).expect("state"),
             cast_stage::StagedState::Applied,
             "PROT {entry} classifies as the loader-stable layout"
+        );
+        // The FULL retail chain must be hosted (Gi 4 clips, Lu 5): the
+        // un-folded module walks depend on the mid-chain entries the
+        // head table does not bind.
+        let want = match sibling {
+            Sibling::Gi => 4,
+            Sibling::Lu => 5,
+            Sibling::Che => 2,
+        };
+        let offs = cast_stage::recover_entry_offsets(&block, clut_a, want)
+            .unwrap_or_else(|e| panic!("PROT {entry}: full chain not authored: {e:#}"));
+        for (i, &off) in offs.iter().enumerate() {
+            let s = off + bca::PLAYER_ANIM_STREAM_OFFSET;
+            let (p, f) = (block[s] as usize, block[s + 1] as usize);
+            assert_eq!(
+                p, bones,
+                "PROT {entry} chain entry {i} poses the whole skeleton"
+            );
+            assert!(f >= 1, "PROT {entry} chain entry {i} carries frames");
+        }
+        // Lu's strike stage rides module 0960's keyframe-22 damage
+        // cursor gate: it must carry at least 23 keyframes.
+        if sibling == Sibling::Lu {
+            let s = offs[3] + bca::PLAYER_ANIM_STREAM_OFFSET;
+            assert!(
+                block[s + 1] as usize >= 23,
+                "Lu's strike stage under the cursor-gate floor"
+            );
+        }
+    }
+    // The un-folded modules' staging stores are cave calls (`jal` -
+    // opcode 0x03 in the top six bits).
+    for (prot, off) in [(958usize, 0x05B0usize), (960, 0x01C0)] {
+        let module = reopened.read_entry(prot).expect("read module");
+        let w = u32::from_le_bytes(module[off..off + 4].try_into().unwrap());
+        assert_eq!(
+            w >> 26,
+            0x03,
+            "PROT {prot} +{off:#x}: staging store hooked into a stage cave"
         );
     }
     {

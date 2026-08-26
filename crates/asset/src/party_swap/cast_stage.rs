@@ -107,12 +107,17 @@ pub struct StagedCastRows {
     /// New FILE-header words: `(clut_a_off, clut_b_off, budget)` for
     /// record0 header `+0x04 / +0x08 / +0x0C`.
     pub header: (u32, u32, u32),
-    /// Frames each rebuilt stage carries (wind-up, payoff).
-    pub frames: [usize; 2],
-    /// Rate byte of each rebuilt stage.
-    pub rates: [u8; 2],
-    /// Frames each source clip is authored at.
-    pub source_frames: [usize; 2],
+    /// Frames each rebuilt stage carries, in chain order.
+    pub frames: Vec<usize>,
+    /// Rate byte of each rebuilt stage, in chain order.
+    pub rates: Vec<u8>,
+    /// Frames each source clip is authored at, in chain order.
+    pub source_frames: Vec<usize>,
+    /// Decoded-image offset of each inserted entry, in chain order (the
+    /// first is the retail `clut_a_off`). These are what the module-side
+    /// stage caves add to the runtime record[0] base to repoint the
+    /// staged table word mid-cast.
+    pub entry_offsets: Vec<usize>,
 }
 
 /// Whether a decoded record[0] already carries staged cast rows, and in
@@ -303,15 +308,26 @@ pub fn push_up_desc_table(entry: &[u8]) -> Result<Option<FileWrites>> {
     ]))
 }
 
-/// Author the two staged cast rows for a routed player file.
+/// Author the staged cast rows for a routed player file.
 ///
 /// * `live_entry` - the CURRENT player-data PROT entry (post-playerize,
 ///   post-moveset): the decoded layout addressed here is retail-stable,
 ///   but the write has to re-fit whatever stream the earlier passes left.
 /// * `retail_player` - the RETAIL player file (the retarget conjugation
 ///   pairs with the playerize bake, which was built from retail rests).
-/// * `chain` - the sibling's staged clips, wind-up first, payoff last;
-///   the module choreography has exactly two stages.
+/// * `chain` - the sibling's staged clips in module walk order (the
+///   opener first). Two clips = the folded walk; more = the un-folded
+///   retail walk whose mid-stages the module-side caves repoint row
+///   `0x0A` at.
+/// * `floors` - per-clip hard keyframe minimum (one per chain entry;
+///   see [`stage_ladder`]).
+/// * `row_ids` - the id/tag byte each entry is authored with: the table
+///   row the entry is reached through (`0x0A` for the variable row, the
+///   static payoff row's id for the entry bound to it).
+/// * `binding` - which head-table rows point at which chain entries at
+///   rest: `(table_row, chain_index)`. Row `0x0A` must bind the opener;
+///   the caves repoint it mid-cast, and the last cave (or the opener
+///   cave) restores it.
 /// * `fits` - the caller's budget oracle: given the candidate FULL new
 ///   decoded image, report whether its recompressed stream still fits
 ///   the record[0] footprint. The ladder descends to fewer poses until
@@ -325,14 +341,29 @@ pub fn build_staged_cast_rows(
     archive: &[u8],
     source_id: u16,
     chain: &[&MonsterAnimation],
-    floors: [usize; 2],
+    floors: &[usize],
+    row_ids: &[u8],
+    binding: &[(usize, usize)],
     mut fits: impl FnMut(&[u8]) -> Result<bool>,
 ) -> Result<StagedCastRows> {
-    if chain.len() != 2 {
+    if chain.is_empty() || chain.len() != floors.len() || chain.len() != row_ids.len() {
         bail!(
-            "the cast module stages exactly two rows, got {}",
-            chain.len()
+            "staged chain shape mismatch: {} clips / {} floors / {} row ids",
+            chain.len(),
+            floors.len(),
+            row_ids.len()
         );
+    }
+    if !binding
+        .iter()
+        .any(|&(row, idx)| row == STAGE_ROW_WINDUP && idx == 0)
+    {
+        bail!("row 0x0A must bind the opener (chain entry 0)");
+    }
+    for &(row, idx) in binding {
+        if !(row == STAGE_ROW_WINDUP || row == STAGE_ROW_PAYOFF) || idx >= chain.len() {
+            bail!("staged binding ({row:#x} -> {idx}) outside the module-owned rows/chain");
+        }
     }
     let block = bca::decode_record0(live_entry)?;
     let (clut_a, clut_b) = record0_clut_offsets(live_entry)?;
@@ -405,52 +436,48 @@ pub fn build_staged_cast_rows(
     }
 
     // Walk the pose-budget ladder until the grown image passes the
-    // caller's budget oracle. The rows are INSERTED at `clut_a`; the
-    // payloads and every header offset past them shift up by `delta`.
-    let ladders = [
-        stage_ladder(chain[0], floors[0]),
-        stage_ladder(chain[1], floors[1]),
-    ];
-    for rung in 0..ladders[0].len().max(ladders[1].len()) {
-        let (fa, ra) = ladders[0][rung.min(ladders[0].len() - 1)];
-        let (fb, rb) = ladders[1][rung.min(ladders[1].len() - 1)];
+    // caller's budget oracle. The rows are INSERTED at `clut_a` in chain
+    // order; the payloads and every header offset past them shift up by
+    // `delta`.
+    let ladders: Vec<Vec<(usize, u8)>> = chain
+        .iter()
+        .zip(floors)
+        .map(|(clip, &floor)| stage_ladder(clip, floor))
+        .collect();
+    let max_rungs = ladders.iter().map(Vec::len).max().unwrap_or(1);
+    for rung in 0..max_rungs {
+        let picks: Vec<(usize, u8)> = ladders.iter().map(|l| l[rung.min(l.len() - 1)]).collect();
         let len = |f: usize| ENTRY_HEAD + 2 + parts * f * 9;
-        let la = (len(fa) + 3) & !3;
-        let lb = (len(fb) + 3) & !3;
-        let delta = la + lb;
+        let lens: Vec<usize> = picks.iter().map(|&(f, _)| (len(f) + 3) & !3).collect();
+        let delta: usize = lens.iter().sum();
         // The member-init allocation the image + scratch share is
         // 0x19000 bytes; keep generous scratch headroom past the tail.
         if block.len() + delta > 0x10000 {
             continue;
         }
-        let entry_a = build_entry(
-            STAGE_ROW_WINDUP as u8,
-            chain[0],
-            fa,
-            ra,
-            rig,
-            retail_player,
-            archive,
-            source_id,
-            parts,
-        )?;
-        let entry_b = build_entry(
-            STAGE_ROW_PAYOFF as u8,
-            chain[1],
-            fb,
-            rb,
-            rig,
-            retail_player,
-            archive,
-            source_id,
-            parts,
-        )?;
+        let mut offsets = Vec::with_capacity(chain.len());
+        let mut cursor = clut_a;
         let mut out = Vec::with_capacity(block.len() + delta);
         out.extend_from_slice(&block[..clut_a]);
-        out.extend_from_slice(&entry_a);
-        out.resize(clut_a + la, 0);
-        out.extend_from_slice(&entry_b);
-        out.resize(clut_a + delta, 0);
+        for (i, clip) in chain.iter().enumerate() {
+            let (f, r) = picks[i];
+            let entry = build_entry(
+                row_ids[i],
+                clip,
+                f,
+                r,
+                rig,
+                retail_player,
+                archive,
+                source_id,
+                parts,
+            )?;
+            offsets.push(cursor);
+            out.extend_from_slice(&entry);
+            cursor += lens[i];
+            out.resize(cursor, 0);
+        }
+        debug_assert_eq!(cursor, clut_a + delta);
         out.extend_from_slice(&block[clut_a..]);
         // Zero the (shifted) face pixel payloads - dead VRAM rects on a
         // playerized file; the zeros pay for the streams' entropy in
@@ -462,8 +489,9 @@ pub fn build_staged_cast_rows(
         let put = |o: &mut Vec<u8>, off: usize, v: u32| {
             o[off..off + 4].copy_from_slice(&v.to_le_bytes());
         };
-        put(&mut out, STAGE_ROW_WINDUP * 4, clut_a as u32);
-        put(&mut out, STAGE_ROW_PAYOFF * 4, (clut_a + la) as u32);
+        for &(row, idx) in binding {
+            put(&mut out, row * 4, offsets[idx] as u32);
+        }
         put(&mut out, BLOCK_ROW_RELOCATED * 4, block_off);
         put(&mut out, 0x5C, (clut_a + delta - 4) as u32);
         if !fits(&out)? {
@@ -477,16 +505,69 @@ pub fn build_staged_cast_rows(
             ),
             decoded: out,
             delta,
-            frames: [fa, fb],
-            rates: [ra, rb],
-            source_frames: [chain[0].frame_count, chain[1].frame_count],
+            frames: picks.iter().map(|&(f, _)| f).collect(),
+            rates: picks.iter().map(|&(_, r)| r).collect(),
+            source_frames: chain.iter().map(|c| c.frame_count).collect(),
+            entry_offsets: offsets,
         });
     }
     bail!(
         "staged cast rows fit the record[0] LZS budget at no pose rung \
-         ({parts} parts, payloads {area:#x}+{:#x} bytes zeroed)",
+         ({parts} parts, {} clips, payloads {area:#x}+{:#x} bytes zeroed)",
+        chain.len(),
         block.len() - pix_b
     )
+}
+
+/// Recover the inserted entries' decoded-image offsets from an
+/// already-authored file ([`StagedState::Applied`]): the entries sit
+/// contiguously from the row-`0x0A` table word (the retail `clut_a_off`),
+/// each `0xAC + 2 + parts*frames*9` bytes 4-aligned. Returns exactly
+/// `count` offsets or an error - a file authored with a different chain
+/// length (an older build) does not silently pass.
+pub fn recover_entry_offsets(decoded: &[u8], clut_a: usize, count: usize) -> Result<Vec<usize>> {
+    let word = |slot: usize| -> Result<usize> {
+        Ok(u32::from_le_bytes(
+            decoded
+                .get(slot * 4..slot * 4 + 4)
+                .ok_or_else(|| anyhow::anyhow!("record[0] table short"))?
+                .try_into()
+                .unwrap(),
+        ) as usize)
+    };
+    let first = word(STAGE_ROW_WINDUP)?;
+    if first >= clut_a {
+        bail!("row 0x0A at {first:#x} is not below clut_a {clut_a:#x} - not the authored layout");
+    }
+    let mut offsets = Vec::with_capacity(count);
+    let mut cursor = first;
+    for i in 0..count {
+        let head = decoded
+            .get(cursor + ENTRY_HEAD..cursor + ENTRY_HEAD + 2)
+            .ok_or_else(|| anyhow::anyhow!("entry {i} head past record[0] end"))?;
+        let (parts, frames) = (head[0] as usize, head[1] as usize);
+        if parts == 0 || frames == 0 || parts > 0x20 {
+            bail!(
+                "entry {i} at {cursor:#x} has implausible head {parts}x{frames} - the file \
+                 was authored with a different chain (patch a clean retail image)"
+            );
+        }
+        offsets.push(cursor);
+        cursor += (ENTRY_HEAD + 2 + parts * frames * 9 + 3) & !3;
+        if cursor > clut_a {
+            bail!(
+                "entry {i} runs past clut_a {clut_a:#x} - the file was authored with a \
+                 different chain (patch a clean retail image)"
+            );
+        }
+    }
+    if cursor != clut_a {
+        bail!(
+            "authored entries end at {cursor:#x}, not clut_a {clut_a:#x} - the file was \
+             authored with a different chain (patch a clean retail image)"
+        );
+    }
+    Ok(offsets)
 }
 
 #[cfg(test)]

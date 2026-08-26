@@ -237,12 +237,43 @@ pub enum CastRoutePolicy {
     ArenaTaken,
 }
 
+/// Per-run visual options of the party swap, off by default.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DelilasPartyOptions {
+    /// Keep Che's welded hammer-fist on the swapped mesh (his authored
+    /// giant hammer) instead of mirroring the other fist in; the host's
+    /// own weapon is then NOT fused into his hand. Clips that assume a
+    /// hand-sized part swing the hammer wide - the comparison trade the
+    /// flag opts into. Che only: Gi's welded blade-fist stays replaced
+    /// (its reach is what caused the catalogued Spirit-charge streak).
+    pub keep_che_hammer: bool,
+}
+
 pub fn apply_delilas_party(
     patcher: &mut DiscPatcher,
     mapping: &PartyMapping,
     arts_voice: crate::delilas_voice_fx::ArtsVoiceMode,
     move_mode: DelilasMoveMode,
     cast_route: CastRoutePolicy,
+) -> Result<DelilasPartyReport> {
+    apply_delilas_party_with(
+        patcher,
+        mapping,
+        arts_voice,
+        move_mode,
+        cast_route,
+        DelilasPartyOptions::default(),
+    )
+}
+
+/// [`apply_delilas_party`] with [`DelilasPartyOptions`] explicit.
+pub fn apply_delilas_party_with(
+    patcher: &mut DiscPatcher,
+    mapping: &PartyMapping,
+    arts_voice: crate::delilas_voice_fx::ArtsVoiceMode,
+    move_mode: DelilasMoveMode,
+    cast_route: CastRoutePolicy,
+    options: DelilasPartyOptions,
 ) -> Result<DelilasPartyReport> {
     let mut report = DelilasPartyReport::default();
     let archive = patcher
@@ -314,7 +345,8 @@ pub fn apply_delilas_party(
             .read_entry(entry)
             .with_context(|| format!("read PROT entry {entry}"))?
             .len();
-        let playerized = playerize::playerize_player_file(
+        let keep_hammer = options.keep_che_hammer && id == Sibling::Che.monster_id();
+        let playerized = playerize::playerize_player_file_with(
             &player_file,
             entry_len,
             rig,
@@ -322,8 +354,14 @@ pub fn apply_delilas_party(
             id,
             template_slot,
             Some(&patcher.read_entry_footprint(READEF_ENTRY)?),
+            keep_hammer,
         )
         .with_context(|| format!("{who} <- monster {id}"))?;
+        if keep_hammer {
+            report
+                .notes
+                .push(format!("{who}: Che's welded hammer kept on the mesh"));
+        }
         patcher.patch_prot_entry(entry, 0, &playerized.file)?;
 
         // Win poses: the character's eight base "ME" victory streams
@@ -678,19 +716,29 @@ pub fn apply_delilas_party(
                 _ => "Plasma Strike (960)",
             };
             match author_staged_cast_rows(patcher, mapping, &retail_players, &archive) {
-                Ok(notes) => {
-                    report.notes.extend(notes);
+                Ok(authored) => {
+                    report.notes.extend(authored.notes);
+                    let gi = authored.gi_unfold.as_deref();
+                    let lu = authored.lu_unfold.as_deref();
                     let installed = crate::delilas_cast::patch_module_959(patcher, false)
-                        .and_then(|_| crate::delilas_cast::patch_module_958(patcher))
-                        .and_then(|_| crate::delilas_cast::patch_module_960(patcher))
-                        .and_then(|_| crate::delilas_cast::install_cast_hook(patcher, &routes));
+                        .and_then(|_| crate::delilas_cast::patch_module_958(patcher, gi))
+                        .and_then(|_| crate::delilas_cast::patch_module_960(patcher, lu))
+                        .and_then(|_| crate::delilas_cast::install_cast_hook(patcher, &routes))
+                        .and_then(|_| crate::delilas_cast::install_stage_caves(patcher, gi, lu));
                     match installed {
                         Ok(_) => {
                             for r in &routes {
+                                let walk = match r.spell_id {
+                                    0x79 if gi.is_some() => " (un-folded retail walk)",
+                                    0x7B if lu.is_some() => " (un-folded retail walk)",
+                                    0x7A => "",
+                                    _ => " (folded walk)",
+                                };
                                 report.notes.push(format!(
-                                    "cast route: slot {} signature runs the retail {} module",
+                                    "cast route: slot {} signature runs the retail {} module{}",
                                     r.char_index,
-                                    module_name(r.spell_id)
+                                    module_name(r.spell_id),
+                                    walk
                                 ));
                             }
                         }
@@ -1504,50 +1552,100 @@ fn signature_clip_chain(sibling: Sibling) -> &'static [usize] {
     }
 }
 
-/// The two archive clips the folded cast-module walk stages on player
-/// rows `0x0A` (wind-up) / `0x0B` (payoff).
+/// One sibling's staged-caster chain: which archive clips are authored
+/// into the player file, in module walk order, and how the head table
+/// binds them at rest.
+struct StagedChain {
+    /// Archive entry index of each clip, module walk order (opener first).
+    clips: &'static [usize],
+    /// Per-clip hard keyframe floor (`cast_stage::stage_ladder`).
+    floors: &'static [usize],
+    /// Per-clip id/tag byte = the table row the clip is reached through.
+    row_ids: &'static [u8],
+    /// At-rest head-table bindings `(row, chain index)`.
+    binding: &'static [(usize, usize)],
+}
+
+/// The FULL retail chain per sibling - the un-folded module walk, where
+/// the module-side stage caves ([`crate::delilas_cast`]) repoint row
+/// `0x0A` (and, for 958, row `0x0B`) at each mid-stage:
 ///
-/// The modules' staged walks are folded onto exactly these two rows
-/// (`MODULE_95x_STAGE_REMAP_EDITS` in [`crate::delilas_cast`]), so a
-/// sibling with a longer retail chain contributes its first stage and
-/// its payoff: Gi's walk `10,11,12,10,11,13` keeps the crouch wind-up +
-/// the leap (retail's own first two stages); Lu's `14,12,13,15` keeps
-/// the charge opener + the strike. Che's two-stage chain maps 1:1.
-///
-/// Lu's payoff row carries her STRIKE clip (entry 13), not the closing
-/// flourish (15): under the fold the damage build-up rides the restaged
-/// wind-up row and the burst stage fires with the payoff row, so entry
-/// 13 there puts her strike pose under the burst effects - the flourish
-/// would leave the strike unplayed.
-fn staged_row_clips(sibling: Sibling) -> [usize; 2] {
+/// * Gi (module 958, walk `10,11,12,10,11,13`): crouch wind-up, leap,
+///   mid slash, second crouch+leap pass, finale. Rows at rest:
+///   `0x0A` -> crouch (10), `0x0B` -> leap (11); the caves swap `0x0A`
+///   to 12/back-to-10 and `0x0B` to 13 for the finale (reset by the s2
+///   cave next cast).
+/// * Lu (module 960, walk `10,14,12,13,15`): raise, charge, channel,
+///   strike, closing flourish. Rows at rest: `0x0A` -> raise (10),
+///   `0x0B` -> flourish (15, the burst stage); the caves walk `0x0A`
+///   through 14/12/13. The strike (13) carries the
+///   [`enemy_anim::PAYOFF_FLOOR_FRAMES`] hard floor: module 0960's
+///   damage tick holds until the playing clip's cursor reaches keyframe
+///   22, and under the un-folded walk that tick rides the strike stage.
+/// * Che (module 959): the retail walk IS two stages - chain == fold.
+fn staged_chain_full(sibling: Sibling) -> StagedChain {
+    use legaia_asset::party_swap::enemy_anim::{PAYOFF_FLOOR_FRAMES, RETAIL_STAGED_FLOOR as RF};
     match sibling {
-        Sibling::Gi => [10, 11],
-        Sibling::Che => [10, 11],
-        Sibling::Lu => [14, 13],
+        Sibling::Gi => StagedChain {
+            clips: &[10, 11, 12, 13],
+            floors: &[RF, RF, RF, RF],
+            row_ids: &[0x0A, 0x0B, 0x0A, 0x0B],
+            binding: &[(0x0A, 0), (0x0B, 1)],
+        },
+        Sibling::Che => StagedChain {
+            clips: &[10, 11],
+            floors: &[RF, RF],
+            row_ids: &[0x0A, 0x0B],
+            binding: &[(0x0A, 0), (0x0B, 1)],
+        },
+        Sibling::Lu => StagedChain {
+            clips: &[10, 14, 12, 13, 15],
+            floors: &[RF, RF, RF, PAYOFF_FLOOR_FRAMES, RF],
+            row_ids: &[0x0A, 0x0A, 0x0A, 0x0A, 0x0B],
+            binding: &[(0x0A, 0), (0x0B, 4)],
+        },
     }
 }
 
-/// Per-row keyframe floors for [`staged_row_clips`]. Module 0960's
-/// damage tick holds until the playing clip's cursor reaches keyframe 22
-/// (the measured `0x160`-sixteenths gate), and under the folded stage
-/// walk that tick rides the wind-up row - so Lu's row `0x0A` must carry
-/// at least [`enemy_anim::PAYOFF_FLOOR_FRAMES`] keyframes or the cast
-/// stalls. 958/959 gate on their own phase clocks (958's `slti` sites
-/// are progress clamps, not gates); their rows keep the soft retail
-/// floor.
-fn staged_row_floors(sibling: Sibling) -> [usize; 2] {
-    use legaia_asset::party_swap::enemy_anim;
+/// The FOLDED two-clip fallback (the pre-cave shape): the module's
+/// staged walk stays folded onto rows `0x0A`/`0x0B`
+/// (`MODULE_95x_STAGE_REMAP_EDITS`), so a sibling with a longer retail
+/// chain contributes its first stage and its payoff - Gi the crouch
+/// wind-up + leap, Lu the charge + strike (the fold's damage build-up
+/// rides the restaged wind-up row, hence Lu's
+/// [`enemy_anim::PAYOFF_FLOOR_FRAMES`] floor on the charge).
+fn staged_chain_folded(sibling: Sibling) -> StagedChain {
+    use legaia_asset::party_swap::enemy_anim::{PAYOFF_FLOOR_FRAMES, RETAIL_STAGED_FLOOR as RF};
     match sibling {
-        Sibling::Lu => [
-            enemy_anim::PAYOFF_FLOOR_FRAMES,
-            enemy_anim::RETAIL_STAGED_FLOOR,
-        ],
-        _ => [enemy_anim::RETAIL_STAGED_FLOOR; 2],
+        Sibling::Gi | Sibling::Che => StagedChain {
+            clips: &[10, 11],
+            floors: &[RF, RF],
+            row_ids: &[0x0A, 0x0B],
+            binding: &[(0x0A, 0), (0x0B, 1)],
+        },
+        Sibling::Lu => StagedChain {
+            clips: &[14, 13],
+            floors: &[PAYOFF_FLOOR_FRAMES, RF],
+            row_ids: &[0x0A, 0x0B],
+            binding: &[(0x0A, 0), (0x0B, 1)],
+        },
     }
 }
 
 /// PROT entry of Terra's player battle file (`data\battle\PLAYER4`).
 const TERRA_PLAYER_ENTRY: usize = 866;
+
+/// What [`author_staged_cast_rows`] landed: the notes, plus the authored
+/// entries' decoded-image offsets for each module that hosts a chain
+/// LONGER than the folded pair (what the module-side stage caves need).
+/// `None` = that sibling shipped the folded two-row shape.
+struct AuthoredCastRows {
+    notes: Vec<String>,
+    /// Gi / module 958: `[crouch, leap, slash, finale]` offsets.
+    gi_unfold: Option<Vec<usize>>,
+    /// Lu / module 960: `[raise, charge, channel, strike, flourish]`.
+    lu_unfold: Option<Vec<usize>>,
+}
 
 /// Author the signature caster rows for every routed slot, and re-home
 /// the Block reaction across every player file.
@@ -1556,8 +1654,9 @@ const TERRA_PLAYER_ENTRY: usize = 866;
 /// the first byte is written, so a failure leaves the disc untouched):
 ///
 /// 1. Each mapped slot's record[0] gets real staged rows: the sibling's
-///    wind-up on row `0x0A` and payoff on row `0x0B`
-///    ([`staged_row_clips`]), hosted below the loader's sub-record
+///    FULL retail chain when the LZS budget takes it, the folded
+///    wind-up + payoff pair otherwise ([`staged_chain_full`] /
+///    [`staged_chain_folded`]), hosted below the loader's sub-record
 ///    scratch ([`party_swap::cast_stage::build_staged_cast_rows`]), with
 ///    the retail Block entry re-homed byte-unmoved onto placeholder row
 ///    `0x06`.
@@ -1571,7 +1670,7 @@ fn author_staged_cast_rows(
     mapping: &PartyMapping,
     retail_players: &[Vec<u8>],
     archive: &[u8],
-) -> Result<Vec<String>> {
+) -> Result<AuthoredCastRows> {
     use legaia_asset::battle_char_assembly;
     use party_swap::cast_stage;
 
@@ -1611,21 +1710,26 @@ fn author_staged_cast_rows(
     let mut notes: Vec<String> = Vec::new();
     let mut row_hosts: Vec<usize> = Vec::new();
 
+    let mut unfold: std::collections::HashMap<u8, Vec<usize>> = std::collections::HashMap::new();
     for (host_entry, rig, slot, who, sibling) in mapping.pairs() {
         let source_id = sibling.monster_id();
-        let chain_entries = staged_row_clips(sibling);
         let clips = monster_archive::animations(archive, source_id)
             .with_context(|| format!("read monster {source_id} animations"))?
             .unwrap_or_default();
-        let chain: Vec<&monster_archive::MonsterAnimation> =
-            chain_entries.iter().filter_map(|&i| clips.get(i)).collect();
-        if chain.len() != chain_entries.len() {
-            bail!(
-                "monster {source_id} carries {} of the {} staged clips",
-                chain.len(),
-                chain_entries.len()
-            );
-        }
+        let full = staged_chain_full(sibling);
+        let folded = staged_chain_folded(sibling);
+        let pick = |spec: &StagedChain| -> Result<Vec<&monster_archive::MonsterAnimation>> {
+            let picked: Vec<&monster_archive::MonsterAnimation> =
+                spec.clips.iter().filter_map(|&i| clips.get(i)).collect();
+            if picked.len() != spec.clips.len() {
+                bail!(
+                    "monster {source_id} carries {} of the {} staged clips",
+                    picked.len(),
+                    spec.clips.len()
+                );
+            }
+            Ok(picked)
+        };
 
         // Reclaim the descriptor-table slack up front (free compressed-
         // stream footprint, transparent to the loader - see
@@ -1656,7 +1760,38 @@ fn author_staged_cast_rows(
             .ok_or_else(|| anyhow::anyhow!("{who}'s record0 LZS region not found"))?;
         match cast_stage::staged_state(&decoded_live, clut_a_live)? {
             cast_stage::StagedState::Applied => {
-                notes.push(format!("cast route: {who} caster rows already present"))
+                // Recover the authored layout so the module-side caves can
+                // re-derive their offsets on an idempotent re-run. A file
+                // authored with neither the full nor the folded chain is
+                // an older build's layout - only a clean image re-patches.
+                match cast_stage::recover_entry_offsets(
+                    &decoded_live,
+                    clut_a_live,
+                    full.clips.len(),
+                ) {
+                    Ok(offs) => {
+                        unfold.insert(sibling.monster_id() as u8, offs);
+                        notes.push(format!(
+                            "cast route: {who} caster rows already present (full chain)"
+                        ));
+                    }
+                    Err(_) => {
+                        cast_stage::recover_entry_offsets(
+                            &decoded_live,
+                            clut_a_live,
+                            folded.clips.len(),
+                        )
+                        .with_context(|| {
+                            format!(
+                                "{who}'s staged rows match neither the full nor the folded \
+                                 chain; patch a clean retail image instead"
+                            )
+                        })?;
+                        notes.push(format!(
+                            "cast route: {who} caster rows already present (folded chain)"
+                        ));
+                    }
+                }
             }
             cast_stage::StagedState::Stale => bail!(
                 "{who}'s player file carries the superseded payload-reuse staged-row \
@@ -1664,30 +1799,57 @@ fn author_staged_cast_rows(
                  image instead"
             ),
             cast_stage::StagedState::Absent => {
-                let mut packed: Option<Vec<u8>> = None;
-                let built = cast_stage::build_staged_cast_rows(
-                    &live,
-                    &retail_players[slot],
-                    rig,
-                    archive,
-                    source_id,
-                    &chain,
-                    staged_row_floors(sibling),
-                    |decoded_new| {
-                        let mut c = legaia_lzs::compress(decoded_new);
-                        if c.len() > region.avail {
-                            c = legaia_lzs::compress_optimal(decoded_new);
+                let build = |spec: &StagedChain| -> Result<(cast_stage::StagedCastRows, Vec<u8>)> {
+                    let chain = pick(spec)?;
+                    let mut packed: Option<Vec<u8>> = None;
+                    let built = cast_stage::build_staged_cast_rows(
+                        &live,
+                        &retail_players[slot],
+                        rig,
+                        archive,
+                        source_id,
+                        &chain,
+                        spec.floors,
+                        spec.row_ids,
+                        spec.binding,
+                        |decoded_new| {
+                            let mut c = legaia_lzs::compress(decoded_new);
+                            if c.len() > region.avail {
+                                c = legaia_lzs::compress_optimal(decoded_new);
+                            }
+                            if c.len() > region.avail {
+                                return Ok(false);
+                            }
+                            packed = Some(c);
+                            Ok(true)
+                        },
+                    )?;
+                    let packed =
+                        packed.ok_or_else(|| anyhow::anyhow!("fits oracle accepted no stream"))?;
+                    Ok((built, packed))
+                };
+                // The full retail chain first; the folded two-clip shape
+                // is the budget fallback (and identical for Che).
+                let (built, packed, is_full) = match build(&full) {
+                    Ok((b, p)) => (b, p, true),
+                    Err(full_err) => {
+                        if full.clips.len() == folded.clips.len() {
+                            return Err(
+                                full_err.context(format!("author {who}'s staged cast rows"))
+                            );
                         }
-                        if c.len() > region.avail {
-                            return Ok(false);
-                        }
-                        packed = Some(c);
-                        Ok(true)
-                    },
-                )
-                .with_context(|| format!("author {who}'s staged cast rows"))?;
-                let packed =
-                    packed.ok_or_else(|| anyhow::anyhow!("fits oracle accepted no stream"))?;
+                        notes.push(format!(
+                            "cast route: {who} full chain does not fit ({full_err:#}); \
+                             folded two-clip chain kept"
+                        ));
+                        let (b, p) = build(&folded)
+                            .with_context(|| format!("author {who}'s staged cast rows"))?;
+                        (b, p, false)
+                    }
+                };
+                if is_full && full.clips.len() > folded.clips.len() {
+                    unfold.insert(sibling.monster_id() as u8, built.entry_offsets.clone());
+                }
                 let (ca, cb, bud) = built.header;
                 let mut hdr = Vec::with_capacity(12);
                 hdr.extend_from_slice(&ca.to_le_bytes());
@@ -1697,16 +1859,19 @@ fn author_staged_cast_rows(
                 // stream at header +0x10.
                 commits.push((host_entry, region.lzs_off - 0x10 + 4, hdr));
                 commits.push((host_entry, region.lzs_off, packed));
+                let stages: Vec<String> = built
+                    .frames
+                    .iter()
+                    .zip(&built.source_frames)
+                    .zip(&built.rates)
+                    .map(|((f, sf), r)| format!("{f}f (of {sf}) rate {r}"))
+                    .collect();
                 notes.push(format!(
-                    "cast route: {who} caster rows inserted (+{:#x} decoded bytes) - \
-                     wind-up {}f (of {}) rate {}, payoff {}f (of {}) rate {}",
+                    "cast route: {who} caster rows inserted (+{:#x} decoded bytes, {} stage \
+                     clips) - {}",
                     built.delta,
-                    built.frames[0],
-                    built.source_frames[0],
-                    built.rates[0],
-                    built.frames[1],
-                    built.source_frames[1],
-                    built.rates[1],
+                    built.frames.len(),
+                    stages.join(", "),
                 ));
             }
         }
@@ -1761,7 +1926,11 @@ fn author_staged_cast_rows(
         .context("re-home the party Block reaction")?;
 
     notes.push("cast route: Block re-homed to row 0x06 on all four files".to_string());
-    Ok(notes)
+    Ok(AuthoredCastRows {
+        notes,
+        gi_unfold: unfold.remove(&(Sibling::Gi.monster_id() as u8)),
+        lu_unfold: unfold.remove(&(Sibling::Lu.monster_id() as u8)),
+    })
 }
 
 /// The fanfare row the slot's host art fires through. The cue is a coin

@@ -170,6 +170,11 @@ pub(crate) enum Cmd {
         /// Path to the retail baseline disc image (`.bin` / `.cue`).
         #[arg(long)]
         baseline: PathBuf,
+        /// Accept a kept welded weapon fist (a `--delilas-che-hammer`
+        /// comparison build): the hand-radius battery reports the welded
+        /// weapon as informational instead of a FAIL.
+        #[arg(long)]
+        allow_kept_hammer: bool,
     },
     /// Read-only: emit RAM pokes (`0xADDR:0xWORD` lines) for every SCUS word
     /// where a patched disc differs from a baseline disc. A save state carries
@@ -834,6 +839,13 @@ pub(crate) struct RandomizeArgs {
     /// `--delilas-arts-voice`.
     #[arg(long, value_name = "V,N,G", value_parser = parse_delilas_party)]
     pub(crate) delilas_party: Option<legaia_patcher::delilas_party::PartyMapping>,
+    /// With `--delilas-party`: keep Che's welded giant hammer on his
+    /// swapped mesh instead of replacing it with a mirrored fist and
+    /// fusing the host's own weapon into the hand. Comparison build:
+    /// clips that assume a hand-sized part swing the hammer wide, and
+    /// Che fights with the hammer regardless of his equipped weapon.
+    #[arg(long)]
+    pub(crate) delilas_che_hammer: bool,
     /// With `--delilas-party`: what the Tactical Arts shout banks
     /// (XA2/XA4/XA6) carry. `adjusted` (default) re-voices the retail
     /// hero shouts toward each mapped sibling with the tuned
