@@ -314,7 +314,12 @@ loop-hold counter (`actor +0x176`) and `+0x85`/`+0x86` bound a loop window
 BEFORE the natural-end test, so a windowed clip parks or replays inside its
 window instead of reaching the re-commit - the Delilas cast clips lean on
 this through their long module stage dwells, reader
-`legaia_asset::monster_archive::animation_loop_windows`). Entry `+0x87` is
+`legaia_asset::monster_archive::animation_loop_windows`). The seed is a
+**finite hold budget**, and a module can end a park early by clearing the
+actor's `+0x176`/`+0x21B` pair: module 0960 releases Lu's strike from its
+authored `[15, 15]` park this way (file `+0x1638`), letting the cursor run
+frames 15..22 so the damage tick's `>= 0x160` test fires a fixed 28 ticks
+after the release - the park is timing choreography, not a terminal hold. Entry `+0x87` is
 **not a sound cue**: a non-zero value is passed to `FUN_8004E13C`, the
 solo/freeze dispatcher - it writes battle ctx `+0x243` and raises the
 other actors' pause flag `+0x21C` (the "everyone freezes during a

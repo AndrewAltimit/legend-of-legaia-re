@@ -211,10 +211,33 @@ pub fn record0_clut_offsets(entry: &[u8]) -> Result<(usize, usize)> {
 /// the playing clip's cursor reaches keyframe 22
 /// ([`enemy_anim::PAYOFF_FLOOR_FRAMES`]), so the row it rides must
 /// carry at least that many keyframes or the cast stalls.
-fn stage_ladder(clip: &MonsterAnimation, floor: usize) -> Vec<(usize, usize, u8)> {
-    let ticks = clip.frame_count * 8 / clip.rate.max(1) as usize;
-    let f = (ticks / 8).max(1).max(floor).min(u8::MAX as usize);
-    let rate = winpose::retimed_rate(f, clip.frame_count, clip.rate.max(1));
+///
+/// `identity` pins the hosted clip to the SOURCE's exact frame count
+/// and rate byte instead of the rate-1 re-timing. Duration-true rate-1
+/// hosting preserves wall time but HALVES the cursor's climb per tick
+/// (the anim cursor advances `2 * rate` sixteenths a tick), which
+/// desynchronizes every module arm that tests the cursor against an
+/// absolute threshold: module 0960 confirms its mp5 phase at cursor
+/// `0x90` (strike frame 9 - 36 ticks at the source's rate 2, 72 at
+/// rate 1) and fires its damage at cursor `0x160` (frame 22, reached a
+/// fixed 28 ticks after the module's park release at the source
+/// timing). A cursor-gated stage must therefore be hosted identity so
+/// its park window, its release, and both thresholds land on retail's
+/// tick schedule; the hold rungs still apply (they duplicate pose
+/// content, never frames or rate). Falls back to the re-timing ladder
+/// if the source cannot satisfy `floor` on its own frames.
+fn stage_ladder(clip: &MonsterAnimation, floor: usize, identity: bool) -> Vec<(usize, usize, u8)> {
+    let src_frames = clip.frame_count.max(1);
+    let (f, rate) = if identity && src_frames >= floor.min(u8::MAX as usize) {
+        (src_frames.min(u8::MAX as usize), clip.rate.max(1))
+    } else {
+        let ticks = clip.frame_count * 8 / clip.rate.max(1) as usize;
+        let f = (ticks / 8).max(1).max(floor).min(u8::MAX as usize);
+        (
+            f,
+            winpose::retimed_rate(f, clip.frame_count, clip.rate.max(1)),
+        )
+    };
     let mut out = Vec::new();
     for hold in [1usize, 2, 4] {
         if out.last() != Some(&(f, hold, rate)) && f.div_ceil(hold) >= 2 {
@@ -379,10 +402,14 @@ pub fn push_up_desc_table(entry: &[u8]) -> Result<Option<FileWrites>> {
 /// * `floors` - per-clip hard keyframe minimum (one per chain entry;
 ///   see [`stage_ladder`]).
 /// * `windows` - per-clip SOURCE loop window to rescale into the hosted
-///   entry head (`None` = author no window; a clip whose stage rides a
-///   cursor gate - Lu's strike, whose damage tick waits for keyframe 22 -
-///   must NOT park its cursor inside a window, so its slot passes
-///   `None` even though the source authors one).
+///   entry head (`None` = author no window).
+/// * `identity` - per-clip: host at the SOURCE's exact frames + rate
+///   instead of the rate-1 re-timing (see [`stage_ladder`]). Required
+///   for a stage a module cursor gate rides - Lu's strike, whose mp5
+///   confirm (cursor `0x90`) and damage tick (cursor `0x160`, 28 ticks
+///   after the module releases the `[15, 15]` park) are absolute-cursor
+///   tests only the source's own frame/rate schedule satisfies on
+///   retail's timing.
 /// * `row_ids` - the id/tag byte each entry is authored with: the table
 ///   row the entry is reached through (`0x0A` for the variable row, the
 ///   static payoff row's id for the entry bound to it).
@@ -405,6 +432,7 @@ pub fn build_staged_cast_rows(
     chain: &[&MonsterAnimation],
     floors: &[usize],
     windows: &[Option<crate::monster_archive::ActionLoopWindow>],
+    identity: &[bool],
     row_ids: &[u8],
     binding: &[(usize, usize)],
     natural_wrist_hand: Option<usize>,
@@ -414,12 +442,15 @@ pub fn build_staged_cast_rows(
         || chain.len() != floors.len()
         || chain.len() != row_ids.len()
         || chain.len() != windows.len()
+        || chain.len() != identity.len()
     {
         bail!(
-            "staged chain shape mismatch: {} clips / {} floors / {} windows / {} row ids",
+            "staged chain shape mismatch: {} clips / {} floors / {} windows / {} identity / \
+             {} row ids",
             chain.len(),
             floors.len(),
             windows.len(),
+            identity.len(),
             row_ids.len()
         );
     }
@@ -511,7 +542,8 @@ pub fn build_staged_cast_rows(
     let ladders: Vec<Vec<(usize, usize, u8)>> = chain
         .iter()
         .zip(floors)
-        .map(|(clip, &floor)| stage_ladder(clip, floor))
+        .zip(identity)
+        .map(|((clip, &floor), &ident)| stage_ladder(clip, floor, ident))
         .collect();
     let max_rungs = ladders.iter().map(Vec::len).max().unwrap_or(1);
     for rung in 0..max_rungs {
@@ -666,7 +698,7 @@ mod tests {
     #[test]
     fn every_rung_is_duration_exact() {
         // Che's staged clips: 50 frames at rate 2 = 200 ticks.
-        let l = stage_ladder(&clip(50, 2), 0);
+        let l = stage_ladder(&clip(50, 2), 0, false);
         assert_eq!(l[0], (25, 1, 1), "200 ticks = 25 frames at rate 1");
         for &(f, hold, r) in &l {
             assert_eq!(f, 25, "a rung changed the frame count");
@@ -681,7 +713,7 @@ mod tests {
     /// poses are dropped.
     #[test]
     fn ladder_respects_short_sources() {
-        let l = stage_ladder(&clip(8, 1), 0);
+        let l = stage_ladder(&clip(8, 1), 0, false);
         assert!(l.iter().all(|&(f, _, _)| f == 8));
         assert!(l.iter().all(|&(f, hold, _)| f.div_ceil(hold) >= 2));
     }
@@ -691,10 +723,30 @@ mod tests {
     #[test]
     fn ladder_honours_a_hard_floor() {
         for src in [clip(8, 1), clip(50, 2), clip(30, 4)] {
-            for &(f, _, r) in &stage_ladder(&src, 23) {
+            for &(f, _, r) in &stage_ladder(&src, 23, false) {
                 assert!(f >= 23, "rung {f}f under the hard floor");
                 assert!(r >= 1);
             }
+        }
+    }
+
+    /// Identity hosting keeps the SOURCE's exact frames and rate on
+    /// every rung (a cursor-gated stage must reproduce retail's cursor
+    /// schedule tick for tick), while the hold ladder still descends.
+    #[test]
+    fn identity_hosting_keeps_source_frames_and_rate() {
+        // Lu's strike: 39 frames at rate 2, park window [15, 15].
+        let l = stage_ladder(&clip(39, 2), 23, true);
+        assert!(!l.is_empty());
+        for &(f, hold, r) in &l {
+            assert_eq!((f, r), (39, 2), "identity rung re-timed the source");
+            assert!(f.div_ceil(hold) >= 2);
+        }
+        assert_eq!(l.len(), 3, "holds 1/2/4 all viable at 39 frames");
+        // A source under the floor cannot satisfy the gate on its own
+        // frames - identity falls back to the stretch ladder.
+        for &(f, _, _) in &stage_ladder(&clip(8, 1), 23, true) {
+            assert!(f >= 23, "identity fallback ignored the floor");
         }
     }
 }

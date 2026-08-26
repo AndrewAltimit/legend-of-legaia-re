@@ -2374,9 +2374,18 @@ cast clips are authored to park or cycle inside their windows through
 each stage's dwell (Gi's crouch holds `[9,10]`, his finale parks on
 its last frame; Lu's charge parks, her flourish loops its tail sway),
 and a zeroed window is what made the hosted stages replay whole clips.
-The one exception is Lu's strike, whose stage carries the
-damage-cursor gate below - a hold window before keyframe 22 would
-stall the payoff, so that slot ships windowless. The caves live in three pools that
+Lu's strike goes one step further and is hosted **identity** - the
+source's own 39 frames at rate 2 with its authored `[15, 15]` park
+intact - because module 0960 tests the strike clip's cursor against
+two ABSOLUTE thresholds: the phase-5 confirm waits for cursor `0x90`
+(strike frame 9), and the damage tick waits for cursor `0x160`
+(frame 22) a fixed 28 ticks after the module itself RELEASES the park
+(file `+0x1638` clears the caster's `+0x176`/`+0x21B` hold budget -
+the park is choreography, not a stall hazard). The anim cursor climbs
+`2 * rate` sixteenths a tick, so the duration-true rate-1 re-timing
+halves the climb: the confirm lands 36 ticks late, the un-parked clip
+replays, and the burst decouples from the release - audible as the
+strike's sound beats drifting off the motion. The caves live in three pools that
 are free exactly when the route runs: the SCUS injection-gap tail
 behind the queue hook, shiny-seru's read-watch-verified `ARENA2` +
 `SLOT6` pockets (option-exclusive features), and PROT 958's own dead
@@ -2393,8 +2402,11 @@ are nop'd (an arbitrary victim's record `+0x80` word is not a vetted
 pointer). One data constraint crosses the module edits: 960's damage
 tick holds until the playing clip's cursor reaches keyframe 22, and
 that tick rides the strike stage (the wind-up row under the folded
-fallback) - the clip it binds is stretch-floored at 23 keyframes,
-player and mirrored-block alike. Module anatomy (image shapes, phase
+fallback) - under the full chain the strike hosts identity (39f rate
+2, park window kept - the module releases it); under the fold, where
+the gate rides a different clip's restages, the bound clip is
+stretch-floored at 23 keyframes and ships windowless, player and
+mirrored-block alike. Module anatomy (image shapes, phase
 machine, staging ABI, the seat-0 damage hardcode):
 [cast-module.md](../subsystems/cast-module.md). The hook stub lives in
 the SCUS injection gap, so the route composes with neither

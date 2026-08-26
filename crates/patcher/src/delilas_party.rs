@@ -1575,11 +1575,16 @@ struct StagedChain {
     /// Per-clip hard keyframe floor (`cast_stage::stage_ladder`).
     floors: &'static [usize],
     /// Per-clip: carry the SOURCE entry's authored loop window across
-    /// (`cast_stage::build_entry` rescales it). `false` only where a
-    /// cursor gate rides the stage - Lu's strike, whose damage tick
-    /// waits for keyframe 22 and must not find the cursor parked in a
-    /// hold window before it.
+    /// (`cast_stage::build_entry` rescales it).
     windows: &'static [bool],
+    /// Per-clip: host at the SOURCE's exact frames + rate instead of
+    /// the duration-true rate-1 re-timing
+    /// (`cast_stage::stage_ladder`). Required where a module cursor
+    /// gate rides the stage - the anim cursor climbs `2 * rate`
+    /// sixteenths a tick, so re-timing a gated clip to rate 1 halves
+    /// the climb and slides every absolute-cursor test off retail's
+    /// tick schedule.
+    identity: &'static [bool],
     /// Per-clip id/tag byte = the table row the clip is reached through.
     row_ids: &'static [u8],
     /// At-rest head-table bindings `(row, chain index)`.
@@ -1598,10 +1603,12 @@ struct StagedChain {
 /// * Lu (module 960, walk `10,14,12,13,15`): raise, charge, channel,
 ///   strike, closing flourish. Rows at rest: `0x0A` -> raise (10),
 ///   `0x0B` -> flourish (15, the burst stage); the caves walk `0x0A`
-///   through 14/12/13. The strike (13) carries the
-///   [`enemy_anim::PAYOFF_FLOOR_FRAMES`] hard floor: module 0960's
-///   damage tick holds until the playing clip's cursor reaches keyframe
-///   22, and under the un-folded walk that tick rides the strike stage.
+///   through 14/12/13. The strike (13) hosts IDENTITY: module 0960's
+///   mp5 confirm (cursor `0x90`) and damage tick (cursor `0x160`, 28
+///   ticks after the module releases the authored `[15, 15]` park at
+///   file `+0x1638`) both ride the strike stage as absolute-cursor
+///   tests, so the hosted clip must keep the source's own 39-frame
+///   rate-2 schedule and its park window.
 /// * Che (module 959): the retail walk IS two stages - chain == fold.
 fn staged_chain_full(sibling: Sibling) -> StagedChain {
     use legaia_asset::party_swap::enemy_anim::{PAYOFF_FLOOR_FRAMES, RETAIL_STAGED_FLOOR as RF};
@@ -1613,6 +1620,7 @@ fn staged_chain_full(sibling: Sibling) -> StagedChain {
             // the slash authors none (the retail flurry replays), the
             // finale parks on its last frame.
             windows: &[true, true, true, true],
+            identity: &[false, false, false, false],
             row_ids: &[0x0A, 0x0B, 0x0A, 0x0B],
             binding: &[(0x0A, 0), (0x0B, 1)],
         },
@@ -1622,17 +1630,27 @@ fn staged_chain_full(sibling: Sibling) -> StagedChain {
             // Che's lift/smash author no windows - carrying them is a
             // no-op, kept uniform.
             windows: &[true, true],
+            identity: &[false, false],
             row_ids: &[0x0A, 0x0B],
             binding: &[(0x0A, 0), (0x0B, 1)],
         },
         Sibling::Lu => StagedChain {
             clips: &[10, 14, 12, 13, 15],
             floors: &[RF, RF, RF, PAYOFF_FLOOR_FRAMES, RF],
-            // The strike (13) authors [15, 15] in the archive but the
-            // hosted stage's damage tick gates on the cursor reaching
-            // keyframe 22 - a hold window before it would stall the
-            // payoff, so that one slot drops the window.
-            windows: &[true, true, true, false, true],
+            // The strike (13) hosts IDENTITY (39f rate 2) with its
+            // authored [15, 15] park intact: module 0960 confirms mp5
+            // at cursor 0x90 (strike frame 9), RELEASES the park
+            // itself (file +0x1638 clears the caster's +0x176/+0x21B
+            // hold budget) and fires the damage a fixed 28 ticks
+            // later at cursor 0x160 (frame 22) - the burst lands ON
+            // the thrust only when the hosted clip reproduces the
+            // source's cursor schedule tick for tick. The rate-1
+            // re-timing (a windowless 23f host) halved the cursor
+            // climb: mp5 confirmed 36 ticks late, the park never
+            // held, and the burst decoupled from the release - the
+            // audible desync against the module-fired cast bed.
+            windows: &[true, true, true, true, true],
+            identity: &[false, false, false, true, false],
             row_ids: &[0x0A, 0x0A, 0x0A, 0x0A, 0x0B],
             binding: &[(0x0A, 0), (0x0B, 4)],
         },
@@ -1653,6 +1671,7 @@ fn staged_chain_folded(sibling: Sibling) -> StagedChain {
             clips: &[10, 11],
             floors: &[RF, RF],
             windows: &[true, true],
+            identity: &[false, false],
             row_ids: &[0x0A, 0x0B],
             binding: &[(0x0A, 0), (0x0B, 1)],
         },
@@ -1664,6 +1683,7 @@ fn staged_chain_folded(sibling: Sibling) -> StagedChain {
             // keyframe-22 damage gate.
             floors: &[PAYOFF_FLOOR_FRAMES, RF],
             windows: &[false, false],
+            identity: &[false, false],
             row_ids: &[0x0A, 0x0B],
             binding: &[(0x0A, 0), (0x0B, 1)],
         },
@@ -1867,6 +1887,7 @@ fn author_staged_cast_rows(
                         &chain,
                         spec.floors,
                         &windows,
+                        spec.identity,
                         spec.row_ids,
                         spec.binding,
                         party_swap::playerize::kept_welded_hand(

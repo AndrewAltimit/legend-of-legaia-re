@@ -280,13 +280,29 @@ fn staged_cast_rows_carry_ches_clips_and_block_survives() {
             );
             assert!(f >= 1, "PROT {entry} chain entry {i} carries frames");
         }
-        // Lu's strike stage rides module 0960's keyframe-22 damage
-        // cursor gate: it must carry at least 23 keyframes.
+        // Lu's strike stage rides module 0960's two absolute-cursor
+        // gates (mp5 confirm at 0x90, damage at 0x160 fired 28 ticks
+        // after the module releases the [15, 15] park at file +0x1638):
+        // it must be hosted IDENTITY - the source's own 39 frames at
+        // rate 2 with the authored park window - or the burst decouples
+        // from the thrust (the probed audio desync).
         if sibling == Sibling::Lu {
-            let s = offs[3] + bca::PLAYER_ANIM_STREAM_OFFSET;
-            assert!(
-                block[s + 1] as usize >= 23,
-                "Lu's strike stage under the cursor-gate floor"
+            let e = offs[3];
+            let s = e + bca::PLAYER_ANIM_STREAM_OFFSET;
+            assert_eq!(
+                block[s + 1],
+                39,
+                "Lu's strike stage is not identity-hosted (frames)"
+            );
+            assert_eq!(
+                block[e + 0x78],
+                2,
+                "Lu's strike stage is not identity-hosted (rate)"
+            );
+            assert_eq!(
+                &block[e + 0x84..e + 0x87],
+                &[0xFF, 15, 15],
+                "Lu's strike stage dropped the authored park window"
             );
         }
     }
