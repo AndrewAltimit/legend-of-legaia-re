@@ -46,19 +46,17 @@ const UNFOLD_958_STAGE: &[(u64, u32, u32)] = &[
     (0x05B0, 0xA242_01DA, 0x0C01_E2AA), // opener sb -> jal stub (SLOT6)
     (0x08E8, 0xA242_01DA, 0x0C01_E2AD), // s2 sb -> jal stub (SLOT6)
     (0x0C50, 0xA242_01DA, 0x0C07_E2E3), // s3 sb -> jal stub (wipe body)
-    (0x19C8, 0xA242_01DA, 0x0C07_E2E6), // s4 sb -> jal stub (wipe body)
-    (0x1FD8, 0xA242_01DA, 0x0C07_E2E9), // s6 sb -> jal stub (wipe body)
-    // Wipe-body stubs: s3 -> slash (ori t7; j shared_a; nop),
-    // s4 -> crouch, s6 -> finale via shared_b.
-    (0x21B4, 0x3C03_8008, 0x340F_8DA4),
-    (0x21B8, 0x2402_00FE, 0x0801_EBFE),
-    (0x21BC, 0x3C06_8008, 0x0000_0000),
+    (0x19C8, 0xA242_01DA, 0x0C07_E2E5), // s4 sb -> jal stub (wipe body)
+    (0x1FD8, 0xA242_01DA, 0x0C07_E2E7), // s6 sb -> jal stub (wipe body)
+    // Wipe-body stubs, 2-word form (j core; ori t7 in the delay slot):
+    // s3 -> slash / s4 -> crouch via shared_a, s6 -> finale via
+    // shared_b. The body tail is the HP gate (shared list).
+    (0x21B4, 0x3C03_8008, 0x0801_EBFE),
+    (0x21B8, 0x2402_00FE, 0x340F_8DA4),
+    (0x21BC, 0x3C06_8008, 0x0801_EBFE),
     (0x21C0, 0x3C05_8008, 0x340F_76A8),
-    (0x21C4, 0xA062_BD71, 0x0801_EBFE),
-    (0x21C8, 0x90A2_BD60, 0x0000_0000),
-    (0x21CC, 0x2403_0005, 0x340F_9A74),
-    (0x21D0, 0xACC3_BD2C, 0x0801_EC07),
-    (0x21D4, 0x3042_007F, 0x0000_0000),
+    (0x21C4, 0xA062_BD71, 0x0801_EC07),
+    (0x21C8, 0x90A2_BD60, 0x340F_9A74),
 ];
 
 /// The un-fold stage edits for PROT 960: the four staging stores as
@@ -101,6 +99,15 @@ const SHARED_958: &[(u64, u32, u32)] = &[
     (0x1F50, 0x8CA4_9370, 0x8CA4_8BB4), // lw a0 <- cell
     // Dead-victim wipe skip.
     (0x21A4, 0x1040_0003, 0x0000_0000), // beqz -> nop
+    // Dead-victim reaction-row wait gate (the Blazing Slash kill
+    // softlock): HP into dead $t4, wait beq -> the 4-word gate cave in
+    // the wipe-body tail (alive -> retail wait, dead -> convergence).
+    (0x213C, 0x0000_0000, 0x962C_014C), // nop -> lhu t4, 0x14C(s1)
+    (0x2140, 0x1062_0078, 0x1062_0022), // wait beq -> gate at 0x801F8BA4
+    (0x21CC, 0x2403_0005, 0x1580_0055), // gate: bnez t4 -> 0x801F8CFC
+    (0x21D0, 0xACC3_BD2C, 0x0000_0000), // branch delay
+    (0x21D4, 0x3042_007F, 0x0807_E2EE), // dead -> j 0x801F8BB8
+    (0x21D8, 0x0C00_C66A, 0x0000_0000), // j delay slot
 ];
 
 /// The stage-variant-independent PROT 960 edits (fold id literals -

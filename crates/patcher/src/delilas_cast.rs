@@ -589,18 +589,80 @@ const MODULE_958_DAMAGE_EDITS: &[WordEdit] = &[
 /// [`MODULE_959_WIPE_EDIT`]: a dead victim whose char record lacks bit
 /// `0x80` at `+0x6C0` falls into the party-wipe body
 /// (`0x801F8B8C..0x801F8BB4`: `BD71 = 0xFE`, `BD2C = 5`, jingle call) -
-/// correct only while the victim is a hero. Nop the `beqz` and every
-/// dead victim takes the alive path to the convergence at `0x801F8BB8`
-/// (clear `+0x21D` on both actors, phase++); real deaths on either side
-/// are caught by the end-of-action liveness sweep (state `0x5A` - in the
-/// 1v1 duels the sole hero dying still ends the battle through it). The
-/// single inbound branch is this `beqz` (whole-image scan), so the body
-/// becomes dead words - the victim cell lives in its last one.
+/// correct only while the victim is a hero. Nop the `beqz` and a dead
+/// victim whose reaction ENDED takes the alive path to the convergence
+/// at `0x801F8BB8` (clear `+0x21D` on both actors, phase++); real deaths
+/// on either side are caught by the end-of-action liveness sweep (state
+/// `0x5A` - in the 1v1 duels the sole hero dying still ends the battle
+/// through it). The single inbound branch is this `beqz` (whole-image
+/// scan), so the body becomes dead words - the victim cell lives in its
+/// last one. NB this edit alone does NOT unblock a monster killed by the
+/// finale: the arm's earlier reaction-row wait never resolves for a
+/// corpse - [`MODULE_958_WAIT_EDITS`] carries that half.
 const MODULE_958_WIPE_EDIT: WordEdit = WordEdit {
     offset: 0x21A4,
     expect: 0x1040_0003, // beqz v0, 0x801F8B8C (the wipe body)
     replace: m::nop(),
 };
+
+/// PROT 958 finale: the dead-victim reaction-row DEADLOCK (the
+/// user-reported Blazing Slash softlock, savestate-pinned: `mph 0x18`,
+/// victim `HP 0` parked in reaction row `0x03 == +0x1F1` with its clip
+/// long finished, caster parked on row `0x0B` with a full `0xFF` hold
+/// budget and `+0x21D = 0`).
+///
+/// Unique to 958: its phase-`0x18` arm opens with
+/// `beq playing(+0x1D9), reaction(+0x1F1) -> wait` BEFORE the HP fork -
+/// 959's finale forks on HP immediately and 960's waits on a countdown,
+/// which is why only Gi's kill hangs. A HERO victim leaves the reaction
+/// row (the battle SM re-stages a KO row), so retail never blocks; a
+/// MONSTER corpse is re-staged by nothing until the action ends - which
+/// this very wait gates. The module waits on the victim, the victim
+/// waits on the module.
+///
+/// Fix: gate the wait on the victim being alive. The arm's free `nop` at
+/// `+0x213C` loads the victim's HP into the dead `$t4` (last read at
+/// `+0x212C`; the `beq` + its delay slot cover the load delay), the wait
+/// branch retargets into a 4-word cave in the wipe body
+/// ([`GATE_958_OFFSET`] - dead under [`MODULE_958_WIPE_EDIT`], after the
+/// three 2-word stubs), and the cave re-branches: alive -> the retail
+/// wait (`0x801F8CFC`, the no-phase-bump epilogue), dead -> the
+/// convergence at `0x801F8BB8` (clear `+0x21D` on both actors, phase++),
+/// after which the liveness sweep (state `0x5A`) runs the real death.
+/// A live victim's wait is behaviourally retail-identical.
+const MODULE_958_WAIT_EDITS: &[WordEdit] = &[
+    WordEdit {
+        offset: 0x213C,
+        expect: 0x0000_0000,            // free delay-filler nop
+        replace: m::lhu(T4, S1, 0x14C), // victim HP
+    },
+    WordEdit {
+        offset: 0x2140,
+        expect: 0x1062_0078,           // beq v1, v0, 0x801F8CFC (the wait)
+        replace: m::beq(V1, V0, 0x22), // -> the HP gate at 0x801F8BA4
+    },
+    // The gate cave (wipe-body words +0x21CC..+0x21D8).
+    WordEdit {
+        offset: GATE_958_OFFSET,
+        expect: 0x2403_0005,             // dead: li 5
+        replace: m::bne(T4, ZERO, 0x55), // alive -> the wait at 0x801F8CFC
+    },
+    WordEdit {
+        offset: GATE_958_OFFSET + 4,
+        expect: 0xACC3_BD2C, // dead: sw wipe-state
+        replace: m::nop(),   // branch delay
+    },
+    WordEdit {
+        offset: GATE_958_OFFSET + 8,
+        expect: 0x3042_007F,        // dead: andi
+        replace: m::j(0x801F_8BB8), // dead victim -> convergence (phase++)
+    },
+    WordEdit {
+        offset: GATE_958_OFFSET + 12,
+        expect: 0x0C00_C66A, // dead: jal jingle
+        replace: m::nop(),   // j delay slot
+    },
+];
 
 /// PROT 960 (Plasma Strike): the two hardcoded `table[0]` damage/HP
 /// loads (`$s6` holds `0x801D0000` tick-wide). The tick derives the
@@ -769,7 +831,9 @@ const MODULE_960_TEARDOWN_EDITS: &[WordEdit] = &[
 //   check), so the pockets cannot be double-claimed;
 // * PROT 958's own dead party-wipe body (`+0x21B4..+0x21D8`, made
 //   unreachable by [`MODULE_958_WIPE_EDIT`]) hosts three of 958's
-//   stubs; its last word stays the finale victim cell.
+//   stubs (2-word form) + the dead-victim HP gate
+//   ([`MODULE_958_WAIT_EDITS`]); its last word stays the finale
+//   victim cell.
 //
 // An ENEMY cast through a patched module executes the same caves: the
 // staging store is identical (the caster reg holds the enemy actor),
@@ -832,6 +896,13 @@ fn assemble_stage_stub(off: u32, core_va: u32) -> Vec<u32> {
     vec![m::ori(T7, ZERO, off as u16), m::j(core_va), m::nop()]
 }
 
+/// Compact 2-word stub - the `ori` rides the `j` delay slot. Used where
+/// cave space is a word-for-word budget (958's wipe body, whose tail
+/// hosts the dead-victim HP gate).
+fn assemble_stage_stub2(off: u32, core_va: u32) -> Vec<u32> {
+    vec![m::j(core_va), m::ori(T7, ZERO, off as u16)]
+}
+
 /// The fixed cave layout over the three pools. Byte-fit is asserted by
 /// [`stage_cave_layout`]; the unit test pins every VA.
 struct StageCaveLayout {
@@ -851,9 +922,14 @@ struct StageCaveLayout {
     stub_958_s6: u32,
 }
 
-/// PROT 958 file offsets of the three wipe-body stubs (9 of the body's
-/// 10 dead words; `+0x21D8` and the `+0x21DC` victim cell stay).
-const STUB_958_BODY_OFFSETS: [u64; 3] = [0x21B4, 0x21C0, 0x21CC];
+/// PROT 958 file offsets of the three wipe-body stubs. Each stub is the
+/// 2-word form (`j core` with the `ori $t7` in the delay slot), packing
+/// all three into `+0x21B4..+0x21C8` so the body's next four words host
+/// the dead-victim HP gate ([`MODULE_958_WAIT_EDITS`]); the `+0x21DC`
+/// victim cell stays.
+const STUB_958_BODY_OFFSETS: [u64; 3] = [0x21B4, 0x21BC, 0x21C4];
+/// File offset of the 4-word HP gate cave inside the wipe body.
+const GATE_958_OFFSET: u64 = 0x21CC;
 
 fn stage_cave_layout() -> Result<StageCaveLayout> {
     use crate::shiny_seru::{ARENA2_END_VA, ARENA2_VA, SLOT6_END_VA, SLOT6_VA};
@@ -978,38 +1054,39 @@ fn module_958_unfold_edits(l: &StageCaveLayout, offs: &[usize]) -> Result<Vec<Wo
             replace: m::jal(l.stub_958_s6),
         },
     ];
-    // The three wipe-body stubs (s3 -> slash, s4 -> crouch, s6 -> finale).
+    // The three wipe-body stubs (s3 -> slash, s4 -> crouch, s6 -> finale),
+    // 2-word form so the body's tail stays free for the HP gate
+    // ([`MODULE_958_WAIT_EDITS`]).
     let body: [(u64, Vec<u32>); 3] = [
         (
             STUB_958_BODY_OFFSETS[0],
-            assemble_stage_stub(e12, l.shared_958_a),
+            assemble_stage_stub2(e12, l.shared_958_a),
         ),
         (
             STUB_958_BODY_OFFSETS[1],
-            assemble_stage_stub(e10, l.shared_958_a),
+            assemble_stage_stub2(e10, l.shared_958_a),
         ),
         (
             STUB_958_BODY_OFFSETS[2],
-            assemble_stage_stub(e13, l.shared_958_b),
+            assemble_stage_stub2(e13, l.shared_958_b),
         ),
     ];
-    // Retail bytes of the (unreachable) wipe body the stubs overwrite.
-    const BODY_RETAIL: [u32; 9] = [
+    // Retail bytes of the (unreachable) wipe body the stubs overwrite,
+    // indexed from `+0x21B4`.
+    const BODY_RETAIL: [u32; 6] = [
         0x3C03_8008,
-        0x2402_00FE,
-        0x3C06_8008, // +0x21B4..
-        0x3C05_8008,
+        0x2402_00FE, // +0x21B4..
+        0x3C06_8008,
+        0x3C05_8008, // +0x21BC..
         0xA062_BD71,
-        0x90A2_BD60, // +0x21C0..
-        0x2403_0005,
-        0xACC3_BD2C,
-        0x3042_007F, // +0x21CC..
+        0x90A2_BD60, // +0x21C4..
     ];
-    for (i, (base, words)) in body.iter().enumerate() {
+    for (base, words) in body.iter() {
         for (k, &w) in words.iter().enumerate() {
+            let idx = ((base - STUB_958_BODY_OFFSETS[0]) / 4) as usize + k;
             edits.push(WordEdit {
                 offset: base + (k as u64) * 4,
-                expect: BODY_RETAIL[i * 3 + k],
+                expect: BODY_RETAIL[idx],
                 replace: w,
             });
         }
@@ -1144,6 +1221,7 @@ pub fn patch_module_958(p: &mut DiscPatcher, unfold: Option<&[usize]>) -> Result
     };
     edits.extend_from_slice(MODULE_958_DAMAGE_EDITS);
     edits.push(MODULE_958_WIPE_EDIT);
+    edits.extend_from_slice(MODULE_958_WAIT_EDITS);
     apply_word_edits(p, 958, &entry, &edits)
 }
 

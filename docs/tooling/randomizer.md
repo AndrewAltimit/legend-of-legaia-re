@@ -2309,6 +2309,18 @@ over), and a finale teardown that leaves a model-less effect entity in a
 carrier's draw table (its stream words are neutralised at the settle tail -
 the kill-marked corpse otherwise routes the TMD walk's colour read to
 unmapped memory and hard-freezes the exact frame the choreography ends).
+958 alone needs a fifth: its finale arm opens with a reaction-row wait
+(`beq playing(+0x1D9), reaction(+0x1F1)` - before the HP fork, where 959
+forks on HP immediately and 960 waits on a countdown). A hero victim
+leaves the reaction row when the battle SM stages its KO, so retail never
+blocks; a monster corpse is re-staged by nothing until the action ends -
+which that very wait gates - so a kill at Blazing Slash's finale
+deadlocked (savestate-pinned: `mph 0x18`, victim parked in row `== +0x1F1`
+with the clip long finished, caster holding a full `0xFF` park). The fix
+gates the wait on the victim being alive: the arm's free `nop` loads HP
+into a dead register, the wait branch retargets a 4-word cave in the wipe
+body (alive -> the retail wait, dead -> the phase-advance convergence),
+and the end-of-action liveness sweep (state `0x5A`) runs the real death.
 
 The fourth is data, not module code: the module stages the CASTER's two
 clips by raw index (`actor+0x1DA` = `0x0A`, then `0x0B` at the lift
@@ -2389,8 +2401,9 @@ strike's sound beats drifting off the motion. The caves live in three pools that
 are free exactly when the route runs: the SCUS injection-gap tail
 behind the queue hook, shiny-seru's read-watch-verified `ARENA2` +
 `SLOT6` pockets (option-exclusive features), and PROT 958's own dead
-party-wipe body (three of its stubs; the body's last word stays the
-finale victim cell). Two facts shape the per-module damage retargets:
+party-wipe body (three 2-word stubs - the `ori` rides each `j`'s delay
+slot - then the 4-word dead-victim HP gate; the body's last word stays
+the finale victim cell). Two facts shape the per-module damage retargets:
 958 keeps the victim in `$s1` only per-arm (its finale arms burn
 `$s1`-`$s4` as GPU-packet constants, so the first damage arm banks the
 victim pointer in that same wipe-body cell and the finale pairs reload
