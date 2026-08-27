@@ -2321,6 +2321,17 @@ gates the wait on the victim being alive: the arm's free `nop` loads HP
 into a dead register, the wait branch retargets a 4-word cave in the wipe
 body (alive -> the retail wait, dead -> the phase-advance convergence),
 and the end-of-action liveness sweep (state `0x5A`) runs the real death.
+960 needs a sixth, on the audio side: its phase-0 opener fires the 16.9 s
+cast bed through the jingle wrapper `FUN_8004FCC8`, which DROPS a cue
+outright whenever the XA system is busy (`jal FUN_8003DE7C(1)`; no
+deferral queue exists). The enemy-side cast opens with the XA idle, but
+the player-side combo path reaches module open with a voice cue still
+live, so the bed vanished, later audio ran ~8 s behind the choreography,
+and the settle held the caster until it finished (video-measured). The
+fix reroutes the opener's `jal` through a 5-word preempt cave split
+across the SCUS pools that calls the guard-free player `FUN_8003D53C`
+(slot `0x13`, channel `2`, dur `0x3F6`) directly - its own head stops
+the active stream, so the bed starts at cast open on both caster kinds.
 
 The fourth is data, not module code: the module stages the CASTER's two
 clips by raw index (`actor+0x1DA` = `0x0A`, then `0x0B` at the lift

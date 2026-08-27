@@ -890,15 +890,11 @@ fn assemble_stage_cave(slot: u32, table_word: u16, id: u16, actor_reg: u32, off:
     ]
 }
 
-/// Per-site stub (3 words): preload the entry offset (`ori` - offsets
-/// can exceed the `addiu` sign bound) and tail into the shared core.
-fn assemble_stage_stub(off: u32, core_va: u32) -> Vec<u32> {
-    vec![m::ori(T7, ZERO, off as u16), m::j(core_va), m::nop()]
-}
-
-/// Compact 2-word stub - the `ori` rides the `j` delay slot. Used where
-/// cave space is a word-for-word budget (958's wipe body, whose tail
-/// hosts the dead-victim HP gate).
+/// Per-site stub (2 words): tail into the shared core with the entry
+/// offset preloaded in the `j` delay slot (`ori` - offsets can exceed
+/// the `addiu` sign bound). The compact form is what makes room for the
+/// two word-budgeted caves: 958's dead-victim HP gate in its wipe body
+/// and 960's bed-preempt cave in the SCUS pools.
 fn assemble_stage_stub2(off: u32, core_va: u32) -> Vec<u32> {
     vec![m::j(core_va), m::ori(T7, ZERO, off as u16)]
 }
@@ -912,6 +908,8 @@ struct StageCaveLayout {
     stub_960_s3: u32,
     stub_960_s4: u32,
     opener_960: u32,
+    preempt_960_a: u32,
+    preempt_960_b: u32,
     // 958 (slot 1 / Noa file), ARENA2 + SLOT6 + the module wipe body:
     shared_958_a: u32,
     shared_958_b: u32,
@@ -938,15 +936,19 @@ fn stage_cave_layout() -> Result<StageCaveLayout> {
     let hook_len = assemble_hook(SCUS_GAP_VA_LOCAL, &[]).len() as u32;
     let tail = SCUS_GAP_VA_LOCAL + hook_len.div_ceil(4) * 4;
     let l = StageCaveLayout {
-        // Gap tail (16 words): the 9-word 960 core + two of its stubs.
+        // Gap tail (16 words): the 9-word 960 core + two 2-word stubs +
+        // the 3-word half A of the bed-preempt cave.
         shared_960: tail,
         stub_960_s3: tail + 9 * 4,
-        stub_960_s4: tail + 12 * 4,
-        // SLOT6 (17 words): the 8-word 960 opener + three 3-word stubs.
+        stub_960_s4: tail + 11 * 4,
+        preempt_960_a: tail + 13 * 4,
+        // SLOT6 (17 words): the 8-word 960 opener + three 2-word stubs +
+        // the 2-word half B of the bed-preempt cave.
         opener_960: SLOT6_VA,
         stub_958_opener: SLOT6_VA + 8 * 4,
-        stub_958_s2: SLOT6_VA + 11 * 4,
-        stub_960_s2: SLOT6_VA + 14 * 4,
+        stub_958_s2: SLOT6_VA + 10 * 4,
+        stub_960_s2: SLOT6_VA + 12 * 4,
+        preempt_960_b: SLOT6_VA + 14 * 4,
         // ARENA2 (18 words): exactly the two 9-word 958 cores.
         shared_958_a: ARENA2_VA,
         shared_958_b: ARENA2_VA + 9 * 4,
@@ -954,17 +956,29 @@ fn stage_cave_layout() -> Result<StageCaveLayout> {
         stub_958_s4: MODULE_LINK_BASE + STUB_958_BODY_OFFSETS[1] as u32,
         stub_958_s6: MODULE_LINK_BASE + STUB_958_BODY_OFFSETS[2] as u32,
     };
-    if l.stub_960_s4 + 3 * 4 > SCUS_GAP_END_VA_LOCAL {
+    if l.preempt_960_a + 3 * 4 > SCUS_GAP_END_VA_LOCAL {
         bail!("960 stage caves overrun the SCUS gap tail");
     }
     if l.shared_958_b + 9 * 4 > ARENA2_END_VA {
         bail!("958 stage cores overrun ARENA2");
     }
-    if l.stub_960_s2 + 3 * 4 > SLOT6_END_VA {
+    if l.preempt_960_b + 2 * 4 > SLOT6_END_VA {
         bail!("stage caves overrun SLOT6");
     }
     Ok(l)
 }
+
+/// The retail XA cue player `FUN_8003D53C(slot, chan, dur_ticks)` - the
+/// guard-free layer under the jingle wrapper `FUN_8004FCC8`. Its own
+/// head stops whatever stream is active before starting the new one, so
+/// a direct call PREEMPTS instead of dropping.
+const XA_PLAY_VA: u32 = 0x8003_D53C;
+/// Module 960's cast bed as `FUN_8003D53C` arguments: id `0x19A` ->
+/// slot `0x13` (`XA20.XA`), channel `2`, duration `(1689*60+99)/100 =
+/// 0x3F6` ticks (16.9 s) from the fanfare table row.
+const BED_960_SLOT: u16 = 0x13;
+const BED_960_CHAN: u16 = 2;
+const BED_960_DUR: u16 = 0x3F6;
 
 /// Link base of the cast modules (slot-B); 958's wipe-body stubs are
 /// addressed as `MODULE_LINK_BASE + file offset`.
@@ -1103,6 +1117,16 @@ fn module_958_unfold_edits(l: &StageCaveLayout, offs: &[usize]) -> Result<Vec<Wo
 fn module_960_unfold_edits(l: &StageCaveLayout, offs: &[usize]) -> Result<Vec<WordEdit>> {
     check_unfold_offsets(offs, 5, 960)?;
     Ok(vec![
+        // The phase-0 opener's cast-bed fire (`jal FUN_8004FCC8` with
+        // `li a0,0x19A` in the delay slot) reroutes through the
+        // bed-preempt cave - see `install_stage_caves` for why the
+        // guarded jingle wrapper loses the bed on the combo-input path.
+        // The retail delay slot stays; the cave overwrites `$a0`.
+        WordEdit {
+            offset: 0x0C80,
+            expect: 0x0C01_3F32, // jal 0x8004FCC8
+            replace: m::jal(l.preempt_960_a),
+        },
         WordEdit {
             offset: 0x01C0,
             expect: 0xA282_01DA,
@@ -1154,12 +1178,38 @@ pub fn install_stage_caves(
             l.shared_960,
             assemble_stage_core(0, ROW_A_WORD, 0x0A, S2_REG),
         ));
-        pieces.push((l.stub_960_s2, assemble_stage_stub(e14, l.shared_960)));
-        pieces.push((l.stub_960_s3, assemble_stage_stub(e12, l.shared_960)));
-        pieces.push((l.stub_960_s4, assemble_stage_stub(e13, l.shared_960)));
+        pieces.push((l.stub_960_s2, assemble_stage_stub2(e14, l.shared_960)));
+        pieces.push((l.stub_960_s3, assemble_stage_stub2(e12, l.shared_960)));
+        pieces.push((l.stub_960_s4, assemble_stage_stub2(e13, l.shared_960)));
         pieces.push((
             l.opener_960,
             assemble_stage_cave(0, ROW_A_WORD, 0x0A, S4, e10),
+        ));
+        // The bed-preempt cave (split 3 + 2 across the two pools): the
+        // module opener's jingle fire is rerouted here, calling the
+        // guard-free XA player directly with the bed's resolved
+        // (slot, chan, dur). `FUN_8004FCC8` DROPS a cue whenever the XA
+        // system is busy - on the real combo-input path a shout /
+        // fanfare cue is still live at module open, so the 16.9 s bed
+        // silently vanished and whatever fired later played ~8 s late,
+        // with the settle then holding the choreography until it
+        // finished (user-video-measured). The direct call preempts:
+        // `FUN_8003D53C`'s own head stops the active stream, so the bed
+        // starts at cast open exactly as the enemy-side cast does.
+        pieces.push((
+            l.preempt_960_a,
+            vec![
+                m::addiu(A0, ZERO, BED_960_SLOT),
+                m::j(l.preempt_960_b),
+                m::addiu(A1, ZERO, BED_960_CHAN), // delay slot
+            ],
+        ));
+        pieces.push((
+            l.preempt_960_b,
+            vec![
+                m::j(XA_PLAY_VA),
+                m::addiu(A2, ZERO, BED_960_DUR), // delay slot
+            ],
         ));
     }
     if let Some(offs) = offs_958 {
@@ -1173,8 +1223,8 @@ pub fn install_stage_caves(
             l.shared_958_b,
             assemble_stage_core(1, ROW_B_WORD, 0x0B, S2_REG),
         ));
-        pieces.push((l.stub_958_opener, assemble_stage_stub(e10, l.shared_958_a)));
-        pieces.push((l.stub_958_s2, assemble_stage_stub(e11, l.shared_958_b)));
+        pieces.push((l.stub_958_opener, assemble_stage_stub2(e10, l.shared_958_a)));
+        pieces.push((l.stub_958_s2, assemble_stage_stub2(e11, l.shared_958_b)));
     }
     let scus = p.read_named_file(SCUS_NAME).context("read SCUS_942.54")?;
     let mut writes: Vec<(u64, Vec<u8>)> = Vec::new();

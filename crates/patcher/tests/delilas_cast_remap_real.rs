@@ -44,7 +44,7 @@ const UNFOLD_958_STAGE: &[(u64, u32, u32)] = &[
     (0x19C4, 0x2442_FFFE, 0x2402_000A), // addiu v0,v0,-2 -> li v0,0xA
     (0x1FD4, 0x2402_000D, 0x2402_000B), // li v0,0xD -> li v0,0xB
     (0x05B0, 0xA242_01DA, 0x0C01_E2AA), // opener sb -> jal stub (SLOT6)
-    (0x08E8, 0xA242_01DA, 0x0C01_E2AD), // s2 sb -> jal stub (SLOT6)
+    (0x08E8, 0xA242_01DA, 0x0C01_E2AC), // s2 sb -> jal stub (SLOT6)
     (0x0C50, 0xA242_01DA, 0x0C07_E2E3), // s3 sb -> jal stub (wipe body)
     (0x19C8, 0xA242_01DA, 0x0C07_E2E5), // s4 sb -> jal stub (wipe body)
     (0x1FD8, 0xA242_01DA, 0x0C07_E2E7), // s6 sb -> jal stub (wipe body)
@@ -63,10 +63,11 @@ const UNFOLD_958_STAGE: &[(u64, u32, u32)] = &[
 /// `jal`s (the folded id literals stay - they are asserted by the fold
 /// case's shared list).
 const UNFOLD_960_STAGE: &[(u64, u32, u32)] = &[
+    (0x0C80, 0x0C01_3F32, 0x0C01_DE07), // bed jingle -> preempt cave
     (0x01C0, 0xA282_01DA, 0x0C01_E2A2), // opener sb($s4) -> jal cave
-    (0x0D6C, 0xA242_01DA, 0x0C01_E2B0), // charge sb -> jal stub (SLOT6)
+    (0x0D6C, 0xA242_01DA, 0x0C01_E2AE), // charge sb -> jal stub (SLOT6)
     (0x1094, 0xA243_01DA, 0x0C01_DE03), // channel sb($v1) -> jal stub
-    (0x1108, 0xA242_01DA, 0x0C01_DE06), // strike sb -> jal stub
+    (0x1108, 0xA242_01DA, 0x0C01_DE05), // strike sb -> jal stub
 ];
 
 /// The fold-variant staged-walk edits for PROT 958.
@@ -257,9 +258,16 @@ fn stage_caves_land_in_the_scus_pools() {
                 0xA24E_01DA, // sb  t6, 0x1DA(s2)     ; delay slot
             ],
         ),
-        (0x8007780C, &[0x340F_7300, 0x0801_DDFA, 0x0000_0000]), // channel
-        (0x80077818, &[0x340F_7A00, 0x0801_DDFA, 0x0000_0000]), // strike
-        (0x80078AC0, &[0x340F_6AD0, 0x0801_DDFA, 0x0000_0000]), // charge
+        // 2-word stubs: j core with the ori in the delay slot.
+        (0x8007780C, &[0x0801_DDFA, 0x340F_7300]), // channel
+        (0x80077814, &[0x0801_DDFA, 0x340F_7A00]), // strike
+        // Bed-preempt cave half A (gap tail): a0=slot 0x13, a1=chan 2,
+        // tail into half B.
+        (0x8007781C, &[0x2404_0013, 0x0801_E2B0, 0x2405_0002]),
+        (0x80078AB8, &[0x0801_DDFA, 0x340F_6AD0]), // charge
+        // Bed-preempt cave half B (SLOT6): guard-free XA play tail-call,
+        // a2 = dur 0x3F6 (16.9 s).
+        (0x80078AC0, &[0x0800_F54F, 0x2406_03F6]),
         (
             0x80078A88, // 960 opener (caster in $s4), offset inline; no
             // +0x88 write - the chain head is table-bound (loader wrote it)
@@ -305,8 +313,8 @@ fn stage_caves_land_in_the_scus_pools() {
                 0xA24E_01DA,
             ],
         ),
-        (0x80078AA8, &[0x340F_76A8, 0x0801_EBFE, 0x0000_0000]), // opener
-        (0x80078AB4, &[0x340F_7D24, 0x0801_EC07, 0x0000_0000]), // s2 reset
+        (0x80078AA8, &[0x0801_EBFE, 0x340F_76A8]), // opener
+        (0x80078AB0, &[0x0801_EC07, 0x340F_7D24]), // s2 reset
     ];
 
     let mut patcher = DiscPatcher::open(original.clone()).expect("open disc");
