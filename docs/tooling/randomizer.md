@@ -2470,6 +2470,32 @@ the SCUS injection gap, so the route composes with neither
 `--shiny-seru` nor `--show-super-arts`; on a conflict the patch keeps
 the art-side signature and says so in the summary.
 
+The queue hook does not convert whole-queue any more - that discarded
+any arts entered BEFORE the signature combo (somersault then Plasma
+Strike played only Plasma Strike). The rework splits the conversion in
+two, both routines in shiny-seru's `ARENA1` (`0x8007AE00`, free under
+the cast route by the same option-exclusivity, claimed
+free-or-identical like the gap). At assemble time the hook's HIT block
+hands the matched `[0x19|0x1A starter][marker]` pair to the ARENA1
+queue-edit: a **pure** queue (only direction bytes before the starter)
+converts to the cast exactly as before - immediate cast, the approach
+run never fires; a **chained** queue keeps its leading arts and only
+deletes the signature's own windup directions (the run just before the
+starter). The deferred half is a two-word detour at the attack band's
+strike-loop fetch (`FUN_801E295C` state `0x1E`, `lbu v1,0x1df(v0)` at
+`0x801E374C` -> `jal` with the fetch riding the delay slot; no branch
+targets either word, and the displaced `+0x1DC` busy-latch load returns
+in the morph's exit delay slot): when the fetched byte is a starter
+whose next byte is the ACTIVE slot's route marker, the action morphs
+mid-chain - category 2, spell over the consumed queue head,
+`ctx[7] = 0x28` - and the capture-class spell routes `0x28 -> 0x6E`
+into the module without re-reading the mid-queue cursor. A missed
+morph fails soft: the marker plays as an ordinary art row and the
+chain ends normally (probe-measured on a routes-zeroed image). The
+per-slot markers double as the replaced host art's own constant
+(Vahn/Che `0x1C`, Noa `0x1F` = Vulture Blade), so performing that host
+art alone still casts - the intended replacement semantics.
+
 `--delilas-che-hammer` is a visual comparison option on top of the
 swap: Che's welded giant hammer stays on his mesh (instead of the
 mirrored-fist replacement) and the host's weapon fusion is skipped for

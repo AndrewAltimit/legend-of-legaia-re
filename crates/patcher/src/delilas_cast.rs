@@ -59,7 +59,8 @@ use anyhow::{Context, Result, bail};
 
 use crate::disc::DiscPatcher;
 use crate::mips::{
-    self as m, A0, A1, A2, A3, RA, S1, S3, SP, T0, T1, T2, T3, T4, T5, T6, T7, V0, V1, ZERO,
+    self as m, A0, A1, A2, A3, RA, S1, S3, S5, SP, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, V0, V1,
+    ZERO,
 };
 
 /// Battle-action overlay (hosts the queue builder + applier).
@@ -223,7 +224,7 @@ const MODULE_959_TEARDOWN_EDITS: &[WordEdit] = &[
     WordEdit {
         offset: 0x17F8, // 0x801F81D0 (dead: lui v1)
         expect: 0x3C03_8008,
-        replace: m::lw(A0, m::S5, 0x102C), // a0 = cached finale entity
+        replace: m::lw(A0, S5, 0x102C), // a0 = cached finale entity
     },
     WordEdit {
         offset: 0x17FC, // 0x801F81D4 (dead: addiu)
@@ -253,7 +254,7 @@ const MODULE_959_TEARDOWN_EDITS: &[WordEdit] = &[
     WordEdit {
         offset: 0x1810, // 0x801F81E8 (dead: li 5)
         expect: 0x2403_0005,
-        replace: m::sw(ZERO, m::S5, 0x102C), // clear the cache
+        replace: m::sw(ZERO, S5, 0x102C), // clear the cache
     },
     WordEdit {
         offset: 0x1814, // 0x801F81EC (dead: sw wipe-state)
@@ -952,13 +953,13 @@ const ROW_B_WORD: u16 = 0x2C;
 fn assemble_stage_core(slot: u32, table_word: u16, id: u16, actor_reg: u32) -> Vec<u32> {
     let ptr = RECORD0_BASE_TABLE_VA + slot * 4;
     vec![
-        m::lui(m::T8, m::hi(ptr)),
-        m::lw(m::T8, m::T8, m::lo(ptr)),
+        m::lui(T8, m::hi(ptr)),
+        m::lw(T8, T8, m::lo(ptr)),
         m::addiu(m::T6, ZERO, id), // load-delay filler
-        m::addu(m::T9, m::T8, T7),
-        m::addiu(T5, m::T9, 0xAC),
-        m::sw(T5, m::T9, 0x88), // entry stream pointer
-        m::sw(m::T9, m::T8, table_word),
+        m::addu(T9, T8, T7),
+        m::addiu(T5, T9, 0xAC),
+        m::sw(T5, T9, 0x88), // entry stream pointer
+        m::sw(T9, T8, table_word),
         m::jr(RA),
         m::sb(m::T6, actor_reg, 0x1DA), // delay slot
     ]
@@ -971,12 +972,12 @@ fn assemble_stage_core(slot: u32, table_word: u16, id: u16, actor_reg: u32) -> V
 fn assemble_stage_cave(slot: u32, table_word: u16, id: u16, actor_reg: u32, off: u32) -> Vec<u32> {
     let ptr = RECORD0_BASE_TABLE_VA + slot * 4;
     vec![
-        m::lui(m::T8, m::hi(ptr)),
-        m::lw(m::T8, m::T8, m::lo(ptr)),
+        m::lui(T8, m::hi(ptr)),
+        m::lw(T8, T8, m::lo(ptr)),
         m::ori(T7, ZERO, off as u16), // load-delay filler
-        m::addu(m::T9, m::T8, T7),
+        m::addu(T9, T8, T7),
         m::addiu(m::T6, ZERO, id),
-        m::sw(m::T9, m::T8, table_word),
+        m::sw(T9, T8, table_word),
         m::jr(RA),
         m::sb(m::T6, actor_reg, 0x1DA),
     ]
@@ -1455,13 +1456,17 @@ pub fn assemble_hook(stub_va: u32, routes: &[CastRoute]) -> Vec<u8> {
     w.push(0); // beq zero, zero, DONE
     w.push(m::nop());
     // HIT: (t6 sits one past the matched byte - the taken branch's delay
-    // slot advanced it)
+    // slot advanced it). The conversion policy lives in the ARENA1
+    // queue-edit routine ([`assemble_delilas_arena`]): pure input
+    // converts to the cast as before, a chained input keeps its leading
+    // arts and defers the conversion to the strike-loop morph. The
+    // routine jumps back to DONE. Fixed 4-word footprint keeps the stub
+    // size (and the stage-cave tail base) stable.
     let hit = w.len();
-    w.push(m::addiu(T7, ZERO, 2));
-    w.push(m::sb(ZERO, T6, 0xFFFF)); // consume the matched byte (one-shot) -
-    // BEFORE the spell write: a match at +0x1DF itself is the same cell
-    w.push(m::sb(T7, V1, 0x1DE)); // category = Magic
-    w.push(m::sb(T3, V1, 0x1DF)); // spell id
+    w.push(m::j(ARENA1_QEDIT_VA));
+    w.push(m::nop()); // delay
+    w.push(m::nop()); // (unreached - size filler)
+    w.push(m::nop()); // (unreached - size filler)
     // DONE:
     let done = w.len();
     w.push(m::lw(RA, SP, 0x14));
@@ -1492,6 +1497,243 @@ pub fn assemble_hook(stub_va: u32, routes: &[CastRoute]) -> Vec<u8> {
     }
     out.extend_from_slice(&tbl);
     out
+}
+
+/// ARENA1 (`shiny_seru` layout, `0x8007AE00..0x8007AF00`) hosts the two
+/// leading-arts routines. It is certifiably free under the cast route:
+/// every other ARENA1 claimant (`--shiny-seru`, `--show-super-arts`,
+/// `--arts-ap-grant`) is option-exclusive with it, and
+/// [`install_delilas_arena`] still verifies free-or-identical bytes.
+const ARENA1_QEDIT_VA: u32 = crate::shiny_seru::ARENA1_VA;
+/// The strike-loop fetch site in overlay 0898 (`FUN_801E295C` state
+/// `0x1E`, `lbu v1,0x1df(v0)` at `0x801E374C` staging into `+0x1DA`,
+/// cursor `ctx[+0x15]`; see `docs/subsystems/battle-action.md`).
+const STRIKE_FETCH_VA: u32 = 0x801E_374C;
+/// Original words at the fetch site (byte-verified against PROT 0898 at
+/// base `0x801CE818`): the fetch and the busy-latch load it displaces.
+const STRIKE_FETCH_WORD: u32 = 0x9043_01DF; // lbu v1, 0x1DF(v0)
+const STRIKE_LATCH_WORD: u32 = 0x9262_01DC; // lbu v0, 0x1DC(s3)
+
+/// Assemble the ARENA1 image: the queue-edit routine at `+0` (entered
+/// from the stub's HIT block) and the strike-loop morph after it
+/// (entered from the `0x801E374C` detour). `stub_done_va` = the stub's
+/// DONE label; `tbl_va` = the stub's 4-row route table (the morph
+/// re-reads it rather than carrying a copy).
+///
+/// Queue-edit policy at HIT (`t6` = one past the matched marker,
+/// `v1` = actor, `t3` = spell): a marker not preceded by a `0x19`/`0x1A`
+/// starter is left alone; a **pure** queue (only direction bytes before
+/// the starter) converts to the cast exactly as the one-piece hook did
+/// (consume marker, category 2, spell at `+0x1DF`) - the immediate-cast
+/// feel of a bare signature input is unchanged; a **chained** queue
+/// (any leading art) keeps its leading arts: only the signature's own
+/// windup directions (the run immediately before the starter) are
+/// deleted, and the conversion happens at playout when the strike loop
+/// fetches the `[starter][marker]` pair.
+///
+/// Morph (entered with `v1` = fetched byte, `v0` = actor+cursor,
+/// `s3` = actor, `s5` = ctx+0x11; `a0` is LIVE in the caller and never
+/// touched; `t2..t9` are dead across the site - the only t-register in
+/// the state-`0x1E` window, `t2`, is `mflo`-written before its next
+/// read): when the fetched byte is a starter whose next byte is the
+/// active slot's route marker, the action morphs into the cast -
+/// category 2, spell over the (already-consumed) queue head,
+/// `ctx[7] = 0x28` (Magic cast begin; the capture-class spell routes
+/// `0x28 -> 0x6E` to the module, so the mid-queue cursor is never
+/// re-read) - and a neutral stage id 0 returns. Both exits reload the
+/// displaced `+0x1DC` busy-latch byte into `v0` in the return delay
+/// slot for the caller's `ori v0,v0,2`.
+pub fn assemble_delilas_arena(stub_done_va: u32, tbl_va: u32) -> Vec<u8> {
+    let mut w: Vec<u32> = Vec::with_capacity(62);
+    let rel = |from: usize, to: usize| -> i16 { (to as i32 - from as i32 - 1) as i16 };
+
+    // --- Queue-edit routine (from the stub HIT) ---
+    w.push(m::lbu(T7, T6, 0xFFFE)); // starter candidate at marker-1
+    w.push(m::addiu(T4, V1, 0x1DF)); // queue base (load-delay filler)
+    w.push(m::addiu(T8, ZERO, 0x19));
+    let b_s19 = w.len();
+    w.push(0); // beq t7, t8, QSTART
+    w.push(m::addiu(T8, ZERO, 0x1A)); // delay
+    let b_s1a = w.len();
+    w.push(0); // bne t7, t8, QDONE
+    w.push(m::nop());
+    // QSTART: back-scan the direction run before the starter.
+    let qstart = w.len();
+    w.push(m::addiu(T0, T6, 0xFFFE)); // t0 = &starter
+    let qback = w.len();
+    let b_base = w.len();
+    w.push(0); // beq t0, t4, QCLASS (reached queue base)
+    w.push(m::lbu(T7, T0, 0xFFFF)); // delay: byte before the run start
+    w.push(m::nop());
+    w.push(m::sltiu(T9, T7, 0x10));
+    let b_ge10 = w.len();
+    w.push(0); // beq t9, zero, QCLASS (>= 0x10: not a direction)
+    w.push(m::sltiu(T9, T7, 0x0C)); // delay
+    let b_lt0c = w.len();
+    w.push(0); // bne t9, zero, QCLASS (< 0x0C: not a direction)
+    w.push(m::nop());
+    let b_back = w.len();
+    w.push(0); // beq zero, zero, QBACK
+    w.push(m::addiu(T0, T0, 0xFFFF)); // delay: run start -= 1
+    // QCLASS: pure iff the run reaches the queue base.
+    let qclass = w.len();
+    let b_chain = w.len();
+    w.push(0); // bne t0, t4, QCHAIN
+    w.push(m::nop());
+    // PURE: the one-piece hook's conversion, verbatim.
+    w.push(m::addiu(T7, ZERO, 2));
+    w.push(m::sb(ZERO, T6, 0xFFFF)); // consume the matched marker
+    w.push(m::sb(T7, V1, 0x1DE)); // category = Magic
+    let b_pure_done = w.len();
+    w.push(0); // beq zero, zero, QDONE
+    w.push(m::sb(T3, V1, 0x1DF)); // delay: spell id
+    // QCHAIN: delete the windup run - copy from the starter down to the
+    // run start until the write cursor hits base+0x14 (reads past the
+    // window are actor fields, harmless; the round driver's 16-zero
+    // preseed guarantees a terminator inside the copied span).
+    let qchain = w.len();
+    w.push(m::addiu(T8, T6, 0xFFFE)); // src = &starter
+    w.push(m::addiu(T9, T4, 0x14)); // write bound
+    let qcopy = w.len();
+    w.push(m::lbu(T7, T8, 0));
+    w.push(m::addiu(T8, T8, 1));
+    w.push(m::sb(T7, T0, 0));
+    w.push(m::addiu(T0, T0, 1));
+    let b_copy = w.len();
+    w.push(0); // bne t0, t9, QCOPY
+    w.push(m::nop());
+    // QDONE:
+    let qdone = w.len();
+    w.push(m::j(stub_done_va));
+    w.push(m::nop());
+
+    w[b_s19] = m::beq(T7, T8, rel(b_s19, qstart));
+    w[b_s1a] = m::bne(T7, T8, rel(b_s1a, qdone));
+    w[b_base] = m::beq(T0, T4, rel(b_base, qclass));
+    w[b_ge10] = m::beq(T9, ZERO, rel(b_ge10, qclass));
+    w[b_lt0c] = m::bne(T9, ZERO, rel(b_lt0c, qclass));
+    w[b_back] = m::beq(ZERO, ZERO, rel(b_back, qback));
+    w[b_chain] = m::bne(T0, T4, rel(b_chain, qchain));
+    w[b_pure_done] = m::beq(ZERO, ZERO, rel(b_pure_done, qdone));
+    w[b_copy] = m::bne(T0, T9, rel(b_copy, qcopy));
+
+    // --- Strike-loop morph (from the 0x801E374C detour) ---
+    let morph = w.len();
+    w.push(m::addiu(T7, ZERO, 0x19));
+    let b_m19 = w.len();
+    w.push(0); // beq v1, t7, MCHK
+    w.push(m::addiu(T7, ZERO, 0x1A)); // delay
+    let b_m1a = w.len();
+    w.push(0); // bne v1, t7, MNORM
+    w.push(m::nop());
+    // MCHK:
+    let mchk = w.len();
+    w.push(m::lbu(T6, V0, 0x1E0)); // byte after the starter
+    w.push(m::lbu(T5, S5, 0x2)); // active slot = ctx[+0x13]
+    w.push(m::lui(T4, m::hi(tbl_va))); // (load-delay filler for t5)
+    w.push(m::sltiu(T7, T5, 3));
+    let b_mslot = w.len();
+    w.push(0); // beq t7, zero, MNORM
+    w.push(m::sll(T5, T5, 1)); // delay: table row offset
+    w.push(m::addiu(T4, T4, m::lo(tbl_va)));
+    w.push(m::addu(T4, T4, T5));
+    w.push(m::lbu(T3, T4, 0)); // route marker
+    w.push(m::lbu(T2, T4, 1)); // route spell
+    let b_mconst = w.len();
+    w.push(0); // bne t6, t3, MNORM
+    w.push(m::nop());
+    let b_mspell = w.len();
+    w.push(0); // beq t2, zero, MNORM
+    w.push(m::nop());
+    // MORPH: category 2, spell at the queue head, state 0x28.
+    w.push(m::addiu(T7, ZERO, 2));
+    w.push(m::sb(T7, S3, 0x1DE));
+    w.push(m::sb(T2, S3, 0x1DF));
+    w.push(m::addiu(T7, ZERO, 0x28));
+    w.push(m::sb(T7, S5, 0xFFF6)); // ctx[7] = s5 - 0x0A
+    w.push(m::addiu(V1, ZERO, 0)); // neutral stage id
+    // MNORM:
+    let mnorm = w.len();
+    w.push(m::jr(RA));
+    w.push(m::lbu(V0, S3, 0x1DC)); // delay: the displaced latch load
+
+    w[b_m19] = m::beq(V1, T7, rel(b_m19, mchk));
+    w[b_m1a] = m::bne(V1, T7, rel(b_m1a, mnorm));
+    w[b_mslot] = m::beq(T7, ZERO, rel(b_mslot, mnorm));
+    w[b_mconst] = m::bne(T6, T3, rel(b_mconst, mnorm));
+    w[b_mspell] = m::beq(T2, ZERO, rel(b_mspell, mnorm));
+
+    debug_assert_eq!(morph, ARENA1_MORPH_WORD_INDEX, "morph offset moved");
+    let mut out: Vec<u8> = Vec::with_capacity(w.len() * 4);
+    for word in &w {
+        out.extend_from_slice(&word.to_le_bytes());
+    }
+    out
+}
+
+/// Word index of the morph routine inside the arena image - pinned so
+/// the 0898 detour's `jal` target is a compile-time constant.
+const ARENA1_MORPH_WORD_INDEX: usize = 35;
+/// VA of the strike-loop morph inside ARENA1.
+const ARENA1_MORPH_VA: u32 = ARENA1_QEDIT_VA + (ARENA1_MORPH_WORD_INDEX as u32) * 4;
+
+/// The stub's route-table VA and DONE-label VA. Both are functions of
+/// the fixed-shape hook alone (the table is appended after the last
+/// code word; DONE is the epilogue's first word, 4 words from the end).
+fn hook_layout(stub_va: u32) -> (u32, u32) {
+    let bytes = assemble_hook(stub_va, &[]);
+    let code_len = (bytes.len() - 8) as u32; // 8-byte route table appended
+    let tbl_va = stub_va + code_len;
+    let done_va = stub_va + code_len - 4 * 4; // lw ra / addiu sp / jr / nop
+    (tbl_va, done_va)
+}
+
+/// Write the ARENA1 image (queue-edit + strike morph). Free-or-identical
+/// contract like [`install_cast_hook`]: bails when another injected
+/// feature owns the arena.
+pub fn install_delilas_arena(p: &mut DiscPatcher) -> Result<bool> {
+    use crate::shiny_seru::{ARENA1_END_VA, ARENA1_VA};
+    const SCUS_NAME: &str = "SCUS_942.54";
+    let (tbl_va, done_va) = hook_layout(crate::shiny_seru::SCUS_GAP_VA);
+    let bytes = assemble_delilas_arena(done_va, tbl_va);
+    if ARENA1_VA + bytes.len() as u32 > ARENA1_END_VA {
+        bail!("delilas arena does not fit ARENA1 ({} bytes)", bytes.len());
+    }
+    let scus = p.read_named_file(SCUS_NAME).context("read SCUS_942.54")?;
+    let off = legaia_asset::item_names::file_offset_for_va(&scus, ARENA1_VA)
+        .context("resolve ARENA1 file offset")?;
+    let cur = &scus[off..off + bytes.len()];
+    if cur == bytes.as_slice() {
+        return Ok(false);
+    }
+    if cur.iter().any(|&b| b != 0) {
+        bail!(
+            "ARENA1 at {ARENA1_VA:#010x} is not free - another injected feature              (shiny-seru / show-super-arts / arts-ap-grant) owns the arena"
+        );
+    }
+    p.patch_named_file(SCUS_NAME, off as u64, &bytes)?;
+    Ok(true)
+}
+
+/// Detour the strike-loop fetch through the ARENA1 morph: two words in
+/// overlay 0898 (`jal` + the fetch moved into the delay slot). No branch
+/// targets either word (whole-dump scan), and the displaced busy-latch
+/// load is re-issued by the morph's return delay slot.
+pub fn install_strike_morph(p: &mut DiscPatcher) -> Result<bool> {
+    let entry = p.read_entry(BATTLE_OVERLAY_PROT).context("read PROT 898")?;
+    let edits = [
+        WordEdit {
+            offset: (STRIKE_FETCH_VA - BATTLE_OVERLAY_BASE) as u64,
+            expect: STRIKE_FETCH_WORD,
+            replace: m::jal(ARENA1_MORPH_VA),
+        },
+        WordEdit {
+            offset: (STRIKE_FETCH_VA + 4 - BATTLE_OVERLAY_BASE) as u64,
+            expect: STRIKE_LATCH_WORD,
+            replace: STRIKE_FETCH_WORD, // the fetch rides the delay slot
+        },
+    ];
+    apply_word_edits(p, BATTLE_OVERLAY_PROT, &entry, &edits)
 }
 
 /// The `jal FUN_801EF9E4` word at the applier call site.
@@ -1631,6 +1873,8 @@ mod tests {
     fn run(slot: u32, char_index: u32, queue: &[u8], super_fired: u32) -> Cpu {
         let mut cpu = Cpu::new();
         cpu.load(STUB_VA, &assemble_hook(STUB_VA, &routes()));
+        let (tbl_va, done_va) = hook_layout(STUB_VA);
+        cpu.load(ARENA1_QEDIT_VA, &assemble_delilas_arena(done_va, tbl_va));
         cpu.load_words(APPLIER_VA, &[m::jr(RA), m::nop()]);
         cpu.wr32(ACTOR_TABLE_VA + slot * 4, ACTOR_VA);
         cpu.wr32(SUPER_FIRED_VA, super_fired);
@@ -1716,10 +1960,10 @@ mod tests {
     #[test]
     fn per_character_rows_resolve_independently() {
         // Noa's 0x1F on Noa's slot fires her mapped spell...
-        let cpu = run(1, 1, &[0x1F, 0x00], 0);
+        let cpu = run(1, 1, &[0x19, 0x1F, 0x00], 0);
         assert_eq!(cpu.rd8(ACTOR_VA + 0x1DF), 0x79);
         // ...but Vahn's 0x1C on Noa's row does nothing.
-        let cpu = run(1, 1, &[0x1C, 0x00], 0);
+        let cpu = run(1, 1, &[0x19, 0x1C, 0x00], 0);
         assert_eq!(cpu.rd8(ACTOR_VA + 0x1DE), 3);
     }
 
@@ -1738,5 +1982,156 @@ mod tests {
         queue.push(0x1C);
         let cpu = run(0, 0, &queue, 0);
         assert_eq!(cpu.rd8(ACTOR_VA + 0x1DE), 3);
+    }
+
+    #[test]
+    fn a_chained_queue_keeps_its_leading_art_and_defers() {
+        // Somersault (0F 0E 19 27) chained into the signature combo
+        // (0C 0D 0F 0F 19 1C): the signature's own windup directions
+        // are deleted, everything else - category included - is kept
+        // for the strike loop, where the morph converts at the
+        // [starter][marker] fetch.
+        let cpu = run(
+            0,
+            0,
+            &[
+                0x0F, 0x0E, 0x19, 0x27, 0x0C, 0x0D, 0x0F, 0x0F, 0x19, 0x1C, 0x00,
+            ],
+            0,
+        );
+        assert_eq!(cpu.rd8(ACTOR_VA + 0x1DE), 3, "category stays Attack");
+        let want = [0x0F, 0x0E, 0x19, 0x27, 0x19, 0x1C, 0x00, 0x00];
+        for (i, b) in want.iter().enumerate() {
+            assert_eq!(
+                cpu.rd8(ACTOR_VA + 0x1DF + i as u32),
+                *b,
+                "queue byte {i} after the windup deletion"
+            );
+        }
+    }
+
+    #[test]
+    fn a_marker_without_a_starter_is_left_alone() {
+        // A marker byte that is not part of a tokenized [starter][marker]
+        // pair (a direction sits before it) is not a signature commit.
+        let cpu = run(0, 0, &[0x0C, 0x1C, 0x00], 0);
+        assert_eq!(cpu.rd8(ACTOR_VA + 0x1DE), 3);
+        assert_eq!(cpu.rd8(ACTOR_VA + 0x1DF), 0x0C);
+        assert_eq!(cpu.rd8(ACTOR_VA + 0x1E0), 0x1C);
+    }
+
+    #[test]
+    fn a_pure_queue_consumes_the_marker() {
+        let cpu = run(0, 0, &[0x0C, 0x0D, 0x0F, 0x0F, 0x19, 0x1C, 0x00], 0);
+        assert_eq!(cpu.rd8(ACTOR_VA + 0x1DE), 2);
+        assert_eq!(cpu.rd8(ACTOR_VA + 0x1DF), 0x7B);
+        assert_eq!(cpu.rd8(ACTOR_VA + 0x1E4), 0, "marker consumed");
+    }
+
+    const CTX_VA: u32 = 0x800E_0000;
+
+    /// Enter the strike-loop morph exactly as the 0898 detour does:
+    /// `v1` = the fetched byte, `v0` = actor+cursor, `s3` = actor,
+    /// `s5` = ctx+0x11, `ra` = the return site.
+    fn run_morph(fetched: u8, cur: u32, slot: u8, queue: &[u8]) -> Cpu {
+        let mut cpu = Cpu::new();
+        let (tbl_va, done_va) = hook_layout(STUB_VA);
+        cpu.load(STUB_VA, &assemble_hook(STUB_VA, &routes())); // route table
+        cpu.load(ARENA1_QEDIT_VA, &assemble_delilas_arena(done_va, tbl_va));
+        for (i, b) in queue.iter().enumerate() {
+            cpu.wr8(ACTOR_VA + 0x1DF + i as u32, *b);
+        }
+        cpu.wr8(ACTOR_VA + 0x1DE, 3);
+        cpu.wr8(ACTOR_VA + 0x1DC, 0x40); // recognizable busy-latch value
+        cpu.wr8(CTX_VA + 0x13, slot);
+        cpu.r[2] = ACTOR_VA + cur; // v0
+        cpu.r[3] = fetched as u32; // v1
+        cpu.r[19] = ACTOR_VA; // s3
+        cpu.r[21] = CTX_VA + 0x11; // s5
+        cpu.r[31] = RET_VA;
+        cpu.pc = ARENA1_MORPH_VA;
+        cpu.run_until(&[RET_VA]);
+        cpu
+    }
+
+    #[test]
+    fn the_morph_converts_at_the_starter_marker_fetch() {
+        // Chained playout mid-queue: cursor 4 fetched the 0x19 whose
+        // next byte is slot 0's marker.
+        let cpu = run_morph(0x19, 4, 0, &[0x0F, 0x0E, 0x19, 0x27, 0x19, 0x1C, 0x00]);
+        assert_eq!(cpu.rd8(ACTOR_VA + 0x1DE), 2, "category flips to Magic");
+        assert_eq!(cpu.rd8(ACTOR_VA + 0x1DF), 0x7B, "spell over the queue head");
+        assert_eq!(cpu.rd8(CTX_VA + 7), 0x28, "state -> Magic cast begin");
+        assert_eq!(cpu.r[3], 0, "neutral stage id returned");
+        assert_eq!(cpu.r[2], 0x40, "displaced latch load re-issued");
+    }
+
+    #[test]
+    fn the_morph_ignores_an_ordinary_art() {
+        let cpu = run_morph(0x19, 2, 0, &[0x0F, 0x0E, 0x19, 0x27, 0x19, 0x1C, 0x00]);
+        assert_eq!(cpu.rd8(ACTOR_VA + 0x1DE), 3, "category untouched");
+        assert_eq!(cpu.rd8(CTX_VA + 7), 0, "state untouched");
+        assert_eq!(cpu.r[3], 0x19, "fetched byte staged unchanged");
+        assert_eq!(cpu.r[2], 0x40, "latch load still re-issued");
+    }
+
+    #[test]
+    fn the_morph_ignores_plain_swings_and_monster_slots() {
+        let cpu = run_morph(0x0C, 0, 0, &[0x0C, 0x00]);
+        assert_eq!(cpu.r[3], 0x0C);
+        assert_eq!(cpu.rd8(CTX_VA + 7), 0);
+        // A monster slot (>= 3) never routes.
+        let cpu = run_morph(0x19, 0, 4, &[0x19, 0x1C, 0x00]);
+        assert_eq!(cpu.rd8(CTX_VA + 7), 0);
+        assert_eq!(cpu.r[3], 0x19);
+    }
+
+    #[test]
+    fn the_morph_converts_a_pure_head_fetch_for_slot2() {
+        // Che's route shares Vahn's marker; the row is the ACTIVE slot's.
+        let cpu = run_morph(0x19, 0, 2, &[0x19, 0x1C, 0x00]);
+        assert_eq!(cpu.rd8(ACTOR_VA + 0x1DF), 0x7A, "slot 2 spell");
+        assert_eq!(cpu.rd8(CTX_VA + 7), 0x28);
+    }
+
+    #[test]
+    fn no_load_delay_hazards_in_the_arena() {
+        let (tbl_va, done_va) = hook_layout(STUB_VA);
+        let bytes = assemble_delilas_arena(done_va, tbl_va);
+        assert!(
+            bytes.len() <= 0x100,
+            "arena image must fit ARENA1 (got {} bytes)",
+            bytes.len()
+        );
+        let words: Vec<u32> = bytes
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+            .collect();
+        let loaded_reg =
+            |w: u32| -> Option<u32> { matches!(w >> 26, 0x20..=0x26).then_some((w >> 16) & 0x1F) };
+        let reads = |w: u32, r: u32| -> bool {
+            if r == 0 || w == 0 {
+                return false;
+            }
+            let op = w >> 26;
+            let rs = (w >> 21) & 0x1F;
+            let rt = (w >> 16) & 0x1F;
+            match op {
+                0 => rs == r || ((w & 0x3F) > 0x08 && rt == r),
+                2 | 3 => false,
+                0x28..=0x2E => rs == r || rt == r,
+                _ => rs == r,
+            }
+        };
+        for (i, pair) in words.windows(2).enumerate() {
+            if let Some(r) = loaded_reg(pair[0]) {
+                assert!(
+                    !reads(pair[1], r),
+                    "load-delay hazard at arena word {i}: {:#010x} then {:#010x}",
+                    pair[0],
+                    pair[1]
+                );
+            }
+        }
     }
 }

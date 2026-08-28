@@ -4,7 +4,10 @@
 //! partially-patched module refuses, and every touched sector stays
 //! EDC/ECC-valid. Skips (and passes) when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_patcher::delilas_cast::{install_stage_caves, patch_module_958, patch_module_960};
+use legaia_patcher::delilas_cast::{
+    CastRoute, assemble_delilas_arena, assemble_hook, install_cast_hook, install_delilas_arena,
+    install_stage_caves, install_strike_morph, patch_module_958, patch_module_960,
+};
 use legaia_patcher::disc::DiscPatcher;
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -358,5 +361,88 @@ fn stage_caves_land_in_the_scus_pools() {
     assert!(
         !install_stage_caves(&mut clean, None, None).expect("no-op"),
         "no un-fold, no writes"
+    );
+}
+
+/// The leading-arts machinery: the ARENA1 image (queue-edit + strike
+/// morph) lands byte-exact at `0x8007AE00`, the 0898 strike-fetch
+/// detour rewrites exactly its two words (`jal` + the fetch riding the
+/// delay slot), both installs are idempotent, and the arena claim
+/// refuses a dirty arena.
+#[test]
+fn arena_and_strike_morph_land() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const ARENA1_VA: u32 = 0x8007_AE00;
+    const STRIKE_FETCH_OFF: usize = 0x14F34; // 0x801E374C - 0x801CE818
+    let routes = vec![
+        CastRoute {
+            char_index: 0,
+            art_constant: 0x1C,
+            spell_id: 0x7B,
+        },
+        CastRoute {
+            char_index: 1,
+            art_constant: 0x1F,
+            spell_id: 0x79,
+        },
+        CastRoute {
+            char_index: 2,
+            art_constant: 0x1C,
+            spell_id: 0x7A,
+        },
+    ];
+
+    let mut p = DiscPatcher::open(original.clone()).expect("patcher");
+    install_cast_hook(&mut p, &routes).expect("hook installs");
+    assert!(install_delilas_arena(&mut p).expect("arena installs"));
+    assert!(install_strike_morph(&mut p).expect("morph installs"));
+
+    // The arena bytes are exactly the assembly (stub table + DONE label
+    // derived from the fixed-shape hook at the SCUS gap).
+    const SCUS_GAP_VA: u32 = 0x8007_7728;
+    let code_len = (assemble_hook(SCUS_GAP_VA, &[]).len() - 8) as u32;
+    let want = assemble_delilas_arena(SCUS_GAP_VA + code_len - 16, SCUS_GAP_VA + code_len);
+    let scus = p.read_named_file("SCUS_942.54").expect("scus");
+    let off = legaia_asset::item_names::file_offset_for_va(&scus, ARENA1_VA).expect("va");
+    assert_eq!(&scus[off..off + want.len()], want.as_slice(), "arena bytes");
+
+    // The 0898 detour words.
+    let entry = p.read_entry(898).expect("prot 898");
+    let w = |o: usize| u32::from_le_bytes(entry[o..o + 4].try_into().unwrap());
+    let morph_va = ARENA1_VA + 35 * 4;
+    assert_eq!(
+        w(STRIKE_FETCH_OFF),
+        0x0C00_0000 | ((morph_va & 0x0FFF_FFFF) >> 2),
+        "jal into the morph"
+    );
+    assert_eq!(
+        w(STRIKE_FETCH_OFF + 4),
+        0x9043_01DF,
+        "fetch rides the delay"
+    );
+    // Retail words held before the edit.
+    let retail = DiscPatcher::open(original.clone()).expect("patcher");
+    let rentry = retail.read_entry(898).expect("prot 898");
+    let rw = |o: usize| u32::from_le_bytes(rentry[o..o + 4].try_into().unwrap());
+    assert_eq!(rw(STRIKE_FETCH_OFF), 0x9043_01DF);
+    assert_eq!(rw(STRIKE_FETCH_OFF + 4), 0x9262_01DC);
+
+    // Idempotence.
+    assert!(!install_delilas_arena(&mut p).expect("arena re-apply"));
+    assert!(!install_strike_morph(&mut p).expect("morph re-apply"));
+
+    // A dirty arena refuses.
+    let mut dirty = DiscPatcher::open(original).expect("patcher");
+    let scus0 = dirty.read_named_file("SCUS_942.54").expect("scus");
+    let off0 = legaia_asset::item_names::file_offset_for_va(&scus0, ARENA1_VA).expect("va");
+    dirty
+        .patch_named_file("SCUS_942.54", off0 as u64, &[0xAA])
+        .expect("dirty byte");
+    assert!(
+        install_delilas_arena(&mut dirty).is_err(),
+        "dirty arena bails"
     );
 }

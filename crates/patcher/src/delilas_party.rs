@@ -750,7 +750,9 @@ pub fn apply_delilas_party_with(
                         .and_then(|_| crate::delilas_cast::patch_module_958(patcher, gi))
                         .and_then(|_| crate::delilas_cast::patch_module_960(patcher, lu))
                         .and_then(|_| crate::delilas_cast::install_cast_hook(patcher, &routes))
-                        .and_then(|_| crate::delilas_cast::install_stage_caves(patcher, gi, lu));
+                        .and_then(|_| crate::delilas_cast::install_stage_caves(patcher, gi, lu))
+                        .and_then(|_| crate::delilas_cast::install_delilas_arena(patcher))
+                        .and_then(|_| crate::delilas_cast::install_strike_morph(patcher));
                     match installed {
                         Ok(_) => {
                             for r in &routes {
@@ -783,7 +785,9 @@ pub fn apply_delilas_party_with(
                         .copied()
                         .collect();
                     let installed = crate::delilas_cast::patch_module_959(patcher, true)
-                        .and_then(|_| crate::delilas_cast::install_cast_hook(patcher, &che_routes));
+                        .and_then(|_| crate::delilas_cast::install_cast_hook(patcher, &che_routes))
+                        .and_then(|_| crate::delilas_cast::install_delilas_arena(patcher))
+                        .and_then(|_| crate::delilas_cast::install_strike_morph(patcher));
                     match installed {
                         Ok(_) => {
                             for r in &che_routes {
