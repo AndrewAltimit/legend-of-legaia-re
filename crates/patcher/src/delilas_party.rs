@@ -668,7 +668,6 @@ pub fn apply_delilas_party_with(
                 rig,
                 retail_player: &retail_players[slot],
                 archive: &archive,
-                lines: &victory_lines,
                 natural_wrist_hand: party_swap::playerize::kept_welded_hand(
                     sibling.monster_id(),
                     options.keep_che_hammer && sibling == Sibling::Che,
@@ -1907,6 +1906,13 @@ fn author_staged_cast_rows(
                 let src_windows = monster_archive::animation_loop_windows(archive, source_id)
                     .with_context(|| format!("read monster {source_id} loop windows"))?
                     .unwrap_or_default();
+                // Source sound-cue tracks, index-aligned like the windows:
+                // the punch-volley impacts the retail cast fires through
+                // `FUN_800508DC` (zeroing them is what made a player-cast
+                // flurry silent).
+                let src_cues = monster_archive::animation_cue_tracks(archive, source_id)
+                    .with_context(|| format!("read monster {source_id} cue tracks"))?
+                    .unwrap_or_default();
                 let build = |spec: &StagedChain| -> Result<(cast_stage::StagedCastRows, Vec<u8>)> {
                     let chain = pick(spec)?;
                     let windows: Vec<Option<monster_archive::ActionLoopWindow>> = spec
@@ -1921,6 +1927,11 @@ fn author_staged_cast_rows(
                             }
                         })
                         .collect();
+                    let cue_tracks: Vec<monster_archive::ActionCueTrack> = spec
+                        .clips
+                        .iter()
+                        .map(|&i| src_cues.get(i).cloned().unwrap_or_default())
+                        .collect();
                     let mut packed: Option<Vec<u8>> = None;
                     let built = cast_stage::build_staged_cast_rows(
                         &live,
@@ -1931,6 +1942,7 @@ fn author_staged_cast_rows(
                         &chain,
                         spec.floors,
                         &windows,
+                        &cue_tracks,
                         spec.identity,
                         spec.row_ids,
                         spec.binding,
@@ -2105,7 +2117,6 @@ struct SignatureCtx<'a> {
     /// The hero's RETAIL player file, captured before the model loop.
     retail_player: &'a [u8],
     archive: &'a [u8],
-    lines: &'a crate::delilas_xa_voice::VictoryLines,
     /// Canonical hand whose kept welded weapon plays the sibling's own
     /// wrist relation ([`party_swap::kept_welded_hand`]).
     natural_wrist_hand: Option<usize>,
@@ -2139,7 +2150,6 @@ fn reskin_signature_art(
         rig,
         retail_player,
         archive,
-        lines,
         natural_wrist_hand,
     } = ctx;
     let who = ["Vahn", "Noa", "Gala"][slot];
@@ -2540,23 +2550,20 @@ fn reskin_signature_art(
         }
     }
 
-    // 4. Fanfare duration: the cue's read span must cover the excerpt
-    // the fills wrote into the host art's own channel pair or the audio
-    // cuts early. The table is indexed by jingle id - 0x100, so the two
-    // rows to widen are the art's `base_id` pair, NOT a fixed {4, 7}
-    // (that pair is Burning Flare's; every art has its own). Measured
-    // against retail (every id's table entry vs its channel's own
-    // length, across 24 ids): the entry is CENTISECONDS of that
-    // channel's audio - `entry ~= secs * 100`, so `dur = entry * 0.6`
-    // is a 60 Hz tick budget, not the 75-sectors/s physical span an
-    // earlier reading assumed (which over-ran every write by 25%).
-    // Skipped for a sibling with no captured soundtrack.
-    if let Some(secs) = lines.special_secs(slot)
-        && let Some(fanfare) = signature_fanfare(slot)
-    {
+    // 4. Fanfare duration: the art's pair channels are SILENCED (the
+    // cast bed carries the special's audio - see `delilas_xa_voice`),
+    // so the duration rows shrink to a token 0.1 s: the entry is
+    // CENTISECONDS of channel audio (measured against retail across 24
+    // ids; `dur = entry * 0.6` is a 60 Hz tick budget, not the
+    // 75-sectors/s physical span an earlier reading assumed). A silent
+    // fire that held the retail 3-7 s span would occupy the guarded XA
+    // system and swallow any shout fired inside it; 0.1 s releases it
+    // immediately. The table is indexed by jingle id - 0x100; the rows
+    // are the art's `base_id` pair, NOT a fixed {4, 7}.
+    if let Some(fanfare) = signature_fanfare(slot) {
         let toff = legaia_art::hyper_fanfare::dur_table_file_offset(&scus)
             .ok_or_else(|| anyhow::anyhow!("fanfare duration table not found in SCUS"))?;
-        let entry_val = ((secs * 100.0).ceil() as u16).to_le_bytes();
+        let entry_val = 10u16.to_le_bytes();
         let base = (fanfare.base_id - 0x100) as usize;
         for n in [base, base + 3] {
             patcher
@@ -2564,7 +2571,7 @@ fn reskin_signature_art(
                 .context("write fanfare duration")?;
         }
         notes.push(format!(
-            "{} fanfare duration: {secs:.1} s",
+            "{} fanfare pair silenced; duration rows -> 0.1 s",
             String::from_utf8_lossy(new)
         ));
     }

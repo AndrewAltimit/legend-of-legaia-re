@@ -526,6 +526,65 @@ pub fn idle_animation(entry: &[u8], id: u16) -> Result<Option<MonsterAnimation>>
     }))
 }
 
+/// One per-action entry's authored **sound-cue track**: up to eight
+/// `(frame, cue_id)` pairs from entry `+0x54..+0x74`, in track order,
+/// truncated at the first zero-cue slot (the retail walk
+/// `FUN_800508DC` stops there, so trailing pairs are unreachable).
+///
+/// The shared per-frame cue player (`FUN_800508DC`, called per actor
+/// with the LIVE entry pointer) walks this table against the clip
+/// cursor - a pair fires once when the cursor first reaches `frame` -
+/// and hands each cue to the ring producer `FUN_8004FE5C`. This is the
+/// carrier of every clip-synchronised battle sound that is not an
+/// effect-script cue: footsteps, swing whooshes, and the per-punch
+/// impact volleys of the Delilas cast flurries (monster 164 entries
+/// 12/13 fire `0x4A` + `0x172` pairs at each punch frame - the ring
+/// receives them as one static-bank and one runtime-bank id).
+pub type ActionCueTrack = Vec<(u16, u16)>;
+
+/// The sound-cue track of every action entry, **index-aligned with
+/// [`animations`]** (same walk, same skip rules). An entry whose track
+/// opens with a zero cue yields an empty vec. Returns `Ok(None)` for an
+/// empty / filler / non-mesh slot.
+pub fn animation_cue_tracks(entry: &[u8], id: u16) -> Result<Option<Vec<ActionCueTrack>>> {
+    let Some(block) = decode_block(entry, id)? else {
+        return Ok(None);
+    };
+    if block.len() < MIN_RECORD_BYTES {
+        return Ok(None);
+    }
+    let magic_count = block[0x4a] as usize;
+    let mut out = Vec::with_capacity(magic_count);
+    for i in 0..magic_count {
+        let Some(entry_off) = legaia_bytes::u32_le(&block, 0x4c + i * 4).map(|v| v as usize) else {
+            break;
+        };
+        let Some(&action_id) = block.get(entry_off) else {
+            continue;
+        };
+        // Mirror `animations`: only entries it keeps take an index.
+        if parse_animation(&block, action_id, entry_off).is_none() {
+            continue;
+        }
+        let mut track = Vec::new();
+        for k in 0..8 {
+            let base = entry_off + 0x54 + k * 4;
+            let (Some(frame), Some(cue)) = (
+                legaia_bytes::u16_le(&block, base),
+                legaia_bytes::u16_le(&block, base + 2),
+            ) else {
+                break;
+            };
+            if cue == 0 {
+                break;
+            }
+            track.push((frame, cue));
+        }
+        out.push(track);
+    }
+    Ok(Some(out))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

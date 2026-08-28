@@ -80,6 +80,12 @@
 #   -portable, so the capture is config-independent. Memory cards are pointed at
 #   the real ~/.config/pcsx-redux via ABSOLUTE Mcd paths (memorycard.cc only
 #   prepends the persistent dir to RELATIVE names), so card saves still work.
+#   The profile also zeroes Debug.FirstChanceException: the default mask
+#   (0x1CF0) PAUSES the whole emulator on the game's own first-chance CPU
+#   exceptions (retail battle load performs an unaligned LW the BIOS handler
+#   resolves), which under -debugger froze every breakpoint probe that crossed
+#   a battle load - the probe just stops logging mid-run with
+#   "First chance exception: LoadAddressError" as the last pcsx.log line.
 #   Knobs: LEGAIA_PCSX_PROFILE_DIR (profile dir), LEGAIA_PCSX_REAL_CONFIG (real
 #   config dir for memcards), LEGAIA_PCSX_HARDWARE_GPU=1 (pin the OpenGL/hardware
 #   renderer instead of the ship-default software one).
@@ -325,7 +331,7 @@ if [[ "$ISOLATE_CONFIG" == "1" ]]; then
     "Mcd2": "$_mcd2",
     "Mcd1Inserted": true,
     "Mcd2Inserted": true,
-    "Debug": { "Debug": $_debug, "GdbServer": false, "WebServer": false }
+    "Debug": { "Debug": $_debug, "GdbServer": false, "WebServer": false, "FirstChanceException": 0 }
   }
 }
 JSON

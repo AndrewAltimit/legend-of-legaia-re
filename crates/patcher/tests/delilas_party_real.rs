@@ -1224,35 +1224,37 @@ fn arts_voice_modes_shape_the_shout_banks() {
             .read_xa_channel_pcm("XA/XA1.XA", c)
             .expect("read patched fanfare");
         let audible = |p: &[i16]| p.iter().filter(|s| s.unsigned_abs() > 200).count();
-        let (ra, aa) = (audible(&r), audible(&a));
-        assert!(
-            aa * 5 >= ra * 4,
-            "adjusted fanfare channel {c} covers {aa} of retail's {ra} audible samples \
-             - a Hyper Art would play near-silence"
-        );
+        // The signature special's channel pair plus the GENERIC
+        // Super-chain channel (`0x101` -> channel 1, fired by a special
+        // performed at the end of a chain) are SILENCED in every mode:
+        // the special's audio is the cast bed the module-open preempt
+        // fires, and the preempt restarts whatever XA stream is live -
+        // so any content here replays over the bed's own opening
+        // (heard as "her intro repeats" once the bed remaster made the
+        // head loud). Asserted both ways so neither half can rot: the
+        // special's channels must be digitally silent, the rest of the
+        // bank must keep its coverage.
+        let sig = legaia_patcher::delilas_party::signature_fanfare_channels(0)
+            .expect("Vahn's slot has a signature fanfare pair");
+        let generic = legaia_art::hyper_fanfare::GENERIC_FANFARE_CHANNEL;
         let (o, _) = p_orig
             .read_xa_channel_pcm("XA/XA1.XA", c)
             .expect("read original fanfare");
-        // ...except the signature special's own channel pair. That cue is
-        // the sibling's attack soundtrack lifted whole from the sectors
-        // their enemy-side cast module plays, not a treatment of the
-        // host's bed, so it lands in every arts-voice mode - `original`
-        // describes what happens to the HERO's voice. Asserted both ways
-        // so neither half can rot: the pair must move, the rest must not.
-        let sig = legaia_patcher::delilas_party::signature_fanfare_channels(0)
-            .expect("Vahn's slot has a signature fanfare pair");
-        // The pair plus the GENERIC Super-chain channel (`0x101` ->
-        // channel 1): a signature special performed at the end of a
-        // Super chain fires the generic id, not the pair, so its cue
-        // covers that channel too - in every mode, same rationale.
-        let generic = legaia_art::hyper_fanfare::GENERIC_FANFARE_CHANNEL;
         if c == sig.0 || c == sig.1 || c == generic {
-            assert_ne!(
-                o, r,
-                "original mode must still install the signature special's own cue \
-                 on channel {c}"
-            );
+            for (mode, pcm) in [("adjusted", &a), ("original", &o)] {
+                assert!(
+                    pcm.iter().all(|&s| s == 0),
+                    "{mode} mode left the signature special's channel {c} audible - \
+                     a pre-cast fanfare fire would replay the bed's head"
+                );
+            }
         } else {
+            let (ra, aa) = (audible(&r), audible(&a));
+            assert!(
+                aa * 5 >= ra * 4,
+                "adjusted fanfare channel {c} covers {aa} of retail's {ra} audible samples \
+                 - a Hyper Art would play near-silence"
+            );
             assert_eq!(
                 o, r,
                 "original mode must not touch the rest of the fanfare bank (channel {c})"

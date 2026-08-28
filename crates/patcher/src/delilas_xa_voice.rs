@@ -12,11 +12,13 @@
 //!
 //! - arts-shout bank (`XA2`/`XA4`/`XA6`): every channel, cycling the
 //!   sibling's attack-voice pool ([`art_voice_vags`]);
-//! - the signature special's own cue: the sibling's attack soundtrack
-//!   lands on the slot's Hyper fanfare pair AND the generic Super-chain
-//!   channel 1 (`legaia_art::hyper_fanfare::GENERIC_FANFARE_CHANNEL`)
-//!   in EVERY arts-voice mode - a chained special fires the generic id,
-//!   not the pair;
+//! - the signature special's fanfare channels - the slot's Hyper
+//!   fanfare pair AND the generic Super-chain channel 1
+//!   (`legaia_art::hyper_fanfare::GENERIC_FANFARE_CHANNEL`; a chained
+//!   special fires the generic id, not the pair) - are SILENCED in
+//!   every arts-voice mode: the special's audio is the cast bed the
+//!   module-open preempt fires, and a pre-cast fanfare carrying the
+//!   bed's head replayed the intro when the preempt restarted it;
 //! - fanfare banks (`XA1`+`XA27` / `XA3`+`XA28` / `XA5`+`XA29`): these
 //!   are the Hyper / Super / Miracle cue beds and the Seru-magic
 //!   fanfare streams - 3-7 second stereo music-plus-voice, NOT one-shot
@@ -207,44 +209,6 @@ fn spirit_xa_pick(sibling: crate::delilas_party::Sibling) -> Option<(&'static st
     }
 }
 
-/// The sibling's signature special-attack soundtrack, as their own
-/// enemy-side cast module fires it. `XA20.XA` holds the three Delilas
-/// attack-sequence reels on consecutive channels, one per sibling.
-///
-/// Each module names its cue as a compile-time immediate in the delay
-/// slot of a `jal FUN_8004FCC8` - Gi `li a0,0x198` at PROT 958 file
-/// `0x4C8`, Che `0x199` at PROT 959 `0x1AC`, Lu `0x19A` at PROT 960
-/// `0xC84`. `FUN_8004FCC8` (`0x8004FD04..0x8004FD74`) resolves an id to
-/// `n = id - 0x100`, clip slot `n >> 3` (slot `i` = `XA<i+1>`; slots
-/// 1/3/5 remap to `0x1A`/`0x1B`/`0x1C`) and channel `n & 7`, with the
-/// playback duration from `0x800788B8 + n*2`. Slot 19 is `XA20.XA`.
-///
-/// Lu's row is the check on the other two: it was first picked BY EAR,
-/// and deriving it from her module's immediate lands on the identical
-/// channel.
-///
-/// The module itself cannot be run from a party slot - its choreography
-/// is compiled `jal` sites, the standing wall on this branch - but the
-/// patcher copies sectors rather than calls, so the audio is reachable
-/// even though the code path is not. The cue becomes the fanfare audio
-/// of the Hyper art the swap reskins (Vahn slot: Burning Flare's channel
-/// pair 4/7). Capped at 12 s - the fanfare channel span and the cue's
-/// duration table bound playback anyway.
-///
-/// Re-pointing `FUN_8004AD80`'s per-character fanfare immediate at the
-/// module's id instead would play the cue at full length from the
-/// original sectors, and is WRONG: that fire is `rand() % 2 * 3 + base`,
-/// so the pair would become `0x198`/`0x19B` and half the rolls would
-/// land on `XA20` channel 3, which is a different clip.
-fn special_xa_pick(sibling: crate::delilas_party::Sibling) -> Option<(&'static str, u8)> {
-    use crate::delilas_party::Sibling;
-    Some(match sibling {
-        Sibling::Gi => ("XA/XA20.XA", 0),
-        Sibling::Che => ("XA/XA20.XA", 1),
-        Sibling::Lu => ("XA/XA20.XA", 2),
-    })
-}
-
 /// Remaster the Plasma Strike cast bed's intro in place: advance the
 /// music so it opens with the walk instead of ~1.3 s after it.
 ///
@@ -273,9 +237,9 @@ fn special_xa_pick(sibling: crate::delilas_party::Sibling) -> Option<(&'static s
 /// walk sync is untouched by construction. A 50 ms fade-in keeps the
 /// seek landing click-free without delaying the hit.
 ///
-/// Must run BEFORE [`capture_victory_lines`]: Lu's special-cue splice
-/// excerpts this channel's head, so ordering the remaster first makes
-/// the spliced fanfare open audibly too (the phase-17 pass-order law).
+/// (The signature-special fanfare channels are silenced outright - see
+/// the apply pass - so nothing else excerpts this channel's head and no
+/// pass-order coupling remains.)
 ///
 /// Idempotence: retail is digitally silent through +0.8 s; a stream
 /// already carrying energy at +0.15..0.6 s is left alone (guard, not a
@@ -383,29 +347,15 @@ pub fn boost_cast_bed_intro(patcher: &mut crate::disc::DiscPatcher) -> Result<bo
 pub struct VictoryLines {
     lines: [Option<(Vec<i16>, u32)>; 3],
     spirit: [Option<(Vec<i16>, u32)>; 3],
-    special: [Option<(Vec<i16>, u32)>; 3],
 }
 
-impl VictoryLines {
-    /// Length in seconds of the special-attack excerpt captured for a
-    /// hero slot (0 Vahn / 1 Noa / 2 Gala) - what the fanfare duration
-    /// table must cover for the audio to complete.
-    pub fn special_secs(&self, slot: usize) -> Option<f64> {
-        self.special
-            .get(slot)?
-            .as_ref()
-            .map(|(pcm, rate)| pcm.len() as f64 / *rate as f64)
-    }
-}
-
-/// Capture every mapped sibling's XA lines (victory bark, Spirit sting,
-/// special-attack soundtrack) off the (still retail) image. MUST run
-/// before any XA mute touches the reels.
+/// Capture every mapped sibling's XA lines (victory bark, Spirit sting)
+/// off the (still retail) image. MUST run before any XA mute touches
+/// the reels.
 pub fn capture_victory_lines(patcher: &DiscPatcher, mapping: &PartyMapping) -> VictoryLines {
     let siblings = [mapping.vahn, mapping.noa, mapping.gala];
     let mut lines: [Option<(Vec<i16>, u32)>; 3] = [None, None, None];
     let mut spirit: [Option<(Vec<i16>, u32)>; 3] = [None, None, None];
-    let mut special: [Option<(Vec<i16>, u32)>; 3] = [None, None, None];
     for (slot, sibling) in siblings.iter().enumerate() {
         if let Some((file, chan)) = victory_xa_pick(*sibling)
             && let Ok((pcm, rate)) = patcher.read_xa_channel_pcm(file, chan)
@@ -421,53 +371,8 @@ pub fn capture_victory_lines(patcher: &DiscPatcher, mapping: &PartyMapping) -> V
         {
             spirit[slot] = Some((pcm, rate));
         }
-        if let Some((file, chan)) = special_xa_pick(*sibling)
-            && let Ok((mut pcm, rate)) = patcher.read_xa_channel_pcm(file, chan)
-        {
-            // Cut at the reel's natural end (trailing silence trimmed),
-            // capped to the destination fanfare pair's channel capacity
-            // (`write_xa_channel` fills only the channel's own sectors,
-            // so anything past it is silently dropped - the old flat
-            // 12 s cap wrote ~7 s and cut mid-decay). A short fade-out
-            // makes the excerpt COMPLETE instead of stopping abruptly.
-            let hero_bank = legaia_art::hyper_fanfare::FANFARE_XA_FILE[slot];
-            let pair = crate::delilas_party::signature_fanfare_channels(slot).unwrap_or((4, 7));
-            let cap = [pair.0, pair.1]
-                .iter()
-                .filter_map(|&c| {
-                    patcher
-                        .read_xa_channel_pcm(&format!("XA/{hero_bank}"), c)
-                        .ok()
-                        .map(|(p, _)| p.len())
-                })
-                .min()
-                .unwrap_or(rate as usize * 12);
-            let win = (rate as usize / 4).max(1);
-            let quiet = |w: &[i16]| {
-                (w.iter().map(|&s| (s as f64) * (s as f64)).sum::<f64>() / w.len() as f64).sqrt()
-                    < 300.0
-            };
-            let mut end = pcm.len();
-            while end > win && quiet(&pcm[end - win..end]) {
-                end -= win;
-            }
-            pcm.truncate(end.min(cap));
-            let fade = (rate as usize * 3 / 5).min(pcm.len());
-            let n = pcm.len();
-            for i in 0..fade {
-                let k = (fade - i) as f64 / fade as f64;
-                pcm[n - fade + i] = (pcm[n - fade + i] as f64 * k) as i16;
-            }
-            if pcm.len() > rate as usize / 10 {
-                special[slot] = Some((pcm, rate));
-            }
-        }
     }
-    VictoryLines {
-        lines,
-        spirit,
-        special,
-    }
+    VictoryLines { lines, spirit }
 }
 
 /// Hero victory-voice clip bands inside `monster.snd` (clip id ranges,
@@ -955,54 +860,52 @@ pub fn fill_hero_xa_voices(
             pcm: pcm.clone(),
             rate: *rate,
         });
-        let special_line = lines.special[slot].as_ref().map(|(pcm, rate)| Grunt {
-            vag: 0,
-            pcm: pcm.clone(),
-            rate: *rate,
-        });
-        // The signature special's cue lands in EVERY arts-voice mode, so
-        // it is written here rather than inside the `Adjusted` arm below.
+        // The signature special's fanfare channels are SILENCED in EVERY
+        // arts-voice mode - the per-art pair AND the generic Super-chain
+        // channel 1 (a chained special fires the generic id
+        // `0x101`/`0x111`/`0x121` -> channel 1, `legaia_art::hyper_fanfare`,
+        // not the pair).
         //
-        // The three modes describe what happens to the HERO's voice -
-        // keep it, mute it, or re-time it toward the sibling - and this
-        // cue is none of those. It is the sibling's own attack
-        // soundtrack, lifted whole from the sectors their enemy-side
-        // cast module plays (see `special_xa_pick`), so it is no more a
-        // "treatment" of Vulture Blade's bed than their mesh is a
-        // treatment of Noa's. Gated on the mode, Gi's Blazing Slash
-        // played Noa's cue under two of the three settings.
-        //
-        // Consequence worth stating: under `removed` this pair is the
-        // one fanfare channel deliberately left non-silent. That mode
-        // removes the hero's voice, not the move's audio.
+        // The special's soundtrack is the cast BED the module-open
+        // preempt fires (`delilas_cast`), and the preempt STOPS whatever
+        // XA stream is live and starts the bed from zero. An earlier
+        // revision spliced the bed's own head into these channels; the
+        // commit-time fanfare fire then pre-played the opening (hit,
+        // music, Lu's line) and the preempt replayed it seconds later -
+        // audible as "her intro repeats" the moment the bed remaster
+        // made the head loud. Enemy-side retail has no pre-cast fanfare
+        // either: the reel starts when the module opens. So the honest
+        // content for these channels is silence, in every mode - the
+        // modes describe the HERO's voice, and the host cue these
+        // channels carried is not the special's audio ("Gi's Blazing
+        // Slash played Noa's cue").
         let mut special_written = false;
-        if let Some(g) = special_line.as_ref() {
+        {
             let (a, b) = crate::delilas_party::signature_fanfare_channels(slot).unwrap_or((4, 7));
             let bank = staged_banks[slot][0];
-            // Channel 1 alongside the per-art pair: a Hyper performed at
-            // the END of a Super chain fires the GENERIC per-character
-            // fanfare id (`0x101`/`0x111`/`0x121` -> channel 1 of the
-            // same bank, `legaia_art::hyper_fanfare`), not the pair - so
-            // a chained signature special reached the one host-derived
-            // channel left uncovered, and under `adjusted` that is the
-            // host's re-pitched bed ("Noa's grunt partway into Blazing
-            // Slash").
             let generic = legaia_art::hyper_fanfare::GENERIC_FANFARE_CHANNEL;
             let mut chans = vec![a, b];
             if !chans.contains(&generic) {
                 chans.push(generic);
             }
+            // ~0.15 s of digital silence; `write_xa_channel` zeroes the
+            // whole channel first, so this silences it end to end.
+            let hush = Grunt {
+                vag: 0,
+                pcm: vec![0i16; 5670],
+                rate: 37800,
+            };
             for chan in chans {
-                if write_grunt(patcher, bank, chan, g, &mut notes)? {
+                if write_grunt(patcher, bank, chan, &hush, &mut notes)? {
                     filled += 1;
                     special_written = true;
                 }
             }
             if special_written {
                 notes.push(format!(
-                    "{}: signature special keeps {}'s own cue in every arts-voice mode",
-                    ["Vahn", "Noa", "Gala"][slot],
-                    sibling.display_name()
+                    "{}: signature-special fanfare channels silenced (the cast bed is the special's \
+                     audio; a pre-cast fire would replay its head)",
+                    ["Vahn", "Noa", "Gala"][slot]
                 ));
             }
         }
@@ -1068,8 +971,6 @@ pub fn fill_hero_xa_voices(
                             None
                         } else if *chan == 0 {
                             spirit_line.as_ref()
-                        } else if *chan == special_pair.0 || *chan == special_pair.1 {
-                            special_line.as_ref()
                         } else {
                             None
                         };

@@ -250,6 +250,35 @@ Parser: the region rides `legaia_asset::monster_archive::MonsterAnimation::effec
 `legaia_engine_core::action_effect_script::step_effect_script`.
 `see ghidra/scripts/funcs/overlay_battle_action_801dea50.txt`.
 
+## Sound-cue track (entry `+0x54..+0x73`)
+
+Eight `[u16 frame][u16 cue]` pairs, walked in order and truncated at the
+first zero cue. This is the carrier of every clip-synchronised battle
+sound that is not an effect-script cue: footsteps on the walk clips,
+swing whooshes, and the per-punch impact volleys of the Delilas cast
+flurries (monster 164's flurry entries fire a `0x4A` + `0x172` pair at
+each punch frame).
+
+The per-frame player is `FUN_800508DC(slot, entry, frame)`: it resumes
+at the actor's cue cursor (`actor +0x1F6`), fires every pair whose
+`frame` the clip cursor has reached, and hands each cue to the ring
+producer `FUN_8004FE5C` - with **per-arm id treatment**: a monster
+actor's cue passes verbatim, a party actor's cue `>= 0xC8` (outside the
+special-cased `0xD7/0xE7/0xF7/0xFA` swing set) takes `+0x38` first, and
+the producer then maps per band (`id-1` / raw / `+0x19C` / `+0x281`
+element-tinted; the full band table is on the
+[`8004FE5C` row](../reference/functions/battle.md)). A party id
+`>= 0x100` bypasses the ring for the XA-direct player (busy-guarded).
+The ring itself is the scheduled-delay pair documented in
+[`sfx-table.md`](sfx-table.md#the-ring-is-two-arrays-aged-by-one-function-and-drained-by-another).
+
+Capture-pinned (retail Lu Plasma Strike, FE5C-arg probe): each punch
+volley is three fires - the VICTIM's reaction-clip track fires `0xAD`
+(ring `0x249`) and `0xD` (ring `0xC`), the CASTER's flurry track fires
+`0x172` (ring `0x30E`, a runtime-bank voice line of the battle's own
+VAB). Reader: `legaia_asset::monster_archive::animation_cue_tracks`
+(index-aligned with `animations`).
+
 ## Packed stream (entry `+0x8c`)
 
 ```

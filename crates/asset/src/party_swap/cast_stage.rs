@@ -263,6 +263,40 @@ fn stage_ladder(clip: &MonsterAnimation, floor: usize, identity: bool) -> Vec<(u
 /// (Gi's crouch holds `[9, 10]`, Lu's charge parks on its last frame),
 /// so zeroing them was what made the hosted stages visibly loop.
 #[allow(clippy::too_many_arguments)]
+/// Translate a SOURCE (enemy-side) cue track into the id space the
+/// PLAYER arm of the cue player resolves (`FUN_800508DC` splits on
+/// `slot < 3`, and `FUN_8004FE5C` maps ids differently again per arm).
+///
+/// Probe-pinned mapping (retail `nivora_duel_pre_plasma_strike`,
+/// FE5C-arg capture): each enemy punch volley reaches the SFX ring as
+/// one runtime-bank id `0x249` (fired by the VICTIM's reaction track as
+/// cue `0xAD`: player arm `0xA7..0xC8` adds `0x19C`) plus the static
+/// thud `0xC` (victim cue `0xD`: player small arm subtracts 1). The
+/// CASTER's own volley cue is `0x172` - a runtime-bank voice line only
+/// the Delilas battle VAB carries, and on a player caster a cue
+/// `>= 0xC8` misroutes into the XA-direct path (`+0x38`), so it cannot
+/// be carried. The punch cue `0x4A` is therefore SUBSTITUTED by the
+/// retail victim pair `(0xAD, 0xD)` - byte-identical ring traffic to a
+/// retail volley - and every other id `>= 0xC8` is dropped. Small ids
+/// (`< 0x1B`: footsteps `0x11`, impacts `0x16`) resolve identically on
+/// both arms and pass through verbatim.
+fn author_player_cue_track(src: &[(u16, u16)]) -> Vec<(u16, u16)> {
+    let mut out = Vec::new();
+    for &(f, cue) in src {
+        match cue {
+            0x4A => {
+                out.push((f, 0xAD));
+                out.push((f, 0xD));
+            }
+            c if c < 0xC8 => out.push((f, c)),
+            _ => {}
+        }
+    }
+    out.truncate(8);
+    out
+}
+
+#[allow(clippy::too_many_arguments)]
 fn build_entry(
     row_id: u8,
     clip: &MonsterAnimation,
@@ -270,6 +304,7 @@ fn build_entry(
     hold: usize,
     rate: u8,
     window: Option<crate::monster_archive::ActionLoopWindow>,
+    cue_track: &[(u16, u16)],
     rig: &PlayerRig,
     retail_player: &[u8],
     archive: &[u8],
@@ -312,6 +347,21 @@ fn build_entry(
         out[0x84] = cnt;
         out[0x85] = hs as u8;
         out[0x86] = he as u8;
+    }
+    // The per-frame sound-cue track (`+0x54`, 8 x [u16 frame][u16 cue],
+    // walked by `FUN_800508DC` against the clip cursor): the source
+    // frames are rescaled into the hosted frame count with the same
+    // round-nearest map the loop window uses. The caller has already
+    // translated the cue ids into the PLAYER arm's id space (see
+    // `author_player_cue_track`); this just packs them.
+    {
+        let sf = clip.frame_count.max(1);
+        let r = |x: usize| (x * frames * 2 + sf) / (sf * 2);
+        for (k, &(f, cue)) in cue_track.iter().take(8).enumerate() {
+            let hf = r(f as usize).clamp(1, frames.max(2) - 1) as u16;
+            out[0x54 + k * 4..0x54 + k * 4 + 2].copy_from_slice(&hf.to_le_bytes());
+            out[0x56 + k * 4..0x56 + k * 4 + 2].copy_from_slice(&cue.to_le_bytes());
+        }
     }
     out.push(parts as u8);
     out.push(frames as u8);
@@ -432,6 +482,7 @@ pub fn build_staged_cast_rows(
     chain: &[&MonsterAnimation],
     floors: &[usize],
     windows: &[Option<crate::monster_archive::ActionLoopWindow>],
+    cue_tracks: &[crate::monster_archive::ActionCueTrack],
     identity: &[bool],
     row_ids: &[u8],
     binding: &[(usize, usize)],
@@ -442,6 +493,7 @@ pub fn build_staged_cast_rows(
         || chain.len() != floors.len()
         || chain.len() != row_ids.len()
         || chain.len() != windows.len()
+        || chain.len() != cue_tracks.len()
         || chain.len() != identity.len()
     {
         bail!(
@@ -570,6 +622,7 @@ pub fn build_staged_cast_rows(
                 hold,
                 r,
                 windows[i],
+                &author_player_cue_track(&cue_tracks[i]),
                 rig,
                 retail_player,
                 archive,
@@ -733,6 +786,21 @@ mod tests {
     /// Identity hosting keeps the SOURCE's exact frames and rate on
     /// every rung (a cursor-gated stage must reproduce retail's cursor
     /// schedule tick for tick), while the hold ladder still descends.
+    #[test]
+    fn punch_volleys_translate_to_the_retail_victim_pair() {
+        // Lu's flurry entries author `(f, 0x4A)+(f, 0x172)` per punch;
+        // the player arm carries the probe-pinned victim pair instead
+        // (ring `0x249` + `0xC`), and the runtime-bank voice line drops.
+        let src = [(3u16, 0x4Au16), (3, 0x172), (7, 0x4A), (7, 0x172)];
+        assert_eq!(
+            author_player_cue_track(&src),
+            vec![(3, 0xAD), (3, 0xD), (7, 0xAD), (7, 0xD)]
+        );
+        // Footsteps and small impacts pass through; big ids drop.
+        let walk = [(1u16, 0xE1u16), (8, 0x11), (10, 0x11)];
+        assert_eq!(author_player_cue_track(&walk), vec![(8, 0x11), (10, 0x11)]);
+    }
+
     #[test]
     fn identity_hosting_keeps_source_frames_and_rate() {
         // Lu's strike: 39 frames at rate 2, park window [15, 15].

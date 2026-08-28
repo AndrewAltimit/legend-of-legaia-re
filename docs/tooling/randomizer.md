@@ -2374,11 +2374,20 @@ input, so the true-stereo re-encode
 (`legaia_xa::encode::encode_stereo_4bit`) converges back onto the
 retail bytes within the written span (the disc oracle asserts the
 span's tail equals retail) and the blast keeps its authored +14.8 s
-offset - the walk sync is untouched by construction. The pass runs
-BEFORE the special-cue capture, so the fanfare excerpt spliced from
-the same channel head opens on the hit too, and an RMS guard skips an
+offset - the walk sync is untouched by construction. An RMS guard skips an
 already-shifted stream (retail is silent at +0.15..0.6 s; re-shifting
 would stack).
+
+The bed is also why the signature special's FANFARE channels - the
+host art's channel pair plus the generic Super-chain channel 1 (a
+chained special fires the generic id `0x101`/`0x111`/`0x121`, not the
+pair) - are written to digital silence in every arts-voice mode, with
+their duration-table rows shrunk to a token 0.1 s. An earlier revision
+spliced the bed's own head into them; the commit-time fanfare fire then
+pre-played the opening and the module-open preempt replayed it from
+zero - audible as "her intro repeats" the moment the remaster made the
+head loud. Enemy-side retail has no pre-cast fanfare either: the reel
+starts when the module opens.
 
 The fourth is data, not module code: the module stages the CASTER's two
 clips by raw index (`actor+0x1DA` = `0x0A`, then `0x0B` at the lift
@@ -2389,7 +2398,10 @@ character's Block clip (whose record the stage boundary is probe-measured
 to choke on). The swap authors real rows instead
 (`party_swap::cast_stage`): the sibling's wind-up and smash, retargeted
 onto the host rig with the same conjugation as the art-side reskin and
-re-encoded raw-packed, are **inserted below `clut_a_off`** - the decoded
+re-encoded raw-packed, are **inserted below `clut_a_off`**, each
+carrying its source clip's `+0x54` sound-cue track (frames rescaled
+with the loop-window map, ids translated for the PLAYER arm of the cue
+player `FUN_800508DC` - see below) - the decoded
 record[0] grows by the rows' length, the two image payloads and the
 `clut_a_off`/`clut_b_off`/`budget` header words (plus the paired `+0x5C`
 sibling word) shift up with it, and the table words `0x0A`/`0x0B` point
@@ -2410,6 +2422,30 @@ to pinning both stages onto the empty row (`addiu v0,v0,1 -> nop` at the
 staged-index step): the caster holds a pose, and the enemy-side cast also
 loses its smash stage, since the module writes the same index for both
 caster kinds.
+
+The cue tracks are the punch sounds. Every clip-synchronised battle
+sound that is not an effect-script cue rides the action entry's
+`+0x54` table (8 x `[u16 frame][u16 cue]`, truncated at the first zero
+cue): the per-frame player `FUN_800508DC` walks it against the clip
+cursor per actor and hands each fired cue to the ring producer
+`FUN_8004FE5C`, which maps ids differently per arm - a party actor's
+small cue (`< 0x48`) lands in the SFX ring as `id - 1` (static bank),
+its `0xA7..0xC7` band as `id + 0x19C` (runtime bank), while a monster's
+big cue also takes `+0x19C` and a party big cue (`>= 0xC8`, after the
+track player's own `+0x38` skew) misroutes into the XA-direct path.
+Probe-pinned on the retail duel (`nivora_duel_pre_plasma_strike`,
+FE5C-arg capture): each enemy Plasma Strike punch volley is three
+fires - the VICTIM's reaction track fires `0xAD` (ring `0x249`,
+runtime bank) and `0xD` (ring `0xC`, the static thud), and the CASTER
+fires `0x172` (a runtime-bank voice line only the Delilas battle VAB
+carries). The authored player rows translate accordingly
+(`cast_stage::author_player_cue_track`): the flurry's punch cue `0x4A`
+becomes the `(0xAD, 0xD)` pair - byte-identical ring traffic to a
+retail volley, resolvable in any battle - small ids (footsteps `0x11`,
+impacts `0x16`) pass verbatim (identical on both arms), and
+runtime-bank voice ids drop. Zeroed tracks were the shipped symptom:
+the authored entries carried no `+0x54` table at all, so a
+player-caster flurry punched in silence.
 
 All three modules are audited and probe-verified: every mapped slot routes
 to its sibling's retail module - Blazing Slash (958), Megaton Press (959),
