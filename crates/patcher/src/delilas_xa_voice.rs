@@ -255,17 +255,23 @@ fn special_xa_pick(sibling: crate::delilas_party::Sibling) -> Option<(&'static s
 /// the audible onset is a pure function of the stream's internal
 /// hit-to-blast spacing, so no fire-timing or trim lever can move it -
 /// only the content can (the phase-68e arithmetic law). This pass
-/// SHIFTS the front of the stream 21 sectors (1.12 s) earlier, so the
-/// opening hit lands at +0.19 s, and pays the shift back with a 1 s
-/// equal-power dissolve into the unshifted stream ending at +3.30 s -
-/// a point chosen by spectral match (cosine 0.984, energy ratio 0.99
-/// against the material 1.12 s later), inside the sustained opening
-/// pad where a texture dissolve is inaudible. Every frame from +3.30 s
-/// on is bit-identical input, so the re-encode converges back to the
-/// retail bytes within the written span and the blast keeps its
-/// authored +14.8 s offset - the walk sync is untouched by
-/// construction. A 0.1 s zero absorber (20 ms fade-in) keeps the seek
-/// landing clean.
+/// SHIFTS the front of the stream 1.24 s earlier, so the opening hit
+/// lands at +0.07 s, and pays the shift back with a 1 s linear
+/// dissolve into the unshifted stream ending at +3.05 s. The material
+/// is strongly periodic (a ~0.565 s ostinato, waveform autocorrelation
+/// 0.82 at one period), so the shift and the dissolve point are chosen
+/// where the two branches are IN PHASE: local waveform correlation
+/// 0.883 over the blend window, making the paid-back material read as
+/// one extra ostinato cycle rather than a restart. (A spectral-only
+/// match is NOT sufficient - the first ship of this pass blended at a
+/// point with waveform correlation -0.15, and the out-of-phase mash
+/// was audible as the music restarting mid-cast.) The blend is linear,
+/// not equal-power: on correlated material equal-power bumps the
+/// middle +3 dB. Every frame from +3.05 s on is bit-identical input,
+/// so the re-encode converges back to the retail bytes within the
+/// written span and the blast keeps its authored +14.8 s offset - the
+/// walk sync is untouched by construction. A 50 ms fade-in keeps the
+/// seek landing click-free without delaying the hit.
 ///
 /// Must run BEFORE [`capture_victory_lines`]: Lu's special-cue splice
 /// excerpts this channel's head, so ordering the remaster first makes
@@ -280,19 +286,23 @@ pub fn boost_cast_bed_intro(patcher: &mut crate::disc::DiscPatcher) -> Result<bo
     /// Stereo frames per audio sector (18 groups x 112 frames).
     const FRAMES_PER_SECTOR: usize = 2016;
     /// Sectors rewritten (channel ordinals `0..SPAN_LEN`). The bridge
-    /// ends at frame `BRIDGE_END` (~3.3 s, sector 62); the remaining
+    /// ends at frame `BRIDGE_END` (~3.05 s, sector 58); the remaining
     /// written sectors carry bit-identical input so the encoder
     /// converges back onto the retail bytes well before the span ends.
     const SPAN_LEN: usize = 70;
     /// Source sectors decoded (span + shift look-ahead).
-    const SRC_SECTORS: usize = 84;
-    /// The advance: 21 sectors = 1.12 s at 37800 Hz stereo.
-    const SHIFT: usize = 21 * FRAMES_PER_SECTOR;
-    /// Zero absorber + fade-in at the stream head.
-    const OPEN_ZERO: usize = 3780; // 0.1 s
-    const OPEN_FADE: usize = 756; // 20 ms
-    /// Equal-power dissolve back into the unshifted stream.
-    const BRIDGE_END: usize = 124_740; // 3.30 s
+    const SRC_SECTORS: usize = 95;
+    /// The advance: 1.24 s at 37800 Hz stereo - the in-phase lag (the
+    /// argmax of local waveform correlation between the shifted and
+    /// unshifted branches over the blend window; 0.883 there).
+    const SHIFT: usize = 46_872;
+    /// Fade-in at the stream head (the shifted content opens mid-music,
+    /// so a raw start would click; the hit sits just past the fade).
+    const OPEN_ZERO: usize = 0;
+    const OPEN_FADE: usize = 1890; // 50 ms
+    /// Linear dissolve back into the unshifted stream, ending where the
+    /// two branches are in phase.
+    const BRIDGE_END: usize = 115_290; // 3.05 s
     const BRIDGE_LEN: usize = 37_800; // 1.0 s
     /// Idempotence guard: retail RMS over +0.15..0.6 s is 0 (digital
     /// silence); a remastered stream carries the opening hit there.
@@ -330,15 +340,16 @@ pub fn boost_cast_bed_intro(patcher: &mut crate::disc::DiscPatcher) -> Result<bo
     let mut left = Vec::with_capacity(n);
     let mut right = Vec::with_capacity(n);
     for f in 0..n {
-        let (l, r) = if f < OPEN_ZERO {
-            (0.0f64, 0.0f64)
-        } else {
+        let (l, r) = {
             let early = |f: usize| (pcm[2 * (f + SHIFT)] as f64, pcm[2 * (f + SHIFT) + 1] as f64);
             let v = if f < BRIDGE_END - BRIDGE_LEN {
                 early(f)
             } else if f < BRIDGE_END {
-                let w = (f - (BRIDGE_END - BRIDGE_LEN)) as f64 / BRIDGE_LEN as f64;
-                let (ge, gl) = ((1.0 - w).sqrt(), w.sqrt());
+                // Linear, not equal-power: the two branches are in phase
+                // here (correlation 0.883), and equal-power on
+                // correlated material bumps the middle +3 dB.
+                let gl = (f - (BRIDGE_END - BRIDGE_LEN)) as f64 / BRIDGE_LEN as f64;
+                let ge = 1.0 - gl;
                 let (e, late) = (early(f), (pcm[2 * f] as f64, pcm[2 * f + 1] as f64));
                 (e.0 * ge + late.0 * gl, e.1 * ge + late.1 * gl)
             } else {
