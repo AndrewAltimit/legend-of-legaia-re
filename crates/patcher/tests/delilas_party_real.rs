@@ -303,17 +303,28 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     }
 
     // XA20/XA22: only bark channel 7 mutes; every other channel (the
-    // music) stays byte-identical.
+    // music) stays byte-identical - except XA20 channel 2's 14-sector
+    // intro span (channel ordinals 13..=26), which the cast-bed
+    // remaster rewrites in place (and must actually differ).
     for name in ["XA/XA20.XA", "XA/XA22.XA"] {
         let (lba, size) = legaia_iso::iso9660::find_path_in_image(&patched, name).expect(name);
         let sectors = (size as usize).div_ceil(2048);
-        let (mut muted, mut kept) = (0usize, 0usize);
+        let (mut muted, mut kept, mut boosted) = (0usize, 0usize, 0usize);
+        let mut ch2_ordinal = 0usize;
         for i in 0..sectors {
             let base = (lba as usize + i) * 2352;
             let sector = &patched[base..base + 2352];
             if sector[0x12] & 0x20 == 0 {
                 continue;
             }
+            // Match the boost's own sector filter exactly: channel 2
+            // AUDIO sectors (subheader bit 0x04), in stream order.
+            let bed_intro =
+                name == "XA/XA20.XA" && sector[0x11] == 2 && sector[0x12] & 0x04 != 0 && {
+                    let ord = ch2_ordinal;
+                    ch2_ordinal += 1;
+                    (13..27).contains(&ord)
+                };
             if sector[0x11] == 7 {
                 assert!(
                     sector[0x18..0x92C].iter().all(|&b| b == 0)
@@ -321,6 +332,18 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
                     "{name} bark channel sector {i} still carries retail audio"
                 );
                 muted += 1;
+            } else if bed_intro {
+                // Tail sectors sit at unity gain, where the optimal
+                // re-encode legitimately reproduces the retail bytes -
+                // count the lifted sectors instead of asserting each.
+                if original[base + 0x18..base + 0x92C] != sector[0x18..0x92C] {
+                    boosted += 1;
+                }
+                assert_eq!(
+                    &original[base + 0x10..base + 0x18],
+                    &sector[0x10..0x18],
+                    "{name} bed-intro sector {i} subheader changed"
+                );
             } else {
                 assert_eq!(
                     &original[base..base + 2352],
@@ -332,6 +355,12 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         }
         assert!(muted > 10, "{name}: only {muted} bark sectors muted");
         assert!(kept > 100, "{name}: only {kept} music sectors survive");
+        if name == "XA/XA20.XA" {
+            assert!(
+                (8..=14).contains(&boosted),
+                "bed intro span: {boosted} lifted sectors (expected 8..=14)"
+            );
+        }
     }
 
     // XA12 is untouched: its only captured battle fire was the
@@ -1822,4 +1851,75 @@ fn stream_speed(readef: &[u8], slot: usize, entry_index: usize) -> Vec<f64> {
             sum / parts.max(1) as f64
         })
         .collect()
+}
+
+/// The Plasma Strike bed intro remaster: the boost lifts the quiet
+/// crescendo into audibility, touches ONLY the 14 swell sectors of
+/// `XA20.XA` channel 2, and guards against double application.
+#[test]
+fn cast_bed_intro_boost_is_audible_scoped_and_guarded() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const FILE: &str = "XA/XA20.XA";
+    const CHAN: u8 = 2;
+    const SPAN_FIRST: usize = 13;
+    const SPAN_LEN: usize = 14;
+    let mut p = DiscPatcher::open(original).expect("open");
+    let (before, coding) = p.read_xa_channel_payload(FILE, CHAN).expect("read");
+    assert_ne!(coding & 0x03, 0, "bed is stereo");
+
+    assert!(
+        legaia_patcher::delilas_xa_voice::boost_cast_bed_intro(&mut p).expect("boost"),
+        "first apply boosts"
+    );
+    let (after, _) = p.read_xa_channel_payload(FILE, CHAN).expect("re-read");
+    assert_eq!(before.len(), after.len());
+    // Scope: only the span sectors changed.
+    assert_eq!(
+        &before[..SPAN_FIRST * 2304],
+        &after[..SPAN_FIRST * 2304],
+        "head silence untouched"
+    );
+    assert_eq!(
+        &before[(SPAN_FIRST + SPAN_LEN) * 2304..],
+        &after[(SPAN_FIRST + SPAN_LEN) * 2304..],
+        "post-span stream untouched"
+    );
+    assert_ne!(
+        &before[SPAN_FIRST * 2304..(SPAN_FIRST + SPAN_LEN) * 2304],
+        &after[SPAN_FIRST * 2304..(SPAN_FIRST + SPAN_LEN) * 2304],
+        "span rewritten"
+    );
+
+    // Audibility: decode the intro and compare RMS over the early swell
+    // (0.75..1.2 s) - the boost must lift it well clear of the retail mix.
+    let opts = legaia_xa::DecodeOptions {
+        channels: legaia_xa::Channels::Stereo,
+        sample_rate: 37800,
+        ..Default::default()
+    };
+    let rms = |payload: &[u8]| -> f64 {
+        let need = (SPAN_FIRST + SPAN_LEN) * 2304;
+        let (pcm, _) = legaia_xa::decode(&payload[..need], opts).expect("decode");
+        let (a, b) = (28350usize, 45360usize); // stereo frames 0.75..1.2 s
+        let mut acc = 0.0f64;
+        for f in a..b {
+            let v = pcm[2 * f] as f64;
+            acc += v * v;
+        }
+        (acc / (b - a) as f64).sqrt()
+    };
+    let (r0, r1) = (rms(&before), rms(&after));
+    assert!(r1 > 4.0 * r0, "boost lifts the swell ({r0:.0} -> {r1:.0})");
+    assert!(r1 > 1000.0, "boosted swell is audible ({r1:.0})");
+
+    // Double-application guard.
+    assert!(
+        !legaia_patcher::delilas_xa_voice::boost_cast_bed_intro(&mut p).expect("re-apply"),
+        "second apply is a no-op"
+    );
+    let (again, _) = p.read_xa_channel_payload(FILE, CHAN).expect("read 3");
+    assert_eq!(after, again, "guarded bytes stable");
 }

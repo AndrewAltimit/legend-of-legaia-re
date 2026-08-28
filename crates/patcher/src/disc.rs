@@ -431,6 +431,79 @@ impl DiscPatcher {
         Ok(written)
     }
 
+    /// Raw sound-group payload of one channel of a Mode 2 Form 2 XA
+    /// file, in stream order (2304 bytes = 18 groups per audio sector),
+    /// plus the channel's coding byte.
+    pub fn read_xa_channel_payload(&self, name: &str, chan: u8) -> Result<(Vec<u8>, u8)> {
+        let (lba, size) = legaia_iso::iso9660::find_path_in_image(&self.image, name)
+            .with_context(|| format!("{name} not found in disc image"))?;
+        let sectors = (size as usize).div_ceil(USER_DATA_SIZE);
+        let mut payload = Vec::new();
+        let mut coding = None;
+        for i in 0..sectors {
+            let base = (lba as usize + i) * SECTOR_SIZE;
+            let Some(sector) = self.image.get(base..base + SECTOR_SIZE) else {
+                break;
+            };
+            if legaia_iso::write::is_form2(sector)
+                && sector[0x12] & 0x04 != 0
+                && sector[0x11] == chan
+            {
+                coding.get_or_insert(sector[0x13]);
+                payload.extend_from_slice(&sector[0x18..0x18 + 2304]);
+            }
+        }
+        let coding =
+            coding.with_context(|| format!("{name}: channel {chan} has no audio sectors"))?;
+        Ok((payload, coding))
+    }
+
+    /// Overwrite one channel's sound-group payload starting at the
+    /// channel's `first`-th audio sector (0-based, stream order).
+    /// `payload` must be a whole number of 2304-byte sector payloads.
+    /// Sectors outside the span keep their bytes; every touched sector
+    /// is EDC re-encoded. Returns the number of sectors rewritten.
+    pub fn rewrite_xa_channel_span(
+        &mut self,
+        name: &str,
+        chan: u8,
+        first: usize,
+        payload: &[u8],
+    ) -> Result<usize> {
+        if payload.is_empty() || !payload.len().is_multiple_of(2304) {
+            bail!("span payload must be a whole number of 2304-byte sectors");
+        }
+        let want = payload.len() / 2304;
+        let (lba, size) = legaia_iso::iso9660::find_path_in_image(&self.image, name)
+            .with_context(|| format!("{name} not found in disc image"))?;
+        let sectors = (size as usize).div_ceil(USER_DATA_SIZE);
+        let mut ordinal = 0usize;
+        let mut written = 0usize;
+        for i in 0..sectors {
+            let base = (lba as usize + i) * SECTOR_SIZE;
+            let Some(sector) = self.image.get_mut(base..base + SECTOR_SIZE) else {
+                break;
+            };
+            if !legaia_iso::write::is_form2(sector)
+                || sector[0x12] & 0x04 == 0
+                || sector[0x11] != chan
+            {
+                continue;
+            }
+            if ordinal >= first && ordinal < first + want {
+                let src = (ordinal - first) * 2304;
+                sector[0x18..0x18 + 2304].copy_from_slice(&payload[src..src + 2304]);
+                legaia_iso::write::encode_mode2_form2_sector(sector)?;
+                written += 1;
+            }
+            ordinal += 1;
+        }
+        if written != want {
+            bail!("{name}: channel {chan} span {first}+{want} covered only {written} sectors");
+        }
+        Ok(written)
+    }
+
     fn silence_xa(&mut self, name: &str, channels: Option<&[u8]>) -> Result<usize> {
         let (lba, size) = legaia_iso::iso9660::find_path_in_image(&self.image, name)
             .with_context(|| format!("{name} not found in disc image"))?;

@@ -139,6 +139,59 @@ pub fn encode_stereo_4bit_dualmono(pcm: &[i16]) -> Vec<u8> {
     out
 }
 
+/// Encode a true-stereo pair as 4-bit STEREO XA sound groups: left =
+/// even units, right = odd units, 4 sample pairs' worth per group (112
+/// stereo frames). `left`/`right` must be the same length; the tail
+/// pads with silence to a whole group. This is
+/// [`encode_stereo_4bit_dualmono`] generalised to independent channel
+/// signals - for re-authoring a span of an existing stereo stream
+/// in place.
+pub fn encode_stereo_4bit(left: &[i16], right: &[i16]) -> Vec<u8> {
+    assert_eq!(left.len(), right.len(), "stereo channels must match");
+    let frames_per_group = (UNITS_PER_GROUP_4BIT / 2) * SAMPLES_PER_UNIT;
+    let groups = left.len().div_ceil(frames_per_group).max(1);
+    let mut l = left.to_vec();
+    let mut r = right.to_vec();
+    l.resize(groups * frames_per_group, 0);
+    r.resize(groups * frames_per_group, 0);
+
+    let mut out = Vec::with_capacity(groups * SOUND_GROUP_BYTES);
+    let mut state = [State::default(); 2];
+    for g in 0..groups {
+        let mut group = [0u8; SOUND_GROUP_BYTES];
+        for unit in 0..UNITS_PER_GROUP_4BIT {
+            let ch = unit & 1;
+            let base = g * frames_per_group + (unit / 2) * SAMPLES_PER_UNIT;
+            let src = if ch == 0 { &l } else { &r };
+            let samples = &src[base..base + SAMPLES_PER_UNIT];
+            let mut best: Option<([u8; 28], f64, State, u8)> = None;
+            for filter in 0..4usize {
+                for range in 0..=12u32 {
+                    let (nibbles, err, st) = try_unit(samples, filter, range, state[ch]);
+                    if best.as_ref().is_none_or(|(_, be, _, _)| err < *be) {
+                        best = Some((nibbles, err, st, ((filter as u8) << 4) | range as u8));
+                    }
+                }
+            }
+            let (nibbles, _, st, param) = best.unwrap();
+            state[ch] = st;
+            let po = if unit < 4 { unit } else { 4 + unit };
+            group[po] = param;
+            group[po + 4] = param;
+            for (line, &n) in nibbles.iter().enumerate() {
+                let b = &mut group[16 + line * 4 + unit / 2];
+                if unit % 2 == 0 {
+                    *b |= n & 0x0F;
+                } else {
+                    *b |= n << 4;
+                }
+            }
+        }
+        out.extend_from_slice(&group);
+    }
+    out
+}
+
 /// Naive linear-interpolation resampler (mono).
 pub fn resample_linear(pcm: &[i16], from_hz: u32, to_hz: u32) -> Vec<i16> {
     if from_hz == to_hz || pcm.is_empty() {
@@ -197,5 +250,47 @@ mod tests {
             .sum();
         let snr_db = 10.0 * (sig / noise.max(1.0)).log10();
         assert!(snr_db > 25.0, "SNR {snr_db:.1} dB too low");
+    }
+
+    #[test]
+    fn stereo_pair_round_trips_per_channel() {
+        // Distinct L/R signals so a channel swap or a dual-mono fold
+        // fails the assert.
+        let n = 112 * 8;
+        let left: Vec<i16> = (0..n)
+            .map(|i| {
+                let t = i as f64 / 37800.0;
+                (9000.0 * (t * 2.0 * std::f64::consts::PI * 330.0).sin()) as i16
+            })
+            .collect();
+        let right: Vec<i16> = (0..n)
+            .map(|i| {
+                let t = i as f64 / 37800.0;
+                (7000.0 * (t * 2.0 * std::f64::consts::PI * 550.0).sin()) as i16
+            })
+            .collect();
+        let groups = encode_stereo_4bit(&left, &right);
+        assert_eq!(groups.len() % SOUND_GROUP_BYTES, 0);
+
+        let mut dec = StreamingDecoder::new(DecodeOptions {
+            channels: Channels::Stereo,
+            bits: BitsPerSample::Four,
+            sample_rate: 37800,
+        });
+        let mut out = Vec::new();
+        dec.feed(&groups, &mut out).expect("decode");
+        assert!(out.len() >= n * 2);
+
+        let snr = |src: &[i16], step_off: usize| -> f64 {
+            let sig: f64 = src.iter().map(|&s| (s as f64).powi(2)).sum();
+            let noise: f64 = src
+                .iter()
+                .enumerate()
+                .map(|(i, &a)| (a as f64 - out[i * 2 + step_off] as f64).powi(2))
+                .sum();
+            10.0 * (sig / noise.max(1.0)).log10()
+        };
+        assert!(snr(&left, 0) > 25.0, "left SNR too low");
+        assert!(snr(&right, 1) > 25.0, "right SNR too low");
     }
 }

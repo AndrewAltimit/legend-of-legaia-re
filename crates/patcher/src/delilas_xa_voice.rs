@@ -43,7 +43,7 @@
 //! [`fill_hero_victory_clips`], which replaces those clips with the
 //! siblings' grunts (verbatim SPU-ADPCM copy, no re-encode needed).
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 
 use crate::delilas_party::PartyMapping;
 use crate::delilas_voice::{MONSTER_SND_ENTRY, monster_vab_offset};
@@ -243,6 +243,117 @@ fn special_xa_pick(sibling: crate::delilas_party::Sibling) -> Option<(&'static s
         Sibling::Che => ("XA/XA20.XA", 1),
         Sibling::Lu => ("XA/XA20.XA", 2),
     })
+}
+
+/// Remaster the Plasma Strike cast bed's intro in place. `XA20.XA`
+/// channel 2 (the bed module 960 fires as cue `0x19A`) opens with
+/// 0.7 s of digital silence - the seek absorber, kept - followed by a
+/// ~0.75 s crescendo mixed 20-30 dB down. On a real-latency CD drive
+/// that quiet swell reads as "the music starts late": with the blast
+/// pinned to the damage whiteout, the audible onset is a pure function
+/// of the stream's internal loud-to-blast spacing, so no fire-timing
+/// or trim lever can move it - only the content can. This pass boosts
+/// the swell sectors (channel-ordinal `13..=26`) with an exponential
+/// x8 -> x1 gain ramp: same length, same splice-free stream, every
+/// other sector byte-identical, so the blast keeps its authored offset
+/// and the walk sync is untouched. Measured swell peaks cap ~6.8 k, so
+/// the ramp stays inside i16 (spot clamps are inaudible).
+///
+/// Must run BEFORE [`capture_victory_lines`]: Lu's special-cue splice
+/// excerpts this channel's head, so ordering the boost first makes the
+/// spliced fanfare open audibly too (the phase-17 pass-order law).
+///
+/// Idempotence: the swell's retail RMS is tiny; a span whose early
+/// sectors already carry boosted energy is left alone (guard, not a
+/// byte compare - re-decoding a boosted span and re-boosting would
+/// double the gain).
+pub fn boost_cast_bed_intro(patcher: &mut crate::disc::DiscPatcher) -> Result<bool> {
+    const FILE: &str = "XA/XA20.XA";
+    const CHAN: u8 = 2;
+    /// First boosted channel sector (0-based; sectors 0..13 are digital
+    /// silence) and span length: 14 sectors = 0.75 s at 37800 Hz stereo.
+    const SPAN_FIRST: usize = 13;
+    const SPAN_LEN: usize = 14;
+    /// Stereo frames per audio sector (18 groups x 112 frames).
+    const FRAMES_PER_SECTOR: usize = 2016;
+    /// Peak gain cap for the envelope-targeted lift.
+    const GAIN_START: f64 = 8.0;
+    /// Per-sample RMS above this in the span's first third = already
+    /// boosted (retail measures well under 200 there).
+    const BOOSTED_RMS: f64 = 700.0;
+
+    let (payload, coding) = patcher.read_xa_channel_payload(FILE, CHAN)?;
+    if coding & 0x03 == 0 {
+        bail!("cast bed channel is mono - expected the stereo bed");
+    }
+    let need = (SPAN_FIRST + SPAN_LEN) * 2304;
+    if payload.len() < need {
+        bail!("cast bed channel too short for the intro span");
+    }
+    let opts = legaia_xa::DecodeOptions {
+        channels: legaia_xa::Channels::Stereo,
+        sample_rate: 37800,
+        ..Default::default()
+    };
+    let (pcm, _) = legaia_xa::decode(&payload[..need], opts).context("decode bed intro")?;
+    let start = SPAN_FIRST * FRAMES_PER_SECTOR;
+    let end = (SPAN_FIRST + SPAN_LEN) * FRAMES_PER_SECTOR;
+    if pcm.len() < end * 2 {
+        bail!("bed intro decoded short");
+    }
+    // Already-boosted guard on the span's first third.
+    let third = start + (end - start) / 3;
+    let mut acc = 0.0f64;
+    for f in start..third {
+        let v = pcm[2 * f] as f64;
+        acc += v * v;
+    }
+    let rms = (acc / (third - start) as f64).sqrt();
+    if rms > BOOSTED_RMS {
+        return Ok(false);
+    }
+    // Envelope-targeted gain: per-window peak over both channels, gain
+    // = clamp(TARGET_PEAK / peak, 1, GAIN_START), linearly interpolated
+    // between windows. The quiet crescendo rises to presence right
+    // after the silence and hands over where the natural mix reaches
+    // the target, with clipping bounded by construction.
+    const WIN: usize = 1764; // ~46 ms at 37800 Hz
+    const TARGET_PEAK: f64 = 16000.0;
+    let n = end - start;
+    let wins = n.div_ceil(WIN);
+    let mut gains = Vec::with_capacity(wins + 1);
+    for wi in 0..wins {
+        let a = start + wi * WIN;
+        let b = (a + WIN).min(end);
+        let mut peak = 1.0f64;
+        for f in a..b {
+            peak = peak.max((pcm[2 * f] as f64).abs());
+            peak = peak.max((pcm[2 * f + 1] as f64).abs());
+        }
+        gains.push((TARGET_PEAK / peak).clamp(1.0, GAIN_START));
+    }
+    gains.push(1.0); // hand over to the untouched stream at the span end
+    let mut left = Vec::with_capacity(n);
+    let mut right = Vec::with_capacity(n);
+    for f in start..end {
+        let x = (f - start) as f64 / WIN as f64;
+        let wi = (x as usize).min(wins - 1);
+        let frac = x - wi as f64;
+        let g = gains[wi] * (1.0 - frac) + gains[wi + 1] * frac;
+        let clamp = |v: i16| -> i16 { (v as f64 * g).round().clamp(-32768.0, 32767.0) as i16 };
+        left.push(clamp(pcm[2 * f]));
+        right.push(clamp(pcm[2 * f + 1]));
+    }
+    let groups = legaia_xa::encode::encode_stereo_4bit(&left, &right);
+    if groups.len() != SPAN_LEN * 2304 {
+        bail!(
+            "bed intro re-encode produced {} bytes, expected {}",
+            groups.len(),
+            SPAN_LEN * 2304
+        );
+    }
+    patcher.rewrite_xa_channel_span(FILE, CHAN, SPAN_FIRST, &groups)?;
+    Ok(true)
 }
 
 /// Per-slot sibling voice lines, captured from the XA reels BEFORE the

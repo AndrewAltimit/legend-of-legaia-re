@@ -2348,6 +2348,24 @@ with the count-store riding the wait branch's delay slot. The threshold
 is probe-calibrated to the retail schedule: damage stage `mph0+938`,
 walk end `+1324` (retail `+909`/`+1264`).
 
+One residual is content, not timing. With the blast pinned to the
+damage whiteout, the bed's audible onset is a pure function of the
+stream's internal loud-to-blast spacing - no fire-timing, trim or
+threshold lever can move one without the other - and the retail bed
+opens with 0.7 s of digital silence (the seek absorber) followed by a
+~0.75 s crescendo mixed 20-30 dB down, which on a real-latency drive
+reads as "the music starts late". The fix is a stream remaster in
+place (`delilas_xa_voice::boost_cast_bed_intro`): the 14 swell sectors
+of `XA20.XA` channel 2 are decoded, lifted with an exponential x8 -> x1
+gain ramp (measured swell peaks cap ~6.8 k, inside i16), and re-encoded
+true-stereo (`legaia_xa::encode::encode_stereo_4bit`) at the same
+length - every other sector byte-identical, so the blast keeps its
+authored offset and the walk sync is untouched. The pass runs BEFORE
+the special-cue capture, so the fanfare excerpt spliced from the same
+channel head opens audibly too, and an RMS guard skips an
+already-boosted span (re-boosting a decode of the boosted stream would
+double the gain).
+
 The fourth is data, not module code: the module stages the CASTER's two
 clips by raw index (`actor+0x1DA` = `0x0A`, then `0x0B` at the lift
 boundary), which on a monster caster are its archive's wind-up/smash

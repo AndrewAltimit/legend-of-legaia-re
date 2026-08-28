@@ -490,6 +490,20 @@ pub fn apply_delilas_party_with(
         // out of Lu's bank and hands the "sibling" slots to the wrong
         // speaker.
 
+        // The Plasma Strike bed's intro remaster runs FIRST: it edits
+        // the same XA20 channel the special-cue capture below excerpts,
+        // so ordering the boost ahead of the capture makes the spliced
+        // fanfare open audibly too (the pass-order law).
+        match crate::delilas_xa_voice::boost_cast_bed_intro(patcher) {
+            Ok(true) => report
+                .notes
+                .push("cast bed: Plasma Strike intro crescendo remastered audible".into()),
+            Ok(false) => {}
+            Err(e) => report
+                .notes
+                .push(format!("cast bed: intro remaster skipped ({e:#})")),
+        }
+
         // Sibling XA victory lines - captured off the still-retail
         // reels BEFORE any mute below wipes them (XA21 mutes whole).
         let victory_lines = crate::delilas_xa_voice::capture_victory_lines(patcher, mapping);
