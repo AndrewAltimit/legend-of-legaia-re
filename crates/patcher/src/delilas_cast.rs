@@ -469,6 +469,98 @@ const MODULE_960_STAGE_REMAP_EDITS: &[WordEdit] = &[
     },
 ];
 
+/// PROT 960: re-time the mp5 hold to the retail schedule.
+///
+/// Retail's mp5 arm holds phase 5 until the PREVIOUS stage's clip ends
+/// (`lbu +0x1D9 == 0x0D` - a clip-boundary wait worth ~320 ticks on the
+/// enemy walk) and the playhead cursor (`lh [*(actor+0x22C)]+0x68`)
+/// reaches `0x90`. The stage-row fold breaks that clock: every stage
+/// stages row `0x0A`, so the playing-id half of the gate is true the
+/// tick mp5 opens, and the cursor half is nearly met by the looping
+/// windup - mp5 exits ~50 ticks in, pulling the burst/damage stage from
+/// retail's `mph0+909` up to `+829` (probe-measured both sides). The
+/// XA bed is authored against the retail schedule: its blast bump sits
+/// at stream `+14.8 s`, which with the real-CD stream-start latency of
+/// actual hardware / DuckStation lands exactly on retail's `+909`
+/// damage. On the folded walk the whiteout ran ~2-3.5 s AHEAD of the
+/// blast (worse the more accurate the CD timing), which is the
+/// user-reported "audio starts late" - the bed was never late; the
+/// walk was early.
+///
+/// Fix: replace the cursor half of the gate with a deterministic tick
+/// counter. The counter cell is a dead word INSIDE the module image
+/// (`0x801F8588`, first word of the party-wipe body that
+/// [`MODULE_960_WIPE_EDIT`] unreaches; zeroed on disc by the edit
+/// below) - the module re-streams from disc at every cast, so the
+/// counter self-resets to zero with no reset code. NB the wipe body's
+/// FIRST words (`0x801F8588..0x85AC`) are already claimed by the
+/// teardown cave ([`MODULE_960_TEARDOWN_EDITS`]) - the counter takes
+/// `0x801F85B0`, the first word past its rejoin. The caster's
+/// `+0x176` hold cell is NOT usable: it is the clip player's live
+/// hold budget, and writing it freezes the staged clip (probe-measured
+/// deadlock, cursor pinned at 0). The cursor itself is not a safe gate
+/// for longer holds either - the fold's per-stage re-commit wraps it.
+/// The count+1 store rides the wait branch's delay slot; the wait
+/// path's return value stays `1` because `slti` is `1` exactly when
+/// the branch is taken (retail set it via `move v0, fp` with `fp = 1`).
+/// `MP5_HOLD_TICKS` is probe-calibrated against the retail enemy walk
+/// (damage stage at `mph0+909`, walk end `+1264`). The arm is entered
+/// once per ~4-5 vsyncs (the restage cadence) and the later stages'
+/// spans shift with the windup cursor's wrap phase at mp5 exit, so the
+/// response is jagged; the sweep's floor is `0x1E` -> damage stage at
+/// `mph0+938`, walk end `+1324` (retail `+909`/`+1264`), vs `+829` /
+/// `+1190` unpatched. That puts the bed's blast bump (stream `+14.8 s`
+/// plus real-CD stream-start latency) back at the damage whiteout the
+/// way the retail schedule has it.
+const MP5_HOLD_TICKS: i16 = 0x1E;
+/// VA `0x801F85B0` = `lui v1, 0x8020` base minus `0x7A50`.
+const MP5_COUNTER_LO: u16 = 0x85B0;
+const MODULE_960_MP5_HOLD_EDITS: &[WordEdit] = &[
+    WordEdit {
+        // 0x801F7B70: cursor deref -> counter-cell base.
+        offset: 0x1198,
+        expect: 0x8E42_022C, // lw v0, 0x22C(s2)
+        replace: m::lui(V1, 0x8020),
+    },
+    WordEdit {
+        // 0x801F7B74: the old load-delay nop -> counter load.
+        offset: 0x119C,
+        expect: 0x0000_0000, // nop
+        replace: m::lw(A0, V1, MP5_COUNTER_LO),
+    },
+    WordEdit {
+        // 0x801F7B78: cursor load -> the counter load's delay slot.
+        offset: 0x11A0,
+        expect: 0x8442_0068, // lh v0, 0x68(v0)
+        replace: m::nop(),
+    },
+    WordEdit {
+        // 0x801F7B7C: free slot -> counter bump.
+        offset: 0x11A4,
+        expect: 0x0000_0000, // nop
+        replace: m::addiu(A0, A0, 1),
+    },
+    WordEdit {
+        // 0x801F7B80: threshold; the `bnez -> wait` that follows stays.
+        offset: 0x11A8,
+        expect: 0x2842_0090, // slti v0, v0, 0x90
+        replace: m::slti(V0, A0, MP5_HOLD_TICKS),
+    },
+    WordEdit {
+        // 0x801F7B88: the branch delay (`move v0, fp`) -> counter store.
+        offset: 0x11B0,
+        expect: 0x03C0_1021, // move v0, fp
+        replace: m::sw(A0, V1, MP5_COUNTER_LO),
+    },
+    WordEdit {
+        // 0x801F85B0: the dead wipe-body word becomes the counter cell
+        // (first word past the teardown cave's rejoin).
+        offset: 0x1BD8,
+        expect: 0xA0A2_BD60, // sb v0, -0x42A0(a1) (unreached)
+        replace: 0x0000_0000,
+    },
+];
+
 /// The victim scratch cell for PROT 958's finale damage arms: the LAST
 /// word of the dead party-wipe body ([`MODULE_958_WIPE_EDIT`] makes the
 /// body unreachable). VA `0x801F8BB4`, addressed as
@@ -1284,6 +1376,7 @@ pub fn patch_module_958(p: &mut DiscPatcher, unfold: Option<&[usize]>) -> Result
 pub fn patch_module_960(p: &mut DiscPatcher, unfold: Option<&[usize]>) -> Result<bool> {
     let entry = p.read_entry(960).context("read PROT 960")?;
     let mut edits: Vec<WordEdit> = MODULE_960_STAGE_REMAP_EDITS.to_vec();
+    edits.extend_from_slice(MODULE_960_MP5_HOLD_EDITS);
     if let Some(offs) = unfold {
         edits.extend(module_960_unfold_edits(&stage_cave_layout()?, offs)?);
     }

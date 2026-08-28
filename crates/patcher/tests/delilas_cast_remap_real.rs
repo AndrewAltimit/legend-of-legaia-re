@@ -121,6 +121,15 @@ const SHARED_960: &[(u64, u32, u32)] = &[
     (0x1104, 0x2402_000D, 0x2402_000A), // li v0,0xD -> li v0,0xA
     (0x1834, 0x2402_000F, 0x2402_000B), // li v0,0xF -> li v0,0xB
     (0x118C, 0x2402_000D, 0x2402_000A), // mp5 played-id gate follows
+    // mp5 hold: cursor gate -> deterministic tick counter in the dead
+    // wipe-body word 0x801F85B0 (self-resets on module re-stream).
+    (0x1198, 0x8E42_022C, 0x3C03_8020), // lw v0,0x22C(s2) -> lui v1,0x8020
+    (0x119C, 0x0000_0000, 0x8C64_85B0), // nop -> lw a0,-0x7A50(v1)
+    (0x11A0, 0x8442_0068, 0x0000_0000), // lh v0,0x68(v0) -> nop (load delay)
+    (0x11A4, 0x0000_0000, 0x2484_0001), // nop -> addiu a0,a0,1
+    (0x11A8, 0x2842_0090, 0x2882_001E), // slti v0,v0,0x90 -> slti v0,a0,0x1E
+    (0x11B0, 0x03C0_1021, 0xAC64_85B0), // move v0,fp -> sw a0,-0x7A50(v1)
+    (0x1BD8, 0xA0A2_BD60, 0x0000_0000), // dead word -> counter cell
     // Damage retargets (victim lives in $s3 tick-wide).
     (0x17AC, 0x8EC5_9370, 0x0260_2821), // lw a1,tbl0 -> move a1,s3
     (0x17DC, 0x8EC6_9370, 0x0260_3021), // lw a2,tbl0 -> move a2,s3

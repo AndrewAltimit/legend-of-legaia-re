@@ -2321,17 +2321,32 @@ gates the wait on the victim being alive: the arm's free `nop` loads HP
 into a dead register, the wait branch retargets a 4-word cave in the wipe
 body (alive -> the retail wait, dead -> the phase-advance convergence),
 and the end-of-action liveness sweep (state `0x5A`) runs the real death.
-960 needs a sixth, on the audio side: its phase-0 opener fires the 16.9 s
-cast bed through the jingle wrapper `FUN_8004FCC8`, which DROPS a cue
-outright whenever the XA system is busy (`jal FUN_8003DE7C(1)`; no
-deferral queue exists). The enemy-side cast opens with the XA idle, but
-the player-side combo path reaches module open with a voice cue still
-live, so the bed vanished, later audio ran ~8 s behind the choreography,
-and the settle held the caster until it finished (video-measured). The
-fix reroutes the opener's `jal` through a 5-word preempt cave split
-across the SCUS pools that calls the guard-free player `FUN_8003D53C`
-(slot `0x13`, channel `2`, dur `0x3F6`) directly - its own head stops
-the active stream, so the bed starts at cast open on both caster kinds.
+960 needs a sixth, on the audio side, in two parts. First the fire
+itself: the phase-0 opener fires the 16.9 s cast bed through the jingle
+wrapper `FUN_8004FCC8`, which DROPS a cue outright whenever the XA
+system is busy (`jal FUN_8003DE7C(1)`; no deferral queue exists) - the
+opener's `jal` is rerouted through a 5-word preempt cave split across
+the SCUS pools that calls the guard-free player `FUN_8003D53C` (slot
+`0x13`, channel `2`, dur `0x3F6`) directly, whose own head stops any
+active stream, so the bed fires at module open unconditionally. Second,
+the schedule the bed is authored against: the bed's blast bump sits at
+stream `+14.8 s`, which lands on the retail walk's damage stage
+(`mph0+909` ticks, walk end `+1264`) once the real CD's stream-start
+latency is added - but the stage-row fold breaks the mp5 hold that
+provides most of that runway. Retail's mp5 arm waits for the previous
+stage's clip to end (`lbu +0x1D9 == 0xD`, a ~320-tick clip boundary)
+plus a playhead-cursor threshold; with every stage folded onto row
+`0x0A` the played-id half is true the tick mp5 opens and the cursor
+half is nearly met, so the walk reached damage at `mph0+829` and the
+blast arrived seconds after the whiteout (worse under accurate CD
+timing, where the stream starts later still). The fix replaces the
+cursor half with a deterministic tick counter kept in a dead
+wipe-body word of the module image itself (`0x801F85B0` - re-streamed
+from disc each cast, so it self-resets; the caster's `+0x176` hold cell
+is the clip player's live budget and deadlocks the clip if borrowed),
+with the count-store riding the wait branch's delay slot. The threshold
+is probe-calibrated to the retail schedule: damage stage `mph0+938`,
+walk end `+1324` (retail `+909`/`+1264`).
 
 The fourth is data, not module code: the module stages the CASTER's two
 clips by raw index (`actor+0x1DA` = `0x0A`, then `0x0B` at the lift
