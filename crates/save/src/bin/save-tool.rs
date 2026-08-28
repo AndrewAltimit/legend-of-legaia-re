@@ -79,6 +79,22 @@ enum Cmd {
         #[arg(long, default_value_t = 5)]
         count: usize,
     },
+    /// Rename characters across every Legaia save block on a memory-card
+    /// image and write the result to a new card (never edits the input in
+    /// place). Repeat `--set OLD=NEW`, e.g. `--set Vahn=Lu --set Noa=Gi
+    /// --set Gala=Che`. Both name sites in each SC block are rewritten -
+    /// the roster display-name table at +0x254 the save-select panel
+    /// reads, and each character record's display name at +0x2A7 - and
+    /// the block's additive checksum is restamped.
+    Rename {
+        path: PathBuf,
+        /// `OLD=NEW` name pair; repeatable.
+        #[arg(long = "set", required = true, value_parser = parse_rename_pair)]
+        set: Vec<(String, String)>,
+        /// Output card path.
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Write a raw payload into a free block chain on a PSX memory-card
     /// image (.mcr). Modifies the card in place and prints the block index
     /// of the first block written.
@@ -212,6 +228,7 @@ fn main() -> Result<()> {
             offset,
             count,
         } => party(&path, block, offset, count),
+        Cmd::Rename { path, set, out } => rename(&path, &set, &out),
         Cmd::Write {
             card,
             payload,
@@ -770,6 +787,62 @@ fn sc_diff(
             preview(&c.b_bytes),
         );
     }
+    Ok(())
+}
+
+/// Parse an `OLD=NEW` rename pair for `--set`.
+fn parse_rename_pair(s: &str) -> Result<(String, String), String> {
+    let (from, to) = s
+        .split_once('=')
+        .ok_or_else(|| format!("expected OLD=NEW, got {s:?}"))?;
+    if from.is_empty() || to.is_empty() {
+        return Err(format!(
+            "expected OLD=NEW with both sides non-empty, got {s:?}"
+        ));
+    }
+    Ok((from.to_string(), to.to_string()))
+}
+
+fn rename(path: &Path, set: &[(String, String)], out: &Path) -> Result<()> {
+    let mut buf = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
+    let saves = parse_card(&buf)?;
+    let mut total = 0usize;
+    for save in &saves {
+        if !save.product_code.contains("SCUS-94254") {
+            println!(
+                "block {} ({}): not a Legaia save, skipped",
+                save.block, save.product_code
+            );
+            continue;
+        }
+        let off = save.block as usize * BLOCK_SIZE;
+        let sc = &mut buf[off..off + BLOCK_SIZE];
+        if sc[..2] != legaia_save::card::SAVE_BLOCK_MAGIC {
+            println!("block {}: no SC magic, skipped", save.block);
+            continue;
+        }
+        let mut changed = 0usize;
+        for (from, to) in set {
+            changed += legaia_save::card::rename_retail_character(sc, from, to)
+                .with_context(|| format!("block {}: {from} -> {to}", save.block))?;
+        }
+        assert!(
+            legaia_save::sc_block_checksum_valid(&buf[off..off + BLOCK_SIZE]),
+            "block {} checksum invalid after rename",
+            save.block
+        );
+        println!(
+            "block {} ({}): {changed} name field(s) rewritten",
+            save.block, save.product_code
+        );
+        total += changed;
+    }
+    std::fs::write(out, &buf).with_context(|| format!("write {}", out.display()))?;
+    println!(
+        "{total} field(s) across {} save(s) -> {}",
+        saves.len(),
+        out.display()
+    );
     Ok(())
 }
 
