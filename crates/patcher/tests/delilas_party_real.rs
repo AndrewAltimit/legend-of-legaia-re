@@ -81,15 +81,28 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     assert_eq!(block_name(&reopened, 164), "Noa");
     assert_eq!(block_name(&reopened, 163), "Gala");
 
-    // Save portraits follow the mapping: hero tiles 0/1/2 of the
-    // portrait sheet now carry the mapped siblings' own tiles (Gi 13,
-    // Lu 6, Che 8 under the default gi,lu,che), the boot load-screen's
-    // standalone portrait TIMs match, and every other tile is retail.
+    // Save portraits follow the mapping both ways: hero tiles 0/1/2 of
+    // the portrait sheet carry the mapped siblings' own tiles (Gi 12,
+    // Lu 13, Che 11 under the default gi,lu,che), the sibling tiles
+    // carry the heroes, the boot load-screen's standalone portrait TIMs
+    // match the hero tiles, and every other tile is retail.
     {
         let retail = DiscPatcher::open(original.clone()).expect("open retail");
         let sheet_r = legaia_patcher::save_icon::read_sheet(&retail).expect("retail sheet");
         let sheet_p = legaia_patcher::save_icon::read_sheet(&reopened).expect("patched sheet");
-        for (hero_tile, src) in [(0usize, 13usize), (1, 6), (2, 8)] {
+        for (a, b) in [(0usize, 12usize), (1, 13), (2, 11)] {
+            assert_eq!(
+                sheet_p.tile_block_pixels(b).unwrap(),
+                sheet_r.tile_block_pixels(a).unwrap(),
+                "sibling tile {b} pixels != retail hero tile {a}"
+            );
+            assert_eq!(
+                sheet_p.tile_clut_bytes(b).unwrap(),
+                sheet_r.tile_clut_bytes(a).unwrap(),
+                "sibling tile {b} palette != retail hero tile {a}"
+            );
+        }
+        for (hero_tile, src) in [(0usize, 12usize), (1, 13), (2, 11)] {
             assert_eq!(
                 sheet_p.tile_block_pixels(hero_tile).unwrap(),
                 sheet_r.tile_block_pixels(src).unwrap(),
@@ -117,7 +130,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
                 "standalone TIM {hero_tile} pixels"
             );
         }
-        for tile in 3..16 {
+        for tile in (3..16).filter(|t| ![11, 12, 13].contains(t)) {
             assert_eq!(
                 sheet_p.tile_block_pixels(tile).unwrap(),
                 sheet_r.tile_block_pixels(tile).unwrap(),

@@ -101,16 +101,16 @@ impl Sibling {
     }
 
     /// The sibling's tile in the save-slot portrait sheet (PROT 899
-    /// `0x1F908`, [`crate::save_icon`]). Pinned by eyeballing the
-    /// exported tiles against the siblings' own scene face textures:
-    /// Che's red head-crest (stone bundle head TIM, CLUT (160,481)),
-    /// Gi's unmasked dark bouffant + grin (conc2 court atlas), Lu's
-    /// pink bob (conc2 atlas).
+    /// `0x1F908`, [`crate::save_icon`]), in the sheet's character order
+    /// (0 Vahn, 1 Noa, 2 Gala, ...). Gi's tile matches his masked field
+    /// head TIM (stone bundle, CLUT (128,481)) - in the field events the
+    /// siblings wear masks, which is why an unmasked-face guess misreads
+    /// this sheet.
     pub fn portrait_tile(self) -> usize {
         match self {
-            Sibling::Gi => 13,
-            Sibling::Che => 8,
-            Sibling::Lu => 6,
+            Sibling::Che => 11,
+            Sibling::Gi => 12,
+            Sibling::Lu => 13,
         }
     }
 
@@ -533,19 +533,22 @@ pub fn apply_delilas_party_with(
         report.notes.extend(events.notes);
 
         // Save metadata wears the swap too: the save-select face and
-        // the PSX card-block icon for the three hero slots come off the
-        // portrait sheet (tiles 0..2 by party id / card slot), and the
-        // boot load screen reads its own standalone copies - point each
-        // hero tile at the mapped sibling's own portrait tile.
+        // the PSX card-block icon come off the portrait sheet (tile =
+        // party id / card slot), and the boot load screen reads its own
+        // standalone copies of tiles 0..2. Exchange each hero tile with
+        // the mapped sibling's tile - the party's saves show the
+        // siblings, and the sheet slots the siblings held now show the
+        // heroes (they are this world's Delilas family).
         for (hero_tile, who, sibling) in [
             (0usize, "Vahn", mapping.vahn),
             (1, "Noa", mapping.noa),
             (2, "Gala", mapping.gala),
         ] {
-            crate::save_icon::copy_slot_portrait(patcher, sibling.portrait_tile(), hero_tile)
-                .with_context(|| format!("save portrait {who} -> {}", sibling.display_name()))?;
+            crate::save_icon::swap_slot_portraits(patcher, hero_tile, sibling.portrait_tile())
+                .with_context(|| format!("save portrait {who} <-> {}", sibling.display_name()))?;
             report.notes.push(format!(
-                "save portraits: {who}'s face tile now shows {}",
+                "save portraits: {who}'s face tile now shows {} (and {}'s shows {who})",
+                sibling.display_name(),
                 sibling.display_name()
             ));
         }

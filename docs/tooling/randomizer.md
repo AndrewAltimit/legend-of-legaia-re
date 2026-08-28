@@ -2287,9 +2287,11 @@ to exist as records - which they do, untouched.
 memory-card block icon for the three hero slots come off the save-slot
 portrait sheet ([`save-icon.md`](../formats/save-icon.md) - tiles 0..2 by
 party id / card slot), and the boot load screen keeps its own standalone
-copies of those three tiles; the swap points each hero tile at the mapped
-sibling's own portrait tile (Gi 13, Che 8, Lu 6 in the same sheet),
-byte-exact, on all surfaces. Existing card saves keep the icon they were
+copies of those three tiles; the swap exchanges each hero tile with the
+mapped sibling's own portrait tile (Che 11, Gi 12, Lu 13 in the same
+sheet, its character order), byte-exact, on all surfaces - the party's
+saves show the siblings, and the card slots whose icons were the
+siblings' faces now show the heroes. Existing card saves keep the icon they were
 written with; `save-tool rename` covers the names on an existing card.
 
 **Dialog follows the swap.** Every line that names a sibling (the
