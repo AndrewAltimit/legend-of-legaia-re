@@ -53,14 +53,11 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     // The field forms must come from the siblings' own NPC meshes at
     // full detail - no battle-model fallback, no decimation ladder, no
     // head-texture downscale. Scoped to the PROT 0874 field pass ("field:"
-    // notes): the nilboa scene mirror ("nilboa field:" notes) legitimately
-    // packs its non-face head islands at half resolution by design (face
-    // fronts stay full-res), which is not this guard's regression.
-    for note in report
-        .notes
-        .iter()
-        .filter(|n| !n.starts_with("nilboa field:"))
-    {
+    // notes): the scene mirrors ("nilboa field:" / "stone field:" /
+    // "taiku2 field:" / "conc2 field:" notes) legitimately pack their
+    // non-face head islands at half resolution by design (face fronts
+    // stay full-res), which is not this guard's regression.
+    for note in report.notes.iter().filter(|n| n.starts_with("field:")) {
         assert!(
             !note.contains("NPC-mesh source unavailable")
                 && !note.contains("detail reduced")

@@ -1848,8 +1848,28 @@ style brings the three rigs to 29200 bytes against the members' 30276 -
 with non-face head-texture islands packed at half resolution (face fronts
 stay full). The retail hero source is the **pre-fieldize** PROT 0874
 capture: by the time this pass runs, 0874 itself carries the siblings.
-Byte-identical copies of the sibling NPC meshes in `stone` / `taiku2` /
-`conc2` are out of scope for now. Verified by `nivora_field_real`.
+Verified by `nivora_field_real`.
+
+The other three story appearances mirror through the same bake driven by
+a per-scene coordinate table (`party_swap::event_field::EVENT_SCENES` via
+`legaia_patcher::nivora_field::apply_event_field`): the map-stone
+confrontation in `stone` (bundle `0175`, members 33/34/35 anchored on ANM
+records 37/52/62), Zora's floating castle in `taiku2` (bundle `0426` -
+four per-beat shading copies per sibling, members 116..127, all four
+carrying one bake anchored on the placement records 14/20/26), and past
+Conkram in `conc2` (bundle `0624`, court-outfit meshes 165/166/167 on
+records 64/66/68, head TIMs in the sibling `tim_pack` entry `0625`).
+Every coordinate is the scene's own MAN actor placement (`model_index` =
+TMD-section member, `anim_id - 1` = anchor record). These scenes keep
+their NPC meshes inside the bundle's LZS TMD section, so the rebuild
+reflows the member pack in the decoded section and recompresses -
+in-place when the stream fits its retail span, else a whole-bundle
+section re-lay inside the entry footprint. One trap is pinned in the
+spec: `taiku2`'s kneeling anchor stances fool the geometric limb
+splitter into a clean-looking but wrong role pairing (the torso lands on
+a leg bone), so its slots carry the assignment measured off the
+byte-identical rigs' neutral stance in `stone`. Verified per scene by
+`delilas_event_field_real`.
 
 The enemy special's **body motion** no longer reads as the sibling's
 move: the enemy-side anim mirror (`party_swap::enemy_anim` via

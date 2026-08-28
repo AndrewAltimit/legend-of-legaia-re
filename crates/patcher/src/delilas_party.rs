@@ -482,6 +482,14 @@ pub fn apply_delilas_party_with(
             .context("nilboa field mirror")?;
         report.notes.extend(nivora.notes);
 
+        // The remaining Delilas event appearances (map stone, floating
+        // castle, past Conkram) mirror the same way - their sibling
+        // meshes live inside each scene's bundle instead of a separate
+        // pack. Same pre-fieldize PROT 0874 dependency.
+        let events = crate::nivora_field::apply_event_field(patcher, mapping, &prot_0874)
+            .context("event-scene field mirrors")?;
+        report.notes.extend(events.notes);
+
         // Battle-voice passes, in dependency order: every XA mute first,
         // then the XA + victory-clip fills (which SOURCE the siblings'
         // grunts from monster.snd), and the duel-bank splice LAST -

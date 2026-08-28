@@ -69,3 +69,63 @@ pub fn apply_nivora_field(
         slots,
     })
 }
+
+/// Swap every OTHER Delilas event appearance (the map-stone
+/// confrontation in `stone`, Zora's floating castle in `taiku2`, past
+/// Conkram in `conc2`) for the mapped heroes' field meshes - the
+/// scene-bundle sibling of [`apply_nivora_field`], driven by
+/// [`legaia_asset::party_swap::event_field::EVENT_SCENES`].
+///
+/// Same ordering constraint as the nilboa pass: `prot_0874_retail` is
+/// the pre-fieldize PROT 0874 entry bytes.
+pub fn apply_event_field(
+    patcher: &mut DiscPatcher,
+    mapping: &PartyMapping,
+    prot_0874_retail: &[u8],
+) -> Result<NivoraFieldReport> {
+    use legaia_asset::party_swap::event_field;
+
+    let field_mapping = [
+        mapping.vahn.monster_id(),
+        mapping.noa.monster_id(),
+        mapping.gala.monster_id(),
+    ];
+    let mut report = NivoraFieldReport::default();
+    for spec in event_field::EVENT_SCENES {
+        let bundle = patcher
+            .read_entry_footprint(spec.bundle_entry)
+            .with_context(|| format!("read PROT {} ({} bundle)", spec.bundle_entry, spec.scene))?;
+        let tim_entry = spec
+            .tim_entry
+            .map(|e| {
+                patcher
+                    .read_entry_footprint(e)
+                    .with_context(|| format!("read PROT {e} ({} TIM pack)", spec.scene))
+            })
+            .transpose()?;
+        let (patch, slots) = event_field::heroize_event_scene(
+            spec,
+            &bundle,
+            tim_entry.as_deref(),
+            prot_0874_retail,
+            field_mapping,
+        )
+        .with_context(|| format!("rebuild {} Delilas field meshes as the heroes", spec.scene))?;
+        patcher
+            .patch_prot_entry(spec.bundle_entry, 0, &patch.bundle_entry)
+            .with_context(|| format!("write PROT {}", spec.bundle_entry))?;
+        if let (Some(entry), Some(bytes)) = (spec.tim_entry, patch.tim_entry.as_ref()) {
+            patcher
+                .patch_prot_entry(entry, 0, bytes)
+                .with_context(|| format!("write PROT {entry}"))?;
+        }
+        report.notes.extend(
+            patch
+                .warnings
+                .iter()
+                .map(|w| format!("{} field: {w}", spec.scene)),
+        );
+        report.slots.extend(slots);
+    }
+    Ok(report)
+}

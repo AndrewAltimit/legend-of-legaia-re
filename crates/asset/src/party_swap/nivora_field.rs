@@ -63,7 +63,7 @@ pub struct NivoraFieldPatch {
 /// One hero's field-mesh source: the 10 posed bones of the PROT 0874 §0
 /// rig, the locomotion idle rest pose, and the atlas texel space its
 /// textured prims sample (`cba` re-keyed to index `cluts`).
-struct HeroSource {
+pub(super) struct HeroSource {
     model: Vec<ModelObject>,
     rest: Vec<PartPose>,
     cluts: Vec<[u16; 16]>,
@@ -73,16 +73,22 @@ struct HeroSource {
 
 /// One sibling NPC target: the retail member mesh (for anatomy + budget),
 /// its scene idle rest pose, and its head-TIM window inside the bundle.
-struct NpcTarget {
-    model: Vec<ModelObject>,
-    rest: Vec<PartPose>,
-    head_tim: HeadTimWindow,
+pub(super) struct NpcTarget {
+    pub(super) model: Vec<ModelObject>,
+    pub(super) rest: Vec<PartPose>,
+    /// Object-index -> body-role assignment. Derived from the first
+    /// frame of the scene record that splits the limb chains cleanly -
+    /// the assignment is pose-independent, but the geometric splitter
+    /// needs a frame where left and right limbs sit on their own sides
+    /// (an event stance like taiku2's kneel crosses them at frame 0).
+    pub(super) roles: [usize; FIELD_BONES],
+    pub(super) head_tim: HeadTimWindow,
 }
 
 /// Where a sibling's head texture lives: the TIM's byte offset inside
 /// the decoded §0 TIM list, its texel window inside texpage 5, and the
 /// CLUT columns its prims address.
-struct HeadTimWindow {
+pub(super) struct HeadTimWindow {
     /// Byte offset of the TIM (its 0x10 magic) inside the decoded §0.
     tim_offset: usize,
     /// Texel-window origin inside the page (u = (fb_x - page_x) * 4).
@@ -102,7 +108,7 @@ struct HeadTimWindow {
 }
 
 /// Decode one hero slot from the pre-fieldize PROT 0874 entry.
-fn hero_slot_source(prot_0874: &[u8], slot: usize) -> Result<HeroSource> {
+pub(super) fn hero_slot_source(prot_0874: &[u8], slot: usize) -> Result<HeroSource> {
     let pack = character_pack::parse(prot_0874).context("parse PROT 0874")?;
     let cs = pack
         .slot(slot)
@@ -262,7 +268,29 @@ fn npc_target(
     if head >> 24 != 0x02 {
         bail!("NPC pack entry head {head:#x} is not a type-2 TMD stream");
     }
-    let pack = &npc_pack[4..];
+    let bundle = crate::player_anm::find_in_entry(npc_bundle, 5)
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("NPC bundle entry carries no ANM bundle"))?;
+    npc_target_at(&npc_pack[4..], sec0_tims, &bundle, member, idle_rec, None)
+}
+
+/// Scene-generic core of [`npc_target`]: locate one sibling member + rest
+/// pose + head-TIM window given the raw coordinates instead of the nilboa
+/// lookup. `pack` is the member pack **body** (count word first - no
+/// entry-head type word), `tims` any buffer holding the scene's raw TIMs
+/// at 4-aligned offsets (a decoded `TIM_LIST` section or a whole
+/// `tim_pack` entry), `anm` the scene's actor-animation bundle, and
+/// `idle_rec` the ANM record the scene's placement binds to the member
+/// (`ActorPlacement::anim_id - 1`).
+pub(super) fn npc_target_at(
+    pack: &[u8],
+    sec0_tims: &[u8],
+    bundle: &crate::player_anm::PlayerAnmBundle,
+    member: usize,
+    idle_rec: usize,
+    roles_override: Option<[usize; FIELD_BONES]>,
+) -> Result<NpcTarget> {
     let entries = parse_pack(pack)?;
     let e = entries
         .get(member)
@@ -276,10 +304,6 @@ fn npc_target(
         bail!("NPC mesh has {} parts, expected {FIELD_BONES}", model.len());
     }
 
-    let bundle = crate::player_anm::find_in_entry(npc_bundle, 5)
-        .into_iter()
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("NPC bundle entry carries no ANM bundle"))?;
     let idle = bundle
         .record_to_monster_animation(idle_rec)
         .ok_or_else(|| anyhow::anyhow!("NPC idle record {idle_rec} missing"))?;
@@ -294,6 +318,20 @@ fn npc_target(
         .first()
         .ok_or_else(|| anyhow::anyhow!("NPC idle has no frames"))?
         .clone();
+    // An event stance can fool the geometric splitter into a clean-looking
+    // but wrong pairing (taiku2's kneel puts the torso on a leg bone), so a
+    // spec may pin the assignment measured off a trusted stance of the
+    // byte-identical rig instead.
+    let roles = match roles_override {
+        Some(r) => r,
+        None => idle
+            .frames
+            .iter()
+            .find_map(|f| derive_field_roles(&model, f).ok())
+            .ok_or_else(|| {
+                anyhow::anyhow!("no frame of NPC record {idle_rec} splits the rig into roles")
+            })?,
+    };
 
     // The member's own texture conventions: one texpage, a run of CLUT
     // columns on one row.
@@ -355,27 +393,28 @@ fn npc_target(
     Ok(NpcTarget {
         model,
         rest,
+        roles,
         head_tim,
     })
 }
 
 /// One rebuilt member: the baked 10-part TMD plus its head-window
 /// repaint (texels in window coordinates + palettes).
-struct HeroizedSlot {
-    tmd: Vec<u8>,
-    window: Vec<u8>,
-    palettes: Vec<Vec<u16>>,
+pub(super) struct HeroizedSlot {
+    pub(super) tmd: Vec<u8>,
+    pub(super) window: Vec<u8>,
+    pub(super) palettes: Vec<Vec<u16>>,
 }
 
 /// Bake one hero rig onto one sibling's NPC rest conventions.
-fn heroize_slot(
+pub(super) fn heroize_slot(
     hero: &HeroSource,
     npc: &NpcTarget,
     decimate: f32,
     warnings: &mut Vec<String>,
 ) -> Result<HeroizedSlot> {
     let src_roles = derive_field_roles(&hero.model, &hero.rest)?;
-    let dst_roles = derive_field_roles(&npc.model, &npc.rest)?;
+    let dst_roles = npc.roles;
 
     // Radial scale: whole-rig height ratio (NPC over hero) - keeps the
     // hero's own proportions while standing at the sibling's height, so
@@ -432,7 +471,7 @@ fn heroize_slot(
             &npc.rest[dst_bone],
             &pb,
         )
-        .with_context(|| format!("nilboa bake role {role}"))?;
+        .with_context(|| format!("field bake role {role}"))?;
         if role == 0 {
             // Seat the hero head on the sibling's neck.
             seat_terminal_axial(
@@ -598,7 +637,7 @@ fn layout_window(
         };
         scales[ci] *= 2;
         warnings.push(format!(
-            "nilboa head island at 1/{} resolution (sibling TIM window)",
+            "head island at 1/{} resolution (sibling TIM window)",
             scales[ci]
         ));
         continue 'retry;
@@ -652,7 +691,11 @@ fn layout_window(
 
 /// Rewrite one sibling head TIM in place inside the decoded §0 stream:
 /// CLUT rows + pixel data replaced, geometry untouched.
-fn repaint_head_tim(sec0: &mut [u8], win: &HeadTimWindow, slot: &HeroizedSlot) -> Result<()> {
+pub(super) fn repaint_head_tim(
+    sec0: &mut [u8],
+    win: &HeadTimWindow,
+    slot: &HeroizedSlot,
+) -> Result<()> {
     let tim = &mut sec0[win.tim_offset..];
     let magic = u32::from_le_bytes(tim.get(0..4).unwrap_or(&[0; 4]).try_into().unwrap());
     let flags = u32::from_le_bytes(tim.get(4..8).unwrap_or(&[0; 4]).try_into().unwrap());
@@ -712,7 +755,16 @@ fn repaint_head_tim(sec0: &mut [u8], win: &HeadTimWindow, slot: &HeroizedSlot) -
 /// replaced. The members' contiguous byte span is the budget; every
 /// other member (and the offset table shape) stays byte-identical.
 fn rebuild_pack(npc_pack: &[u8], slots: &BTreeMap<usize, &[u8]>) -> Result<Vec<u8>> {
-    let pack = &npc_pack[4..];
+    let body = rebuild_pack_body(&npc_pack[4..], slots)?;
+    let mut out = npc_pack[..4].to_vec();
+    out.extend_from_slice(&body);
+    Ok(out)
+}
+
+/// [`rebuild_pack`] on a member-pack **body** (count word first, no
+/// entry-head type word) - the shape a scene bundle's decoded TMD
+/// section has. Output length always equals the input length.
+pub(super) fn rebuild_pack_body(pack: &[u8], slots: &BTreeMap<usize, &[u8]>) -> Result<Vec<u8>> {
     let entries = parse_pack(pack)?;
     let members: Vec<usize> = slots.keys().copied().collect();
     // The replaced members must be one contiguous ascending run.
@@ -738,19 +790,18 @@ fn rebuild_pack(npc_pack: &[u8], slots: &BTreeMap<usize, &[u8]>) -> Result<Vec<u
     if need > budget {
         bail!("rebuilt members need {need} bytes, the pack span holds {budget}");
     }
-    let mut out = npc_pack.to_vec();
-    let base = 4; // entry head word
+    let mut out = pack.to_vec();
     let mut cursor = region_start;
     for (k, m) in members.iter().enumerate() {
         // Offset table word for member m at pack byte 4 + m*4.
         let word = (cursor / 4) as u32;
-        out[base + 4 + m * 4..base + 4 + m * 4 + 4].copy_from_slice(&word.to_le_bytes());
+        out[4 + m * 4..4 + m * 4 + 4].copy_from_slice(&word.to_le_bytes());
         let bytes = slots[m];
-        out[base + cursor..base + cursor + bytes.len()].copy_from_slice(bytes);
+        out[cursor..cursor + bytes.len()].copy_from_slice(bytes);
         // Zero the alignment pad.
         for b in out
             .iter_mut()
-            .skip(base + cursor + bytes.len())
+            .skip(cursor + bytes.len())
             .take(sizes[k] - bytes.len())
         {
             *b = 0;
@@ -758,7 +809,7 @@ fn rebuild_pack(npc_pack: &[u8], slots: &BTreeMap<usize, &[u8]>) -> Result<Vec<u
         cursor += sizes[k];
     }
     // Zero the residue up to the next untouched member.
-    for b in out.iter_mut().skip(base + cursor).take(region_end - cursor) {
+    for b in out.iter_mut().skip(cursor).take(region_end - cursor) {
         *b = 0;
     }
     Ok(out)
