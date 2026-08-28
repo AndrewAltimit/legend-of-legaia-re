@@ -1522,14 +1522,25 @@ const STRIKE_LATCH_WORD: u32 = 0x9262_01DC; // lbu v0, 0x1DC(s3)
 ///
 /// Queue-edit policy at HIT (`t6` = one past the matched marker,
 /// `v1` = actor, `t3` = spell): a marker not preceded by a `0x19`/`0x1A`
-/// starter is left alone; a **pure** queue (only direction bytes before
-/// the starter) converts to the cast exactly as the one-piece hook did
-/// (consume marker, category 2, spell at `+0x1DF`) - the immediate-cast
-/// feel of a bare signature input is unchanged; a **chained** queue
-/// (any leading art) keeps its leading arts: only the signature's own
-/// windup directions (the run immediately before the starter) are
-/// deleted, and the conversion happens at playout when the strike loop
-/// fetches the `[starter][marker]` pair.
+/// starter is left alone; a starter **at the queue base** converts to
+/// the cast exactly as the one-piece hook did (consume marker,
+/// category 2, spell at `+0x1DF`) - the immediate-cast feel of a bare
+/// signature input is unchanged; a starter **anywhere else** defers
+/// with the queue untouched, and the conversion happens at playout
+/// when the strike loop fetches the `[starter][marker]` pair.
+///
+/// Why base-or-defer and not a windup back-scan: the retail matcher's
+/// Hyper arm (`0x801EF4E8`) CONSUMES the matched arrow span, so a real
+/// tokenized queue never carries windup directions before the
+/// signature's `0x1A` - a bare input tokenizes to `[1A M]` at base and
+/// a chained one to `[.. 19 <art> 1A M]`. The only queues with raw
+/// directions before the starter are chains whose leading art the AP
+/// admission gate dropped (`0x801EF424`: the Hyper's tier is charged
+/// first, and an unaffordable completed match emits nothing), and
+/// those directions are retail basic strikes the player entered -
+/// deferring plays them out instead of silently eating them. The
+/// earlier back-scan classified exactly those queues as "pure" and
+/// cast instantly, which read as "my leading art was skipped".
 ///
 /// Morph (entered with `v1` = fetched byte, `v0` = actor+cursor,
 /// `s3` = actor, `s5` = ctx+0x11; `a0` is LIVE in the caller and never
@@ -1550,72 +1561,32 @@ pub fn assemble_delilas_arena(stub_done_va: u32, tbl_va: u32) -> Vec<u8> {
     // --- Queue-edit routine (from the stub HIT) ---
     w.push(m::lbu(T7, T6, 0xFFFE)); // starter candidate at marker-1
     w.push(m::addiu(T4, V1, 0x1DF)); // queue base (load-delay filler)
+    w.push(m::addiu(T0, T6, 0xFFFE)); // t0 = &starter (both branch paths)
     w.push(m::addiu(T8, ZERO, 0x19));
     let b_s19 = w.len();
-    w.push(0); // beq t7, t8, QSTART
+    w.push(0); // beq t7, t8, QCHK
     w.push(m::addiu(T8, ZERO, 0x1A)); // delay
     let b_s1a = w.len();
     w.push(0); // bne t7, t8, QDONE
     w.push(m::nop());
-    // QSTART: back-scan the direction run before the starter.
-    let qstart = w.len();
-    w.push(m::addiu(T0, T6, 0xFFFE)); // t0 = &starter
-    let qback = w.len();
-    let b_base = w.len();
-    w.push(0); // beq t0, t4, QCLASS (reached queue base)
-    w.push(m::lbu(T7, T0, 0xFFFF)); // delay: byte before the run start
-    w.push(m::nop());
-    w.push(m::sltiu(T9, T7, 0x10));
-    let b_ge10 = w.len();
-    w.push(0); // beq t9, zero, QCLASS (>= 0x10: not a direction)
-    w.push(m::sltiu(T9, T7, 0x0C)); // delay
-    let b_lt0c = w.len();
-    w.push(0); // bne t9, zero, QCLASS (< 0x0C: not a direction)
-    w.push(m::nop());
-    let b_back = w.len();
-    w.push(0); // beq zero, zero, QBACK
-    w.push(m::addiu(T0, T0, 0xFFFF)); // delay: run start -= 1
-    // QCLASS: pure iff the run reaches the queue base.
-    let qclass = w.len();
-    let b_chain = w.len();
-    w.push(0); // bne t0, t4, QCHAIN
+    // QCHK: pure iff the starter sits at the queue base.
+    let qchk = w.len();
+    let b_defer = w.len();
+    w.push(0); // bne t0, t4, QDONE (anything leading: defer untouched)
     w.push(m::nop());
     // PURE: the one-piece hook's conversion, verbatim.
     w.push(m::addiu(T7, ZERO, 2));
     w.push(m::sb(ZERO, T6, 0xFFFF)); // consume the matched marker
     w.push(m::sb(T7, V1, 0x1DE)); // category = Magic
-    let b_pure_done = w.len();
-    w.push(0); // beq zero, zero, QDONE
-    w.push(m::sb(T3, V1, 0x1DF)); // delay: spell id
-    // QCHAIN: delete the windup run - copy from the starter down to the
-    // run start until the write cursor hits base+0x14 (reads past the
-    // window are actor fields, harmless; the round driver's 16-zero
-    // preseed guarantees a terminator inside the copied span).
-    let qchain = w.len();
-    w.push(m::addiu(T8, T6, 0xFFFE)); // src = &starter
-    w.push(m::addiu(T9, T4, 0x14)); // write bound
-    let qcopy = w.len();
-    w.push(m::lbu(T7, T8, 0));
-    w.push(m::addiu(T8, T8, 1));
-    w.push(m::sb(T7, T0, 0));
-    w.push(m::addiu(T0, T0, 1));
-    let b_copy = w.len();
-    w.push(0); // bne t0, t9, QCOPY
-    w.push(m::nop());
+    w.push(m::sb(T3, V1, 0x1DF)); // spell id (over the base starter)
     // QDONE:
     let qdone = w.len();
     w.push(m::j(stub_done_va));
     w.push(m::nop());
 
-    w[b_s19] = m::beq(T7, T8, rel(b_s19, qstart));
+    w[b_s19] = m::beq(T7, T8, rel(b_s19, qchk));
     w[b_s1a] = m::bne(T7, T8, rel(b_s1a, qdone));
-    w[b_base] = m::beq(T0, T4, rel(b_base, qclass));
-    w[b_ge10] = m::beq(T9, ZERO, rel(b_ge10, qclass));
-    w[b_lt0c] = m::bne(T9, ZERO, rel(b_lt0c, qclass));
-    w[b_back] = m::beq(ZERO, ZERO, rel(b_back, qback));
-    w[b_chain] = m::bne(T0, T4, rel(b_chain, qchain));
-    w[b_pure_done] = m::beq(ZERO, ZERO, rel(b_pure_done, qdone));
-    w[b_copy] = m::bne(T0, T9, rel(b_copy, qcopy));
+    w[b_defer] = m::bne(T0, T4, rel(b_defer, qdone));
 
     // --- Strike-loop morph (from the 0x801E374C detour) ---
     let morph = w.len();
@@ -1673,7 +1644,7 @@ pub fn assemble_delilas_arena(stub_done_va: u32, tbl_va: u32) -> Vec<u8> {
 
 /// Word index of the morph routine inside the arena image - pinned so
 /// the 0898 detour's `jal` target is a compile-time constant.
-const ARENA1_MORPH_WORD_INDEX: usize = 35;
+const ARENA1_MORPH_WORD_INDEX: usize = 16;
 /// VA of the strike-loop morph inside ARENA1.
 const ARENA1_MORPH_VA: u32 = ARENA1_QEDIT_VA + (ARENA1_MORPH_WORD_INDEX as u32) * 4;
 
@@ -1784,6 +1755,40 @@ pub fn install_cast_label_gate(p: &mut DiscPatcher) -> Result<bool> {
             replace: m::sltiu(V0, V0, 2),
         },
     ];
+    apply_word_edits(p, BATTLE_OVERLAY_PROT, &entry, &edits)
+}
+
+/// The arts matcher's Hyper admission tier: `li t4,0xA` at
+/// `0x801EF32C` in `FUN_801EED1C` (visit rows 1..3, i.e. the Hyper
+/// block the signature special rides). At input-commit the matcher
+/// charges `tier * arrows` per completed match - later-starting matches
+/// first, so the special's admission is paid before any leading art's -
+/// and an unaffordable match emits NOTHING (`0x801EF424`), which is how
+/// a chain's leading art silently drops. The walk's deductions are the
+/// real per-command charge (`+0x224` accumulates them for playout), so
+/// halving the tier both admits chains at realistic AP and halves what
+/// the special costs.
+const CHAIN_TIER_SITE_VA: u32 = 0x801E_F32C;
+/// Retail word at the site: `addiu t4, zero, 0xA`.
+const CHAIN_TIER_RETAIL_WORD: u32 = 0x240C_000A;
+/// The tier the patch installs: 5 per arrow (the special's five-arrow
+/// combo then admits at 25 AP instead of 50, so an art-then-special
+/// chain clears admission from ~40 AP instead of ~70).
+const CHAIN_TIER_PATCHED: u16 = 5;
+
+/// Halve the Hyper admission tier so a leading art survives the
+/// signature special's AP charge at realistic mid-battle AP. See
+/// [`CHAIN_TIER_SITE_VA`]. Scope: the tier word is per-visit-ordinal,
+/// so every party Hyper halves with it - on a Delilas rom the party is
+/// the three siblings and the specials are their Hypers, and the report
+/// carries the note.
+pub fn install_chain_admission_tier(p: &mut DiscPatcher) -> Result<bool> {
+    let entry = p.read_entry(BATTLE_OVERLAY_PROT).context("read PROT 898")?;
+    let edits = [WordEdit {
+        offset: (CHAIN_TIER_SITE_VA - BATTLE_OVERLAY_BASE) as u64,
+        expect: CHAIN_TIER_RETAIL_WORD,
+        replace: m::addiu(T4, ZERO, CHAIN_TIER_PATCHED),
+    }];
     apply_word_edits(p, BATTLE_OVERLAY_PROT, &entry, &edits)
 }
 
@@ -1989,9 +1994,12 @@ mod tests {
 
     #[test]
     fn signature_constant_in_the_queue_becomes_the_cast() {
-        let cpu = run(0, 0, &[0x0C, 0x0D, 0x19, 0x1C, 0x00], 0);
+        // A bare signature input: the Hyper arm consumes its arrows, so
+        // the real tokenized shape is [1A 1C] at the queue base.
+        let cpu = run(0, 0, &[0x1A, 0x1C, 0x00], 0);
         assert_eq!(cpu.rd8(ACTOR_VA + 0x1DE), 2, "category flips to Magic");
         assert_eq!(cpu.rd8(ACTOR_VA + 0x1DF), 0x7B, "spell id installed");
+        assert_eq!(cpu.rd8(ACTOR_VA + 0x1E0), 0, "marker consumed");
     }
 
     #[test]
@@ -2037,26 +2045,40 @@ mod tests {
 
     #[test]
     fn a_chained_queue_keeps_its_leading_art_and_defers() {
-        // Somersault (0F 0E 19 27) chained into the signature combo
-        // (0C 0D 0F 0F 19 1C): the signature's own windup directions
-        // are deleted, everything else - category included - is kept
-        // for the strike loop, where the morph converts at the
-        // [starter][marker] fetch.
-        let cpu = run(
-            0,
-            0,
-            &[
-                0x0F, 0x0E, 0x19, 0x27, 0x0C, 0x0D, 0x0F, 0x0F, 0x19, 0x1C, 0x00,
-            ],
-            0,
-        );
+        // Somersault (0F 0E 19 27) chained into the signature: the
+        // Hyper arm consumed the signature's arrows at tokenize time,
+        // so the real shape is [.. 19 27 1A 1C]. The edit leaves the
+        // whole queue untouched - category included - for the strike
+        // loop, where the morph converts at the [starter][marker]
+        // fetch (probe-verified for a cyclone-led chain too).
+        let queue = [0x0F, 0x0E, 0x19, 0x27, 0x1A, 0x1C, 0x00];
+        let cpu = run(0, 0, &queue, 0);
         assert_eq!(cpu.rd8(ACTOR_VA + 0x1DE), 3, "category stays Attack");
-        let want = [0x0F, 0x0E, 0x19, 0x27, 0x19, 0x1C, 0x00, 0x00];
-        for (i, b) in want.iter().enumerate() {
+        for (i, b) in queue.iter().enumerate() {
             assert_eq!(
                 cpu.rd8(ACTOR_VA + 0x1DF + i as u32),
                 *b,
-                "queue byte {i} after the windup deletion"
+                "queue byte {i} untouched"
+            );
+        }
+    }
+
+    #[test]
+    fn a_raw_arrow_led_queue_defers_instead_of_casting() {
+        // A chain whose leading art the AP admission gate dropped:
+        // raw directions before the [1A 1C] pair. The old back-scan
+        // classified this "pure" and cast instantly, silently eating
+        // the player's strikes; the base-or-defer policy leaves it for
+        // the strike loop (the arrows play as retail basic strikes,
+        // then the morph converts).
+        let queue = [0x0E, 0x0F, 0x0F, 0x0F, 0x1A, 0x1C, 0x00];
+        let cpu = run(0, 0, &queue, 0);
+        assert_eq!(cpu.rd8(ACTOR_VA + 0x1DE), 3, "category stays Attack");
+        for (i, b) in queue.iter().enumerate() {
+            assert_eq!(
+                cpu.rd8(ACTOR_VA + 0x1DF + i as u32),
+                *b,
+                "queue byte {i} untouched"
             );
         }
     }
@@ -2072,11 +2094,13 @@ mod tests {
     }
 
     #[test]
-    fn a_pure_queue_consumes_the_marker() {
-        let cpu = run(0, 0, &[0x0C, 0x0D, 0x0F, 0x0F, 0x19, 0x1C, 0x00], 0);
+    fn a_learned_starter_at_base_also_converts() {
+        // The Hyper arm hard-codes 0x1A, but the morph and the edit
+        // accept the learned starter too - keep that path covered.
+        let cpu = run(0, 0, &[0x19, 0x1C, 0x00], 0);
         assert_eq!(cpu.rd8(ACTOR_VA + 0x1DE), 2);
         assert_eq!(cpu.rd8(ACTOR_VA + 0x1DF), 0x7B);
-        assert_eq!(cpu.rd8(ACTOR_VA + 0x1E4), 0, "marker consumed");
+        assert_eq!(cpu.rd8(ACTOR_VA + 0x1E0), 0, "marker consumed");
     }
 
     const CTX_VA: u32 = 0x800E_0000;

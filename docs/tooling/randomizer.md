@@ -2357,13 +2357,19 @@ before the first real musical event, a full-level hit at stream
 +1.31 s, which on a real-latency drive reads as "the music starts
 late". The fix is a front shift in place
 (`delilas_xa_voice::boost_cast_bed_intro`): the first 70 sectors of
-`XA20.XA` channel 2 are decoded, the stream is advanced 21 sectors
-(1.12 s) so the opening hit lands at +0.19 s (0.1 s zero absorber +
-20 ms fade-in kept for the seek landing), and the advance is paid back
-with a 1 s equal-power dissolve into the unshifted stream ending at
-+3.30 s - a bridge point chosen by spectral match (cosine 0.984,
-energy ratio 0.99 against the material 1.12 s later) inside the
-sustained opening pad. Every frame past the bridge is bit-identical
+`XA20.XA` channel 2 are decoded, the stream is advanced 1.24 s so the
+opening hit lands at +0.07 s (50 ms fade-in for the seek landing), and
+the advance is paid back with a 1 s linear dissolve into the unshifted
+stream ending at +3.05 s. The advance and the bridge point are the
+argmax of LOCAL WAVEFORM correlation between the shifted and unshifted
+branches over the blend window (0.883 - the bed is a ~0.565 s ostinato,
+so an in-phase lag exists), which makes the paid-back material read as
+one extra ostinato cycle. A spectral-similarity pick is NOT sufficient
+for this: the first ship of the pass bridged at a spectrally-matched
+point whose waveform correlation was -0.15, and the out-of-phase blend
+was audible as the music restarting mid-cast. The blend is linear
+because equal-power on correlated material bumps the middle +3 dB.
+Every frame past the bridge is bit-identical
 input, so the true-stereo re-encode
 (`legaia_xa::encode::encode_stereo_4bit`) converges back onto the
 retail bytes within the written span (the disc oracle asserts the
@@ -2485,11 +2491,26 @@ two, both routines in shiny-seru's `ARENA1` (`0x8007AE00`, free under
 the cast route by the same option-exclusivity, claimed
 free-or-identical like the gap). At assemble time the hook's HIT block
 hands the matched `[0x19|0x1A starter][marker]` pair to the ARENA1
-queue-edit: a **pure** queue (only direction bytes before the starter)
-converts to the cast exactly as before - immediate cast, the approach
-run never fires; a **chained** queue keeps its leading arts and only
-deletes the signature's own windup directions (the run just before the
-starter). The deferred half is a two-word detour at the attack band's
+queue-edit: a starter **at the queue base** converts to the cast
+exactly as before - immediate cast, the approach run never fires; a
+starter **anywhere else** defers with the queue untouched. The
+base-or-defer split follows the retail matcher's own emission shapes
+(`FUN_801EED1C`): the Hyper arm (`0x801EF4E8`) consumes the matched
+arrow span, so a bare signature input tokenizes to `[1A marker]` at
+the base and a chained one to `[.. 19 art 1A marker]` - no windup
+directions ever precede the signature's starter in a real queue. The
+only queues with raw directions there are chains whose leading art the
+matcher's AP admission gate dropped (`0x801EF424`: tiers are charged
+per completed match, later-starting matches first, and an unaffordable
+match emits nothing), and those directions are basic strikes the
+player entered - deferring plays them out instead of eating them. The
+route also halves the Hyper admission tier
+(`install_chain_admission_tier`, `li t4,0xA -> 0x5` at `0x801EF32C`)
+so an art-then-special chain clears admission at realistic mid-battle
+AP (the five-arrow signature admits at 25 instead of 50; the walk's
+deductions are refunded at the applier's end, `+0x170 += +0x224`, so
+this is the per-command charge, not a second pool). The deferred half
+is a two-word detour at the attack band's
 strike-loop fetch (`FUN_801E295C` state `0x1E`, `lbu v1,0x1df(v0)` at
 `0x801E374C` -> `jal` with the fetch riding the delay slot; no branch
 targets either word, and the displaced `+0x1DC` busy-latch load returns

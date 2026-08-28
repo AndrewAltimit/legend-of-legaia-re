@@ -413,7 +413,9 @@ fn arena_and_strike_morph_land() {
     // The 0898 detour words.
     let entry = p.read_entry(898).expect("prot 898");
     let w = |o: usize| u32::from_le_bytes(entry[o..o + 4].try_into().unwrap());
-    let morph_va = ARENA1_VA + 35 * 4;
+    // Word 16 of the arena image = the strike-loop morph (the
+    // queue-edit's base-or-defer routine precedes it).
+    let morph_va = ARENA1_VA + 16 * 4;
     assert_eq!(
         w(STRIKE_FETCH_OFF),
         0x0C00_0000 | ((morph_va & 0x0FFF_FFFF) >> 2),
@@ -495,4 +497,36 @@ fn cast_label_gate_lands() {
             "spell {id:#04x} name"
         );
     }
+}
+
+#[test]
+fn chain_admission_tier_lands() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const TIER_OFF: usize = 0x20B14; // 0x801EF32C - 0x801CE818
+
+    let retail = DiscPatcher::open(original.clone()).expect("patcher");
+    let rentry = retail.read_entry(898).expect("prot 898");
+    let rw = u32::from_le_bytes(rentry[TIER_OFF..TIER_OFF + 4].try_into().unwrap());
+    assert_eq!(rw, 0x240C_000A, "retail li t4,0xA at the Hyper tier site");
+
+    let mut p = DiscPatcher::open(original).expect("patcher");
+    assert!(
+        legaia_patcher::delilas_cast::install_chain_admission_tier(&mut p).expect("tier installs")
+    );
+    let entry = p.read_entry(898).expect("prot 898");
+    let w = u32::from_le_bytes(entry[TIER_OFF..TIER_OFF + 4].try_into().unwrap());
+    assert_eq!(w, 0x240C_0005, "patched li t4,0x5");
+    // The neighbours (Miracle tier 0xB, normal tier 0x6) stay retail.
+    let n1 = u32::from_le_bytes(entry[TIER_OFF - 4..TIER_OFF].try_into().unwrap());
+    let n2 = u32::from_le_bytes(entry[TIER_OFF + 0x10..TIER_OFF + 0x14].try_into().unwrap());
+    assert_eq!(n1, 0x240C_000B, "Miracle tier untouched");
+    assert_eq!(n2, 0x240C_0006, "normal-art tier untouched");
+
+    // Idempotence.
+    assert!(
+        !legaia_patcher::delilas_cast::install_chain_admission_tier(&mut p).expect("tier re-apply")
+    );
 }

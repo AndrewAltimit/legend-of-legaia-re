@@ -753,12 +753,19 @@ pub fn apply_delilas_party_with(
                         .and_then(|_| crate::delilas_cast::install_stage_caves(patcher, gi, lu))
                         .and_then(|_| crate::delilas_cast::install_delilas_arena(patcher))
                         .and_then(|_| crate::delilas_cast::install_strike_morph(patcher))
-                        .and_then(|_| crate::delilas_cast::install_cast_label_gate(patcher));
+                        .and_then(|_| crate::delilas_cast::install_cast_label_gate(patcher))
+                        .and_then(|_| crate::delilas_cast::install_chain_admission_tier(patcher));
                     match installed {
                         Ok(_) => {
                             report.notes.push(
                                 "cast label: the special's spell name replaces the arts banner \
                                  (state-0x28 label runs for every Magic cast)"
+                                    .into(),
+                            );
+                            report.notes.push(
+                                "chain admission: Hyper tier 10 -> 5 per arrow, so an \
+                                 art-then-special chain clears the matcher's AP gate \
+                                 from ~40 AP (the special itself admits at 25)"
                                     .into(),
                             );
                             for r in &routes {
@@ -794,12 +801,19 @@ pub fn apply_delilas_party_with(
                         .and_then(|_| crate::delilas_cast::install_cast_hook(patcher, &che_routes))
                         .and_then(|_| crate::delilas_cast::install_delilas_arena(patcher))
                         .and_then(|_| crate::delilas_cast::install_strike_morph(patcher))
-                        .and_then(|_| crate::delilas_cast::install_cast_label_gate(patcher));
+                        .and_then(|_| crate::delilas_cast::install_cast_label_gate(patcher))
+                        .and_then(|_| crate::delilas_cast::install_chain_admission_tier(patcher));
                     match installed {
                         Ok(_) => {
                             report.notes.push(
                                 "cast label: the special's spell name replaces the arts banner \
                                  (state-0x28 label runs for every Magic cast)"
+                                    .into(),
+                            );
+                            report.notes.push(
+                                "chain admission: Hyper tier 10 -> 5 per arrow, so an \
+                                 art-then-special chain clears the matcher's AP gate \
+                                 from ~40 AP (the special itself admits at 25)"
                                     .into(),
                             );
                             for r in &che_routes {
