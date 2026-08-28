@@ -2283,6 +2283,28 @@ The Miracle Art itself needs no component art kept. Its replacement
 string is written into the queue verbatim, so the arts it names only have
 to exist as records - which they do, untouched.
 
+**Save metadata follows the mapping.** The save-select face and the PSX
+memory-card block icon for the three hero slots come off the save-slot
+portrait sheet ([`save-icon.md`](../formats/save-icon.md) - tiles 0..2 by
+party id / card slot), and the boot load screen keeps its own standalone
+copies of those three tiles; the swap points each hero tile at the mapped
+sibling's own portrait tile (Gi 13, Che 8, Lu 6 in the same sheet),
+byte-exact, on all surfaces. Existing card saves keep the icon they were
+written with; `save-tool rename` covers the names on an existing card.
+
+**Dialog follows the swap.** Every line that names a sibling (the
+speaker prefixes and self-introductions in the ravine, map-stone,
+Floating Castle and past-Conkram events) is rewritten through the
+translation machinery to name the hero who took that sibling's place -
+"Delilas" itself stays, so "Gi Delilas:" reads e.g. "Noa Delilas:" and
+the world reads as Vahn, Noa and Gala *being* the Delilas family.
+Word-boundary matches only. Hero names run longer than sibling names, so
+a line that overflows its fixed segment budget goes through a
+least-destructive fit ladder: drop the " Delilas" surname one occurrence
+at a time (speaker prefix first), then contract "I am " to "I'm ",
+taking the first candidate that fits; nothing needed the whole-sector
+MAN relayout in either direction of the default mapping.
+
 Still retail: menu
 portraits, battle HUD faces. Composes with
 `--delilas-challenge` - the challenge applies first, so its memory-tight

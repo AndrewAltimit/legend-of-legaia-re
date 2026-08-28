@@ -81,6 +81,51 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     assert_eq!(block_name(&reopened, 164), "Noa");
     assert_eq!(block_name(&reopened, 163), "Gala");
 
+    // Save portraits follow the mapping: hero tiles 0/1/2 of the
+    // portrait sheet now carry the mapped siblings' own tiles (Gi 13,
+    // Lu 6, Che 8 under the default gi,lu,che), the boot load-screen's
+    // standalone portrait TIMs match, and every other tile is retail.
+    {
+        let retail = DiscPatcher::open(original.clone()).expect("open retail");
+        let sheet_r = legaia_patcher::save_icon::read_sheet(&retail).expect("retail sheet");
+        let sheet_p = legaia_patcher::save_icon::read_sheet(&reopened).expect("patched sheet");
+        for (hero_tile, src) in [(0usize, 13usize), (1, 6), (2, 8)] {
+            assert_eq!(
+                sheet_p.tile_block_pixels(hero_tile).unwrap(),
+                sheet_r.tile_block_pixels(src).unwrap(),
+                "portrait tile {hero_tile} pixels != retail tile {src}"
+            );
+            assert_eq!(
+                sheet_p.tile_clut_bytes(hero_tile).unwrap(),
+                sheet_r.tile_clut_bytes(src).unwrap(),
+                "portrait tile {hero_tile} palette != retail tile {src}"
+            );
+            let base = (legaia_asset::title_pak::OVERLAY_LOAD_PORTRAIT_TIM_OFFSET
+                + hero_tile * legaia_asset::title_pak::OVERLAY_LOAD_PORTRAIT_STRIDE)
+                as u64;
+            let tim = reopened
+                .read_prot_bytes(base, legaia_asset::title_pak::OVERLAY_LOAD_PORTRAIT_STRIDE)
+                .expect("standalone portrait TIM");
+            assert_eq!(
+                tim[20..52],
+                sheet_r.tile_clut_bytes(src).unwrap(),
+                "standalone TIM {hero_tile} palette"
+            );
+            assert_eq!(
+                tim[64..192],
+                sheet_r.tile_block_pixels(src).unwrap(),
+                "standalone TIM {hero_tile} pixels"
+            );
+        }
+        for tile in 3..16 {
+            assert_eq!(
+                sheet_p.tile_block_pixels(tile).unwrap(),
+                sheet_r.tile_block_pixels(tile).unwrap(),
+                "tile {tile} should be untouched"
+            );
+        }
+    }
+
     // The swapped blocks still decode as 15-part meshes and the retail
     // animation streams still cover them.
     let archive = reopened

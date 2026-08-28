@@ -100,6 +100,20 @@ impl Sibling {
         }
     }
 
+    /// The sibling's tile in the save-slot portrait sheet (PROT 899
+    /// `0x1F908`, [`crate::save_icon`]). Pinned by eyeballing the
+    /// exported tiles against the siblings' own scene face textures:
+    /// Che's red head-crest (stone bundle head TIM, CLUT (160,481)),
+    /// Gi's unmasked dark bouffant + grin (conc2 court atlas), Lu's
+    /// pink bob (conc2 atlas).
+    pub fn portrait_tile(self) -> usize {
+        match self {
+            Sibling::Gi => 13,
+            Sibling::Che => 8,
+            Sibling::Lu => 6,
+        }
+    }
+
     /// The party display name the sibling fights under.
     pub fn display_name(self) -> &'static str {
         match self {
@@ -247,6 +261,34 @@ pub struct DelilasPartyOptions {
     /// flag opts into. Che only: Gi's welded blade-fist stays replaced
     /// (its reach is what caused the catalogued Spirit-charge streak).
     pub keep_che_hammer: bool,
+}
+
+/// Replace every word-boundary occurrence of `from` in `text` with `to`.
+/// `None` when `from` does not occur as a whole word. A boundary is any
+/// non-alphanumeric byte (markup braces, punctuation, spaces) or the
+/// string edge, so "Lu" matches in "I am Lu Delilas!" but not in "Lucky".
+fn replace_word(text: &str, from: &str, to: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let f = from.as_bytes();
+    let mut out = String::new();
+    let mut i = 0usize;
+    let mut hit = false;
+    while i < bytes.len() {
+        let is_match = bytes[i..].starts_with(f)
+            && (i == 0 || !bytes[i - 1].is_ascii_alphanumeric())
+            && (i + f.len() == bytes.len() || !bytes[i + f.len()].is_ascii_alphanumeric());
+        if is_match {
+            out.push_str(to);
+            i += f.len();
+            hit = true;
+        } else {
+            // Advance one UTF-8 scalar so `out` stays valid text.
+            let step = text[i..].chars().next().map_or(1, char::len_utf8);
+            out.push_str(&text[i..i + step]);
+            i += step;
+        }
+    }
+    hit.then_some(out)
 }
 
 pub fn apply_delilas_party(
@@ -489,6 +531,132 @@ pub fn apply_delilas_party_with(
         let events = crate::nivora_field::apply_event_field(patcher, mapping, &prot_0874)
             .context("event-scene field mirrors")?;
         report.notes.extend(events.notes);
+
+        // Save metadata wears the swap too: the save-select face and
+        // the PSX card-block icon for the three hero slots come off the
+        // portrait sheet (tiles 0..2 by party id / card slot), and the
+        // boot load screen reads its own standalone copies - point each
+        // hero tile at the mapped sibling's own portrait tile.
+        for (hero_tile, who, sibling) in [
+            (0usize, "Vahn", mapping.vahn),
+            (1, "Noa", mapping.noa),
+            (2, "Gala", mapping.gala),
+        ] {
+            crate::save_icon::copy_slot_portrait(patcher, sibling.portrait_tile(), hero_tile)
+                .with_context(|| format!("save portrait {who} -> {}", sibling.display_name()))?;
+            report.notes.push(format!(
+                "save portraits: {who}'s face tile now shows {}",
+                sibling.display_name()
+            ));
+        }
+
+        // Dialog follows the swap: any line that names a sibling now
+        // names the hero who took that sibling's place in the duels.
+        // "Delilas" itself stays - in this world Vahn, Noa and Gala ARE
+        // the Delilas family, so "Gi Delilas: ..." reads e.g. "Noa
+        // Delilas: ...". Word-boundary matches only ("Che" never
+        // rewrites a "Chest"). Runs last: a scene MAN whose renamed
+        // dialog no longer fits its compressed footprint is grown by
+        // whole sectors, which relays the disc.
+        {
+            let renames = [
+                (mapping.vahn.display_name(), "Vahn"),
+                (mapping.noa.display_name(), "Noa"),
+                (mapping.gala.display_name(), "Gala"),
+            ];
+            let mut pack =
+                crate::translation::export_pack(patcher).context("export dialog corpus")?;
+            let mut lines = 0usize;
+            for entry in pack
+                .sections
+                .scene_dialog
+                .iter_mut()
+                .chain(pack.sections.inline_text.iter_mut())
+            {
+                let mut text = entry.source.clone();
+                let mut hit = false;
+                for (from, to) in renames {
+                    if let Some(replaced) = replace_word(&text, from, to) {
+                        text = replaced;
+                        hit = true;
+                    }
+                }
+                if hit {
+                    // Fit the raw carriers' fixed budgets: hero names run
+                    // longer than sibling names, so a line can overflow
+                    // by a byte or two. Contract "I am " -> "I'm ", then
+                    // drop the " Delilas" surname after a hero name -
+                    // each only when the full line doesn't fit.
+                    let fits = |t: &str| {
+                        crate::translation::markup::encode(
+                            t,
+                            crate::translation::markup::Target::Segment,
+                        )
+                        .map(|b| b.len() <= entry.budget)
+                        .unwrap_or(false)
+                    };
+                    // Candidate ladder, least destructive first: drop
+                    // " Delilas" after hero names one occurrence at a
+                    // time (the speaker prefix goes first, an
+                    // in-sentence "I am Vahn Delilas!" survives as long
+                    // as it fits), interleaving the "I am " -> "I'm "
+                    // contraction, and take the first candidate that
+                    // fits the budget.
+                    if !fits(&text) {
+                        let drop_n = |t: &str, n: usize| {
+                            let mut out = t.to_string();
+                            for _ in 0..n {
+                                let hit = ["Vahn", "Noa", "Gala"]
+                                    .iter()
+                                    .filter_map(|h| {
+                                        out.find(&format!("{h} Delilas")).map(|p| (p, h.len()))
+                                    })
+                                    .min();
+                                match hit {
+                                    Some((pos, hlen)) => out.replace_range(
+                                        pos + hlen..pos + hlen + " Delilas".len(),
+                                        "",
+                                    ),
+                                    None => break,
+                                }
+                            }
+                            out
+                        };
+                        'ladder: for n in 0..=3usize {
+                            for contract in [false, true] {
+                                let mut cand = drop_n(&text, n);
+                                if contract {
+                                    cand = cand.replace("I am ", "I'm ");
+                                }
+                                if fits(&cand) {
+                                    text = cand;
+                                    break 'ladder;
+                                }
+                            }
+                        }
+                    }
+                    entry.translation = text;
+                    lines += 1;
+                }
+            }
+            let dialog = crate::translation::import_pack_relayout(patcher, &pack)
+                .context("rename sibling dialog mentions")?;
+            report.notes.push(format!(
+                "dialog: {} of {lines} sibling-name line(s) now name the heroes{}",
+                dialog.applied + dialog.already_applied,
+                if dialog.relayout_entries > 0 {
+                    format!(
+                        " ({} scene(s) grown by {} sector(s))",
+                        dialog.relayout_entries, dialog.relayout_sectors_added
+                    )
+                } else {
+                    String::new()
+                }
+            ));
+            for (key, msg) in &dialog.issues {
+                report.notes.push(format!("dialog: {key}: {msg}"));
+            }
+        }
 
         // Battle-voice passes, in dependency order: every XA mute first,
         // then the XA + victory-clip fills (which SOURCE the siblings'

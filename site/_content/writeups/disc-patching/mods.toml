@@ -465,7 +465,7 @@ edit = "cross-rig battle-model rebuild both directions (anatomy permutation + re
 gap = false
 status = "shipped"
 test = "delilas_party_real + party_swap_real + delilas_cast_stage_real + delilas_cast_remap_real + enemy_anim_mirror_real + nivora_field_real"
-notes = "play as Gi / Lu / Che (any assignment); duels + dome Master legs field Vahn / Noa / Gala; arts shouts follow --delilas-arts-voice (default original; adjusted = pitch/formant re-voice); menu portraits / HUD faces stay retail; the cast route yields the SCUS gap to any hard consumer"
+notes = "play as Gi / Lu / Che (any assignment); duels + dome Master legs field Vahn / Noa / Gala; arts shouts follow --delilas-arts-voice (default original; adjusted = pitch/formant re-voice); save-select/card-icon/load-screen portraits + sibling-name dialog follow the mapping; menu portraits / HUD faces stay retail; the cast route yields the SCUS gap to any hard consumer"
 
 [[mod]]
 key = "super_art_list"
