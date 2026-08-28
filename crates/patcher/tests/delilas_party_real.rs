@@ -303,9 +303,9 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     }
 
     // XA20/XA22: only bark channel 7 mutes; every other channel (the
-    // music) stays byte-identical - except XA20 channel 2's 14-sector
-    // intro span (channel ordinals 13..=26), which the cast-bed
-    // remaster rewrites in place (and must actually differ).
+    // music) stays byte-identical - except XA20 channel 2's 70-sector
+    // intro span (channel ordinals 0..70), which the cast-bed front
+    // shift rewrites in place (and must actually differ).
     for name in ["XA/XA20.XA", "XA/XA22.XA"] {
         let (lba, size) = legaia_iso::iso9660::find_path_in_image(&patched, name).expect(name);
         let sectors = (size as usize).div_ceil(2048);
@@ -323,7 +323,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
                 name == "XA/XA20.XA" && sector[0x11] == 2 && sector[0x12] & 0x04 != 0 && {
                     let ord = ch2_ordinal;
                     ch2_ordinal += 1;
-                    (13..27).contains(&ord)
+                    ord < 70
                 };
             if sector[0x11] == 7 {
                 assert!(
@@ -357,8 +357,8 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         assert!(kept > 100, "{name}: only {kept} music sectors survive");
         if name == "XA/XA20.XA" {
             assert!(
-                (8..=14).contains(&boosted),
-                "bed intro span: {boosted} lifted sectors (expected 8..=14)"
+                (30..=66).contains(&boosted),
+                "bed intro span: {boosted} shifted sectors (expected 30..=66)"
             );
         }
     }
@@ -682,22 +682,27 @@ fn every_slot_gets_its_siblings_signature_art() {
         action_constant,
     } in expect
     {
-        // The two names EXCHANGE places, so neither count moves: the
-        // arts-table record gives up the host name to carry the
-        // signature, and the sibling's spell row gives up the signature
-        // to carry the host name. Holding the counts still is what
-        // catches collateral damage - these strings nest (searching for
-        // `Hurricane` finds `Hurricane Kick`), so a rename that went
-        // through the image as text rather than through each table's own
-        // pointer would show up here as a count that drifted.
-        for name in [host_name, sig_name] {
-            assert_eq!(
-                occurrences(&scus, name),
-                occurrences(&retail_scus, name),
-                "slot {slot}: {name} site count moved - the rename is an exchange, \
-                 so every name should end up somewhere exactly once"
-            );
-        }
+        // The arts-table record gives up the host name to carry the
+        // signature, and the sibling's spell row KEEPS the signature
+        // (the enemy-side rename is retired: the mirrored hero's
+        // signature is a physical attack, so the row's only reader is
+        // the player-side state-0x28 cast banner, which must show the
+        // special's own name). Net: the signature name gains exactly
+        // the arts-record site, and the host name loses its only one.
+        // Pinning counts still catches collateral text-replace damage -
+        // these strings nest (searching `Hurricane` finds `Hurricane
+        // Kick`), so a rename that went through the image as text
+        // rather than through each table's own pointer drifts a count.
+        assert_eq!(
+            occurrences(&scus, sig_name),
+            occurrences(&retail_scus, sig_name) + 1,
+            "slot {slot}: {sig_name} should gain exactly the arts-record site"
+        );
+        assert_eq!(
+            occurrences(&scus, host_name),
+            occurrences(&retail_scus, host_name) - 1,
+            "slot {slot}: {host_name} should lose its arts-record site"
+        );
 
         // The host art's stream now carries the sibling's clip at the
         // clip's OWN length - not the host stream's retail length.
@@ -971,19 +976,20 @@ fn every_slot_gets_its_siblings_signature_art() {
             );
         }
 
-        // The enemy half of the same rename. The sibling's block already
-        // wears this character's model and name, so the Nivora duel
-        // fights the heroes - and the cast it announces must be the
-        // host's art, not the sibling's, or Vahn casts Blazing Slash.
-        // `FUN_801E9FD4` resolves it as `monster_id - 0x29`.
+        // The sibling's spell row keeps its retail name. No enemy ever
+        // casts it (the AI picker's cast arm is rewritten into a
+        // physical attack), and the player-side cast banner - the
+        // state-0x28 label the un-gate opened to Magic casts - reads
+        // exactly this row when the converted signature fires, so it
+        // must announce the special itself, not the host art.
         {
             let table = legaia_asset::spell_names::SpellNameTable::from_scus(&scus)
                 .expect("patched spell table");
             let id = (monster_id - 0x29) as u8;
             assert_eq!(
                 table.name(id),
-                Some(host_name),
-                "slot {slot}: enemy cast {id:#04X} should announce the host art"
+                Some(sig_name),
+                "slot {slot}: the cast banner row {id:#04X} should announce the special"
             );
         }
 
@@ -1853,9 +1859,12 @@ fn stream_speed(readef: &[u8], slot: usize, entry_index: usize) -> Vec<f64> {
         .collect()
 }
 
-/// The Plasma Strike bed intro remaster: the boost lifts the quiet
-/// crescendo into audibility, touches ONLY the 14 swell sectors of
-/// `XA20.XA` channel 2, and guards against double application.
+/// The Plasma Strike bed intro remaster: the front shift opens the
+/// music ~0.19 s into the stream (retail: silence to +1.31 s), touches
+/// ONLY the 70-sector intro span of `XA20.XA` channel 2, converges back
+/// onto the retail bytes before the span ends (so the +14.8 s blast and
+/// the walk sync are untouched by construction), and guards against
+/// double application.
 #[test]
 fn cast_bed_intro_boost_is_audible_scoped_and_guarded() {
     let Some(original) = load_disc() else {
@@ -1864,46 +1873,47 @@ fn cast_bed_intro_boost_is_audible_scoped_and_guarded() {
     };
     const FILE: &str = "XA/XA20.XA";
     const CHAN: u8 = 2;
-    const SPAN_FIRST: usize = 13;
-    const SPAN_LEN: usize = 14;
+    const SPAN_LEN: usize = 70;
     let mut p = DiscPatcher::open(original).expect("open");
     let (before, coding) = p.read_xa_channel_payload(FILE, CHAN).expect("read");
     assert_ne!(coding & 0x03, 0, "bed is stereo");
 
     assert!(
-        legaia_patcher::delilas_xa_voice::boost_cast_bed_intro(&mut p).expect("boost"),
-        "first apply boosts"
+        legaia_patcher::delilas_xa_voice::boost_cast_bed_intro(&mut p).expect("remaster"),
+        "first apply remasters"
     );
     let (after, _) = p.read_xa_channel_payload(FILE, CHAN).expect("re-read");
     assert_eq!(before.len(), after.len());
-    // Scope: only the span sectors changed.
+    // Scope: nothing after the span changed.
     assert_eq!(
-        &before[..SPAN_FIRST * 2304],
-        &after[..SPAN_FIRST * 2304],
-        "head silence untouched"
-    );
-    assert_eq!(
-        &before[(SPAN_FIRST + SPAN_LEN) * 2304..],
-        &after[(SPAN_FIRST + SPAN_LEN) * 2304..],
+        &before[SPAN_LEN * 2304..],
+        &after[SPAN_LEN * 2304..],
         "post-span stream untouched"
     );
     assert_ne!(
-        &before[SPAN_FIRST * 2304..(SPAN_FIRST + SPAN_LEN) * 2304],
-        &after[SPAN_FIRST * 2304..(SPAN_FIRST + SPAN_LEN) * 2304],
+        &before[..SPAN_LEN * 2304],
+        &after[..SPAN_LEN * 2304],
         "span rewritten"
     );
+    // Convergence: the written span's tail re-encodes to the retail
+    // bytes (bit-identical input after the +3.3 s bridge), proving the
+    // blast region could not have moved.
+    assert_eq!(
+        &before[66 * 2304..SPAN_LEN * 2304],
+        &after[66 * 2304..SPAN_LEN * 2304],
+        "span tail converges onto retail bytes"
+    );
 
-    // Audibility: decode the intro and compare RMS over the early swell
-    // (0.75..1.2 s) - the boost must lift it well clear of the retail mix.
+    // The advance: the opening hit now lands in +0.15..0.6 s, where
+    // retail carries digital silence.
     let opts = legaia_xa::DecodeOptions {
         channels: legaia_xa::Channels::Stereo,
         sample_rate: 37800,
         ..Default::default()
     };
-    let rms = |payload: &[u8]| -> f64 {
-        let need = (SPAN_FIRST + SPAN_LEN) * 2304;
+    let rms = |payload: &[u8], a: usize, b: usize| -> f64 {
+        let need = SPAN_LEN * 2304;
         let (pcm, _) = legaia_xa::decode(&payload[..need], opts).expect("decode");
-        let (a, b) = (28350usize, 45360usize); // stereo frames 0.75..1.2 s
         let mut acc = 0.0f64;
         for f in a..b {
             let v = pcm[2 * f] as f64;
@@ -1911,9 +1921,10 @@ fn cast_bed_intro_boost_is_audible_scoped_and_guarded() {
         }
         (acc / (b - a) as f64).sqrt()
     };
-    let (r0, r1) = (rms(&before), rms(&after));
-    assert!(r1 > 4.0 * r0, "boost lifts the swell ({r0:.0} -> {r1:.0})");
-    assert!(r1 > 1000.0, "boosted swell is audible ({r1:.0})");
+    let (a, b) = (5670usize, 22680usize); // stereo frames 0.15..0.6 s
+    let (r0, r1) = (rms(&before, a, b), rms(&after, a, b));
+    assert!(r0 < 200.0, "retail opening is silent ({r0:.0})");
+    assert!(r1 > 8000.0, "shifted opening hit is audible ({r1:.0})");
 
     // Double-application guard.
     assert!(

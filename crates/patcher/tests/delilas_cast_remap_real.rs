@@ -5,8 +5,9 @@
 //! EDC/ECC-valid. Skips (and passes) when `LEGAIA_DISC_BIN` is unset.
 
 use legaia_patcher::delilas_cast::{
-    CastRoute, assemble_delilas_arena, assemble_hook, install_cast_hook, install_delilas_arena,
-    install_stage_caves, install_strike_morph, patch_module_958, patch_module_960,
+    CastRoute, assemble_delilas_arena, assemble_hook, install_cast_hook, install_cast_label_gate,
+    install_delilas_arena, install_stage_caves, install_strike_morph, patch_module_958,
+    patch_module_960,
 };
 use legaia_patcher::disc::DiscPatcher;
 
@@ -445,4 +446,53 @@ fn arena_and_strike_morph_land() {
         install_delilas_arena(&mut dirty).is_err(),
         "dirty arena bails"
     );
+}
+
+/// The cast-label un-gate lands: the two category-test words replace
+/// the site's slot test (`nop` filler and rejoin `bne` untouched),
+/// retail words held before, a re-apply is a clean no-op, and the
+/// routed spell rows keep their retail sibling-special names.
+#[test]
+fn cast_label_gate_lands() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const SITE_OFF: usize = 0x15BB8; // 0x801E43D0 - 0x801CE818
+
+    let mut p = DiscPatcher::open(original.clone()).expect("patcher");
+    assert!(install_cast_label_gate(&mut p).expect("gate installs"));
+
+    let entry = p.read_entry(898).expect("prot 898");
+    let w = |o: usize| u32::from_le_bytes(entry[o..o + 4].try_into().unwrap());
+    assert_eq!(w(SITE_OFF), 0x9262_01DE, "lbu v0,0x1DE(s3) - category");
+    assert_eq!(w(SITE_OFF + 4), 0x0000_0000, "delay-slot nop untouched");
+    assert_eq!(w(SITE_OFF + 8), 0x2C42_0002, "sltiu v0,v0,2 - Item skips");
+    assert_eq!(w(SITE_OFF + 12), 0x1440_0020, "rejoin bne untouched");
+
+    // Retail words held before the edit.
+    let retail = DiscPatcher::open(original).expect("patcher");
+    let rentry = retail.read_entry(898).expect("prot 898");
+    let rw = |o: usize| u32::from_le_bytes(rentry[o..o + 4].try_into().unwrap());
+    assert_eq!(rw(SITE_OFF), 0x92A2_0002);
+    assert_eq!(rw(SITE_OFF + 8), 0x2C42_0003);
+
+    // Idempotence.
+    assert!(!install_cast_label_gate(&mut p).expect("gate re-apply"));
+
+    // The routed spell rows read the sibling special names - the banner
+    // the un-gated label raises for the converted cast.
+    let scus = p.read_named_file("SCUS_942.54").expect("scus");
+    for (id, name) in [
+        (0x79u8, &b"Blazing Slash"[..]),
+        (0x7A, b"Megaton Press"),
+        (0x7B, b"Plasma Strike"),
+    ] {
+        let field = legaia_asset::spell_names::name_field(&scus, id).expect("name field");
+        assert_eq!(
+            &scus[field.file_offset..field.file_offset + name.len()],
+            name,
+            "spell {id:#04x} name"
+        );
+    }
 }

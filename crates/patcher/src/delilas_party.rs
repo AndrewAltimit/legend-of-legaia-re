@@ -497,7 +497,7 @@ pub fn apply_delilas_party_with(
         match crate::delilas_xa_voice::boost_cast_bed_intro(patcher) {
             Ok(true) => report
                 .notes
-                .push("cast bed: Plasma Strike intro crescendo remastered audible".into()),
+                .push("cast bed: Plasma Strike music advanced to open with the walk".into()),
             Ok(false) => {}
             Err(e) => report
                 .notes
@@ -752,9 +752,15 @@ pub fn apply_delilas_party_with(
                         .and_then(|_| crate::delilas_cast::install_cast_hook(patcher, &routes))
                         .and_then(|_| crate::delilas_cast::install_stage_caves(patcher, gi, lu))
                         .and_then(|_| crate::delilas_cast::install_delilas_arena(patcher))
-                        .and_then(|_| crate::delilas_cast::install_strike_morph(patcher));
+                        .and_then(|_| crate::delilas_cast::install_strike_morph(patcher))
+                        .and_then(|_| crate::delilas_cast::install_cast_label_gate(patcher));
                     match installed {
                         Ok(_) => {
+                            report.notes.push(
+                                "cast label: the special's spell name replaces the arts banner \
+                                 (state-0x28 label runs for every Magic cast)"
+                                    .into(),
+                            );
                             for r in &routes {
                                 let walk = match r.spell_id {
                                     0x79 if gi.is_some() => " (un-folded retail walk)",
@@ -787,9 +793,15 @@ pub fn apply_delilas_party_with(
                     let installed = crate::delilas_cast::patch_module_959(patcher, true)
                         .and_then(|_| crate::delilas_cast::install_cast_hook(patcher, &che_routes))
                         .and_then(|_| crate::delilas_cast::install_delilas_arena(patcher))
-                        .and_then(|_| crate::delilas_cast::install_strike_morph(patcher));
+                        .and_then(|_| crate::delilas_cast::install_strike_morph(patcher))
+                        .and_then(|_| crate::delilas_cast::install_cast_label_gate(patcher));
                     match installed {
                         Ok(_) => {
+                            report.notes.push(
+                                "cast label: the special's spell name replaces the arts banner \
+                                 (state-0x28 label runs for every Magic cast)"
+                                    .into(),
+                            );
                             for r in &che_routes {
                                 report.notes.push(format!(
                                     "cast route: slot {} signature runs the retail {} module \
@@ -2489,20 +2501,17 @@ fn reskin_signature_art(
         combo_str(&target.commands)
     ));
 
-    // 3a2. The other half of the same rename, on the enemy side. The
-    // sibling's own block now wears this character's model and name, so
-    // the Nivora duel already fights the heroes - but the cast it
-    // announces is still the sibling's, which reads as Vahn casting
-    // Blazing Slash. The enemy AI resolves that name through the spell
-    // table (`FUN_801E9FD4` sets `actor+0x1DF = monster_id - 0x29` on
-    // every third round), so pointing the sibling's row at the host
-    // art's retail name completes the exchange: the party art gave up
-    // "Burning Flare" to become "Blazing Slash", and the enemy row gives
-    // up "Blazing Slash" to become "Burning Flare".
-    match rename_enemy_signature_spell(patcher, sibling, art.retail_name) {
-        Ok(why) => notes.push(format!("{who} enemy cast: {why}")),
-        Err(e) => notes.push(format!("{who} enemy cast: left retail ({e:#})")),
-    }
+    // 3a2 (retired). The sibling's spell-table row (0x79/0x7A/0x7B) once
+    // took the host art's retail name so the Nivora duel's mirrored-hero
+    // CAST announced the hero art. Two later changes inverted the
+    // ownership: the enemy-side signature is now a physical attack
+    // (`delilas_signature_attack` rewrites the AI picker's cast arm in
+    // place, so no enemy ever casts these ids), and the state-0x28
+    // spell-name label is un-gated for player Magic casts
+    // (`delilas_cast::install_cast_label_gate`), which reads exactly this
+    // row when the converted signature fires. The retail bytes - the
+    // sibling special's own name - are what that banner must show, so
+    // the row is left retail.
 
     // 3b. The swing camera. Not a retarget - a re-time. See
     // [`retime_camera_arm`] for why the arm the art already dispatches to
@@ -2573,50 +2582,6 @@ const IMPACT_CLASS_OFFSET: usize = 0x7A;
 fn signature_spell_id(sibling: Sibling) -> u8 {
     (sibling.monster_id() - 0x29) as u8
 }
-
-/// Rename the sibling's signature cast to the host art's retail name.
-///
-/// The spell-name table is the same one the party path uses, so this is
-/// the enemy half of the art rename and not a second mechanism. Written
-/// through the record's own `+8` pointer into the measured NUL padding -
-/// never grown, never found by searching the image for the old text,
-/// which is how the `Hurricane` / `Hurricane Kick` class of neighbour
-/// corruption happens.
-fn rename_enemy_signature_spell(
-    patcher: &mut DiscPatcher,
-    sibling: Sibling,
-    host_name: &[u8],
-) -> Result<String> {
-    let id = signature_spell_id(sibling);
-    let scus = patcher
-        .read_named_file(crate::arts::SCUS_NAME)
-        .ok_or_else(|| anyhow::anyhow!("SCUS_942.54 not found"))?;
-    let field = legaia_asset::spell_names::name_field(&scus, id)
-        .ok_or_else(|| anyhow::anyhow!("spell {id:#04X} has no reachable name field"))?;
-    let current = &scus[field.file_offset..field.file_offset + field.len];
-    if current == host_name {
-        return Ok(format!("spell {id:#04X} already renamed"));
-    }
-    if host_name.len() + 1 > field.budget {
-        bail!(
-            "spell {id:#04X}'s name slot holds {} bytes, {} needs {}",
-            field.budget,
-            String::from_utf8_lossy(host_name),
-            host_name.len() + 1
-        );
-    }
-    let was = String::from_utf8_lossy(current).into_owned();
-    let mut bytes = vec![0u8; field.budget];
-    bytes[..host_name.len()].copy_from_slice(host_name);
-    patcher
-        .patch_named_file(crate::arts::SCUS_NAME, field.file_offset as u64, &bytes)
-        .context("write the enemy signature cast name")?;
-    Ok(format!(
-        "spell {id:#04X} {was:?} -> {:?}",
-        String::from_utf8_lossy(host_name)
-    ))
-}
-
 /// PROT 0898 file offset of each character's attack-camera jump table
 /// (`0x801CEA88` / `0x801CEAD0` / `0x801CEB20` less the overlay base) and
 /// how many art constants it admits - the `sltiu` bounds at `0x801D72E0`

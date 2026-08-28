@@ -1736,6 +1736,57 @@ pub fn install_strike_morph(p: &mut DiscPatcher) -> Result<bool> {
     apply_word_edits(p, BATTLE_OVERLAY_PROT, &entry, &edits)
 }
 
+/// The state-`0x28` spell-name label gate in overlay 0898
+/// (`FUN_801E295C`, Magic cast begin). Retail heads the label block with
+/// `lbu v0,0x2(s5); sltiu v0,v0,3; bne v0,zero,+skip` - the TAKEN side
+/// skips the block, so the `0x4C` spell-name banner is raised for
+/// **monster** casters only (an address sweep of the descriptor slots
+/// `0x77332`/`0x77344` finds no party-side writer anywhere; the
+/// `battle-action.md` "for party" reading had the branch sense
+/// inverted). A converted signature cast therefore kept whatever the
+/// arts chain last wrote - the leading art's name.
+///
+/// The fix is two in-place words: retest on the actor's action
+/// **category** instead of the caster's slot. `lbu v0,0x1DE(s3);
+/// sltiu v0,v0,2` makes the untouched `bne` skip the label only for
+/// the Item band (category 1, the summon items `0x98`/`0x99` - whose
+/// `+0x1DF` of `0x96`/`0x97` indexes Rare-Seru rows, retail's own skip)
+/// and run it for every Magic cast. Monster casts are category 2, so
+/// the retail monster banner is bit-identical; the player side gains
+/// the same banner - the converted signature shows its spell's name
+/// (the fix), and ordinary Seru casts now announce themselves the way
+/// enemy casts always did (a deliberate presentation upgrade; no free
+/// injection arena exists on a delilas image, every pool is carved).
+const CAST_LABEL_SITE_VA: u32 = 0x801E_43D0;
+/// Retail words at the site (byte-verified): `lbu v0,0x2(s5)` and, 8
+/// bytes later past the `nop` delay filler, `sltiu v0,v0,0x3`.
+const CAST_LABEL_SLOT_WORD: u32 = 0x92A2_0002;
+const CAST_LABEL_SLTIU_WORD: u32 = 0x2C42_0003;
+
+/// Install the label un-gate: the two category-test words over the
+/// site's slot test (the `nop` between them and the `bne` after them
+/// ride unchanged). See [`CAST_LABEL_SITE_VA`]. The routed spell rows
+/// `0x79..=0x7B` keep their retail names - the sibling specials' own -
+/// because the enemy-side rename this build once ran is retired (the
+/// mirrored hero's signature is a physical attack now, so no enemy
+/// casts these ids and the label is the row's only reader).
+pub fn install_cast_label_gate(p: &mut DiscPatcher) -> Result<bool> {
+    let entry = p.read_entry(BATTLE_OVERLAY_PROT).context("read PROT 898")?;
+    let edits = [
+        WordEdit {
+            offset: (CAST_LABEL_SITE_VA - BATTLE_OVERLAY_BASE) as u64,
+            expect: CAST_LABEL_SLOT_WORD,
+            replace: m::lbu(V0, S3, 0x1DE),
+        },
+        WordEdit {
+            offset: (CAST_LABEL_SITE_VA + 8 - BATTLE_OVERLAY_BASE) as u64,
+            expect: CAST_LABEL_SLTIU_WORD,
+            replace: m::sltiu(V0, V0, 2),
+        },
+    ];
+    apply_word_edits(p, BATTLE_OVERLAY_PROT, &entry, &edits)
+}
+
 /// The `jal FUN_801EF9E4` word at the applier call site.
 const APPLIER_JAL_RETAIL: u32 = 0x0C00_0000 | ((APPLIER_VA & 0x0FFF_FFFF) >> 2);
 

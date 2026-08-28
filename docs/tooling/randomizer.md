@@ -2350,21 +2350,29 @@ walk end `+1324` (retail `+909`/`+1264`).
 
 One residual is content, not timing. With the blast pinned to the
 damage whiteout, the bed's audible onset is a pure function of the
-stream's internal loud-to-blast spacing - no fire-timing, trim or
+stream's internal music-to-blast spacing - no fire-timing, trim or
 threshold lever can move one without the other - and the retail bed
-opens with 0.7 s of digital silence (the seek absorber) followed by a
-~0.75 s crescendo mixed 20-30 dB down, which on a real-latency drive
-reads as "the music starts late". The fix is a stream remaster in
-place (`delilas_xa_voice::boost_cast_bed_intro`): the 14 swell sectors
-of `XA20.XA` channel 2 are decoded, lifted with an exponential x8 -> x1
-gain ramp (measured swell peaks cap ~6.8 k, inside i16), and re-encoded
-true-stereo (`legaia_xa::encode::encode_stereo_4bit`) at the same
-length - every other sector byte-identical, so the blast keeps its
-authored offset and the walk sync is untouched. The pass runs BEFORE
-the special-cue capture, so the fanfare excerpt spliced from the same
-channel head opens audibly too, and an RMS guard skips an
-already-boosted span (re-boosting a decode of the boosted stream would
-double the gain).
+opens with ~0.82 s of digital silence and a faint (-30 dB) pre-swell
+before the first real musical event, a full-level hit at stream
++1.31 s, which on a real-latency drive reads as "the music starts
+late". The fix is a front shift in place
+(`delilas_xa_voice::boost_cast_bed_intro`): the first 70 sectors of
+`XA20.XA` channel 2 are decoded, the stream is advanced 21 sectors
+(1.12 s) so the opening hit lands at +0.19 s (0.1 s zero absorber +
+20 ms fade-in kept for the seek landing), and the advance is paid back
+with a 1 s equal-power dissolve into the unshifted stream ending at
++3.30 s - a bridge point chosen by spectral match (cosine 0.984,
+energy ratio 0.99 against the material 1.12 s later) inside the
+sustained opening pad. Every frame past the bridge is bit-identical
+input, so the true-stereo re-encode
+(`legaia_xa::encode::encode_stereo_4bit`) converges back onto the
+retail bytes within the written span (the disc oracle asserts the
+span's tail equals retail) and the blast keeps its authored +14.8 s
+offset - the walk sync is untouched by construction. The pass runs
+BEFORE the special-cue capture, so the fanfare excerpt spliced from
+the same channel head opens on the hit too, and an RMS guard skips an
+already-shifted stream (retail is silent at +0.15..0.6 s; re-shifting
+would stack).
 
 The fourth is data, not module code: the module stages the CASTER's two
 clips by raw index (`actor+0x1DA` = `0x0A`, then `0x0B` at the lift
@@ -2495,6 +2503,27 @@ chain ends normally (probe-measured on a routes-zeroed image). The
 per-slot markers double as the replaced host art's own constant
 (Vahn/Che `0x1C`, Noa `0x1F` = Vulture Blade), so performing that host
 art alone still casts - the intended replacement semantics.
+
+The banner follows the same conversion. Retail's state-`0x28` body
+raises the `0x4C` spell-name banner for **monster** casters only
+(`lbu v0,0x2(s5); sltiu v0,v0,3` at `0x801E43D0` - the party side has
+no banner writer anywhere), so a converted signature kept whatever the
+arts chain last wrote: somersault into Plasma Strike read "Somersault"
+through the whole cast. The un-gate
+(`delilas_cast::install_cast_label_gate`) is two in-place words -
+`lbu v0,0x1DE(s3); sltiu v0,v0,2` - retesting on the action category:
+the Item band (the summon items, retail's own skip) still skips, and
+every Magic cast runs the retail label block, monster casts
+bit-identically. Player Seru casts gain the same banner enemy casts
+always had - a deliberate presentation upgrade; no free injection
+arena exists on a delilas image (gap 1, ARENA1/2 and slot 6 are all
+carved), so an id-scoped gate had nowhere to live. The name the banner
+reads is the sibling special's own: the spell rows `0x79..=0x7B` keep
+their retail names ("Blazing Slash" / "Megaton Press" /
+"Plasma Strike"), because the enemy-side rename that once pointed them
+at the host art names is retired - the mirrored hero's signature is a
+physical attack now, so the un-gated player banner is those rows' only
+reader.
 
 `--delilas-che-hammer` is a visual comparison option on top of the
 swap: Che's welded giant hammer stays on his mesh (instead of the
