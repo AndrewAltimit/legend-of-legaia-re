@@ -41,10 +41,15 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     assert_eq!(block_name(&patcher, 164), "Lu Delilas");
 
     let mapping = PartyMapping::default();
+    // Adjusted explicitly: the XA assertions below verify the re-voice
+    // path's mute-then-refill contract (every non-silent shout sector
+    // differs from retail). The shipped default is `original`, whose
+    // XA2-stays-retail contract arts_voice_modes_shape_the_shout_banks
+    // pins on its own.
     let report = apply_delilas_party(
         &mut patcher,
         &mapping,
-        ArtsVoiceMode::default(),
+        ArtsVoiceMode::Adjusted,
         MoveMode::default(),
         CastRoutePolicy::Install,
     )
@@ -523,7 +528,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     let report2 = apply_delilas_party(
         &mut second,
         &mapping,
-        ArtsVoiceMode::default(),
+        ArtsVoiceMode::Adjusted,
         MoveMode::default(),
         CastRoutePolicy::Install,
     )
@@ -536,7 +541,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     apply_delilas_party(
         &mut third,
         &mapping,
-        ArtsVoiceMode::default(),
+        ArtsVoiceMode::Adjusted,
         MoveMode::default(),
         CastRoutePolicy::Install,
     )

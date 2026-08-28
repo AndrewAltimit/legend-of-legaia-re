@@ -306,7 +306,7 @@ unless asked for:
 | `--approach-softlock-fix` | a monster whose approach animation dies mid-walk is re-staged and resumes walking instead of parking the battle forever (the "endless camera orbit") | - | [Approach-softlock fix](#approach-softlock-fix) |
 | `--delilas-challenge` | a fourth Muscle Dome enrollment option: a new 2-round arena course (Che & Lu double-team, then Gi; a clear pays 5000 coins + a Honey); unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
 | `--delilas-party V,N,G` | play as the Delilas siblings: the party wears Gi / Lu / Che battle models (any permutation over Vahn, Noa, Gala) while the ravine duels + dome Master legs field Vahn / Noa / Gala models | - | [Delilas party swap](#delilas-party-swap) |
-| `--delilas-arts-voice MODE` | with the swap: what the arts shout AND Super/Hyper fanfare banks carry - `adjusted` (default; re-voiced toward the siblings), `original`, `removed` | `adjusted` | [Delilas party swap](#delilas-party-swap) |
+| `--delilas-arts-voice MODE` | with the swap: what the arts shout AND Super/Hyper fanfare banks carry - `original` (default; the retail hero shouts stay), `adjusted` (re-voiced toward the siblings), `removed` | `original` | [Delilas party swap](#delilas-party-swap) |
 | `--delilas-moves MODE` | with the swap: whose animations the hero's Tactical Arts play - `hybrid` (default; only the signature Hyper is the sibling's), `delilas` (whole art archive rebuilt from the sibling's clips, arts renamed, non-essential arts hidden) | `hybrid` | [The Delilas move set](#the-delilas-move-set) |
 | `--custom-items` | inject three brand-new items (Nature's Elixir / Ra-Seru Tear / Fury Bloom) into cut item slots; `random` drop/chest/steal modes add them to the fill pool, and with `--delilas-challenge` they replace the Honey clear reward | - | [Custom items](#completion-reward---a-honey-or-three-custom-items) |
 | `--fishing-price ITEM=POINTS` | set the fishing-exchange point cost of a prize (e.g. the Buma Water Egg); the price also gates when the prize appears | repeatable / comma-separated | [Fishing prize prices](#fishing-prize-prices) |
@@ -1618,7 +1618,7 @@ audio. Filling one with a quarter-second grunt therefore leaves the
 cue silent for over 90% of its window. They follow the same three-way
 contract as the shouts:
 
-- `adjusted` (default) - the retail hero shouts are captured before the
+- `adjusted` - the retail hero shouts are captured before the
   mute and **re-voiced toward each mapped sibling** through the tuned
   pitch/formant map in `delilas_voice_fx` (`DEFAULT_VOICE_MAP`, tuned
   by ear per hero-sibling cell). The DSP chain is deterministic pure
@@ -1661,7 +1661,8 @@ contract as the shouts:
   tuned in and was inert on the patched disc, which is exactly the shape
   [`host-drift.md`](host-drift.md) warns about: a value that reads as
   tuned because the surface you tuned it on honoured it.
-- `original` - both bank families are left retail (never muted): Vahn /
+- `original` (default) - both bank families are left retail (never
+  muted): Vahn /
   Noa / Gala call their own arts out of the siblings' bodies.
 - `removed` - the banks stay silent; the spliced SPU grunts remain the
   audible attack voice.

@@ -1737,7 +1737,7 @@ const PRESET_BASE = {
   drops: 'none', encounters: 'none', encounter_scope: 'scene', soloStrong: false, fleeExp: false, chests: 'none',
   shops: 'none', casino: 'none', steals: 'none', arts: 'none', doors: 'none',
   door_coupling: 'coupled', houseDoors: false, equipmentDrops: false, seruTrade: false,
-  enemyAlly: false, shinySeru: false, showSuperArts: false, jewelFix: false, approachFix: false, delilasChallenge: false, customItems: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', superArtPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '', delilasParty: '', delilasArtsVoice: 'adjusted', delilasMoves: 'hybrid', attackCount: '',
+  enemyAlly: false, shinySeru: false, showSuperArts: false, jewelFix: false, approachFix: false, delilasChallenge: false, customItems: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', superArtPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '', delilasParty: '', delilasArtsVoice: 'original', delilasMoves: 'hybrid', attackCount: '',
   startingItems: 0, doorOfWind: false, incense: false,
   speedChain: false, chickenHeart: false, goodLuckBell: false,
   allWarps: false,
@@ -2125,7 +2125,7 @@ function init() {
     delilasChallengeChk.checked = cfg.delilasChallenge;
     customItemsChk.checked = cfg.customItems;
     delilasPartySel.value = cfg.delilasParty ?? '';
-    delilasArtsVoiceSel.value = cfg.delilasArtsVoice ?? 'adjusted';
+    delilasArtsVoiceSel.value = cfg.delilasArtsVoice ?? 'original';
     delilasMovesSel.value = cfg.delilasMoves ?? 'hybrid';
     syncDelilasArtsRow();
     fishingPriceInput.value = cfg.fishingPrice || '';

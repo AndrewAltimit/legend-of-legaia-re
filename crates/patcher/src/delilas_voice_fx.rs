@@ -18,14 +18,15 @@ use crate::delilas_party::Sibling;
 /// What the arts shout banks carry after the party swap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ArtsVoiceMode {
-    /// Leave the retail Vahn / Noa / Gala shouts untouched.
+    /// Leave the retail Vahn / Noa / Gala shouts untouched (the
+    /// default).
+    #[default]
     Original,
     /// Silence the arts shouts; the spliced SPU grunts remain the
     /// audible attack voice.
     Removed,
     /// Re-voice the retail shouts toward the mapped sibling with
-    /// [`DEFAULT_VOICE_MAP`] (the tuned default).
-    #[default]
+    /// [`DEFAULT_VOICE_MAP`] (the tuned re-voice).
     Adjusted,
 }
 
@@ -1112,7 +1113,7 @@ mod tests {
             Ok(ArtsVoiceMode::Adjusted)
         );
         assert!("grunts".parse::<ArtsVoiceMode>().is_err());
-        assert_eq!(ArtsVoiceMode::default(), ArtsVoiceMode::Adjusted);
+        assert_eq!(ArtsVoiceMode::default(), ArtsVoiceMode::Original);
     }
 
     #[test]

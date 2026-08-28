@@ -458,7 +458,7 @@
       </label>
 
       <div class="rom-opt">
-        <label class="rom-opt-label" for="rom-delilas-party">Delilas party swap (experimental)
+        <label class="rom-opt-label" for="rom-delilas-party">Delilas party swap <span class="tag tag-planned">early preview</span>
           <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Play as the Delilas siblings: Gi, Lu and Che take the party's place in battle, and the story's three Nivora Ravine duels (plus the Muscle Dome Master legs) field Vahn, Noa and Gala instead - each side fights with the other's model under its own moves, so the duels play exactly as before with the fighters exchanged. Pick which sibling replaces which hero. The swap covers battle models, field walking models, names and the battle grunt voices (resampled from the siblings' own voice banks); stats, arts, magic and the story are untouched, and party names change on a New Game only (existing saves keep their stored names). Each sibling also brings their signature special into the Arts list - Gi's Blazing Slash, Che's Megaton Press, Lu's Plasma Strike, all on the combo Left Right Up Up Down - replacing that hero's 50-AP Hyper Art (Burning Flare, Vulture Blade, Explosive Fist). The move plays the sibling's own choreography at its authored length, with their own cast effect instead of the hero's, and on Vahn's slot it also gains a proper swing camera (Burning Flare's retail camera is the one flat framing in the game, which is why that slot looked static). The run-in stays the hero's, since it is shared across all of that character's arts. What the heroes' Tactical Arts shout lines become is picked by the Arts voices sub-option below. Unaffected by the seed.</span></span>
         </label>
         <select id="rom-delilas-party">
@@ -473,11 +473,11 @@
       </div>
       <div class="rom-opt rom-sub" id="rom-delilas-arts-voice-row" hidden>
         <label class="rom-opt-label" for="rom-delilas-arts-voice">&#8627; Arts voices
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">What the heroes' Tactical Arts voice banks carry once the siblings take their place - both the per-art shouts and the Super / Hyper / Miracle fanfare cues (a Hyper Art has no shout of its own, so its fanfare is its only audio). Adjusted (the default) re-voices the retail shouts toward each mapped sibling with a tuned pitch and formant map, so the calls keep their timing but sound closer to the Delilas. Original keeps Vahn, Noa and Gala's own shouts playing out of the siblings' bodies. Removed silences the arts shouts entirely - the siblings' own attack grunts remain the audible voice. Unaffected by the seed.</span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">What the heroes' Tactical Arts voice banks carry once the siblings take their place - both the per-art shouts and the Super / Hyper / Miracle fanfare cues (a Hyper Art has no shout of its own, so its fanfare is its only audio). Original (the default) keeps Vahn, Noa and Gala's own shouts playing out of the siblings' bodies. Adjusted re-voices the retail shouts toward each mapped sibling with a tuned pitch and formant map, so the calls keep their timing but sound closer to the Delilas. Removed silences the arts shouts entirely - the siblings' own attack grunts remain the audible voice. Unaffected by the seed.</span></span>
         </label>
         <select id="rom-delilas-arts-voice">
-          <option value="adjusted" selected>Adjusted - hero voices re-voiced toward the siblings</option>
-          <option value="original">Original - keep the Vahn / Noa / Gala voices</option>
+          <option value="original" selected>Original - keep the Vahn / Noa / Gala voices</option>
+          <option value="adjusted">Adjusted - hero voices re-voiced toward the siblings</option>
           <option value="removed">Removed - arts silent, attack grunts remain</option>
         </select>
       </div>

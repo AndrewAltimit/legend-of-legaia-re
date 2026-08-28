@@ -1215,7 +1215,7 @@ pub async fn patch_rom(
         summary.push_str("delilas-party: off\n");
     } else {
         // Arts-voice mode for the swapped shout banks; an empty or
-        // unknown value falls back to the tuned default (adjusted).
+        // unknown value falls back to the default (original).
         let arts_voice = delilas_arts_voice
             .trim()
             .parse::<legaia_patcher::delilas_voice_fx::ArtsVoiceMode>()

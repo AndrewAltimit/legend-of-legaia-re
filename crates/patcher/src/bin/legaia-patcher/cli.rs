@@ -847,11 +847,11 @@ pub(crate) struct RandomizeArgs {
     #[arg(long)]
     pub(crate) delilas_che_hammer: bool,
     /// With `--delilas-party`: what the Tactical Arts shout banks
-    /// (XA2/XA4/XA6) carry. `adjusted` (default) re-voices the retail
-    /// hero shouts toward each mapped sibling with the tuned
-    /// pitch/formant map; `original` keeps the retail Vahn / Noa / Gala
-    /// shouts; `removed` silences arts shouts (attack grunts remain).
-    #[arg(long, value_name = "MODE", default_value = "adjusted")]
+    /// (XA2/XA4/XA6) carry. `original` (default) keeps the retail
+    /// Vahn / Noa / Gala shouts; `adjusted` re-voices them toward each
+    /// mapped sibling with the tuned pitch/formant map; `removed`
+    /// silences arts shouts (attack grunts remain).
+    #[arg(long, value_name = "MODE", default_value = "original")]
     pub(crate) delilas_arts_voice: legaia_patcher::delilas_voice_fx::ArtsVoiceMode,
     /// With `--delilas-party`: how much of the hero's Tactical Arts kit
     /// becomes the sibling's. `hybrid` (default) keeps every host art's
