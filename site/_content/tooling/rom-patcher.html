@@ -310,40 +310,43 @@
     </details>
 
     <!-- ---- Equipment editor ---- -->
-    <details class="rom-group" id="rom-equip-group">
-      <summary>Equipment editor <span class="rom-opt-note">- swing costs &amp; who can equip what</span></summary>
-      <p class="rom-edit-note">Every value is read from <strong>your</strong> disc when you choose it. A weapon&rsquo;s <em>swing cost</em> is the AP one press of that weapon-hand command charges on the Arts bar and, as the same byte, how wide its pennant draws (<code>cost &minus; 6</code> px): retail uses 30 for a favored-class weapon, 42 off-class, 54 far off-class, and the Astral Sword is Vahn&rsquo;s one 54. The cost is authored per character in that character&rsquo;s battle file, so the same weapon can be priced differently per column; a dash means that character&rsquo;s file has no section for the weapon. <em>Who can equip</em> rewrites the item&rsquo;s owner bits in the equipment table. Ticking a character for a weapon their file has no section for lets them equip it, but in battle they fall through to the default look and a 30-AP swing. Mechanism: <a href="../subsystems/arts-command-gauge.html">Arts command gauge</a>.</p>
-      <div class="rom-equip-toolbar">
-        <input type="search" id="rom-equip-filter" placeholder="filter by name or 0xID" spellcheck="false" autocomplete="off">
-        <select id="rom-equip-slot" aria-label="Slot">
-          <option value="weapon" selected>Weapons</option>
-          <option value="body">Body</option>
-          <option value="head">Head</option>
-          <option value="footwear">Footwear</option>
-          <option value="all">All equipment</option>
-        </select>
-        <span class="rom-equip-presets">
-          <button type="button" class="rom-tex-preset" id="rom-equip-preset-astral" title="Set the Astral Sword's swing to the favored 30">Astral Sword = 30</button>
-          <button type="button" class="rom-tex-preset" id="rom-equip-preset-all30" title="Every weapon swings at the favored 30 for every character">All swings 30</button>
-          <button type="button" class="rom-tex-preset" id="rom-equip-preset-anyone" title="Every visible weapon equippable by all three">Weapons: anyone</button>
-          <button type="button" class="rom-tex-preset" id="rom-equip-preset-reset">Reset edits</button>
-        </span>
+    <details class="rom-group" id="rom-equip-group" open>
+      <summary>Equipment <span class="rom-summary-note">swing costs, who can equip what</span></summary>
+      <div class="rom-group-body">
+        <h4 class="rom-edit-title">Swing cost &amp; owners
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Values are read from <strong>your</strong> disc. A weapon&rsquo;s <em>swing cost</em> is the AP one press of the weapon-hand command charges on the Arts bar; the same byte sets how wide its pennant draws (<code>cost &minus; 6</code> px). Retail uses 30 for a favored-class weapon, 42 off-class, 54 far off-class - the Astral Sword is Vahn&rsquo;s one 54. The cost is authored per character in that character&rsquo;s battle file, so one weapon can be priced differently per column; a dash means that file has no section for the weapon. The <em>V / N / G</em> boxes rewrite the item&rsquo;s owner bits. Ticking a character for a weapon their file has no section for lets them equip it, but in battle they fall through to the default look and a 30-AP swing. Mechanism: <a href="../subsystems/arts-command-gauge.html">Arts command gauge</a>.</span></span>
+        </h4>
+        <div class="rom-equip-toolbar">
+          <select id="rom-equip-slot" aria-label="Slot">
+            <option value="weapon" selected>Weapons</option>
+            <option value="body">Body</option>
+            <option value="head">Head</option>
+            <option value="footwear">Footwear</option>
+            <option value="all">All equipment</option>
+          </select>
+          <span class="rom-equip-presets">
+            <button type="button" class="rom-tex-preset" id="rom-equip-preset-astral" title="Set the Astral Sword's swing to the favored 30">Astral Sword = 30</button>
+            <button type="button" class="rom-tex-preset" id="rom-equip-preset-all30" title="Every weapon swings at the favored 30 for every character">All swings 30</button>
+            <button type="button" class="rom-tex-preset" id="rom-equip-preset-anyone" title="Every weapon equippable by all three">Weapons: anyone</button>
+            <button type="button" class="rom-tex-preset" id="rom-equip-preset-reset" title="Drop every edit in this table">Reset</button>
+          </span>
+        </div>
+        <p class="rom-edit-note" id="rom-equip-status">Waiting for a disc image ...</p>
+        <div id="rom-equip-rows" class="rom-equip-rows"></div>
+        <details class="rom-art-advanced">
+          <summary>Advanced: raw token lists (CLI syntax)</summary>
+          <div class="rom-opt">
+            <label class="rom-opt-label" for="rom-swing-cost">Swing costs</label>
+            <span class="rom-opt-note"><code>CHAR:ITEM=COST</code>, comma-separated (<code>--swing-cost</code>) - e.g. <code>Vahn:0xBA=30</code>. Merged with the table.</span>
+            <input type="text" id="rom-swing-cost" placeholder="e.g. Vahn:0xBA=30" spellcheck="false" autocomplete="off">
+          </div>
+          <div class="rom-opt">
+            <label class="rom-opt-label" for="rom-equip-owner">Equip owners</label>
+            <span class="rom-opt-note"><code>ITEM=OWNERS</code> with <code>V</code>/<code>N</code>/<code>G</code>, <code>any</code> or <code>none</code> (<code>--equip-owner</code>) - e.g. <code>0xBA=any</code>. Merged with the table.</span>
+            <input type="text" id="rom-equip-owner" placeholder="e.g. 0xBA=any" spellcheck="false" autocomplete="off">
+          </div>
+        </details>
       </div>
-      <p class="rom-edit-note" id="rom-equip-status">Waiting for a disc image ...</p>
-      <div id="rom-equip-rows" class="rom-equip-rows"></div>
-      <details class="rom-art-advanced">
-        <summary>Advanced: raw token lists (CLI syntax)</summary>
-        <div class="rom-opt">
-          <label class="rom-opt-label" for="rom-swing-cost">Swing costs</label>
-          <span class="rom-opt-note"><code>CHAR:ITEM=COST</code> tokens, comma-separated - e.g. <code>Vahn:0xBA=30, Noa:0x2E=30</code>. Same as the CLI&rsquo;s <code>--swing-cost</code>; <code>legaia-patcher equipment</code> lists current values. Merged with the table above.</span>
-          <input type="text" id="rom-swing-cost" placeholder="e.g. Vahn:0xBA=30" spellcheck="false" autocomplete="off">
-        </div>
-        <div class="rom-opt">
-          <label class="rom-opt-label" for="rom-equip-owner">Equip owners</label>
-          <span class="rom-opt-note"><code>ITEM=OWNERS</code> tokens with <code>V</code>/<code>N</code>/<code>G</code> letters, <code>any</code> or <code>none</code> - e.g. <code>0xBA=VNG</code>. Same as <code>--equip-owner</code>. Merged with the table above.</span>
-          <input type="text" id="rom-equip-owner" placeholder="e.g. 0xBA=any" spellcheck="false" autocomplete="off">
-        </div>
-      </details>
     </details>
 
     </div><!-- /rom-col -->
@@ -961,7 +964,6 @@
 
   /* Equipment editor: one table row per item, owner bits + per-character swing cost */
   .rom-equip-toolbar { display: flex; flex-wrap: wrap; gap: 0.4rem 0.6rem; align-items: center; margin: 0 0 0.5rem; }
-  .rom-form .rom-equip-toolbar input[type=search] { flex: 1 1 10rem; min-width: 8rem; padding: 0.3rem 0.45rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: inherit; }
   .rom-form .rom-equip-toolbar select { width: auto; }
   .rom-equip-presets { display: flex; flex-wrap: wrap; gap: 0.3rem; }
   .rom-equip-rows { max-height: 32rem; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }

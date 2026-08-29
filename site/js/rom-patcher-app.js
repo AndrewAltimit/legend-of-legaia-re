@@ -250,7 +250,6 @@ function setupInfoTips() {
 function setupEquipmentEditor(wasm, fileInput, discBytes) {
   const statusEl = $('rom-equip-status');
   const rowsEl = $('rom-equip-rows');
-  const filterEl = $('rom-equip-filter');
   const slotEl = $('rom-equip-slot');
   if (!rowsEl) {
     return { clear() {}, collect() { return { costs: '', owners: '', error: '' }; } };
@@ -259,7 +258,7 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
   const hexOf = (id) => '0x' + Number(id).toString(16).toUpperCase().padStart(2, '0');
   const setNote = (msg) => { if (statusEl) statusEl.textContent = msg; };
   let items = [];
-  // Edits live here, not in the DOM: a filter or slot change re-renders only
+  // Edits live here, not in the DOM: a slot change re-renders only
   // the visible rows, so a DOM-only edit on a hidden row would be lost.
   // costs: "id:char" -> typed string ('' = keep); owners: id -> mask.
   const costEdits = new Map();
@@ -282,7 +281,6 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
       rowsEl.appendChild(p);
       return;
     }
-    const q = (filterEl && filterEl.value || '').trim().toLowerCase();
     const slot = slotEl ? slotEl.value : 'weapon';
     const table = document.createElement('table');
     table.className = 'rom-equip-table';
@@ -294,7 +292,6 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
     let shown = 0;
     for (const it of items) {
       if (slot !== 'all' && it.slot !== slot) continue;
-      if (q && !(it.name.toLowerCase().includes(q) || hexOf(it.id).toLowerCase().includes(q))) continue;
       shown++;
       const tr = document.createElement('tr');
       tr.className = 'rom-equip-row';
@@ -394,7 +391,6 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
     const b = $(id);
     if (b) b.addEventListener('click', (e) => { e.preventDefault(); fn(); });
   }
-  if (filterEl) filterEl.addEventListener('input', render);
   if (slotEl) slotEl.addEventListener('change', render);
 
   let loadedFor = null;
@@ -415,7 +411,7 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
       items = t.items || [];
       loadedFor = key;
       render();
-      setNote('Current values read from your disc. Empty box = keep; owners tick who can equip. A swing costs its AP per press and draws (cost - 6) px wide.');
+      setNote('Read from your disc. Empty box = keep the disc value.');
     } catch (e) {
       setNote('Could not read the equipment table: ' + (e && e.message ? e.message : e));
     }
