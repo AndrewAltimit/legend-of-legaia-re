@@ -803,6 +803,30 @@ impl DiscPatcher {
         Ok(dmy_sectors.saturating_sub(1).saturating_sub(used))
     }
 
+    /// Park an arbitrary blob in freshly allocated annex sectors and return its
+    /// absolute disc LBA - the value the game's own CD reader
+    /// (`FUN_8005E4D4`) takes, so an injected stub can stream the blob at
+    /// runtime with that LBA as a literal. The blob is zero-padded to whole
+    /// sectors; the disc keeps its size (annex sectors already exist).
+    pub fn annex_blob(&mut self, bytes: &[u8]) -> Result<(u32, u32)> {
+        if bytes.is_empty() {
+            bail!("annex blob is empty");
+        }
+        let sectors = bytes.len().div_ceil(USER_DATA_SIZE) as u32;
+        let lba = self.annex_alloc(sectors)?;
+        let mut padded = bytes.to_vec();
+        padded.resize(sectors as usize * USER_DATA_SIZE, 0);
+        legaia_iso::write::patch_file_logical(&mut self.image, lba, 0, &padded)
+            .context("write annexed blob")?;
+        Ok((lba, sectors))
+    }
+
+    /// Read `sectors` sectors of user data back out of the annex (or any
+    /// absolute disc LBA) - the read side of [`Self::annex_blob`], for oracles.
+    pub fn read_disc_sectors(&self, lba: u32, sectors: u32) -> Result<Vec<u8>> {
+        read_user_data(&self.image, lba, sectors as usize)
+    }
+
     /// Where PROT entry `index`'s player file keeps its records, if they
     /// were annexed: the placement decoded from the in-place table.
     pub fn player_file_annex(&self, index: usize) -> Result<Option<AnnexPlacement>> {

@@ -49,6 +49,9 @@ impl Cpu {
     pub fn wr8(&mut self, a: u32, v: u8) {
         self.mem.insert(a, v);
     }
+    pub fn wr16(&mut self, a: u32, v: u16) {
+        self.load(a, &v.to_le_bytes());
+    }
     pub fn wr32(&mut self, a: u32, v: u32) {
         self.load(a, &v.to_le_bytes());
     }
@@ -71,10 +74,17 @@ impl Cpu {
                 0x04 => self.r[rd] = self.r[rt] << (self.r[rs] & 31),
                 0x06 => self.r[rd] = self.r[rt] >> (self.r[rs] & 31),
                 0x08 => branch = Some(self.r[rs]),
+                0x09 => {
+                    // `jalr rd, rs` - the link register defaults to $ra.
+                    let target = self.r[rs];
+                    self.r[if rd == 0 { 31 } else { rd }] = self.pc + 8;
+                    branch = Some(target);
+                }
                 0x21 => self.r[rd] = self.r[rs].wrapping_add(self.r[rt]),
                 0x23 => self.r[rd] = self.r[rs].wrapping_sub(self.r[rt]),
                 0x24 => self.r[rd] = self.r[rs] & self.r[rt],
                 0x25 => self.r[rd] = self.r[rs] | self.r[rt],
+                0x2a => self.r[rd] = u32::from((self.r[rs] as i32) < (self.r[rt] as i32)),
                 0x2b => self.r[rd] = u32::from(self.r[rs] < self.r[rt]),
                 f => panic!("unsupported SPECIAL funct {f:#x} at {:#x}", self.pc),
             },
@@ -94,6 +104,7 @@ impl Cpu {
                 }
             }
             0x09 => self.r[rt] = self.r[rs].wrapping_add(simm),
+            0x0a => self.r[rt] = u32::from((self.r[rs] as i32) < (simm as i32)),
             0x0b => self.r[rt] = u32::from(self.r[rs] < simm),
             0x0c => self.r[rt] = self.r[rs] & u32::from(imm),
             0x0d => self.r[rt] = self.r[rs] | u32::from(imm),
@@ -103,6 +114,7 @@ impl Cpu {
             0x24 => self.r[rt] = u32::from(self.rd8(self.r[rs].wrapping_add(simm))),
             0x25 => self.r[rt] = u32::from(self.rd16(self.r[rs].wrapping_add(simm))),
             0x28 => self.wr8(self.r[rs].wrapping_add(simm), self.r[rt] as u8),
+            0x29 => self.wr16(self.r[rs].wrapping_add(simm), self.r[rt] as u16),
             0x2b => self.wr32(self.r[rs].wrapping_add(simm), self.r[rt]),
             o => panic!("unsupported opcode {o:#x} at {:#x}", self.pc),
         }

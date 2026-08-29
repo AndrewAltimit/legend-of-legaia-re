@@ -898,6 +898,20 @@ pub(crate) struct RandomizeArgs {
     /// dead-space bytes).
     #[arg(long, default_value_t = false)]
     pub(crate) show_super_arts: bool,
+    /// **Super Arts Pack, by ZetaPhoenix**: fifteen extra Super Arts - five more
+    /// per character on top of the retail five - each with its own name (Ultra
+    /// Elbow, Somersault Duo, Double Lizard, Ground Pound, ...), hit count and
+    /// animation, triggered by their own arts chains. ZetaPhoenix's 3764-byte
+    /// block is installed unmodified: it is parked in the `DMY.DAT` annex and
+    /// streamed to `0x801FD000` at battle load by an injected stub, and ten
+    /// same-size word edits point the retail Super-Art applier, the arts queue
+    /// builder and the two banner routines at it. The retail five per character
+    /// are unchanged - the pack carries them verbatim as its first five rows.
+    /// **Mutually exclusive with `--shiny-seru`, `--show-super-arts`,
+    /// `--arts-ap-grant` / `--arts-ap-cost` and `--delilas-challenge`** (same
+    /// dead-space bytes).
+    #[arg(long, default_value_t = false)]
+    pub(crate) super_arts_pack: bool,
     /// Per-battle percentage chance a capturable enemy is shiny (only with
     /// `--shiny-seru`).
     #[arg(long, default_value_t = legaia_patcher::shiny_seru::DEFAULT_PCT)]

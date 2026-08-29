@@ -62,6 +62,22 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             );
         }
     }
+    // The Super Arts Pack hosts its battle-load stub + queue trampoline in the
+    // same arena, and rewrites the Super-Art applier the move list detours - so
+    // it is a hard conflict with every one of them.
+    for (other, flag) in [
+        (arts_ap, "--arts-ap-grant / --arts-ap-cost"),
+        (args.shiny_seru, "--shiny-seru"),
+        (args.delilas_challenge, "--delilas-challenge"),
+        (args.show_super_arts, "--show-super-arts"),
+    ] {
+        if args.super_arts_pack && other {
+            bail!(
+                "--super-arts-pack and {flag} both inject into the same verified-dead SCUS \
+                 regions and are mutually exclusive; enable only one"
+            );
+        }
+    }
 
     let original = load_image(&args.input)?;
     check_usa_disc(&original, args.allow_region_mismatch, "randomize")?;
@@ -329,11 +345,12 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     // 1v2 on the retail sibling data while the ravine duels (1v1, ample
     // headroom) carry the swapped models.
     if let Some(mapping) = &args.delilas_party {
-        let cast_route = if args.shiny_seru || args.show_super_arts || arts_ap {
-            legaia_patcher::delilas_party::CastRoutePolicy::ArenaTaken
-        } else {
-            legaia_patcher::delilas_party::CastRoutePolicy::Install
-        };
+        let cast_route =
+            if args.shiny_seru || args.show_super_arts || args.super_arts_pack || arts_ap {
+                legaia_patcher::delilas_party::CastRoutePolicy::ArenaTaken
+            } else {
+                legaia_patcher::delilas_party::CastRoutePolicy::Install
+            };
         match legaia_patcher::delilas_party::apply_delilas_party_with(
             &mut patcher,
             mapping,
@@ -643,6 +660,30 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("show_super_arts = true".to_string());
     } else {
         manifest.push("show_super_arts = false".to_string());
+    }
+
+    // Super Arts Pack (by ZetaPhoenix): fifteen extra Super Arts, five more per
+    // character, from his own 3764-byte block - parked in the DMY.DAT annex and
+    // streamed to 0x801FD000 at battle load, reached by ten same-size edits.
+    if args.super_arts_pack {
+        let report = apply::inject_super_arts_pack(&mut patcher)?;
+        println!(
+            "super-arts-pack (by ZetaPhoenix): {} extra Super Arts, five per character \
+             (block at LBA {} x{} sectors -> {:#x}, loader stub {:#x}, {} word edits)",
+            report.names.len(),
+            report.block_lba,
+            report.block_sectors,
+            legaia_patcher::super_arts_pack::BLOCK_VA,
+            report.stub_va,
+            report.edits
+        );
+        for (i, name) in report.names.iter().enumerate() {
+            let who = ["Vahn", "Noa", "Gala"][i / 5];
+            println!("  {who}: {name}");
+        }
+        manifest.push("super_arts_pack = true  # by ZetaPhoenix".to_string());
+    } else {
+        manifest.push("super_arts_pack = false".to_string());
     }
 
     // Place renames: the SCUS landmark cell, the world-map label records, and
