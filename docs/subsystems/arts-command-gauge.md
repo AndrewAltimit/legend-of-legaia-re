@@ -197,11 +197,30 @@ The descriptor table keys sections by **equippable item id**, so each equippable
 | Noa (864) | claw / feral / fang (+ knife) | sword / blade | club / axe |
 | Gala (865) | club / axe / mace | claw, knife | - |
 
+The classes are finer than three families. Per weapon, reading every section of the three files (all other direction commands read `0x1E`):
+
+| Weapon | Vahn | Noa | Gala |
+|---|---|---|---|
+| Survival Knife, Battle Knife | `0x1E` | `0x1E` | `0x2A` |
+| Short Sword, Force Blade | `0x1E` | `0x2A` | `0x1E` |
+| Beast Buster, Chaos Breaker | `0x1E` | - | `0x1E` |
+| Nail Glove, Crimson Nails, Fighter Claw, Bloody Claw | `0x2A` | `0x1E` | `0x2A` |
+| Survival Club, Red Club | `0x1E` | `0x36` | `0x1E` |
+| Power Club, Survival Axe, Battle Axe, Great Axe | `0x2A` | `0x36` | `0x1E` |
+| Astral Sword (`0xBA`) | `0x36` | - | - |
+| character-locked gear (Ra-Seru weapons, Feral / Hard Beat / Heavy Strike, Holy / Golden Claw, Mace) | `0x1E` | `0x1E` | `0x1E` |
+
+So Gala swings a Short Sword at the favored price but a knife off-class, Vahn swings the light clubs favored but the Power Club and every axe off-class, and Noa is the only character with a `0x36` tier on ordinary gear. The Astral Sword is not a code exception: it is simply Vahn's one `0x36` section, the same tier Noa gets from an axe.
+
 Cross-checked against live RAM: Gala + Nail Glove reads `0x2A`, Gala + Ra-Seru Club reads `0x1E` - matching that file's `0x28` and `0x21` sections. The cost lives inside the section's **LZS-compressed** stream, so an editor decompresses the section, rewrites the byte at `swing_rec_a + 0x74`, recompresses, and writes back within the slot footprint.
 
 ### Reading it
 
-`legaia_asset::battle_char_assembly::swing_command_costs(buf, pack, equipped)` returns the four costs for one equipped set, indexed in direction-command byte order (`Left, Right, Down, Up` = runtime action slots `0xC..=0xF`). It is the splice path, not a descriptor-id lookup: `select_sections` matches an equipped id positionally **inside its own section**, and the arm swing is section 2's record, so it is equipment index 2 that re-prices the arm. An id placed at index 0 silently falls through to the section default and every weapon reads `0x1E` - the failure mode to expect when a cost sweep comes back constant.
+`legaia_asset::battle_char_assembly::swing_command_costs(buf, pack, equipped)` returns the four costs for one equipped set, indexed in direction-command byte order (`Left, Right, Down, Up` = runtime action slots `0xC..=0xF`). It is the splice path, not a descriptor-id lookup: `select_sections` matches an equipped id positionally **inside its own section**, so the equipment index that re-prices a swing is whichever section the file keys the weapon under - and that differs per character.
+
+Vahn's and Gala's files carry the weapons in section 2 (slot `0xC`, Left) with the Ra-Seru in section 3; Noa's file carries Ra-Seru Terra in section 2 and the weapons in **section 3**, so her weapon-priced command is slot `0xD` (**Right**). The character records agree: a retail save reads Vahn `[.., 0x1B Ra-Seru Blade, 0x09 Meta, ..]`, Gala `[.., 0x21 Ra-Seru Club, 0x19 Ozma, ..]`, Noa `[.., 0x11 Terra, 0x1F Ra-Seru Fangs, ..]` at `+0x196..`, which is why the [save-record](../formats/save-record.md) labels `+0x198` weapon / `+0x199` Ra-Seru hold for Vahn and Gala only.
+
+An id placed at the wrong index silently falls through to the section default and every weapon reads `0x1E` - the failure mode to expect when a cost sweep comes back constant.
 
 Every caller reads it here: the port's Arts input, the Muscle Dome's per-command cost, and the disc-gated pin in `crates/asset/tests/battle_data_pack_real.rs`. One byte prices one command, and the dome is a restricted normal battle, so a second reader would be a second answer.
 
@@ -209,7 +228,7 @@ Every caller reads it here: the port's Arts input, the Muscle Dome's per-command
 
 **Confirmed** (live-pinned + byte-validated against the disc): the cost field `DAT_801C9360[char][0x0C] + 0x74`, its measured values, the case-`9` read and case-`0xB` AP spend in `FUN_801D388C`, the SCUS call site of the execution resolver, the **writer** (`FUN_800557B8`, verbatim copy from the LZS-decoded equipment section at battle load - no runtime penalty arithmetic), and the **disc location** of the cost byte (`section[+0x04]` swing record `+0x74` in the player battle files, tabulated above).
 
-**Inferred**: the identification of command `0x0C` as "the arm" (it is the only command whose cost tracks the weapon).
+**Inferred**: the identification of the weapon-hand command as "the arm" (`0x0C` Left for Vahn and Gala, `0x0D` Right for Noa - the only command whose cost tracks the weapon; the live measurements above were taken on Gala and Vahn).
 
 The weapon-specialty mechanic is therefore a fully editable data table: rewrite a character's favored-class arm costs up / another class's down to reassign their specialty. The [randomizer](../tooling/randomizer.md)'s `--weapon-specialty` does exactly this - it permutes the three favored families among the characters by rewriting these bytes (decompressing / re-compressing each touched section in place).
 
