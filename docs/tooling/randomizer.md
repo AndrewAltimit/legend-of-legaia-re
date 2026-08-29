@@ -3326,7 +3326,11 @@ or footwear the default record's cost - see
 [arts-command-gauge.md](../subsystems/arts-command-gauge.md#if-the-astral-sword-is-forced-onto-another-character)).
 For a **weapon**, the patcher instead **carries the model over**: the weapon's
 primitives are cut out of the donor file's record with the same item-alone
-cut the equipment viewer uses, seated on the new owner's own bare arm and
+cut the equipment viewer uses, re-seated into the new owner's own grip (the
+three skeletons' hand frames differ by up to a right angle; the transform
+is calibrated from the weapons both files carry, per weapon class - see
+[battle-data-pack.md](../formats/battle-data-pack.md#carrying-a-weapon-into-another-characters-file)),
+seated on the new owner's own bare arm and
 swing records, the donor's texture tile and palettes ride along on the
 owner's section columns, and the record keeps the donor weapon's arm cost
 (so the Astral Sword swings at 54 for Noa too until `--swing-cost Noa:0xBA=…`

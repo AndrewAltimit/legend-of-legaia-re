@@ -90,7 +90,7 @@ fn astral_sword_transplants_into_noas_file() {
         eprintln!("[skip] player files missing");
         return;
     };
-    let t = transplant_weapon(&noa, &vahn, 0, ASTRAL_SWORD).expect("transplant");
+    let t = transplant_weapon(&noa, &vahn, 0, 1, ASTRAL_SWORD).expect("transplant");
     assert_eq!(t.section, 3, "Noa's weapons live in section 3");
     assert_eq!(t.cost, 54, "the Astral Sword keeps its far-off-class price");
     assert!(t.weapon_prims >= 40, "cut claimed {} prims", t.weapon_prims);
@@ -189,7 +189,7 @@ fn astral_sword_transplants_into_noas_file() {
         assert_eq!(a, b, "record {} (id {:#x}) changed", r.index, r.id);
     }
     // Idempotent: transplanting into the rebuilt file replaces, never duplicates.
-    let again = transplant_weapon(&rebuilt, &vahn, 0, ASTRAL_SWORD).unwrap();
+    let again = transplant_weapon(&rebuilt, &vahn, 0, 1, ASTRAL_SWORD).unwrap();
     let (_, recs2) = records_with_transplants(&rebuilt, &[again]).unwrap();
     assert_eq!(recs2.len(), pack.records.len());
     assert!(equip_transplant::weapon_section(&pack) == Some(3));

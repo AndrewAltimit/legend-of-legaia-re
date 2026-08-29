@@ -620,7 +620,7 @@ pub fn fall_through_notes(list: &[FallThrough]) -> Vec<String> {
 /// primitives and texture tile, seated on the new owner's own bare arm and
 /// swing records (`legaia_asset::equip_transplant`). The record keeps the
 /// donor weapon's arm cost.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ModelTransplant {
     /// The new owner.
     pub character: String,
@@ -630,10 +630,17 @@ pub struct ModelTransplant {
     pub source: String,
     /// The arm cost the new record carries.
     pub cost: u8,
+    /// Degrees the weapon was rotated to sit in the new owner's hand
+    /// frame (the hand channel's calibration; see
+    /// `legaia_asset::equip_hand_frame`), with the calibration residual.
+    pub reseat: Option<(f64, f64)>,
+    /// Donor bones whose part of the weapon had no calibration and was
+    /// left out.
+    pub dropped_channels: Vec<u8>,
 }
 
 /// What [`apply_equipment_edits`] did.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct EquipmentEditReport {
     /// Weapon models carried over into another character's file.
     pub models_transplanted: Vec<ModelTransplant>,
@@ -776,13 +783,15 @@ pub fn apply_equipment_edits(
         for (&ci, wants) in &plan {
             let mut ts: Vec<Transplant> = Vec::new();
             for &(id, src) in wants {
-                match transplant_weapon(&raw[ci], &raw[src], src, id as u32) {
+                match transplant_weapon(&raw[ci], &raw[src], src, ci, id as u32) {
                     Ok(t) => {
                         landed[ci].push(ModelTransplant {
                             character: PLAYERS[ci].name.to_string(),
                             item: id,
                             source: PLAYERS[src].name.to_string(),
                             cost: t.cost,
+                            reseat: t.reseated.last().map(|(_, deg, rms)| (*deg, *rms)),
+                            dropped_channels: t.dropped_channels.clone(),
                         });
                         wanted[ci].push((id, src));
                         ts.push(t);
@@ -1107,10 +1116,20 @@ fn annex_rebuilt_files(
 pub fn transplant_notes(rep: &EquipmentEditReport) -> Vec<String> {
     let mut out = Vec::new();
     for t in &rep.models_transplanted {
+        let seat = match t.reseat {
+            Some((deg, _)) => format!(", re-seated {deg:.0} deg into {}'s grip", t.character),
+            None => String::new(),
+        };
         out.push(format!(
-            "{} now holds 0x{:02X} in battle: model carried over from {}'s file ({} AP swing)",
+            "{} now holds 0x{:02X} in battle: model carried over from {}'s file ({} AP swing{seat})",
             t.character, t.item, t.source, t.cost
         ));
+        if !t.dropped_channels.is_empty() {
+            out.push(format!(
+                "  part of 0x{:02X} on donor bone(s) {:?} had no grip calibration and was left out",
+                t.item, t.dropped_channels
+            ));
+        }
     }
     for (who, lba, sectors) in &rep.models_annexed {
         out.push(format!(

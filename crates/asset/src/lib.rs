@@ -44,6 +44,7 @@ pub mod data_field_truncated;
 pub mod efect_pack;
 pub mod effect_bundle;
 pub mod element_affinity;
+pub mod equip_hand_frame;
 pub mod equip_stats;
 pub mod equip_transplant;
 pub mod face_anim;

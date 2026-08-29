@@ -417,9 +417,30 @@ built, not copied (`legaia_asset::equip_transplant`; the patcher's
    channel by channel: donor bone `k` of the section maps to target bone
    `k` - the held-item sections are the same three arm bones (upper arm,
    forearm, hand) in the same order on every file, only numbered per
-   skeleton (Vahn `3 4 5`, Noa `7 8 9`). Coordinates copy verbatim, each
-   object being authored about its own bone origin, so the weapon sits where
-   the donor's fist held it. The section's `0xFF` variant is a byte copy of
+   skeleton (Vahn `3 4 5`, Noa `7 8 9`). Coordinates do **not** copy
+   verbatim. Each object is authored about its own bone origin, but the
+   three skeletons' arm-bone frames differ: the same Short Sword runs along
+   `-Y` in Vahn's hand frame, `-Z` in Noa's and `(0, +0.5, +0.85)` in
+   Gala's, and the wrist origin sits at a different point along the shaft
+   (`crates/asset/examples/hand_frame_fit.rs` measures it). So each
+   channel's geometry is re-seated through a rigid transform calibrated
+   from the disc itself (`legaia_asset::equip_hand_frame`): every weapon
+   both files carry (the `any`-owner knives, Short Sword, claws, clubs and
+   axes, each file holding its own record authored for its own hand) is
+   cut out of both, its principal frame and far tip fitted, the roll sign
+   about the shaft chosen by consensus and the translation refined by a
+   translation-only ICP, and the per-weapon transforms averaged per
+   channel. The calibration is **per weapon class** - Noa's clubs run
+   along `(+0.77, +0.33, +0.54)` in her hand while her blades run along
+   `-Z`, a club being swung and a blade pointed - so a sword transplant
+   calibrates on the shared blades, a club on the shared clubs and axes,
+   claws on claws. Leave-one-out over the shared blades puts a re-seated
+   blade on the target's own record within 4-9 GTE units nearest-point
+   RMS (verbatim copying: 22-55), shaft axes within 2 degrees. The forearm
+   channel (Vahn's swords keep a pommel block there) calibrates from the
+   claws, which occupy the forearm in all three files; a channel with no
+   shared weapon on it is dropped rather than guessed, and the report says
+   so. The section's `0xFF` variant is a byte copy of
    the armed hand on every retail weapon record of all three files (only the
    bare defaults ship a differently posed variant), so the transplant emits
    one armed hand and aliases the variant's object-table entry onto it;

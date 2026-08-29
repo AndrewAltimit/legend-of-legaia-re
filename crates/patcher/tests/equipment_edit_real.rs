@@ -382,16 +382,20 @@ fn astral_sword_model_carries_over_to_noa_by_moving_a_boundary() {
         ..Default::default()
     };
     let rep = apply::apply_equipment_edits(&mut patcher, &edits).expect("apply");
+    assert_eq!(rep.models_transplanted.len(), 1, "{rep:?}");
+    let t = &rep.models_transplanted[0];
     assert_eq!(
-        rep.models_transplanted,
-        vec![apply::ModelTransplant {
-            character: "Noa".to_string(),
-            item: ASTRAL,
-            source: "Vahn".to_string(),
-            cost: 36,
-        }],
+        (t.character.as_str(), t.item, t.source.as_str(), t.cost),
+        ("Noa", ASTRAL, "Vahn", 36),
         "the note quotes the folded cost, not the donor's 54"
     );
+    let (deg, rms) = t.reseat.expect("the sword was re-seated into Noa's grip");
+    assert!(
+        deg > 90.0 && deg < 150.0,
+        "Vahn->Noa blade re-seat {deg} deg"
+    );
+    assert!(rms < 15.0, "re-seat residual {rms}");
+    assert!(t.dropped_channels.is_empty(), "{:?}", t.dropped_channels);
     assert!(
         rep.models_no_room.is_empty() && rep.models_failed.is_empty(),
         "{rep:?}"

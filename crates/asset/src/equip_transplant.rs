@@ -21,8 +21,12 @@
 //!    record (its bare arm, its swing records, its attach list) channel by
 //!    channel - donor bone `k` of the section maps to target bone `k`, the
 //!    sections being the same three arm bones in the same order on every
-//!    file. Coordinates copy verbatim: each object is authored about its
-//!    bone origin, so the weapon sits where the donor's fist held it;
+//!    file. Coordinates do **not** copy verbatim: the three skeletons'
+//!    arm-bone frames differ (the same Short Sword runs along `-Y` in
+//!    Vahn's hand frame, `-Z` in Noa's), so each channel's geometry is
+//!    re-seated through the rigid transform [`crate::equip_hand_frame`]
+//!    calibrates from the weapons both files carry - of the transplanted
+//!    weapon's own class, since a club and a blade are gripped differently;
 //! 3. the donor's section tile rides along as the new record's pool,
 //!    texels outside the weapon's UV box blanked, with the weapon's
 //!    palettes installed on the target section's columns. Sections 2 and 3
@@ -93,6 +97,23 @@ pub fn find_weapon_record(pack: &BattleDataPack, id: u32) -> Option<(usize, usiz
         .map(|(r, s)| (r.index, *s))
 }
 
+/// The bones a held section attaches, in channel order - read off the
+/// section's `id = 0` default record's loader frame.
+pub fn section_bones(file: &[u8], pack: &BattleDataPack, section: usize) -> Result<Vec<u8>> {
+    let secs = record_sections(pack);
+    let Some(def) = pack
+        .records
+        .iter()
+        .zip(&secs)
+        .find(|(r, s)| **s == section && r.id == 0)
+        .map(|(r, _)| r.index)
+    else {
+        bail!("section {section} has no default record");
+    };
+    let dec = battle_data_pack::decode_record(file, pack, def)?.bytes;
+    Ok(frame_bones(&dec)?.1)
+}
+
 /// A file's records as `(id, decoded bytes)` in chain order - what
 /// [`rebuild_player_file`] repacks.
 pub type RecordList = Vec<(u32, Vec<u8>)>;
@@ -145,7 +166,10 @@ pub fn packed_len(records: &[(u32, Vec<u8>)]) -> usize {
         .sum()
 }
 
-/// One transplanted weapon record.
+/// One transplanted weapon record. `hand_frame` is the calibration that
+/// re-seated the weapon in the new owner's arm frames
+/// ([`crate::equip_hand_frame`]); `dropped_channels` are donor bones whose
+/// geometry had no calibration and was left out rather than guessed.
 #[derive(Debug, Clone)]
 pub struct Transplant {
     /// The weapon's item id.
@@ -160,6 +184,11 @@ pub struct Transplant {
     pub weapon_prims: usize,
     /// The hand and its per-clip variant share one copy of the geometry.
     pub aliased: bool,
+    /// Per donor bone the weapon occupied: the calibrated re-seat (degrees
+    /// of rotation, residual in GTE units) that was applied.
+    pub reseated: Vec<(u8, f64, f64)>,
+    /// Donor bones whose weapon geometry had no calibration and was dropped.
+    pub dropped_channels: Vec<u8>,
 }
 
 /// Loader-frame attach list (bone ids) of a decoded record.
@@ -226,12 +255,14 @@ pub fn section_clut_cols(buf: &[u8], pack: &BattleDataPack, section: usize) -> R
 }
 
 /// Build the target's record for `item_id` from the donor file's own record
-/// of it. `source_slot` is the donor's party-band slot (0 Vahn, 1 Noa,
-/// 2 Gala), which keys the committed isolation-rule table.
+/// of it. `source_slot` / `target_slot` are the party-band slots (0 Vahn,
+/// 1 Noa, 2 Gala), which key the committed isolation-rule table and the
+/// hand-frame calibration.
 pub fn transplant_weapon(
     target_file: &[u8],
     source_file: &[u8],
     source_slot: usize,
+    target_slot: usize,
     item_id: u32,
 ) -> Result<Transplant> {
     let sp = battle_data_pack::parse(source_file).context("parse donor player file")?;
@@ -296,6 +327,21 @@ pub fn transplant_weapon(
     let variant = variant_object(attach_count, objects.len());
     let alias = variant.is_some();
 
+    // The donor's arm frames are not the target's: re-seat the weapon
+    // through the calibration the shared weapons give (`equip_hand_frame`).
+    let hand_frame = crate::equip_hand_frame::fit_for(
+        source_file,
+        &sp,
+        source_slot,
+        target_file,
+        &tp,
+        target_slot,
+        item_id,
+    )
+    .context("hand-frame calibration")?;
+    let mut reseated = Vec::new();
+    let mut dropped_channels = Vec::new();
+
     // Merge channel by channel; UV rows shifted onto the target tile;
     // track each prim's UV box in donor-tile space for the pool blank.
     let mut boxes: Vec<(u8, u8, u8, u8)> = Vec::new();
@@ -305,6 +351,16 @@ pub fn transplant_weapon(
             bail!("donor channel {sbone} is not one of the section's bones");
         };
         let mut g = geom.clone();
+        match hand_frame.channels.get(k).and_then(|c| c.as_ref()) {
+            Some(cf) => {
+                cf.xf.apply_object(&mut g);
+                reseated.push((*sbone, cf.xf.angle_deg(), cf.rms));
+            }
+            None => {
+                dropped_channels.push(*sbone);
+                continue;
+            }
+        }
         for grp in &mut g.groups {
             for p in &mut grp.prims {
                 weapon_prims += 1;
@@ -413,6 +469,8 @@ pub fn transplant_weapon(
         cost,
         weapon_prims,
         aliased: alias,
+        reseated,
+        dropped_channels,
     })
 }
 
