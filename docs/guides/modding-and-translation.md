@@ -33,7 +33,8 @@ the same disc is byte-deterministic: you and a friend get identical patches.
 `--output` also writes a `.cue` beside the `.bin` so emulators can open it
 directly. `--dry-run` plans without writing.
 
-The default `--drops shuffle` re-rolls monster item drops; dozens of flags
+Nothing is randomized unless asked: `--drops shuffle` re-rolls monster item
+drops; dozens of flags
 cover encounters, chests, steals, arts combos, doors, shops, monster stats,
 spell costs, equipment, and code-hook extras (`--equipment-drops`,
 `--flee-exp`, `--enemy-ally`, `--shiny-seru`, ...). Read-only preview

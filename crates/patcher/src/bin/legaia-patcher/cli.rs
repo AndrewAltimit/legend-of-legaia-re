@@ -770,8 +770,11 @@ pub(crate) struct RandomizeArgs {
     /// from the system clock.
     #[arg(long)]
     pub(crate) seed: Option<String>,
-    /// How monster item drops are reassigned.
-    #[arg(long, value_enum, default_value_t = DropArg::Shuffle)]
+    /// How monster item drops are reassigned. Off by default, like every
+    /// other randomizer feature: a run that only asks for a manual edit or a
+    /// community mod must not silently reshuffle the drop tables (it once
+    /// did - a pack-only PPF came out at 9 MB).
+    #[arg(long, value_enum, default_value_t = DropArg::None)]
     pub(crate) drops: DropArg,
     /// Inject an *additional* low-chance equipment drop into the battle-end
     /// reward routine (a same-size `SCUS_942.54` code hook). On a per-battle
