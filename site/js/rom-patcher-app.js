@@ -276,6 +276,51 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
   let hands = [null, null, null];
   const DEFAULT_KEYS = { dw: 'weapon', dr: 'raseru', df: 'down', dfu: 'up' };
   const ARROW = { Left: 'L', Right: 'R', Down: '↓', Up: '↑' };
+  // The retail Arts-input layout in miniature: four hexagonal pennants
+  // sitting apart at north / east / south / west around a small d-pad
+  // cross. The priced command's pennant is dark orange and drawn on the
+  // game's own scale (`cost - 6` wide), so a typed cost visibly widens or
+  // narrows it; the other three stay at retail's 30.
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  // Pennant anchors: Up / Down centred over the cross; Left / Right hold
+  // their inner edge next to it and grow outward, so a wide pennant never
+  // runs into the cross or the number box.
+  const PENNANT_POS = { Up: [22, 6], Down: [22, 26], Left: [9, 16], Right: [35, 16] };
+  const hexPoints = (cx, cy, w, h, dir) => {
+    let x0 = cx - w / 2, x1 = cx + w / 2;
+    if (dir === 'Left') { x1 = 15; x0 = x1 - w; }
+    if (dir === 'Right') { x0 = 29; x1 = x0 + w; }
+    const s = h / 2;
+    return [[x0, cy], [x0 + s, cy - s], [x1 - s, cy - s], [x1, cy], [x1 - s, cy + s], [x0 + s, cy + s]]
+      .map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  };
+  // Retail 30 -> 12 wide; the width tracks `cost - 6` at half scale.
+  const pennantWidth = (cost) => Math.max(7, Math.min(20, (Number(cost) - 6) / 2));
+  const dirGlyph = (cmd, cost) => {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 44 32');
+    svg.setAttribute('class', 'rom-equip-dpad');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.dataset.cmd = cmd;
+    for (const d of ['Up', 'Left', 'Right', 'Down']) {
+      const poly = document.createElementNS(SVG_NS, 'polygon');
+      const [cx, cy] = PENNANT_POS[d];
+      poly.setAttribute('points', hexPoints(cx, cy, d === cmd ? pennantWidth(cost) : 12, 7, d));
+      poly.setAttribute('class', d === cmd ? 'is-priced' : '');
+      svg.appendChild(poly);
+    }
+    const cross = document.createElementNS(SVG_NS, 'path');
+    cross.setAttribute('d', 'M20.5 13h3v2.5H26v3h-2.5V21h-3v-2.5H18v-3h2.5z');
+    cross.setAttribute('class', 'hub');
+    svg.appendChild(cross);
+    return svg;
+  };
+  const sizeGlyph = (svg, cost) => {
+    const poly = svg && svg.querySelector('polygon.is-priced');
+    if (!poly) return;
+    const [cx, cy] = PENNANT_POS[svg.dataset.cmd] || [22, 16];
+    poly.setAttribute('points', hexPoints(cx, cy, pennantWidth(cost), 7, svg.dataset.cmd));
+  };
   const otherHand = (h) => (h === 'Left' ? 'Right' : h === 'Right' ? 'Left' : null);
   // Owner mask as edited (falls back to the disc's).
   const effMask = (it) => (ownerEdits.has(it.id) ? ownerEdits.get(it.id) : it.mask);
@@ -336,14 +381,19 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
     });
     return inp;
   };
-  // A command cell: the direction letter, then the number box.
+  // A command cell: the d-pad glyph with the priced command lit, then the
+  // number box; typing resizes the lit pennant.
   const cmdCell = (td, cmd, key, c, cur, tr, what) => {
     const lab = document.createElement('span');
     lab.className = 'rom-equip-cmd';
-    lab.textContent = ARROW[cmd] || '';
     lab.title = `${cmd} command`;
+    const shown = (costEdits.get(`${key}:${c}`) || '').trim() || cur;
+    const glyph = dirGlyph(cmd, shown);
+    lab.appendChild(glyph);
     td.appendChild(lab);
-    td.appendChild(costInput(key, c, cur, tr, `${c}’s ${cmd} command with ${what}: currently ${cur} AP (${cur - 6} px wide)`));
+    const inp = costInput(key, c, cur, tr, `${c}’s ${cmd} command with ${what}: currently ${cur} AP (${cur - 6} px wide)`);
+    inp.addEventListener('input', () => sizeGlyph(glyph, inp.value.trim() || cur));
+    td.appendChild(inp);
   };
   // A fall-through cell: the default record's value that applies instead.
   const fallthroughTitle = (c, cmd, def, row) => `${c}’s battle file has no section for this item. If ${c} equips it, the ${row} record is used: default look, ${def} AP per ${cmd} press. Change that in the ${row} row at the top.`;
@@ -356,14 +406,20 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
     sp.dataset.row = row;
     const def = shownOf(key, ci);
     sp.title = fallthroughTitle(c, cmd, def, row);
-    sp.textContent = `${ARROW[cmd] || ''}↳ ${def}`;
+    sp.appendChild(dirGlyph(cmd, def));
+    const txt = document.createElement('span');
+    txt.className = 'rom-equip-fallthrough-val';
+    txt.textContent = `↳ ${def}`;
+    sp.appendChild(txt);
     return sp;
   };
   const syncFallthrough = (key, c) => {
     const ci = CHARS.indexOf(c);
     const def = shownOf(key, ci);
     for (const el of rowsEl.querySelectorAll(`.rom-equip-fallthrough[data-char="${c}"][data-def="${key}"]`)) {
-      el.textContent = `${ARROW[el.dataset.cmd] || ''}↳ ${def}`;
+      const v = el.querySelector('.rom-equip-fallthrough-val');
+      if (v) v.textContent = `↳ ${def}`;
+      sizeGlyph(el.querySelector('svg'), def);
       el.title = fallthroughTitle(c, el.dataset.cmd, def, el.dataset.row);
     }
   };
@@ -377,12 +433,13 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
     tr.classList.toggle('is-edited', edited);
   };
 
+  let showSlot = false;
   // A section-default row: `cells(ci)` returns the per-character cell content.
   const defaultRow = (tbody, label, note, keys, cells) => {
     const tr = document.createElement('tr');
     tr.className = 'rom-equip-row rom-equip-default';
     tr.dataset.keys = keys.join(',');
-    tr.innerHTML = `<td><span class="rom-edit-name">${label}</span> <span class="rom-equip-shared" title="${escapeHtml(note)}">(default record)</span></td><td>—</td><td class="n">—</td><td>—</td>`;
+    tr.innerHTML = `<td><span class="rom-edit-name" title="${escapeHtml(note)}">${label}</span></td><td class="n">—</td><td>—</td>`;
     CHARS.forEach((c, ci) => {
       const td = document.createElement('td');
       td.className = 'n';
@@ -428,8 +485,12 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
     const table = document.createElement('table');
     table.className = 'rom-equip-table';
     const thead = document.createElement('thead');
-    thead.innerHTML = '<tr><th>Item</th><th>Slot</th><th class="n">ATK</th><th>Who can equip</th>'
-      + '<th class="n">Vahn AP</th><th class="n">Noa AP</th><th class="n">Gala AP</th></tr>';
+    // A mixed view names each row's slot under the item name; a per-slot
+    // view already says it in the dropdown. No slot column - the table has
+    // to fit half the group grid.
+    showSlot = slot === 'all';
+    thead.innerHTML = `<tr><th>Item</th><th class="n" title="Attack bonus">ATK</th><th title="Who can equip it: Vahn, Noa, Gala">Owners</th>`
+      + '<th class="n" title="Vahn: AP per press">Vahn</th><th class="n" title="Noa: AP per press">Noa</th><th class="n" title="Gala: AP per press">Gala</th></tr>';
     table.appendChild(thead);
     const tbody = document.createElement('tbody');
     let shown = 0;
@@ -442,7 +503,7 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
           if (cur == null || !hands[ci]) naCell(td, 'Not found in this file');
           else cmdCell(td, hands[ci], 'dw', c, cur, tr, 'an unlisted weapon or bare hands');
         });
-      defaultRow(tbody, 'Default Ra-Seru arm',
+      defaultRow(tbody, 'Default Ra-Seru',
         'The Ra-Seru section’s default record: the other hand’s command when the equipped Ra-Seru level has no section in the file, or none is equipped.',
         ['dr'],
         (td, c, ci, tr) => {
@@ -458,7 +519,11 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
         ['df', 'dfu'],
         (td, c, ci, tr) => kicksCell(td, c, ci, tr, 'df', 'dfu', 'unlisted footwear or bare feet', null));
     }
-    for (const it of items) {
+    // Named gear first, then the Ra-Seru levels (Meta / Terra / Ozma), and
+    // the unnamed ids (`item 0xHH`) at the very bottom.
+    const rank = (it) => (!it.name ? 2 : it.ra_seru_arm ? 1 : 0);
+    const ordered = [...items].sort((a, b) => rank(a) - rank(b));
+    for (const it of ordered) {
       if (slot !== 'all' && it.slot !== slot) continue;
       shown++;
       const tr = document.createElement('tr');
@@ -466,16 +531,24 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
       tr.dataset.id = String(it.id);
       tr.dataset.keys = it.slot === 'footwear' ? `${it.id},${it.id}u` : String(it.id);
       const tdName = document.createElement('td');
-      tdName.innerHTML = `<span class="rom-edit-name">${escapeHtml(it.name || 'item ' + hexOf(it.id))}</span> <code>${hexOf(it.id)}</code>`;
-      if (it.shares_row_with && it.shares_row_with.length) {
+      // Name only - the id and the shared-row note live in the tooltip so
+      // the column stays narrow enough for the table to fit without a
+      // horizontal scrollbar.
+      const shared = it.shares_row_with && it.shares_row_with.length
+        ? ' Shares its stat row with ' + it.shares_row_with.map(hexOf).join(', ') + ' - an owner change moves them too.'
+        : '';
+      tdName.innerHTML = `<span class="rom-edit-name" title="${escapeHtml('Item ' + hexOf(it.id) + '.' + shared)}">${escapeHtml(it.name || 'item ' + hexOf(it.id))}</span>`;
+      if (shared) {
         const s = document.createElement('span');
         s.className = 'rom-equip-shared';
-        s.title = 'Shares its stat row with ' + it.shares_row_with.map(hexOf).join(', ') + ' - an owner change moves them too.';
-        s.textContent = ' (shared row)';
+        s.title = shared.trim();
+        s.textContent = '*';
         tdName.appendChild(s);
       }
       tr.appendChild(tdName);
-      const tdSlot = document.createElement('td'); tdSlot.textContent = it.ra_seru_arm ? 'Ra-Seru arm' : it.slot; tr.appendChild(tdSlot);
+      // A Ra-Seru level already says so in its name; the mixed view labels
+      // the slot under the name.
+      if (showSlot) { const sl = document.createElement('span'); sl.className = 'rom-equip-slot'; sl.textContent = it.ra_seru_arm ? 'Ra-Seru arm' : it.slot; tdName.appendChild(sl); }
       const tdAtk = document.createElement('td'); tdAtk.className = 'n'; tdAtk.textContent = String(it.atk); tr.appendChild(tdAtk);
       const tdOwn = document.createElement('td');
       tdOwn.className = 'rom-equip-owners';
@@ -496,8 +569,8 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
           render();
         });
         lab.appendChild(cb);
-        lab.appendChild(document.createTextNode(c[0]));
-        lab.title = c;
+        lab.appendChild(document.createTextNode(c));
+        lab.title = `${c} can equip`;
         tdOwn.appendChild(lab);
       });
       tr.appendChild(tdOwn);

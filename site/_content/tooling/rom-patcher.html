@@ -309,45 +309,6 @@
       </div>
     </details>
 
-    <!-- ---- Equipment editor ---- -->
-    <details class="rom-group" id="rom-equip-group" open>
-      <summary>Equipment <span class="rom-summary-note">Arts-bar command costs, who can equip what</span></summary>
-      <div class="rom-group-body">
-        <h4 class="rom-edit-title">Arts-bar command costs &amp; owners
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Values are read from <strong>your</strong> disc. Each of the four Arts-bar commands is priced by the gear that fills it: <em>Left</em> and <em>Right</em> by the weapon and the Ra-Seru arm (Noa&rsquo;s weapon is her Right), <em>Down</em> and <em>Up</em> by the footwear. The number is the AP one press charges, and the same byte sets how wide the pennant draws (<code>cost &minus; 6</code> px, and the command label has to fit inside it, so 24 is the floor and 30 is the lowest that reads cleanly). Retail prices weapons at 30 favored-class / 42 off-class / 54 far off-class (the Astral Sword is Vahn&rsquo;s one 54) and every Ra-Seru and footwear record at 30; body and head gear price nothing. Costs are authored per character in that character&rsquo;s battle file, so a column is that character&rsquo;s price, and a dash means that character cannot equip the item. The <em>V / N / G</em> boxes set who can equip it. Tick a weapon on for someone whose file lacks it and the patcher carries the model over from the file that has it (highlighted cell, donor&rsquo;s price until you type another): the three player files are re-packed and the boundaries between them moved to make room, which fits one or two carried-over weapons; beyond that the CLI&rsquo;s <code>--allow-relayout</code> grows the disc. Other gear ticked on without a record uses the slot&rsquo;s <em>Default</em> record (top rows): default look, that row&rsquo;s cost. Mechanism: <a href="../subsystems/arts-command-gauge.html">Arts command gauge</a>.</span></span>
-        </h4>
-        <div class="rom-equip-toolbar">
-          <select id="rom-equip-slot" aria-label="Slot">
-            <option value="weapon" selected>Weapons &amp; Ra-Seru</option>
-            <option value="body">Body</option>
-            <option value="head">Head</option>
-            <option value="footwear">Footwear</option>
-            <option value="all">All equipment</option>
-          </select>
-          <span class="rom-equip-presets">
-            <button type="button" class="rom-tex-preset" id="rom-equip-preset-astral" title="Set the Astral Sword's swing to the favored 30">Astral Sword = 30</button>
-            <button type="button" class="rom-tex-preset" id="rom-equip-preset-all30" title="Every command of every item and default record at 30, for every character">All commands 30</button>
-            <button type="button" class="rom-tex-preset" id="rom-equip-preset-anyone" title="Every item in the slot shown above becomes equippable by all three">Anyone can equip</button>
-            <button type="button" class="rom-tex-preset" id="rom-equip-preset-reset" title="Drop every edit in this table">Reset</button>
-          </span>
-        </div>
-        <p class="rom-edit-note" id="rom-equip-status">Waiting for a disc image ...</p>
-        <div id="rom-equip-rows" class="rom-equip-rows"></div>
-        <details class="rom-art-advanced">
-          <summary>Advanced: raw token lists (CLI syntax)</summary>
-          <div class="rom-opt">
-            <label class="rom-opt-label" for="rom-swing-cost">Command costs</label>
-            <span class="rom-opt-note"><code>CHAR:ITEM[:up]=COST</code>, comma-separated (<code>--swing-cost</code>) - e.g. <code>Vahn:0xBA=30</code>, <code>Gala:0x5E:up=42</code>, <code>Noa:default=42</code>; <code>ITEM</code> may be <code>default</code>, <code>raseru</code> or <code>feet</code>. Merged with the table.</span>
-            <input type="text" id="rom-swing-cost" placeholder="e.g. Vahn:0xBA=30" spellcheck="false" autocomplete="off">
-          </div>
-          <div class="rom-opt">
-            <label class="rom-opt-label" for="rom-equip-owner">Equip owners</label>
-            <span class="rom-opt-note"><code>ITEM=OWNERS</code> with <code>V</code>/<code>N</code>/<code>G</code>, <code>any</code> or <code>none</code> (<code>--equip-owner</code>) - e.g. <code>0xBA=any</code>. A weapon a new owner&rsquo;s file has no record for gets its model carried over (the summary says from whom, and whether the player files had room). Merged with the table.</span>
-            <input type="text" id="rom-equip-owner" placeholder="e.g. 0xBA=any" spellcheck="false" autocomplete="off">
-          </div>
-        </details>
-      </div>
-    </details>
 
     </div><!-- /rom-col -->
     <div class="rom-col">
@@ -743,6 +704,45 @@
       </div>
     </details>
 
+    <!-- ---- Equipment editor ---- -->
+    <details class="rom-group" id="rom-equip-group" open>
+      <summary>Equipment <span class="rom-summary-note">Arts-bar command costs, who can equip what</span></summary>
+      <div class="rom-group-body">
+        <h4 class="rom-edit-title">Arts-bar command costs &amp; owners
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Values are read from <strong>your</strong> disc. Each of the four Arts-bar commands is priced by the gear that fills it: <em>Left</em> and <em>Right</em> by the weapon and the Ra-Seru arm (Noa&rsquo;s weapon is her Right), <em>Down</em> and <em>Up</em> by the footwear. The number is the AP one press charges, and the same byte sets how wide the pennant draws (<code>cost &minus; 6</code> px, and the command label has to fit inside it, so 24 is the floor and 30 is the lowest that reads cleanly). Retail prices weapons at 30 favored-class / 42 off-class / 54 far off-class (the Astral Sword is Vahn&rsquo;s one 54) and every Ra-Seru and footwear record at 30; body and head gear price nothing. Costs are authored per character in that character&rsquo;s battle file, so a column is that character&rsquo;s price, and a dash means that character cannot equip the item. The <em>V / N / G</em> boxes set who can equip it. Tick a weapon on for someone whose file lacks it and the patcher carries the model over from the file that has it (highlighted cell, donor&rsquo;s price until you type another): the three player files are re-packed and the boundaries between them moved to make room, which fits one or two carried-over weapons; beyond that the CLI&rsquo;s <code>--allow-relayout</code> grows the disc. Other gear ticked on without a record uses the slot&rsquo;s <em>Default</em> record (top rows): default look, that row&rsquo;s cost. Mechanism: <a href="../subsystems/arts-command-gauge.html">Arts command gauge</a>.</span></span>
+        </h4>
+        <div class="rom-equip-toolbar">
+          <select id="rom-equip-slot" aria-label="Slot">
+            <option value="weapon" selected>Weapons &amp; Ra-Seru</option>
+            <option value="body">Body</option>
+            <option value="head">Head</option>
+            <option value="footwear">Footwear</option>
+            <option value="all">All equipment</option>
+          </select>
+          <span class="rom-equip-presets">
+            <button type="button" class="rom-tex-preset" id="rom-equip-preset-astral" title="Set the Astral Sword's swing to the favored 30">Astral Sword = 30</button>
+            <button type="button" class="rom-tex-preset" id="rom-equip-preset-all30" title="Every command of every item and default record at 30, for every character">All commands 30</button>
+            <button type="button" class="rom-tex-preset" id="rom-equip-preset-anyone" title="Every item in the slot shown above becomes equippable by all three">Anyone can equip</button>
+            <button type="button" class="rom-tex-preset" id="rom-equip-preset-reset" title="Drop every edit in this table">Reset</button>
+          </span>
+        </div>
+        <p class="rom-edit-note" id="rom-equip-status">Waiting for a disc image ...</p>
+        <div id="rom-equip-rows" class="rom-equip-rows"></div>
+        <details class="rom-art-advanced">
+          <summary>Advanced: raw token lists (CLI syntax)</summary>
+          <div class="rom-opt">
+            <label class="rom-opt-label" for="rom-swing-cost">Command costs</label>
+            <span class="rom-opt-note"><code>CHAR:ITEM[:up]=COST</code>, comma-separated (<code>--swing-cost</code>) - e.g. <code>Vahn:0xBA=30</code>, <code>Gala:0x5E:up=42</code>, <code>Noa:default=42</code>; <code>ITEM</code> may be <code>default</code>, <code>raseru</code> or <code>feet</code>. Merged with the table.</span>
+            <input type="text" id="rom-swing-cost" placeholder="e.g. Vahn:0xBA=30" spellcheck="false" autocomplete="off">
+          </div>
+          <div class="rom-opt">
+            <label class="rom-opt-label" for="rom-equip-owner">Equip owners</label>
+            <span class="rom-opt-note"><code>ITEM=OWNERS</code> with <code>V</code>/<code>N</code>/<code>G</code>, <code>any</code> or <code>none</code> (<code>--equip-owner</code>) - e.g. <code>0xBA=any</code>. A weapon a new owner&rsquo;s file has no record for gets its model carried over (the summary says from whom, and whether the player files had room). Merged with the table.</span>
+            <input type="text" id="rom-equip-owner" placeholder="e.g. 0xBA=any" spellcheck="false" autocomplete="off">
+          </div>
+        </details>
+      </div>
+    </details>
     </div><!-- /rom-col -->
     </div><!-- /rom-groups -->
 
@@ -966,21 +966,38 @@
   .rom-equip-toolbar { display: flex; flex-wrap: wrap; gap: 0.4rem 0.6rem; align-items: center; margin: 0 0 0.5rem; }
   .rom-form .rom-equip-toolbar select { width: auto; }
   .rom-equip-presets { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  /* Seven columns of inputs do not fit half the two-column group grid, so the
+     equipment group sits below it at full width and the table needs no
+     horizontal scrollbar on a desktop viewport. */
   .rom-equip-rows { max-height: 32rem; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
-  .rom-equip-table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
-  .rom-equip-table th { position: sticky; top: 0; background: var(--bg-raised); text-align: left; padding: 0.35rem 0.5rem; font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); border-bottom: 1px solid var(--border); z-index: 1; }
-  .rom-equip-table td { padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
+  /* Shrink-to-content: the item column is as wide as the longest name, not
+     whatever is left over. */
+  .rom-equip-table { width: auto; border-collapse: collapse; font-size: 0.82em; }
+  .rom-equip-table th { position: sticky; top: 0; background: var(--bg-raised); text-align: left; padding: 0.35rem 0.45rem; font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); border-bottom: 1px solid var(--border); z-index: 1; }
+  .rom-equip-table td { padding: 0.3rem 0.45rem; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
   .rom-equip-table th.n, .rom-equip-table td.n { text-align: right; }
   .rom-equip-table tr.is-edited td { background: color-mix(in srgb, var(--accent) 12%, transparent); }
   .rom-equip-table td.is-new { background: color-mix(in srgb, var(--accent) 26%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }
-  .rom-equip-table .rom-edit-name { min-width: 0; }
+  .rom-equip-table .rom-edit-name { min-width: 0; cursor: help; }
+  /* Item names stay on one line; the numeric and owner cells shrink to their
+     content so the name column takes whatever width is left. */
+  .rom-equip-slot { display: block; font-size: 0.85em; color: var(--text-dim); }
   .rom-equip-table td code { font-size: 0.85em; color: var(--text-dim); }
-  .rom-equip-shared { color: var(--text-dim); font-size: 0.85em; cursor: help; }
-  .rom-equip-owners label { display: inline-flex; align-items: center; gap: 0.15rem; margin-right: 0.5rem; cursor: pointer; }
-  .rom-form .rom-equip-table input.eq-cost { width: 4.2em; padding: 0.2rem 0.3rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: inherit; text-align: right; }
+  .rom-equip-shared { color: var(--text-dim); font-size: 0.85em; cursor: help; margin-left: 0.25em; }
+  /* One owner per line: full names beside the boxes without widening the
+     table past its half-width column. */
+  .rom-equip-owners { display: flex; flex-direction: column; gap: 0.1rem; }
+  .rom-equip-owners label { display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer; line-height: 1.2; }
+  .rom-equip-owners input { margin: 0; }
+  .rom-form .rom-equip-table input.eq-cost { width: 4.1em; padding: 0.2rem 0.55rem 0.2rem 0.35rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: inherit; text-align: right; }
   .rom-equip-na { color: var(--text-dim); cursor: help; }
   .rom-equip-fallthrough { font-variant-numeric: tabular-nums; }
-  .rom-equip-cmd { display: inline-block; min-width: 1.1em; margin-right: 0.25rem; color: var(--text-dim); font-size: 0.85em; text-align: center; }
+  .rom-equip-cmd { display: inline-block; vertical-align: middle; margin: 0 0.45rem 0 0.35rem; line-height: 0; }
+  .rom-equip-dpad { width: 2.75rem; height: 2rem; display: inline-block; vertical-align: middle; overflow: visible; }
+  .rom-equip-dpad polygon { fill: #3a3d6e; stroke: #6d5a2e; stroke-width: 0.8; }
+  .rom-equip-dpad polygon.is-priced { fill: #b5641c; stroke: #e0b86a; stroke-width: 1; }
+  .rom-equip-dpad .hub { fill: var(--text-dim); }
+  .rom-equip-fallthrough { display: inline-flex; align-items: center; gap: 0.3rem; }
   .rom-equip-kicks { display: inline-flex; flex-direction: column; gap: 0.15rem; align-items: flex-end; }
   .rom-equip-default td { background: color-mix(in srgb, var(--bg-raised) 60%, transparent); border-bottom: 2px solid var(--border); }
 
