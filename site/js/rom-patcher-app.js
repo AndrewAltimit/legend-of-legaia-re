@@ -263,12 +263,42 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
   // costs: "id:char" -> typed string ('' = keep); owners: id -> mask.
   const costEdits = new Map();
   const ownerEdits = new Map();
+  let defaults = [null, null, null];
+
+  const costInput = (id, c, cur, tr, title) => {
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.className = 'eq-cost';
+    inp.min = '7'; inp.max = '255';
+    inp.placeholder = String(cur);
+    inp.dataset.char = c;
+    inp.dataset.cur = String(cur);
+    inp.value = costEdits.get(`${id}:${c}`) || '';
+    inp.title = title;
+    inp.addEventListener('input', () => {
+      costEdits.set(`${id}:${c}`, inp.value.trim());
+      rowEdited(tr);
+      if (id === 0) syncFallthrough(c);
+    });
+    return inp;
+  };
+  // The Default row's value is shown in every no-section cell of that
+  // character's column; keep those in step without a full re-render.
+  const defaultShown = (c, ci) => (costEdits.get(`0:${c}`) || '').trim() || (defaults[ci] == null ? '?' : String(defaults[ci]));
+  const fallthroughTitle = (c, def) => `${c}\u2019s battle file has no section for this weapon. If ${c} equips it, the Default record is used: default look, ${def} AP per swing. Change that in the Default record row at the top.`;
+  const syncFallthrough = (c) => {
+    const def = defaultShown(c, CHARS.indexOf(c));
+    for (const el of rowsEl.querySelectorAll(`.rom-equip-fallthrough[data-char="${c}"]`)) {
+      el.textContent = '\u21B3 ' + def;
+      el.title = fallthroughTitle(c, def);
+    }
+  };
 
   const rowEdited = (tr) => {
     const id = Number(tr.dataset.id);
     const it = items.find((x) => x.id === id);
     const edited = CHARS.some((c) => (costEdits.get(`${id}:${c}`) || '') !== '')
-      || (ownerEdits.has(id) && it && ownerEdits.get(id) !== it.mask);
+      || (it != null && ownerEdits.has(id) && ownerEdits.get(id) !== it.mask);
     tr.classList.toggle('is-edited', edited);
   };
 
@@ -290,6 +320,27 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
     table.appendChild(thead);
     const tbody = document.createElement('tbody');
     let shown = 0;
+    if (slot === 'weapon' || slot === 'all') {
+      // The fall-through record: what a character pays for a weapon their
+      // battle file has no section for (and for swinging unarmed).
+      const tr = document.createElement('tr');
+      tr.className = 'rom-equip-row rom-equip-default';
+      tr.dataset.id = '0';
+      tr.innerHTML = '<td><span class="rom-edit-name">Default record</span> <span class="rom-equip-shared" title="Each character\u2019s battle file has one default weapon record. It is what they swing with when the equipped weapon has no section in their file (a weapon you ticked on for them below) or when nothing is equipped. One value per character, shared by every such weapon.">(unlisted weapon / unarmed)</span></td><td>weapon</td><td class="n">\u2014</td><td>\u2014</td>';
+      CHARS.forEach((c, ci) => {
+        const td = document.createElement('td');
+        td.className = 'n';
+        const cur = defaults[ci];
+        if (cur == null) {
+          td.innerHTML = '<span class="rom-equip-na">\u2014</span>';
+        } else {
+          td.appendChild(costInput(0, c, cur, tr, `${c}\u2019s default record: currently ${cur} AP`));
+        }
+        tr.appendChild(td);
+      });
+      rowEdited(tr);
+      tbody.appendChild(tr);
+    }
     for (const it of items) {
       if (slot !== 'all' && it.slot !== slot) continue;
       shown++;
@@ -334,22 +385,18 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
         const td = document.createElement('td');
         td.className = 'n';
         const cur = it.costs ? it.costs[ci] : null;
-        if (it.slot !== 'weapon' || cur == null) {
-          td.innerHTML = '<span class="rom-equip-na" title="' + (it.slot === 'weapon'
-            ? c + '’s battle file has no section for this weapon: no swing cost exists to edit'
-            : 'Only weapons carry a swing cost') + '">—</span>';
+        if (it.slot !== 'weapon') {
+          td.innerHTML = '<span class="rom-equip-na" title="Only weapons carry a swing cost">\u2014</span>';
+        } else if (cur == null) {
+          const def = defaultShown(c, ci);
+          const sp = document.createElement('span');
+          sp.className = 'rom-equip-na rom-equip-fallthrough';
+          sp.dataset.char = c;
+          sp.title = fallthroughTitle(c, def);
+          sp.textContent = '\u21B3 ' + def;
+          td.appendChild(sp);
         } else {
-          const inp = document.createElement('input');
-          inp.type = 'number';
-          inp.className = 'eq-cost';
-          inp.min = '7'; inp.max = '255';
-          inp.placeholder = String(cur);
-          inp.dataset.char = c;
-          inp.dataset.cur = String(cur);
-          inp.value = costEdits.get(`${it.id}:${c}`) || '';
-          inp.title = `${c}: currently ${cur} AP (${cur - 6} px wide)`;
-          inp.addEventListener('input', () => { costEdits.set(`${it.id}:${c}`, inp.value.trim()); rowEdited(tr); });
-          td.appendChild(inp);
+          td.appendChild(costInput(it.id, c, cur, tr, `${c}: currently ${cur} AP (${cur - 6} px wide)`));
         }
         tr.appendChild(td);
       });
@@ -368,6 +415,10 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
 
   // Quick edits over every weapon the disc lists (not just the visible rows).
   const setCost = (pred, value) => {
+    CHARS.forEach((c, ci) => {
+      const cur = defaults[ci];
+      if (cur != null && pred(0, c, cur)) costEdits.set(`0:${c}`, cur === value ? '' : String(value));
+    });
     for (const it of items) {
       if (it.slot !== 'weapon') continue;
       CHARS.forEach((c, ci) => {
@@ -409,6 +460,7 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
       const buf = await discBytes();
       const t = mod.read_equipment_table(buf);
       items = t.items || [];
+      defaults = Array.isArray(t.default_costs) ? t.default_costs : [null, null, null];
       loadedFor = key;
       render();
       setNote('Read from your disc. Empty box = keep the disc value.');
@@ -427,6 +479,14 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
     const fail = (error) => ({ costs: '', owners: '', error });
     const costs = [];
     const owners = [];
+    CHARS.forEach((c, ci) => {
+      const v = (costEdits.get(`0:${c}`) || '').trim();
+      if (!v) return;
+      const n = parseInt(v, 10);
+      if (!Number.isFinite(n) || n < 7 || n > 255) { costs.push(null); fail.msg = `Default swing cost for ${c} must be 7..255.`; return; }
+      if (defaults[ci] == null || n === defaults[ci]) return;
+      costs.push(`${c}:default=${n}`);
+    });
     for (const it of items) {
       const id = hexOf(it.id);
       CHARS.forEach((c, ci) => {

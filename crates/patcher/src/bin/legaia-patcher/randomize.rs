@@ -1103,9 +1103,9 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
                 s.join(", ")
             );
         }
-        for (c, id) in &rep.owners_without_section {
+        for (c, id, cost) in &rep.owners_without_section {
             println!(
-                "  note: {c} can now equip 0x{id:02X} but has no battle section for it - default look, 30-AP swing"
+                "  note: {c} can now equip 0x{id:02X} but has no battle section for it - default look, {cost}-AP swing ({c}:default)"
             );
         }
         for e in &equipment_edits.costs {

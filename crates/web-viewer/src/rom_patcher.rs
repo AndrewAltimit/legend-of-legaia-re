@@ -1393,9 +1393,9 @@ pub async fn patch_rom(
                 s.join(", ")
             ));
         }
-        for (c, id) in &rep.owners_without_section {
+        for (c, id, cost) in &rep.owners_without_section {
             summary.push_str(&format!(
-                "  {c} can now equip 0x{id:02X} but has no battle section for it: default look, 30-AP swing\n"
+                "  {c} can now equip 0x{id:02X} but has no battle section for it: default look, {cost}-AP swing (the Default row)\n"
             ));
         }
     }
@@ -1612,14 +1612,19 @@ pub async fn patch_rom(
 #[wasm_bindgen]
 pub fn read_equipment_table(image: Vec<u8>) -> Result<JsValue, JsValue> {
     let patcher = DiscPatcher::open(image).map_err(|e| err(format!("open disc image: {e}")))?;
-    let rows = apply::read_equipment_table(&patcher)
+    let table = apply::read_equipment_table(&patcher)
         .map_err(|e| err(format!("equipment table: {e}")))?
         .ok_or_else(|| err("equipment table not found in SCUS_942.54"))?;
     drop(patcher);
     let num = JsValue::from_f64;
     let out = Object::new();
+    let defaults = js_sys::Array::new();
+    for c in table.default_costs {
+        defaults.push(&c.map(|v| num(v as f64)).unwrap_or(JsValue::NULL));
+    }
+    Reflect::set(&out, &"default_costs".into(), &defaults)?;
     let items = js_sys::Array::new();
-    for r in &rows {
+    for r in &table.rows {
         let o = Object::new();
         Reflect::set(&o, &"id".into(), &num(r.id as f64))?;
         Reflect::set(&o, &"name".into(), &r.name.as_str().into())?;

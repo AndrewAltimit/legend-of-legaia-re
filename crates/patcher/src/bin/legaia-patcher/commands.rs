@@ -1121,17 +1121,28 @@ pub(crate) fn cmd_scus_pokes(patched: &Path, baseline: &Path) -> Result<()> {
 pub(crate) fn cmd_equipment(input: &Path) -> Result<()> {
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
-    let Some(rows) = apply::read_equipment_table(&patcher)? else {
+    let Some(table) = apply::read_equipment_table(&patcher)? else {
         println!("equipment table not found");
         return Ok(());
     };
+    let rows = &table.rows;
     let cell = |c: Option<u8>| c.map(|v| format!("{v:>3}")).unwrap_or_else(|| "  -".into());
     println!(
         "{:<5} {:<18} {:<6} {:>3}  {:>4} {:>4} {:>4}  slot",
         "id", "name", "owner", "atk", "Vahn", "Noa", "Gala"
     );
+    println!(
+        "{:<5} {:<18} {:<6} {:>3}  {:>4} {:>4} {:>4}  (unlisted weapon / unarmed)",
+        "0x00",
+        "default record",
+        "-",
+        "-",
+        cell(table.default_costs[0]),
+        cell(table.default_costs[1]),
+        cell(table.default_costs[2]),
+    );
     let mut cur = "";
-    for r in &rows {
+    for r in rows {
         if r.slot != cur {
             cur = r.slot;
             println!("[{}]", r.slot);
@@ -1149,7 +1160,8 @@ pub(crate) fn cmd_equipment(input: &Path) -> Result<()> {
     }
     println!(
         "\nswing cost = AP per press and pennant width + 6 (retail 30 favored / 42 off-class / 54 far); \
-         '-' = that character's file has no section for the item. Edit with --swing-cost CHAR:ITEM=COST / --equip-owner ITEM=OWNERS."
+         '-' = that character's file has no section for the item, so equipping it uses the default record's cost. \
+         Edit with --swing-cost CHAR:ITEM=COST (ITEM may be `default`) / --equip-owner ITEM=OWNERS."
     );
     Ok(())
 }

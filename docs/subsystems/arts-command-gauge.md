@@ -531,7 +531,8 @@ files. This follows from the disc layout and the traced selector; it has not
 been confirmed with a live capture of an edited save. The
 [patcher's equipment editor](../tooling/randomizer.md#equipment-editor-swing-costs-and-equip-owners)
 reports exactly these fall-through combinations when an owner edit creates
-one.
+one, and exposes the default record's cost as `CHAR:default=COST` - the only
+in-place knob, since the player files have no free space for a new section.
 
 ## Common misconceptions
 

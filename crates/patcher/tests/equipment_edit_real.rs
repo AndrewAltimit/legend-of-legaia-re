@@ -39,8 +39,8 @@ fn cost_of(patcher: &DiscPatcher, ci: usize, item: u8) -> Option<u8> {
 }
 
 fn owner_of(patcher: &DiscPatcher, item: u8) -> Option<u8> {
-    let rows = apply::read_equipment_table(patcher).ok()??;
-    rows.iter().find(|r| r.id == item).map(|r| r.mask)
+    let t = apply::read_equipment_table(patcher).ok()??;
+    t.rows.iter().find(|r| r.id == item).map(|r| r.mask)
 }
 
 fn changed_sectors_valid(orig: &[u8], patched: &[u8]) -> usize {
@@ -121,6 +121,11 @@ fn equipment_edits_round_trip_off_the_patched_disc() {
                 item_id: ASTRAL,
                 cost: 30,
             }, // no section
+            SwingCostEdit {
+                character: 1,
+                item_id: apply::DEFAULT_WEAPON,
+                cost: 54,
+            }, // Noa's fall-through record
         ],
         owners: vec![EquipOwnerEdit {
             item_id: ASTRAL,
@@ -128,14 +133,17 @@ fn equipment_edits_round_trip_off_the_patched_disc() {
         }],
     };
     let rep = apply::apply_equipment_edits(&mut patcher, &edits).expect("apply");
-    assert_eq!(rep.costs_changed, 3, "{rep:?}");
+    assert_eq!(rep.costs_changed, 4, "{rep:?}");
     assert_eq!(rep.costs_no_section, vec![("Noa".to_string(), ASTRAL)]);
     assert!(rep.costs_skipped_fit.is_empty(), "{rep:?}");
     assert_eq!(rep.owners_changed, 1);
     assert_eq!(
         rep.owners_without_section,
-        vec![("Noa".to_string(), ASTRAL), ("Gala".to_string(), ASTRAL)],
-        "the fall-through warning names both characters without a section"
+        vec![
+            ("Noa".to_string(), ASTRAL, 54),
+            ("Gala".to_string(), ASTRAL, 0x1E)
+        ],
+        "the fall-through warning names both characters without a section and the cost they pay"
     );
 
     // Re-open the patched bytes cold and read everything back.
@@ -150,6 +158,14 @@ fn equipment_edits_round_trip_off_the_patched_disc() {
         "untouched weapon keeps retail"
     );
     assert_eq!(owner_of(&re, ASTRAL), Some(7));
+    assert_eq!(
+        apply::read_equipment_table(&re)
+            .unwrap()
+            .unwrap()
+            .default_costs,
+        [Some(0x1E), Some(54), Some(0x1E)],
+        "only Noa's default record was repriced"
+    );
     let n = changed_sectors_valid(&orig, &patched);
     assert!(n > 0, "the patch changed something");
 
@@ -157,7 +173,7 @@ fn equipment_edits_round_trip_off_the_patched_disc() {
     let mut again = DiscPatcher::open(patched.clone()).expect("reopen");
     let rep2 = apply::apply_equipment_edits(&mut again, &edits).expect("apply twice");
     assert_eq!(rep2.costs_changed, 0);
-    assert_eq!(rep2.costs_unchanged, 3);
+    assert_eq!(rep2.costs_unchanged, 4);
     assert_eq!(rep2.owners_changed, 0);
     assert_eq!(again.image(), &patched[..]);
 }
@@ -169,9 +185,15 @@ fn equipment_table_lists_noa_weapons_under_her_own_section() {
         return;
     };
     let patcher = DiscPatcher::open(orig).expect("open disc");
-    let rows = apply::read_equipment_table(&patcher)
+    let table = apply::read_equipment_table(&patcher)
         .expect("read")
         .expect("table present");
+    assert_eq!(
+        table.default_costs,
+        [Some(0x1E); 3],
+        "every default weapon record swings at the favored tier"
+    );
+    let rows = &table.rows;
     let glove = rows
         .iter()
         .find(|r| r.id == NAIL_GLOVE)

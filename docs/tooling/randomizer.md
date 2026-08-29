@@ -3288,7 +3288,10 @@ Retail tiers are 30 favored / 42 off-class / 54 far off-class; the minimum is
 (`section[+0x04]` swing record `+0x74`), so the same weapon is priced per
 character and each edit names a character. A weapon the character's file has
 no section for is reported (`no section`) and skipped - there is no cost to
-set. The section is decompressed, rewritten and recompressed in place; a
+set; what that character pays instead is their **default weapon record**,
+addressable as `ITEM` = `default` (or `0`, e.g. `Noa:default=42`): one value
+per character, shared by every unlisted weapon they equip and by the unarmed
+swing. The section is decompressed, rewritten and recompressed in place; a
 section that does not fit is reported and left alone. Applied after
 `--weapon-specialty`, so a named cost wins over the permutation.
 
@@ -3299,16 +3302,20 @@ table, the byte the equip screen gates on. Several items can share one bonus
 row, in which case they move together and the report says which. Giving a
 character a weapon their player file has no section for lets them equip it,
 but at battle load the selector falls through to the section default: the
-default appearance and a 30-AP swing (see
+default appearance and the default record's cost (retail 30; see
 [arts-command-gauge.md](../subsystems/arts-command-gauge.md#if-the-astral-sword-is-forced-onto-another-character)).
-The report names every such (character, item) pair.
+The report names every such (character, item) pair with the cost it pays.
+The three player files have no free space (each ends flush against its last
+slot, and Terra's file follows on the next sector), so a real per-weapon
+section cannot be added in place - the default record is the one knob.
 
 `legaia-patcher equipment --input disc.bin` lists every equippable item with
 its owners, attack bonus, and the swing cost each character's file carries
-(`-` where the file has no section). The ROM-patcher page's **Equipment
-editor** shows the same table read from the user's disc, with a number box
-per character and an owner checkbox per character, and sends the identical
-token lists.
+(`-` where the file has no section) plus the per-character default record.
+The ROM-patcher page's **Equipment** group shows the same table read from
+the user's disc - a Default record row on top, a number box per character,
+an owner checkbox per character, and `-> N` in a no-section cell for the
+default cost that applies there - and sends the identical token lists.
 
 ```bash
 legaia-patcher randomize --input disc.bin --output out.bin \
