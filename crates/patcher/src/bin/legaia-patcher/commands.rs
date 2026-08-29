@@ -1115,3 +1115,41 @@ pub(crate) fn cmd_scus_pokes(patched: &Path, baseline: &Path) -> Result<()> {
     eprintln!("{count} differing SCUS words (patched vs baseline)");
     Ok(())
 }
+
+/// `legaia-patcher equipment`: every equippable item, its owners, and (for
+/// weapons) the swing cost each character's player file carries.
+pub(crate) fn cmd_equipment(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let Some(rows) = apply::read_equipment_table(&patcher)? else {
+        println!("equipment table not found");
+        return Ok(());
+    };
+    let cell = |c: Option<u8>| c.map(|v| format!("{v:>3}")).unwrap_or_else(|| "  -".into());
+    println!(
+        "{:<5} {:<18} {:<6} {:>3}  {:>4} {:>4} {:>4}  slot",
+        "id", "name", "owner", "atk", "Vahn", "Noa", "Gala"
+    );
+    let mut cur = "";
+    for r in &rows {
+        if r.slot != cur {
+            cur = r.slot;
+            println!("[{}]", r.slot);
+        }
+        println!(
+            "0x{:02X}  {:<18} {:<6} {:>3}  {:>4} {:>4} {:>4}",
+            r.id,
+            r.name,
+            apply::owner_label(r.mask),
+            r.atk,
+            cell(r.costs[0]),
+            cell(r.costs[1]),
+            cell(r.costs[2]),
+        );
+    }
+    println!(
+        "\nswing cost = AP per press and pennant width + 6 (retail 30 favored / 42 off-class / 54 far); \
+         '-' = that character's file has no section for the item. Edit with --swing-cost CHAR:ITEM=COST / --equip-owner ITEM=OWNERS."
+    );
+    Ok(())
+}

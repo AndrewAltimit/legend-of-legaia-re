@@ -238,6 +238,231 @@ function setupInfoTips() {
   });
 }
 
+
+// --- Equipment editor: swing costs + equip owners over the disc's own tables --
+// One row per equippable item read from the user's disc via
+// `read_equipment_table`. Weapons show the Arts-gauge swing cost each
+// character's player file carries (30 favored / 42 off-class / 54 far; the
+// Astral Sword is Vahn's one 54) as one number box per character; every item
+// shows its equip-owner bits as three checkboxes. Serializes to the CLI's
+// `--swing-cost CHAR:ITEM=COST` / `--equip-owner ITEM=OWNERS` token lists,
+// which is exactly what patch_rom takes, merged with the raw (advanced) inputs.
+function setupEquipmentEditor(wasm, fileInput, discBytes) {
+  const statusEl = $('rom-equip-status');
+  const rowsEl = $('rom-equip-rows');
+  const filterEl = $('rom-equip-filter');
+  const slotEl = $('rom-equip-slot');
+  if (!rowsEl) {
+    return { clear() {}, collect() { return { costs: '', owners: '', error: '' }; } };
+  }
+  const CHARS = ['Vahn', 'Noa', 'Gala'];
+  const hexOf = (id) => '0x' + Number(id).toString(16).toUpperCase().padStart(2, '0');
+  const setNote = (msg) => { if (statusEl) statusEl.textContent = msg; };
+  let items = [];
+  // Edits live here, not in the DOM: a filter or slot change re-renders only
+  // the visible rows, so a DOM-only edit on a hidden row would be lost.
+  // costs: "id:char" -> typed string ('' = keep); owners: id -> mask.
+  const costEdits = new Map();
+  const ownerEdits = new Map();
+
+  const rowEdited = (tr) => {
+    const id = Number(tr.dataset.id);
+    const it = items.find((x) => x.id === id);
+    const edited = CHARS.some((c) => (costEdits.get(`${id}:${c}`) || '') !== '')
+      || (ownerEdits.has(id) && it && ownerEdits.get(id) !== it.mask);
+    tr.classList.toggle('is-edited', edited);
+  };
+
+  function render() {
+    rowsEl.textContent = '';
+    if (!items.length) {
+      const p = document.createElement('p');
+      p.className = 'rom-edit-empty';
+      p.textContent = 'Waiting for a disc image ...';
+      rowsEl.appendChild(p);
+      return;
+    }
+    const q = (filterEl && filterEl.value || '').trim().toLowerCase();
+    const slot = slotEl ? slotEl.value : 'weapon';
+    const table = document.createElement('table');
+    table.className = 'rom-equip-table';
+    const thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th>Item</th><th>Slot</th><th class="n">ATK</th><th>Who can equip</th>'
+      + '<th class="n">Vahn swing</th><th class="n">Noa swing</th><th class="n">Gala swing</th></tr>';
+    table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    let shown = 0;
+    for (const it of items) {
+      if (slot !== 'all' && it.slot !== slot) continue;
+      if (q && !(it.name.toLowerCase().includes(q) || hexOf(it.id).toLowerCase().includes(q))) continue;
+      shown++;
+      const tr = document.createElement('tr');
+      tr.className = 'rom-equip-row';
+      tr.dataset.id = String(it.id);
+      const tdName = document.createElement('td');
+      tdName.innerHTML = `<span class="rom-edit-name">${escapeHtml(it.name || 'item ' + hexOf(it.id))}</span> <code>${hexOf(it.id)}</code>`;
+      if (it.shares_row_with && it.shares_row_with.length) {
+        const s = document.createElement('span');
+        s.className = 'rom-equip-shared';
+        s.title = 'Shares its stat row with ' + it.shares_row_with.map(hexOf).join(', ') + ' - an owner change moves them too.';
+        s.textContent = ' (shared row)';
+        tdName.appendChild(s);
+      }
+      tr.appendChild(tdName);
+      const tdSlot = document.createElement('td'); tdSlot.textContent = it.slot; tr.appendChild(tdSlot);
+      const tdAtk = document.createElement('td'); tdAtk.className = 'n'; tdAtk.textContent = String(it.atk); tr.appendChild(tdAtk);
+      const tdOwn = document.createElement('td');
+      tdOwn.className = 'rom-equip-owners';
+      const mask = ownerEdits.has(it.id) ? ownerEdits.get(it.id) : it.mask;
+      CHARS.forEach((c, ci) => {
+        const lab = document.createElement('label');
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.className = 'eq-owner';
+        cb.dataset.bit = String(1 << ci);
+        cb.dataset.cur = (it.mask & (1 << ci)) ? '1' : '0';
+        cb.checked = (mask & (1 << ci)) !== 0;
+        cb.addEventListener('change', () => {
+          const cur = ownerEdits.has(it.id) ? ownerEdits.get(it.id) : it.mask;
+          ownerEdits.set(it.id, cb.checked ? (cur | (1 << ci)) : (cur & ~(1 << ci)));
+          rowEdited(tr);
+        });
+        lab.appendChild(cb);
+        lab.appendChild(document.createTextNode(c[0]));
+        lab.title = c;
+        tdOwn.appendChild(lab);
+      });
+      tr.appendChild(tdOwn);
+      CHARS.forEach((c, ci) => {
+        const td = document.createElement('td');
+        td.className = 'n';
+        const cur = it.costs ? it.costs[ci] : null;
+        if (it.slot !== 'weapon' || cur == null) {
+          td.innerHTML = '<span class="rom-equip-na" title="' + (it.slot === 'weapon'
+            ? c + '’s battle file has no section for this weapon: no swing cost exists to edit'
+            : 'Only weapons carry a swing cost') + '">—</span>';
+        } else {
+          const inp = document.createElement('input');
+          inp.type = 'number';
+          inp.className = 'eq-cost';
+          inp.min = '7'; inp.max = '255';
+          inp.placeholder = String(cur);
+          inp.dataset.char = c;
+          inp.dataset.cur = String(cur);
+          inp.value = costEdits.get(`${it.id}:${c}`) || '';
+          inp.title = `${c}: currently ${cur} AP (${cur - 6} px wide)`;
+          inp.addEventListener('input', () => { costEdits.set(`${it.id}:${c}`, inp.value.trim()); rowEdited(tr); });
+          td.appendChild(inp);
+        }
+        tr.appendChild(td);
+      });
+      rowEdited(tr);
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    rowsEl.appendChild(table);
+    if (!shown) {
+      const p = document.createElement('p');
+      p.className = 'rom-edit-empty';
+      p.textContent = 'No items match.';
+      rowsEl.appendChild(p);
+    }
+  }
+
+  // Quick edits over every weapon the disc lists (not just the visible rows).
+  const setCost = (pred, value) => {
+    for (const it of items) {
+      if (it.slot !== 'weapon') continue;
+      CHARS.forEach((c, ci) => {
+        const cur = it.costs ? it.costs[ci] : null;
+        if (cur == null || !pred(it.id, c, cur)) return;
+        costEdits.set(`${it.id}:${c}`, cur === value ? '' : String(value));
+      });
+    }
+    render();
+  };
+  const presets = {
+    'rom-equip-preset-astral': () => setCost((id) => id === 0xBA, 30),
+    'rom-equip-preset-all30': () => setCost(() => true, 30),
+    'rom-equip-preset-anyone': () => {
+      for (const it of items) if (it.slot === 'weapon') ownerEdits.set(it.id, 7);
+      render();
+    },
+    'rom-equip-preset-reset': () => clear(),
+  };
+  for (const [id, fn] of Object.entries(presets)) {
+    const b = $(id);
+    if (b) b.addEventListener('click', (e) => { e.preventDefault(); fn(); });
+  }
+  if (filterEl) filterEl.addEventListener('input', render);
+  if (slotEl) slotEl.addEventListener('change', render);
+
+  let loadedFor = null;
+  async function load() {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    const key = `${file.name}/${file.size}/${file.lastModified}`;
+    if (key === loadedFor) return;
+    try {
+      setNote('Reading equipment from your disc ...');
+      const mod = await wasm();
+      if (typeof mod.read_equipment_table !== 'function') {
+        setNote('This patcher build cannot list equipment here - the raw lists under "Advanced" still work.');
+        return;
+      }
+      const buf = await discBytes();
+      const t = mod.read_equipment_table(buf);
+      items = t.items || [];
+      loadedFor = key;
+      render();
+      setNote('Current values read from your disc. Empty box = keep; owners tick who can equip. A swing costs its AP per press and draws (cost - 6) px wide.');
+    } catch (e) {
+      setNote('Could not read the equipment table: ' + (e && e.message ? e.message : e));
+    }
+  }
+  fileInput.addEventListener('change', () => { load(); });
+
+  function clear() {
+    costEdits.clear();
+    ownerEdits.clear();
+    render();
+  }
+  function collect() {
+    const fail = (error) => ({ costs: '', owners: '', error });
+    const costs = [];
+    const owners = [];
+    for (const it of items) {
+      const id = hexOf(it.id);
+      CHARS.forEach((c, ci) => {
+        const v = (costEdits.get(`${it.id}:${c}`) || '').trim();
+        if (!v) return;
+        const n = parseInt(v, 10);
+        if (!Number.isFinite(n) || n < 7 || n > 255) {
+          costs.push(null);
+          fail.msg = `Swing cost for ${c} on ${id} must be 7..255.`;
+          return;
+        }
+        const cur = it.costs ? it.costs[ci] : null;
+        if (cur == null || n === cur) return;
+        costs.push(`${c}:${id}=${n}`);
+      });
+      if (ownerEdits.has(it.id) && ownerEdits.get(it.id) !== it.mask) {
+        const m = ownerEdits.get(it.id);
+        const letters = CHARS.filter((c, ci) => m & (1 << ci)).map((c) => c[0]).join('');
+        owners.push(`${id}=${letters || 'none'}`);
+      }
+    }
+    if (costs.includes(null)) return fail(fail.msg);
+    return { costs: costs.join(','), owners: owners.join(','), error: '' };
+  }
+  render();
+  return { load, clear, collect };
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 // --- Prices & names: structured editors over the disc's own tables ----------
 // Friendly rows over the same `fishing_prices` / `location_renames` strings
 // the raw (advanced) inputs feed - the structured editors serialize to that
@@ -2009,6 +2234,9 @@ function init() {
   // from the user's own disc when one is chosen).
   setupInfoTips();
   const manualTables = setupManualTables(() => ensureWasm(setStatus), fileInput, discBytes);
+  const equipmentEditor = setupEquipmentEditor(() => ensureWasm(setStatus), fileInput, discBytes);
+  const swingCostInput = $('rom-swing-cost');
+  const equipOwnerInput = $('rom-equip-owner');
 
   // "Check pack against my disc": the same disc-measured dry run the CLI does.
   langValidateBtn.addEventListener('click', async () => {
@@ -2192,6 +2420,9 @@ function init() {
     artsApGrantInput.value = cfg.artsApGrant || '';
     artBuilder.clear();
     manualTables.clear();
+    equipmentEditor.clear();
+    if (swingCostInput) swingCostInput.value = '';
+    if (equipOwnerInput) equipOwnerInput.value = '';
     weaponSpecialtyChk.checked = cfg.weaponSpecialty;
     startingItemsSel.value = String(cfg.startingItems);
     startingLevelSel.value = String(cfg.startingLevel);
@@ -2341,6 +2572,16 @@ function init() {
     const renameLocation = [manual.locations, (renameLocationInput.value || '').trim()]
       .filter(Boolean).join('\n');
     const earthEggPrice = (earthEggPriceInput.value || '').trim();
+    // Equipment editor rows + the raw (advanced) token lists, same syntax.
+    const equipEdits = equipmentEditor.collect();
+    if (equipEdits.error) {
+      setStatus(equipEdits.error, 'err');
+      return;
+    }
+    const swingCosts = [equipEdits.costs, (swingCostInput && swingCostInput.value || '').trim()]
+      .filter(Boolean).join(',');
+    const equipOwners = [equipEdits.owners, (equipOwnerInput && equipOwnerInput.value || '').trim()]
+      .filter(Boolean).join(',');
     // AP sliders: only sent when their override checkbox is on ('' = retail).
     // Both ranges include 0 and negatives, so read the value as-is.
     const spiritAp = spiritApChk.checked ? String(spiritApSlider.value) : '';
@@ -2463,7 +2704,7 @@ function init() {
       !fishingPrice && !renameLocation && !earthEggPrice && !artsPower && !superArtPower &&
       !artsApGrant && !artsApCost &&
       !spiritAp && !damageAp && !enemyStatScale && !expScale && !seruCatchRate && !delilasParty &&
-      !attackCount
+      !attackCount && !swingCosts && !equipOwners
     );
     if (!baseActive && texSpecs.length === 0) {
       setStatus('Enable at least one option (pick a preset, a language, a texture, or flip a toggle).', 'err');
@@ -2499,7 +2740,7 @@ function init() {
       let summaryText = '';
       let langReport = null;
       if (baseActive) {
-        const result = await mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate, delilasParty, delilasArtsVoice, delilasMoves, superArtPower, showSuperArts, attackCount, onPatchProgress);
+        const result = await mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate, delilasParty, delilasArtsVoice, delilasMoves, superArtPower, showSuperArts, attackCount, swingCosts, equipOwners, onPatchProgress);
         data = result.data;
         usedSeed = result.seed;
         summaryText = result.summary || '';

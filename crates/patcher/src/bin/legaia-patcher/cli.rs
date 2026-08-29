@@ -335,6 +335,15 @@ pub(crate) enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only: list every equippable item with who can equip it and, for
+    /// weapons, the Arts-gauge swing cost each character's player file carries
+    /// for it - the table `--swing-cost` and `--equip-owner` edit.
+    Equipment {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
+        #[arg(long)]
+        input: PathBuf,
+    },
     /// Apply a PPF patch to a copy of a disc and confirm it applies cleanly
     /// (records applied, the result still parses). Use this to check that a
     /// shared patch + seed match your own disc before playing.
@@ -1186,6 +1195,33 @@ pub(crate) struct RandomizeArgs {
     /// `legaia-patcher weapon-specialty` shows the current favored class per char.
     #[arg(long, default_value_t = false)]
     pub(crate) weapon_specialty: bool,
+    /// Set the Arts-gauge swing cost of one weapon for one character:
+    /// `CHAR:ITEM=COST` (e.g. `Vahn:0xBA=30` makes the Astral Sword a
+    /// favored-width swing). `COST` is the AP a press charges and the pennant
+    /// width plus 6; retail tiers are 30 / 42 / 54, minimum 7. The byte lives
+    /// in that character's player battle file, so the same weapon can be priced
+    /// differently per character. `legaia-patcher equipment` lists every
+    /// current value. Repeatable / comma-separated; applied after
+    /// `--weapon-specialty`.
+    #[arg(
+        long = "swing-cost",
+        value_name = "CHAR:ITEM=COST",
+        value_delimiter = ','
+    )]
+    pub(crate) swing_cost: Vec<String>,
+    /// Set who can equip an item: `ITEM=OWNERS` where `OWNERS` is any of the
+    /// letters `V` `N` `G` (Vahn / Noa / Gala), `any`, or `none` (e.g.
+    /// `0xBA=VNG`). Rewrites the item's equip-character mask in the SCUS
+    /// equipment table; items sharing a bonus row move together (the report
+    /// says which). A character whose player file has no section for a weapon
+    /// can equip it but falls through to the default appearance and a 30-AP
+    /// swing in battle. Repeatable / comma-separated.
+    #[arg(
+        long = "equip-owner",
+        value_name = "ITEM=OWNERS",
+        value_delimiter = ','
+    )]
+    pub(crate) equip_owner: Vec<String>,
     /// How per-monster steal items are reassigned (the Evil God Icon table;
     /// `shuffle` redistributes the existing steal items, `random` draws from the
     /// valid item pool - the steal *chance* is always preserved).

@@ -1077,6 +1077,54 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("weapon_specialty = false".to_string());
     }
 
+    // Manual equipment edits (swing costs / equip owners) run after the
+    // specialty shuffle so a named cost always wins over the permutation.
+    let equipment_edits =
+        apply::parse_edit_lists(&args.swing_cost.join(","), &args.equip_owner.join(","))?;
+    if !equipment_edits.is_empty() {
+        let rep = apply::apply_equipment_edits(&mut patcher, &equipment_edits)?;
+        println!(
+            "equipment: {} swing cost(s) rewritten, {} owner row(s) changed",
+            rep.costs_changed, rep.owners_changed
+        );
+        for (c, id) in &rep.costs_no_section {
+            println!("  note: {c} has no section for item 0x{id:02X} - no swing cost to set");
+        }
+        for (c, id) in &rep.costs_skipped_fit {
+            println!("  skipped: {c} item 0x{id:02X} does not recompress into its slot");
+        }
+        for id in &rep.owners_not_equipment {
+            println!("  note: item 0x{id:02X} is not equipment - owner not changed");
+        }
+        for (id, sib) in &rep.owners_shared_rows {
+            let s: Vec<String> = sib.iter().map(|i| format!("0x{i:02X}")).collect();
+            println!(
+                "  note: item 0x{id:02X} shares its row with {} - they moved too",
+                s.join(", ")
+            );
+        }
+        for (c, id) in &rep.owners_without_section {
+            println!(
+                "  note: {c} can now equip 0x{id:02X} but has no battle section for it - default look, 30-AP swing"
+            );
+        }
+        for e in &equipment_edits.costs {
+            manifest.push(format!(
+                "swing_cost_{}_0x{:02X} = {}",
+                legaia_patcher::weapon_specialty::PLAYERS[e.character].name,
+                e.item_id,
+                e.cost
+            ));
+        }
+        for e in &equipment_edits.owners {
+            manifest.push(format!(
+                "equip_owner_0x{:02X} = \"{}\"",
+                e.item_id,
+                apply::owner_label(e.mask)
+            ));
+        }
+    }
+
     if let Some(equip_bonus_mode) = equip_bonus_mode {
         let changed = apply::randomize_equip_bonuses(&mut patcher, seed, equip_bonus_mode)?;
         println!("equip bonuses: {changed} bonus row(s) changed ({equip_bonus_mode:?})");

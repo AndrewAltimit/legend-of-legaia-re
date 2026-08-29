@@ -92,6 +92,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Equipment stat bonuses](#equipment-stat-bonuses)
   - [Equip mask (who can equip what)](#equip-mask-who-can-equip-what)
   - [Weapon specialty](#weapon-specialty)
+  - [Equipment editor (swing costs and equip owners)](#equipment-editor-swing-costs-and-equip-owners)
   - [Arts button combos](#arts-button-combos)
   - [Arts damage power](#arts-damage-power)
   - [Super Art damage power](#super-art-damage-power)
@@ -353,6 +354,7 @@ convenience toggles below, additively - five slots with `--all-warps`. See
 |---|---|
 | `--unused-enemies` / `--unused-items` | Re-introduce content the game ships but never surfaces. See [Unused content](#unused-content). |
 | `--weapon-specialty` | Reassign which weapon class each character favors. See [Weapon specialty](#weapon-specialty). |
+| `--swing-cost CHAR:ITEM=COST` / `--equip-owner ITEM=OWNERS` | Manual edits: set one weapon's Arts-gauge swing cost for one character, or who can equip an item. See [Equipment editor](#equipment-editor-swing-costs-and-equip-owners). |
 
 ### Reading the disc without patching it
 
@@ -363,7 +365,7 @@ refuses a non-USA disc unless `--allow-region-mismatch` is passed (see above).
 
 The `drops`, `chests`, `shops`, `casino`, `steals`, `arts`, `doors`,
 `starting-items`, `monster-stats`, `move-powers`, `affinity`, `spell-costs`,
-`equip-bonuses`, and `weapon-specialty` subcommands **write nothing**. They
+`equip-bonuses`, `weapon-specialty`, and `equipment` subcommands **write nothing**. They
 decode the randomizable populations off the user's disc and print them, with item
 ids and names resolved from the disc's own SCUS table, and chests and doors
 grouped by scene via CDNAME.
@@ -3269,6 +3271,55 @@ edit (a section too tight to re-pack is skipped and reported; in practice every 
 re-packs). The Astral Sword and non-class gear carry no family and are never
 touched, so the Astral Sword stays always-wide. `legaia-patcher weapon-specialty`
 shows each character's current favored class.
+
+### Equipment editor (swing costs and equip owners)
+
+Two manual, seedless edits over the same tables the specialty shuffle and
+the equip-mask shuffle randomize, for modders who want a specific outcome -
+"the Astral Sword should not be so costly to use", "let Noa use axes at the
+favored price", "let everyone equip the Ra-Seru Blade".
+
+**Swing cost** - `--swing-cost CHAR:ITEM=COST` (repeatable, comma-separated).
+`CHAR` is `Vahn` / `Noa` / `Gala` (or `V` / `N` / `G`, or `0..2`), `ITEM` an
+item id (decimal or `0xHH`), `COST` the byte the Arts gauge reads for that
+weapon-hand press: the AP one press charges **and** the pennant width plus 6.
+Retail tiers are 30 favored / 42 off-class / 54 far off-class; the minimum is
+7 (a 1-pixel body). The byte lives in that character's player battle file
+(`section[+0x04]` swing record `+0x74`), so the same weapon is priced per
+character and each edit names a character. A weapon the character's file has
+no section for is reported (`no section`) and skipped - there is no cost to
+set. The section is decompressed, rewritten and recompressed in place; a
+section that does not fit is reported and left alone. Applied after
+`--weapon-specialty`, so a named cost wins over the permutation.
+
+**Equip owner** - `--equip-owner ITEM=OWNERS` (repeatable). `OWNERS` is any
+set of the letters `V` `N` `G`, `any`, or `none`. Rewrites the low three bits
+of the item's `+6` equip-character mask in the SCUS equipment stat-bonus
+table, the byte the equip screen gates on. Several items can share one bonus
+row, in which case they move together and the report says which. Giving a
+character a weapon their player file has no section for lets them equip it,
+but at battle load the selector falls through to the section default: the
+default appearance and a 30-AP swing (see
+[arts-command-gauge.md](../subsystems/arts-command-gauge.md#if-the-astral-sword-is-forced-onto-another-character)).
+The report names every such (character, item) pair.
+
+`legaia-patcher equipment --input disc.bin` lists every equippable item with
+its owners, attack bonus, and the swing cost each character's file carries
+(`-` where the file has no section). The ROM-patcher page's **Equipment
+editor** shows the same table read from the user's disc, with a number box
+per character and an owner checkbox per character, and sends the identical
+token lists.
+
+```bash
+legaia-patcher randomize --input disc.bin --output out.bin \
+  --swing-cost Vahn:0xBA=30 \
+  --swing-cost Noa:0x2E=30,Noa:0x31=42 \
+  --equip-owner 0xBA=any
+```
+
+Disc-gated oracle: `crates/patcher/tests/equipment_edit_real.rs` (round trip
+off the patched image, Noa's section-3 keying, the fall-through report,
+EDC/ECC validity, idempotence).
 
 ### Arts button combos
 

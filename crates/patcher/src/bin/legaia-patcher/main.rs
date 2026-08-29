@@ -173,6 +173,7 @@ fn main() -> Result<()> {
         Cmd::SpellCosts { input } => commands::cmd_spell_costs(&input),
         Cmd::EquipBonuses { input } => commands::cmd_equip_bonuses(&input),
         Cmd::WeaponSpecialty { input } => commands::cmd_weapon_specialty(&input),
+        Cmd::Equipment { input } => commands::cmd_equipment(&input),
         Cmd::Randomize(args) => randomize::cmd_randomize(args),
         Cmd::Verify {
             input,

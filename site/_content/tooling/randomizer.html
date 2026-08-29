@@ -149,6 +149,7 @@ legaia-patcher verify    --input DISC.bin --patch run.ppf       # apply + sanity
       <tr><td><code>--equip-bonus</code></td><td>Equipment passive stat bonuses, within each slot category. See <a href="#equip-bonus">Equipment stat bonuses</a>.</td></tr>
       <tr><td><code>--equip-mask</code></td><td>Who can equip each item (the equip-character mask, within each slot category). See <a href="#equip-mask">Equip mask</a>.</td></tr>
       <tr><td><code>--weapon-specialty</code></td><td>Toggle: permute which weapon class each character favors. See <a href="#weapon-specialty">Weapon specialty</a>.</td></tr>
+      <tr><td><code>--swing-cost CHAR:ITEM=COST</code> / <code>--equip-owner ITEM=OWNERS</code></td><td>Manual edits: one weapon's Arts-gauge swing cost for one character, or who can equip an item. See <a href="#equipment-editor">Equipment editor</a>.</td></tr>
       <tr><td><code>--doors</code></td><td>Scene-transition destinations. <code>--door-coupling</code> is <code>coupled</code> (default, bidirectional) or <code>decoupled</code> (one-way). See <a href="#doors">Doors</a>.</td></tr>
       <tr><td><code>--house-doors</code></td><td>Intra-town door warps, class-preserving (<code>shuffle</code> only). See <a href="#house-doors">House doors</a>.</td></tr>
       <tr><td><code>--equipment-drops</code></td><td>Toggle: code hook granting one extra random equipment piece per battle on a low chance (<code>--equipment-drop-chance</code>, default 5) on top of the normal drop. See <a href="#equipment">Equipment drops</a>.</td></tr>
@@ -403,6 +404,20 @@ legaia-patcher verify    --input DISC.bin --patch run.ppf       # apply + sanity
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="../subsystems/arts-command-gauge.html">Arts command gauge</a>
+    <a href="../writeups/disc-patching/b-lzs-slots.html">Write-up: editing inside LZS slots (tier B)</a>
+  </div>
+</section>
+
+<section class="doc-section" id="equipment-editor">
+  <h2>Equipment editor (swing costs and equip owners)</h2>
+  <p>Two manual, seedless edits over the same tables the specialty and equip-mask shuffles randomize, for modders who want a specific outcome - &ldquo;the Astral Sword should not be so costly to use&rdquo;, &ldquo;let Noa use axes at the favored price&rdquo;, &ldquo;let everyone equip the Ra-Seru Blade&rdquo;.</p>
+  <p><strong>Swing cost</strong> - <code>--swing-cost CHAR:ITEM=COST</code>. <code>CHAR</code> is Vahn / Noa / Gala, <code>ITEM</code> an item id, <code>COST</code> the byte the Arts gauge reads for that weapon-hand press: the AP one press charges <em>and</em> the pennant width plus 6. Retail tiers are 30 favored / 42 off-class / 54 far off-class; minimum 7. The byte lives in that character&rsquo;s player battle file, so the same weapon is priced per character. A weapon the character&rsquo;s file has no section for is reported and skipped. The LZS section is decompressed, rewritten and recompressed in place; applied after <code>--weapon-specialty</code>, so a named cost wins.</p>
+  <p><strong>Equip owner</strong> - <code>--equip-owner ITEM=OWNERS</code>, with <code>OWNERS</code> any set of the letters <code>V</code> <code>N</code> <code>G</code>, <code>any</code>, or <code>none</code>. Rewrites the item&rsquo;s equip-character mask in the SCUS equipment table. Items sharing a bonus row move together (the report says which). Giving a character a weapon their player file has no section for lets them equip it, but in battle the loader falls through to the section default: default appearance and a 30-AP swing - the report names every such pair.</p>
+  <p><code>legaia-patcher equipment</code> lists every equippable item with its owners and per-character swing costs; the <a href="rom-patcher.html">ROM patcher page</a> shows the same table read from your disc with a box per cell.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/arts-command-gauge.html">Arts command gauge</a>
+    <a href="../formats/equipment-table.html">Equipment stat-bonus table</a>
     <a href="../writeups/disc-patching/b-lzs-slots.html">Write-up: editing inside LZS slots (tier B)</a>
   </div>
 </section>
