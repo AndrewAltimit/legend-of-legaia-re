@@ -65,7 +65,7 @@ jobs:
   verify:
     name: Verify
     runs-on: self-hosted
-    timeout-minutes: 45
+    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -92,7 +92,7 @@ jobs:
     name: Build + Release
     needs: [verify]
     runs-on: self-hosted
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@v4
