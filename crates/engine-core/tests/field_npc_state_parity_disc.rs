@@ -204,6 +204,22 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
         class: "c",
         note: "sibling of vis:2 - same pre-battle staging cohort",
     },
+    KnownDivergence {
+        label: "nivora_cutscene_delilas_intro",
+        key: "vis:*",
+        class: "b",
+        note: "mid-cutscene capture (the Delilas walk-in at the Nivora ravine): the \
+               intro choreography has already hidden these nilboa actors when the \
+               siblings take the stage; the engine's cold entry seats them per the \
+               spawn prologue. A fresh-entry nilboa capture would pin the entry seats",
+    },
+    KnownDivergence {
+        label: "nivora_cutscene_delilas_intro",
+        key: "pos:*",
+        class: "b",
+        note: "same walk-in choreography: actors 22/23 are captured on their cutscene \
+               marks, away from the entry seats the engine reproduces",
+    },
 ];
 
 fn known(label: &str, key: &str) -> Option<&'static KnownDivergence> {
