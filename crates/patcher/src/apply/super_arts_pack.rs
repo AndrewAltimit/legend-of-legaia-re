@@ -22,7 +22,7 @@ pub struct SuperArtsPackReport {
 }
 
 /// Install the **Super Arts Pack by ZetaPhoenix**: fifteen extra Super Arts -
-/// five more per character on top of the retail five - each with its own name,
+/// five per character on top of the retail five - each with its own name,
 /// hit count and animation, triggered by their own arts chains.
 ///
 /// ZetaPhoenix's 3764-byte block is parked in the `DMY.DAT` annex and streamed

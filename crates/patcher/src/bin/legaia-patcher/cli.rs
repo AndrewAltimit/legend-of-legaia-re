@@ -898,7 +898,7 @@ pub(crate) struct RandomizeArgs {
     /// dead-space bytes).
     #[arg(long, default_value_t = false)]
     pub(crate) show_super_arts: bool,
-    /// **Super Arts Pack, by ZetaPhoenix**: fifteen extra Super Arts - five more
+    /// **Super Arts Pack, by ZetaPhoenix**: fifteen extra Super Arts - five
     /// per character on top of the retail five - each with its own name (Ultra
     /// Elbow, Somersault Duo, Double Lizard, Ground Pound, ...), hit count and
     /// animation, triggered by their own arts chains. ZetaPhoenix's 3764-byte

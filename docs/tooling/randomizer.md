@@ -229,7 +229,7 @@ legaia-patcher arts      --input DISC.bin                                       
 legaia-patcher randomize --input DISC.bin --seed pow --arts-power RDLDL=0x0C              # power Vahn's Burning Flare down to tier 0x0C
 legaia-patcher randomize --input DISC.bin --super-art-power "Tri-Somersault"=0x1A       # power Vahn's Tri-Somersault Super Art up to tier 0x1A
 legaia-patcher randomize --input DISC.bin --show-super-arts                             # list a character's performed Super Arts on the in-battle Triangle menu, in AP order
-legaia-patcher randomize --input DISC.bin --super-arts-pack                             # install ZetaPhoenix's Super Arts Pack: five more Super Arts per character
+legaia-patcher randomize --input DISC.bin --super-arts-pack                             # install ZetaPhoenix's Super Arts Pack: five Super Arts per character
 legaia-patcher randomize --input DISC.bin --arts-ap-grant Vahn:RDLDL=10                   # Vahn's Burning Flare GRANTS 10 AP instead of costing it
 legaia-patcher randomize --input DISC.bin --arts-ap-cost Vahn:RDLDL=5                     # ... or costs a flat 5 AP instead of the computed 50
 legaia-patcher randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
@@ -318,7 +318,7 @@ unless asked for:
 | `--arts-power COMBO=VALUE` | rebalance a Tactical Art's per-strike damage-power bytes, targeted by input combo (`RDLDL=0x16`); `VALUE` is a power tier `0x0C..=0x1F` or `0` to disable | repeatable / comma-separated | [Arts damage power](#arts-damage-power) |
 | `--super-art-power NAME=VALUE` | the same rebalance for a **Super Art**, targeted by name (`"Tri-Somersault"=0x1A`); Super Arts carry no combo, no arts-table row and no AP cost of their own, so name is their only key | repeatable / comma-separated | [Super Art damage power](#super-art-damage-power) |
 | `--show-super-arts` | list a character's Super Arts on the in-battle Tactical-Arts list, which retail never draws: once performed, sorted in by AP, with name, chain AP and the arrows you type; mutually exclusive with `--shiny-seru`, the arts AP overrides and `--delilas-challenge` |
-| `--super-arts-pack` | install the **Super Arts Pack by ZetaPhoenix**: fifteen extra Super Arts, five more per character, each with its own name, hit count and animation; his block is installed byte-for-byte, parked in the `DMY.DAT` annex and streamed to `0x801FD000` at battle load. Mutually exclusive with `--shiny-seru`, `--show-super-arts`, the arts AP overrides and `--delilas-challenge` | flag | [Super Arts Pack](#super-arts-pack-by-zetaphoenix) |
+| `--super-arts-pack` | install the **Super Arts Pack by ZetaPhoenix**: fifteen extra Super Arts, five per character, each with its own name, hit count and animation; his block is installed byte-for-byte, parked in the `DMY.DAT` annex and streamed to `0x801FD000` at battle load. Mutually exclusive with `--shiny-seru`, `--show-super-arts`, the arts AP overrides and `--delilas-challenge` | flag | [Super Arts Pack](#super-arts-pack-by-zetaphoenix) |
 | `--arts-ap-grant [CHAR:]COMBO=AMOUNT` | make a Tactical Art **grant** `AMOUNT` AP (Spirit, clamped at 100) instead of costing it, admitting it at any AP level; a code hook into the party arts queue-builder. Keyed per (character, arts row). Mutually exclusive with `--shiny-seru` | repeatable / comma-separated | [Arts AP override](#arts-ap-override) |
 | `--arts-ap-cost [CHAR:]COMBO=AMOUNT` | set what a Tactical Art **costs** in AP (`1..=100`), replacing retail's computed cost. Same hook, same keying, same exclusivity; the art's menu AP number is rewritten to match | repeatable / comma-separated | [Arts AP override](#arts-ap-override) |
 | `--spirit-ap AP` | set how much AP the Spirit command charges into the battle gauge (retail 32): `0` = defence boost only, `100` = one press fills the gauge, negative = Spirit drains the gauge | single value -100..=100 | [Spirit AP](#spirit-ap) |
@@ -3748,7 +3748,7 @@ every derived input against the curated walkthrough table.
 ### Super Arts Pack (by ZetaPhoenix)
 
 `--super-arts-pack` installs the **Super Arts Pack**, a community mod by
-**ZetaPhoenix**. Each character gains **five more Super Arts** on top of the
+**ZetaPhoenix**. Each character gains **five Super Arts** on top of the
 retail five, each with its own name banner, hit count and animation, triggered
 by its own arts chain exactly the way a retail Super Art is:
 

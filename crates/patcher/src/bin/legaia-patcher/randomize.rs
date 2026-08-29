@@ -662,7 +662,7 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("show_super_arts = false".to_string());
     }
 
-    // Super Arts Pack (by ZetaPhoenix): fifteen extra Super Arts, five more per
+    // Super Arts Pack (by ZetaPhoenix): fifteen extra Super Arts, five per
     // character, from his own 3764-byte block - parked in the DMY.DAT annex and
     // streamed to 0x801FD000 at battle load, reached by ten same-size edits.
     if args.super_arts_pack {

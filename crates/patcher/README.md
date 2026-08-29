@@ -916,7 +916,7 @@ list" - a known cosmetic gap. Full design:
 
 ## Super Arts Pack, by ZetaPhoenix (`super_arts_pack` module)
 
-`--super-arts-pack` installs **ZetaPhoenix's Super Arts Pack**: five more Super
+`--super-arts-pack` installs **ZetaPhoenix's Super Arts Pack**: five Super
 Arts per character on top of the retail five, each with its own name banner, hit
 count and animation, triggered by its own arts chain. The payload is his - a
 3764-byte block written as a GameShark-style RAM patch at `0x801FD000`, shipped

@@ -265,7 +265,7 @@ const PATCH_ROM_STAGES: u32 = 37;
 /// menu's Status screen (Left = Moves) lists them the same way. The
 /// Triangle caption's own page thresholds stay retail, so on a later page it can
 /// still read "View Hyper Arts list". `super_arts_pack` installs the **Super
-/// Arts Pack by ZetaPhoenix**: fifteen extra Super Arts, five more per
+/// Arts Pack by ZetaPhoenix**: fifteen extra Super Arts, five per
 /// character, each with its own name, hit count and animation, from his own
 /// 3764-byte block (parked in the disc's `DMY.DAT` annex, streamed to
 /// `0x801FD000` at battle load). Mutually exclusive with the same four features
@@ -702,7 +702,7 @@ pub async fn patch_rom(
         let rep = apply::inject_super_arts_pack(&mut patcher)
             .map_err(|e| err(format!("super-arts-pack: {e}")))?;
         summary.push_str(&format!(
-            "super-arts-pack (by ZetaPhoenix): {} extra Super Arts, five more per character\n",
+            "super-arts-pack (by ZetaPhoenix): {} extra Super Arts, five per character\n",
             rep.names.len()
         ));
     } else {
