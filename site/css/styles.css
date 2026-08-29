@@ -513,6 +513,23 @@ section.doc-section > p {
   max-width: 720px;
 }
 
+/* A page's key-findings box: the numbered or bulleted summary a reader can
+   stop at. Tinted with the accent so it reads as distinct from the body. */
+section.doc-summary {
+  border: 1px solid var(--accent);
+  border-left-width: 4px;
+  border-radius: 6px;
+  padding: 0.9rem 1.2rem 0.6rem;
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-card));
+}
+section.doc-summary > h2 {
+  margin-top: 0;
+  font-size: 0.95rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
 .doc-section ul.bullets,
 .doc-section ol.bullets {
   list-style: none;

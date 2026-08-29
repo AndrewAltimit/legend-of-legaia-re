@@ -178,7 +178,11 @@
     </a>
     <a class="card" href="arts-command-gauge.html">
       <div class="card-title">Arts command gauge</div>
-      <div class="card-body">The AP gauge the player spends inputting an arts combo, and the weapon-specialty arm width: the arm command's cost at <code>DAT_801C9360[char][0x0C]+0x74</code> escalates over base for an off-class weapon (favored <code>0x1E</code> / off-class <code>0x2A</code> / Astral <code>0x36</code>) - not a flat double.</div>
+      <div class="card-body">Why one Arts-bar button is wider than the others: the weapon-hand command's cost byte at <code>DAT_801C9360[char][cmd]+0x74</code> is both its AP price and its pennant width, authored per (character, weapon) on the disc (30 favored / 42 off-class / 54 far; the Astral Sword is Vahn's one 54) and spent from the character's AGL. With a full address reference.</div>
+    </a>
+    <a class="card" href="inventory.html">
+      <div class="card-title">Inventory</div>
+      <div class="card-body">One 256-slot bag at <code>0x80085958</code>, reached only through five SCUS helpers bounded by an <em>active window</em> that collapses to one 128-slot half for a lone character - the &ldquo;split bag&rdquo;. The &ldquo;72-slot&rdquo; figure is a cheat&rsquo;s display page, not a bound.</div>
     </a>
     <a class="card" href="audio.html">
       <div class="card-title">Audio</div>
