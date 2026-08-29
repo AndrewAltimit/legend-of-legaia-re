@@ -704,9 +704,6 @@
       </div>
     </details>
 
-    </div><!-- /rom-col -->
-    </div>
-
     <!-- ---- Equipment editor ---- -->
     <details class="rom-group" id="rom-equip-group" open>
       <summary>Equipment <span class="rom-summary-note">Arts-bar command costs, who can equip what</span></summary>
@@ -745,7 +742,9 @@
           </div>
         </details>
       </div>
-    </details><!-- /rom-groups -->
+    </details>
+    </div><!-- /rom-col -->
+    </div><!-- /rom-groups -->
 
     <div class="rom-row rom-actions">
       <button id="rom-run" class="rom-button">Patch &amp; download</button>
@@ -970,23 +969,35 @@
   /* Seven columns of inputs do not fit half the two-column group grid, so the
      equipment group sits below it at full width and the table needs no
      horizontal scrollbar on a desktop viewport. */
-  #rom-equip-group { margin-top: 0.4rem; }
   .rom-equip-rows { max-height: 32rem; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
-  .rom-equip-table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
-  .rom-equip-table th { position: sticky; top: 0; background: var(--bg-raised); text-align: left; padding: 0.35rem 0.5rem; font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); border-bottom: 1px solid var(--border); z-index: 1; }
-  .rom-equip-table td { padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
+  /* Shrink-to-content: the item column is as wide as the longest name, not
+     whatever is left over. */
+  .rom-equip-table { width: auto; border-collapse: collapse; font-size: 0.82em; }
+  .rom-equip-table th { position: sticky; top: 0; background: var(--bg-raised); text-align: left; padding: 0.35rem 0.45rem; font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); border-bottom: 1px solid var(--border); z-index: 1; }
+  .rom-equip-table td { padding: 0.3rem 0.45rem; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
   .rom-equip-table th.n, .rom-equip-table td.n { text-align: right; }
   .rom-equip-table tr.is-edited td { background: color-mix(in srgb, var(--accent) 12%, transparent); }
   .rom-equip-table td.is-new { background: color-mix(in srgb, var(--accent) 26%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }
   .rom-equip-table .rom-edit-name { min-width: 0; cursor: help; }
-  .rom-equip-table td:first-child { white-space: normal; max-width: 11rem; }
+  /* Item names stay on one line; the numeric and owner cells shrink to their
+     content so the name column takes whatever width is left. */
+  .rom-equip-slot { display: block; font-size: 0.85em; color: var(--text-dim); }
   .rom-equip-table td code { font-size: 0.85em; color: var(--text-dim); }
   .rom-equip-shared { color: var(--text-dim); font-size: 0.85em; cursor: help; margin-left: 0.25em; }
-  .rom-equip-owners label { display: inline-flex; align-items: center; gap: 0.15rem; margin-right: 0.5rem; cursor: pointer; }
-  .rom-form .rom-equip-table input.eq-cost { width: 3.8em; padding: 0.2rem 0.3rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: inherit; text-align: right; }
+  /* One owner per line: full names beside the boxes without widening the
+     table past its half-width column. */
+  .rom-equip-owners { display: flex; flex-direction: column; gap: 0.1rem; }
+  .rom-equip-owners label { display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer; line-height: 1.2; }
+  .rom-equip-owners input { margin: 0; }
+  .rom-form .rom-equip-table input.eq-cost { width: 4.1em; padding: 0.2rem 0.55rem 0.2rem 0.35rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: inherit; text-align: right; }
   .rom-equip-na { color: var(--text-dim); cursor: help; }
   .rom-equip-fallthrough { font-variant-numeric: tabular-nums; }
-  .rom-equip-cmd { display: inline-block; min-width: 1.1em; margin-right: 0.25rem; color: var(--text-dim); font-size: 0.85em; text-align: center; }
+  .rom-equip-cmd { display: inline-block; vertical-align: middle; margin-right: 0.3rem; line-height: 0; }
+  .rom-equip-dpad { width: 1.9rem; height: 1.9rem; display: inline-block; vertical-align: middle; }
+  .rom-equip-dpad polygon { fill: var(--border-hi); }
+  .rom-equip-dpad polygon.is-priced { fill: #b5641c; }
+  .rom-equip-dpad circle { fill: var(--text-dim); }
+  .rom-equip-fallthrough { display: inline-flex; align-items: center; gap: 0.3rem; }
   .rom-equip-kicks { display: inline-flex; flex-direction: column; gap: 0.15rem; align-items: flex-end; }
   .rom-equip-default td { background: color-mix(in srgb, var(--bg-raised) 60%, transparent); border-bottom: 2px solid var(--border); }
 

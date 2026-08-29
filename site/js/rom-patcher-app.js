@@ -276,6 +276,40 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
   let hands = [null, null, null];
   const DEFAULT_KEYS = { dw: 'weapon', dr: 'raseru', df: 'down', dfu: 'up' };
   const ARROW = { Left: 'L', Right: 'R', Down: '↓', Up: '↑' };
+  // A d-pad glyph in the shape of the retail Arts-input pennants: four tags
+  // around a hub, the priced command in dark orange and drawn `cost - 6`
+  // deep on the same scale the game uses (retail 30 -> 24 px pennant), so a
+  // typed cost visibly grows or shrinks it.
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const pennantPoints = (dir, len) => {
+    // A tag from the hub edge (r = 4) outward by `len`, 6 wide, pointed tip.
+    const c = 13, r = 4, w = 3, tip = 2.5;
+    const pts = [[r, -w], [r + len - tip, -w], [r + len, 0], [r + len - tip, w], [r, w]];
+    const rot = { Right: [1, 0, 0, 1], Left: [-1, 0, 0, -1], Up: [0, -1, 1, 0], Down: [0, 1, -1, 0] }[dir] || [1, 0, 0, 1];
+    return pts.map(([x, y]) => `${(c + rot[0] * x + rot[1] * y).toFixed(1)},${(c + rot[2] * x + rot[3] * y).toFixed(1)}`).join(' ');
+  };
+  const pennantLen = (cost) => Math.max(3, Math.min(9, (Number(cost) - 6) / 4));
+  const dirGlyph = (cmd, cost) => {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 26 26');
+    svg.setAttribute('class', 'rom-equip-dpad');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.dataset.cmd = cmd;
+    for (const d of ['Up', 'Left', 'Right', 'Down']) {
+      const poly = document.createElementNS(SVG_NS, 'polygon');
+      poly.setAttribute('points', pennantPoints(d, d === cmd ? pennantLen(cost) : 4));
+      poly.setAttribute('class', d === cmd ? 'is-priced' : '');
+      svg.appendChild(poly);
+    }
+    const hub = document.createElementNS(SVG_NS, 'circle');
+    hub.setAttribute('cx', '13'); hub.setAttribute('cy', '13'); hub.setAttribute('r', '2.6');
+    svg.appendChild(hub);
+    return svg;
+  };
+  const sizeGlyph = (svg, cost) => {
+    const poly = svg && svg.querySelector('polygon.is-priced');
+    if (poly) poly.setAttribute('points', pennantPoints(svg.dataset.cmd, pennantLen(cost)));
+  };
   const otherHand = (h) => (h === 'Left' ? 'Right' : h === 'Right' ? 'Left' : null);
   // Owner mask as edited (falls back to the disc's).
   const effMask = (it) => (ownerEdits.has(it.id) ? ownerEdits.get(it.id) : it.mask);
@@ -336,14 +370,19 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
     });
     return inp;
   };
-  // A command cell: the direction letter, then the number box.
+  // A command cell: the d-pad glyph with the priced command lit, then the
+  // number box; typing resizes the lit pennant.
   const cmdCell = (td, cmd, key, c, cur, tr, what) => {
     const lab = document.createElement('span');
     lab.className = 'rom-equip-cmd';
-    lab.textContent = ARROW[cmd] || '';
     lab.title = `${cmd} command`;
+    const shown = (costEdits.get(`${key}:${c}`) || '').trim() || cur;
+    const glyph = dirGlyph(cmd, shown);
+    lab.appendChild(glyph);
     td.appendChild(lab);
-    td.appendChild(costInput(key, c, cur, tr, `${c}’s ${cmd} command with ${what}: currently ${cur} AP (${cur - 6} px wide)`));
+    const inp = costInput(key, c, cur, tr, `${c}’s ${cmd} command with ${what}: currently ${cur} AP (${cur - 6} px wide)`);
+    inp.addEventListener('input', () => sizeGlyph(glyph, inp.value.trim() || cur));
+    td.appendChild(inp);
   };
   // A fall-through cell: the default record's value that applies instead.
   const fallthroughTitle = (c, cmd, def, row) => `${c}’s battle file has no section for this item. If ${c} equips it, the ${row} record is used: default look, ${def} AP per ${cmd} press. Change that in the ${row} row at the top.`;
@@ -356,14 +395,20 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
     sp.dataset.row = row;
     const def = shownOf(key, ci);
     sp.title = fallthroughTitle(c, cmd, def, row);
-    sp.textContent = `${ARROW[cmd] || ''}↳ ${def}`;
+    sp.appendChild(dirGlyph(cmd, def));
+    const txt = document.createElement('span');
+    txt.className = 'rom-equip-fallthrough-val';
+    txt.textContent = `↳ ${def}`;
+    sp.appendChild(txt);
     return sp;
   };
   const syncFallthrough = (key, c) => {
     const ci = CHARS.indexOf(c);
     const def = shownOf(key, ci);
     for (const el of rowsEl.querySelectorAll(`.rom-equip-fallthrough[data-char="${c}"][data-def="${key}"]`)) {
-      el.textContent = `${ARROW[el.dataset.cmd] || ''}↳ ${def}`;
+      const v = el.querySelector('.rom-equip-fallthrough-val');
+      if (v) v.textContent = `↳ ${def}`;
+      sizeGlyph(el.querySelector('svg'), def);
       el.title = fallthroughTitle(c, el.dataset.cmd, def, el.dataset.row);
     }
   };
@@ -377,12 +422,13 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
     tr.classList.toggle('is-edited', edited);
   };
 
+  let showSlot = false;
   // A section-default row: `cells(ci)` returns the per-character cell content.
   const defaultRow = (tbody, label, note, keys, cells) => {
     const tr = document.createElement('tr');
     tr.className = 'rom-equip-row rom-equip-default';
     tr.dataset.keys = keys.join(',');
-    tr.innerHTML = `<td><span class="rom-edit-name" title="${escapeHtml(note)}">${label}</span></td><td>default</td><td class="n">—</td><td>—</td>`;
+    tr.innerHTML = `<td><span class="rom-edit-name" title="${escapeHtml(note)}">${label}</span></td><td class="n">—</td><td>—</td>`;
     CHARS.forEach((c, ci) => {
       const td = document.createElement('td');
       td.className = 'n';
@@ -428,8 +474,12 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
     const table = document.createElement('table');
     table.className = 'rom-equip-table';
     const thead = document.createElement('thead');
-    thead.innerHTML = '<tr><th>Item</th><th>Slot</th><th class="n">ATK</th><th>Who can equip</th>'
-      + '<th class="n">Vahn AP</th><th class="n">Noa AP</th><th class="n">Gala AP</th></tr>';
+    // A mixed view names each row's slot under the item name; a per-slot
+    // view already says it in the dropdown. No slot column - the table has
+    // to fit half the group grid.
+    showSlot = slot === 'all';
+    thead.innerHTML = `<tr><th>Item</th><th class="n" title="Attack bonus">ATK</th><th title="Who can equip it: Vahn, Noa, Gala">Owners</th>`
+      + '<th class="n" title="Vahn: AP per press">Vahn</th><th class="n" title="Noa: AP per press">Noa</th><th class="n" title="Gala: AP per press">Gala</th></tr>';
     table.appendChild(thead);
     const tbody = document.createElement('tbody');
     let shown = 0;
@@ -442,7 +492,7 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
           if (cur == null || !hands[ci]) naCell(td, 'Not found in this file');
           else cmdCell(td, hands[ci], 'dw', c, cur, tr, 'an unlisted weapon or bare hands');
         });
-      defaultRow(tbody, 'Default Ra-Seru arm',
+      defaultRow(tbody, 'Default Ra-Seru',
         'The Ra-Seru section’s default record: the other hand’s command when the equipped Ra-Seru level has no section in the file, or none is equipped.',
         ['dr'],
         (td, c, ci, tr) => {
@@ -481,7 +531,9 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
         tdName.appendChild(s);
       }
       tr.appendChild(tdName);
-      const tdSlot = document.createElement('td'); tdSlot.textContent = it.ra_seru_arm ? 'Ra-Seru arm' : it.slot; tr.appendChild(tdSlot);
+      // A Ra-Seru level already says so in its name; the mixed view labels
+      // the slot under the name.
+      if (showSlot) { const sl = document.createElement('span'); sl.className = 'rom-equip-slot'; sl.textContent = it.ra_seru_arm ? 'Ra-Seru arm' : it.slot; tdName.appendChild(sl); }
       const tdAtk = document.createElement('td'); tdAtk.className = 'n'; tdAtk.textContent = String(it.atk); tr.appendChild(tdAtk);
       const tdOwn = document.createElement('td');
       tdOwn.className = 'rom-equip-owners';
@@ -502,8 +554,8 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
           render();
         });
         lab.appendChild(cb);
-        lab.appendChild(document.createTextNode(c[0]));
-        lab.title = c;
+        lab.appendChild(document.createTextNode(c));
+        lab.title = `${c} can equip`;
         tdOwn.appendChild(lab);
       });
       tr.appendChild(tdOwn);
