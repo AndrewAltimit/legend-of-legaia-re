@@ -3758,9 +3758,16 @@ by its own arts chain exactly the way a retail Super Art is:
 | Noa | Double Lizard, Falcon Talons, Chilling Smash, Zephyr Swipes, Grand Maelstrom |
 | Gala | Ground Pound, Storm Kick, System Shock, Skyvolt Knee, Raging Bull |
 
-The retail five per character are untouched: the pack carries them verbatim as
-the first five rows of its own trigger table, and the patcher checks those rows
-against the disc's own table before it writes anything.
+The retail five per character keep their triggers and their queue results: the
+pack carries them verbatim as the first five rows of its own trigger table, and
+the patcher checks those rows against the disc's own table before it writes
+anything. Their **animations** do pass through the pack - the animation hook
+fires for any action in the pack's seventeen listed constants, and three of
+Noa's and Gala's retail finishers are among them. Each clip is a pair of
+`(offset, values)` edit-lists over the art record: "A" adds the added Super's
+extra element and bumps the record's `+0x14` / `+0x8C` / `+0x9A` fields, "B"
+writes the plain values back, so a shared constant plays with B - ZetaPhoenix's
+own restore path.
 
 **ZetaPhoenix authored the payload; this is its disc-patch carrier.** He wrote
 it as a GameShark-style RAM patch - a 3764-byte block forced into main RAM at
@@ -3831,8 +3838,9 @@ base as `t5*65` and its replace base as `t5*80`, so a doubled `t5` gives
 `130 = 10*13` and `160 = 10*16` exactly - the pack's strides. It is also what
 makes routine A's own `(t5>>1) + t5 + t5` read as `5*character`, the flat 0..14
 index it stores at `0x801FD378` and uses against the hit-seed and name tables.
-Nothing else in the applier reads `t5`. Retail's rows stay retail: routine A
-returns immediately for a row below 5 (`slti t0,0x50`).
+Nothing else in the applier reads `t5`. Routine A returns immediately for a row
+below 5 (`slti t0,0x50`), so a retail Super Art never picks up a pack name or
+hit count.
 
 #### What is ZetaPhoenix's and what is this project's
 

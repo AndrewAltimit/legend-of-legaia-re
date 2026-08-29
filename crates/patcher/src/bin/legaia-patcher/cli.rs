@@ -906,7 +906,9 @@ pub(crate) struct RandomizeArgs {
     /// streamed to `0x801FD000` at battle load by an injected stub, and ten
     /// same-size word edits point the retail Super-Art applier, the arts queue
     /// builder and the two banner routines at it. The retail five per character
-    /// are unchanged - the pack carries them verbatim as its first five rows.
+    /// keep their triggers and results - the pack carries them verbatim as its
+    /// first five rows - though its animation hook also runs for the seventeen
+    /// art constants it lists, three of which retail Super Arts share.
     /// **Mutually exclusive with `--shiny-seru`, `--show-super-arts`,
     /// `--arts-ap-grant` / `--arts-ap-cost` and `--delilas-challenge`** (same
     /// dead-space bytes).

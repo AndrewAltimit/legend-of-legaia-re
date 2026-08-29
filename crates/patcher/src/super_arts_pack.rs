@@ -94,9 +94,17 @@
 //!   routine C re-stores **both** words on its non-skip path and stores neither
 //!   on its skip path.
 //!
-//! Retail behaviour is a subset, not a casualty: rows 0..4 of each character in
-//! the pack are the disc's own trigger rows (checked byte-for-byte at patch
-//! time), and routine A returns immediately for them (`slti t0,0x50`).
+//! Retail's own five per character keep their triggers and their queue results
+//! exactly: rows 0..4 of each character in the pack are the disc's own trigger
+//! rows (checked byte-for-byte at patch time), and routine A returns
+//! immediately for them (`slti t0,0x50`). Their **animations** do pass through
+//! the pack, though - routine D fires for any action in the seventeen listed
+//! constants, and three of Noa's and Gala's retail finishers are in that list.
+//! Each clip is an `(offset, values)` edit-list pair over the art record: the
+//! "A" list adds the Super variant's extra element and bumps the record's
+//! `+0x14` / `+0x8C` / `+0x9A` fields, the "B" list writes the plain values
+//! back. So a shared constant plays with the pack's B values, which is
+//! ZetaPhoenix's own restore path, not a side effect of this carrier.
 
 use anyhow::{Context, Result, bail};
 
