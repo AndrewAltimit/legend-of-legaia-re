@@ -1,29 +1,37 @@
-//! Manual equipment editor: per-(character, weapon) **swing cost** and
-//! per-item **equip owner** edits.
+//! Manual equipment editor: per-(character, item) **command cost** edits for
+//! the four Arts-bar directions, and per-item **equip owner** edits.
 //!
 //! Two disc tables, both documented in
 //! [`docs/subsystems/arts-command-gauge.md`](../../../../docs/subsystems/arts-command-gauge.md):
 //!
-//! - **Swing cost** - the AP a direction command charges on the Arts gauge,
-//!   which is also the pennant width (`cost - 6` px). It is an authored byte
-//!   inside each weapon's LZS section of that character's player battle file
-//!   (`section[+0x04]` swing record `+0x74`), so the same weapon carries a
-//!   different cost per character (favored `0x1E`, off-class `0x2A`, far
-//!   `0x36`; the Astral Sword is Vahn's one `0x36`). An edit decompresses the
+//! - **Command cost** - the AP one press of a direction command charges on
+//!   the Arts gauge, which is also the pennant width (`cost - 6` px). Each of
+//!   the four commands is priced by an authored byte inside an equipment
+//!   section of that character's player battle file (`record + 0x74` of the
+//!   swing record the section's `+0x04` word points at): section 2 fills
+//!   Left, section 3 Right, and the footwear section (4) fills Down from its
+//!   `+0x04` record and Up from a second record at `+0x08`. Vahn's and Gala's
+//!   files carry the weapons in section 2 and the Ra-Seru arm in 3; Noa's file
+//!   is the other way round, so her weapon prices Right. The same weapon
+//!   carries a different cost per character (favored `0x1E`, off-class
+//!   `0x2A`, far `0x36`; the Astral Sword is Vahn's one `0x36`); every
+//!   Ra-Seru and footwear record ships at `0x1E`. An edit decompresses the
 //!   section, rewrites the byte, and recompresses in place - the same path the
 //!   [`crate::weapon_specialty`] randomizer takes, but to a value the modder
-//!   chooses.
+//!   chooses, on any of the four commands.
 //! - **Equip owner** - the `+6` character mask of the item's row in the SCUS
 //!   equipment stat-bonus table (`DAT_80074F68`; bit `1` Vahn, `2` Noa,
 //!   `4` Gala). The equip screen gates on it (`FUN_8003fb10`), so this changes
-//!   who may equip the item. It does **not** add a battle model or swing record
-//!   to a file that lacks one: a character whose player file has no section
-//!   for the item falls through to the section default at battle load
-//!   (default appearance, the default record's own cost - retail `0x1E`).
-//!   The report names those combinations so the page can say so, and the
-//!   default record itself is addressable as item id `0` (`Vahn:default=30`)
-//!   so the fall-through price can be set - shared by every unlisted weapon
-//!   that character equips, and by the unarmed swing.
+//!   who may equip the item - any slot: weapon, body, head, footwear. It does
+//!   **not** add a battle model or swing record to a file that lacks one: a
+//!   character whose player file has no section for the item falls through to
+//!   that section's default record at battle load (default appearance; for a
+//!   weapon or footwear also the default record's own cost). The report names
+//!   those combinations so the page can say so, and every section default is
+//!   itself addressable ([`CostTarget::Default`]: `Vahn:default=30`,
+//!   `Noa:raseru=30`, `Gala:feet:up=30`) so the fall-through price can be
+//!   set - shared by every unlisted item of that slot the character equips,
+//!   and by the unarmed / barefoot swing.
 //!
 //! Both edits are same-size, in-place, and idempotent.
 
@@ -32,18 +40,83 @@ use legaia_asset::battle_data_pack;
 use legaia_asset::equip_stats::{BONUS_STRIDE, EquipSlot, EquipStatTable, bonus_table_file_offset};
 
 use crate::disc::DiscPatcher;
-use crate::weapon_specialty::{self, PLAYERS, arm_cost_offset};
+use crate::weapon_specialty::{self, PLAYERS, arm_cost_offset, up_cost_offset};
 
 use super::SCUS_NAME;
 
-/// Smallest swing cost the gauge can draw: the pennant body is `cost - 6`
+/// Smallest command cost the gauge can draw: the pennant body is `cost - 6`
 /// pixels wide, so anything lower has no body.
 pub const MIN_SWING_COST: u8 = 7;
 
-/// Pseudo item id naming a character's weapon-section **default** record: the
-/// bare-hand section the battle loader splices when the equipped weapon has no
-/// section of its own (an unlisted weapon, or nothing equipped).
-pub const DEFAULT_WEAPON: u8 = 0;
+/// The three equipment sections of a player file that carry swing records,
+/// named by what they hold rather than by index (the weapon / Ra-Seru order
+/// differs per file).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SwingSection {
+    /// The weapon section (2 in Vahn's and Gala's files, 3 in Noa's).
+    Weapon,
+    /// The Ra-Seru arm section (the other of 2 / 3).
+    RaSeru,
+    /// The footwear section (4): two records, Down and Up.
+    Footwear,
+}
+
+impl SwingSection {
+    fn label(self) -> &'static str {
+        match self {
+            SwingSection::Weapon => "default",
+            SwingSection::RaSeru => "raseru",
+            SwingSection::Footwear => "feet",
+        }
+    }
+}
+
+/// Which swing record of a section an edit targets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum SwingRecord {
+    /// The `+0x04` record: the section's own command (Left / Right / Down).
+    #[default]
+    Primary,
+    /// The `+0x08` record: the Up kick. Footwear sections only.
+    Up,
+}
+
+/// What a cost edit points at: one item's section, or a section's `id = 0`
+/// default record (what the loader splices when nothing matches).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CostTarget {
+    /// The section keyed by this equippable item id.
+    Item(u8),
+    /// The default record of the named section.
+    Default(SwingSection),
+}
+
+/// One command-cost edit: `character` indexes [`PLAYERS`] (0 Vahn, 1 Noa, 2 Gala).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SwingCostEdit {
+    /// Index into [`PLAYERS`].
+    pub character: usize,
+    /// The section whose record is repriced.
+    pub target: CostTarget,
+    /// Which of the section's records (`Up` exists only for footwear).
+    pub record: SwingRecord,
+    /// New `+0x74` value (`>= MIN_SWING_COST`).
+    pub cost: u8,
+}
+
+impl SwingCostEdit {
+    /// The token spelling of the target: `0xBA`, `0x5E:up`, `default`, `feet:up`.
+    pub fn label(&self) -> String {
+        let t = match self.target {
+            CostTarget::Item(id) => format!("0x{id:02X}"),
+            CostTarget::Default(s) => s.label().to_string(),
+        };
+        match self.record {
+            SwingRecord::Primary => t,
+            SwingRecord::Up => format!("{t}:up"),
+        }
+    }
+}
 
 /// Equip-owner mask bits (`+6` byte of a bonus row).
 pub const MASK_VAHN: u8 = 1;
@@ -51,18 +124,6 @@ pub const MASK_VAHN: u8 = 1;
 pub const MASK_NOA: u8 = 2;
 /// Equip-owner mask bit for Gala.
 pub const MASK_GALA: u8 = 4;
-
-/// One swing-cost edit: `character` indexes [`PLAYERS`] (0 Vahn, 1 Noa, 2 Gala).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SwingCostEdit {
-    /// Index into [`PLAYERS`].
-    pub character: usize,
-    /// Equippable weapon id (the descriptor key of its section), or
-    /// [`DEFAULT_WEAPON`] for the character's weapon-section default record.
-    pub item_id: u8,
-    /// New `+0x74` value (`>= MIN_SWING_COST`).
-    pub cost: u8,
-}
 
 /// One equip-owner edit: the low three bits of the item's row `+6` byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,20 +169,41 @@ fn parse_u8(s: &str) -> Option<u8> {
     }
 }
 
-/// Parse `CHAR:ITEM=COST` (`Vahn:0xBA=30`, `n:0x2E=0x1E`, `2:51=42`); `ITEM`
-/// may be `default` (or `0`) for the character's default weapon record.
+/// Parse `CHAR:ITEM[:up]=COST` (`Vahn:0xBA=30`, `n:0x2E=0x1E`, `2:51=42`,
+/// `g:0x5E:up=42`). `ITEM` may name a section default instead of an item:
+/// `default` / `fist` / `unarmed` (weapon section), `raseru` (Ra-Seru arm
+/// section), `feet` / `barefoot` (footwear section, `:up` for its Up kick).
 pub fn parse_cost_token(tok: &str) -> Result<SwingCostEdit> {
     let (lhs, cost) = tok
         .split_once('=')
-        .with_context(|| format!("swing cost `{tok}`: expected CHAR:ITEM=COST"))?;
-    let (ch, item) = lhs
-        .split_once(':')
-        .with_context(|| format!("swing cost `{tok}`: expected CHAR:ITEM=COST"))?;
+        .with_context(|| format!("swing cost `{tok}`: expected CHAR:ITEM[:up]=COST"))?;
+    let mut parts = lhs.split(':');
+    let ch = parts.next().unwrap_or("");
+    let item = parts
+        .next()
+        .with_context(|| format!("swing cost `{tok}`: expected CHAR:ITEM[:up]=COST"))?;
+    let record = match parts.next().map(|r| r.trim().to_ascii_lowercase()) {
+        None => SwingRecord::Primary,
+        Some(r) if r == "down" || r == "primary" => SwingRecord::Primary,
+        Some(r) if r == "up" => SwingRecord::Up,
+        Some(r) => bail!("swing cost `{tok}`: unknown record `{r}` (use `up`)"),
+    };
+    if parts.next().is_some() {
+        bail!("swing cost `{tok}`: expected CHAR:ITEM[:up]=COST");
+    }
     let character =
         character_index(ch).with_context(|| format!("swing cost `{tok}`: unknown character"))?;
-    let item_id = match item.trim().to_ascii_lowercase().as_str() {
-        "default" | "fist" | "unarmed" => DEFAULT_WEAPON,
-        _ => parse_u8(item).with_context(|| format!("swing cost `{tok}`: bad item id"))?,
+    let target = match item.trim().to_ascii_lowercase().as_str() {
+        "default" | "fist" | "unarmed" | "default-weapon" => {
+            CostTarget::Default(SwingSection::Weapon)
+        }
+        "raseru" | "ra-seru" | "default-raseru" => CostTarget::Default(SwingSection::RaSeru),
+        "feet" | "barefoot" | "default-feet" | "footwear" => {
+            CostTarget::Default(SwingSection::Footwear)
+        }
+        _ => CostTarget::Item(
+            parse_u8(item).with_context(|| format!("swing cost `{tok}`: bad item id"))?,
+        ),
     };
     let cost = parse_u8(cost).with_context(|| format!("swing cost `{tok}`: bad cost"))?;
     if cost < MIN_SWING_COST {
@@ -129,7 +211,8 @@ pub fn parse_cost_token(tok: &str) -> Result<SwingCostEdit> {
     }
     Ok(SwingCostEdit {
         character,
-        item_id,
+        target,
+        record,
         cost,
     })
 }
@@ -210,6 +293,9 @@ pub struct EquipmentRow {
     pub name: String,
     /// `weapon` / `body` / `head` / `footwear`.
     pub slot: &'static str,
+    /// `true` for a Ra-Seru arm level (it sits in a Ra-Seru section, so it
+    /// prices the other hand than that character's weapons).
+    pub ra_seru_arm: bool,
     /// Bonus-table row index (several items may share one).
     pub row: usize,
     /// Other item ids sharing the same bonus row (an owner edit moves them too).
@@ -218,10 +304,29 @@ pub struct EquipmentRow {
     pub mask: u8,
     /// Attack bonus (`+1`).
     pub atk: u8,
-    /// Per-character swing cost for weapons: `Some(cost)` when that character's
-    /// player file has a section for the item, `None` otherwise. Always
-    /// `[None; 3]` for non-weapons.
+    /// Per character: the cost of the item's `+0x04` record - the command the
+    /// section fills (`Left` / `Right` for weapons and Ra-Seru arms, `Down` for
+    /// footwear). `None` when that character's file has no section for the
+    /// item; always `[None; 3]` for body / head.
     pub costs: [Option<u8>; 3],
+    /// Per character: the Up kick's cost (`+0x08` record). Footwear only.
+    pub up_costs: [Option<u8>; 3],
+    /// Per character: the command name the `+0x04` record prices
+    /// (`"Left"` / `"Right"` / `"Down"`), where a section exists.
+    pub cmds: [Option<&'static str>; 3],
+}
+
+/// One character's section default records and their costs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SectionDefaults {
+    /// Weapon-section default: an unlisted weapon, or unarmed.
+    pub weapon: Option<u8>,
+    /// Ra-Seru-section default.
+    pub ra_seru: Option<u8>,
+    /// Footwear-section default, Down kick.
+    pub down: Option<u8>,
+    /// Footwear-section default, Up kick.
+    pub up: Option<u8>,
 }
 
 fn slot_name(s: EquipSlot) -> &'static str {
@@ -233,40 +338,84 @@ fn slot_name(s: EquipSlot) -> &'static str {
     }
 }
 
-/// Per character, `item id -> current swing cost` for every section that
-/// carries a swing record.
-/// Descriptor index of the weapon section's `id = 0` default record: the
-/// terminator of the id group that carries weapon ids (section 2 in Vahn's and
-/// Gala's files, section 3 in Noa's).
-fn weapon_section_default_index(pack: &battle_data_pack::BattleDataPack) -> Option<usize> {
-    let mut group_has_weapon = false;
-    for (idx, rec) in pack.records.iter().enumerate() {
+/// Section index (`0..5`, counted by `id = 0` terminators) of every
+/// descriptor, plus which of sections 2 / 3 holds the weapons: the id group
+/// containing a weapon-family id.
+fn section_layout(pack: &battle_data_pack::BattleDataPack) -> (Vec<usize>, usize) {
+    let mut sections = Vec::with_capacity(pack.records.len());
+    let mut sec = 0usize;
+    let mut weapon_section = 2usize;
+    for rec in &pack.records {
+        sections.push(sec);
+        if rec.id != 0
+            && rec.id <= 0xFF
+            && weapon_specialty::weapon_family(rec.id as u8).is_some()
+            && (2..=3).contains(&sec)
+        {
+            weapon_section = sec;
+        }
         if rec.id == 0 {
-            if group_has_weapon {
-                return Some(idx);
-            }
-            group_has_weapon = false;
-        } else if rec.id <= 0xFF && weapon_specialty::weapon_family(rec.id as u8).is_some() {
-            group_has_weapon = true;
+            sec += 1;
         }
     }
-    None
+    (sections, weapon_section)
 }
 
-/// Descriptor index of `item`'s section in `pack`, with [`DEFAULT_WEAPON`]
-/// resolving to the weapon section's default record.
-fn section_index(pack: &battle_data_pack::BattleDataPack, item: u8) -> Option<usize> {
-    if item == DEFAULT_WEAPON {
-        weapon_section_default_index(pack)
-    } else {
-        pack.records.iter().position(|r| r.id == item as u32)
+fn section_of(kind: SwingSection, weapon_section: usize) -> usize {
+    match kind {
+        SwingSection::Weapon => weapon_section,
+        SwingSection::RaSeru => 5 - weapon_section,
+        SwingSection::Footwear => 4,
     }
 }
 
-/// Per character: item id -> swing cost, with key [`DEFAULT_WEAPON`] carrying
-/// the weapon-section default record's cost.
-fn read_swing_costs(patcher: &DiscPatcher) -> [std::collections::BTreeMap<u8, u8>; 3] {
-    let mut out: [std::collections::BTreeMap<u8, u8>; 3] = Default::default();
+/// The command name section `sec` of a file prices with its `+0x04` record.
+fn command_name(sec: usize) -> Option<&'static str> {
+    match sec {
+        2 => Some("Left"),
+        3 => Some("Right"),
+        4 => Some("Down"),
+        _ => None,
+    }
+}
+
+/// Descriptor index of `target`'s section in `pack`.
+fn section_index(pack: &battle_data_pack::BattleDataPack, target: CostTarget) -> Option<usize> {
+    match target {
+        CostTarget::Item(item) => pack.records.iter().position(|r| r.id == item as u32),
+        CostTarget::Default(kind) => {
+            let (sections, weapon_section) = section_layout(pack);
+            let want = section_of(kind, weapon_section);
+            pack.records
+                .iter()
+                .zip(&sections)
+                .position(|(r, &s)| r.id == 0 && s == want)
+        }
+    }
+}
+
+fn cost_offset(decoded: &[u8], record: SwingRecord) -> Option<usize> {
+    match record {
+        SwingRecord::Primary => arm_cost_offset(decoded),
+        SwingRecord::Up => up_cost_offset(decoded),
+    }
+}
+
+/// One character's swing-record costs as read from the disc.
+#[derive(Debug, Default)]
+struct FileCosts {
+    /// Item id -> (`+0x04` cost, `+0x08` cost, command the `+0x04` record prices).
+    items: std::collections::BTreeMap<u8, (u8, Option<u8>, &'static str)>,
+    /// Item ids that sit in the Ra-Seru section.
+    ra_seru_arms: std::collections::BTreeSet<u8>,
+    /// The section defaults.
+    defaults: SectionDefaults,
+    /// Command the weapon section prices.
+    weapon_hand: Option<&'static str>,
+}
+
+fn read_file_costs(patcher: &DiscPatcher) -> [FileCosts; 3] {
+    let mut out: [FileCosts; 3] = Default::default();
     for (ci, player) in PLAYERS.iter().enumerate() {
         let Ok(buf) = patcher.read_entry(player.entry) else {
             continue;
@@ -274,9 +423,12 @@ fn read_swing_costs(patcher: &DiscPatcher) -> [std::collections::BTreeMap<u8, u8
         let Some(pack) = battle_data_pack::detect(&buf) else {
             continue;
         };
-        let default_idx = weapon_section_default_index(&pack);
+        let (sections, weapon_section) = section_layout(&pack);
+        let ra_seru_section = 5 - weapon_section;
+        out[ci].weapon_hand = command_name(weapon_section);
         for (idx, rec) in pack.records.iter().enumerate() {
-            if rec.id > 0xFF || (rec.id == 0 && Some(idx) != default_idx) {
+            let sec = sections[idx];
+            if rec.id > 0xFF || !(2..=4).contains(&sec) {
                 continue;
             }
             let Ok(dec) = battle_data_pack::decode_record(&buf, &pack, idx) else {
@@ -285,26 +437,48 @@ fn read_swing_costs(patcher: &DiscPatcher) -> [std::collections::BTreeMap<u8, u8
             let Some(off) = arm_cost_offset(&dec.bytes) else {
                 continue;
             };
-            out[ci].insert(rec.id as u8, dec.bytes[off]);
+            let primary = dec.bytes[off];
+            let up = up_cost_offset(&dec.bytes).map(|o| dec.bytes[o]);
+            if rec.id == 0 {
+                let d = &mut out[ci].defaults;
+                if sec == weapon_section {
+                    d.weapon = Some(primary);
+                } else if sec == ra_seru_section {
+                    d.ra_seru = Some(primary);
+                } else {
+                    d.down = Some(primary);
+                    d.up = up;
+                }
+                continue;
+            }
+            let Some(cmd) = command_name(sec) else {
+                continue;
+            };
+            out[ci].items.insert(rec.id as u8, (primary, up, cmd));
+            if sec == ra_seru_section {
+                out[ci].ra_seru_arms.insert(rec.id as u8);
+            }
         }
     }
     out
 }
 
 /// The table the editor displays: every equippable item, plus each
-/// character's default weapon-record cost.
+/// character's section default records.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EquipmentTable {
     /// One row per equippable item, in id order.
     pub rows: Vec<EquipmentRow>,
-    /// Per character ([`PLAYERS`] order): the swing cost of the weapon-section
-    /// default record - what an unlisted weapon (or no weapon) costs.
-    pub default_costs: [Option<u8>; 3],
+    /// Per character ([`PLAYERS`] order): the default records' costs.
+    pub defaults: [SectionDefaults; 3],
+    /// Per character: the command the weapon section prices (`"Left"` for
+    /// Vahn and Gala, `"Right"` for Noa); the Ra-Seru arm is the other one.
+    pub weapon_hand: [Option<&'static str>; 3],
 }
 
-/// Read every equippable item with its owner mask and, for weapons, its
-/// per-character swing cost - the table the editor displays. `None` when the
-/// SCUS equipment table can't be parsed.
+/// Read every equippable item with its owner mask and, where a section
+/// exists, its per-character command costs - the table the editor displays.
+/// `None` when the SCUS equipment table can't be parsed.
 pub fn read_equipment_table(patcher: &DiscPatcher) -> Result<Option<EquipmentTable>> {
     let Some(scus) = patcher.read_named_file(SCUS_NAME) else {
         return Ok(None);
@@ -320,7 +494,7 @@ pub fn read_equipment_table(patcher: &DiscPatcher) -> Result<Option<EquipmentTab
             row_of.insert(id, row);
         }
     }
-    let costs = read_swing_costs(patcher);
+    let files = read_file_costs(patcher);
     let mut out = Vec::new();
     for id in 1u8..=255 {
         let Some(b) = table.bonus(id) else {
@@ -335,15 +509,13 @@ pub fn read_equipment_table(patcher: &DiscPatcher) -> Result<Option<EquipmentTab
             .unwrap_or("")
             .to_string();
         let slot = b.slot();
-        let per_char = if slot == EquipSlot::Weapon {
-            std::array::from_fn(|ci| costs[ci].get(&id).copied())
-        } else {
-            [None; 3]
-        };
+        let per: [Option<(u8, Option<u8>, &'static str)>; 3] =
+            std::array::from_fn(|ci| files[ci].items.get(&id).copied());
         out.push(EquipmentRow {
             id,
             name,
             slot: slot_name(slot),
+            ra_seru_arm: files.iter().any(|f| f.ra_seru_arms.contains(&id)),
             row,
             shares_row_with: items_for_rows[row]
                 .iter()
@@ -352,13 +524,74 @@ pub fn read_equipment_table(patcher: &DiscPatcher) -> Result<Option<EquipmentTab
                 .collect(),
             mask: b.equip_mask() & 7,
             atk: b.attack(),
-            costs: per_char,
+            costs: per.map(|p| p.map(|(c, _, _)| c)),
+            up_costs: per.map(|p| p.and_then(|(_, u, _)| u)),
+            cmds: per.map(|p| p.map(|(_, _, cmd)| cmd)),
         });
     }
     Ok(Some(EquipmentTable {
         rows: out,
-        default_costs: std::array::from_fn(|ci| costs[ci].get(&DEFAULT_WEAPON).copied()),
+        defaults: std::array::from_fn(|ci| files[ci].defaults),
+        weapon_hand: std::array::from_fn(|ci| files[ci].weapon_hand),
     }))
+}
+
+/// An owner edit that lets a character equip an item their player file has no
+/// section for: they fall through to that section's default record in battle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FallThrough {
+    /// Character name.
+    pub character: String,
+    /// The item.
+    pub item: u8,
+    /// The item's slot (`weapon` / `body` / `head` / `footwear`).
+    pub slot: &'static str,
+    /// The default record's costs after this pass's edits: `[swing]` for a
+    /// weapon, `[down, up]` for footwear, empty for body / head (no cost).
+    pub costs: Vec<u8>,
+}
+
+impl FallThrough {
+    /// One-line human note for reports and the web summary.
+    pub fn note(&self) -> String {
+        let cost = match (self.slot, self.costs.as_slice()) {
+            ("weapon", [c]) => format!(", {c}-AP swing (the weapon Default row)"),
+            ("footwear", [d, u]) => {
+                format!(", {d}-AP Down / {u}-AP Up kick (the footwear Default row)")
+            }
+            _ => String::new(),
+        };
+        format!(
+            "{} can now equip 0x{:02X} but has no battle section for it: default look{cost}",
+            self.character, self.item
+        )
+    }
+}
+
+/// [`FallThrough::note`] over a report, with the characters that share one
+/// item and one cost outcome folded into a single line (`Noa, Gala can now
+/// equip 0x34 ...`), in first-seen order.
+pub fn fall_through_notes(list: &[FallThrough]) -> Vec<String> {
+    let mut groups: Vec<(FallThrough, Vec<String>)> = Vec::new();
+    for f in list {
+        match groups
+            .iter_mut()
+            .find(|(g, _)| g.item == f.item && g.slot == f.slot && g.costs == f.costs)
+        {
+            Some((_, names)) => names.push(f.character.clone()),
+            None => groups.push((f.clone(), vec![f.character.clone()])),
+        }
+    }
+    groups
+        .into_iter()
+        .map(|(g, names)| {
+            let joined = FallThrough {
+                character: names.join(", "),
+                ..g
+            };
+            joined.note()
+        })
+        .collect()
 }
 
 /// What [`apply_equipment_edits`] did.
@@ -368,21 +601,21 @@ pub struct EquipmentEditReport {
     pub costs_changed: usize,
     /// Swing-cost edits that were already at the requested value.
     pub costs_unchanged: usize,
-    /// `(character, item)` pairs whose player file has no section for the item.
-    pub costs_no_section: Vec<(String, u8)>,
-    /// `(character, item)` pairs whose section would not recompress into its slot.
-    pub costs_skipped_fit: Vec<(String, u8)>,
+    /// `(character, target label)` edits whose player file has no such section
+    /// or record (an unlisted item, or `:up` on anything but footwear).
+    pub costs_no_section: Vec<(String, String)>,
+    /// `(character, target label)` edits whose section would not recompress
+    /// into its slot.
+    pub costs_skipped_fit: Vec<(String, String)>,
     /// Owner rows rewritten.
     pub owners_changed: usize,
     /// Owner edits whose item is not equipment on this disc.
     pub owners_not_equipment: Vec<u8>,
     /// `(item, [other items on the same row])` for owner edits that moved siblings.
     pub owners_shared_rows: Vec<(u8, Vec<u8>)>,
-    /// `(character, item, default cost)` for owner edits that newly allow an
-    /// item although that character's player file has no section for it: they
-    /// equip it but fall through to the default weapon record in battle, at
-    /// that record's cost (after any edit to it in this same pass).
-    pub owners_without_section: Vec<(String, u8, u8)>,
+    /// Owner edits that newly allow an item although that character's player
+    /// file has no section for it (see [`FallThrough`]).
+    pub owners_without_section: Vec<FallThrough>,
 }
 
 /// Apply the edit set. Swing costs go through the LZS re-pack path (a section
@@ -411,27 +644,27 @@ pub fn apply_equipment_edits(
             );
         };
         for e in mine {
+            let label = e.label();
             if e.cost < MIN_SWING_COST {
                 bail!(
-                    "swing cost {} for {} item {:#04x} is below {MIN_SWING_COST}",
+                    "swing cost {} for {} {label} is below {MIN_SWING_COST}",
                     e.cost,
                     player.name,
-                    e.item_id
                 );
             }
-            let Some(idx) = section_index(&pack, e.item_id) else {
+            let Some(idx) = section_index(&pack, e.target) else {
                 report
                     .costs_no_section
-                    .push((player.name.to_string(), e.item_id));
+                    .push((player.name.to_string(), label));
                 continue;
             };
             let rec = &pack.records[idx];
             let dec = battle_data_pack::decode_record(&buf, &pack, idx)
-                .with_context(|| format!("decode {} item {:#04x}", player.name, e.item_id))?;
-            let Some(off) = arm_cost_offset(&dec.bytes) else {
+                .with_context(|| format!("decode {} {label}", player.name))?;
+            let Some(off) = cost_offset(&dec.bytes, e.record) else {
                 report
                     .costs_no_section
-                    .push((player.name.to_string(), e.item_id));
+                    .push((player.name.to_string(), label));
                 continue;
             };
             if dec.bytes[off] == e.cost {
@@ -445,18 +678,13 @@ pub fn apply_equipment_edits(
             if recompressed.len() > avail {
                 report
                     .costs_skipped_fit
-                    .push((player.name.to_string(), e.item_id));
+                    .push((player.name.to_string(), label));
                 continue;
             }
             let stream_off = rec.file_offset(pack.data_base) + 4;
             patcher
                 .patch_prot_entry(player.entry, stream_off as u64, &recompressed)
-                .with_context(|| {
-                    format!(
-                        "write swing cost for {} item {:#04x}",
-                        player.name, e.item_id
-                    )
-                })?;
+                .with_context(|| format!("write swing cost for {} {label}", player.name))?;
             report.costs_changed += 1;
         }
     }
@@ -470,7 +698,7 @@ pub fn apply_equipment_edits(
         let off = bonus_table_file_offset(&scus).context("equipment bonus table offset")?;
         let items_for_rows = table.items_for_rows();
         let mut rows: Vec<[u8; 8]> = table.rows().iter().map(|b| b.raw).collect();
-        let sections = read_swing_costs(patcher);
+        let files = read_file_costs(patcher);
         let mut changed = 0usize;
         for e in &edits.owners {
             let Some(row) = items_for_rows
@@ -495,21 +723,25 @@ pub fn apply_equipment_edits(
             if !siblings.is_empty() {
                 report.owners_shared_rows.push((e.item_id, siblings));
             }
-            if table.bonus(e.item_id).map(|b| b.slot()) == Some(EquipSlot::Weapon) {
-                for (ci, player) in PLAYERS.iter().enumerate() {
-                    let bit = 1u8 << ci;
-                    if new & bit != 0 && old & bit == 0 && !sections[ci].contains_key(&e.item_id) {
-                        let def = sections[ci]
-                            .get(&DEFAULT_WEAPON)
-                            .copied()
-                            .unwrap_or(weapon_specialty::FAVORED_COST);
-                        report.owners_without_section.push((
-                            player.name.to_string(),
-                            e.item_id,
-                            def,
-                        ));
-                    }
+            let slot = table.bonus(e.item_id).map(|b| b.slot());
+            for (ci, player) in PLAYERS.iter().enumerate() {
+                let bit = 1u8 << ci;
+                if new & bit == 0 || old & bit != 0 || files[ci].items.contains_key(&e.item_id) {
+                    continue;
                 }
+                let d = files[ci].defaults;
+                let fav = weapon_specialty::FAVORED_COST;
+                let costs = match slot {
+                    Some(EquipSlot::Weapon) => vec![d.weapon.unwrap_or(fav)],
+                    Some(EquipSlot::Footwear) => vec![d.down.unwrap_or(fav), d.up.unwrap_or(fav)],
+                    _ => Vec::new(),
+                };
+                report.owners_without_section.push(FallThrough {
+                    character: player.name.to_string(),
+                    item: e.item_id,
+                    slot: slot.map(slot_name).unwrap_or("-"),
+                    costs,
+                });
             }
         }
         if changed > 0 {
@@ -542,17 +774,67 @@ mod tests {
             ("Gala", 2),
         ] {
             let e = parse_cost_token(&format!("{s}:0xBA=30")).unwrap();
-            assert_eq!((e.character, e.item_id, e.cost), (ci, 0xBA, 30));
+            assert_eq!(
+                (e.character, e.target, e.record, e.cost),
+                (ci, CostTarget::Item(0xBA), SwingRecord::Primary, 30)
+            );
         }
         let e = parse_cost_token("n:46=0x36").unwrap();
-        assert_eq!((e.item_id, e.cost), (46, 0x36));
+        assert_eq!((e.target, e.cost), (CostTarget::Item(46), 0x36));
         let e = parse_cost_token("Gala:default=42").unwrap();
-        assert_eq!((e.character, e.item_id, e.cost), (2, DEFAULT_WEAPON, 42));
+        assert_eq!(
+            (e.character, e.target, e.cost),
+            (2, CostTarget::Default(SwingSection::Weapon), 42)
+        );
+        let e = parse_cost_token("v:raseru=42").unwrap();
+        assert_eq!(e.target, CostTarget::Default(SwingSection::RaSeru));
+        let e = parse_cost_token("g:feet:up=42").unwrap();
+        assert_eq!(
+            (e.target, e.record, e.label()),
+            (
+                CostTarget::Default(SwingSection::Footwear),
+                SwingRecord::Up,
+                "feet:up".to_string()
+            )
+        );
+        let e = parse_cost_token("g:0x5E:UP=42").unwrap();
+        assert_eq!(
+            (e.record, e.label()),
+            (SwingRecord::Up, "0x5E:up".to_string())
+        );
+        assert!(parse_cost_token("g:0x5E:left=42").is_err());
+        assert!(parse_cost_token("g:0x5E:up:x=42").is_err());
         assert!(parse_cost_token("x:0xBA=30").is_err());
         assert!(parse_cost_token("v:0xBA").is_err());
         assert!(
             parse_cost_token("v:0xBA=6").is_err(),
             "below the drawable minimum"
+        );
+    }
+
+    #[test]
+    fn fall_through_notes_fold_characters_per_item() {
+        let ft = |c: &str, item: u8, slot: &'static str, costs: Vec<u8>| FallThrough {
+            character: c.into(),
+            item,
+            slot,
+            costs,
+        };
+        let notes = fall_through_notes(&[
+            ft("Noa", 0x34, "head", vec![]),
+            ft("Gala", 0x34, "head", vec![]),
+            ft("Noa", 0xBA, "weapon", vec![54]),
+            ft("Gala", 0xBA, "weapon", vec![30]),
+            ft("Gala", 0x63, "footwear", vec![30, 44]),
+        ]);
+        assert_eq!(
+            notes,
+            vec![
+                "Noa, Gala can now equip 0x34 but has no battle section for it: default look",
+                "Noa can now equip 0xBA but has no battle section for it: default look, 54-AP swing (the weapon Default row)",
+                "Gala can now equip 0xBA but has no battle section for it: default look, 30-AP swing (the weapon Default row)",
+                "Gala can now equip 0x63 but has no battle section for it: default look, 30-AP Down / 44-AP Up kick (the footwear Default row)",
+            ]
         );
     }
 

@@ -1126,20 +1126,55 @@ pub(crate) fn cmd_equipment(input: &Path) -> Result<()> {
         return Ok(());
     };
     let rows = &table.rows;
-    let cell = |c: Option<u8>| c.map(|v| format!("{v:>3}")).unwrap_or_else(|| "  -".into());
+    // One cell per character: the command letter + cost (`L30`, `R42`), or
+    // `D30/U30` for footwear, `-` without a section.
+    let cell = |cmd: Option<&str>, c: Option<u8>, up: Option<u8>| -> String {
+        match (cmd, c, up) {
+            (Some(cmd), Some(c), Some(u)) => format!("{}{c}/U{u}", &cmd[..1]),
+            (Some(cmd), Some(c), None) => format!("{}{c}", &cmd[..1]),
+            _ => "-".into(),
+        }
+    };
     println!(
-        "{:<5} {:<18} {:<6} {:>3}  {:>4} {:>4} {:>4}  slot",
+        "{:<5} {:<18} {:<6} {:>3}  {:>8} {:>8} {:>8}  slot",
         "id", "name", "owner", "atk", "Vahn", "Noa", "Gala"
     );
+    let hand = |ci: usize| table.weapon_hand[ci];
+    let other = |ci: usize| match table.weapon_hand[ci] {
+        Some("Left") => Some("Right"),
+        Some("Right") => Some("Left"),
+        _ => None,
+    };
+    let d = &table.defaults;
     println!(
-        "{:<5} {:<18} {:<6} {:>3}  {:>4} {:>4} {:>4}  (unlisted weapon / unarmed)",
-        "0x00",
-        "default record",
+        "{:<5} {:<18} {:<6} {:>3}  {:>8} {:>8} {:>8}  weapon default (unlisted weapon / unarmed)",
+        "-",
+        "default",
         "-",
         "-",
-        cell(table.default_costs[0]),
-        cell(table.default_costs[1]),
-        cell(table.default_costs[2]),
+        cell(hand(0), d[0].weapon, None),
+        cell(hand(1), d[1].weapon, None),
+        cell(hand(2), d[2].weapon, None),
+    );
+    println!(
+        "{:<5} {:<18} {:<6} {:>3}  {:>8} {:>8} {:>8}  Ra-Seru default",
+        "-",
+        "raseru",
+        "-",
+        "-",
+        cell(other(0), d[0].ra_seru, None),
+        cell(other(1), d[1].ra_seru, None),
+        cell(other(2), d[2].ra_seru, None),
+    );
+    println!(
+        "{:<5} {:<18} {:<6} {:>3}  {:>8} {:>8} {:>8}  footwear default (unlisted boots / barefoot)",
+        "-",
+        "feet",
+        "-",
+        "-",
+        cell(Some("Down"), d[0].down, d[0].up),
+        cell(Some("Down"), d[1].down, d[1].up),
+        cell(Some("Down"), d[2].down, d[2].up),
     );
     let mut cur = "";
     for r in rows {
@@ -1148,20 +1183,22 @@ pub(crate) fn cmd_equipment(input: &Path) -> Result<()> {
             println!("[{}]", r.slot);
         }
         println!(
-            "0x{:02X}  {:<18} {:<6} {:>3}  {:>4} {:>4} {:>4}",
+            "0x{:02X}  {:<18} {:<6} {:>3}  {:>8} {:>8} {:>8}{}",
             r.id,
             r.name,
             apply::owner_label(r.mask),
             r.atk,
-            cell(r.costs[0]),
-            cell(r.costs[1]),
-            cell(r.costs[2]),
+            cell(r.cmds[0], r.costs[0], r.up_costs[0]),
+            cell(r.cmds[1], r.costs[1], r.up_costs[1]),
+            cell(r.cmds[2], r.costs[2], r.up_costs[2]),
+            if r.ra_seru_arm { "  Ra-Seru arm" } else { "" },
         );
     }
     println!(
-        "\nswing cost = AP per press and pennant width + 6 (retail 30 favored / 42 off-class / 54 far); \
-         '-' = that character's file has no section for the item, so equipping it uses the default record's cost. \
-         Edit with --swing-cost CHAR:ITEM=COST (ITEM may be `default`) / --equip-owner ITEM=OWNERS."
+        "\ncost = AP per press of that Arts-bar command and pennant width + 6 (L/R = weapon or Ra-Seru hand, \
+         D/U = the footwear kicks; retail 30 favored / 42 off-class / 54 far for weapons, 30 elsewhere); \
+         '-' = that character's file has no section for the item, so equipping it uses the slot's default record. \
+         Edit with --swing-cost CHAR:ITEM[:up]=COST (ITEM may be `default`, `raseru` or `feet`) / --equip-owner ITEM=OWNERS."
     );
     Ok(())
 }

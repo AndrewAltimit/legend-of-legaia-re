@@ -1376,14 +1376,14 @@ pub async fn patch_rom(
             "equipment: {} swing cost(s) rewritten, {} owner row(s) changed\n",
             rep.costs_changed, rep.owners_changed
         ));
-        for (c, id) in &rep.costs_no_section {
+        for (c, what) in &rep.costs_no_section {
             summary.push_str(&format!(
-                "  {c} has no battle section for item 0x{id:02X}; no swing cost to set\n"
+                "  {c} has no battle section or record for {what}; no cost to set\n"
             ));
         }
-        for (c, id) in &rep.costs_skipped_fit {
+        for (c, what) in &rep.costs_skipped_fit {
             summary.push_str(&format!(
-                "  skipped: {c} item 0x{id:02X} does not recompress into its slot\n"
+                "  skipped: {c} {what} does not recompress into its slot\n"
             ));
         }
         for (id, sib) in &rep.owners_shared_rows {
@@ -1393,10 +1393,8 @@ pub async fn patch_rom(
                 s.join(", ")
             ));
         }
-        for (c, id, cost) in &rep.owners_without_section {
-            summary.push_str(&format!(
-                "  {c} can now equip 0x{id:02X} but has no battle section for it: default look, {cost}-AP swing (the Default row)\n"
-            ));
+        for n in apply::fall_through_notes(&rep.owners_without_section) {
+            summary.push_str(&format!("  {n}\n"));
         }
     }
 
@@ -1618,11 +1616,22 @@ pub fn read_equipment_table(image: Vec<u8>) -> Result<JsValue, JsValue> {
     drop(patcher);
     let num = JsValue::from_f64;
     let out = Object::new();
+    let opt = |c: Option<u8>| c.map(|v| num(v as f64)).unwrap_or(JsValue::NULL);
     let defaults = js_sys::Array::new();
-    for c in table.default_costs {
-        defaults.push(&c.map(|v| num(v as f64)).unwrap_or(JsValue::NULL));
+    for d in table.defaults {
+        let o = Object::new();
+        Reflect::set(&o, &"weapon".into(), &opt(d.weapon))?;
+        Reflect::set(&o, &"raseru".into(), &opt(d.ra_seru))?;
+        Reflect::set(&o, &"down".into(), &opt(d.down))?;
+        Reflect::set(&o, &"up".into(), &opt(d.up))?;
+        defaults.push(&o.into());
     }
-    Reflect::set(&out, &"default_costs".into(), &defaults)?;
+    Reflect::set(&out, &"defaults".into(), &defaults)?;
+    let hands = js_sys::Array::new();
+    for h in table.weapon_hand {
+        hands.push(&h.map(JsValue::from).unwrap_or(JsValue::NULL));
+    }
+    Reflect::set(&out, &"weapon_hand".into(), &hands)?;
     let items = js_sys::Array::new();
     for r in &table.rows {
         let o = Object::new();
@@ -1637,11 +1646,22 @@ pub fn read_equipment_table(image: Vec<u8>) -> Result<JsValue, JsValue> {
         Reflect::set(&o, &"shares_row_with".into(), &sib)?;
         Reflect::set(&o, &"mask".into(), &num(r.mask as f64))?;
         Reflect::set(&o, &"atk".into(), &num(r.atk as f64))?;
+        Reflect::set(&o, &"ra_seru_arm".into(), &r.ra_seru_arm.into())?;
         let costs = js_sys::Array::new();
         for c in r.costs {
-            costs.push(&c.map(|v| num(v as f64)).unwrap_or(JsValue::NULL));
+            costs.push(&opt(c));
         }
         Reflect::set(&o, &"costs".into(), &costs)?;
+        let ups = js_sys::Array::new();
+        for c in r.up_costs {
+            ups.push(&opt(c));
+        }
+        Reflect::set(&o, &"up_costs".into(), &ups)?;
+        let cmds = js_sys::Array::new();
+        for c in r.cmds {
+            cmds.push(&c.map(JsValue::from).unwrap_or(JsValue::NULL));
+        }
+        Reflect::set(&o, &"cmds".into(), &cmds)?;
         items.push(&o.into());
     }
     Reflect::set(&out, &"items".into(), &items)?;

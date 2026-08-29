@@ -529,10 +529,14 @@ A modification that wants the penalty to travel with the sword must add an
 `0xBA` section (or re-price the default record) in the other characters'
 files. This follows from the disc layout and the traced selector; it has not
 been confirmed with a live capture of an edited save. The
-[patcher's equipment editor](../tooling/randomizer.md#equipment-editor-swing-costs-and-equip-owners)
+[patcher's equipment editor](../tooling/randomizer.md#equipment-editor-command-costs-and-equip-owners)
 reports exactly these fall-through combinations when an owner edit creates
-one, and exposes the default record's cost as `CHAR:default=COST` - the only
-in-place knob, since the player files have no free space for a new section.
+one, and exposes each section default's cost (`CHAR:default=COST` for the
+weapon section, `raseru`, `feet` / `feet:up`) - the only in-place knob, since
+the player files have no free space for a new section. The same editor
+reprices the other three commands through their own sections: the Ra-Seru
+arm's record and the footwear section's Down (`+0x04`) and Up (`+0x08`)
+records, all `0x1E` in retail.
 
 ## Common misconceptions
 

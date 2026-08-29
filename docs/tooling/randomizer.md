@@ -92,7 +92,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Equipment stat bonuses](#equipment-stat-bonuses)
   - [Equip mask (who can equip what)](#equip-mask-who-can-equip-what)
   - [Weapon specialty](#weapon-specialty)
-  - [Equipment editor (swing costs and equip owners)](#equipment-editor-swing-costs-and-equip-owners)
+  - [Equipment editor (command costs and equip owners)](#equipment-editor-command-costs-and-equip-owners)
   - [Arts button combos](#arts-button-combos)
   - [Arts damage power](#arts-damage-power)
   - [Super Art damage power](#super-art-damage-power)
@@ -354,7 +354,7 @@ convenience toggles below, additively - five slots with `--all-warps`. See
 |---|---|
 | `--unused-enemies` / `--unused-items` | Re-introduce content the game ships but never surfaces. See [Unused content](#unused-content). |
 | `--weapon-specialty` | Reassign which weapon class each character favors. See [Weapon specialty](#weapon-specialty). |
-| `--swing-cost CHAR:ITEM=COST` / `--equip-owner ITEM=OWNERS` | Manual edits: set one weapon's Arts-gauge swing cost for one character, or who can equip an item. See [Equipment editor](#equipment-editor-swing-costs-and-equip-owners). |
+| `--swing-cost CHAR:ITEM[:up]=COST` / `--equip-owner ITEM=OWNERS` | Manual edits: price one Arts-bar command (a weapon, Ra-Seru arm or footwear record) for one character, or set who can equip an item. See [Equipment editor](#equipment-editor-command-costs-and-equip-owners). |
 
 ### Reading the disc without patching it
 
@@ -3272,61 +3272,77 @@ re-packs). The Astral Sword and non-class gear carry no family and are never
 touched, so the Astral Sword stays always-wide. `legaia-patcher weapon-specialty`
 shows each character's current favored class.
 
-### Equipment editor (swing costs and equip owners)
+### Equipment editor (command costs and equip owners)
 
 Two manual, seedless edits over the same tables the specialty shuffle and
 the equip-mask shuffle randomize, for modders who want a specific outcome -
 "the Astral Sword should not be so costly to use", "let Noa use axes at the
-favored price", "let everyone equip the Ra-Seru Blade".
+favored price", "make the kicks wider", "let everyone equip the Ra-Seru
+Blade and Gala's boots".
 
-**Swing cost** - `--swing-cost CHAR:ITEM=COST` (repeatable, comma-separated).
-`CHAR` is `Vahn` / `Noa` / `Gala` (or `V` / `N` / `G`, or `0..2`), `ITEM` an
-item id (decimal or `0xHH`), `COST` the byte the Arts gauge reads for that
-weapon-hand press: the AP one press charges **and** the pennant width plus 6.
-Retail tiers are 30 favored / 42 off-class / 54 far off-class; the minimum is
-7 (a 1-pixel body). The byte lives in that character's player battle file
-(`section[+0x04]` swing record `+0x74`), so the same weapon is priced per
-character and each edit names a character. A weapon the character's file has
-no section for is reported (`no section`) and skipped - there is no cost to
-set; what that character pays instead is their **default weapon record**,
-addressable as `ITEM` = `default` (or `0`, e.g. `Noa:default=42`): one value
-per character, shared by every unlisted weapon they equip and by the unarmed
-swing. The section is decompressed, rewritten and recompressed in place; a
-section that does not fit is reported and left alone. Applied after
-`--weapon-specialty`, so a named cost wins over the permutation.
+**Command cost** - `--swing-cost CHAR:ITEM[:up]=COST` (repeatable,
+comma-separated). `CHAR` is `Vahn` / `Noa` / `Gala` (or `V` / `N` / `G`, or
+`0..2`), `ITEM` an item id (decimal or `0xHH`), `COST` the byte the Arts gauge
+reads for one press of the command that item prices: the AP the press charges
+**and** the pennant width plus 6. Each of the four commands is priced by the
+equipment section that fills it in that character's player battle file
+(`section[+0x04]` swing record `+0x74`): section 2 prices Left and section 3
+Right - the weapon and the Ra-Seru arm, in that order for Vahn and Gala and
+the reverse for Noa, whose weapon is her Right - and the footwear section
+prices Down from its `+0x04` record and Up from a second record at `+0x08`,
+addressed with the `:up` suffix (`Gala:0x5E:up=42`). Body and head gear price
+nothing. Retail weapon tiers are 30 favored / 42 off-class / 54 far off-class;
+every Ra-Seru and footwear record ships at 30; the minimum is 7 (a 1-pixel
+body). The same item is priced per character, so each edit names one. An
+item the character's file has no section for (or `:up` on anything but
+footwear) is reported (`no section`) and skipped - there is no byte to set;
+what that character pays instead is the **section's default record**,
+addressable in place of an item id: `default` (or `fist` / `unarmed`) for the
+weapon section, `raseru` for the Ra-Seru section, `feet` (or `barefoot`) for
+the footwear section with `feet:up` for its Up kick - e.g. `Noa:default=42`,
+`Gala:feet:up=36`. One value per character per record, shared by every
+unlisted item of that slot they equip and by the empty-slot swing. The
+section is decompressed, rewritten and recompressed in place; a section that
+does not fit is reported and left alone. Applied after `--weapon-specialty`,
+so a named cost wins over the permutation.
 
 **Equip owner** - `--equip-owner ITEM=OWNERS` (repeatable). `OWNERS` is any
 set of the letters `V` `N` `G`, `any`, or `none`. Rewrites the low three bits
 of the item's `+6` equip-character mask in the SCUS equipment stat-bonus
-table, the byte the equip screen gates on. Several items can share one bonus
-row, in which case they move together and the report says which. Giving a
-character a weapon their player file has no section for lets them equip it,
-but at battle load the selector falls through to the section default: the
-default appearance and the default record's cost (retail 30; see
+table, the byte the equip screen gates on - for every slot: weapon, body,
+head, footwear. Several items can share one bonus row, in which case they
+move together and the report says which. Giving a character an item their
+player file has no section for lets them equip it, but at battle load the
+selector falls through to the section default: the default appearance and,
+for a weapon or footwear, the default record's cost (retail 30; see
 [arts-command-gauge.md](../subsystems/arts-command-gauge.md#if-the-astral-sword-is-forced-onto-another-character)).
 The report names every such (character, item) pair with the cost it pays.
 The three player files have no free space (each ends flush against its last
-slot, and Terra's file follows on the next sector), so a real per-weapon
+slot, and Terra's file follows on the next sector), so a real per-item
 section cannot be added in place - the default record is the one knob.
 
 `legaia-patcher equipment --input disc.bin` lists every equippable item with
-its owners, attack bonus, and the swing cost each character's file carries
-(`-` where the file has no section) plus the per-character default record.
-The ROM-patcher page's **Equipment** group shows the same table read from
-the user's disc - a Default record row on top, a number box per character,
-an owner checkbox per character, and `-> N` in a no-section cell for the
-default cost that applies there - and sends the identical token lists.
+its owners, attack bonus, and the command cost each character's file carries
+(`L30` / `R42` / `D30/U30` - the command letter and its cost; `-` where the
+file has no section) plus the three default records per character. The
+ROM-patcher page's **Equipment** group shows the same table read from the
+user's disc - the default records on top, a number box per command per
+character (two for footwear), an owner checkbox per character, and `-> N` in
+a no-section cell for the default cost that applies there - and sends the
+identical token lists.
 
 ```bash
 legaia-patcher randomize --input disc.bin --output out.bin \
   --swing-cost Vahn:0xBA=30 \
   --swing-cost Noa:0x2E=30,Noa:0x31=42 \
-  --equip-owner 0xBA=any
+  --swing-cost Vahn:0x09=36,Gala:0x5E:up=42,Gala:feet:up=42 \
+  --equip-owner 0xBA=any,0x63=any
 ```
 
 Disc-gated oracle: `crates/patcher/tests/equipment_edit_real.rs` (round trip
-off the patched image, Noa's section-3 keying, the fall-through report,
-EDC/ECC validity, idempotence).
+off the patched image for weapon, Ra-Seru, footwear Up and default records,
+Noa's section-3 keying, the fall-through report, EDC/ECC validity,
+idempotence).
 
 ### Arts button combos
 

@@ -1087,11 +1087,11 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             "equipment: {} swing cost(s) rewritten, {} owner row(s) changed",
             rep.costs_changed, rep.owners_changed
         );
-        for (c, id) in &rep.costs_no_section {
-            println!("  note: {c} has no section for item 0x{id:02X} - no swing cost to set");
+        for (c, what) in &rep.costs_no_section {
+            println!("  note: {c} has no section or record for {what} - no cost to set");
         }
-        for (c, id) in &rep.costs_skipped_fit {
-            println!("  skipped: {c} item 0x{id:02X} does not recompress into its slot");
+        for (c, what) in &rep.costs_skipped_fit {
+            println!("  skipped: {c} {what} does not recompress into its slot");
         }
         for id in &rep.owners_not_equipment {
             println!("  note: item 0x{id:02X} is not equipment - owner not changed");
@@ -1103,16 +1103,14 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
                 s.join(", ")
             );
         }
-        for (c, id, cost) in &rep.owners_without_section {
-            println!(
-                "  note: {c} can now equip 0x{id:02X} but has no battle section for it - default look, {cost}-AP swing ({c}:default)"
-            );
+        for n in apply::fall_through_notes(&rep.owners_without_section) {
+            println!("  note: {n}");
         }
         for e in &equipment_edits.costs {
             manifest.push(format!(
-                "swing_cost_{}_0x{:02X} = {}",
+                "swing_cost_{}_{} = {}",
                 legaia_patcher::weapon_specialty::PLAYERS[e.character].name,
-                e.item_id,
+                e.label().replace(':', "_"),
                 e.cost
             ));
         }

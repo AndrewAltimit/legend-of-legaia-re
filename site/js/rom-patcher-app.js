@@ -239,14 +239,20 @@ function setupInfoTips() {
 }
 
 
-// --- Equipment editor: swing costs + equip owners over the disc's own tables --
+// --- Equipment editor: Arts-bar command costs + equip owners over the disc's own tables --
 // One row per equippable item read from the user's disc via
-// `read_equipment_table`. Weapons show the Arts-gauge swing cost each
-// character's player file carries (30 favored / 42 off-class / 54 far; the
-// Astral Sword is Vahn's one 54) as one number box per character; every item
-// shows its equip-owner bits as three checkboxes. Serializes to the CLI's
-// `--swing-cost CHAR:ITEM=COST` / `--equip-owner ITEM=OWNERS` token lists,
-// which is exactly what patch_rom takes, merged with the raw (advanced) inputs.
+// `read_equipment_table`. Each of the four Arts-bar commands is priced by
+// the equipment section that fills it in that character's player battle
+// file: Left / Right by the weapon and the Ra-Seru arm (Noa's weapon is her
+// Right), Down / Up by the footwear (two records in one section). Weapons
+// show that cost per character (30 favored / 42 off-class / 54 far; the
+// Astral Sword is Vahn's one 54), Ra-Seru arms and footwear theirs (30 in
+// retail), and every section's default record - what an unlisted item or an
+// empty slot uses - is a row of its own. Every item shows its equip-owner
+// bits as three checkboxes. Serializes to the CLI's
+// `--swing-cost CHAR:ITEM[:up]=COST` / `--equip-owner ITEM=OWNERS` token
+// lists, which is exactly what patch_rom takes, merged with the raw
+// (advanced) inputs.
 function setupEquipmentEditor(wasm, fileInput, discBytes) {
   const statusEl = $('rom-equip-status');
   const rowsEl = $('rom-equip-rows');
@@ -260,46 +266,132 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
   let items = [];
   // Edits live here, not in the DOM: a slot change re-renders only
   // the visible rows, so a DOM-only edit on a hidden row would be lost.
-  // costs: "id:char" -> typed string ('' = keep); owners: id -> mask.
+  // costs: "key:char" -> typed string ('' = keep), where key is the item id
+  // (its +0x04 record), "<id>u" (a footwear item's Up record), or a default
+  // record: dw (weapon), dr (Ra-Seru), df (footwear Down), dfu (footwear Up).
+  // owners: id -> mask.
   const costEdits = new Map();
   const ownerEdits = new Map();
-  let defaults = [null, null, null];
+  let defaults = [{}, {}, {}];
+  let hands = [null, null, null];
+  const DEFAULT_KEYS = { dw: 'weapon', dr: 'raseru', df: 'down', dfu: 'up' };
+  const ARROW = { Left: 'L', Right: 'R', Down: '↓', Up: '↑' };
+  const otherHand = (h) => (h === 'Left' ? 'Right' : h === 'Right' ? 'Left' : null);
 
-  const costInput = (id, c, cur, tr, title) => {
+  // The disc's current value for an edit key on one character (null = no
+  // such record in that character's file).
+  const curOf = (key, ci) => {
+    if (key in DEFAULT_KEYS) {
+      const v = (defaults[ci] || {})[DEFAULT_KEYS[key]];
+      return v == null ? null : v;
+    }
+    const up = key.endsWith('u');
+    const it = items.find((x) => x.id === parseInt(key, 10));
+    if (!it) return null;
+    const v = (up ? it.up_costs : it.costs) || [];
+    return v[ci] == null ? null : v[ci];
+  };
+  const tokenOf = (key, c) => {
+    if (key === 'dw') return `${c}:default`;
+    if (key === 'dr') return `${c}:raseru`;
+    if (key === 'df') return `${c}:feet`;
+    if (key === 'dfu') return `${c}:feet:up`;
+    return `${c}:${hexOf(parseInt(key, 10))}${key.endsWith('u') ? ':up' : ''}`;
+  };
+  // What a default record currently shows: the typed edit, else the disc value.
+  const shownOf = (key, ci) => (costEdits.get(`${key}:${CHARS[ci]}`) || '').trim() || (curOf(key, ci) == null ? '?' : String(curOf(key, ci)));
+
+  const costInput = (key, c, cur, tr, title) => {
     const inp = document.createElement('input');
     inp.type = 'number';
     inp.className = 'eq-cost';
     inp.min = '7'; inp.max = '255';
     inp.placeholder = String(cur);
     inp.dataset.char = c;
+    inp.dataset.key = key;
     inp.dataset.cur = String(cur);
-    inp.value = costEdits.get(`${id}:${c}`) || '';
+    inp.value = costEdits.get(`${key}:${c}`) || '';
     inp.title = title;
     inp.addEventListener('input', () => {
-      costEdits.set(`${id}:${c}`, inp.value.trim());
+      costEdits.set(`${key}:${c}`, inp.value.trim());
       rowEdited(tr);
-      if (id === 0) syncFallthrough(c);
+      if (key in DEFAULT_KEYS) syncFallthrough(key, c);
     });
     return inp;
   };
-  // The Default row's value is shown in every no-section cell of that
-  // character's column; keep those in step without a full re-render.
-  const defaultShown = (c, ci) => (costEdits.get(`0:${c}`) || '').trim() || (defaults[ci] == null ? '?' : String(defaults[ci]));
-  const fallthroughTitle = (c, def) => `${c}\u2019s battle file has no section for this weapon. If ${c} equips it, the Default record is used: default look, ${def} AP per swing. Change that in the Default record row at the top.`;
-  const syncFallthrough = (c) => {
-    const def = defaultShown(c, CHARS.indexOf(c));
-    for (const el of rowsEl.querySelectorAll(`.rom-equip-fallthrough[data-char="${c}"]`)) {
-      el.textContent = '\u21B3 ' + def;
-      el.title = fallthroughTitle(c, def);
+  // A command cell: the direction letter, then the number box.
+  const cmdCell = (td, cmd, key, c, cur, tr, what) => {
+    const lab = document.createElement('span');
+    lab.className = 'rom-equip-cmd';
+    lab.textContent = ARROW[cmd] || '';
+    lab.title = `${cmd} command`;
+    td.appendChild(lab);
+    td.appendChild(costInput(key, c, cur, tr, `${c}’s ${cmd} command with ${what}: currently ${cur} AP (${cur - 6} px wide)`));
+  };
+  // A fall-through cell: the default record's value that applies instead.
+  const fallthroughTitle = (c, cmd, def, row) => `${c}’s battle file has no section for this item. If ${c} equips it, the ${row} record is used: default look, ${def} AP per ${cmd} press. Change that in the ${row} row at the top.`;
+  const fallthroughSpan = (key, c, ci, cmd, row) => {
+    const sp = document.createElement('span');
+    sp.className = 'rom-equip-na rom-equip-fallthrough';
+    sp.dataset.char = c;
+    sp.dataset.def = key;
+    sp.dataset.cmd = cmd;
+    sp.dataset.row = row;
+    const def = shownOf(key, ci);
+    sp.title = fallthroughTitle(c, cmd, def, row);
+    sp.textContent = `${ARROW[cmd] || ''}↳ ${def}`;
+    return sp;
+  };
+  const syncFallthrough = (key, c) => {
+    const ci = CHARS.indexOf(c);
+    const def = shownOf(key, ci);
+    for (const el of rowsEl.querySelectorAll(`.rom-equip-fallthrough[data-char="${c}"][data-def="${key}"]`)) {
+      el.textContent = `${ARROW[el.dataset.cmd] || ''}↳ ${def}`;
+      el.title = fallthroughTitle(c, el.dataset.cmd, def, el.dataset.row);
     }
   };
 
   const rowEdited = (tr) => {
+    const keys = (tr.dataset.keys || '').split(',').filter(Boolean);
     const id = Number(tr.dataset.id);
-    const it = items.find((x) => x.id === id);
-    const edited = CHARS.some((c) => (costEdits.get(`${id}:${c}`) || '') !== '')
+    const it = Number.isFinite(id) ? items.find((x) => x.id === id) : null;
+    const edited = keys.some((k) => CHARS.some((c) => (costEdits.get(`${k}:${c}`) || '') !== ''))
       || (it != null && ownerEdits.has(id) && ownerEdits.get(id) !== it.mask);
     tr.classList.toggle('is-edited', edited);
+  };
+
+  // A section-default row: `cells(ci)` returns the per-character cell content.
+  const defaultRow = (tbody, label, note, keys, cells) => {
+    const tr = document.createElement('tr');
+    tr.className = 'rom-equip-row rom-equip-default';
+    tr.dataset.keys = keys.join(',');
+    tr.innerHTML = `<td><span class="rom-edit-name">${label}</span> <span class="rom-equip-shared" title="${escapeHtml(note)}">(default record)</span></td><td>—</td><td class="n">—</td><td>—</td>`;
+    CHARS.forEach((c, ci) => {
+      const td = document.createElement('td');
+      td.className = 'n';
+      cells(td, c, ci, tr);
+      tr.appendChild(td);
+    });
+    rowEdited(tr);
+    tbody.appendChild(tr);
+  };
+  const naCell = (td, why) => { td.innerHTML = `<span class="rom-equip-na" title="${escapeHtml(why)}">—</span>`; };
+  const kicksCell = (td, c, ci, tr, keyDown, keyUp, what, rowName) => {
+    // Footwear prices two commands: Down (+0x04 record) and Up (+0x08).
+    const wrap = document.createElement('span');
+    wrap.className = 'rom-equip-kicks';
+    for (const [cmd, key] of [['Down', keyDown], ['Up', keyUp]]) {
+      const line = document.createElement('span');
+      const cur = curOf(key, ci);
+      if (cur == null) {
+        if (rowName) line.appendChild(fallthroughSpan(key === keyDown ? 'df' : 'dfu', c, ci, cmd, rowName));
+        else line.innerHTML = '<span class="rom-equip-na">—</span>';
+      } else {
+        cmdCell(line, cmd, key, c, cur, tr, what);
+      }
+      wrap.appendChild(line);
+    }
+    td.appendChild(wrap);
   };
 
   function render() {
@@ -316,30 +408,34 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
     table.className = 'rom-equip-table';
     const thead = document.createElement('thead');
     thead.innerHTML = '<tr><th>Item</th><th>Slot</th><th class="n">ATK</th><th>Who can equip</th>'
-      + '<th class="n">Vahn swing</th><th class="n">Noa swing</th><th class="n">Gala swing</th></tr>';
+      + '<th class="n">Vahn AP</th><th class="n">Noa AP</th><th class="n">Gala AP</th></tr>';
     table.appendChild(thead);
     const tbody = document.createElement('tbody');
     let shown = 0;
     if (slot === 'weapon' || slot === 'all') {
-      // The fall-through record: what a character pays for a weapon their
-      // battle file has no section for (and for swinging unarmed).
-      const tr = document.createElement('tr');
-      tr.className = 'rom-equip-row rom-equip-default';
-      tr.dataset.id = '0';
-      tr.innerHTML = '<td><span class="rom-edit-name">Default record</span> <span class="rom-equip-shared" title="Each character\u2019s battle file has one default weapon record. It is what they swing with when the equipped weapon has no section in their file (a weapon you ticked on for them below) or when nothing is equipped. One value per character, shared by every such weapon.">(unlisted weapon / unarmed)</span></td><td>weapon</td><td class="n">\u2014</td><td>\u2014</td>';
-      CHARS.forEach((c, ci) => {
-        const td = document.createElement('td');
-        td.className = 'n';
-        const cur = defaults[ci];
-        if (cur == null) {
-          td.innerHTML = '<span class="rom-equip-na">\u2014</span>';
-        } else {
-          td.appendChild(costInput(0, c, cur, tr, `${c}\u2019s default record: currently ${cur} AP`));
-        }
-        tr.appendChild(td);
-      });
-      rowEdited(tr);
-      tbody.appendChild(tr);
+      defaultRow(tbody, 'Default weapon',
+        'Each character’s battle file has one default weapon record. It is what they swing with when the equipped weapon has no section in their file (a weapon you ticked on for them below) or when nothing is equipped. One value per character, shared by every such weapon.',
+        ['dw'],
+        (td, c, ci, tr) => {
+          const cur = curOf('dw', ci);
+          if (cur == null || !hands[ci]) naCell(td, 'Not found in this file');
+          else cmdCell(td, hands[ci], 'dw', c, cur, tr, 'an unlisted weapon or bare hands');
+        });
+      defaultRow(tbody, 'Default Ra-Seru arm',
+        'The Ra-Seru section’s default record: the other hand’s command when the equipped Ra-Seru level has no section in the file, or none is equipped.',
+        ['dr'],
+        (td, c, ci, tr) => {
+          const cur = curOf('dr', ci);
+          const cmd = otherHand(hands[ci]);
+          if (cur == null || !cmd) naCell(td, 'Not found in this file');
+          else cmdCell(td, cmd, 'dr', c, cur, tr, 'no listed Ra-Seru');
+        });
+    }
+    if (slot === 'footwear' || slot === 'all') {
+      defaultRow(tbody, 'Default footwear',
+        'The footwear section’s default record prices both kicks when the equipped footwear has no section in the file (footwear you ticked on for them below) or none is equipped.',
+        ['df', 'dfu'],
+        (td, c, ci, tr) => kicksCell(td, c, ci, tr, 'df', 'dfu', 'unlisted footwear or bare feet', null));
     }
     for (const it of items) {
       if (slot !== 'all' && it.slot !== slot) continue;
@@ -347,6 +443,7 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
       const tr = document.createElement('tr');
       tr.className = 'rom-equip-row';
       tr.dataset.id = String(it.id);
+      tr.dataset.keys = it.slot === 'footwear' ? `${it.id},${it.id}u` : String(it.id);
       const tdName = document.createElement('td');
       tdName.innerHTML = `<span class="rom-edit-name">${escapeHtml(it.name || 'item ' + hexOf(it.id))}</span> <code>${hexOf(it.id)}</code>`;
       if (it.shares_row_with && it.shares_row_with.length) {
@@ -357,7 +454,7 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
         tdName.appendChild(s);
       }
       tr.appendChild(tdName);
-      const tdSlot = document.createElement('td'); tdSlot.textContent = it.slot; tr.appendChild(tdSlot);
+      const tdSlot = document.createElement('td'); tdSlot.textContent = it.ra_seru_arm ? 'Ra-Seru arm' : it.slot; tr.appendChild(tdSlot);
       const tdAtk = document.createElement('td'); tdAtk.className = 'n'; tdAtk.textContent = String(it.atk); tr.appendChild(tdAtk);
       const tdOwn = document.createElement('td');
       tdOwn.className = 'rom-equip-owners';
@@ -385,18 +482,17 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
         const td = document.createElement('td');
         td.className = 'n';
         const cur = it.costs ? it.costs[ci] : null;
-        if (it.slot !== 'weapon') {
-          td.innerHTML = '<span class="rom-equip-na" title="Only weapons carry a swing cost">\u2014</span>';
-        } else if (cur == null) {
-          const def = defaultShown(c, ci);
-          const sp = document.createElement('span');
-          sp.className = 'rom-equip-na rom-equip-fallthrough';
-          sp.dataset.char = c;
-          sp.title = fallthroughTitle(c, def);
-          sp.textContent = '\u21B3 ' + def;
-          td.appendChild(sp);
+        const cmd = it.cmds ? it.cmds[ci] : null;
+        if (it.slot === 'body' || it.slot === 'head') {
+          naCell(td, 'Body and head gear price no command');
+        } else if (it.slot === 'footwear') {
+          kicksCell(td, c, ci, tr, String(it.id), `${it.id}u`, 'this footwear', 'Default footwear');
+        } else if (cur == null || !cmd) {
+          const key = it.ra_seru_arm ? 'dr' : 'dw';
+          const fcmd = it.ra_seru_arm ? otherHand(hands[ci]) : hands[ci];
+          td.appendChild(fallthroughSpan(key, c, ci, fcmd || 'Left', it.ra_seru_arm ? 'Default Ra-Seru arm' : 'Default weapon'));
         } else {
-          td.appendChild(costInput(it.id, c, cur, tr, `${c}: currently ${cur} AP (${cur - 6} px wide)`));
+          cmdCell(td, cmd, String(it.id), c, cur, tr, 'this ' + (it.ra_seru_arm ? 'Ra-Seru' : 'weapon'));
         }
         tr.appendChild(td);
       });
@@ -413,27 +509,32 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
     }
   }
 
-  // Quick edits over every weapon the disc lists (not just the visible rows).
-  const setCost = (pred, value) => {
-    CHARS.forEach((c, ci) => {
-      const cur = defaults[ci];
-      if (cur != null && pred(0, c, cur)) costEdits.set(`0:${c}`, cur === value ? '' : String(value));
-    });
+  // Every edit key the disc has a record for, across all rows and defaults.
+  const allKeys = () => {
+    const keys = Object.keys(DEFAULT_KEYS);
     for (const it of items) {
-      if (it.slot !== 'weapon') continue;
+      keys.push(String(it.id));
+      if (it.slot === 'footwear') keys.push(`${it.id}u`);
+    }
+    return keys;
+  };
+  // Quick edits over every record the disc lists (not just the visible rows).
+  const setCost = (pred, value) => {
+    for (const key of allKeys()) {
       CHARS.forEach((c, ci) => {
-        const cur = it.costs ? it.costs[ci] : null;
-        if (cur == null || !pred(it.id, c, cur)) return;
-        costEdits.set(`${it.id}:${c}`, cur === value ? '' : String(value));
+        const cur = curOf(key, ci);
+        if (cur == null || !pred(key, c, cur)) return;
+        costEdits.set(`${key}:${c}`, cur === value ? '' : String(value));
       });
     }
     render();
   };
   const presets = {
-    'rom-equip-preset-astral': () => setCost((id) => id === 0xBA, 30),
+    'rom-equip-preset-astral': () => setCost((key) => key === '186', 30),
     'rom-equip-preset-all30': () => setCost(() => true, 30),
     'rom-equip-preset-anyone': () => {
-      for (const it of items) if (it.slot === 'weapon') ownerEdits.set(it.id, 7);
+      const slot = slotEl ? slotEl.value : 'weapon';
+      for (const it of items) if (slot === 'all' || it.slot === slot) ownerEdits.set(it.id, 7);
       render();
     },
     'rom-equip-preset-reset': () => clear(),
@@ -460,7 +561,8 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
       const buf = await discBytes();
       const t = mod.read_equipment_table(buf);
       items = t.items || [];
-      defaults = Array.isArray(t.default_costs) ? t.default_costs : [null, null, null];
+      defaults = Array.isArray(t.defaults) ? t.defaults : [{}, {}, {}];
+      hands = Array.isArray(t.weapon_hand) ? t.weapon_hand : [null, null, null];
       loadedFor = key;
       render();
       setNote('Read from your disc. Empty box = keep the disc value.');
@@ -479,36 +581,26 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
     const fail = (error) => ({ costs: '', owners: '', error });
     const costs = [];
     const owners = [];
-    CHARS.forEach((c, ci) => {
-      const v = (costEdits.get(`0:${c}`) || '').trim();
-      if (!v) return;
-      const n = parseInt(v, 10);
-      if (!Number.isFinite(n) || n < 7 || n > 255) { costs.push(null); fail.msg = `Default swing cost for ${c} must be 7..255.`; return; }
-      if (defaults[ci] == null || n === defaults[ci]) return;
-      costs.push(`${c}:default=${n}`);
-    });
+    for (const [k, v] of costEdits) {
+      const val = (v || '').trim();
+      if (!val) continue;
+      const i = k.lastIndexOf(':');
+      const key = k.slice(0, i);
+      const c = k.slice(i + 1);
+      const ci = CHARS.indexOf(c);
+      const n = parseInt(val, 10);
+      if (!Number.isFinite(n) || n < 7 || n > 255) return fail(`Cost for ${c} (${tokenOf(key, c)}) must be 7..255.`);
+      const cur = curOf(key, ci);
+      if (cur == null || n === cur) continue;
+      costs.push(`${tokenOf(key, c)}=${n}`);
+    }
     for (const it of items) {
-      const id = hexOf(it.id);
-      CHARS.forEach((c, ci) => {
-        const v = (costEdits.get(`${it.id}:${c}`) || '').trim();
-        if (!v) return;
-        const n = parseInt(v, 10);
-        if (!Number.isFinite(n) || n < 7 || n > 255) {
-          costs.push(null);
-          fail.msg = `Swing cost for ${c} on ${id} must be 7..255.`;
-          return;
-        }
-        const cur = it.costs ? it.costs[ci] : null;
-        if (cur == null || n === cur) return;
-        costs.push(`${c}:${id}=${n}`);
-      });
       if (ownerEdits.has(it.id) && ownerEdits.get(it.id) !== it.mask) {
         const m = ownerEdits.get(it.id);
         const letters = CHARS.filter((c, ci) => m & (1 << ci)).map((c) => c[0]).join('');
-        owners.push(`${id}=${letters || 'none'}`);
+        owners.push(`${hexOf(it.id)}=${letters || 'none'}`);
       }
     }
-    if (costs.includes(null)) return fail(fail.msg);
     return { costs: costs.join(','), owners: owners.join(','), error: '' };
   }
   render();
