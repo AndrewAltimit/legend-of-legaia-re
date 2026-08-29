@@ -188,7 +188,25 @@ fn seed_party_battle_stats_folds_live_stats_and_equipment() {
     world.set_equipment_table(table);
 
     world.seed_party_battle_stats();
-    assert_eq!(world.battle_attack[0], 37, "30 base + 7 weapon");
+    // Retail seeds the actor's ATK without equipment (`FUN_80053CB8` folds
+    // UDF / LDF / SPD only); the weapon's +7 reaches a swing at execution
+    // time as `+7 >> 1` for the command that reads its slot.
+    assert_eq!(world.battle_attack[0], 30, "base ATK, no equipment fold");
+    assert_eq!(
+        world.battle_equip_atk[0],
+        [7, 0, 0, 0, 0],
+        "per-slot equipment attack bytes"
+    );
+    assert_eq!(
+        legaia_engine_vm::battle_formulas::arms_weapon_atk_fold(0x11, &world.battle_equip_atk[0]),
+        Some(3),
+        "an art folds half the sum of all five slots"
+    );
+    assert_eq!(
+        legaia_engine_vm::battle_formulas::arms_weapon_atk_fold(0x0C, &world.battle_equip_atk[0]),
+        Some(0),
+        "the left-arm command reads slot 2, which is empty here"
+    );
     assert_eq!(
         world.battle_defense_split[0],
         Some((13, 10)),

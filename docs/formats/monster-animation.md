@@ -173,25 +173,39 @@ tick's integer frame, `cursor >> 4`.
 
 Both traced consumers are in the anim tick `FUN_80047430`, and both locate the
 slot through the helper `FUN_80050E00(entry + 0x10)`
-(`ghidra/scripts/funcs/80050e00.txt`), which walks `+0x11..+0x13` and returns
-the 1-based index of the first zero, capped at `3`. The tick then reads
-`entry[+0x10 + index]`:
+(`ghidra/scripts/funcs/80050e00.txt`), which walks `+0x11..+0x13`. Read the
+return **register**, not the loop counter: the walk keeps its 1-based
+position in `v1`, but the caller consumes `v0` (`andi v0,v0,0xff` at
+`0x8004791C` / `0x80047E30`), and `v0` is the byte that ended the walk - `0`
+whenever any of `+0x11..+0x13` is zero - or, on the fall-through exit with
+all three non-zero, the delay-slot `addu v0,v1,a0`, i.e. `entry + 0x13`
+itself, whose low byte then indexes the list. The tick reads
+`entry[+0x10 + v0 & 0xFF]`:
 
 - `0x80047918` - the event-flag path. With `actor[+0x1DC]` bit 1 set and
   `entry[+0x76] == 0`, the queued clip commits mid-clip once
   `event_frame + 2 < frame` (the bit-1 arm of [Playback](#playback) below).
 - `0x80047E28` - runs every tick and latches
-  `actor[+0x1F7] = (frame < event_frame)`. That byte gates `actor[+0x1F6]`
-  in the commit `FUN_8004AD80` (the counter / guard window, which additionally
-  requires the staged id to be one of the `+0x1EF`/`+0x1F0`/`+0x1F3` reaction
-  entries) and paces the arts-input band.
+  `actor[+0x1F7] = (frame < event_frame)`. That byte is the battle's
+  **juggle window**: the damage kernel grows the juggle counter while the
+  *defender's* byte is up ([battle-formulas.md](../subsystems/battle-formulas.md#the-juggle-window---what-makes-a-monster-juggleable)),
+  the commit `FUN_8004AD80` gates `actor[+0x1F6]` on it (the counter / guard
+  window, which additionally requires the staged id to be one of the
+  `+0x1EF`/`+0x1F0`/`+0x1F3` reaction entries), and it paces the arts-input
+  band. Live-pinned by a write-watch: these two stores are the byte's only
+  writers, and the flinch's beat over its rate is the window (Gobu Gobu
+  `8` at rate `2` = 16 ticks at the normal speed scale `8`).
 
-Because the helper returns the index of the **terminator**, only a list with
-all four slots populated hands its consumer a real frame - `entry[+0x13]`, the
-last beat. Any shorter list resolves to the zero that ends it, i.e. no gate.
-Those are the only two consumers reachable: a word-wise `jal` scan over
-`SCUS_942.54` and every image in `extracted/overlays/` finds no third call
-site for `FUN_80050E00`.
+So for every list short of four entries - every reaction entry on the disc -
+the consumed beat is the **first** byte, `entry[+0x10]`; the "index of the
+terminator" reading (which would make every short list a no-gate) was the
+decompiler's `void` rendering of a routine whose result lives in `v0`. A
+four-slot list hands the tick a load-address-dependent index instead; only
+attack-band entries carry one. Those are the only two consumers reachable: a
+word-wise `jal` scan over `SCUS_942.54` and every image in
+`extracted/overlays/` finds no third call site for `FUN_80050E00`. Reader
+`legaia_asset::monster_archive::juggle_windows` (`gate_frame()` is the
+resolved beat, `None` for the four-slot case).
 
 Reading the field as "the hit frames" fits the offensive entries and no more.
 The archive census by tag is unambiguous about that - idle, walk, knockdown,
@@ -330,9 +344,11 @@ loop, then `FUN_800495c8` / `FUN_8005b038` blend it onto the object vertices.
 
 The per-frame cursor advance lives in the anim-node tick `FUN_80047430`:
 `phase += (frame_dt * actor[+0x21D] * record[+0x78]) >> 1`, where `+0x21D`
-is the actor's speed scale (normally `4`) and the entry's `+0x78` byte is
-its **playback rate** (`1` or `2` across the retail corpus - `rate/8`
-keyframes per 60 Hz tick in the normal case). When the cursor passes the
+is the actor's speed scale (`8` in normal play - a live watch reads `8` on
+every actor of a plain Gobu Gobu fight - dropped to `4` / `2` on everyone
+by an Art's slow-motion arms) and the entry's `+0x78` byte is its
+**playback rate** (`1` or `2` across the retail corpus - `rate/4`
+keyframes per 60 Hz tick at scale `8`). When the cursor passes the
 stream's frame count (or the `+0x1DC` event flags fire mid-clip) the tick
 calls the commit `FUN_8004AD80`, which swaps the entry, zeroes the cursor,
 and converges `+0x1D9 = +0x1DA`. On the last frame of a clip the decoder

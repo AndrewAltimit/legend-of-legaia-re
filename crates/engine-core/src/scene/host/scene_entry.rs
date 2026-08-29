@@ -187,12 +187,18 @@ impl SceneHost {
     /// be resolved keeps the favored base `0x1E` - the disc-free
     /// behaviour.
     ///
-    /// Runs at scene entry, since equipment can only change in the field;
-    /// retail does the same copy at battle load. The Muscle Dome reads the
-    /// same bytes through the same function, which is what keeps the two
-    /// input screens pricing a swing identically.
+    /// Runs at scene entry, since equipment can only change in the field -
+    /// and that is when retail does it too: the player files stream, and
+    /// the equipment sections are re-selected, on a scene load (world map
+    /// or field entry), never on a battle start; a battle splices the
+    /// sections already resident (read-watchpoint on the equipped-item
+    /// bytes: the case-4 compare of `FUN_80052770` reads them across the
+    /// scene load, the battle only touches them from the splice). The
+    /// Muscle Dome reads the same bytes through the same function, which
+    /// is what keeps the two input screens pricing a swing identically.
     ///
     /// REF: FUN_800557B8
+    /// REF: FUN_80052770
     fn refresh_battle_swing_costs(&mut self) {
         /// PROT entries of the three weapon-carrying player battle files.
         const PLAYER_FILE_PROT: [u32; 3] = [863, 864, 865];

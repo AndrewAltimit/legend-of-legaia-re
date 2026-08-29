@@ -55,6 +55,10 @@ pub const ARMS_COMMAND_BASE: u8 = 0x0C;
 /// Number of arms in the `PTR_801CF4B4` dispatch table.
 pub const ARMS_COMMAND_ARMS: u8 = 6;
 
+/// The command byte of an **art** hit (`PTR_801CF4B4[5]`): the arm that folds
+/// half the sum of all five equipment slots' attack bytes.
+pub const ARMS_ART_COMMAND: u8 = 0x11;
+
 /// Highest command byte the **admission** gate at the resolver's head accepts.
 ///
 /// The head gate and the dispatch bound are deliberately different widths and

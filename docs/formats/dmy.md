@@ -16,6 +16,8 @@ No part of the file is referenced by retail gameplay code; the file is included 
 
 Skipped by the categorize pipeline. Not interesting for either preservation or the engine port.
 
+It is, however, the disc's **spare room**: 18,054 Form 1 sectors at the end of the disc (LBA 180228 on the USA image) that nothing loads. The patcher's equipment editor parks rebuilt player-file records there when they outgrow `PROT.DAT` - the PROT entry keeps its header and its descriptor offsets reach into `DMY.DAT` (see [battle-data-pack.md](battle-data-pack.md#parking-the-records-in-dmydat)). A bump-allocator marker (`LGAX`, version, sectors used) in the file's **last** sector records what an earlier patch already placed; the first sector (its own TOC) is left alone so the archive still parses.
+
 ## See also
 
 - [PROT TOC](prot.md) - the sibling container with real game content.

@@ -2019,6 +2019,35 @@ pub fn rebuild_player_file(
     records: Vec<(u32, Vec<u8>)>,
     entry_len: usize,
 ) -> Result<Vec<u8>> {
+    rebuild_player_file_inner(
+        player_file,
+        table_offset,
+        data_base,
+        records,
+        Some(entry_len),
+    )
+}
+
+/// [`rebuild_player_file`] with no entry budget: greedy LZS throughout,
+/// the file ends at the last record's sector boundary. The shape a
+/// caller parks outside the PROT entry (`legaia_asset::player_file_annex`)
+/// wants - room is not the constraint there.
+pub fn rebuild_player_file_unbounded(
+    player_file: &[u8],
+    table_offset: usize,
+    data_base: usize,
+    records: Vec<(u32, Vec<u8>)>,
+) -> Result<Vec<u8>> {
+    rebuild_player_file_inner(player_file, table_offset, data_base, records, None)
+}
+
+fn rebuild_player_file_inner(
+    player_file: &[u8],
+    table_offset: usize,
+    data_base: usize,
+    records: Vec<(u32, Vec<u8>)>,
+    entry_len: Option<usize>,
+) -> Result<Vec<u8>> {
     let mut new_records: Vec<(u32, Vec<u8>, Vec<u8>)> = records
         .into_iter()
         .map(|(id, rewritten)| {
@@ -2038,27 +2067,29 @@ pub fn rebuild_player_file(
 
     // Greedy total first; pay for the optimal parse per record only when
     // the file misses its entry budget.
-    let budget = entry_len.saturating_sub(data_base);
+    let budget = entry_len.map(|e| e.saturating_sub(data_base));
     let total = |recs: &[(u32, Vec<u8>, Vec<u8>)]| -> usize {
         recs.iter()
             .map(|(_, s, _)| (s.len() + 0x7FF) & !0x7FF)
             .sum()
     };
-    if total(&new_records) > budget {
-        for (_, slot, decoded) in new_records.iter_mut() {
-            let stream = legaia_lzs::compress_optimal(decoded);
-            if 4 + stream.len() < slot.len() {
-                slot.truncate(4);
-                slot.extend_from_slice(&stream);
+    if let Some(budget) = budget {
+        if total(&new_records) > budget {
+            for (_, slot, decoded) in new_records.iter_mut() {
+                let stream = legaia_lzs::compress_optimal(decoded);
+                if 4 + stream.len() < slot.len() {
+                    slot.truncate(4);
+                    slot.extend_from_slice(&stream);
+                }
             }
         }
-    }
-    if total(&new_records) > budget {
-        bail!(
-            "rebuilt records need {} bytes, the PROT entry holds {}",
-            total(&new_records),
-            budget
-        );
+        if total(&new_records) > budget {
+            bail!(
+                "rebuilt records need {} bytes, the PROT entry holds {}",
+                total(&new_records),
+                budget
+            );
+        }
     }
 
     // Rebuild the file: everything below data_base verbatim except the
@@ -2090,13 +2121,15 @@ pub fn rebuild_player_file(
         let padded = (start + slot.len() + 0x7FF) & !0x7FF;
         file.resize(padded.max(file.len()), 0);
     }
-    if file.len() > entry_len {
-        bail!(
-            "rebuilt player file {} bytes exceeds the PROT entry ({} bytes)",
-            file.len(),
-            entry_len
-        );
+    if let Some(entry_len) = entry_len {
+        if file.len() > entry_len {
+            bail!(
+                "rebuilt player file {} bytes exceeds the PROT entry ({} bytes)",
+                file.len(),
+                entry_len
+            );
+        }
+        file.resize(entry_len, 0);
     }
-    file.resize(entry_len, 0);
     Ok(file)
 }

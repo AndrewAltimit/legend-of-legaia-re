@@ -42,7 +42,11 @@ pub const ART_ANIM_THRESHOLD: u8 = 0x10;
 /// element table installed resolves to.
 #[derive(Debug, Clone, Copy)]
 pub struct PhysicalHit {
-    /// Attacker ATK, actor `+0x158`.
+    /// Attacker ATK, actor `+0x158` **after** the resolver's execution-time
+    /// equipment fold: the actor's working ATK (seeded from the character
+    /// record with no equipment) plus half of the one equipment slot the
+    /// command reads - [`super::arms_weapon_atk_fold`]. The caller does the
+    /// fold; this kernel takes the sum.
     pub attacker_atk: u16,
     /// Attacker live HP, actor `+0x14C` - contributes `hp >> 8`.
     pub attacker_hp: u16,
@@ -55,8 +59,10 @@ pub struct PhysicalHit {
     /// The attacker's staged anim id (`+0x1D9`). `> `[`ART_ANIM_THRESHOLD`]
     /// selects the art arms.
     pub staged_anim: u8,
-    /// Character-record ability bit `0x1000` on a party attacker - picks
-    /// 14/10 over 13/10 (and 12/10 over 11/10 in the rewrite).
+    /// Character-record ability word `+0xF8` bit `0x1000` on a party
+    /// attacker (accessory passive `0x2C` **Arts Power** - War Soul; read at
+    /// `0x801ED0F8..0x801ED104`) - picks 14/10 over 13/10 (and 12/10 over
+    /// 11/10 in the rewrite).
     pub art_power_bit: bool,
     /// `matrix[attacker_element][defender_element]` from the element-affinity
     /// table (`0x801F53E8`), as a percent. `100` = neutral, which is what an
@@ -67,15 +73,25 @@ pub struct PhysicalHit {
     /// Defender `+0x16E`: same two bits, applied to `guard`.
     pub defender_status: u16,
     /// Defender `+0x1DE == 4` (the Spirit guard stance) - **triples** the
-    /// guard roll. This is the melee path's whole guard model; it does not
-    /// also take `FUN_801DDB30`'s halve, which belongs to the summon/arts
-    /// kernel.
+    /// guard roll (`0x801ED210..0x801ED230`). This is the melee path's whole
+    /// guard model; it does not also take `FUN_801DDB30`'s halve, which
+    /// belongs to the summon/arts kernel. Retail's same `beq` also fires the
+    /// triple when the defender is fleeing (`+0x1DE == 5`) and any living
+    /// party member carries `+0xF8` bit `0x200000` (passive `0x35` Safe
+    /// Escape); the caller folds that case into this flag.
     pub defender_guarding: bool,
-    /// `ctx[+0x0A]` - the per-chain combo scalar.
+    /// `ctx[+0x0A]` - the **juggle** counter: `1` on a chain's first hit,
+    /// `+1` per further hit while the defender's hit-reaction timer
+    /// (`+0x1F7`) is still running, back to `1` otherwise
+    /// (`0x801ECA20..0x801ECA80`).
     pub combo_scale: u8,
-    /// `ctx[+0x6D2]` (i16) - the attack-side chain ramp.
+    /// `ctx[+0x6D2]` (i16) - the **attack angle** term, written by the
+    /// approach state of `FUN_801E295C` (`0x801E3068..0x801E30C8`) as the
+    /// folded facing difference minus `0x800`: `0` for a face-on strike.
     pub attack_ramp: i16,
-    /// `ctx[+0x6D4]` (i16) - the guard-side chain ramp.
+    /// `ctx[+0x6D4]` (i16) - the **approach distance** accumulated while the
+    /// attacker walks in (`0x801E35DC..0x801E35EC`); the kernel zeroes it once
+    /// the first hit lands, so only a chain's opening hit pays it.
     pub guard_ramp: i16,
 }
 

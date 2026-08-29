@@ -710,6 +710,226 @@ impl DiscPatcher {
     }
 }
 
+// ---------------------------------------------------------------------------
+// The DMY.DAT annex: room outside PROT.DAT for records that outgrow it.
+// ---------------------------------------------------------------------------
+
+/// Where an annexed player file's records went.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AnnexPlacement {
+    /// Absolute disc sector of the first annexed record.
+    pub lba: u32,
+    /// Sectors the region occupies.
+    pub sectors: u32,
+    /// The descriptor displacement written into the table: the byte distance
+    /// from the entry's data base to `lba`.
+    pub base: u32,
+}
+
+/// Marker the allocator keeps in `DMY.DAT`'s last sector so a second patch
+/// of an already-annexed disc allocates past what the first one placed.
+const ANNEX_MAGIC: &[u8; 4] = b"LGAX";
+const ANNEX_VERSION: u32 = 1;
+/// The first DMY sector is its own archive header; leaving it lets the
+/// archive walkers still see a well-formed (if junk) file.
+const ANNEX_FIRST_SECTOR: u32 = 1;
+/// Player-file prologue the loader reads before seeking to any slot: the
+/// header, `record[0]` and the descriptor table, `0x8000` bytes.
+pub const PLAYER_FILE_DATA_BASE: usize = 0x8000;
+
+impl DiscPatcher {
+    /// `DMY.DAT`'s disc extent `(lba, sectors)`. The file is developer
+    /// fixtures no retail code path loads (`docs/formats/dmy.md`), all Form 1
+    /// sectors, which makes it the disc's spare room.
+    fn dmy_extent(&self) -> Result<(u32, u32)> {
+        let (lba, size) = find_file_in_image(&self.image, "DMY.DAT")
+            .context("DMY.DAT not found in disc image (no annex room)")?;
+        Ok((lba, (size as usize).div_ceil(USER_DATA_SIZE) as u32))
+    }
+
+    /// Sectors of `DMY.DAT` already handed out, from the marker (0 when the
+    /// disc has never been annexed).
+    fn annex_used(&self, dmy_lba: u32, dmy_sectors: u32) -> Result<u32> {
+        let marker = read_user_data(&self.image, dmy_lba + dmy_sectors - 1, 1)?;
+        if &marker[..4] != ANNEX_MAGIC {
+            return Ok(0);
+        }
+        let version = u32::from_le_bytes(marker[4..8].try_into().unwrap());
+        if version != ANNEX_VERSION {
+            bail!("DMY.DAT annex marker has unknown version {version}");
+        }
+        Ok(u32::from_le_bytes(marker[8..12].try_into().unwrap()))
+    }
+
+    /// Reserve `sectors` whole sectors in the annex and return the absolute
+    /// disc LBA of the first. Allocation is a bump pointer persisted in the
+    /// marker sector; nothing is written to the reserved sectors here.
+    pub fn annex_alloc(&mut self, sectors: u32) -> Result<u32> {
+        if sectors == 0 {
+            bail!("annex allocation of zero sectors");
+        }
+        let (dmy_lba, dmy_sectors) = self.dmy_extent()?;
+        let used = self
+            .annex_used(dmy_lba, dmy_sectors)?
+            .max(ANNEX_FIRST_SECTOR);
+        // The marker owns the last sector.
+        let room = dmy_sectors.saturating_sub(1);
+        if used + sectors > room {
+            bail!(
+                "DMY.DAT annex is full: {sectors} sector(s) wanted, {} free of {room}",
+                room.saturating_sub(used)
+            );
+        }
+        let mut marker = vec![0u8; USER_DATA_SIZE];
+        marker[..4].copy_from_slice(ANNEX_MAGIC);
+        marker[4..8].copy_from_slice(&ANNEX_VERSION.to_le_bytes());
+        marker[8..12].copy_from_slice(&(used + sectors).to_le_bytes());
+        legaia_iso::write::patch_file_logical(
+            &mut self.image,
+            dmy_lba,
+            (dmy_sectors as u64 - 1) * USER_DATA_SIZE as u64,
+            &marker,
+        )
+        .context("write DMY.DAT annex marker")?;
+        Ok(dmy_lba + used)
+    }
+
+    /// Sectors the annex still has to give.
+    pub fn annex_free_sectors(&self) -> Result<u32> {
+        let (dmy_lba, dmy_sectors) = self.dmy_extent()?;
+        let used = self
+            .annex_used(dmy_lba, dmy_sectors)?
+            .max(ANNEX_FIRST_SECTOR);
+        Ok(dmy_sectors.saturating_sub(1).saturating_sub(used))
+    }
+
+    /// Park an arbitrary blob in freshly allocated annex sectors and return its
+    /// absolute disc LBA - the value the game's own CD reader
+    /// (`FUN_8005E4D4`) takes, so an injected stub can stream the blob at
+    /// runtime with that LBA as a literal. The blob is zero-padded to whole
+    /// sectors; the disc keeps its size (annex sectors already exist).
+    pub fn annex_blob(&mut self, bytes: &[u8]) -> Result<(u32, u32)> {
+        if bytes.is_empty() {
+            bail!("annex blob is empty");
+        }
+        let sectors = bytes.len().div_ceil(USER_DATA_SIZE) as u32;
+        let lba = self.annex_alloc(sectors)?;
+        let mut padded = bytes.to_vec();
+        padded.resize(sectors as usize * USER_DATA_SIZE, 0);
+        legaia_iso::write::patch_file_logical(&mut self.image, lba, 0, &padded)
+            .context("write annexed blob")?;
+        Ok((lba, sectors))
+    }
+
+    /// Read `sectors` sectors of user data back out of the annex (or any
+    /// absolute disc LBA) - the read side of [`Self::annex_blob`], for oracles.
+    pub fn read_disc_sectors(&self, lba: u32, sectors: u32) -> Result<Vec<u8>> {
+        read_user_data(&self.image, lba, sectors as usize)
+    }
+
+    /// Where PROT entry `index`'s player file keeps its records, if they
+    /// were annexed: the placement decoded from the in-place table.
+    pub fn player_file_annex(&self, index: usize) -> Result<Option<AnnexPlacement>> {
+        let head = self.read_entry_footprint(index)?;
+        let Some(chain) = legaia_asset::player_file_annex::chain(&head) else {
+            return Ok(None);
+        };
+        if !chain.is_annexed() {
+            return Ok(None);
+        }
+        let entry_lba = self
+            .entry_disc_lba(index)
+            .with_context(|| format!("PROT entry {index} LBA"))?;
+        let data_lba = entry_lba + (PLAYER_FILE_DATA_BASE / USER_DATA_SIZE) as u32;
+        Ok(Some(AnnexPlacement {
+            lba: data_lba + chain.base / USER_DATA_SIZE as u32,
+            sectors: (chain.region_len() / USER_DATA_SIZE) as u32,
+            base: chain.base,
+        }))
+    }
+
+    /// PROT entry `index` as the **retail-shaped** player file: the entry's
+    /// own sectors when its records are in place, or the in-place header
+    /// with the annexed records read back behind it when they are not.
+    /// Every `battle_data_pack` reader takes the result as-is.
+    pub fn read_player_file(&self, index: usize) -> Result<Vec<u8>> {
+        let head = self.read_entry_footprint(index)?;
+        let Some(place) = self.player_file_annex(index)? else {
+            return Ok(head);
+        };
+        let region = read_user_data(&self.image, place.lba, place.sectors as usize)
+            .with_context(|| format!("read annexed records of PROT entry {index}"))?;
+        legaia_asset::player_file_annex::materialize(&head, PLAYER_FILE_DATA_BASE, &region)
+            .with_context(|| format!("materialise annexed PROT entry {index}"))
+    }
+
+    /// Park a rebuilt retail-shaped player `file` (records chained from 0
+    /// at [`PLAYER_FILE_DATA_BASE`]) with its records in the annex: the
+    /// header goes in place over PROT entry `index` (same size), the slot
+    /// region into freshly allocated `DMY.DAT` sectors, and the table's
+    /// offsets are displaced to reach them. The entry's old record sectors
+    /// are left as they were; nothing reads them any more.
+    pub fn annex_player_file(&mut self, index: usize, file: &[u8]) -> Result<AnnexPlacement> {
+        let entry_lba = self
+            .entry_disc_lba(index)
+            .with_context(|| format!("PROT entry {index} LBA"))?;
+        let foot = self
+            .entry_true_footprint_sectors(index)
+            .with_context(|| format!("PROT entry {index} footprint"))?;
+        if (foot as usize) * USER_DATA_SIZE < PLAYER_FILE_DATA_BASE {
+            bail!("PROT entry {index} is shorter than a player-file prologue");
+        }
+        let chain = legaia_asset::player_file_annex::chain(file)
+            .with_context(|| format!("rebuilt file for PROT entry {index} is not a player file"))?;
+        let sectors = (chain.region_len() / USER_DATA_SIZE) as u32;
+        let lba = self.annex_alloc(sectors)?;
+        let data_lba = entry_lba + (PLAYER_FILE_DATA_BASE / USER_DATA_SIZE) as u32;
+        if lba <= data_lba {
+            bail!(
+                "annex at LBA {lba} is not past PROT entry {index}'s data base (forward seek only)"
+            );
+        }
+        let base = (lba - data_lba) * USER_DATA_SIZE as u32;
+        let (header, region) =
+            legaia_asset::player_file_annex::split(file, PLAYER_FILE_DATA_BASE, base)?;
+        self.patch_prot_entry(index, 0, &header)
+            .with_context(|| format!("write annexed header of PROT entry {index}"))?;
+        legaia_iso::write::patch_file_logical(&mut self.image, lba, 0, &region)
+            .with_context(|| format!("write annexed records of PROT entry {index}"))?;
+        Ok(AnnexPlacement { lba, sectors, base })
+    }
+
+    /// Overwrite `bytes` at `offset` into PROT entry `index`'s player file
+    /// **as [`Self::read_player_file`] presents it** - routed to the entry
+    /// when the file is in place, and to the annex for offsets inside an
+    /// annexed slot region. A write must not straddle the two halves.
+    pub fn patch_player_file(&mut self, index: usize, offset: u64, bytes: &[u8]) -> Result<()> {
+        let Some(place) = self.player_file_annex(index)? else {
+            return self.patch_prot_entry(index, offset, bytes);
+        };
+        let db = PLAYER_FILE_DATA_BASE as u64;
+        let end = offset + bytes.len() as u64;
+        if end <= db {
+            return self.patch_prot_entry(index, offset, bytes);
+        }
+        if offset < db {
+            bail!(
+                "player-file write [{offset}, +{}] straddles the annex boundary",
+                bytes.len()
+            );
+        }
+        let region_len = place.sectors as u64 * USER_DATA_SIZE as u64;
+        if end - db > region_len {
+            bail!(
+                "player-file write [{offset}, +{}] runs past the annexed region ({region_len} bytes)",
+                bytes.len()
+            );
+        }
+        legaia_iso::write::patch_file_logical(&mut self.image, place.lba, offset - db, bytes)
+            .with_context(|| format!("write annexed records of PROT entry {index}"))
+    }
+}
+
 /// Synthetic-disc builders shared by this module's tests and the texture
 /// module's disc-free replacement tests.
 #[cfg(test)]
@@ -720,12 +940,19 @@ pub(crate) mod synth {
     /// single file, "PROT.DAT", with the given logical payload. Enough structure
     /// for find_file_in_image + the read/write paths.
     pub(crate) fn synth_disc(prot_payload: &[u8]) -> Vec<u8> {
+        synth_disc_with_dmy(prot_payload, 0)
+    }
+
+    /// [`synth_disc`] plus a `DMY.DAT` of `dmy_sectors` zeroed sectors right
+    /// after `PROT.DAT` - the annex's room.
+    pub(crate) fn synth_disc_with_dmy(prot_payload: &[u8], dmy_sectors: usize) -> Vec<u8> {
         const PVD_LBA: u32 = 16;
         const ROOT_LBA: u32 = 17;
         const PROT_LBA: u32 = 18;
 
         let prot_sectors = prot_payload.len().div_ceil(USER_DATA_SIZE).max(1);
-        let total_sectors = PROT_LBA as usize + prot_sectors;
+        let dmy_lba = PROT_LBA + prot_sectors as u32;
+        let total_sectors = PROT_LBA as usize + prot_sectors + dmy_sectors;
         let mut image = vec![0u8; total_sectors * SECTOR_SIZE];
 
         // Shape every sector as a valid empty Form 1 sector first.
@@ -766,19 +993,26 @@ pub(crate) mod synth {
         pvd[156..156 + 34].copy_from_slice(&root_rec);
         put(&mut image, PVD_LBA, &pvd);
 
-        // Root directory at sector 17: one file record for PROT.DAT.
-        let name = b"PROT.DAT;1";
-        let rec_len = 33 + name.len();
+        // Root directory at sector 17: a file record for PROT.DAT (and DMY.DAT).
         let mut root = vec![0u8; USER_DATA_SIZE];
-        root[0] = rec_len as u8;
-        root[2..6].copy_from_slice(&PROT_LBA.to_le_bytes());
-        root[10..14].copy_from_slice(&(prot_payload.len() as u32).to_le_bytes());
-        root[25] = 0x00; // file
-        root[32] = name.len() as u8;
-        root[33..33 + name.len()].copy_from_slice(name);
+        let mut at = 0usize;
+        let mut file_rec = |name: &[u8], lba: u32, len: u32| {
+            let rec_len = 33 + name.len();
+            root[at] = rec_len as u8;
+            root[at + 2..at + 6].copy_from_slice(&lba.to_le_bytes());
+            root[at + 10..at + 14].copy_from_slice(&len.to_le_bytes());
+            root[at + 25] = 0x00; // file
+            root[at + 32] = name.len() as u8;
+            root[at + 33..at + 33 + name.len()].copy_from_slice(name);
+            at += rec_len;
+        };
+        file_rec(b"PROT.DAT;1", PROT_LBA, prot_payload.len() as u32);
+        if dmy_sectors > 0 {
+            file_rec(b"DMY.DAT;1", dmy_lba, (dmy_sectors * USER_DATA_SIZE) as u32);
+        }
         put(&mut image, ROOT_LBA, &root);
 
-        // PROT.DAT payload.
+        // PROT.DAT payload (DMY.DAT stays the zeroed Form 1 sectors above).
         put(&mut image, PROT_LBA, prot_payload);
         image
     }
@@ -879,5 +1113,140 @@ mod tests {
         let disc = synth_disc(&synth_prot(b"x"));
         let patcher = DiscPatcher::open(disc).unwrap();
         assert!(patcher.monster_slot(0).is_err());
+    }
+}
+
+#[cfg(test)]
+mod annex_tests {
+    use super::synth::{synth_disc_with_dmy, synth_prot};
+    use super::*;
+
+    /// A retail-shaped player file: 16-sector prologue with a 3-row table,
+    /// then three records of one sector each (a sane `dec_size` prefix).
+    fn player_file() -> Vec<u8> {
+        let db = PLAYER_FILE_DATA_BASE;
+        let mut f = vec![0u8; db];
+        let table = 0x40u32;
+        f[0..4].copy_from_slice(&table.to_le_bytes());
+        f[4..8].copy_from_slice(&0x100u32.to_le_bytes());
+        f[8..12].copy_from_slice(&0x200u32.to_le_bytes());
+        f[12..16].copy_from_slice(&0x300u32.to_le_bytes());
+        let rows = [(0x22u32, 0u32), (0u32, 0x800), (0x5u32, 0x1000)];
+        for (i, (id, off)) in rows.iter().enumerate() {
+            let p = table as usize + i * 12;
+            f[p..p + 4].copy_from_slice(&id.to_le_bytes());
+            f[p + 4..p + 8].copy_from_slice(&off.to_le_bytes());
+            f[p + 8..p + 12].copy_from_slice(&0x800u32.to_le_bytes());
+        }
+        for i in 0..3u8 {
+            let mut slot = vec![0x10 + i; 0x800];
+            slot[..4].copy_from_slice(&0x100u32.to_le_bytes());
+            f.extend_from_slice(&slot);
+        }
+        f
+    }
+
+    /// PROT with entry 1 sized to hold a full player file (19 sectors).
+    fn prot_with_player_file(file: &[u8]) -> Vec<u8> {
+        let sec = USER_DATA_SIZE;
+        let mut prot = synth_prot(&[]);
+        // Re-shape: entry 1 spans LBA 2..=20, entry 2 starts at 21.
+        let put = |p: &mut [u8], j: usize, v: u32| {
+            p[8 + 4 * j..12 + 4 * j].copy_from_slice(&v.to_le_bytes());
+        };
+        put(&mut prot, 4, 21);
+        put(&mut prot, 5, 22);
+        put(&mut prot, 6, 23);
+        put(&mut prot, 7, 24);
+        prot.resize(26 * sec, 0);
+        prot[2 * sec..2 * sec + file.len()].copy_from_slice(file);
+        prot
+    }
+
+    #[test]
+    fn annex_round_trips_a_player_file_and_persists_its_marker() {
+        let file = player_file();
+        let disc = synth_disc_with_dmy(&prot_with_player_file(&file), 12);
+        let mut patcher = DiscPatcher::open(disc).unwrap();
+        assert!(patcher.player_file_annex(1).unwrap().is_none());
+        assert_eq!(patcher.read_player_file(1).unwrap()[..file.len()], file[..]);
+        // 12 DMY sectors: 1 header, 1 marker, 10 to give.
+        assert_eq!(patcher.annex_free_sectors().unwrap(), 10);
+
+        // Grow the file by one record and annex it.
+        let mut grown = file.clone();
+        let table = 0x40usize + 3 * 12;
+        grown[table..table + 4].copy_from_slice(&0xBAu32.to_le_bytes());
+        grown[table + 4..table + 8].copy_from_slice(&0x1800u32.to_le_bytes());
+        grown[table + 8..table + 12].copy_from_slice(&0x800u32.to_le_bytes());
+        let mut slot = vec![0x77u8; 0x800];
+        slot[..4].copy_from_slice(&0x100u32.to_le_bytes());
+        grown.extend_from_slice(&slot);
+        let place = patcher.annex_player_file(1, &grown).unwrap();
+        assert_eq!(place.sectors, 4);
+        assert_eq!(patcher.annex_free_sectors().unwrap(), 6);
+        let (dmy_lba, _) = find_file_in_image(patcher.image(), "DMY.DAT").unwrap();
+        assert_eq!(
+            place.lba,
+            dmy_lba + 1,
+            "first allocation skips the DMY header sector"
+        );
+        let entry_lba = patcher.entry_disc_lba(1).unwrap();
+        assert_eq!(
+            place.base,
+            (place.lba - entry_lba - 16) * USER_DATA_SIZE as u32
+        );
+
+        // In place: the header, table displaced; the old records untouched.
+        let head = patcher.read_entry_footprint(1).unwrap();
+        let chain = legaia_asset::player_file_annex::chain(&head).unwrap();
+        assert_eq!(chain.base, place.base);
+        assert_eq!(
+            head[PLAYER_FILE_DATA_BASE..PLAYER_FILE_DATA_BASE + 0x800],
+            file[PLAYER_FILE_DATA_BASE..PLAYER_FILE_DATA_BASE + 0x800]
+        );
+        // Read back retail-shaped.
+        let back = patcher.read_player_file(1).unwrap();
+        assert_eq!(back, grown);
+        let p = patcher.player_file_annex(1).unwrap().unwrap();
+        assert_eq!(p, place);
+
+        // A write inside the annexed region lands in the annex, a header
+        // write in the entry, a straddling one is refused.
+        patcher
+            .patch_player_file(1, 0x8000 + 0x1800 + 4, &[0xEE; 4])
+            .unwrap();
+        let back = patcher.read_player_file(1).unwrap();
+        assert_eq!(&back[0x8000 + 0x1804..0x8000 + 0x1808], &[0xEE; 4]);
+        patcher.patch_player_file(1, 0x10, &[1, 2, 3, 4]).unwrap();
+        assert_eq!(
+            &patcher.read_entry_footprint(1).unwrap()[0x10..0x14],
+            &[1, 2, 3, 4]
+        );
+        assert!(patcher.patch_player_file(1, 0x7FFE, &[0; 4]).is_err());
+        assert!(
+            patcher
+                .patch_player_file(1, 0x8000 + 0x2000 - 2, &[0; 4])
+                .is_err()
+        );
+
+        // Reopen: the marker persists and the next allocation follows.
+        let mut again = DiscPatcher::open(patcher.into_image()).unwrap();
+        assert_eq!(again.annex_free_sectors().unwrap(), 6);
+        assert_eq!(again.annex_alloc(2).unwrap(), dmy_lba + 5);
+        assert!(again.annex_alloc(5).is_err(), "over the room");
+        assert_eq!(again.annex_free_sectors().unwrap(), 4);
+    }
+
+    #[test]
+    fn annex_needs_a_dmy_dat() {
+        let disc = synth_disc_with_dmy(&prot_with_player_file(&player_file()), 0);
+        let mut patcher = DiscPatcher::open(disc).unwrap();
+        assert!(patcher.annex_free_sectors().is_err());
+        assert!(patcher.annex_alloc(1).is_err());
+        assert!(
+            patcher.read_player_file(1).is_ok(),
+            "reading needs no annex"
+        );
     }
 }

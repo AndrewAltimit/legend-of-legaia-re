@@ -442,6 +442,7 @@ Beyond `actor[+0x1DE]` (category), these per-actor bytes are read or written by 
 | `+0x1E8` | u8 | **Effect class** of the committed action, seeded once at state `0x3C` (item-effect descriptor `+0` for an Item, spell record `+0` otherwise). Selects the applier's jump-table arm at `0x80014FA0`, the arm's [cue-group site](#fun_800402f4s-cue-group-sites), and the [cast-audio cue](#state-table). |
 | `+0x1E9` | u8 | **Tier / sub-index** within that class, from `+1` of the same record. The `param_2` the applier's cue-group sites turn into a group id for classes `0`, `1`, `2` and `7`. |
 | `+0x1F5` | u8 | Anim-cue flag (read at state `0x33` for fade-in trigger). |
+| `+0x1F7` | u8 | **Juggle window** - `1` while the actor's current clip is still before its first event frame (`record[+0x10]`), re-derived every tick by the anim tick `FUN_80047430` (`0x80047E1C..0x80047E54`, its only writers). The damage kernel grows `ctx[+0x0A]` while the *defender's* byte is up; see [battle-formulas.md](battle-formulas.md#the-juggle-window---what-makes-a-monster-juggleable). |
 | `+0x1F9` | u8 | "Spirit shield" flag - gates spirit-arts variant path. Written by `FUN_800402F4` case 5 (set) / case 4 (cleanse clears), selected by `actor[+0x1E8]` seeded from the spell-table class byte (`DAT_800754C8 +0`, `5` = shield / `4` = cleanse). |
 | `+0x1FA` | u8 | Spell-cast iteration counter. |
 | `+0x21B` | u8 | Hit-count bound (script-defined; loop exits at `ctx[+0x24C] >= +0x21B`). |

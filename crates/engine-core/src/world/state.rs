@@ -349,6 +349,16 @@ pub struct World {
     /// character record's weapon power. Default zero - un-populated slots
     /// produce floor-clamped damage (`= 1`).
     pub battle_attack: [u16; 8],
+    /// Per-slot **equipment** attack bonuses, one byte per character-record
+    /// equipment slot (`+0x196..+0x19A`: body, head, slot 2, slot 3,
+    /// footwear), as the equipment table's `+1` attack byte resolves them.
+    /// Retail never folds these into the actor's ATK at battle load - the
+    /// arms execution resolver `FUN_801EC3E4` adds **half** of the slot the
+    /// executing command reads (`arms_weapon_atk_fold`) on every swing, so
+    /// [`Self::battle_attack`] stays the un-equipped base and this array
+    /// supplies the per-command half. Party slots only; monster slots stay
+    /// zero.
+    pub battle_equip_atk: [[u8; legaia_engine_vm::battle_formulas::EQUIP_SLOTS]; 8],
     /// Per-slot magic attack scalar used by [`spells::cast_spell`] for the
     /// caster's `mag` column when resolving a player-driven battle Magic cast.
     /// Engines populate from the active character record; default zero (which
@@ -2708,6 +2718,7 @@ impl World {
             cos_lut: Vec::new(),
             character_ability_bits: [0; 8],
             battle_attack: [0; 8],
+            battle_equip_atk: [[0; legaia_engine_vm::battle_formulas::EQUIP_SLOTS]; 8],
             battle_magic: [0; 8],
             battle_defense: [0; 8],
             battle_defense_split: [None; 8],

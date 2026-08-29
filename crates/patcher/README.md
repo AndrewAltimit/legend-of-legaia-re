@@ -23,8 +23,10 @@ Four patching families share that machinery:
   in no preset and untouched by the seed: the
   [Delilas party swap family](#delilas-party-swap-delilas_party-module-family),
   the Delilas Challenge dome fight (`delilas_challenge` / `delilas_dome`),
-  custom items (`custom_items`), and the Super-Arts move list
-  (`super_art_list`).
+  custom items (`custom_items`), the Super-Arts move list
+  (`super_art_list`), and **ZetaPhoenix's**
+  [Super Arts Pack](#super-arts-pack-by-zetaphoenix-super_arts_pack-module)
+  (`super_arts_pack`).
 - **Translation packs** - the `translate` CLI family: disc text out to an
   editable YAML language pack, filled pack back in as a same-size in-place
   reimport ([`docs/tooling/translation.md`](../../docs/tooling/translation.md)).
@@ -98,6 +100,7 @@ full design.
   - [Arts damage power](#arts-damage-power-arts_power-module)
   - [Super Art damage power](#super-art-damage-power-super_art_power-module)
   - [Show Super Arts on the move list](#show-super-arts-on-the-move-list-super_art_list-module)
+  - [Super Arts Pack (by ZetaPhoenix)](#super-arts-pack-by-zetaphoenix-super_arts_pack-module)
   - [Arts AP override](#arts-ap-override-arts_ap_grant-module)
   - [Spirit AP](#spirit-ap-spirit_ap-module)
   - [Enemy-damage AP](#enemy-damage-ap-damage_ap-module)
@@ -910,6 +913,33 @@ so the toggle is **mutually exclusive** with `--shiny-seru`, `--arts-ap-grant` /
 thresholds stay retail, so on a later page it can still read "View Hyper Arts
 list" - a known cosmetic gap. Full design:
 [`docs/tooling/randomizer.md`](../../docs/tooling/randomizer.md#show-super-arts-on-the-in-battle-move-list).
+
+## Super Arts Pack, by ZetaPhoenix (`super_arts_pack` module)
+
+`--super-arts-pack` installs **ZetaPhoenix's Super Arts Pack**: five Super
+Arts per character on top of the retail five, each with its own name banner, hit
+count and animation, triggered by its own arts chain. The payload is his - a
+3764-byte block written as a GameShark-style RAM patch at `0x801FD000`, shipped
+verbatim in [`data/zetaphoenix-super-arts-pack.bin`](data/zetaphoenix-super-arts-pack.bin)
+and installed unmodified (licence still to be confirmed with him - see
+[`data/README.md`](data/README.md)).
+
+The block is parked in the `DMY.DAT` annex (`DiscPatcher::annex_blob`) and
+streamed to `0x801FD000` at battle load by a 12-instruction stub in the
+verified-dead arena 1, hooked into `FUN_80055B6C` one instruction past the CD
+wait that finishes the battle overlay's own read. Nine further same-size word
+edits point the retail Super-Art applier `FUN_801EF9E4`, the arts queue builder
+and the two banner routines at the block - each derived from his code, since
+every routine replays the instruction it displaces and returns to the next one.
+The keystone is `move t5,a1` becoming `sll t5,a1,1`: the applier multiplies that
+register by 65 and 80 to reach a character's rows, so doubling it yields the
+pack's `10 x 13` and `10 x 16` strides exactly, and makes his own
+`(t5>>1) + t5 + t5` resolve to `5 * character`.
+
+Mutually exclusive with `--shiny-seru`, `--show-super-arts`, the arts AP
+overrides and `--delilas-challenge` (same arena; the move list also detours the
+same applier). Full reference, including what is reconstruction rather than his:
+[randomizer.md](../../docs/tooling/randomizer.md#super-arts-pack-by-zetaphoenix).
 
 ## Arts AP override (`arts_ap_grant` module)
 

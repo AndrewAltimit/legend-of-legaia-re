@@ -97,6 +97,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Arts damage power](#arts-damage-power)
   - [Super Art damage power](#super-art-damage-power)
   - [Show Super Arts on the in-battle move list](#show-super-arts-on-the-in-battle-move-list)
+  - [Super Arts Pack (by ZetaPhoenix)](#super-arts-pack-by-zetaphoenix)
   - [Arts AP override](#arts-ap-override)
   - [Spirit AP](#spirit-ap)
   - [Enemy-damage AP](#enemy-damage-ap)
@@ -228,6 +229,7 @@ legaia-patcher arts      --input DISC.bin                                       
 legaia-patcher randomize --input DISC.bin --seed pow --arts-power RDLDL=0x0C              # power Vahn's Burning Flare down to tier 0x0C
 legaia-patcher randomize --input DISC.bin --super-art-power "Tri-Somersault"=0x1A       # power Vahn's Tri-Somersault Super Art up to tier 0x1A
 legaia-patcher randomize --input DISC.bin --show-super-arts                             # list a character's performed Super Arts on the in-battle Triangle menu, in AP order
+legaia-patcher randomize --input DISC.bin --super-arts-pack                             # install ZetaPhoenix's Super Arts Pack: five Super Arts per character
 legaia-patcher randomize --input DISC.bin --arts-ap-grant Vahn:RDLDL=10                   # Vahn's Burning Flare GRANTS 10 AP instead of costing it
 legaia-patcher randomize --input DISC.bin --arts-ap-cost Vahn:RDLDL=5                     # ... or costs a flat 5 AP instead of the computed 50
 legaia-patcher randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
@@ -316,6 +318,7 @@ unless asked for:
 | `--arts-power COMBO=VALUE` | rebalance a Tactical Art's per-strike damage-power bytes, targeted by input combo (`RDLDL=0x16`); `VALUE` is a power tier `0x0C..=0x1F` or `0` to disable | repeatable / comma-separated | [Arts damage power](#arts-damage-power) |
 | `--super-art-power NAME=VALUE` | the same rebalance for a **Super Art**, targeted by name (`"Tri-Somersault"=0x1A`); Super Arts carry no combo, no arts-table row and no AP cost of their own, so name is their only key | repeatable / comma-separated | [Super Art damage power](#super-art-damage-power) |
 | `--show-super-arts` | list a character's Super Arts on the in-battle Tactical-Arts list, which retail never draws: once performed, sorted in by AP, with name, chain AP and the arrows you type; mutually exclusive with `--shiny-seru`, the arts AP overrides and `--delilas-challenge` |
+| `--super-arts-pack` | install the **Super Arts Pack by ZetaPhoenix**: fifteen extra Super Arts, five per character, each with its own name, hit count and animation; his block is installed byte-for-byte, parked in the `DMY.DAT` annex and streamed to `0x801FD000` at battle load. Mutually exclusive with `--shiny-seru`, `--show-super-arts`, the arts AP overrides and `--delilas-challenge` | flag | [Super Arts Pack](#super-arts-pack-by-zetaphoenix) |
 | `--arts-ap-grant [CHAR:]COMBO=AMOUNT` | make a Tactical Art **grant** `AMOUNT` AP (Spirit, clamped at 100) instead of costing it, admitting it at any AP level; a code hook into the party arts queue-builder. Keyed per (character, arts row). Mutually exclusive with `--shiny-seru` | repeatable / comma-separated | [Arts AP override](#arts-ap-override) |
 | `--arts-ap-cost [CHAR:]COMBO=AMOUNT` | set what a Tactical Art **costs** in AP (`1..=100`), replacing retail's computed cost. Same hook, same keying, same exclusivity; the art's menu AP number is rewritten to match | repeatable / comma-separated | [Arts AP override](#arts-ap-override) |
 | `--spirit-ap AP` | set how much AP the Spirit command charges into the battle gauge (retail 32): `0` = defence boost only, `100` = one press fills the gauge, negative = Spirit drains the gauge | single value -100..=100 | [Spirit AP](#spirit-ap) |
@@ -3326,7 +3329,11 @@ or footwear the default record's cost - see
 [arts-command-gauge.md](../subsystems/arts-command-gauge.md#if-the-astral-sword-is-forced-onto-another-character)).
 For a **weapon**, the patcher instead **carries the model over**: the weapon's
 primitives are cut out of the donor file's record with the same item-alone
-cut the equipment viewer uses, seated on the new owner's own bare arm and
+cut the equipment viewer uses, re-seated into the new owner's own grip (the
+three skeletons' hand frames differ by up to a right angle; the transform
+is calibrated from the weapons both files carry, per weapon class - see
+[battle-data-pack.md](../formats/battle-data-pack.md#carrying-a-weapon-into-another-characters-file)),
+seated on the new owner's own bare arm and
 swing records, the donor's texture tile and palettes ride along on the
 owner's section columns, and the record keeps the donor weapon's arm cost
 (so the Astral Sword swings at 54 for Noa too until `--swing-cost Noa:0xBA=…`
@@ -3337,12 +3344,24 @@ re-packed. Room is the constraint: the retail player files tile their
 footprints exactly, so the patcher re-packs the three files with the optimal
 LZS parse (a few sectors each) and **moves the boundaries between PROT
 entries 863..865** - same total footprint, index space preserved, still a
-PPF - which pays for one or two carried-over weapons. Past that, the CLI's
-`--allow-relayout` grows the target entries with a whole-disc relayout
+PPF - which pays for one or two carried-over weapons. Past that the records
+go to the **`DMY.DAT` annex**: the rebuilt file's header (with the
+descriptor table) stays in its PROT entry and its whole slot region is
+written into `DMY.DAT`, the 18,000-sector developer-fixture file at the end
+of the disc that no retail code path loads, with the table's offsets
+displaced to reach it. The loader streams a player file by those offsets
+alone - a fixed 16-sector prologue from the entry's TOC start, then each
+selected slot by a forward seek of its offset - and discards the entry's
+TOC span, so nothing in retail notices where the records sit (detail in
+[battle-data-pack.md](../formats/battle-data-pack.md#parking-the-records-in-dmydat)).
+Same-size image, still a PPF, room for every weapon on every character; a
+bump marker in `DMY.DAT`'s last sector lets a second patch of the same disc
+allocate past the first. Only when the annex is missing or full does the
+CLI's `--allow-relayout` grow the target entries with a whole-disc relayout
 (`--output` only, no PPF; the web patcher never relays out); without it the
-model stays out and the report says so (`no room in the player files`), the
-owner falling through to the default record. `--no-model-transplant` keeps
-the default-look behaviour on purpose. Ra-Seru level forms, body, head and
+model stays out and the report says so (`no room in the player files or
+the DMY.DAT annex`), the owner falling through to the default record.
+`--no-model-transplant` keeps the default-look behaviour on purpose. Ra-Seru level forms, body, head and
 footwear are never carried over (a Ra-Seru arm or an armour section is the
 donor's whole re-sculpted limb, not an item to seat); they fall through, and
 the report names every such (character, item) pair with the cost it pays.
@@ -3725,6 +3744,154 @@ table from `legaia_art::SUPER_ARTS`). Module
 [`legaia_patcher::super_art_list`](../../crates/patcher/src/super_art_list.rs);
 disc oracle `crates/patcher/tests/super_art_list_real.rs`, which also checks
 every derived input against the curated walkthrough table.
+
+### Super Arts Pack (by ZetaPhoenix)
+
+`--super-arts-pack` installs the **Super Arts Pack**, a community mod by
+**ZetaPhoenix**. Each character gains **five Super Arts** on top of the
+retail five, each with its own name banner, hit count and animation, triggered
+by its own arts chain exactly the way a retail Super Art is:
+
+| | Added Super Arts |
+|---|---|
+| Vahn | Ultra Elbow, Somersault Duo, Searing Rush, Criss-Cross, Blazing Typhoon |
+| Noa | Double Lizard, Falcon Talons, Chilling Smash, Zephyr Swipes, Grand Maelstrom |
+| Gala | Ground Pound, Storm Kick, System Shock, Skyvolt Knee, Raging Bull |
+
+The retail five per character keep their triggers and their queue results: the
+pack carries them verbatim as the first five rows of its own trigger table, and
+the patcher checks those rows against the disc's own table before it writes
+anything. Their **animations** do pass through the pack - the animation hook
+fires for any action in the pack's seventeen listed constants, and three of
+Noa's and Gala's retail finishers are among them. Each clip is a pair of
+`(offset, values)` edit-lists over the art record: "A" adds the added Super's
+extra element and bumps the record's `+0x14` / `+0x8C` / `+0x9A` fields, "B"
+writes the plain values back, so a shared constant plays with B - ZetaPhoenix's
+own restore path.
+
+**ZetaPhoenix authored the payload; this is its disc-patch carrier.** He wrote
+it as a GameShark-style RAM patch - a 3764-byte block forced into main RAM at
+`0x801FD000` during battle, plus a handful of word edits pointing retail code at
+it. The block ships in
+[`crates/patcher/data/zetaphoenix-super-arts-pack.bin`](../../crates/patcher/data/zetaphoenix-super-arts-pack.bin)
+and is installed **unmodified**: nothing is re-assembled, relocated or rewritten.
+Its licence still needs confirming with him before a tagged release ships it -
+see that directory's `README.md`.
+
+#### What the block holds
+
+The whole mod is one contiguous image, and every address in it is confirmed by
+the block's own code referencing it:
+
+| VA | What |
+|---|---|
+| `0x801FD000` | find table, 13-byte rows, **10 rows per character** (rows 0..4 retail, 5..9 ZetaPhoenix's) |
+| `0x801FD186` | replace table, 16-byte rows, same order |
+| `0x801FD366` | fifteen hit-count seeds, one per added Super Art |
+| `0x801FD376` / `0x801FD378` | two runtime cells: the per-queue hit bit-train, and which added Super is playing |
+| `0x801FD380` / `0x801FD3DC` | routines A and B - the applier's post-match arm, and the per-queue reset |
+| `0x801FD400` | the fifteen 16-byte names |
+| `0x801FD4F0` | three per-character action-constant groups (6 / 5 / 6 = 17) |
+| `0x801FD510` / `0x801FD538` | routines C and D - keep an installed banner name, and install one + apply the art's animation edits |
+| `0x801FD71C` / `0x801FD760` | two 17-entry pointer tables into 34 animation edit-lists at `0x801FD7A4` |
+
+#### Getting the bytes there
+
+`0x801FD000..0x801FE000` is free RAM: all-zero in every state of this project's
+save library, battles included, with the deepest observed stack use at
+`0x801FE420` - 1388 bytes above the block's end. No overlay covers it either;
+slot A ends at `0x801F7018` (PROT 0898's `0x28800` bytes from `0x801CE818`).
+
+So the block is parked in the [`DMY.DAT` annex](#re-pack-slack) and streamed to
+`0x801FD000` at battle load by a 12-instruction stub in the verified-dead SCUS
+arena. The stub is entered from battle init `FUN_80055B6C` at `0x80055DBC` -
+one instruction **after** the `FUN_8003DE7C(0)` that waits for the battle
+overlay's own CD read, so the drive is idle and the read happens in the same
+between-frames context every other load runs in. It calls the game's own
+synchronous reader `FUN_8005E4D4(sectors, lba, dest)`, then the BIOS
+`FlushCache` (the block is code, and the PSX I-cache is not DMA-coherent).
+
+Growing PROT 0898 to cover `0x801FD000` was the alternative and is worse: it
+needs 14 sectors taken from a neighbouring entry, and it would zero
+`0x801F7018..0x801FD000` at every battle load - the persistent `0x801F****`
+effect and world state the field overlay leaves there.
+
+#### The ten word edits
+
+Every one is same-size and PPF-safe. Six retarget the retail Super-Art applier
+`FUN_801EF9E4` onto the pack's wider tables; four are the jumps:
+
+| Site | Retail word | Becomes |
+|---|---|---|
+| `0x801EF9E8` | `move t5,a1` | `sll t5,a1,1` - the applier's per-character stride doubles |
+| `0x801EFA38` / `0x801EFA3C` | `lui v0,0x801f` / `addiu t6,v0,0x6524` | the find table becomes `0x801FD000` |
+| `0x801EFA58` / `0x801EFA5C` | `lui v0,0x801f` / `addiu t8,v0,0x65e8` | the replace table becomes `0x801FD186` |
+| `0x801EFBE0` | `slti v0,a1,5` | `slti v0,a1,10` - all ten rows are tried |
+| `0x801EFB94` | `nop` (a load-delay slot) | `j 0x801FD380` (routine A) |
+| `0x801EED20` | `move t9,a0` | `j` an arena trampoline into routine B |
+| `0x8004BC10` | `sw v0,0x74c(a0)` | `j 0x801FD538` (routine D) |
+| `0x8004C718` / `0x8004C71C` | `sw v0,0x74c(s0)` / `sw v0,0x734(s0)` | `j 0x801FD510` (routine C) + `nop` |
+| `0x80055DBC` | `lui a2,0x1f80` | `j` the battle-load stub |
+
+The `t5` edit is the whole retarget. The applier computes a character's find
+base as `t5*65` and its replace base as `t5*80`, so a doubled `t5` gives
+`130 = 10*13` and `160 = 10*16` exactly - the pack's strides. It is also what
+makes routine A's own `(t5>>1) + t5 + t5` read as `5*character`, the flat 0..14
+index it stores at `0x801FD378` and uses against the hit-seed and name tables.
+Nothing else in the applier reads `t5`. Routine A returns immediately for a row
+below 5 (`slti t0,0x50`), so a retail Super Art never picks up a pack name or
+hit count.
+
+#### What is ZetaPhoenix's and what is this project's
+
+He supplied the block and described the rest as "a few more lines of code that
+replace lines from the OG code (mostly jumps to my new code)", but not the lines
+themselves. **The nine jump/retarget words above are this project's
+reconstruction from his block**, not his own: each of his routines replays the
+exact instruction it displaces and returns to the instruction after it, which
+pins the site; the doubled `t5` is forced by his tables' strides and by his own
+index arithmetic. The tenth edit - the battle-load stub and its hook - is ours
+by construction, because a RAM cheat had nothing to load.
+
+Two deliberate departures, both taken to keep his bytes exact:
+
+- The `0x801EED20` hook goes through a two-word arena trampoline rather than
+  detouring `0x801EED24` directly. A `j` at `0x801EED24` would run `move s3,zero`
+  in its delay slot, so routine B's replayed `sw s3,0x54(sp)` would spill 0
+  instead of the caller's `s3`. Hooking one word earlier keeps the spill honest,
+  and the trampoline replays `move t9,a0` in its own delay slot.
+- `0x8004C71C` is nopped rather than left in place, because routine C re-stores
+  **both** banner words on its non-skip path and neither on its skip path.
+
+**Not fixed here:** the art-name banner is centred as if every name were the
+13-character placeholder `FUN_8004AD80` measures at `0x8004BBB4` (the fixed
+pointer at `0x80076024`), so long names sit off-centre - retail's own Super Arts
+already do. Names up to 15 characters ("Blazing Typhoon", "Grand Maelstrom")
+make it slightly more visible. Fixing it means moving the width measurement
+after the real name pointer is known, which is a bigger change than the pack
+needs, so the banner is left exactly as ZetaPhoenix's mod draws it.
+
+#### Where it lives, and what it excludes
+
+The battle-load stub and the trampoline are 56 bytes at `0x8007AE00`, the head
+of the verified-dead SCUS arena 1 - so the pack is **mutually exclusive with
+`--shiny-seru`, `--show-super-arts`, `--arts-ap-grant` / `--arts-ap-cost` and
+`--delilas-challenge`**, the other claimants of the same 652 bytes (see
+[Show Super Arts](#show-super-arts-on-the-in-battle-move-list) for the arena
+budget). `--show-super-arts` would conflict anyway: it detours the same applier.
+
+Seedless toggle, off by default, in no preset. Module
+[`legaia_patcher::super_arts_pack`](../../crates/patcher/src/super_arts_pack.rs);
+disc oracle `crates/patcher/tests/super_arts_pack_real.rs`, plus a runtime oracle
+that executes the **patched retail applier** - real `FUN_801EF9E4` instructions
+off the patched disc, with the block read back out of the annex - over a live
+action queue and checks all fifteen added chains fire with the right replace
+string and the right name index, and that the retail fifteen still fire
+untouched. The one link neither reaches - the CD read itself - is covered by an
+emulator probe, `scripts/pcsx-redux/autorun_super_arts_pack_load.lua`: on the
+patched disc it walks a save state into a random encounter and reads
+`0x801FD000` at the stub's return, having first checked that address was clear
+(catalogued in [pcsx-redux-automation.md](pcsx-redux-automation.md#runtime-probes-lua-autorun)).
 
 ### Arts AP override
 

@@ -2365,12 +2365,23 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     }
     fn apply_art_strike(&mut self, info: legaia_engine_vm::battle_action::ArtStrikeInfo) {
         // Resolve per-slot weapon attack and the defense the art targets.
-        let attack = self
+        // Base ATK plus the art arm of the execution-time equipment fold:
+        // command `0x11` adds half the sum of all five equipment slots'
+        // attack bytes (`FUN_801EC3E4`, `PTR_801CF4B4[5]`).
+        let mut attack = self
             .world
             .battle_attack
             .get(info.actor_slot as usize)
             .copied()
             .unwrap_or(0);
+        if let Some(bonuses) = self.world.battle_equip_atk.get(info.actor_slot as usize)
+            && let Some(fold) = legaia_engine_vm::battle_formulas::arms_weapon_atk_fold(
+                legaia_engine_vm::battle_formulas::ARMS_ART_COMMAND,
+                bonuses,
+            )
+        {
+            attack = attack.saturating_add(fold);
+        }
         let defense = self.world.resolve_battle_defense(info.target_slot, &info);
         let outcome = crate::art_strike::apply_art_strike(attack, defense, &info);
         // Seed the target's HP-bar ramp the way every other damage entry

@@ -121,6 +121,7 @@ pub mod steal;
 pub mod super_art_list;
 pub mod super_art_menu;
 pub mod super_art_power;
+pub mod super_arts_pack;
 pub mod texture;
 pub mod translation;
 pub mod unused;

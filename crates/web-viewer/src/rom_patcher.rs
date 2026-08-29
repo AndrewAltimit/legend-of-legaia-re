@@ -168,7 +168,7 @@ pub fn resolve_seed(seed: &str) -> String {
 
 /// Number of `prog.stage(..)` boundaries in [`patch_rom`] (the `stage_count`
 /// every progress-callback invocation carries).
-const PATCH_ROM_STAGES: u32 = 36;
+const PATCH_ROM_STAGES: u32 = 37;
 
 /// Patch a user-supplied disc image with the chosen randomizer settings.
 ///
@@ -264,7 +264,12 @@ const PATCH_ROM_STAGES: u32 = 36;
 /// name, the chain's summed AP cost and the arrows the player types; the pause
 /// menu's Status screen (Left = Moves) lists them the same way. The
 /// Triangle caption's own page thresholds stay retail, so on a later page it can
-/// still read "View Hyper Arts list". Mutually exclusive with
+/// still read "View Hyper Arts list". `super_arts_pack` installs the **Super
+/// Arts Pack by ZetaPhoenix**: fifteen extra Super Arts, five per
+/// character, each with its own name, hit count and animation, from his own
+/// 3764-byte block (parked in the disc's `DMY.DAT` annex, streamed to
+/// `0x801FD000` at battle load). Mutually exclusive with the same four features
+/// as `show_super_arts`, plus `show_super_arts` itself. Mutually exclusive with
 /// `shiny_seru`, the arts AP override and `delilas_challenge` (same SCUS
 /// regions). `arts_ap_grants` and `arts_ap_costs` are
 /// comma/space-separated lists of `[character:]combo=amount` pairs (e.g.
@@ -387,6 +392,7 @@ pub async fn patch_rom(
     delilas_moves: &str,
     super_art_powers: &str,
     show_super_arts: bool,
+    super_arts_pack: bool,
     enemy_attack_count: &str,
     swing_costs: &str,
     equip_owners: &str,
@@ -441,6 +447,21 @@ pub async fn patch_rom(
             return Err(err(format!(
                 "showing Super Arts on the move list and {what} both inject into the same \
                  verified-dead SCUS regions and are mutually exclusive; enable only one"
+            )));
+        }
+    }
+    // The Super Arts Pack hosts its battle-load stub in the same arena and
+    // rewrites the applier the move list detours, so it conflicts with all four.
+    for (other, what) in [
+        (arts_ap, "the arts AP override"),
+        (shiny_seru, "shiny-seru"),
+        (delilas_challenge, "the Delilas Challenge"),
+        (show_super_arts, "showing Super Arts on the move list"),
+    ] {
+        if super_arts_pack && other {
+            return Err(err(format!(
+                "the Super Arts Pack and {what} both inject into the same verified-dead SCUS \
+                 regions and are mutually exclusive; enable only one"
             )));
         }
     }
@@ -671,6 +692,21 @@ pub async fn patch_rom(
         ));
     } else {
         summary.push_str("show-super-arts: untouched\n");
+    }
+
+    // Super Arts Pack (by ZetaPhoenix): his 3764-byte block parked in the annex
+    // and streamed to 0x801FD000 at battle load, reached by ten word edits.
+    // Spoiler-safe: the count, never the roster.
+    prog.stage("Super Arts Pack (by ZetaPhoenix)").await;
+    if super_arts_pack {
+        let rep = apply::inject_super_arts_pack(&mut patcher)
+            .map_err(|e| err(format!("super-arts-pack: {e}")))?;
+        summary.push_str(&format!(
+            "super-arts-pack (by ZetaPhoenix): {} extra Super Arts, five per character\n",
+            rep.names.len()
+        ));
+    } else {
+        summary.push_str("super-arts-pack: untouched\n");
     }
 
     // Seru trading: a vendor in shops offers to trade a party member's Seru-magic for
@@ -1232,6 +1268,7 @@ pub async fn patch_rom(
             Ok(mapping) => {
                 let cast_route = if shiny_seru
                     || show_super_arts
+                    || super_arts_pack
                     || !arts_ap_grants.trim().is_empty()
                     || !arts_ap_costs.trim().is_empty()
                 {

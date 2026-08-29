@@ -329,6 +329,131 @@ pub fn action_tags(entry: &[u8], id: u16) -> Result<Option<Vec<u8>>> {
     Ok(Some(out))
 }
 
+/// Offset of the four-byte, zero-terminated **event-frame list** inside a
+/// per-action entry (`+0x10..+0x13`; shared with the player battle files'
+/// record[0] entries).
+pub(crate) const EVENT_FRAME_LIST_OFFSET: usize = 0x10;
+
+/// One action entry's **juggle window**: the beat the anim tick compares the
+/// clip cursor against to keep the actor's `+0x1F7` byte raised.
+///
+/// The only writer of battle-actor `+0x1F7` is the shared anim tick
+/// `FUN_80047430` (`0x80047E28..0x80047E54`): every tick, for every actor,
+/// `+0x1F7 = (cursor >> 4) < entry[+0x10 + idx]` where `idx` is
+/// `FUN_80050E00(entry + 0x10)`'s **`v0`** - `0` when any of `+0x11..+0x13`
+/// is zero (every reaction entry on the disc), so the compared beat is the
+/// list's first frame. The damage kernel `FUN_801EC3E4` reads the
+/// *defender's* byte to grow the juggle counter `ctx+0x0A` (`+1` while it is
+/// `1`, back to `1` otherwise), so a monster's "juggleability" is this
+/// beat of its light-flinch clip (tag `2`, the `+0x1EF` reaction every
+/// surviving hit re-stages) scaled by the clip's playback rate - not a stat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JuggleWindow {
+    /// Raw entry index in the `+0x4C` table (the `+0x1DA` id space).
+    pub entry_index: usize,
+    /// The entry's action tag (`+0x00`).
+    pub tag: u8,
+    /// The four-byte event-frame list (`+0x10..+0x13`).
+    pub event_frames: [u8; 4],
+    /// Playback-rate byte (`+0x78`).
+    pub rate: u8,
+    /// Keyframes in the clip's packed stream (0 when the stream is empty).
+    pub frame_count: usize,
+}
+
+impl JuggleWindow {
+    /// The beat the tick actually compares against, i.e. the list slot the
+    /// helper `FUN_80050E00` resolves: slot `0` unless `+0x11..+0x13` are
+    /// **all** non-zero, in which case retail indexes with the low byte of
+    /// the entry's own address (`v0 = a0 + 3` on the fall-through exit) and
+    /// the result depends on where the block was loaded - `None` here.
+    pub fn gate_frame(&self) -> Option<u8> {
+        let l = self.event_frames;
+        if l[1] != 0 && l[2] != 0 && l[3] != 0 {
+            None
+        } else {
+            Some(l[0])
+        }
+    }
+
+    /// 60 Hz ticks from clip commit during which `+0x1F7` reads `1` at the
+    /// actor speed scale `speed` (`actor[+0x21D]`): the cursor gains
+    /// `speed * rate / 2` sixteenths per tick, so the byte holds while
+    /// `speed * rate * t < 32 * beat`, i.e. for `ceil(32 * beat / (speed *
+    /// rate))` ticks. `0` when the gate frame is `0` (no window) or unpinned.
+    pub fn ticks_at(&self, speed: u8) -> u32 {
+        let beat = u32::from(self.gate_frame().unwrap_or(0));
+        let per_tick = u32::from(self.rate.max(1)) * u32::from(speed.max(1));
+        (32 * beat).div_ceil(per_tick)
+    }
+
+    /// [`Self::ticks_at`] at the normal battle speed scale `8` (the value a
+    /// live `+0x21D` reads outside an Art's slow-motion arms): `4 * beat /
+    /// rate` ticks. Live-measured: Gobu Gobu's and Gilium's `f8/2` flinch
+    /// holds the byte for 16 ticks at scale 8 and 32 at scale 4.
+    pub fn ticks(&self) -> u32 {
+        self.ticks_at(8)
+    }
+}
+
+/// The juggle window of every entry in the monster's `+0x4C` action-record
+/// array, **index-aligned with [`action_tags`]** (same walk, same stop
+/// rule), so `entry_index` is the raw id the engine stages. Returns
+/// `Ok(None)` for an empty / filler / non-mesh slot.
+pub fn juggle_windows(entry: &[u8], id: u16) -> Result<Option<Vec<JuggleWindow>>> {
+    let Some(block) = decode_block(entry, id)? else {
+        return Ok(None);
+    };
+    if block.len() < MIN_RECORD_BYTES {
+        return Ok(None);
+    }
+    let magic_count = block[0x4a] as usize;
+    let mut out = Vec::with_capacity(magic_count);
+    for i in 0..magic_count {
+        let Some(entry_off) = legaia_bytes::u32_le(&block, 0x4c + i * 4).map(|v| v as usize) else {
+            break;
+        };
+        let Some(&tag) = block.get(entry_off) else {
+            break;
+        };
+        let at = |o: usize| block.get(entry_off + o).copied().unwrap_or(0);
+        let event_frames = [
+            at(EVENT_FRAME_LIST_OFFSET),
+            at(EVENT_FRAME_LIST_OFFSET + 1),
+            at(EVENT_FRAME_LIST_OFFSET + 2),
+            at(EVENT_FRAME_LIST_OFFSET + 3),
+        ];
+        let frame_count = block
+            .get(entry_off + ANIM_STREAM_OFFSET + 1)
+            .copied()
+            .map(usize::from)
+            .unwrap_or(0);
+        out.push(JuggleWindow {
+            entry_index: i,
+            tag,
+            event_frames,
+            rate: at(ANIM_RATE_OFFSET),
+            frame_count,
+        });
+    }
+    Ok(Some(out))
+}
+
+/// The window a normal hit leaves the monster in: the entry the battle
+/// installer `FUN_80054CB0` caches as the light flinch (`+0x1EF`, tag `2`,
+/// resolved through [`reaction_map`] - last match wins). A monster with no
+/// tag-`2` entry stages its zeroed `+0x1EF` as entry `0`, the idle loop, so
+/// that entry's (empty) window is returned for it. `Ok(None)` only for an
+/// empty / filler / non-mesh slot.
+pub fn light_flinch_window(entry: &[u8], id: u16) -> Result<Option<JuggleWindow>> {
+    let Some(ws) = juggle_windows(entry, id)? else {
+        return Ok(None);
+    };
+    let tags: Vec<u8> = ws.iter().map(|w| w.tag).collect();
+    let flinch = reaction_map(&tags)[0].map(usize::from).unwrap_or(0);
+    Ok(ws.get(flinch).copied())
+}
+
 /// First-byte tag search over the action-record array.
 ///
 /// Retail signature is `(table, tag, count) -> idx_or_0xFF`: a linear scan of a

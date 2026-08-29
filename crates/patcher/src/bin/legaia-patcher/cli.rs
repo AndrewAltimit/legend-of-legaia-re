@@ -209,7 +209,10 @@ pub(crate) enum Cmd {
     },
     /// Read-only: list every monster's current combat stats (HP / MP / ATK /
     /// UDF / LDF / INT / SPD) from the `battle_data` archive - the population
-    /// the `--monster-stats` randomizer redistributes.
+    /// the `--monster-stats` randomizer redistributes - plus its juggle
+    /// window: the light-flinch clip's gate frame over its rate byte
+    /// (`f8/2`) and the 60 Hz ticks a follow-up hit has to grow the juggle
+    /// counter (animation data, not a stat).
     MonsterStats {
         /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
         /// is accepted and resolved to the `.bin` it references).
@@ -767,8 +770,11 @@ pub(crate) struct RandomizeArgs {
     /// from the system clock.
     #[arg(long)]
     pub(crate) seed: Option<String>,
-    /// How monster item drops are reassigned.
-    #[arg(long, value_enum, default_value_t = DropArg::Shuffle)]
+    /// How monster item drops are reassigned. Off by default, like every
+    /// other randomizer feature: a run that only asks for a manual edit or a
+    /// community mod must not silently reshuffle the drop tables (it once
+    /// did - a pack-only PPF came out at 9 MB).
+    #[arg(long, value_enum, default_value_t = DropArg::None)]
     pub(crate) drops: DropArg,
     /// Inject an *additional* low-chance equipment drop into the battle-end
     /// reward routine (a same-size `SCUS_942.54` code hook). On a per-battle
@@ -895,6 +901,22 @@ pub(crate) struct RandomizeArgs {
     /// dead-space bytes).
     #[arg(long, default_value_t = false)]
     pub(crate) show_super_arts: bool,
+    /// **Super Arts Pack, by ZetaPhoenix**: fifteen extra Super Arts - five
+    /// per character on top of the retail five - each with its own name (Ultra
+    /// Elbow, Somersault Duo, Double Lizard, Ground Pound, ...), hit count and
+    /// animation, triggered by their own arts chains. ZetaPhoenix's 3764-byte
+    /// block is installed unmodified: it is parked in the `DMY.DAT` annex and
+    /// streamed to `0x801FD000` at battle load by an injected stub, and ten
+    /// same-size word edits point the retail Super-Art applier, the arts queue
+    /// builder and the two banner routines at it. The retail five per character
+    /// keep their triggers and results - the pack carries them verbatim as its
+    /// first five rows - though its animation hook also runs for the seventeen
+    /// art constants it lists, three of which retail Super Arts share.
+    /// **Mutually exclusive with `--shiny-seru`, `--show-super-arts`,
+    /// `--arts-ap-grant` / `--arts-ap-cost` and `--delilas-challenge`** (same
+    /// dead-space bytes).
+    #[arg(long, default_value_t = false)]
+    pub(crate) super_arts_pack: bool,
     /// Per-battle percentage chance a capturable enemy is shiny (only with
     /// `--shiny-seru`).
     #[arg(long, default_value_t = legaia_patcher::shiny_seru::DEFAULT_PCT)]
@@ -1215,9 +1237,11 @@ pub(crate) struct RandomizeArgs {
     /// equipment table; items sharing a bonus row move together (the report
     /// says which). A weapon a character's player file has no record for gets
     /// its model carried over from the file that has it (the three player
-    /// files are re-packed and their boundaries moved to make room; see
-    /// `--allow-relayout` when that is not enough). Other slots fall through
-    /// to the default look. Repeatable / comma-separated.
+    /// files are re-packed and their boundaries moved to make room; past
+    /// that the rebuilt file's records go to the DMY.DAT annex - same-size
+    /// image, still a PPF). Body, head, footwear and Ra-Seru forms cannot
+    /// be carried and fall through to the default look. Repeatable /
+    /// comma-separated.
     #[arg(
         long = "equip-owner",
         value_name = "ITEM=OWNERS",
@@ -1228,9 +1252,10 @@ pub(crate) struct RandomizeArgs {
     /// swings with the default look (and the default record's cost).
     #[arg(long)]
     pub(crate) no_model_transplant: bool,
-    /// With `--equip-owner`: when the carried-over weapon models do not fit
-    /// the three player files, grow them with a whole-disc relayout. The
-    /// image gets longer, so this needs `--output` and writes no PPF.
+    /// With `--equip-owner`: when the carried-over weapon models fit neither
+    /// the three player files nor the DMY.DAT annex, grow them with a
+    /// whole-disc relayout. The image gets longer, so this needs `--output`
+    /// and writes no PPF.
     #[arg(long)]
     pub(crate) allow_relayout: bool,
     /// How per-monster steal items are reassigned (the Evil God Icon table;

@@ -64,6 +64,9 @@ legaia_*.yaml
 # deterministic in-test SaveFile via crates/save/tests/schema_fixture.rs).
 # Regenerable with LEGAIA_UPDATE_FIXTURES=1.
 !/crates/save/tests/fixtures/*.bin
+# Third-party mod payloads the patcher installs verbatim (no Sony bytes; see
+# crates/patcher/data/README.md for provenance and the licence note).
+!/crates/patcher/data/*.bin
 
 # Static overlay-extraction output (Sony overlay code + generated Ghidra
 # import scripts; the as-loaded .bin already matches *.bin above, but stop
