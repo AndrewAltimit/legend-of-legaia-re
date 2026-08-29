@@ -198,6 +198,7 @@ impl SceneHost {
     /// is what keeps the two input screens pricing a swing identically.
     ///
     /// REF: FUN_800557B8
+    /// REF: FUN_80052770
     fn refresh_battle_swing_costs(&mut self) {
         /// PROT entries of the three weapon-carrying player battle files.
         const PLAYER_FILE_PROT: [u32; 3] = [863, 864, 865];
