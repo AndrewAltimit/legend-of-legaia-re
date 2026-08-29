@@ -1,19 +1,763 @@
 # Battle formulas
 
-Damage, MP-cost, and stat-cap math used by the [battle action state machine](battle-action.md). Lives in the battle overlay (`0898`); the central damage-application primitive is `FUN_800402F4`.
+The arithmetic behind Legaia's battles: how much a hit does, how a Tactical Art
+scales it, what the defender's numbers subtract, and the smaller rolls around
+them (turn order, fleeing, poison ticks, MP costs, the RNG). Everything here is
+traced from the game's own code - `FUN_801EC3E4` in the battle overlay (PROT
+`0898`) for a physical hit, `FUN_800402F4` in `SCUS_942.54` for the generic
+applicator - and mirrored in the clean-room engine at
+`crates/engine-vm/src/battle_formulas.rs`.
+
+The page is written for two readers at once. A **player or modder** wants the
+formula in plain terms and a worked example: that is the [Summary](#summary),
+the [Offense / Defense Value](#physical-damage---offense-value-and-defense-value)
+section and the [worked example](#worked-example---vahn-vs-evil-fly). A
+**porter** wants each term pinned to an instruction: that is the
+[register-level stage list](#the-melee-roll-pair-and-the-underdog-rewrite) and
+the [address appendix](#address-appendix). The formula shape - an *Offense
+Value* built from the attacker, a *Defense Value* built from the defender,
+damage = the difference - follows ZetaPhoenix's community analysis, which
+corrected and simplified Meth962's earlier forum write-ups; see
+[Credits and sources](#credits-and-sources).
+
+## Summary
+
+> **A normal hit or an Art, in one paragraph.** Your attack starts from your
+> **base ATK** (the number with everything unequipped) plus **half** the ATK of
+> the one piece of gear the command uses - footwear for High/Low, the
+> weapon-hand item for the arm command, the other hand's item for the other
+> arm, and half of *all* your gear for an Art. That number is nudged up by a
+> random 0-12.5%, multiplied by the move's **power** (20/16 for a normal hit;
+> Arts carry 12, 18, 20, 22 or 28), and gets small extras for your current HP
+> (1 per 256), for **juggling** (each consecutive hit while the enemy is still
+> reeling adds ATK/64) and for the strike angle. An Art multiplies the total by
+> **1.3** (1.4 with War Soul) and the element matchup applies (x1.04 for
+> fire-vs-water and the other opposed pairs, x0.96 same-element; an Art takes
+> the element factor twice). The defender's **UDF or LDF** - upper body for
+> high strikes, lower for low ones - gets the same random 0-12.5% nudge plus a
+> small approach-distance term on the first hit only. **Damage = Offense -
+> Defense**, capped at 9999. When the defense would win outright the game does
+> not floor the hit at 1: it rebuilds your attack on top of the defense so a
+> weak attacker still lands a hit that scales with ATK.
+
+Things the summary leaves out, all covered below: Venom/Toxic scale both sides
+by 9/10 and 7/10; a defender in the **Spirit** stance triples its Defense
+Value; a petrified defender takes nothing from a physical hit; Seru magic and
+monster specials use a *different* kernel (`FUN_801DD0AC`, INT-driven) with its
+own finisher; blocking and the limb-height "Miss" are separate mechanics.
 
 ## Contents
 
-- [Damage application primitive - `FUN_800402F4`](#damage-application-primitive---fun_800402f4)
-- [Actor stat block + monster record mapping](#actor-stat-block--monster-record-mapping) - [spell list](#spell-list-record-0x4c) · [physical attack damage](#physical-attack-damage---overlay_battle_action_801ec3e4) · [the melee roll pair](#the-melee-roll-pair-and-the-underdog-rewrite) · [selector 0](#selector-0---basic-damage-attack--item--generic-spell) · [selector 9 (accuracy)](#selector-9---accuracy--evasion-roll) · [stat-buff selectors](#stat-buff-selectors-17)
-- [Victory spoils (rewards)](#victory-spoils-rewards) · [spirit damage formula](#spirit-damage-formula) · [run / escape roll](#run--escape-roll---fun_801e791c)
-- [Per-round status DoT ticker - `FUN_801E752C`](#per-round-status-dot-ticker---fun_801e752c) · [status application byte map](#status-application-the-art--move-record-status-byte)
-- [Summon-magic damage roll - `FUN_801dd0ac`](#summon-magic-damage-roll---fun_801dd0ac) - [arts / physical branch](#arts--physical-branch-attacker_slot--7) · [element-affinity matrix](#element-affinity-matrix-fun_801dd864-0x801f53e8)
-- [Summon spell XP + magic level-up](#summon-spell-xp--magic-level-up)
-- [MP cost & ability-bit modifiers](#mp-cost--ability-bit-modifiers) · [RNG primitive](#rng-primitive)
-- [Engine-side mirror - `engine-vm::battle_formulas`](#engine-side-mirror---engine-vmbattle_formulas) · [what's still open](#whats-still-open)
+- [Physical damage - Offense Value and Defense Value](#physical-damage---offense-value-and-defense-value) - [base offense](#base-offense-value-base-atk-plus-half-of-one-equipment-slot) · [offense](#offense-value) · [defense](#defense-value) · [underdog floor](#damage-and-the-underdog-floor) · [worked example](#worked-example---vahn-vs-evil-fly) · [claims checked against the bytes](#checking-the-community-analysis-against-the-bytes) · [register-level stages](#the-melee-roll-pair-and-the-underdog-rewrite)
+- [Other damage kernels](#other-damage-kernels) - [summon / magic roll](#summon-magic-damage-roll---fun_801dd0ac) · [arts / physical branch](#arts--physical-branch-attacker_slot--7) · [element-affinity matrix](#element-affinity-matrix-fun_801dd864-0x801f53e8) · [summon spell XP](#summon-spell-xp--magic-level-up) · [spirit damage](#spirit-damage-formula)
+- [Stats and the actor record](#stats-and-the-actor-record) - [applicator `FUN_800402F4`](#damage-application-primitive---fun_800402f4) · [stat block mapping](#actor-stat-block--monster-record-mapping) · [initiative](#initiative-key-seeding-fun_801da780) · [formation advantage](#formation-advantage-fun_80051d84) · [spell list](#spell-list-record-0x4c) · [selector 0](#selector-0---basic-damage-attack--item--generic-spell) · [selector 9](#selector-9---accuracy--evasion-roll) · [stat buffs](#stat-buff-selectors-17)
+- [Round mechanics and status](#round-mechanics-and-status) - [escape roll](#run--escape-roll---fun_801e791c) · [monster escape](#monster-escape-roll---fun_801ec0dc) · [status DoT ticker](#per-round-status-dot-ticker---fun_801e752c) · [status application](#status-application-the-art--move-record-status-byte)
+- [Rewards and costs](#rewards-and-costs) - [victory spoils](#victory-spoils-rewards) · [MP cost](#mp-cost--ability-bit-modifiers) · [RNG](#rng-primitive)
+- [Engine-side mirror](#engine-side-mirror---engine-vmbattle_formulas) · [what's still open](#whats-still-open) · [credits and sources](#credits-and-sources) · [address appendix](#address-appendix)
 
-## Damage application primitive - `FUN_800402F4`
+## Physical damage - Offense Value and Defense Value
+
+Every direction-command hit and every Tactical-Art hit a party member lands, and
+every plain swing a monster lands, resolves in `FUN_801EC3E4` (battle overlay
+`0898`, link base `0x801CE818`, called from `SCUS_942.54` at `0x800478A0`). It
+is one routine with two rolls: an **Offense Value** built from the attacker and
+a **Defense Value** built from the defender, subtracted.
+
+```text
+Damage = Offense Value - Defense Value        (cap 9999; see the underdog floor)
+```
+
+Integer arithmetic throughout - every `/` truncates, every `rand()` is the BIOS
+`rand` (0..32767). `Rnd(1..1.125)` below is shorthand for the game's
+`x + rand() % (x/8 + 1)`, which lies between `x` and `x + x/8`.
+
+### Base Offense Value: base ATK plus half of one equipment slot
+
+```text
+Base Offense = Base ATK + Equipment ATK / 2
+```
+
+**Base ATK** is the character's ATK with nothing equipped - the value the
+battle loader `FUN_80053CB8` copies into the actor's ATK halfword (`+0x158`)
+from the character record (`+0x112`), with **no** equipment folded in (it folds
+UDF / LDF / SPD from the equipment table and skips the ATK and INT bytes:
+`see ghidra/scripts/funcs/80053cb8.txt`, store at `0x8005417C`). The menu's
+ATK figure is base plus *all* your gear, so the two do not match - the menu
+aggregator `FUN_801CF650` adds equipment for display only.
+
+**Equipment ATK** is added at swing time, per command, by the resolver's
+six-arm jump table `PTR_801CF4B4[(+0x1D9) - 0x0C]` at `0x801ECB90..0x801ECBBC`.
+Each arm reads one or more of the character's five equipment slots
+(`+0x196..+0x19A`: body, head, slot 2, slot 3, footwear), resolves each id to its
+equipment-table attack byte (`DAT_80074368 + id*0xC` byte `+1` → row,
+`DAT_80074F68 + row*8` byte `+1`), halves it, and adds it to the working ATK:
+
+| Command | `+0x1D9` | Equipment slot read | Fold | Arm |
+|---|---|---|---|---|
+| Left arm | `0x0C` | slot 2 | `atk[2] >> 1` | `0x801ECBC4` |
+| Right arm | `0x0D` | slot 3 | `atk[3] >> 1` | `0x801ECC0C` |
+| High | `0x0E` | slot 4 (**footwear**) | `atk[4] >> 1` | `0x801ECC54` |
+| Low | `0x0F` | slot 4 (**footwear**) | `atk[4] >> 1` | `0x801ECC54` |
+| (starter) | `0x10` | none | nothing | `0x801ECDE4` |
+| **Art** hit | `0x11` | slots 0-4 | `(sum of all five) >> 1` | `0x801ECCD0` |
+
+Two things the table hides. The arms are keyed by **slot**, not by item type:
+Vahn and Gala carry the weapon in slot 2 and the Ra-Seru in slot 3, so for them
+Left = weapon ATK and Right = Ra-Seru ATK; Noa carries Terra in slot 2 and her
+claws in slot 3, so hers are swapped ([arts-command-gauge.md](arts-command-gauge.md#the-execution-time-weapon-fold)).
+And the Art arm sums all five slots, body and head included - those normally
+carry no ATK byte, so in practice it is weapon + Ra-Seru + footwear. The fold
+runs for party slots only (`sltiu a0,a0,0x3` at `0x801ECB80`); a monster's
+Offense starts from its actor ATK unchanged.
+
+### Offense Value
+
+```text
+Offense = [ Base Offense * Rnd(1..1.125) * Power / 16
+          + Current HP / 256
+          + Base Offense * Juggle / 64
+          + Base Offense * Angle / 65536 ]
+          * Arts Modifier * Element * (Element again for an Art)
+```
+
+| Term | What it is | Where |
+|---|---|---|
+| `Rnd(1..1.125)` | `atk + rand() % (atk/8 + 1)`: `atk` plus 0 to `atk/8`. The `% (atk/8+1)` makes the extra at most one eighth, so the factor is 1 to 1.125 (exactly 1.125 only when `atk` divides by 8). | `0x801ECE78..0x801ECEB0` |
+| Power | Move power byte, `(byte - 0x0C) % 5` into `0x801F64EC = [12, 18, 20, 22, 28]`, applied as `* Power >> 4`. A normal direction hit carries the 20 tier; Arts carry any of the five per strike (the art record's `+0x24` power run, [art-data.md](../formats/art-data.md#power-encoding)). | `0x801ECE9C..0x801ECEB4`, `0x801ECEFC` |
+| Current HP / 256 | The **attacker's** current HP (`+0x14C`), `>> 8`. Worth a few points. | `0x801ECEF8..0x801ECF04` |
+| Juggle | `ctx[+0x0A]`: `1` on a chain's first hit, `+1` for each further hit while the defender's hit-reaction timer (`+0x1F7`) is still running, back to `1` when the reaction has ended. Applied as `(juggle * atk) >> 6`. | set `0x801ECA20..0x801ECA80`, used `0x801ECEC4..0x801ECF0C` |
+| Angle | `ctx[+0x6D2]`: the folded difference between the attacker's heading and the defender's new facing, minus `0x800` - `0` for a face-on strike. Applied as `(angle * atk) >> 16`. Only a chain's opening hit can carry it (the defender turns to face the attacker, and the kernel zeroes the word after the first hit). | written `0x801E3068..0x801E30C8` (`FUN_801E295C`), used `0x801ECED8..0x801ECF18`, zeroed `0x801EC888` |
+| Arts Modifier | `x13/10` when the staged id `+0x1D9` is above `0x10` (an Art); `x14/10` when the attacker's record word `+0xF8` carries bit `0x1000` - accessory passive `0x2C` **Arts Power**, the War Soul. `x1` for a plain hit. | `0x801ED0A4..0x801ED138` |
+| Element | `matrix[attacker element][defender element] / 100` from the 8x8 table at `0x801F53E8`: same element 96, opposed pairs (earth-wind, water-fire, light-dark) 104, else 100. Applied once for every hit and **a second time inside the Art arm**, so an Art scales by the factor squared. | `0x801ED13C..0x801ED174` (Art pass), `0x801ED178..0x801ED1B4` (always) |
+| Venom / Toxic | Attacker's `+0x16E` bit `0x1` (Venom) scales Offense `x9/10`, bit `0x2` (Toxic) `x7/10`, after the element pass. | `0x801ED254..0x801ED2A0` |
+
+### Defense Value
+
+```text
+Defense = Base DEF * Rnd(1..1.125) + Base DEF * Distance / 1024
+```
+
+| Term | What it is | Where |
+|---|---|---|
+| Base DEF | The defender's **UDF** (`+0x15C`, upper body) when the strike's power byte satisfies `(byte - 0x0C) % 10 < 5`, else **LDF** (`+0x160`, lower body). For a monster this is the record stat after the battle-load boost ([below](#actor-stat-block--monster-record-mapping)); for a party member it is the record UDF/LDF plus the equipment table's defence bytes, which `FUN_80053CB8` *does* fold. | `0x801ECE0C..0x801ECE74` |
+| `Rnd(1..1.125)` | `def + rand() % (def/8 + 1)`, the same shape as the attack roll. | `0x801ED1B0..0x801ED1D0` |
+| Distance | `ctx[+0x6D4]`, accumulated from a scratchpad byte (`0x1F800393`) on every step of the attacker's walk-in and zeroed by the kernel once the first hit lands. Applied as `(def * distance) >> 10`. ZetaPhoenix measured 30 for a straight walk-in from the starting line, i.e. about +3% of DEF on the opening hit and nothing after it. | accumulated `0x801E35DC..0x801E35EC`, used `0x801ED1E0..0x801ED220`, zeroed `0x801EC88C` |
+| Spirit stance | Defense `x3` when the defender chose **Spirit** (`+0x1DE == 4`), or is fleeing (`+0x1DE == 5`) while a living party member wears passive `0x35` **Safe Escape** (`+0xF8` bit `0x200000`). | `0x801ECFB8..0x801ED03C`, `0x801ED210..0x801ED230` |
+| Venom / Toxic | Defender's `+0x16E` bit `0x1` scales Defense `x9/10`, bit `0x2` `x7/10`. | `0x801ED2B8..0x801ED304` |
+
+### Damage and the underdog floor
+
+`Damage = Offense - Defense`, and the whole routine caps it at `9999`
+(`raw <= guard + 9999`, `0x801EDA00`). Two things then happen before the HP
+write: a defender carrying `+0x16E` bit `0x4` (**Stone**) takes nothing at all
+(`0x801EDA28..0x801EDA40`), and a local quarter-damage flag set at the head of
+the routine leaves a quarter of the difference (`0x801EDA44..0x801EDA58`).
+
+When Offense does not clear Defense the game does **not** floor the hit at 1.
+The test at `0x801ED308..0x801ED358` is
+
+```text
+Offense > Defense + Offense*Power/64 + Offense*Juggle/64 + Juggle      -> hit stands
+otherwise                                                              -> underdog rewrite
+```
+
+and the rewrite (`0x801ED360..0x801ED3E0`) *replaces* Offense with
+
+```text
+Offense' = Defense + (3/4 * Offense + rand() % (Offense/4 + 1)) * Power / 64
+                   + Offense*Juggle/64 + Juggle
+```
+
+then re-applies the Art multiplier (`x11/10`, or `x12/10` with War Soul) and
+the element pass(es), and finally a **chip floor** guarantees a few points: a
+plain swing still within `Defense + Juggle + 3` becomes
+`Defense + rand()%3 + 3 + Juggle`, an Art within `Defense + Juggle + 5` becomes
+`Defense + rand()%4 + 5 + Juggle` (`0x801ED4A0..0x801ED5C4`). So an attacker
+whose ATK sits under the defender's defence still lands a hit that scales with
+ATK - which is the ordinary case for long stretches of the game, where real
+enemy defence exceeds a party member's ATK. This is the "minimum damage" a
+player sees; it is a fraction of the attacker's own roll, not a constant.
+
+### Worked example - Vahn vs Evil Fly
+
+ZetaPhoenix's playtest, reproduced with his numbers and credited to him: Vahn
+with base ATK 188, weapon (slot 2) ATK 98, footwear ATK 86, Ra-Seru (slot 3)
+ATK 100, HP 2747, no status, no War Soul; an Evil Fly with UDF 42 / LDF 49 and
+a neutral element matchup. The combo is Left arm, Right arm, then the Art Hyper
+Elbow (a 20-power, LDF-targeting strike). The random draws are the ones he
+observed; any other draw within the `0..x/8` window is equally possible.
+
+| Hit | Base Offense | Rnd roll | Offense terms | Offense | Base DEF | Rnd roll | Distance | Defense | Damage |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 - Left arm | `188 + 98/2 = 237` | `+7` → 244 | `244*20/16 = 305`, HP `2747/256 = 10`, juggle 1 → `237/64 = 3`, angle 0 | 318 | UDF 42 | `+1` → 43 | 30 → `42*30/1024 = 1` | 44 | **274** |
+| 2 - Right arm | `188 + 100/2 = 238` | `+10` → 248 | `248*20/16 = 310`, HP 10, juggle 2 → `238*2/64 = 7` | 327 | UDF 42 | `+2` → 44 | 0 | 44 | **283** |
+| 3 - Hyper Elbow | `188 + (98+86+100)/2 = 330` | `+20` → 350 | `350*20/16 = 437`, HP 10, juggle 1 → `330/64 = 5`; sum 452, `x13/10` = 587 | 587 | LDF 49 | `+2` → 51 | 0 | 51 | **536** |
+
+Total 274 + 283 + 536 = **1086**, matching the in-game figure for that combo.
+Two details the example makes visible: the second hit's juggle 2 is why it
+out-damages the first from a nearly identical base, and the Art's Base Offense
+takes *all three* gear ATKs at half, then the `x1.3`, which is where most of an
+Art's advantage comes from.
+
+### Checking the community analysis against the bytes
+
+ZetaPhoenix's write-up was checked claim by claim against the disassembly of
+`FUN_801EC3E4` (`ghidra/scripts/funcs/overlay_0898_801ec3e4.txt`) and its
+callers - the disassembly, not the decompiled C, per
+[ghidra.md](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims).
+The jump-table arms live in a gap Ghidra's listing skips, so those were read
+straight from the PROT `0898` bytes at their link addresses.
+
+| Claim | Verdict | Evidence |
+|---|---|---|
+| Base ATK is always used; equipment ATK is not in the actor's ATK | **Confirmed** | `FUN_80053CB8` seeds `+0x158` from record `+0x112` with no equipment fold (`0x8005417C`); the kernel starts from `lhu s0,0x158` at `0x801ECB84`. |
+| Equipment ATK is selected per command and halved | **Confirmed** | `PTR_801CF4B4` arms: `srl v0,v0,0x1` / `addu s0,s0,v0` at `0x801ECCC4..0x801ECCCC`, `sra a0,a0,0x1` / `addu s0,s0,a0` at `0x801ECDDC..0x801ECDE0`. |
+| High/Low use the boots' ATK | **Confirmed** | Commands `0x0E` / `0x0F` share the arm at `0x801ECC54`, which reads record `+0x19A` (slot 4, footwear) via `lbu v1,0x762(v0)`. |
+| Arms uses the weapon's ATK, Ra-Seru uses the Ra-Seru's | **Confirmed, with a nuance** | `0x0C` reads slot 2, `0x0D` reads slot 3 - by slot, so which hand is "the weapon" depends on the character (Noa's are swapped). |
+| Arts use the sum of all equipment, halved | **Confirmed** | Arm `0x801ECCD0..0x801ECDE0` reads `+0x196..+0x19A`, sums the five attack bytes, `sra 1`. |
+| `Rnd(1..1.125)` is `base + rand % (base/8 + 1)` | **Confirmed** | `srl v1,s0,0x3; addiu v1,v1,0x1; divu; mfhi` at `0x801ECE80..0x801ECE98` (attack), `0x801ED1B8..0x801ED1D0` (defence). |
+| Power 20 for a normal hit; 12/18/20/22/28 for Arts | **Confirmed** (table) / playtest (which byte a normal hit carries) | Table bytes at `0x801F64EC` read `[12, 18, 20, 22, 28]`, indexed `(byte - 0x0C) % 5` (`0x801EC588..0x801EC5C8`). The 20 for a direction hit is his measurement; the disassembly only shows the table and the index. |
+| `+ Current HP / 256` | **Confirmed** | `lhu v0,0x14c(attacker)`, `srl v0,v0,0x8` at `0x801ECEF8..0x801ECF04`. |
+| Juggle starts at 1, grows per quick hit, resets after a pause; applied `/ 64` | **Confirmed** | `ctx[+0x0A]` set at `0x801ECA20..0x801ECA80` (increment while `+0x1F7 != 0`, else `1`); `(juggle*atk) >> 6` at `0x801ECEC4..0x801ECF0C`. |
+| Attack angle `/ 65536`, 0 in front, 2048 from behind | **Confirmed shape; magnitude unverified** | `(ctx[+0x6D2] * atk) >> 16` at `0x801ECED8..0x801ECF18`. The writer (`0x801E3068..0x801E30C8`) stores the folded facing difference **minus** `0x800`, so face-on is `0`; what the kernel does with a from-behind strike's negative halfword has not been captured. |
+| Arts modifier 1.3, 1.4 with War Soul | **Confirmed** | `x13/10` at `0x801ED118..0x801ED138`; the `x14/10` arm keys on record `+0xF8` bit `0x1000` (`0x801ED0F8..0x801ED104`) = passive `0x2C` Arts Power. |
+| Element 1.04 fire-vs-water, applied twice on Arts | **Confirmed** | Matrix `0x801F53E8` (opposed pairs `0x68` = 104); the Art arm's pass at `0x801ED13C..0x801ED174` precedes the unconditional pass at `0x801ED178..0x801ED1B4`. |
+| Defense = `DEF * Rnd + DEF * distance / 1024`, UDF or LDF | **Confirmed** | `0x801ED1B0..0x801ED220`; UDF/LDF pick at `0x801ECE14..0x801ECE74`. |
+| Distance is 30 for a straight first-hit walk-in, 0 after | **Confirmed shape; 30 is a measurement** | `ctx[+0x6D4] += *(u8*)0x1F800393` per approach step (`0x801E35DC..0x801E35EC`); zeroed after the first hit (`0x801EC88C`). The value is runtime scratchpad state, not a constant in the code. |
+| A minimum damage is enforced when Defense exceeds Offense | **Confirmed, and richer** | The underdog rewrite (`0x801ED308..0x801ED3E0`) plus the chip floor (`0x801ED4A0..0x801ED5C4`) - a rebuilt roll that scales with ATK, not a fixed floor. |
+| The random numbers are 2 bytes | **Corrected** | `FUN_80056798` is a veneer onto BIOS `rand`, which returns 15 bits (`0..0x7FFF`). Immaterial after the `% (x/8 + 1)` reduction. |
+| Blocking and status are separate | **Confirmed** | Venom / Toxic are the `x9/10` / `x7/10` scales above; the Spirit stance is the Defense triple; a petrified defender takes zero. The limb-height "Miss" is a size-class gate outside this routine. |
+
+What the engine got wrong before this check: it seeded a party member's
+attack from the **menu** aggregate (base plus every equipped item's full ATK)
+and fed that to the kernel, over-stating Vahn's first hit above from 237 to 472
+before the roll. The port now seeds the base and folds the halved slot per
+command (`World::battle_equip_atk`, `arms_weapon_atk_fold`).
+
+### Physical attack damage - `overlay_battle_action_801ec3e4`
+
+The register-level view of the same routine, for porters. The raw hit value is
+built from the **attacker's ATK** (`actor[+0x158]`, plus the equipment fold
+above) and reduced by the **defender's defense** - `actor[+0x15C]` (UDF) when
+the strike's power byte satisfies `(byte - 0xC) % 10 < 5`, else `actor[+0x160]`
+(LDF):
+
+```c
+atk = attacker[+0x158] + equip_fold(command);            // stat1 = ATK
+def = ((byte - 0xC) % 10 < 5) ? target[+0x15C]           // UDF (stat2)
+                              : target[+0x160];           // LDF (stat3)
+raw   = (atk + rand() % (atk/8 + 1)) * scalar >> 4 + … ;
+guard = def + rand() % (def/8 + 1) + … ;
+// damage applied when raw exceeds guard, scaled by the difference
+```
+
+This is the binding that names ATK / UDF / LDF; the `legaia_asset::monster_archive` accessors (`attack()` / `defense_high()` / `defense_low()`) and `engine-core`'s `monster_def_from_record` follow it.
+
+#### The melee roll pair and the underdog rewrite
+
+`FUN_801EC3E4` is a **different kernel** from the summon / arts roll
+`FUN_801DD0AC`: it rolls ATK against UDF/LDF, applies the HP loss itself, and
+never calls the `FUN_801DDB30` finisher. Both rolls are keyed on the power byte
+the caller's command record supplies at the actor's input cursor
+(`record[+0x1F4]`), through two tables in the overlay's rodata:
+`0x801F64EC[(byte - 0x0C) % 5]` is the **power scalar**, and
+`(byte - 0x0C) % 10 < 5` picks UDF over LDF. The scalar values are the same
+five-entry multiplier scale `legaia_art::power` carries for art power tiers.
+The Art arms key on a third byte, the actor's staged id `+0x1D9` (`> 0x10`).
+
+The stages, each cited to `overlay_battle_action_801ec3e4.txt` /
+`overlay_0898_801ec3e4.txt`:
+
+| Stage | Address | What it does |
+|---|---|---|
+| Equipment fold | `0x801ECB90..0x801ECDE0` | party slot: `atk += equip_atk[slot(s)] >> 1` through `PTR_801CF4B4[+0x1D9 - 0x0C]` (table above) |
+| Attack roll | `0x801ECE78` | `raw = ((atk + rand%((atk>>3)+1)) * scalar >> 4) + (hp>>8) + ((ctx[+0x0A]*atk)>>6) + ((ctx[+0x6D2]*atk)>>16)` |
+| Art scale | `0x801ED0AC` | staged id `> 0x10`: `raw *= 13/10` (`14/10` with record `+0xF8` bit `0x1000`), then one affinity pass |
+| Affinity | `0x801ED178` | `raw = raw * matrix[atk_elem][def_elem] / 100` - taken a second time for an art |
+| Guard roll | `0x801ED1B0` | `guard = def + rand%((def>>3)+1) + ((def*ctx[+0x6D4])>>10)`, **tripled** when the defender holds the Spirit stance (`+0x1DE == 4`) or flees under a Safe Escape wearer |
+| Status scales | `0x801ED25C` | `+0x16E` bit `0x1` → `×9/10`, bit `0x2` → `×7/10`; attacker's word scales `raw`, defender's scales `guard` |
+| Underdog rewrite | `0x801ED308` | see above |
+| Chip floor | `0x801ED4A0` | inside the rewrite only: a plain swing still within `guard + 3` becomes `guard + rand%3 + 3`; an art within `guard + 5` becomes `guard + rand%4 + 5` |
+| Cap + apply | `0x801EDA00` | `raw = min(raw, guard + 9999)`; Stone defender → `raw = guard`; quarter flag → `guard + (raw-guard)/4`; then `damage = raw - guard` |
+
+**Engine wiring.** `battle_formulas::physical_predamage` ports the stages from
+the attack roll down (the party-defender elemental-guard ladder at
+`0x801ED844` is [`damage_finish`](#engine-side-mirror---engine-vmbattle_formulas)'s
+resist stage and stays there), and `battle_formulas::arms_weapon_atk_fold`
+ports the equipment fold. `World::apply_basic_attack` runs every physical
+swing - party and monster - through both: the attacker's `battle_attack` is the
+un-equipped base (`seed_party_battle_stats` subtracts the equipment sum the
+menu aggregator adds) and `apply_one_basic_strike` adds the halved slot for the
+command it executes from `World::battle_equip_atk`; the state-machine art path
+(`apply_art_strike`) adds the `0x11` all-slots arm. RNG draws follow retail
+call order: attack roll, guard roll, then the rewrite draw and the chip-floor
+draw only when those arms fire. The `--damage-finish` gate adds only the
+finisher's *post* stages on top (equipment resists); it supplies no guard
+halve, because the melee kernel already charges the Spirit stance as the
+guard-roll triple. Regressions: `engine-vm/tests/battle_physical_predamage.rs`
+(hand-checked stage arithmetic) and
+`engine-core/tests/battle_physical_damage.rs` (a starting-stat party fells real
+archive enemies in a plausible number of swings).
+
+## Other damage kernels
+
+The melee kernel above is one of two damage routines in the battle overlay. Seru magic (player summons), monster special attacks and the capture-class boss casts run the INT-driven roll below, which finishes through `FUN_801DDB30`; the Spirit super-arts hard-code their own figure.
+
+### Summon-magic damage roll - `FUN_801dd0ac`
+
+A player Seru-magic *damage* summon does **not** go through `FUN_800402F4`'s
+selector dispatch and has no static per-spell power scalar (see
+[spell-table.md](../formats/spell-table.md#per-spell-damage-power-is-not-static-data---it-is-caster-state-derived)).
+Its HP delta is built from live battle stats in three stages - all byte-traced
+from `overlay_battle_action_801dd0ac.txt` and the two helpers it calls. In the
+pseudocode below `INT` is the actor's `+0x168` stat (for monsters that is
+record `+0x18`, the bestiary INT column; for the party caster it is the
+character's `+0x168` accuracy line) - **not** the AGL action gauge (`+0x0E`):
+
+```c
+// Stage 1 - rolls (FUN_801dd0ac, summon branch attacker_slot == 7)
+atk = rand() % (summon.INT + 1) + summon.HP + caster.INT*2;
+def = rand() % ((tgt.INT >> 1) + 1) + (tgt.HP >> 8)
+    + (tgt.DEFa >> 4) + (tgt.DEFb >> 4) + tgt.INT*2;
+
+// Stage 2 - scale (FUN_801dd864)
+atk = atk * affinity[atk_elem*8 + def_elem] / 100;   // 8x8 matrix @ 0x801F53E8
+if (summon.status & 1) atk = atk*9/10;  if (summon.status & 2) atk = atk*7/10;
+if (tgt.guard == 4)    def <<= 1;
+if (tgt.status & 1)    def = def*9/10;   if (tgt.status & 2)   def = def*7/10;
+atk += atk * (magic_power_byte - 1) >> 3;             // SC + 0x729, summon only
+// FUN_801dd0ac re-rolls a weak attacker:
+if (def + summon.HP > atk) atk = def + rand() % ((summon.INT >> 1) + 1) + summon.HP;
+
+// Stage 3 - finish (FUN_801ddb30): equipment elemental-resistance halving,
+//   guard halve, rand%9+8 no-damage floor, summon power-% scale, 9999 cap,
+//   spirit-gauge fill, damage popup, MP drain, per-element stat debuffs.
+damage = atk - def;
+```
+
+The finisher works on `over = atk - def` (the damage above the base) and rewrites
+it through six closed-form stages: (1) **party-defender elemental resistance** -
+if the defender's equipment sets the resist bit for the attacker's element,
+`over >>= 1` (the absorb bit `0x10` instead routes to a `over*3>>2` 3/4 scale).
+The resist words are the first two words of the character record's
+accessory-passive **ability bitfield** (`+0xF4`/`+0xF8`, aggregator
+`FUN_80042558`), and every flag is passive index `0x1D + element` read through
+the word boundary: the elemental-guard passives sit contiguously at
+`0x1D..=0x23` (Earth, Water, Fire, Wind, Thunder, Light, Dark - the element-id
+order), so elements 0..=2 test `+0xF4` bits 29..31 and elements 3..=6 test
+`+0xF8` bits 0..3; the absorb gate `+0xF8 & 0x10` is All Guard (`0x24`, Rainbow
+Jewel), and the two "spirit gain up" bits below are AP Boost 1/2
+(`0x28`/`0x29`). See
+[accessory-passive-table.md](../formats/accessory-passive-table.md);
+(2) **enemy-defender halve** (`_DAT_8007bd84`); (3) **guard halve** (defender
+`+0x1de == 4`); (4) the **no-damage floor** `over = rand()%9 + 8` when mitigation
+zeroed it; (5) the **summon power-% scale** (`attacker_slot == 7`): `over =
+over * pct / 100` with `pct = table[(caster_char_id - 1) * 8 + summon_element]`
+from the per-caster table at `0x801F5468` (PROT 0898 file `0x26C50`, the 24
+bytes before the per-character element table; parsed as
+`legaia_asset::element_affinity::ElementAffinity::summon_power`). Each caster
+summons their own element at 100% and their opposed element weakest - Vahn
+fire 100 / water 40, Noa wind 100 / earth 40, Gala thunder 100 / dark 60, the
+rest 70–95 (`asset element-affinity` prints the rows); (6) the **9999 cap**. The defender's spirit gauge then fills by `pct = max(1,
+over*100/maxHP)` plus the two "spirit gain up" equipment bits (`+0xF8 & 0x200`
+→ `pct>>2`, `& 0x100` → `pct/10`), clamped to 100. The `100` scale is
+synthesized as a shift/add chain, not an immediate, which is why the
+patcher's [`--damage-ap`](../tooling/randomizer.md#enemy-damage-ap) restates
+it as an explicit multiply to retune it.
+
+#### The spirit-gauge fill is duplicated
+
+That gauge fill exists **twice** in overlay 0898, as two independent inlined
+copies of one kernel, and which one runs depends on how the hit was resolved:
+
+| Copy | Host | Registers (damage / defender / pct) | Reached by |
+|---|---|---|---|
+| A | `FUN_801DDB30`, the closed-form finisher | `v1` / `s1` / `a1` | magic, summon and special-attack hits |
+| B | `FUN_801EC3E4`, the arms execution resolver | `a0` / `a1` / `a2` | ordinary physical hits |
+
+Both compute the same `pct = max(1, damage*100/maxHP)`, apply the same two
+ability-gated bonus arms, and clamp at 100; copy B's shift/add chain merely
+starts in a branch delay slot (the `beq` at `0x801EDB74` joins at
+`0x801EDB80`) and interleaves its own max-HP load. A structural sweep of the
+entry pins the count at exactly two: the kernel's `andi v0,v0,0x200` /
+`andi v0,v0,0x100` tests and its `sltiu rX,v0,0x1` min-one floor co-occur at
+`0x801DE1F8` and `0x801EDBB0` and nowhere else.
+
+The duplication matters to anything that edits the fill rather than reads it:
+touching only copy A leaves the *common* case - a regular enemy swing -
+running stock, which is easy to misread as an edit that did nothing. The
+port's single `spirit_gauge_fill` kernel is the correct shape for the engine
+(one function, two call sites); it is only the retail image that inlines it
+twice.
+
+Recovery summons skip the roll entirely and heal `(magic_power_byte << 5) + 0xE0`,
+clamped to `maxHP - curHP`.
+
+#### Arts / physical branch (`attacker_slot != 7`)
+
+The **same** kernel `FUN_801dd0ac` also resolves every melee / Tactical-Art /
+enemy-special-attack hit. It is the twin of the summon branch with two
+differences: the attacker roll is seeded by the **static per-move power scalar**
+from the 26-byte-stride move-power table at `0x801F4F5C` (parsed off the disc as
+[`legaia_asset::move_power`], see [move-power.md](../formats/move-power.md)), and
+it draws two `rand()`s for the attacker roll plus two for the bonus (five total,
+vs the summon branch's three). The defender roll and the `FUN_801dd864` scale /
+`FUN_801ddb30` finisher are shared; the scale's per-character magic-power arm is
+summon-only (`param_1 == 7`), so arts hits scale by affinity + status only.
+
+```c
+// Stage 1 - rolls (FUN_801dd0ac, arts/physical branch). power = (i16)move_power[id].+0
+//   atk.INT = the attacker's +0x168 stat (record +0x18 for monsters)
+atk = rand() % ((power >> 2) + 1) + rand() % ((atk.INT >> 1) + 1)
+    + (atk.HP >> 8) + power + atk.INT*2;
+def = /* identical to the summon-branch defender roll above */;
+
+// Stage 2 - scale (FUN_801dd864): affinity + status only (no magic-power arm).
+// Stage 2c - FUN_801dd0ac re-rolls a weak attacker, this time off the power scalar:
+if (atk < def + (power >> 1) + (atk.INT >> 1))
+    atk = def + (power >> 1) + rand() % ((power >> 3) + 1)
+        + (atk.INT >> 1) + rand() % ((atk.INT >> 3) + 1);
+```
+
+The bounded, state-free arithmetic of stages 1 + 2 ports to pure kernels for
+**both** branches (see the mirror table below). Stage 3 (`FUN_801ddb30`, 889
+instructions) splits: its **closed-form finalisation arithmetic** now ports too -
+`battle_formulas::damage_finish` (the six damage-rewrite stages above) and
+`spirit_gauge_fill` (the gauge accrual), both with hand-checked unit tests. The
+engine can route the live basic-attack damage through `damage_finish` behind the
+`World::use_damage_finish` gate (the `--damage-finish` play-window flag): the raw
+roll feeds the finisher so the 9999 cap and the `rand()%9+8` no-damage floor
+apply. The **defender resist inputs are live**: `World::defender_resist` reads
+the two resist words off the occupying character's rebuilt ability bitfield
+(`refresh_party_ability_bits`), so an equipped elemental-guard accessory halves
+a matching-element monster special, All Guard applies the 3/4 scale, and the AP
+Boost bits accelerate the wearer's spirit-gauge fill - the monster
+special-attack path (`enemy_move_predamage`) runs the closed-form finisher
+stages (resist ladder vs the monster record element `+0x1D`, guard halve,
+floor, cap) on every hit. The finisher
+draws its one RNG only when a hit zeroes out, so the no-gear RNG call-count is
+unchanged. The
+finisher's remaining tail - the damage-popup accumulator (`_DAT_8007bd14`), the
+`DAT_801f6980` AI revenge table, the MP drain, and the per-element stat-debuff
+`switch` (keyed on the attacker element at `DAT_801c9358+0x1d`) - reads/writes
+~20 battle globals and stays in the live battle context. Dumps:
+`overlay_battle_action_801dd0ac.txt` / `_801dd864.txt` / `_801ddb30.txt`; see the
+[`FUN_801DD0AC` / `FUN_801DD864` / `FUN_801DDB30` rows](../reference/functions.md).
+
+**Engine wiring.** The arts/physical kernel is wired into the live loop for
+**monster special-attacks**: the move-power table loads from PROT 0898 onto
+`World::move_power` (the engine wrapper `move_power::MovePowerCatalog`), and when
+a monster's chosen move id resolves to a power record, `cast_spell_on_slots`
+overrides the cast's damage magnitude with `arts_physical_predamage` seeded by
+that move's power (`World::enemy_move_predamage`, `engine-core::world::battle`).
+The stat bridge reads live actor fields faithfully - INT (the `+0x168` stat,
+record `+0x18`) from `battle_accuracy`, HP from `battle.hp`, the two defender defense terms from the
+`battle_defense_split` (UDF/LDF) pair - and takes the `rand()` draws in retail
+call order: attacker ×2 + defender ×1 up front, then the bonus pair **lazily**
+(only when the bonus arm fires, via `arts_physical_predamage_lazy`), so the
+shared RNG cursor advances by three or five draws exactly as `FUN_801dd0ac` does.
+The `FUN_801dd864` scale supplies the real enemy→party element affinity
+(`World::enemy_affinity_pct`, `matrix[enemy_element][party_member_element]`,
+neutral 100 when the affinity table isn't installed) with status/guard still
+defaulted; the override engages **only when the move-power table
+is installed**, so disc-free / synthetic battles keep the MP-scaled placeholder
+magnitude with a bit-identical RNG stream. (A party member's Tactical Art does
+**not** route through this table - the move-power table is special-attack-only
+[its id→index map leaves the basic-attack / art id bands `0x08..=0x11` /
+`0x16..=0x18` unmapped, pinned by a live capture], so a character's art takes its
+power from the per-strike art-record power byte instead. A no-art generic swing
+belongs to neither branch: it runs the melee kernel `FUN_801EC3E4`
+[above](#the-melee-roll-pair-and-the-underdog-rewrite).)
+
+**The summon branch is wired the same way for player Seru-magic casts**
+(`World::player_summon_predamage`): when the monster catalog resolves the
+spell's namesake summon creature, `cast_spell_on_slots` replaces the MP-scaled
+placeholder with `summon_predamage_lazy` seeded faithfully - summon-body
+HP/INT from the creature's `battle_data` record (the stats the loader installs
+on the freshly-spawned slot-7 actor; INT = record `+0x18`), the caster's `battle_accuracy` (`+0x168`)
+doubled, the affinity percent inside the roll, and the caster's per-spell
+**magic-power byte** searched the way `FUN_801dd864` does (the character
+record's 32-entry spell-id list at `+0x13D` with parallel level bytes at
+`+0x161`, live `0x80084845`/`0x80084869`; identity `1` when the roster doesn't
+carry the spell). The closed-form `FUN_801ddb30` finisher stages then apply -
+the lazily-drawn `rand()%9+8` floor, the per-caster summon power-percent
+(`0x801F5468`), and the 9999 cap. RNG draws follow retail call order:
+attacker + defender eager, the bonus arm and the floor lazy, so the cursor
+advances by two to four draws exactly as `FUN_801dd0ac`/`FUN_801ddb30` do.
+Gating mirrors the arts path: an unresolved creature (disc-free / synthetic
+battles) keeps the placeholder magnitude and an untouched RNG stream.
+
+#### Element-affinity matrix (`FUN_801dd864`, `0x801F53E8`)
+
+The scale stage's affinity byte comes from an 8×8 matrix, indexed
+`matrix[attacker_element][defender_element]` (the disasm computes `def_elem +
+atk_elem*8` - **row = attacker, column = defender**). The matrix and the
+per-character element table that feeds it are static battle-action-overlay data,
+now parsed off the disc by [`legaia_asset::element_affinity`] (PROT 0898; matrix
+at file `0x26BD0`, char table at `0x26C68`, same link base `0x801CE818` as the
+move-power table; CLI `asset element-affinity <0898.BIN>`).
+
+The retail values are a small nudge rather than the classic ×0/×2 weakness
+table: the same-element diagonal is `0x60` = 96 (a slight self-resist), reciprocal
+opposite-element pairs (`earth↔wind`, `water↔fire`, `light↔dark`) carry `0x68` =
+104, everything else is `0x64` = 100. The neutral element (id 7) has an all-100
+row + column, and the thunder row (id 4) is special (attacks every element at 102,
+takes 98 from dark). The element ids 2/3/4 (fire/wind/thunder) and 7 (neutral) are
+byte-pinned; 0/1/5/6 (earth/water/light/dark) are inferred from the reciprocal
+pairs + the spell-table element vocabulary.
+
+`FUN_801dd864` resolves each side's element id **by the actor's battle slot, not
+the spell**: a **party member** (slot `< 3`) looks its element up in the
+per-character table by **1-based** char id (`CHARACTER_ELEMENTS[char_id]` at
+`0x801F5480`: Vahn=fire, Noa=wind, Gala=thunder, Terra=wind); any **other slot**
+(`>= 3`, which is both enemies *and* the slot-7 summon body) reads the element
+**directly from the monster-archive record `+0x1d`** - `FUN_801dd864` indexes the
+per-enemy **record-pointer table** `0x801C9348` (NOT the live-actor table
+`0x801C9370`) by `slot - 3` and does `lbu …,0x1d(record)` (dump
+`overlay_battle_action_801dd864.txt` `0x801dd8c4`/`0x801dd8dc`). There is **no**
+copy of the element into a live-actor field (unlike the `+0x0E..+0x1A` stats,
+which `FUN_80054CB0` *does* copy into `+0x14C..`).
+
+This **resolves the player-cast element question**: a player Seru-magic cast
+attacks *as the summoned creature* - it rolls through the summon path
+(`FUN_801dd0ac` `param_2 == 7`) and `FUN_801dd864` is called with the attacker as
+slot 7, so the attacker element is the **summon body's `+0x1d`** (the namesake
+creature's monster element - Gimard's creature, etc.), **not** the caster
+character's element and **not** the spell's own `SpellElement` (the spell element
+is never read here). The matrix index is the raw `0..=7` element byte, so there is
+no separate `SpellElement → index` mapping. A party member's *non-summon* attack
+(slot `< 3`) instead uses that member's character-table element. The
+enemy element comes from the monster record's **`+0x1D`** byte
+([`legaia_asset::monster_archive::MonsterRecord::element`]) - now **pinned by the
+`FUN_801dd864` disasm directly** (the record-direct `lbu …,0x1d(record)` read
+above), which supersedes the earlier curated-element *correlation* argument as
+the mechanism: the affinity scale reaches `MonsterRecord::element` through the
+same `0x801C9348` record-pointer table the victory-spoils path uses, so the byte
+is consumed by the live game exactly as the parser exposes it. (The correlation
+still corroborates the *id labelling* - the four party-table ids reproduce
+exactly, water/earth/light/dark corroborate, and the byte takes only `0..=7`
+across every populated record.)
+
+**The slot-7 attacker is literal, and its element is the streamed cast-body
+record's.** Every per-spell summon overlay module (PROT 0902..0934) contains
+its own `jal FUN_801DD0AC` with `li a1, 7` immediately before it (byte-scan of
+the extracted entries for the call word `0x0C07742B`), so a cast's damage roll
+is issued by the spell's own overlay with the attacker slot hardcoded to 7
+while the acting seat `ctx+0x13` stays on the caster - the battle-action
+overlay itself carries exactly one static roll call site (`0x801E188C`, which
+passes `ctx+0x13`). Slot 7 resolves through `0x801C9348[4]` = `0x801C9358`,
+the pointer `FUN_801F19EC` installs when a group's actor-record slot streams
+([`summon-readef.md`](../formats/summon-readef.md#actor-record-slot-last-streamed-slot-of-a-group) -
+the record's `+0x1D` element byte is tabulated there). `0x801C9358` is **zero
+at battle init** and is written *only* by that installer, so a cast whose
+readef group streams no actor record resolves its element through whatever
+the slot last held (null → the `lbu` lands on `main_ram[0x1D]` via the KUSEG
+mirror). Live-confirmed on a Gimard cast: `FUN_801DD0AC(_, 7, target)` with
+the element read from the installed Burning Attack record
+(`scripts/pcsx-redux/autorun_element_attribution_trace.lua`).
+
+**Enemy capture-class casts pass the caster's seat - but choose whether the
+resist ladder runs at all.** A spell whose table record's first byte is `'c'`
+(the boss cinematic casts - see
+[spell-table.md § cast classes](../formats/spell-table.md#cast-classes-record-byte-0))
+streams its own per-spell code module (`FUN_8003EC70(record[+1] + 0x28)` →
+PROT `944..966`) whose damage calls carry **baked-in power constants** and go
+through one of two SCUS wrappers around scale + finish:
+
+| Wrapper | Finisher `param_5` | Effect |
+|---|---|---|
+| `FUN_801DD4B0` | `0` | resist ladder runs (jewels / elemental guards / All Guard apply) |
+| `FUN_801DD6B4` | `1` | **whole party-defender resist block skipped** |
+
+Both pass `a1 = ctx+0x13` (the caster's seat), so the affinity scale reads the
+caster's true record element either way - the bypass is purely the finisher's
+`param_5 == 0` gate around the resist ladder. Which wrapper a given cast uses
+is hand-written per module - and, where a module is shared, per **spell**: a
+module head dispatcher branches on the action id `actor[+0x1DF]` to a
+per-spell tick function (e.g. PROT 960 `+0x1C60`: `0x7B` -> the `+0xB0C`
+function, `0xA6` -> `+0x0`). Xain's **Bloody Horns** (PROT 952: hit `0x1D0`
+via `FUN_801DD6B4`) and **Terio Punch** (PROT 953: `0x274` via
+`FUN_801DD6B4`) bypass the ladder -
+**this is why Earth Jewels do not reduce them** despite Xain's element byte
+being 0 (Earth) and being read by the scale - while the enemy-side
+**Evil Seru Magic** module (PROT 966: `0x327` / `0x100` via `FUN_801DD4B0`)
+respects it, which is why Cort's ESM behaves as Dark. The engine finisher
+models the gate as `damage_finish::bypass_party_resist`.
+
+##### The bypass wrapper's heavy defence fold does not mitigate more
+
+`FUN_801DD6B4` folds the defender's two defence stats `+0x15C` / `+0x160` into
+its defender roll at `>> 1`, eight times as heavily as the shared kernel's
+`>> 4`. The plausible - and wrong - reading of that is "the bypass path is more
+sensitive to the defender's defence". It is *less* sensitive, and the reason is
+the bonus arm both wrappers share.
+
+The weight is heavy enough that on ordinary defence values the scaled attacker
+roll lands below `defender_roll + power`, which is exactly the `sltu` condition
+the bonus arm tests. The arm then rebuilds the attacker roll **out of the
+defender roll** as `defender_roll + power + rand % ((power >> 2) + 1)`, so the
+pre-finisher damage `attacker_roll - defender_roll` collapses to
+`power + rand` and the defence terms cancel. A bypass-wrapper hit therefore
+sits on that floor and is near-flat against the defender's defence, while a
+respecting hit - whose `>> 4` fold keeps it clear of the arm - drops as defence
+rises. Mirrored in `engine-vm::battle_damage_wrappers`.
+
+The full wrapper census over every capture-class module (module anatomy -
+paging, phase machine, and the seat-0-hardcoded apply sites these wrapper
+calls feed - is on [cast-module.md](cast-module.md); byte-scan of the
+extracted entries for the `jal` words `0x0C0775AD` bypass / `0x0C07752C`
+respect, each module's own extent bounded by the next entry's head - the
+`09xx` extents **tile exactly**, so every offset below names one physical
+word inside its own entry):
+
+| Module | Spells (shared per module) | Known caster | Wrapper |
+|---|---|---|---|
+| PROT 944 | Guilty Cross `0x37` -> **bypass** (dispatcher `+0x1510` sends `0x37` to the `+0x2C` tick; playtest-confirmed - an Ebony Jewel makes no difference); Curse All `0x53` -> `+0xA98` tick with **no damage-wrapper call**; no monster record carries `0x53` and no case of the picker's [hardcoded special-cast switch](../formats/spell-table.md#the-hardcoded-special-cast-switch-the-second-selection-mechanism) queues it - **casterless** (unused content, cf. the dummied Freeze Thunder `0x2C`) | Cort (humanoid phases) | per-spell (see cells) |
+| PROT 952 | Bloody Horns `0x5C` -> **bypass** (dispatcher `+0x1150` sends `0x5C` to the `+0x740` tick); Astral Slash `0xB8` -> `+0x34` tick, which carries **no damage-wrapper call** - and **respects** in play (community playtest: a Luminous Jewel halves it, 1570 -> 781); its damage-call site is unpinned | Xain; Gaza (first fight) | per-spell (see cells) |
+| PROT 953 | Terio Punch `0x5D`, Bull Charge `0x5E` (no id dispatcher - one shared tick, both spells) | Xain | **bypass** |
+| PROT 958 | Blazing Slash `0x79` | Gi Delilas | **bypass** (6 calls) |
+| PROT 959 | Megaton Press `0x7A` | Che Delilas | **bypass** (3 calls) |
+| PROT 960 | Plasma Strike `0x7B` -> `+0xB0C` tick = **bypass**; Neo Star Slash `0xA6` -> `+0x0` tick = **respect** (dispatcher `+0x1C60`) | Lu Delilas; Gaza (Sim-Seru) | per-spell (see cells) |
+| every other damage-dealing capture module (935..966) | Earthquake, Hyper Crush/Lightning, Chaos Breath/Flare, Call/Big Wave, Water Column/Crystals/Hazard, Cross Beam, V-/Neo Windhash, Rolling Flare, Scythe Wind, Dead End / Final Crisis, Blade Breath band, Genocidal Cannon, Doomsday, Mystic Circle, enemy ESM, ... (the full per-entry spell↔module map is static spell-table data - [spell-table.md](../formats/spell-table.md#capture-class-module-index-prot-09350966)) | various | respect |
+
+Status-only modules (Glare / Divide / Curse / White Shield cluster / Mystic
+Shield / Clone / Fatal Decision / Kiss of Death band) carry no damage-wrapper
+call at all. Shared modules dispatch **per spell** at the module-head id
+switch, so a shared row does not imply shared behaviour. Two residuals: PROT
+952 carries one *respect* call (`+0x15B0`, power `0x80`) with **no reachable
+in-module entry** - same-shape twins sit at the same offsets in sibling
+modules, so it reads as shared template dead code, not a Bloody Horns
+component - and Astral Slash's dispatched tick has no damage call at all;
+its behaviour is **respecting** (community playtest: Luminous Jewel halves
+it), but which call site applies its damage stays open. Notably **no Songi
+cast is in a bypass module**
+(Hyper Wave is plain-class; Hyper Lightning / Hyper Crush / Chaos Flare /
+Genocidal Cannon all respect), and non-capture casts (plain-class, player
+summons, move-power specials) all reach the finisher with `param_5 = 0`.
+
+##### "Respect" is a different kernel, not the shared kernel
+
+The respecting arm of the census is `FUN_801DD4B0`, and a capture-class cast
+never reaches `FUN_801DD0AC` at all - the `0x63` arm pages the module, and the
+module's tick calls a wrapper. `FUN_801DD4B0`'s attacker and defender rolls are
+instruction-identical to the shared kernel's, so the two agree exactly on any
+hit that clears the defender's mitigation; the whole divergence is the bonus
+arm:
+
+| | `FUN_801DD0AC` | `FUN_801DD4B0` |
+|---|---|---|
+| threshold | `defender + (power >> 1) + (agl >> 1)` | `defender + power` |
+| rebuild | `+ rand % ((power >> 3) + 1) + (agl >> 1) + rand % ((agl >> 3) + 1)` | `+ rand % ((power >> 2) + 1)` |
+| draws when it fires | two | one |
+
+So the routing question is only "which arm rebuilds a hit that fell short", and
+it also changes the RNG-cursor advance (five draws vs four on the bonus path).
+The class byte that answers it is `stats +0` of the `DAT_800754C8` record,
+decoded by `legaia_asset::spell_names` as `SpellEntry::class` /
+`capture_class_records`; the engine reads it off the SCUS spell table installed
+at boot and routes in `World::capture_respect_predamage`. The six bypass ids are
+checked first, because a shared module dispatches per spell and the class byte
+cannot separate two ticks of one module.
+
+**Engine wiring.** The matrix + per-character table load from the same PROT 0898
+overlay as the move-power table (`World::element_affinity`), and the monster
+special-attack path scales by `matrix[enemy_element][party_member_element]`
+(`World::enemy_affinity_pct` → `enemy_move_predamage`): the enemy element from
+`MonsterDef::element`, the defender from the active party member's element (the
+engine models `char_id == party slot`, so a defender at actor slot *s* is char id
+*s+1*). The scale is applied *inside* the roll (`arts_physical_predamage_lazy`),
+before the conditional bonus-arm threshold - matching retail's scale→bonus order
+(`FUN_801dd864` scale precedes the `FUN_801dd0ac` second arm) - so a non-neutral
+affinity can change whether the lazy bonus pair is drawn. The gating is what's
+invariant: an uninstalled table resolves to the neutral 100% multiplier (no
+scaling), reproducing the no-affinity baseline bit-identically, so disc-free /
+synthetic battles keep an unchanged magnitude *and* RNG stream.
+
+The **player→enemy** direction is **also wired** - the same matrix the other way
+round, `matrix[summon-creature element][target element]` (attacker = the summon
+body's `+0x1d`, defender = the target monster's `+0x1d`). `cast_spell_on_slots`
+applies it for a player Seru-magic cast through `World::cast_affinity_pct`: the
+attacker element resolves off the summon **creature** - the spell's display name
+matched to its namesake `battle_data` record (`World::summon_attacker_element`,
+the engine-side equivalent of resolving slot 7's `+0x1d`), *not* the casting
+character's element - and the defender element resolves by slot
+(`World::battle_slot_element`: party member → per-character table, enemy / summon
+body → monster record `+0x1d`). When the catalog resolves the creature, the
+percent feeds the **faithful summon roll** (`World::player_summon_predamage`,
+see the summon-branch wiring above), applied *inside* the roll before the
+bonus-arm threshold exactly like the enemy direction; when only the affinity
+tables are present but the creature isn't resolvable, the cast falls back to
+the placeholder magnitude with the percent applied post-roll (RNG untouched).
+A party member's Tactical Art is *not* a move-power case (it uses the
+art-record power byte - see the note under the arts/physical kernel above) and
+does not route through this cast path.
+
+### Summon spell XP + magic level-up
+
+Casting Seru magic trains the spell itself. The character record carries a
+per-spell-slot u32 **XP array at `+0x8`** (parallel to the spell-id list at
+`+0x13D` and the level bytes at `+0x161`), and two retail pieces drive it:
+
+**Accrual - the `FUN_801ddb30` tail** (`overlay_battle_action_801ddb30.txt:1037..1084`,
+summon attacker `param_1 == 7` only). Per finisher call (= per hit), with
+`damage = *atk - *def` (the final committed delta) against the defender's live
+HP (`+0x14C`) and max HP (`+0x14E`), keyed on the summon's target byte
+(`+0x1DD`: `< 8` single-target, `8`/`9` group):
+
+```text
+if (target_hp < 2)            gain = 0;                       // both branches gate
+else if (damage < target_hp)  gain = damage * (single ? 12 : 4) / target_max_hp;
+else                          gain = single ? 12 : 4;          // killing hit: flat
+xp[spell_slot] += gain;
+```
+
+Gates: the per-battle no-reward flag `_DAT_8007BAC0` (the same scripted-fight
+flag as the gold gate above) and an unidentified skip `_DAT_8007BDB8`. The
+heal-spell arms of `FUN_800402F4` (case-0 tiers 3/4/5: spell ids `0x83`/`0x89`)
+accrue into the same array inline.
+
+**Level-up - `FUN_801E70BC`** (`overlay_battle_action_801e70bc.txt`), fired
+once per cast at summon return (state `0x36`): finds the cast spell id
+(`actor[+0x1DF]`) in the record's id list (search bound `0x20`), then
+
+```text
+mult      = (id in {0x86,0x88,0x8D,0x99,0x9B,0xA0}) ? 3 : 2;
+threshold = (u16_table[level - 1] * mult) >> 1;     // table at SCUS 0x8007656C
+if (level < 9 && threshold < xp)  level += 1;        // strict compare, cap 9
+```
+
+The threshold table is 8 ascending u16 steps (levels 1..=8; level 9 is the
+cap). The leveled `+0x161` byte is exactly the **magic-power** input of the
+next cast's scale stage (`FUN_801dd864`, `apply_magic_power` above) - so the
+loop is cast → XP → level → stronger cast.
+
+Engine: kernels `battle_formulas::summon_spell_xp_gain` /
+`summon_magic_levels_up`; threshold loader
+`engine-core::magic_xp::thresholds_from_scus` (decoded off the user's
+`SCUS_942.54`, disc-gated `magic_xp_disc`); live wiring
+`World::cast_spell_on_slots` → `World::accrue_summon_spell_xp` (XP persists in
+the record's `+0x8` bytes, so it round-trips through saves). The engine
+narrows "summon attacker" to the Seru-magic id block its summon path covers
+(`0x81..=0x8B`); the evolved-spell ids above that block accrue nothing until
+the summon coverage widens.
+
+### Spirit damage formula
+
+From [battle-action.md state `0x3E` and `0x46`](battle-action.md):
+
+```text
+damage = ((target_HP * 7) / 5) + 8;     // 1.4 × target HP + 8
+damage = min(damage, 0x120);            // cap 1: 288 hit-points
+// or cap 2 (smaller spirit arts): min(damage, 100);
+```
+
+This is hard-coded per Spirit super-art and bypasses `FUN_800402F4`. The `_DAT_80076D7E` damage popup is written directly with the result before the state machine calls `func_0x800402F4` in state `0x3F`. The spirit pre-application formula is the one place the engine has to reproduce a non-obvious arithmetic; everything else is selector-dispatch driven.
+
+## Stats and the actor record
+
+Where the numbers the formulas read come from: the generic applicator, the per-actor stat block and how a monster record is copied (and boosted) into it, and the smaller selector-driven rolls.
+
+### Damage application primitive - `FUN_800402F4`
 
 `ghidra/scripts/funcs/800402f4.txt` (7,904 bytes / 1,976 instructions, no static caller in `SCUS_942.54` - the battle overlay calls it indirectly).
 
@@ -25,7 +769,7 @@ void FUN_800402F4(byte selector, byte sub_index, byte target_slot, uint flags);
 
 The function is a **selector dispatch**: `switch(selector) { case 0..0x83 ... }`. Each case is one "damage / status / stat-modify kind." The `target_slot` is an index into the [8-slot battle actor pointer table](battle.md) at `0x801C9370`.
 
-### Local stat-window setup (`selector` agnostic)
+#### Local stat-window setup (`selector` agnostic)
 
 Before the switch, the function fills four local 8-pointer arrays (one entry per actor slot). Each array holds a pointer to one specific halfword inside the actor record:
 
@@ -43,7 +787,7 @@ The two arms are selected by **game mode**, not by a debug/release build. `0x800
 
 Cited in `ghidra/scripts/funcs/800402f4.txt`, `0x80040338..0x8004043C` (both arms).
 
-## Actor stat block + monster record mapping
+### Actor stat block + monster record mapping
 
 The per-actor stat block runs `+0x14C..+0x16A`, each stat stored as a **pair** of adjacent halfwords (the lower offset is the working value the formulas read; `+2` is the base used to restore after a buff wears off). For enemies, `FUN_80054CB0` (`ghidra/scripts/funcs/80054cb0.txt`, lines 629-699) copies the [monster stat record](battle.md) field-by-field into this block:
 
@@ -69,7 +813,7 @@ HP/MP/AGL/SPD are copied unchanged in both. Both profiles boost - the raw record
 
 **SPD** (`+0x164`): `FUN_801DA780` seeds each actor's per-turn initiative key from it. It has a dedicated "Speed Up" buff (selector 7 sub 1) and is reset to its base each round (`FUN_80053CB8`: `+0x164 = +0x166`). Distinct from INT, which governs the hit/dodge roll rather than turn order, and from AGL, which is the per-round action gauge. The next-actor selector `recompute_battle_order` (`FUN_801daba4`) reads the seeded `+0x16C` keys: it picks the living actor with the highest key (random tiebreak via `rand % tie_count`), zeroing dead actors' keys first. Ported as `World::next_combatant_by_initiative`; see [turn order in battle.md](battle.md#auto-resolve-vs-player-driven).
 
-#### Initiative key seeding (`FUN_801DA780`)
+##### Initiative key seeding (`FUN_801DA780`)
 
 The seeder is the direct caller of `FUN_801DABA4` and runs once per round over the seven combat slots. The base roll is `+0x16C = speed + (rand() % (speed/2 + 1)) + 1`, but three further terms land on top of it:
 
@@ -83,7 +827,7 @@ Ported as `battle_formulas::seed_initiative` / `wounded_bonus`, driven by `World
 
 > **Address caution.** The base roll was long attributed to `overlay_0897_801e23ec`. That is an **aliased VA**: PROT 0897's extraction over-reads into 0898 and the Ghidra program maps the file at `0x801C0000` instead of the true slot-A base `0x801CE818`, so every `0x801Exxxx`/`0x801Fxxxx` function it surfaces is a different battle-overlay routine. The aliased reading recovered only the base roll and dropped all three modifier terms above.
 
-#### Formation advantage (`FUN_80051D84`)
+##### Formation advantage (`FUN_80051D84`)
 
 Battle setup rolls for a **back attack** or a **pre-emptive strike** and records the result in `ctx+0x290` (`1` = back attack, `2` = pre-emptive). Both sides' *mean* SPD is compared, each blurred by a random spread:
 
@@ -109,7 +853,7 @@ Ported as `battle_formulas::roll_formation_advantage` / `FormationAdvantage`, wi
 
 **AGL** (`+0x154` current / `+0x156` base): the per-round agility / action gauge. Every action draws it down; the enemy-AI action picker (`overlay_0898_801e9fd4`) deducts each candidate action's `+0x74` cost from `+0x154` and only queues actions it can still afford. Each round `FUN_801D88CC` restores it. Live-RAM confirmed by Zetopheonix: the "Power Up" buff prints *"agility increased!"* and raises this cur/base pair. The damage popup (`_DAT_80076D7E`) reads `+0x154`; this is the HP/MP/AGL triplet at `+0x14C..+0x156` in [battle.md](battle.md).
 
-#### Per-round AGL restore (`FUN_801D88CC`)
+##### Per-round AGL restore (`FUN_801D88CC`)
 
 Which arm fires depends on the actor's action state, and one of the three restores nothing:
 
@@ -125,7 +869,7 @@ The pass runs **before** the initiative seeder, not after it: the battle-flow SM
 
 Ported as `battle_formulas::round_reset_agility` / `needs_retarget`, with the caller-side sweep as `engine-core::BattleRound::boundary` - which the live battle loop runs at its round boundary, ahead of the status tick and the reseed. The gauge it maintains is the battle actor's `+0x154`; the enemy swing-budget loop spends it.
 
-### Spell list (`record +0x4C`)
+#### Spell list (`record +0x4C`)
 
 `record +0x4A` (u8) is the spell count; `record +0x4C` is an array of that many u32 **block-relative offsets**, each pointing at a spell entry inside the same decoded monster block. The battle loader `FUN_800542C8` (`ghidra/scripts/funcs/800542c8.txt`, lines 633-658) fixes every offset to an absolute pointer at battle init - `record[+0x4C + i*4] += block_base` - exactly like `name_offset`; it also initialises a `+0x88` self-pointer to `entry+0x8C` and resolves each entry's `+0x04`/`+0x08` **effect indices** (see below).
 
@@ -139,70 +883,7 @@ Each spell entry's head:
 
 Real-data sanity check: Gimard (id 10, AGL 60) has 9 slots - the affinity prefix `0,1,2,4,5,0x0B` (cost 0), two castable spells `0x0D @ 28` and `0x0F @ 32` (both `<= 60`), and the `0x23` special. Hornet (id 61, AGL 88) has `0x0C @ 88` and `0x13 @ 88`. Across every populated record the decoded list length equals the declared count and no offset escapes the block. The `legaia_asset::monster_archive::MonsterRecord::spells` field (`MonsterSpell { id, agl_cost, offset, effect_offset, aux_offset }`, with `is_castable()`) exposes this; the [enemy table](../../site/_content/monsters.html) renders the castable set with AGL cost.
 
-### Physical attack damage - `overlay_battle_action_801ec3e4`
-
-Lines 2716-2826. The raw hit value is built from the **attacker's ATK** (`actor[+0x158]`) and reduced by the **defender's defense** - the routine reads `actor[+0x15C]` (UDF) when the attack's move index satisfies `(move - 0xC) % 10 < 5`, else `actor[+0x160]` (LDF):
-
-```c
-atk = attacker[+0x158];                                  // stat1 = ATK
-def = ((move - 0xC) % 10 < 5) ? target[+0x15C]           // UDF (stat2)
-                              : target[+0x160];           // LDF (stat3)
-raw   = (atk + rand() % (atk/8 + 1)) * scalar >> 4 + … ;
-guard = def + rand() % (def/8 + 1) + … ;
-// damage applied when raw exceeds guard, scaled by the difference
-```
-
-This is the binding that names ATK / UDF / LDF; the `legaia_asset::monster_archive` accessors (`attack()` / `defense_high()` / `defense_low()`) and `engine-core`'s `monster_def_from_record` follow it. The full stage list is [below](#the-melee-roll-pair-and-the-underdog-rewrite).
-
-#### The melee roll pair and the underdog rewrite
-
-`FUN_801EC3E4` is a **different kernel** from the summon / arts roll
-`FUN_801DD0AC`: it rolls ATK against UDF/LDF, applies the HP loss itself, and
-never calls the `FUN_801DDB30` finisher. Both rolls are keyed on the staged
-command byte `+0x1D9`, through two tables in the overlay's rodata:
-`0x801F64EC[(id - 0x0C) % 5]` is the per-command **power scalar**, and
-`(id - 0x0C) % 10 < 5` picks UDF over LDF. The scalar values are the same
-five-entry multiplier scale `legaia_art::power` carries for art power tiers.
-
-The stages, each cited to `overlay_battle_action_801ec3e4.txt`:
-
-| Stage | Address | What it does |
-|---|---|---|
-| Attack roll | `0x801ECE78` | `raw = ((atk + rand%((atk>>3)+1)) * scalar >> 4) + (hp>>8) + ((ctx[+0x0A]*atk)>>6) + ((ctx[+0x6D2]*atk)>>16)` |
-| Art scale | `0x801ED0AC` | staged id `> 0x10`: `raw *= 13/10` (`14/10` with record bit `0x1000`), then one affinity pass |
-| Affinity | `0x801ED178` | `raw = raw * matrix[atk_elem][def_elem] / 100` - taken a second time for an art |
-| Guard roll | `0x801ED1B0` | `guard = def + rand%((def>>3)+1) + ((def*ctx[+0x6D4])>>10)`, **tripled** when the defender holds the Spirit stance (`+0x1DE == 4`) |
-| Status scales | `0x801ED25C` | `+0x16E` bit `0x1` → `×9/10`, bit `0x2` → `×7/10`; attacker's word scales `raw`, defender's scales `guard` |
-| Underdog rewrite | `0x801ED308` | see below |
-| Chip floor | `0x801ED4A0` | inside the rewrite only: a plain swing still within `guard + 3` becomes `guard + rand%3 + 3`; an art within `guard + 5` becomes `guard + rand%4 + 5` |
-| Cap + apply | `0x801EDA00` | `raw = min(raw, guard + 9999)`, then `damage = raw - guard` |
-
-The **underdog rewrite** is the load-bearing stage, and the one a port is most
-likely to get wrong. When the attack roll does not clear the guard roll
-(`raw <= guard + ((raw*scalar)>>6) + ((ctx[+0x0A]*raw)>>6) + ctx[+0x0A]`), the
-routine does not floor the hit - it *replaces* `raw` with
-`guard + ((((raw*3)>>2) + rand%((raw>>2)+1)) * scalar >> 6) + …`, so the damage
-becomes a fraction of the attacker's own roll rather than a constant. An
-attacker whose ATK sits under the defender's defence therefore still lands a
-hit that scales with ATK, which is the normal case for most of the game: real
-enemy defence exceeds a party member's ATK across whole chapters.
-
-**Engine wiring.** `battle_formulas::physical_predamage` ports the stages above
-(the party-defender elemental-guard ladder at `0x801ED844` is
-[`damage_finish`](#engine-side-mirror---engine-vmbattle_formulas)'s resist stage
-and stays there). `World::apply_basic_attack` runs every physical swing -
-party and monster - through it, as the **arm** command `0x0C`, since the
-engine's generic strike is one un-chained swing. RNG draws follow retail call
-order: attack roll, guard roll, then the rewrite draw and the chip-floor draw
-only when those arms fire. The `--damage-finish` gate now adds only the
-finisher's *post* stages on top (equipment resists); it no longer supplies a
-guard halve, because the melee kernel already charges the Spirit stance as the
-guard-roll triple. Regressions: `engine-vm/tests/battle_physical_predamage.rs`
-(hand-checked stage arithmetic) and
-`engine-core/tests/battle_physical_damage.rs` (a starting-stat party fells real
-archive enemies in a plausible number of swings).
-
-### Selector 0 - basic damage (Attack / item / generic spell)
+#### Selector 0 - basic damage (Attack / item / generic spell)
 
 Lines 2037-2043:
 
@@ -223,7 +904,7 @@ Reads:
 2. Result is capped at `DAT_8007655C[sub_index]` for party slots 0..2. The cap table is 6 halfwords (twelve bytes) and represents per-character damage caps.
 3. The capped value is then handed to a downstream applicator (the case body keeps writing it back into the actor record at `+0x14C`).
 
-### Selector 9 - accuracy / evasion roll
+#### Selector 9 - accuracy / evasion roll
 
 Lines 2730-2774. The pattern:
 
@@ -266,7 +947,7 @@ rate and the monsters ~11%. Regression:
 
 For party members, both accuracy and evasion derive from the character's AGL with the same scaling, so the retail `+0x168 = AGL + AGL/4` rescale is ratio-preserving and not separately applied. (For monsters, `+0x168` is loaded directly from record `+0x18` = INT.) That the two sides read different record columns at all is an **engine model**, and it is why any surviving consumer of these arrays needs re-checking before it is trusted for balance.
 
-### Stat-buff selectors (1..7)
+#### Stat-buff selectors (1..7)
 
 These cases multiply the actor stat block by `6/5` (decompiles to `0x4cccccccd >> 0x22` then `+ uVar13/5`, clamped to `0xFFFF`) - the +20% stat-up animations for buff spells. The earlier "one distinct stat per halfword across `+0x158..+0x16A`" reading was wrong: the actor stores each stat as a **pair of adjacent halfwords** (working + base, both seeded to the same value by `FUN_80054CB0`), so a buff touches two halfwords per stat. See the [actor stat block mapping](#actor-stat-block--monster-record-mapping) below.
 
@@ -302,57 +983,9 @@ Water + the all-stats Honey / Miracle Water) adds a flat increment to the
 disc-pinned item ids in [`item-effect-table.md`](../formats/item-effect-table.md#stat-up--buff-items-class-567);
 parser `legaia_asset::item_effect::stat_item_effect` / `ItemEffectTable::stat_effect`.
 
-## Victory spoils (rewards)
+## Round mechanics and status
 
-The post-battle EXP / gold / drop are inline in each monster record at
-`+0x44..+0x49` (the global archive head; see
-[`legaia_asset::monster_archive`](../formats/monster-animation.md) and
-[battle.md](battle.md)). The spoils function `FUN_8004E568` walks the dead
-enemies through the per-enemy **record-pointer table at `0x801C9348`** (populated
-by the loader `FUN_800542C8`) and computes:
-
-| Record | Field | Formula |
-|---|---|---|
-| `+0x44` u16 | base gold | `Σ (gold >> 1)` over dead enemies, `* 1.25` if a living party member has ability bit `0x10000`, then total halved. Lone enemy: `floor((gold >> 1) / 2)`. |
-| `+0x46` u16 | base EXP | `Σ (exp)` then `* 3/4` (`v - v>>2`), split evenly among living party members. |
-| `+0x48` u8 | drop item id | `0` = no drop. |
-| `+0x49` u8 | drop chance % | per dead enemy, `rand() % 100 < (chance + bonus)` grants the item (added to the win banner at actor `+0xA9` and to inventory via `FUN_800421D4`). |
-
-Gold commits to party gold `0x8008459C` (clamp `99,999,999`); EXP is divided
-among the living members inside `FUN_8004E568` itself (`divu` by the alive
-count) and applied per member via the level-up applier `FUN_801E9504`. (The
-earlier "EXP commits via the generic `FUN_80026018`" reading is wrong:
-`FUN_80026018` is the mode-24 **minigame exit / return-warp** handler and its
-`_DAT_800845A4 += _DAT_80084440` commit is the **casino-coin** bank - no
-battle-path caller exists in the dump corpus; see
-[`script-vm.md § 0x3E WARP`](script-vm.md#0x3e-warp-mode-24-minigame-door-warp).)
-Runtime-confirmed:
-the Gimard fight (`+0x44`=60) credited exactly `+15` gold
-(`60>>1=30`, `30-(30>>1)=15`) via a write-watchpoint on `0x8008459C`. Drop ids
-cross-check against `legaia-gamedata` (Gimard `+0x48`=119 @ 10% drops Healing
-Leaf).
-
-The gold/EXP scaling ports to pure kernels (`battle_formulas::victory_gold_per_monster`
-/ `victory_gold_finalize` / `victory_exp_per_member`) the engine's
-`World::apply_battle_loot` / `apply_battle_xp` call - so the credited reward is
-the scaled amount, not the raw record sum. The +25% gold bonus reads the living
-party members' `+0xF4` ability bit `0x10000`; the per-battle no-gold flag
-(`_DAT_8007BAC0`, certain scripted fights) is the one remaining unmodelled gold
-gate.
-
-## Spirit damage formula
-
-From [battle-action.md state `0x3E` and `0x46`](battle-action.md):
-
-```text
-damage = ((target_HP * 7) / 5) + 8;     // 1.4 × target HP + 8
-damage = min(damage, 0x120);            // cap 1: 288 hit-points
-// or cap 2 (smaller spirit arts): min(damage, 100);
-```
-
-This is hard-coded per Spirit super-art and bypasses `FUN_800402F4`. The `_DAT_80076D7E` damage popup is written directly with the result before the state machine calls `func_0x800402F4` in state `0x3F`. The spirit pre-application formula is the one place the engine has to reproduce a non-obvious arithmetic; everything else is selector-dispatch driven.
-
-## Run / escape roll - `FUN_801E791C`
+### Run / escape roll - `FUN_801E791C`
 
 The flee decision battle-action state `0x64` requests:
 
@@ -374,7 +1007,7 @@ decode - the outcome pointer, the accessory-bit fold over living wearers, the
 forced-flee battle flag and the success-side flee staging - lives in
 [battle-action.md § the escape roll](battle-action.md#the-escape-roll-fun_801e791c).
 
-### Monster escape roll - `FUN_801EC0DC`
+#### Monster escape roll - `FUN_801EC0DC`
 
 The enemy-side mirror, asked once per monster from the AI picker `FUN_801E9FD4`:
 "does this monster break off and flee?" It weighs HP and **ATK** where the party
@@ -407,7 +1040,7 @@ traps on a zero side count (`break 0x1C00`); the port saturates the divisors.
 Ported as `engine-vm::battle_formulas::monster_escape_roll` /
 `monster_escape_side_scores`; `see ghidra/scripts/funcs/overlay_battle_action_801ec0dc.txt`.
 
-## Per-round status DoT ticker - `FUN_801E752C`
+### Per-round status DoT ticker - `FUN_801E752C`
 
 `ghidra/scripts/funcs/overlay_battle_action_801e752c.txt` (760 bytes / 190
 instructions). Called once per battle round by the round driver `FUN_801D0748`
@@ -455,7 +1088,7 @@ actor's outgoing roll *and* its guard roll by `9/10` for bit 1 (Venom) and
 `7/10` for bit 2 (Toxic) - already ported as
 `battle_formulas::apply_status_weaken`.
 
-### Status application (the art / move record status byte)
+#### Status application (the art / move record status byte)
 
 The two pinned hit resolvers - `overlay_battle_action_801ec3e4` (~line 3099,
 physical strike, art record `+0x7A`) and `overlay_battle_action_801e09f8`
@@ -553,445 +1186,47 @@ guard-disabling status (read at `801ec3e4:2640` and the AI picker
 `801e9fd4:3035`: a victim carrying it auto-fails its guard roll) whose applier
 is neither the byte map above nor anywhere in the dumped corpus.
 
-## Summon-magic damage roll - `FUN_801dd0ac`
+## Rewards and costs
 
-A player Seru-magic *damage* summon does **not** go through `FUN_800402F4`'s
-selector dispatch and has no static per-spell power scalar (see
-[spell-table.md](../formats/spell-table.md#per-spell-damage-power-is-not-static-data---it-is-caster-state-derived)).
-Its HP delta is built from live battle stats in three stages - all byte-traced
-from `overlay_battle_action_801dd0ac.txt` and the two helpers it calls. In the
-pseudocode below `INT` is the actor's `+0x168` stat (for monsters that is
-record `+0x18`, the bestiary INT column; for the party caster it is the
-character's `+0x168` accuracy line) - **not** the AGL action gauge (`+0x0E`):
+### Victory spoils (rewards)
 
-```c
-// Stage 1 - rolls (FUN_801dd0ac, summon branch attacker_slot == 7)
-atk = rand() % (summon.INT + 1) + summon.HP + caster.INT*2;
-def = rand() % ((tgt.INT >> 1) + 1) + (tgt.HP >> 8)
-    + (tgt.DEFa >> 4) + (tgt.DEFb >> 4) + tgt.INT*2;
+The post-battle EXP / gold / drop are inline in each monster record at
+`+0x44..+0x49` (the global archive head; see
+[`legaia_asset::monster_archive`](../formats/monster-animation.md) and
+[battle.md](battle.md)). The spoils function `FUN_8004E568` walks the dead
+enemies through the per-enemy **record-pointer table at `0x801C9348`** (populated
+by the loader `FUN_800542C8`) and computes:
 
-// Stage 2 - scale (FUN_801dd864)
-atk = atk * affinity[atk_elem*8 + def_elem] / 100;   // 8x8 matrix @ 0x801F53E8
-if (summon.status & 1) atk = atk*9/10;  if (summon.status & 2) atk = atk*7/10;
-if (tgt.guard == 4)    def <<= 1;
-if (tgt.status & 1)    def = def*9/10;   if (tgt.status & 2)   def = def*7/10;
-atk += atk * (magic_power_byte - 1) >> 3;             // SC + 0x729, summon only
-// FUN_801dd0ac re-rolls a weak attacker:
-if (def + summon.HP > atk) atk = def + rand() % ((summon.INT >> 1) + 1) + summon.HP;
-
-// Stage 3 - finish (FUN_801ddb30): equipment elemental-resistance halving,
-//   guard halve, rand%9+8 no-damage floor, summon power-% scale, 9999 cap,
-//   spirit-gauge fill, damage popup, MP drain, per-element stat debuffs.
-damage = atk - def;
-```
-
-The finisher works on `over = atk - def` (the damage above the base) and rewrites
-it through six closed-form stages: (1) **party-defender elemental resistance** -
-if the defender's equipment sets the resist bit for the attacker's element,
-`over >>= 1` (the absorb bit `0x10` instead routes to a `over*3>>2` 3/4 scale).
-The resist words are the first two words of the character record's
-accessory-passive **ability bitfield** (`+0xF4`/`+0xF8`, aggregator
-`FUN_80042558`), and every flag is passive index `0x1D + element` read through
-the word boundary: the elemental-guard passives sit contiguously at
-`0x1D..=0x23` (Earth, Water, Fire, Wind, Thunder, Light, Dark - the element-id
-order), so elements 0..=2 test `+0xF4` bits 29..31 and elements 3..=6 test
-`+0xF8` bits 0..3; the absorb gate `+0xF8 & 0x10` is All Guard (`0x24`, Rainbow
-Jewel), and the two "spirit gain up" bits below are AP Boost 1/2
-(`0x28`/`0x29`). See
-[accessory-passive-table.md](../formats/accessory-passive-table.md);
-(2) **enemy-defender halve** (`_DAT_8007bd84`); (3) **guard halve** (defender
-`+0x1de == 4`); (4) the **no-damage floor** `over = rand()%9 + 8` when mitigation
-zeroed it; (5) the **summon power-% scale** (`attacker_slot == 7`): `over =
-over * pct / 100` with `pct = table[(caster_char_id - 1) * 8 + summon_element]`
-from the per-caster table at `0x801F5468` (PROT 0898 file `0x26C50`, the 24
-bytes before the per-character element table; parsed as
-`legaia_asset::element_affinity::ElementAffinity::summon_power`). Each caster
-summons their own element at 100% and their opposed element weakest - Vahn
-fire 100 / water 40, Noa wind 100 / earth 40, Gala thunder 100 / dark 60, the
-rest 70–95 (`asset element-affinity` prints the rows); (6) the **9999 cap**. The defender's spirit gauge then fills by `pct = max(1,
-over*100/maxHP)` plus the two "spirit gain up" equipment bits (`+0xF8 & 0x200`
-→ `pct>>2`, `& 0x100` → `pct/10`), clamped to 100. The `100` scale is
-synthesized as a shift/add chain, not an immediate, which is why the
-patcher's [`--damage-ap`](../tooling/randomizer.md#enemy-damage-ap) restates
-it as an explicit multiply to retune it.
-
-### The spirit-gauge fill is duplicated
-
-That gauge fill exists **twice** in overlay 0898, as two independent inlined
-copies of one kernel, and which one runs depends on how the hit was resolved:
-
-| Copy | Host | Registers (damage / defender / pct) | Reached by |
-|---|---|---|---|
-| A | `FUN_801DDB30`, the closed-form finisher | `v1` / `s1` / `a1` | magic, summon and special-attack hits |
-| B | `FUN_801EC3E4`, the arms execution resolver | `a0` / `a1` / `a2` | ordinary physical hits |
-
-Both compute the same `pct = max(1, damage*100/maxHP)`, apply the same two
-ability-gated bonus arms, and clamp at 100; copy B's shift/add chain merely
-starts in a branch delay slot (the `beq` at `0x801EDB74` joins at
-`0x801EDB80`) and interleaves its own max-HP load. A structural sweep of the
-entry pins the count at exactly two: the kernel's `andi v0,v0,0x200` /
-`andi v0,v0,0x100` tests and its `sltiu rX,v0,0x1` min-one floor co-occur at
-`0x801DE1F8` and `0x801EDBB0` and nowhere else.
-
-The duplication matters to anything that edits the fill rather than reads it:
-touching only copy A leaves the *common* case - a regular enemy swing -
-running stock, which is easy to misread as an edit that did nothing. The
-port's single `spirit_gauge_fill` kernel is the correct shape for the engine
-(one function, two call sites); it is only the retail image that inlines it
-twice.
-
-Recovery summons skip the roll entirely and heal `(magic_power_byte << 5) + 0xE0`,
-clamped to `maxHP - curHP`.
-
-### Arts / physical branch (`attacker_slot != 7`)
-
-The **same** kernel `FUN_801dd0ac` also resolves every melee / Tactical-Art /
-enemy-special-attack hit. It is the twin of the summon branch with two
-differences: the attacker roll is seeded by the **static per-move power scalar**
-from the 26-byte-stride move-power table at `0x801F4F5C` (parsed off the disc as
-[`legaia_asset::move_power`], see [move-power.md](../formats/move-power.md)), and
-it draws two `rand()`s for the attacker roll plus two for the bonus (five total,
-vs the summon branch's three). The defender roll and the `FUN_801dd864` scale /
-`FUN_801ddb30` finisher are shared; the scale's per-character magic-power arm is
-summon-only (`param_1 == 7`), so arts hits scale by affinity + status only.
-
-```c
-// Stage 1 - rolls (FUN_801dd0ac, arts/physical branch). power = (i16)move_power[id].+0
-//   atk.INT = the attacker's +0x168 stat (record +0x18 for monsters)
-atk = rand() % ((power >> 2) + 1) + rand() % ((atk.INT >> 1) + 1)
-    + (atk.HP >> 8) + power + atk.INT*2;
-def = /* identical to the summon-branch defender roll above */;
-
-// Stage 2 - scale (FUN_801dd864): affinity + status only (no magic-power arm).
-// Stage 2c - FUN_801dd0ac re-rolls a weak attacker, this time off the power scalar:
-if (atk < def + (power >> 1) + (atk.INT >> 1))
-    atk = def + (power >> 1) + rand() % ((power >> 3) + 1)
-        + (atk.INT >> 1) + rand() % ((atk.INT >> 3) + 1);
-```
-
-The bounded, state-free arithmetic of stages 1 + 2 ports to pure kernels for
-**both** branches (see the mirror table below). Stage 3 (`FUN_801ddb30`, 889
-instructions) splits: its **closed-form finalisation arithmetic** now ports too -
-`battle_formulas::damage_finish` (the six damage-rewrite stages above) and
-`spirit_gauge_fill` (the gauge accrual), both with hand-checked unit tests. The
-engine can route the live basic-attack damage through `damage_finish` behind the
-`World::use_damage_finish` gate (the `--damage-finish` play-window flag): the raw
-roll feeds the finisher so the 9999 cap and the `rand()%9+8` no-damage floor
-apply. The **defender resist inputs are live**: `World::defender_resist` reads
-the two resist words off the occupying character's rebuilt ability bitfield
-(`refresh_party_ability_bits`), so an equipped elemental-guard accessory halves
-a matching-element monster special, All Guard applies the 3/4 scale, and the AP
-Boost bits accelerate the wearer's spirit-gauge fill - the monster
-special-attack path (`enemy_move_predamage`) runs the closed-form finisher
-stages (resist ladder vs the monster record element `+0x1D`, guard halve,
-floor, cap) on every hit. The finisher
-draws its one RNG only when a hit zeroes out, so the no-gear RNG call-count is
-unchanged. The
-finisher's remaining tail - the damage-popup accumulator (`_DAT_8007bd14`), the
-`DAT_801f6980` AI revenge table, the MP drain, and the per-element stat-debuff
-`switch` (keyed on the attacker element at `DAT_801c9358+0x1d`) - reads/writes
-~20 battle globals and stays in the live battle context. Dumps:
-`overlay_battle_action_801dd0ac.txt` / `_801dd864.txt` / `_801ddb30.txt`; see the
-[`FUN_801DD0AC` / `FUN_801DD864` / `FUN_801DDB30` rows](../reference/functions.md).
-
-**Engine wiring.** The arts/physical kernel is wired into the live loop for
-**monster special-attacks**: the move-power table loads from PROT 0898 onto
-`World::move_power` (the engine wrapper `move_power::MovePowerCatalog`), and when
-a monster's chosen move id resolves to a power record, `cast_spell_on_slots`
-overrides the cast's damage magnitude with `arts_physical_predamage` seeded by
-that move's power (`World::enemy_move_predamage`, `engine-core::world::battle`).
-The stat bridge reads live actor fields faithfully - INT (the `+0x168` stat,
-record `+0x18`) from `battle_accuracy`, HP from `battle.hp`, the two defender defense terms from the
-`battle_defense_split` (UDF/LDF) pair - and takes the `rand()` draws in retail
-call order: attacker ×2 + defender ×1 up front, then the bonus pair **lazily**
-(only when the bonus arm fires, via `arts_physical_predamage_lazy`), so the
-shared RNG cursor advances by three or five draws exactly as `FUN_801dd0ac` does.
-The `FUN_801dd864` scale supplies the real enemy→party element affinity
-(`World::enemy_affinity_pct`, `matrix[enemy_element][party_member_element]`,
-neutral 100 when the affinity table isn't installed) with status/guard still
-defaulted; the override engages **only when the move-power table
-is installed**, so disc-free / synthetic battles keep the MP-scaled placeholder
-magnitude with a bit-identical RNG stream. (A party member's Tactical Art does
-**not** route through this table - the move-power table is special-attack-only
-[its id→index map leaves the basic-attack / art id bands `0x08..=0x11` /
-`0x16..=0x18` unmapped, pinned by a live capture], so a character's art takes its
-power from the per-strike art-record power byte instead. A no-art generic swing
-belongs to neither branch: it runs the melee kernel `FUN_801EC3E4`
-[above](#the-melee-roll-pair-and-the-underdog-rewrite).)
-
-**The summon branch is wired the same way for player Seru-magic casts**
-(`World::player_summon_predamage`): when the monster catalog resolves the
-spell's namesake summon creature, `cast_spell_on_slots` replaces the MP-scaled
-placeholder with `summon_predamage_lazy` seeded faithfully - summon-body
-HP/INT from the creature's `battle_data` record (the stats the loader installs
-on the freshly-spawned slot-7 actor; INT = record `+0x18`), the caster's `battle_accuracy` (`+0x168`)
-doubled, the affinity percent inside the roll, and the caster's per-spell
-**magic-power byte** searched the way `FUN_801dd864` does (the character
-record's 32-entry spell-id list at `+0x13D` with parallel level bytes at
-`+0x161`, live `0x80084845`/`0x80084869`; identity `1` when the roster doesn't
-carry the spell). The closed-form `FUN_801ddb30` finisher stages then apply -
-the lazily-drawn `rand()%9+8` floor, the per-caster summon power-percent
-(`0x801F5468`), and the 9999 cap. RNG draws follow retail call order:
-attacker + defender eager, the bonus arm and the floor lazy, so the cursor
-advances by two to four draws exactly as `FUN_801dd0ac`/`FUN_801ddb30` do.
-Gating mirrors the arts path: an unresolved creature (disc-free / synthetic
-battles) keeps the placeholder magnitude and an untouched RNG stream.
-
-### Element-affinity matrix (`FUN_801dd864`, `0x801F53E8`)
-
-The scale stage's affinity byte comes from an 8×8 matrix, indexed
-`matrix[attacker_element][defender_element]` (the disasm computes `def_elem +
-atk_elem*8` - **row = attacker, column = defender**). The matrix and the
-per-character element table that feeds it are static battle-action-overlay data,
-now parsed off the disc by [`legaia_asset::element_affinity`] (PROT 0898; matrix
-at file `0x26BD0`, char table at `0x26C68`, same link base `0x801CE818` as the
-move-power table; CLI `asset element-affinity <0898.BIN>`).
-
-The retail values are a small nudge rather than the classic ×0/×2 weakness
-table: the same-element diagonal is `0x60` = 96 (a slight self-resist), reciprocal
-opposite-element pairs (`earth↔wind`, `water↔fire`, `light↔dark`) carry `0x68` =
-104, everything else is `0x64` = 100. The neutral element (id 7) has an all-100
-row + column, and the thunder row (id 4) is special (attacks every element at 102,
-takes 98 from dark). The element ids 2/3/4 (fire/wind/thunder) and 7 (neutral) are
-byte-pinned; 0/1/5/6 (earth/water/light/dark) are inferred from the reciprocal
-pairs + the spell-table element vocabulary.
-
-`FUN_801dd864` resolves each side's element id **by the actor's battle slot, not
-the spell**: a **party member** (slot `< 3`) looks its element up in the
-per-character table by **1-based** char id (`CHARACTER_ELEMENTS[char_id]` at
-`0x801F5480`: Vahn=fire, Noa=wind, Gala=thunder, Terra=wind); any **other slot**
-(`>= 3`, which is both enemies *and* the slot-7 summon body) reads the element
-**directly from the monster-archive record `+0x1d`** - `FUN_801dd864` indexes the
-per-enemy **record-pointer table** `0x801C9348` (NOT the live-actor table
-`0x801C9370`) by `slot - 3` and does `lbu …,0x1d(record)` (dump
-`overlay_battle_action_801dd864.txt` `0x801dd8c4`/`0x801dd8dc`). There is **no**
-copy of the element into a live-actor field (unlike the `+0x0E..+0x1A` stats,
-which `FUN_80054CB0` *does* copy into `+0x14C..`).
-
-This **resolves the player-cast element question**: a player Seru-magic cast
-attacks *as the summoned creature* - it rolls through the summon path
-(`FUN_801dd0ac` `param_2 == 7`) and `FUN_801dd864` is called with the attacker as
-slot 7, so the attacker element is the **summon body's `+0x1d`** (the namesake
-creature's monster element - Gimard's creature, etc.), **not** the caster
-character's element and **not** the spell's own `SpellElement` (the spell element
-is never read here). The matrix index is the raw `0..=7` element byte, so there is
-no separate `SpellElement → index` mapping. A party member's *non-summon* attack
-(slot `< 3`) instead uses that member's character-table element. The
-enemy element comes from the monster record's **`+0x1D`** byte
-([`legaia_asset::monster_archive::MonsterRecord::element`]) - now **pinned by the
-`FUN_801dd864` disasm directly** (the record-direct `lbu …,0x1d(record)` read
-above), which supersedes the earlier curated-element *correlation* argument as
-the mechanism: the affinity scale reaches `MonsterRecord::element` through the
-same `0x801C9348` record-pointer table the victory-spoils path uses, so the byte
-is consumed by the live game exactly as the parser exposes it. (The correlation
-still corroborates the *id labelling* - the four party-table ids reproduce
-exactly, water/earth/light/dark corroborate, and the byte takes only `0..=7`
-across every populated record.)
-
-**The slot-7 attacker is literal, and its element is the streamed cast-body
-record's.** Every per-spell summon overlay module (PROT 0902..0934) contains
-its own `jal FUN_801DD0AC` with `li a1, 7` immediately before it (byte-scan of
-the extracted entries for the call word `0x0C07742B`), so a cast's damage roll
-is issued by the spell's own overlay with the attacker slot hardcoded to 7
-while the acting seat `ctx+0x13` stays on the caster - the battle-action
-overlay itself carries exactly one static roll call site (`0x801E188C`, which
-passes `ctx+0x13`). Slot 7 resolves through `0x801C9348[4]` = `0x801C9358`,
-the pointer `FUN_801F19EC` installs when a group's actor-record slot streams
-([`summon-readef.md`](../formats/summon-readef.md#actor-record-slot-last-streamed-slot-of-a-group) -
-the record's `+0x1D` element byte is tabulated there). `0x801C9358` is **zero
-at battle init** and is written *only* by that installer, so a cast whose
-readef group streams no actor record resolves its element through whatever
-the slot last held (null → the `lbu` lands on `main_ram[0x1D]` via the KUSEG
-mirror). Live-confirmed on a Gimard cast: `FUN_801DD0AC(_, 7, target)` with
-the element read from the installed Burning Attack record
-(`scripts/pcsx-redux/autorun_element_attribution_trace.lua`).
-
-**Enemy capture-class casts pass the caster's seat - but choose whether the
-resist ladder runs at all.** A spell whose table record's first byte is `'c'`
-(the boss cinematic casts - see
-[spell-table.md § cast classes](../formats/spell-table.md#cast-classes-record-byte-0))
-streams its own per-spell code module (`FUN_8003EC70(record[+1] + 0x28)` →
-PROT `944..966`) whose damage calls carry **baked-in power constants** and go
-through one of two SCUS wrappers around scale + finish:
-
-| Wrapper | Finisher `param_5` | Effect |
+| Record | Field | Formula |
 |---|---|---|
-| `FUN_801DD4B0` | `0` | resist ladder runs (jewels / elemental guards / All Guard apply) |
-| `FUN_801DD6B4` | `1` | **whole party-defender resist block skipped** |
+| `+0x44` u16 | base gold | `Σ (gold >> 1)` over dead enemies, `* 1.25` if a living party member has ability bit `0x10000`, then total halved. Lone enemy: `floor((gold >> 1) / 2)`. |
+| `+0x46` u16 | base EXP | `Σ (exp)` then `* 3/4` (`v - v>>2`), split evenly among living party members. |
+| `+0x48` u8 | drop item id | `0` = no drop. |
+| `+0x49` u8 | drop chance % | per dead enemy, `rand() % 100 < (chance + bonus)` grants the item (added to the win banner at actor `+0xA9` and to inventory via `FUN_800421D4`). |
 
-Both pass `a1 = ctx+0x13` (the caster's seat), so the affinity scale reads the
-caster's true record element either way - the bypass is purely the finisher's
-`param_5 == 0` gate around the resist ladder. Which wrapper a given cast uses
-is hand-written per module - and, where a module is shared, per **spell**: a
-module head dispatcher branches on the action id `actor[+0x1DF]` to a
-per-spell tick function (e.g. PROT 960 `+0x1C60`: `0x7B` -> the `+0xB0C`
-function, `0xA6` -> `+0x0`). Xain's **Bloody Horns** (PROT 952: hit `0x1D0`
-via `FUN_801DD6B4`) and **Terio Punch** (PROT 953: `0x274` via
-`FUN_801DD6B4`) bypass the ladder -
-**this is why Earth Jewels do not reduce them** despite Xain's element byte
-being 0 (Earth) and being read by the scale - while the enemy-side
-**Evil Seru Magic** module (PROT 966: `0x327` / `0x100` via `FUN_801DD4B0`)
-respects it, which is why Cort's ESM behaves as Dark. The engine finisher
-models the gate as `damage_finish::bypass_party_resist`.
+Gold commits to party gold `0x8008459C` (clamp `99,999,999`); EXP is divided
+among the living members inside `FUN_8004E568` itself (`divu` by the alive
+count) and applied per member via the level-up applier `FUN_801E9504`. (The
+earlier "EXP commits via the generic `FUN_80026018`" reading is wrong:
+`FUN_80026018` is the mode-24 **minigame exit / return-warp** handler and its
+`_DAT_800845A4 += _DAT_80084440` commit is the **casino-coin** bank - no
+battle-path caller exists in the dump corpus; see
+[`script-vm.md § 0x3E WARP`](script-vm.md#0x3e-warp-mode-24-minigame-door-warp).)
+Runtime-confirmed:
+the Gimard fight (`+0x44`=60) credited exactly `+15` gold
+(`60>>1=30`, `30-(30>>1)=15`) via a write-watchpoint on `0x8008459C`. Drop ids
+cross-check against `legaia-gamedata` (Gimard `+0x48`=119 @ 10% drops Healing
+Leaf).
 
-#### The bypass wrapper's heavy defence fold does not mitigate more
+The gold/EXP scaling ports to pure kernels (`battle_formulas::victory_gold_per_monster`
+/ `victory_gold_finalize` / `victory_exp_per_member`) the engine's
+`World::apply_battle_loot` / `apply_battle_xp` call - so the credited reward is
+the scaled amount, not the raw record sum. The +25% gold bonus reads the living
+party members' `+0xF4` ability bit `0x10000`; the per-battle no-gold flag
+(`_DAT_8007BAC0`, certain scripted fights) is the one remaining unmodelled gold
+gate.
 
-`FUN_801DD6B4` folds the defender's two defence stats `+0x15C` / `+0x160` into
-its defender roll at `>> 1`, eight times as heavily as the shared kernel's
-`>> 4`. The plausible - and wrong - reading of that is "the bypass path is more
-sensitive to the defender's defence". It is *less* sensitive, and the reason is
-the bonus arm both wrappers share.
-
-The weight is heavy enough that on ordinary defence values the scaled attacker
-roll lands below `defender_roll + power`, which is exactly the `sltu` condition
-the bonus arm tests. The arm then rebuilds the attacker roll **out of the
-defender roll** as `defender_roll + power + rand % ((power >> 2) + 1)`, so the
-pre-finisher damage `attacker_roll - defender_roll` collapses to
-`power + rand` and the defence terms cancel. A bypass-wrapper hit therefore
-sits on that floor and is near-flat against the defender's defence, while a
-respecting hit - whose `>> 4` fold keeps it clear of the arm - drops as defence
-rises. Mirrored in `engine-vm::battle_damage_wrappers`.
-
-The full wrapper census over every capture-class module (module anatomy -
-paging, phase machine, and the seat-0-hardcoded apply sites these wrapper
-calls feed - is on [cast-module.md](cast-module.md); byte-scan of the
-extracted entries for the `jal` words `0x0C0775AD` bypass / `0x0C07752C`
-respect, each module's own extent bounded by the next entry's head - the
-`09xx` extents **tile exactly**, so every offset below names one physical
-word inside its own entry):
-
-| Module | Spells (shared per module) | Known caster | Wrapper |
-|---|---|---|---|
-| PROT 944 | Guilty Cross `0x37` -> **bypass** (dispatcher `+0x1510` sends `0x37` to the `+0x2C` tick; playtest-confirmed - an Ebony Jewel makes no difference); Curse All `0x53` -> `+0xA98` tick with **no damage-wrapper call**; no monster record carries `0x53` and no case of the picker's [hardcoded special-cast switch](../formats/spell-table.md#the-hardcoded-special-cast-switch-the-second-selection-mechanism) queues it - **casterless** (unused content, cf. the dummied Freeze Thunder `0x2C`) | Cort (humanoid phases) | per-spell (see cells) |
-| PROT 952 | Bloody Horns `0x5C` -> **bypass** (dispatcher `+0x1150` sends `0x5C` to the `+0x740` tick); Astral Slash `0xB8` -> `+0x34` tick, which carries **no damage-wrapper call** - and **respects** in play (community playtest: a Luminous Jewel halves it, 1570 -> 781); its damage-call site is unpinned | Xain; Gaza (first fight) | per-spell (see cells) |
-| PROT 953 | Terio Punch `0x5D`, Bull Charge `0x5E` (no id dispatcher - one shared tick, both spells) | Xain | **bypass** |
-| PROT 958 | Blazing Slash `0x79` | Gi Delilas | **bypass** (6 calls) |
-| PROT 959 | Megaton Press `0x7A` | Che Delilas | **bypass** (3 calls) |
-| PROT 960 | Plasma Strike `0x7B` -> `+0xB0C` tick = **bypass**; Neo Star Slash `0xA6` -> `+0x0` tick = **respect** (dispatcher `+0x1C60`) | Lu Delilas; Gaza (Sim-Seru) | per-spell (see cells) |
-| every other damage-dealing capture module (935..966) | Earthquake, Hyper Crush/Lightning, Chaos Breath/Flare, Call/Big Wave, Water Column/Crystals/Hazard, Cross Beam, V-/Neo Windhash, Rolling Flare, Scythe Wind, Dead End / Final Crisis, Blade Breath band, Genocidal Cannon, Doomsday, Mystic Circle, enemy ESM, ... (the full per-entry spell↔module map is static spell-table data - [spell-table.md](../formats/spell-table.md#capture-class-module-index-prot-09350966)) | various | respect |
-
-Status-only modules (Glare / Divide / Curse / White Shield cluster / Mystic
-Shield / Clone / Fatal Decision / Kiss of Death band) carry no damage-wrapper
-call at all. Shared modules dispatch **per spell** at the module-head id
-switch, so a shared row does not imply shared behaviour. Two residuals: PROT
-952 carries one *respect* call (`+0x15B0`, power `0x80`) with **no reachable
-in-module entry** - same-shape twins sit at the same offsets in sibling
-modules, so it reads as shared template dead code, not a Bloody Horns
-component - and Astral Slash's dispatched tick has no damage call at all;
-its behaviour is **respecting** (community playtest: Luminous Jewel halves
-it), but which call site applies its damage stays open. Notably **no Songi
-cast is in a bypass module**
-(Hyper Wave is plain-class; Hyper Lightning / Hyper Crush / Chaos Flare /
-Genocidal Cannon all respect), and non-capture casts (plain-class, player
-summons, move-power specials) all reach the finisher with `param_5 = 0`.
-
-#### "Respect" is a different kernel, not the shared kernel
-
-The respecting arm of the census is `FUN_801DD4B0`, and a capture-class cast
-never reaches `FUN_801DD0AC` at all - the `0x63` arm pages the module, and the
-module's tick calls a wrapper. `FUN_801DD4B0`'s attacker and defender rolls are
-instruction-identical to the shared kernel's, so the two agree exactly on any
-hit that clears the defender's mitigation; the whole divergence is the bonus
-arm:
-
-| | `FUN_801DD0AC` | `FUN_801DD4B0` |
-|---|---|---|
-| threshold | `defender + (power >> 1) + (agl >> 1)` | `defender + power` |
-| rebuild | `+ rand % ((power >> 3) + 1) + (agl >> 1) + rand % ((agl >> 3) + 1)` | `+ rand % ((power >> 2) + 1)` |
-| draws when it fires | two | one |
-
-So the routing question is only "which arm rebuilds a hit that fell short", and
-it also changes the RNG-cursor advance (five draws vs four on the bonus path).
-The class byte that answers it is `stats +0` of the `DAT_800754C8` record,
-decoded by `legaia_asset::spell_names` as `SpellEntry::class` /
-`capture_class_records`; the engine reads it off the SCUS spell table installed
-at boot and routes in `World::capture_respect_predamage`. The six bypass ids are
-checked first, because a shared module dispatches per spell and the class byte
-cannot separate two ticks of one module.
-
-**Engine wiring.** The matrix + per-character table load from the same PROT 0898
-overlay as the move-power table (`World::element_affinity`), and the monster
-special-attack path scales by `matrix[enemy_element][party_member_element]`
-(`World::enemy_affinity_pct` → `enemy_move_predamage`): the enemy element from
-`MonsterDef::element`, the defender from the active party member's element (the
-engine models `char_id == party slot`, so a defender at actor slot *s* is char id
-*s+1*). The scale is applied *inside* the roll (`arts_physical_predamage_lazy`),
-before the conditional bonus-arm threshold - matching retail's scale→bonus order
-(`FUN_801dd864` scale precedes the `FUN_801dd0ac` second arm) - so a non-neutral
-affinity can change whether the lazy bonus pair is drawn. The gating is what's
-invariant: an uninstalled table resolves to the neutral 100% multiplier (no
-scaling), reproducing the no-affinity baseline bit-identically, so disc-free /
-synthetic battles keep an unchanged magnitude *and* RNG stream.
-
-The **player→enemy** direction is **also wired** - the same matrix the other way
-round, `matrix[summon-creature element][target element]` (attacker = the summon
-body's `+0x1d`, defender = the target monster's `+0x1d`). `cast_spell_on_slots`
-applies it for a player Seru-magic cast through `World::cast_affinity_pct`: the
-attacker element resolves off the summon **creature** - the spell's display name
-matched to its namesake `battle_data` record (`World::summon_attacker_element`,
-the engine-side equivalent of resolving slot 7's `+0x1d`), *not* the casting
-character's element - and the defender element resolves by slot
-(`World::battle_slot_element`: party member → per-character table, enemy / summon
-body → monster record `+0x1d`). When the catalog resolves the creature, the
-percent feeds the **faithful summon roll** (`World::player_summon_predamage`,
-see the summon-branch wiring above), applied *inside* the roll before the
-bonus-arm threshold exactly like the enemy direction; when only the affinity
-tables are present but the creature isn't resolvable, the cast falls back to
-the placeholder magnitude with the percent applied post-roll (RNG untouched).
-A party member's Tactical Art is *not* a move-power case (it uses the
-art-record power byte - see the note under the arts/physical kernel above) and
-does not route through this cast path.
-
-## Summon spell XP + magic level-up
-
-Casting Seru magic trains the spell itself. The character record carries a
-per-spell-slot u32 **XP array at `+0x8`** (parallel to the spell-id list at
-`+0x13D` and the level bytes at `+0x161`), and two retail pieces drive it:
-
-**Accrual - the `FUN_801ddb30` tail** (`overlay_battle_action_801ddb30.txt:1037..1084`,
-summon attacker `param_1 == 7` only). Per finisher call (= per hit), with
-`damage = *atk - *def` (the final committed delta) against the defender's live
-HP (`+0x14C`) and max HP (`+0x14E`), keyed on the summon's target byte
-(`+0x1DD`: `< 8` single-target, `8`/`9` group):
-
-```text
-if (target_hp < 2)            gain = 0;                       // both branches gate
-else if (damage < target_hp)  gain = damage * (single ? 12 : 4) / target_max_hp;
-else                          gain = single ? 12 : 4;          // killing hit: flat
-xp[spell_slot] += gain;
-```
-
-Gates: the per-battle no-reward flag `_DAT_8007BAC0` (the same scripted-fight
-flag as the gold gate above) and an unidentified skip `_DAT_8007BDB8`. The
-heal-spell arms of `FUN_800402F4` (case-0 tiers 3/4/5: spell ids `0x83`/`0x89`)
-accrue into the same array inline.
-
-**Level-up - `FUN_801E70BC`** (`overlay_battle_action_801e70bc.txt`), fired
-once per cast at summon return (state `0x36`): finds the cast spell id
-(`actor[+0x1DF]`) in the record's id list (search bound `0x20`), then
-
-```text
-mult      = (id in {0x86,0x88,0x8D,0x99,0x9B,0xA0}) ? 3 : 2;
-threshold = (u16_table[level - 1] * mult) >> 1;     // table at SCUS 0x8007656C
-if (level < 9 && threshold < xp)  level += 1;        // strict compare, cap 9
-```
-
-The threshold table is 8 ascending u16 steps (levels 1..=8; level 9 is the
-cap). The leveled `+0x161` byte is exactly the **magic-power** input of the
-next cast's scale stage (`FUN_801dd864`, `apply_magic_power` above) - so the
-loop is cast → XP → level → stronger cast.
-
-Engine: kernels `battle_formulas::summon_spell_xp_gain` /
-`summon_magic_levels_up`; threshold loader
-`engine-core::magic_xp::thresholds_from_scus` (decoded off the user's
-`SCUS_942.54`, disc-gated `magic_xp_disc`); live wiring
-`World::cast_spell_on_slots` → `World::accrue_summon_spell_xp` (XP persists in
-the record's `+0x8` bytes, so it round-trips through saves). The engine
-narrows "summon attacker" to the Seru-magic id block its summon path covers
-(`0x81..=0x8B`); the evolved-spell ids above that block accrue nothing until
-the summon coverage widens.
-
-## MP cost & ability-bit modifiers
+### MP cost & ability-bit modifiers
 
 From battle-action.md state `0x28` (Magic / Item - cast begin):
 
@@ -1022,7 +1257,7 @@ block recurs in state `0x3C` at `0x801E3D0C`. Ported verbatim in
 
 The character record is documented to have stat fields at `+0x100..+0x110` and an ability-flag bitfield with at least 16 distinct bits in use (the 0x10 / 0x20 / 0x100 / 0x200 quarter / half / HP-cap / MP-cap split is confirmed; the rest of the bit assignments need a spreadsheet of "which character has which natural ability flag set" which is straightforward but hasn't been compiled).
 
-## RNG primitive
+### RNG primitive
 
 `FUN_80056798()` reaches the in-game RNG, but it holds no arithmetic of its own. Its whole body is a three-instruction tail-jump veneer into **BIOS A0 vector `0x2F`** (`rand`):
 
@@ -1050,7 +1285,8 @@ The clean-room Rust module `crates/engine-vm/src/battle_formulas.rs` ports the f
 | `summon_attacker_roll` / `summon_defender_roll` / `summon_bonus_roll` / `summon_predamage` | this doc, summon-roll stages 1+2 (`FUN_801dd0ac` summon branch) |
 | `arts_attacker_roll` / `arts_bonus_roll` / `arts_physical_predamage` | this doc, arts/physical-roll stages 1+2 (`FUN_801dd0ac` non-summon branch, seeded by the `0x801F4F5C` move-power table) |
 | `apply_element_affinity` / `apply_status_weaken` / `apply_magic_power` | this doc, summon-roll scale stage (`FUN_801dd864`) |
-| `physical_predamage` / `command_power_scalar` / `physical_defense_is_udf` (+ `PhysicalHit`) | this doc, [the melee roll pair](#the-melee-roll-pair-and-the-underdog-rewrite) (`FUN_801EC3E4`) |
+| `physical_predamage` / `command_power_scalar` / `physical_defense_is_udf` (+ `PhysicalHit`) | this doc, [the melee roll pair](#the-melee-roll-pair-and-the-underdog-rewrite) (`FUN_801EC3E4`, attack roll onward) |
+| `arms_weapon_atk_fold` / `arms_command_equip_slots` / `arms_resolver_admits` | this doc, [base offense value](#base-offense-value-base-atk-plus-half-of-one-equipment-slot) (`FUN_801EC3E4`, the `PTR_801CF4B4` equipment fold) |
 | `damage_finish` / `spirit_gauge_fill` (+ `DamageFinish` / `DefenderResist`) | this doc, finisher closed-form stages (`FUN_801ddb30`) |
 | `summon_spell_xp_gain` / `summon_magic_levels_up` (+ `summon_magic_level_threshold`) | this doc, [summon spell XP + magic level-up](#summon-spell-xp--magic-level-up) (`FUN_801ddb30` tail / `FUN_801E70BC`) |
 | `heal_summon_amount` | this doc, recovery-summon closed form |
@@ -1084,10 +1320,78 @@ The unit tests there pin the documented formulas as fixtures - a future runtime 
 - The monster record is now fully decoded: all six stat halfwords (see [actor stat block mapping](#actor-stat-block--monster-record-mapping)), the reward fields (see [victory spoils](#victory-spoils-rewards)), and the spell-offset list (see [spell list](#spell-list-record-0x4c)). No record fields remain open. The spell entries' `+0x04`/`+0x08` **effect indices** now resolve through the per-block effect-offset table to the per-spell effect descriptor (`MonsterSpell::effect_offset` / `aux_offset`; see [spell list](#spell-list-record-0x4c)) - these are indices into a table, not direct sub-pointers, and the target is a small fixed descriptor, not TMD geometry. What stays open is only that descriptor's **interior field semantics** (its runtime consumer is the cast/effect path).
 - **Ability-bit catalogue.** The ability bitfield at `+0xF4` of the character record has at least the documented MP-half / MP-quarter / HP-cap / MP-cap bits in use, plus the impact-step modifier (`0x10` / `0x20`) on attack actions. The full per-character mapping comes out of save-data (the 0x414 record's `+0xF4..+0xF8` is one row in the save schema's character block) - a few new-game saves with different early-game characters resolve it.
 
+## Credits and sources
+
+- **ZetaPhoenix** - the Offense Value / Defense Value shape this page is
+  organised around, the per-command equipment selection and halving (footwear
+  for High/Low, one hand's item per arm command, the sum of all gear for an
+  Art), the `Rnd(1..1.125)` reading of the `% (x/8 + 1)` draw, the juggle,
+  angle and distance terms, and the Vahn vs Evil Fly worked example - all
+  measured against the running game and then checked here against the
+  disassembly. His [Legaia Arts Data spreadsheet](https://docs.google.com/spreadsheets/d/1_U_AKdEncylFwE0lXkvPG-OhMWpNXgUdoaSGZ6vSUg0/edit?usp=drive_link)
+  is the source the `legaia-art` trigger tables are validated against, and his
+  live-RAM readings pinned the AGL buff and the cross-region stat boost
+  recorded under the [actor stat block](#actor-stat-block--monster-record-mapping).
+- **Meth962** - the original forum analyses of the damage formula on the old
+  legendoflegaia.net boards, which ZetaPhoenix's write-up corrects and this
+  page builds on: [thread 800](https://web.archive.org/web/20161205053304/https://www.legendoflegaia.net/forums/viewtopic.php?f=66&t=800&sid=b9049876cd2bcdd56c9eb66fe8614cf4&start=30)
+  and [thread 941](https://web.archive.org/web/20161203095801/https://www.legendoflegaia.net/forums/viewtopic.php?f=66&t=941&sid=10471c996f5bab205174f85853bf65e7)
+  (Wayback Machine). His INT reading ("affects your magical damage and defense
+  against other magical spells") is what the summon kernel bears out, and his
+  [100% walkthrough](https://gamefaqs.gamespot.com/ps/197766-legend-of-legaia/faqs/53721)
+  grounds the curated enemy tables in `legaia-gamedata`.
+- The disassembly: `ghidra/scripts/funcs/overlay_0898_801ec3e4.txt` /
+  `overlay_battle_action_801ec3e4.txt` (the kernel), `overlay_0898_801e295c.txt`
+  (the action state machine that writes the angle and distance words),
+  `80053cb8.txt` (party battle-load stat seeding), `800402f4.txt` (the
+  applicator), `overlay_battle_action_801dd0ac.txt` / `_801dd864.txt` /
+  `_801ddb30.txt` (the summon / special kernel), and the PROT `0898` bytes for
+  the jump-table arms Ghidra's listing skips.
+
+## Address appendix
+
+Battle overlay `0898` addresses are link-base `0x801CE818` (file offset =
+VA - base). Everything below is in `FUN_801EC3E4` unless a function is named.
+
+| Address | What is there |
+|---|---|
+| `0x800478A0` | `SCUS_942.54` call site of `FUN_801EC3E4` (the arts execution driver) |
+| `0x801CF4B4` | `PTR_801CF4B4`, the six-entry command jump table: `[801ECBC4, 801ECC0C, 801ECC54, 801ECC54, 801ECDE4, 801ECCD0]` |
+| `0x801EC588..0x801EC5C8` | power index `(record_byte - 0x0C) % 5` into the stack local the two table reads use |
+| `0x801EC888..0x801EC88C` | zeroing of `ctx[+0x6D2]` (angle) and `ctx[+0x6D4]` (distance) once the first hit has landed |
+| `0x801ECA20..0x801ECA80` | juggle counter `ctx[+0x0A]`: `+1` while the defender's `+0x1F7` timer runs, else `1` |
+| `0x801ECB80..0x801ECBBC` | party-slot gate, `lhu s0,0x158` base ATK, jump-table dispatch on `+0x1D9 - 0x0C` |
+| `0x801ECBC4` / `0x801ECC0C` / `0x801ECC54` | single-slot arms: record `+0x198` / `+0x199` / `+0x19A` → equipment attack byte `>> 1` |
+| `0x801ECCD0..0x801ECDE0` | Art arm: sum of the five equipment attack bytes, `sra 1` |
+| `0x801ECE0C..0x801ECE74` | UDF (`+0x15C`) vs LDF (`+0x160`) by `(byte - 0x0C) % 10 < 5` |
+| `0x801ECE78..0x801ECF18` | attack roll: rand window, `* power >> 4`, `+ hp >> 8`, `+ juggle*atk >> 6`, `+ angle*atk >> 16` |
+| `0x801ECF1C..0x801ED07C` | attacker / defender element ids (party: `0x801F5480[char-1]`; monster: record `+0x1D`); Safe Escape wearer count |
+| `0x801ED0A4..0x801ED138` | Art gate `+0x1D9 > 0x10`; `x13/10`, or `x14/10` on `+0xF8` bit `0x1000` |
+| `0x801ED13C..0x801ED1B4` | element pass (Art-only copy, then the unconditional copy) against `0x801F53E8` |
+| `0x801ED1B0..0x801ED230` | guard roll: rand window, `+ def*distance >> 10`, Spirit / Safe Escape triple |
+| `0x801ED254..0x801ED304` | Venom / Toxic `x9/10` / `x7/10` on the attacker's roll, then the defender's |
+| `0x801ED308..0x801ED3E0` | underdog test and rewrite |
+| `0x801ED3E4..0x801ED49C` | rewrite's Art re-scale (`x11/10` / `x12/10`) and element pass |
+| `0x801ED4A0..0x801ED5C4` | chip floor (`rand%3 + 3` plain, `rand%4 + 5` Art) |
+| `0x801ED5CC..0x801EDA00` | party-defender elemental-guard / All-Guard ladder (the finisher's resist stage, ported as `damage_finish`) |
+| `0x801EDA00..0x801EDA58` | 9999 cap, Stone zero-out, quarter-damage flag |
+| `0x801EDAB0..0x801EDB18` | HP write (`+0x14C`) and the HP-bar accumulator (`+0x10`) |
+| `0x801EDB74..0x801EDBB0` | inlined spirit-gauge fill (copy B) |
+| `0x801F64E4` | `[6, 4, 4, 4, 2]` - the counter-hit scalar table used at `0x801EC680` |
+| `0x801F64EC` | `[12, 18, 20, 22, 28]` - the power scalar table |
+| `0x801F53E8` | 8x8 element-affinity matrix (row = attacker) |
+| `0x801F5480` | per-character element table (Vahn fire, Noa wind, Gala thunder, Terra wind) |
+| `FUN_801E295C` `0x801E3068..0x801E30C8` | angle word `ctx[+0x6D2]`: `atan2` between the two actors, defender turned to face, folded difference minus `0x800` |
+| `FUN_801E295C` `0x801E35DC..0x801E35EC` | distance word `ctx[+0x6D4] += *(u8*)0x1F800393` per approach step |
+| `FUN_80053CB8` `0x8005417C` | party actor ATK (`+0x158`) seeded from the record with no equipment fold |
+| `0x80074368` / `0x80074F68` | item property records (`0xC` stride, `+1` = equipment row) / equipment stat rows (`8` stride, `+1` = attack byte) |
+| `0x80084708 + (char-1)*0x414` | character record; equipment slots at `+0x196..+0x19A`, ability words `+0xF4` / `+0xF8` |
+
 ## See also
 
 **Reference** -
 [Battle scene](battle.md) ·
 [Battle action SM](battle-action.md) ·
+[Arts command gauge](arts-command-gauge.md) ·
 [Level-up](level-up.md) ·
 [Game-data tables](../reference/gamedata.md)

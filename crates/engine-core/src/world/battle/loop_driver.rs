@@ -785,7 +785,18 @@ impl World {
             return false;
         };
         let target = target as usize;
-        let attack = self.battle_attack.get(attacker).copied().unwrap_or(0);
+        // Base ATK (`+0x158`, seeded without equipment) plus the execution-time
+        // equipment fold: half of the one equipment slot this command reads
+        // (`FUN_801EC3E4`'s `PTR_801CF4B4` arms - footwear for High / Low,
+        // slot 2 / 3 for the two arm commands). Party attackers only; the
+        // monster branch of the resolver performs no fold.
+        let mut attack = self.battle_attack.get(attacker).copied().unwrap_or(0);
+        if (attacker as u8) < self.party_count
+            && let Some(bonuses) = self.battle_equip_atk.get(attacker)
+            && let Some(fold) = vm::battle_formulas::arms_weapon_atk_fold(command, bonuses)
+        {
+            attack = attack.saturating_add(fold);
+        }
         let defense = self.physical_defense_of(target as u8, command);
         // Spirit guard stance on the defender (a party slot that picked
         // Spirit and hasn't started its next turn).

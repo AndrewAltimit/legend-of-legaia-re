@@ -1,8 +1,83 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle formulas</div>
   <h1>Battle formulas</h1>
-  <p class="lede">The actual arithmetic behind Legaia's battles - if you have ever wondered exactly how much damage a hit does, what your odds are to connect or to flee, how MP-saver accessories round, or how the random number generator is seeded, this is the page. Every formula here is traced from the game's own code (function names like <code>FUN_800402F4</code> are Ghidra's labels for the routines at those RAM addresses), and the clean-room Rust engine mirrors the arithmetic <em>exactly</em> - same integer truncation, same clamps, same order of RNG draws - in <code>crates/engine-vm/src/battle_formulas.rs</code>. These kernels are what the <a href="battle-action.html">battle action state machine</a> calls when an action lands.</p>
+  <p class="lede">How much a hit does, what a Tactical Art multiplies, what the defender's numbers subtract - and the smaller rolls around them (turn order, fleeing, poison ticks, MP costs, the RNG). Every formula is traced from the game's own code (<code>FUN_801EC3E4</code> in the battle overlay for a physical hit, <code>FUN_800402F4</code> in <code>SCUS_942.54</code> for the generic applicator) and mirrored in the clean-room engine at <code>crates/engine-vm/src/battle_formulas.rs</code>. The Offense Value / Defense Value shape follows ZetaPhoenix's community analysis, which corrected and simplified Meth962's earlier forum write-ups - see <a href="#credits">credits</a>.</p>
 </header>
+
+<section class="doc-section doc-summary" id="summary">
+  <h2>Summary</h2>
+  <ul class="bullets">
+    <li><strong>Your attack.</strong> Starts from <strong>base ATK</strong> (the number with everything unequipped) plus <strong>half</strong> the ATK of the one piece of gear the command uses: footwear for High / Low, the weapon-hand item for one arm command, the other hand's item for the other, and half of <em>all</em> your gear for an Art.</li>
+    <li><strong>Roll and power.</strong> That number is nudged up by a random 0-12.5% and multiplied by the move's power over 16 (20 for a normal hit; Arts carry 12, 18, 20, 22 or 28), then gains small extras: current HP / 256, a <strong>juggle</strong> bonus of ATK / 64 per consecutive hit while the enemy is still reeling, and a strike-angle term.</li>
+    <li><strong>Arts and elements.</strong> An Art multiplies the total by <strong>1.3</strong> (1.4 with War Soul). The element matchup applies at &times;1.04 for opposed pairs (fire vs water, earth vs wind, light vs dark) and &times;0.96 same-element - and an Art takes that factor twice.</li>
+    <li><strong>The defense.</strong> The defender's <strong>UDF</strong> (high strikes) or <strong>LDF</strong> (low strikes) gets the same 0-12.5% nudge plus a small approach-distance term on a chain's first hit only. A defender in the <strong>Spirit</strong> stance triples it.</li>
+    <li><strong>Damage = Offense &minus; Defense</strong>, capped at 9999. When the defense would win outright the game does not floor the hit at 1 - it rebuilds the attack on top of the defense so a weak attacker still lands a hit that scales with ATK.</li>
+    <li><strong>Not in this formula.</strong> Seru magic, monster specials and boss casts use a different, INT-driven kernel with its own finisher; the limb-height "Miss" and blocking are separate mechanics.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="physical-damage">
+  <h2>Physical damage - Offense Value and Defense Value</h2>
+  <p>Every direction-command hit and every Tactical-Art hit resolves in <code>FUN_801EC3E4</code> (battle overlay <code>0898</code>, called from <code>SCUS_942.54</code> at <code>0x800478A0</code>): one routine, two rolls, subtracted. Integer arithmetic throughout; <code>Rnd(1..1.125)</code> is shorthand for the game's <code>x + rand() % (x/8 + 1)</code>, which lies between <code>x</code> and <code>x + x/8</code>.</p>
+  <pre><code>Base Offense = Base ATK + Equipment ATK / 2
+
+Offense = [ Base Offense * Rnd(1..1.125) * Power / 16
+          + Current HP / 256
+          + Base Offense * Juggle / 64
+          + Base Offense * Angle / 65536 ]
+          * Arts Modifier * Element * (Element again for an Art)
+
+Defense = Base DEF * Rnd(1..1.125) + Base DEF * Distance / 1024
+
+Damage  = Offense - Defense                 (cap 9999; underdog rewrite below)</code></pre>
+  <h3>Base Offense: base ATK plus half of one equipment slot</h3>
+  <p><strong>Base ATK</strong> is the character's ATK with nothing equipped - what the battle loader <code>FUN_80053CB8</code> copies into the actor from the character record with <em>no</em> equipment folded in (it folds UDF / LDF / SPD from the equipment table and skips the ATK byte). The menu's ATK figure is base plus all your gear, so the two never match. <strong>Equipment ATK</strong> is added at swing time, per command, by the resolver's six-arm jump table <code>PTR_801CF4B4</code>: each arm reads one or more of the five equipment slots (<code>+0x196..+0x19A</code>: body, head, slot 2, slot 3, footwear), resolves each to its equipment-table attack byte, halves it, and adds it to the working ATK.</p>
+  <table class="data-table">
+    <thead><tr><th>Command</th><th>Byte</th><th>Slot read</th><th>Fold</th><th>Arm</th></tr></thead>
+    <tbody>
+      <tr><td>Left arm</td><td><code>0x0C</code></td><td>slot 2</td><td><code>atk[2] &gt;&gt; 1</code></td><td><code>0x801ECBC4</code></td></tr>
+      <tr><td>Right arm</td><td><code>0x0D</code></td><td>slot 3</td><td><code>atk[3] &gt;&gt; 1</code></td><td><code>0x801ECC0C</code></td></tr>
+      <tr><td>High</td><td><code>0x0E</code></td><td>slot 4 (<strong>footwear</strong>)</td><td><code>atk[4] &gt;&gt; 1</code></td><td><code>0x801ECC54</code></td></tr>
+      <tr><td>Low</td><td><code>0x0F</code></td><td>slot 4 (<strong>footwear</strong>)</td><td><code>atk[4] &gt;&gt; 1</code></td><td><code>0x801ECC54</code></td></tr>
+      <tr><td>(starter)</td><td><code>0x10</code></td><td>none</td><td>nothing</td><td><code>0x801ECDE4</code></td></tr>
+      <tr><td><strong>Art</strong> hit</td><td><code>0x11</code></td><td>slots 0-4</td><td><code>(sum of all five) &gt;&gt; 1</code></td><td><code>0x801ECCD0</code></td></tr>
+    </tbody>
+  </table>
+  <p class="note">The arms are keyed by <strong>slot</strong>, not item type: Vahn and Gala carry the weapon in slot 2 and the Ra-Seru in slot 3, so Left = weapon ATK and Right = Ra-Seru ATK; Noa carries Terra in slot 2 and her claws in slot 3, so hers are swapped. The Art arm sums all five slots, body and head included - those normally carry no ATK, so in practice it is weapon + Ra-Seru + footwear. Monsters take no fold at all.</p>
+  <h3>Term by term</h3>
+  <table class="data-table">
+    <thead><tr><th>Term</th><th>What it is</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td><code>Rnd(1..1.125)</code></td><td><code>x + rand() % (x/8 + 1)</code> - <code>x</code> plus 0 to <code>x/8</code>, so 1 to 1.125 times <code>x</code>.</td><td><code>0x801ECE78</code> (attack), <code>0x801ED1B0</code> (defense)</td></tr>
+      <tr><td>Power</td><td>The move's power byte, <code>(byte - 0x0C) % 5</code> into <code>[12, 18, 20, 22, 28]</code> at <code>0x801F64EC</code>, applied as <code>* Power &gt;&gt; 4</code>. A normal direction hit carries the 20 tier; each Art strike carries its own (the art record's <code>+0x24</code> power run).</td><td><code>0x801ECE9C..0x801ECEB4</code></td></tr>
+      <tr><td>Current HP / 256</td><td>The <em>attacker's</em> current HP, <code>&gt;&gt; 8</code>.</td><td><code>0x801ECEF8</code></td></tr>
+      <tr><td>Juggle</td><td><code>ctx[+0x0A]</code>: 1 on a chain's first hit, +1 per further hit while the defender's hit-reaction timer is still running, back to 1 otherwise. Applied as <code>(juggle * atk) &gt;&gt; 6</code>.</td><td>set <code>0x801ECA20..0x801ECA80</code></td></tr>
+      <tr><td>Angle</td><td><code>ctx[+0x6D2]</code>: the folded facing difference between attacker and defender minus <code>0x800</code>, written when the attacker walks in - 0 for a face-on strike. Applied as <code>(angle * atk) &gt;&gt; 16</code>; only a chain's first hit can carry it.</td><td><code>FUN_801E295C</code> <code>0x801E3068..0x801E30C8</code></td></tr>
+      <tr><td>Arts Modifier</td><td><code>&times;13/10</code> when the staged id is above <code>0x10</code> (an Art); <code>&times;14/10</code> with record word <code>+0xF8</code> bit <code>0x1000</code> - accessory passive <code>0x2C</code> <strong>Arts Power</strong>, the War Soul. <code>&times;1</code> for a plain hit.</td><td><code>0x801ED0A4..0x801ED138</code></td></tr>
+      <tr><td>Element</td><td><code>matrix[attacker][defender] / 100</code> from the 8&times;8 table at <code>0x801F53E8</code>: same element 96, opposed pairs 104, else 100. Applied once for every hit and a second time inside the Art arm.</td><td><code>0x801ED13C..0x801ED1B4</code></td></tr>
+      <tr><td>Base DEF</td><td>Defender UDF (<code>+0x15C</code>) when <code>(byte - 0x0C) % 10 &lt; 5</code>, else LDF (<code>+0x160</code>). Party defenders <em>do</em> get their equipment's defence bytes here.</td><td><code>0x801ECE0C..0x801ECE74</code></td></tr>
+      <tr><td>Distance</td><td><code>ctx[+0x6D4]</code>, accumulated from a scratchpad byte on every step of the walk-in and zeroed once the first hit lands; <code>(def * distance) &gt;&gt; 10</code>. ZetaPhoenix measured 30 for a straight walk-in from the starting line.</td><td><code>0x801E35DC..0x801E35EC</code>, <code>0x801ED1E0</code></td></tr>
+      <tr><td>Spirit stance</td><td>Defense <code>&times;3</code> when the defender chose Spirit (<code>+0x1DE == 4</code>), or is fleeing while a party member wears Safe Escape.</td><td><code>0x801ED210..0x801ED230</code></td></tr>
+      <tr><td>Venom / Toxic</td><td>Bit <code>0x1</code> scales a side <code>&times;9/10</code>, bit <code>0x2</code> <code>&times;7/10</code> - the attacker's word on Offense, the defender's on Defense.</td><td><code>0x801ED254..0x801ED304</code></td></tr>
+    </tbody>
+  </table>
+  <h3>The underdog floor</h3>
+  <p>When Offense does not clear <code>Defense + Offense*Power/64 + Offense*Juggle/64 + Juggle</code> (<code>0x801ED308</code>), the routine <em>replaces</em> Offense with <code>Defense + (3/4 * Offense + rand() % (Offense/4 + 1)) * Power / 64 + Offense*Juggle/64 + Juggle</code>, re-applies the Art multiplier (<code>&times;11/10</code>, or <code>&times;12/10</code> with War Soul) and the element pass, and finally a chip floor guarantees a few points (<code>rand()%3 + 3</code> for a plain swing, <code>rand()%4 + 5</code> for an Art, on top of the defense). So the "minimum damage" a player sees against a heavily-armoured enemy is a fraction of their own roll, not a constant. Before the HP write, a petrified defender (<code>+0x16E</code> bit <code>0x4</code>) takes nothing, and the whole hit caps at 9999.</p>
+  <h3 id="worked-example">Worked example - Vahn vs Evil Fly</h3>
+  <p>ZetaPhoenix's playtest, with his numbers: Vahn at base ATK 188, weapon (slot 2) ATK 98, footwear ATK 86, Ra-Seru (slot 3) ATK 100, HP 2747; an Evil Fly with UDF 42 / LDF 49, neutral element. The combo is Left arm, Right arm, then Hyper Elbow (a 20-power, LDF-targeting Art). The random draws are the ones he observed.</p>
+  <table class="data-table">
+    <thead><tr><th>Hit</th><th>Base Offense</th><th>Rnd</th><th>Offense terms</th><th>Offense</th><th>Base DEF</th><th>Rnd</th><th>Distance</th><th>Defense</th><th>Damage</th></tr></thead>
+    <tbody>
+      <tr><td>1 - Left arm</td><td><code>188 + 98/2 = 237</code></td><td>+7 &rarr; 244</td><td><code>244*20/16 = 305</code>, HP 10, juggle 1 &rarr; 3, angle 0</td><td>318</td><td>UDF 42</td><td>+1 &rarr; 43</td><td>30 &rarr; 1</td><td>44</td><td><strong>274</strong></td></tr>
+      <tr><td>2 - Right arm</td><td><code>188 + 100/2 = 238</code></td><td>+10 &rarr; 248</td><td><code>248*20/16 = 310</code>, HP 10, juggle 2 &rarr; 7</td><td>327</td><td>UDF 42</td><td>+2 &rarr; 44</td><td>0</td><td>44</td><td><strong>283</strong></td></tr>
+      <tr><td>3 - Hyper Elbow</td><td><code>188 + (98+86+100)/2 = 330</code></td><td>+20 &rarr; 350</td><td><code>350*20/16 = 437</code>, HP 10, juggle 1 &rarr; 5; sum 452, <code>&times;13/10</code></td><td>587</td><td>LDF 49</td><td>+2 &rarr; 51</td><td>0</td><td>51</td><td><strong>536</strong></td></tr>
+    </tbody>
+  </table>
+  <p>Total 274 + 283 + 536 = <strong>1086</strong>, matching the in-game figure for that combo. The second hit's juggle 2 is why it out-damages the first from a near-identical base, and the Art takes all three gear ATKs at half and then the &times;1.3 - which is where most of an Art's advantage comes from.</p>
+  <h3>Checked against the bytes</h3>
+  <p>Each claim in the community analysis was checked against the disassembly of <code>FUN_801EC3E4</code> and its callers (the jump-table arms live in a gap Ghidra's listing skips, so those were read straight from the overlay bytes). Every term above is <strong>confirmed</strong> with one correction and two open magnitudes: the random numbers are the BIOS <code>rand</code>'s 15 bits, not 16 (immaterial after the <code>% (x/8 + 1)</code> reduction); the "2048 from behind" angle value is the fold <em>before</em> the writer's <code>- 0x800</code>, and what the kernel does with the resulting negative halfword has not been captured; and the distance of 30 is runtime scratchpad state rather than a constant in the code. The full claim-by-claim table, register-level stage list and address appendix are in the <a href="#full-reference">full reference</a>.</p>
+  <p class="note"><strong>Engine.</strong> Before this check the port seeded a party member's attack from the <em>menu</em> aggregate (base plus every item's full ATK), over-stating Vahn's first hit above from 237 to 472 before the roll. It now seeds the base and folds the halved slot per command (<code>World::battle_equip_atk</code>, <code>arms_weapon_atk_fold</code>); <code>physical_predamage</code> ports the roll pair, the Art and element passes, the status scales, the underdog rewrite and the chip floor, drawing <code>rand()</code> in retail order.</p>
+</section>
 
 <section class="doc-section" id="damage-primitive">
   <h2>Damage application primitive</h2>
@@ -31,7 +106,7 @@
       <tr><td><code>+0x1A</code></td><td><code>+0x164/+0x166</code></td><td><strong>SPD</strong></td><td>turn-order initiative seed (<code>+0x16C = SPD + rand</code>); "Speed Up" buff</td></tr>
     </tbody>
   </table>
-  <p>Physical damage (<code>overlay_battle_action_801ec3e4</code>) reads the attacker's ATK (<code>+0x158</code>) and the target's defense - <code>+0x15C</code> (DEF&uarr;) when the attack move index satisfies <code>(move - 0xC) % 10 &lt; 5</code>, else <code>+0x160</code> (DEF&darr;). The single &ldquo;Defense Up&rdquo; buff raising both <code>+0x15C</code> and <code>+0x160</code> together confirms they are two facets of one defense. <strong>SPD</strong> (<code>+0x164</code>) seeds the per-turn initiative key <code>+0x16C = SPD + rand(0..SPD/2) + 1</code>, which the next-actor selector <code>recompute_battle_order</code> (<code>FUN_801daba4</code>, ported as <code>World::next_combatant_by_initiative</code>) reads to pick the highest-key living actor each turn; <strong>AGL</strong> (<code>+0x154</code>) is the agility / action gauge the enemy AI spends to act each round (deducting each action's <code>+0x74</code> cost) and re-derives from base each round. The parser exposes all six via <code>legaia_asset::monster_archive::MonsterRecord::{attack, defense_high, defense_low, intelligence, speed, agility}</code>; the <a href="../monsters.html">enemy table</a> renders them per enemy.</p>
+  <p>Physical damage (<code>FUN_801EC3E4</code>, <a href="#physical-damage">above</a>) reads the attacker's ATK (<code>+0x158</code>, plus the per-command equipment fold) and the target's defense - <code>+0x15C</code> (DEF&uarr;) when the strike's power byte satisfies <code>(byte - 0xC) % 10 &lt; 5</code>, else <code>+0x160</code> (DEF&darr;). The single &ldquo;Defense Up&rdquo; buff raising both <code>+0x15C</code> and <code>+0x160</code> together confirms they are two facets of one defense. <strong>SPD</strong> (<code>+0x164</code>) seeds the per-turn initiative key <code>+0x16C = SPD + rand(0..SPD/2) + 1</code>, which the next-actor selector <code>recompute_battle_order</code> (<code>FUN_801daba4</code>, ported as <code>World::next_combatant_by_initiative</code>) reads to pick the highest-key living actor each turn; <strong>AGL</strong> (<code>+0x154</code>) is the agility / action gauge the enemy AI spends to act each round (deducting each action's <code>+0x74</code> cost) and re-derives from base each round. The parser exposes all six via <code>legaia_asset::monster_archive::MonsterRecord::{attack, defense_high, defense_low, intelligence, speed, agility}</code>; the <a href="../monsters.html">enemy table</a> renders them per enemy.</p>
 </section>
 
 <section class="doc-section" id="spell-list">
@@ -101,6 +176,7 @@ else
     <li><code>arts_attacker_roll</code> / <code>arts_bonus_roll</code> / <code>arts_physical_predamage</code> (<code>FUN_801DD0AC</code> arts/physical branch, seeded by the <code>0x801F4F5C</code> move-power table)</li>
     <li><code>apply_element_affinity</code> (<code>FUN_801DD864</code> scale stage; the 8×8 matrix at <code>0x801F53E8</code> + the per-character element table at <code>0x801F5480</code> are parsed off the disc by <code>legaia_asset::element_affinity</code>). The stage resolves each side's element by the actor's battle <em>slot</em>, not the spell: a party member (slot &lt; 3) uses the per-character table, while any other slot (≥ 3, including the slot-7 summon body) reads the element <strong>record-direct</strong> from the monster record <code>+0x1D</code> - via the per-enemy record-pointer table <code>0x801C9348[slot-3]</code> (<code>lbu …,0x1d(record)</code>), <strong>not</strong> a copied live-actor field. So a player Seru-magic cast attacks <em>as the summoned creature</em> and scales by <code>matrix[summon-creature element][target element]</code> - neither the caster character's element nor the spell's own element.</li>
     <li><code>damage_finish</code> / <code>spirit_gauge_fill</code> (<code>FUN_801DDB30</code> finisher's closed-form stages: equipment elemental-resistance halving, guard halve, <code>rand%9+8</code> no-damage floor, summon power-% scale, 9999 cap, and the spirit-gauge accrual; the finisher's state-mutating tail - popup accumulator, AI revenge table, MP drain, per-element stat-debuff switch - stays in the live battle context. The live basic-attack damage can route through <code>damage_finish</code> behind the <code>World::use_damage_finish</code> gate (<code>--damage-finish</code> play-window flag). The defender resist inputs are live: <code>World::defender_resist</code> reads the two resist words off the character's rebuilt ability bitfield (record <code>+0xF4</code>/<code>+0xF8</code> - every flag is accessory-passive index <code>0x1D + element</code>, the contiguous elemental-guard band, with All Guard <code>0x24</code> as the 3/4-scale gate and AP Boost <code>0x28</code>/<code>0x29</code> as the spirit-gain bits), so an equipped elemental guard halves a matching-element monster special and AP Boost accelerates the wearer's spirit-gauge fill. The monster special-attack path runs the finisher's resist ladder / guard halve / floor / cap on every hit, drawing its one RNG only on a zeroed hit so the no-gear call-count is unchanged)</li>
+    <li><code>physical_predamage</code> / <code>arms_weapon_atk_fold</code> (<code>FUN_801EC3E4</code>, the melee kernel above - the equipment fold, roll pair, Art / element passes, underdog rewrite and chip floor)</li>
     <li><code>victory_gold_per_monster</code> / <code>victory_gold_finalize</code> / <code>victory_exp_per_member</code> (<code>FUN_8004E568</code> reward scaling)</li>
     <li><code>escape_roll</code> / <code>escape_party_score</code> / <code>escape_enemy_score</code> (<code>FUN_801E791C</code>, the Run command's flee decision: party score = per-slot <code>(SPD*3)&gt;&gt;1 + missingHP&gt;&gt;4</code>, enemy score = <code>SPD + missingHP&gt;&gt;5</code>, two rand draws, caught iff <code>roll_p &lt; roll_e</code> or the no-escape flag; the Chicken Heart / Chicken King accessory bits fold via <code>EscapeFlags</code> from the living wearers' second ability word. Rolled live by <code>World::roll_battle_escape</code> when the command menu resolves Run - see <a href="battle-action.html#spirit-run-live-menu">the run band</a>)</li>
   </ul>
@@ -116,6 +192,14 @@ else
   </ul>
 </section>
 
+<section class="doc-section" id="credits">
+  <h2>Credits and sources</h2>
+  <ul class="bullets">
+    <li><strong>ZetaPhoenix</strong> - the Offense Value / Defense Value shape this page is organised around, the per-command equipment selection and halving (footwear for High / Low, one hand's item per arm command, the sum of all gear for an Art), the <code>Rnd(1..1.125)</code> reading, the juggle / angle / distance terms and the Vahn vs Evil Fly worked example - all measured against the running game and then checked here against the disassembly. His <a href="https://docs.google.com/spreadsheets/d/1_U_AKdEncylFwE0lXkvPG-OhMWpNXgUdoaSGZ6vSUg0/edit?usp=drive_link" target="_blank" rel="noopener">Legaia Arts Data spreadsheet</a> is what the <code>legaia-art</code> trigger tables are validated against.</li>
+    <li><strong>Meth962</strong> - the original forum analyses of the damage formula, which ZetaPhoenix's write-up corrects and this page builds on: <a href="https://web.archive.org/web/20161205053304/https://www.legendoflegaia.net/forums/viewtopic.php?f=66&amp;t=800&amp;sid=b9049876cd2bcdd56c9eb66fe8614cf4&amp;start=30" target="_blank" rel="noopener">thread 800</a> and <a href="https://web.archive.org/web/20161203095801/https://www.legendoflegaia.net/forums/viewtopic.php?f=66&amp;t=941&amp;sid=10471c996f5bab205174f85853bf65e7" target="_blank" rel="noopener">thread 941</a> (Wayback Machine); his <a href="https://gamefaqs.gamespot.com/ps/197766-legend-of-legaia/faqs/53721" target="_blank" rel="noopener">100% walkthrough</a> grounds the curated enemy tables.</li>
+  </ul>
+</section>
+
 <section class="doc-section" id="full-reference">
   <h2>Full reference</h2>
   <p>The full doc with provenance citations is at <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-formulas.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-formulas.md</code></a>.</p>
@@ -127,6 +211,7 @@ else
     <span class="see-also-label">Reference</span>
     <a href="battle.html">Battle scene</a>
     <a href="battle-action.html">Battle action SM</a>
+    <a href="arts-command-gauge.html">Arts command gauge</a>
     <a href="level-up.html">Level-up</a>
     <a href="../reference/gamedata.html">Game-data tables</a>
   </div>

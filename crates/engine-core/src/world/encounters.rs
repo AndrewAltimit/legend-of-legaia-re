@@ -419,7 +419,9 @@ impl World {
     /// the character's base attack / UDF / LDF and the modifiers of the items
     /// in its equipment slots ([`crate::battle_stats::compute_battle_stats_default`]
     /// against [`Self::equipment_table`]), then writes
-    /// [`Self::battle_attack`] (= resolved attack) and
+    /// [`Self::battle_attack`] (= the attack **without** the equipment sum,
+    /// which retail folds per command at swing time - see
+    /// [`Self::battle_equip_atk`]) and
     /// [`Self::battle_defense_split`] (= resolved UDF / LDF). Slots with a
     /// zeroed roster record are left untouched, so synthetic battles that set
     /// `battle_attack` directly keep their values.
@@ -524,8 +526,33 @@ impl World {
                     a.battle.hp = a.battle.hp.min(max_hp);
                 }
             }
+            // ATK is the one equipment-fed line retail does NOT seed with its
+            // equipment bonus: `FUN_80053CB8` folds UDF / LDF / SPD from the
+            // equipment table and leaves the actor's ATK at the record value.
+            // The equipment attack reaches a swing at execution time instead,
+            // when `FUN_801EC3E4` adds *half* of the one slot the command
+            // reads (footwear for High / Low, slot 2 or 3 for the arm
+            // commands, the sum of all five for an art). So the seeded
+            // attack is the aggregator's ATK minus the equipment sum - the
+            // base plus any accessory percent boost - and the per-slot bytes
+            // go to `battle_equip_atk` for `apply_one_basic_strike` to fold.
+            let mut equip_atk = [0u8; legaia_engine_vm::battle_formulas::EQUIP_SLOTS];
+            let mut equip_atk_sum: u16 = 0;
+            for (i, &id) in record.equip.iter().enumerate() {
+                if id == 0 {
+                    continue;
+                }
+                if let Some(m) = self.equipment_table.get(id) {
+                    let b = m.atk.clamp(0, 255) as u8;
+                    equip_atk[i] = b;
+                    equip_atk_sum = equip_atk_sum.saturating_add(u16::from(b));
+                }
+            }
             if let Some(s) = self.battle_attack.get_mut(slot) {
-                *s = stats.atk;
+                *s = stats.atk.saturating_sub(equip_atk_sum);
+            }
+            if let Some(s) = self.battle_equip_atk.get_mut(slot) {
+                *s = equip_atk;
             }
             if let Some(s) = self.battle_accuracy.get_mut(slot) {
                 *s = stats.acc;

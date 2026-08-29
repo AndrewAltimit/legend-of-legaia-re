@@ -206,7 +206,7 @@ Each arm resolves one or more of the character record's five equipment slots (`+
 
 This is the counterpart to the battle-load asymmetry recorded in [`battle-formulas.md`](battle-formulas.md): the seeder `FUN_80053CB8` folds the equipment table's UDF / LDF / SPD bytes and folds **neither** INT nor ATK, so a weapon's attack bonus never reaches the actor's ATK **base** (`+0x15A`). It reaches ATK **working** here instead, per committed command. The seeder's omission is correct, not a gap.
 
-Ports: `legaia_engine_vm::battle_formulas::arms_command_equip_slots` / `arms_weapon_atk_fold` / `arms_resolver_admits`.
+Ports: `legaia_engine_vm::battle_formulas::arms_command_equip_slots` / `arms_weapon_atk_fold` / `arms_resolver_admits`; the live loop seeds a party slot's `battle_attack` without the equipment sum and adds the halved slot per swing (`World::battle_equip_atk`). The player-facing formula this fold feeds is on [battle-formulas.md](battle-formulas.md#base-offense-value-base-atk-plus-half-of-one-equipment-slot).
 
 ## Who writes the cost
 
@@ -626,7 +626,7 @@ The cheat-database labels "weapon = `+0x198`" are Vahn's and Gala's layout.
 | Offset | Type | Meaning |
 |---|---|---|
 | `+0x154` / `+0x156` | u16 | AGL, current / base; the turn pool is seeded from `+0x154` |
-| `+0x158` | u16 | Working ATK; the execution resolver folds half the weapon's attack bonus in here per command |
+| `+0x158` | u16 | Working ATK; the execution resolver folds half of one equipment slot's attack bonus in here per command (footwear for Up / Down, slot 2 / 3 for the arms, all five for an art) |
 | `+0x16E` | u16 | Status word; bits `0x08` / `0x10` / `0x20` disable Left / Right / Up+Down |
 | `+0x170` | u16 | Spirit gauge; where a named art's cost is charged (not the bar) |
 | `+0x1D9` | u8 | Last staged action id (`< 0x10` = plain direction) |
