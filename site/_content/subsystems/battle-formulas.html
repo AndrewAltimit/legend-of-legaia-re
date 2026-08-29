@@ -63,6 +63,19 @@ Damage  = Offense - Defense                 (cap 9999; underdog rewrite below)</
   </table>
   <h3 id="juggle-window">The juggle window - what makes a monster "juggleable"</h3>
   <p>ZetaPhoenix asked what sets a monster's tolerance to juggling - a hidden number, or the state of its damage animation. It is the animation, and more precisely one authored byte of it.</p>
+  <p><strong>In plain terms.</strong> Every hit adds <code>BaseOffense * juggle / 64</code> to its roll. <code>juggle</code> is 1 on the first hit and climbs by one for each further hit that lands while the defender is still reeling from the last one; miss that window and it snaps back to 1. The bonus is modest - the fourth hit of a juggle carries an extra 6% of Base Offense, not a multiplier - but it is the term that rewards a tight string. &ldquo;Juggleability&rdquo; is the size of that window: how long, after a hit lands, the defender still counts as reeling. <strong>A bigger window is easier to juggle.</strong> The window <strong>restarts on every hit that lands inside it</strong>, so what matters is the gap between consecutive hits, never the length of the string - keep each hit inside the window and the counter climbs without limit. And the window is a property of the <strong>reaction clip the defender is in</strong>, not of the defender: the numbers below are for the light flinch an ordinary hit puts a monster into; a hit that triggers a different reaction (a heavier knockback, a launch) opens that clip&rsquo;s own window. In normal play the window is <code>4 * beat / rate</code> ticks at 60 Hz:</p>
+  <table class="data-table">
+    <thead><tr><th>Flinch entry</th><th><code>4 * beat / rate</code></th><th>Window</th><th>Read as</th></tr></thead>
+    <tbody>
+      <tr><td>Rogue <code>f1/2</code></td><td><code>4*1/2</code></td><td>2 ticks</td><td>next hit within 2 frames - effectively un-jugglable</td></tr>
+      <tr><td>bee family <code>f5/2</code></td><td><code>4*5/2</code></td><td>10 ticks</td><td></td></tr>
+      <tr><td>Gobu Gobu <code>f8/2</code></td><td><code>4*8/2</code></td><td>16 ticks</td><td></td></tr>
+      <tr><td>Zeto <code>f16/2</code></td><td><code>4*16/2</code></td><td>32 ticks</td><td></td></tr>
+      <tr><td>Caruban <code>f10/1</code></td><td><code>4*10/1</code></td><td>40 ticks</td><td>hit him again within 40 ticks (~0.67 s) of the last hit and <code>juggle</code> goes up; the window then restarts</td></tr>
+      <tr><td>Vahn (party) <code>f3/1</code></td><td><code>4*3/1</code></td><td>12 ticks</td><td>why an enemy&rsquo;s swings, 24+ ticks apart, never juggle him</td></tr>
+    </tbody>
+  </table>
+  <p>An Art&rsquo;s slow-motion halves or quarters every actor&rsquo;s play speed, which doubles or quadruples every window while it runs - part of why Arts chain so well. The rest of this section is where those numbers come from.</p>
   <p><strong>Two writers on the whole disc.</strong> Scanning <code>SCUS_942.54</code> and every overlay image for a store to actor offset <code>+0x1F7</code> finds exactly two, four bytes apart, both in the per-frame anim tick <code>FUN_80047430</code> (<code>0x80047E50</code> stores 0, <code>0x80047E54</code> stores 1). The battle overlay only reads the byte. A live write-watch across three battle states sees no other writer.</p>
   <p><strong>What it stores.</strong> Every tick, for every actor, after advancing that actor's clip cursor:</p>
   <pre><code>frame = cursor &gt;&gt; 4                       ; integer frame of the clip the actor is IN

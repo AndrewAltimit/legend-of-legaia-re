@@ -137,6 +137,36 @@ ZetaPhoenix asked what sets a monster's tolerance to juggling - a hidden
 number, or the state of its damage animation. It is the animation, and more
 precisely one authored byte of it.
 
+**In plain terms.** Every hit adds `BaseOffense * juggle / 64` to its roll.
+`juggle` is `1` on the first hit and climbs by one for each further hit
+that lands while the defender is still reeling from the last one; miss
+that window and it snaps back to `1`. The bonus is modest - the fourth
+hit of a juggle carries an extra 6% of Base Offense, not a multiplier -
+but it is the term that rewards a tight string. "Juggleability" is the
+size of that window: how long, after a hit lands, the defender still
+counts as reeling. **A bigger window is easier to juggle.** The window
+**restarts on every hit that lands inside it**, so what matters is the gap
+between consecutive hits, never the length of the string - keep each hit
+inside the window and the counter climbs without limit. And the window is
+a property of the **reaction clip the defender is in**, not of the
+defender: the numbers below are for the light flinch an ordinary hit puts
+a monster into, and a hit that triggers a different reaction (a heavier
+knockback, a launch) opens that clip's own window. In normal play the
+window is `4 * beat / rate` ticks at 60 Hz:
+
+| Flinch entry | `4 * beat / rate` | Window | Read as |
+|---|---|---|---|
+| Rogue `f1/2` | `4*1/2` | 2 ticks | next hit within 2 frames - effectively un-jugglable |
+| bee family `f5/2` | `4*5/2` | 10 ticks | |
+| Gobu Gobu `f8/2` | `4*8/2` | 16 ticks | |
+| Zeto `f16/2` | `4*16/2` | 32 ticks | |
+| Caruban `f10/1` | `4*10/1` | 40 ticks | hit him again within 40 ticks (~0.67 s) of the last hit and `juggle` goes up; the window then restarts |
+| Vahn (party) `f3/1` | `4*3/1` | 12 ticks | why an enemy's swings, 24+ ticks apart, never juggle him |
+
+An Art's slow-motion halves or quarters every actor's play speed, which
+doubles or quadruples every window while it runs - part of why Arts chain
+so well. The rest of this section is where those numbers come from.
+
 **The byte has two writers on the whole disc.** A word-wise scan of
 `SCUS_942.54` and every image in `extracted/overlays/` for a `sb` / `sh` /
 `sw` at actor offset `+0x1F7` finds exactly two stores, four bytes apart:
