@@ -3337,12 +3337,24 @@ re-packed. Room is the constraint: the retail player files tile their
 footprints exactly, so the patcher re-packs the three files with the optimal
 LZS parse (a few sectors each) and **moves the boundaries between PROT
 entries 863..865** - same total footprint, index space preserved, still a
-PPF - which pays for one or two carried-over weapons. Past that, the CLI's
-`--allow-relayout` grows the target entries with a whole-disc relayout
+PPF - which pays for one or two carried-over weapons. Past that the records
+go to the **`DMY.DAT` annex**: the rebuilt file's header (with the
+descriptor table) stays in its PROT entry and its whole slot region is
+written into `DMY.DAT`, the 18,000-sector developer-fixture file at the end
+of the disc that no retail code path loads, with the table's offsets
+displaced to reach it. The loader streams a player file by those offsets
+alone - a fixed 16-sector prologue from the entry's TOC start, then each
+selected slot by a forward seek of its offset - and discards the entry's
+TOC span, so nothing in retail notices where the records sit (detail in
+[battle-data-pack.md](../formats/battle-data-pack.md#parking-the-records-in-dmydat)).
+Same-size image, still a PPF, room for every weapon on every character; a
+bump marker in `DMY.DAT`'s last sector lets a second patch of the same disc
+allocate past the first. Only when the annex is missing or full does the
+CLI's `--allow-relayout` grow the target entries with a whole-disc relayout
 (`--output` only, no PPF; the web patcher never relays out); without it the
-model stays out and the report says so (`no room in the player files`), the
-owner falling through to the default record. `--no-model-transplant` keeps
-the default-look behaviour on purpose. Ra-Seru level forms, body, head and
+model stays out and the report says so (`no room in the player files or
+the DMY.DAT annex`), the owner falling through to the default record.
+`--no-model-transplant` keeps the default-look behaviour on purpose. Ra-Seru level forms, body, head and
 footwear are never carried over (a Ra-Seru arm or an armour section is the
 donor's whole re-sculpted limb, not an item to seat); they fall through, and
 the report names every such (character, item) pair with the cost it pays.

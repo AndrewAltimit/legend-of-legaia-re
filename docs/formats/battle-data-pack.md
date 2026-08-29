@@ -442,7 +442,48 @@ Vahn's / Noa's / Gala's files and Terra's none - so the patcher moves the
 boundaries between PROT entries 863..865 (the loader streams each file by
 descriptor offsets from the entry's own start LBA, so a file that grows into
 its neighbour's former sectors needs nothing but the TOC word) and, past
-that pool, a disc relayout.
+that pool, parks the records outside `PROT.DAT` altogether.
+
+#### Parking the records in DMY.DAT
+
+The loader never bounds a player file by its TOC span. `FUN_800558FC`
+opens the file through `FUN_8003E8A8`, which sets the CD position from the
+entry's start LBA and *returns* the span (`toc[p+3] - toc[p+2]`) - a value
+the caller discards. Everything after that is offset-driven: a fixed
+16-sector prologue read (`FUN_800559EC(…, 0x8000)`), then for the five
+selected slots case 5 rewrites each captured offset into the **gap** from
+the end of the previous selected slot (`gap[i] = off[i] - (off[i-1] +
+size[i-1])`, the first slot's gap being its offset from the data base) and
+cases 6 / 8 seek by `gap >> 11` sectors (`FUN_80055A5C` → `FUN_8003E964`, a
+plain add to the current LBA) before reading `size >> 11` sectors. Two
+consequences: the offsets are 32-bit and can reach anywhere later on the
+disc, and because the gap is shifted as an unsigned value a selected slot
+must never sit *before* the previous one - records stay in chain order.
+
+So a rebuilt file that outgrows the pool keeps its first `0x8000` bytes in
+the PROT entry - header, `record[0]`, descriptor table - and puts its whole
+slot region, in chain order, into `DMY.DAT` (`docs/formats/dmy.md`: developer
+fixtures no retail code loads, Form 1 sectors, 18,054 of them at the end of
+the disc), with every table offset displaced by the byte distance from the
+entry's data base to the annexed region. The entry's old record sectors
+stay where they were and nothing reads them. `legaia_asset::player_file_annex`
+tells an annexed table from a retail one (the chain starts at a non-zero
+sector-aligned offset), splits a retail-shaped rebuilt file into the two
+halves and materialises the retail-shaped file back for every existing
+parser; `DiscPatcher::{annex_player_file, read_player_file,
+patch_player_file}` are the disc side, with a bump allocator whose marker
+(`LGAX`, version, sectors used) lives in `DMY.DAT`'s last sector so a second
+patch of an already-annexed disc allocates past the first. The image keeps
+its size, so a PPF carries it. Verified in PCSX-Redux from a pre-battle save
+on the patched disc: Noa and Gala both draw the Astral Sword through the
+battle with their records streamed from `DMY.DAT`.
+
+What this does **not** unlock: a Ra-Seru level form, a body / head / footwear
+record is the donor's whole re-sculpted limb or torso on the donor's
+skeleton, not an item to seat on the target's bone (see
+[Every section is bone geometry](#every-section-is-bone-geometry---the-item-is-not-its-own-object)),
+so those slots still fall through to the target's default record whatever
+the room; and Terra's file carries no equipment sections at all.
 
 ## Slot region
 

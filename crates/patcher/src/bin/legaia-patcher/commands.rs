@@ -856,7 +856,7 @@ pub(crate) fn cmd_delilas_verify(input: &Path) -> Result<()> {
         let who = hosts[slot];
         let rig = rigs[slot];
         let file = patcher
-            .read_entry_footprint(863 + slot)
+            .read_player_file(863 + slot)
             .with_context(|| format!("read player file PROT {}", 863 + slot))?;
         let pack = battle_data_pack::parse(&file)
             .with_context(|| format!("{who}: parse player battle file"))?;

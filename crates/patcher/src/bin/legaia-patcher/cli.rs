@@ -1215,9 +1215,11 @@ pub(crate) struct RandomizeArgs {
     /// equipment table; items sharing a bonus row move together (the report
     /// says which). A weapon a character's player file has no record for gets
     /// its model carried over from the file that has it (the three player
-    /// files are re-packed and their boundaries moved to make room; see
-    /// `--allow-relayout` when that is not enough). Other slots fall through
-    /// to the default look. Repeatable / comma-separated.
+    /// files are re-packed and their boundaries moved to make room; past
+    /// that the rebuilt file's records go to the DMY.DAT annex - same-size
+    /// image, still a PPF). Body, head, footwear and Ra-Seru forms cannot
+    /// be carried and fall through to the default look. Repeatable /
+    /// comma-separated.
     #[arg(
         long = "equip-owner",
         value_name = "ITEM=OWNERS",
@@ -1228,9 +1230,10 @@ pub(crate) struct RandomizeArgs {
     /// swings with the default look (and the default record's cost).
     #[arg(long)]
     pub(crate) no_model_transplant: bool,
-    /// With `--equip-owner`: when the carried-over weapon models do not fit
-    /// the three player files, grow them with a whole-disc relayout. The
-    /// image gets longer, so this needs `--output` and writes no PPF.
+    /// With `--equip-owner`: when the carried-over weapon models fit neither
+    /// the three player files nor the DMY.DAT annex, grow them with a
+    /// whole-disc relayout. The image gets longer, so this needs `--output`
+    /// and writes no PPF.
     #[arg(long)]
     pub(crate) allow_relayout: bool,
     /// How per-monster steal items are reassigned (the Evil God Icon table;

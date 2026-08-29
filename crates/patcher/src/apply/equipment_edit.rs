@@ -43,7 +43,7 @@ use legaia_asset::equip_stats::{BONUS_STRIDE, EquipSlot, EquipStatTable, bonus_t
 use legaia_asset::equip_transplant::{
     self, Transplant, packed_len, records_with_transplants, transplant_weapon,
 };
-use legaia_asset::party_swap::playerize::rebuild_player_file;
+use legaia_asset::party_swap::playerize::{rebuild_player_file, rebuild_player_file_unbounded};
 
 use crate::disc::DiscPatcher;
 use crate::weapon_specialty::{self, PLAYERS, arm_cost_offset, up_cost_offset};
@@ -158,8 +158,8 @@ pub struct EquipmentEdits {
     /// its model over from the character file that has it (see
     /// [`ModelTransplant`]).
     pub skip_model_transplant: bool,
-    /// When the transplanted records do not fit the three player files
-    /// even after re-packing them, grow the target entries with a
+    /// When the transplanted records fit neither the three player files
+    /// (re-packed) nor the `DMY.DAT` annex, grow the target entries with a
     /// whole-disc relayout (the image gets longer; a PPF cannot carry it).
     pub allow_relayout: bool,
 }
@@ -438,7 +438,7 @@ struct FileCosts {
 fn read_file_costs(patcher: &DiscPatcher) -> [FileCosts; 3] {
     let mut out: [FileCosts; 3] = Default::default();
     for (ci, player) in PLAYERS.iter().enumerate() {
-        let Ok(buf) = patcher.read_entry(player.entry) else {
+        let Ok(buf) = patcher.read_player_file(player.entry) else {
             continue;
         };
         let Some(pack) = battle_data_pack::detect(&buf) else {
@@ -647,6 +647,10 @@ pub struct EquipmentEditReport {
     pub entries_reassigned: Vec<(usize, i64)>,
     /// Sectors the disc grew by (relayout), 0 when it did not.
     pub relayout_sectors: u32,
+    /// `(character, disc LBA, sectors)` player files whose records were
+    /// parked in the `DMY.DAT` annex because the PROT pool had no room
+    /// (header in place, same-size image).
+    pub models_annexed: Vec<(String, u32, u32)>,
     /// Swing-cost sections rewritten.
     pub costs_changed: usize,
     /// Swing-cost edits that were already at the requested value.
@@ -760,7 +764,7 @@ pub fn apply_equipment_edits(
             .iter()
             .map(|p| {
                 patcher
-                    .read_entry_footprint(p.entry)
+                    .read_player_file(p.entry)
                     .with_context(|| format!("read {} player file", p.name))
             })
             .collect::<Result<_>>()?;
@@ -890,6 +894,22 @@ pub fn apply_equipment_edits(
                 for l in landed {
                     report.models_transplanted.extend(l);
                 }
+            } else if let Some(placed) = annex_rebuilt_files(
+                patcher,
+                &raw,
+                &mut lists,
+                &landed,
+                &table_offset,
+                &mut report,
+            )? {
+                // The PROT pool is short, but DMY.DAT is not: the records of
+                // every rebuilt file go there, header in place.
+                for ci in placed {
+                    rebuilt.insert(ci);
+                }
+                for l in landed {
+                    report.models_transplanted.extend(l);
+                }
             } else if edits.allow_relayout {
                 let mut payloads: BTreeMap<usize, Vec<u8>> = BTreeMap::new();
                 for ci in 0..PLAYERS.len() {
@@ -952,7 +972,7 @@ pub fn apply_equipment_edits(
             continue;
         }
         let buf = patcher
-            .read_entry(player.entry)
+            .read_player_file(player.entry)
             .with_context(|| format!("read {} player file", player.name))?;
         let Some(pack) = battle_data_pack::detect(&buf) else {
             bail!(
@@ -1001,7 +1021,7 @@ pub fn apply_equipment_edits(
             }
             let stream_off = rec.file_offset(pack.data_base) + 4;
             patcher
-                .patch_prot_entry(player.entry, stream_off as u64, &recompressed)
+                .patch_player_file(player.entry, stream_off as u64, &recompressed)
                 .with_context(|| format!("write swing cost for {} {label}", player.name))?;
             report.costs_changed += 1;
         }
@@ -1027,6 +1047,60 @@ pub fn apply_equipment_edits(
     Ok(report)
 }
 
+/// Park every rebuilt file that carries a transplant in the `DMY.DAT`
+/// annex (`DiscPatcher::annex_player_file`). Returns the characters placed,
+/// or `None` - with nothing written - when the annex cannot take them
+/// (no `DMY.DAT`, or it is full), so the caller can fall back. Files in
+/// `lists` without a landed transplant (the pool-fill repacks) are left
+/// alone; their records are already on the disc.
+fn annex_rebuilt_files(
+    patcher: &mut DiscPatcher,
+    raw: &[Vec<u8>],
+    lists: &mut [Option<RecordPlan>],
+    landed: &[Vec<ModelTransplant>],
+    table_offset: &dyn Fn(usize) -> Result<usize>,
+    report: &mut EquipmentEditReport,
+) -> Result<Option<Vec<usize>>> {
+    let mut files: Vec<(usize, Vec<u8>, CostFold)> = Vec::new();
+    for ci in 0..PLAYERS.len() {
+        if landed[ci].is_empty() {
+            continue;
+        }
+        let Some((db, records, fold)) = lists[ci].as_ref() else {
+            continue;
+        };
+        let file = rebuild_player_file_unbounded(&raw[ci], table_offset(ci)?, *db, records.clone())
+            .with_context(|| format!("rebuild {} player file", PLAYERS[ci].name))?;
+        files.push((ci, file, fold.clone()));
+    }
+    if files.is_empty() {
+        return Ok(None);
+    }
+    let wanted: u32 = files
+        .iter()
+        .map(|(_, f, _)| {
+            (f.len().saturating_sub(crate::disc::PLAYER_FILE_DATA_BASE) / 0x800) as u32
+        })
+        .sum();
+    match patcher.annex_free_sectors() {
+        Ok(free) if free >= wanted => {}
+        _ => return Ok(None),
+    }
+    let mut placed = Vec::new();
+    for (ci, file, fold) in files {
+        let place = patcher
+            .annex_player_file(PLAYERS[ci].entry, &file)
+            .with_context(|| format!("annex {} player file", PLAYERS[ci].name))?;
+        fold.commit(report);
+        lists[ci] = None;
+        report
+            .models_annexed
+            .push((PLAYERS[ci].name.to_string(), place.lba, place.sectors));
+        placed.push(ci);
+    }
+    Ok(Some(placed))
+}
+
 /// Human-readable lines for the model side of a report: what was carried
 /// over, what had no room, what the cut refused, and how the disc made
 /// room. The CLI prints them, the web patcher puts them in the summary.
@@ -1036,6 +1110,12 @@ pub fn transplant_notes(rep: &EquipmentEditReport) -> Vec<String> {
         out.push(format!(
             "{} now holds 0x{:02X} in battle: model carried over from {}'s file ({} AP swing)",
             t.character, t.item, t.source, t.cost
+        ));
+    }
+    for (who, lba, sectors) in &rep.models_annexed {
+        out.push(format!(
+            "{who}'s battle records now live in DMY.DAT (disc LBA {lba}, {sectors} sectors) - \
+             the PROT entry keeps its header, the disc did not grow"
         ));
     }
     for (entry, delta) in &rep.entries_reassigned {
@@ -1057,7 +1137,7 @@ pub fn transplant_notes(rep: &EquipmentEditReport) -> Vec<String> {
     }
     for n in fall_through_notes(&rep.models_no_room) {
         out.push(format!(
-            "no room in the player files for the model: {n} (allow a relayout to carry it over)"
+            "no room in the player files or the DMY.DAT annex for the model: {n} (allow a relayout to carry it over)"
         ));
     }
     for (c, id, why) in &rep.models_failed {
@@ -1106,7 +1186,7 @@ type RecordPlan = (usize, RecordList, CostFold);
 
 /// What folding one character's cost edits into a record list did - held
 /// back until the rebuild is known to land, then committed to the report.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct CostFold {
     changed: usize,
     unchanged: usize,

@@ -37,7 +37,7 @@ fn cost_of(patcher: &DiscPatcher, ci: usize, item: u8) -> Option<u8> {
 }
 
 fn record_cost_of(patcher: &DiscPatcher, ci: usize, item: u8, rec: SwingRecord) -> Option<u8> {
-    let buf = patcher.read_entry(PLAYERS[ci].entry).ok()?;
+    let buf = patcher.read_player_file(PLAYERS[ci].entry).ok()?;
     let pack = battle_data_pack::detect(&buf)?;
     let (idx, _) = pack
         .records
@@ -333,14 +333,14 @@ fn equipment_table_lists_noa_weapons_under_her_own_section() {
 
 /// Descriptor index of `item` in `ci`'s file, in a held section.
 fn weapon_record_section(patcher: &DiscPatcher, ci: usize, item: u8) -> Option<usize> {
-    let buf = patcher.read_entry(PLAYERS[ci].entry).ok()?;
+    let buf = patcher.read_player_file(PLAYERS[ci].entry).ok()?;
     let pack = battle_data_pack::detect(&buf)?;
     legaia_asset::equip_transplant::find_weapon_record(&pack, item as u32).map(|(_, s)| s)
 }
 
 /// Every record of `ci`'s file, decoded, keyed by (section, id).
 fn decoded_records(patcher: &DiscPatcher, ci: usize) -> Vec<((usize, u32), Vec<u8>)> {
-    let buf = patcher.read_entry(PLAYERS[ci].entry).unwrap();
+    let buf = patcher.read_player_file(PLAYERS[ci].entry).unwrap();
     let pack = battle_data_pack::detect(&buf).unwrap();
     let secs = legaia_asset::equip_transplant::record_sections(&pack);
     pack.records
@@ -489,13 +489,146 @@ fn astral_sword_model_carries_over_to_noa_by_moving_a_boundary() {
 }
 
 #[test]
-fn every_owner_needs_a_relayout_and_gets_one_when_allowed() {
+fn every_owner_lands_in_the_dmy_annex_without_a_relayout() {
     let Some(orig) = load_disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
-    // Without a relayout, two sword records do not fit the three files.
+    // Two sword records do not fit the three files' pool; both go to the
+    // DMY.DAT annex, header in place, and the image keeps its size.
     let mut patcher = DiscPatcher::open(orig.clone()).expect("open disc");
+    let free_before = patcher.annex_free_sectors().expect("annex room");
+    let noa_head_before = patcher.read_entry_footprint(864).unwrap()[..0x8000].to_vec();
+    let edits = EquipmentEdits {
+        costs: vec![item(2, ASTRAL, 42)],
+        owners: vec![EquipOwnerEdit {
+            item_id: ASTRAL,
+            mask: 7,
+        }],
+        ..Default::default()
+    };
+    let rep = apply::apply_equipment_edits(&mut patcher, &edits).expect("apply");
+    assert_eq!(
+        rep.models_transplanted
+            .iter()
+            .map(|t| t.character.as_str())
+            .collect::<Vec<_>>(),
+        ["Noa", "Gala"],
+        "{rep:?}"
+    );
+    assert!(rep.models_no_room.is_empty(), "{rep:?}");
+    assert_eq!(rep.relayout_sectors, 0);
+    assert!(
+        rep.entries_reassigned.is_empty(),
+        "no boundary moved: {rep:?}"
+    );
+    assert_eq!(
+        rep.models_annexed
+            .iter()
+            .map(|(c, _, _)| c.as_str())
+            .collect::<Vec<_>>(),
+        ["Noa", "Gala"],
+        "{rep:?}"
+    );
+    let (dmy_lba, dmy_size) =
+        legaia_iso::iso9660::find_file_in_image(&orig, "DMY.DAT").expect("DMY.DAT");
+    let dmy_end = dmy_lba + dmy_size.div_ceil(2048);
+    for (who, lba, sectors) in &rep.models_annexed {
+        assert!(
+            *lba > dmy_lba && lba + sectors < dmy_end,
+            "{who}'s annex [{lba}, +{sectors}) inside DMY.DAT [{dmy_lba}, {dmy_end})"
+        );
+    }
+    let used: u32 = rep.models_annexed.iter().map(|(_, _, s)| s).sum();
+    assert_eq!(
+        patcher.annex_free_sectors().unwrap(),
+        free_before - used,
+        "the marker accounts for every annexed sector"
+    );
+    assert_eq!(owner_of(&patcher, ASTRAL), Some(7));
+
+    let patched = patcher.image().to_vec();
+    assert_eq!(patched.len(), orig.len(), "same-size image (still a PPF)");
+    assert!(changed_sectors_valid(&orig, &patched) > 0);
+
+    // The entries did not move and the in-place header changed only in the
+    // descriptor table (the annexed offsets); everything else is retail.
+    let re = DiscPatcher::open(patched.clone()).expect("reopen");
+    let noa_head = re.read_entry_footprint(864).unwrap()[..0x8000].to_vec();
+    let table = legaia_asset::player_file_annex::chain(&noa_head).expect("annexed chain");
+    assert!(table.is_annexed());
+    assert_eq!(
+        noa_head[..table.table_offset],
+        noa_head_before[..table.table_offset]
+    );
+    assert!(re.player_file_annex(864).unwrap().is_some());
+    assert!(re.player_file_annex(865).unwrap().is_some());
+    assert!(
+        re.player_file_annex(863).unwrap().is_none(),
+        "Vahn's file is untouched"
+    );
+
+    // Read back through the annex-aware reader: the records are there.
+    assert_eq!(weapon_record_section(&re, 1, ASTRAL), Some(3));
+    assert_eq!(weapon_record_section(&re, 2, ASTRAL), Some(2));
+    assert_eq!(cost_of(&re, 1, ASTRAL), Some(0x36), "donor's price");
+    assert_eq!(cost_of(&re, 2, ASTRAL), Some(42), "the cost edit folded in");
+    // Every retail record survived the rebuild byte-for-byte.
+    let noa_orig = decoded_records(&DiscPatcher::open(orig.clone()).unwrap(), 1);
+    let noa_now = decoded_records(&re, 1);
+    for (key, bytes) in &noa_orig {
+        let now = noa_now.iter().find(|(k, _)| k.1 == key.1 && k.0 == key.0);
+        assert!(
+            now.is_some_and(|(_, b)| b == bytes),
+            "Noa record {key:?} survived"
+        );
+    }
+    // The listing reads the patched disc the same way.
+    let t = apply::read_equipment_table(&re).unwrap().unwrap();
+    let astral = t.rows.iter().find(|r| r.id == ASTRAL).unwrap();
+    assert_eq!(astral.costs, [Some(0x36), Some(0x36), Some(42)]);
+
+    // A second pass over the annexed disc keeps working: a cost edit on
+    // the annexed record routes to the annex, and a further transplant
+    // allocates past the first.
+    let mut again = DiscPatcher::open(patched.clone()).expect("reopen");
+    let edits2 = EquipmentEdits {
+        costs: vec![item(1, ASTRAL, 30)],
+        owners: vec![EquipOwnerEdit {
+            item_id: 0x33, // Great Axe, Vahn's
+            mask: 7,
+        }],
+        ..Default::default()
+    };
+    let rep2 = apply::apply_equipment_edits(&mut again, &edits2).expect("apply again");
+    assert_eq!(cost_of(&again, 1, ASTRAL), Some(30), "{rep2:?}");
+    assert_eq!(weapon_record_section(&again, 1, 0x33), Some(3), "{rep2:?}");
+    assert_eq!(weapon_record_section(&again, 2, 0x33), Some(2), "{rep2:?}");
+    assert_eq!(
+        weapon_record_section(&again, 1, ASTRAL),
+        Some(3),
+        "first pass kept"
+    );
+    assert_eq!(again.image().len(), orig.len());
+
+    // Deterministic.
+    let mut p2 = DiscPatcher::open(orig.clone()).expect("open disc");
+    apply::apply_equipment_edits(&mut p2, &edits).expect("apply");
+    assert!(p2.image() == &patched[..], "byte-deterministic");
+}
+
+#[test]
+fn relayout_is_the_fallback_when_the_annex_is_full() {
+    let Some(orig) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // Fill the annex first; without a relayout the models then stay out.
+    let mut patcher = DiscPatcher::open(orig.clone()).expect("open disc");
+    let free = patcher.annex_free_sectors().unwrap();
+    patcher.annex_alloc(free).expect("fill the annex");
+    assert_eq!(patcher.annex_free_sectors().unwrap(), 0);
+    let filled = patcher.image().to_vec();
     let edits = EquipmentEdits {
         owners: vec![EquipOwnerEdit {
             item_id: ASTRAL,
@@ -505,6 +638,7 @@ fn every_owner_needs_a_relayout_and_gets_one_when_allowed() {
     };
     let rep = apply::apply_equipment_edits(&mut patcher, &edits).expect("apply");
     assert!(rep.models_transplanted.is_empty(), "{rep:?}");
+    assert!(rep.models_annexed.is_empty(), "{rep:?}");
     assert_eq!(
         rep.models_no_room
             .iter()
@@ -517,7 +651,7 @@ fn every_owner_needs_a_relayout_and_gets_one_when_allowed() {
     assert_eq!(owner_of(&patcher, ASTRAL), Some(7), "the mask still moved");
 
     // With one, both files grow and the disc gets longer.
-    let mut patcher = DiscPatcher::open(orig.clone()).expect("open disc");
+    let mut patcher = DiscPatcher::open(filled.clone()).expect("open disc");
     let terra_before = patcher.read_entry(866).unwrap();
     let archive_head = patcher.read_entry(867).unwrap()[..0x4000].to_vec();
     let edits = EquipmentEdits {
@@ -538,7 +672,7 @@ fn every_owner_needs_a_relayout_and_gets_one_when_allowed() {
     let patched = patcher.image().to_vec();
     assert_eq!(
         patched.len(),
-        orig.len() + rep.relayout_sectors as usize * SECTOR_SIZE,
+        filled.len() + rep.relayout_sectors as usize * SECTOR_SIZE,
         "the image grew by exactly the relayout"
     );
     let re = DiscPatcher::open(patched).expect("reopen the grown image");
