@@ -354,6 +354,8 @@ Full write-ups for the rows above whose detail outgrew a table cell. Linked from
 
 ### `0x80085958` - Item inventory
 
+Mechanism-first treatment (the window, the helper family, the design intent, the folklore): [`inventory.md`](../subsystems/inventory.md).
+
 **Item inventory** array (= SC `+0x1818`), 2-byte stride `(id, count)`; the `Have 99 Items` cheat targets the count bytes over `0x80085958..0x800859E8`, which is that cheat's 72-slot general-item **page**, not an engine bound. Stacks cap at 99. The read/consume/merge accessors (`FUN_80042310`/`_42EE0`/`_42F4C`/`_423E0`/`_43048`) all scan/write within the active window `gp[+0x2D2]..gp[+0x2D4]` and fully bound the slot index on `gp[+0x2D4]`.
 
 **The active window is context state, installed by `FUN_8004313C`** - the sole

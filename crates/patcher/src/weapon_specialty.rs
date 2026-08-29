@@ -27,8 +27,13 @@ pub const FAVORED_COST: u8 = 0x1E;
 /// Arm cost assigned to every off-class weapon.
 pub const OFFCLASS_COST: u8 = 0x2A;
 
-/// Offset of the swing-record pointer in a decoded section header.
+/// Offset of the swing-record pointer in a decoded section header: the record
+/// the battle loader installs at the section's own direction command
+/// (Left for section 2, Right for section 3, Down for section 4).
 const SWING_PTR_OFF: usize = 0x04;
+/// Offset of the **second** swing-record pointer, carried only by footwear
+/// (section 4) payloads: the Up kick's record. Zero elsewhere.
+const UP_SWING_PTR_OFF: usize = 0x08;
 /// Offset of the arm cost inside the swing record.
 const ARM_COST_IN_SWING: usize = 0x74;
 
@@ -110,7 +115,18 @@ pub fn plan_favored(seed: u64) -> [Family; 3] {
 /// Locate the arm-cost byte offset within a decoded weapon section, or `None`
 /// when the section has no swing record or the offset would fall out of bounds.
 pub fn arm_cost_offset(decoded: &[u8]) -> Option<usize> {
-    let raw = decoded.get(SWING_PTR_OFF..SWING_PTR_OFF + 4)?;
+    cost_offset_at(decoded, SWING_PTR_OFF)
+}
+
+/// Byte offset of the **Up kick's** AP cost in a decoded footwear section
+/// (`section[+0x08]` record `+0x74`), or `None` when the payload carries no
+/// second record (every section other than footwear).
+pub fn up_cost_offset(decoded: &[u8]) -> Option<usize> {
+    cost_offset_at(decoded, UP_SWING_PTR_OFF)
+}
+
+fn cost_offset_at(decoded: &[u8], ptr_off: usize) -> Option<usize> {
+    let raw = decoded.get(ptr_off..ptr_off + 4)?;
     let swing = u32::from_le_bytes(raw.try_into().ok()?) as usize;
     if swing == 0 {
         return None;

@@ -388,6 +388,8 @@ pub async fn patch_rom(
     super_art_powers: &str,
     show_super_arts: bool,
     enemy_attack_count: &str,
+    swing_costs: &str,
+    equip_owners: &str,
     progress: Option<js_sys::Function>,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
@@ -1362,6 +1364,40 @@ pub async fn patch_rom(
         summary.push_str("weapon-specialty: untouched\n");
     }
 
+    prog.stage("equipment edits").await;
+    let equipment_edits = apply::parse_edit_lists(swing_costs, equip_owners)
+        .map_err(|e| err(format!("equipment: {e}")))?;
+    if equipment_edits.is_empty() {
+        summary.push_str("equipment: untouched\n");
+    } else {
+        let rep = apply::apply_equipment_edits(&mut patcher, &equipment_edits)
+            .map_err(|e| err(format!("equipment: {e}")))?;
+        summary.push_str(&format!(
+            "equipment: {} swing cost(s) rewritten, {} owner row(s) changed\n",
+            rep.costs_changed, rep.owners_changed
+        ));
+        for (c, what) in &rep.costs_no_section {
+            summary.push_str(&format!(
+                "  {c} has no battle section or record for {what}; no cost to set\n"
+            ));
+        }
+        for (c, what) in &rep.costs_skipped_fit {
+            summary.push_str(&format!(
+                "  skipped: {c} {what} does not recompress into its slot\n"
+            ));
+        }
+        for (id, sib) in &rep.owners_shared_rows {
+            let s: Vec<String> = sib.iter().map(|i| format!("0x{i:02X}")).collect();
+            summary.push_str(&format!(
+                "  item 0x{id:02X} shares its stat row with {}; their owners moved too\n",
+                s.join(", ")
+            ));
+        }
+        for n in apply::fall_through_notes(&rep.owners_without_section) {
+            summary.push_str(&format!("  {n}\n"));
+        }
+    }
+
     prog.stage("steal items").await;
     match steal_mode {
         Some(m) => {
@@ -1562,6 +1598,73 @@ pub async fn patch_rom(
     Reflect::set(&out, &"summary".into(), &summary.into())?;
     Reflect::set(&out, &"seed".into(), &seed_n.to_string().into())?;
     Reflect::set(&out, &"lang".into(), &lang_json)?;
+    Ok(out.into())
+}
+
+/// Read every equippable item off the user's disc for the ROM-patcher page's
+/// equipment editor: `{ items: [{ id, name, slot, row, shares_row_with: [id],
+/// mask, atk, costs: [cost|null x3] }] }`. `costs` is the Arts-gauge swing
+/// cost each character's player file carries for a weapon (`null` = that file
+/// has no section for it); `mask` is the equip-owner bits (1 Vahn, 2 Noa,
+/// 4 Gala). Decoded in this tab from the supplied image; nothing is uploaded.
+#[wasm_bindgen]
+pub fn read_equipment_table(image: Vec<u8>) -> Result<JsValue, JsValue> {
+    let patcher = DiscPatcher::open(image).map_err(|e| err(format!("open disc image: {e}")))?;
+    let table = apply::read_equipment_table(&patcher)
+        .map_err(|e| err(format!("equipment table: {e}")))?
+        .ok_or_else(|| err("equipment table not found in SCUS_942.54"))?;
+    drop(patcher);
+    let num = JsValue::from_f64;
+    let out = Object::new();
+    let opt = |c: Option<u8>| c.map(|v| num(v as f64)).unwrap_or(JsValue::NULL);
+    let defaults = js_sys::Array::new();
+    for d in table.defaults {
+        let o = Object::new();
+        Reflect::set(&o, &"weapon".into(), &opt(d.weapon))?;
+        Reflect::set(&o, &"raseru".into(), &opt(d.ra_seru))?;
+        Reflect::set(&o, &"down".into(), &opt(d.down))?;
+        Reflect::set(&o, &"up".into(), &opt(d.up))?;
+        defaults.push(&o.into());
+    }
+    Reflect::set(&out, &"defaults".into(), &defaults)?;
+    let hands = js_sys::Array::new();
+    for h in table.weapon_hand {
+        hands.push(&h.map(JsValue::from).unwrap_or(JsValue::NULL));
+    }
+    Reflect::set(&out, &"weapon_hand".into(), &hands)?;
+    let items = js_sys::Array::new();
+    for r in &table.rows {
+        let o = Object::new();
+        Reflect::set(&o, &"id".into(), &num(r.id as f64))?;
+        Reflect::set(&o, &"name".into(), &r.name.as_str().into())?;
+        Reflect::set(&o, &"slot".into(), &r.slot.into())?;
+        Reflect::set(&o, &"row".into(), &num(r.row as f64))?;
+        let sib = js_sys::Array::new();
+        for &s in &r.shares_row_with {
+            sib.push(&num(s as f64));
+        }
+        Reflect::set(&o, &"shares_row_with".into(), &sib)?;
+        Reflect::set(&o, &"mask".into(), &num(r.mask as f64))?;
+        Reflect::set(&o, &"atk".into(), &num(r.atk as f64))?;
+        Reflect::set(&o, &"ra_seru_arm".into(), &r.ra_seru_arm.into())?;
+        let costs = js_sys::Array::new();
+        for c in r.costs {
+            costs.push(&opt(c));
+        }
+        Reflect::set(&o, &"costs".into(), &costs)?;
+        let ups = js_sys::Array::new();
+        for c in r.up_costs {
+            ups.push(&opt(c));
+        }
+        Reflect::set(&o, &"up_costs".into(), &ups)?;
+        let cmds = js_sys::Array::new();
+        for c in r.cmds {
+            cmds.push(&c.map(JsValue::from).unwrap_or(JsValue::NULL));
+        }
+        Reflect::set(&o, &"cmds".into(), &cmds)?;
+        items.push(&o.into());
+    }
+    Reflect::set(&out, &"items".into(), &items)?;
     Ok(out.into())
 }
 

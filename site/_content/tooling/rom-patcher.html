@@ -309,6 +309,46 @@
       </div>
     </details>
 
+    <!-- ---- Equipment editor ---- -->
+    <details class="rom-group" id="rom-equip-group" open>
+      <summary>Equipment <span class="rom-summary-note">Arts-bar command costs, who can equip what</span></summary>
+      <div class="rom-group-body">
+        <h4 class="rom-edit-title">Arts-bar command costs &amp; owners
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Values are read from <strong>your</strong> disc. Each of the four Arts-bar commands is priced by the gear that fills it: <em>Left</em> and <em>Right</em> by the weapon and the Ra-Seru arm (Noa&rsquo;s weapon is her Right), <em>Down</em> and <em>Up</em> by the footwear. The number is the AP one press charges, and the same byte sets how wide the pennant draws (<code>cost &minus; 6</code> px). Retail prices weapons at 30 favored-class / 42 off-class / 54 far off-class (the Astral Sword is Vahn&rsquo;s one 54) and every Ra-Seru and footwear record at 30; body and head gear price nothing. Costs are authored per character in that character&rsquo;s battle file, so a column is that character&rsquo;s price. The <em>V / N / G</em> boxes set who can equip the item, in every slot. A <em>&#8627; N</em> cell means that file has no section for the item: the character can wear it once ticked, but in battle the slot&rsquo;s <em>Default</em> record (top rows) is used - default look, and that row&rsquo;s cost. There is no room in the files to add sections, so the default is one value per character. Mechanism: <a href="../subsystems/arts-command-gauge.html">Arts command gauge</a>.</span></span>
+        </h4>
+        <div class="rom-equip-toolbar">
+          <select id="rom-equip-slot" aria-label="Slot">
+            <option value="weapon" selected>Weapons &amp; Ra-Seru</option>
+            <option value="body">Body</option>
+            <option value="head">Head</option>
+            <option value="footwear">Footwear</option>
+            <option value="all">All equipment</option>
+          </select>
+          <span class="rom-equip-presets">
+            <button type="button" class="rom-tex-preset" id="rom-equip-preset-astral" title="Set the Astral Sword's swing to the favored 30">Astral Sword = 30</button>
+            <button type="button" class="rom-tex-preset" id="rom-equip-preset-all30" title="Every command of every item and default record at 30, for every character">All commands 30</button>
+            <button type="button" class="rom-tex-preset" id="rom-equip-preset-anyone" title="Every item in the slot shown above becomes equippable by all three">Anyone can equip</button>
+            <button type="button" class="rom-tex-preset" id="rom-equip-preset-reset" title="Drop every edit in this table">Reset</button>
+          </span>
+        </div>
+        <p class="rom-edit-note" id="rom-equip-status">Waiting for a disc image ...</p>
+        <div id="rom-equip-rows" class="rom-equip-rows"></div>
+        <details class="rom-art-advanced">
+          <summary>Advanced: raw token lists (CLI syntax)</summary>
+          <div class="rom-opt">
+            <label class="rom-opt-label" for="rom-swing-cost">Command costs</label>
+            <span class="rom-opt-note"><code>CHAR:ITEM[:up]=COST</code>, comma-separated (<code>--swing-cost</code>) - e.g. <code>Vahn:0xBA=30</code>, <code>Gala:0x5E:up=42</code>, <code>Noa:default=42</code>; <code>ITEM</code> may be <code>default</code>, <code>raseru</code> or <code>feet</code>. Merged with the table.</span>
+            <input type="text" id="rom-swing-cost" placeholder="e.g. Vahn:0xBA=30" spellcheck="false" autocomplete="off">
+          </div>
+          <div class="rom-opt">
+            <label class="rom-opt-label" for="rom-equip-owner">Equip owners</label>
+            <span class="rom-opt-note"><code>ITEM=OWNERS</code> with <code>V</code>/<code>N</code>/<code>G</code>, <code>any</code> or <code>none</code> (<code>--equip-owner</code>) - e.g. <code>0xBA=any</code>. Merged with the table.</span>
+            <input type="text" id="rom-equip-owner" placeholder="e.g. 0xBA=any" spellcheck="false" autocomplete="off">
+          </div>
+        </details>
+      </div>
+    </details>
+
     </div><!-- /rom-col -->
     <div class="rom-col">
 
@@ -749,6 +789,7 @@
     <li><strong>Enemy ally</strong> - a 20% chance per battle that one enemy starts charmed and fights its own side (not a controllable party member); multi-enemy fights only, so scripted solo fights can't softlock. How: <a href="../writeups/disc-patching/e-rodata-gap-code.html">code in the rodata gap</a>.</li>
     <li><strong>Shiny Seru</strong> - a 2% chance per battle that a capturable enemy spawns as a translucent shiny with +35% stats; the Seru captured from it keeps a permanent +35% damage boost (captures <em>after</em> patching only). How: <a href="../writeups/disc-patching/e-rodata-gap-code.html">code in the rodata gap</a>.</li>
     <li><strong>Weapon specialty</strong> - permutes which weapon class each character favors; an off-class weapon widens that character's <em>Arms</em> command. The Astral Sword stays always-wide.</li>
+    <li><strong>Equipment editor</strong> - a table of every equippable item read from your disc: set any weapon's Arts-bar swing cost per character (retail 30 favored / 42 off-class / 54 far - the Astral Sword is Vahn's one 54; the same byte is the button's width) and tick who can equip each item. A character given a weapon their battle file has no section for falls through to the default look and a 30-AP swing, and the summary says so. Same edits as the CLI's <code>--swing-cost</code> / <code>--equip-owner</code>.</li>
     <li><strong>Doors / exits</strong> - reassigns where scene-transition doors lead, re-paired (<em>two-way</em>) or independent (<em>one-way</em>). A few big overworld hubs whose data can't grow in place keep their original doors.</li>
     <li><strong>House doors (experimental)</strong> - shuffles intra-town interior/exit door targets; the op is shared with NPC movement, so some actor positions scramble too.</li>
     <li><strong>Starting items</strong> - replaces the new game's fixed Healing Leaf &times;5 with distinct random consumables, sharing the seed's slot capacity with the convenience toggles.</li>
@@ -920,6 +961,27 @@
   .rom-form .rom-loc-grid input[type=text] { max-width: none; padding: 0.3rem 0.45rem; font-size: 0.95em; }
   .rom-earth-row { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
   .rom-form .rom-earth-row input[type=number] { width: 10em; padding: 0.3rem 0.45rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: inherit; }
+
+  /* Equipment editor: one table row per item, owner bits + per-character swing cost */
+  .rom-equip-toolbar { display: flex; flex-wrap: wrap; gap: 0.4rem 0.6rem; align-items: center; margin: 0 0 0.5rem; }
+  .rom-form .rom-equip-toolbar select { width: auto; }
+  .rom-equip-presets { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .rom-equip-rows { max-height: 32rem; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
+  .rom-equip-table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
+  .rom-equip-table th { position: sticky; top: 0; background: var(--bg-raised); text-align: left; padding: 0.35rem 0.5rem; font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); border-bottom: 1px solid var(--border); z-index: 1; }
+  .rom-equip-table td { padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
+  .rom-equip-table th.n, .rom-equip-table td.n { text-align: right; }
+  .rom-equip-table tr.is-edited td { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .rom-equip-table .rom-edit-name { min-width: 0; }
+  .rom-equip-table td code { font-size: 0.85em; color: var(--text-dim); }
+  .rom-equip-shared { color: var(--text-dim); font-size: 0.85em; cursor: help; }
+  .rom-equip-owners label { display: inline-flex; align-items: center; gap: 0.15rem; margin-right: 0.5rem; cursor: pointer; }
+  .rom-form .rom-equip-table input.eq-cost { width: 4.2em; padding: 0.2rem 0.3rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: inherit; text-align: right; }
+  .rom-equip-na { color: var(--text-dim); cursor: help; }
+  .rom-equip-fallthrough { font-variant-numeric: tabular-nums; }
+  .rom-equip-cmd { display: inline-block; min-width: 1.1em; margin-right: 0.25rem; color: var(--text-dim); font-size: 0.85em; text-align: center; }
+  .rom-equip-kicks { display: inline-flex; flex-direction: column; gap: 0.15rem; align-items: flex-end; }
+  .rom-equip-default td { background: color-mix(in srgb, var(--bg-raised) 60%, transparent); border-bottom: 2px solid var(--border); }
 
   /* Tactical-Art override rows */
   .rom-art-intro { margin: 0 0 0.7rem; color: var(--text-muted); font-size: 0.9em; }
