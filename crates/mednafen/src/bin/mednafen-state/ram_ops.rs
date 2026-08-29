@@ -352,10 +352,11 @@ pub fn cmd_watch(label: &str, manifest_path: &Path, json: Option<&Path>) -> Resu
     let scenario = manifest
         .by_label(label)
         .with_context(|| format!("scenario {label:?} not in {}", manifest_path.display()))?;
-    let primary_path = manifest.save_path(scenario.slot)?;
+    let slot = scenario.live_slot()?;
+    let primary_path = manifest.save_path(slot)?;
     let primary = SaveState::from_path(&primary_path)?;
     let primary_ram = primary.main_ram()?.to_vec();
-    println!("[watch] scenario={} slot={}", scenario.label, scenario.slot);
+    println!("[watch] scenario={} slot={slot}", scenario.label);
     println!("    primary save: {}", primary_path.display());
 
     let mut all_results: Vec<serde_json::Value> = Vec::new();
@@ -431,10 +432,11 @@ pub fn cmd_scenarios(manifest_path: &Path) -> Result<()> {
         } else {
             format!(" [{}]", s.topics.join(", "))
         };
-        println!(
-            "  mc{}  {:<28}  {}{}",
-            s.slot, s.label, s.description, topics
-        );
+        let home = match s.slot {
+            Some(n) if n != 255 => format!("mc{n}"),
+            _ => "lib".to_owned(),
+        };
+        println!("  {home:<4}  {:<28}  {}{}", s.label, s.description, topics);
         if !s.diff_against.is_empty() {
             print!("       diff_against = [");
             for (i, n) in s.diff_against.iter().enumerate() {

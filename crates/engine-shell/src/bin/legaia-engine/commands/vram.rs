@@ -296,20 +296,16 @@ fn resolve_vram_inputs(args: &VramOracleArgs<'_>) -> Result<ResolvedVram> {
             let scene_name = scn.expected_active_scene.clone().with_context(|| {
                 format!("scenario {label:?} has no `expected_active_scene`; cannot derive scene",)
             })?;
-            let save_path = manifest.save_path(scn.slot)?;
+            let slot = scn.live_slot()?;
+            let save_path = manifest.save_path(slot)?;
             if !save_path.exists() {
                 anyhow::bail!(
-                    "scenario {label:?} slot {} save not found at {}",
-                    scn.slot,
+                    "scenario {label:?} slot {slot} save not found at {}",
                     save_path.display()
                 );
             }
             let runtime_bytes = load_runtime_vram_from_save(&save_path)?;
-            let source_label = format!(
-                "scenario {label:?} (slot {}, {})",
-                scn.slot,
-                save_path.display()
-            );
+            let source_label = format!("scenario {label:?} (slot {slot}, {})", save_path.display());
             Ok(ResolvedVram {
                 scene_name,
                 runtime_bytes,

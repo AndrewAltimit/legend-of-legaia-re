@@ -47,8 +47,12 @@ fn default_pattern() -> String {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Scenario {
-    /// Mednafen save-state slot index (0..9).
-    pub slot: u8,
+    /// Mednafen save-state slot index (0..9). Absent (or the `255`
+    /// sentinel `scripts/manage-states.py` shares) for fingerprint-only
+    /// scenarios that live solely as immutable library backups - resolve
+    /// those via [`ScenarioManifest::library_save_path`].
+    #[serde(default)]
+    pub slot: Option<u8>,
     /// Short label used as overlay program name (e.g. `area_load_early`).
     pub label: String,
     /// Human-readable description.
@@ -149,7 +153,7 @@ impl ScenarioManifest {
     }
 
     pub fn by_slot(&self, slot: u8) -> Option<&Scenario> {
-        self.scenarios.iter().find(|s| s.slot == slot)
+        self.scenarios.iter().find(|s| s.slot == Some(slot))
     }
 
     pub fn by_label(&self, label: &str) -> Option<&Scenario> {
@@ -194,7 +198,7 @@ impl ScenarioManifest {
         {
             return Ok(p);
         }
-        self.save_path(scenario.slot)
+        self.save_path(scenario.live_slot()?)
     }
 
     /// Library-backup-**only** resolution: like [`Self::mednafen_save_path`]
@@ -209,6 +213,23 @@ impl ScenarioManifest {
     pub fn library_save_path(&self, scenario: &Scenario, library_dir: &Path) -> Option<PathBuf> {
         let fp = scenario.backup_fingerprint.as_deref()?;
         library_backup_for("mednafen", library_dir, fp)
+    }
+}
+
+impl Scenario {
+    /// The scenario's live mednafen `.mc{slot}` index, or an error for a
+    /// fingerprint-only scenario (no `slot` field, or the `255` "no live
+    /// slot" sentinel). Live-slot consumers (watch, trace, vram) call
+    /// this; library-backed oracles never need it.
+    pub fn live_slot(&self) -> Result<u8> {
+        match self.slot {
+            Some(n) if n != 255 => Ok(n),
+            _ => anyhow::bail!(
+                "scenario {:?} has no live mc slot (fingerprint-only library capture); \
+                 resolve it through its backup_fingerprint library copy",
+                self.label
+            ),
+        }
     }
 }
 
@@ -340,6 +361,42 @@ diff_against = [2, 3]
         unsafe {
             std::env::remove_var("LEGAIA_MEDNAFEN_DIR");
         }
+    }
+
+    #[test]
+    fn fingerprint_only_scenario_parses_and_rejects_live_slot_use() {
+        let toml = r#"
+[[scenarios]]
+label = "library_only"
+backup_fingerprint = "abcd"
+description = "captured straight into the library, no live mc slot"
+"#;
+        let m = ScenarioManifest::parse_toml(toml).expect("slot-less entry parses");
+        let s = m.by_label("library_only").expect("present");
+        assert_eq!(s.slot, None);
+        assert!(m.by_slot(0).is_none(), "no live slot to match");
+        let err = s.live_slot().unwrap_err().to_string();
+        assert!(
+            err.contains("library_only"),
+            "error names the scenario: {err}"
+        );
+        let err = m.mednafen_save_path(s, None).unwrap_err().to_string();
+        assert!(
+            err.contains("no live mc slot"),
+            "live fallback refuses: {err}"
+        );
+    }
+
+    #[test]
+    fn slot_255_is_the_no_live_slot_sentinel() {
+        let toml = r#"
+[[scenarios]]
+slot = 255
+label = "sentinel"
+description = "marker entry"
+"#;
+        let m = ScenarioManifest::parse_toml(toml).expect("parses");
+        assert!(m.by_label("sentinel").unwrap().live_slot().is_err());
     }
 
     #[test]
