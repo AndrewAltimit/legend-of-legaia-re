@@ -519,7 +519,9 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
         ['df', 'dfu'],
         (td, c, ci, tr) => kicksCell(td, c, ci, tr, 'df', 'dfu', 'unlisted footwear or bare feet', null));
     }
-    for (const it of items) {
+    // Weapons first, the Ra-Seru levels (Meta / Terra / Ozma) after them.
+    const ordered = [...items].sort((a, b) => (a.ra_seru_arm ? 1 : 0) - (b.ra_seru_arm ? 1 : 0));
+    for (const it of ordered) {
       if (slot !== 'all' && it.slot !== slot) continue;
       shown++;
       const tr = document.createElement('tr');
