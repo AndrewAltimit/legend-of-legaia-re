@@ -45,6 +45,7 @@ pub mod efect_pack;
 pub mod effect_bundle;
 pub mod element_affinity;
 pub mod equip_stats;
+pub mod equip_transplant;
 pub mod face_anim;
 pub mod field_char_textures;
 pub mod field_disasm;

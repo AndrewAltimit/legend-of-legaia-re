@@ -1079,10 +1079,19 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
 
     // Manual equipment edits (swing costs / equip owners) run after the
     // specialty shuffle so a named cost always wins over the permutation.
-    let equipment_edits =
+    let mut equipment_edits =
         apply::parse_edit_lists(&args.swing_cost.join(","), &args.equip_owner.join(","))?;
+    equipment_edits.skip_model_transplant = args.no_model_transplant;
+    equipment_edits.allow_relayout = args.allow_relayout;
+    if args.allow_relayout && args.output.is_none() && !args.dry_run {
+        bail!(
+            "--allow-relayout can grow the image; write --output <patched.bin> (a PPF cannot carry a relayout)"
+        );
+    }
+    let mut relayout_sectors = 0u32;
     if !equipment_edits.is_empty() {
         let rep = apply::apply_equipment_edits(&mut patcher, &equipment_edits)?;
+        relayout_sectors = rep.relayout_sectors;
         println!(
             "equipment: {} swing cost(s) rewritten, {} owner row(s) changed",
             rep.costs_changed, rep.owners_changed
@@ -1105,6 +1114,15 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         }
         for n in apply::fall_through_notes(&rep.owners_without_section) {
             println!("  note: {n}");
+        }
+        for n in apply::transplant_notes(&rep) {
+            println!("  note: {n}");
+        }
+        for t in &rep.models_transplanted {
+            manifest.push(format!(
+                "weapon_model_{}_0x{:02X} = \"{}\"",
+                t.character, t.item, t.source
+            ));
         }
         for e in &equipment_edits.costs {
             manifest.push(format!(
@@ -1385,6 +1403,42 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
 
     // Diff original vs patched -> PPF.
     let patched = patcher.into_image();
+    if relayout_sectors > 0 {
+        // A relayout moved every sector after PROT.DAT: no PPF, image only.
+        manifest.push(format!("relayout_sectors = {relayout_sectors}"));
+        if args.dry_run {
+            println!(
+                "dry run: the image would grow by {relayout_sectors} sector(s); no files written"
+            );
+            return Ok(());
+        }
+        let out = args
+            .output
+            .as_ref()
+            .context("--allow-relayout grew the image; --output is required")?;
+        note_overwrite(out);
+        std::fs::write(out, &patched).with_context(|| format!("write {}", out.display()))?;
+        println!(
+            "patched image: {} (grew by {relayout_sectors} sector(s); contains Sony bytes - do not redistribute; no PPF written)",
+            out.display()
+        );
+        let cue_path = out.with_extension("cue");
+        let bin_name = out
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "disc.bin".to_string());
+        std::fs::write(&cue_path, cue_contents(&bin_name))
+            .with_context(|| format!("write {}", cue_path.display()))?;
+        println!("cue sheet:     {}", cue_path.display());
+        if let Some(mpath) = &args.manifest {
+            let mut text = manifest.join("\n");
+            text.push('\n');
+            std::fs::write(mpath, text)
+                .with_context(|| format!("write manifest {}", mpath.display()))?;
+            println!("manifest: {}", mpath.display());
+        }
+        return Ok(());
+    }
     if patched.len() != original.len() {
         bail!("patched image changed size - refusing to emit (all edits must be same-size)");
     }

@@ -1198,7 +1198,8 @@ pub(crate) fn cmd_equipment(input: &Path) -> Result<()> {
         "\ncost = AP per press of that Arts-bar command and pennant width + 6 (L/R = weapon or Ra-Seru hand, \
          D/U = the footwear kicks; retail 30 favored / 42 off-class / 54 far for weapons, 30 elsewhere); \
          '-' = that character's file has no section for the item, so equipping it uses the slot's default record. \
-         Edit with --swing-cost CHAR:ITEM[:up]=COST (ITEM may be `default`, `raseru` or `feet`) / --equip-owner ITEM=OWNERS."
+         Edit with --swing-cost CHAR:ITEM[:up]=COST (ITEM may be `default`, `raseru` or `feet`, minimum 24) / --equip-owner ITEM=OWNERS \
+         (a weapon a new owner's file lacks gets its model carried over from the file that has it)."
     );
     Ok(())
 }

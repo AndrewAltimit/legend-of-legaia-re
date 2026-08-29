@@ -178,6 +178,10 @@ fn equipment_edits_round_trip_off_the_patched_disc() {
                 mask: 7,
             },
         ],
+        // The default-look path: no model carried over, so the fall-through
+        // notes below name every new owner.
+        skip_model_transplant: true,
+        ..Default::default()
     };
     let rep = apply::apply_equipment_edits(&mut patcher, &edits).expect("apply");
     assert_eq!(rep.costs_changed, 7, "{rep:?}");
@@ -324,5 +328,230 @@ fn equipment_table_lists_noa_weapons_under_her_own_section() {
             .filter(|r| r.slot != "footwear")
             .all(|r| r.up_costs == [None; 3]),
         "only footwear carries an Up record"
+    );
+}
+
+/// Descriptor index of `item` in `ci`'s file, in a held section.
+fn weapon_record_section(patcher: &DiscPatcher, ci: usize, item: u8) -> Option<usize> {
+    let buf = patcher.read_entry(PLAYERS[ci].entry).ok()?;
+    let pack = battle_data_pack::detect(&buf)?;
+    legaia_asset::equip_transplant::find_weapon_record(&pack, item as u32).map(|(_, s)| s)
+}
+
+/// Every record of `ci`'s file, decoded, keyed by (section, id).
+fn decoded_records(patcher: &DiscPatcher, ci: usize) -> Vec<((usize, u32), Vec<u8>)> {
+    let buf = patcher.read_entry(PLAYERS[ci].entry).unwrap();
+    let pack = battle_data_pack::detect(&buf).unwrap();
+    let secs = legaia_asset::equip_transplant::record_sections(&pack);
+    pack.records
+        .iter()
+        .zip(&secs)
+        .map(|(r, s)| {
+            (
+                (*s, r.id),
+                battle_data_pack::decode_record(&buf, &pack, r.index)
+                    .unwrap()
+                    .bytes,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn astral_sword_model_carries_over_to_noa_by_moving_a_boundary() {
+    let Some(orig) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut patcher = DiscPatcher::open(orig.clone()).expect("open disc");
+    let span_before: u64 = PLAYERS
+        .iter()
+        .map(|p| patcher.entry_footprint(p.entry).unwrap())
+        .sum();
+    let noa_before = decoded_records(&patcher, 1);
+    let gala_before = decoded_records(&patcher, 2);
+    let vahn_bytes = patcher.read_entry(PLAYERS[0].entry).unwrap();
+
+    let edits = EquipmentEdits {
+        // Noa's Astral Sword cost lands on the transplanted record.
+        costs: vec![item(1, ASTRAL, 36)],
+        owners: vec![EquipOwnerEdit {
+            item_id: ASTRAL,
+            mask: 0b011, // Vahn + Noa
+        }],
+        ..Default::default()
+    };
+    let rep = apply::apply_equipment_edits(&mut patcher, &edits).expect("apply");
+    assert_eq!(
+        rep.models_transplanted,
+        vec![apply::ModelTransplant {
+            character: "Noa".to_string(),
+            item: ASTRAL,
+            source: "Vahn".to_string(),
+            cost: 36,
+        }],
+        "the note quotes the folded cost, not the donor's 54"
+    );
+    assert!(
+        rep.models_no_room.is_empty() && rep.models_failed.is_empty(),
+        "{rep:?}"
+    );
+    assert!(rep.owners_without_section.is_empty(), "{rep:?}");
+    assert_eq!(rep.relayout_sectors, 0);
+    assert_eq!(rep.costs_changed, 1, "{rep:?}");
+    assert!(rep.costs_no_section.is_empty(), "{rep:?}");
+    let delta: i64 = rep.entries_reassigned.iter().map(|(_, d)| d).sum();
+    assert_eq!(
+        delta, 0,
+        "the run keeps its footprint: {:?}",
+        rep.entries_reassigned
+    );
+    assert!(
+        rep.entries_reassigned
+            .iter()
+            .any(|(e, d)| *e == PLAYERS[1].entry && *d > 0),
+        "Noa's file grew: {:?}",
+        rep.entries_reassigned
+    );
+
+    // Cold re-open: the TOC moved, every file still parses, nothing but the
+    // new record changed in decoded terms, the donor is untouched.
+    let patched = patcher.image().to_vec();
+    assert_eq!(patched.len(), orig.len(), "no relayout");
+    let re = DiscPatcher::open(patched.clone()).expect("reopen");
+    let span_after: u64 = PLAYERS
+        .iter()
+        .map(|p| re.entry_footprint(p.entry).unwrap())
+        .sum();
+    assert_eq!(span_before, span_after);
+    assert!(
+        re.read_entry(PLAYERS[0].entry).unwrap() == vahn_bytes,
+        "Vahn's file is untouched"
+    );
+    assert_eq!(
+        weapon_record_section(&re, 1, ASTRAL),
+        Some(3),
+        "Noa's sword sits in her weapon section"
+    );
+    assert_eq!(
+        cost_of(&re, 1, ASTRAL),
+        Some(36),
+        "the folded cost edit landed"
+    );
+    assert_eq!(cost_of(&re, 0, ASTRAL), Some(0x36));
+    assert_eq!(owner_of(&re, ASTRAL), Some(0b011));
+    let noa_after = decoded_records(&re, 1);
+    assert_eq!(noa_after.len(), noa_before.len() + 1);
+    let mut rest: Vec<_> = noa_after
+        .iter()
+        .filter(|(k, _)| *k != (3, ASTRAL as u32))
+        .cloned()
+        .collect();
+    rest.sort_by_key(|(k, _)| *k);
+    let mut before = noa_before.clone();
+    before.sort_by_key(|(k, _)| *k);
+    assert!(
+        rest == before,
+        "every other Noa record decodes byte-identical"
+    );
+    let mut gala_after = decoded_records(&re, 2);
+    gala_after.sort_by_key(|(k, _)| *k);
+    let mut gala_b = gala_before.clone();
+    gala_b.sort_by_key(|(k, _)| *k);
+    assert!(
+        gala_after == gala_b,
+        "Gala's re-packed file decodes byte-identical"
+    );
+    let n = changed_sectors_valid(&orig, &patched);
+    assert!(n > 0);
+    // The assembled battle mesh carries the sword.
+    let buf = re.read_entry(PLAYERS[1].entry).unwrap();
+    let pack = battle_data_pack::detect(&buf).unwrap();
+    let armed =
+        legaia_asset::battle_char_assembly::assemble_character(&buf, &pack, &[0, 0, 0, ASTRAL, 0])
+            .unwrap();
+    assert_eq!(armed.sections[3].id, ASTRAL as u32);
+    let t = apply::read_equipment_table(&re).unwrap().unwrap();
+    let astral = t.rows.iter().find(|r| r.id == ASTRAL).unwrap();
+    assert_eq!(
+        astral.costs,
+        [Some(0x36), Some(36), None],
+        "the table now prices Noa's sword"
+    );
+
+    // Idempotent: a second pass finds the record and moves nothing.
+    let mut again = DiscPatcher::open(patched.clone()).expect("reopen");
+    let rep2 = apply::apply_equipment_edits(&mut again, &edits).expect("apply twice");
+    assert!(rep2.models_transplanted.is_empty(), "{rep2:?}");
+    assert!(rep2.entries_reassigned.is_empty(), "{rep2:?}");
+    assert_eq!(rep2.costs_unchanged, 1);
+    assert!(again.image() == &patched[..]);
+}
+
+#[test]
+fn every_owner_needs_a_relayout_and_gets_one_when_allowed() {
+    let Some(orig) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // Without a relayout, two sword records do not fit the three files.
+    let mut patcher = DiscPatcher::open(orig.clone()).expect("open disc");
+    let edits = EquipmentEdits {
+        owners: vec![EquipOwnerEdit {
+            item_id: ASTRAL,
+            mask: 7,
+        }],
+        ..Default::default()
+    };
+    let rep = apply::apply_equipment_edits(&mut patcher, &edits).expect("apply");
+    assert!(rep.models_transplanted.is_empty(), "{rep:?}");
+    assert_eq!(
+        rep.models_no_room
+            .iter()
+            .map(|f| f.character.as_str())
+            .collect::<Vec<_>>(),
+        ["Noa", "Gala"],
+        "{rep:?}"
+    );
+    assert!(rep.entries_reassigned.is_empty());
+    assert_eq!(owner_of(&patcher, ASTRAL), Some(7), "the mask still moved");
+
+    // With one, both files grow and the disc gets longer.
+    let mut patcher = DiscPatcher::open(orig.clone()).expect("open disc");
+    let terra_before = patcher.read_entry(866).unwrap();
+    let archive_head = patcher.read_entry(867).unwrap()[..0x4000].to_vec();
+    let edits = EquipmentEdits {
+        allow_relayout: true,
+        ..edits
+    };
+    let rep = apply::apply_equipment_edits(&mut patcher, &edits).expect("apply");
+    assert_eq!(
+        rep.models_transplanted
+            .iter()
+            .map(|t| t.character.as_str())
+            .collect::<Vec<_>>(),
+        ["Noa", "Gala"],
+        "{rep:?}"
+    );
+    assert!(rep.relayout_sectors > 0);
+    assert!(rep.entries_reassigned.is_empty());
+    let patched = patcher.image().to_vec();
+    assert_eq!(
+        patched.len(),
+        orig.len() + rep.relayout_sectors as usize * SECTOR_SIZE,
+        "the image grew by exactly the relayout"
+    );
+    let re = DiscPatcher::open(patched).expect("reopen the grown image");
+    assert_eq!(weapon_record_section(&re, 1, ASTRAL), Some(3));
+    assert_eq!(weapon_record_section(&re, 2, ASTRAL), Some(2));
+    assert_eq!(cost_of(&re, 1, ASTRAL), Some(0x36));
+    assert_eq!(cost_of(&re, 2, ASTRAL), Some(0x36));
+    assert!(
+        re.read_entry(866).unwrap() == terra_before,
+        "Terra's file rides the shift intact"
+    );
+    assert!(
+        re.read_entry(867).unwrap()[..0x4000] == archive_head[..],
+        "so does the monster archive"
     );
 }
