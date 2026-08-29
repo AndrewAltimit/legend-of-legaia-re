@@ -3292,8 +3292,13 @@ the reverse for Noa, whose weapon is her Right - and the footwear section
 prices Down from its `+0x04` record and Up from a second record at `+0x08`,
 addressed with the `:up` suffix (`Gala:0x5E:up=42`). Body and head gear price
 nothing. Retail weapon tiers are 30 favored / 42 off-class / 54 far off-class;
-every Ra-Seru and footwear record ships at 30; the minimum is 7 (a 1-pixel
-body). The same item is priced per character, so each edit names one. An
+every Ra-Seru and footwear record ships at 30. The minimum is **24**: the
+pennant is a text window `cost - 6` pixels wide and the command label
+(`High` / `Arms` / `RaSeru` / `Low`) is condensed to fit it - legible down to
+24, clean only from retail's 30 up, a smear of glyph fragments below that and
+a 1-pixel sliver at 7 (measured on an emulator sweep; see
+[arts-command-gauge.md](../subsystems/arts-command-gauge.md#how-the-gauge-consumes-it)).
+The same item is priced per character, so each edit names one. An
 item the character's file has no section for (or `:up` on anything but
 footwear) is reported (`no section`) and skipped - there is no byte to set;
 what that character pays instead is the **section's default record**,
@@ -3311,15 +3316,36 @@ set of the letters `V` `N` `G`, `any`, or `none`. Rewrites the low three bits
 of the item's `+6` equip-character mask in the SCUS equipment stat-bonus
 table, the byte the equip screen gates on - for every slot: weapon, body,
 head, footwear. Several items can share one bonus row, in which case they
-move together and the report says which. Giving a character an item their
-player file has no section for lets them equip it, but at battle load the
-selector falls through to the section default: the default appearance and,
-for a weapon or footwear, the default record's cost (retail 30; see
+move together and the report says which.
+
+A character's battle look for an item comes from a per-item record in their
+own player file, and the retail files only carry records for the items their
+character can equip, so an owner edit alone would leave the new owner on the
+section's **default record** at battle load (the bare hand, and for a weapon
+or footwear the default record's cost - see
 [arts-command-gauge.md](../subsystems/arts-command-gauge.md#if-the-astral-sword-is-forced-onto-another-character)).
-The report names every such (character, item) pair with the cost it pays.
-The three player files have no free space (each ends flush against its last
-slot, and Terra's file follows on the next sector), so a real per-item
-section cannot be added in place - the default record is the one knob.
+For a **weapon**, the patcher instead **carries the model over**: the weapon's
+primitives are cut out of the donor file's record with the same item-alone
+cut the equipment viewer uses, seated on the new owner's own bare arm and
+swing records, the donor's texture tile and palettes ride along on the
+owner's section columns, and the record keeps the donor weapon's arm cost
+(so the Astral Sword swings at 54 for Noa too until `--swing-cost Noa:0xBA=…`
+says otherwise) - format detail in
+[battle-data-pack.md](../formats/battle-data-pack.md#carrying-a-weapon-into-another-characters-file).
+The rebuilt record is appended to the owner's weapon section and the file
+re-packed. Room is the constraint: the retail player files tile their
+footprints exactly, so the patcher re-packs the three files with the optimal
+LZS parse (a few sectors each) and **moves the boundaries between PROT
+entries 863..865** - same total footprint, index space preserved, still a
+PPF - which pays for one or two carried-over weapons. Past that, the CLI's
+`--allow-relayout` grows the target entries with a whole-disc relayout
+(`--output` only, no PPF; the web patcher never relays out); without it the
+model stays out and the report says so (`no room in the player files`), the
+owner falling through to the default record. `--no-model-transplant` keeps
+the default-look behaviour on purpose. Ra-Seru level forms, body, head and
+footwear are never carried over (a Ra-Seru arm or an armour section is the
+donor's whole re-sculpted limb, not an item to seat); they fall through, and
+the report names every such (character, item) pair with the cost it pays.
 
 `legaia-patcher equipment --input disc.bin` lists every equippable item with
 its owners, attack bonus, and the command cost each character's file carries
@@ -3327,9 +3353,11 @@ its owners, attack bonus, and the command cost each character's file carries
 file has no section) plus the three default records per character. The
 ROM-patcher page's **Equipment** group shows the same table read from the
 user's disc - the default records on top, a number box per command per
-character (two for footwear), an owner checkbox per character, and `-> N` in
-a no-section cell for the default cost that applies there - and sends the
-identical token lists.
+character (two for footwear), an owner checkbox per character, a dash where
+a character cannot equip the item, and once a box is ticked either a
+highlighted cost box at the donor's price (the model will be carried over)
+or `-> N` for the default cost that applies - and sends the identical token
+lists.
 
 ```bash
 legaia-patcher randomize --input disc.bin --output out.bin \

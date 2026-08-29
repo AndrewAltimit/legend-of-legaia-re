@@ -1396,6 +1396,9 @@ pub async fn patch_rom(
         for n in apply::fall_through_notes(&rep.owners_without_section) {
             summary.push_str(&format!("  {n}\n"));
         }
+        for n in apply::transplant_notes(&rep) {
+            summary.push_str(&format!("  {n}\n"));
+        }
     }
 
     prog.stage("steal items").await;

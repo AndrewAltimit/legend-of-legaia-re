@@ -261,6 +261,90 @@ impl DiscPatcher {
         Ok(())
     }
 
+    /// Move the boundaries between a **contiguous run** of PROT entries
+    /// without growing the image: `payloads[index]` is each entry's new
+    /// full-footprint payload (a whole number of sectors); the run's total
+    /// footprint must stay exactly what it was, so the sectors one entry
+    /// gives up are the sectors its neighbour gains. Rewrites the run's
+    /// bytes at their new positions and the PROT-relative internal TOC
+    /// start words of every entry after the first (same-size edits of the
+    /// TOC sectors - no LBA outside the run moves, no relayout, and a PPF
+    /// patch still expresses it). Entry indices are preserved.
+    ///
+    /// This is how a player battle file gains room for a transplanted
+    /// equipment record: the retail files tile their footprints exactly,
+    /// but a neighbour repacked with the optimal LZS parse frees a few
+    /// sectors, and the boundary between the two simply moves.
+    pub fn reassign_prot_entries(&mut self, payloads: &BTreeMap<usize, Vec<u8>>) -> Result<()> {
+        if payloads.is_empty() {
+            return Ok(());
+        }
+        let sector = USER_DATA_SIZE;
+        let first = *payloads.keys().next().unwrap();
+        let last = *payloads.keys().next_back().unwrap();
+        if payloads.len() != last - first + 1 {
+            bail!("PROT entry reassignment needs a contiguous run of entries");
+        }
+        let mut old_total = 0u32;
+        let mut new_total = 0u32;
+        for (&idx, payload) in payloads {
+            if !payload.len().is_multiple_of(sector) {
+                bail!("reassigned PROT entry {idx} payload is not a whole number of sectors");
+            }
+            old_total += self
+                .entry_true_footprint_sectors(idx)
+                .with_context(|| format!("PROT entry {idx} footprint"))?;
+            new_total += (payload.len() / sector) as u32;
+        }
+        if old_total != new_total {
+            bail!(
+                "reassigned PROT entries {first}..={last} would change the run's footprint \
+                 ({old_total} -> {new_total} sectors); only a relayout can grow it"
+            );
+        }
+        // New starts, sequential from the run's first entry.
+        let mut start = self.entries[first].start_lba;
+        let mut new_starts: Vec<(usize, u32, usize)> = Vec::with_capacity(payloads.len());
+        for (&idx, payload) in payloads {
+            new_starts.push((idx, start, payload.len()));
+            start += (payload.len() / sector) as u32;
+        }
+        // Payloads land at their new positions (the run is rewritten whole,
+        // so overlapping old/new spans never read stale bytes).
+        for (idx, start, _) in &new_starts {
+            let logical_off = *start as u64 * sector as u64;
+            legaia_iso::write::patch_file_logical(
+                &mut self.image,
+                self.prot_lba,
+                logical_off,
+                &payloads[idx],
+            )
+            .with_context(|| format!("write reassigned PROT entry {idx}"))?;
+        }
+        // Internal TOC start words (`8 + (j+2)*4`, PROT-relative) for the
+        // entries whose start moved; entry `first` stays where it was.
+        for (idx, start, _) in &new_starts {
+            if *idx == first {
+                continue;
+            }
+            let off = 8 + (idx + 2) * 4;
+            legaia_iso::write::patch_file_logical(
+                &mut self.image,
+                self.prot_lba,
+                off as u64,
+                &start.to_le_bytes(),
+            )
+            .with_context(|| format!("rewrite TOC start of PROT entry {idx}"))?;
+        }
+        for (idx, start, len) in new_starts {
+            self.entries[idx] = EntrySpan {
+                start_lba: start,
+                size_bytes: len as u64,
+            };
+        }
+        Ok(())
+    }
+
     /// Overwrite `bytes` at `offset_in_entry` bytes into PROT entry `index`,
     /// re-encoding every touched sector's EDC/ECC. Same-size, in-place; never
     /// grows the image or moves an LBA.

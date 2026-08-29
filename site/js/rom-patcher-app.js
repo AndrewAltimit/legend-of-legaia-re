@@ -277,6 +277,19 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
   const DEFAULT_KEYS = { dw: 'weapon', dr: 'raseru', df: 'down', dfu: 'up' };
   const ARROW = { Left: 'L', Right: 'R', Down: '↓', Up: '↑' };
   const otherHand = (h) => (h === 'Left' ? 'Right' : h === 'Right' ? 'Left' : null);
+  // Owner mask as edited (falls back to the disc's).
+  const effMask = (it) => (ownerEdits.has(it.id) ? ownerEdits.get(it.id) : it.mask);
+  const canEquip = (it, ci) => (effMask(it) & (1 << ci)) !== 0;
+  const newlyEnabled = (it, ci) => canEquip(it, ci) && (it.mask & (1 << ci)) === 0;
+  // A weapon another character's file carries: when `ci` is newly ticked
+  // on, the patcher carries that model over into their file (the record
+  // keeps the donor's price). Ra-Seru levels (ids <= 0x1A) never move.
+  const donorOf = (it, ci) => {
+    if (it.slot !== 'weapon' || it.ra_seru_arm || it.id <= 0x1A) return null;
+    const costs = it.costs || [];
+    const cj = CHARS.findIndex((_, j) => j !== ci && costs[j] != null);
+    return cj < 0 ? null : cj;
+  };
 
   // The disc's current value for an edit key on one character (null = no
   // such record in that character's file).
@@ -289,6 +302,10 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
     const it = items.find((x) => x.id === parseInt(key, 10));
     if (!it) return null;
     const v = (up ? it.up_costs : it.costs) || [];
+    if (v[ci] == null && !up && newlyEnabled(it, ci)) {
+      const d = donorOf(it, ci);
+      return d == null ? null : it.costs[d];
+    }
     return v[ci] == null ? null : v[ci];
   };
   const tokenOf = (key, c) => {
@@ -305,7 +322,7 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
     const inp = document.createElement('input');
     inp.type = 'number';
     inp.className = 'eq-cost';
-    inp.min = '7'; inp.max = '255';
+    inp.min = '24'; inp.max = '255';
     inp.placeholder = String(cur);
     inp.dataset.char = c;
     inp.dataset.key = key;
@@ -376,16 +393,20 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
     tbody.appendChild(tr);
   };
   const naCell = (td, why) => { td.innerHTML = `<span class="rom-equip-na" title="${escapeHtml(why)}">—</span>`; };
-  const kicksCell = (td, c, ci, tr, keyDown, keyUp, what, rowName) => {
+  const cannotEquip = (c) => `${c} cannot equip this. Tick ${c[0]} under “Who can equip” to allow it.`;
+  const kicksCell = (td, c, ci, tr, keyDown, keyUp, what, rowName, it) => {
     // Footwear prices two commands: Down (+0x04 record) and Up (+0x08).
+    if (it && !canEquip(it, ci)) { naCell(td, cannotEquip(c)); return; }
     const wrap = document.createElement('span');
     wrap.className = 'rom-equip-kicks';
     for (const [cmd, key] of [['Down', keyDown], ['Up', keyUp]]) {
       const line = document.createElement('span');
       const cur = curOf(key, ci);
       if (cur == null) {
-        if (rowName) line.appendChild(fallthroughSpan(key === keyDown ? 'df' : 'dfu', c, ci, cmd, rowName));
-        else line.innerHTML = '<span class="rom-equip-na">—</span>';
+        if (rowName) {
+          line.appendChild(fallthroughSpan(key === keyDown ? 'df' : 'dfu', c, ci, cmd, rowName));
+          if (it && newlyEnabled(it, ci)) td.classList.add('is-new');
+        } else line.innerHTML = '<span class="rom-equip-na">—</span>';
       } else {
         cmdCell(line, cmd, key, c, cur, tr, what);
       }
@@ -468,9 +489,11 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
         cb.dataset.cur = (it.mask & (1 << ci)) ? '1' : '0';
         cb.checked = (mask & (1 << ci)) !== 0;
         cb.addEventListener('change', () => {
-          const cur = ownerEdits.has(it.id) ? ownerEdits.get(it.id) : it.mask;
+          const cur = effMask(it);
           ownerEdits.set(it.id, cb.checked ? (cur | (1 << ci)) : (cur & ~(1 << ci)));
-          rowEdited(tr);
+          // The cost cells follow the tick (dash / carried-over model /
+          // default record), so the row is rebuilt from state.
+          render();
         });
         lab.appendChild(cb);
         lab.appendChild(document.createTextNode(c[0]));
@@ -484,13 +507,26 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
         const cur = it.costs ? it.costs[ci] : null;
         const cmd = it.cmds ? it.cmds[ci] : null;
         if (it.slot === 'body' || it.slot === 'head') {
-          naCell(td, 'Body and head gear price no command');
+          naCell(td, canEquip(it, ci) ? 'Body and head gear price no command' : cannotEquip(c));
         } else if (it.slot === 'footwear') {
-          kicksCell(td, c, ci, tr, String(it.id), `${it.id}u`, 'this footwear', 'Default footwear');
+          kicksCell(td, c, ci, tr, String(it.id), `${it.id}u`, 'this footwear', 'Default footwear', it);
+        } else if (!canEquip(it, ci)) {
+          naCell(td, cannotEquip(c));
         } else if (cur == null || !cmd) {
-          const key = it.ra_seru_arm ? 'dr' : 'dw';
-          const fcmd = it.ra_seru_arm ? otherHand(hands[ci]) : hands[ci];
-          td.appendChild(fallthroughSpan(key, c, ci, fcmd || 'Left', it.ra_seru_arm ? 'Default Ra-Seru arm' : 'Default weapon'));
+          const donor = newlyEnabled(it, ci) ? donorOf(it, ci) : null;
+          if (donor != null && hands[ci]) {
+            // Newly ticked on, and another file has the model: the patcher
+            // carries it over, at the donor's price unless typed over.
+            const dcost = it.costs[donor];
+            cmdCell(td, hands[ci], String(it.id), c, dcost, tr, `this weapon (model carried over from ${CHARS[donor]}’s file)`);
+            td.classList.add('is-new');
+            td.title = `${c} will hold ${CHARS[donor]}’s ${it.name || 'weapon'} model in battle; ${dcost} AP per swing (${CHARS[donor]}’s price) unless you type another.`;
+          } else {
+            const key = it.ra_seru_arm ? 'dr' : 'dw';
+            const fcmd = it.ra_seru_arm ? otherHand(hands[ci]) : hands[ci];
+            td.appendChild(fallthroughSpan(key, c, ci, fcmd || 'Left', it.ra_seru_arm ? 'Default Ra-Seru arm' : 'Default weapon'));
+            if (newlyEnabled(it, ci)) td.classList.add('is-new');
+          }
         } else {
           cmdCell(td, cmd, String(it.id), c, cur, tr, 'this ' + (it.ra_seru_arm ? 'Ra-Seru' : 'weapon'));
         }
@@ -589,7 +625,7 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
       const c = k.slice(i + 1);
       const ci = CHARS.indexOf(c);
       const n = parseInt(val, 10);
-      if (!Number.isFinite(n) || n < 7 || n > 255) return fail(`Cost for ${c} (${tokenOf(key, c)}) must be 7..255.`);
+      if (!Number.isFinite(n) || n < 24 || n > 255) return fail(`Cost for ${c} (${tokenOf(key, c)}) must be 24..255 (below 24 the command label no longer fits its pennant).`);
       const cur = curOf(key, ci);
       if (cur == null || n === cur) continue;
       costs.push(`${tokenOf(key, c)}=${n}`);

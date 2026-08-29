@@ -72,7 +72,7 @@ const BAND: u8 = 0;
 
 /// Most distinct CLUT columns any fusable weapon samples (census over all
 /// three player files' weapon records: every weapon uses 1 or 2).
-pub(crate) const WEAPON_PALETTE_MAX: usize = 2;
+pub const WEAPON_PALETTE_MAX: usize = 2;
 
 /// Authoring CLUT row of the player band (the loader's CBA relocation
 /// retargets it to `0x1E1 + slot` - see `relocate_tsb_cba`).
@@ -80,7 +80,7 @@ const AUTHORING_CLUT_ROW: u16 = 480;
 
 /// Per-record weapon data to merge at record-rewrite time.
 #[derive(Default)]
-pub(crate) struct WeaponFusion {
+pub struct WeaponFusion {
     /// `(section, record id)` -> channel -> textured weapon geometry in
     /// that channel's local frame (retail prims, CBA column remapped).
     pub per_record: BTreeMap<(usize, u32), BTreeMap<u8, ModelObject>>,
@@ -108,13 +108,7 @@ pub(crate) fn weapon_fusions(
 ) -> Result<WeaponFusion> {
     let pack = crate::battle_data_pack::parse(player_file).context("parse player file")?;
     let mut fusion = WeaponFusion::default();
-
-    // The bare assembly + its VRAM, shared across every record's diff.
-    let bare_ids = [0u8; SECTION_COUNT];
-    let mut bare = bca::assemble_character(player_file, &pack, &bare_ids)?;
-    bca::relocate_tsb_cba(&mut bare.tmd, BAND)?;
-    let bare_tmd = legaia_tmd::parse(&bare.tmd).context("bare TMD")?;
-    let bare_vram = vram_for(player_file, &pack, &bare_ids)?;
+    let bare = BareFrame::new(player_file, &pack)?;
 
     // Walk the descriptor chain with the same section tracking the record
     // rewrite uses (`id == 0` closes a section).
@@ -126,14 +120,84 @@ pub(crate) fn weapon_fusions(
             continue;
         }
         if HELD_SECTIONS.contains(&section) && id > RA_SERU_MAX_ID {
-            let mut equipped = [0u8; SECTION_COUNT];
-            equipped[section] = id as u8;
-            let Ok(mut asm) = bca::assemble_character(player_file, &pack, &equipped) else {
+            let Some((per_channel, pals)) = weapon_fusion_record(
+                player_file,
+                &pack,
+                &bare,
+                char_slot,
+                section,
+                id,
+                weapon_cols,
+            )?
+            else {
                 continue;
             };
-            if asm.sections[section].id != id {
-                continue;
+            match fusion.weapon_section {
+                None => fusion.weapon_section = Some(section),
+                Some(s) if s != section => {
+                    bail!(
+                        "fusable weapon records in both held sections ({s} and {section}) - \
+                         the one-weapon-tile texturing scheme cannot host that"
+                    );
+                }
+                Some(_) => {}
             }
+            fusion.per_record.insert((section, id), per_channel);
+            fusion.palettes.insert((section, id), pals);
+        }
+    }
+    Ok(fusion)
+}
+
+/// The bare (all-defaults) assembly of a player file in the relocated band
+/// frame, plus its VRAM - the reference every weapon cut diffs against.
+pub struct BareFrame {
+    asm: bca::AssembledCharacter,
+    tmd: legaia_tmd::Tmd,
+    vram: Vram,
+}
+
+impl BareFrame {
+    /// Assemble the bare loadout of `player_file`.
+    pub fn new(player_file: &[u8], pack: &crate::battle_data_pack::BattleDataPack) -> Result<Self> {
+        let bare_ids = [0u8; SECTION_COUNT];
+        let mut asm = bca::assemble_character(player_file, pack, &bare_ids)?;
+        bca::relocate_tsb_cba(&mut asm.tmd, BAND)?;
+        let tmd = legaia_tmd::parse(&asm.tmd).context("bare TMD")?;
+        let vram = vram_for(player_file, pack, &bare_ids)?;
+        Ok(Self { asm, tmd, vram })
+    }
+}
+
+/// One record's weapon cut: per-channel geometry + the palettes it samples.
+pub type WeaponCut = (BTreeMap<u8, ModelObject>, Vec<[u16; 16]>);
+
+/// The weapon cut of one held-section record: `(channel -> textured weapon
+/// geometry in that channel's local frame with CBA columns remapped onto
+/// `weapon_cols`, the weapon's palettes index-aligned with those columns)`.
+/// `None` when the cut claims nothing, or the weapon samples more palettes
+/// than `weapon_cols` can host (the record is left bare-handed rather than
+/// mis-paletted). Channels are the file's own bone ids.
+pub fn weapon_fusion_record(
+    player_file: &[u8],
+    pack: &crate::battle_data_pack::BattleDataPack,
+    bare: &BareFrame,
+    char_slot: usize,
+    section: usize,
+    id: u32,
+    weapon_cols: &[u16],
+) -> Result<Option<WeaponCut>> {
+    let (bare, bare_tmd, bare_vram) = (&bare.asm, &bare.tmd, &bare.vram);
+    let mut equipped = [0u8; SECTION_COUNT];
+    equipped[section] = id as u8;
+    let Ok(mut asm) = bca::assemble_character(player_file, pack, &equipped) else {
+        return Ok(None);
+    };
+    if asm.sections[section].id != id {
+        return Ok(None);
+    }
+    {
+        {
             // Two frames of one assembly: the isolation compares texels
             // in the RELOCATED frame (band VRAM); the harvested prims
             // keep their AUTHORING words (the frame a stored record
@@ -144,17 +208,17 @@ pub(crate) fn weapon_fusions(
             let tmd = legaia_tmd::parse(&asm.tmd).context("equipped TMD")?;
             let authoring_tmd =
                 legaia_tmd::parse(&authoring_tmd_bytes).context("equipped TMD (authoring)")?;
-            let Some(partition) = equip_item::item_partition(section, &bare, &bare_tmd, &asm, &tmd)
+            let Some(partition) = equip_item::item_partition(section, bare, bare_tmd, &asm, &tmd)
             else {
-                continue;
+                return Ok(None);
             };
-            let vram = vram_for(player_file, &pack, &equipped)?;
+            let vram = vram_for(player_file, pack, &equipped)?;
             let iso = equip_isolate::isolate_item(
                 &equip_isolate::IsolationInputs {
                     section,
-                    bare: &bare,
-                    bare_tmd: &bare_tmd,
-                    bare_vram: &bare_vram,
+                    bare,
+                    bare_tmd,
+                    bare_vram,
                     equipped: &asm,
                     equipped_tmd: &tmd,
                     vram: &vram,
@@ -179,12 +243,12 @@ pub(crate) fn weapon_fusions(
                 }
             }
             if src_cols.is_empty() {
-                continue;
+                return Ok(None);
             }
             if src_cols.len() > weapon_cols.len() {
                 // Outside the measured envelope - leave this record
                 // bare-handed rather than mis-palette it.
-                continue;
+                return Ok(None);
             }
             src_cols.sort_unstable();
             // The weapon's palettes, read off the equipped band CLUT row
@@ -285,27 +349,16 @@ pub(crate) fn weapon_fusions(
                     },
                 );
             }
-            if !per_channel.is_empty() {
-                match fusion.weapon_section {
-                    None => fusion.weapon_section = Some(section),
-                    Some(s) if s != section => {
-                        bail!(
-                            "fusable weapon records in both held sections ({s} and {section}) - \
-                             the one-weapon-tile texturing scheme cannot host that"
-                        );
-                    }
-                    Some(_) => {}
-                }
-                fusion.per_record.insert((section, id), per_channel);
-                fusion.palettes.insert((section, id), pals);
+            if per_channel.is_empty() {
+                return Ok(None);
             }
+            Ok(Some((per_channel, pals)))
         }
     }
-    Ok(fusion)
 }
 
 /// Append `add`'s geometry to `dst` (indices rebased).
-pub(crate) fn merge_into(dst: &mut ModelObject, add: &ModelObject) {
+pub fn merge_into(dst: &mut ModelObject, add: &ModelObject) {
     let base = dst.vertices.len() as u16;
     dst.vertices.extend_from_slice(&add.vertices);
     for g in &add.groups {

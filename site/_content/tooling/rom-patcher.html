@@ -314,7 +314,7 @@
       <summary>Equipment <span class="rom-summary-note">Arts-bar command costs, who can equip what</span></summary>
       <div class="rom-group-body">
         <h4 class="rom-edit-title">Arts-bar command costs &amp; owners
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Values are read from <strong>your</strong> disc. Each of the four Arts-bar commands is priced by the gear that fills it: <em>Left</em> and <em>Right</em> by the weapon and the Ra-Seru arm (Noa&rsquo;s weapon is her Right), <em>Down</em> and <em>Up</em> by the footwear. The number is the AP one press charges, and the same byte sets how wide the pennant draws (<code>cost &minus; 6</code> px). Retail prices weapons at 30 favored-class / 42 off-class / 54 far off-class (the Astral Sword is Vahn&rsquo;s one 54) and every Ra-Seru and footwear record at 30; body and head gear price nothing. Costs are authored per character in that character&rsquo;s battle file, so a column is that character&rsquo;s price. The <em>V / N / G</em> boxes set who can equip the item, in every slot. A <em>&#8627; N</em> cell means that file has no section for the item: the character can wear it once ticked, but in battle the slot&rsquo;s <em>Default</em> record (top rows) is used - default look, and that row&rsquo;s cost. There is no room in the files to add sections, so the default is one value per character. Mechanism: <a href="../subsystems/arts-command-gauge.html">Arts command gauge</a>.</span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Values are read from <strong>your</strong> disc. Each of the four Arts-bar commands is priced by the gear that fills it: <em>Left</em> and <em>Right</em> by the weapon and the Ra-Seru arm (Noa&rsquo;s weapon is her Right), <em>Down</em> and <em>Up</em> by the footwear. The number is the AP one press charges, and the same byte sets how wide the pennant draws (<code>cost &minus; 6</code> px, and the command label has to fit inside it, so 24 is the floor and 30 is the lowest that reads cleanly). Retail prices weapons at 30 favored-class / 42 off-class / 54 far off-class (the Astral Sword is Vahn&rsquo;s one 54) and every Ra-Seru and footwear record at 30; body and head gear price nothing. Costs are authored per character in that character&rsquo;s battle file, so a column is that character&rsquo;s price, and a dash means that character cannot equip the item. The <em>V / N / G</em> boxes set who can equip it. Tick a weapon on for someone whose file lacks it and the patcher carries the model over from the file that has it (highlighted cell, donor&rsquo;s price until you type another): the three player files are re-packed and the boundaries between them moved to make room, which fits one or two carried-over weapons; beyond that the CLI&rsquo;s <code>--allow-relayout</code> grows the disc. Other gear ticked on without a record uses the slot&rsquo;s <em>Default</em> record (top rows): default look, that row&rsquo;s cost. Mechanism: <a href="../subsystems/arts-command-gauge.html">Arts command gauge</a>.</span></span>
         </h4>
         <div class="rom-equip-toolbar">
           <select id="rom-equip-slot" aria-label="Slot">
@@ -342,7 +342,7 @@
           </div>
           <div class="rom-opt">
             <label class="rom-opt-label" for="rom-equip-owner">Equip owners</label>
-            <span class="rom-opt-note"><code>ITEM=OWNERS</code> with <code>V</code>/<code>N</code>/<code>G</code>, <code>any</code> or <code>none</code> (<code>--equip-owner</code>) - e.g. <code>0xBA=any</code>. Merged with the table.</span>
+            <span class="rom-opt-note"><code>ITEM=OWNERS</code> with <code>V</code>/<code>N</code>/<code>G</code>, <code>any</code> or <code>none</code> (<code>--equip-owner</code>) - e.g. <code>0xBA=any</code>. A weapon a new owner&rsquo;s file has no record for gets its model carried over (the summary says from whom, and whether the player files had room). Merged with the table.</span>
             <input type="text" id="rom-equip-owner" placeholder="e.g. 0xBA=any" spellcheck="false" autocomplete="off">
           </div>
         </details>
@@ -873,7 +873,7 @@
   .info-tip { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 1.25em; height: 1.25em; border-radius: 50%; border: 1px solid var(--border-hi); color: var(--text-dim); font-size: 0.8em; font-weight: 700; cursor: help; user-select: none; margin-left: 0.35em; vertical-align: 0.1em; flex: none; }
   .info-tip:hover, .info-tip:focus-visible, .info-tip.is-open { color: var(--accent-hi); border-color: var(--accent); }
   .info-tip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .tip-pop { display: none; position: absolute; z-index: 40; top: calc(100% + 0.5rem); left: 50%; transform: translateX(-50%); width: min(24rem, 78vw); padding: 0.6rem 0.8rem; background: var(--bg-raised); border: 1px solid var(--border-hi); border-radius: 7px; box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45); color: var(--text-muted); font-size: 0.86rem; font-weight: 400; font-style: normal; line-height: 1.5; text-align: left; cursor: auto; white-space: normal; }
+  .tip-pop { text-transform: none; letter-spacing: normal; display: none; position: absolute; z-index: 40; top: calc(100% + 0.5rem); left: 50%; transform: translateX(-50%); width: min(24rem, 78vw); padding: 0.6rem 0.8rem; background: var(--bg-raised); border: 1px solid var(--border-hi); border-radius: 7px; box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45); color: var(--text-muted); font-size: 0.86rem; font-weight: 400; font-style: normal; line-height: 1.5; text-align: left; cursor: auto; white-space: normal; }
   .info-tip:hover > .tip-pop, .info-tip:focus-visible > .tip-pop, .info-tip.is-open > .tip-pop { display: block; }
   .info-tip.tip-align-right > .tip-pop { left: auto; right: -0.6rem; transform: none; }
   .info-tip.tip-align-left > .tip-pop { left: -0.6rem; right: auto; transform: none; }
@@ -972,6 +972,7 @@
   .rom-equip-table td { padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
   .rom-equip-table th.n, .rom-equip-table td.n { text-align: right; }
   .rom-equip-table tr.is-edited td { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .rom-equip-table td.is-new { background: color-mix(in srgb, var(--accent) 26%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }
   .rom-equip-table .rom-edit-name { min-width: 0; }
   .rom-equip-table td code { font-size: 0.85em; color: var(--text-dim); }
   .rom-equip-shared { color: var(--text-dim); font-size: 0.85em; cursor: help; }

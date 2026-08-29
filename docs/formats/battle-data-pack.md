@@ -36,6 +36,7 @@ Implementations:
 - [Not the monster archive](#not-the-monster-archive)
 - [File layout](#file-layout)
 - [Descriptor table](#descriptor-table)
+- [Carrying a weapon into another character's file](#carrying-a-weapon-into-another-characters-file)
 - [Slot region](#slot-region)
 - [Decompressed slot layout](#decompressed-slot-layout)
 - [Battle animations (record[0])](#battle-animations-record0)
@@ -396,6 +397,52 @@ holds the weapon alone.
 So "skip every `200+` object" drops real geometry, and "draw every `200+`
 object" z-fights a limb. The test is a byte comparison against the attach
 bone: `AssembledCharacter::duplicate_objects`.
+
+### Carrying a weapon into another character's file
+
+Because the loader selects a section by the equipped item id and every
+retail file only carries records for the items its character can equip, a
+weapon handed to another character through the SCUS owner mask alone lands
+on that character's `id = 0` weapon default at battle load - the bare hand.
+Giving them the model means giving their file a record, and a record is
+built, not copied (`legaia_asset::equip_transplant`; the patcher's
+`--equip-owner` does it for every weapon it enables):
+
+1. the weapon's own primitives are cut out of the **donor** record with the
+   [item-alone cut](#the-item-alone---an-opinionated-cut-with-a-committed-rule-table)
+   (retail prims verbatim, CBA columns remapped onto the target section's
+   CLUT columns - `party_swap::weapon_fuse`, the same cut the Delilas swap
+   fuses a host's weapon with);
+2. they are merged into the **target's** weapon-section default record,
+   channel by channel: donor bone `k` of the section maps to target bone
+   `k` - the held-item sections are the same three arm bones (upper arm,
+   forearm, hand) in the same order on every file, only numbered per
+   skeleton (Vahn `3 4 5`, Noa `7 8 9`). Coordinates copy verbatim, each
+   object being authored about its own bone origin, so the weapon sits where
+   the donor's fist held it. The section's `0xFF` variant is a byte copy of
+   the armed hand on every retail weapon record of all three files (only the
+   bare defaults ship a differently posed variant), so the transplant emits
+   one armed hand and aliases the variant's object-table entry onto it;
+3. the donor's section tile rides along as the record's pool, texels no
+   weapon primitive samples blanked, under the weapon's palettes installed
+   on the target section's columns (`clut_x = 176` for Noa's section 3).
+   Sections 2 and 3 share texpage `0x16` and differ only by tile row
+   (`y0 = 0` / `0x80`), so a cross-section transplant shifts the fused
+   prims' `v` by 128 and nothing else about their texturing;
+4. the target default's header, loader frame, attach list and swing /
+   attach records survive whole (`splice_record_tmd`), with the swing
+   record's `+0x74` set to the donor weapon's arm cost.
+
+The record is appended to the target's weapon section and the file
+re-packed from `data_base` with `0x800`-aligned slots
+(`playerize::rebuild_player_file`). Size is the constraint: Vahn's Astral
+Sword record for Noa comes out at 7 sectors, and the retail files tile their
+footprints exactly - the optimal LZS parse frees 4 / 2 / 5 sectors in
+Vahn's / Noa's / Gala's files and Terra's none - so the patcher moves the
+boundaries between PROT entries 863..865 (the loader streams each file by
+descriptor offsets from the entry's own start LBA, so a file that grows into
+its neighbour's former sectors needs nothing but the TOC word) and, past
+that pool, a disc relayout.
 
 ## Slot region
 

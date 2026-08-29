@@ -619,7 +619,7 @@ pub(crate) fn variant_object(attach_count: usize, nobj: usize) -> Option<usize> 
 /// exactly one surplus, and `rewrite_section_record` reads a retail TMD's
 /// length off its last object's `normal_top`, so an entry aliased backwards
 /// would leave that reading short of the real end.
-fn alias_variant_onto_bone(tmd: &mut [u8], variant: usize) -> Result<()> {
+pub(crate) fn alias_variant_onto_bone(tmd: &mut [u8], variant: usize) -> Result<()> {
     let entry = |i: usize| legaia_tmd::HEADER_SIZE + i * legaia_tmd::OBJECT_SIZE;
     let (src, dst) = (entry(variant), entry(variant - 1));
     if src + legaia_tmd::OBJECT_SIZE > tmd.len() {
@@ -642,23 +642,13 @@ fn rewrite_section_record(
         legaia_bytes::u32_le(decoded, o).ok_or_else(|| anyhow::anyhow!("short record at +{o:#x}"))
     };
     let frame_off = u32at(0)? as usize;
-    let swing_a = u32at(4)? as usize;
-    let swing_b = u32at(8)? as usize;
     let body_end = u32at(0xC)? as usize;
-    let attach_obj_count = i16::from_le_bytes(
-        decoded
-            .get(0x10..0x12)
-            .ok_or_else(|| anyhow::anyhow!("short record"))?
-            .try_into()
-            .unwrap(),
-    ) as usize;
     if body_end > decoded.len() || frame_off < 0x14 || frame_off >= body_end {
         bail!("section record header out of range");
     }
     // Loader frame.
     let attach_count = decoded[frame_off] as usize;
     let tmd_off = frame_off + 0xC;
-    let old_data_size = u32at(frame_off + 8)? as usize;
     let tmd = legaia_tmd::parse(&decoded[tmd_off..]).context("section TMD")?;
     let nobj = tmd.objects.len();
     if attach_count > nobj {
@@ -764,6 +754,37 @@ fn rewrite_section_record(
     if let Some(v) = variant {
         alias_variant_onto_bone(&mut new_tmd, v).context("alias the equipment-variant object")?;
     }
+    splice_record_tmd(decoded, &new_tmd, pool_block)
+}
+
+/// Rebuild a section record around a replacement TMD and pool:
+/// `[0x00..tmd verbatim][new TMD][swing / attach tail shifted whole][pool]`,
+/// with the header's swing-record offsets, `body_end`, attach-object
+/// offsets and the loader frame's `data_size` fixed up, and the upload
+/// flag forced on (a retail flag-0 default would leave the band tile
+/// stale). `decoded` is the retail record the header, loader frame and
+/// tail come from; the new TMD is written at its `frame_off + 0xC`.
+pub fn splice_record_tmd(decoded: &[u8], new_tmd: &[u8], pool_block: &[u8]) -> Result<Vec<u8>> {
+    let u32at = |o: usize| -> Result<u32> {
+        legaia_bytes::u32_le(decoded, o).ok_or_else(|| anyhow::anyhow!("short record at +{o:#x}"))
+    };
+    let frame_off = u32at(0)? as usize;
+    let swing_a = u32at(4)? as usize;
+    let swing_b = u32at(8)? as usize;
+    let body_end = u32at(0xC)? as usize;
+    let attach_obj_count = i16::from_le_bytes(
+        decoded
+            .get(0x10..0x12)
+            .ok_or_else(|| anyhow::anyhow!("short record"))?
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    if body_end > decoded.len() || frame_off < 0x14 || frame_off >= body_end {
+        bail!("section record header out of range");
+    }
+    let tmd_off = frame_off + 0xC;
+    let old_data_size = u32at(frame_off + 8)? as usize;
+    let tmd = legaia_tmd::parse(&decoded[tmd_off..]).context("section TMD")?;
 
     // Old TMD byte extent (up to the swing region / body_end).
     let old_last = tmd
@@ -779,7 +800,7 @@ fn rewrite_section_record(
     // Assemble: [0x00..tmd_off verbatim][new TMD][tail shifted][pool].
     let mut out = Vec::with_capacity(decoded.len());
     out.extend_from_slice(&decoded[..tmd_off]);
-    out.extend_from_slice(&new_tmd);
+    out.extend_from_slice(new_tmd);
     while out.len() % 4 != 0 {
         out.push(0);
     }
@@ -798,8 +819,6 @@ fn rewrite_section_record(
         put_u32(&mut out, 8, (swing_b as i64 + delta) as u32);
     }
     put_u32(&mut out, 0xC, new_body_end as u32);
-    // Upload flag on: the pool must land even on retail flag-0 records
-    // (bare-fist / no-Ra-Seru defaults), or the band tile stays stale.
     out[0x12] = 1;
     out[0x13] = 0;
     for i in 0..attach_obj_count {
@@ -1889,7 +1908,7 @@ fn playerize_scaled(
     // Rewrite every record except record[0].
     let table_offset = pack.table_offset;
     // (id, slot bytes, decoded bytes - kept for the optimal-LZS retry)
-    let mut new_records: Vec<(u32, Vec<u8>, Vec<u8>)> = Vec::new();
+    let mut new_records: Vec<(u32, Vec<u8>)> = Vec::new();
     let mut section = 0usize;
     // Streamer-anchor latch: the first variant-carrying section.
     let mut anchor_section: Option<usize> = None;
@@ -1967,11 +1986,7 @@ fn playerize_scaled(
             &mut anchor_section,
         )
         .with_context(|| format!("rewrite record {idx} (id {:#x})", rec.id))?;
-        let stream = legaia_lzs::compress(&rewritten);
-        let mut slot = Vec::with_capacity(4 + stream.len());
-        slot.extend_from_slice(&(rewritten.len() as u32).to_le_bytes());
-        slot.extend_from_slice(&stream);
-        new_records.push((rec.id, slot, rewritten));
+        new_records.push((rec.id, rewritten));
         if rec.id == 0 {
             section += 1;
         }
@@ -1979,11 +1994,51 @@ fn playerize_scaled(
     if section != SECTION_COUNT {
         bail!("descriptor chain closed after {section} sections");
     }
+    let file = rebuild_player_file(
+        player_file,
+        table_offset,
+        pack.data_base,
+        new_records,
+        entry_len,
+    )?;
+    Ok(PlayerizedFile { file, warnings })
+}
+
+/// Re-pack a player file around a replacement record list: everything
+/// below `data_base` verbatim except the descriptor table (rewritten from
+/// `records`, `(id, decoded bytes)` in chain order, with an all-zero
+/// terminator where the retail table had room for one), then the records
+/// LZS-compressed into `0x800`-aligned slots from `data_base` - the
+/// retail invariant the sector-streaming loader relies on. Greedy LZS
+/// first; the optimal parse is paid per record only when the greedy total
+/// misses the `entry_len` budget. Errors when the records cannot fit.
+pub fn rebuild_player_file(
+    player_file: &[u8],
+    table_offset: usize,
+    data_base: usize,
+    records: Vec<(u32, Vec<u8>)>,
+    entry_len: usize,
+) -> Result<Vec<u8>> {
+    let mut new_records: Vec<(u32, Vec<u8>, Vec<u8>)> = records
+        .into_iter()
+        .map(|(id, rewritten)| {
+            let stream = legaia_lzs::compress(&rewritten);
+            let mut slot = Vec::with_capacity(4 + stream.len());
+            slot.extend_from_slice(&(rewritten.len() as u32).to_le_bytes());
+            slot.extend_from_slice(&stream);
+            (id, slot, rewritten)
+        })
+        .collect();
+    if table_offset + new_records.len() * 12 > data_base {
+        bail!(
+            "descriptor table of {} entries overruns the data base",
+            new_records.len()
+        );
+    }
 
     // Greedy total first; pay for the optimal parse per record only when
     // the file misses its entry budget.
-    let data_base = pack.data_base;
-    let budget = entry_len - data_base;
+    let budget = entry_len.saturating_sub(data_base);
     let total = |recs: &[(u32, Vec<u8>, Vec<u8>)]| -> usize {
         recs.iter()
             .map(|(_, s, _)| (s.len() + 0x7FF) & !0x7FF)
@@ -2043,5 +2098,5 @@ fn playerize_scaled(
         );
     }
     file.resize(entry_len, 0);
-    Ok(PlayerizedFile { file, warnings })
+    Ok(file)
 }

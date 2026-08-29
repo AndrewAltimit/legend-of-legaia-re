@@ -6,7 +6,7 @@ The popular description is "an off-class weapon **doubles** the arm command." Th
 
 ## Summary
 
-1. Each of the four direction commands on the Arts bar carries an 8-bit **AP cost**. The gauge builder uses that one byte both as the command's price and as the width of the pennant drawn for it (`cost - 6` pixels wide, next pennant `cost` pixels later). A larger button and a more expensive command are the same value.
+1. Each of the four direction commands on the Arts bar carries an 8-bit **AP cost**. The gauge builder uses that one byte both as the command's price and as the width of the pennant drawn for it (`cost - 6` pixels wide, next pennant `cost` pixels later). A larger button and a more expensive command are the same value. The pennant is a text window and its label has to fit: 30 (retail's floor) is the lowest clean width, 24 is still legible, below that the label smears - see [How the gauge consumes it](#how-the-gauge-consumes-it).
 2. Only the command that swings the **weapon hand** depends on equipment - Left (`0x0C`) for Vahn and Gala, Right (`0x0D`) for Noa. It takes one of three authored values: `0x1E` (30) favored class, `0x2A` (42) off-class, `0x36` (54) far off-class. The Ra-Seru arm and the two leg commands are always 30.
 3. The game performs **no class comparison** at runtime. The cost is authored per (character, weapon) inside each character's player battle file and copied into RAM unchanged at battle load.
 4. The turn budget the costs are spent against is the character's **AGL** stat. A turn admits commands until the next one would exceed the remaining budget, then the input ends by itself.
@@ -77,6 +77,21 @@ ctx[0x6DC] -= ctx[slot + 0x14];              // consume the command's cost
 ```
 
 Because a higher `+0x74` widens the gauge slot (`bVar3 - 6`) **and** drains more of the AP pool, an off-class arm both *looks* wider and lets fewer total commands fit - the visible "longer arm input."
+
+**The lowest drawable cost.** Each pennant is registered as a text-window
+actor of width `cost - 6` (`FUN_801D8DE8` → `FUN_8003541C(kind, .., label,
+x, y - 2, width, height, style)`, four `0x18`-byte window records at
+`0x80076E98..` in SCUS `.data`), and the window renderer condenses the
+label (`High` / `Arms` / `RaSeru` / `Low`) horizontally to fit that width
+rather than clipping it. An emulator sweep injecting one cost into all four
+`+0x74` bytes and rebuilding the gauge (`scripts/pcsx-redux/autorun_apcost_visual.lua`)
+puts the floor where retail put it: 30 (24 px) is the tightest width that
+draws every label cleanly, 24 (18 px) is condensed but legible, 20 and below
+smear into glyph fragments, and 7 (1 px) leaves only the arrow caps. The
+`(cost - 30) * DAT_8007B650[slot] / 2` term at `0x801D3B64` only re-centres
+the pennant; the AP fill bar itself is unaffected at any value. A cost below
+6 would wrap the width negative. The patcher's equipment editor refuses
+costs below 24 for this reason.
 
 The same case-`9`/`0xB` machinery also deals and spends the **Muscle Dome hand**: a dome card is one of the four direction commands (`0xC..=0xF`, the deck table `DAT_801f4b8c`), its cost is this same `+0x74` byte, and the commit debits the same `ctx+0x6DC` pool - see [`minigame-muscle-dome.md`](minigame-muscle-dome.md#hand-deck-decoded).
 

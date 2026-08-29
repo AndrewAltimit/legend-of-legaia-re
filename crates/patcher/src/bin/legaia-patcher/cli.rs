@@ -1213,15 +1213,26 @@ pub(crate) struct RandomizeArgs {
     /// letters `V` `N` `G` (Vahn / Noa / Gala), `any`, or `none` (e.g.
     /// `0xBA=VNG`). Rewrites the item's equip-character mask in the SCUS
     /// equipment table; items sharing a bonus row move together (the report
-    /// says which). A character whose player file has no section for a weapon
-    /// can equip it but falls through to the default appearance and a 30-AP
-    /// swing in battle. Repeatable / comma-separated.
+    /// says which). A weapon a character's player file has no record for gets
+    /// its model carried over from the file that has it (the three player
+    /// files are re-packed and their boundaries moved to make room; see
+    /// `--allow-relayout` when that is not enough). Other slots fall through
+    /// to the default look. Repeatable / comma-separated.
     #[arg(
         long = "equip-owner",
         value_name = "ITEM=OWNERS",
         value_delimiter = ','
     )]
     pub(crate) equip_owner: Vec<String>,
+    /// With `--equip-owner`: do not carry weapon models over; a new owner
+    /// swings with the default look (and the default record's cost).
+    #[arg(long)]
+    pub(crate) no_model_transplant: bool,
+    /// With `--equip-owner`: when the carried-over weapon models do not fit
+    /// the three player files, grow them with a whole-disc relayout. The
+    /// image gets longer, so this needs `--output` and writes no PPF.
+    #[arg(long)]
+    pub(crate) allow_relayout: bool,
     /// How per-monster steal items are reassigned (the Evil God Icon table;
     /// `shuffle` redistributes the existing steal items, `random` draws from the
     /// valid item pool - the steal *chance* is always preserved).
