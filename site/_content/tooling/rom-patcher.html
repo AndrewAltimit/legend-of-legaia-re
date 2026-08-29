@@ -992,11 +992,11 @@
   .rom-form .rom-equip-table input.eq-cost { width: 4.1em; padding: 0.2rem 0.55rem 0.2rem 0.35rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: inherit; text-align: right; }
   .rom-equip-na { color: var(--text-dim); cursor: help; }
   .rom-equip-fallthrough { font-variant-numeric: tabular-nums; }
-  .rom-equip-cmd { display: inline-block; vertical-align: middle; margin-right: 0.3rem; line-height: 0; }
-  .rom-equip-dpad { width: 1.9rem; height: 1.9rem; display: inline-block; vertical-align: middle; }
-  .rom-equip-dpad polygon { fill: var(--border-hi); }
-  .rom-equip-dpad polygon.is-priced { fill: #b5641c; }
-  .rom-equip-dpad circle { fill: var(--text-dim); }
+  .rom-equip-cmd { display: inline-block; vertical-align: middle; margin: 0 0.45rem 0 0.35rem; line-height: 0; }
+  .rom-equip-dpad { width: 2.75rem; height: 2rem; display: inline-block; vertical-align: middle; overflow: visible; }
+  .rom-equip-dpad polygon { fill: #3a3d6e; stroke: #6d5a2e; stroke-width: 0.8; }
+  .rom-equip-dpad polygon.is-priced { fill: #b5641c; stroke: #e0b86a; stroke-width: 1; }
+  .rom-equip-dpad .hub { fill: var(--text-dim); }
   .rom-equip-fallthrough { display: inline-flex; align-items: center; gap: 0.3rem; }
   .rom-equip-kicks { display: inline-flex; flex-direction: column; gap: 0.15rem; align-items: flex-end; }
   .rom-equip-default td { background: color-mix(in srgb, var(--bg-raised) 60%, transparent); border-bottom: 2px solid var(--border); }

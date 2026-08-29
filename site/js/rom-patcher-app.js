@@ -276,39 +276,50 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
   let hands = [null, null, null];
   const DEFAULT_KEYS = { dw: 'weapon', dr: 'raseru', df: 'down', dfu: 'up' };
   const ARROW = { Left: 'L', Right: 'R', Down: '↓', Up: '↑' };
-  // A d-pad glyph in the shape of the retail Arts-input pennants: four tags
-  // around a hub, the priced command in dark orange and drawn `cost - 6`
-  // deep on the same scale the game uses (retail 30 -> 24 px pennant), so a
-  // typed cost visibly grows or shrinks it.
+  // The retail Arts-input layout in miniature: four hexagonal pennants
+  // sitting apart at north / east / south / west around a small d-pad
+  // cross. The priced command's pennant is dark orange and drawn on the
+  // game's own scale (`cost - 6` wide), so a typed cost visibly widens or
+  // narrows it; the other three stay at retail's 30.
   const SVG_NS = 'http://www.w3.org/2000/svg';
-  const pennantPoints = (dir, len) => {
-    // A tag from the hub edge (r = 4) outward by `len`, 6 wide, pointed tip.
-    const c = 13, r = 4, w = 3, tip = 2.5;
-    const pts = [[r, -w], [r + len - tip, -w], [r + len, 0], [r + len - tip, w], [r, w]];
-    const rot = { Right: [1, 0, 0, 1], Left: [-1, 0, 0, -1], Up: [0, -1, 1, 0], Down: [0, 1, -1, 0] }[dir] || [1, 0, 0, 1];
-    return pts.map(([x, y]) => `${(c + rot[0] * x + rot[1] * y).toFixed(1)},${(c + rot[2] * x + rot[3] * y).toFixed(1)}`).join(' ');
+  // Pennant anchors: Up / Down centred over the cross; Left / Right hold
+  // their inner edge next to it and grow outward, so a wide pennant never
+  // runs into the cross or the number box.
+  const PENNANT_POS = { Up: [22, 6], Down: [22, 26], Left: [9, 16], Right: [35, 16] };
+  const hexPoints = (cx, cy, w, h, dir) => {
+    let x0 = cx - w / 2, x1 = cx + w / 2;
+    if (dir === 'Left') { x1 = 15; x0 = x1 - w; }
+    if (dir === 'Right') { x0 = 29; x1 = x0 + w; }
+    const s = h / 2;
+    return [[x0, cy], [x0 + s, cy - s], [x1 - s, cy - s], [x1, cy], [x1 - s, cy + s], [x0 + s, cy + s]]
+      .map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
   };
-  const pennantLen = (cost) => Math.max(3, Math.min(9, (Number(cost) - 6) / 4));
+  // Retail 30 -> 12 wide; the width tracks `cost - 6` at half scale.
+  const pennantWidth = (cost) => Math.max(7, Math.min(20, (Number(cost) - 6) / 2));
   const dirGlyph = (cmd, cost) => {
     const svg = document.createElementNS(SVG_NS, 'svg');
-    svg.setAttribute('viewBox', '0 0 26 26');
+    svg.setAttribute('viewBox', '0 0 44 32');
     svg.setAttribute('class', 'rom-equip-dpad');
     svg.setAttribute('aria-hidden', 'true');
     svg.dataset.cmd = cmd;
     for (const d of ['Up', 'Left', 'Right', 'Down']) {
       const poly = document.createElementNS(SVG_NS, 'polygon');
-      poly.setAttribute('points', pennantPoints(d, d === cmd ? pennantLen(cost) : 4));
+      const [cx, cy] = PENNANT_POS[d];
+      poly.setAttribute('points', hexPoints(cx, cy, d === cmd ? pennantWidth(cost) : 12, 7, d));
       poly.setAttribute('class', d === cmd ? 'is-priced' : '');
       svg.appendChild(poly);
     }
-    const hub = document.createElementNS(SVG_NS, 'circle');
-    hub.setAttribute('cx', '13'); hub.setAttribute('cy', '13'); hub.setAttribute('r', '2.6');
-    svg.appendChild(hub);
+    const cross = document.createElementNS(SVG_NS, 'path');
+    cross.setAttribute('d', 'M20.5 13h3v2.5H26v3h-2.5V21h-3v-2.5H18v-3h2.5z');
+    cross.setAttribute('class', 'hub');
+    svg.appendChild(cross);
     return svg;
   };
   const sizeGlyph = (svg, cost) => {
     const poly = svg && svg.querySelector('polygon.is-priced');
-    if (poly) poly.setAttribute('points', pennantPoints(svg.dataset.cmd, pennantLen(cost)));
+    if (!poly) return;
+    const [cx, cy] = PENNANT_POS[svg.dataset.cmd] || [22, 16];
+    poly.setAttribute('points', hexPoints(cx, cy, pennantWidth(cost), 7, svg.dataset.cmd));
   };
   const otherHand = (h) => (h === 'Left' ? 'Right' : h === 'Right' ? 'Left' : null);
   // Owner mask as edited (falls back to the disc's).
