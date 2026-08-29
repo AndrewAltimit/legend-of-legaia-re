@@ -382,7 +382,7 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
     const tr = document.createElement('tr');
     tr.className = 'rom-equip-row rom-equip-default';
     tr.dataset.keys = keys.join(',');
-    tr.innerHTML = `<td><span class="rom-edit-name">${label}</span> <span class="rom-equip-shared" title="${escapeHtml(note)}">(default record)</span></td><td>—</td><td class="n">—</td><td>—</td>`;
+    tr.innerHTML = `<td><span class="rom-edit-name" title="${escapeHtml(note)}">${label}</span></td><td>default</td><td class="n">—</td><td>—</td>`;
     CHARS.forEach((c, ci) => {
       const td = document.createElement('td');
       td.className = 'n';
@@ -466,12 +466,18 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
       tr.dataset.id = String(it.id);
       tr.dataset.keys = it.slot === 'footwear' ? `${it.id},${it.id}u` : String(it.id);
       const tdName = document.createElement('td');
-      tdName.innerHTML = `<span class="rom-edit-name">${escapeHtml(it.name || 'item ' + hexOf(it.id))}</span> <code>${hexOf(it.id)}</code>`;
-      if (it.shares_row_with && it.shares_row_with.length) {
+      // Name only - the id and the shared-row note live in the tooltip so
+      // the column stays narrow enough for the table to fit without a
+      // horizontal scrollbar.
+      const shared = it.shares_row_with && it.shares_row_with.length
+        ? ' Shares its stat row with ' + it.shares_row_with.map(hexOf).join(', ') + ' - an owner change moves them too.'
+        : '';
+      tdName.innerHTML = `<span class="rom-edit-name" title="${escapeHtml('Item ' + hexOf(it.id) + '.' + shared)}">${escapeHtml(it.name || 'item ' + hexOf(it.id))}</span>`;
+      if (shared) {
         const s = document.createElement('span');
         s.className = 'rom-equip-shared';
-        s.title = 'Shares its stat row with ' + it.shares_row_with.map(hexOf).join(', ') + ' - an owner change moves them too.';
-        s.textContent = ' (shared row)';
+        s.title = shared.trim();
+        s.textContent = '*';
         tdName.appendChild(s);
       }
       tr.appendChild(tdName);

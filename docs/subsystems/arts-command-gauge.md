@@ -78,6 +78,18 @@ ctx[0x6DC] -= ctx[slot + 0x14];              // consume the command's cost
 
 Because a higher `+0x74` widens the gauge slot (`bVar3 - 6`) **and** drains more of the AP pool, an off-class arm both *looks* wider and lets fewer total commands fit - the visible "longer arm input."
 
+**Two budgets, not one.** The AP pool bounds a turn by *cost*, but the
+committed command buffer `actor[+0x1DF..+0x1EE]` bounds it by *count*: sixteen
+bytes, a cap the cancel wipe (`sltiu v0,s3,0x10` over `sb zero,0x1df`), the
+preseed `FUN_801DA34C` and the Super applier `FUN_801EF9E4` all share. A plain
+direction press is one byte; a matched art keeps its leading arrows and
+replaces its last one with the two-byte `[0x19 starter][art id]` pair, so an
+N-arrow art occupies N + 1 bytes, and a Super / Miracle tail-replaces the
+buffer with its own finisher bytes (`super-art-queue-capture.md` shows Vahn's
+`0F 0E | 19 27 0F | 19 1F 0E | 1A 2B 2B 2B`). At retail costs the pool binds
+long before sixteen tokens do; a mod that prices commands low enough that
+`pool / cost` passes sixteen hits the buffer instead.
+
 **The lowest drawable cost.** Each pennant is registered as a text-window
 actor of width `cost - 6` (`FUN_801D8DE8` → `FUN_8003541C(kind, .., label,
 x, y - 2, width, height, style)`, four `0x18`-byte window records at

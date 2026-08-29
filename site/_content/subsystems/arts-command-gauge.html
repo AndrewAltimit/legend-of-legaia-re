@@ -63,6 +63,8 @@ ctx[0x6DC] -= ctx[slot + 0x14];                             // consume the comma
 </section>
 
 <section class="doc-section" id="status-limb-gating">
+  <p><strong>Two budgets, not one.</strong> The AP pool bounds a turn by <em>cost</em>, but the committed command buffer <code>actor[+0x1DF..+0x1EE]</code> bounds it by <em>count</em>: sixteen bytes, a cap the cancel wipe, the preseed <code>FUN_801DA34C</code> and the Super applier <code>FUN_801EF9E4</code> all share. A plain direction press is one byte; a matched art keeps its leading arrows and replaces its last one with the two-byte <code>[0x19 starter][art id]</code> pair, so an N-arrow art occupies N&nbsp;+&nbsp;1 bytes, and a Super / Miracle tail-replaces the buffer with its own finisher bytes. At retail costs the pool binds long before sixteen tokens do; a mod that prices commands low enough that <code>pool / cost</code> passes sixteen hits the buffer instead.</p>
+
   <h2>Status limb gating</h2>
   <p>A <strong>Rot</strong> (or similar limb-disable) status grays individual command arrows and refuses their input. The gauge-input arm <code>FUN_801D0748</code> state <code>0x50</code> (<code>overlay_battle_action_801d0748.txt:3311-3360</code>) reads the active actor's <code>+0x16E</code> status halfword; the gray-draw pass and the input gate agree bit-for-bit:</p>
   <table class="data-table">
