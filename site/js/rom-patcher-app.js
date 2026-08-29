@@ -519,8 +519,10 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
         ['df', 'dfu'],
         (td, c, ci, tr) => kicksCell(td, c, ci, tr, 'df', 'dfu', 'unlisted footwear or bare feet', null));
     }
-    // Weapons first, the Ra-Seru levels (Meta / Terra / Ozma) after them.
-    const ordered = [...items].sort((a, b) => (a.ra_seru_arm ? 1 : 0) - (b.ra_seru_arm ? 1 : 0));
+    // Named gear first, then the Ra-Seru levels (Meta / Terra / Ozma), and
+    // the unnamed ids (`item 0xHH`) at the very bottom.
+    const rank = (it) => (!it.name ? 2 : it.ra_seru_arm ? 1 : 0);
+    const ordered = [...items].sort((a, b) => rank(a) - rank(b));
     for (const it of ordered) {
       if (slot !== 'all' && it.slot !== slot) continue;
       shown++;
