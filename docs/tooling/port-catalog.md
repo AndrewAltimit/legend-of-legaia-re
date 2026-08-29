@@ -702,21 +702,25 @@ attributable references, through the same `item_reference_patterns` /
 ### The denominator is a union of ladders, not one binary
 
 `--json` is repeatable, and joining only one test binary is the trap here. The
-repo drives five pad-only ladders, each its own test target: the four
-`engine-shell` ones - `critical_path_replay` (the world spine), `menu_replay`
-(pause menu + save UI), `minigame_replay` (the five minigame doors),
-`v0_1_playthrough` (the cold-boot field anchor) - and the `web-viewer`
-draw-composition ladder `play_compose_ladder` (next section). Menus and
-minigames are two of the largest clusters in `live-unentered`, so a join over
-the spine alone reports precisely the subsystems the other ladders walk as
-never-entered - and a worklist ordered off it is ordered against a measurement
-that excluded its own top rows by construction.
+repo drives a set of pad-only ladders, each its own test target in its own
+crate - the world spine, the pause menu + save UI, the minigame doors, the
+cold-boot field anchor, the browser draw-composition ladder (next section), and
+the per-lane ladders written to reach content none of those touch. The canonical
+membership lives in `CANONICAL_LADDERS` in the script and is printed by
+`--list-ladders`; read it there rather than from a list on this page, because a
+ladder absent from that constant is a ladder nobody exports.
+
+Menus and minigames are two of the largest clusters in `live-unentered`, so a
+join over the spine alone reports precisely the subsystems the other ladders
+walk as never-entered - and a worklist ordered off it is ordered against a
+measurement that excluded its own top rows by construction.
 
 Produce one export per ladder, then join them. **The union is the default** -
 a bare invocation globs `target/cov-*.json`, so the short command is the honest
 one and the single-binary join is now the thing you have to ask for:
 
 ```bash
+cargo llvm-cov clean --workspace
 scripts/ci/replay-port-coverage.py --list-ladders | while read -r t pkg; do
     cargo llvm-cov clean --profraw-only
     cargo llvm-cov -p "$pkg" --test "$t" --no-report
@@ -724,6 +728,13 @@ scripts/ci/replay-port-coverage.py --list-ladders | while read -r t pkg; do
 done
 scripts/ci/replay-port-coverage.py
 ```
+
+The opening `clean --workspace` is not tidiness. The reader collapses duplicate
+spans keyed on the exact `(line_start, line_end)`, so a stale sibling binary
+left in `target/` can shadow a fresh executed record with its own zero. The
+in-loop `clean --profraw-only` is the weaker sibling: it drops profile data
+between ladders so each export is that ladder alone, while leaving build
+artifacts in place so this is not one rebuild per ladder.
 
 No `--release` - an optimised build inlines small functions and leaves their
 out-of-line coverage record at zero, indistinguishable from never-called
@@ -751,10 +762,14 @@ The `engine-shell` ladders drive the headless `BootSession`, which constructs
 no renderer and no draw list, so their union structurally cannot execute the
 draw-list builders - `engine-ui` reported zero executed regions however far
 those ladders walked, and the report was blind to the browser hosts entirely
-([`reach-triage.md`](reach-triage.md) carries the full account). The native
-window's composition cannot close that gap from a test: it lives in a `bin/`
-target, and `cargo llvm-cov --test` links the crate's *library*, never enters
-the binary.
+([`reach-triage.md`](reach-triage.md) carries the full account).
+
+Two ladders close it, from opposite sides, and the second settles a structural
+claim this report used to carry. `cargo llvm-cov --test` links the crate's
+*library* and never enters a `bin/` target - which bounds what a test can
+**call**, and says nothing about what it can **measure**. `LLVM_PROFILE_FILE` is
+inherited, so a test that *spawns* a `CARGO_BIN_EXE_*` gets the child's own
+profile merged into the export.
 
 `crates/web-viewer/tests/play_compose_ladder.rs` is the ladder that can,
 because the browser play page's composition is library code. It drives
@@ -764,13 +779,24 @@ and the menu / battle / fishing / dev-menu / name-entry overlays, the
 screen-prim route, the battle 3D + FX exports) across a ten-rung ratchet
 (`scripts/replays/play_compose_baseline.toml`). Still pad-only - nothing is
 seated or poked - but every frame is composed, which is the half of a rendering
-host the headless ladders cannot supply. What stays outside even this union:
-`engine-render` (a hard wgpu link `web-viewer` does not carry) and the
-`engine-shell` `bin/` modules.
+host the headless ladders cannot supply. What it cannot carry is a wgpu link,
+so `engine-render` stays outside it.
+
+`crates/engine-shell/tests/w5_native_minigame_ladder.rs` is the other side: it
+spawns `legaia-engine play-window` per rung and lets the inherited profile merge
+back, so the native window's own composition layer - the `engine-shell` `bin/`
+tree and the `engine-render` link under it - executes here and nowhere else in
+the union. It needs a display as well as a disc, and it asserts on the captured
+frame rather than on the child's exit status, because an empty draw list would
+pass "did it run". It is also the ladder that punishes a one-shot `-p … --json`
+export hardest, since almost all of its yield lands in crates other than the one
+`-p` names - which is what the recipe's build/report split above is for.
 
 ### Why this stays a manual step
 
-Each export is an instrumented release build plus a full disc-gated ladder run,
+Each export is an instrumented build plus a full disc-gated ladder run (an
+*instrumented* build, not an optimised one - the recipe above passes no
+`--release`, and the script's own prose slips into calling it a release build),
 so a complete union is minutes of work and needs the disc - it cannot be a
 pre-commit gate, and a gate that silently degrades to a partial union would
 reintroduce exactly the understated denominator this section exists to name.

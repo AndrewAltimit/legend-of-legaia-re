@@ -34,6 +34,12 @@ directory is gitignored, so a fresh worktree has none and `port-catalog.py` run
 inside one reports `dumped: 0` - point both `--repo` and `--catalog` at the
 checkout that produced the dumps.
 
+`--repo`, `--catalog` and `--out` are **required in every mode**, including the
+two drill-downs below: the script parses its arguments before it decides what to
+do, so `--explain` or `--audit-ignored` on its own exits on an argparse error
+rather than running. Pass the same three, and send `--out` at a scratch path
+when you only want the drill-down.
+
 `--explain <addr>` prints the per-dump evidence for a single address: which dump
 files cover the VA, each one's resolved `entry=`, image, instruction count,
 whether the body contains `jr ra`, and the trailing jump target if any. That is

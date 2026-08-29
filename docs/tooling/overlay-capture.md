@@ -87,15 +87,17 @@ actor's colour word, stamped with the 24-bit mid-grey `0x00808080` (masked
 2. `File → Show Lua Console`.
 3. Run `ghidra/scripts/dump_overlay.lua` from the Lua console - it writes `0x801C0000-0x801EFFFF` to `/tmp/legaia_overlay_<TIMESTAMP>.bin`.
 
-> The 192 KB window in `dump_overlay.lua` is too narrow for some battle-effect handlers and for the world-map overlay's high-mode prim renderers at `0x801F7644..0x801F8690` (consumed by `FUN_80043390`'s overlay-mode dispatch table at `0x801F8968`). Use `extract-mednafen-overlay.py` (default window is now `0x801C0000-0x801F9000`, 228 KB) - or pass `--end 0x80200000` for the full 256 KB.
+> The 192 KB window in `dump_overlay.lua` is too narrow for some battle-effect handlers and for the world-map overlay's high-mode prim renderers at `0x801F7644..0x801F8690` (consumed by `FUN_80043390`'s overlay-mode dispatch table at `0x801F8968`). Use `extract-mednafen-overlay.py` (default window `0x801C0000-0x801F9000`, 228 KB) - or pass `--end 0x80200000` for the full 256 KB.
 
-Then load the dump into Ghidra:
+Then load the dump into Ghidra. Copy it to a **writable** path inside the
+container: `/data` is `./extracted` bind-mounted read-only, so `docker compose
+cp` into it is rejected - `/tmp` is what the committed importers use.
 
 ```bash
-docker compose cp /tmp/legaia_overlay_<TIMESTAMP>.bin ghidra:/data/overlay.bin
+docker compose cp /tmp/legaia_overlay_<TIMESTAMP>.bin ghidra:/tmp/overlay.bin
 docker compose exec ghidra /ghidra/support/analyzeHeadless \
     /projects legaia \
-    -import /data/overlay.bin \
+    -import /tmp/overlay.bin \
     -loader BinaryLoader \
     -loader-baseAddr 0x801C0000 \
     -processor MIPS:LE:32:default \
@@ -104,6 +106,8 @@ docker compose exec ghidra /ghidra/support/analyzeHeadless \
 docker compose exec ghidra /ghidra/support/analyzeHeadless \
     /projects legaia -process overlay.bin
 ```
+
+`ghidra/scripts/import_overlay.sh <dump>` wraps exactly these two calls.
 
 ## Caveat: overlay-buffer captures are mixed content
 
@@ -134,7 +138,7 @@ A captured RAM dump often contains transient TIMs that the game staged in main R
        # validate CLUT block size + RECT, then pixel block size + RECT
        # (within sane bounds: w/h <= 1024 / 512, sizes in plausible ranges)
    ```
-2. Extract each hit as a `.tim` file and decode with `legaia-tim convert` to PNG to identify visually.
+2. Extract each hit as a `.tim` file and decode with `tim convert` (the `legaia-tim` crate's binary) to PNG to identify visually.
 3. Build a 16-byte fingerprint from the first CLUT row at offset `0x14` inside the TIM file (skip the RECT bytes at `0x0C..0x14` because those get runtime-relocated).
 4. Grep the PROT corpus (`extracted/PROT/*.BIN`) for that fingerprint. Each hit identifies the source entry; byte-compare CLUT + pixel data to confirm.
 
@@ -230,6 +234,16 @@ scripts/ghidra-analysis/extract-duckstation-overlay.py SCUS-94254_1.sav --out /t
 scripts/ghidra-analysis/import-overlay-named.sh /tmp/legaia_overlay_fishing.bin fishing
 ```
 
+The decompressed state payload also carries more than main RAM, at fixed
+offsets: the disc's cue path string sits in the (uncompressed) header, the
+first zstd frame is a 256x192 RGBA thumbnail, and in the second frame main
+RAM starts at payload `+0x1A62` with **VRAM (1 MiB) at `RAM_end + 0x396`**
+(payload `+0x201DF8`; a ~0x396-byte GPU-register block sits between). Pin
+the VRAM base against a landmark before reading coordinates out of it: a
+base short by that GPU block makes every located CLUT colour appear at one
+uniform halfword shift, which reads as a "relocation" when it is only an
+extraction error.
+
 The `import-overlay-named.sh` step imports as `overlay_fishing.bin` in the Ghidra project (base `0x801C0000`, MIPS LE) and runs auto-analysis. Run `inventory_overlay.py` afterwards to get the function list, then write a `dump_<label>_overlay.py` for the functions of interest.
 
 ### Minigame hub overlay (six variants from Duckstation saves)
@@ -283,8 +297,10 @@ piece is the renderer's overlay-resident byte→quad pipeline.
 3. **As soon as the dialog box appears**, save state. (The overlay unloads
    when the box closes; capturing mid-conversation is essential.)
 4. Run `scripts/ghidra-analysis/analyze-overlay.sh "$HOME/.mednafen/mcs/Legend of Legaia (USA).<HASH>.mc0" --label dialog`.
-5. Run `scripts/ghidra-analysis/import-overlay-named.sh dialog` so the overlay imports as
-   a named program (preserved across re-imports of other overlays).
+5. Run `scripts/ghidra-analysis/import-overlay-named.sh /tmp/legaia_overlay_dialog.bin dialog`
+   so the overlay imports as a named program (preserved across re-imports of
+   other overlays). Both positionals are required - the slice path first, the
+   label second.
 
 What to look for after import:
 - Strings near the overlay base - Japanese / English glyph table headers.
@@ -314,7 +330,7 @@ transitions.
    playback), save state. The first 1-2 seconds work - the overlay is
    resident as long as the cutscene is active.
 3. Run `scripts/ghidra-analysis/analyze-overlay.sh "$HOME/.mednafen/mcs/Legend of Legaia (USA).<HASH>.mc0" --label cutscene`.
-4. Run `scripts/ghidra-analysis/import-overlay-named.sh cutscene`.
+4. Run `scripts/ghidra-analysis/import-overlay-named.sh /tmp/legaia_overlay_cutscene.bin cutscene`.
 
 What to look for after import:
 - `jal` to `_DAT_8007AF40`-region SPU regs at the XA-DMA destination

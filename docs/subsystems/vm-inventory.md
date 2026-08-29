@@ -38,7 +38,7 @@ disassembly (`sltiu` immediate before the `jr`), not off the port.
 | [Effect VM](effect-vm.md) | `FUN_801E0088` | **none** - see [No opcode space](#the-effect-vm-has-no-opcode-space) | resolved | yes - `effect_vm` | yes |
 | [Battle-action SM](battle-action.md) | `FUN_801E295C` | 256-slot JT `0x801CED44`, sparse handled bands, no default arm | partial | yes - `battle_action` | yes |
 | [World-map entity SM](world-map.md) | `FUN_801DA51C` | 5 states | resolved | yes - `world_map` | yes |
-| [Tile-board walk SM](tile-board.md) | `overlay_0897_801EF2B0` | 15 states, JT at `0x801EF308` | resolved | yes - `legaia_engine_core::tile_board` | yes |
+| [Tile-board walk SM](tile-board.md) | `overlay_0897_801EF2B0` | 15 states, JT at `0x801CF65C` | resolved | yes - `legaia_engine_core::tile_board` | yes |
 | Per-actor anim dispatch | `FUN_80021DF4` | 7 dispatch bytes `0x01..=0x07` at `actor[+0x5A]` | resolved | yes - `anim_vm` / `actor_tick` | yes |
 | Ambient facing channel | `FUN_80038158` ops `0x04` / `0x0D` | 2 of the 32-slot table | resolved | yes - `ambient_motion` | yes |
 | Sub-mode dispatcher | `FUN_801DD35C` | 25-slot JT `0x801CF244` | contested - see [below](#one-function-two-ports) | **twice** - `menu` and `title_overlay` | `menu` yes, `title_overlay` **inert** |
@@ -121,11 +121,12 @@ calls them. Inert is a reachability statement, not a correctness one.
 ## How many copies of `FUN_801D362C` exist
 
 One, in field overlay `0897`. The reading that each overlay carries its own
-flavour with its own 61-entry jump table is falsified: the six capture-derived
-dumps are identical to each other, and the `0897` static dump is a strict
-*subset* of them - no address appears only in `0897`, while 135 appear only in
-the captures, which are JT paths Ghidra could not follow statically. That subset
-relation is what the "byte-identical" shorthand in the open-threads register
+flavour with its own 61-entry jump table is falsified: all seven dumps - the
+six capture-derived ones and the `0897` static one - carry the same 1293
+instructions with a byte-identical disassembly section. There is no subset
+relation and no address that appears in one but not another; the whole-file
+line-count spread is header and decompiled-section noise. That identity is what
+the "byte-identical" shorthand in the open-threads register
 compresses, and it is worth stating precisely: a reader diffing the dump sizes
 will otherwise think the shorthand is broken.
 

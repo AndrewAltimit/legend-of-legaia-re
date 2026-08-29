@@ -57,8 +57,11 @@ legaia-patcher translate init --lang fr --from legaia_en.yaml \
     --contributor "you" [--resume site/lang/fr.yaml] -o legaia_fr.yaml
 
 # 3. Fill `translation:` fields (editor, script, AI pass - your choice).
-#    --chunk N splits the skeleton into N-entry files for a parallel bulk fill;
-#    recombine them with `translate merge`.
+#    --chunk N splits the skeleton into N-entry files for a parallel bulk fill.
+#    Recombine them onto the base pack (--pack repeatable, applied in order;
+#    every input is read before the output is written, so -o may be the base).
+legaia-patcher translate merge --base legaia_fr.yaml \
+    --pack legaia_fr.001.yaml --pack legaia_fr.002.yaml -o legaia_fr.yaml
 
 # 4. Check coverage + encodability/budget. Add --input to dry-run the pack
 #    against a real disc (the only way to validate a distributable pack).

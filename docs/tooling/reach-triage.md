@@ -310,12 +310,13 @@ page is for, and they stay valid whatever the totals are.
 `801e791c` is filed NO-LADDER below while the `engine-vm` table further down
 says the flee roll is "ladder-covered
 (`crates/engine-core/tests/battle_flee_ladder.rs`)". Both statements hold, and
-the join between them is the denominator: `CANONICAL_LADDERS` in
-`replay-port-coverage.py` is five named test binaries, and neither
-`battle_flee_ladder` nor `seru_cast_magic_xp_ladder` is one of them. Membership
-is "drives the engine with `set_pad` and nothing else"; both of those build a
-`World` by hand first, which is what puts them outside the union however
-pad-driven the rest of the run is.
+the join between them is the denominator: only the test binaries named in
+`CANONICAL_LADDERS` in `replay-port-coverage.py` are in the union, and a ladder
+that seats the player by building a `World` by hand measures a different thing
+however pad-driven the rest of its run is. **`CANONICAL_LADDERS` is the only
+statement of membership**; this page deliberately does not restate it, because
+a ladder joins the union by being added there and a copy here would go stale
+the moment one is.
 
 So "a pad ladder drives it" and "no run in the denominator entered it" are
 different claims, and a row can satisfy the first while failing the second. For

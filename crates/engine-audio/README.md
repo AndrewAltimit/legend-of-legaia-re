@@ -18,6 +18,11 @@ master gate that zeroes the rendered frames while the sequencer, SPU
 voices, XA stream and fade engine all keep ticking, so unmuting resumes
 playback in sync without tearing down the stream.
 
+The `audio-webaudio` cargo feature (off by default) adds `WebAudioOut`, a
+`ScriptProcessorNode`-backed twin of the `AudioOut` API for `wasm32` targets.
+It must be opened from inside a user-gesture handler; the browser play page
+enables the feature and drives it.
+
 ## Note-level tracing
 
 The engine half of the note-level BGM differential against the static
@@ -76,6 +81,10 @@ Capture, diff and the retail side are documented in
 | [`seq_calc`](src/seq_calc.rs) | The retail **SsAPI per-frame calc tier** - `SsSeqCalc`'s dispatch (`FUN_80062F98`) plus the tempo slide (`FUN_800649B0`), the ascending / descending volume slides (`FUN_8006320C` / `FUN_8006352C`) and the track-end / loop-repeat handler (`FUN_80063AA8`). Pure kernels over a `SeqChannel`; `tick_budget` is the one place wall-clock tempo becomes an integer tick step. |
 | [`seq_events`](src/seq_events.rs) | The rest of that tier - everything in `SsSeqCalc`'s fan-out that reads a stream byte: the stop / start arms (`FUN_800638D8` / `FUN_8006418C`), the delta-time pump (`FUN_80063974` / `FUN_800639A0`), the SEQ event decoder (`FUN_80063CEC`) and the chained-channel restart (`FUN_80064090`). `run_handler_tail` completes a walk by advancing past what the installed handler consumes; without it a trailing delta is re-read as the next status byte. |
 | [`anim_cue`](src/anim_cue.rs) | `walk_anim_cues` / `AnimCueState` - the per-frame walker over a playing battle action's 8-slot `(frame, cue)` track (`FUN_800508DC`). Resolves the party `0xC8..=0xFF` band into the `>= 0x100` arts-voice namespace, the three per-character shout ids into a two-take XA channel pick, and the CD-busy fallback into a fixed ring cue. Emits `AnimCueEmit` decisions rather than calling anything - `NOT WIRED`, see the module docs. |
+| [`sfx_ring`](src/sfx_ring.rs) | The retail 4-slot cue ring, byte-faithful: the id array `DAT_8007B6D8[4]` beside its per-slot vsync countdown `DAT_8007C338[4]`, plus both halves of the per-frame walk (`FUN_8001698c` aging, `FUN_80016b6c` drain). Two parallel fixed arrays, not a queue. |
+| [`seq_slots`](src/seq_slots.rs) | The SEQ resource-slot table at `0x80091508` (12-byte stride): which side-band SEQ/VAB resources hold an open libsnd handle. Pure bookkeeping - the hardware side of a close is a caller-supplied closure. |
+| [`battle_voice`](src/battle_voice.rs) | `battle_voice_step` (`FUN_8004DA00`) - which whole-clip XA voice stream, if any, a battle action arms this frame. `NOT WIRED`; retail reaches it through a static actor template rather than a call. |
+| [`footstep`](src/footstep.rs) | The field movement cadence kernel (`FUN_80018DB0`). **Deliberately mislabelled**: retail's cadence drives the libpad *actuators*, not audio - it plays no footstep sound. The module docs enumerate each name that reads as audio and what it really is. |
 | [`test_sink`](src/test_sink.rs) | `TestAudioSink` - the device-free stand-in for `AudioOut`, so a headless test can drive the BGM/SFX plumbing. See below. |
 
 ## Driving the mixer without a device

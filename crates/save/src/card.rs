@@ -521,6 +521,79 @@ pub const RETAIL_CHAR_RECORD_HEADER_SIZE: usize = 0x3C8;
 /// i.e. `game+0x66F / 0xA83 / 0xE97 / 0x12AB`.
 pub const RETAIL_CHAR_RECORD_STRIDE: usize = 0x414;
 
+/// Byte offset (within the SC block) of the roster display-name list the
+/// save-select info panel reads: NUL-padded ASCII slots of
+/// [`RETAIL_PARTY_NAME_STRIDE`] bytes each, one per active party member
+/// (`game_data + 0x054 + k*0xC`; the "primary character display name" the
+/// [`RETAIL_CHAR_RECORD_HEADER_SIZE`] doc lists is slot 0 of this table).
+/// A byte scan across a real 9-save card puts every `Vahn`/`Noa`/`Gala`
+/// occurrence in an SC block at exactly two sites: this table and each
+/// character record's own name at [`crate::character::NAME_OFFSET`] - an
+/// early solo-party save populates only slot 0 here, which is what pins
+/// the table as the *party roster* rather than a fixed 3-name array.
+pub const RETAIL_PARTY_NAME_TABLE_OFFSET: usize = 0x254;
+/// Stride between roster display-name slots ([`RETAIL_PARTY_NAME_TABLE_OFFSET`]).
+pub const RETAIL_PARTY_NAME_STRIDE: usize = 0xC;
+/// Roster display-name slots (battle party maximum).
+pub const RETAIL_PARTY_NAME_SLOTS: usize = 3;
+
+/// Rename a character in a retail SC save block: every name field whose
+/// current NUL-terminated value equals `from` - across the roster name
+/// table and all four character records' display names - is rewritten to
+/// `to` (NUL-padded), and the block's additive checksum is restamped when
+/// anything changed. Returns the number of fields rewritten (0 when the
+/// name does not appear, e.g. a save from before that character joined).
+///
+/// `Err` if `to` does not fit the narrower site (the record name field is
+/// [`crate::character::NAME_LEN`] bytes including its NUL terminator) or
+/// is not plain ASCII, or if the block is shorter than [`BLOCK_SIZE`].
+pub fn rename_retail_character(sc_block: &mut [u8], from: &str, to: &str) -> Result<usize> {
+    use crate::character::{NAME_LEN, NAME_OFFSET};
+    if sc_block.len() < BLOCK_SIZE {
+        bail!("SC block too small: {} bytes", sc_block.len());
+    }
+    if to.len() >= NAME_LEN || !to.bytes().all(|b| b.is_ascii() && b != 0) {
+        bail!(
+            "replacement name {to:?} must be ASCII and at most {} bytes",
+            NAME_LEN - 1
+        );
+    }
+    let mut sites: Vec<(usize, usize)> = (0..RETAIL_PARTY_NAME_SLOTS)
+        .map(|k| {
+            (
+                RETAIL_PARTY_NAME_TABLE_OFFSET + k * RETAIL_PARTY_NAME_STRIDE,
+                RETAIL_PARTY_NAME_STRIDE,
+            )
+        })
+        .collect();
+    // All four roster slots: slot 3 (Terra) overlaps the story-flag
+    // bitmap from internal +0x2BC, but its name field (+0x2A7..+0x2B0)
+    // ends before the overlap begins, so writing it is safe.
+    sites.extend((0..4).map(|n| {
+        (
+            RETAIL_GAME_DATA_OFFSET
+                + RETAIL_CHAR_RECORD_HEADER_SIZE
+                + n * RETAIL_CHAR_RECORD_STRIDE
+                + NAME_OFFSET,
+            NAME_LEN,
+        )
+    }));
+    let mut changed = 0usize;
+    for (off, len) in sites {
+        let field = &mut sc_block[off..off + len];
+        let cur_len = field.iter().position(|&b| b == 0).unwrap_or(len);
+        if &field[..cur_len] == from.as_bytes() {
+            field.fill(0);
+            field[..to.len()].copy_from_slice(to.as_bytes());
+            changed += 1;
+        }
+    }
+    if changed > 0 {
+        restamp_sc_block_checksum(sc_block);
+    }
+    Ok(changed)
+}
+
 /// Maximum number of fully non-overlapping character record slots in the
 /// retail SC layout.
 ///
@@ -962,6 +1035,36 @@ fn bytes_to_ascii(b: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn rename_covers_both_name_sites_and_restamps() {
+        use crate::character::{NAME_LEN, NAME_OFFSET};
+        let mut block = vec![0u8; super::BLOCK_SIZE];
+        block[..2].copy_from_slice(&super::SAVE_BLOCK_MAGIC);
+        // Roster table slot 0 + character record 0 both say "Vahn".
+        block[super::RETAIL_PARTY_NAME_TABLE_OFFSET..super::RETAIL_PARTY_NAME_TABLE_OFFSET + 4]
+            .copy_from_slice(b"Vahn");
+        let rec0 =
+            super::RETAIL_GAME_DATA_OFFSET + super::RETAIL_CHAR_RECORD_HEADER_SIZE + NAME_OFFSET;
+        block[rec0..rec0 + 4].copy_from_slice(b"Vahn");
+        super::restamp_sc_block_checksum(&mut block);
+
+        let n = super::rename_retail_character(&mut block, "Vahn", "Lu").unwrap();
+        assert_eq!(n, 2, "both sites rewritten");
+        assert_eq!(
+            &block[super::RETAIL_PARTY_NAME_TABLE_OFFSET..][..3],
+            b"Lu\0"
+        );
+        assert_eq!(&block[rec0..rec0 + 3], b"Lu\0");
+        assert!(super::sc_block_checksum_valid(&block), "checksum restamped");
+        // A prefix must not match: "Va" stays.
+        assert_eq!(
+            super::rename_retail_character(&mut block, "L", "X").unwrap(),
+            0
+        );
+        // A too-long replacement is refused.
+        assert!(super::rename_retail_character(&mut block, "Lu", &"X".repeat(NAME_LEN)).is_err());
+    }
+
     use super::*;
 
     fn synth_card_with_one_save() -> Vec<u8> {

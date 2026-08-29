@@ -32,6 +32,7 @@ referenced by code, not analysis one-offs:
 | `recomp/` | Static-recomp differential-oracle tooling; see [`#recomp`](#recomp) below and [`docs/tooling/recomp-differential.md`](../docs/tooling/recomp-differential.md). |
 | `git-hooks/` | The shipped `pre-commit` hook (installed via `ci/install-hooks.sh`). |
 | [`lib/`](#lib) | Sourced bash helpers shared by the shell scripts: process control that cannot match the caller, and run-and-capture that reports the real exit code. |
+| `models/` | Blender-side mesh generators for the custom monster-model track (`generate_twintail_duelist.py`, `lu_twintails_mod.py`) - authoring companions to `legaia-patcher monster-model`. |
 | `engine/` | Engine-side `scenarios.toml` for the determinism replay harness (distinct from the capture manifest above). |
 | `replays/` | `j-replay-v1` record/replay fixtures for the determinism tests. |
 

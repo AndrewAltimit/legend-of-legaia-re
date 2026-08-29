@@ -13,7 +13,9 @@
 
 mod cli;
 mod commands;
+mod delilas_audit;
 mod monster_block;
+mod monster_model;
 mod randomize;
 mod save_icon;
 mod texture;
@@ -50,6 +52,13 @@ fn main() -> Result<()> {
         Cmd::Casino { input } => commands::cmd_casino(&input),
         Cmd::Fishing { input } => commands::cmd_fishing(&input),
         Cmd::DelilasPokes { custom_items } => commands::cmd_delilas_pokes(custom_items),
+        Cmd::DelilasVerify { input } => commands::cmd_delilas_verify(&input),
+        Cmd::DelilasAudit {
+            input,
+            baseline,
+            allow_kept_hammer,
+        } => delilas_audit::cmd_delilas_audit(&input, &baseline, allow_kept_hammer),
+        Cmd::ScusPokes { patched, baseline } => commands::cmd_scus_pokes(&patched, &baseline),
         Cmd::EarthEgg { input } => commands::cmd_earth_egg(&input),
         Cmd::Locations { input } => commands::cmd_locations(&input),
         Cmd::MonsterStats { input } => commands::cmd_monster_stats(&input),
@@ -65,6 +74,27 @@ fn main() -> Result<()> {
             id,
             dump.as_deref(),
             write.as_deref(),
+            output.as_deref(),
+            patch.as_deref(),
+        ),
+        Cmd::MonsterModel {
+            input,
+            id,
+            export,
+            obj,
+            texture,
+            allow_grow,
+            dry_run,
+            output,
+            patch,
+        } => monster_model::cmd_monster_model(
+            &input,
+            id,
+            export.as_deref(),
+            obj.as_deref(),
+            texture.as_deref(),
+            allow_grow,
+            dry_run,
             output.as_deref(),
             patch.as_deref(),
         ),

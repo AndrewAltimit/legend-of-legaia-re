@@ -21,22 +21,44 @@ directory) produced by `legaia-extract`
 This boots the scene `town01` (Rim Elm) straight off the disc: field
 rendering, BGM, NPC scripts, dialog, and the full gameplay loop - walking
 rolls the scene's own random encounters, a battle opens the command menu, and
-victory returns you to the field with XP, gold and drops. Keyboard defaults:
-arrows = D-pad, `Z` = Cross, `X` = Circle, `C` = Triangle, `V` = Square,
-`Esc` = quit. In-window extras: left-mouse drag orbits the camera, `T` cycles
-the camera-distance preset, `R` toggles precise free-angle movement (an opt-in
-enhancement - retail-style movement is the default), `F1` shows the engine's
-diagnostic text rows (off by default), `F2` mutes audio, `F3` swaps the field
-camera for the wide debug orbit, `F4` toggles the camera-occlusion fade (on by
-default: walls between the camera and your character dissolve to a dither so
-you can always see yourself; `--no-occlusion-fade` starts with it off).
+victory returns you to the field with XP, gold and drops.
 
-Window toggles that would otherwise sit on a bound key live on the F-keys, and
-that is not cosmetic: a window key arm runs **before** the pad lookup, so one
-parked on a bound letter deletes that button from the keyboard entirely. No
-letter key carries a window toggle - every one that did has moved to an F-key
-that the binding parser does not accept, so no rebinding can collide with
-one.
+Keyboard defaults are arrows = D-pad, then:
+
+| Key | Pad button |
+|---|---|
+| `Z` | Cross |
+| `S` | Circle |
+| `A` | Triangle |
+| `X` | Square |
+| `Q` / `W` | L1 / R1 |
+| `1` / `2` | L2 / R2 |
+| `Enter`, `Space` | Start |
+| `RShift` | Select |
+
+`Esc` quits. The browser play page ships a *different* default layout (`X` is
+Circle there, `C` / `V` carry Triangle / Square, and WASD doubles the arrows),
+so a key that works in the tab is not necessarily the same button in the
+window. `config show` prints the desktop table, including any rebinding.
+
+In-window extras: left-mouse drag orbits the camera, `T` cycles the
+camera-distance preset, `R` toggles precise free-angle movement (an opt-in
+enhancement - retail-style movement is the default), `I` toggles dynamic
+lighting (also opt-in, `--dynamic-lighting` to start with it on), `F1` shows
+the engine's diagnostic text rows (off by default), `F2` mutes audio, `F3`
+swaps the field camera for the wide debug orbit, `F4` toggles the
+camera-occlusion fade (on by default: walls between the camera and your
+character dissolve to a dither so you can always see yourself;
+`--no-occlusion-fade` starts with it off).
+
+No window toggle sits on a key the pad table can bind, and that is not
+cosmetic: a window key arm runs **before** the pad lookup, so one parked on a
+bindable key deletes that button from the keyboard entirely. The bindable
+vocabulary is the table above plus `C`, `V`, `D` and `E`. Every window toggle
+is either an F-key, which the pad lookup never resolves, or a letter outside
+that vocabulary (`I`, `R`, `T`, `Y`, and the minigame entries below), so no
+rebinding can collide with one.
+
 `--boot-ui` starts at the title screen → save-select flow instead of jumping
 into the scene.
 
@@ -216,11 +238,14 @@ dialog font at `extracted/font/`, which the pipeline writes by default (or
 
 ```bash
 ./asset-viewer prot extracted/PROT.DAT --cdname extracted/CDNAME.TXT   # archive browser
-./asset-viewer tim  extracted/tim_scan/<entry>/raw_off<HEX>.tim        # one texture
+./asset-viewer tim  extracted/tim_scan/<entry>/<tim-file>              # one texture
 ./asset-viewer tmd  extracted/tmd_scan                                 # cycle 3D meshes
 ./asset-viewer vab  extracted/PROT/<entry>.BIN --sample 0              # play a sample
-./asset-viewer field --scene town01                                    # playable field demo
+./asset-viewer field town01                                            # playable field demo
 ```
+
+The scene name is a positional argument here, not a `--scene` flag (`field`,
+`world` and `dialog` all take their subject that way).
 
 In the PROT browser: `N` / `P` = next/prev entry, `PgDn` / `PgUp` = jump 10,
 `Esc` = quit; each entry's format is auto-detected and the first viewable

@@ -30,6 +30,8 @@ out of scope here.
 
 ## Pipeline
 
-Leaf crate. Depended on by the format-parser crates (`asset`, `tmd`, `anm`,
-`engine-core`, …) wherever a raw little-endian read out of a disc buffer is
-needed.
+Leaf crate with no dependencies of its own. Depended on by `legaia-asset` and
+`legaia-engine-core` - the two crates that read the widest range of raw disc
+buffers - wherever a raw little-endian read out of one is needed. Other
+parser crates still carry their own private helpers; each is a candidate to
+fold in here.

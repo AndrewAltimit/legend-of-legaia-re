@@ -12,8 +12,8 @@ use legaia_patcher::drops::DropMode;
 
 use crate::util::{
     parse_arts_ap_cost, parse_arts_ap_grant, parse_arts_power, parse_attack_count_scale,
-    parse_exp_scale, parse_item_spec, parse_location_rename, parse_prize_price,
-    parse_seru_catch_rate, parse_stat_scale, parse_super_art_power,
+    parse_delilas_party, parse_exp_scale, parse_item_spec, parse_location_rename,
+    parse_prize_price, parse_seru_catch_rate, parse_stat_scale, parse_super_art_power,
 };
 
 #[derive(Parser)]
@@ -142,6 +142,55 @@ pub(crate) enum Cmd {
         #[arg(long)]
         custom_items: bool,
     },
+    /// Read-only: verify a patched image carries the current
+    /// `--delilas-party` build invariants. Detects the swap (hero-named
+    /// sibling monster blocks), then checks every rebuilt player battle
+    /// file: no `0xFE` equipment extras survive in any equipment assembly
+    /// (the Spirit-streak / foreign-pointer class), every hand is seated at
+    /// its wrist, and every skeleton part carries geometry. Use this on the
+    /// exact `.bin` you are about to play-test - it catches a rom built by
+    /// a stale patcher (cached wasm, old server) in seconds, before an
+    /// emulator session is wasted on it.
+    DelilasVerify {
+        /// Path to the patched disc image to verify (`.bin`, Mode 2/2352; a
+        /// `.cue` is accepted and resolved to the `.bin` it references).
+        #[arg(long)]
+        input: PathBuf,
+    },
+    /// Read-only defect battery for a `--delilas-party` image, measured
+    /// against the retail baseline: per-clip FK joint closures + posed
+    /// extents vs the baseline's own numbers, an animation-stream census
+    /// (base-archive lead-ins must stay retail - the battle plays them),
+    /// and welded-weapon hand-radius checks. Two discs in, verdicts out;
+    /// no emulator or save state needed.
+    DelilasAudit {
+        /// Path to the patched disc image (`.bin` / `.cue`).
+        #[arg(long)]
+        input: PathBuf,
+        /// Path to the retail baseline disc image (`.bin` / `.cue`).
+        #[arg(long)]
+        baseline: PathBuf,
+        /// Accept a kept welded weapon fist (a `--delilas-che-hammer`
+        /// comparison build): the hand-radius battery reports the welded
+        /// weapon as informational instead of a FAIL.
+        #[arg(long)]
+        allow_kept_hammer: bool,
+    },
+    /// Read-only: emit RAM pokes (`0xADDR:0xWORD` lines) for every SCUS word
+    /// where a patched disc differs from a baseline disc. A save state carries
+    /// the whole resident SCUS, so a probe that loads a state from one disc
+    /// era onto a newer patched disc runs fresh overlay code against stale
+    /// SCUS injections - a per-frame dynarec fault in the injection arena.
+    /// Applying these pokes after the state load makes the resident SCUS
+    /// byte-match the disc under test (the e2e harness consumes this).
+    ScusPokes {
+        /// The patched disc image under test.
+        #[arg(long)]
+        patched: PathBuf,
+        /// The baseline disc (usually the retail image).
+        #[arg(long)]
+        baseline: PathBuf,
+    },
     /// Read-only: show the Earth Egg coin threshold (the Sol Tower Prize Counter
     /// exchange) - the value the `--earth-egg-price` editor changes.
     EarthEgg {
@@ -190,6 +239,50 @@ pub(crate) enum Cmd {
         /// `--output` and/or `--patch`.
         #[arg(long)]
         write: Option<PathBuf>,
+        /// Write the patched image here (contains Sony bytes - local play
+        /// only, never redistribute).
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Write a portable PPF 3.0 patch here (safe to share).
+        #[arg(long)]
+        patch: Option<PathBuf>,
+    },
+    /// Export a monster's 3D model (mesh + texture page + baked colours) as
+    /// editable OBJ+MTL+PNG, or replace it with a custom model. A replacement
+    /// keeping the retail `o part_NN` group count performs every retail
+    /// battle animation - the streams pose parts rigidly by index. Written
+    /// back as the same same-size in-place slot edit `monster-block` uses.
+    MonsterModel {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references). Never
+        /// modified.
+        #[arg(long)]
+        input: PathBuf,
+        /// 1-based monster id (`monster-stats` lists the populated ids).
+        #[arg(long)]
+        id: u16,
+        /// Export the model here: writes `<stem>.obj`, `<stem>.mtl`,
+        /// `<stem>.png`.
+        #[arg(long, value_name = "STEM")]
+        export: Option<PathBuf>,
+        /// Replacement model (Wavefront OBJ, `o part_NN` groups, raw GTE
+        /// units). Requires `--texture`, plus `--output`/`--patch` or
+        /// `--dry-run`.
+        #[arg(long)]
+        obj: Option<PathBuf>,
+        /// Replacement texture page (PNG, same dimensions as the retail
+        /// page - see the exported PNG).
+        #[arg(long)]
+        texture: Option<PathBuf>,
+        /// Permit the decoded block to grow past its retail size (the battle
+        /// heap budget is tuned to retail; growth risks the loader's
+        /// unchecked allocation). The 0x14000 compressed-slot cap always
+        /// applies.
+        #[arg(long)]
+        allow_grow: bool,
+        /// Validate + report sizes without writing anything.
+        #[arg(long)]
+        dry_run: bool,
         /// Write the patched image here (contains Sony bytes - local play
         /// only, never redistribute).
         #[arg(long)]
@@ -730,6 +823,45 @@ pub(crate) struct RandomizeArgs {
     /// the Honey as the course's full-clear reward.
     #[arg(long, default_value_t = false)]
     pub(crate) custom_items: bool,
+    /// **Delilas party swap**: play as the Delilas siblings while the story's
+    /// ravine duels (and the Muscle Dome Master legs) field Vahn / Noa / Gala
+    /// instead. A battle-model + name identity swap: each character keeps
+    /// their own animations, arts, stats and story, but wears the mapped
+    /// sibling's model; each sibling's monster block wears the mapped
+    /// character's battle model under the retail Delilas movesets, renamed to
+    /// match. The value maps the three siblings onto Vahn, Noa, Gala in
+    /// order: any permutation of `gi`, `lu`, `che` (e.g. `--delilas-party
+    /// lu,gi,che` puts Lu on Vahn). New-game party names follow the mapping
+    /// (existing saves keep their stored names). The field walking models
+    /// rebuild from the same sibling models, and the party's battle grunt
+    /// voices resample from the siblings' own voice banks; what the
+    /// Tactical Arts shout banks carry is picked by
+    /// `--delilas-arts-voice`.
+    #[arg(long, value_name = "V,N,G", value_parser = parse_delilas_party)]
+    pub(crate) delilas_party: Option<legaia_patcher::delilas_party::PartyMapping>,
+    /// With `--delilas-party`: keep Che's welded giant hammer on his
+    /// swapped mesh instead of replacing it with a mirrored fist and
+    /// fusing the host's own weapon into the hand. Comparison build:
+    /// clips that assume a hand-sized part swing the hammer wide, and
+    /// Che fights with the hammer regardless of his equipped weapon.
+    #[arg(long)]
+    pub(crate) delilas_che_hammer: bool,
+    /// With `--delilas-party`: what the Tactical Arts shout banks
+    /// (XA2/XA4/XA6) carry. `original` (default) keeps the retail
+    /// Vahn / Noa / Gala shouts; `adjusted` re-voices them toward each
+    /// mapped sibling with the tuned pitch/formant map; `removed`
+    /// silences arts shouts (attack grunts remain).
+    #[arg(long, value_name = "MODE", default_value = "original")]
+    pub(crate) delilas_arts_voice: legaia_patcher::delilas_voice_fx::ArtsVoiceMode,
+    /// With `--delilas-party`: how much of the hero's Tactical Arts kit
+    /// becomes the sibling's. `hybrid` (default) keeps every host art's
+    /// own animation and only reskins one Hyper into the sibling's
+    /// signature special; `delilas` rebuilds the whole art-stream
+    /// archive from the sibling's own motions, renames each surviving
+    /// art after the clip it plays, and blanks every art the Super and
+    /// Miracle Arts do not need out of the matcher.
+    #[arg(long, value_name = "MODE", default_value = "hybrid")]
+    pub(crate) delilas_moves: legaia_patcher::delilas_party::DelilasMoveMode,
     /// **Show Super Arts on the in-battle move list**: list a character's
     /// Super Arts on the Tactical-Arts list the Triangle button opens in
     /// battle, which retail never draws at all. A Super Art appears once you

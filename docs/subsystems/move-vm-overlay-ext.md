@@ -25,7 +25,7 @@ So this overlay-escape, despite being an indirect-jump-table dispatch on a bytec
 
 The dispatcher and its JT live in **PROT 0897 alone**. The earlier "many overlays, each with its own JT contents" reading is **falsified**:
 
-- The seven capture-derived dumps (`overlay_0897` / `world_map` / `world_map_walk` / `dialog_mc4` / `dialog_typing` / `cutscene_dialogue` / `cutscene_mapview` `_801d362c.txt`) are **byte-identical disassembly** - one 0897-resident function observed under different scenario labels (world-map, dialog and mapview-cutscene play are all 0897-hosted modes). The `overlay_0897` static dump merely has coverage gaps where Ghidra couldn't follow the JT flow.
+- The `0897` **static** dump plus the six **capture-derived** ones (`world_map` / `world_map_walk` / `dialog_mc4` / `dialog_typing` / `cutscene_dialogue` / `cutscene_mapview` `_801d362c.txt`) all disassemble **byte-identically**, 1293 instructions each - one 0897-resident function observed under different scenario labels (world-map, dialog and mapview-cutscene play are all 0897-hosted modes). The static dump has no coverage gaps: Ghidra followed the JT flow.
 - In the disc images of every other mapped slot-A overlay the VA `0x801D362C` holds unrelated bytes: menu 0899 / fishing 0972 / slot-machine 0973 / baka 0976 / dance 0980 carry mid-function code of their own, cutscene_str 0970 is zero-fill there, battle-action 0898 has a different battle function (a save-block `0x80084140` walker) at that address, and the title overlay holds data tables. None has a 61-pointer JT at `0x801CE868` (0897's is at file `+0x50`; the others carry path strings or unrelated data there).
 
 Since the SCUS opcode arm calls the **fixed VA** `0x801D362C`, op `0x2F` is only executable while the field overlay is resident - in any other overlay generation it would jump into unrelated code. Battle-side move records (monster archive, summon stagers) therefore cannot use op `0x2F`; the extension sub-ops are a field/world-map/dialog-mode vocabulary.
@@ -155,7 +155,9 @@ The re-pack is a full 32-bit `sw` (`sw v1,0x0(s0)` at `0x801D3F84`), so the pack
 
 ### Fourth flag bank (shared with the field VM)
 
-The fourth flag bank at `DAT_80085758` is shared between the move VM (sub-ops `0x13` / `0x14` predicate, `0x1C` / `0x1D` set / clear) and the field VM (high-byte default routes `0x5x` set / `0x6x` clear / `0x7x` test). `engine-core::World` exposes it as a single lazily-grown `system_flags: Vec<u8>` with MSB-first bit ordering (mirroring `FUN_8003CE08`'s `0x80 >> (idx & 7)`). The field VM's `idx` encoding `((opcode_byte & 0x8F) << 8) | operand_byte` ranges over `0..=0x87FF`, which is why the bank can't be a fixed-size 256-bit array.
+The fourth flag bank at `DAT_80085758` is shared between the move VM (sub-ops `0x13` / `0x14` predicate, `0x1C` / `0x1D` set / clear) and the field VM (high-byte default routes `0x5x` set / `0x6x` clear / `0x7x` test). `engine-core::World` exposes it as a single lazily-grown `system_flags: Vec<u8>` with MSB-first bit ordering (mirroring `FUN_8003CE08`'s `0x80 >> (idx & 7)`). 
+
+The field VM's `idx` encoding is `((opcode_byte & 0x8F) << 8) | operand_byte`, ranging over `0..=0x8FFF` in retail: the route select at `0x801E3570` tests the **raw** opcode byte (`andi v1,v0,0x70`), so `0xF0..0xFF` reach the same routes and `0xFF & 0x8F = 0x8F` tops the index out. That is why the bank cannot be a fixed-size 256-bit array. The port's match arm is narrower - `0x50..=0x77`, which caps the index at `0x87FF` - and does not cover masked opcodes `0x78..=0x7F`.
 
 ### Player-relative cluster close-out (`0x3A` / `0x3B` / `0x3C`)
 

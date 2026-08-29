@@ -1,41 +1,56 @@
 # legaia-engine-vm
 
-Clean-room Rust ports of Legaia's runtime VMs.
+Clean-room Rust ports of Legaia's runtime VMs, one module each. Every one is
+written from the decompiled source in `ghidra/scripts/funcs/<addr>.txt` plus
+the format notes in `docs/subsystems/`, with no static-recompiled bytes from
+the original executable. The sections below cover the VMs proper; the rest of
+the crate is the battle-overlay and SCUS leaf kernels those VMs sit among.
 
-Three VMs are bundled as separate modules. Each is written from the
-decompiled source in `ghidra/scripts/funcs/<addr>.txt` plus the format
-notes in `docs/subsystems/`, with no static-recompiled bytes from the
-original executable.
+The crate also ships the `field-disasm` binary - a thin CLI over the
+side-effect-free field-VM disassembler this crate re-exports from
+`legaia-asset` (`field_disasm`). `field-disasm file` walks a raw script body,
+`scene-event-scripts` walks every record of a prescript container, and
+`scan-prot` sweeps a whole extracted `PROT.DAT` for FMV triggers. For a
+scene's genuine per-scene scripts - which live LZS-compressed inside the
+scene's MAN - use `legaia-engine man-scripts` instead.
 
 ## Contents
 
-- [`actor_vm` - `FUN_801D6628`](#actor_vm---fun_801d6628)
+- [The window-widget VM - `FUN_801D6628`](#the-window-widget-vm---fun_801d6628)
 - [`field_vm` - `FUN_801DE840`](#field_vm---fun_801de840-the-fieldevent-script-vm)
 - [`effect_vm` - `FUN_801DE914` / `FUN_801DFDF8` / `FUN_801E0088`](#effect_vm---fun_801de914--fun_801dfdf8--fun_801e0088)
 - [`move_vm` - `FUN_80023070`](#move_vm---fun_80023070)
+- [`motion_vm` - `FUN_8003774C` / `FUN_80038158`](#motion_vm---fun_8003774c--fun_80038158)
 - [`world_map` - `FUN_801DA51C`](#world_map---fun_801da51c)
 - [`escape_timer` - `FUN_801D2EBC`](#escape_timer---fun_801d2ebc)
 - [`actor_tick` - `FUN_80021DF4`](#actor_tick---fun_80021df4)
 - [`status_effects`](#status_effects)
 - [`scus_core_helpers`](#scus_core_helpers)
+- [`battle_action` - `FUN_801E295C`](#battle_action---fun_801e295c)
 - [`battle_cam_script` - `FUN_801D5854`](#battle_cam_script---fun_801d5854)
 - [Battle-overlay leaves outside the action SM](#battle-overlay-leaves-outside-the-action-sm)
 - [`field_party_cursor` - `FUN_801F1278`](#field_party_cursor---fun_801f1278)
 - [`battle_formulas`](#battle_formulas)
 - [See also](#see-also)
 
-## `actor_vm` - `FUN_801D6628`
+## The window-widget VM - `FUN_801D6628`
 
-Sprite / actor script VM. The first script VM identified in retail
-Legaia. Lives in the title-screen / field overlay loaded into the
-`0x801C0000+` window at runtime. Small (612 bytes, 13 opcodes) and
-well-bounded - the smallest target we have for a runtime-faithful port.
+The first script VM identified in retail Legaia, and the crate's namesake -
+it lives at the **crate root** (`run` + the `Host` trait), not in a submodule.
+Historically called the "actor / sprite VM"; it is really the **menu
+overlay's window-widget script interpreter** (PROT 0899, slot-A base
+`0x801CE818`, dispatch jump table at `0x801CED70`), and `operand_b` is a
+window id into the menu window-descriptor table (`legaia_asset::menu_windows`)
+rather than a field actor. Small (612 bytes, 13 opcodes) and well-bounded -
+the smallest target we have for a runtime-faithful port. Its programs are data
+resident in the menu overlay itself; see
+[`docs/formats/window-script.md`](../../docs/formats/window-script.md).
 
 ### Bytecode layout (4 bytes per instruction)
 
 ```text
 byte 0:    opcode
-byte 1:    operand_b - typically an actor id
+byte 1:    operand_b - a window id
 bytes 2-3: operand_w - little-endian u16, typically packed (x, y)
 ```
 
@@ -52,10 +67,11 @@ Execution stops on opcode `0x00`. Opcodes outside `1..=0xD` are no-ops.
 | `0x04` | `DeleteSprite` | Delete the sprite for `operand_b`. |
 | `0x05` | `GlobalUpdate` | Tick the global sprite system. |
 | `0x06` | `ClearField20` | Clear actor `field20` if actor exists. |
-| `0x07`–`0x0D` | `Nop` / reserved | Fall through to default. |
+| `0x07` | `Nop` | Falls through to default. |
 | `0x08` | `Effect` | Trigger actor effect. |
 | `0x09` | `MotionAt` | Motion to packed `operand_w`. |
 | `0x0A` | `EffectMotion` | Capture target, trigger effect, respawn, motion. |
+| `0x0B`–`0x0D` | reserved `Nop` | Fall through to default. |
 
 ### Packed-position encoding
 
@@ -97,6 +113,24 @@ cannot depend on it.
 (skip when wait_timer ≥ 0, run VM, check HALT flag). Op `0x2F` escapes
 into the overlay-resident `FUN_801D362C` extension VM (61 sub-opcodes);
 the dispatch table is ported in `move_vm_overlay_ext.rs`.
+
+## `motion_vm` - `FUN_8003774C` / `FUN_80038158`
+
+Retail carries **two** per-actor motion VMs and both are ported.
+`motion_vm` is `FUN_8003774C`: pursue / patrol / face-target, the NPC
+movement, camera follow paths and "face the speaker" cinematic posing.
+Each script entry is `1 + N` bytes, with bit `0x80` of the op byte selecting a
+target actor first (`0xF8` = self, `0xFB` = linked); dispatch is a 22-entry
+jump table at `0x80010EE0` indexed by `(op & 0x7F) - 0x37`.
+
+`ambient_motion` is the second one, `FUN_80038158` - the ambient / idle
+**facing** channel whose bytecode arrives as MAN tail-section 1
+(`legaia_asset::man_motion`). Its two rotate ops both aim at the same
+eight-point compass LUT the walk ops snap to, so every ambient turn ends on a
+compass point. Without it an engine NPC holds one heading forever where a
+retail one slowly looks around. `motion_pause` is the sibling kick
+(`FUN_8003C9AC`) a field interaction tail-calls: it snaps every wandering
+moving-class NPC back onto its default motion cycle while the dialog runs.
 
 ## `world_map` - `FUN_801DA51C`
 
@@ -259,7 +293,7 @@ Five more `0898` bodies whose kernels are ported here, each with its own
 | `battle_ground_grid` | `FUN_801D02C0` | The procedural battle floor's CPU side: grid origin, the three-valued per-cell depth class, the `3x3` projection lattice, the four-corner screen reject and the 2x2 sub-tile UVs. |
 | `battle_scatter` | `FUN_801E0080` | The arena's emitter/particle pools: record layouts, both script advances, the countdown drain, the position integration, the brightness ramp and the mirror-bit UVs. |
 | `battle_arts_auto_combo` | `FUN_801F0450` | The AI-side Arts assembler's two arms - the learned-arts auto-fill and the weighted candidate pool with its AP-gauge spend loop. |
-| `battle_attack_camera` | `FUN_801D71B8` | The per-art attack camera's gate, pose seed, character / art dispatch and animation-frame push; the seventeen per-art arms need the `0x801F4E10` table parsed first. |
+| `battle_attack_camera` | `FUN_801D71B8` | The per-art attack camera: gate, pose seed, character / art dispatch and animation-frame push. Dispatch is three per-character jump tables (17 / 20 / 17 slots) reaching 13 distinct arms; the row folds come from `legaia_asset::battle_attack_camera_table`. |
 | `battle_value_readout` | `FUN_801E805C` | The battle value readout: the landed-hit numeral's sheet, cells and pop/rise envelope, plus the multi-cast half's decimal split, teardown pairing, slot-to-widget indirection and label quad. |
 | `battle_approach` | `FUN_801DF570` | The attack-approach distance clamp: the projected attacker/target separation and the `[3d/4, d]` band a requested step is clamped into. |
 | `battle_party_panel` | `FUN_801DBB8C`, `FUN_801DBC30`, `FUN_801D84C0` | The battle party-name panels - the label-actor open/teardown pair over `0x801F4E08`, the per-party-size anchors, the all-slots actor reset, and the label-strip blit. |

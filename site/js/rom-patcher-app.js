@@ -12,7 +12,8 @@
  * jewel_fix, approach_softlock_fix, delilas_challenge, custom_items, fishing_prices, location_renames,
  * earth_egg_price, arts_powers, super_art_powers,
  * arts_ap_grants, arts_ap_costs, spirit_ap, damage_ap, enemy_stat_scale,
- * exp_scale, seru_catch_rate, enemy_attack_count, progress?)
+ * exp_scale, seru_catch_rate, delilas_party, delilas_arts_voice,
+ * delilas_moves, enemy_attack_count, progress?)
  * -> Promise<{ data, summary, seed, lang }>`, `resolve_seed(str)`,
  * `validate_lang_pack(image, yaml) -> { ok, language, applied, skipped, message, report }`,
  * `export_lang_pack(image, language) -> yaml_string`, and
@@ -64,8 +65,9 @@ let wasmMod = null;
 async function ensureWasm(setStatus) {
   if (wasmMod) return wasmMod;
   setStatus('Loading patcher (WASM) ...');
-  wasmMod = await import('../wasm/legaia_web_viewer.js');
-  await wasmMod.default();
+  const v = window.LEGAIA_WASM_V || '0';
+  wasmMod = await import('../wasm/legaia_web_viewer.js?v=' + v);
+  await wasmMod.default(new URL('../wasm/legaia_web_viewer_bg.wasm?v=' + v, import.meta.url));
   return wasmMod;
 }
 
@@ -1735,7 +1737,7 @@ const PRESET_BASE = {
   drops: 'none', encounters: 'none', encounter_scope: 'scene', soloStrong: false, fleeExp: false, chests: 'none',
   shops: 'none', casino: 'none', steals: 'none', arts: 'none', doors: 'none',
   door_coupling: 'coupled', houseDoors: false, equipmentDrops: false, seruTrade: false,
-  enemyAlly: false, shinySeru: false, showSuperArts: false, jewelFix: false, approachFix: false, delilasChallenge: false, customItems: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', superArtPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '', attackCount: '',
+  enemyAlly: false, shinySeru: false, showSuperArts: false, jewelFix: false, approachFix: false, delilasChallenge: false, customItems: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', superArtPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '', delilasParty: '', delilasArtsVoice: 'original', delilasMoves: 'hybrid', attackCount: '',
   startingItems: 0, doorOfWind: false, incense: false,
   speedChain: false, chickenHeart: false, goodLuckBell: false,
   allWarps: false,
@@ -1835,6 +1837,17 @@ function init() {
   const approachFixChk = $('rom-approach-fix');
   const delilasChallengeChk = $('rom-delilas-challenge');
   const customItemsChk = $('rom-custom-items');
+  const delilasPartySel = $('rom-delilas-party');
+  const delilasArtsVoiceSel = $('rom-delilas-arts-voice');
+  const delilasArtsVoiceRow = $('rom-delilas-arts-voice-row');
+  const delilasMovesSel = $('rom-delilas-moves');
+  const delilasMovesRow = $('rom-delilas-moves-row');
+  // The arts-voice sub-option only means anything with the swap on.
+  const syncDelilasArtsRow = () => {
+    delilasArtsVoiceRow.hidden = !delilasPartySel.value;
+    delilasMovesRow.hidden = !delilasPartySel.value;
+  };
+  delilasPartySel.addEventListener('change', syncDelilasArtsRow);
   const fishingPriceInput = $('rom-fishing-price');
   const renameLocationInput = $('rom-rename-location');
   const earthEggPriceInput = $('rom-earth-egg-price');
@@ -2111,6 +2124,10 @@ function init() {
     approachFixChk.checked = cfg.approachFix;
     delilasChallengeChk.checked = cfg.delilasChallenge;
     customItemsChk.checked = cfg.customItems;
+    delilasPartySel.value = cfg.delilasParty ?? '';
+    delilasArtsVoiceSel.value = cfg.delilasArtsVoice ?? 'original';
+    delilasMovesSel.value = cfg.delilasMoves ?? 'hybrid';
+    syncDelilasArtsRow();
     fishingPriceInput.value = cfg.fishingPrice || '';
     renameLocationInput.value = cfg.renameLocation || '';
     earthEggPriceInput.value = cfg.earthEggPrice || '';
@@ -2371,6 +2388,9 @@ function init() {
     // Seru catch rate: every flat percent is a real override (100% is not the
     // identity - retail rates vary per monster), so send whatever is set.
     const seruCatchRate = seruCatchChk.checked ? String(seruCatchSlider.value) : '';
+    const delilasParty = delilasPartySel.value;
+    const delilasArtsVoice = delilasParty ? delilasArtsVoiceSel.value : '';
+    const delilasMoves = delilasParty ? delilasMovesSel.value : '';
     // Enemy attack count: a multiplier like the EXP scale - "enabled at 1.0x"
     // is the identity and collapses to '' (retail).
     const attackCountNum = attackCountChk.checked ? Number(attackCountSlider.value) : 1;
@@ -2442,7 +2462,8 @@ function init() {
       startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !showSuperArts && !jewelFix && !approachFix && !delilasChallenge && !customItems &&
       !fishingPrice && !renameLocation && !earthEggPrice && !artsPower && !superArtPower &&
       !artsApGrant && !artsApCost &&
-      !spiritAp && !damageAp && !enemyStatScale && !expScale && !seruCatchRate && !attackCount
+      !spiritAp && !damageAp && !enemyStatScale && !expScale && !seruCatchRate && !delilasParty &&
+      !attackCount
     );
     if (!baseActive && texSpecs.length === 0) {
       setStatus('Enable at least one option (pick a preset, a language, a texture, or flip a toggle).', 'err');
@@ -2478,7 +2499,7 @@ function init() {
       let summaryText = '';
       let langReport = null;
       if (baseActive) {
-        const result = await mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate, superArtPower, showSuperArts, attackCount, onPatchProgress);
+        const result = await mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate, delilasParty, delilasArtsVoice, delilasMoves, superArtPower, showSuperArts, attackCount, onPatchProgress);
         data = result.data;
         usedSeed = result.seed;
         summaryText = result.summary || '';

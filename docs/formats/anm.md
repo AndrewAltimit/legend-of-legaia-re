@@ -470,7 +470,7 @@ exactly:
     record_size = 16 + 8 * (a & 0xFF) * b
 ```
 
-verified byte-exact across all **296 records** in the 5 pinned scenes (and
+verified byte-exact across all **310 records** in the 5 pinned scenes (and
 across every other scene's bundle the corpus sweep finds; `f(a,b) == size`
 falls out 100%). The runtime layout (traced through
 `ghidra/scripts/funcs/8001b964.txt` - the per-actor

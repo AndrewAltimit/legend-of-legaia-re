@@ -19,9 +19,9 @@ Not finding an address here does not mean it is unknown - this directory covers 
 | Page | Covers |
 |---|---|
 | [`functions/asset-loading.md`](functions/asset-loading.md) | Asset loading + dispatch; per-stage asset table machinery; disc / loader chain; scene / stage init (mode-0x02 loader callees). |
-| [`functions/runtime-libs.md`](functions/runtime-libs.md) | PSX runtime / standard libraries (libgte, BIOS veneers); CD / file-system (libcd-style); helpers; stub helpers. |
+| [`functions/runtime-libs.md`](functions/runtime-libs.md) | PSX runtime / standard libraries (libgte, BIOS veneers); CD / file-system (libcd-style); helpers; static actor templates (the 24-byte records whose tick pointer is a routine's only reference); stub helpers. |
 | [`functions/game-modes.md`](functions/game-modes.md) | Input + debug subsystem; move / animation subsystem; game-mode state machine; title overlay. |
-| [`functions/battle.md`](functions/battle.md) | Battle subsystem; on-screen elements (HUD + 2D sprite/effect list); per-frame draw; sparring-tutorial overlay (PROT 0967); command-block persistence + target menu (overlay 0898); field->battle transition overlay. |
+| [`functions/battle.md`](functions/battle.md) | Battle subsystem; on-screen elements (HUD + 2D sprite/effect list); per-frame draw; sparring-tutorial overlay (PROT 0967); command-block persistence + target menu (overlay 0898); field->battle transition overlay; unreferenced SCUS entry points. |
 | [`functions/script-vms.md`](functions/script-vms.md) | Script VMs; field-locomotion math helpers. |
 | [`functions/renderer.md`](functions/renderer.md) | Renderer; renderer / GPU primitives; ANM animation container; MES / dialog text interpreter; dialog-overlay actor-frame helpers. |
 | [`functions/audio.md`](functions/audio.md) | Audio - the libsnd / libspu stack, SsAPI sequencer, SPU transfer engine, XA streaming. |

@@ -117,6 +117,18 @@ The gate is `beq v0,zero,0x8003E25C` at `0x8003E1FC`, so the **zero** arm is the
 
 The same pattern (`h:\mpack\…` paths + per-record TOC at a small data structure) is the shape we expect for the rest of the still-TBD audio formats - read the `FUN_8003E104` dump as the canonical example.
 
+### Hero victory voices - the tail clips of `monster.snd`
+
+`monster.snd`'s TOC (count word `0xCE` at file offset `+4`, then sector offsets) indexes more than the per-monster banks: its **tail clips carry the party's victory-pose voice lines**, streamed by the same `FUN_8003E104` at results time - which is why these vocals survive any sweep of the `XA/` CD-audio files. Runtime-confirmed via recomp CD-sector capture: a forced weak victory reads exactly the selected clip's sectors at pose time.
+
+Selection, all in the results sequencer `FUN_8004E568` (see `ghidra/scripts/funcs/8004e568.txt`):
+
+1. **Pose tier** from the pose actor's HP: `cur >= 3/4·max` → tier 0, `>= 1/2` → 1, `>= 1/4` → 2, below → 3; any status in mask `0x107B` at `+0x16E` forces tier 4. Tiers 2-3 roll into the weak arm with probability 1/2 and 3/4.
+2. **Pose action id** (`0x11..=0x18`) from the per-character 6-byte table at SCUS `0x800788A0`: columns 0-1 the healthy pair, 2-3 the alternate pair, 4-5 the weak pair. Action id − `0x11` = the entry index in the character's base "ME" win-pose archive (readef slot `3·char + 2`); the weak entries 4/5 are the near-static breathing streams the sequencer **loops**, the others play one-shot.
+3. **Voice clip byte** at SCUS `0x80078867 + action + char_id·8` (clip = byte − 1), fed to `FUN_8003E104(clip, 7, dst)`. Per-character clip bands: Vahn `0xB8..=0xBC`, Gala `0xBD..=0xC3`, Noa `0xC4..=0xCB`, fourth-slot `0xCC` (constant row).
+
+The `gp+0x9F4`-keyed bark jukebox inside the same function (ids `0x19F`-`0x1AF` → `XA20`/`XA21`/`XA22`) is a **different, special-sequence path**: in captured ordinary victories `gp+0x9F4` is never written and no XA plays at pose time.
+
 ## BGM dispatch
 
 The field VM's opcode `0x35` writes the BGM ID to `_DAT_8007BAC8`. `FUN_800243F0` (the per-frame asset poller) resolves it to a PROT index - `bgm_id < 2000` is scene-local, `bgm_id >= 2000` is a global pool. There's no literal BGM table; the resolution is a PROT-relative offset into the [CDNAME](../formats/cdname.md) per-scene block.

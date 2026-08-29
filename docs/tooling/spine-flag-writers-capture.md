@@ -70,11 +70,11 @@ directly from each SC block's bitmap (block offset `0x14C0`, mirroring RAM
 |---|---|---|---|
 | Zeto write (`0x8007b7fc=0x4B`) | **PRO-01** | keikoku + dolk done, Zeto not beaten; tightest pre-trigger | PRO-05 |
 | flag `0x142` (dolk clear) | **PRO-00** | everything unset; play through the dolk dungeon to its clear beat | - |
+| flag `0x482` (mist walls) | (not on this card) | `0x482` is unset in all 15 slots; no catalogued save reaches it | see note below |
 
 Load saves **by name** on the in-game load screen, never by block position: the
 card's physical block order does not follow the PRO numbering (verify with
 `save-tool saves <card>`; e.g. PRO-01 sits mid-card, after PRO-03/04/05).
-| flag `0x482` (mist walls) | (not on this card) | `0x482` is unset in all 15 slots; no catalogued save reaches it | see note below |
 
 PRO-00 is also a viable single start for a forward run past the Caruban beat
 (`0x142`). (The old `jou`-side Zeto battle-id write it once targeted was

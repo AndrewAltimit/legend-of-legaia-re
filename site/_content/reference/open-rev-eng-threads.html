@@ -95,6 +95,18 @@
         <td>The chrome, the seat and the frame arithmetic are captured on the same banner surface mid-fight. What is owed is only which placement record the transient intro instance raises. <a href="#d-intro-banner">details &darr;</a></td>
         <td><a href="../subsystems/battle.html">battle</a></td>
       </tr>
+      <tr>
+        <td>Can a scene TMD pack member be grown in place?</td>
+        <td><span class="tag tag-open">open</span></td>
+        <td>Members <code>106</code>/<code>107</code>/<code>108</code> of PROT entry <code>0639</code> are the Delilas siblings' field NPC meshes, and the pack's 112 members tile its declared <code>347476</code>-byte stream with zero internal slack &mdash; so a larger mesh needs the pack rebuilt rather than patched, and the Nivora field-form swap is blocked on that. Closing it means enumerating what outside the pack holds a byte offset <em>into</em> it: placements name a member index, but the scene bundle's descriptor and the scene ANM records are unchecked.</td>
+        <td><a href="../formats/man-relocation.html">man-relocation</a></td>
+      </tr>
+      <tr>
+        <td>Is any of an enemy signature cast's choreography data-driven?</td>
+        <td><span class="tag tag-open">open</span></td>
+        <td>The three Delilas cast modules reach the pool spawner <code>FUN_80050ED4</code> from hardcoded <code>jal</code> sites &mdash; 15 in PROT <code>0958</code>, 41 in <code>0959</code>, 24 in <code>0960</code> &mdash; each passing a module-resident record by absolute pointer. Nothing on that path takes an id, so a player art's eight-record effect script has no way to name one, and the fire / lift / camera of a reskinned signature move stay behind. Closing it means deciding whether a duplicated parameter block plus one reachable spawn site can be driven from the art path.</td>
+        <td><a href="../tooling/randomizer.html">randomizer</a></td>
+      </tr>
     </tbody>
   </table>
 

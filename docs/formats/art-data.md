@@ -7,6 +7,7 @@ Implementation: [`crates/art`](../../crates/art/README.md).
 ## Contents
 
 - [Where the data lives](#where-the-data-lives)
+- [Confidence](#confidence)
 - [Action Constants](#action-constants)
 - [Art record layout](#art-record-layout)
   - [Fixed prefix](#fixed-prefix)
@@ -33,11 +34,27 @@ Implementation: [`crates/art`](../../crates/art/README.md).
 | Noa art records (RAM)  | `0x80176998` (first record) onwards |
 | Gala art records (RAM) | `0x8018BA54` (first record) onwards |
 | Learned Art Constants (RAM) | Vahn `0x8008488D`, Noa `0x80084CA1`, Gala `0x8008506C` |
-| On-disc source | PROT entry `0x05C4` (Inferred, see warning) |
+| On-disc source | Per-character player-data `record0` - extraction `0863` Vahn / `0864` Noa / `0865` Gala |
 | Miracle Art trigger entries (RAM `801F` segment) | Vahn's Craze `0x64F4`, Noa's Ark `0x6504`, Biron Rage `0x6514` |
-| Miracle Art trigger entries (PROT `0x05C4` area) | Vahn's Craze `0x0CDC`, Noa's Ark `0x0CEC`, Biron Rage `0x0CFC` |
+| Miracle Art trigger entries (record-file offsets) | Vahn's Craze `0x0CDC`, Noa's Ark `0x0CEC`, Biron Rage `0x0CFC` |
 
-Confidence: **Inferred** - the per-record damage / animation / effect schema below comes from external RE work cross-referenced with Meth962's earlier observations; a watchpoint trace pinning the runtime read sites is still pending.
+**"PROT entry `0x05C4`" is not a location.** `0x05C4` = 1476 is past the last
+PROT index, and the external RE work this page draws on used it as a label for
+the record file rather than as an archive coordinate. The records live in the
+player-data `record0` above; the `0x05C4`-area offsets in the third row are
+offsets inside that file.
+
+## Confidence
+
+Split by part, not per-page:
+
+- **Confirmed** - the command-sequence prefix at record `+0` and the fixed
+  `0xD0` record stride (savestate-proven, both copies located); the damage
+  power byte at `record0 +0x24` (disassembly-traced read chain below); the
+  SCUS arts-name table (`DAT_80075EC4`).
+- **Inferred** - the exact byte offsets of the variable-field tail (damage /
+  animation / effect fields after the prefix), which come from external RE work
+  cross-referenced with Meth962's earlier observations.
 
 > **Where the button combos live - there are TWO copies (savestate-proven).**
 > The directional command of each art is stored in two different files, and they
@@ -249,8 +266,11 @@ readers; each is in the battle overlay (PROT 0898).
   `+2/+4/+6` XYZ offsets), places each cue in world space from the actor's
   position (`+0x34/+0x38`) rotated by its facing (`+0x46`) through the shared
   sin/cos tables, and dispatches on the cue code. A code with the high bit set
-  is a floating-number spawn (masked `& 0x7f`, via `FUN_801dfdf0`); a plain code
-  is an SFX + effect-sprite pair (see [the cue tables](#the-cue-tables)). On the
+  spawns an `efect.dat` billboard (masked `& 0x7f`, via `FUN_801dfdf0`, which
+  resolves the id through the `pack1` descriptor table - see
+  [effect.md](effect.md)); a plain code selects a 3D move-VM prototype from
+  `0x801F6324` and pairs it with an SFX (see [the cue tables](#the-cue-tables)).
+  On the
   terminator entry it materializes the move-power record for the move id
   `actor[+0x1DF]` (`0x801F4F5C`, 26-byte stride; see [move-power.md](move-power.md))
   and lays down that move's own per-hit cue list plus the multi-target markers.
@@ -278,6 +298,32 @@ readers; each is in the battle overlay (PROT 0898).
   at the tail of its `ActionSeed` state - see
   [`battle-action.md`](../subsystems/battle-action.md#actor-pool-leaf-helpers).
 
+### Impact-effect class (entry `+0x7A`)
+
+The cue script above is not the only thing that draws during an art. Entry
+`+0x7A` carries a `1..=5` selector (`0` = none), bounded by `FUN_801ec3e4`'s
+`sltiu v0,v0,6`. That routine stores the selector at `actor[+0x21F]` and the
+row it indexes out of `0x801F53D4` at `actor[+0x04]`, and two renderers read
+those - neither of which consults the entry's cue records:
+
+| reader | what it draws |
+|---|---|
+| `FUN_8004998c` | An element spark streamed along the swing path at random cadence: `efect.dat` sprite `0x0B` for selector `1`, `0x10` for selector `2`. Gated on `actor[+0x21F]` being non-zero. |
+| `FUN_80049348` | Fading afterimage copies of the character mesh, tinted from the per-**character** table at `0x80076908` (3 entries + a non-party row, 4 bytes each). Reached from `FUN_800480d8` only when `actor[+0x04]` left a colour word on the node. |
+
+So this byte, and not the cue script, is what makes an art read as its owner's
+element. On the three 50-AP Hyper Arts it is set only on Vahn's Burning Flare
+(`1`); Noa's Vulture Blade and Gala's Explosive Fist are `0`, and Gala's
+Thunder Punch is `2`. A reskin that rewrites the cue records but leaves `+0x7A`
+alone still shows the host character's sparks and ghost trail - see
+[randomizer.md](../tooling/randomizer.md).
+
+The afterimage table's channel order is **not** settled: `+0x74` is a GP0
+colour word, and the byte order that reads correctly for move-VM op `0x0C`
+disagrees with the one that reads correctly for `FUN_8005112c`'s ribbon
+literals. Treat the per-character colours as unresolved until a frame capture
+settles it.
+
 ### The cue tables
 
 `FUN_801dea50` / `FUN_801e09f8` resolve a plain cue code through two parallel
@@ -285,9 +331,27 @@ overlay tables; `FUN_801e22c8` uses the third:
 
 | Table VA | Indexed by | Role |
 |---|---|---|
-| `0x801F6418` | cue code (1-byte stride) | SFX id; nonzero entry issues a `0x1DC` sound packet |
+| `0x801F6418` | cue code (1-byte stride) | CLUT **source x** (not an SFX id - see below); nonzero entry copies a palette row |
 | `0x801F6324` | cue code (`code*4`) | pointer to the effect-sprite descriptor spawned via `FUN_80050ed4` |
 | `0x801F6470` | art/anim id (5-byte stride) | per-art cue list (`+0` count, then codes) read by `FUN_801e22c8` |
+
+**No battle effect id plays a sound.** `0x801F6418` was long documented here
+as an SFX id issuing a "`0x1DC` sound packet". It is not: the routine the six
+readers end in is `FUN_80058490`, whose materialised string at `0x800156EC` is
+literally `MoveImage`, and the 8-byte "packet" is a PsyQ `RECT` -
+`x = 0x801F6418[code]`, `y = 0x1DC`, `w = 0x10`, `h = 1` - copied to
+`(0xE0, 0x1DC)`. That is a 16-entry CLUT row copy at VRAM `y = 476`, i.e. the
+effect's palette. The table holds only `0xB0` / `0xC0` / `0xD0`, which are VRAM
+x coordinates and are outside the `0x00..=0x63` id space of the
+[sound-effect descriptor table](sfx-table.md). A `jal 0x80058490` sweep of the
+battle overlay returns exactly the six `0x801F6418` readers, each paired with
+its `0x801F6324` prototype spawn, and no SPU-cue call
+(`FUN_8004FCC8`/`FUN_8004FE5C`/`FUN_80035B50`/`FUN_8003D53C`/`FUN_800250D4`)
+appears anywhere inside `FUN_801DEA50` or `FUN_801E22C8`.
+
+A party Tactical Art's audio is therefore entirely the **CD-XA** layer: the
+per-swing cue, the shout pool, and - for a Hyper - the per-`(character,
+action constant)` fanfare fired by `FUN_8004AD80`.
 
 A cue code's high bit (`0x80`) is not an index into these tables - it is the
 "spawn a digit" flag, and the low 7 bits select the glyph, matching the
@@ -337,7 +401,7 @@ Crate API: [`legaia_art::learned_art_action(character, slot)`](../../crates/art/
 | `0x06` | PK Combo (`0x21`) | Tempest Break (`0x21`) | Neo Raising (`0x21`) |
 | `0x07` | Spin Combo (`0x22`) | Rushing Gale (`0x22`) | Black Rain (`0x22`) |
 | `0x08` | Pyro Pummel (`0x23`) | Tough Love (`0x23`) | Side Kick (`0x23`) |
-| `0x09` | Cross Kick (`0x24`) | Swan Driver (`0x24`) | Head-Splitter (`0x24`) |
+| `0x09` | Cross-Kick (`0x24`) | Swan Driver (`0x24`) | Head-Splitter (`0x24`) |
 | `0x0A` | Power Punch (`0x25`) | Bird Step (`0x25`) | Guillotine (`0x25`) |
 | `0x0B` | Slash Kick (`0x26`) | Dolphin Attack (`0x26`) | Back Punch (`0x26`) |
 | `0x0C` | Somersault (`0x27`) | Mirage Lancer (`0x27`) | Ironhead (`0x27`) |
@@ -372,7 +436,7 @@ Crate API: [`legaia_art::art_anim_name(character, anim_index)`](../../crates/art
 | `0x0D` | Burning Flare | Vulture Blade | Black Rain |
 | `0x0E` | Spin Combo | Mirage Lancer | - |
 | `0x0F` | Pyro Pummel | Blizzard Bash | - |
-| `0x10` | Cross Kick | Sonic Javelin | Side Kick |
+| `0x10` | Cross-Kick | Sonic Javelin | Side Kick |
 | `0x11` | Acrobatic Blitz | Electro Thrash | - |
 | `0x12` | - | - | Neo Raising |
 
@@ -382,7 +446,7 @@ Most art records reference exactly one anim slot; a handful (e.g. Hurricane Kick
 
 Each character has one Miracle Art. When the player enters the *exact* command sequence for that art, the runtime **clears the entire action queue** and writes the art's replacement string instead.
 
-| Character | Art | RAM | PROT | Command sequence |
+| Character | Art | RAM | Record-file offset | Command sequence |
 |---|---|---|---|---|
 | Vahn | Vahn's Craze | `0x64F4` | `0x0CDC` | R D L U L U R D L |
 | Noa | Noa's Ark | `0x6504` | `0x0CEC` | L U R D U L U D R |
@@ -538,13 +602,14 @@ walkthrough error (Vahn's *Hyper Elbow* is `L R L` on disc, not `Arms / Ra-Seru
 Because the glyph string is byte-exact ground truth, it serves as the
 validation oracle for the two derived command sources:
 
-- **The best-effort PROT `0x05C4` parser** ([`legaia_art::parse_record`]).
+- **The best-effort art-record parser** ([`legaia_art::parse_record`]).
   `legaia_art::ArtsOracle::by_command(character, &commands)` resolves a decoded
   command sequence back to a named art; the disc-gated contract test
   `crates/art/tests/arts_table_real.rs` runs every art's canonical record bytes
   through `parse_record` and asserts the decode round-trips through the oracle.
   This pins the parser's `1=L,2=R,3=D,4=U` command-byte decode against the
-  executable without needing the (still-unpinned) full record stride.
+  executable without depending on the record's still-Inferred variable-field
+  tail.
 - **The curated `legaia-gamedata` `arts.toml` `ap` + `directions` columns.**
   The disc-gated test `crates/gamedata/tests/arts_scus_oracle.rs` matches each
   curated art to its SCUS row by name and asserts AP + directions agree, with a

@@ -181,17 +181,24 @@ fn scenarios_manifest_resolves_every_save() {
         return;
     }
     let manifest = ScenarioManifest::from_path(manifest_path()).expect("manifest parses");
-    assert_eq!(manifest.scenarios.len(), 10, "10 scenarios expected");
+    // Only scenarios with a live mc slot resolve to an on-disk `.mc{slot}`;
+    // fingerprint-only library captures have no live path by design.
+    let live: Vec<u8> = manifest
+        .scenarios
+        .iter()
+        .filter_map(|s| s.live_slot().ok())
+        .collect();
+    assert!(!live.is_empty(), "no live-slot scenarios in the manifest");
     let mut missing = 0usize;
-    for s in &manifest.scenarios {
-        let p = manifest.save_path(s.slot).expect("save path resolves");
+    for slot in &live {
+        let p = manifest.save_path(*slot).expect("save path resolves");
         if !p.exists() {
             missing += 1;
         }
     }
-    // Allow a small number missing (user might not have all 10), but
+    // Allow some missing (live slots get rotated as the user plays), but
     // refuse to silently pass when nothing is there at all.
-    assert!(missing < manifest.scenarios.len(), "no saves found");
+    assert!(missing < live.len(), "no saves found");
 }
 
 #[test]

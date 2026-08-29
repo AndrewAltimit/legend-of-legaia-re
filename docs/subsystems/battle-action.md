@@ -40,7 +40,7 @@ The function is not a bytecode VM. There is no opcode table, no PC stride. It is
 | `0x46`–`0x48` | Spirit super-arts variant | Spirit (`+0x1DE == 4` with `+0x1F9 != 0`) |
 | `0x50`–`0x52`, `0x5A` | Done / cleanup / end-of-action | (any) |
 | `0x64`–`0x6B` | Run / Defend / capture-fail | Flee (`+0x1DE == 5`) |
-| `0x6E`–`0x71` | Capture sequence | Magic with capture flag |
+| `0x6E`–`0x71` | Capture sequence - drives the paged [cast module](cast-module.md) | Magic with capture flag |
 | `0xFD`, `0xFF` | Idle hold / round boundary | (any) |
 
 ### State table
@@ -97,7 +97,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x6B` | Capture - end | `FUN_801D5854(0, 9)`; screen rotates; decrements timer. When < 0 → `0x5A` (end-of-action). | `0x5A`. |
 | `0x6E` | **Magic-capture branch** | `FUN_801D5854(actor, 6)`; waits on `func_0x8003DE7C(1)` (CD ready). When ready: calls `func_0x8003EAE4(0, capture_index)` (load capture archive); sets `_DAT_8007BDB0` to capture-monster index. | `0x6F`. |
 | `0x6F` | Magic-capture - fade | If `ctx[+0x287] != 0`: duck the audio level `_DAT_8007B910 -= DAT_1F800393`, clamp to `(_DAT_8008457C * 0x4B) / 100`. Adjusts ctx-buffer X position. Waits on `func_0x8003F2B8(1)`. | `0x70`. |
-| `0x70` | Magic-capture - phase 2 | Same audio duck as `0x6F`. Runs `func_0x801F2160` (the [magic effect-class dispatcher](#battle-helper-functions), keyed on the spell's effect-class byte). When done, calls `func_0x801F0348` (the [target-size camera framing](#battle-helper-functions)). | `0x71`. |
+| `0x70` | Magic-capture - phase 2 | Same audio duck as `0x6F`. Runs `func_0x801F2160` (the [magic effect-class dispatcher](#battle-helper-functions), keyed on the spell's effect-class byte) - for a capture-class action this is the drive loop of the paged **cast module**: the module tick re-enters every frame and the state advances only on a zero return, with no timer and no bail-out ([cast-module.md](cast-module.md)). When done, calls `func_0x801F0348` (the [target-size camera framing](#battle-helper-functions)). | `0x71`. |
 | `0x71` | Magic-capture - finalize | `FUN_801D5854(actor, 6)`; checks all 8 slots are settled (alive with non-zero `+0x4`, or non-`8` `+0x1D9`). Once stable: clears ctx buffers, writes the 4-byte fade sentinel (`84 10 42 08`), iterates resetting per-actor `+0x21C = 0` and `+0x8 = 0x81000000`. | `0x50`. |
 | `0xFD` | Idle hold (battle paused?) | `FUN_801D5854(actor, 8)`. No state change. | (stays). |
 | `0xFF` | **End of round** (not battle end - see below) | Sets `ctx[+0x6] = 0x14`, increments `ctx[+0x28A]` (round counter), calls `func_0x801F45A4` (the [end-of-action damage/HP-bar settle](#battle-helper-functions)). | round boundary; the next round's actor selection follows. |
@@ -190,7 +190,7 @@ The full step body for state `0x28`:
   degenerating onto its last target.
 - Then [faces the target](#the-cast-begin-facing-store) and writes
   `actor[+0x46]`. Sets `ctx[+0x6D8] = 0x14` (frame timer).
-- For party (`actor_id < 3`), looks up the spell-name string via `&DAT_800754D0 + actor[+0x1DF]*0xC`, computes centered X for HUD, writes `_DAT_80077332/+0x33A/+0x344/+0x352/+0x35C` (HUD label slots), fires UI element `FUN_801D8DE8(0x4C, 0)` (spell label).
+- For a **monster** caster (`ctx[+0x13] >= 3`), looks up the spell-name string via `&DAT_800754D0 + actor[+0x1DF]*0xC`, computes centered X for HUD, writes `_DAT_80077332/+0x33A/+0x344/+0x352/+0x35C` (the element `0x4C`/`0x4D` descriptor slots), fires UI element `FUN_801D8DE8(0x4C, 0)` (spell-name banner). The gate is `lbu v0,0x2(s5); sltiu v0,v0,3; bne v0,zero,0x801E4460` at `0x801E43D0` - the TAKEN side skips the block, so the banner is monster-only. (An earlier revision read the branch sense the other way and claimed the label was party-side; a party cast has **no** banner writer anywhere - the same descriptor slots' only other writers are `FUN_8004AD80`'s two sites: the per-art name chase at anim install, party side, and its own monster-cast spell-name write.)
 - If the spell's first table byte is `'c'` (capture-class spell) → `ctx[7] = 0x6E` (capture path) + queues capture archive load via `func_0x8003EC70`.
 - Reads MP cost from the spell record's `+3` byte (`lbu s0,0x3(v1)` at `0x801E451C`, record base `DAT_800754C8 + spell_id*0xC`, loaded at `0x801E4464`; `DAT_800754D0` is the same table viewed `+8`, which is how the name lookup reaches the record's `name_ptr`). Reduces it by half (`cost - cost>>1`) if the character's ability bitmask has `0x20` ("MP-half"), else by a quarter (`cost - cost>>2`) if `0x10` ("MP-quarter") - `0x20` is tested first and wins when both are set (`0x801E4568`). Stores the applied cost at `actor[+0x178]` and subtracts it from `actor[+0x150]` (MP).
 - **Which copy is which.** The identical fold is inlined twice, and the two are easy to swap: `0x801E4568` is *this* state, immediately after the capture-archive `jal 0x8003EC70` at `0x801E44EC`; `0x801E3D0C` is state `0x3C`'s copy, immediately after that state's Pomander (`+0x1DF == 0xFE`) special case at `0x801E3C4C`. Behaviour is the same either way - only the state label differs.
@@ -446,7 +446,7 @@ Beyond `actor[+0x1DE]` (category), these per-actor bytes are read or written by 
 | `+0x1FA` | u8 | Spell-cast iteration counter. |
 | `+0x21B` | u8 | Hit-count bound (script-defined; loop exits at `ctx[+0x24C] >= +0x21B`). |
 | `+0x21C` | u8 | Per-actor render flag - `0xFF` while hidden by summon fade, `0x02` while captured, `0` otherwise. |
-| `+0x21D` | u8 | Impact-step magnitude - multiplied into the per-frame X/Z drift during attacks. |
+| `+0x21D` | u8 | **Animation-rate scalar** (normal `8`; an art's arms drop it to `4`/`2`/`0`). The strike loop also multiplies it into the per-frame X/Z impact drift - that is one consumer, not the field. |
 | `+0x224` | u8 | "Action recoil" magnitude - written by `0x50`. |
 | `+0x225` | u8 | Capture state byte - `2` while captured. |
 | `+0x46` | u16 | Facing angle (i12 in 0xFFF range; written from bearing checks). |
@@ -1876,9 +1876,14 @@ seeds it `0xD7` beside its persistent reference and immediately calls the
 audio-context volume re-apply `FUN_8002614C(0)`. Across the whole dumped corpus
 the cell has 26 read sites and **none** reaches a draw primitive.
 
-The screen fade is a different scalar: `_DAT_8007B440`, ramped by
-`FUN_801ED308` and drawn each frame by the wipe/curtain emitter `FUN_8003479C`
-(clamped `0xF2`). The two were conflated because they ramp together - the summon
+The screen fade is a different scalar: `_DAT_8007B440`, ramped by the function
+at VA `0x801ED308` **in the menu/cutscene overlay family** (`see
+ghidra/scripts/funcs/801ed308.txt` - own prologue, `jal 0x8003479c` at
+`0x801ED3F0`/`0x801ED4BC`/`0x801ED510`) and drawn each frame by the wipe/curtain
+emitter `FUN_8003479C` (clamped `0xF2`). Name the overlay when citing it: in the
+**battle** image that VA is interior to `FUN_801EC3E4` (the underdog-rewrite
+arm's power-scalar read), which touches `_DAT_8007B440` nowhere - the aliasing
+class the dump-aliasing caution below covers. The two were conflated because they ramp together - the summon
 dims the screen *and* ducks the music. Port: `BattleActionHost::duck_audio_level`
 → `BattleEvent::DuckAudioLevel`.
 
@@ -2496,7 +2501,28 @@ The ids the SM stages into `actor.queued_anim` actually play on the battle actor
 The clip's finish is the engine's anim-end signal: `ADVANCE_DONE` clears (opening the `0x801E370C` read gate for the next strike byte), the id pair converges back to idle `0`, and the idle loop resumes. An actor with no usable clip for a staged id converges immediately (a zero-length swing), so clip-less hosts keep the pre-animation pacing.
 
 Clip sources, decoded at battle entry next to the mesh assembly (`play-window`): the record[0] action streams + `swing_battle_animations` (per equipped item, runtime slots `0xC..0xF`) feed `World::set_actor_battle_action_clips`; the art bank (`art_animation_bank`, streams resolved through the `readef.DAT` `"ME"` archives via `art_me_archive`/`art_animation`) feeds `World::set_actor_battle_art_bank`.
-Monsters install no bank, so their staged ids stay plain archive entry indices across the whole range. The art records' `rate_alt` (`+0x84`) byte is used only as the base-archive marker; playback stepping follows the `+0x78` rate like every other entry (see [battle-data-pack.md § Art-animation bank](../formats/battle-data-pack.md#art-animation-bank-record0-0x58)). Engine assumption: the loop-vs-once bit retail derives from the record kind isn't modelled - staged id `1` (the approach walk) loops, every other staged id plays once.
+Monsters install no bank, so their staged ids stay plain archive entry indices across the whole range. Playback *stepping* follows the `+0x78` rate like every other entry (see [battle-data-pack.md § Art-animation bank](../formats/battle-data-pack.md#art-animation-bank-record0-0x58)).
+
+**`+0x84` is the clip's loop count, not a second rate** - which matters here
+because it is exactly the loop-vs-once channel this section's port approximates.
+
+The commit `FUN_8004AD80` copies the byte into both `actor+0x21B` and
+`actor+0x176 << 4` (`0x8004BDEC..0x8004BE0C`). The animation tick
+`FUN_80047430` then gates on `+0x176`: once the 12.4 frame cursor
+`actor[+0x22C][+0x68]` reaches `entry[+0x86] << 4` it rewinds the cursor to
+`entry[+0x85] << 4` and decrements `+0x176` by `0x10`
+(`0x80047828`), mirroring the remaining whole count back to `+0x21B`
+(`0x80047768..0x800477E8`). The span is subtracted from the **cursor**
+(`0x80047818`), not from the counter - `+0x176` holds the loop count in the
+same 12.4 units as the cursor, so one rewind costs it exactly one whole
+unit. The stream therefore cycles frames `[+0x85, +0x86]` that many times.
+
+The sentinel `0xFF` additionally marks the eight base-archive records
+(`ArtAnimRecord::uses_base_archive`). The parser's field is still spelled
+`rate_alt`, and its doc comment carries the correction. See
+`ghidra/scripts/funcs/8004ad80.txt` and `ghidra/scripts/funcs/80047430.txt`.
+
+The port does not read the loop count: it approximates with a staged-id rule, where staged id `1` (the approach walk) loops and every other staged id plays once.
 
 ### Where an action leaves its combatants
 

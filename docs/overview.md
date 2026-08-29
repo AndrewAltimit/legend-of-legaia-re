@@ -44,7 +44,9 @@ Choose by what you're trying to do:
 | You want to… | Read |
 |---|---|
 | Install prebuilt binaries or build from source | Root [`README.md`](../README.md#getting-started) |
-| Get assets off your disc | [`tooling/extraction.md`](tooling/extraction.md) |
+| Follow a task end to end with the shipped tools | [`guides/getting-started.md`](guides/getting-started.md) |
+| Get assets off your disc | [`guides/extracting-assets.md`](guides/extracting-assets.md), then [`tooling/extraction.md`](tooling/extraction.md) |
+| Play a scene or browse an asset interactively | [`guides/playing-and-viewing.md`](guides/playing-and-viewing.md) |
 | Understand a specific file format | [`formats/overview.md`](formats/overview.md) → per-format page |
 | Understand how a runtime subsystem works | [`subsystems/`](subsystems/) - boot, asset loader, script VM, move VM, renderer, audio, battle, minigames |
 | Understand the Rust engine port | [`subsystems/engine.md`](subsystems/engine.md) |
@@ -52,7 +54,7 @@ Choose by what you're trying to do:
 | Capture a runtime overlay | [`tooling/overlay-capture.md`](tooling/overlay-capture.md) |
 | Look up a key function or RAM address | [`reference/functions.md`](reference/functions.md), [`reference/memory-map.md`](reference/memory-map.md) |
 | Cross-reference against a different region's build | [`reference/builds.md`](reference/builds.md) |
-| Patch your own disc (randomizer / translation) | [`tooling/randomizer.md`](tooling/randomizer.md), [`tooling/translation.md`](tooling/translation.md) |
+| Patch your own disc (randomizer / translation) | [`guides/modding-and-translation.md`](guides/modding-and-translation.md), then [`tooling/randomizer.md`](tooling/randomizer.md) and [`tooling/translation.md`](tooling/translation.md) |
 | Find an open question to work on | [`reference/open-rev-eng-threads.md`](reference/open-rev-eng-threads.md) |
 | Look up an answered question, and how firmly it is pinned | [`reference/re-settled-threads.md`](reference/re-settled-threads.md) |
 | Check whether a plausible reading was already disproved | [`reference/re-do-not-re-walk.md`](reference/re-do-not-re-walk.md) |

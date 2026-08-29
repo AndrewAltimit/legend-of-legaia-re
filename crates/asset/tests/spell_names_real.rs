@@ -28,7 +28,16 @@ fn names_enemy_magic_or_skips() {
 
     let scus = std::fs::read(&scus_path).expect("read SCUS");
     let table = SpellNameTable::from_scus(&scus).expect("parse spell table");
-    assert_eq!(table.len(), 256);
+    // The table ends where the description-pointer table begins
+    // (`STATS_VA + 190*12 == 0x80075DB0`), so ids past `0xBD` resolve to
+    // `None` instead of decoding a description pointer as a record.
+    assert_eq!(table.len(), legaia_asset::spell_names::SPELL_COUNT);
+    assert_eq!(
+        legaia_asset::spell_names::STATS_VA
+            + (table.len() * legaia_asset::spell_names::RECORD_STRIDE) as u32,
+        legaia_asset::spell_names::DESC_PTR_TABLE_VA,
+    );
+    assert!(table.entry(0xBE).is_none(), "0xBE is past the stats table");
 
     // Pinned named monster attacks (the band starting at 0x25).
     assert_eq!(table.name(0x25), Some("Fire Breath"));

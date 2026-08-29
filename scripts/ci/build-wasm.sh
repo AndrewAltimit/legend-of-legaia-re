@@ -48,4 +48,11 @@ else
     echo "[build-wasm] WARN: no python3; site/wasm/SOURCE_STAMP.json not updated" >&2
 fi
 
-echo "[build-wasm] done. site/wasm/ is now in sync with crates/web-viewer."
+# Re-stamp the pages: every page carries window.LEGAIA_WASM_V (the wasm
+# content version the JS loaders append as ?v= to the module + binary
+# URLs). Skipping this leaves pages advertising the PREVIOUS version, and
+# a browser that cached those bytes under the old key serves them stale
+# on the next rebuild.
+python3 "${REPO}/site/_gen.py" >/dev/null
+
+echo "[build-wasm] done. site/wasm/ is now in sync with crates/web-viewer (pages re-stamped)."

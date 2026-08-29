@@ -375,10 +375,11 @@ type (4 bytes &rarr; u32 story flags; 2-byte stride &rarr; inventory
 
 `--coalesce N` merges runs of differing bytes whose gap is &le; `N`
 into one cluster (default 8). `--range LO..HI` (hex or decimal)
-restricts the scan; the default range skips the per-character record
-region (`0x086F..`) since per-character changes are visible via
-`save-tool character`. Either argument can be a raw 8192-byte SC-block
-file or a `.mcr` memory-card image; the tool detects which.
+restricts the scan; the default range is `0x0000..0x05C8`, which stops
+where the `0x414`-byte per-character record array begins, since
+per-character changes are visible via `save-tool character`. Either
+argument can be a raw 8192-byte SC-block file or a `.mcr` memory-card
+image; the tool detects which.
 
 Layout reference: [`docs/subsystems/save-screen.md#retail-sc-block-layout`](../subsystems/save-screen.md#retail-sc-block-layout).
 
@@ -455,6 +456,15 @@ diff_against = [2, 3]
 # Optional drift guards (see "Save resolution" below):
 # backup_fingerprint   = "<sha256 of an immutable saves/library copy>"
 # ram_fingerprint_sha256 = "<sha256 of first 64 KiB of main RAM>"
+# Optional context pins + cross-emulator anchors:
+# phase = "battle"                       # coarse game phase the state is parked in
+# expected_game_mode = 0x15              # asserted at load by the validators
+# expected_active_scene = "nilboa"       # CDNAME scene name, ditto
+# pcsx_redux_sstate = "<path>"           # PCSX-Redux anchor for the same moment
+# duckstation_sav = "<path>"             # DuckStation anchor, ditto
+# `slot` may be omitted for scenarios that exist only as library backups
+# (serde default) - the canonical field list is scripts/scenarios.toml's
+# own header comment.
 
 [scenarios.overlay_slice]
 start = 0x801C0000

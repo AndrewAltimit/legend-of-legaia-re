@@ -36,11 +36,11 @@ The walker is iterative (not recursive) and yields stable-sorted file paths. The
 ```
 CDNAME.TXT  DMY.DAT  PROT.DAT  SCUS_942.54  SYSTEM.CNF
 MOV/MV1.STR ... MV6.STR
-XA/XA1.XA  ... XA21.XA
+XA/XA1.XA  ... XA34.XA
 ```
 
-`MOV/MV*.STR` are PSX MDEC video streams (delegate to public decoders like jPSXdec).
-`XA/XA*.XA` are XA-ADPCM audio; `crates/xa` decodes the format spec but the on-disc files use a non-standard interleave.
+`MOV/MV*.STR` are PSX MDEC video streams - the **Iki** bitstream rather than STRv2; decoder in [`crates/mdec`](../../crates/mdec/README.md).
+`XA/XA*.XA` are XA-ADPCM audio in standard CD-XA Mode 2 Form 2. `crates/xa` demuxes them per `(file_no, ch_no)` straight off the raw 2352-byte sectors; the "non-standard interleave" the earliest tooling saw was Form-1-truncation damage, not a bespoke muxing scheme ([`xa.md`](xa.md#non-standard-interleave---what-it-is-and-isnt)).
 `PROT.DAT` is the main asset archive - see [PROT.DAT TOC](prot.md).
 `SCUS_942.54` is the executable. Reverse-engineering instructions: [`tooling/ghidra.md`](../tooling/ghidra.md).
 

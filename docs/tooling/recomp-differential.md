@@ -605,9 +605,14 @@ the running recomp - `0x8007BAC8` is the live BGM id and `0x8007BAB8` the
 PROT index it resolved to:
 
 ```bash
+python3 scripts/recomp/probe.py --port 4471 read 0x8007BAC8 4
 python3 scripts/recomp/probe.py --port 4471 \
-    --json '{"cmd":"read_ram","addr":"0x8007BAC8","len":4}'
+    cmd '{"cmd":"read_ram","addr":"0x8007BAC8","len":4}'
 ```
+
+`read <addr> [len]` prints the hex bytes; the `cmd` subcommand is the raw
+passthrough (one positional JSON object, `id` supplied by the client) for
+server commands the CLI has no wrapper for.
 
 Both read `0` until a scene actually starts music, so drive the game to a
 field scene first; the ids in the opening chain only appear once the

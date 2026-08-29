@@ -161,8 +161,9 @@
         /* Resolve against the PAGE (this file lives in js/, the wasm glue in
          * wasm/ next to the page - a bare './wasm/...' would resolve against
          * this script's URL). */
-        const mod = await import(new URL('wasm/legaia_web_viewer.js', document.baseURI).href);
-        await mod.default();
+        const v = window.LEGAIA_WASM_V || '0';
+        const mod = await import(new URL('wasm/legaia_web_viewer.js?v=' + v, document.baseURI).href);
+        await mod.default(new URL('wasm/legaia_web_viewer_bg.wasm?v=' + v, document.baseURI));
         if (typeof mod.LegaiaArts !== 'function') {
           prog.fail('This build of the viewer has no arts support.');
           return;

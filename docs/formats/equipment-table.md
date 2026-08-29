@@ -26,7 +26,7 @@ record      = (&DAT_80074F68)[bonus_index * 8]   ; stride-8 record
 
 | | |
 |---|---|
-| Record base | `DAT_80074F68` (file `0x64F68`) |
+| Record base | `DAT_80074F68` (file `0x65768`) |
 | Stride | `0x8` bytes |
 | Index | item property `+1` byte (per equippable id) |
 

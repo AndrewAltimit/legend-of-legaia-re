@@ -268,8 +268,10 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   (popups), `StatusEvent` (icons), and `BattleRound::begin` / `end`
   (slot rows). `engine-render::battle_hud_draws_for` turns it into the
   drawn surface. Also the two labels the drawn surface needs off the
-  live world: `battle_plaque_label` (the top-left plaque, and the port's
-  whole monster readout - retail draws no monster gauge),
+  live world: `battle_active_actor` (the `(slot, name)` pair behind the
+  top-left plaque, and the port's whole monster readout - retail draws no
+  monster gauge; `None` once every formation slot is cleared, which is what
+  stops the plaque drawing over the victory frames),
   `battle_plaque_element_badge` (the 20x12 badge an elemental actor wears
   in front of that name) and `encounter_banner_label` /
   `encounter_banner_enabled` (the banner is a port invention with no retail

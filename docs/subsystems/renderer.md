@@ -31,20 +31,25 @@ first; u32 second}` per row, selects `row = ((flags >> 1) - 8) >> 1`, and reads
 **byte3 = `first >> 24`** (the shape selector, `& 3` = `F`/`FT`/`G`/`GT`) and
 **byte4 = `second & 0xFF`** (the base vertex-index offset in u16 units):
 
-| flags   | row | raw 8 bytes               | byte3 (shape) | byte4 (vtx off) |
-|---------|-----|---------------------------|---------------|-----------------|
-| 0x10/11 | 0   | `04 00 00 05 07 00 00 00` | 0x05          | 0x07            |
-| 0x12/13 | 1   | `09 00 00 07 06 00 00 00` | 0x07          | 0x06            |
-| 0x14/15 | 2   | `04 00 00 00 02 00 00 00` | 0x00          | 0x02            |
-| 0x16/17 | 3   | `06 00 00 02 06 00 00 00` | 0x02          | 0x06            |
-| 0x18/19 | 4   | `07 03 00 01 07 00 00 00` | 0x01          | 0x07            |
-| 0x1A/1B | 5   | `09 03 00 03 0B 00 00 00` | 0x03          | 0x0B            |
-| 0x20-27 | (re-uses rows 0-5 via the same `(flags>>1)-8` math) |  |  |  |
+Because the row index shifts *twice*, each row covers **four** `flags` values -
+a tri pair and a quad pair - and the whole legal span is `flags 0x10..=0x27`
+(`f_shifted = flags >> 1` must land in `8..=0x13`):
+
+| flags (tri / quad) | row | raw 8 bytes               | byte3 (shape) | byte4 (vtx off) |
+|--------------------|-----|---------------------------|---------------|-----------------|
+| 0x10/11 · 0x12/13  | 0   | `04 00 00 05 07 00 00 00` | 0x05          | 0x07            |
+| 0x14/15 · 0x16/17  | 1   | `09 00 00 07 06 00 00 00` | 0x07          | 0x06            |
+| 0x18/19 · 0x1A/1B  | 2   | `04 00 00 00 02 00 00 00` | 0x00          | 0x02            |
+| 0x1C/1D · 0x1E/1F  | 3   | `06 00 00 02 06 00 00 00` | 0x02          | 0x06            |
+| 0x20/21 · 0x22/23  | 4   | `07 03 00 01 07 00 00 00` | 0x01          | 0x07            |
+| 0x24/25 · 0x26/27  | 5   | `09 03 00 03 0B 00 00 00` | 0x03          | 0x0B            |
 
 The low 2 bits of byte3 select the OT packet shape (`0`=flat untextured,
 `1`=flat textured, `2`=gouraud untextured, `3`=gouraud textured); the quad bit
-`(flags>>1)&1` picks tri vs quad. Byte1 says whether the prim carries a leading
-**colour** block: rows 4/5 (`byte1 = 3`) do, rows 0-3 (`byte1 = 0`) do not.
+`(flags>>1)&1` picks tri vs quad, which is why each row's second `flags` pair is
+its quad form. Byte1 says whether the prim carries a leading **colour** block:
+rows 4/5 - i.e. `flags 0x20..=0x27` - (`byte1 = 3`) do, rows 0-3 (`byte1 = 0`)
+do not.
 Rows 0/1 are the *light-source-lit* textured rows - their texture block starts
 at prim offset 0 and normal indices trail the vertex indices. See
 [`formats/tmd.md`](../formats/tmd.md) for the full per-mode record layout.
@@ -443,27 +448,29 @@ under `SecondCopy`), so neither draws it as a second `SceneDraw` - the single
 once. Retail draws it twice, and which transform the copy takes is per stage
 (`legaia_asset::battle_backdrop`).
 
-> **Resolved, and the builder split was not the cause.** The visible
-> divergence - repeating vertical lighter bands across the browser's sky and
-> mountain arc - was **one multiply in the fragment shader**, not the two
-> builders: both carry the same per-vertex colours and the same ABE bit.
-> `site/js/webgl-shaders.js` applied a synthetic Lambert on its untextured
-> path, and a sky dome's panels sweep every azimuth, so a term in the
-> screen-space geometric normal painted exactly those bands. The untextured
-> branch now draws the packet colour, as retail and as the native renderer do.
-> The table above still describes the builder split accurately - it is real,
-> and it is still something the host-drift gate cannot see, because both hosts
-> *do* reach a backdrop builder - but it is not what was on screen. Full
-> analysis, including how the textured path closed the same way (the page now
-> uploads the per-vertex packet colour and applies `texel * colour / 128`), is
-> in [`host-drift.md`](../tooling/host-drift.md).
+> **The builder split is not a shading divergence.** The table above describes
+> the split accurately - it is real, and it is something the host-drift gate
+> cannot see, because both hosts *do* reach a backdrop builder. But it is not a
+> source of visible difference: both builders carry the same per-vertex colours
+> and the same ABE bit.
 >
-> The reproduction cost is also gone: `play_battle.rs` exports a wasm
-> `debug_force_battle(row)` that mirrors native `--battle <ROW>`, so a headless
-> page can enter a named formation directly. Before it, `debug_start_test_battle`
-> was `#[cfg(not(target_arch = "wasm32"))]` and town stages - which roll no
-> encounters - could not be reached in the browser at all, which is why nobody
-> had ever looked at one.
+> A divergence of that shape - repeating vertical lighter bands across the
+> browser's sky and mountain arc - comes from **one multiply in the fragment
+> shader** instead. A synthetic Lambert off the screen-space geometric normal
+> paints exactly those bands, because a sky dome's panels sweep every azimuth.
+> Both of `site/js/webgl-shaders.js`'s paths are retail: the untextured branch
+> draws the packet colour, and the textured branch uploads the per-vertex
+> packet colour and applies `texel * colour / 128`. The trap that lets a
+> regression here hide is that an unbound colour attribute defaults to white,
+> and white is `texel * 255/128` - so a missing colour stream reads as "too
+> bright", not as "unlit". Full analysis in
+> [`host-drift.md`](../tooling/host-drift.md).
+>
+> Reproducing a backdrop on the browser host needs no encounter roll:
+> `play_battle.rs` exports a wasm `debug_force_battle(row)` mirroring native
+> `--battle <ROW>`, so a headless page enters a named formation directly. This
+> matters for town stages in particular, which roll no encounters and are
+> otherwise unreachable in the browser.
 
 ### The screen the GTE projects onto is 320x224, not 320x240
 
@@ -1078,7 +1085,7 @@ volume, so the clip planes are sized to hold an entire scene from any vantage
 rather than to frame the current view:
 
 - [`window::SCENE_FAR`](../../crates/engine-render/src/window.rs) = `1e6` for
-  every camera. A field map is `256 x 256` tiles of 128 units (~23 k units on
+  every camera. A field map is `128 x 128` tiles of 128 units (~23 k units on
   the diagonal), and the **overworld walk camera composes a 6x world scale**
   onto `psx_camera_mvp`, so eye-space depth there runs to ~140 k. Raising the
   far plane costs no depth precision: the renderer runs **reversed-Z** (see
@@ -1303,7 +1310,7 @@ Not every asymmetry is a defect. Three are deliberate:
 A `.MAP` object record carries three authored angles (`+0x08` pitch, `+0x0A`
 yaw, `+0x0C` roll) and retail composes all three in `Rx * Ry * Rz`
 (`FUN_80026988`; the port's pinned copy is
-`engine_ui::battle_intro::placement_rotation`, and the browser's is
+`legaia_engine_ui::battle_intro::placement_rotation`, and the browser's is
 `placementModelEuler` in `site/js/webgl-math.js`).
 
 The yaw-only builders (`placementModelScaled*`) take a **negated** yaw,
@@ -1669,7 +1676,7 @@ contiguous same-draw, same-mode tail runs coalesce into single indexed draws
 
 ## GTE math module
 
-A fixed-point GTE math module at `crates/engine-render/src/gte.rs` mirrors the
+A fixed-point GTE math module at `crates/engine-ui/src/gte.rs` mirrors the
 retail accumulator shape: q3.12 rotation matrices, q19.12 translation vectors,
 i64-widened multiply-add to absorb three-term sums without overflow.
 

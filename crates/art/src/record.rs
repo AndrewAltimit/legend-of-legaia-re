@@ -3,7 +3,8 @@
 //! Field positions and meanings from the external `Art Data Format`
 //! research. Per-character base addresses (Vahn `0x80160EFC`, Noa
 //! `0x80176998`, Gala `0x8018BA54`) and the on-disc source live in PROT
-//! entry `0x05C4`. Records are variable-length: the command sequence and
+//! the player-file `record0` art bank. Records are variable-length: the
+//! command sequence and
 //! the power-data section both shrink/expand per art, so the format is
 //! schema-then-walk rather than fixed-stride.
 //!

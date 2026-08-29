@@ -120,11 +120,15 @@ rewritten to the dynamic art-bank slot it materialises into. So the arm that
 runs is chosen by the clip that is playing, and the band `0x1A..=0x2D` is
 art-bank records `0x0A..=0x1D`.
 
-| Character id | Bound | Jump table | Live arms |
-|---|---|---|---|
-| `1` | `0x11` | `0x801CEA88` | `0x1A`, `0x1C`, `0x1D`, `0x1E`/`0x2A` |
-| `2` | `0x14` | `0x801CEAD0` | `0x1A`, `0x1D`/`0x2C`, `0x1E`/`0x2D`, `0x1F`, `0x20` |
-| `3` | `0x11` | `0x801CEB20` | `0x1A`, `0x1C`, `0x1D`, `0x1E`/`0x2A` |
+The character id is the per-slot active-member id (`1` Vahn, `2` Noa, `3`
+Gala - see [`character-mesh.md`](character-mesh.md#battle-form---assembled-from-the-player-files)),
+and the table's file offset is its VA less the overlay base `0x801CE818`.
+
+| Character id | Bound | Jump table | File offset | Live arms |
+|---|---|---|---|---|
+| `1` Vahn | `0x11` | `0x801CEA88` | `0x0270` | `0x1A`, `0x1C`, `0x1D`, `0x1E`/`0x2A` |
+| `2` Noa | `0x14` | `0x801CEAD0` | `0x02B8` | `0x1A`, `0x1D`/`0x2C`, `0x1E`/`0x2D`, `0x1F`, `0x20` |
+| `3` Gala | `0x11` | `0x801CEB20` | `0x0308` | `0x1A`, `0x1C`, `0x1D`, `0x1E`/`0x2A` |
 
 Character `2` therefore accepts three art ids the other two reject, and most
 slots in every table are the shared epilogue `0x801D828C`. Thirteen distinct
@@ -132,12 +136,87 @@ arm bodies exist. The earlier "seventeen per-art arms" reading generalised
 character `1`'s table to all three; the bounds `sltiu v0,v1,0x11` /
 `0x14` / `0x11` at `0x801D72E0` / `0x801D76C4` / `0x801D7B24` settle it.
 
+### There is no spare arm
+
+The thirteen arm bodies and the seventeen live slots cover each other exactly:
+every arm is some slot's target, and **no arm is reached from two different
+characters' tables**. Four arms take a second slot inside their own
+character's table - `0x801D74A8` from `0x1E` and `0x2A`, `0x801D78F0` from
+`0x1D` and `0x2C`, `0x801D797C` from `0x1E` and `0x2D`, `0x801D81FC` from
+`0x1E` and `0x2A`. The other nine are single-slot, and the remaining 37 slots
+hold the epilogue.
+
+So nothing in the overlay is an unclaimed arm. Pointing a slot at a different
+arm necessarily aliases one that another art still dispatches to, and any edit
+to that arm - a moved `slti` threshold, a changed row fold - follows the alias
+into that other art. **Exchanging** two slots' targets keeps the live set and
+every arm's slot count unchanged; retargeting one does not.
+
+## The cursor cascade: each arm's thresholds are clip-sized literals
+
+Nine of the thirteen arms load the animation cursor `actor[+0x22C][+0x68]`
+and run a cascade of `slti` tests on it - the arm's first act in eight of
+them; `0x801D76EC` first branches on `actor[+0x21B] == 2` to a framing that
+reads no cursor at all, and reaches its own cascade on the other path. Each
+band
+the cascade selects writes a different set of literals, ramp folds and table
+rows into the pose triple, so **the cascade is how one swing gets several
+shots instead of one framing**. The thresholds are immediates in the
+instruction stream, not data anywhere:
+
+| Arm | Char | Art constants | Cursor thresholds | Framings |
+|---|---|---|---|---|
+| `0x801D7308` | 1 | `0x1A` | `0x61` | 2 |
+| `0x801D74A8` | 1 | `0x1E`, `0x2A` | `0xE0` | 2 |
+| `0x801D7568` | 1 | `0x1D` | `0xF0` | 2 |
+| `0x801D7650` | 1 | `0x1C` | none | 1 |
+| `0x801D76EC` | 2 | `0x1A` | `0x90` | 2 |
+| `0x801D7870` | 2 | `0x20` | none | 1 |
+| `0x801D78F0` | 2 | `0x1D`, `0x2C` | none | 1 |
+| `0x801D797C` | 2 | `0x1E`, `0x2D` | none | 1 |
+| `0x801D79F8` | 2 | `0x1F` | `0xE0` | 2 |
+| `0x801D7B4C` | 3 | `0x1A` | `0x70`, `0xA0` | 3 |
+| `0x801D7D7C` | 3 | `0x1C` | `0x40`, `0x70`, `0xA0` | 4 |
+| `0x801D7EA0` | 3 | `0x1D` | `0xB0`, `0x110` | 3 |
+| `0x801D81FC` | 3 | `0x1E`, `0x2A` | `0xC0` | 2 |
+
+Thresholds are in the cursor's own units - **sixteenths of a keyframe** - so
+`0xE0` is keyframe 14 and `0x110` keyframe 17. `0x61` is the one that is not a
+whole keyframe (`0x61 >> 4` = 6, remainder 1); its arm immediately re-uses
+`cursor − 0x60` as a ramp, clamped to `0x100` by the `sltiu` at `0x801D737C`,
+which is a magnitude clamp rather than a second band.
+
+Named by the arts-table index the constant carries (`constant − 0x1B`):
+`0x801D7D7C` is Gala's Explosive Fist, changing shot three times across
+keyframes 4 / 7 / 10 - the most band-rich arm in the dispatcher; `0x801D79F8`
+is Noa's Vulture Blade and `0x801D74A8` Vahn's Tornado Flame, both switching
+once at keyframe 14; `0x801D7650` is Vahn's Burning Flare, one of the four
+arms that never reads the cursor at all.
+
+**A threshold is sized for the clip the art plays in retail, and nothing
+rescales it.** An arm reads no frame count and has no other notion of where it
+is in the swing, so against a longer clip the whole cascade completes inside
+the opening and the last framing then holds for the remainder; against a
+shorter one the later bands are never reached. The highest threshold in the
+dispatcher is `0x110`, keyframe 17, so **every arm has spent its whole
+choreography by keyframe 17 of whatever clip is playing** - which is a
+proportion of the swing only for clips of about the length the literals were
+cut against. The four cursor-blind arms are the flat case: one framing for the
+entire clip, immune to its length and with no choreography to re-time.
+
+Every row of the table is read site by site out of
+`ghidra/scripts/funcs/overlay_battle_action_801d71b8.txt`; the art constants
+come from the three jump tables at PROT 0898 file `0x0270` / `0x02B8` /
+`0x0308`. The `slti` shape is what identifies a threshold - the dispatcher's
+own bounds checks are `sltiu`, a different opcode, and the arms are branch
+cascades, so a straight-line liveness read of the cursor register calls it
+dead on the very paths that jump over its reuse.
+
 ## The two ramp counters the arms fold beside the rows
 
 Each arm also adds its own literals and multiples of two battle-context
-counters, under its own animation-frame thresholds (`actor[+0x22C][+0x68]`
-against `0x40`, `0x61`, `0x70`, `0x90`, `0xA0`, `0xB0`, `0xC0`, `0xE0`, `0xF0`
-and `0x110`, depending on the arm):
+counters, per band of the [cursor cascade](#the-cursor-cascade-each-arms-thresholds-are-clip-sized-literals)
+above:
 
 - `ctx[+0x26E]` - a `0..=0xC8` ramp advanced by `8 * frame_step` and clamped in
   `FUN_801D5854`'s prologue (`0x801D58F8..0x801D5960`), which runs on **every**

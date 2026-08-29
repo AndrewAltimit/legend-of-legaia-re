@@ -24,7 +24,8 @@
 //! art names, Miracle/Super Art trigger sequences) come from external
 //! reverse-engineering work that captured the relevant tables from RAM
 //! addresses `0x80160EFC` (Vahn), `0x80176998` (Noa), `0x8018BA54` (Gala)
-//! and PROT entry `0x05C4`. See [`docs/formats/art-data.md`](../../docs/formats/art-data.md)
+//! and the player-file `record0` art bank. See
+//! [`docs/formats/art-data.md`](../../docs/formats/art-data.md)
 //! for the binary record layout, multiplier encoding, and full table
 //! citations.
 //!

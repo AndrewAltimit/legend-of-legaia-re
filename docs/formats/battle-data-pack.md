@@ -39,6 +39,7 @@ Implementations:
 - [Slot region](#slot-region)
 - [Decompressed slot layout](#decompressed-slot-layout)
 - [Battle animations (record[0])](#battle-animations-record0)
+  - [Two container encodings, one pose format](#two-container-encodings-one-pose-format)
   - [Swing records](#swing-records-equipment-sections--slots-0xc0xf)
   - [Art-animation bank](#art-animation-bank-record0-0x58)
   - ["ME" stream archives](#me-stream-archives-readefdat)
@@ -461,6 +462,18 @@ The byte runs the earlier byte-match corpus read as "texture format tags" at
 bone-id bytes (`06 09 0a 0b | 0c 0d 0e 00` = 6 attached objects on bones
 9..14 - a footwear section).
 
+The assembled objects are not only drawn - they are **effect-read**: the
+Spirit charge's streamer effect samples authored **vertex indices** of
+specific objects (on Noa's retail assembly, the hair part's 49 vertices
+and the `0xFE` weapon extra's 56), pinned live by content-diffing the
+charge's GPU display list between a clean and a glitched tick on retail
+and patched discs. A rebuild that ships a zero-vertex object in one of
+those slots feeds the streamer reads from whatever bytes follow the
+empty pool - the effect's trail fan then anchors off-model. A prim-less
+object with a real vertex pool (all vertices at the object origin, so
+the part's pose channel seats them on its socket) satisfies the reads
+while drawing nothing.
+
 The post-TMD pool has no PSX TIM image-block headers: it is one upload block
 in the `FUN_80053B9C` frame -
 `[u16 clut_x][u16 clut_n][clut_n × u16 BGR555][w*h halfwords 4bpp pixels]`
@@ -472,6 +485,21 @@ placement is pinned - see
 [Texture-pool VRAM placement](#texture-pool-vram-placement).
 
 ## Battle animations (record[0])
+
+**Only the region below `clut_a_off` is battle-persistent.** The member
+init decodes record[0] into a single `0x19000`-byte allocation, uploads
+the CLUT-A/B image blocks, then LZS-decodes the five equip-section
+sub-records *sequentially into the same buffer starting at `clut_a_off`*
+(cursor advancing per section - the walk
+`legaia_asset::battle_char_palette::parse_record` mirrors). Everything
+from `clut_a_off` on is therefore load-time scratch: bytes there are
+addressable right after the record decodes (and in any post-load RAM
+capture the sub-records have already run over), but they do not survive
+into the battle. Anything that must stay readable per-frame - the action
+table, its entries, the art-animation bank - lives below `clut_a_off`,
+and an edit that adds such data must grow that region (shifting
+`clut_a_off`/`clut_b_off`/`budget` and the paired `+0x5C` word up), never
+borrow payload space above it.
 
 `record[0]` (the LZS stream at file `+0x10`, decoded to `budget` bytes) is
 not just the battle-palette chain: its head is a **u32 action-offset table**
@@ -600,6 +628,37 @@ Ghidra dumps. To close the negative completely, extract those with
 statement is "no reader in SCUS or the 15 extracted overlays", **not**
 "no reader anywhere".
 
+### Two container encodings, one pose format
+
+A character's clips reach the same decoder through two containers that encode
+them differently, and the difference decides what an edit costs.
+
+- **Inline in `record[0]` - raw.** Every entry the action-offset table points
+  at carries its stream **verbatim** at `+0xAC`: `[u8 parts][u8 frames]` then
+  `parts * frames` 9-byte TRS records, so the stream is exactly
+  `2 + parts * frames * 9` bytes and its own head is the only length there is.
+  Entries are laid end to end (word-aligned) in the decoded block, and the
+  retail splice `FUN_800557B8` copies `(parts*frames*9 + 5) >> 2` words after
+  the `0xAC` header, which pins the same arithmetic from the code side. There
+  is no size field, no flag and no compression at this layer - the block's own
+  LZS is the only encoding between the stream and the disc. This covers the
+  reaction family, the idle, and the spliced [swing
+  records](#swing-records-equipment-sections--slots-0xc0xf).
+- **In a `readef.DAT` `"ME"` body - channel-delta.** An art record's stream is
+  not inline; it is an archive body whose size word carries a bit-15
+  compression flag, and every player-art body on the retail disc has that bit
+  set, so it is delta-coded per 12-bit channel by `FUN_8002A9CC` (see
+  [`"ME"` stream archives](#me-stream-archives-readefdat)).
+
+Both decode to the same `[parts][frames][9-byte TRS]` bytes and the same
+absolute-model-space pose model
+([`monster-animation.md` § Packed stream](monster-animation.md#packed-stream-entry-0x8c)),
+so the two are interchangeable **after** decoding and not before. The trap is
+in the other direction: a raw inline stream can be rewritten byte-for-byte in
+place - hold `parts` and `frames` and every later offset in the block stays
+valid, with no relocation - whereas a `"ME"` body has to be re-encoded, and its
+encoded length is a property of the content rather than of the pose count.
+
 ### Swing records (equipment sections → slots 0xC..0xF)
 
 Each selected section's decoded payload carries self-relative offsets to
@@ -620,8 +679,11 @@ Disc census (every equippable id in every file, disc-gated
 section-2/3/4 slot carries a valid record at `+0x04` (and section 4 at
 `+0x08`), `parts` = the character's skeleton bone count (up to +2 channels
 on slots with attach objects), stream end inside the section footprint.
-The record's `+0x00` tag is a presentation-class id (`0x0E..0x1F`
-observed), **not** the runtime slot. Sections with `attach_obj_count > 0`
+The record's `+0x00` byte is **not** the runtime slot - and not a class
+id: it sits in the entry head the art bank uses for the per-strike
+**power run** (below), and the observed band (`0x0E..0x1F`) lies inside
+that power encoding
+([art-data.md](art-data.md#damage-power-byte---pinned-to-record0-0x24)). Sections with `attach_obj_count > 0`
 additionally carry attach-object records; `FUN_80052FA0` matches each
 attach record's `+0x07` **attach key** against the action entries'
 `+0x77` bytes (then the art bank's `+0x9B` keys) and links the attach copy
@@ -663,8 +725,13 @@ The self-relative word at record[0] `+0x58` locates the bank:
 +0x10  char name[20]      ; inline art-name string (NUL-terminated ASCII;
                           ; empty on the base / un-named records)
 +0x24  action entry       ; 0xAC bytes - the standard entry header:
-       +0x00 u8  tag          ; presentation-class id (0x16..0x1F on named
-                              ; arts, 0 on base records)
+       +0x00 u8  power[]      ; per-strike POWER run (= record +0x24):
+                              ; FUN_801EC3E4 indexes it by the strike
+                              ; cursor (actor +0x1F4); run length = the
+                              ; entry's event-frame strike count; the
+                              ; 0x16..0x1F values on named arts are the
+                              ; UDF/LDF power encoding (art-data.md),
+                              ; 0 on base records
        +0x04/+0x08 u32        ; attach pointers - 0 on disc, written at
                               ; runtime by FUN_80052FA0's attach-key scan
        +0x77 u8  attach_key   ; matched against equipment attach records
@@ -674,8 +741,12 @@ The self-relative word at record[0] `+0x58` locates the bank:
                               ; (FUN_8005112C weapon trail, FUN_8004CE2C
                               ; impact freeze/tint arms)
        +0x78 u8  rate         ; playback rate (FUN_80047430 cursor)
-       +0x84 u8  rate_alt     ; secondary anim-rate field (-> actor +0x21B);
-                              ; 0xFF marks the eight base-archive records
+       +0x84 u8  loop_count   ; times the clip replays frames [+0x85, +0x86]
+                              ; (FUN_8004AD80 -> actor +0x21B and +0x176<<4;
+                              ; FUN_80047430 does the wrap). NOT a rate - the
+                              ; rate is +0x78, and 0 here would freeze a clip
+                              ; while 0 is what most playable art records
+                              ; carry. 0xFF marks the base-archive records
        +0x88 u32 stream_ptr   ; 0 on disc - FUN_8004AD80 points it at the
                               ; decoded scratch buffer at commit
        +0x8C u8  eyes[4][3]   ; facial eye track (= record +0xB0) - the
@@ -753,6 +824,24 @@ phase split, not a per-record selector. Decomps
 `overlay_battle_action_801daba4.txt`, `overlay_battle_action_801e295c.txt`,
 `overlay_muscle_dome_801f12d0.txt`, `80055b4c.txt`.
 
+Two live-measured consequences of that split. First, the scratch is
+**one shared buffer** (`FUN_8004AD80` passes the same gp-relative pointer
+to every materialize; `0x800E7EA0` in the battle captures), so a later
+commit by any actor overwrites it under a still-playing clip. Second, the
+**Spirit charge** stages the base-archive record `0x11` *mid-battle* -
+outside the battle-end window the base archive is resident in - so its
+commit routinely decodes **main-archive entry 0** under the record's own
+59-frame metadata and `[+0x85, +0x86)` loop window. Retail does this too
+(scratch header read live on a retail disc mid-charge: a stale frame
+count under the playing `0x11`), and tolerates it because the loop rows
+land in the aliased stream's own hold section; rows past the decoded
+body read whatever the scratch last held, and a never-written tail is
+zeros - an all-zero pose row seats every part on the model origin, which
+the charge close-up camera sits on. Consumers that re-author these
+archives must keep every row the loop window can address inside decoded
+data (the party swap clamps `+0x85`/`+0x86` to the aliased stream - see
+[`randomizer.md`](../tooling/randomizer.md)).
+
 Archive layout (reader `FUN_8002B28C`, decomp `8002b28c.txt`):
 
 ```
@@ -773,7 +862,11 @@ temporally per channel; each frame row re-packs into the standard 9-byte
 TRS records. **Every** art entry on the retail disc has bit 15 set, so the
 codec is the exercised path. Decoded output validated across the full
 corpus: every stream is length-exact (`2 + parts*frames*9`) with
-`parts` == the character's skeleton bone count.
+`parts` == the character's skeleton bone count. The record[0] entries'
+inline streams carry the identical decoded bytes with no codec in front of
+them - see [Two container encodings, one pose
+format](#two-container-encodings-one-pose-format) for what that asymmetry
+costs an edit.
 
 Parsers: `legaia_asset::me_archive` (`parse` + `decode_channel_delta`) and
 `legaia_asset::battle_char_assembly::art_me_archive` (the readef slot
@@ -1006,6 +1099,20 @@ weapon band (17-part swings vs 16 bones) and Gala's Ra-Seru Ozma high
 tiers (16/17-part swings vs 15 bones). Decomps `8004ccd4.txt`,
 `80047430.txt`, `80049348.txt`, `800536bc.txt`, `80053898.txt`,
 `800513f0.txt`, `80048a08.txt`.
+
+**What this costs anything that rewrites a section's objects.** The `0xFF`
+variant is not spare decoration hanging off the hand - it replaces the hand,
+in the hand's own channel, for the frames a window covers. So a rebuild that
+leaves the surplus objects empty (the natural thing to do when the equipment
+visuals are being dropped) deletes the attach bone's whole part whenever a
+window opens, and retail's own variant is that bone's mesh again: byte-equal
+vertices and prims on Vahn / Gala / Terra, same topology with alternate
+vertices on Noa. The two tags need opposite treatment - a `0xFE` extra has a
+pose channel of its own and draws *alongside* the bone, so emptying that one
+is correct. `legaia_asset::party_swap::playerize` mirrors the attach bone's
+geometry into the variant by aliasing its object-table entry, which costs
+nothing because both the retail splice and the port address the data purely
+through that entry.
 
 ## Texture-pool VRAM placement
 

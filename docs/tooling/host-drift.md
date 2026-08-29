@@ -19,7 +19,7 @@ Related pages: [`shipped-bundle-freshness.md`](shipped-bundle-freshness.md)
 
 ## Where the gates run
 
-The six host-drift tiers below all run in the `gates` job of
+The host-drift tiers below all run in the `gates` job of
 [`.github/workflows/main-ci.yml`](../../.github/workflows/main-ci.yml) and from
 [`scripts/git-hooks/pre-commit`](../../scripts/git-hooks/pre-commit) as a fast
 local mirror. CI is the authority: a gate that lives only in a hook is one
@@ -115,22 +115,23 @@ this class, because a kernel that hands back pens rather than a draw list has
 no `engine-ui` builder to be enumerated:
 
 * window 35, the buy-quantity readout
-  (`engine-core::shop::shop_buy_quantity_panel`, `FUN_801D5510`) - drawn by
-  the browser page only, so a native-window buyer sized a stack with no held
-  count, no unit price and no running total on screen. Both hosts draw it now.
+  (`engine-core::shop::shop_buy_quantity_panel`, `FUN_801D5510`) - it drew on
+  the browser page alone, so a native-window buyer sized a stack with no held
+  count, no unit price and no running total on screen.
 * window 39, the sell-list item detail
-  (`engine-core::shop::shop_sell_detail_panel`, `FUN_801D5AE8`) - still
-  browser-only, so a native-window seller picks a row with no name, no
-  description, no price and no accessory-passive lines beside it.
+  (`engine-core::shop::shop_sell_detail_panel`, `FUN_801D5AE8`) - likewise, so
+  a native-window seller picked a row with no name, no description, no price
+  and no accessory-passive lines beside it.
 
-Window 39 has a blocker window 35 did not, and it is worth naming because it is
-the sort a "just call the kernel" reading misses. Its passive lines route
-through `shop::item_passive_index`, whose equipment arm needs the equip record's
-`+5` byte, and the native host holds equipment restrictions as
-`equipment::DiscEquipInfo`, which keeps `+6` / `+7` and **drops `+5`**. So the
-native window cannot resolve the equipment-arm passive index at all today; the
-prerequisite is that byte reaching `DiscEquipEntry` (or the raw
-`EquipStatTable` staying resident), not a call site.
+Both draw on both hosts. Window 39 carried a prerequisite window 35 did not,
+and it is worth naming because it is the sort a "just call the kernel" reading
+misses. Its passive lines route through `shop::item_passive_index`, whose
+equipment arm needs the equip record's `+5` byte, so a host that holds
+equipment restrictions as `equipment::DiscEquipInfo` cannot resolve the
+equipment-arm passive index until that byte is kept beside `+6` / `+7`. The
+missing piece was never the call site - it is
+`DiscEquipEntry::passive_index` and `DiscEquipInfo::row_passive_index`, which
+the shop's window-39 painter reads on both hosts.
 
 The general shape: **tier 1 is silent about every screen whose content kernel
 is not an `engine-ui` builder.** A cheap sweep that finds them is "public
@@ -205,8 +206,9 @@ is reached at runtime.
 | Muscle Dome damage | `pattern_same` over the `resolve_turn*` family each host names. |
 | save-select model | `pattern_same` over the `SaveRack` variant each host builds. |
 | live-loop arming | `symbols_all` on the shared `World::arm_live_loop`. |
-| pause-menu open | `symbols_all` on `FieldMenuGate` + `SceneMode::Menu` + `dialogue_owns_input`. |
-| game-over panel | `pattern_same` over the `game_over_draws_for` argument list. |
+| pause-menu open | `symbols_all` on `FieldMenuGate` + `SceneMode::Menu`. |
+| menu-open precondition | `symbols_all` on `field_menu_open_allowed`, across all three open sites. |
+| party wipe | `symbols_all` on `GameOverOutcome::ReturnToTitle` across the two routing sites. |
 | dev-menu tick | `symbols_all` on `retail_packed` + `commit_equip_row` + the records-page toggle. |
 | dev-records model | `symbols_all` on `record_counters` + `records_screen` across the two model builders. |
 | play clock | `symbols_same` on `advance_play_time` across the two menu draw sites. |
@@ -223,17 +225,23 @@ every row white and opens every row, which lets a player Save in one of the
 scenes whose header forbids it (see [`save-screen.md`](../subsystems/save-screen.md)).
 Both open sites call the same builder, so tier 1 was green throughout.
 
-The row also names `dialogue_owns_input`, because *whether the menu opens at
-all* is the same kind of invisible split. Retail's menu-open accept sits behind
-the locomotion controller's engaged-bit branch, so Start is inert while the
-player is talking; the two hosts refuse in two crates, and a host that dropped
-the check would look identical in every screenshot that is not mid-conversation
-(see [`field-menu.md`](../subsystems/field-menu.md#the-menu-does-not-open-at-all-while-a-dialogue-is-up)).
+**Menu-open precondition.** *Whether the menu opens at all* is the same kind of
+invisible split, so it is a row of its own: every host that turns a Start edge
+into an open menu must ask `World::field_menu_open_allowed` rather than spell
+the test out locally. That predicate carries both halves - the scene mode, and
+the locomotion controller's engaged bit, which is why Start is inert while the
+player is talking (see
+[`field-menu.md`](../subsystems/field-menu.md#the-menu-does-not-open-at-all-while-a-dialogue-is-up)).
+Three hosts each wrote their own copy and all three said `mode == Field`, which
+is how the overworld lost the pause menu: retail runs one locomotion controller
+across the field and the kingdom overworlds, and the port splits that one retail
+mode into `Field` + `WorldMap`.
 
-**Game-over panel.** The assertion is that both hosts project the live
-`GameOverSession` - its cursor, and the save-scan `continue_enabled` - rather
-than a pinned pair of literals. `pattern_same` is the right mode because it
-does not have to name what the arguments should be.
+**Party wipe.** The pairing is on the *routing* sites, not the draw sites,
+because retail's wipe arm has exactly one exit store - so a host that offers the
+player a row here has invented a destination. The panel that used to sit in this
+slot was exactly that, drawn from a pinned literal pair on one host and from a
+live cursor on the other: two pictures of a menu retail never shows.
 
 **Play clock.** The H:MM:SS box reads `World::play_time_seconds`, and that
 counter only moves if a host drives `advance_play_time`. Substituting a frame
@@ -248,7 +256,8 @@ with waivers in
 [`scripts/ci/trait-override-waivers.toml`](../../scripts/ci/trait-override-waivers.toml).
 
 `engine-core` hands hosts their behaviour through traits, and several give
-every method a default body - `BgmDirector` gives all eight. That is a
+every method a default body - `BgmDirector`, in
+`crates/engine-core/src/scene/host.rs`, is the one to look at. That is a
 deliberate convenience (a test stub can implement it with an empty block) and
 a silent failure mode: a host that never types `start_owned_vab` loses every
 global-pool track, which is every real music cue, with no compile error and
@@ -358,8 +367,8 @@ one implementation both hosts call, and `std::env::var` answers `Err` under
 [`check-ui-host-drift.py`](../../scripts/ci/check-ui-host-drift.py).
 
 Every tier above measures a UI screen, a constant, a simulation injection
-site, a trait hook or a keyboard table. None of them asks the question that
-has now shipped **five** separate bugs: two surfaces assemble the same kind of
+site, a trait hook or a keyboard table. None of them asks the question that has
+shipped every bug in the table below: two surfaces assemble the same kind of
 draw list and only one runs the kernel that makes it correct.
 
 | what shipped | who missed it |
@@ -524,7 +533,7 @@ about these is contested.
 
 | Gap | Shape |
 |---|---|
-| save-model unification | The two hosts build their save-slot model separately; the tier-3 `set_card_slots_mode` row is one symptom of it, not the whole of it. |
+| save-model unification | The two hosts build their save-slot model separately; tier 3's save-select row pairs only the `SaveRack` kind each declares, not the model around it. |
 | shared camera on web | The browser page runs its own orbit projection beside the engine's camera controller instead of consuming it. |
 | MDEC on web | `crates/mdec` decodes STR video for the native `play-str` path; the play page has no video decode, so an FMV beat has nothing to show. |
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |

@@ -364,6 +364,12 @@ pub(crate) fn with_extension(input: &Path, ext: &str) -> PathBuf {
     p
 }
 
+/// Parse a `--delilas-party` mapping: three comma-separated sibling names in
+/// Vahn, Noa, Gala order, each used once (`gi,lu,che`).
+pub(crate) fn parse_delilas_party(s: &str) -> Result<legaia_patcher::delilas_party::PartyMapping> {
+    legaia_patcher::delilas_party::PartyMapping::parse(s)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

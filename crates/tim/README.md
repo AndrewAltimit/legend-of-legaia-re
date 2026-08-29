@@ -50,7 +50,8 @@ Pixel widths in real pixels:
   bounds-checked - NPC palettes sit at the framebuffer's bottom edge). Used to
   build the flat `PROT.DAT` TIM catalog in `legaia-asset::tim_catalog`.
 - `Tim::byte_extent` / `Tim::palette_count` - on-disc footprint + CLUT count.
-- `Tim::to_rgba8` - palette-resolve to RGBA8 for PNG.
+- `decode_rgba8(tim, clut_idx)` - palette-resolve one CLUT row to RGBA8 for
+  PNG; `write_png` is the encoder beside it.
 - `vram::Vram` - software model of PSX VRAM (1024×512 R16 framebuffer).
   Used by `legaia-engine-render` for per-primitive texture-page +
   CLUT-row decode in the fragment shader.

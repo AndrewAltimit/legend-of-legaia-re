@@ -254,9 +254,9 @@ impl PlayWindowApp {
             let audio_str = if self.session.audio.is_none() {
                 "no audio"
             } else if self.options_state.muted {
-                "audio MUTED (V)"
+                "audio MUTED (F2)"
             } else {
-                "audio on (V mutes)"
+                "audio on (F2 mutes)"
             };
             // Human-readable name for the playing track: global-pool ids join
             // the music_01 bank / debug sound-test order the curated

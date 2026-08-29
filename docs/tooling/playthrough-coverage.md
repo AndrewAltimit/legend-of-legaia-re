@@ -139,11 +139,13 @@ harness's):
   breakpoints), so the arming gate is irrelevant to it. Tracing the boot/title
   code itself (if wanted) arms on a memory-watchpoint at a known boot-transition
   register (`_DAT_801EF16C`, the title countdown) rather than a vsync count.
-- **Breakpoint-count ceiling: arm a SMALL set per run.** Arming the full
-  780-entry gap-set in one go stalls the emulator before capture; ~150 arms
+- **Breakpoint-count ceiling: arm a SMALL set per run.** Arming the whole
+  gap-set in one go stalls the emulator before capture; ~150 arms
   fine. Capture the whole gap-set as a UNION of windowed passes
-  (`LEGAIA_ADDR_HI=0x801C0000` for the 167 SCUS, then overlay windows via
-  `LEGAIA_ADDR_LO/HI`), each pass under the ceiling. The probe writes the CSV
+  (`LEGAIA_ADDR_HI=0x801C0000` for the SCUS subset, then overlay windows via
+  `LEGAIA_ADDR_LO/HI`), each pass under the ceiling.
+  [`trace_scenario.sh`](../../scripts/pcsx-redux/trace_scenario.sh) tiles those
+  windows for you. The probe writes the CSV
   incrementally (every ~60 vsyncs) so a late PCSX abort - this build aborts a
   few hundred vsyncs into some resumed saves - still leaves the captured hits on
   disk; the `.hits.txt` snapshot is a second copy.
@@ -196,7 +198,7 @@ once field-RUN begins, so use a small `LEGAIA_SETTLE` (the checkpoint must land
 in the init window); pressing START+CROSS *together* navigates the title (single
 -button variants stall at the menu mode `0x17`).
 
-So cold-boot S1 is now capturable headless + reproducibly, alongside the resume
+So cold-boot S1 is capturable headless + reproducibly, alongside the resume
 path. (GDB note: `gdb_probe.py`'s packet parser mis-frames the `+` ack into the
 payload, raising a spurious checksum error - the read value is still visible in
 the error text; a one-line framing fix makes it a clean host-side state oracle.)
@@ -710,7 +712,9 @@ logic.
 - **1 already documented:** `8005A5FC` re-traces the interior of the
   GPU-queue flusher `FUN_8005A4A0` - confirmation the trace hits known code too.
 
-Net: gap-set 762 -> 739 (SCUS 161 -> 138). Every overlay-range hit attributes to
+Every triaged address leaves the gap-set on the next regenerate, so the
+burndown shows up in the worklist rather than here. Every overlay-range hit
+attributes to
 the **field overlay 0897** (all `first_mode 0x03`); the misleading dump stems
 (`overlay_dance_*`, `overlay_slot_machine_*`, ...) are just the static dump's
 home overlay under VA-aliasing, not the resident code.
@@ -800,10 +804,12 @@ they lie in the `0898` program (`overlay_battle_action.bin`, spanning
 - **The `0x801F` cluster - `0898`'s own render tail, truncated from the import.**
   `0x801F71E0` (62×), `0x801F0740` (16×), the `0x801F0xxx`/`0x801F6xxx` set are
   `inmem=False` in `overlay_battle_action.bin` - but *not* because they are a
-  different overlay. The battle overlay `0898` loads at base `0x801CE818` and is
-  `~0x29800` bytes (`crates/asset/data/static-overlays.toml`), so it spans
-  `0x801CE818..0x801F8018` - every `0x801F` hit is inside it. The Ghidra program
-  was imported as the window `0x801C0000..0x801EFFFF`, which stops `0x8018` bytes
+  different overlay. The battle overlay `0898` loads at base `0x801CE818` and its
+  PROT entry is `0x28800` bytes (`clean_copy_bytes` in
+  `crates/asset/data/static-overlays.toml`), so it spans
+  `0x801CE818..0x801F7018` - the lower `0x801F` hits are inside it. The Ghidra
+  program was imported as the window `0x801C0000..0x801EFFFF`, which stops
+  `0x7018` bytes
   short of the overlay end, so the render tail simply isn't mapped (their `ra`
   values landing in `0898`'s own `0x801E2xxx` confirm same-overlay calls). The
   `0x801F` band splits at `0x801F69D8`:

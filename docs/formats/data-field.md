@@ -23,7 +23,9 @@ Where:
 
 ## What's in the wild
 
-Strict-validating PROT entries with `asset scan-stream` finds 26 hits, concentrated in the `_other5` cluster (entries 1214–1219+) plus a few in `dolk2`, `rikuroa2`, `rayman`. Each entry has 3 chunks of single-asset shape:
+`asset scan-stream` strict-validates 34 PROT entries (class `data_field_streaming`), in two families.
+
+**Character / effect streams** - the `other5` run, entries 1204..1219. The common shape is three chunks:
 
 ```
 chunk[0]: TIM   (single, magic 0x10)        - sprite atlas / texture
@@ -32,7 +34,11 @@ chunk[2]: MOVE2 (single, magic 0x08)        - animation data
 terminator
 ```
 
-The chunk layouts are **single assets** here (one TIM, one TMD2, one MOVE2), not packs. Other clusters elsewhere in the corpus do use pack-shaped TIM_LIST / TMD chunks; the [pack format](pack.md) handles that case.
+The two heads of the run are homogeneous instead: `1204` is five `TMD2` chunks (the battle-form party meshes) and `1205` is eight `TIM` chunks of `0x8220` bytes each (their atlases) - which is what makes the atlas stride `0x8224`, chunk header included.
+
+**Scene bundles** - `MAN / MES / MOVE / VDF`, four chunks (`dolk2`, `rikuroa`, `rikuroa2`, `rayman`, `station`, `taiku`, `taiku2`, `doman`, `nilboa2`, `edbalden`, `eddoman`). Shorter variants drop the trailing `VDF` (`balden2`, `ropeway2`) or lead with a bare `TMD` where a `MAN` would sit (`balden`, `bubu1`, `edbubu`). Two entries are neither family: `init_data` is `TIM_LIST + TMD`, and `0890_sound_data2` is two `TIM`s.
+
+The chunk layouts are **single assets** in the `other5` family (one TIM, one TMD2, one MOVE2), not packs. Other clusters elsewhere in the corpus do use pack-shaped TIM_LIST / TMD chunks; the [pack format](pack.md) handles that case.
 
 ## Trailer data
 
@@ -43,7 +49,8 @@ Some entries contain bytes past the streaming terminator. `asset extract` preser
 - The [scene-TMD-prefixed streaming](scene-bundles.md) shape is structurally similar but the leading chunk has no `[u32 type_size]` header and the inner content is a bare TMD instead of a TIM.
 - The [scene-VAB-prefixed streaming](scene-bundles.md) shape uses the same chunk0-header trick but with VAB content.
 - [Pack format](pack.md) lives *inside* TIM_LIST / TMD chunks when the chunk's data is a pack rather than a single asset.
-- A handful of entries (`0157_rikuroa`, `0228_station`, `0373_taiku`, `1205_other5`) carry the streaming layout but the **final** chunk's declared `size` walks past EOF without a terminator on disc. The runtime extends the chunk via streaming DMA continuation rather than consuming a literal terminator. Detector: `crates/asset/src/data_field_truncated.rs` (class `data_field_truncated`).
+- One entry (`0892_level_up`) carries the streaming layout but its **final** chunk's declared `size` walks past the entry's end without a terminator on disc - three clean leading chunks, then an over-large fourth header. Detector: `crates/asset/src/data_field_truncated.rs` (class `data_field_truncated`). How the runtime consumes that chunk is not pinned.
+- Three scene entries commonly cited in this class - `0157_rikuroa`, `0228_station`, `0373_taiku` - are **not** truncated. Each is one of the four-chunk `MAN / MES / MOVE / VDF` bundles above, and each is a case where the superseded `toc[p+5] - toc[p+3] + 4` span fell *short* of the real entry (`0157` declares 163840 bytes against a real 186368; the other two are short by 69632 and 8192), so the last chunk overran a buffer that ended early. Against their own sectors all three terminate cleanly. See [`prot.md`](prot.md#tocp5---tocp3--4-is-not-an-entrys-size).
 
 ## Per-scene field bundles - what's still open
 

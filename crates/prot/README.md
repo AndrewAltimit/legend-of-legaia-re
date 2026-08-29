@@ -67,7 +67,15 @@ random blobs).
 prot-extract list    <PROT.DAT> [--cdname <CDNAME.TXT>]
 prot-extract locate  <PROT.DAT> <offset> [--in-entry N] [--cdname <CDNAME.TXT>]
 prot-extract extract <PROT.DAT> <out_dir> [--cdname <CDNAME.TXT>] [--clamp-footprint]
+prot-extract retail-names <CDNAME.TXT> [--all]
 ```
+
+`retail-names` prints what the **retail loader** reads back out of a
+`CDNAME.TXT` next to what the tolerant parser reads, flagging each
+disagreement. The loader copies each name into a 16-byte record with no bound
+and no terminator, then stores the block index over bytes `+0xC`/`+0xD`, so
+every name of 12 bytes or more comes back with index bytes buried inside it -
+the reading a tool editing `CDNAME.TXT` has to satisfy.
 
 Names from `CDNAME.TXT` propagate to the extracted filenames
 (`0865_battle_data.BIN`, etc.) so downstream tools stay self-describing.

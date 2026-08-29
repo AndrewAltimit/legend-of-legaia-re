@@ -56,7 +56,7 @@ pub const DEV_MENU_CURSOR_COL: i32 = 4;
 /// One visible dev-menu row reduced to its draw inputs.
 #[derive(Debug, Clone, Copy)]
 pub struct DevMenuListRow<'a> {
-    /// The row label (`MAP_CHANGE`, `CAMERA`, `ENCOUNT`, ... or `CLOSED`).
+    /// The row label (`MAP CHANGE`, `CAMERA`, `ENCOUNT`, ... or `CLOSED`).
     pub label: &'a str,
     /// Formatted numeric readout and its x column offset from the origin, for
     /// the rows that show a live value. `None` for label-only rows.
@@ -136,15 +136,15 @@ mod tests {
     fn rows() -> Vec<DevMenuListRow<'static>> {
         vec![
             DevMenuListRow {
-                label: "MAP_CHANGE",
+                label: "MAP CHANGE",
                 value: None,
             },
             DevMenuListRow {
-                label: "CARD_OPTION",
+                label: "CARD OPTION",
                 value: None,
             },
             DevMenuListRow {
-                label: "PLAYER_STATUS",
+                label: "PLAYER STATUS",
                 value: None,
             },
             DevMenuListRow {

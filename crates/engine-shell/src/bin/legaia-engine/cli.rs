@@ -729,8 +729,11 @@ pub(crate) enum Cmd {
     /// distance preset (retail / far / farther - default `far`, persisted
     /// in `legaia-options.toml`); `R` toggles precise free-angle movement
     /// (non-retail; true key diagonals + continuous analog angles,
-    /// persisted); `C` toggles the wide debug orbit vantage; `I` toggles
-    /// dynamic lighting; `V` mutes audio.
+    /// persisted); `F3` toggles the wide debug orbit vantage; `I` toggles
+    /// dynamic lighting; `F4` toggles the camera-occlusion fade; `F2` mutes
+    /// audio. The shell's own toggles sit on function keys because every
+    /// letter is bindable to a pad button - a toggle on a bound letter
+    /// consumes the event and deletes that button from the keyboard.
     ///
     /// When `--str-file` is provided the STR video plays first in a windowed
     /// player (same as `play-str`). After the video window closes the scene
@@ -972,20 +975,10 @@ pub(crate) enum Cmd {
         /// roofs / props (retail relies on authored camera framing instead
         /// and can bury the player). Pure presentation - the simulation and
         /// the faithful-mode oracles are untouched. Toggle at runtime with
-        /// the `D` key.
+        /// the `F4` key.
         #[arg(long, default_value_t = false)]
         no_occlusion_fade: bool,
     },
-    /// Open a window and play back a PSX STR movie using the MDEC decoder,
-    /// paced at the stream's real ~15 fps.
-    ///
-    /// Without `--disc` it plays a raw filesystem STR file (2048-byte Form-1
-    /// sectors, video only - the `legaia-extract` shape). With `--disc <bin>`
-    /// the `<str_file>` argument is an ISO path inside the disc image (e.g.
-    /// `MOV/MV1.STR`); the movie is read as raw 2352-byte sectors so its
-    /// interleaved XA audio track plays, with the video clock driven off the
-    /// audio cursor for A/V sync.
-    #[command(display_order = 2)]
     /// Resolve XA voice-cue ids to the `(clip slot, filter channel, duration)`
     /// triple the retail dispatcher builds - the cutscene-audio census view.
     ///
@@ -1005,6 +998,16 @@ pub(crate) enum Cmd {
         #[arg(long)]
         xa_dir: Option<PathBuf>,
     },
+    /// Open a window and play back a PSX STR movie using the MDEC decoder,
+    /// paced at the stream's real ~15 fps.
+    ///
+    /// Without `--disc` it plays a raw filesystem STR file (2048-byte Form-1
+    /// sectors, video only - the `legaia-extract` shape). With `--disc <bin>`
+    /// the `<str_file>` argument is an ISO path inside the disc image (e.g.
+    /// `MOV/MV1.STR`); the movie is read as raw 2352-byte sectors so its
+    /// interleaved XA audio track plays, with the video clock driven off the
+    /// audio cursor for A/V sync.
+    #[command(display_order = 2)]
     PlayStr {
         /// STR file to play. Without `--disc` this is a raw filesystem path
         /// (2048-byte Form-1 sectors, video only - the extracted shape).

@@ -168,7 +168,7 @@ pub fn resolve_seed(seed: &str) -> String {
 
 /// Number of `prog.stage(..)` boundaries in [`patch_rom`] (the `stage_count`
 /// every progress-callback invocation carries).
-const PATCH_ROM_STAGES: u32 = 35;
+const PATCH_ROM_STAGES: u32 = 36;
 
 /// Patch a user-supplied disc image with the chosen randomizer settings.
 ///
@@ -382,6 +382,9 @@ pub async fn patch_rom(
     enemy_stat_scale: &str,
     exp_scale: &str,
     seru_catch_rate: &str,
+    delilas_party: &str,
+    delilas_arts_voice: &str,
+    delilas_moves: &str,
     super_art_powers: &str,
     show_super_arts: bool,
     enemy_attack_count: &str,
@@ -1197,6 +1200,77 @@ pub async fn patch_rom(
                 Err(e) => summary.push_str(&format!("seru-catch-rate: {e}\n")),
             },
             Err(e) => summary.push_str(&format!("seru-catch-rate: skipped - {e}\n")),
+        }
+    }
+
+    // Delilas party swap (empty = off): play as the mapped siblings, the
+    // ravine duels field Vahn / Noa / Gala models. Runs after
+    // --delilas-challenge (same ordering as the CLI - the challenge cuts
+    // its slim dome clones from the pre-swap blocks). The single heaviest
+    // stage in the whole run (player files + monster blocks + field forms
+    // + XA banks), so it gets its own progress label.
+    prog.stage("Delilas party swap").await;
+    let delilas_party = delilas_party.trim();
+    if delilas_party.is_empty() {
+        summary.push_str("delilas-party: off\n");
+    } else {
+        // Arts-voice mode for the swapped shout banks; an empty or
+        // unknown value falls back to the default (original).
+        let arts_voice = delilas_arts_voice
+            .trim()
+            .parse::<legaia_patcher::delilas_voice_fx::ArtsVoiceMode>()
+            .unwrap_or_default();
+        // Move mode for the swapped kit; an empty or unknown value falls
+        // back to the retail-preserving default (hybrid).
+        let move_mode = delilas_moves
+            .trim()
+            .parse::<legaia_patcher::delilas_party::DelilasMoveMode>()
+            .unwrap_or_default();
+        match legaia_patcher::delilas_party::PartyMapping::parse(delilas_party) {
+            Ok(mapping) => {
+                let cast_route = if shiny_seru
+                    || show_super_arts
+                    || !arts_ap_grants.trim().is_empty()
+                    || !arts_ap_costs.trim().is_empty()
+                {
+                    legaia_patcher::delilas_party::CastRoutePolicy::ArenaTaken
+                } else {
+                    legaia_patcher::delilas_party::CastRoutePolicy::Install
+                };
+                match legaia_patcher::delilas_party::apply_delilas_party(
+                    &mut patcher,
+                    &mapping,
+                    arts_voice,
+                    move_mode,
+                    cast_route,
+                ) {
+                    Ok(rep) if rep.changed => {
+                        summary.push_str(&format!(
+                            "delilas-party: playing as {} / {} / {} (duels field the heroes); \
+                             moves: {move_mode}; arts voices: {arts_voice}\n",
+                            mapping.vahn.display_name(),
+                            mapping.noa.display_name(),
+                            mapping.gala.display_name()
+                        ));
+                        for note in rep.notes.iter().filter(|n| n.contains("cast route")) {
+                            summary.push_str(&format!("  {note}\n"));
+                        }
+                    }
+                    Ok(_) => summary.push_str("delilas-party: already applied\n"),
+                    // A mid-apply error leaves the image partially
+                    // swapped (the swap touches many entries before the
+                    // failing one) - shipping that as a "skipped" note
+                    // would hand the user a broken hybrid ROM. Fail the
+                    // whole patch instead, like the CLI does.
+                    Err(e) => {
+                        return Err(JsValue::from_str(&format!(
+                            "delilas-party failed mid-apply ({e:#}); no ROM was produced - \
+                             the image would have been a partial hybrid"
+                        )));
+                    }
+                }
+            }
+            Err(e) => summary.push_str(&format!("delilas-party: skipped - {e}\n")),
         }
     }
 

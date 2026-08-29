@@ -427,26 +427,35 @@ animation, both shipped on disc:
   first frame starting 0x54 bytes into the record (8 zero bytes +
   12-byte CLUT block header + 32 unrelated CLUT entries).
 
-The runtime DMAs one frame at a time onto VRAM ``(0, 506)``,
+The viewer DMAs one frame at a time onto VRAM ``(0, 506)``,
 overwriting the first 16 CLUT entries; the wave peak (``0x3D05``
-bright blue) propagates through indices 0..7 over the 13-frame cycle,
-creating the horizontal rolling-wave appearance visible in retail.
+bright blue) propagates through indices 0..7 over the 13-frame cycle.
 Frame 0 starts at index 5; the cycle wraps back to index 0 at frame
 8 and continues through index 2 at frame 12.
 
+**This 13-frame table is not what retail cycles.** The frames are real disc
+data and the viewer animates them legitimately, but retail drives the same
+``(0, 506)`` head from the kingdom bundle's **slot-5 CLUT-walk table**, on a
+different cadence (18 steps, one every 9 vsyncs, ≈2.7 s per cycle). The
+13-frame slot-0 path survives in the engine only as the fallback for a bundle
+with no parseable slot 5, which no retail bundle is. See
+[`world-map.md`](world-map.md) for the retail mechanism.
+
 ## Web-overview shader plumbing
 
-``crates/web-viewer::ocean::find_ocean_assets`` decompresses the
-kingdom bundle's slot 0, locates the ocean TIM by VRAM coords, and
+[`legaia_asset::ocean::find_ocean_assets`](../../crates/asset/src/ocean.rs)
+decompresses the kingdom bundle's slot 0, locates the ocean TIM by VRAM coords, and
 signature-scans the slot for the animation table. The disc-gated
 test ``crates/web-viewer/tests/ocean_assets.rs`` verifies extraction
 across all three kingdoms.
 
-The viewer animates the water the way retail does: each animation
+The viewer animates the water through retail's own CLUT head: each animation
 step writes the frame's 16 BGR555 entries **into the VRAM texture at
 `(0, 506)`** - the CLUT row the continent heightfield's water cells
-sample (CBA `0x7E80`; the retail per-frame ocean DMA target, same
-mechanism as the live engine's `advance_ocean_animation`). Every
+sample (CBA `0x7E80`, the retail ocean CLUT target). The frames it steps
+through are the slot-0 13-frame table, i.e. the live engine's
+`advance_ocean_animation` **fallback** arm rather than its retail slot-5
+stepper. Every
 water prim in the scene shimmers from that single CLUT write, so
 terrain-embedded water and the open sea stay phase-locked as one
 layer. The wall-clock frame cadence matches the live engine's tuned

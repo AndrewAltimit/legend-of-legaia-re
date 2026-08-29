@@ -12,7 +12,7 @@ Three pieces:
 |---|---|---|
 | `j-replay-v1` schema | [`legaia_engine_shell::replay`](../../crates/engine-shell/src/replay.rs) | TOML format + parser/writer/validator |
 | Determinism gate | [`crates/engine-shell/tests/determinism_j2.rs`](../../crates/engine-shell/tests/determinism_j2.rs) | Disc-free cargo-test; runs in CI |
-| `legaia-engine replay` / `record` | [`crates/engine-shell/src/bin/legaia-engine.rs`](../../crates/engine-shell/src/bin/legaia-engine.rs) | Headless playback + interactive capture |
+| `legaia-engine replay` / `record` | [`crates/engine-shell/src/bin/legaia-engine/cli.rs`](../../crates/engine-shell/src/bin/legaia-engine/cli.rs) | Headless playback + interactive capture (flag definitions) |
 
 ## File format (`j-replay-v1`)
 
@@ -73,6 +73,9 @@ mode trace as JSONL (the same shape as `legaia-engine mode-trace`):
 legaia-engine replay --input my.replay.toml [--out trace.jsonl] [--strict]
 ```
 
+Every argument is a flag - `--input` is not positional - and `--out`
+defaults to `-` (stdout), so the trace pipes without a temporary file.
+
 The synthetic driver mirrors the determinism-gate harness: `World::new`
 + an 8-slot actor pool, RNG seeded from `meta.rng_seed`, ticked once
 per replay frame. No disc required.
@@ -86,8 +89,14 @@ printed to stderr but the command succeeds.
 Thin wrapper over `play-window` with a pad-capture hook armed:
 
 ```
-legaia-engine record --out my.replay.toml [--scene town01] [--scenario LABEL] [--rng-seed 0xDEADC0DE]
+legaia-engine record --out my.replay.toml --disc "Legend of Legaia (USA).bin" \
+    [--scene town01] [--scenario LABEL] [--rng-seed 0xDEADC0DE]
 ```
+
+Assets come from `--extracted-root` (default `extracted`) unless `--disc`
+points at a `.bin`, which supersedes it. The bracketed values above are the
+defaults. `--no-audio`, `--world-map` and `--save-dir` behave as they do on
+`play-window`, which is the host this wraps.
 
 Every keyboard transition that changes the pad mask is appended to a
 `RecordLog` hanging off `PlayWindowApp`. Escape, window-close, and

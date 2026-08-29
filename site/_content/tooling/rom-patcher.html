@@ -457,6 +457,40 @@
           <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Injects three brand-new items into cut item slots: Nature's Elixir (restores full HP and MP in one use), the Ra-Seru Tear (a free cast of the user's own Ra-Seru summon - anyone can shed one), and the Fury Bloom (a party-wide Fury Boost in a single use). How you obtain them: with a Random drop / chest / steal mode they join the fill pool like any other item, and with the Delilas Challenge they replace the Honey as the full-clear reward. With neither source enabled the items exist in the game but nothing hands them out. Unaffected by the seed.</span></span></span>
       </label>
 
+      <div class="rom-opt">
+        <label class="rom-opt-label" for="rom-delilas-party">Delilas party swap <span class="tag tag-planned">early preview</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Play as the Delilas siblings: Gi, Lu and Che take the party's place in battle, and the story's three Nivora Ravine duels (plus the Muscle Dome Master legs) field Vahn, Noa and Gala instead - each side fights with the other's model under its own moves, so the duels play exactly as before with the fighters exchanged. Pick which sibling replaces which hero. The swap covers battle models, field walking models, names, the battle grunt voices (resampled from the siblings' own voice banks), the save-file faces (save-select portraits, memory-card icons and the boot load screen show the mapped siblings), and the dialog - lines naming Gi, Lu or Che now name the hero who took that sibling's place, with "Delilas" kept. Stats, arts, magic and the story beats are untouched, and party names change on a New Game only (existing saves keep their stored names). Each sibling also brings their signature special into the Arts list - Gi's Blazing Slash, Che's Megaton Press, Lu's Plasma Strike, all on the combo Left Right Up Up Down - replacing that hero's 50-AP Hyper Art (Burning Flare, Vulture Blade, Explosive Fist). The move plays the sibling's own choreography at its authored length, with their own cast effect instead of the hero's, and on Vahn's slot it also gains a proper swing camera (Burning Flare's retail camera is the one flat framing in the game, which is why that slot looked static). The run-in stays the hero's, since it is shared across all of that character's arts. What the heroes' Tactical Arts shout lines become is picked by the Arts voices sub-option below. Unaffected by the seed.</span></span>
+        </label>
+        <select id="rom-delilas-party">
+          <option value="" selected>Off</option>
+          <option value="gi,lu,che">Gi as Vahn, Lu as Noa, Che as Gala</option>
+          <option value="gi,che,lu">Gi as Vahn, Che as Noa, Lu as Gala</option>
+          <option value="lu,gi,che">Lu as Vahn, Gi as Noa, Che as Gala</option>
+          <option value="lu,che,gi">Lu as Vahn, Che as Noa, Gi as Gala</option>
+          <option value="che,gi,lu">Che as Vahn, Gi as Noa, Lu as Gala</option>
+          <option value="che,lu,gi">Che as Vahn, Lu as Noa, Gi as Gala</option>
+        </select>
+      </div>
+      <div class="rom-opt rom-sub" id="rom-delilas-arts-voice-row" hidden>
+        <label class="rom-opt-label" for="rom-delilas-arts-voice">&#8627; Arts voices
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">What the heroes' Tactical Arts voice banks carry once the siblings take their place - both the per-art shouts and the Super / Hyper / Miracle fanfare cues (a Hyper Art has no shout of its own, so its fanfare is its only audio). Original (the default) keeps Vahn, Noa and Gala's own shouts playing out of the siblings' bodies. Adjusted re-voices the retail shouts toward each mapped sibling with a tuned pitch and formant map, so the calls keep their timing but sound closer to the Delilas. Removed silences the arts shouts entirely - the siblings' own attack grunts remain the audible voice. Unaffected by the seed.</span></span>
+        </label>
+        <select id="rom-delilas-arts-voice">
+          <option value="original" selected>Original - keep the Vahn / Noa / Gala voices</option>
+          <option value="adjusted">Adjusted - hero voices re-voiced toward the siblings</option>
+          <option value="removed">Removed - arts silent, attack grunts remain</option>
+        </select>
+      </div>
+      <div class="rom-opt rom-sub" id="rom-delilas-moves-row" hidden>
+        <label class="rom-opt-label" for="rom-delilas-moves">&#8627; Move set
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Which animations the swapped hero's Tactical Arts play. Hybrid (the default) leaves every art exactly as retail authored it and only reskins one Hyper Art into the sibling's signature special. Delilas re-authors the character's whole battle-animation archive from the mapped sibling's own monster clips, so every art in the list plays a Delilas motion, renames each surviving art after the clip it performs, and blanks the arts that neither a Super Art nor the Miracle Art needs - a blanked art is never learned, so it never appears in the Moves list. Super and Miracle Arts stay reachable either way. Unaffected by the seed.</span></span>
+        </label>
+        <select id="rom-delilas-moves">
+          <option value="hybrid" selected>Hybrid - host arts keep their own animations</option>
+          <option value="delilas">Delilas - every art plays a sibling motion</option>
+        </select>
+      </div>
+
       <label class="rom-check-row">
         <input type="checkbox" id="rom-spirit-ap-on">
         <span>Spirit AP <span class="rom-opt-note">- how much AP the Spirit command charges (retail 32)</span>

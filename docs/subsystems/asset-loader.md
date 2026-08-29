@@ -151,7 +151,7 @@ PROT 876 (`player_data`) is a separate streaming file - VAB + an empty `TIM_LIST
   - `scene_tmd_stream` entries are excluded entirely - their leading TMDs go to the battle character TMD register (`_DAT_8007B864`), never rendered from a field scene, and their type-0x01 TIM chunks upload the same mesh's textures. Retail field saves carry row 479 fb_x=0..256 = zero.
   - `battle_data` records are skipped at parse + upload time - the pack is battle-init resident, not part of field VRAM.
 
-`SceneHost::enter_field_scene` uses `SceneLoadKind::Field` so the engine port matches the retail dispatch boundary. The `BuildOptions::default` remains `Battle` so legacy `build_targeted` calls keep their previous semantics.
+`SceneHost::enter_field_scene` uses `SceneLoadKind::Field` so the engine port matches the retail dispatch boundary. `BuildOptions::default` is `Battle`, which is the wider of the two builds and therefore the safe default for a caller that has not stated which mode it is loading for.
 
 ### Entries the sweep must never touch (all kinds)
 
@@ -184,7 +184,7 @@ For scene-level diagnostics that don't need a pre-extracted tree, `legaia-engine
 
 The four town01 NPC TMDs at field intersections sample CLUT row y=479 slots x=128..240 (`CBA = 0x77C8..0x77CF`). An earlier hypothesis was that those palettes lived inside the `battle_data` block (the player battle files, extraction 863..866) and would land in VRAM via a boot pre-load - the [byte-match corpus](../formats/battle-data-pack.md#vram-byte-match-corpus) refutes that. The actual source is the matching `scene_tmd_stream` entries in *town01's own CDNAME block*, wrapped in type-0x01 chunk headers that `FUN_8001FE70` dispatches during battle init (see [`npc-palette.md`](../formats/npc-palette.md)). Retail field saves carry row 479 = zero because retail field-mode rendering never has those CLUTs resident either.
 
-`SceneResources::build_targeted_with_options(.. SceneLoadKind::Field)` matches this dispatch boundary: it excludes both the leading TMD and the type-0x01 TIMs from every `scene_tmd_stream` entry, so the field-mode TMD pool drops the battle character meshes that retail wouldn't render either. The 388-prim "MissingClut" measurement that surfaced under the previous battle-mode default disappears - those prims belonged to meshes that simply aren't loaded in field mode.
+`SceneResources::build_targeted_with_options(.. SceneLoadKind::Field)` matches this dispatch boundary: it excludes both the leading TMD and the type-0x01 TIMs from every `scene_tmd_stream` entry, so the field-mode TMD pool drops the battle character meshes that retail wouldn't render either. A field scene built in battle mode reports a block of "MissingClut" prims for exactly this reason: they belong to meshes field mode does not load, so their CLUTs are legitimately absent rather than lost.
 
 The [player battle file](../formats/battle-data-pack.md) parser remains the entry point for battle-init: `legaia_asset::battle_data_pack` decompresses every TMD slot's LZS stream and exposes the embedded Legaia TMDs + 32-byte layout header. The post-TMD texture/CLUT pool layout is partially TBD - the descriptor at `u32[3..0x20]` points at specific palette positions but the encoding isn't pinned. `build_battle_boot_vram` wires the API in place so once descriptor decoding lands (see [`battle-data-pack.md`](../formats/battle-data-pack.md#open-questions)), battle scenes pick up the per-slot `(fb_x, fb_y)` CLUTs without further integration work.
 

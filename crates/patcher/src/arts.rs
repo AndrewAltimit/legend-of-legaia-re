@@ -367,15 +367,46 @@ pub fn patch_player_record0(
     entry: &[u8],
     edits: &[(Vec<u8>, Vec<u8>)],
 ) -> Option<(usize, Vec<u8>)> {
+    patch_player_record0_full(entry, edits, &[])
+}
+
+/// [`patch_player_record0`] plus direct byte pokes at decoded-image
+/// offsets, all applied in ONE decode -> recompress pass (two passes
+/// would each need to re-fit the LZS footprint independently). Offset
+/// edits address the decoded record0 image - e.g. an art-bank record
+/// field via `ArtAnimRecord::entry_offset`.
+pub fn patch_player_record0_full(
+    entry: &[u8],
+    edits: &[(Vec<u8>, Vec<u8>)],
+    offset_edits: &[(usize, u8)],
+) -> Option<(usize, Vec<u8>)> {
     let region = record0_lzs_region(entry)?;
     let lzs_off = region.lzs_off;
     let avail = region.avail;
     let mut decoded = legaia_lzs::decompress(entry.get(lzs_off..)?, region.budget).ok()?;
-    let changed = apply_record_edits(&mut decoded, edits);
+    let mut changed = apply_record_edits(&mut decoded, edits);
+    for &(off, byte) in offset_edits {
+        let b = decoded.get_mut(off)?;
+        if *b != byte {
+            *b = byte;
+            changed += 1;
+        }
+    }
     if changed == 0 {
         return None;
     }
-    let recompressed = legaia_lzs::compress(&decoded);
+    let mut recompressed = legaia_lzs::compress(&decoded);
+    if recompressed.len() > avail {
+        // The greedy encoder overshot the footprint. Retry with the
+        // optimal one before giving up: it is slower but never larger,
+        // and the alternative is this function returning `None` - which
+        // callers cannot tell apart from "nothing needed changing", so
+        // an overflow silently drops EVERY edit in the batch rather than
+        // failing. Edits that grow the block (a rebuilt animation stream
+        // is far less compressible than the one it replaces) sit close
+        // enough to the ceiling for this to matter.
+        recompressed = legaia_lzs::compress_optimal(&decoded);
+    }
     if recompressed.len() > avail {
         return None;
     }

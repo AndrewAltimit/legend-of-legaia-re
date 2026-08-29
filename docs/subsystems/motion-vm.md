@@ -101,7 +101,7 @@ When the high bit is set, the VM resolves a target actor before applying the bod
 ## Opcodes
 
 Dispatch is a 22-entry jump table at `0x80010EE0` indexed by `(op & 0x7F) -
-0x37`; opcodes outside `0x37..=0x4C`, and the fifteen table slots pointing at
+0x37`; opcodes outside `0x37..=0x4C`, and the sixteen table slots pointing at
 `0x80037FEC`, all take the default arm.
 
 | byte | case body  | name             | semantics                                |

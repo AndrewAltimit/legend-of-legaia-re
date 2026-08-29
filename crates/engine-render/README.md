@@ -187,12 +187,18 @@ the CPU mirror + lockstep tests live in the `dyn_light` module. In
 `play-window` this is the `--dynamic-lighting` flag, toggled at runtime
 with the `I` key and reflected on the HUD status line.
 
+`scene_lights` is the sub-layer beneath it: it derives a small set of
+world-space point lights from a loaded field scene's light-emitting props
+(candle flames, wall torches, lamps) for the renderer to shade and shadow
+from. Inert while dynamic lighting is off; `--no-dyn-shadows` / the `Y` key
+turns the shadow half off on its own.
+
 ## Opt-in camera-occlusion fade (enhancement, NOT retail)
 
 `Renderer::set_occlusion_fade(true)` plus a per-frame
-`Renderer::set_occlusion_focus(player_clip_pos, strength)` dissolve scene
-fragments that sit between the camera and the player to a 4x4-Bayer
-screen-door, so the character reads through walls / roofs / cliffs. **Off
+`Renderer::set_occlusion_focus(player_clip_pos, strength, proj_scale_y)`
+dissolve scene fragments that sit between the camera and the player to a
+4x4-Bayer screen-door, so the character reads through walls / roofs. **Off
 by default, and off IS retail** - the disabled path is pixel-identical
 (the WGSL `occl_keep` returns 1.0, which no Bayer threshold reaches).
 `strength` is the host's eased output of the **visibility gate**
@@ -212,7 +218,8 @@ intact. The focus rides in the per-frame group-2 scene uniform;
 single-mesh pipelines compile a `return 1.0` stub, like
 `scene_point_gain`. Tunables + the CPU lockstep mirror live in the
 `occlusion_fade` module. In `play-window` this is ON by default
-(`--no-occlusion-fade` / the `D` key disables), and the whole feature is
+(`--no-occlusion-fade`, or the `F4` key at runtime - a function key precisely
+because it must not collide with a pad-bindable letter), and the feature is
 deliberately per-fragment + per-triangle - the site's abandoned per-body
 occluder cull is the failure mode it avoids (see
 `docs/subsystems/renderer.md`). The browser play page ships the GLSL twin
@@ -505,6 +512,15 @@ rather than emit geometry. Each is pure, unit-tested and carries a
   mode-entry prologue: frame-pacing reset, the RAM-cached-overlay word-sum
   verdict, and the field snapshot a battle / cutscene / minigame mode is
   entered behind.
+- [`actor_cull`](src/actor_cull.rs) - the camera-frame actor projector +
+  visibility cull. The port draws every loaded body every frame: no frustum
+  cull, no draw distance, no per-object radius test (the scene clip volume is
+  `SCENE_FAR`, see [`renderer.md`](../../docs/subsystems/renderer.md)).
+
+[`gte_trace`](src/gte_trace.rs) sits beside them as the harness rather than a
+kernel: a deterministic record of the cop2 register state before and after
+each op, so a captured GTE trace can be replayed against the `gte` module's
+arithmetic.
 
 ## Current limitations
 

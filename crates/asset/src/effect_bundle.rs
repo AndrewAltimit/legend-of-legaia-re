@@ -1,5 +1,18 @@
-//! Effect-bundle container - the format used by `data\battle\efect.dat`
-//! (PROT 0872) and a sibling sub-section of `etmd.dat` (PROT 0873).
+//! Effect-bundle container - a magic-prefixed sub-region embedded inside a
+//! larger PROT entry, carrying the resident battle-effect master TMD.
+//!
+//! ## Where it lives
+//!
+//! One entry on the retail disc carries it: **`0000_init_data`**, magic at
+//! file offset `0x10270` behind a `0xFF`-fill preamble. The magic occurs
+//! nowhere else in `PROT.DAT`, raw or through any embedded LZS stream.
+//!
+//! **Trap: not the `befect_data` cluster.** The `efect.dat` (PROT 0873) /
+//! `etmd.dat` (0871) reading is falsified - those entries do not contain
+//! this magic at all. `efect.dat` is the headerless 2-pack parsed by
+//! [`crate::efect_pack`], 0872 is an offset pack, 0871 a TMD pack. The two
+//! formats are siblings in subject matter only; see `docs/formats/effect.md`
+//! for the verified `befect_data` map.
 //!
 //! ## Format
 //!
@@ -8,21 +21,21 @@
 //!
 //! ```text
 //! [file start]
-//!   ...preamble (variable size; 0xFF-padding allocator slot table in 0872,
-//!      arbitrary preceding data in 0873)...
+//!   ...preamble (variable size; the 0xFF-fill allocator slot table)...
 //!   [u32 LE = MAGIC = 0x02018B0C]
 //!   [u32 LE = HEADER_A = 0x0000001D]   ; constant across all observed bundles
 //!   [u32 LE = HEADER_B = 0x0000001E]   ; constant across all observed bundles
-//!   [28 × u32 LE - offset table, identical across all observed bundles]
+//!   [28 × u32 LE - offset table, ascending, anchored 0x17F4 .. 0x404D]
 //!   [asset region - packed Legaia TMD primitive groups + TIM textures]
 //! [file end]
 //! ```
 //!
-//! The 28 offsets are the **same values** in every known bundle (`0x17F4`
-//! through `0x404D`). They are abstract sub-record offsets - not file
-//! offsets - describing a fixed effect-record schema that the runtime fills
-//! in with bundle-specific bytes. This mirrors the field-pack pattern in
-//! [`crate::field_pack`].
+//! The 28 offsets run `0x17F4` through `0x404D`. They are abstract
+//! sub-record offsets - not file offsets - describing a fixed effect-record
+//! schema the runtime fills in. This mirrors the field-pack pattern in
+//! [`crate::field_pack`]. With a single retail carrier the values are a
+//! measurement of that carrier, so [`SCHEMA_FIRST`] / [`SCHEMA_LAST`] are
+//! detector anchors rather than a cross-bundle invariant.
 //!
 //! ## What this gives us
 //!
@@ -50,13 +63,13 @@ use serde::Serialize;
 /// Magic word that introduces the bundle header.
 pub const MAGIC: u32 = 0x0201_8B0C;
 
-/// First header u32 immediately after the magic. Constant in all observed
-/// effect bundles (PROT 0872 and 0873).
+/// First header u32 immediately after the magic, in the `0000_init_data`
+/// carrier.
 pub const HEADER_A: u32 = 0x0000_001D;
 
-/// Second header u32. Constant in all observed effect bundles. The
-/// `HEADER_B == HEADER_A + 1` relationship is a property of the format,
-/// not a coincidence - both values are the same across every bundle.
+/// Second header u32. `HEADER_B == HEADER_A + 1`; whether that is a property
+/// of the format or of the one carrier is not separable from a single
+/// sample, so [`detect`] pins both literally.
 pub const HEADER_B: u32 = 0x0000_001E;
 
 /// Number of u32 entries in the offset table.
@@ -78,9 +91,9 @@ const TMD_MAGIC: u32 = 0x8000_0002;
 /// PSX TIM magic at file offset 0 (= `0x00000010`).
 const TIM_MAGIC: u32 = 0x0000_0010;
 
-/// Constant header values observed in EVERY master TMD across every effect
-/// bundle: 382 verts, 760 normals, 760 primitives. The data inside differs
-/// per-bundle but the structural counts are universal.
+/// Master-TMD header counts measured in the `0000_init_data` carrier: 382
+/// verts, 760 normals, 760 primitives. One sample, so these are a recorded
+/// observation - nothing in this module gates on them.
 pub const MASTER_TMD_NVERTS: u32 = 382;
 pub const MASTER_TMD_NPRIMS: u32 = 760;
 pub const MASTER_TMD_NNORMALS: u32 = 760;
@@ -139,8 +152,8 @@ pub struct SchemaSlot {
 
 impl EffectBundle {
     /// File-offset range of the preamble (everything before the magic).
-    /// In 0872 this is the 0xFF-init allocator slot table; in 0873 it's
-    /// the etmd.dat content that precedes the embedded effect bundle.
+    /// In `0000_init_data` this is the `0xFF`-init allocator slot table the
+    /// bundle is embedded behind.
     pub fn preamble_range(&self) -> (usize, usize) {
         (0, self.magic_offset)
     }

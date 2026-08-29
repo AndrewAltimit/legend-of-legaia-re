@@ -322,6 +322,64 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("delilas_challenge = false".to_string());
     }
 
+    // Delilas party swap: play as the siblings, fight the heroes. Runs
+    // AFTER --delilas-challenge on purpose - the challenge cuts its slim
+    // dome clones (archive slots 190/191) from the blocks as they are at
+    // its own apply time, so challenge-first keeps the memory-tight dome
+    // 1v2 on the retail sibling data while the ravine duels (1v1, ample
+    // headroom) carry the swapped models.
+    if let Some(mapping) = &args.delilas_party {
+        let cast_route = if args.shiny_seru || args.show_super_arts || arts_ap {
+            legaia_patcher::delilas_party::CastRoutePolicy::ArenaTaken
+        } else {
+            legaia_patcher::delilas_party::CastRoutePolicy::Install
+        };
+        match legaia_patcher::delilas_party::apply_delilas_party_with(
+            &mut patcher,
+            mapping,
+            args.delilas_arts_voice,
+            args.delilas_moves,
+            cast_route,
+            legaia_patcher::delilas_party::DelilasPartyOptions {
+                keep_che_hammer: args.delilas_che_hammer,
+            },
+        ) {
+            Ok(report) if report.changed => {
+                println!(
+                    "delilas-party: playing as {} (Vahn), {} (Noa), {} (Gala); the ravine \
+                     duels + dome Master legs field Vahn / Noa / Gala models instead",
+                    mapping.vahn.display_name(),
+                    mapping.noa.display_name(),
+                    mapping.gala.display_name(),
+                );
+                for note in &report.notes {
+                    println!("  {note}");
+                }
+                manifest.push(format!(
+                    "delilas_party = {},{},{}",
+                    mapping.vahn.display_name().to_ascii_lowercase(),
+                    mapping.noa.display_name().to_ascii_lowercase(),
+                    mapping.gala.display_name().to_ascii_lowercase(),
+                ));
+                manifest.push(format!("delilas_arts_voice = {}", args.delilas_arts_voice));
+                manifest.push(format!("delilas_moves = {}", args.delilas_moves));
+                if args.delilas_che_hammer {
+                    manifest.push("delilas_che_hammer = true".to_string());
+                }
+            }
+            Ok(_) => {
+                println!("delilas-party: already applied");
+                manifest.push("delilas_party = already".to_string());
+            }
+            Err(e) => {
+                println!("delilas-party: skipped ({e:#})");
+                manifest.push("delilas_party = skipped".to_string());
+            }
+        }
+    } else {
+        manifest.push("delilas_party = false".to_string());
+    }
+
     // Jewel fix: retarget the boss cinematic casts' damage jals from the
     // resist-ladder-bypassing wrapper to the guard-respecting one, so elemental
     // jewels / guards / All Guard apply to Xain's Bloody Horns / Terio Punch

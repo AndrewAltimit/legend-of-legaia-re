@@ -133,8 +133,15 @@ save-tool saves <card.mcr>               # active save blocks + product codes
 # First character record: SC anchor 0x5C8, stride 0x414 (2nd char: 0x9DC, ...)
 save-tool character <card.mcr> --block N --offset 0x5C8
 save-tool party <card.mcr> --block N --offset 0x5C8 --count 3   # records as JSON
+save-tool roundtrip <card.mcr> --block N --offset 0x5C8   # parse→write→parse
+save-tool items <card.mcr> [--save-index N] [--consume ID:QTY]   # retail accessors
+save-tool write --card <card.mcr> --payload <raw.bin>    # into a free block chain
 save-tool sc-diff <a.mcr> <b.mcr>        # byte diff of two saves' SC blocks
 ```
+
+`items` runs the **retail** fixed-window accessor family over a real SC block
+without writing anything back, so a dry-run consume shows which slot it
+empties and whether it leaves a hole.
 
 ## What this is NOT
 

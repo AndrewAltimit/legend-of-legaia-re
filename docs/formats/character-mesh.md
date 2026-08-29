@@ -68,6 +68,28 @@ padding. This is byte-equality-verified against the live `DAT_8007C018[4]`
 allocation in retail (see
 [`world-map-overlay.md` § Disc-side source of `[0..4]`](world-map-overlay.md#disc-side-source-of-04)).
 
+### Dual consumer - the battle loader registers the header words as VDF pointers
+
+PROT 0874 serves a **second, battle-side reader** with a different shape
+expectation (its extraction label is `vdf` for a reason). At every battle
+load, `FUN_800520F0` state `0xc` (first loop, `jal 0x8001FBCC`) walks the
+raw entry as a flat pack: word 0 (`meta[0]` = 3) is the count, and words
+1..3 - `meta[1]`, `type<<24|size0`, `offset0` - are registered verbatim as
+battle-VDF pointers off the raw entry base. `meta[1]` (`0x2CBA0`) is **not**
+just the decoded-size sum: it is the byte offset of a VDF data tail that
+lives *past* the LZS payload inside the same PROT entry (payload ends at
+`0x19800`; the entry footprint extends further). Any editor that rebuilds
+the container and recomputes `meta[1]` or changes §0's decoded size points
+the effect system at garbage: the field walks fine, and the corruption
+detonates at the next battle load ("efect init" reads through the stale
+pointer - observed as a wild read at `0x808425F8` under PCSX-Redux and a
+battle-intro hang on stricter emulators). An in-place edit must keep the
+first four words (`meta[0]`, `meta[1]`, `type<<24|size0`, `offset0`)
+byte-exact, which pins §0's decoded size at retail's 46 236 bytes (pad the
+pack tail - retail itself pads ~19 KB in slot 4) and leave the entry bytes
+past the LZS payload untouched. `legaia_asset::party_swap::fieldize`
+implements exactly this contract.
+
 Byte-equality verified against a settled field-scene RAM snapshot at
 `DAT_8007C018[0..=4]` - see
 [`world-map-overlay.md` § Disc-side source of `[0..4]`](world-map-overlay.md#disc-side-source-of-04)
@@ -416,6 +438,16 @@ party render node's anim context (`node +0x4C`, consumed by `FUN_80047430` →
 `record0_image + action_table[0] + 0xAC`, and the whole stream byte-matches
 the disc decode (`crates/engine-shell/tests/battle_party_pose_live.rs`); no
 PROT 1203 record is resident in battle RAM.
+
+Those inline `record[0]` streams are **raw packed** - `2 + parts * frames * 9`
+bytes, sized entirely by their own `[parts][frames]` head, with no size word,
+flag or codec between them and the block's LZS. The character's **art** clips
+carry the same decoded bytes but arrive in a different container: they are
+`"ME"` archive bodies in `readef.DAT`, and every player-art body on the retail
+disc is channel-delta coded. One pose format, two container encodings - the
+consequence, and why it decides what an edit to a clip costs, is
+[`battle-data-pack.md` § Two container encodings, one pose
+format](battle-data-pack.md#two-container-encodings-one-pose-format).
 
 The **PROT 1203** ANM bundle (`other5`, decoded per
 [`anm.md`](anm.md#per-bone-frame-8-byte-encoding)) is the rig for the

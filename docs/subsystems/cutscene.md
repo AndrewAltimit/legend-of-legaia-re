@@ -1417,7 +1417,7 @@ RotMatrix, `FUN_8005BAC8` RotTransPers-class, `FUN_8003D2C4` / `FUN_8003D344` /
 `FUN_8003D1A4` primitive helpers) and screen-clips before linking. The per-record
 simulation each style runs - seeding, gating and integration - is ported into
 `legaia-engine-vm`, and all five styles **draw** through the engine's screen-overlay
-path: the packet builders live in `engine-render::battle_intro` (`emit_particle_field`,
+path: the packet builders live in `engine-ui::battle_intro` (`emit_particle_field`,
 `emit_tile`, `intro_quad_to_screen`, `emit_swirl_band`, `emit_spinup_ring`).
 
 Every style is a **(init, tick)** pair, and the allocation sizes are what pair them:
@@ -1504,7 +1504,7 @@ the base colour behind it. A port that keeps rendering the live field underneath
 halves wrong at once - the rest-pose patches read at double brightness, and the window's
 tail shows an untouched, still-animating field once the last particle has expired.
 
-The port's stand-in is `engine-render::battle_intro::backdrop_prim`, an opaque display-rect
+The port's stand-in is `engine-ui::battle_intro::backdrop_prim`, an opaque display-rect
 quad at the farthest OT bucket emitted on **every** frame of the window. It exists because
 the port composites the transition's screen primitives over a live scene
 (`RenderTarget::SceneWithScreenPrims`), which is a port artifact with no retail counterpart.
@@ -1583,7 +1583,7 @@ ambient) as it grows.
 10-primitive Legaia TMD object in the scratch block at `_DAT_8007B85C + 0x5DC00` and hands it
 to the generic per-prim dispatcher. All projection, culling, depth cue and OT linking happen
 inside the SCUS dispatch handler, which the engine already models
-(`engine-vm::prim_dispatch` + `engine-render::gte`). So "the packet assembly stays at the
+(`engine-vm::prim_dispatch` + `engine-ui::gte`). So "the packet assembly stays at the
 clean-room boundary" is the wrong frame for this style - the boundary it actually sits behind
 is a dispatcher that is already ported.
 
@@ -1683,7 +1683,7 @@ reversed one rejects, which is why the packet's back face reverses its corner or
 relative to the front (each culls exactly when it faces away).
 
 Engine side, the style now draws: `battle_intro_tiles::tile_face_quads` is the
-ten-primitive packet, `engine-render::battle_intro::emit_tile` the projection + accept
+ten-primitive packet, `engine-ui::battle_intro::emit_tile` the projection + accept
 chain (with `euler_rot_psx` as the `FUN_80026988` port), and the capture path re-lands
 pack entry 0 in the transition's cloned VRAM page. The one retail nuance not carried: a
 moving tile's record (`progress != 0`) dispatches through the depth-cue alpha bank (fade

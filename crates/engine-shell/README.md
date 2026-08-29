@@ -33,7 +33,7 @@ The crate root (`src/lib.rs`) re-exports the glue every embedding shares:
 
 ### Parity oracles
 
-Four modules implement the "engine vs. retail" comparison harnesses. Each
+These modules implement the "engine vs. retail" comparison harnesses. Each
 boots the engine on a scene, samples a per-frame trace, and (in scenario
 mode) compares against a snapshot lifted from a mednafen `.mc{slot}` save:
 
@@ -45,6 +45,11 @@ mode) compares against a snapshot lifted from a mednafen `.mc{slot}` save:
   voices[24], master_volume)` per frame, vs. the SPU section.
 - [`pcm_oracle`](src/pcm_oracle.rs) - rendered stereo PCM windows from both
   sides (the I2 sibling of the audio trace).
+- [`sim_trace`](src/sim_trace.rs) - the engine side of the frame-tagged
+  differential against the static recomp: per-frame simulation channels in
+  **retail** units (PSX 12-bit angles, retail world units), so
+  `scripts/recomp/trace_diff.py` can align the two timelines. See
+  [`docs/tooling/recomp-differential.md`](../../docs/tooling/recomp-differential.md).
 
 ## Binary: `legaia-engine`
 
@@ -53,10 +58,10 @@ authoritative list; the broad groups are:
 
 | Group | Subcommands | What they do |
 |---|---|---|
-| Scene inspection | `info`, `list-scenes`, `clut-trace`, `man-scripts` | Headless reports on a scene's resolved asset chain / dropped CLUTs / MAN field-VM scripts. |
+| Scene inspection | `info`, `list-scenes`, `clut-trace`, `man-scripts`, `xa-cue`, `dump-cutscene-map` | Headless reports on a scene's resolved asset chain / dropped CLUTs / MAN field-VM scripts / XA voice-cue slots, plus the CDNAME→`MV*` map as an editable TOML. |
 | Run | `play`, `play-window`, `play-str`, `record` | Boot a scene headless (`play`) or in a wgpu window (`play-window`); play an MDEC movie (`play-str`); capture pad input to a replay (`record`). |
 | Save / config | `save`, `load`, `config` | Disk-save smoke round-trip + the keyboard→pad input mapping. |
-| Parity oracles | `vram-oracle`, `mode-trace`, `audio-trace`, `pcm-trace`, `replay`, `scenarios` | The harnesses above, plus deterministic replay and the scenario-hash suite. |
+| Parity oracles | `vram-oracle`, `mode-trace`, `audio-trace`, `pcm-trace`, `sim-trace`, `replay`, `scenarios` | The harnesses above, plus the recomp differential's engine-side emitter, deterministic replay and the scenario-hash suite. |
 | Synthetic sessions | `battle`, `inventory`, `equip`, `title`, `save-select`, `encounter`, `target-pick`, `chain-editor`, `seru-capture`, `gte-replay` | Drive one engine subsystem's state machine headless from a scripted input string - no disc required. |
 
 ```bash
@@ -81,11 +86,14 @@ edges keyed on the world-tick counter, replacing `xdotool` for menu navigation.
 Pair with `mednafen-state vram-dump --display-crop` to diff engine output against
 retail framebuffers.
 
-In `play-window`, the `V` key toggles a master audio mute: the mixer's output
+In `play-window`, the `F2` key toggles a master audio mute: the mixer's output
 gate zeroes the rendered frames while the sequencer / SPU / XA stream keep
 ticking, so unmuting resumes mid-track in sync. The state persists in
 `legaia-options.toml` (the engine-only `muted` knob next to the retail
-options rows) and the HUD status line reflects it (`audio MUTED (V)`).
+options rows) and the HUD status line reflects it. The runtime toggles are
+function keys on purpose: a letter is a pad-bindable key name, so binding one
+to a toggle costs the player that pad button (`V` is Square in the default
+table, which is what an earlier mute binding took away).
 
 In `play-window`, five minigames run as suspending scene modes driven by their
 clean-room rules engines. Each shows its own HUD and restores the interrupted

@@ -29,9 +29,10 @@ especially before telling someone a play-page fix is live. `--strict` is the for
 for that; the default warns so it can be called from scripts without aborting
 them.
 
-This is not a repository gate and is not wired into any hook - there is no
-committed artifact left to gate, and the stamp it reads is itself untracked
-local state. It answers a question about your working copy.
+This is not a blocking gate: it runs advisory (`|| true`) from the pre-commit
+hook and from CI, because there is no committed artifact to gate and the stamp
+it reads is itself untracked local state. It answers a question about your
+working copy, and answering it wrong is a warning rather than a refusal.
 
 Hashing only tracked files keeps the answer reproducible across clones: build
 output, editor scratch and `target/` never enter the stamp.

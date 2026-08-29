@@ -13,16 +13,23 @@ about your working copy: *does the bundle I built still match the code I am
 looking at?*
 
 Checker: [`scripts/ci/check-wasm-freshness.py`](../../scripts/ci/check-wasm-freshness.py).
-Stamp writer: `build-wasm.sh`. Neither is wired into a hook - there is no
-committed artifact to gate, and the stamp is untracked local state.
+Stamp writer: `build-wasm.sh`. Both the pre-commit hook and the `gates` job of
+[`.github/workflows/main-ci.yml`](../../.github/workflows/main-ci.yml) run the
+checker **advisory** - it reports and can never fail a commit or a build,
+because there is no committed artifact to gate and the stamp is untracked local
+state. The hook runs it only when the staged set touches `crates/`, `site/`,
+`Cargo.toml` or `Cargo.lock` *and* a bundle is already built; with no bundle on
+disk it stays silent.
 
 ## Why the question needs a tool
 
 The bundle's source closure is not the `web-viewer` crate. `legaia-web-viewer`
 transitively compiles most of the workspace - the format crates, `engine-core`,
-`engine-ui`, `engine-audio` - which is 27 workspace crates. Editing a PROT reader
-or an audio kernel therefore changes what the play page does, with nothing in the
-diff to suggest the web target is involved.
+`engine-ui`, `engine-audio`. Editing a PROT reader or an audio kernel therefore
+changes what the play page does, with nothing in the diff to suggest the web
+target is involved. The closure is derived per run from `cargo metadata`'s
+resolve graph and the checker prints how many source files it hashed, so no
+list written down here could stay true against it.
 
 `engine-render` is deliberately **outside** the closure: it hard-links wgpu, which
 is why `engine-ui` exists as the wgpu-free leaf both hosts share. An edit there is

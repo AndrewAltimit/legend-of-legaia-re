@@ -36,6 +36,7 @@ use crate::disc::DiscPatcher;
 use legaia_asset::save_icon::{
     self, CLUT_ENTRIES_PER_TILE, SaveIconSheet, TILE_BLOCK_BYTES, TILE_CLUT_BYTES, TILE_SIZE,
 };
+use legaia_asset::title_pak;
 
 /// PROT entry that carries the sheet.
 pub const PROT_ENTRY: u32 = save_icon::PROT_ENTRY as u32;
@@ -300,6 +301,88 @@ pub fn replace_slot(
         quantized_pixels,
         touched_offsets,
     })
+}
+
+/// Exchange two portrait tiles, byte-exact - palette and pixels both
+/// ways, so each tile becomes pixel-identical to what the other held
+/// before the swap. Both directions source from one pre-read snapshot
+/// of the sheet, so the order of the writes cannot leak one tile's new
+/// content into the other's source.
+///
+/// Beyond the strip in PROT entry 899 (the save-UI face draw *and* the
+/// VRAM rect the card-block icon writer `FUN_801E1934` grabs), a tile
+/// in 0..3 also has a boot load-screen standalone portrait TIM in the
+/// pre-`init_data` head of `PROT.DAT`
+/// ([`legaia_asset::title_pak::OVERLAY_LOAD_PORTRAIT_TIM_OFFSET`],
+/// indexed by char_id) which retail keeps byte-identical to the strip -
+/// it receives that side's new content too.
+///
+/// Compare-before-write throughout, so re-swapping an already-swapped
+/// pair is byte-neutral only if run twice; the caller gates on a fresh
+/// apply. Returns whether anything changed.
+pub fn swap_slot_portraits(patcher: &mut DiscPatcher, a: usize, b: usize) -> Result<bool> {
+    check_slot(a)?;
+    check_slot(b)?;
+    if a == b {
+        return Ok(false);
+    }
+    let sheet = read_sheet(patcher)?;
+    let mut changed = false;
+    for (dst, src) in [(a, b), (b, a)] {
+        let pixels = sheet.tile_block_pixels(src)?;
+        let clut = sheet.tile_clut_bytes(src)?;
+        if sheet.tile_clut_bytes(dst)? != clut {
+            patcher
+                .patch_prot_entry(
+                    PROT_ENTRY as usize,
+                    sheet.tile_clut_offset(dst) as u64,
+                    &clut,
+                )
+                .with_context(|| format!("swap save-icon palette {src} -> {dst}"))?;
+            changed = true;
+        }
+        if sheet.tile_block_pixels(dst)? != pixels {
+            let run = TILE_SIZE / 2;
+            for (row, &off) in sheet.tile_pixel_run_offsets(dst).iter().enumerate() {
+                patcher
+                    .patch_prot_entry(
+                        PROT_ENTRY as usize,
+                        off as u64,
+                        &pixels[row * run..(row + 1) * run],
+                    )
+                    .with_context(|| format!("swap save-icon pixels {src} -> {dst} row {row}"))?;
+            }
+            changed = true;
+        }
+        if dst < title_pak::OVERLAY_LOAD_PORTRAIT_COUNT {
+            // Standalone TIM: 8-byte header, 12-byte CLUT block header +
+            // 32 CLUT bytes, 12-byte image block header + 128 pixel bytes.
+            const TIM_CLUT_OFF: usize = 8 + 12;
+            const TIM_PIX_OFF: usize = TIM_CLUT_OFF + TILE_CLUT_BYTES + 12;
+            let base = title_pak::OVERLAY_LOAD_PORTRAIT_TIM_OFFSET
+                + dst * title_pak::OVERLAY_LOAD_PORTRAIT_STRIDE;
+            let tim =
+                patcher.read_prot_bytes(base as u64, title_pak::OVERLAY_LOAD_PORTRAIT_STRIDE)?;
+            anyhow::ensure!(
+                tim[..8] == [0x10, 0, 0, 0, 0x08, 0, 0, 0],
+                "standalone portrait TIM {dst}: unexpected header {:02X?}",
+                &tim[..8]
+            );
+            if tim[TIM_CLUT_OFF..TIM_CLUT_OFF + TILE_CLUT_BYTES] != clut {
+                patcher
+                    .patch_named_file("PROT.DAT", (base + TIM_CLUT_OFF) as u64, &clut)
+                    .with_context(|| format!("swap standalone portrait palette -> char {dst}"))?;
+                changed = true;
+            }
+            if tim[TIM_PIX_OFF..TIM_PIX_OFF + TILE_BLOCK_BYTES] != pixels {
+                patcher
+                    .patch_named_file("PROT.DAT", (base + TIM_PIX_OFF) as u64, &pixels)
+                    .with_context(|| format!("swap standalone portrait pixels -> char {dst}"))?;
+                changed = true;
+            }
+        }
+    }
+    Ok(changed)
 }
 
 #[cfg(test)]

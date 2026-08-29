@@ -28,7 +28,7 @@ Four things, all usable today. Everything browser-side reads your disc image loc
 
 **Native tools and engine.** Prebuilt binaries for Linux and Windows on the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases), or `cargo build --release`. `legaia-extract` turns a disc into PNG / WAV / OBJ / JSON; `legaia-engine play-window` is the windowed engine (field scenes, the full menu stack, shops, level-ups, a battle harness, and MDEC cutscene playback with synced XA audio); `asset-viewer` browses every format interactively; plus `save-tool`, `legaia-patcher`, and a CLI per format.
 
-**Modding and translation.** [`legaia-patcher`](docs/tooling/randomizer.md) patches your own `.bin` in place or emits a PPF: it shuffles drops, encounters, chests, steals, arts, doors, shops, casino prizes, prices, equipment, starting items and level, and battle tuning - several features are hand-assembled MIPS hooks injected into dead space. Its [`translate`](docs/tooling/translation.md) subcommands export the game's dialog and UI text to editable YAML and reimport it in place, the basis for community language packs; [`translate lift-official`](docs/tooling/pal-localizations.md) re-keys the official PAL French / German / Italian text onto the USA disc where it fits.
+**Modding and translation.** [`legaia-patcher`](docs/tooling/randomizer.md) patches your own `.bin` in place or emits a PPF: it shuffles drops, encounters, chests, steals, arts, doors, shops, casino prizes, prices, equipment, starting items and level, and battle tuning - several features are hand-assembled MIPS hooks injected into dead space - plus content mods: the Delilas party swap, custom monster models and skins, and the Super-Arts move list. Its [`translate`](docs/tooling/translation.md) subcommands export the game's dialog and UI text to editable YAML and reimport it in place, the basis for community language packs; [`translate lift-official`](docs/tooling/pal-localizations.md) re-keys the official PAL French / German / Italian text onto the USA disc where it fits.
 
 **The research itself.** Byte-level [format specs](docs/formats/overview.md) with confidence levels and Ghidra provenance, [subsystem documentation](docs/subsystems/) of how the engine actually works (VMs, battle formulas, audio, renderer, minigames), and the [tooling](docs/tooling/) that produced it all - reproducible from a retail disc.
 
@@ -101,10 +101,10 @@ drops LTO:
 cargo test --workspace --profile release-test
 ```
 
-Measured on `legaia-engine-core` (156 test binaries), rebuilding after a
-one-line source change: **490 s on `release`, 62 s on `release-test`**. The
-tradeoff is a second set of artifacts in `target/`, and test binaries whose
-codegen no longer matches a release build.
+On a crate with a few hundred test binaries, the relink after a one-line
+source change is dominated by that link-time work, so dropping it is close to
+an order of magnitude. The tradeoff is a second set of artifacts in
+`target/`, and test binaries whose codegen no longer matches a release build.
 
 CI stays on `--release`: its `ci` job runs `cargo build --release` alongside the
 test step and the runner's target directory persists, so there the two profiles
@@ -165,7 +165,8 @@ with a release archive the same binaries sit in the unpacked directory, so run
 ./target/release/legaia-engine play-str /path/to/cutscene.str
 
 # Persist input bindings to TOML (engine-core::input::Mapping).
-./target/release/legaia-engine config set --binding cross=Z
+# The form is KEY=BUTTON: a friendly key name, then a PSX pad button name.
+./target/release/legaia-engine config set --binding Z=Cross
 ```
 
 Asset inspection, after `legaia-extract` has populated `extracted/`:
@@ -255,7 +256,7 @@ legend-of-legaia-re/
 │   ├── pcsxr/                    # PCSX-Redux save-state main-RAM reader
 │   ├── gamedata/                 # Curated walkthrough-mined tables (ground-truth labels)
 │   ├── cheats/                   # GameShark / Mednafen cheat-database parser + classifier
-│   ├── patcher/                  # Randomizer / translation / disc patcher for a user-supplied .bin
+│   ├── patcher/                  # Randomizer / translation / content mods (Delilas swap, custom models) for a user-supplied .bin
 │   │   # Track 2 - engine reimplementation (clean-room Rust)
 │   ├── engine-core/              # World, scene host, camera, menu runtime, save round-trip
 │   ├── engine-ui/                # Renderer-agnostic UI draw-list builders

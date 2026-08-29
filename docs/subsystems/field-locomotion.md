@@ -698,7 +698,11 @@ misclassifying hop shows up there as a 42-unit overshoot into the wall.
 
 Each `+0x4000` byte packs two nibbles for its 128-unit tile:
 
-- **High nibble - walls.** Four sub-cell wall bits (the `2×2` quadrant grid the collision check samples; see above). The quadrant bit is `(x_cell & 1) | ((z_cell & 1) << 1)` - bit `1` odd-X, bit `2` odd-Z, bit `4` even-X/odd-Z, bit `8` both odd - selected inside the probe `FUN_801D56C4` itself, whose 47-instruction body is the whole sampler: two signed `/64` cell derivations (`z_cell = z/64 + 2`, `x_cell = ceil(x/64) - 1`), the `(x_cell/2 & 0x7F) + (z_cell/2 & 0x7F) * 0x80` byte index into `*(0x1F8003EC) + 0x4000`, the quadrant select out of `byte >> 4`, and a `!= 0` return meaning **blocked**. Ported as [`World::field_tile_is_wall`](../../crates/engine-core/src/world/field_movement.rs).
+- **High nibble - walls.** Four sub-cell wall bits (the `2×2` quadrant grid the collision check samples; see above). The quadrant expression `(x_cell & 1) | ((z_cell & 1) << 1)` is a **shift amount**, not the mask itself - the sampled bit is `1 << quad`.
+
+  Masks are therefore `1` = even-X/even-Z, `2` = odd-X/even-Z, `4` = even-X/odd-Z, `8` = odd-X/odd-Z (`overlay_0897_801cfe4c.txt`, `0x801CFF80..0x801CFFB8`, whose four arms load `v1` with `1`, `2`, `4`, `8` off the two parity tests).
+
+  The quadrant is selected inside the probe `FUN_801D56C4` itself, whose 47-instruction body is the whole sampler: two signed `/64` cell derivations (`z_cell = z/64 + 2`, `x_cell = ceil(x/64) - 1`), the `(x_cell/2 & 0x7F) + (z_cell/2 & 0x7F) * 0x80` byte index into `*(0x1F8003EC) + 0x4000`, the quadrant select out of `byte >> 4`, and a `!= 0` return meaning **blocked**. Ported as [`World::field_tile_is_wall`](../../crates/engine-core/src/world/field_movement.rs).
 
   **Both** `& 0x7F` masks are load-bearing, and the row's is easy to lose. Retail spells the row term `((z_cell + sign) << 6) & 0x3f80` (`0x801D5710..0x801D571C`) - the same 7-bit mask the column gets one instruction earlier, written as a pre-scaled offset - so the byte index can never leave the `0x4000`-byte grid and a Z past the last row **wraps** onto a real row. Drop the mask and the index runs off the buffer from `z >= 0x3F80` up; a port that answers "no wall" there hands the player an open corridor along the far edge of every scene instead of retail's wrapped read.
 - **Low nibble - floor-elevation tier.** A 4-bit index `0..15` into a 16-entry `short` height LUT at scratchpad `0x1f80035c` (`= 0x1f800314 + 0x48`). The object/actor spawn iterator `FUN_8003a55c` reads `LUT[byte & 0xf]` and adds it to each placed object's Y, so a tile's collision byte also encodes its floor height (raised platforms, multi-level rooms). The LUT is filled at scene entry by `FUN_8003aeb0` from the MAN asset header (`_DAT_8007b898 + 2`, 16 negated `short`s). The same low nibble is **terrain elevation**: `FUN_80019278` (SCUS) bilinearly interpolates a smooth ground height from the 2×2 block of floor nibbles here - `grid[0],[1],[0x80],[0x81]`, weighted by the sub-tile position - so the world-map walk-view continent is a heightfield surface,
@@ -805,9 +809,12 @@ id `137` = Vahn's house, anchor tile `(col 38, row 25)` -> `world (4864, _, 3208
 matching the live actor; the `+0x08..+0x0c` fields are the rotation triple, not
 the mesh selector.) NPCs and event triggers ride
 the same map via a sibling path (`FUN_8003a1e4`, partition-1 records, the
-`0x7F,0x7F` parked-sentinel decode); the small actor pool note (about 8 slots,
-`0xD8` stride, list heads `0x8007C34C..0x36C`, player `_DAT_8007c364`) refers to
-that NPC/player set, while the static objects are a larger placed set.
+`0x7F,0x7F` parked-sentinel decode); the actor pool that set draws from holds **143 slots** of `0xD8` stride
+(`FUN_800203EC` seeds the free stack `0x8E` down to `0` inclusive; list heads
+`0x8007C34C..0x36C`, player `_DAT_8007c364`), which is the same pool every
+scene actor uses - see
+[`field-ambient-fx.md`](field-ambient-fx.md). The static objects are a
+separate placed set.
 
 Clean-room parser: [`legaia_asset::field_objects`](../../crates/asset/src/field_objects.rs)
 (`parse_placements` + `pack_mesh_index` over the field map file); the engine

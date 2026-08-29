@@ -5,7 +5,7 @@ feature is built on the same foundation: same-size in-place sector edits with
 the EDC/ECC re-encoded (`disc::DiscPatcher` over `legaia_iso::write`), emitted
 as a portable PPF 3.0 patch and/or a patched `.bin` copy for local play.
 
-Three patching families share that machinery:
+Four patching families share that machinery:
 
 - **The randomizer** - seeded reassignment of gameplay data: monster item
   drops, random-encounter formations, treasure-chest contents, steal items,
@@ -19,12 +19,22 @@ Three patching families share that machinery:
   `--jewel-fix` toggle retargets the boss cinematic cast modules' damage
   `jal`s so Xain's, Cort's, and the Delilas trio's signature casts respect
   elemental guards ([`jewel_fix`](#jewel-fix-jewel_fix-module)).
+- **New-content mods** - seedless structural rebuilds shipped as flags,
+  in no preset and untouched by the seed: the
+  [Delilas party swap family](#delilas-party-swap-delilas_party-module-family),
+  the Delilas Challenge dome fight (`delilas_challenge` / `delilas_dome`),
+  custom items (`custom_items`), and the Super-Arts move list
+  (`super_art_list`).
 - **Translation packs** - the `translate` CLI family: disc text out to an
   editable YAML language pack, filled pack back in as a same-size in-place
   reimport ([`docs/tooling/translation.md`](../../docs/tooling/translation.md)).
 - **Manual edits** - targeted single-record patching for curated mods:
   `monster-block` dumps one monster's decoded `battle_data` block for hex
   editing (stats, element, name) and re-packs it onto a copy of the disc;
+  `monster-model` exports a monster's whole 3D model as editable OBJ+PNG
+  and re-imports a custom one (the mesh must keep the retail part count so
+  the battle animations, which pose parts by index, drive it unchanged -
+  [custom monster models](../../docs/tooling/randomizer.md#custom-monster-models));
   `--fishing-price` / `--rename-location` retune fishing-exchange prices and
   world-map names; `--arts-power COMBO=VALUE` rebalances a Tactical Art's
   per-strike damage-power bytes (`record0 +0x24`, targeted by input combo -
@@ -101,6 +111,7 @@ full design.
   - [Item prices](#item-prices)
   - [Unused content](#unused-content)
   - [Name injection](#name-injection)
+- [Delilas party swap](#delilas-party-swap-delilas_party-module-family)
 - [Texture replacement](#texture-replacement-texture-module)
 - [Battle character art](#battle-character-art-battle_texture-module)
 - [Monster battle skins](#monster-battle-skins-monster_texture-module)
@@ -1231,6 +1242,30 @@ zero-fill tail, which is `.sbss` scratch the game clobbers, nor an arbitrary
 always-zero region, which can be boot-cleared) and repoint only `0xFD`'s
 `name_ptr_slot`, leaving the other empty-name ids blank.
 
+## Delilas party swap (`delilas_party` module family)
+
+The largest new-content family - play *as* Gi / Lu / Che while the ravine
+duels field Vahn / Noa / Gala. One orchestrator, eight support modules;
+this table is the map, the full mechanism reference is
+[`docs/tooling/randomizer.md` § Delilas party swap](../../docs/tooling/randomizer.md#delilas-party-swap):
+
+| Module | Carries |
+|---|---|
+| `delilas_party` | Orchestrator + `PartyMapping` (any permutation of `gi`/`lu`/`che`); battle + field model swap both directions, names both directions. `DelilasPartyOptions::keep_che_hammer` (`--delilas-che-hammer`) keeps Che's welded hammer on the mesh, skips his weapon fusion, and flips the kept hand to the sibling's natural wrist relation (`retarget_clip_wrist`) so the hammer holds Che's own model-space attitude - `delilas-verify` detects the state, `delilas-audit` needs `--allow-kept-hammer`. |
+| `delilas_voice` | Battle grunt voices resampled from the sibling SPU banks in place. |
+| `delilas_voice_fx` | `--delilas-arts-voice` modes (`original` / `removed` / `adjusted`, default `adjusted` - the pitch/formant re-voice). |
+| `delilas_xa_voice` | The XA-sector write path (Form 2 EDC re-encode via `legaia_iso::write`). |
+| `delilas_signature_attack` | Hero Hyper -> sibling signature: stage-chain retarget, event-frame replace, `name_field` renames in both id spaces. |
+| `delilas_effects` | Signature effect-prototype transplant into the spare prototype-table ids (the 88-byte cave). |
+| `delilas_cast` | The retail cast route: SCUS queue-hook stub + expect-verified word edits in PROT 958/959/960 ([cast-module.md](../../docs/subsystems/cast-module.md)), plus the un-folded stage caves: staging stores `jal` into SCUS-resident repoint code so the player caster walks the FULL retail clip chain (folded two-row fallback when the LZS budget refuses); the hosted-clip timing laws live in the cast-route section of [randomizer.md](../../docs/tooling/randomizer.md). `CastRoutePolicy::Install` wires it; the frontend passes `ArenaTaken` when shiny-Seru / show-super-arts / arts-AP own the SCUS arena, and the route **silently downgrades** to the art-side signature, noted in the apply summary. |
+| `enemy_anim_mirror` | Hero idles + hero Hyper chains written into the swapped monster blocks (the enemy-side animation mirror). |
+| `nivora_field` | The duel field scene rebuilt with the mapped heroes' field rigs (PROT 0639 members 106-108, whole-pack re-emit). |
+| `mips_sim` | In-crate MIPS interpreter the hook stubs execute under in unit tests (load-delay-accurate). |
+
+Disc oracles: `delilas_party_real`, `delilas_cast_stage_real`,
+`delilas_cast_remap_real`, `enemy_anim_mirror_real`, `nivora_field_real`,
+plus `party_swap_real` on the asset side.
+
 ## Texture replacement (`texture` module)
 
 Replaces a TIM on the disc with a user-authored PNG, in both tiers the TIM
@@ -1521,6 +1556,70 @@ legaia-patcher verify --input DISC.bin --patch run.ppf
   and `--seru-catch-rate` overrides every capturable Seru's absorb chance with
   one flat percent (`0`..`100`). Both seedless data edits to the same records -
   see [Experience multiplier + Seru catch rate](#experience-multiplier--seru-catch-rate-rewards-module).
+- `--delilas-party V,N,G` swaps the party's battle identity with the Delilas
+  siblings (any permutation of `gi` / `lu` / `che` over Vahn, Noa, Gala): the
+  party wears the siblings' battle models under their own animations and
+  arts, the ravine duels + dome Master legs field Vahn / Noa / Gala models
+  under the retail Delilas movesets, and both sides' names follow. Field
+  walking models rebuild from the same sibling models, and the party's
+  battle grunt voices resample from the siblings' voice banks in place
+  (`delilas_voice`); the hero XA arts shouts follow `--delilas-arts-voice`
+  (below). Seedless, not in any
+  preset - the swap machinery lives in `legaia_asset::party_swap`, the
+  disc apply in `delilas_party`. See `docs/tooling/randomizer.md`
+  § Delilas party swap.
+- `--delilas-arts-voice original|removed|adjusted` (default `adjusted`)
+  picks what the swapped party's XA arts shouts become
+  (`delilas_voice_fx`): `adjusted` re-voices the retail Vahn / Noa / Gala
+  takes toward the mapped sibling through the tuned pitch/formant map,
+  `removed` silences them (the XA2/4/6 banks whole plus the party's three
+  channels of the shared `XA30.XA` swing-grunt bank - routing intact,
+  sectors decode to silence), `original` leaves the hero takes untouched.
+  Every mode composes with the swing-grunt resample, which is SPU-side and
+  always on with the swap.
+- With the swap, each hero slot also gives up its 50-AP Hyper to carry the
+  mapped sibling's **signature special**, which is where it stops being a
+  reskin. That clip is a *chain* of monster-archive entries the enemy cast
+  module stages in sequence, so it is retargeted stage by stage and
+  concatenated, and the art's event frames (entry `+0x10..0x13`, its hit
+  timing) are replaced rather than rescaled so the contacts land inside the
+  payoff stage. Names
+  are exchanged in both directions - the party art through
+  `arts_table::name_field`, the enemy row through `spell_names::name_field` -
+  each written into its own record's measured NUL slack, never by searching
+  the image for the old text.
+- `--delilas-moves delilas` re-authors the *rest* of the kit
+  (`apply_delilas_moveset`). The character's whole art `"ME"` archive is
+  rebuilt from the sibling's own monster clips - retail leaves only
+  20374 / 2446 / 17361 free bytes in the three slots, so extending is not
+  a shape the disc has room for, while re-emitting is, because retail
+  already points several art records at one stream. Every record is
+  repointed round-robin over the sibling's swings, re-timed to the clip's
+  rate, stripped of the host's impact class and loop hold, and renamed
+  after the clip it plays - and the renames are what keep `record[0]`
+  inside its LZS footprint, since repeated strings compress where 22
+  distinct ones do not (measured spare: 143 / 268 / 48 bytes). Arts that
+  no Super or Miracle trigger needs get their combos blanked, which hides
+  them for free (an art is only listed once it has been performed). What
+  must survive is measured, not chosen: the Miracle's own row 11, every
+  row a Super `find` names, and the innate block below the `0x801F686C`
+  cap, which is script-granted rather than self-taught.
+- The swing camera is **re-timed, not replaced** (`retime_camera_arm`). Its
+  shot changes are `slti` immediates in the battle overlay, cut against the
+  clip the art plays in retail (the highest in the dispatcher is keyframe 17),
+  so a longer chain finishes the whole choreography inside its wind-up and
+  then holds one shot. Two constraints make that a code edit whose blast
+  radius has to be checked rather than assumed. Every arm in the dispatcher
+  is already live in some character's table, so a slot is **exchanged** with
+  another rather than retargeted - a retarget aliases an arm a second art
+  still uses, and the re-time then follows the alias into that art. And
+  because the arms are branch cascades, a straight-line liveness read calls
+  the cursor register dead on exactly the paths that jump over its reuse, so
+  the immediates are found by shape instead: `slti` (the dispatcher's own
+  bounds checks are `sltiu`, a different opcode) against a register some
+  `lh`/`lhu` loaded from `+0x68`, with a threshold in the keyframe range.
+  Format side:
+  [`docs/formats/battle-attack-camera-table.md`](../../docs/formats/battle-attack-camera-table.md).
 - `--enemy-attack-count` scales how many hits enemies land with their standard
   attacks (`0.1`..`5`, retail `1`) by rescaling the attack entries' AGL prices;
   a retail attacker always keeps at least one hit per turn - see

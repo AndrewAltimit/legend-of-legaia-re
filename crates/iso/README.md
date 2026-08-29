@@ -17,9 +17,12 @@ strips that wrapper and exposes a clean ISO9660 view.
   (USA / JP / EU / debug) you're holding.
 - `write` - the write side: `encode_mode2_form1_sector` recomputes a sector's
   EDC + P/Q ECC (the generic ECMA-130 / Yellow Book math; not game-specific),
+  `encode_mode2_form2_sector` the Form 2 variant (EDC only, and a blank
+  retail EDC field stays blank - the XA-audio write path),
   `patch_file_logical` overwrites bytes in an ISO file's logical payload and
-  re-encodes every touched sector, and `iso9660::find_file_in_image` locates a
-  top-level file in an in-memory image. Used by the
+  re-encodes every touched sector, `iso9660::find_file_in_image` locates a
+  top-level file in an in-memory image, and `iso9660::find_path_in_image`
+  walks subdirectories (`"XA/XA2.XA"`). Used by the
   [randomizer / disc patcher](../../docs/tooling/randomizer.md) to write edited
   assets back into a `.bin`.
 

@@ -138,17 +138,19 @@ The mode-dispatch table at `0x8007078C` is **28 entries × 24 bytes = 672 bytes*
 | `+0x10` | u32 | Handler function pointer (some land in the overlay window `0x801C0000+` when an overlay is resident, e.g. mode 6 TMD-TEST's `0x801CF730`). |
 | `+0x14` | u32 | Handler parameter. |
 
-Dev mode-name strings (12-byte stride in the static pool):
+Dev mode-name strings, read through each record's `+0x00` name pointer. There is **no `<NAME> INIT` string on the disc**: the even (init) modes point into a *second*, tighter pool at `0x8007B3DC..0x8007B408` holding the bare nouns, while the odd (`MODE`) names live in the 12-byte-stride pool at `0x800109D0..0x80010AD8`. Six even modes point into the odd pool instead and carry `TEST`-suffixed dev names.
 
-| Mode pair | Name | Mode pair | Name |
+| Mode pair | Name (even / odd) | Mode pair | Name (even / odd) |
 |---|---|---|---|
-| `0/1` | `CONFIG INIT` / `CONFIG MODE` | `14/15` | `MAP TEST` / `MAP MODE` |
-| `2/3` | `MAIN INIT` / `MAIN MODE` | `16/17` | `READ INIT` / `READ MODE` |
-| `4/5` | `MONSTER TEST` / `MONSTER MODE` | `18/19` | `GAMEOVER INIT` / `GAMEOVER MODE` |
-| `6/7` | `TMD TEST` / `TMD MODE` | `20/21` | `BATTLE INIT` / `BATTLE MODE` |
-| `8/9` | `EFECT TEST` / `EFECT MODE` | `22/23` | `CARD INIT` / `CARD MODE` |
-| `10/11` | `TEST TEST` / `TEST MODE` | `24/25` | `OTHER INIT` / `OTHER MODE` |
-| `12/13` | `MAPDISP INIT` / `MAPDISP MODE` | `26/27` | `STR INIT` / `STR MODE` |
+| `0/1` | `CONFIG` / `CONFIG MODE` | `14/15` | `MAP TEST` / `MAP MODE` |
+| `2/3` | `MAIN ` / `MAIN MODE` | `16/17` | `READ` / `READ MODE` |
+| `4/5` | `MONSTER TEST` / `MONSTER MODE` | `18/19` | `GAME OVER` / `GAMEOVER MODE` |
+| `6/7` | `TMD TEST` / `TMD MODE` | `20/21` | `BATTLE` / `BATTLE MODE` |
+| `8/9` | `EFECT TEST` / `EFECT MODE` | `22/23` | `CARD` / `CARD MODE` |
+| `10/11` | `TEST TEST` / `TEST MODE` | `24/25` | `OTHER` / `OTHER MODE` |
+| `12/13` | `MAPDSIP MODE INIT` / `MAPDSIP MODE` | `26/27` | `STR` / `STR MODE` |
+
+Two spellings to keep as-is when quoting: mode 2's even name has a **trailing space** (`MAIN `), and the mode-12/13 pair is misspelled `MAPDSIP` on the disc (see the note under the handler map). Parser: `legaia_asset::mode_table`.
 
 Verified handler→PROT mappings (`FUN_8003EBE4` and `FUN_8003EC70` are the two parallel overlay
 loaders, destination buffer pointers `*DAT_8001038C` / `*DAT_80010390` respectively; both call
@@ -475,42 +477,45 @@ Confirming this requires a Write-breakpoint capture targeting the `0x80105000..0
 
 ### Title-overlay source on disc
 
-The title-overlay code (function `FUN_801DD35C` at `0x801DD35C`, the captured `overlay_title.bin` 256-KiB window) lives in an **unindexed 60-sector gap inside `PROT.DAT`** between TOC entries 899 and 900. The per-entry extractor stops at each TOC entry's claimed size, so the gap bytes never land in `extracted/PROT/`. To reach them, slice `PROT.DAT` directly.
+The title-overlay code (function `FUN_801DD35C` at `0x801DD35C`, the captured `overlay_title.bin` 256-KiB window) lives **inside PROT entry 899**, and the per-entry extractor emits it: `0899_xxx_dat.BIN` is 151 552 bytes = 74 sectors.
 
 | Range (PROT.DAT) | Sectors | Bytes | Contents |
 |---|---|---|---|
-| `0x5C3D800..0x5C44800` | 47227..47241 | 28 672 | PROT entry 899 indexed payload (extracted as `0899_xxx_dat.BIN`) |
-| `0x5C44800..0x5C62800` | 47241..47301 | **122 880** | **Unindexed gap = title overlay code** |
-| `0x5C62800..0x5C67800` | 47301..47311 | 20 480 | PROT entry 900 indexed payload (extracted as `0900_xxx_dat.BIN`) |
+| `0x5C3D800..0x5C62800` | 47227..47301 | 151 552 | PROT entry 899, whole payload (`0899_xxx_dat.BIN`) - the title overlay is at entry offset `0xEB44` |
+| `0x5C62800..0x5C67800` | 47301..47311 | 20 480 | PROT entry 900 payload (`0900_xxx_dat.BIN`) |
 
-The title-tick body (`FUN_801DD35C`) source is at `PROT.DAT` offset `0x5C4C344` (gap-relative `+0x7B44`, sector +15 within the gap). Capture the gap as a standalone file with:
+The title-tick body (`FUN_801DD35C`) source is at `PROT.DAT` offset `0x5C4C344`, i.e. entry-899 offset `+0xEB44` (sector +29). Reading it needs no `PROT.DAT` slicing - open the extracted entry:
 
 ```python
-raw = open("extracted/PROT.DAT","rb").read()
-open("title_overlay.bin","wb").write(raw[47241*0x800 : 47301*0x800])
+raw = open("extracted/PROT/0899_xxx_dat.BIN", "rb").read()
+title_tick = raw[0xEB44:]          # 27bdfe50 = addiu sp,sp,-0x1b0
 ```
 
 #### How the load happens
 
-The SCUS boot sequence issues a multi-sector `ReadN` starting at PROT 899's LBA (47227) and reads ~74 sectors of contiguous on-disc data - crossing PROT 899's TOC-claimed end (47241) into the unindexed gap. The CD-DMA primitive (`FUN_8005D9A0`) breaks the read into 5 sequential DMA bursts:
+The SCUS boot sequence issues a multi-sector `ReadN` starting at PROT 899's LBA (47227) and reads the entry's 74 sectors of contiguous on-disc data. The CD-DMA primitive (`FUN_8005D9A0`) breaks the read into 5 sequential DMA bursts, every one of them landing inside entry 899:
 
-| DMA burst | RAM dst | PROT.DAT source offset | Caller |
-|---|---|---|---|
-| 1 | `0x801CF818` | `0x5C3E800` (PROT 899 +0x1000, sec +2) | `pc=0x8005DA50, ra=0x8005C2D4` |
-| 2 | `0x801D4818` | `0x5C43800` (PROT 899 +0x6000, sec +12) | same |
-| 3 | `0x801D9818` | `0x5C48800` (gap +0x4000, sec +8) | same |
-| 4 | `0x801DD018` | `0x5C4C000` (gap +0x7800, sec +15) | same |
-| 5 | `0x801E4818` | `0x5C53800` (gap +0xF000, sec +30) | same |
+| DMA burst | RAM dst | PROT.DAT source offset | Entry-899 offset | Caller |
+|---|---|---|---|---|
+| 1 | `0x801CF818` | `0x5C3E800` | `+0x1000`, sec +2 | `pc=0x8005DA50, ra=0x8005C2D4` |
+| 2 | `0x801D4818` | `0x5C43800` | `+0x6000`, sec +12 | same |
+| 3 | `0x801D9818` | `0x5C48800` | `+0xB000`, sec +22 | same |
+| 4 | `0x801DD018` | `0x5C4C000` | `+0xE800`, sec +29 | same |
+| 5 | `0x801E4818` | `0x5C53800` | `+0x16000`, sec +44 | same |
 
 Capture pipeline: [`scripts/pcsx-redux/autorun_title_overlay_writer_hunt.lua`](../../scripts/pcsx-redux/autorun_title_overlay_writer_hunt.lua) (cold-boot mode, `LEGAIA_NO_SSTATE=1`) arms Write breakpoints inside the overlay range and captures the DMA-driven writes - PCSX-Redux Lua Write BPs catch DMA writes from CD-DMA-channel-3.
 
-#### Why the TOC misses it
+#### Why the TOC was thought to miss it
 
-The per-entry size formula `size_sectors = toc[p+5] - toc[p+3] + 4` (see [`docs/formats/prot.md`](../formats/prot.md) and [`crates/prot/src/archive.rs`](../../crates/prot/src/archive.rs)) gives 14 sectors for PROT 899, but the on-disc contiguous range between PROT 899 and PROT 900 is 74 sectors. The formula appears to describe an "indexed" subset of each entry's disc footprint, with trailing unindexed bytes carrying overlay code that the SCUS loader reads by passing an explicit larger sector count. The same pattern may apply to other entries - comparing each TOC slot's claimed size to the gap to the next entry would identify other hidden overlays.
+The TOC does not miss it. An entry's size is the sector gap to the next entry - `size_sectors = toc[p+3] - toc[p+2]`, which is exactly what retail's own span routine `FUN_8003E68C` computes (`see ghidra/scripts/funcs/8003e68c.txt`: it loads `toc[a0+3]` and `toc[a0+2]` and returns the difference). That gives PROT 899 its 74 sectors, and the title overlay sits inside them.
+
+The superseded `toc[p+5] - toc[p+3] + 4` expression gave 14 sectors instead, and the missing 60 are what earlier readings named an "unindexed gap". `toc[p+3]` is entry `p+1`'s start LBA and `toc[p+5]` belongs to a following entry, so the expression is not a size of entry `p` at all; `crates/prot/src/archive.rs` keeps it only as a legacy `decl_span` field beside the real `size_sectors`. See [`docs/formats/prot.md`](../formats/prot.md).
+
+This is worth having straight beyond the title screen: any "hidden overlay in the gap after entry N" reading is an artifact of the old expression, not a property of the disc.
 
 #### Negative findings (corrects earlier notes)
 
-- The historical claim "title overlay code is not in any PROT entry" was **methodologically** correct (it isn't in any **extracted PROT file**) but missed the disc-level reality: the bytes ARE in PROT.DAT, just outside the indexed entries.
+- The historical claim "title overlay code is not in any PROT entry" is **false in both senses**. The bytes are in `PROT.DAT`, and they are inside indexed entry 899 - `0899_xxx_dat.BIN` carries them at `+0xEB44`, byte-identical to `PROT.DAT` at `0x5C4C344`. The claim survived only because the superseded entry-size expression truncated the extracted entry to 14 sectors.
 - A lossy-LZS brute-force scan returned zero hits because the title overlay is **not compressed**; the CD-DMA primitive copies raw bytes straight into the overlay window.
 - The "FUN_8005DA40 walks pointer table _DAT_800795B4" claim from earlier notes is unverified. `0x8005DA40` is an intra-function instruction inside `FUN_8005D9A0` (the CD-DMA-channel-3 read primitive) - Ghidra promotes intra-function labels to fake `FUN_xxxxxxxx`. The actual DMA-driver site is `pc=0x8005DA50`.
 
@@ -666,7 +671,7 @@ Two functions carry the screen:
 
 The control row (grid row 6) tiles those sentinel bytes across its columns: `00 00 | 66×6 | 64×6 | 65×3` (filler / Backspace / Space / End).
 
-**Clean-room engine port.** The whole SM is ported as a standalone overlay in [`legaia_engine_core::name_entry`](../../crates/engine-core/src/name_entry.rs) (`NameEntry` + `NameEntryState` + `Control`), driven on the world by `World::open_name_entry` / `step_name_entry` (committing into `World::party_names`) and rendered through [`legaia_engine_render::name_entry_draws_for`](../../crates/engine-render/src/lib.rs). In `legaia-engine play-window`, the NEW GAME flow reaches the prompt through the scene's own bytecode - the `town01` opening timeline's pinned op `0x49` (above) - whether the player rode the natural chain or skipped; the P2[3] C1 gate (flag `0x225`) keeps a normal later `town01` visit from re-prompting. A dev `N` key also opens it for testing outside the new-game flow.
+**Clean-room engine port.** The whole SM is ported as a standalone overlay in [`legaia_engine_core::name_entry`](../../crates/engine-core/src/name_entry.rs) (`NameEntry` + `NameEntryState` + `Control`), driven on the world by `World::open_name_entry` / `step_name_entry` (committing into `World::party_names`) and rendered through [`legaia_engine_ui::ui_menu::name_entry`](../../crates/engine-ui/src/ui_menu/name_entry.rs). In `legaia-engine play-window`, the NEW GAME flow reaches the prompt through the scene's own bytecode - the `town01` opening timeline's pinned op `0x49` (above) - whether the player rode the natural chain or skipped; the P2[3] C1 gate (flag `0x225`) keeps a normal later `town01` visit from re-prompting. A dev `N` key also opens it for testing outside the new-game flow.
 
 **Both hosts reach it.** The browser play page runs the same SM and the same shared [`legaia_engine_ui`](../../crates/engine-ui/README.md) builders (`name_entry_draws_for` + `name_entry_chrome_sprite_draws_for`) through [`legaia_web_viewer::play_name_entry`](../../crates/web-viewer/README.md); the page freezes the field and forwards pad edges while the overlay is up, exactly as the native window's redraw loop does. Neither host owns name logic - only the pad bridge and the draw target - which is what keeps the two from drifting (`scripts/ci/check-ui-host-drift.py`).
 

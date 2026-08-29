@@ -288,7 +288,7 @@ The level-up overlay data section (`overlay_magic_level_up_full.bin`,
 
 | Address | Content |
 |---|---|
-| `0x801F4B8C` | 4-byte display row-ID table for magic slots (indices 12–17) |
+| `0x801F4B8C` | Muscle Dome hand-command id table, 4 bytes `0C 0F 0E 0D` (`legaia_asset::muscle_dome::DECK_TABLE_VA`) - not a magic-slot table. Its sibling `0x801F4B94` holds the 4 card-sprite ids `0D 10 11 0C`. |
 | `0x801F4B98` | Magic-type name strings: Spirit / Defense / Meta / Terra / Ozma |
 | `0x801F4C28+` | Battle-result text strings (win / annihilated / escaped / …) |
 | `0x801F5CF8`, `0x801F5D90` | 18-byte **move-VM trigger programs** (`WAIT_SET 0 / 0x17 <mode> / WAIT_SET 0 / HALT`), one per burst arm. Not tables, and they do not call `FUN_80050ED4` - the `0x17` in them escapes to `FUN_801F30C4`, which does. Each precedes its arm's stager record one alignment word later (`0x801F5DA4` / `0x801F5D0C`); the constant `-0x14` skew between the two address pairs is the tell. See [`functions/battle.md`](../reference/functions/battle.md#801f30c4). |
@@ -447,13 +447,22 @@ level 1 + N.
 when it reaches zero. The same tick pattern is used for `ArtLearnedBanner`
 (Tactical Arts learning).
 
-`level_up_draws_for(banner, world)` in `engine-render` returns two text draw
-calls:
+`legaia_engine_ui::ui_overlay::level_up_draws_for` (re-exported by
+`engine-render`) returns two text draw calls. It takes the font, the four
+banner scalars and a pen rather than the banner struct, so it stays renderer-
+and world-agnostic:
 - Line 1 (yellow): `LEVEL UP! (char N -> Lv M)`
 - Line 2 (green): `HP +X  MP +Y`
 
-Wired into `PlayWindowApp::build_text_overlay` at anchor `(8, 60)` in
-`legaia-engine play-window`.
+Both hosts draw it at the same anchor `(8, 60)` - the native `play-window`
+through `LEVEL_UP_BANNER_PEN` in `window/hud.rs`, and the browser play page
+through its `LEVEL_UP_PEN` twin in `web-viewer::play_shop`. The two pens are
+paired constants: the [host-drift](../tooling/host-drift.md) gate is what keeps
+a change to one from leaving the other behind.
+
+The hosts substitute the character's roster name for the builder's `char N`
+ordinal when the roster carries one, falling back to `P<n>` only for an unnamed
+slot - the banner is read by a player, not by the codebase.
 
 ## Key types
 

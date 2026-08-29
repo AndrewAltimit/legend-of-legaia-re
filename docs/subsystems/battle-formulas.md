@@ -36,11 +36,12 @@ Before the switch, the function fills four local 8-pointer arrays (one entry per
 | `local_70[i]` | `+0x150` | Current MP |
 | `local_50[i]` | `+0x152` | MP working/base (paired) |
 
-(Release setup at lines 2014-2017; the debug branch at 2027-2030 aliases the same windows over the per-character record at `0x80084708 + slot*0x414`, offsets `+0x104..+0x10A`.)
+The two arms are selected by **game mode**, not by a debug/release build. `0x80040310` loads the mode word `*(i16*)0x8007B83C` and `0x80040330` branches on `!= 0x15`:
 
-In the **debug** branch (when the condition at `0x80040314` selects), the loop iterates 7 times over the 8-slot pointer table; in the **release** branch it iterates the 3-slot party-only path using the character-record stride `0x414` from base `0x80084708`.
+- **In battle** (`mode == 0x15`): 7 iterations over the live battle-actor table `0x801C9370`, reading `+0x14C` / `+0x14E` / `+0x150` / `+0x152`.
+- **Outside battle**: 3 iterations over the character records at `0x80084708 + slot*0x414`, reading `+0x106` / `+0x104` / `+0x10A` / `+0x108`.
 
-Cited in `ghidra/scripts/funcs/800402f4.txt` lines 22-87 (release setup), 1986-2034 (decomp).
+Cited in `ghidra/scripts/funcs/800402f4.txt`, `0x80040338..0x8004043C` (both arms).
 
 ## Actor stat block + monster record mapping
 
@@ -851,7 +852,9 @@ sits on that floor and is near-flat against the defender's defence, while a
 respecting hit - whose `>> 4` fold keeps it clear of the arm - drops as defence
 rises. Mirrored in `engine-vm::battle_damage_wrappers`.
 
-The full wrapper census over every capture-class module (byte-scan of the
+The full wrapper census over every capture-class module (module anatomy -
+paging, phase machine, and the seat-0-hardcoded apply sites these wrapper
+calls feed - is on [cast-module.md](cast-module.md); byte-scan of the
 extracted entries for the `jal` words `0x0C0775AD` bypass / `0x0C07752C`
 respect, each module's own extent bounded by the next entry's head - the
 `09xx` extents **tile exactly**, so every offset below names one physical
@@ -1021,18 +1024,17 @@ The character record is documented to have stat fields at `+0x100..+0x110` and a
 
 ## RNG primitive
 
-`FUN_80056798()` is the in-game RNG. It's the standard PsyQ `rand()` pattern (same shape as the libc `rand()` PsyQ provides - 32-bit LCG with multiplier `1103515245` and increment `12345`, return value `(seed >> 16) & 0x7FFF`). The cliff-notes:
+`FUN_80056798()` reaches the in-game RNG, but it holds no arithmetic of its own. Its whole body is a three-instruction tail-jump veneer into **BIOS A0 vector `0x2F`** (`rand`):
 
-```c
-int FUN_80056798(void) {
-    DAT_8007AE5C = DAT_8007AE5C * 1103515245 + 12345;
-    return (DAT_8007AE5C >> 16) & 0x7FFF;
-}
+```
+80056798  li t2,0xa0
+8005679c  jr t2
+800567a0  _li t1,0x2f
 ```
 
-(Confirmed: see `ghidra/scripts/funcs/80056798.txt`.) Range: 0..32767. For damage variance the battle code typically uses `roll % (cap)` so distribution skew at small cap values is fine.
+The arithmetic is the BIOS' own: the standard 32-bit LCG with multiplier `1103515245` and increment `12345`, returning `(seed >> 16) & 0x7FFF`. Range 0..32767; for damage variance the battle code typically uses `roll % cap`, so distribution skew at small caps is fine.
 
-The seed (`DAT_8007AE5C`) initialises from the boot timer - for deterministic playback the engine must seed it from the same source, otherwise replay tests will diverge.
+The seed lives in kernel-managed RAM, **not** at `0x8007AE5C` - that address appears nowhere in the dump corpus. What the dump confirms (`see ghidra/scripts/funcs/80056798.txt`) is the veneer and the vector, nothing about the seed's storage. For deterministic playback the engine seeds its own mirror rather than reading a retail seed word.
 
 ## Engine-side mirror - `engine-vm::battle_formulas`
 
@@ -1043,7 +1045,7 @@ The clean-room Rust module `crates/engine-vm/src/battle_formulas.rs` ports the f
 | `spirit_damage` | battle-action.md state 0x3E / 0x46 |
 | `mp_cost_after_ability_bits` | battle-action.md state 0x28 |
 | `accuracy_roll` | this doc, selector 9 above |
-| `psyq_rand_step` | `ghidra/scripts/funcs/80056798.txt` |
+| `psyq_rand_step` | BIOS A0 `0x2F`; veneer in `ghidra/scripts/funcs/80056798.txt` |
 | `damage_cap_for_party_slot` | this doc, selector 0 above (`DAT_8007655C` table) |
 | `summon_attacker_roll` / `summon_defender_roll` / `summon_bonus_roll` / `summon_predamage` | this doc, summon-roll stages 1+2 (`FUN_801dd0ac` summon branch) |
 | `arts_attacker_roll` / `arts_bonus_roll` / `arts_physical_predamage` | this doc, arts/physical-roll stages 1+2 (`FUN_801dd0ac` non-summon branch, seeded by the `0x801F4F5C` move-power table) |

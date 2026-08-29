@@ -17,7 +17,7 @@
 //!   stat clamp through [`crate::debug_char_editor`]; the equip write
 //!   through [`legaia_engine_vm::dev_equip_commit`].
 //! * **The port's** - which rows exist. Retail's list is 24 rows of
-//!   world-map debug tooling (`MAP_CHANGE`, `CAMERA`, `ENCOUNT`, ...) whose
+//!   world-map debug tooling (`MAP CHANGE`, `CAMERA`, `ENCOUNT`, ...) whose
 //!   backing state is overlay-resident; [`DevMenuRow`] carries the subset
 //!   whose backing state the engine actually owns, so no row steps a value
 //!   nothing reads.
@@ -45,7 +45,7 @@ use legaia_engine_vm::world_map_panel::{SFX_CURSOR_MOVE, dev_menu_action};
 /// stands in for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DevMenuRow {
-    /// `MAP_CHANGE` - the 12-bit map-id ring.
+    /// `MAP CHANGE` - the 12-bit map-id ring.
     MapChange,
     /// `ENCOUNT` - the encounter rate, clamped to `1..=255`.
     EncounterRate,
@@ -70,7 +70,7 @@ impl DevMenuRow {
     /// The label the list renderer draws.
     pub fn label(self) -> &'static str {
         match self {
-            DevMenuRow::MapChange => "MAP_CHANGE",
+            DevMenuRow::MapChange => "MAP CHANGE",
             DevMenuRow::EncounterRate => "ENCOUNT",
             DevMenuRow::EventFlag => "EVENT_FLAG",
             DevMenuRow::PlayerParam => "PLAYER_PARAM",
@@ -138,7 +138,7 @@ pub struct DevMenuSession {
     pub page: DevPage,
     /// Cursor over [`DevMenuRow::ALL`].
     pub row: usize,
-    /// `MAP_CHANGE` value - a 12-bit ring.
+    /// `MAP CHANGE` value - a 12-bit ring.
     pub map_id: u16,
     /// `ENCOUNT` value - clamped to `1..=255`.
     pub encounter_rate: i32,
@@ -170,8 +170,8 @@ pub struct DevMenuSession {
     pub list_visible: bool,
     /// The row list's panel geometry, sized from the row span.
     pub list_panel: PanelGeometry,
-    /// `_DAT_8007B868` - the gate that makes retail's `MAP_CHANGE` and
-    /// `CARD_OPTION` rows read `CLOSED` instead of their label.
+    /// `_DAT_8007B868` - the gate that makes retail's `MAP CHANGE` and
+    /// `CARD OPTION` rows read `CLOSED` instead of their label.
     pub closed_gate: u32,
 }
 
@@ -216,7 +216,7 @@ impl DevMenuSession {
     ///
     /// The decision is retail's ([`RetailRow::is_closed`]), taken against this
     /// screen's [`Self::closed_gate`] mirror of `_DAT_8007B868`. Only the rows
-    /// that sit at retail's `MAP_CHANGE` / `CARD_OPTION` indices are gated.
+    /// that sit at retail's `MAP CHANGE` / `CARD OPTION` indices are gated.
     pub fn row_is_closed(&self, row: DevMenuRow) -> bool {
         row.retail_row()
             .is_some_and(|r| r.is_closed(self.closed_gate))
@@ -655,11 +655,11 @@ mod tests {
 
     /// The label the list draws is the gate's output, not the row's name -
     /// this is the string the renderer receives, so a host that never asked
-    /// would draw `MAP_CHANGE` on a closed row.
+    /// would draw `MAP CHANGE` on a closed row.
     #[test]
     fn the_gate_swaps_the_drawn_label_not_just_the_predicate() {
         let mut s = DevMenuSession::new();
-        assert_eq!(s.row_label(DevMenuRow::MapChange), "MAP_CHANGE");
+        assert_eq!(s.row_label(DevMenuRow::MapChange), "MAP CHANGE");
         s.closed_gate = 1;
         assert_eq!(s.row_label(DevMenuRow::MapChange), CLOSED_LABEL);
         // An ungated row keeps its label whatever the gate says.

@@ -21,21 +21,23 @@ images (raw and inside LZS compression), then convert the hits.
 ./tim convert-dir extracted/tim_scan
 ```
 
-`tim_scan/` gets one directory per PROT entry holding files named
-`raw_off<HEX>.tim` (found in the raw bytes) or `lzs<i>_off<HEX>.tim` (found
-inside LZS section `i`); `convert-dir` writes a `.png` next to each. For a
-single texture:
+`tim_scan/` gets one directory per PROT entry, holding files named
+`<source>_off<OFFSET>_<W>x<H>_<BPP>bpp.tim`. `<source>` is `raw` (found in
+the entry's raw bytes) or `lzs<i>` (found inside LZS section `i`), and
+`<OFFSET>` is the byte offset in that source, upper-case hex zero-padded to
+six digits. `convert-dir` writes a `.png` next to each. For a single texture:
 
 ```bash
-./tim convert extracted/tim_scan/<entry>/raw_off<HEX>.tim -o out.png
+./tim convert extracted/tim_scan/<entry>/<tim-file> -o out.png
 ./tim convert <file>.tim --all-cluts        # one PNG per palette row
 ```
 
 The filename is how a texture-catalog label maps to a file on disk. A label
 like `PROT 46 · LZS sec 0 +0x13368 · 128×128 4bpp · foliage` reads as: PROT
-entry 46 (`0046_vell`), inside LZS section 0, at offset `0x13368`. So after
-the sweep it lands at `extracted/tim_scan/0046_vell/lzs0_off13368.tim` -
-convert that one file. `tim-scan` does the LZS decompression itself, so this
+entry 46 (`0046_vell`), inside LZS section 0, at offset `0x13368`. Every one
+of those fields is in the name, so after the sweep it lands at
+`extracted/tim_scan/0046_vell/lzs0_off013368_128x128_4bpp.tim` - convert that
+one file. `tim-scan` does the LZS decompression itself, so this
 is the whole texture path; you never need to decompress sections by hand
 (the manual-chain section below is for the rarer non-texture cases).
 
@@ -52,11 +54,13 @@ and export:
 
 ```bash
 ./asset tmd-scan extracted/PROT --out extracted/tmd_scan
-./tmd dump-obj extracted/tmd_scan/<entry>/raw_off<HEX>.tmd --out mesh
+./tmd dump-obj extracted/tmd_scan/<entry>/raw_off<HEX>.tmd --out mesh.obj
 ```
 
-`dump-obj` writes `mesh_obj0.obj` etc. - vertices *and* faces, decoded through
-the Legaia-specific primitive walker. Note: `tmd info` prints a
+`dump-obj` writes exactly one file, at the path you give it - no extension is
+appended, so name it `.obj` yourself. Every object in the TMD becomes an `o
+object_NNN_...` group inside that one file, carrying vertices *and* faces
+decoded through the Legaia-specific primitive walker. Note: `tmd info` prints a
 `psx-walk: FAIL` line on every valid Legaia TMD - that is the diagnostic
 confirming the file is the Legaia variant rather than a standard PsyQ TMD, not
 an error.
@@ -80,10 +84,11 @@ separately; `--anim` lists the decoded actions. Formats:
 [monster-animation.md](../formats/monster-animation.md).
 
 Enemy stats are **not** LZS-compressible text you can spot in a hex editor,
-and they are **not** in the player-battle files `0865`/`0866`. If you open
-those in a hex editor you will see enemy names like `Evil Fly` near the end -
-that is an *over-read* (see below), not their real home. Always read enemy
-data through `asset monster-archive` on entry `0867`, which starts each
+and they are **not** in the player-battle files `0865`/`0866`. A `.BIN` for
+either of those extracted before the entry-size expression was corrected ends
+in enemy names like `Evil Fly`; that tail is an *over-read* into `0867` (see
+below), not their real home, and a current extraction does not have it. Always
+read enemy data through `asset monster-archive` on entry `0867`, which starts each
 monster's LZS stream at the right slot base; a raw `lzs-decode` of the whole
 file only expands the first stream it meets.
 
@@ -237,7 +242,11 @@ To rebuild it alone, no emulator needed:
 ```
 
 `--disc` also accepts an already-extracted `PROT.DAT`. The alternative
-`--save` mode reads a mednafen save state's live VRAM instead. Format:
+`--save` mode reads a mednafen save state's live VRAM instead - exactly one of
+the two is required. Either way the *glyph bitmaps* are all that mode
+supplies: the width and escape tables come from the executable, read before
+the mode even branches, so `--scus` (default `extracted/SCUS_942.54`) has to
+resolve or the run fails on that file rather than on the disc. Format:
 [dialog-font.md](../formats/dialog-font.md).
 
 ## The manual chain (when you want one stage at a time)
@@ -287,7 +296,7 @@ scene bundle, or overlay code before you pick a decoder. Then:
   that input, not a corrupt file.
 - **Textures, in any container** - skip the section plumbing and use
   `asset tim-scan` ([Textures → PNG](#textures--png)); it decompresses LZS
-  sections itself and writes each TIM as `lzs<i>_off<HEX>.tim`.
+  sections itself and names each hit for the section it came out of.
 
 One trap worth knowing: LZS "decompresses without error" is **not** a
 validity signal - the decoder's ring buffer initialises to zeros, so most
@@ -298,33 +307,37 @@ rather than emitting garbage - a clean "this isn't LZS" is the useful answer.
 
 ### The over-read trap, and which file owns a byte offset
 
-Some PROT entries declare a TOC window far larger than their real on-disc
-footprint (the sector gap to the next entry). `prot-extract` writes the full
-declared window, so those `.BIN` files carry the *next* entry's bytes in their
-tail. The clearest case is the battle-data cluster: entries `0865` (Gala) and
+An entry's real size is the sector gap to the next entry. Some entries also
+carry a *declared* TOC window far larger than that, and reading the declared
+window instead of the gap walks straight into the following entry's bytes.
+The clearest case is the battle-data cluster: entries `0865` (Gala) and
 `0866` (Terra) each declare ~16 MB but really own `0x6F000` / `0x17800`, and
-their oversized windows both spill into the monster archive `0867`. That is
-why enemy text shows up at the end of a player-battle file.
+both declared windows run into the monster archive `0867`.
 
-`prot-extract list` now flags every such entry with an `OVR` column and shows
-its true `footprint` next to the declared `decl_size`. To resolve a specific
-offset - "which file really owns the bytes my hex editor is showing at
-`0x17855` of `0866`?" - use `locate`:
+`prot-extract extract` writes each `.BIN` as the entry's own sectors, so a
+freshly extracted tree does not carry the trap. It bites in two other places:
+a `.BIN` produced before the size expression was corrected, and any note or
+constant of the form "entry N, offset K" that was measured against one - the
+bytes are still on the disc where the note says, but the entry it names is
+the wrong owner.
+
+`prot-extract list` prints both numbers side by side, `size` (what the entry
+owns) next to `decl_span` (what it declares), and marks every row where they
+disagree with `OVR`. To resolve a specific offset - "which file really owns
+the bytes my hex editor is showing at `0x17855` of `0866`?" - use `locate`:
 
 ```bash
 prot-extract locate extracted/PROT.DAT 0x17855 --in-entry 866 --cdname extracted/CDNAME.TXT
 ```
 
 It translates the in-file offset to an absolute PROT.DAT offset, names the
-**true owning entry** (here `0867`), and warns when the offset lands in an
-over-read tail rather than the entry's own data. Drop `--in-entry` to pass an
-absolute PROT.DAT offset directly.
+**true owning entry** (here `0867`), and says plainly when the offset runs
+past the entry you asked about. Drop `--in-entry` to pass an absolute
+PROT.DAT offset directly.
 
-To avoid the trap entirely, re-extract with `prot-extract extract
---clamp-footprint`: every `.BIN` is trimmed to its true footprint, so no file
-carries a neighbour's bytes (trailing overlays are kept - they sit inside the
-footprint). The default stays un-clamped because in-`.BIN` offsets then match
-the TOC-declared windows that `locate --in-entry` and older notes assume.
+`prot-extract extract` still accepts `--clamp-footprint`, so old invocations
+keep working, but it is a no-op that prints a note: there is no larger window
+left to trim.
 
 ## Related docs
 

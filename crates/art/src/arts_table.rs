@@ -6,7 +6,8 @@
 //! **command-input glyph string** - the arrow sequence shown in the arts menu.
 //! Decoding the glyph string recovers the real on-disc directional command for
 //! each art, an independent source from (and validation oracle for) the
-//! best-effort PROT `0x05C4` art-record parser in [`crate::parse`].
+//! best-effort art-record parser in [`crate::parse`], which reads the
+//! player-file `record0` blobs (extraction 0863/0864/0865).
 //!
 //! ## Record layout (20 bytes, stride `0x14`, sorted by character)
 //!
@@ -295,6 +296,58 @@ impl RawArtRecord {
     pub fn cmd_ptr_file_offset(&self) -> usize {
         self.record_file_offset + 8
     }
+
+    /// File offset of the `+0xC` name pointer word.
+    pub fn name_ptr_file_offset(&self) -> usize {
+        self.record_file_offset + 0xC
+    }
+}
+
+/// Where an art's display name lives in `SCUS_942.54`, and how much room
+/// it has.
+///
+/// A renamer that finds the string by searching the image is searching a
+/// substring: `"Hurricane"` matches twice because it is a prefix of
+/// `"Hurricane Kick"`, so a same-length write over the shorter name
+/// corrupts the longer one. Editing through the record's own `+0xC`
+/// pointer cannot make that mistake.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NameField {
+    /// File offset of the first name byte.
+    pub file_offset: usize,
+    /// Bytes of the current string, terminator excluded.
+    pub len: usize,
+    /// Writable bytes before the next object: the string plus the run of
+    /// NUL padding that follows it. A replacement needs one byte of this
+    /// for its own terminator, so it may be at most `budget - 1` long.
+    pub budget: usize,
+}
+
+/// Locate the name field of the arts-table record at `record_file_offset`.
+///
+/// The budget is measured, not assumed: the strings are NUL-padded and the
+/// next pointed-at object starts at the first non-zero byte after them, so
+/// the padding run is exactly the slack.
+pub fn name_field(scus: &[u8], record_file_offset: usize) -> Option<NameField> {
+    let map = ExeMap::parse(scus)?;
+    let rec = scus.get(record_file_offset..record_file_offset + RECORD_STRIDE)?;
+    let name_ptr = u32::from_le_bytes(rec[0xC..0x10].try_into().ok()?);
+    let file_offset = map.off(name_ptr)?;
+    let len = scus
+        .get(file_offset..)?
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(0);
+    let pad = scus
+        .get(file_offset + len..)?
+        .iter()
+        .position(|&b| b != 0)
+        .unwrap_or(0);
+    Some(NameField {
+        file_offset,
+        len,
+        budget: len + pad,
+    })
 }
 
 /// Parse the arts-name table into raw editing records (file offset + `+8`
@@ -339,7 +392,7 @@ pub fn raw_records_from_scus(scus: &[u8]) -> Option<Vec<RawArtRecord>> {
 ///
 /// The SCUS table is the executable's **ground-truth** source for each art's
 /// command sequence + AP. This wrapper is the validation oracle the
-/// best-effort PROT `0x05C4` art-record parser ([`crate::parse::parse_record`])
+/// best-effort art-record parser ([`crate::parse::parse_record`])
 /// and the curated `legaia-gamedata` `directions` column are checked against:
 /// a decoded command sequence either resolves to a named art here or it
 /// disagrees with the executable.
@@ -377,7 +430,7 @@ impl ArtsOracle {
 
     /// Find the art whose decoded command sequence exactly matches
     /// `commands` for `character`. This is the contract a command decoder
-    /// (the PROT `0x05C4` parser, or a player's live input) must satisfy:
+    /// (the art-record parser, or a player's live input) must satisfy:
     /// the bytes it produced map to exactly one named art. Empty sequences
     /// (the Miracle-art rows carry only the separator marker) never match.
     pub fn by_command(&self, character: Character, commands: &[Command]) -> Option<&ArtTableEntry> {

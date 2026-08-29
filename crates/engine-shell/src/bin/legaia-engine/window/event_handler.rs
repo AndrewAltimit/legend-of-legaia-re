@@ -37,7 +37,7 @@ impl ApplicationHandler for PlayWindowApp {
         // Shadow sub-toggle (`--no-dyn-shadows` / the `Y` key): the derived
         // per-scene point lights + their PCF shadow maps. Inert while
         // dynamic lighting is off, so this is safe to stage unconditionally.
-        // Camera-occlusion fade (`--no-occlusion-fade` / the `D` key):
+        // Camera-occlusion fade (`--no-occlusion-fade` / the `F4` key):
         // default-on see-through walls; inert until the field redraw pass
         // stages a player focus, so staging the toggle here is safe too.
         if let Some(r) = self.win.renderer.as_ref() {

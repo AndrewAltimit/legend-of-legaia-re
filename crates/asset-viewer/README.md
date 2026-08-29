@@ -13,16 +13,22 @@ defaults to `extracted`, resolved against the current directory). `field` and
 
 ```bash
 asset-viewer tim   <input.tim> [--offset H] [--clut N]
+asset-viewer save-icons <PROT_899> [--tile N] [--scale N]  # save-slot portraits
 asset-viewer tmd   <input> [--shape character] [--sort-by-size] [--bundle battle]
 asset-viewer stage <PATH>                       # wireframe stage geometry
 asset-viewer vab   <PROT_entry> --offset <H> --sample <N>
 asset-viewer seq   <file.seq> <file.vab> [--vab-offset H] [--looped]
 asset-viewer prot  <PROT.DAT> [--cdname <CDNAME.TXT>] [--scus <SCUS_942.54>]
-asset-viewer field <SCENE> [--record N] [--cycle-records]
+asset-viewer field <SCENE> [--record N] [--cycle-records] [--max-actors N]
 asset-viewer dialog <MES_blob> [--message N]    # typewriter-paced dialog box
 asset-viewer battle-scene [--queued-action N]   # battle-action SM driver
 asset-viewer world <SCENE> [--max-actors N]     # engine-core World composite demo
 ```
+
+`save-icons` paints the sixteen 16x16 save-slot tiles that sit row-interleaved
+across one 256x16 strip, each through its **own** 16-colour palette - which is
+exactly what the plain `tim` mode cannot do. Tile N is the memory-card icon
+for save N+1; tile 15 is blank padding.
 
 `--cycle-records` is a bare flag (on by default): when the active record
 reaches Halt or Unknown the runner advances to the next record, so a single
@@ -61,8 +67,6 @@ The diagnostic logs distinguish each failure mode:
 ```
 skipped N prim(s) (M/N kept)
   missing CLUT data for K prim(s) across rows [r0, r1, ...]
-  CLUT row R IS populated but 256 entries wide (8-bit palette);
-    prim expects 16 entries (4-bit) - prim dropped to avoid rainbow noise
   missing texture-page data for K prim(s) across tpages [t0, t1, ...]
 ```
 
@@ -75,7 +79,7 @@ boundary.
 For offline diagnostics the same targeted-upload + per-prim verdict
 logic is also exposed by the `tmd` CLI: `tmd prims <input> --vram-dir
 <dir>` prints a per-prim status tag (`Ok` / `MissingClut` /
-`ClutDepthMismatch` / `MissingTexturePage`), and `tmd vram-dump <input>
+`MissingTexturePage`), and `tmd vram-dump <input>
 -o vram.png [--annotate]` writes the simulated post-upload VRAM as a
 PNG so collisions are obvious without firing up the GUI.
 

@@ -325,7 +325,7 @@ passive line this window prints in practice comes from the item-effect arm. See
 [equipment-table.md](../formats/equipment-table.md) for the measurement and for
 why the port's mirror of the column is row-keyed.
 
-`engine-render::shop_draws_for` implements the above layout using these
+`engine-ui::ui_overlay::shop_draws_for` implements the above layout using these
 confirmed constants. The cost prompt and Yes/No cursor are rendered in
 `legaia-engine play-window` whenever `MenuState::ShopConfirm` is active.
 

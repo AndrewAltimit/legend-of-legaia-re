@@ -31,7 +31,7 @@
 //! ## Wiring
 //!
 //! `legaia_engine_core::dev_menu_host::DevMenuSession` is the host screen:
-//! its `MAP_CHANGE` row steps [`wrap12_step`] and its `ENCOUNT` row
+//! its `MAP CHANGE` row steps [`wrap12_step`] and its `ENCOUNT` row
 //! [`clamp1_255_step`], both off the frame's newly-pressed pad word. The
 //! sibling [`crate::world_map_overlay`] still carries the menu's retail row
 //! model, panel sizer and list-picker, which that screen does not use.

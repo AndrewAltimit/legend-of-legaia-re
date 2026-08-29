@@ -190,12 +190,14 @@ use anyhow::{Result, bail};
 
 mod animation;
 mod mesh;
+mod rebuild;
 mod record;
 mod slim;
 mod texture_page;
 
 pub use animation::*;
 pub use mesh::*;
+pub use rebuild::*;
 pub use record::*;
 pub use slim::*;
 pub use texture_page::*;
@@ -248,7 +250,12 @@ pub fn decode_block(entry: &[u8], id: u16) -> Result<Option<Vec<u8>>> {
 /// byte-identical to Sony's, but the retail decoder accepts any valid stream;
 /// errors when the re-packed stream would overflow the fixed slot.
 pub fn encode_slot(block: &[u8]) -> Result<Vec<u8>> {
-    let stream = legaia_lzs::compress(block);
+    // Greedy first; when it misses the slot, pay for the optimal parse
+    // (the same greedy -> optimal fallback every MAN repack site uses).
+    let mut stream = legaia_lzs::compress(block);
+    if 4 + stream.len() > SLOT_STRIDE {
+        stream = legaia_lzs::compress_optimal(block);
+    }
     if 4 + stream.len() > SLOT_STRIDE {
         bail!(
             "re-packed stream does not fit a monster slot: 4 + {} > {SLOT_STRIDE}",

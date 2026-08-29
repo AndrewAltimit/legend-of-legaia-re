@@ -31,8 +31,21 @@ pub const STATS_VA: u32 = 0x8007_54C8;
 pub const DESC_PTR_TABLE_VA: u32 = 0x8007_5DB0;
 /// Per-id stride in bytes.
 pub const RECORD_STRIDE: usize = 0x0C;
-/// Number of spell ids the table covers.
-pub const SPELL_COUNT: usize = 256;
+/// Number of spell ids the table covers: ids `0x00..=0xBD`.
+///
+/// The count is pinned by the table's own end, not by the id type:
+/// [`STATS_VA`]` + 190 * `[`RECORD_STRIDE`]` == `[`DESC_PTR_TABLE_VA`], so
+/// record 190 would begin on the first word of the description-pointer
+/// table.
+///
+/// **Trap:** a `u8` id space invites `256` here, and reading 256 records
+/// decodes the description-pointer table as spell records - the `+8` name
+/// pointer lands on a description pointer, so ids `0xCA`, `0xCB`, ... come
+/// back "named" with description text and an MP cost of `128` (the `0x80`
+/// high byte of a `0x800xxxxx` pointer). The over-read reads as data, never
+/// as an error, and a writer using the same span writes MP-cost bytes into
+/// live description pointers.
+pub const SPELL_COUNT: usize = 190;
 
 /// PSX-EXE `t_addr` -> file-offset resolver (see [`crate::item_names`]).
 struct ExeMap {
@@ -64,6 +77,48 @@ impl ExeMap {
 /// `SCUS_942.54` isn't a parseable PSX-EXE. Mirrors
 /// [`crate::steal_table::table_file_offset`]; the MP-cost randomizer uses it to
 /// turn a spell id into a same-size SCUS patch offset.
+/// The writable extent of one spell's display-name string in SCUS.
+///
+/// Sibling of `legaia_art::arts_table::NameField`, and for the same
+/// reason: the enemy-cast name and the party art name are two different
+/// tables that a swap has to keep consistent, and both are NUL-padded
+/// strings a rename must fit rather than grow into.
+pub struct SpellNameField {
+    /// File offset of the first name byte.
+    pub file_offset: usize,
+    /// Bytes of the current string, terminator excluded.
+    pub len: usize,
+    /// Writable bytes before the next object: the string plus the NUL
+    /// padding run after it. A replacement needs one of them for its own
+    /// terminator, so it may be at most `budget - 1` long.
+    pub budget: usize,
+}
+
+/// Locate spell `id`'s display-name field, with its padding measured
+/// rather than assumed - the next pointed-at object starts at the first
+/// non-zero byte after the padding, so that run is exactly the slack.
+pub fn name_field(scus: &[u8], id: u8) -> Option<SpellNameField> {
+    let map = ExeMap::parse(scus)?;
+    let stat = map.off(STATS_VA + (id as usize * RECORD_STRIDE) as u32)?;
+    let name_ptr = u32::from_le_bytes(scus.get(stat + 8..stat + 12)?.try_into().ok()?);
+    let file_offset = map.off(name_ptr)?;
+    let len = scus
+        .get(file_offset..)?
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(0);
+    let pad = scus
+        .get(file_offset + len..)?
+        .iter()
+        .position(|&b| b != 0)
+        .unwrap_or(0);
+    Some(SpellNameField {
+        file_offset,
+        len,
+        budget: len + pad,
+    })
+}
+
 pub fn stats_file_offset(scus: &[u8]) -> Option<usize> {
     ExeMap::parse(scus)?.off(STATS_VA)
 }
@@ -212,7 +267,10 @@ impl SpellEntry {
     }
 }
 
-/// The decoded spell table: one entry per spell id (`0x00..=0xFF`).
+/// The decoded spell table: one entry per spell id (`0x00..=0xBD`, see
+/// [`SPELL_COUNT`]). Every accessor takes a `u8`, so an id past the table's
+/// end returns `None` rather than a record read out of the neighbouring
+/// description-pointer table.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SpellNameTable {
     entries: Vec<SpellEntry>,

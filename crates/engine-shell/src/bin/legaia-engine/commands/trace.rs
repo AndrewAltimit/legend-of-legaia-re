@@ -446,20 +446,16 @@ fn resolve_mode_trace_inputs(args: &ModeTraceArgs<'_>) -> Result<ResolvedModeTra
             let scene_name = scn.expected_active_scene.clone().with_context(|| {
                 format!("scenario {label:?} has no `expected_active_scene`; cannot derive scene",)
             })?;
-            let save_path = manifest.save_path(scn.slot)?;
+            let slot = scn.live_slot()?;
+            let save_path = manifest.save_path(slot)?;
             if !save_path.exists() {
                 anyhow::bail!(
-                    "scenario {label:?} slot {} save not found at {}",
-                    scn.slot,
+                    "scenario {label:?} slot {slot} save not found at {}",
                     save_path.display()
                 );
             }
             let retail = load_runtime_mode_trace_from_save(&save_path)?;
-            let source_label = format!(
-                "scenario {label:?} (slot {}, {})",
-                scn.slot,
-                save_path.display()
-            );
+            let source_label = format!("scenario {label:?} (slot {slot}, {})", save_path.display());
             Ok(ResolvedModeTrace {
                 scene_name,
                 retail: Some(retail),
@@ -645,20 +641,16 @@ fn resolve_audio_trace_inputs(args: &AudioTraceArgs<'_>) -> Result<ResolvedAudio
             let scene_name = scn.expected_active_scene.clone().with_context(|| {
                 format!("scenario {label:?} has no `expected_active_scene`; cannot derive scene")
             })?;
-            let save_path = manifest.save_path(scn.slot)?;
+            let slot = scn.live_slot()?;
+            let save_path = manifest.save_path(slot)?;
             if !save_path.exists() {
                 anyhow::bail!(
-                    "scenario {label:?} slot {} save not found at {}",
-                    scn.slot,
+                    "scenario {label:?} slot {slot} save not found at {}",
                     save_path.display()
                 );
             }
             let retail = load_runtime_audio_trace_from_save(&save_path)?;
-            let source_label = format!(
-                "scenario {label:?} (slot {}, {})",
-                scn.slot,
-                save_path.display()
-            );
+            let source_label = format!("scenario {label:?} (slot {slot}, {})", save_path.display());
             Ok(ResolvedAudioTrace {
                 scene_name,
                 retail: Some(ResolvedRetail::Snapshot(retail)),
@@ -789,19 +781,15 @@ fn resolve_pcm_trace_inputs(args: &PcmTraceArgs<'_>) -> Result<ResolvedPcmTrace>
             let scene_name = scn.expected_active_scene.clone().with_context(|| {
                 format!("scenario {label:?} has no `expected_active_scene`; cannot derive scene")
             })?;
-            let save_path = manifest.save_path(scn.slot)?;
+            let slot = scn.live_slot()?;
+            let save_path = manifest.save_path(slot)?;
             if !save_path.exists() {
                 anyhow::bail!(
-                    "scenario {label:?} slot {} save not found at {}",
-                    scn.slot,
+                    "scenario {label:?} slot {slot} save not found at {}",
                     save_path.display()
                 );
             }
-            let source_label = format!(
-                "scenario {label:?} (slot {}, {})",
-                scn.slot,
-                save_path.display()
-            );
+            let source_label = format!("scenario {label:?} (slot {slot}, {})", save_path.display());
             Ok(ResolvedPcmTrace {
                 scene_name,
                 retail_save: Some(save_path),

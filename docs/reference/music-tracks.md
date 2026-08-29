@@ -77,8 +77,8 @@ residency (`engine-core/tests/music_bank_residency_disc.rs`):
 
 - **Pochi alignment**: the four placeholder-filled slots (extraction
   `1066..=1069`) land exactly on the four dev-leftover rows (#76..=79 - the
-  M13 flute, `M117`, `MPIANO`, `LEVELUP`), still holding their sound-test
-  slots in the retail NA disc.
+  M13 flute, `M117`, `MPIANO` and the `獸衣` row whose romaji is `LEVELUP`),
+  still holding their sound-test slots in the retail NA disc.
 - **Battle-bank copies**: the ten `sound_data2` boot/battle-bank SEQ copies
   (extraction `877..886`) resolve, under this map, to exactly the ten
   battle/boss themes (#26 Battle 1, #27 Battle 2, #28 Boss 1, #30 Songi,
@@ -111,13 +111,15 @@ script census, since these are the played values, not the op operands.
 - **Borrowed placeholder cues.** `ALNDRA` (#72) is *Alundra*'s Zazzan battle
   theme and `JBGM` (#73) is the *Wild Arms* battle theme - both other
   Contrail/Sony titles, present on the Legaia disc as dev placeholders.
-- **Dev test files.** `DUMMY` (#74, debug title "I'M A DUMMY-DAYO!"), `PIANO`
-  (#78), `LEVELUP` (#79), and `A` (#80) are test/placeholder entries, not
-  shipping music.
+- **Dev test files.** #74 (no debug ID at all; romaji `DAMĪ`, "Dummy"), `MPIANO`
+  (#78, romaji `PIANO`), #79 (ID `獸衣`, romaji `LEVELUP`) and `M26A` (#80,
+  romaji `A`) are test/placeholder entries, not shipping music. Note the last
+  three carry an ID distinct from their romaji - quote the **ID** column when
+  joining against the table below.
 - **Reused themes under different IDs.** Several debug IDs share a title
-  (`中ボス` / "medium boss" appears for `M27`, `M108`, `M33`; `ディスコ` /
-  "disco" for `M112`, `M120`, `M117`) - the same musical idea staged for
-  different scenes.
+  (`中ボス` / "medium boss" appears for `M27`, `M108` and `M33`; `ディスコ` /
+  "disco" for `M112` and `M117`; `ディスコ決勝` / "disco finals" for `M116` and
+  `M120`) - the same musical idea staged for different scenes.
 
 ## Track table
 

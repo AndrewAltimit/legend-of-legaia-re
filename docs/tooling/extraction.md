@@ -25,9 +25,9 @@ extracted/
 ├── prot_tim_catalog.tsv           - flat TIM inventory (see `asset tim-catalog` below)
 ├── prot_tim_deep_catalog.tsv      - TIMs inside LZS-compressed sections
 ├── PROT/                          - per-PROT-entry files (1233 entries, named via CDNAME).
-│                                     Includes trailing-overlay sectors for entries
-│                                     whose on-disc footprint extends past their
-│                                     TOC-indexed end (see formats/prot.md).
+│                                     Each file is the entry's whole sector footprint,
+│                                     so trailing-overlay tails (PROT 899's title-screen
+│                                     overlay code) are present (see formats/prot.md).
 │   ├── categorize.json            - per-class breakdown
 │   └── ####_<name>.BIN
 ├── streaming/                     - DATA_FIELD streaming sub-assets, one dir per container
@@ -46,8 +46,8 @@ handful). The full texture set is inventoried by the TIM catalogs; export it
 with `asset tim-scan extracted/PROT --out extracted/tim_scan` and convert with
 `tim convert-dir extracted/tim_scan` (the final pipeline summary prints exactly
 this). The `font/` step is what `legaia-engine`, `asset-viewer field`/`dialog`
-and the site load text from; `font-extract --disc` produces the same files
-standalone.
+and the site load text from; `font-extract --disc <bin-or-PROT.DAT>` produces
+the same files standalone.
 
 The CD-XA step reads the raw disc directly and demuxes every `*.XA` file
 into one WAV per `(file_no, ch_no)` channel, each decoded at its true
@@ -76,15 +76,28 @@ Walks ISO9660 and writes every file. See [disc + ISO9660](../formats/disc.md).
 prot-extract extract extracted/PROT.DAT extracted/PROT/ --cdname extracted/CDNAME.TXT
 prot-extract list   extracted/PROT.DAT --cdname extracted/CDNAME.TXT
 prot-extract locate extracted/PROT.DAT 0x17855 --in-entry 866 --cdname extracted/CDNAME.TXT
+prot-extract retail-names extracted/CDNAME.TXT
 ```
 
-`extract --clamp-footprint` trims each `.BIN` to its true footprint instead,
-so no file carries a neighbour's tail (trailing overlays survive - they sit
-inside the footprint); the manifest records the mode and the per-file sizes.
-Keep the default when you need in-`.BIN` offsets to match the TOC-declared
-windows other tools assume.
+Splits PROT.DAT into 1233 numbered entries with CDNAME-derived filenames, plus
+a `manifest.json` and an unpacked `tim/<entry>/` dir per TIM-pack entry. Each
+`.BIN` holds exactly that entry's sectors - `toc[p+3] - toc[p+2]`, the gap to
+the next entry's start LBA, which is what retail's own span routine returns.
+The footprints tile the archive with no gaps and no overlaps, so no file
+carries a neighbour's bytes and none is truncated mid-payload: PROT 899's
+title-screen overlay code is inside its footprint, not past it.
+`--clamp-footprint` is a deprecated no-op, accepted so existing invocations
+keep working.
 
-Splits PROT.DAT into 1233 numbered entries with CDNAME-derived filenames. Each extracted file's size is `max(indexed_size, next_start - this_start)`, so trailing-overlay sectors past the TOC-indexed end (e.g. PROT 899's title-screen overlay code) are visible. But where the TOC *declares* a window larger than the sector gap to the next entry, that same rule makes the file **over-read** into its neighbour - its tail holds the next entry's bytes (entries 865/866 spill into the monster archive 867). `list` flags these with an `OVR` column and prints each entry's true `footprint`; `locate` maps a byte offset (absolute, or in-`.BIN` via `--in-entry`) to the entry that really owns it and warns on an over-read tail. See [PROT TOC](../formats/prot.md).
+`list` prints the entry size next to `decl_span`, the historical
+`toc[p+5] - toc[p+3] + 4` expression, and flags with `ovr` the entries where
+that expression overshoots - the ones whose pre-correction `.BIN` carried a
+neighbour's tail (865/866 into the monster archive 867). `locate` maps a byte
+offset (absolute, or in-`.BIN` via `--in-entry`) to the entry that really owns
+it and says so when the offset runs past that entry's end. `retail-names`
+shows what the **retail** loader reads back out of a `CDNAME.TXT` next to the
+tolerant parse - the view an edit to that file needs, see
+[CDNAME](../formats/cdname.md). See [PROT TOC](../formats/prot.md).
 
 ### LZS decode (`lzs-decode`)
 
@@ -98,16 +111,17 @@ See [LZS compression](../formats/lzs.md).
 ### TIM → PNG (`tim`)
 
 ```bash
-tim convert <file> [out.png]            # single TIM; out defaults to <file>.png
-tim convert-dir <dir>                    # recursively convert every .tim under <dir>
+tim info    <file>                      # header, CLUT block, image dims
+tim convert <file> [-o out.png] [--clut N | --all-cluts]   # out defaults to <file>.png
+tim convert-dir <dir> [-o <out_dir>]    # recursively convert every .tim under <dir>
 ```
 
 ### TMD analysis (`tmd`)
 
 ```bash
-tmd info        <file>            # header + object table
-tmd dump-obj    <file> --out <prefix>     # OBJ-with-faces export
-tmd validate-prims <DIR>          # bulk-walk every prim group, sanity-check
+tmd info        <file>                    # header + object table
+tmd dump-obj    <file> --out <file.obj>   # OBJ-with-faces export (one file, all objects)
+tmd validate-prims <DIR>                  # bulk-walk every prim group, sanity-check
 ```
 
 ### VAB extraction (`vab`)
@@ -184,16 +198,18 @@ mdt slots    <file> --limit 8
 
 ## Disc-gated tests
 
-Two integration tests touch a real disc and only run when `LEGAIA_DISC_BIN` points at a valid `.bin`:
+The extraction layer's integration tests touch a real disc and only run when `LEGAIA_DISC_BIN` points at a valid `.bin`:
 
 - `crates/iso/tests/disc_pipeline.rs` - disc walk, file count, key file SHA-256s.
+- `crates/iso/tests/ecc_real.rs` - sector write-back keeps EDC/ECC valid.
+- `crates/prot/tests/archive_tiling_real.rs` - the entry footprints tile PROT.DAT exactly.
 - `crates/extract/tests/validation_suite.rs` - full pipeline, PROT entry count, sub-asset totals, TIM round-trip.
 
 ```bash
 LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test --workspace
 ```
 
-Without the env var, both tests **skip and pass** - that's intentional, so CI works without redistributing Sony data. Don't change that gating.
+Without the env var, every one of them **skips and passes** - that's intentional, so CI works without redistributing Sony data. Don't change that gating. The same pattern covers disc-gated tests across the rest of the workspace; find them with `grep -rl LEGAIA_DISC_BIN crates/*/tests`.
 
 ## Asset viewer
 
@@ -201,7 +217,7 @@ Once assets are extracted, browse them interactively:
 
 ```bash
 # Single TIM (a `tim-scan` hit, or a PROT entry starting with a TIM)
-asset-viewer tim extracted/tim_scan/<entry>/raw_off<HEX>_<W>x<H>_<bpp>.tim
+asset-viewer tim extracted/tim_scan/<entry>/raw_off<HEX>_<W>x<H>_<BPP>bpp.tim
 
 # TIM at a non-zero offset within a larger file. Use this for TIMs in
 # the unindexed pre-`init_data` gap of PROT.DAT (system-UI sprite

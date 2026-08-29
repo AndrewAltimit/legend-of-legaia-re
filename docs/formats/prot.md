@@ -4,14 +4,20 @@
 
 Implementation: `crates/prot/src/archive.rs`.
 
-## Header (8 bytes at offset 0x000 OR 0x800)
+## Header (at offset 0x000 OR 0x800)
 
 ```
-u32 file_count_minus_1
-u32 header_sectors      // size of TOC in 0x800-byte sectors
++0x00  u32  unused                // zero in both retail archives
++0x04  u32  lba_row_count - 1     // PROT.DAT 1235, DMY.DAT 15
++0x08  u32  header_sectors        // header + TOC size in 0x800-byte sectors
+                                  //   - and this word IS toc[0]
 ```
 
-The detector tries offset 0x000 first, then 0x800, accepting whichever yields plausible values. PROT.DAT uses 0x000.
+The header proper is the first two words: `toc[]` below starts at `+0x08`, so the sector-count word doubles as `toc[0]`. Both readings hold at once by construction - the TOC's first LBA row is the first content sector, which is the sector immediately after the TOC. `detect_header` takes the word as a sector count to size its TOC read; retail's resolver indexes from `toc[2]` upwards and never reads it as a size.
+
+`lba_row_count` counts TOC rows, not entries. PROT.DAT's 1236 rows are `toc[0]` and `toc[1]` (the two boot-UI regions), 1233 entry start LBAs, and one end terminator (`toc[1235] = 59206`, the archive's sector count). DMY.DAT's 16 rows resolve to 13 entries the same way.
+
+The detector tries offset 0x000 first, then 0x800, accepting whichever yields plausible values. Both retail archives use 0x000.
 
 ## TOC (immediately after header)
 
@@ -76,13 +82,15 @@ Two properties make the corrected form checkable, and both are asserted by the d
 
 ## In-RAM TOC
 
-`SCUS_942.54` keeps a transformed copy of the TOC at RAM address `0x801C70F0`. Used at `FUN_8003E8A8` (the LBA resolver):
+`SCUS_942.54` keeps a copy of the TOC at RAM address `0x801C70F0`. Read at `FUN_8003E8A8` (the TOC resolver):
 
 ```c
 start_lba    = TABLE[(idx + 2) * 4 + 0x801C70F0]
 end_lba      = TABLE[(idx + 3) * 4 + 0x801C70F0]
 size_sectors = end_lba - start_lba
 ```
+
+The routine **returns the span, not the LBA**: it stores `start_lba` at `gp+0x8f0` and folds it into the CD position the read consumes (`msf_to_lba(base) + start_lba`, back through `lba_to_msf`), leaving `size_sectors` in `v0`. That is why `FUN_8003EB98` can hand its return value straight to `FUN_8003E800` as a sector count.
 
 The in-RAM copy is **raw `PROT.DAT` from byte 0** - `FUN_8003E4E8` reads the first three sectors of `PROT.DAT` into `0x801C70F0` at boot, header words included (byte-verified against a live save state's RAM). There is no transformation; but the **index space differs by 2** from the extraction's:
 the extraction (`crates/prot`, and the `NNNN` in `extracted/PROT/NNNN_*.BIN`) builds its

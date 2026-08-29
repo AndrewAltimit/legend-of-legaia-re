@@ -32,10 +32,11 @@ This is proved two ways:
   committed - only the hash.
 - **Runtime byte-match** (disc + save-state gated). The on-disc bytes are
   byte-identical to the resident RAM image over the entire `.text`+`.rodata`
-  region. For the battle overlay (PROT 0898 at base `0x801CE818`) the on-disc
-  bytes match RAM for the first `0x28800` of `0x29800` bytes - 100 % of
-  code+rodata - with only the trailing `0x1000`-byte `.bss` diverging (the
-  runtime zeroes / writes it after the copy). Test:
+  region. The battle overlay (PROT 0898 at base `0x801CE818`) is the clean
+  case: its entry is `0x28800` bytes and every one of them matches RAM, which
+  is also its committed `clean_copy_bytes`. Where an entry carries a
+  runtime-written `.bss` tail (PROT 0899), `clean_copy_bytes` records the
+  verified prefix and the tail is expected to diverge. Test:
   [`crates/mednafen/tests/static_overlay_clean_copy.rs`](../../crates/mednafen/tests/static_overlay_clean_copy.rs).
 
 ## What it buys (and the limit)
@@ -62,7 +63,9 @@ For the true base `B`, every internal call target `T` maps to file offset
 `T - B`, which begins a function prologue (`addiu sp, sp, -X`). Tallying
 `B = T - prologue_offset` over every (distinct-call-target, prologue-offset)
 pair, the true base wins by a landslide (the field overlay recovers `0x801CE818`
-with 60 corroborating call targets; battle with 44).
+with 59 corroborating call targets; battle with 44). `asset overlay scan`
+prints the winning base and its vote count per entry, so the recovery is
+reproducible from the disc rather than taken on trust.
 
 This is decisive enough to **catch and correct mislabelled overlays**. The
 historical "PROT 0896 = options/pause-menu overlay" label is wrong: PROT 0896
@@ -77,12 +80,13 @@ prologues and by jal-recovery (30 votes). PROT 0899 and the field overlay
 (PROT 0897) are **VA-alias siblings in slot A** - both load at `0x801CE818` at
 different times, so `0x801CF650` is a `"Give"` string in 0897 but the equip
 aggregator in 0899. That is the exact aliasing this pipeline exists to
-disambiguate. (PROT 0896 is the pipeline's **cautionary tale**: its
-whole-file recovery returns a convincing 60-vote base `0x801C5818`, but the
-votes come from the FIELD overlay's bytes carried in 0896's over-read tail
-from file `+0x9000` - that code's self-consistency at `0x801CE818` fixes the
-result to `0x801CE818 − 0x9000` *by construction*. Restricted to the head's
-own code the recovery yields no landslide, so 0896's true link base is
+disambiguate. (PROT 0896 is the pipeline's **cautionary tale**: recovered over
+the old over-reading window it returned a convincing 60-vote base
+`0x801C5818`, but the votes came from the FIELD overlay's bytes carried in
+0896's over-read tail from file `+0x9000` - that code's self-consistency at
+`0x801CE818` fixes the result to `0x801CE818 − 0x9000` *by construction*.
+Scanned over its own `0x9000`-byte entry it yields no landslide, so 0896's
+true link base is
 unrecovered, and a live mode-24 entry capture refuted the old "mode-24 OTHER
 overlay" reading (the SCUS-resident OTHER INIT streams each minigame's own
 overlay directly into slot A; 0896's bytes appear nowhere in RAM across the
@@ -197,7 +201,12 @@ and `*DAT_80010390`; see [`prot.md`](../formats/prot.md#overlay-loaders-parallel
   `Damage`/`Recover`/`Both` effect labels, NOT a dance song; correcting an
   earlier `overlay-ptr-table` reading). The **GAME OVER** overlay (0902) is
   **not** slot B - its old slot-B row was the `pointer_resolution` false
-  positive dissected above; it is a slot-A row. See
+  positive dissected above; it is a slot-A row. The Delilas cast modules
+  `0958..0960` are the decoded members of the band: RAM-anchored at the
+  slot-B link base `0x801F69D8` (scenario `nivora_duel_mid_blazing_slash`
+  holds 958 byte-resident there), module anatomy on
+  [`cast-module.md`](../subsystems/cast-module.md); they are not yet rows
+  in `static-overlays.toml`. See
   [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
 ### A small overlay does not clear the slot
@@ -223,13 +232,13 @@ the reading structural rather than a guess. Two consequences worth carrying:
 
 - **A capture's slot-A bytes are not one overlay's**, so "this dump came from
   the DEBUG MODE capture" bounds nothing. Resolve the bytes per VA.
-- **The strata are also why whole-file jal-recovery mis-fires here.** PROT
-  0971's footprint over-reads PROT 0972 from `+0x1800`, and 0972's code is
-  self-consistent at `0x801CE818`, so the recovery lands on
-  `0x801CE818 - 0x1800 = 0x801CD018` with a comfortable 29 votes. Same
-  mechanism as the PROT 0896 cautionary tale above; the map records
-  `base_source = "capture"` for 0971 precisely so the reproducibility test does
-  not assert the phantom.
+- **The strata are also what once made jal-recovery mis-fire here.** Over the
+  old over-reading window, PROT 0971's image ran into PROT 0972 from `+0x1800`,
+  and 0972's code is self-consistent at `0x801CE818`, so the recovery landed on
+  `0x801CE818 - 0x1800 = 0x801CD018` with a comfortable 29 votes - the same
+  mechanism as the PROT 0896 cautionary tale above. Scanned over its own
+  `0x1800`-byte entry, 0971 has too sparse an internal call graph to recover a
+  base at all, which is why the map records `base_source = "capture"` for it.
 
 ## CLI
 
@@ -269,14 +278,17 @@ asset overlay generate extracted/PROT.DAT --index 897 --index 898
 ## Importing into Ghidra
 
 `asset overlay extract` writes `overlay_<label>_<prot>.bin` (the as-loaded form)
-and `asset overlay ghidra` writes the matching import driver. Copy the blobs
-into the compose service and run the driver (mirrors
+and `asset overlay ghidra` writes the matching import driver
+(`import_static_overlays.sh`). The driver imports each blob from `/data/<bin>`,
+and `/data` is `./extracted` bind-mounted **read-only** - so the blobs reach the
+container by being placed in `extracted/` on the host, not by `docker compose
+cp`. Run the driver from the repo root (mirrors
 [`overlay-capture.md`](overlay-capture.md), but sourced from the disc):
 
 ```bash
 asset overlay extract extracted/PROT.DAT --out extracted/overlays
 asset overlay ghidra  --out extracted/overlays
-docker compose cp extracted/overlays/. ghidra:/data/
+cp extracted/overlays/*.bin extracted/     # -> /data/<bin> inside the container
 bash extracted/overlays/import_static_overlays.sh
 ```
 
@@ -298,35 +310,36 @@ and against live RAM in the clean-copy test.
 
 ## Scope + limits
 
-- **An extracted image is a footprint, not an overlay.** `read_entry` returns
-  `[entry start, entry start + footprint)`, which runs into the following
-  entries' sectors; the runtime slice is only `[entry start, next entry
-  start)`. The tail is harmless while you are reading a function at its own
-  address, and actively misleading the moment you ask *which overlay owns this
-  VA* - the tail answers, with a neighbour's code, at an address its own
-  overlay never occupies.
+- **An overlay image is exactly its entry, and older dumps are not.**
+  [`Archive::read_entry`](../../crates/prot/src/archive.rs) returns
+  `[entry start, next entry start)` - `size_sectors` and nothing belonging to a
+  neighbour - and that is what the `asset overlay` commands read, so an
+  extracted image ends where the overlay ends. The historical over-reading
+  window (`toc[p+5] - toc[p+3] + 4`) survives only as the diagnostic
+  `read_entry_declared_span`; see [`prot.md`](../formats/prot.md).
 
-  The own-content length is measurable without the TOC: it is where another
-  entry's head appears inside the image, and it comes out sector-aligned.
-  PROT 0897 owns `0x25000` (to VA `0x801F3818`), 0898 `0x28800`, 0899
-  `0x25000`, 0971 `0x1800`, 0972 `0xB000`. Note 0898's `0x28800` is exactly
-  its recorded `clean_copy_bytes`, so its "trailing `0x1000` diverges in RAM"
-  is simply PROT 0899's head, which was never loaded.
+  The entry lengths are therefore the own-content lengths: PROT 0897 owns
+  `0x25000` (to VA `0x801F3818`), 0898 `0x28800`, 0899 `0x25000`, 0971
+  `0x1800`, 0972 `0xB000`.
 
-  The cost of skipping this: `FUN_801F5748` was read as the field overlay's
-  inventory hub for a long time. `0x801F5748 - 0x801CE818 = 0x26F30` is
-  `0x1F30` past where 0897 ends, so those bytes are PROT 0898's battle
-  dispatcher `FUN_801D0748` - a real routine at a phantom address. The dump is
-  correctly *based*; the image simply answered for a VA it does not own.
+  What that correction cost while it was outstanding: `FUN_801F5748` was read
+  as the field overlay's inventory hub for a long time. `0x801F5748 -
+  0x801CE818 = 0x26F30` is `0x1F30` past where 0897 ends, so those bytes are
+  PROT 0898's battle dispatcher `FUN_801D0748` - a real routine at a phantom
+  address. The dump was correctly *based*; the over-read image simply answered
+  for a VA it does not own. Any function dump or `(entry, offset)` coordinate
+  taken from an over-read image still carries that flaw - re-derive it from the
+  entry rather than trusting the printed VA.
 
 - Static extraction is for overlays that are **clean copies**. The byte-match
   catches the exceptions: an overlay whose on-disc bytes do not match the
   resident image is runtime-relocated/constructed - mark it `ineligible` and
   keep it on the dynamic path. Don't force it static.
-- The fingerprint covers the `read_entry` footprint. For a few entries that
-  footprint over-reads adjacent shared sectors past the real overlay (the
-  on-disc entries overlap); the over-read tail is harmless noise in the Ghidra
-  disassembly - the real functions still land at their real addresses.
+- The fingerprint covers exactly the `read_entry` span, so it changes if and
+  only if the entry's own bytes change. An overlay whose own content stops
+  short of its entry (a small overlay padded out to the next sector boundary)
+  still hashes the whole entry; the padding is harmless noise in the Ghidra
+  disassembly - the real functions land at their real addresses.
 - This pipeline does **not** address runtime values. The dynamic-capture
   workflow ([`overlay-capture.md`](overlay-capture.md),
   [`pcsx-redux-automation.md`](pcsx-redux-automation.md)) remains essential and

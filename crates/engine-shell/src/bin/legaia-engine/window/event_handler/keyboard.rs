@@ -353,7 +353,9 @@ impl PlayWindowApp {
                     self.session.restore_field_bgm();
                 }
             } else if self.start_dance_minigame(false) {
-                log::info!("dance: count-in - Square/Circle/Triangle are the arrows, K to quit");
+                log::info!(
+                    "dance: count-in - Square/Circle are the arrows, Triangle spends a groovy move, K to quit"
+                );
             }
             return;
         }
@@ -392,7 +394,7 @@ impl PlayWindowApp {
                 }
             } else if self.start_fishing_minigame() {
                 log::info!(
-                    "fishing: started - Cross casts/reels(A), Circle reels(B), L to quit, P = prize exchange"
+                    "fishing: started - Cross casts/reels(A), Square reels(B), L to quit, P = prize exchange"
                 );
             }
             return;

@@ -2,11 +2,18 @@
 //!
 //! Every character has one Miracle Art:
 //!
-//! | Character | Art           | RAM (`801F` segment) | PROT (`05C4` area) |
-//! |-----------|---------------|-----------------------|---------------------|
-//! | Vahn      | Vahn's Craze  | `0x64F4`              | `0x0CDC`            |
-//! | Noa       | Noa's Ark     | `0x6504`              | `0x0CEC`            |
-//! | Gala      | Biron Rage    | `0x6514`              | `0x0CFC`            |
+//! | Character | Art           | RAM (`801F` segment) | `record0` file offset |
+//! |-----------|---------------|-----------------------|-----------------------|
+//! | Vahn      | Vahn's Craze  | `0x64F4`              | `0x0CDC`              |
+//! | Noa       | Noa's Ark     | `0x6504`              | `0x0CEC`              |
+//! | Gala      | Biron Rage    | `0x6514`              | `0x0CFC`              |
+//!
+//! The right column is an offset inside the per-character player-data
+//! `record0` - extraction PROT `0863` Vahn / `0864` Noa / `0865` Gala. It is
+//! **not** an archive coordinate: the "PROT entry `0x05C4`" label the source
+//! spreadsheet uses names the record file, and `0x05C4` = 1476 is past the
+//! last of `PROT.DAT`'s 1233 entries. See
+//! [`docs/formats/art-data.md`](../../docs/formats/art-data.md).
 //!
 //! ## Trigger semantics
 //!

@@ -21,6 +21,14 @@ params at bytes 0..4 mirrored four times) is also decoded - select it with
 `DecodeOptions { bits: BitsPerSample::Eight, .. }` or `--bits 8` on the CLI.
 The NA Legaia corpus is entirely 4-bit, so 4-bit stays the default.
 
+The `encode` module is the write side: `encode_mono_4bit` /
+`encode_stereo_4bit_dualmono` produce sound groups the retail decoder
+accepts (exhaustive filter/range search per 28-sample unit), and `resample_linear` brings
+replacement audio onto the stream's rate. The disc patcher's XA voice
+edits (`legaia-patcher`, Delilas arts-voice modes) are built on it,
+paired with `legaia_iso::write::encode_mode2_form2_sector` for the
+sector-level EDC.
+
 ## Filter coefficients (1/64 units)
 
 | filter | f0  | f1   |

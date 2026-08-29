@@ -45,11 +45,22 @@ mednafen-state watch LABEL [--manifest PATH]
 mednafen-state vram-dump SAVE [--out PNG --out-bin BIN --regs --display-crop]
 mednafen-state spu SAVE [--all]      # reverb routing: master enable, mode, EON mask, per-voice
 mednafen-state clut-trace --pack PROT_ENTRY SAVE... [--json PATH --include-tmd-body]
+mednafen-state prim-trace SAVE [--pool-base ADDR --pool-end ADDR]
 mednafen-state prim-dispatch-table SAVE [--overlay-targets-only]
+mednafen-state prim-dispatch-survey SAVE...
+mednafen-state world-map-camera SAVE... [--table]
 mednafen-state identify SAVE...      # scene / game mode / player position
 mednafen-state display-list SAVE [--coincident --list --all-ots --ot-addr ADDR]
 mednafen-state scenarios [--manifest PATH]
 ```
+
+`prim-trace` walks the primitive pool and scans the RAM windows behind it for
+fixed-stride source tables. `prim-dispatch-survey` runs the dispatch-table
+decode across several saves and asserts the SCUS-resident table is
+byte-identical in all of them (it lives in code, so a RAM write cannot legally
+touch it). `world-map-camera` decodes the top-view camera globals - the X/Z
+scrolls are stored negated, so the printed `cam_x` / `cam_z` are the camera
+target in world units, alongside the walk-view / top-view mode flag.
 
 `identify` prints the scene name, game mode and player position of a batch of
 states, mirroring `pcsxr-state identify` so `scripts/mednafen/state-index.py`

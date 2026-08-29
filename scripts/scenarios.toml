@@ -2353,3 +2353,134 @@ topics = ["battle", "boss", "Gaza", "softlock", "state 0x19", "attack approach",
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
+
+[[scenarios]]
+slot = 1
+label = "nivora_cutscene_delilas_intro"
+backup_fingerprint = "542107a89004977b35d47057ed5695c20b47061bd48b7f004b5d6d705a8f89af"
+description = "RETAIL disc: start of the Nivora ravine cutscene with the Delilas siblings (nilboa field-run, x=14400 z=14656) - the walk-in before the duels"
+topics = ["nivora", "nilboa", "Delilas", "cutscene", "retail reference"]
+phase = "field"
+expected_active_scene = "nilboa"
+
+[[scenarios]]
+slot = 2
+label = "nivora_duel_che_vs_gala_start"
+backup_fingerprint = "41471a9dc196ea13b0d909be3a06ee80f32d2511d8e370fb615098d65c234a12"
+description = "RETAIL disc: start of the Che vs Gala Nivora duel battle (nilboa battle mode) - the retail boss-cast reference fight"
+topics = ["nivora", "nilboa", "Delilas", "Che", "duel", "battle", "retail reference"]
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+
+[[scenarios]]
+slot = 3
+label = "nivora_duel_pre_megaton_press"
+backup_fingerprint = "87dd9568e167bdb96ad94cc9a7bc4504073eef2979e87e616d755905bb80ce02"
+description = "RETAIL disc: mid Che vs Gala duel, ~1 second before Che performs Megaton Press unprompted - THE retail reference for the capture-cast module 959 finale (camera pan to caster + face cut-in). Load and wait; the cast fires on its own"
+topics = ["nivora", "Delilas", "Che", "Megaton Press", "cast module 959", "finale", "camera", "face cut-in", "retail reference"]
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+
+[[scenarios]]
+label = "nivora_duel_pre_plasma_strike"
+backup_fingerprint = "9f7afd18519ad43c44b764a64c2e25902a9c97756c8886002a9055cd496795a9"
+description = "RETAIL disc: mid Lu vs Noa duel (formation 0xA4, party Noa), captured at phase 0x51 with Lu's queued action already cat=2 spell=0x7B (Plasma Strike) and the cast module NOT yet loaded (slot-B empty) - the retail before-cast reference for porting the capture-cast route to Lu's module. Load and wait; the cast fires on its own"
+topics = ["nivora", "Delilas", "Lu", "Plasma Strike", "spell 0x7B", "cast module", "retail reference"]
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+
+[[scenarios]]
+label = "nivora_duel_mid_blazing_slash"
+backup_fingerprint = "7c7a8d2034ec3e5a164145910cf55a8b34629861209683fc922066b87d1837ff"
+description = "RETAIL disc: mid Gi vs Vahn duel (formation 0xA2, party Vahn), captured INSIDE the cast band (phase 0x6E) with Gi's action cat=2 spell=0x79 (Blazing Slash) and the cast module resident at slot-B 0x801F6E9C - the module bytes are dumpable straight from this state's RAM. Load and the spectacle plays out"
+topics = ["nivora", "Delilas", "Gi", "Blazing Slash", "spell 0x79", "cast module", "slot-B resident", "retail reference"]
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+
+[[scenarios]]
+slot = 7
+label = "delilas_gi_move_input_hand_gap"
+backup_fingerprint = "cf06081fa6e864ca2e6c0c2455317a850142fad31d78760d4f732db0c1495a73"
+description = "DELILAS PARTY SWAP MOD savestate - disc patched with --delilas-party lu,gi,che (rom 'Legend of Legaia (USA).legaia-patcher-1787410245104.bin'): battle, Gi (Noa slot) waiting for move input with his hand visibly DISCONNECTED from the arm - a live repro of the playerize hand/variant seam on the current build. Patched-disc state: RAM carries the patched player files, so the defect is dumpable straight from this state"
+topics = ["delilas party", "Gi", "playerize", "hand gap", "mesh seam", "patched disc", "bug repro"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[[scenarios]]
+slot = 8
+label = "delilas_che_move_input_mesh_gaps"
+backup_fingerprint = "7b5060df8c86fea91faaa3095e8cf64a553eef388cac5f49b87c5a85a7b25204"
+description = "DELILAS PARTY SWAP MOD savestate - same lu,gi,che-patched rom as delilas_gi_move_input_hand_gap: battle, Che (Gala slot) waiting for move input with gaps in his mesh (the hammer among them) - live repro of missing/cropped geometry in the playerized battle form on the current build"
+topics = ["delilas party", "Che", "playerize", "mesh gaps", "hammer", "patched disc", "bug repro"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[[scenarios]]
+slot = 9
+label = "delilas_gi_spirit_artifact"
+backup_fingerprint = "75e9f97dd640bfb27a17201b7c28728713898b00b4cdb53d66cf71114e15e61d"
+description = "DELILAS PARTY SWAP MOD savestate - same lu,gi,che-patched rom as delilas_gi_move_input_hand_gap: battle, Gi mid-SPIRIT - load and the stretched-mesh visual artifact shows about one second later. THE repro state for the Spirit stretch (task-60 class): patched RAM, natural battle context, artifact on a timer from load"
+topics = ["delilas party", "Gi", "Spirit", "mesh stretch", "equipment variant window", "patched disc", "bug repro"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[[scenarios]]
+slot = 1
+label = "delilas_gi_move_hand_gap_v2"
+backup_fingerprint = "baa3330b8b4575828c8c01fc3b766f365c866fb488029256ee6de9b951eaa51a"
+description = "DELILAS PARTY SWAP MOD savestate - disc patched with --delilas-party lu,gi,che (rom 'Legend of Legaia (USA).legaia-patcher-1787422713325.bin', CONTAINS the hand centroid-seat + winding-twin fixes and the VDF-tail restore, all byte-verified): battle, Gi (Noa slot) waiting for move input with a visible gap between hand and arm - the residual after the seat + twins"
+topics = ["delilas party", "Gi", "hand gap", "residual", "patched disc", "bug repro"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[[scenarios]]
+slot = 2
+label = "delilas_che_move_hammer_gaps_v2"
+backup_fingerprint = "9ecca345b035241ef5a5145a05f95ab627e5edad161a9d328c1d6e823d13817b"
+description = "DELILAS PARTY SWAP MOD savestate - same fixed rom as delilas_gi_move_hand_gap_v2: battle, Che (Gala slot) waiting for move input with visible gaps in the hammer - residual after the hammer's full winding twins (129->258 prims)"
+topics = ["delilas party", "Che", "hammer gaps", "residual", "patched disc", "bug repro"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[[scenarios]]
+slot = 3
+label = "delilas_gi_spirit_streaks_v2"
+backup_fingerprint = "445f85f3afab797761e98784f919dbeee4613c5281cfc24ae64a74bcbf279eb1"
+description = "DELILAS PARTY SWAP MOD savestate - same fixed rom as delilas_gi_move_hand_gap_v2: mid-battle during Gi's SPIRIT with mesh pieces stretching across the screen. The VDF tail is byte-intact on this rom, so the streak source is NOT the zero-filled effect tail - THE attribution state for the reopened streak hunt (task 60): patched RAM, fixed disc, artifact live"
+topics = ["delilas party", "Gi", "Spirit", "streaks", "residual", "patched disc", "bug repro"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[[scenarios]]
+slot = 1
+label = "delilas_gi_hand_gap_v3"
+backup_fingerprint = "ed830c9db304d50115948fa2b02b7124fcf7fb74f7e7fe0de15a5ea31ebf423d"
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "vozz"
+description = "DELILAS PARTY SWAP MOD savestate - rom 1787575238766 (delilas-verify PASS, all static invariants hold). Gi (Noa slot) at the command ring in a vozz random encounter with his fist visibly DETACHED from the forearm. Decoded runtime assembly is byte-identical to a clean boot-anchored battle (digest e92dfddc..., 18 objects, no 0xFE) - the defect is POSE-TIME, not bake-time: certain idle-cycle frames pose the hand channel where the seated geometry does not follow."
+topics = ["delilas", "battle", "pose-time", "hand gap", "probe state"]
+
+[[scenarios]]
+slot = 2
+label = "delilas_che_hammer_gaps_v3"
+backup_fingerprint = "675336d7d2d3f7ff66671ddce60be30fce0518579fb066d0779dad69616cbf86"
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "vozz"
+description = "DELILAS PARTY SWAP MOD savestate - same rom/session as delilas_gi_hand_gap_v3. Che (Gala slot) at his ring with a separated hammer chunk floating right of the body and gaps in the hammer head. Same pose-time class: assembly bytes match the clean battle."
+topics = ["delilas", "battle", "pose-time", "hammer gap", "probe state"]
+
+[[scenarios]]
+slot = 3
+label = "delilas_gi_spirit_distortion_v3"
+backup_fingerprint = "ccc316d8494386e49ad02b0b38da70e07b06522c7e907972026bada97016ddd4"
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "vozz"
+description = "DELILAS PARTY SWAP MOD savestate - same rom/session. Gi mid-Spirit with distorted/stretched torso mesh on a disc that has NO 0xFE extras (the ordinal-overrun fix is on this rom and the runtime assembly confirms it) - a SECOND streak mechanism, pose-time like the hand/hammer gaps. Streaks flash within ~1s of loading."
+topics = ["delilas", "battle", "pose-time", "spirit streaks", "probe state"]

@@ -50,11 +50,23 @@ Two distinct flags in the same RAM page:
 
 | Flag | NA address | JP address | Effect |
 |---|---|---|---|
-| `_DAT_8007B8C2` | `0x8007B8C2` | (build-shifted by 0x1B90) | Dev/retail loader-path flag; 40 `lh` reads in SCUS. Retail boots it to `1` (`0x80015F08`), selecting the PROT-index arm; the `== 0` arm is the `h:\PROT\FIELD\<stage>\…` dev-path branch in `FUN_800255B8` and its sisters. |
+| `_DAT_8007B8C2` | `0x8007B8C2` | (build-shifted by 0x1B90) | Dev/retail loader-path flag; read by `lh` throughout SCUS, three of those reads `$gp`-relative (`0x80015FD4` / `0x80016038` / `0x8001631C`). Retail boots it to `1` (`0x80015F08`), selecting the PROT-index arm; the `== 0` arm is the `h:\PROT\FIELD\<stage>\…` dev-path branch in `FUN_800255B8` and its sisters. |
 | `_DAT_8007B9B0` | `0x8007B9B0` | - | Overlay **print flag**. Separate from the menu enable: the slot-A minigame overlays gate their `printf`-style readouts on it, several of them additionally on held pad bit `0x2`. In the fishing overlay that pair also swaps the bite cadence for a debug value. |
 | `_DAT_8007B98F` | `0x8007B98F` | `0x8007D51F` | In-game debug menu enable. Accessed as the high byte of the word at `0x8007B98C` - the GameShark byte-write `8007B98F 0001` makes the LE word non-zero (`0x01000000`), enabling every debug branch with one check. |
 
-Both have **zero static writers in `SCUS_942.54`**. The writers must live in an unswept overlay or come from external POKE - published GameShark codes prove both flags are runtime-writable.
+All three do have static writers in `SCUS_942.54`, reached `$gp`-relative
+(`$gp = 0x8007B318`, from the `lui`/`addiu` pair at `0x80026CA8`) - which is why a
+`lui`-pair-only cross-reference sweep reports none:
+
+| Cell | Writer(s) |
+|---|---|
+| `0x8007B8C2` | `sh` at `0x80015F08` (`gp+0x5AA`) - the retail boot-to-`1` store |
+| `0x8007B98C` | `sw` at `0x8001D444` (clear), `0x8001D490`, `0x8001D4B0` (`gp+0x674`) |
+| `0x8007B9B0` | `sw zero` at `0x8001D448` (`gp+0x698`) |
+
+Only the *byte* `0x8007B98F` has no accessor of its own - it is reached as the high
+byte of the word at `0x8007B98C`. Published GameShark codes additionally prove all
+three are runtime-writable by external POKE.
 
 The 0x1B90-byte build shift between JP and NA addresses is consistent with same-data, different-binary-layout. Implies the JP and NA executables have the same RAM-resident layout, just relocated.
 
@@ -98,7 +110,7 @@ retail debug branches reach:
 
 | Tool | Retail entry | Lives in |
 |---|---|---|
-| Row list (`MAP_CHANGE`, `CAMERA`, `ENCOUNT`, ... 24 rows) | `FUN_801EAD98` draws it, `FUN_801E9F64` feeds each row's pad edits | world-map overlay |
+| Row list (`MAP CHANGE`, `CAMERA`, `ENCOUNT`, ... 24 rows) | `FUN_801EAD98` draws it, `FUN_801E9F64` feeds each row's pad edits | field overlay (PROT 0897) - the world map is a 0897-hosted mode, not an overlay of its own |
 | EVENT FLAG editor | `FUN_801DBD04` value step, `FUN_801DB8B4` / `FUN_801DB8F4` list cursor | field overlay (0897) |
 | Character-parameter editor | `FUN_801D6E18` | menu overlay (0899) |
 | Equip commit | `FUN_801E5A08` | field overlay (0897) |
@@ -143,12 +155,16 @@ The debug coordinate overlay uses cinematography axis names - useful as a string
 
 ```
 VX (truck), VY (pedestal), VZ (zoom)
-WX (track), WZ (dolly)
+WX (track), WY, WZ (dolly)
 AX (crane), AY (tongue/pan), AZ (roll)
 SC (FOV)
 ```
 
-These exact strings appear in the executable as debug-overlay text.
+They live in the **field overlay** (PROT 0897), not in `SCUS_942.54` - the block
+starts at `0x801CF1E4` and runs `VX VY VZ AX AY AZ WX WZ SC WY`, then `DCX` /
+`DCY` / `DCZ`, `MX0` / `MY0` / `MX1` / `MY1`, and `PLAYER_STAT` / `HEIGHT_STAT` /
+`FREEZE_STAT` / `ANM_FREEZE_FLAG`. Search the extracted PROT entry, not the
+executable.
 
 ## CDNAME subsystem semantics
 
@@ -181,11 +197,11 @@ PSX RAM (KSEG0, `0x80000000` base). Useful as runtime-tracing anchors.
 |---|---|
 | `0x80084540` | Current map ID (writable; "Map Modifier" / "View Credits" use this) |
 | `0x8007B6F4` | "Small maps" debug mode flag |
-| `0x8007B7C0` | Debug-dispatch trigger - selects which menu/state is active |
+| `0x8007B7C0` | **Previous-frame button mask** - what the `D0` / `E0` conditional codes compare against. `FUN_8001822C` loads it, XORs it against the fresh mask into the edge words `0x8007B7C4` / `0x8007B874`, then stores the fresh mask back (`0x80018510..0x80018548`). Not a dispatch selector; the "debug-dispatch trigger" reading is superseded. |
 | `0x8007B450` | Debug-dispatch parameter slot - sub-action within the trigger's mode |
-| `0x800422F4` | "Force item quantity 99 on pickup/buy" flag |
+| `0x800422F4` | **Not a RAM cell** - a `bne r2, r0, +2` inside SCUS's inventory-add clamp (`slti r2,r2,100` / `addiu r3,99` / `sb`). The "99 quantity" cheat writes `0001`, shortening the displacement so the clamp always runs. See [`cheats.md`](cheats.md). |
 
-The `0x8007B7C0` + `0x8007B450` pair forms a built-in menu/debug-action dispatcher. Sample parameter values when trigger == `0x0100`:
+`0x8007B450` is the menu-request register the menu overlay polls each frame; the cheats below drive it directly. Sample values:
 
 | Parameter | Effect |
 |---|---|
@@ -261,7 +277,12 @@ ID `0x12` is "empty wp. for Noa" and `0x52` is "empty wp. for Vahn" - the invent
 
 ## Move tables (Tactical Arts)
 
-14 moves per character (IDs `0x01-0x0E`); slot `0x0F` is reserved for Miracle Arts (gated by a story flag).
+Slot `0x00` is the Miracle Art starter on every character (action constant `0x1B` =
+Vahn's Craze / Noa's Ark / Biron Rage, gated by a story flag). Vahn and Gala carry
+their 14 regular arts at slots `0x01..0x0E`. Noa's table runs to slot `0x10` with
+holes at `0x02` / `0x03` (her Hurricane Kick covers three on-disc levels through one
+slot), so her slot `0x0F` is the ordinary art Acrobatic Blitz, not a Miracle Art.
+Mirror: `legaia_art::tables`.
 
 **Vahn:**
 ```
@@ -271,7 +292,7 @@ ID `0x12` is "empty wp. for Noa" and `0x52` is "empty wp. for Vahn" - the invent
 0x0D Charging Scorch  0x0E Hyper Elbow
 ```
 
-**Noa** (in display order): Lizard Tail, Acrobatic Blitz, Sonic Javelin, Blizzard Bash, Mirage Lancer, Dolphin Attack, Bird Step, Swan Diver, Tough Love, Rushing Gale, Tempest Break, Frost Breath, Vulture Blade, Hurricane Kick.
+**Noa** (in display order): Lizard Tail, Acrobatic Blitz, Sonic Javelin, Blizzard Bash, Mirage Lancer, Dolphin Attack, Bird Step, Swan Driver, Tough Love, Rushing Gale, Tempest Break, Frost Breath, Vulture Blade, Hurricane Kick.
 
 **Gala**: Flying Knee Attack, Battering Ram, Ironhead, Back Punch, Guillotine, Head-Splitter, Side Kick, Black Rain, Neo Raising, Electro Thrash, Bull Horns, Thunder Punch, Lightning Storm, Explosive Fist.
 

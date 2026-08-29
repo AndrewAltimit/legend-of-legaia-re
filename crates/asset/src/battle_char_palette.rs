@@ -56,6 +56,16 @@
 //! `adv = u32[cur+0x0C]`, `flag = u16[cur+0x12]`; if `flag != 0` the sub's
 //! trailing CLUT sits at `cur + adv`; then `cur += adv`.
 //!
+//! **Model scope**: the five-sub-record offset derivation above reproduces
+//! the retail **Vahn** file (the layout the byte-exact VRAM validation ran
+//! on). Retail Noa and Gala do not parse under it (Noa's sub#4 lands past
+//! the work size, Gala's reads a garbage budget), and a patcher-rebuilt
+//! file (records repacked 0x800-aligned) moves the sub offsets off the
+//! derive entirely - while the real loader still boots those files with
+//! correct palettes. Treat a sub-walk failure on a non-retail-Vahn file as
+//! "outside the model", not as a defect in the file; the CLUT A/B reads
+//! from record0 itself are layout-independent and remain sound.
+//!
 //! A CLUT struct is `[u16 base][u16 count][count × u16 BGR555]`. Upload
 //! (`FUN_80053B9C`) sets **bit 15 (STP / semi-transparency)** on every non-zero
 //! colour; `0x0000` stays `0x0000`. `count == 0` structs are no-ops. Vahn's

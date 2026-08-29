@@ -103,6 +103,113 @@ packed stream at entry `+0xAC` instead of `+0x8C`, `parts` = the
 character's skeleton bone count. See
 [`battle-data-pack.md` § Battle animations](battle-data-pack.md#battle-animations-record0).
 
+### A special attack can be a chain of entries
+
+An action id is one entry, but a **move** need not be. The per-spell cast
+modules paged into the slot-B overlay window for a capture-class cast
+([`spell-table.md` § Capture-class module index](spell-table.md#capture-class-module-index-prot-09350966);
+module anatomy on [cast-module.md](../subsystems/cast-module.md))
+drive the caster's clip themselves, writing `actor[+0x1DA]` directly, and a
+boss signature attack is several archive entries staged in sequence - a
+wind-up, a carry and a strike - rather than one long clip. Nothing in the
+archive marks the grouping: the chain lives in the module's code.
+
+The staging sites are `sb ?,0x1DA(<caster>)` in the module image, at module VA
+= the slot-B link base `0x801F69D8` + file offset. Sites that store
+`<target>[+0x1F1]` (the knockdown index from the reaction map) are the
+victim's clip, not the caster's, and the ~936-byte tail the modules share -
+including a `sb zero,0x1DA(s0)` at `0x801F96F4` - is a common epilogue rather
+than a per-move stage. For the three Delilas siblings:
+
+| Module | Cast | Caster stages (entry indices, hex) | Closing entry |
+|---|---|---|---|
+| PROT 958 | Gi, `0x79` | `0x0A -> 0x0B -> 0x0C -> 0x0A -> 0x0B` | `0x0D` |
+| PROT 959 | Che, `0x7A` | `0x0A -> 0x0B` | none |
+| PROT 960 | Lu, `0x7B` | `0x0E -> 0x0C -> 0x0D` | `0x0F` |
+
+Two staging idioms appear. A **literal** seeds or jumps the chain:
+`li v0,0xA` at `0x801F6F88` (Gi), `li v1,0xA` at `0x801F6F40` (Che), and
+Lu's whole chain as three of them - `li v0,0xE` at `0x801F7744`,
+`li v1,0xC` at `0x801F7A6C`, `li v0,0xD` at `0x801F7AE0`. A **stepper**
+advances it in place, `lbu +0x1DA; addiu +1; sb`: Gi's at `0x801F72C0` /
+`0x801F7628` / `0x801F854C`, Che's single one at `0x801F768C` - and one
+stepper **rewinds**: Gi's `addiu v0,v0,-2` at `0x801F839C` steps `0x0C`
+back to `0x0A`, replaying the wind-up/smash pair before the close, so his
+walk is not linear. The closing entries are literals too - `li v0,0xD` at
+`0x801F89B0` and `li v0,0xF` at `0x801F8214`.
+
+The walks are pinned two ways: the staging-site scan above, and per-frame
+capture of natural duel casts (the choreography watcher
+`autorun_delilas_enemy_cast_watch.lua` logs the `+0x1D9..+0x1DB`
+transitions against the module phase byte) - the capture is what exposed
+Gi's rewind. A staging literal can also carry a **paired confirmation
+literal** elsewhere in the module (a phase gate on `lbu +0x1D9`), so no
+staging site may be edited in isolation - see
+[cast-module.md](../subsystems/cast-module.md).
+
+The archive agrees with the scan. Gi's `0x0A`/`0x0B`/`0x0C` are his three
+consecutive tag-`0x23` entries (11 / 30 / 23 frames, rates 1 / 2 / 2) with
+`0x0D` his tag-`0x22` close; Che's `0x0A`/`0x0B` are his only two
+tag-`0x23` entries (50 / 50 frames) and his archive carries no tag-`0x22`
+entry at all, which is why his module stages no closing index; Lu's `0x0E`
+is her tag-`0x23` entry and `0x0C`/`0x0D` her two tag-`0x0C` entries
+(16 / 19 / 39 frames, rates 1 / 2 / 2), with `0x0F` her tag-`0x22` close.
+
+Two consequences for anyone reading a chain out of the archive. **The stages
+are addressed by entry index, not by tag** - Gi's and Che's are all tagged
+`0x23`, so no tag search separates a stage from a generic castable. And
+**stages do not share a rate byte**, so a chain's real duration is
+`sum(frames_i * 8 / rate_i)` ticks, not a frame sum.
+
+## Event-frame list (entry `+0x10..+0x13`)
+
+Four bytes ahead of the effect script are a **zero-terminated list of up to
+four clip frame indices** - the action's own significant beats. The list is
+strictly ascending and never holed: across every action entry of every archive
+in PROT 867 no populated run is out of order and no zero is followed by a
+non-zero, and only four entries carry a value at or past their own
+`frame_count`. Frames, not sixteenths - these are compared against the anim
+tick's integer frame, `cursor >> 4`.
+
+Both traced consumers are in the anim tick `FUN_80047430`, and both locate the
+slot through the helper `FUN_80050E00(entry + 0x10)`
+(`ghidra/scripts/funcs/80050e00.txt`), which walks `+0x11..+0x13` and returns
+the 1-based index of the first zero, capped at `3`. The tick then reads
+`entry[+0x10 + index]`:
+
+- `0x80047918` - the event-flag path. With `actor[+0x1DC]` bit 1 set and
+  `entry[+0x76] == 0`, the queued clip commits mid-clip once
+  `event_frame + 2 < frame` (the bit-1 arm of [Playback](#playback) below).
+- `0x80047E28` - runs every tick and latches
+  `actor[+0x1F7] = (frame < event_frame)`. That byte gates `actor[+0x1F6]`
+  in the commit `FUN_8004AD80` (the counter / guard window, which additionally
+  requires the staged id to be one of the `+0x1EF`/`+0x1F0`/`+0x1F3` reaction
+  entries) and paces the arts-input band.
+
+Because the helper returns the index of the **terminator**, only a list with
+all four slots populated hands its consumer a real frame - `entry[+0x13]`, the
+last beat. Any shorter list resolves to the zero that ends it, i.e. no gate.
+Those are the only two consumers reachable: a word-wise `jal` scan over
+`SCUS_942.54` and every image in `extracted/overlays/` finds no third call
+site for `FUN_80050E00`.
+
+Reading the field as "the hit frames" fits the offensive entries and no more.
+The archive census by tag is unambiguous about that - idle, walk, knockdown,
+get-up and the approach/victory tags are all-zero almost everywhere, while
+**every** light-flinch (tags `2`/`3`) and every block (`0x0B`) entry carries
+exactly one early frame, and the castable/attack band (`0x0C..0x15`) carries
+one to four ascending ones. So the field marks a clip's beats generally, of
+which contact is the offensive case; a reaction's single value is the beat its
+own clip turns on, not a hit it deals (Confidence: the layout, the ordering
+invariant and the two consumers are **Confirmed**; "contact" for the offensive
+band is **Inferred**).
+
+The same field sits at the same offset on the player battle files' record[0]
+entries, their equipment swing records and the art-bank records' embedded
+entries ([`battle-data-pack.md`](battle-data-pack.md#battle-animations-record0)),
+with the same shape - Vahn's flinch and block entries each carry a single
+frame `3`, his idle / walk / knockdown / get-up entries none.
+
 ## Effect-script records (entry `+0x14..+0x53`)
 
 Every per-action entry's head carries the action's **battle effect script**:
@@ -142,6 +249,35 @@ Parser: the region rides `legaia_asset::monster_archive::MonsterAnimation::effec
 (the entry head `+0x00..+0x54`); the walker port is
 `legaia_engine_core::action_effect_script::step_effect_script`.
 `see ghidra/scripts/funcs/overlay_battle_action_801dea50.txt`.
+
+## Sound-cue track (entry `+0x54..+0x73`)
+
+Eight `[u16 frame][u16 cue]` pairs, walked in order and truncated at the
+first zero cue. This is the carrier of every clip-synchronised battle
+sound that is not an effect-script cue: footsteps on the walk clips,
+swing whooshes, and the per-punch impact volleys of the Delilas cast
+flurries (monster 164's flurry entries fire a `0x4A` + `0x172` pair at
+each punch frame).
+
+The per-frame player is `FUN_800508DC(slot, entry, frame)`: it resumes
+at the actor's cue cursor (`actor +0x1F6`), fires every pair whose
+`frame` the clip cursor has reached, and hands each cue to the ring
+producer `FUN_8004FE5C` - with **per-arm id treatment**: a monster
+actor's cue passes verbatim, a party actor's cue `>= 0xC8` (outside the
+special-cased `0xD7/0xE7/0xF7/0xFA` swing set) takes `+0x38` first, and
+the producer then maps per band (`id-1` / raw / `+0x19C` / `+0x281`
+element-tinted; the full band table is on the
+[`8004FE5C` row](../reference/functions/battle.md)). A party id
+`>= 0x100` bypasses the ring for the XA-direct player (busy-guarded).
+The ring itself is the scheduled-delay pair documented in
+[`sfx-table.md`](sfx-table.md#the-ring-is-two-arrays-aged-by-one-function-and-drained-by-another).
+
+Capture-pinned (retail Lu Plasma Strike, FE5C-arg probe): each punch
+volley is three fires - the VICTIM's reaction-clip track fires `0xAD`
+(ring `0x249`) and `0xD` (ring `0xC`), the CASTER's flurry track fires
+`0x172` (ring `0x30E`, a runtime-bank voice line of the battle's own
+VAB). Reader: `legaia_asset::monster_archive::animation_cue_tracks`
+(index-aligned with `animations`).
 
 ## Packed stream (entry `+0x8c`)
 
@@ -203,8 +339,21 @@ and converges `+0x1D9 = +0x1DA`. On the last frame of a clip the decoder
 cross-blends toward **frame 0 of the queued entry's stream** (looked up by
 `+0x1DA`), so anim transitions tween rather than snap. Entry `+0x84` seeds a
 loop-hold counter (`actor +0x176`) and `+0x85`/`+0x86` bound a loop window
-(e.g. the player defeat entries hold a 2-frame loop); `+0x87` is a sound
-cue fired at install.
+(e.g. the player defeat entries hold a 2-frame loop; the window test runs
+BEFORE the natural-end test, so a windowed clip parks or replays inside its
+window instead of reaching the re-commit - the Delilas cast clips lean on
+this through their long module stage dwells, reader
+`legaia_asset::monster_archive::animation_loop_windows`). The seed is a
+**finite hold budget**, and a module can end a park early by clearing the
+actor's `+0x176`/`+0x21B` pair: module 0960 releases Lu's strike from its
+authored `[15, 15]` park this way (file `+0x1638`), letting the cursor run
+frames 15..22 so the damage tick's `>= 0x160` test fires a fixed 28 ticks
+after the release - the park is timing choreography, not a terminal hold. Entry `+0x87` is
+**not a sound cue**: a non-zero value is passed to `FUN_8004E13C`, the
+solo/freeze dispatcher - it writes battle ctx `+0x243` and raises the
+other actors' pause flag `+0x21C` (the "everyone freezes during a
+special" spotlight; value 2 additionally re-rolls a coin into ctx
+`+0x6DA` when a party member is acting).
 
 Three consequences of that commit shape:
 

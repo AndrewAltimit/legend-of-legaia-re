@@ -67,6 +67,21 @@ navigation logic depends on the GPU backend.
   (`painter_at`) or walks a whole table (`menu_window_painters`) instead of
   hard-coding a screen; the disc oracle is
   `engine-shell/tests/menu_window_dispatch_real.rs`.
+- `pause_menu` - pause-menu **composition**: which windows a screen opens,
+  which painter draws each, and the order frames / content / modals land in.
+- `field_party_hud` - the persistent field party readout (name, `LV`, `HP`
+  and `MP` per present member over a semi-transparent plate).
+- `battle_item_ui` / `battle_name_banner` - the battle item window (retail
+  state `0x3C`) and the art-name banner's measured centring (`FUN_8004C650`).
+- `ui_prize_exchange` - the casino prize-exchange sub-screen (`0x20`,
+  `FUN_801DC1CC`), drawn while a `PrizeExchangeSession` owns the pad.
+- `other_game_hud` - the PROT 0977 arena overlay's HUD primitive layer: a
+  table-driven textured-Gouraud-quad emitter plus the decimal readout on it.
+- `afterimage` / `streak_pass` / `battle_trail` / `billboard` - the move-FX
+  draw kernels: one jittered semi-transparent quad, the per-frame pass that
+  turns a battle context's projection block into those quads, the swept
+  weapon trail's projected `POLY_G4` band, and the shared screen-space
+  corner projector (`FUN_800195a8`) all four ride on.
 
 `ui_fishing` is the one module that owns both halves. The fishing overlay's
 HUD helpers are ports in their own right (`FUN_801d13f0`, `FUN_801d1580`,
@@ -102,8 +117,8 @@ tests reference the builders unchanged. The GPU-resident batch wrappers
 `legaia-engine-render` because they hold wgpu handles.
 
 Depends only on `legaia-asset`, `legaia-engine-vm`, `legaia-font`,
-`legaia-tim`, `glam`, `serde`, and `bytemuck` - no wgpu, no winit - so it
-links into the lean WASM play build.
+`legaia-tim`, `glam`, `serde`, `serde_json`, and `bytemuck` - no wgpu, no
+winit - so it links into the lean WASM play build.
 
 ## Whole-screen compositions
 

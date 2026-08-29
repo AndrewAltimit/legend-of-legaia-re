@@ -1,7 +1,9 @@
 # legaia-tmd
 
-PSX TMD (3D mesh) parser, with the Legaia-specific primitive walker and
-OBJ exporter.
+PSX TMD (3D mesh) parser, with the Legaia-specific primitive walker, an
+OBJ exporter, and a byte-exact **encoder** (`encode`: typed model -> Legaia
+TMD bytes, `decode_model` as its inverse; every monster mesh in the retail
+archive re-encodes byte-identically - the write side of mesh replacement).
 
 TMD is Sony's PlayStation 3D model format (PsyQ `libgte` / `libgs`).
 Legaia ships a custom variant - distinct enough that a stock TMD parser
@@ -130,8 +132,8 @@ tmd dump-obj extracted/tmd_scan/0148_retock/raw_off000004.tmd --out mesh.obj --n
 tmd prims extracted/tmd_scan/0148_retock/raw_off000004.tmd
 
 # Same, but also simulate the targeted VRAM upload the viewer does at runtime:
-# per-prim Ok / MissingClut / ClutDepthMismatch / MissingTexturePage. This is
-# the fast way to diagnose a wrong-palette mesh without opening the GUI.
+# per-prim Ok / MissingClut / MissingTexturePage. This is the fast way to
+# diagnose a wrong-palette mesh without opening the GUI.
 # --vram-dir is repeatable.
 tmd prims extracted/tmd_scan/0148_retock/raw_off000004.tmd --vram-dir extracted/tim_scan/0148_retock
 

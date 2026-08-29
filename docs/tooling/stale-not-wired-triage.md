@@ -105,10 +105,10 @@ reads like a precise anchor unless the line is opened.
 
 ## The fix each mechanism takes
 
-Two of the five are analysis defects and were fixed in the tool. The other three
-are properties of the *names and anchors in source*, and the fix belongs there -
-sharpening the shared permissive graph is the wrong move and has been tried and
-reverted twice.
+Some are analysis defects and are fixed in the tool - those rows read
+*Implemented*. The rest are properties of the *names and anchors in source*, and
+the fix belongs there: sharpening the shared permissive graph is the wrong move
+and has been tried and reverted twice.
 
 | Mechanism | Fix |
 |---|---|
@@ -140,11 +140,11 @@ it. That is the fix working, not a regression, but the disclosures those callees
 now need are part of the same edit; leaving them turns one false claim into
 several silent gaps. Check both section counts before and after.
 
-The last four are source edits, and each wants a comment saying why the name or
-the tag placement is the way it is - otherwise the next refactor undoes it and
-the false accusation returns. `footstep.rs`, `anim_cue.rs`, `seq_calc.rs`,
-`dance_tutorial.rs`, `title_prim.rs`, `vram_rect_copy.rs` and
-`world_map_overlay.rs` each carry that note now.
+The rename and anchor-move rows are source edits, and each wants a comment
+saying why the name or the tag placement is the way it is - otherwise the next
+refactor undoes it and the false accusation returns. `footstep.rs`,
+`anim_cue.rs`, `seq_calc.rs`, `dance_tutorial.rs`, `title_prim.rs`,
+`vram_rect_copy.rs` and `world_map_overlay.rs` each carry that note.
 
 ### The two-graph split (implemented)
 

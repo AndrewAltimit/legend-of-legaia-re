@@ -28,8 +28,8 @@ Three functions:
 
 | Function | Span | Role |
 |---|---|---|
-| `0x801DE914` | 0x138 | Init / pack-fixup. Called from `FUN_800520F0` case `0xE` with `(id=0x1000, param=0xA00)`. |
-| `0x801DFDF8` | 0x290 | Public spawn-effect API: `(byte effect_id, short* world_pos, ushort angle)`. |
+| `0x801DE914` | 0x13C | Init / pack-fixup. Called from `FUN_800520F0` case `0xE` with `(id=0x1000, param=0xA00)`. |
+| `0x801DFDF8` | 0x280 | Public spawn-effect API: `(byte effect_id, short* world_pos, ushort angle)`. |
 | `0x801E0088` | 0x970 | Per-frame walker (update + render). |
 
 The on-disc input format is the [runtime 2-pack wrapper](../formats/effect.md) (PROT entry 873, `data\battle\efect.dat`). Each pack0 entry is a frame-batch animation record; each pack1 entry is an effect-ID script.
@@ -240,7 +240,7 @@ popup queue only under `LEGAIA_DIAG_HUD`.
 +0x000  16 bytes   table-head record set by init
 +0x010  4096 bytes 128 × 32-byte child slots - per-sprite render state
 +0x1010 896 bytes  32 × 28-byte master slots - per-effect-instance state
-+0x1390 1968 bytes (unused / future expansion)
++0x1390            end of pool (16 + 4096 + 896 = 5008 = 0x1390)
 ```
 
 32 max simultaneous effects × ~4 sprites avg = 128-child sprite pool.

@@ -55,15 +55,18 @@ data/gamedata/
   magic.toml          - 21 Seru spells + 8 Ra-Seru summons
   items.toml          - consumables, key items, art books, fishing tackle
   weapons.toml        - 27 weapons
-  armor.toml          - 49 armor / helmet / shoes entries
+  armor.toml          - 51 armor / helmet / shoes entries (body 20, head 15,
+                        footwear 16)
   accessories.toml    - 70+ accessories with structured effect classes
   enemies.toml        - 177 enemies with location + drop / steal (and
                         `steal_chance`, the steal % sourced byte-exact from
                         the SCUS_942.54 steal table DAT_80077828) + full
                         per-enemy stat columns (HP / MP / EXP / Gold /
                         ATK / SPD / UDF / LDF / INT / AGL / element)
-  bosses.toml         - 18 main-story B-code bosses + Lapis + 7 Muscle
-                        Dome rounds; per-fight named attacks + MP cost,
+  bosses.toml         - 22 main-story B-code boss rows over 20 distinct
+                        meth_ids (B000C is shared by the three Delilas
+                        siblings) + Lapis + 7 Muscle Dome rounds;
+                        per-fight named attacks + MP cost,
                         XP / gold / item rewards, recommended level
   shops.toml          - per-town shop inventories with item-key references
   casino.toml         - Sol/Vidna slot prizes + Muscle Dome courses + Baka Fighter

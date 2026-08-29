@@ -636,8 +636,9 @@
         // ES module import paths resolve relative to the importing JS
         // file (site/js/), not the host HTML page. wasm-pack output
         // lives at site/wasm/.
-        wasmMod = await import('../wasm/legaia_web_viewer.js');
-        await wasmMod.default();
+        const v = window.LEGAIA_WASM_V || '0';
+        wasmMod = await import('../wasm/legaia_web_viewer.js?v=' + v);
+        await wasmMod.default(new URL('../wasm/legaia_web_viewer_bg.wasm?v=' + v, import.meta.url));
       }
       $status.textContent = 'Classifying PROT entries ...';
       if (prog) { prog.indeterminate('Parsing PROT.DAT + classifying entries…'); await prog.paint(); }

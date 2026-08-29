@@ -372,6 +372,27 @@
         <td>The <em>other</em> battle SM - <code>FUN_801D0748</code>, the menu half, distinct from the action SM's <code>ctx[+0x07]</code> and overlapping its value space. Its selection band is regular decimal tens <code>30..120</code>.</td>
         <td><a href="../subsystems/battle-action.html">battle-action</a></td>
       </tr>
+      <tr>
+        <td>How an enemy's signature cast picks the spell id it announces</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><span class="tag tag-done">disassembly</span></td>
+        <td><code>FUN_801E9FD4</code>'s round-counter arm, <code>0x801EB7C0..0x801EB81C</code> (PROT 0898 file <code>0x1CFF0..0x1CFFC</code>): the round byte <code>ctx[+0x28A]</code> goes through the <code>0xAAAAAAAB</code> reciprocal, the arm returns unless <code>% 3 == 2</code>, then stores that remainder to <code>actor[+0x1DE]</code> (action category), loads the seat's byte from the formation cell <code>0x8007BD0C + seat</code>, and writes <code>actor[+0x1DF] = monster_id - 0x29</code> &mdash; the literal <code>0x2442FFD7</code>, with <code>sb v0,0x1DF(s4)</code> in the next <code>j</code>'s delay slot. Formation id <code>162</code> therefore announces spell <code>0x79</code>, <code>163</code> <code>0x7A</code>, <code>164</code> <code>0x7B</code>, in the party spell table's own id space &mdash; which is why renaming a party art to a sibling's move has to <em>exchange</em> names with the enemy row rather than write one way.</td>
+        <td><a href="../tooling/randomizer.html">randomizer</a></td>
+      </tr>
+      <tr>
+        <td>How a Delilas sibling's signature move stages its clips</td>
+        <td><span class="tag tag-done">resolved</span> (channel + arithmetic; the stage <em>count</em> is corroboration)</td>
+        <td><span class="tag tag-done">disassembly</span></td>
+        <td>The cast modules drive <code>actor[+0x1DA]</code> as a running monster-archive entry index. Lu's (PROT <code>0960</code>) writes explicit constants &mdash; <code>10</code>, then <code>14</code>, <code>12</code>, <code>13</code> in file order &mdash; reproducing the probe-traced <code>14 &rarr; 12 &rarr; 13</code>. Che's (<code>0959</code>) seeds <code>10</code> and carries one <code>lbu +0x1DA</code> / <code>addiu +1</code> / <code>sb +0x1DA</code> advance: <code>10 &rarr; 11</code>. Gi's (<code>0958</code>) seeds <code>10</code> the same way, carries three of those <code>+1</code> advances plus one <code>addiu v0,v0,-2</code> back toward the seed, and seeds <code>13</code> elsewhere &mdash; so his index walks consecutively up from <code>10</code>, the shape <code>10 &rarr; 11 &rarr; 12</code> predicts and clip shape alone cannot separate from three arbitrary entries.</td>
+        <td><a href="../tooling/randomizer.html">randomizer</a></td>
+      </tr>
+      <tr>
+        <td>Is the player battle idle channel-delta encoded, like the readef "ME" bodies?</td>
+        <td><span class="tag tag-done">resolved</span> (no &mdash; raw packed inline in <code>record[0]</code>)</td>
+        <td><span class="tag tag-done">capture</span></td>
+        <td>Each action entry in a player battle file's <code>record[0]</code> carries <code>[u8 parts][u8 frames]</code> at <code>+0xAC</code> then <code>parts &times; frames</code> raw 9-byte TRS records &mdash; the monster archive's own packing, with no codec between disc and RAM. The entries tile the block: Vahn's slot 0 is 15 parts &times; 9 frames ending at <code>0x5CD</code>, slot 1 opens at <code>0x5D0</code>, and so on down the table (Noa's rig is 16 parts to Vahn's and Gala's 15). The live pose oracle byte-matches the disc stream against PSX RAM at <code>record0_base + stream_off</code>. So an idle rewritten at its exact retail length leaves every later entry offset valid and needs no relocation.</td>
+        <td><a href="../formats/battle-data-pack.html">battle-data-pack</a></td>
+      </tr>
     </tbody>
   </table>
 

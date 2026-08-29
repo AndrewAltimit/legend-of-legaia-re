@@ -61,7 +61,9 @@ Field offsets are pinned by a fusion of three sources:
                                            ; while experience stayed 0). Seeded per
                                            ; char to reach(L2): Vahn 121, Noa 102,
                                            ; Gala 140.
-+0x006  u8[10]   header_tail              ; (function unmapped)
++0x008  u8[8]    header_tail              ; (function unmapped). Starts at +0x008:
+                                           ; +0x004 is a u32, so +0x006/+0x007 are
+                                           ; its high halfword, not tail bytes.
 +0x010  u8[228]  stat_block_unmapped      ; (function partially mapped via
                                            ; FUN_80042558; not all bytes named)
 +0x0F4  u8[16]   ability_bits             ; OR'd into 0x80074358 by the
@@ -246,15 +248,17 @@ where the cheat database has 12 named modifiers, and treats
 The original `SpellList::levels` accessor is preserved for
 backwards compatibility; new code should prefer `summon_levels()`.
 
-### `+0x004` vs `+0x000` for cumulative XP.
+### Why a u16 XP field appeared to sit at `+0x004`.
 
-The captured Noa + Gala level-up triplets show the `+0x004` u16
-moving by the expected XP delta per level-up event. The GameShark
-`Max Exp` cheat writes a u32 spanning `+0x000..+0x003`. Both
-co-exist in the engine: `cumulative_xp()` reads u16 LE at `+0x004`
-(empirical, used for level inference); the `xp_low_word_alt` window
-at `+0x000..+0x003` holds a separate per-level XP cell that the
-runtime uses for "next level" displays.
+The captured Noa + Gala level-up triplets show a u16 at `+0x004`
+moving by an XP-shaped delta on every level-up event, which read as
+a second cumulative-XP cell alongside the u32 the GameShark
+`Max Exp` cheat writes at `+0x000..+0x003`. It is the **low half of
+the `+0x4` threshold word**: the applier rewrites the threshold each
+time the level changes, so it steps in exactly the places cumulative
+XP does. There is one XP total (`+0x0`, u32) and one threshold
+(`+0x4`, u32) - see the section above. `CharacterRecord::cumulative_xp`
+reads the u32 at `+0x000`, and no `xp_low_word_alt` field exists.
 
 ## The `+0x120` cap constant
 

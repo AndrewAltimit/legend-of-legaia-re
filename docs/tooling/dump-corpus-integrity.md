@@ -558,10 +558,13 @@ leaving `misbased` (the only *positive* claim about where bytes live) on the
 stronger evidence it needs.
 
 The split is set from a control rather than from judgement, which is the part
-worth copying. `attribute-dump-extents.py --validate-short-floor` truncates every
-extent the full window already resolves and re-runs the at-VA test at each short
-length. Over ~3000 trials it produces **no wrong answer at any length down to one
-instruction**, and loses precision only by naming several images instead of one.
+worth copying: run
+`python3 scripts/ghidra-analysis/attribute-dump-extents.py --validate-short-floor`
+(the file carries no execute bit, so invoke it through `python3`). It truncates
+every extent the full window already resolves and re-runs the at-VA test at each
+short length. Over ~3000 trials it produces **no wrong answer at any length down
+to one instruction**, and loses precision only by naming several images instead
+of one.
 Agreement is 99.9% at three instructions and 98.9% at one.
 
 **A confidence floor belongs to a question, not to an instrument.** Shared across

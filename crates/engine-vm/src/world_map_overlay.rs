@@ -126,8 +126,8 @@ pub fn format_fixed_decimal(value: i32, width: usize) -> String {
 /// PORT: FUN_801EAD98 (row dispatch)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DevMenuRow {
-    MapChange,       // 0x00 - "MAP_CHANGE"  (or CLOSED, gate _DAT_8007B868)
-    CardOption,      // 0x01 - "CARD_OPTION" (or CLOSED)
+    MapChange,       // 0x00 - "MAP CHANGE"  (or CLOSED, gate _DAT_8007B868)
+    CardOption,      // 0x01 - "CARD OPTION" (or CLOSED)
     PlayerStatus,    // 0x02
     Camera,          // 0x03 - reads _DAT_1F800384
     Encount,         // 0x04 - reads DAT_8007B5F8
@@ -194,15 +194,15 @@ impl DevMenuRow {
     }
 
     /// Whether this row renders as "CLOSED" instead of its label. Only the
-    /// `MAP_CHANGE` and `CARD_OPTION` rows are gated, by `_DAT_8007B868 != 0`.
+    /// `MAP CHANGE` and `CARD OPTION` rows are gated, by `_DAT_8007B868 != 0`.
     ///
     /// The polarity is the disassembly's: case 0 is `lw v0,-0x4798(0x8008)`
     /// then `beq v0,zero,0x801EAE5C`, so the **zero** leg loads the
-    /// `MAP_CHANGE` string and the fall-through loads `CLOSED`; case 1 repeats
-    /// it at `0x801EB310` for `CARD_OPTION`.
+    /// `MAP CHANGE` string and the fall-through loads `CLOSED`; case 1 repeats
+    /// it at `0x801EB310` for `CARD OPTION`.
     ///
     /// Wired: `legaia_engine_core::dev_menu_host::DevMenuSession::row_is_closed`
-    /// gates the `MAP_CHANGE` row's label through here, and its own caller
+    /// gates the `MAP CHANGE` row's label through here, and its own caller
     /// `DevMenuSession::row_label` is what the row list draws from every
     /// frame - see [`DevMenuRow`] for the chain to the host root.
     /// PORT: FUN_801EAD98 (cases 0 and 1)

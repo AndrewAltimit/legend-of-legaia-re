@@ -54,7 +54,7 @@ The three pack formats are unrelated despite the shared name - `pack.md` (inside
 | [MDT move table](mdt.md) | Confirmed | Tactical Arts move tables. Two on-disc layouts the consumer accepts. |
 | [Place names](place-names.md) | Confirmed | The three carriers one place name has - the SCUS quick-travel cells, the world-map label table trailing each kingdom MAN, and each scene MAN's section-2 banner name. Editing one changes one display. |
 | [Save-slot portraits](save-icon.md) | Confirmed | Sixteen 16x16 character tiles row-interleaved across one 256x16 4bpp strip, a 16-colour palette each. Tile N is save N+1's memory-card icon; tile 15 is blank. |
-| [Art data](art-data.md) | Inferred | Per-character art records: Action Constants, command sequences, power-byte encoding, Miracle/Super Art trigger tables. PROT entry `0x05C4`. |
+| [Art data](art-data.md) | Inferred | Per-character art records in the player-data `record0` (extraction 863..865): Action Constants, command sequences, power-byte encoding, Miracle/Super Art trigger tables. Prefix + power byte are Confirmed; the variable-field tail is not. |
 | [Per-character save record](save-record.md) | Confirmed | Runtime `0x414`-byte record at `0x80084708 + slot * 0x414`. Cheat-database-pinned offset table for stats / level / magic rank / spells / summons / equipment. |
 
 ## Battle / stat tables
@@ -81,7 +81,7 @@ Static `SCUS_942.54` rodata tables that drive stats, items, and magic. These are
 |---|---|---|
 | [DATA_FIELD streaming](data-field.md) | Confirmed | `[type, size, data]` chunk stream consumed by `FUN_8002541C` |
 | [Scene bundles](scene-bundles.md) | Confirmed | Scene-prefixed wrappers (`scene_tmd_stream`, `scene_vab_stream`, `scene_v12_table`, `scene_asset_table`) - the dominant per-scene asset shapes |
-| [scene_v12_table](scene-v12-table.md) | Confirmed | Per-scene container with a runtime-fixup header + inline record table + event-script prescript at sector offset `0x800`. 97 PROT entries (one per scene). |
+| [scene_v12_table](scene-v12-table.md) | Confirmed | Per-scene `.PCH` walk-on trigger sidecar: a four-kind sub-table directory + the kind-1 trigger records, one `0x800` sector exactly. 97 PROT entries (one per scene); the event-script prescript is the **next** entry. |
 | [Per-scene field map](field-map.md) | Confirmed | `DATA\FIELD\<scene>.MAP` - the fixed `0x12000`-byte slot 0 of every scene block. Four regions (object descriptors, collision + floor grid, object-index map, trigger block) whose sizes sum to the footprint exactly. |
 | [Effect bundles](effect.md) | Confirmed | Both the on-disc bundle (magic `0x02018B0C`) and the runtime 2-pack wrapper used by `efect.dat` |
 | [summon.dat / readef.DAT](summon-readef.md) | Confirmed | Battle side-band streaming slots (`0x10800` bytes each): per-special-attack CLUTs + 4bpp texture pages + summon-creature actor records. Extraction PROT 893 / 894 (retail TOC `0x37F` / `0x380`) |
@@ -120,7 +120,7 @@ The dispatch chain *into* these formats is fully traced. The byte-level layout o
 
 | Page | Confidence | What it covers |
 |---|---|---|
-| [Pochi-filler placeholder slots](pochi.md) | Confirmed | 265 PROT entries are dev-fill placeholders - recognised by `pochipochi…` ASCII + `0x1A` DOS-EOF marker at `+0x786`. **Skip these in any "scan the block for TIMs" sweep** - the bytes behind the prefix are stale mastering scratch that parses as a valid TIM. |
+| [Pochi-filler placeholder slots](pochi.md) | Confirmed | 266 PROT entries are dev-fill placeholders - recognised by `pochipochi…` ASCII + `0x1A` DOS-EOF marker at `+0x786`. Each is exactly one 2048-byte sector of fill and none carries a parseable TIM; the page records why the "stale scratch that parses as a TIM" reading was the *next* entry seen through the old entry size. |
 
 ## Video / pre-rendered
 

@@ -1,6 +1,6 @@
 # Field / event script VM
 
-The bytecode interpreter that drives Legaia's overworld scripting - NPC movement, dialog triggers, cutscene sequencing, story-flag manipulation. Lives in PROT entry **`0897_xxx_dat`** (the town/field overlay), at `FUN_801DE840`. ~17.5 KB / 4099 instructions / 357 outgoing calls - the largest function in the corpus.
+The bytecode interpreter that drives Legaia's overworld scripting - NPC movement, dialog triggers, cutscene sequencing, story-flag manipulation. Lives in PROT entry **`0897_xxx_dat`** (the town/field overlay), at `FUN_801DE840`. 19 992 bytes / 4998 instructions / 334 `jal` sites over 93 distinct targets - one of the largest functions in the corpus, though not the largest (the dance overlay's `FUN_801F90DC` is 22 288 bytes / 5541 instructions).
 
 It has **43 opcodes** (`0x21..0x4F`, with gaps) over a byte stream, plus a
 `0x5x`/`0x6x`/`0x7x` default route. Port:
@@ -1347,9 +1347,9 @@ A growing set of small leaf helpers in the dispatcher's call graph are pure arit
 
 **`load_u16_le(buf)` / `load_u24_le(buf)` / `load_u32_le(buf)`** - the LE byte-load family. Each helper assembles its result from sequential bytes (`b0 | (b1 << 8) | …`) and returns 0 for missing bytes (matching the dispatcher's `try_get`-style operand reads). The 24-bit version is paired with `sign_extend_24(value)` for the few opcodes (notably `0x4C nE sub-5`'s XP-add) that need a signed 24-bit immediate.
 
-**`tile_center(b)`** - the field VM's grid-byte → world-coord conversion. Formula: `b == 0` returns 0; otherwise `(b & 0x7F) << 7 | 0x40`, plus `0x40` if the high bit is set. The original inlines this conversion in nine separate dispatcher arms (most prominently `0x4C nE sub-3/4` for camera-anchored teleport / bbox queries, MOVE_TO at op 0x23, the scene-change entry tile at op 0x3F, and the position-broadcast `0x4C nC sub-F`). Lifting it to a shared helper avoids the closure-per-arm pattern that drift-prone copy-paste was producing - round 18 introduced the helper and migrated `nE sub-4`'s closure to it; future arms can pick it up directly.
+**`tile_center(b)`** - the field VM's grid-byte → world-coord conversion. Formula: `b == 0` returns 0; otherwise `(b & 0x7F) << 7 | 0x40`, plus `0x40` if the high bit is set. The original inlines this conversion in nine separate dispatcher arms (most prominently `0x4C nE sub-3/4` for camera-anchored teleport / bbox queries, MOVE_TO at op 0x23, the scene-change entry tile at op 0x3F, and the position-broadcast `0x4C nC sub-F`). Lifting it to a shared helper avoids the closure-per-arm pattern that drift-prone copy-paste produces; an arm needing the conversion calls the helper rather than inlining its own copy.
 
-The Rust ports are exhaustively tested (39 tests covering escape sequences, terminator placement, bit ordering, search bounds, LE byte assembly across short / full-width / over-long buffers, and tile-center high-bit and zero-input edge cases). Tests live alongside the ports in `field_helpers.rs`.
+Tests live alongside the ports in `field_helpers.rs`, covering escape sequences, terminator placement, bit ordering, search bounds, LE byte assembly across short / full-width / over-long buffers, and tile-center high-bit and zero-input edge cases.
 
 ## Overlay-0897 command / submenu support functions
 
@@ -1363,7 +1363,7 @@ A survey of the high-reference `0x801F` VA band the field overlay shares with th
 | `0x801E805C` | INTERIOR | Actor command commit: writes action id to actor `+0x1DF`, reads a per-command descriptor at `0x8007..52C0` (stride 4), branches on bits `0x40`/`0x20`. | `overlay_0897_801e805c.txt` |
 | `0x801E0080` | REAL (battle overlay) | The `overlay_0897` dump is an empty 0-instruction stub (corpus gap), but a full 606-instruction body is present in the battle-overlay dump — a real `battle_action(898)` function, not a field-VM entry. | `overlay_battle_action_801e0080.txt` |
 | `0x801F0450` | INTERIOR of `FUN_801F03B0` | Per-entry sprite-position lerp over 40×`0xC` records; non-ABI `t0`/`t2` register args. | `overlay_0897_801f0450.txt` |
-| `0x801F0ADC` | REAL (field 0897) | PROT 0897 at this VA opens a clean prologue (`addiu sp,sp,-0x20` / `sw s1,0x14(sp)` / `move s1,a0`) followed by the divide-by-100 magic and the character-record table base `0x80084140`, and `locate-entry-image.py` frames it at `frame+0` in 897. The re-dump this row once called for **has happened**: the dump now reports `entry=801f0adc`, 264 instructions, `extent=ghidra function body`, with the INTERIOR reading attached to `requested=801f0e68` where it belongs. The old `entry=801f07ac` / 15-of-226 mismatch was the mis-based window, and it is gone - nothing blocks porting this address. | `overlay_0897_801f0adc.txt` |
+| `0x801F0ADC` | REAL (field 0897) | A function entry: the dump reports `entry=801f0adc`, 264 instructions, `extent=ghidra function body`. PROT 0897 at this VA opens a clean prologue (`addiu sp,sp,-0x20` / `sw s1,0x14(sp)` / `move s1,a0`) followed by the divide-by-100 magic and the character-record table base `0x80084140`, and `locate-entry-image.py` frames it at `frame+0` in 897. The INTERIOR reading at this address belongs to `requested=801f0e68`, not here. | `overlay_0897_801f0adc.txt` |
 | `0x801DF6B8` | INTERIOR (epilogue) of `FUN_801DF570` | Two-decimal percent text builder (`v*100/max`, `v*10000/max`) drawn via `80034B78`/`8003C1F8`/`8003CC98`; register-arg. | `overlay_0897_801df6b8.txt` |
 | `0x801EC0DC` | INTERIOR | Delay-slot entry; sprite/text draw fragment (`8003CD00` + `8002B994`), register-arg `s1`/`s2`/`s3`. | `overlay_0896_801ec0dc.txt` |
 | `0x801F20B0` | DUPLICATE | Interior of `FUN_801F2098`, a twin of the living-slot scanner `FUN_801DB8B4` (below). | `overlay_overlay_0897_xxx_dat_801f20b0.txt` |
@@ -1721,7 +1721,7 @@ discs and translation packs.
 - **Relative-jump deltas wrap at 16 bits.** Each script's PC is stored as a signed 16-bit value (`*(short *)(ctx + 0x9e)`), so every relative branch (`0x26` JMP_REL, the `0x7x` flag-TEST conditional jump, `0x42` COND_JMP, the `0x4E` compare jumps) computes `(base + delta) mod 0x10000`. A delta with the high bit set is a **backward** jump, e.g. `0xFFFE` = -2 - the per-frame "park here" wait loop idiom (`[21] [26 FE FF]` ping-pongs two bytes until a story flag flips a guarded TEST). Computing `base + delta` in a wider int without the 16-bit truncation turns every backward jump into a `+0xFFxx` forward overrun, the "PC runs away to 0x10102" symptom that derails a script after its first wait loop. The clean-room port models this with a `rel_jump(base, lo, hi)` helper that wraps in `u16`.
 ### Intra-function label catalogue
 
-`FUN_801de840` is a 17.5 KB function. Several `iVar = FUN_801xxxxx(); return iVar;` patterns in its C decompile look like calls into separate helpers but are actually **intra-function `j` targets** that Ghidra promoted to fake function names. Each label is a `addiu s8, s8, N; j epilogue` block (or a small variant); calling "into" it just supplies the PC delta and falls through to the dispatcher's tail.
+`FUN_801de840` is a ~19.5 KB function. Several `iVar = FUN_801xxxxx(); return iVar;` patterns in its C decompile look like calls into separate helpers but are actually **intra-function `j` targets** that Ghidra promoted to fake function names. Each label is a `addiu s8, s8, N; j epilogue` block (or a small variant); calling "into" it just supplies the PC delta and falls through to the dispatcher's tail.
 
 Use this table as the lookup when interpreting the dump:
 
@@ -1746,9 +1746,7 @@ Pitfalls when verifying:
 
 1. The misleadingly-named dump file `ghidra/scripts/funcs/overlay_0897_801e3620.txt` shows entry `0x801e3578` - the address `0x801e3620` is just inside that function's epilogue (`lw ra, 0x14(sp)`). The dump filename uses Ghidra's call-site rendering, not the actual entry. Same trap for `overlay_0897_801e212c.txt` if you ever generate one.
 2. **Always cross-check `grep -n "0x<addr>" overlay_0897_801de840.txt`** before treating an `FUN_xxxxxxxx` reference as a separate function. Inside the FUN_801de840 dump, `j 0x<addr>` and `beq …, 0x<addr>` instructions reveal intra-function targets that Ghidra mis-promotes.
-3. The C decomp sometimes collapses sub-op-first dispatch ordering. Round 11's 0x4C nibble-A bug was an inversion that only became visible after reading raw asm at `0x801e2568` (`bne a1, zero, 0x801e258c` dispatching on sub-op BEFORE the ctx[+0x10] check). When tests pass but the C reads suspicious, walk the asm.
-
-A standing audit pass - picking 5 random ported sub-ops and cross-checking against the dump - turned up **no further inversion bugs** as of round 15.
+3. The C decomp sometimes collapses sub-op-first dispatch ordering, which reads as an inverted test. `0x4C` nibble-A is the worked example: the raw asm at `0x801e2568` (`bne a1, zero, 0x801e258c`) dispatches on the sub-op **before** the `ctx[+0x10]` check, and only the disassembly shows that order. When tests pass but the C reads suspicious, walk the asm.
 
 #### The wait join at `0x801e28c4`
 

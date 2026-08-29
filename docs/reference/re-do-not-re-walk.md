@@ -31,6 +31,8 @@ below.
 | Move-VM op `0x2F` extension dispatcher - per-overlay copies? | falsified (one copy, field overlay 0897 only) | The **capture-derived** `_801d362c` dumps are identical to each other (0897 observed under world-map / dialog / cutscene scenario labels); the `0897` **static** dump is a strict *subset* of them, not a byte-identical twin (Ghidra could not follow the JT flow). Substance is unchanged: every other mapped slot-A overlay + the title overlay carries unrelated bytes at the fixed call VA and no JT at `0x801CE868`, so op `0x2F` is executable only while 0897 is resident and battle-side move records cannot use it. See [move-vm-overlay-ext.md](../subsystems/move-vm-overlay-ext.md#overlay-residency---one-copy-in-the-field-overlay-only). |
 | "`FUN_801F3894` spirit/magic damage roll" (state-`0x3D` chain caller) | falsified (VA-aliased dump) | The `overlay_0897_801f3894` dump is `FUN_801DD0AC` byte-for-byte under a double VA shift, so the already-ported damage kernel surfaces at a fake entry VA. The real state-`0x3D` callee `FUN_801F3990` is a cast **audio-cue dispatcher**; spirit damage is state `0x3E`'s inline formula. **Corollary, widened: `801Exxxx` dumps are suspect too, not just the `0x801F` band** - `801f0348` and `801e23ec` are settled casualties, the latter's aliased reading having dropped all three initiative modifier terms; `0x801F1ED4`/`0x801F45A4` unverified. See [battle-formulas.md](../subsystems/battle-formulas.md#initiative-key-seeding-fun_801da780). |
 | A level-up **refills** the live HP / MP pools (the captures' "settle" phase at `+0x106` / `+0x10A`) | falsified (the settle write is the battle-end resync; both currents stand still) | [details ↓](#a-level-up-is-not-a-heal) |
+| A streamed signature-attack cast module cannot run from a party slot because "a party actor has no monster block" | falsified (it has a first-class equivalent) | `FUN_8004AD80` resolves the staged raw anim index down two arms, and the party one (`DAT_801C9360[slot]`) carries the indices PROT 960 stages. The module's only monster-block touch is a hardcoded **seat-0** write unrelated to the caster. [details ↓](#the-cast-module-blocker-was-named-wrong) |
+| An art whose attack camera films flat has the wrong **arm**, so the fix is to select a better-choreographed one | falsified (every arm is timed for a ~20-frame swing, and not one is spare) | [details ↓](#the-attack-camera-was-never-an-arm-choice) |
 | Navmesh / per-scene navigation data | falsified | `0x80108EA4..0x80109550` is per-scene GPU primitive scratch, not a 24-byte stride navmesh. Pointer hunts find zero RAM cells pointing into the window. Real per-scene region / collision / event-trigger data lives in the field-file preamble (a count + `u16` offset table + records - **not** the field-pack schema slots, which are a global-constant template; see [field-pack](../formats/field-pack.md)); the collision grid is the `+0x4000` MAP region; the encounter-record path lives at `actor[+0x94]`. |
 | Op-`0x4E` sub-ops 4..8 "absolute jump" / "rand -> next PC" readings | falsified (all sub-ops 0..9 are the 7-byte compare-and-skip) | [details ↓](#op-0x4e-sub-op-family---every-sub-op-09-is-a-compare) |
 | `801d58f0` / `801d63b0` as single shared port blockers | falsified (VA-aliasing artifact) | The two addresses host different code in different overlays (byte-verified: 80/228/124/308/1 B and 208/1036 B across 0897/baka/cutscene/debug-menu/fishing/slot/dance) - the port-catalog's bare-VA keying aggregated their refs into phantom top blockers. Tracked per-overlay via `overlay_<label>_<addr>` identities; catalog ignore category `va_aliased_overlay_local`. |
@@ -271,6 +273,79 @@ Lost-Grail-armed party, no harness HP/readout/accumulator writes, ~84k
 vsyncs) drove twelve retail `FUN_801E6968` revives across cast-path,
 kernel-path, single-target and party-wide kills: every assign hit
 `+0x10 == 0`, margins 143-280 vsyncs.
+
+### The cast-module blocker was named wrong
+
+The reading was that a streamed signature-attack module "stages the caster's
+monster-block entries by raw index, and a party actor has no monster block".
+The second half is false. `FUN_8004AD80` resolves `actor+0x1DA` down two
+arms - monster seats through `DAT_801C9348[slot-3]+0x4C`, **party seats
+through `DAT_801C9360[slot]`** - and the indices PROT 960 stages resolve on
+both. Its one monster-block access is a hardcoded **seat-0** write to a
+single clip's root-motion field, which has nothing to do with who is casting.
+
+Three real blockers were behind it, none of them the stated one, and the
+first is worse than a hang:
+
+- That seat-0 read walks past `magic_count` into words the loader never
+  fixed up, so a seat-0 monster with `magic_count <= 13` - Che Delilas has
+  12 - turns the pointer into a bare offset and the following store lands a
+  halfword in PSX **kernel RAM**. Retail never trips it because the module
+  is only ever reached with Lu (16 entries) in seat 0.
+- Battle state `0x70` re-enters the module every frame and advances only on
+  a zero return; there is no timer and no bail-out. One of its four phase
+  gates needs a clip of at least 23 keyframes, which Gala's party index
+  `0x0D` fails at 17 of 19 equippable section-2 ids.
+- The damage call and both HP writes are hardcoded to actor slot 0, not the
+  chosen target.
+
+**Generalises:** a structural-sounding impossibility ("X has no Y") reads as
+settled and stops the search, so the *actual* failures never get enumerated -
+here three of them, one a silent memory corruption that would have shipped as
+"the game crashes later, sometimes". Full account in
+[`randomizer.md`](../tooling/randomizer.md#casting-a-sibling-signature-attack-from-a-party-slot).
+
+### The attack camera was never an arm choice
+
+The reading: `FUN_801D71B8` dispatches the per-art attack camera through three
+per-character jump tables, the arms visibly differ in how much choreography
+they carry - one commits a single framing for the whole swing while others
+change shot two or three times - and 37 of the tables' 54 slots point at a bare
+return. So an art that films flat is dispatching to a poor arm, and the fix is
+to point its slot at a richer one.
+
+Two facts, both read off the tables and the arm bodies, falsify it.
+
+- **Every arm is timed, not merely shaped.** A shot change is an `slti`
+  immediate against the animation cursor `actor[+0x22C][+0x68]`, which counts
+  sixteenths of a keyframe. The whole arm span carries thirteen of those tests,
+  and their immediates are `64` / `97` / `112` / `144` / `160` / `176` / `192`
+  / `224` / `240` / `272` - keyframe 4 through **17**, sized for the ~20-frame
+  swings retail authors. Aim any arm at a 46-100 frame clip and it finishes its
+  entire choreography inside the wind-up, then holds one shot for the rest of
+  the move. That length assumption is common to all of them, so no arm escapes
+  it and choosing between them cannot.
+- **Not one arm is spare.** The 37 dead slots all point at a single shared
+  epilogue (`0x801D828C`), which is a return, not an arm. The 17 live slots
+  reach 13 distinct arms, no arm is live in more than one character's table,
+  and every one of the 13 is already some art's camera. A retarget can
+  therefore only alias an arm another art still uses - and a re-time then
+  follows the alias into that art and mistunes it too.
+
+What the arms do admit is re-timing in place: scale an arm's immediates and its
+shots land at the same beats of the longer swing. Where a host art's own arm
+carries no cursor test at all there is nothing to scale, and the move is a
+**swap** of two slots inside one character's table rather than a retarget - a
+swap leaves the set of live arms unchanged and leaves the borrowed arm
+reachable from exactly one slot, which is what makes re-timing it safe. Full
+account in [`randomizer.md`](../tooling/randomizer.md#delilas-party-swap).
+
+**Generalises:** "pick a better one" presumes the candidates differ along the
+axis the defect lies on. These differ in shot *count* and agree on clip
+*length*, so the choice axis was orthogonal to the problem. And a table that is
+two-thirds dead slots reads as spare capacity while the things those slots
+would point at are fully subscribed - emptiness in the index is not slack in
+what it indexes.
 
 ## Audio / sound driver
 
