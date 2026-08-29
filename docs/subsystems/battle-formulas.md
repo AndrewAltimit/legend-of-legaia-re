@@ -48,7 +48,7 @@ own finisher; blocking and the limb-height "Miss" are separate mechanics.
 
 ## Contents
 
-- [Physical damage - Offense Value and Defense Value](#physical-damage---offense-value-and-defense-value) - [base offense](#base-offense-value-base-atk-plus-half-of-one-equipment-slot) · [offense](#offense-value) · [defense](#defense-value) · [underdog floor](#damage-and-the-underdog-floor) · [worked example](#worked-example---vahn-vs-evil-fly) · [claims checked against the bytes](#checking-the-community-analysis-against-the-bytes) · [register-level stages](#the-melee-roll-pair-and-the-underdog-rewrite)
+- [Physical damage - Offense Value and Defense Value](#physical-damage---offense-value-and-defense-value) - [base offense](#base-offense-value-base-atk-plus-half-of-one-equipment-slot) · [offense](#offense-value) · [juggle window](#the-juggle-window---what-makes-a-monster-juggleable) · [defense](#defense-value) · [underdog floor](#damage-and-the-underdog-floor) · [worked example](#worked-example---vahn-vs-evil-fly) · [claims checked against the bytes](#checking-the-community-analysis-against-the-bytes) · [register-level stages](#the-melee-roll-pair-and-the-underdog-rewrite)
 - [Other damage kernels](#other-damage-kernels) - [summon / magic roll](#summon-magic-damage-roll---fun_801dd0ac) · [arts / physical branch](#arts--physical-branch-attacker_slot--7) · [element-affinity matrix](#element-affinity-matrix-fun_801dd864-0x801f53e8) · [summon spell XP](#summon-spell-xp--magic-level-up) · [spirit damage](#spirit-damage-formula)
 - [Stats and the actor record](#stats-and-the-actor-record) - [applicator `FUN_800402F4`](#damage-application-primitive---fun_800402f4) · [stat block mapping](#actor-stat-block--monster-record-mapping) · [initiative](#initiative-key-seeding-fun_801da780) · [formation advantage](#formation-advantage-fun_80051d84) · [spell list](#spell-list-record-0x4c) · [selector 0](#selector-0---basic-damage-attack--item--generic-spell) · [selector 9](#selector-9---accuracy--evasion-roll) · [stat buffs](#stat-buff-selectors-17)
 - [Round mechanics and status](#round-mechanics-and-status) - [escape roll](#run--escape-roll---fun_801e791c) · [monster escape](#monster-escape-roll---fun_801ec0dc) · [status DoT ticker](#per-round-status-dot-ticker---fun_801e752c) · [status application](#status-application-the-art--move-record-status-byte)
@@ -125,11 +125,97 @@ Offense = [ Base Offense * Rnd(1..1.125) * Power / 16
 | `Rnd(1..1.125)` | `atk + rand() % (atk/8 + 1)`: `atk` plus 0 to `atk/8`. The `% (atk/8+1)` makes the extra at most one eighth, so the factor is 1 to 1.125 (exactly 1.125 only when `atk` divides by 8). | `0x801ECE78..0x801ECEB0` |
 | Power | Move power byte, `(byte - 0x0C) % 5` into `0x801F64EC = [12, 18, 20, 22, 28]`, applied as `* Power >> 4`. A normal direction hit carries the 20 tier; Arts carry any of the five per strike (the art record's `+0x24` power run, [art-data.md](../formats/art-data.md#power-encoding)). | `0x801ECE9C..0x801ECEB4`, `0x801ECEFC` |
 | Current HP / 256 | The **attacker's** current HP (`+0x14C`), `>> 8`. Worth a few points. | `0x801ECEF8..0x801ECF04` |
-| Juggle | `ctx[+0x0A]`: `1` on a chain's first hit, `+1` for each further hit while the defender's hit-reaction timer (`+0x1F7`) is still running, back to `1` when the reaction has ended. Applied as `(juggle * atk) >> 6`. | set `0x801ECA20..0x801ECA80`, used `0x801ECEC4..0x801ECF0C` |
+| Juggle | `ctx[+0x0A]`: `1` on a chain's first hit, `+1` for each further hit that lands while the defender's `+0x1F7` byte is up - while its current clip is still before that clip's first **event frame** - back to `1` once the flinch has passed that frame, and always `1` against a blocking defender. Applied as `(juggle * atk) >> 6`. What raises the byte, and for how long, is the [juggle window](#the-juggle-window---what-makes-a-monster-juggleable) below. | set `0x801ECA20..0x801ECA80`, used `0x801ECEC4..0x801ECF0C` |
 | Angle | `ctx[+0x6D2]`: the folded difference between the attacker's heading and the defender's new facing, minus `0x800` - `0` for a face-on strike. Applied as `(angle * atk) >> 16`. Only a chain's opening hit can carry it (the defender turns to face the attacker, and the kernel zeroes the word after the first hit). | written `0x801E3068..0x801E30C8` (`FUN_801E295C`), used `0x801ECED8..0x801ECF18`, zeroed `0x801EC888` |
 | Arts Modifier | `x13/10` when the staged id `+0x1D9` is above `0x10` (an Art); `x14/10` when the attacker's record word `+0xF8` carries bit `0x1000` - accessory passive `0x2C` **Arts Power**, the War Soul. `x1` for a plain hit. | `0x801ED0A4..0x801ED138` |
 | Element | `matrix[attacker element][defender element] / 100` from the 8x8 table at `0x801F53E8`: same element 96, opposed pairs (earth-wind, water-fire, light-dark) 104, else 100. Applied once for every hit and **a second time inside the Art arm**, so an Art scales by the factor squared. | `0x801ED13C..0x801ED174` (Art pass), `0x801ED178..0x801ED1B4` (always) |
 | Venom / Toxic | Attacker's `+0x16E` bit `0x1` (Venom) scales Offense `x9/10`, bit `0x2` (Toxic) `x7/10`, after the element pass. | `0x801ED254..0x801ED2A0` |
+
+### The juggle window - what makes a monster "juggleable"
+
+ZetaPhoenix asked what sets a monster's tolerance to juggling - a hidden
+number, or the state of its damage animation. It is the animation, and more
+precisely one authored byte of it.
+
+**The byte has two writers on the whole disc.** A word-wise scan of
+`SCUS_942.54` and every image in `extracted/overlays/` for a `sb` / `sh` /
+`sw` at actor offset `+0x1F7` finds exactly two stores, four bytes apart:
+`sb zero,0x1f7(s2)` at `0x80047E50` and `sb v0,0x1f7(s2)` at `0x80047E54`,
+both in the per-frame anim-node tick `FUN_80047430`
+(`see ghidra/scripts/funcs/80047430.txt`). The battle overlay only reads it
+(`0x801EC950`, `0x801ECA4C` in the damage kernel); the SCUS anim commit
+`FUN_8004AD80` reads it once more (`0x8004AFD4`, the counter / guard
+window). The only other store that touches the address is the battle-init
+block clear. A live write-watch on the byte across three battle states
+(`scripts/pcsx-redux/autorun_juggle_window.lua`) sees no other `pc`.
+
+**What it stores.** The tick runs for every actor every frame, and after
+advancing the actor's 12.4 clip cursor (`node+0x68`) it does, at
+`0x80047E1C..0x80047E54`:
+
+```text
+frame = cursor >> 4                                  ; integer clip frame
+idx   = FUN_80050E00(record + 0x10)                  ; v0: 0 unless +0x11..+0x13 are ALL non-zero
+actor[+0x1F7] = (frame < record[0x10 + idx]) ? 1 : 0
+```
+
+`record` is the action entry the actor is currently playing (`node+0x4C`),
+and `record[+0x10..+0x13]` is that clip's **event-frame list**
+([monster-animation.md](../formats/monster-animation.md#event-frame-list-entry-0x100x13)).
+Every reaction entry on the disc carries a one-frame list, so `idx` is `0`
+and the compared beat is the list's first byte. The byte is therefore not
+a timer loaded with a count - it is re-derived each tick from *whichever
+clip the actor is in*, and reads `1` while that clip is still before its
+first beat.
+
+**The sequence on a hit.** A landing hit stages the defender's light
+flinch (`+0x1DA = +0x1EF`, tag `2`; `FUN_800402F4`), the commit installs
+the flinch record with the cursor at `0`, and the next tick raises
+`+0x1F7` because `0 < beat`. Each tick then adds `speed * rate / 2`
+sixteenths to the cursor - `speed` is the actor's scale byte `+0x21D`
+(`8` in normal play; an Art's slow-motion arms drop *everyone's* to `4` /
+`2`), `rate` the entry's `+0x78` byte (`1` or `2`). Once `frame` reaches
+the beat the byte drops for the rest of the clip. A hit that lands while
+it is up grows the counter (`0x801ECA4C..0x801ECA70`) **and** re-stages
+the flinch from frame `0`, so the window refreshes with every juggling
+hit; a hit that lands after it has dropped resets the counter to `1`
+(`0x801ECA74..0x801ECA80`). A defender whose current clip is its block
+entry (`+0x1D9 == +0x1F3`) is never juggled (`0x801ECA20..0x801ECA2C`).
+
+So the window a follow-up hit has to land in is
+
+```text
+ticks = 32 * beat / (speed * rate)      = 4 * beat / rate at speed 8
+```
+
+**Per monster, that is two bytes of its light-flinch entry** - the first
+event frame and the rate - and nothing in the stat record. Across the
+roster the beat runs `1..16` at rate `2` (a few `1`), so the window runs
+from Rogue's 2 ticks (`f1/2`) through the 10 of the bee family (`f5/2`),
+Gobu Gobu's 16 (`f8/2`), the 32 of Zeto (`f16/2`) to Caruban's 40
+(`f10/1`); id `181` Cort's beat `10` lies past its 7-frame flinch, so its
+byte holds for the whole clip. `legaia-patcher monster-stats` prints the
+`juggle` column (`f<beat>/<rate>` and the ticks at speed 8) for every
+monster; reader `legaia_asset::monster_archive::light_flinch_window`.
+
+Live, from the write-watch (values are 60 Hz ticks after the flinch commit):
+
+| State | Defender | Flinch entry | Window | Measured | Juggle counter seen |
+|---|---|---|---|---|---|
+| `battle_noa_miracle_art_combo` | Gilium $3 (id 161) | `f8/2` | 16 at speed 8, 32 at speed 4 | `1` for 16 ticks during the Art, 32 ticks for each later hit | `2`, `3`, `4` on hits 8-12 ticks apart, then `1` on every hit landing after the drop |
+| `party_basic_attack_vs_gobu_gobu` | Gobu Gobu (id 4) | `f8/2` | 16 | 16 (`t=326..342`); its tag-3 flinch `f10/2` measured 22 against a computed 20 | `1` (single hits) |
+| `party_basic_attack_vs_gobu_gobu` | **Vahn** | tag 2 / 3 `f3/1` | 12 | 12, three times | `1` on each of Gobu Gobu's three hits, which landed 24-26 ticks apart |
+
+**Party members have the same mechanic.** The player battle files' flinch
+entries carry the same list at the same offset (Vahn's `3` at rate `1`),
+the tick is the shared SCUS one, and the kernel reads the defender's byte
+whichever side it is on. Vahn's 12-tick window is why an enemy's multi-hit
+string rarely juggles the party: Gobu Gobu's swings arrive two windows apart.
+
+Two side effects of "whichever clip the actor is in": an attack entry's
+first beat is its contact frame, so an actor struck during its own wind-up
+counts as juggled for that hit, and an Art's slow-motion scale stretches
+every actor's window while it runs (Gilium's 16 became 32 above).
 
 ### Defense Value
 
@@ -219,6 +305,7 @@ straight from the PROT `0898` bytes at their link addresses.
 | Power 20 for a normal hit; 12/18/20/22/28 for Arts | **Confirmed** (table) / playtest (which byte a normal hit carries) | Table bytes at `0x801F64EC` read `[12, 18, 20, 22, 28]`, indexed `(byte - 0x0C) % 5` (`0x801EC588..0x801EC5C8`). The 20 for a direction hit is his measurement; the disassembly only shows the table and the index. |
 | `+ Current HP / 256` | **Confirmed** | `lhu v0,0x14c(attacker)`, `srl v0,v0,0x8` at `0x801ECEF8..0x801ECF04`. |
 | Juggle starts at 1, grows per quick hit, resets after a pause; applied `/ 64` | **Confirmed** | `ctx[+0x0A]` set at `0x801ECA20..0x801ECA80` (increment while `+0x1F7 != 0`, else `1`); `(juggle*atk) >> 6` at `0x801ECEC4..0x801ECF0C`. |
+| "Juggleability" is the defender's damage animation, not a hidden number | **Confirmed** (disassembly + live write-watch) | `+0x1F7`'s only writers are `0x80047E50` / `0x80047E54` in the anim tick: `frame < flinch_entry[+0x10]`, per monster two bytes of its flinch entry (beat, rate). Three states, two monsters + Vahn, in the [juggle window](#the-juggle-window---what-makes-a-monster-juggleable). |
 | Attack angle `/ 65536`, 0 in front, 2048 from behind | **Confirmed shape; magnitude unverified** | `(ctx[+0x6D2] * atk) >> 16` at `0x801ECED8..0x801ECF18`. The writer (`0x801E3068..0x801E30C8`) stores the folded facing difference **minus** `0x800`, so face-on is `0`; what the kernel does with a from-behind strike's negative halfword has not been captured. |
 | Arts modifier 1.3, 1.4 with War Soul | **Confirmed** | `x13/10` at `0x801ED118..0x801ED138`; the `x14/10` arm keys on record `+0xF8` bit `0x1000` (`0x801ED0F8..0x801ED104`) = passive `0x2C` Arts Power. |
 | Element 1.04 fire-vs-water, applied twice on Arts | **Confirmed** | Matrix `0x801F53E8` (opposed pairs `0x68` = 104); the Art arm's pass at `0x801ED13C..0x801ED174` precedes the unconditional pass at `0x801ED178..0x801ED1B4`. |
@@ -1318,6 +1405,16 @@ The unit tests there pin the documented formulas as fixtures - a future runtime 
   unported spirit/magic damage roll hides behind state `0x3D`.
 - **Selector dispatch for selectors `0x10..=0x83`.** The cases beyond status / buff / damage handle stat-up animations, status-clear, queue-end markers, and the multi-target item slot used by Smelly Glove etc. They're mostly read-only stat ramps that don't affect game balance, so leaving them un-decoded is fine for a first port.
 - The monster record is now fully decoded: all six stat halfwords (see [actor stat block mapping](#actor-stat-block--monster-record-mapping)), the reward fields (see [victory spoils](#victory-spoils-rewards)), and the spell-offset list (see [spell list](#spell-list-record-0x4c)). No record fields remain open. The spell entries' `+0x04`/`+0x08` **effect indices** now resolve through the per-block effect-offset table to the per-spell effect descriptor (`MonsterSpell::effect_offset` / `aux_offset`; see [spell list](#spell-list-record-0x4c)) - these are indices into a table, not direct sub-pointers, and the target is a small fixed descriptor, not TMD geometry. What stays open is only that descriptor's **interior field semantics** (its runtime consumer is the cast/effect path).
+- **Juggle window, three loose ends.** (1) `FUN_80050E00`'s fall-through exit returns
+  `a0 + 3` in `v0`, so an entry whose `+0x11..+0x13` are all non-zero hands the tick
+  an index that depends on the block's load address; no reaction entry on the disc
+  has such a list (`light_flinch_juggle_windows_resolve_over_real_archives`), so it
+  only touches an attack-band entry's own `+0x1F7`, and what that reads as in retail
+  is uncaptured. (2) The measured window can run 1-2 ticks past
+  `32 * beat / (speed * rate)` (Gobu Gobu's tag-3 flinch: 22 vs 20) - the commit
+  lands part-way through a tick and the cursor's sub-frame carry is not modelled.
+  (3) Whether the anim commit's counter / guard window (`+0x1F6`, `0x8004AFC0..`)
+  uses the same beat for a parry has not been traced.
 - **Ability-bit catalogue.** The ability bitfield at `+0xF4` of the character record has at least the documented MP-half / MP-quarter / HP-cap / MP-cap bits in use, plus the impact-step modifier (`0x10` / `0x20`) on attack actions. The full per-character mapping comes out of save-data (the 0x414 record's `+0xF4..+0xF8` is one row in the save schema's character block) - a few new-game saves with different early-game characters resolve it.
 
 ## Credits and sources
@@ -1326,7 +1423,9 @@ The unit tests there pin the documented formulas as fixtures - a future runtime 
   organised around, the per-command equipment selection and halving (footwear
   for High/Low, one hand's item per arm command, the sum of all gear for an
   Art), the `Rnd(1..1.125)` reading of the `% (x/8 + 1)` draw, the juggle,
-  angle and distance terms, and the Vahn vs Evil Fly worked example - all
+  angle and distance terms, the question of what makes one monster more
+  juggleable than another (his guess - the state of the damage animation -
+  was the right one), and the Vahn vs Evil Fly worked example - all
   measured against the running game and then checked here against the
   disassembly. His [Legaia Arts Data spreadsheet](https://docs.google.com/spreadsheets/d/1_U_AKdEncylFwE0lXkvPG-OhMWpNXgUdoaSGZ6vSUg0/edit?usp=drive_link)
   is the source the `legaia-art` trigger tables are validated against, and his
@@ -1356,6 +1455,7 @@ VA - base). Everything below is in `FUN_801EC3E4` unless a function is named.
 | Address | What is there |
 |---|---|
 | `0x800478A0` | `SCUS_942.54` call site of `FUN_801EC3E4` (the arts execution driver) |
+| `0x80047E1C..0x80047E54` | `FUN_80047430`: `actor[+0x1F7] = (cursor >> 4) < record[0x10 + FUN_80050E00(record+0x10)]` - the juggle window's only two writers (`0x80047E50` zero, `0x80047E54` one) |
 | `0x801CF4B4` | `PTR_801CF4B4`, the six-entry command jump table: `[801ECBC4, 801ECC0C, 801ECC54, 801ECC54, 801ECDE4, 801ECCD0]` |
 | `0x801EC588..0x801EC5C8` | power index `(record_byte - 0x0C) % 5` into the stack local the two table reads use |
 | `0x801EC888..0x801EC88C` | zeroing of `ctx[+0x6D2]` (angle) and `ctx[+0x6D4]` (distance) once the first hit has landed |

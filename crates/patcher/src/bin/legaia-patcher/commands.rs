@@ -162,12 +162,26 @@ pub(crate) fn cmd_monster_stats(input: &Path) -> Result<()> {
     let records =
         legaia_asset::monster_archive::records(&entry).context("decode monster archive records")?;
     println!(
-        "{:>3}  {:<16} {:>6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5}",
-        "id", "name", "hp", "mp", "atk", "def+", "def-", "int", "spd"
+        "{:>3}  {:<16} {:>6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5}  {:>6} {:>7}",
+        "id", "name", "hp", "mp", "atk", "def+", "def-", "int", "spd", "juggle", "(ticks)"
     );
     for r in &records {
+        // Juggle window: the light-flinch clip's first event frame and how
+        // many 60 Hz ticks the defender's `+0x1F7` byte holds for at the
+        // normal speed scale - animation data, not a stat
+        // (docs/subsystems/battle-formulas.md, "Juggle").
+        let (beat, ticks) = legaia_asset::monster_archive::light_flinch_window(&entry, r.id)
+            .ok()
+            .flatten()
+            .map(|w| {
+                let beat = w
+                    .gate_frame()
+                    .map_or_else(|| "?".to_string(), |b| format!("f{b}/{}", w.rate));
+                (beat, w.ticks())
+            })
+            .unwrap_or_else(|| ("-".to_string(), 0));
         println!(
-            "{:>3}  {:<16} {:>6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5}",
+            "{:>3}  {:<16} {:>6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5}  {:>6} {:>7}",
             r.id,
             r.name,
             r.hp,
@@ -176,7 +190,9 @@ pub(crate) fn cmd_monster_stats(input: &Path) -> Result<()> {
             r.defense_high(),
             r.defense_low(),
             r.intelligence(),
-            r.speed()
+            r.speed(),
+            beat,
+            ticks
         );
     }
     println!("{} populated monster records", records.len());

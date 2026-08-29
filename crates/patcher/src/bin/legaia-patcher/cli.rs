@@ -209,7 +209,10 @@ pub(crate) enum Cmd {
     },
     /// Read-only: list every monster's current combat stats (HP / MP / ATK /
     /// UDF / LDF / INT / SPD) from the `battle_data` archive - the population
-    /// the `--monster-stats` randomizer redistributes.
+    /// the `--monster-stats` randomizer redistributes - plus its juggle
+    /// window: the light-flinch clip's gate frame over its rate byte
+    /// (`f8/2`) and the 60 Hz ticks a follow-up hit has to grow the juggle
+    /// counter (animation data, not a stat).
     MonsterStats {
         /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
         /// is accepted and resolved to the `.bin` it references).

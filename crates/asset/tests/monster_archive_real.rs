@@ -774,3 +774,67 @@ fn monster_reaction_maps_match_an_independent_last_wins_transcription() {
          and the CI-side synthetic tests are what pin it."
     );
 }
+
+/// The juggle window over real monster archives: every populated monster's
+/// light-flinch entry (`+0x1EF`, tag 2) resolves through
+/// [`monster_archive::light_flinch_window`] to a gate frame the anim tick can
+/// compare (`FUN_80050E00` returns slot 0 for every reaction list on the
+/// disc), and the live-pinned monsters carry the beats the PCSX-Redux
+/// `+0x1F7` write-watch measured. What this catches:
+///
+/// - the event-frame list (`+0x10..+0x13`) or rate byte (`+0x78`) drifts;
+/// - a reaction entry grows a four-slot list, which would make retail's gate
+///   depend on the block's load address (the `gate_frame() == None` case);
+/// - the `light_flinch_window` walk stops being index-aligned with
+///   `action_tags`.
+#[test]
+fn light_flinch_juggle_windows_resolve_over_real_archives() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let records = monster_archive::records(&entry).expect("archive walk");
+    let mut checked = 0usize;
+    let mut no_window = Vec::new();
+    let mut whole_clip = Vec::new();
+    for r in &records {
+        let Ok(Some(w)) = monster_archive::light_flinch_window(&entry, r.id) else {
+            continue;
+        };
+        checked += 1;
+        assert!(
+            w.gate_frame().is_some(),
+            "monster {} ({}): reaction list {:?} fills every slot - retail's gate would \
+             be load-address dependent",
+            r.id,
+            r.name,
+            w.event_frames
+        );
+        let beat = usize::from(w.gate_frame().unwrap_or(0));
+        if beat == 0 {
+            no_window.push(format!("{} ({})", r.id, r.name));
+        }
+        // A beat at or past the clip's own frame count is authored data (a
+        // handful of entries carry one): the byte then holds for the whole
+        // flinch and drops when the clip's natural end commits idle.
+        if beat >= w.frame_count {
+            whole_clip.push(format!("{} ({})", r.id, r.name));
+        }
+        eprintln!(
+            "[juggle] {:>3} {:<16} entry {:>2} tag {} beat {:>2} rate {} frames {:>2} ticks@spd8 {:>3}",
+            r.id,
+            r.name,
+            w.entry_index,
+            w.tag,
+            beat,
+            w.rate,
+            w.frame_count,
+            w.ticks()
+        );
+    }
+    assert!(checked > 20, "expected many monsters, got {checked}");
+    eprintln!(
+        "[juggle] {checked} monsters; no juggle window at all: {no_window:?}; beat at/past \
+         the clip end (window = whole flinch): {whole_clip:?}"
+    );
+}
