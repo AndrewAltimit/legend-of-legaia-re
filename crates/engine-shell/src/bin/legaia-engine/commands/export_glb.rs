@@ -6,8 +6,8 @@
 
 use super::*;
 use legaia_engine_core::glb_export::{
-    FloorSampler, GlbExportOptions, export_animated_prop_glbs, export_npc_glbs, export_world_glb,
-    world_manifest,
+    FloorSampler, GlbExportOptions, export_animated_prop_glbs, export_equipment_item_glbs,
+    export_npc_glbs, export_world_glb, items_manifest, world_manifest,
 };
 use legaia_engine_core::npc_catalog::catalog_scene_npcs;
 use legaia_engine_core::scene_assembly::assemble_field_scene;
@@ -21,13 +21,23 @@ pub(crate) fn cmd_export_glb(
     include_sky: bool,
     no_npcs: bool,
     no_props: bool,
+    items: bool,
     extracted_root: &Path,
     disc: Option<&Path>,
 ) -> Result<()> {
-    if scenes.is_empty() && !all_scenes {
-        anyhow::bail!("pass --scene <name> (repeatable) or --all-scenes");
+    if scenes.is_empty() && !all_scenes && !items {
+        anyhow::bail!("pass --scene <name> (repeatable), --all-scenes, or --items");
     }
     let index = open_index_from_args(extracted_root, disc)?;
+    if items {
+        export_items(&index, out, extracted_root, disc)?;
+        if scenes.is_empty() && !all_scenes {
+            println!(
+                "note: the output contains Sony-derived game data - keep it local, never redistribute it"
+            );
+            return Ok(());
+        }
+    }
     let names: Vec<String> = if all_scenes {
         index
             .cdname_scene_names()
@@ -140,4 +150,58 @@ fn export_one(
         props.len(),
     );
     Ok(true)
+}
+
+/// Export every equipment item of the four player battle files as animated
+/// `.glb`s (see `glb_export::export_equipment_item_glbs`). `SCUS_942.54`
+/// supplies item names + section labels when readable; the export still
+/// works without it (ids in place of names).
+fn export_items(
+    index: &ProtIndex,
+    out: &Path,
+    extracted_root: &Path,
+    disc: Option<&Path>,
+) -> Result<()> {
+    use legaia_engine_core::Vfs;
+    let scus: Option<Vec<u8>> = match disc {
+        Some(path) => legaia_engine_core::DiscVfs::open(path)
+            .ok()
+            .and_then(|v| v.read("SCUS_942.54").ok()),
+        None => legaia_engine_core::DirVfs::new(extracted_root)
+            .ok()
+            .and_then(|v| v.read("SCUS_942.54").ok()),
+    };
+    if scus.is_none() {
+        eprintln!("  [items] SCUS_942.54 not readable - exporting with ids instead of names");
+    }
+    let export = export_equipment_item_glbs(index, scus.as_deref())
+        .map_err(|e| anyhow::anyhow!("equipment item export: {e}"))?;
+    let items_dir = out.join("items");
+    let mut written = 0usize;
+    for it in &export.items {
+        for (bytes, suffix) in [(&it.glb_alone, "_alone"), (&it.glb_with_limb, "_with_limb")] {
+            if bytes.is_empty() {
+                continue;
+            }
+            let path = items_dir.join(format!("{}{suffix}.glb", it.file_stem));
+            if let Some(dir) = path.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            std::fs::write(&path, bytes)?;
+            written += 1;
+        }
+    }
+    std::fs::write(
+        items_dir.join("manifest.json"),
+        serde_json::to_string_pretty(&items_manifest(&export))?,
+    )?;
+    for n in &export.notes {
+        eprintln!("  [items] {n}");
+    }
+    println!(
+        "export-glb --items: {} item record(s), {written} glb file(s) -> {}",
+        export.items.len(),
+        items_dir.display()
+    );
+    Ok(())
 }

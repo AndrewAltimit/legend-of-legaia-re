@@ -80,6 +80,7 @@ fn main() -> Result<()> {
             include_sky,
             no_npcs,
             no_props,
+            items,
             extracted_root,
             disc,
         } => cmd_export_glb(
@@ -90,6 +91,7 @@ fn main() -> Result<()> {
             include_sky,
             no_npcs,
             no_props,
+            items,
             &extracted_root,
             disc.as_deref(),
         ),

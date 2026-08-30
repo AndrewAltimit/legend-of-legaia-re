@@ -677,6 +677,13 @@ pub(crate) enum Cmd {
         /// Skip the animated-prop glbs.
         #[arg(long, action = clap::ArgAction::SetTrue)]
         no_props: bool,
+        /// Also export every equipment item (all four characters' weapons,
+        /// Ra-Seru, armour, headgear, footwear) as animated `.glb`s under
+        /// `<out>/items/`: the item alone (grip repaired) plus the exact
+        /// palette cut with its host limb, each carrying the action bank +
+        /// weapon swings. Works on its own, without `--scene`.
+        #[arg(long, action = clap::ArgAction::SetTrue)]
+        items: bool,
         /// Extracted-root directory containing `PROT.DAT` + `CDNAME.TXT`.
         #[arg(long, default_value = "extracted")]
         extracted_root: PathBuf,

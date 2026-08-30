@@ -363,7 +363,9 @@ lifts - the one build the browser field-scene page and the native
 textured/vertex-colour side channel, `npc_catalog` the MAN placement
 walk, and `glb_export` composes all of it (plus per-NPC and animated-prop
 bakes through `legaia_asset::{scene,character}_gltf`) into the
-`legaia-engine export-glb` artifact set - see
+`legaia-engine export-glb` artifact set, `--items` included
+(`export_equipment_item_glbs` over the shared
+`battle_char_assembly::loadout` kernel) - see
 [`docs/tooling/vrchat-world-export.md`](../../docs/tooling/vrchat-world-export.md).
 
 ## Dialogue, save/load, and loot

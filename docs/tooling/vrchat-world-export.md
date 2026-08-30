@@ -15,14 +15,16 @@ as `extracted/`.
 ```bash
 legaia-engine export-glb --scene town01 --out glb-export       # one scene
 legaia-engine export-glb --all-scenes --out glb-export         # everything
+legaia-engine export-glb --items --out glb-export              # every equipment item
 ```
 
 Reads `extracted/` (default) or `--disc <image.bin>`. Flags: `--scale`
 (glTF meters per PSX world unit, default 1/64 - one 128-unit walk tile
 = 2 m, near VRChat human scale), `--include-sky` (keep the sky-backdrop
-shells the site viewers hide), `--no-npcs`, `--no-props`. `--all-scenes`
-skips cutscene labels, reports each scene's yield, and continues past
-failures.
+shells the site viewers hide), `--no-npcs`, `--no-props`, `--items` (the
+equipment export below - standalone or combined with scenes).
+`--all-scenes` skips cutscene labels, reports each scene's yield, and
+continues past failures.
 
 ## What one scene exports
 
@@ -56,6 +58,31 @@ with, so the export matches the on-screen pages:
   pair whose clip has more than one frame, exported object-local with the
   clip, plus every placement transform in the manifest. The world glb
   keeps their frame-0 static twins, so these are opt-in upgrades.
+
+## `--items`: every equipment item
+
+`--items` walks the four player battle files (`data\battle\PLAYER1..4`,
+extraction PROT 863..866) and exports **every equippable record** - all
+four characters' weapons, Ra-Seru, armour, headgear and footwear - into
+`<out>/items/<character>/`, two files per record plus `items/manifest.json`:
+
+- `*_alone.glb` - the opinionated item-alone cut with its grip repaired
+  ([`equip_isolate`](../formats/character-mesh.md) +
+  `equip_repair`), what a "give me just the great axe" consumer wants (a
+  VRC Pickup, a Blender prop);
+- `*_with_limb.glb` - the record-keeping exact palette cut with its
+  ground-truth host limb.
+
+Both carry the character's battle action bank and the weapon's spliced
+direction swings as named clips, so the piece moves the way it does in
+hand. This is the **same kernel the site's characters-page equipment
+viewer runs** - `legaia_asset::battle_char_assembly::loadout`, hoisted out
+of the wasm session so both hosts share one implementation - and the
+manifest repeats each record's honesty tags (`class`, `complete`,
+`isolation_mode`, `curated`, `grip_bridges`) so a heuristic cut is
+distinguishable from a curated one. `SCUS_942.54` supplies display names
+and section labels when readable; without it, ids stand in. Like the NPC
+and prop glbs, item glbs ship in **raw PSX units**.
 
 ## Manifest
 

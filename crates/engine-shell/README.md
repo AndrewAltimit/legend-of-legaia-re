@@ -60,7 +60,7 @@ authoritative list; the broad groups are:
 |---|---|---|
 | Scene inspection | `info`, `list-scenes`, `clut-trace`, `man-scripts`, `xa-cue`, `dump-cutscene-map` | Headless reports on a scene's resolved asset chain / dropped CLUTs / MAN field-VM scripts / XA voice-cue slots, plus the CDNAME→`MV*` map as an editable TOML. |
 | Run | `play`, `play-window`, `play-str`, `record` | Boot a scene headless (`play`) or in a wgpu window (`play-window`); play an MDEC movie (`play-str`); capture pad input to a replay (`record`). |
-| Asset export | `export-glb` | Bake a scene (or `--all-scenes`) into textured world / NPC / animated-prop `.glb`s + a placement manifest for Unity/VRChat or Blender ([`docs/tooling/vrchat-world-export.md`](../../docs/tooling/vrchat-world-export.md)). |
+| Asset export | `export-glb` | Bake a scene (or `--all-scenes`) into textured world / NPC / animated-prop `.glb`s + a placement manifest for Unity/VRChat or Blender; `--items` exports every equipment item as animated item-alone / with-limb `.glb`s ([`docs/tooling/vrchat-world-export.md`](../../docs/tooling/vrchat-world-export.md)). |
 | Save / config | `save`, `load`, `config` | Disk-save smoke round-trip + the keyboard→pad input mapping. |
 | Parity oracles | `vram-oracle`, `mode-trace`, `audio-trace`, `pcm-trace`, `sim-trace`, `replay`, `scenarios` | The harnesses above, plus the recomp differential's engine-side emitter, deterministic replay and the scenario-hash suite. |
 | Synthetic sessions | `battle`, `inventory`, `equip`, `title`, `save-select`, `encounter`, `target-pick`, `chain-editor`, `seru-capture`, `gte-replay` | Drive one engine subsystem's state machine headless from a scripted input string - no disc required. |

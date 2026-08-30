@@ -92,6 +92,7 @@ its VRAM-derived texture atlas, one animated `.glb` per NPC, animated props
 ```bash
 ./legaia-engine export-glb --scene town01 --out glb-export
 ./legaia-engine export-glb --all-scenes --out glb-export
+./legaia-engine export-glb --items --out glb-export   # every equipment item
 ```
 
 The files open in Blender or import into Unity; a full VRChat-world kit +

@@ -36,6 +36,8 @@ cargo build --release -p legaia-engine-shell
 ./target/release/legaia-engine export-glb --scene town01 --out glb-export
 # or every scene that assembles:
 ./target/release/legaia-engine export-glb --all-scenes --out glb-export
+# every equipment item (grabbable weapons and the rest):
+./target/release/legaia-engine export-glb --items --out glb-export
 ```
 
 Reads `extracted/` by default (`--disc "Legend of Legaia (USA).bin"` works
@@ -87,10 +89,16 @@ the VCC setup in more detail if this is your first worlds project.
 - **Wandering villagers**: add `LegaiaNpcWander` (UdonSharp) to an NPC the
   builder placed; tune radius/speed. Movement is computed per player -
   fine for ambience, use synced variables if everyone must agree.
-- **Grabbable weapons**: the site's equipment viewer downloads any weapon
-  as an item-alone `.glb` (and the characters/bestiary pages export
-  characters and monsters with their full animation banks). Import the
+- **Grabbable weapons**: `export-glb --items` exports **every equipment
+  item** (all four characters' weapons, Ra-Seru, armour, headgear,
+  footwear) to `glb-export/items/` - per record an item-alone `.glb`
+  (grip repaired) and an exact-cut `.glb` with its host limb, both
+  animated, plus a manifest of names and cut-honesty tags. Import one the
   same way, then add a `VRC Pickup` + a collider to hold Vahn's sword.
+  (The site's equipment viewer offers the same files per download, and
+  the characters/bestiary pages export characters and monsters with
+  their full animation banks.) Item glbs are raw PSX units - scale them
+  like NPCs.
 - **More clips**: every NPC glb carries *all* the scene-bundle clips whose
   bone count matches (`record_N` takes) - retarget the Animator the
   builder generated at any of them.

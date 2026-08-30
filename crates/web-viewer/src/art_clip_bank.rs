@@ -39,26 +39,12 @@ use crate::disc;
 /// carrying each character's art `"ME"` keyframe archives.
 const READEF_PROT_INDEX: u32 = 894;
 
-/// One curated art resolved to its on-disc keyframes, **unexpanded** (raw
-/// bank part layout - re-index per assembled object with
-/// [`bca::expand_animation_for_objects`] before posing a loadout).
-#[derive(Clone)]
-pub(crate) struct ArtClip {
-    /// The curated display name (arts table).
-    pub name: String,
-    /// `regular` / `hyper` / `super` / `miracle`.
-    pub kind: &'static str,
-    /// AP the art costs when fully expressed (arts table).
-    pub ap: u32,
-    /// Direction bytes of the input (`1=L 2=R 3=D 4=U`).
-    pub directions: Vec<u8>,
-    /// Staged anim id of the first bank record the art resolved to.
-    pub anim_id: u8,
-    /// How many consecutive bank records the clip concatenates.
-    pub segments: usize,
-    /// The concatenated keyframe stream (first segment's rate byte).
-    pub anim: MonsterAnimation,
-}
+/// The loadout kernel's [`ArtClip`] - the data shape this module fills.
+/// The struct lives with the shared kernel
+/// (`legaia_asset::battle_char_assembly::loadout`) so a native consumer can
+/// take the same clips; the curated-name resolution ladder below stays
+/// host-side because it needs `legaia_gamedata` and the disc TOC.
+pub(crate) use legaia_asset::battle_char_assembly::loadout::ArtClip;
 
 /// The `kind` tag the summary JSON carries per art clip.
 pub(crate) fn kind_tag(kind: ArtKind) -> &'static str {

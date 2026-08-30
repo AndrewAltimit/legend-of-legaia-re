@@ -133,3 +133,106 @@ fn town01_world_export_bakes_all_three_artifact_families() {
         assert_eq!(n["position"].as_array().map(Vec::len), Some(3));
     }
 }
+
+#[test]
+fn equipment_item_export_bakes_named_animated_glbs() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
+    let scus = std::fs::read(extracted.join("SCUS_942.54")).ok();
+
+    let export =
+        legaia_engine_core::glb_export::export_equipment_item_glbs(&index, scus.as_deref())
+            .expect("items export");
+
+    // The four player files together offer well over a hundred equippable
+    // records, spread across all four characters.
+    assert!(
+        export.items.len() > 100,
+        "expected >100 item records, got {}",
+        export.items.len()
+    );
+    // Terra's player file (PLAYER4) offers no equippable records - she has
+    // no changeable equipment in retail - so exactly three characters yield.
+    for who in ["Vahn", "Noa", "Gala"] {
+        assert!(
+            export.items.iter().any(|i| i.character == who),
+            "no items for {who}"
+        );
+    }
+    assert!(
+        !export.items.iter().any(|i| i.character == "Terra"),
+        "Terra unexpectedly offers equippable records"
+    );
+
+    let mut alone = 0usize;
+    let mut with_limb = 0usize;
+    let mut named = 0usize;
+    let mut animated = 0usize;
+    for it in &export.items {
+        if !it.glb_with_limb.is_empty() {
+            with_limb += 1;
+            let j = glb_json(&it.glb_with_limb);
+            assert!(
+                !j["meshes"].as_array().unwrap().is_empty(),
+                "{}: with-limb glb has no meshes",
+                it.file_stem
+            );
+        }
+        if !it.glb_alone.is_empty() {
+            alone += 1;
+            let j = glb_json(&it.glb_alone);
+            // Every item file bakes the loadout's clip bank (action bank +
+            // weapon swings) so the piece moves with the limb it rides.
+            let anims = j["animations"].as_array().map_or(0, Vec::len);
+            if anims > 0 {
+                animated += 1;
+            }
+            assert_eq!(
+                anims, it.clip_count,
+                "{}: baked animation count vs manifest clip count",
+                it.file_stem
+            );
+            // The item's display name labels a node when SCUS was readable.
+            if let Some(name) = &it.name {
+                named += 1;
+                let json_text = j.to_string();
+                assert!(
+                    json_text.contains(name.trim()),
+                    "{}: item name {name:?} not in glb JSON",
+                    it.file_stem
+                );
+            }
+        }
+    }
+    // The vast majority of records survive the item-alone cut; every one
+    // keeps the record-keeping with-limb export.
+    assert!(alone > 80, "only {alone} item-alone glbs");
+    assert!(with_limb > 100, "only {with_limb} with-limb glbs");
+    assert!(animated > 80, "only {animated} alone glbs carry clips");
+    if scus.is_some() {
+        assert!(named > 80, "only {named} alone glbs carry a SCUS name");
+    }
+
+    // Manifest cross-references: every listed file name matches the stem
+    // and flavour of the record it came from.
+    let manifest = legaia_engine_core::glb_export::items_manifest(&export);
+    let rows = manifest["items"].as_array().expect("items array");
+    assert_eq!(rows.len(), export.items.len());
+    for (row, it) in rows.iter().zip(&export.items) {
+        if !it.glb_alone.is_empty() {
+            assert_eq!(
+                row["alone"].as_str().unwrap(),
+                format!("{}_alone.glb", it.file_stem)
+            );
+        } else {
+            assert!(row["alone"].is_null());
+        }
+    }
+}
