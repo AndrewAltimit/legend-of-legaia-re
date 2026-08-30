@@ -83,6 +83,8 @@ namespace LegaiaWorld
             string sceneName = MiniJson.AsStr(MiniJson.Get(m, "scene")) ?? "scene";
             string worldGlb = MiniJson.AsStr(MiniJson.Get(m, "world_glb"));
 
+            float scale = MiniJson.GetNum(m, "scale", 1f);
+
             var root = new GameObject("Legaia_" + sceneName);
             Undo.RegisterCreatedObjectUndo(root, "Build Legaia scene");
 
@@ -125,6 +127,10 @@ namespace LegaiaWorld
                 string file = MiniJson.AsStr(MiniJson.Get(n, "file"));
                 var go = InstantiateGlb(dir + "/" + file, npcRoot.transform);
                 if (go == null) continue;
+                // NPC/prop glbs ship in raw PSX units (same as the site's
+                // downloads); manifest positions are pre-scaled, the meshes
+                // are not - scale each instance by the manifest's factor.
+                go.transform.localScale = Vector3.one * scale;
                 go.transform.localPosition = G2U(MiniJson.GetVec3(n, "position"));
                 string label = MiniJson.AsStr(MiniJson.Get(n, "label"));
                 if (!string.IsNullOrEmpty(label))
@@ -152,6 +158,7 @@ namespace LegaiaWorld
                 {
                     var go = InstantiateGlb(dir + "/" + file, propRoot.transform);
                     if (go == null) continue;
+                    go.transform.localScale = Vector3.one * scale;
                     go.transform.localPosition = G2U(MiniJson.GetVec3(inst, "position"));
                     float yaw = MiniJson.GetNum(inst, "rot_y_radians") * Mathf.Rad2Deg;
                     go.transform.localRotation = Quaternion.Euler(0, YAW_SIGN * yaw, 0);

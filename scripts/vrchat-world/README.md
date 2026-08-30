@@ -111,6 +111,11 @@ the VCC setup in more detail if this is your first worlds project.
   where it matters.
 - **Too big / too small**: re-export with a different `--scale`; the
   manifest records the scale used so the builder stays consistent.
+- **A hand-placed NPC or prop is a giant**: the NPC/prop `.glb`s ship in
+  raw PSX units (like the site's downloads) while manifest *positions*
+  are pre-scaled - the builder sets each instance's scale from the
+  manifest; do the same (`localScale = manifest scale`) when placing one
+  by hand.
 - **A scene looks empty**: world-map scenes (`deele1`…) have no MAN NPCs,
   and some scenes are cutscene-only shells; `export-glb --all-scenes`
   reports what each scene yielded.

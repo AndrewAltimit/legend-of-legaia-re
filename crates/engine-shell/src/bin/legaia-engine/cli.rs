@@ -24,7 +24,7 @@ use std::path::PathBuf;
         each time, or pass explicit paths where supported.",
     after_help = "COMMAND GROUPS:\n  \
         Playing:      play-window, play-str, config, save, load\n  \
-        Exploring:    list-scenes, info, record, replay\n  \
+        Exploring:    list-scenes, info, record, replay, export-glb\n  \
         Diagnostics (engine development; not needed to play):\n    \
         scene / script analysis:  play, clut-trace, man-scripts\n    \
         parity oracles:           vram-oracle, mode-trace, audio-trace, pcm-trace, gte-replay, scenarios,\n                              \

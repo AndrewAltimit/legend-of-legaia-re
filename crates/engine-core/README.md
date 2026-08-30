@@ -354,6 +354,18 @@ each scene actually uploads, rather than blanket-loading the block.
 transition - the player TMD lives here, which is why the party mesh
 survives a door without a reload.
 
+`scene_assembly` is the shared full-scene assembly kernel over those
+resources: `assemble_field_scene` resolves the env pack, the `.MAP`
+placement/terrain draws (object binds included, so each placed draw
+carries its posing clip), the walk-ground heightfield and the coplanar
+lifts - the one build the browser field-scene page and the native
+`export-glb` path both read. `packet_color` carries the hybrid
+textured/vertex-colour side channel, `npc_catalog` the MAN placement
+walk, and `glb_export` composes all of it (plus per-NPC and animated-prop
+bakes through `legaia_asset::{scene,character}_gltf`) into the
+`legaia-engine export-glb` artifact set - see
+[`docs/tooling/vrchat-world-export.md`](../../docs/tooling/vrchat-world-export.md).
+
 ## Dialogue, save/load, and loot
 
 `inline_dialogue` is the opt-in dialogue runner: `step_inline_dialogue`

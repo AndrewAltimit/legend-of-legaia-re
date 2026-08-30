@@ -75,7 +75,10 @@ objects - the village centre, not the map-grid centre), composition
 Transforms are in the **export frame**: the site renderers' convention
 (mesh-local Y flipped at bake so the model reads +Y-up,
 mirror-handedness and all), already multiplied by `scale`; yaw in radians
-about +Y exactly as the world-glb instances apply it.
+about +Y exactly as the world-glb instances apply it. The NPC / prop
+`.glb`s themselves stay in **raw PSX units** (matching the site's
+character downloads), so a consumer scales each instance by the
+manifest's `scale` - the kit's builder does.
 
 ## Verification
 
